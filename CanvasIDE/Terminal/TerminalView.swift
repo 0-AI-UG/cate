@@ -12,8 +12,15 @@ final class TerminalView: NSView {
 
     /// The unzoomed canvas-coordinate size of this terminal's content area.
     /// Set by CanvasNode.updateContentZoom() when zoom changes.
+    /// Setting this adjusts the view's bounds (not frame) so Ghostty sees the
+    /// unzoomed size. AppKit's frame/bounds ratio creates a natural scale transform.
     var canvasSize: CGSize = .zero {
-        didSet { updateSurfaceSize() }
+        didSet {
+            if canvasSize.width > 0, canvasSize.height > 0,
+               bounds.size != canvasSize {
+                setBoundsSize(canvasSize)
+            }
+        }
     }
 
     // MARK: - NSView Overrides
@@ -110,21 +117,12 @@ final class TerminalView: NSView {
     private func updateSurfaceSize() {
         guard let surface else { return }
         let scale = window?.backingScaleFactor ?? 2.0
-
-        // Use canvas-coordinate size (unzoomed) if available, otherwise fall back to bounds
-        let effectiveSize = canvasSize.width > 0 ? canvasSize : bounds.size
-        let w = UInt32(effectiveSize.width * scale)
-        let h = UInt32(effectiveSize.height * scale)
+        // bounds reflects the unzoomed canvas size (set via canvasSize/setBoundsSize)
+        // so Ghostty renders at full resolution regardless of zoom
+        let w = UInt32(bounds.width * scale)
+        let h = UInt32(bounds.height * scale)
         guard w > 0, h > 0 else { return }
-
         ghostty_surface_set_size(surface, w, h)
-        ghostty_surface_set_content_scale(surface, scale, scale)
-
-        // Set Metal layer drawable size to unzoomed pixel dimensions so
-        // Ghostty renders at full resolution even when the frame is zoomed down.
-        if let metalLayer = layer as? CAMetalLayer {
-            metalLayer.drawableSize = CGSize(width: CGFloat(w), height: CGFloat(h))
-        }
     }
 
     // MARK: - Focus
