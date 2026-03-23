@@ -11,7 +11,6 @@ final class TerminalView: NSView {
     private var hasSurface: Bool { surface != nil }
 
     /// The unzoomed canvas-coordinate size of this terminal's content area.
-    /// Set by CanvasNode.updateContentZoom() when zoom changes.
     /// Setting this adjusts the view's bounds (not frame) so Ghostty sees the
     /// unzoomed size. AppKit's frame/bounds ratio creates a natural scale transform.
     var canvasSize: CGSize = .zero {
@@ -22,11 +21,24 @@ final class TerminalView: NSView {
                     setBoundsOrigin(.zero)
                 }
             } else {
-                // Reset bounds to match frame (no scaling)
                 if bounds.size != frame.size {
                     setBoundsSize(frame.size)
                     setBoundsOrigin(.zero)
                 }
+            }
+        }
+    }
+
+    /// Current canvas zoom level. Used to set the Metal layer's contentsScale
+    /// so text renders at the correct pixel density (avoids pixelation when zoomed in).
+    var canvasZoom: Double = 1.0 {
+        didSet {
+            let backing = window?.backingScaleFactor ?? 2.0
+            let scale = backing * max(canvasZoom, 1.0)
+            if let metalLayer = layer as? CAMetalLayer {
+                metalLayer.contentsScale = scale
+            } else {
+                layer?.contentsScale = scale
             }
         }
     }

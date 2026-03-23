@@ -354,6 +354,7 @@ final class CanvasNode: NSView {
         for subview in contentContainer.subviews {
             if let terminal = subview as? TerminalView {
                 terminal.canvasSize = unzoomedSize
+                terminal.canvasZoom = zoomLevel
             }
         }
     }
