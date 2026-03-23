@@ -28,6 +28,9 @@ struct CanvasNodeState {
 
 @MainActor
 final class CanvasState: ObservableObject {
+    static let minZoom: Double = 0.3
+    static let maxZoom: Double = 3.0
+
     @Published private(set) var nodes: [CanvasNodeID: CanvasNodeState] = [:]
     @Published var viewportOffset: CGPoint = .zero
     @Published var zoomLevel: Double = 1.0
@@ -78,7 +81,7 @@ final class CanvasState: ObservableObject {
     }
 
     func setZoom(_ level: Double) {
-        zoomLevel = min(max(level, 0.1), 2.0)
+        zoomLevel = min(max(level, Self.minZoom), Self.maxZoom)
         for key in nodes.keys {
             nodes[key]?.lodState = zoomLevel >= 0.2 ? .live : .placeholder
         }

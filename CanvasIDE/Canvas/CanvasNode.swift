@@ -1,7 +1,142 @@
 import AppKit
 import Foundation
 
+// MARK: - ResizeHandle
+
+/// A small 12×12 drag handle placed at the bottom-right corner of a CanvasNode.
+/// It shows a resize cursor on hover and fires `onResize` with the new desired
+/// total node size as the user drags.
+final class ResizeHandle: NSView {
+
+    // MARK: Callback
+
+    /// Called continuously during a drag.  The argument is the *new* desired
+    /// total size of the containing CanvasNode (current size + pointer delta,
+    /// already divided by the canvas zoom scale supplied at drag-start).
+    var onResize: ((CGSize) -> Void)?
+
+    // MARK: Constants
+
+    static let size: CGFloat = 12
+
+    // MARK: Private state
+
+    private var trackingArea: NSTrackingArea?
+    private var dragStartLocation: NSPoint = .zero
+    private var dragStartNodeSize: CGSize = .zero
+
+    /// The canvas zoom scale at the moment the drag begins.  The coordinator
+    /// sets this before the first `mouseDragged` fires.
+    var zoomScaleAtDragStart: CGFloat = 1.0
+
+    // MARK: Init
+
+    init() {
+        let side = ResizeHandle.size
+        super.init(frame: NSRect(x: 0, y: 0, width: side, height: side))
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    // MARK: Tracking area
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .cursorUpdate],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    private static let resizeCursor: NSCursor = {
+        if #available(macOS 15.0, *) {
+            return NSCursor.frameResize(position: .bottomRight, directions: [.inward, .outward])
+        }
+        return NSCursor.crosshair
+    }()
+
+    override func cursorUpdate(with event: NSEvent) {
+        Self.resizeCursor.set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        Self.resizeCursor.set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.arrow.set()
+    }
+
+    // MARK: Drag
+
+    override func mouseDown(with event: NSEvent) {
+        guard let node = enclosingCanvasNode else { return }
+        dragStartLocation = convert(event.locationInWindow, from: nil)
+        dragStartNodeSize = node.frame.size
+        zoomScaleAtDragStart = node.enclosingZoomScale
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let node = enclosingCanvasNode else { return }
+        let current = convert(event.locationInWindow, from: nil)
+        let deltaX = (current.x - dragStartLocation.x) / zoomScaleAtDragStart
+        let deltaY = (current.y - dragStartLocation.y) / zoomScaleAtDragStart
+
+        // isFlipped on CanvasNode means positive-Y is downward, so dragging
+        // the bottom-right corner right/down should increase both dimensions.
+        let newWidth  = dragStartNodeSize.width  + deltaX
+        let newHeight = dragStartNodeSize.height - deltaY   // window coords: up = +Y
+
+        onResize?(CGSize(width: newWidth, height: newHeight))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        // Nothing extra needed; coordinator has already updated state via onResize.
+    }
+
+    // MARK: Helpers
+
+    private var enclosingCanvasNode: CanvasNode? {
+        var view: NSView? = superview
+        while let v = view {
+            if let node = v as? CanvasNode { return node }
+            view = v.superview
+        }
+        return nil
+    }
+}
+
+// MARK: - NSView convenience
+
+private extension NSView {
+    /// Walks up the view hierarchy to find the effective zoom scale of the
+    /// enclosing canvas scroll view, if any.  Falls back to 1.0.
+    var enclosingZoomScale: CGFloat {
+        var view: NSView? = superview
+        while let v = view {
+            if let scrollView = v as? NSScrollView {
+                return scrollView.magnification
+            }
+            view = v.superview
+        }
+        return 1.0
+    }
+}
+
 // MARK: - CanvasNode
+
 // Note: PanelType is defined in CanvasLayoutEngine.swift (same module).
 
 final class CanvasNode: NSView {
@@ -15,13 +150,21 @@ final class CanvasNode: NSView {
         didSet {
             guard isFocused != oldValue else { return }
             updateAppearance()
+            updateResizeHandleVisibility()
         }
+    }
+
+    /// Called during a resize drag.  Argument is the new desired total size.
+    /// The caller (Coordinator) is responsible for clamping and state updates.
+    var onResize: ((CGSize) -> Void)? {
+        didSet { resizeHandle.onResize = onResize }
     }
 
     // MARK: Subviews
 
     let titleBar: CanvasNodeTitleBar
     private let contentContainer: NSView
+    private let resizeHandle: ResizeHandle = ResizeHandle()
 
     // MARK: Constants
 
@@ -31,6 +174,16 @@ final class CanvasNode: NSView {
     private static let borderColorFocused = NSColor(red: 0x4A / 255.0, green: 0x9E / 255.0, blue: 0xFF / 255.0, alpha: 1.0)
     private static let borderColorDefault = NSColor(white: 1.0, alpha: 0.10)
     private static let borderWidth: CGFloat = 2
+
+    // MARK: Hover tracking
+
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isHovered: Bool = false {
+        didSet {
+            guard isHovered != oldValue else { return }
+            updateResizeHandleVisibility()
+        }
+    }
 
     // MARK: Init
 
@@ -97,15 +250,44 @@ final class CanvasNode: NSView {
             contentContainer.bottomAnchor.constraint(equalTo: clipView.bottomAnchor),
         ])
 
+        // Resize handle — added directly to self so it sits above the clip mask
+        addSubview(resizeHandle)
+
         // Border layer drawn on top of clip view (not clipped)
         wantsLayer = true
 
         updateAppearance()
+        updateResizeHandleVisibility()
     }
 
     // MARK: Flipped
 
     override var isFlipped: Bool { true }
+
+    // MARK: Tracking areas
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = hoverTrackingArea {
+            removeTrackingArea(existing)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+    }
 
     // MARK: Appearance
 
@@ -125,6 +307,10 @@ final class CanvasNode: NSView {
             layer?.shadowRadius = 6
             layer?.shadowOffset = CGSize(width: 0, height: -2)
         }
+    }
+
+    private func updateResizeHandleVisibility() {
+        resizeHandle.isHidden = !(isHovered || isFocused)
     }
 
     // MARK: Content
@@ -148,8 +334,57 @@ final class CanvasNode: NSView {
 
     override func layout() {
         super.layout()
-        // Auto layout handles subview positioning; this override is
-        // available for any manual adjustments needed in the future.
+        // Position the resize handle at the bottom-right corner.
+        // We do this in layout() because bounds may not be final until then.
+        let side = ResizeHandle.size
+        resizeHandle.frame = NSRect(
+            x: bounds.maxX - side,
+            y: bounds.maxY - side,
+            width: side,
+            height: side
+        )
+    }
+
+    // MARK: Mouse passthrough
+
+    /// When the node is not focused, only the title bar should consume clicks.
+    /// Clicks in the content area bubble up to the canvas so the canvas can
+    /// focus the node without swallowing the event inside a web/terminal view.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Always let the resize handle receive its own events.
+        let handleHit = resizeHandle.hitTest(convert(point, to: resizeHandle))
+        if handleHit != nil {
+            return resizeHandle
+        }
+
+        guard !isFocused else {
+            // Focused: normal hit-testing — content views handle their own events.
+            return super.hitTest(point)
+        }
+
+        // Unfocused: only the title bar absorbs clicks.
+        let titleBarFrame = convert(titleBar.frame, from: titleBar.superview)
+        if titleBarFrame.contains(point) {
+            return titleBar.hitTest(convert(point, to: titleBar))
+        }
+
+        // Return self for content-area clicks so the canvas coordinator gets
+        // the event and can focus the node, but subviews are not activated.
+        if bounds.contains(point) {
+            return self
+        }
+
+        return nil
+    }
+
+    /// When unfocused, forward scroll events to the superview (canvas) so the
+    /// canvas can pan while the pointer is over a non-focused node.
+    override func scrollWheel(with event: NSEvent) {
+        if isFocused {
+            super.scrollWheel(with: event)
+        } else {
+            superview?.scrollWheel(with: event)
+        }
     }
 }
 

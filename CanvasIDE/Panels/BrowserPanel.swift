@@ -13,6 +13,8 @@ final class BrowserPanel: NSObject, Panel {
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
+        // Note: Uses WebKit (not Chromium). Chrome cookie/password sharing is not feasible due to encrypted storage.
+        config.websiteDataStore = WKWebsiteDataStore.default()
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.navigationDelegate = self
         return wv

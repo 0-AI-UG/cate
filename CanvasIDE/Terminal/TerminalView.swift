@@ -44,6 +44,10 @@ final class TerminalView: NSView {
     /// Attach a Ghostty surface to this view. Call once after the view has a window.
     func attachSurface() {
         guard surface == nil else { return }
+        guard window != nil else {
+            print("TerminalView: attachSurface called before view has a window — skipping")
+            return
+        }
         surface = GhosttyAppManager.shared.createSurface(in: self)
         if surface == nil {
             print("TerminalView: failed to create Ghostty surface")
@@ -59,9 +63,15 @@ final class TerminalView: NSView {
     }
 
     deinit {
-        // ghostty_surface_free is safe to call from deinit on main thread
+        // ghostty_surface_free must be called on the main thread.
         if let s = surface {
-            ghostty_surface_free(s)
+            if Thread.isMainThread {
+                ghostty_surface_free(s)
+            } else {
+                DispatchQueue.main.sync {
+                    ghostty_surface_free(s)
+                }
+            }
         }
     }
 
@@ -69,10 +79,16 @@ final class TerminalView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil, !hasSurface {
-            attachSurface()
+        if window != nil {
+            if !hasSurface {
+                attachSurface()
+            }
+            updateSurfaceSize()
+        } else {
+            // View has been removed from a window — tear down the surface to
+            // avoid dangling references to a now-invisible Metal layer.
+            detachSurface()
         }
-        updateSurfaceSize()
     }
 
     override func layout() {
@@ -161,7 +177,7 @@ final class TerminalView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        guard let surface else { return }
+        guard let surface else { super.mouseDown(with: event); return }
         let pt = convert(event.locationInWindow, from: nil)
         ghostty_surface_mouse_pos(surface, Double(pt.x), Double(pt.y), ghosttyMods(from: event.modifierFlags))
         ghostty_surface_mouse_button(
@@ -173,7 +189,7 @@ final class TerminalView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let surface else { return }
+        guard let surface else { super.mouseUp(with: event); return }
         let pt = convert(event.locationInWindow, from: nil)
         ghostty_surface_mouse_pos(surface, Double(pt.x), Double(pt.y), ghosttyMods(from: event.modifierFlags))
         ghostty_surface_mouse_button(
@@ -209,19 +225,19 @@ final class TerminalView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard let surface else { return }
+        guard let surface else { super.mouseMoved(with: event); return }
         let pt = convert(event.locationInWindow, from: nil)
         ghostty_surface_mouse_pos(surface, Double(pt.x), Double(pt.y), ghosttyMods(from: event.modifierFlags))
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let surface else { return }
+        guard let surface else { super.mouseDragged(with: event); return }
         let pt = convert(event.locationInWindow, from: nil)
         ghostty_surface_mouse_pos(surface, Double(pt.x), Double(pt.y), ghosttyMods(from: event.modifierFlags))
     }
 
     override func scrollWheel(with event: NSEvent) {
-        guard let surface else { return }
+        guard let surface else { super.scrollWheel(with: event); return }
         let xDelta = event.scrollingDeltaX
         let yDelta = event.scrollingDeltaY
         // ghostty_input_scroll_mods_t is an int bitmask of keyboard mods.

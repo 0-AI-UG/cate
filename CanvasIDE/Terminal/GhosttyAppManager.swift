@@ -9,6 +9,9 @@ final class GhosttyAppManager {
     private(set) var app: ghostty_app_t?
     private(set) var config: ghostty_config_t?
 
+    /// 16 ms repeating timer that drives the Ghostty event loop on the main thread.
+    private var tickTimer: Timer?
+
     private init() {}
 
     func initialize() {
@@ -45,22 +48,10 @@ final class GhosttyAppManager {
             return false
         }
 
-        // Read clipboard: (userdata, clipboard_location, state_opaque_ptr)
-        runtimeConfig.read_clipboard_cb = { _, location, state in
-            let pb: NSPasteboard
-            if location == GHOSTTY_CLIPBOARD_SELECTION {
-                pb = NSPasteboard(name: NSPasteboard.Name("com.mitchellh.ghostty.selection"))
-            } else {
-                pb = .general
-            }
-            let text = pb.string(forType: .string) ?? ""
-            // We don't have the surface pointer here — the state pointer is
-            // opaque and Ghostty will route it correctly. For now, this is a
-            // simplified version that doesn't complete the request properly.
-            // Full integration requires surface-aware clipboard handling.
-            _ = text
-            _ = state
-        }
+        // Read clipboard: set to nil so Ghostty uses its default behavior.
+        // The previous custom implementation did not properly complete the async
+        // clipboard request and caused the terminal to hang waiting for a response.
+        runtimeConfig.read_clipboard_cb = nil
 
         // Write clipboard: (userdata, clipboard_location, content_array, count, confirm)
         runtimeConfig.write_clipboard_cb = { _, _, contents, count, _ in
@@ -79,6 +70,13 @@ final class GhosttyAppManager {
             return
         }
         self.app = ghosttyApp
+
+        // Start a 16 ms repeating timer (~60 fps) to drive the Ghostty event loop.
+        // wakeup_cb can also trigger ticks on demand, but a steady heartbeat prevents
+        // stalls when wakeup is not fired (e.g., during idle rendering).
+        tickTimer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
     }
 
     /// Drive the Ghostty event loop.

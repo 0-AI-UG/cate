@@ -30,6 +30,7 @@ final class CanvasView: NSView {
     private func commonInit() {
         wantsLayer = true
         layer?.backgroundColor = NSColor(red: 0.110, green: 0.110, blue: 0.129, alpha: 1.0).cgColor
+        layer?.masksToBounds = true  // Clip grid dots and node shadows to canvas bounds
 
         // Accept scroll/magnify/click events
         allowedTouchTypes = [.indirect]
@@ -170,7 +171,7 @@ final class CanvasView: NSView {
 
     private func zoomAround(point viewPoint: CGPoint, by delta: CGFloat) {
         let oldZoom = canvasState.zoomLevel
-        let newZoom = min(max(oldZoom + Double(delta), 0.1), 2.0)
+        let newZoom = min(max(oldZoom + Double(delta), CanvasState.minZoom), CanvasState.maxZoom)
         guard newZoom != oldZoom else { return }
 
         // Keep viewPoint fixed in canvas space:
@@ -211,6 +212,17 @@ final class CanvasView: NSView {
 
     override func rightMouseUp(with event: NSEvent) {
         lastRightClickDragLocation = nil
+    }
+
+    // MARK: - Focus sync
+
+    /// Update the isFocused state on all hosted CanvasNode views.
+    func updateFocusState(focusedId: CanvasNodeID?) {
+        for (nodeId, view) in nodeViews {
+            if let canvasNode = view as? CanvasNode {
+                canvasNode.isFocused = (nodeId == focusedId)
+            }
+        }
     }
 
     // MARK: - Accept first responder for key events

@@ -8,28 +8,14 @@ struct WorkspaceContentView: View {
     @ObservedObject var workspace: Workspace
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             // Canvas (NSViewRepresentable wrapping CanvasView + CanvasNode subviews)
             CanvasViewRepresentable(workspace: workspace)
                 .ignoresSafeArea()
 
-            // Toolbar overlay at top-center
-            HStack {
-                CanvasToolbar(
-                    zoomLevel: workspace.canvasState.zoomLevel,
-                    onNewTerminal: { workspace.createTerminal() },
-                    onNewBrowser:  { workspace.createBrowser() },
-                    onNewEditor:   { workspace.createEditor() },
-                    onZoomIn:  { workspace.canvasState.setZoom(workspace.canvasState.zoomLevel + 0.1) },
-                    onZoomOut: { workspace.canvasState.setZoom(workspace.canvasState.zoomLevel - 0.1) }
-                )
-            }
-            .padding(.top, 12)
-
-            // Minimap overlay bottom-right
+            // Minimap overlay top-right
             if workspace.canvasState.minimapVisible {
                 VStack {
-                    Spacer()
                     HStack {
                         Spacer()
                         CanvasMinimapView(
@@ -44,9 +30,26 @@ struct WorkspaceContentView: View {
                                 )
                             }
                         )
-                        .padding(12)
                     }
+                    .padding(12)
+                    Spacer()
                 }
+            }
+
+            // Toolbar overlay at bottom-center
+            VStack {
+                Spacer()
+                HStack {
+                    CanvasToolbar(
+                        zoomLevel: workspace.canvasState.zoomLevel,
+                        onNewTerminal: { workspace.createTerminal() },
+                        onNewBrowser:  { workspace.createBrowser() },
+                        onNewEditor:   { workspace.createEditor() },
+                        onZoomIn:  { workspace.canvasState.setZoom(workspace.canvasState.zoomLevel + 0.1) },
+                        onZoomOut: { workspace.canvasState.setZoom(workspace.canvasState.zoomLevel - 0.1) }
+                    )
+                }
+                .padding(.bottom, 12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -127,12 +130,17 @@ struct CanvasViewRepresentable: NSViewRepresentable {
         // Track which nodeIds have already been added to the canvas
         private var addedNodeIds: Set<CanvasNodeID> = []
 
+        // Drag guard: defer additions while a drag is in flight
+        var isDragging: Bool = false
+        private var pendingNodeIds: Set<CanvasNodeID> = []
+
         // Cancellables for observing CanvasState changes
         private var cancellables = Set<AnyCancellable>()
 
         init(workspace: Workspace) {
             self.workspace = workspace
             super.init()
+
             // Observe canvasState node changes to add/remove subviews
             workspace.canvasState.$nodes
                 .receive(on: RunLoop.main)
@@ -140,6 +148,14 @@ struct CanvasViewRepresentable: NSViewRepresentable {
                     guard let self, let cv = self.canvasView else { return }
                     self.syncNodes(workspace: self.workspace, canvasView: cv)
                     cv.invalidateCanvas()
+                }
+                .store(in: &cancellables)
+
+            // Focus sync: forward focusedNodeId changes to CanvasView
+            workspace.canvasState.$focusedNodeId
+                .receive(on: RunLoop.main)
+                .sink { [weak self] focusedId in
+                    self?.canvasView?.updateFocusState(focusedId: focusedId)
                 }
                 .store(in: &cancellables)
         }
@@ -152,11 +168,23 @@ struct CanvasViewRepresentable: NSViewRepresentable {
             for nodeId in removedIds {
                 canvasView.removeNodeView(for: nodeId)
                 addedNodeIds.remove(nodeId)
+                pendingNodeIds.remove(nodeId)
             }
 
-            // Add views for new nodes
+            // Determine new nodes to add
             let newIds = currentIds.subtracting(addedNodeIds)
-            for nodeId in newIds {
+
+            // If dragging, defer new additions until drag ends
+            if isDragging {
+                pendingNodeIds.formUnion(newIds)
+                return
+            }
+
+            // Include any previously deferred nodes
+            let idsToAdd = newIds.union(pendingNodeIds)
+            pendingNodeIds.removeAll()
+
+            for nodeId in idsToAdd {
                 guard let nodeState = workspace.canvasState.nodes[nodeId] else { continue }
                 let panelId = nodeState.panelId
 
@@ -196,7 +224,8 @@ struct CanvasViewRepresentable: NSViewRepresentable {
                 // Wire title bar drag → move node on canvas
                 let capturedNodeId = nodeId
                 let capturedState = workspace.canvasState
-                canvasNode.titleBar.onDrag = { [weak capturedState, weak canvasView] delta in
+                canvasNode.titleBar.onDrag = { [weak self, weak capturedState, weak canvasView] delta in
+                    self?.isDragging = true
                     guard let state = capturedState,
                           let current = state.nodes[capturedNodeId] else { return }
                     let zoom = state.zoomLevel > 0 ? state.zoomLevel : 1.0
@@ -206,6 +235,27 @@ struct CanvasViewRepresentable: NSViewRepresentable {
                     )
                     state.moveNode(capturedNodeId, to: newOrigin)
                     canvasView?.invalidateCanvas()
+                }
+
+                // Wire title bar drag end → flush pending nodes
+                canvasNode.titleBar.onDragEnd = { [weak self, weak canvasView] in
+                    guard let self, let cv = canvasView else { return }
+                    self.isDragging = false
+                    if !self.pendingNodeIds.isEmpty {
+                        self.syncNodes(workspace: self.workspace, canvasView: cv)
+                        cv.invalidateCanvas()
+                    }
+                }
+
+                // Wire resize callback
+                canvasNode.onResize = { [weak capturedState] newSize in
+                    guard let state = capturedState else { return }
+                    let minSize = CanvasLayoutEngine.minimumSize(for: type)
+                    let clampedSize = CGSize(
+                        width: max(newSize.width, minSize.width),
+                        height: max(newSize.height, minSize.height)
+                    )
+                    state.resizeNode(capturedNodeId, to: clampedSize)
                 }
 
                 canvasView.addNodeView(canvasNode, for: nodeId)
