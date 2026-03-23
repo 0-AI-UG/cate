@@ -123,8 +123,14 @@ final class CanvasView: NSView {
 
     private func repositionNodeViews() {
         for (nodeId, nodeView) in nodeViews {
-            if let frame = canvasState.viewFrame(for: nodeId) {
+            if let frame = canvasState.viewFrame(for: nodeId),
+               let node = canvasState.nodes[nodeId] {
                 nodeView.frame = frame
+                // Set bounds to the unzoomed canvas-coordinate size.
+                // When frame.size = canvasSize * zoom and bounds.size = canvasSize,
+                // AppKit applies a natural scale transform so all content (including
+                // Metal-rendered terminal text) visually scales with zoom.
+                nodeView.setBoundsSize(node.size)
             }
         }
     }
@@ -142,8 +148,10 @@ final class CanvasView: NSView {
         guard nodeViews[nodeId] == nil else { return }
         nodeViews[nodeId] = view
         addSubview(view)
-        if let frame = canvasState.viewFrame(for: nodeId) {
+        if let frame = canvasState.viewFrame(for: nodeId),
+           let node = canvasState.nodes[nodeId] {
             view.frame = frame
+            view.setBoundsSize(node.size)
         }
     }
 
@@ -238,6 +246,17 @@ final class CanvasView: NSView {
 
     override func rightMouseUp(with event: NSEvent) {
         lastRightClickDragLocation = nil
+    }
+
+    // MARK: - Mouse down (unfocus on canvas background click)
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        // If click is on the canvas background (not on a node), clear focus
+        if nodeId(at: point) == nil {
+            canvasState.focusedNodeId = nil
+        }
+        super.mouseDown(with: event)
     }
 
     // MARK: - Focus sync
