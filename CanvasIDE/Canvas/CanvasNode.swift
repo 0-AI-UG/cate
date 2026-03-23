@@ -173,9 +173,9 @@ final class CanvasNode: NSView {
     private static let titleBarHeight: CGFloat = 28
     private static let cornerRadius: CGFloat = 8
     private static let backgroundColor = NSColor(red: 0x1E / 255.0, green: 0x1E / 255.0, blue: 0x24 / 255.0, alpha: 1.0)
-    private static let borderColorFocused = NSColor(red: 0x4A / 255.0, green: 0x9E / 255.0, blue: 0xFF / 255.0, alpha: 1.0)
-    private static let borderColorDefault = NSColor(white: 1.0, alpha: 0.18)
-    private static let borderWidth: CGFloat = 3
+    private static let borderColorFocused = NSColor(red: 0x4A / 255.0, green: 0x9E / 255.0, blue: 0xFF / 255.0, alpha: 0.5)
+    private static let borderColorDefault = NSColor(white: 1.0, alpha: 0.10)
+    private static let borderWidth: CGFloat = 1.5
 
     // MARK: Hover tracking
 
@@ -318,15 +318,15 @@ final class CanvasNode: NSView {
         dimOverlay.isHidden = isFocused
 
         if isFocused {
-            layer?.shadowColor = NSColor(red: 0x4A / 255.0, green: 0x9E / 255.0, blue: 0xFF / 255.0, alpha: 0.35).cgColor
+            layer?.shadowColor = NSColor(red: 0x4A / 255.0, green: 0x9E / 255.0, blue: 0xFF / 255.0, alpha: 0.2).cgColor
             layer?.shadowOpacity = 1.0
-            layer?.shadowRadius = 12
-            layer?.shadowOffset = CGSize(width: 0, height: -4)
+            layer?.shadowRadius = 8
+            layer?.shadowOffset = CGSize(width: 0, height: -2)
         } else {
             layer?.shadowColor = NSColor.black.cgColor
-            layer?.shadowOpacity = 0.4
-            layer?.shadowRadius = 6
-            layer?.shadowOffset = CGSize(width: 0, height: -2)
+            layer?.shadowOpacity = 0.3
+            layer?.shadowRadius = 4
+            layer?.shadowOffset = CGSize(width: 0, height: -1)
         }
     }
 
@@ -344,17 +344,21 @@ final class CanvasNode: NSView {
         let containerFrame = contentContainer.frame
         guard containerFrame.width > 0, containerFrame.height > 0 else { return }
 
-        // Always use the unzoomed canvas-coordinate size for terminal content.
-        // Ghostty renders at this fixed size; AppKit's frame/bounds ratio handles
-        // the visual scaling. This avoids Ghostty reflow lag during zoom.
-        let unzoomedSize = CGSize(
-            width: containerFrame.width / zoomLevel,
-            height: containerFrame.height / zoomLevel
-        )
         for subview in contentContainer.subviews {
-            if let terminal = subview as? TerminalView {
+            guard let terminal = subview as? TerminalView else { continue }
+
+            if zoomLevel < 0.99 {
+                // Zoomed OUT: setBoundsSize to unzoomed canvas size so Ghostty
+                // renders at 1x and AppKit scales down (lossless, no reflow)
+                let unzoomedSize = CGSize(
+                    width: containerFrame.width / zoomLevel,
+                    height: containerFrame.height / zoomLevel
+                )
                 terminal.canvasSize = unzoomedSize
-                terminal.canvasZoom = zoomLevel
+            } else {
+                // Zoomed IN or at 1x: clear canvasSize so bounds = frame.
+                // Ghostty renders at full zoomed pixel count → sharp text.
+                terminal.canvasSize = .zero
             }
         }
     }

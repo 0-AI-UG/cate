@@ -16,15 +16,16 @@ final class TerminalView: NSView {
     var canvasSize: CGSize = .zero {
         didSet {
             if canvasSize.width > 0, canvasSize.height > 0 {
+                // Zoomed out: lock bounds to unzoomed canvas size
                 if bounds.size != canvasSize {
                     setBoundsSize(canvasSize)
                     setBoundsOrigin(.zero)
                 }
-            } else {
-                if bounds.size != frame.size {
-                    setBoundsSize(frame.size)
-                    setBoundsOrigin(.zero)
-                }
+            } else if oldValue != .zero {
+                // Transitioning from zoomed-out to 1x+: reset bounds to frame
+                setBoundsSize(frame.size)
+                setBoundsOrigin(.zero)
+                updateSurfaceSize()
             }
         }
     }
