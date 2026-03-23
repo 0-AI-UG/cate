@@ -119,7 +119,11 @@ final class TerminalView: NSView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        updateSurfaceSize()
+        // When canvasSize is active, bounds are locked to the unzoomed size —
+        // frame changes are just visual scaling, no need to update Ghostty.
+        if canvasSize == .zero {
+            updateSurfaceSize()
+        }
     }
 
     private func updateSurfaceSize() {
