@@ -123,14 +123,8 @@ final class CanvasView: NSView {
 
     private func repositionNodeViews() {
         for (nodeId, nodeView) in nodeViews {
-            if let frame = canvasState.viewFrame(for: nodeId),
-               let node = canvasState.nodes[nodeId] {
+            if let frame = canvasState.viewFrame(for: nodeId) {
                 nodeView.frame = frame
-                // Set bounds to the unzoomed canvas-coordinate size.
-                // When frame.size = canvasSize * zoom and bounds.size = canvasSize,
-                // AppKit applies a natural scale transform so all content (including
-                // Metal-rendered terminal text) visually scales with zoom.
-                nodeView.setBoundsSize(node.size)
             }
         }
     }
@@ -148,10 +142,8 @@ final class CanvasView: NSView {
         guard nodeViews[nodeId] == nil else { return }
         nodeViews[nodeId] = view
         addSubview(view)
-        if let frame = canvasState.viewFrame(for: nodeId),
-           let node = canvasState.nodes[nodeId] {
+        if let frame = canvasState.viewFrame(for: nodeId) {
             view.frame = frame
-            view.setBoundsSize(node.size)
         }
     }
 
