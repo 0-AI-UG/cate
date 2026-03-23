@@ -30,9 +30,21 @@ targets:
         CODE_SIGN_ENTITLEMENTS: CanvasIDE/CanvasIDE.entitlements
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
+        OTHER_LDFLAGS:
+          - "-lc++"
+          - "-framework"
+          - Metal
+          - "-framework"
+          - QuartzCore
+          - "-framework"
+          - IOSurface
+          - "-framework"
+          - UniformTypeIdentifiers
+          - "-framework"
+          - Carbon
     dependencies:
       - framework: GhosttyKit.xcframework
-        embed: true
+        embed: false
       - package: Highlightr
       - package: Sparkle
 

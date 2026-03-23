@@ -2,6 +2,6 @@
 #define CanvasIDE_Bridging_Header_h
 
 // Import Ghostty C API
-#include <GhosttyKit/ghostty.h>
+#import "ghostty.h"
 
 #endif
