@@ -343,15 +343,22 @@ final class CanvasNode: NSView {
         guard zoomLevel > 0 else { return }
         let containerFrame = contentContainer.frame
         guard containerFrame.width > 0, containerFrame.height > 0 else { return }
-        let unzoomedSize = CGSize(
-            width: containerFrame.width / zoomLevel,
-            height: containerFrame.height / zoomLevel
-        )
-        // Pass the unzoomed canvas-coordinate size to TerminalView children
-        // so Ghostty renders at full resolution (text scales visually with zoom)
+
         for subview in contentContainer.subviews {
             if let terminal = subview as? TerminalView {
-                terminal.canvasSize = unzoomedSize
+                if zoomLevel < 1.0 {
+                    // Zoomed out: tell Ghostty the unzoomed size so text renders at
+                    // full resolution and AppKit scales it down visually
+                    let unzoomedSize = CGSize(
+                        width: containerFrame.width / zoomLevel,
+                        height: containerFrame.height / zoomLevel
+                    )
+                    terminal.canvasSize = unzoomedSize
+                } else {
+                    // Zoomed in (≥1.0): let Ghostty render at the actual zoomed pixel
+                    // size for maximum sharpness — no need for bounds override
+                    terminal.canvasSize = .zero
+                }
             }
         }
     }

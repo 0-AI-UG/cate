@@ -16,9 +16,17 @@ final class TerminalView: NSView {
     /// unzoomed size. AppKit's frame/bounds ratio creates a natural scale transform.
     var canvasSize: CGSize = .zero {
         didSet {
-            if canvasSize.width > 0, canvasSize.height > 0,
-               bounds.size != canvasSize {
-                setBoundsSize(canvasSize)
+            if canvasSize.width > 0, canvasSize.height > 0 {
+                if bounds.size != canvasSize {
+                    setBoundsSize(canvasSize)
+                    setBoundsOrigin(.zero)
+                }
+            } else {
+                // Reset bounds to match frame (no scaling)
+                if bounds.size != frame.size {
+                    setBoundsSize(frame.size)
+                    setBoundsOrigin(.zero)
+                }
             }
         }
     }
