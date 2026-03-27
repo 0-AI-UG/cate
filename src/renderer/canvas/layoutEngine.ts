@@ -233,6 +233,40 @@ export function minimumSize(panelType: PanelType): Size {
 }
 
 // -----------------------------------------------------------------------------
+// Auto layout
+// -----------------------------------------------------------------------------
+
+/**
+ * Compute a grid layout for a set of nodes.
+ * Returns a map of nodeId → new origin.
+ */
+export function autoLayout(
+  nodes: { id: string; size: Size }[],
+  containerWidth: number,
+  gap = 40,
+): Record<string, Point> {
+  const result: Record<string, Point> = {}
+  let x = gap
+  let y = gap
+  let rowHeight = 0
+
+  for (const node of nodes) {
+    // Wrap to next row if exceeding container width
+    if (x + node.size.width + gap > containerWidth && x > gap) {
+      x = gap
+      y += rowHeight + gap
+      rowHeight = 0
+    }
+
+    result[node.id] = { x, y }
+    x += node.size.width + gap
+    rowHeight = Math.max(rowHeight, node.size.height)
+  }
+
+  return result
+}
+
+// -----------------------------------------------------------------------------
 // Overlap detection
 // -----------------------------------------------------------------------------
 

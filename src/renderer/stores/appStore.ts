@@ -49,6 +49,7 @@ function createDefaultWorkspace(name?: string, rootPath?: string): WorkspaceStat
     rootPath: rootPath ?? '',
     panels: {},
     canvasNodes: {},
+    regions: {},
     zoomLevel: ZOOM_DEFAULT,
     viewportOffset: { x: 0, y: 0 },
     focusedNodeId: null,
@@ -137,6 +138,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ws.viewportOffset,
         ws.zoomLevel,
         ws.focusedNodeId,
+        ws.regions,
       )
 
       // Check for deferred restore (lazy workspace loading)
@@ -328,6 +330,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ? {
               ...ws,
               canvasNodes: { ...canvas.nodes },
+              regions: { ...canvas.regions },
               viewportOffset: { ...canvas.viewportOffset },
               zoomLevel: canvas.zoomLevel,
               focusedNodeId: canvas.focusedNodeId,
@@ -381,6 +384,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       rootPath: ws.rootPath,
       panels: {},
       canvasNodes: {},
+      regions: {},
       zoomLevel: ZOOM_DEFAULT,
       viewportOffset: { x: 0, y: 0 },
       focusedNodeId: null,

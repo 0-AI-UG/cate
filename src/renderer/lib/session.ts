@@ -49,6 +49,7 @@ export async function saveSession(): Promise<void> {
     // For others, use the workspace's stored canvasNodes
     const isSelected = workspace.id === appState.selectedWorkspaceId
     const nodes = isSelected ? canvasState.nodes : workspace.canvasNodes
+    const regions = isSelected ? canvasState.regions : workspace.regions
 
     const nodeSnapshots: NodeSnapshot[] = Object.values(nodes).map((node) => {
       const panel = workspace.panels[node.panelId]
@@ -94,6 +95,7 @@ export async function saveSession(): Promise<void> {
       zoomLevel: isSelected ? canvasState.zoomLevel : workspace.zoomLevel,
       viewportOffset: isSelected ? canvasState.viewportOffset : workspace.viewportOffset,
       nodes: nodeSnapshots,
+      regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
     })
   }
 
@@ -193,6 +195,13 @@ export async function restoreSession(snapshot: SessionSnapshot): Promise<void> {
 
   canvasStore.setZoom(snapshot.zoomLevel)
   canvasStore.setViewportOffset(snapshot.viewportOffset)
+
+  // Restore regions if present
+  if (snapshot.regions) {
+    for (const region of Object.values(snapshot.regions)) {
+      canvasStore.addRegion(region.label, region.origin, region.size, region.color)
+    }
+  }
 
   console.debug(`[session] workspace ${wsId} restored in ${(performance.now() - t0).toFixed(1)}ms`)
 }

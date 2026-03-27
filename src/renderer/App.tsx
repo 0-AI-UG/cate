@@ -14,6 +14,7 @@ import { useProcessMonitor } from './hooks/useProcessMonitor'
 import Canvas from './canvas/Canvas'
 import CanvasNode from './canvas/CanvasNode'
 import CanvasToolbar from './canvas/CanvasToolbar'
+import Minimap from './canvas/Minimap'
 import { Sidebar } from './sidebar/Sidebar'
 import { FileExplorerSidebar } from './sidebar/FileExplorerSidebar'
 const TerminalPanel = React.lazy(() => import('./panels/TerminalPanel'))
@@ -44,6 +45,7 @@ export default function App() {
   const sidebarVisible = useUIStore((s) => s.sidebarVisible)
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
+  const showMinimap = useSettingsStore((s) => s.showMinimap)
 
   // Current workspace
   const currentWorkspace = workspaces.find((w) => w.id === selectedWorkspaceId)
@@ -259,6 +261,9 @@ export default function App() {
             )
           })}
         </Canvas>
+
+        {/* Minimap overlay */}
+        {showMinimap && <Minimap />}
 
         {/* Toolbar overlay */}
         <CanvasToolbar

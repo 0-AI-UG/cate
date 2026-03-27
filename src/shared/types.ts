@@ -53,6 +53,19 @@ export function isMaximized(node: CanvasNodeState): boolean {
 }
 
 // -----------------------------------------------------------------------------
+// Canvas region (group container)
+// -----------------------------------------------------------------------------
+
+export interface CanvasRegion {
+  id: string
+  origin: Point
+  size: Size
+  label: string
+  color: string
+  zOrder: number
+}
+
+// -----------------------------------------------------------------------------
 // LOD state (level-of-detail for zoom)
 // -----------------------------------------------------------------------------
 
@@ -82,6 +95,7 @@ export interface WorkspaceState {
   rootPath: string
   panels: Record<string, PanelState>
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
+  regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
   focusedNodeId: CanvasNodeId | null
@@ -294,6 +308,7 @@ export interface SessionSnapshot {
   viewportOffset: Point
   zoomLevel: number
   nodes: NodeSnapshot[]
+  regions?: Record<string, CanvasRegion>
 }
 
 export interface MultiWorkspaceSession {

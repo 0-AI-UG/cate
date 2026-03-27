@@ -11,6 +11,7 @@ import { viewToCanvas } from '../lib/coordinates'
 import CanvasGrid from './CanvasGrid'
 import SnapGuides from './SnapGuides'
 import ContextMenu from '../ui/ContextMenu'
+import CanvasRegionComponent from './CanvasRegionComponent'
 import type { Point, PanelType } from '../../shared/types'
 
 interface CanvasProps {
@@ -25,6 +26,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
 
   const zoom = useCanvasStore((s) => s.zoomLevel)
   const offset = useCanvasStore((s) => s.viewportOffset)
+  const regions = useCanvasStore((s) => s.regions)
 
   const {
     handleWheel,
@@ -113,24 +115,38 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   const worldTransform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
 
   // Build context menu items for creating panels at a specific canvas position
-  const contextMenuItems = canvasContextMenu && onCreateAtPoint
+  const contextMenuItems = canvasContextMenu
     ? [
+        ...(onCreateAtPoint
+          ? [
+              {
+                label: 'New Terminal',
+                onClick: () => {
+                  onCreateAtPoint('terminal', canvasContextMenu.canvasPoint)
+                },
+              },
+              {
+                label: 'New Editor',
+                onClick: () => {
+                  onCreateAtPoint('editor', canvasContextMenu.canvasPoint)
+                },
+              },
+              {
+                label: 'New Browser',
+                onClick: () => {
+                  onCreateAtPoint('browser', canvasContextMenu.canvasPoint)
+                },
+              },
+            ]
+          : []),
         {
-          label: 'New Terminal',
+          label: 'New Region',
           onClick: () => {
-            onCreateAtPoint('terminal', canvasContextMenu.canvasPoint)
-          },
-        },
-        {
-          label: 'New Editor',
-          onClick: () => {
-            onCreateAtPoint('editor', canvasContextMenu.canvasPoint)
-          },
-        },
-        {
-          label: 'New Browser',
-          onClick: () => {
-            onCreateAtPoint('browser', canvasContextMenu.canvasPoint)
+            useCanvasStore.getState().addRegion(
+              'Region',
+              canvasContextMenu.canvasPoint,
+              { width: 400, height: 300 },
+            )
           },
         },
       ]
@@ -164,12 +180,15 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
           containerWidth={containerSize.width}
           containerHeight={containerSize.height}
         />
+        {Object.values(regions).map((region) => (
+          <CanvasRegionComponent key={region.id} region={region} zoomLevel={zoom} />
+        ))}
         <SnapGuides />
         {children}
       </div>
 
       {/* Canvas background right-click context menu */}
-      {canvasContextMenu && contextMenuItems.length > 0 && (
+      {canvasContextMenu && (
         <ContextMenu
           x={canvasContextMenu.x}
           y={canvasContextMenu.y}

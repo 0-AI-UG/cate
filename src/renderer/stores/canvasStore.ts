@@ -7,6 +7,7 @@ import { create } from 'zustand'
 import type {
   CanvasNodeId,
   CanvasNodeState,
+  CanvasRegion,
   Point,
   Size,
   PanelType,
@@ -18,6 +19,7 @@ import {
   ZOOM_DEFAULT,
   PANEL_DEFAULT_SIZES,
 } from '../../shared/types'
+import { autoLayout as computeAutoLayout } from '../canvas/layoutEngine'
 
 // -----------------------------------------------------------------------------
 // Store interface
@@ -25,6 +27,7 @@ import {
 
 interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
+  regions: Record<string, CanvasRegion>
   viewportOffset: Point
   zoomLevel: number
   focusedNodeId: CanvasNodeId | null
@@ -76,12 +79,22 @@ interface CanvasStoreActions {
   setSnapGuides: (guides: { x: number | null; y: number | null }) => void
   clearSnapGuides: () => void
 
+  autoLayout: () => void
+
+  // Region management
+  addRegion: (label: string, origin: Point, size: Size, color?: string) => string
+  removeRegion: (id: string) => void
+  moveRegion: (id: string, origin: Point) => void
+  resizeRegion: (id: string, size: Size, origin?: Point) => void
+  renameRegion: (id: string, label: string) => void
+
   // Bulk reset (used when switching workspaces)
   loadWorkspaceCanvas: (
     nodes: Record<CanvasNodeId, CanvasNodeState>,
     viewportOffset: Point,
     zoomLevel: number,
     focusedNodeId: CanvasNodeId | null,
+    regions?: Record<string, CanvasRegion>,
   ) => void
 }
 
@@ -161,6 +174,7 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // --- State ---
   nodes: {},
+  regions: {},
   viewportOffset: { x: 0, y: 0 },
   zoomLevel: ZOOM_DEFAULT,
   focusedNodeId: null,
@@ -493,7 +507,104 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({ snapGuides: { x: null, y: null } })
   },
 
-  loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId) {
+  autoLayout() {
+    const state = get()
+    const nodeList = Object.values(state.nodes).sort((a, b) => a.creationIndex - b.creationIndex)
+    if (nodeList.length === 0) return
+
+    const containerWidth = state.containerSize.width > 0
+      ? state.containerSize.width / state.zoomLevel
+      : 1200
+
+    const positions = computeAutoLayout(
+      nodeList.map(n => ({ id: n.id, size: n.size })),
+      containerWidth,
+      40,
+    )
+
+    const updatedNodes = { ...state.nodes }
+    for (const [id, origin] of Object.entries(positions)) {
+      updatedNodes[id] = { ...updatedNodes[id], origin }
+    }
+
+    set({ nodes: updatedNodes })
+
+    // Zoom to fit after layout
+    get().zoomToFit()
+  },
+
+  addRegion(label, origin, size, color) {
+    const id = generateId()
+    const region: CanvasRegion = {
+      id,
+      origin,
+      size,
+      label,
+      color: color || 'rgba(74, 158, 255, 0.08)',
+      zOrder: -1000,
+    }
+    set((state) => ({
+      regions: { ...state.regions, [id]: region },
+    }))
+    return id
+  },
+
+  removeRegion(id) {
+    set((state) => {
+      const { [id]: _, ...rest } = state.regions
+      return { regions: rest }
+    })
+  },
+
+  moveRegion(id, origin) {
+    set((state) => {
+      const region = state.regions[id]
+      if (!region) return state
+      const dx = origin.x - region.origin.x
+      const dy = origin.y - region.origin.y
+      const updatedNodes = { ...state.nodes }
+      for (const node of Object.values(state.nodes)) {
+        if (rectsOverlap(
+          { origin: node.origin, size: node.size },
+          { origin: region.origin, size: region.size },
+        )) {
+          updatedNodes[node.id] = {
+            ...node,
+            origin: { x: node.origin.x + dx, y: node.origin.y + dy },
+          }
+        }
+      }
+      return {
+        regions: { ...state.regions, [id]: { ...region, origin } },
+        nodes: updatedNodes,
+      }
+    })
+  },
+
+  resizeRegion(id, size, origin) {
+    set((state) => {
+      const region = state.regions[id]
+      if (!region) return state
+      return {
+        regions: {
+          ...state.regions,
+          [id]: { ...region, size, ...(origin ? { origin } : {}) },
+        },
+      }
+    })
+  },
+
+  renameRegion(id, label) {
+    set((state) => {
+      const region = state.regions[id]
+      if (!region) return state
+      return {
+        regions: { ...state.regions, [id]: { ...region, label } },
+      }
+    })
+  },
+
+  loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions) {
     // Compute next counters from loaded data
     const nodeList = Object.values(nodes)
     const maxZOrder = nodeList.reduce((max, n) => Math.max(max, n.zOrder), -1)
@@ -501,6 +612,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     set({
       nodes,
+      regions: regions ?? {},
       viewportOffset,
       zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
       focusedNodeId,
