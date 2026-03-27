@@ -12,6 +12,7 @@ import { useAppStore } from '../stores/appStore'
 import { useNodeDrag } from '../hooks/useNodeDrag'
 import { useNodeResize, detectEdge, getCursorForEdge } from '../hooks/useNodeResize'
 import CanvasNodeTitleBar from './CanvasNodeTitleBar'
+import CanvasNodeTabBar from './CanvasNodeTabBar'
 
 // -----------------------------------------------------------------------------
 // Props
@@ -26,6 +27,7 @@ interface CanvasNodeProps {
   activityState?: NodeActivityState
   zoomLevel: number
   children: React.ReactNode
+  splitContent?: React.ReactNode
 }
 
 // -----------------------------------------------------------------------------
@@ -100,6 +102,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   activityState,
   zoomLevel,
   children,
+  splitContent,
 }) => {
   ensureKeyframes()
 
@@ -221,6 +224,39 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     }
   }, [nodeId, panelType])
 
+  const handleSplitHorizontal = useCallback(() => {
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    const panelId = crypto.randomUUID()
+    useAppStore.getState().addPanel(wsId, { id: panelId, type: panelType, title: 'Split', isDirty: false })
+    useCanvasStore.getState().splitNode(nodeId, 'horizontal', panelId)
+  }, [nodeId, panelType])
+
+  const handleSplitVertical = useCallback(() => {
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    const panelId = crypto.randomUUID()
+    useAppStore.getState().addPanel(wsId, { id: panelId, type: panelType, title: 'Split', isDirty: false })
+    useCanvasStore.getState().splitNode(nodeId, 'vertical', panelId)
+  }, [nodeId, panelType])
+
+  const handleAddTab = useCallback(() => {
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    const newPanelId = crypto.randomUUID()
+    useAppStore.getState().addPanel(wsId, { id: newPanelId, type: 'editor', title: 'Untitled', isDirty: false })
+    useCanvasStore.getState().stackPanel(nodeId, newPanelId)
+  }, [nodeId])
+
+  const handleSelectTab = useCallback((index: number) => {
+    useCanvasStore.getState().setActiveStackPanel(nodeId, index)
+  }, [nodeId])
+
+  const handleCloseTab = useCallback((tabPanelId: string) => {
+    useCanvasStore.getState().unstackPanel(nodeId, tabPanelId)
+  }, [nodeId])
+
+  // Stack state
+  const hasStack = node?.stackedPanelIds && node.stackedPanelIds.length > 1
+  const currentWorkspace = useAppStore((s) => s.workspaces.find(w => w.id === s.selectedWorkspaceId))
+
   // --- Computed styles -------------------------------------------------------
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
@@ -275,13 +311,29 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         onDragStart={handleDragStart}
         onRename={handleRename}
         onDuplicate={handleDuplicate}
+        onSplitHorizontal={!node?.split ? handleSplitHorizontal : undefined}
+        onSplitVertical={!node?.split ? handleSplitVertical : undefined}
+        onAddTab={handleAddTab}
       />
+
+      {/* Tab bar — rendered when node has stacked panels */}
+      {hasStack && (
+        <CanvasNodeTabBar
+          tabs={(node.stackedPanelIds || []).map(pid => {
+            const p = currentWorkspace?.panels[pid]
+            return { panelId: pid, title: p?.title || 'Panel', type: (p?.type || 'editor') as PanelType }
+          })}
+          activeIndex={node.activeStackIndex || 0}
+          onSelectTab={handleSelectTab}
+          onCloseTab={handleCloseTab}
+        />
+      )}
 
       {/* Content area */}
       <div
         style={{
           position: 'relative',
-          height: `calc(100% - ${TITLE_BAR_HEIGHT}px)`,
+          height: `calc(100% - ${TITLE_BAR_HEIGHT}px${hasStack ? ' - 24px' : ''})`,
           overflow: 'hidden',
         }}
       >
@@ -298,10 +350,69 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           />
         )}
 
-        {/* Panel content */}
-        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-          {children}
-        </div>
+        {/* Panel content — split or single */}
+        {node.split ? (
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: node.split.direction === 'horizontal' ? 'row' : 'column',
+            }}
+          >
+            {/* First panel */}
+            <div
+              style={{
+                [node.split.direction === 'horizontal' ? 'width' : 'height']: `${node.split.ratio * 100}%`,
+                overflow: 'hidden',
+                position: 'relative',
+                flexShrink: 0,
+              }}
+            >
+              {children}
+            </div>
+
+            {/* Divider */}
+            <div
+              style={{
+                [node.split.direction === 'horizontal' ? 'width' : 'height']: 4,
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                cursor: node.split.direction === 'horizontal' ? 'col-resize' : 'row-resize',
+                flexShrink: 0,
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                const split = node.split!
+                const startPos = split.direction === 'horizontal' ? e.clientX : e.clientY
+                const startRatio = split.ratio
+                const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
+                const totalSize = split.direction === 'horizontal' ? rect.width : rect.height
+
+                const handleMove = (ev: MouseEvent) => {
+                  const currentPos = split.direction === 'horizontal' ? ev.clientX : ev.clientY
+                  const delta = (currentPos - startPos) / totalSize
+                  useCanvasStore.getState().setSplitRatio(nodeId, startRatio + delta)
+                }
+                const handleUp = () => {
+                  window.removeEventListener('mousemove', handleMove)
+                  window.removeEventListener('mouseup', handleUp)
+                }
+                window.addEventListener('mousemove', handleMove)
+                window.addEventListener('mouseup', handleUp)
+              }}
+            />
+
+            {/* Second panel */}
+            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              {splitContent}
+            </div>
+          </div>
+        ) : (
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            {children}
+          </div>
+        )}
       </div>
     </div>
   )

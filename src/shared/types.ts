@@ -35,6 +35,12 @@ export type PanelType = 'terminal' | 'browser' | 'editor'
 /** Opaque string identifier (UUID) for canvas nodes. */
 export type CanvasNodeId = string
 
+export interface SplitState {
+  direction: 'horizontal' | 'vertical'
+  panelIds: [string, string]
+  ratio: number // 0-1, position of the divider
+}
+
 export interface CanvasNodeState {
   id: CanvasNodeId
   panelId: string
@@ -45,6 +51,9 @@ export interface CanvasNodeState {
   preMaximizeOrigin?: Point
   preMaximizeSize?: Size
   isPinned?: boolean
+  split?: SplitState
+  stackedPanelIds?: string[]
+  activeStackIndex?: number
 }
 
 /** Computed helper — mirrors the Swift `isMaximized` computed property. */
@@ -177,7 +186,7 @@ export function displayString(s: StoredShortcut): string {
   return parts.join('')
 }
 
-// All 15 shortcut actions — matches Swift ShortcutAction enum exactly.
+// All 16 shortcut actions — matches Swift ShortcutAction enum exactly.
 export type ShortcutAction =
   | 'newTerminal'
   | 'newBrowser'
@@ -187,6 +196,7 @@ export type ShortcutAction =
   | 'toggleFileExplorer'
   | 'toggleMinimap'
   | 'nodeSwitcher'
+  | 'panelSwitcher'
   | 'commandPalette'
   | 'zoomIn'
   | 'zoomOut'
@@ -205,6 +215,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'toggleFileExplorer',
   'toggleMinimap',
   'nodeSwitcher',
+  'panelSwitcher',
   'commandPalette',
   'zoomIn',
   'zoomOut',
@@ -224,6 +235,7 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   toggleFileExplorer: 'Toggle File Explorer',
   toggleMinimap: 'Toggle Minimap',
   nodeSwitcher: 'Panel Switcher',
+  panelSwitcher: 'Panel Switcher',
   commandPalette: 'Command Palette',
   zoomIn: 'Zoom In',
   zoomOut: 'Zoom Out',
@@ -243,6 +255,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   toggleFileExplorer: storedShortcut('f', { command: true, shift: true }),
   toggleMinimap: storedShortcut('m', { command: true, shift: true }),
   nodeSwitcher: storedShortcut(' ', { control: true }),
+  panelSwitcher: storedShortcut('\t', { control: true }),
   commandPalette: storedShortcut('k', { command: true }),
   zoomIn: storedShortcut('=', { command: true }),
   zoomOut: storedShortcut('-', { command: true }),

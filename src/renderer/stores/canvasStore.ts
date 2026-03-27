@@ -88,6 +88,16 @@ interface CanvasStoreActions {
   resizeRegion: (id: string, size: Size, origin?: Point) => void
   renameRegion: (id: string, label: string) => void
 
+  // Split panel actions
+  splitNode: (nodeId: CanvasNodeId, direction: 'horizontal' | 'vertical', newPanelId: string) => void
+  unsplitNode: (nodeId: CanvasNodeId) => void
+  setSplitRatio: (nodeId: CanvasNodeId, ratio: number) => void
+
+  // Stack/tab management
+  stackPanel: (targetNodeId: CanvasNodeId, panelId: string) => void
+  unstackPanel: (nodeId: CanvasNodeId, panelId: string) => void
+  setActiveStackPanel: (nodeId: CanvasNodeId, index: number) => void
+
   // Bulk reset (used when switching workspaces)
   loadWorkspaceCanvas: (
     nodes: Record<CanvasNodeId, CanvasNodeState>,
@@ -600,6 +610,123 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       if (!region) return state
       return {
         regions: { ...state.regions, [id]: { ...region, label } },
+      }
+    })
+  },
+
+  splitNode(nodeId, direction, newPanelId) {
+    set((state) => {
+      const node = state.nodes[nodeId]
+      if (!node || node.split) return state // Already split
+      return {
+        nodes: {
+          ...state.nodes,
+          [nodeId]: {
+            ...node,
+            split: {
+              direction,
+              panelIds: [node.panelId, newPanelId],
+              ratio: 0.5,
+            },
+          },
+        },
+      }
+    })
+  },
+
+  unsplitNode(nodeId) {
+    set((state) => {
+      const node = state.nodes[nodeId]
+      if (!node || !node.split) return state
+      return {
+        nodes: {
+          ...state.nodes,
+          [nodeId]: {
+            ...node,
+            split: undefined,
+          },
+        },
+      }
+    })
+  },
+
+  setSplitRatio(nodeId, ratio) {
+    set((state) => {
+      const node = state.nodes[nodeId]
+      if (!node || !node.split) return state
+      return {
+        nodes: {
+          ...state.nodes,
+          [nodeId]: {
+            ...node,
+            split: { ...node.split, ratio: Math.max(0.2, Math.min(0.8, ratio)) },
+          },
+        },
+      }
+    })
+  },
+
+  stackPanel(targetNodeId, panelId) {
+    set((state) => {
+      const node = state.nodes[targetNodeId]
+      if (!node) return state
+      const currentStack = node.stackedPanelIds || [node.panelId]
+      if (currentStack.includes(panelId)) return state
+      return {
+        nodes: {
+          ...state.nodes,
+          [targetNodeId]: {
+            ...node,
+            stackedPanelIds: [...currentStack, panelId],
+            activeStackIndex: currentStack.length, // Focus the new tab
+          },
+        },
+      }
+    })
+  },
+
+  unstackPanel(nodeId, panelId) {
+    set((state) => {
+      const node = state.nodes[nodeId]
+      if (!node || !node.stackedPanelIds) return state
+      const newStack = node.stackedPanelIds.filter(id => id !== panelId)
+      if (newStack.length <= 1) {
+        // Unstack completely — revert to single panel
+        return {
+          nodes: {
+            ...state.nodes,
+            [nodeId]: {
+              ...node,
+              panelId: newStack[0] || node.panelId,
+              stackedPanelIds: undefined,
+              activeStackIndex: undefined,
+            },
+          },
+        }
+      }
+      const activeIndex = Math.min(node.activeStackIndex || 0, newStack.length - 1)
+      return {
+        nodes: {
+          ...state.nodes,
+          [nodeId]: {
+            ...node,
+            stackedPanelIds: newStack,
+            activeStackIndex: activeIndex,
+          },
+        },
+      }
+    })
+  },
+
+  setActiveStackPanel(nodeId, index) {
+    set((state) => {
+      const node = state.nodes[nodeId]
+      if (!node) return state
+      return {
+        nodes: {
+          ...state.nodes,
+          [nodeId]: { ...node, activeStackIndex: index },
+        },
       }
     })
   },

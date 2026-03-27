@@ -21,6 +21,7 @@ const TerminalPanel = React.lazy(() => import('./panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('./panels/EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./panels/BrowserPanel'))
 import { NodeSwitcher } from './ui/NodeSwitcher'
+import { PanelSwitcher } from './ui/PanelSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
 import { ShortcutHintOverlay } from './ui/ShortcutHintOverlay'
 import { SettingsWindow } from './settings/SettingsWindow'
@@ -45,6 +46,7 @@ export default function App() {
   const sidebarVisible = useUIStore((s) => s.sidebarVisible)
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
+  const showPanelSwitcher = useUIStore((s) => s.showPanelSwitcher)
   const showMinimap = useSettingsStore((s) => s.showMinimap)
 
   // Current workspace
@@ -246,17 +248,30 @@ export default function App() {
             const panel = currentWorkspace?.panels[node.panelId]
             if (!panel) return null
 
+            // For stacked nodes, show the active tab's panel.
+            // For split nodes, render the primary panel as children and the
+            // secondary panel as splitContent.
+            const hasStack = node.stackedPanelIds && node.stackedPanelIds.length > 1
+            const activePanelId = hasStack
+              ? node.stackedPanelIds![node.activeStackIndex || 0]
+              : node.split ? node.split.panelIds[0] : node.panelId
+            const secondaryPanelId = !hasStack && node.split ? node.split.panelIds[1] : undefined
+
+            // Resolve the panel for title/type using the active panel
+            const activePanel = currentWorkspace?.panels[activePanelId] || panel
+
             return (
               <CanvasNode
                 key={node.id}
                 nodeId={node.id}
-                panelId={node.panelId}
-                panelType={panel.type}
-                title={panel.title}
+                panelId={activePanelId}
+                panelType={activePanel.type}
+                title={activePanel.title}
                 isFocused={focusedNodeId === node.id}
                 zoomLevel={zoomLevel}
+                splitContent={secondaryPanelId ? renderPanelContent(secondaryPanelId, node.id) : undefined}
               >
-                {renderPanelContent(node.panelId, node.id)}
+                {renderPanelContent(activePanelId, node.id)}
               </CanvasNode>
             )
           })}
@@ -281,6 +296,7 @@ export default function App() {
 
       {/* Modal overlays */}
       {showNodeSwitcher && <NodeSwitcher />}
+      {showPanelSwitcher && <PanelSwitcher />}
       {showCommandPalette && <CommandPalette />}
       {showSettings && (
         <SettingsWindow isOpen={showSettings} onClose={() => setShowSettings(false)} />

@@ -27,6 +27,9 @@ interface TitleBarProps {
   onDragStart: (e: React.MouseEvent) => void
   onRename?: () => void
   onDuplicate?: () => void
+  onSplitHorizontal?: () => void
+  onSplitVertical?: () => void
+  onAddTab?: () => void
 }
 
 // -----------------------------------------------------------------------------
@@ -62,6 +65,9 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
   onDragStart,
   onRename,
   onDuplicate,
+  onSplitHorizontal,
+  onSplitVertical,
+  onAddTab,
 }) => {
   const iconColor = panelColor(panelType)
 
@@ -137,6 +143,18 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
         useCanvasStore.getState().moveToBack(nodeId)
       },
     },
+    ...(onSplitHorizontal || onSplitVertical || onAddTab
+      ? [{ label: '', separator: true, onClick: () => {} }]
+      : []),
+    ...(onSplitHorizontal
+      ? [{ label: 'Split Right', onClick: onSplitHorizontal }]
+      : []),
+    ...(onSplitVertical
+      ? [{ label: 'Split Down', onClick: onSplitVertical }]
+      : []),
+    ...(onAddTab
+      ? [{ label: 'Add Tab', onClick: onAddTab }]
+      : []),
     { label: '', separator: true, onClick: () => {} },
     {
       label: 'Close',

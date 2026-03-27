@@ -86,6 +86,10 @@ export function useShortcuts(): void {
           useUIStore.getState().setShowNodeSwitcher(true)
           break
 
+        case 'panelSwitcher':
+          useUIStore.getState().setShowPanelSwitcher(true)
+          break
+
         case 'commandPalette':
           useUIStore.getState().setShowCommandPalette(true)
           break

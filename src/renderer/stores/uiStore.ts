@@ -11,6 +11,7 @@ import { create } from 'zustand'
 interface UIStoreState {
   showNodeSwitcher: boolean
   showCommandPalette: boolean
+  showPanelSwitcher: boolean
   sidebarVisible: boolean
   fileExplorerVisible: boolean
 }
@@ -18,6 +19,7 @@ interface UIStoreState {
 interface UIStoreActions {
   setShowNodeSwitcher: (show: boolean) => void
   setShowCommandPalette: (show: boolean) => void
+  setShowPanelSwitcher: (show: boolean) => void
   toggleSidebar: () => void
   toggleFileExplorer: () => void
   setSidebarVisible: (visible: boolean) => void
@@ -34,6 +36,7 @@ export const useUIStore = create<UIStore>((set) => ({
   // --- State ---
   showNodeSwitcher: false,
   showCommandPalette: false,
+  showPanelSwitcher: false,
   sidebarVisible: true,
   fileExplorerVisible: false,
 
@@ -45,6 +48,10 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setShowCommandPalette(show) {
     set({ showCommandPalette: show })
+  },
+
+  setShowPanelSwitcher(show) {
+    set({ showPanelSwitcher: show })
   },
 
   toggleSidebar() {
