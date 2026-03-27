@@ -18,7 +18,7 @@
 |------|---------------|
 | **New: `CanvasIDE/Terminal/TerminalOutputLogger.swift`** | Per-terminal PTY output capture, buffered disk writing, two-file log rotation, OSC 7/0/2 parsing |
 | **New: `CanvasIDE/Workspace/WorkspaceContainerView.swift`** | AppKit NSViewController that manages a `[UUID: CanvasView]` dictionary, swapping visibility on workspace switch |
-| `CanvasIDE/MainWindowView.swift` | Replace `if let workspace` conditional with `WorkspaceContainerRepresentable` |
+| `CanvasIDE/MainWindowView.swift` | Replace ForEach/opacity ZStack (lines 81-95) with `WorkspaceContainerRepresentable` |
 | `CanvasIDE/Terminal/GhosttyAppManager.swift` | Wire `io_write_cb`, `working_directory`, expose `replayOutput()` wrapper |
 | `CanvasIDE/Terminal/TerminalView.swift` | Remove `detachSurface()` on window-nil, add replay + "Restoring..." overlay |
 | `CanvasIDE/Workspace/WorkspaceContentView.swift` | Pass restore metadata (cwd, log path) when creating terminal nodes |
@@ -80,7 +80,7 @@ Replace the SwiftUI conditional rendering (`if let workspace`) with an AppKit co
 
 **Files:**
 - Create: `CanvasIDE/Workspace/WorkspaceContainerView.swift`
-- Modify: `CanvasIDE/MainWindowView.swift:62-73`
+- Modify: `CanvasIDE/MainWindowView.swift:78-96` (replace ForEach/opacity ZStack)
 
 - [ ] **Step 1: Create `WorkspaceContainerView.swift`**
 
@@ -187,25 +187,25 @@ struct WorkspaceContainerRepresentable: NSViewControllerRepresentable {
 
 - [ ] **Step 2: Update `MainWindowView.swift` to use the container**
 
-Replace the `if let workspace` block (lines 62-73) with the new representable:
+Replace the ForEach/opacity ZStack block (lines 78-96) with the new representable:
 
 ```swift
-// MainWindowView.swift — replace lines 62-73:
+// MainWindowView.swift — replace lines 78-96:
 // Old:
-//     if let workspace = appState.selectedWorkspace {
-//         WorkspaceContentView(workspace: workspace)
-//     } else {
-//         ZStack { ... "No workspace selected" ... }
+//     // Canvas workspace — keep all workspace views alive so terminal
+//     // surfaces survive workspace switches ...
+//     ZStack {
+//         ForEach(appState.workspaces) { workspace in
+//             let isSelected = workspace.id == appState.selectedWorkspaceId
+//             WorkspaceContentView(workspace: workspace)
+//                 .opacity(isSelected ? 1 : 0)
+//                 .allowsHitTesting(isSelected)
+//         }
+//         if appState.selectedWorkspace == nil { ... }
 //     }
+//     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
 // New:
-WorkspaceContainerRepresentable()
-```
-
-Also, the `WorkspaceContainerRepresentable` needs to handle the "no workspace selected" empty state internally. Update the `switchToWorkspace` method to show a placeholder when `workspaceId` is nil — or add an empty-state overlay in the SwiftUI wrapper. The simplest approach: keep the empty state in `MainWindowView`:
-
-```swift
-// Canvas workspace area
 ZStack {
     WorkspaceContainerRepresentable()
 
@@ -216,6 +216,7 @@ ZStack {
             .foregroundStyle(.tertiary)
     }
 }
+.frame(maxWidth: .infinity, maxHeight: .infinity)
 ```
 
 - [ ] **Step 3: Build and verify**
@@ -254,14 +255,16 @@ import Foundation
 
 /// Captures PTY output from a terminal and writes it to disk for session restore.
 /// Uses a two-file rotation scheme: current (.log) and previous (.prev.log).
+/// Thread-safe: io_write_cb is called from Ghostty's IO thread, so all mutable
+/// state access is serialized through a dedicated dispatch queue.
 final class TerminalOutputLogger {
 
     let terminalId: UUID
     let workspaceId: UUID
 
-    /// Latest working directory parsed from OSC 7
+    /// Latest working directory parsed from OSC 7 (read from main thread)
     private(set) var currentWorkingDirectory: String?
-    /// Latest title parsed from OSC 0/2
+    /// Latest title parsed from OSC 0/2 (read from main thread)
     private(set) var currentTitle: String?
 
     private let logDirectory: URL
@@ -281,6 +284,9 @@ final class TerminalOutputLogger {
     // OSC parser state
     private var oscBuffer: Data = Data()
     private var inOSC: Bool = false
+
+    /// Serial queue protecting all mutable state (io_write_cb fires from background thread)
+    private let queue = DispatchQueue(label: "com.canvaside.terminal-logger", qos: .utility)
 
     private static let baseDirectory: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -320,24 +326,34 @@ final class TerminalOutputLogger {
         try? fileHandle?.close()
     }
 
-    // MARK: - Append bytes (called from io_write_cb)
+    // MARK: - Append bytes (called from io_write_cb on Ghostty's IO thread)
 
     func append(_ bytes: UnsafePointer<CChar>, length: Int) {
         let data = Data(bytes: bytes, count: length)
-        bufferedBytes.append(data)
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.bufferedBytes.append(data)
 
-        // Parse OSC sequences from the data
-        parseOSC(data)
+            // Parse OSC sequences from the data
+            self.parseOSC(data)
 
-        // Flush if buffer exceeds threshold
-        if bufferedBytes.count >= flushThreshold {
-            flush()
+            // Flush if buffer exceeds threshold
+            if self.bufferedBytes.count >= self.flushThreshold {
+                self._flush()
+            }
         }
     }
 
     // MARK: - Flush
 
     func flush() {
+        queue.sync { [weak self] in
+            self?._flush()
+        }
+    }
+
+    /// Internal flush — must be called on `queue`.
+    private func _flush() {
         guard !bufferedBytes.isEmpty else { return }
         fileHandle?.write(bufferedBytes)
         currentFileSize += UInt64(bufferedBytes.count)
@@ -553,9 +569,10 @@ func createSurface(
     }
 
     // Wire io_write_cb if logger provided
+    // Uses passUnretained because Workspace.terminalLoggers owns the logger
+    // and outlives the surface.
     if let logger {
-        // Store logger reference as userdata for the callback
-        let loggerPtr = Unmanaged.passRetained(logger).toOpaque()
+        let loggerPtr = Unmanaged.passUnretained(logger).toOpaque()
         surfaceConfig.io_write_userdata = loggerPtr
         surfaceConfig.io_write_cb = { userdata, bytes, length in
             guard let userdata, let bytes else { return }
@@ -574,9 +591,11 @@ func createSurface(
 
 /// Replay captured output data into a terminal surface.
 /// Chunks the data in 64KB blocks dispatched async to avoid blocking the main thread.
+/// Uses a weak reference to the TerminalView to cancel replay if the terminal is closed.
 func replayOutput(
     into surface: ghostty_surface_t,
     data: Data,
+    owner: TerminalView,
     chunkSize: Int = 65536,
     completion: @escaping () -> Void
 ) {
@@ -587,8 +606,11 @@ func replayOutput(
     }
 
     var offset = 0
+    weak var weakOwner = owner
 
     func replayNextChunk() {
+        // Cancel if terminal was closed mid-replay
+        guard weakOwner != nil else { return }
         guard offset < totalLength else {
             completion()
             return
@@ -681,7 +703,7 @@ func attachSurface() {
     if let data = replayData, let surface {
         replayData = nil
         showRestoringOverlay()
-        GhosttyAppManager.shared.replayOutput(into: surface, data: data) { [weak self] in
+        GhosttyAppManager.shared.replayOutput(into: surface, data: data, owner: self) { [weak self] in
             self?.hideRestoringOverlay()
         }
     }
@@ -799,7 +821,7 @@ func createTerminal(
     terminalLoggers[panelId] = logger
 
     // Store restore metadata for WorkspaceContentView to pick up
-    if let workingDirectory {
+    if workingDirectory != nil || replayLogData != nil {
         terminalRestoreData[panelId] = TerminalRestoreInfo(
             workingDirectory: workingDirectory,
             replayData: replayLogData,
@@ -830,7 +852,7 @@ func consumeTerminalRestoreInfo(for panelId: UUID) -> TerminalRestoreInfo? {
 }
 ```
 
-- [ ] **Step 4: Update `closePanel` to clean up logger**
+- [ ] **Step 4: Update `closePanel` and `closeAllPanels` to clean up loggers**
 
 In the `closePanel` method, add logger cleanup:
 
@@ -841,6 +863,25 @@ func closePanel(_ panelId: UUID) {
     terminalLoggers.removeValue(forKey: panelId)
     terminalRestoreData.removeValue(forKey: panelId)
     if let nodeId = canvasState.nodeForPanel(panelId) {
+        canvasState.removeNode(nodeId)
+    }
+}
+```
+
+Also update `closeAllPanels` to clean up all loggers:
+
+```swift
+func closeAllPanels() {
+    for panelId in Array(panels.keys) {
+        closePanel(panelId)
+    }
+    // Clean up terminal loggers (terminals are node-only, not in panels dict)
+    for (_, logger) in terminalLoggers {
+        logger.deleteLogFiles()
+    }
+    terminalLoggers.removeAll()
+    terminalRestoreData.removeAll()
+    for nodeId in Array(canvasState.nodes.keys) {
         canvasState.removeNode(nodeId)
     }
 }
@@ -1142,8 +1183,14 @@ struct CanvasIDEApp: App {
                 .onAppear {
                     GhosttyAppManager.shared.initialize()
                     // Restore previous session
-                    if !SessionStore.restoreAll(into: appState) {
-                        // No session to restore — keep default workspace
+                    if SessionStore.restoreAll(into: appState) {
+                        // Prune orphaned terminal log files
+                        let activeTerminalIds = Set(appState.workspaces.flatMap { $0.terminalLoggers.keys })
+                        let activeWorkspaceIds = Set(appState.workspaces.map(\.id))
+                        TerminalOutputLogger.pruneOrphanedLogs(
+                            activeTerminalIds: activeTerminalIds,
+                            activeWorkspaceIds: activeWorkspaceIds
+                        )
                     }
                 }
         }
