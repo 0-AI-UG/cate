@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useAppStore } from '../stores/appStore'
@@ -15,65 +15,70 @@ function panelColor(type: PanelType): string {
 }
 
 /**
- * Capture real panel thumbnails by screenshotting the page and cropping
- * each panel's bounding rect.
+ * Crop panel regions from a pre-captured page screenshot.
+ * Bounding rects are collected from the DOM at the moment this runs
+ * (before the overlay is visible).
  */
-function usePanelScreenshots(show: boolean, nodeIds: string[]) {
-  const [screenshots, setScreenshots] = useState<Record<string, string>>({})
+function useCroppedThumbnails(
+  pageScreenshot: string | null,
+  nodeIds: string[],
+) {
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
 
-  useEffect(() => {
-    if (!show || nodeIds.length === 0) return
-
-    // Collect bounding rects BEFORE capturing (overlay isn't rendered yet on first frame)
+  // Collect bounding rects synchronously on first render (overlay not yet painted)
+  const rectsRef = useRef<Record<string, DOMRect>>({})
+  useMemo(() => {
     const rects: Record<string, DOMRect> = {}
     for (const id of nodeIds) {
       const el = document.querySelector(`[data-node-id="${id}"]`)
       if (el) rects[id] = el.getBoundingClientRect()
     }
+    rectsRef.current = rects
+  }, [nodeIds.join(',')])
 
-    window.electronAPI.capturePage().then((dataUrl) => {
-      if (!dataUrl) return
+  useEffect(() => {
+    if (!pageScreenshot) return
+    const rects = rectsRef.current
 
-      const img = new Image()
-      img.onload = () => {
-        // Electron capturePage returns image at device pixel ratio
-        const dpr = window.devicePixelRatio || 1
-        const result: Record<string, string> = {}
+    const img = new Image()
+    img.onload = () => {
+      const dpr = window.devicePixelRatio || 1
+      const result: Record<string, string> = {}
 
-        for (const id of nodeIds) {
-          const rect = rects[id]
-          if (!rect || rect.width === 0 || rect.height === 0) continue
+      for (const id of nodeIds) {
+        const rect = rects[id]
+        if (!rect || rect.width < 1 || rect.height < 1) continue
 
-          const canvas = document.createElement('canvas')
-          const thumbW = 180
-          const aspect = rect.width / rect.height
-          const thumbH = thumbW / aspect
-          canvas.width = thumbW * 2 // render at 2x for sharpness
-          canvas.height = thumbH * 2
-          const ctx = canvas.getContext('2d')
-          if (!ctx) continue
+        // Source region in the screenshot (at device pixel ratio)
+        const sx = Math.round(rect.left * dpr)
+        const sy = Math.round(rect.top * dpr)
+        const sw = Math.round(rect.width * dpr)
+        const sh = Math.round(rect.height * dpr)
 
-          ctx.drawImage(
-            img,
-            rect.left * dpr, rect.top * dpr,
-            rect.width * dpr, rect.height * dpr,
-            0, 0,
-            canvas.width, canvas.height,
-          )
-          result[id] = canvas.toDataURL()
-        }
+        // Skip if out of bounds
+        if (sx < 0 || sy < 0 || sx + sw > img.width || sy + sh > img.height) continue
 
-        setScreenshots(result)
+        const canvas = document.createElement('canvas')
+        canvas.width = sw
+        canvas.height = sh
+        const ctx = canvas.getContext('2d')
+        if (!ctx) continue
+
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+        result[id] = canvas.toDataURL()
       }
-      img.src = dataUrl
-    }).catch(() => {})
-  }, [show, nodeIds.join(',')])
 
-  return screenshots
+      setThumbnails(result)
+    }
+    img.src = pageScreenshot
+  }, [pageScreenshot, nodeIds.join(',')])
+
+  return thumbnails
 }
 
 export function PanelSwitcher() {
   const show = useUIStore((s) => s.showPanelSwitcher)
+  const pageScreenshot = useUIStore((s) => s.panelSwitcherScreenshot)
   const nodes = useCanvasStore((s) => s.nodes)
   const focusedNodeId = useCanvasStore((s) => s.focusedNodeId)
   const workspace = useAppStore((s) => s.workspaces.find(w => w.id === s.selectedWorkspaceId))
@@ -82,14 +87,16 @@ export function PanelSwitcher() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selectedRef = useRef<HTMLDivElement>(null)
 
-  const screenshots = usePanelScreenshots(show, nodeList.map(n => n.id))
+  const thumbnails = useCroppedThumbnails(show ? pageScreenshot : null, nodeList.map(n => n.id))
 
-  // Reset selection when opened — start at next panel after focused
   useEffect(() => {
     if (show) {
       const focusedIdx = nodeList.findIndex(n => n.id === focusedNodeId)
       const nextIdx = focusedIdx >= 0 ? (focusedIdx + 1) % nodeList.length : 0
       setSelectedIndex(nextIdx)
+    } else {
+      // Clear screenshot when closing
+      useUIStore.setState({ panelSwitcherScreenshot: null })
     }
   }, [show])
 
@@ -112,7 +119,6 @@ export function PanelSwitcher() {
     setSelectedIndex((prev) => (prev + 1) % nodeList.length)
   }, [nodeList.length])
 
-  // Listen for cycle event from useShortcuts (Cmd+E while open)
   useEffect(() => {
     if (!show) return
     const handler = () => advanceSelection()
@@ -120,10 +126,8 @@ export function PanelSwitcher() {
     return () => window.removeEventListener('panel-switcher-next', handler)
   }, [show, advanceSelection])
 
-  // Keyboard navigation
   useEffect(() => {
     if (!show) return
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'Tab') {
         e.preventDefault()
@@ -141,7 +145,6 @@ export function PanelSwitcher() {
         selectItem(selectedIndex)
       }
     }
-
     document.addEventListener('keydown', handleKeyDown, { capture: true })
     return () => document.removeEventListener('keydown', handleKeyDown, { capture: true })
   }, [show, selectedIndex, nodeList, close, selectItem, advanceSelection])
@@ -164,9 +167,8 @@ export function PanelSwitcher() {
           const title = panel?.title || 'Panel'
           const isSelected = i === selectedIndex
           const color = panelColor(type)
-          const screenshot = screenshots[node.id]
+          const thumb = thumbnails[node.id]
 
-          // Real aspect ratio
           const maxThumbW = 180
           const maxThumbH = 120
           const aspect = node.size.width / Math.max(node.size.height, 1)
@@ -204,23 +206,19 @@ export function PanelSwitcher() {
                   backgroundColor: '#1E1E24',
                 }}
               >
-                {screenshot ? (
+                {thumb ? (
                   <img
-                    src={screenshot}
+                    src={thumb}
                     alt={title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
                   />
                 ) : (
                   <div style={{
-                    width: '100%',
-                    height: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'rgba(255,255,255,0.2)',
-                    fontSize: 10,
+                    width: '100%', height: '100%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'rgba(255,255,255,0.15)', fontSize: 10,
                   }}>
-                    Loading...
+                    ...
                   </div>
                 )}
               </div>

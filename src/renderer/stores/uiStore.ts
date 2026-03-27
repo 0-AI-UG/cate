@@ -15,6 +15,8 @@ interface UIStoreState {
   showGlobalSearch: boolean
   sidebarVisible: boolean
   fileExplorerVisible: boolean
+  /** Pre-captured page screenshot for panel switcher previews. */
+  panelSwitcherScreenshot: string | null
 }
 
 interface UIStoreActions {
@@ -39,6 +41,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showNodeSwitcher: false,
   showCommandPalette: false,
   showPanelSwitcher: false,
+  panelSwitcherScreenshot: null,
   showGlobalSearch: false,
   sidebarVisible: true,
   fileExplorerVisible: false,

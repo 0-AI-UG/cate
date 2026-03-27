@@ -93,10 +93,18 @@ export function useShortcuts(): void {
         case 'panelSwitcher': {
           const uiState = useUIStore.getState()
           if (uiState.showPanelSwitcher) {
-            // Already open — advance selection via custom event
             window.dispatchEvent(new CustomEvent('panel-switcher-next'))
           } else {
-            uiState.setShowPanelSwitcher(true)
+            // Capture page screenshot BEFORE showing overlay
+            window.electronAPI.capturePage().then((dataUrl) => {
+              const ui = useUIStore.getState()
+              ui.setShowPanelSwitcher(true)
+              if (dataUrl) {
+                useUIStore.setState({ panelSwitcherScreenshot: dataUrl })
+              }
+            }).catch(() => {
+              useUIStore.getState().setShowPanelSwitcher(true)
+            })
           }
           break
         }
