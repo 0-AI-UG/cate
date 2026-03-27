@@ -32,6 +32,15 @@ export interface ElectronAPI {
   /** Subscribe to terminal exit events (main -> renderer). */
   onTerminalExit(callback: (terminalId: string, exitCode: number) => void): () => void
 
+  /** Get the current working directory of a PTY process by ID. */
+  terminalGetCwd(ptyId: string): Promise<string | null>
+
+  /** Read the persisted scrollback log for a terminal. */
+  terminalLogRead(terminalId: string): Promise<string | null>
+
+  /** Delete the persisted scrollback log for a terminal. */
+  terminalLogDelete(terminalId: string): Promise<void>
+
   // ---------------------------------------------------------------------------
   // Filesystem
   // ---------------------------------------------------------------------------

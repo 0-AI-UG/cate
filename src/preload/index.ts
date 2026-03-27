@@ -6,6 +6,9 @@ import {
   TERMINAL_KILL,
   TERMINAL_DATA,
   TERMINAL_EXIT,
+  TERMINAL_GET_CWD,
+  TERMINAL_LOG_READ,
+  TERMINAL_LOG_DELETE,
   FS_READ_FILE,
   FS_WRITE_FILE,
   FS_READ_DIR,
@@ -70,6 +73,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => {
       ipcRenderer.removeListener(TERMINAL_DATA, listener)
     }
+  },
+
+  terminalGetCwd(ptyId: string): Promise<string | null> {
+    return ipcRenderer.invoke(TERMINAL_GET_CWD, ptyId)
+  },
+
+  terminalLogRead(terminalId: string): Promise<string | null> {
+    return ipcRenderer.invoke(TERMINAL_LOG_READ, terminalId)
+  },
+
+  terminalLogDelete(terminalId: string): Promise<void> {
+    return ipcRenderer.invoke(TERMINAL_LOG_DELETE, terminalId)
   },
 
   onTerminalExit(callback: (terminalId: string, exitCode: number) => void): () => void {

@@ -9,6 +9,9 @@ export const TERMINAL_RESIZE = 'terminal:resize'
 export const TERMINAL_KILL = 'terminal:kill'
 export const TERMINAL_DATA = 'terminal:data' // main -> renderer
 export const TERMINAL_EXIT = 'terminal:exit' // main -> renderer
+export const TERMINAL_GET_CWD = 'terminal:getCwd'
+export const TERMINAL_LOG_READ = 'terminal:logRead'
+export const TERMINAL_LOG_DELETE = 'terminal:logDelete'
 
 // Filesystem
 export const FS_READ_FILE = 'fs:readFile'

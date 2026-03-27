@@ -279,14 +279,22 @@ export interface NodeSnapshot {
   title: string
   url?: string | null
   filePath?: string | null
+  workingDirectory?: string | null
 }
 
 export interface SessionSnapshot {
+  workspaceId?: string
   workspaceName: string
   rootPath: string | null
   viewportOffset: Point
   zoomLevel: number
   nodes: NodeSnapshot[]
+}
+
+export interface MultiWorkspaceSession {
+  version: 2
+  selectedWorkspaceIndex: number | null
+  workspaces: SessionSnapshot[]
 }
 
 // -----------------------------------------------------------------------------

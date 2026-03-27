@@ -10,6 +10,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { useStatusStore } from '../stores/statusStore'
+import { terminalRestoreData, replayTerminalLog } from './session'
 
 // ---------------------------------------------------------------------------
 // Theme — matches CanvasIDE dark palette (kept in sync with TerminalPanel.tsx)
@@ -139,11 +140,14 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     const cols = terminal.cols
     const rows = terminal.rows
 
+    // Resolve cwd: prefer explicit opt, then fall back to restore data
+    const resolvedCwd = opts.cwd ?? terminalRestoreData.get(panelId)?.cwd
+
     const shell = await electronAPI.settingsGet('defaultShellPath')
     const ptyId = await electronAPI.terminalCreate({
       cols,
       rows,
-      cwd: opts.cwd,
+      cwd: resolvedCwd,
       shell: (shell as string) || undefined,
     })
 
@@ -194,6 +198,11 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
       setTimeout(() => {
         terminal.write(opts.initialInput!)
       }, 100)
+    }
+
+    // 12. Replay scrollback log if this terminal was restored from a session
+    if (terminalRestoreData.has(panelId)) {
+      replayTerminalLog(panelId).catch(() => {})
     }
   } catch (err) {
     if (registry.has(panelId)) {

@@ -9,6 +9,7 @@ import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { FolderOpen } from 'lucide-react'
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -45,6 +46,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
     const id = s.selectedWorkspaceId
     return s.workspaces.find((w) => w.id === id)
   })
+  const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
+  const setWorkspaceRootPath = useAppStore((s) => s.setWorkspaceRootPath)
 
   const showFileExplorerOnLaunch = useSettingsStore((s) => s.showFileExplorerOnLaunch)
 
@@ -136,10 +139,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
   return (
     <div
       ref={sidebarRef}
-      className="flex-shrink-0 relative flex flex-col h-full bg-canvas-bg border-r border-white/10 select-none transition-transform duration-200 ease-in-out"
+      className="flex-shrink-0 relative flex flex-col h-full bg-canvas-bg border-r border-white/10 select-none overflow-hidden"
       style={{
         width: `${width}px`,
-        transform: isVisible ? 'translateX(0)' : `translateX(-${width}px)`,
+        marginLeft: isVisible ? 0 : `-${width}px`,
+        transition: 'margin-left 200ms ease-in-out',
       }}
     >
       {/* macOS titlebar drag region */}
@@ -153,7 +157,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
           flex: showFileExplorer ? undefined : '1 1 auto',
         }}
       >
-        <ProjectList onToggleFileExplorer={() => setShowFileExplorer((prev) => !prev)} />
+        <ProjectList />
       </div>
 
       {/* Section divider (only when file explorer is visible) */}
@@ -173,9 +177,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
           {rootPath ? (
             <FileExplorer rootPath={rootPath} />
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-white/30 text-xs gap-2 p-4">
-              <span className="text-2xl">&#128193;</span>
+            <div className="flex flex-col items-center justify-center h-full text-white/30 text-xs gap-3 p-4">
               <span>No folder open</span>
+              <button
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-white/50 hover:text-white/80 bg-white/5 hover:bg-white/10 transition-colors"
+                onClick={async () => {
+                  const path = await window.electronAPI.openFolderDialog()
+                  if (path && selectedWorkspaceId) {
+                    setWorkspaceRootPath(selectedWorkspaceId, path)
+                  }
+                }}
+              >
+                <FolderOpen size={13} />
+                Open Folder
+              </button>
             </div>
           )}
         </div>

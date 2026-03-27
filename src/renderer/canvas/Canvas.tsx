@@ -1,0 +1,158 @@
+// =============================================================================
+// Canvas — the main infinite canvas component.
+// Ported from CanvasView.swift.
+// =============================================================================
+
+import React, { useRef, useCallback, useEffect, useState } from 'react'
+import { useCanvasStore } from '../stores/canvasStore'
+import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
+import CanvasGrid from './CanvasGrid'
+import ContextMenu from '../ui/ContextMenu'
+import type { Point, PanelType } from '../../shared/types'
+
+interface CanvasProps {
+  children?: React.ReactNode
+  /** Called when the user right-clicks empty canvas and picks a panel type. */
+  onCreateAtPoint?: (type: PanelType, canvasPoint: Point) => void
+}
+
+const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
+
+  const zoom = useCanvasStore((s) => s.zoomLevel)
+  const offset = useCanvasStore((s) => s.viewportOffset)
+
+  const {
+    handleWheel,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    handleContextMenu,
+    canvasContextMenu,
+    closeCanvasContextMenu,
+  } = useCanvasInteraction(canvasRef)
+
+  // Register wheel listener with { passive: false } so preventDefault works
+  // React's onWheel is passive by default, which silently ignores preventDefault
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+
+    const onWheel = (e: WheelEvent) => {
+      handleWheel(e as unknown as React.WheelEvent<HTMLDivElement>)
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [handleWheel])
+
+  // Track container size for grid visibility calculations
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const size = {
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        }
+        setContainerSize(size)
+        useCanvasStore.getState().setContainerSize(size)
+      }
+    })
+
+    observer.observe(el)
+    const initialSize = {
+      width: el.clientWidth,
+      height: el.clientHeight,
+    }
+    setContainerSize(initialSize)
+    useCanvasStore.getState().setContainerSize(initialSize)
+
+    return () => observer.disconnect()
+  }, [])
+
+  // Click on the canvas background (world div) to unfocus
+  const handleWorldClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // Only unfocus if clicking directly on the world div, not on a child node
+      if (e.target === e.currentTarget) {
+        useCanvasStore.getState().unfocus()
+      }
+    },
+    [],
+  )
+
+  // CSS transform: scale first, then translate (divide offset by zoom since
+  // the translate happens in the scaled coordinate space)
+  const worldTransform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
+
+  // Build context menu items for creating panels at a specific canvas position
+  const contextMenuItems = canvasContextMenu && onCreateAtPoint
+    ? [
+        {
+          label: 'New Terminal',
+          onClick: () => {
+            onCreateAtPoint('terminal', canvasContextMenu.canvasPoint)
+          },
+        },
+        {
+          label: 'New Editor',
+          onClick: () => {
+            onCreateAtPoint('editor', canvasContextMenu.canvasPoint)
+          },
+        },
+        {
+          label: 'New Browser',
+          onClick: () => {
+            onCreateAtPoint('browser', canvasContextMenu.canvasPoint)
+          },
+        },
+      ]
+    : []
+
+  return (
+    <div
+      ref={canvasRef}
+      className="relative w-full h-full overflow-hidden bg-canvas-bg"
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onContextMenu={handleContextMenu}
+    >
+      {/* World div: transformed to implement pan/zoom */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: 1,
+          height: 1,
+          transform: worldTransform,
+          transformOrigin: '0 0',
+        }}
+        onClick={handleWorldClick}
+      >
+        <CanvasGrid
+          containerWidth={containerSize.width}
+          containerHeight={containerSize.height}
+        />
+        {children}
+      </div>
+
+      {/* Canvas background right-click context menu */}
+      {canvasContextMenu && contextMenuItems.length > 0 && (
+        <ContextMenu
+          x={canvasContextMenu.x}
+          y={canvasContextMenu.y}
+          items={contextMenuItems}
+          onClose={closeCanvasContextMenu}
+        />
+      )}
+    </div>
+  )
+}
+
+export default Canvas

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
-import { registerHandlers as registerTerminalHandlers } from './ipc/terminal'
+import { registerHandlers as registerTerminalHandlers, flushAllLoggers } from './ipc/terminal'
 import { registerHandlers as registerFilesystemHandlers } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers } from './ipc/shell'
@@ -31,6 +31,9 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  // Debug: open DevTools to see console errors
+  mainWindow.webContents.openDevTools()
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -71,6 +74,6 @@ app.on('activate', () => {
 })
 
 app.on('before-quit', () => {
-  // Placeholder for session save on quit
-  // The renderer should trigger SESSION_SAVE before the window closes
+  // Flush all terminal loggers so scrollback is persisted to disk
+  flushAllLoggers()
 })

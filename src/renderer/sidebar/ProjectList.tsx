@@ -2,18 +2,17 @@ import React from 'react'
 import { PanelLeft, Bell, Plus } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useStatusStore } from '../stores/statusStore'
+import { useUIStore } from '../stores/uiStore'
 import { WorkspaceTab } from './WorkspaceTab'
 
-interface ProjectListProps {
-  onToggleFileExplorer?: () => void
-}
-
-export const ProjectList: React.FC<ProjectListProps> = ({ onToggleFileExplorer }) => {
+export const ProjectList: React.FC = () => {
   const workspaces = useAppStore((s) => s.workspaces)
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const addWorkspace = useAppStore((s) => s.addWorkspace)
   const selectWorkspace = useAppStore((s) => s.selectWorkspace)
   const removeWorkspace = useAppStore((s) => s.removeWorkspace)
+
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
 
   const needsInputCount = useStatusStore((s) => {
     let count = 0
@@ -29,8 +28,8 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onToggleFileExplorer }
       <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0">
         <button
           className="text-white/40 hover:text-white/70 transition-colors p-1"
-          onClick={onToggleFileExplorer}
-          title="Toggle File Explorer"
+          onClick={toggleSidebar}
+          title="Toggle Sidebar"
         >
           <PanelLeft size={16} />
         </button>
