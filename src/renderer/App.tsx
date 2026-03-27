@@ -3,7 +3,7 @@
 // Ported from MainWindowView.swift
 // =============================================================================
 
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, Suspense } from 'react'
 import { useAppStore } from './stores/appStore'
 import { useCanvasStore } from './stores/canvasStore'
 import type { PanelType, Point } from '../shared/types'
@@ -16,9 +16,9 @@ import CanvasNode from './canvas/CanvasNode'
 import CanvasToolbar from './canvas/CanvasToolbar'
 import { Sidebar } from './sidebar/Sidebar'
 import { FileExplorerSidebar } from './sidebar/FileExplorerSidebar'
-import TerminalPanel from './panels/TerminalPanel'
-import EditorPanel from './panels/EditorPanel'
-import BrowserPanel from './panels/BrowserPanel'
+const TerminalPanel = React.lazy(() => import('./panels/TerminalPanel'))
+const EditorPanel = React.lazy(() => import('./panels/EditorPanel'))
+const BrowserPanel = React.lazy(() => import('./panels/BrowserPanel'))
 import { NodeSwitcher } from './ui/NodeSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
 import { ShortcutHintOverlay } from './ui/ShortcutHintOverlay'
@@ -150,17 +150,19 @@ export default function App() {
       const panel = currentWorkspace.panels[panelId]
       if (!panel) return null
 
+      let content: React.ReactNode = null
       switch (panel.type) {
         case 'terminal':
-          return (
+          content = (
             <TerminalPanel
               panelId={panelId}
               workspaceId={selectedWorkspaceId}
               nodeId={nodeId}
             />
           )
+          break
         case 'editor':
-          return (
+          content = (
             <EditorPanel
               panelId={panelId}
               workspaceId={selectedWorkspaceId}
@@ -168,8 +170,9 @@ export default function App() {
               filePath={panel.filePath}
             />
           )
+          break
         case 'browser':
-          return (
+          content = (
             <BrowserPanel
               panelId={panelId}
               workspaceId={selectedWorkspaceId}
@@ -177,9 +180,16 @@ export default function App() {
               url={panel.url}
             />
           )
+          break
         default:
           return null
       }
+
+      return (
+        <Suspense fallback={<div className="w-full h-full bg-[#1e1e1e] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+          {content}
+        </Suspense>
+      )
     },
     [currentWorkspace, selectedWorkspaceId],
   )
