@@ -28,7 +28,12 @@ export async function saveSession(): Promise<void> {
 
   const snapshots: SessionSnapshot[] = []
 
-  for (const workspace of appState.workspaces) {
+  // Skip ephemeral workspaces (no panels and no rootPath)
+  const persistableWorkspaces = appState.workspaces.filter(
+    (ws) => Object.keys(ws.panels).length > 0 || ws.rootPath,
+  )
+
+  for (const workspace of persistableWorkspaces) {
     // For the selected workspace, use canvasStore (most current state)
     // For others, use the workspace's stored canvasNodes
     const isSelected = workspace.id === appState.selectedWorkspaceId
@@ -74,7 +79,7 @@ export async function saveSession(): Promise<void> {
     })
   }
 
-  const selectedIndex = appState.workspaces.findIndex((w) => w.id === appState.selectedWorkspaceId)
+  const selectedIndex = persistableWorkspaces.findIndex((w) => w.id === appState.selectedWorkspaceId)
 
   const session: MultiWorkspaceSession = {
     version: 2,
@@ -98,7 +103,7 @@ export async function loadSession(): Promise<MultiWorkspaceSession | SessionSnap
     const data = await window.electronAPI.sessionLoad()
     if (!data) return null
     // Check if it's the new multi-workspace format
-    if ((data as any).version === 2) {
+    if ((data as any).version === 2 || Array.isArray((data as any).workspaces)) {
       return data as unknown as MultiWorkspaceSession
     }
     // Legacy single-workspace format
@@ -113,12 +118,21 @@ export async function loadSession(): Promise<MultiWorkspaceSession | SessionSnap
 // -----------------------------------------------------------------------------
 
 export async function restoreSession(snapshot: SessionSnapshot): Promise<void> {
+  if (!snapshot?.nodes) {
+    console.warn('[session] invalid snapshot (no nodes), skipping restore')
+    return
+  }
+
   const appStore = useAppStore.getState()
   const canvasStore = useCanvasStore.getState()
 
   const wsId = appStore.selectedWorkspaceId
+  console.debug(`[session] restoring workspace ${wsId}: ${snapshot.nodes.length} nodes`)
+  const t0 = performance.now()
 
-  for (const nodeSnap of snapshot.nodes) {
+  for (let i = 0; i < snapshot.nodes.length; i++) {
+    const nodeSnap = snapshot.nodes[i]
+    console.debug(`[session] restoring node ${i + 1}/${snapshot.nodes.length}: ${nodeSnap.panelType} (panelId=${nodeSnap.panelId})`)
     const position = nodeSnap.origin
     const size = nodeSnap.size
 
@@ -131,43 +145,38 @@ export async function restoreSession(snapshot: SessionSnapshot): Promise<void> {
           replayFromId: nodeSnap.panelId,
         })
         // Update position/size for the newly created node
-        const ws = appStore.selectedWorkspace()
-        const panelIds = Object.keys(ws?.panels ?? {})
-        const lastPanelId = panelIds[panelIds.length - 1]
-        if (lastPanelId) {
-          const newNodeId = canvasStore.nodeForPanel(lastPanelId)
-          if (newNodeId) {
-            canvasStore.moveNode(newNodeId, position)
-            canvasStore.resizeNode(newNodeId, size)
-          }
-        }
-        break
-      }
-      case 'editor':
-        appStore.createEditor(wsId, nodeSnap.filePath ?? undefined)
-        break
-      case 'browser':
-        appStore.createBrowser(wsId, nodeSnap.url ?? undefined)
-        break
-    }
-
-    if (nodeSnap.panelType !== 'terminal') {
-      // Find the newly created node and update its position/size
-      const ws = appStore.selectedWorkspace()
-      const panelIds = Object.keys(ws?.panels ?? {})
-      const lastPanelId = panelIds[panelIds.length - 1]
-      if (lastPanelId) {
-        const newNodeId = canvasStore.nodeForPanel(lastPanelId)
+        const newNodeId = canvasStore.nodeForPanel(panelId)
         if (newNodeId) {
           canvasStore.moveNode(newNodeId, position)
           canvasStore.resizeNode(newNodeId, size)
         }
+        break
+      }
+      case 'editor': {
+        const panelId = appStore.createEditor(wsId, nodeSnap.filePath ?? undefined)
+        const newNodeId = canvasStore.nodeForPanel(panelId)
+        if (newNodeId) {
+          canvasStore.moveNode(newNodeId, position)
+          canvasStore.resizeNode(newNodeId, size)
+        }
+        break
+      }
+      case 'browser': {
+        const panelId = appStore.createBrowser(wsId, nodeSnap.url ?? undefined)
+        const newNodeId = canvasStore.nodeForPanel(panelId)
+        if (newNodeId) {
+          canvasStore.moveNode(newNodeId, position)
+          canvasStore.resizeNode(newNodeId, size)
+        }
+        break
       }
     }
   }
 
   canvasStore.setZoom(snapshot.zoomLevel)
   canvasStore.setViewportOffset(snapshot.viewportOffset)
+
+  console.debug(`[session] workspace ${wsId} restored in ${(performance.now() - t0).toFixed(1)}ms`)
 }
 
 // -----------------------------------------------------------------------------
@@ -207,24 +216,19 @@ export async function replayTerminalLog(panelId: string): Promise<void> {
 
 export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSession): Promise<void> {
   const appStore = useAppStore.getState()
+  const tTotal = performance.now()
+  console.debug(`[session] restoring multi-workspace session: ${session.workspaces.length} workspaces`)
 
-  // Reuse the default workspace for the first snapshot
-  const defaultWsId = appStore.workspaces[0]?.id
+  // Clear any existing workspaces so we don't duplicate on every restart
+  const existingIds = appStore.workspaces.map((w) => w.id)
+  for (const id of existingIds) {
+    appStore.removeWorkspace(id)
+  }
 
   for (let i = 0; i < session.workspaces.length; i++) {
     const snapshot = session.workspaces[i]
-
-    let wsId: string
-    if (i === 0 && defaultWsId) {
-      // Reuse the default workspace for the first one
-      wsId = defaultWsId
-      appStore.renameWorkspace(wsId, snapshot.workspaceName)
-      if (snapshot.rootPath) {
-        appStore.setWorkspaceRootPath(wsId, snapshot.rootPath)
-      }
-    } else {
-      wsId = appStore.addWorkspace(snapshot.workspaceName, snapshot.rootPath ?? undefined)
-    }
+    console.debug(`[session] workspace ${i + 1}/${session.workspaces.length}: "${snapshot.workspaceName}" (${snapshot.nodes.length} nodes)`)
+    const wsId = appStore.addWorkspace(snapshot.workspaceName, snapshot.rootPath ?? undefined)
 
     // Select this workspace so the canvas store is active for it
     appStore.selectWorkspace(wsId)
@@ -240,6 +244,8 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
   ) {
     appStore.selectWorkspace(appStore.workspaces[session.selectedWorkspaceIndex].id)
   }
+
+  console.debug(`[session] full session restored in ${(performance.now() - tTotal).toFixed(1)}ms`)
 }
 
 // -----------------------------------------------------------------------------
@@ -247,8 +253,14 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
 // -----------------------------------------------------------------------------
 
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+let autoSaveSetUp = false
 
 export function setupAutoSave(): () => void {
+  if (autoSaveSetUp) {
+    return () => {}
+  }
+  autoSaveSetUp = true
+
   const unsubCanvas = useCanvasStore.subscribe(() => {
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
     autoSaveTimer = setTimeout(() => saveSession(), 5000)
@@ -263,5 +275,6 @@ export function setupAutoSave(): () => void {
     unsubCanvas()
     unsubApp()
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
+    autoSaveSetUp = false
   }
 }
