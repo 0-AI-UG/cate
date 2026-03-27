@@ -60,6 +60,9 @@ export interface ElectronAPI {
   /** Stop watching a directory. */
   fsWatchStop(dirPath: string): Promise<void>
 
+  /** Stat a path to determine if it is a file or directory. */
+  fsStat(filePath: string): Promise<{ isDirectory: boolean; isFile: boolean }>
+
   /** Subscribe to filesystem watch events (main -> renderer). */
   onFsWatchEvent(
     callback: (event: { type: 'create' | 'update' | 'delete'; path: string }) => void,

@@ -61,9 +61,16 @@ interface CanvasStoreActions {
   nextNode: () => CanvasNodeId | null
   previousNode: () => CanvasNodeId | null
 
+  // Focus and center viewport on a node
+  focusAndCenter: (nodeId: CanvasNodeId) => void
+
+  zoomToFit: () => void
+
   // Z-order management
   moveToFront: (nodeId: CanvasNodeId) => void
   moveToBack: (nodeId: CanvasNodeId) => void
+
+  togglePin: (id: CanvasNodeId) => void
 
   // Bulk reset (used when switching workspaces)
   loadWorkspaceCanvas: (
@@ -412,6 +419,63 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const minZOrder = nodeList.reduce((min, n) => Math.min(min, n.zOrder), Infinity)
       return {
         nodes: { ...state.nodes, [nodeId]: { ...node, zOrder: minZOrder - 1 } },
+      }
+    })
+  },
+
+  focusAndCenter(nodeId) {
+    const state = get()
+    const node = state.nodes[nodeId]
+    if (!node) return
+    const updated = { ...node, zOrder: state.nextZOrder }
+    const cs = state.containerSize
+    const zoom = state.zoomLevel
+    const newState: Partial<CanvasStoreState> = {
+      nodes: { ...state.nodes, [nodeId]: updated },
+      nextZOrder: state.nextZOrder + 1,
+      focusedNodeId: nodeId,
+    }
+    if (cs.width > 0 && cs.height > 0) {
+      newState.viewportOffset = {
+        x: cs.width / 2 - (node.origin.x + node.size.width / 2) * zoom,
+        y: cs.height / 2 - (node.origin.y + node.size.height / 2) * zoom,
+      }
+    }
+    set(newState)
+  },
+
+  zoomToFit() {
+    const state = get()
+    const nodeList = Object.values(state.nodes)
+    if (nodeList.length === 0) return
+    const cs = state.containerSize
+    if (cs.width === 0 || cs.height === 0) return
+
+    const minX = Math.min(...nodeList.map(n => n.origin.x))
+    const minY = Math.min(...nodeList.map(n => n.origin.y))
+    const maxX = Math.max(...nodeList.map(n => n.origin.x + n.size.width))
+    const maxY = Math.max(...nodeList.map(n => n.origin.y + n.size.height))
+
+    const padding = 60
+    const contentW = maxX - minX + padding * 2
+    const contentH = maxY - minY + padding * 2
+    const zoom = Math.min(Math.max(Math.min(cs.width / contentW, cs.height / contentH), ZOOM_MIN), ZOOM_MAX)
+
+    set({
+      zoomLevel: zoom,
+      viewportOffset: {
+        x: (cs.width - contentW * zoom) / 2 - (minX - padding) * zoom,
+        y: (cs.height - contentH * zoom) / 2 - (minY - padding) * zoom,
+      },
+    })
+  },
+
+  togglePin(id) {
+    set((state) => {
+      const node = state.nodes[id]
+      if (!node) return state
+      return {
+        nodes: { ...state.nodes, [id]: { ...node, isPinned: !node.isPinned } },
       }
     })
   },

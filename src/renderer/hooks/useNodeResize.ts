@@ -116,7 +116,7 @@ export function useNodeResize(
       e.stopPropagation()
 
       const node = useCanvasStore.getState().nodes[nodeId]
-      if (!node) return
+      if (!node || node.isPinned) return
 
       resizeStateRef.current = {
         edge,

@@ -40,6 +40,7 @@ export default function App() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const nodes = useCanvasStore((s) => s.nodes)
   const zoomLevel = useCanvasStore((s) => s.zoomLevel)
+  const focusedNodeId = useCanvasStore((s) => s.focusedNodeId)
   const sidebarVisible = useUIStore((s) => s.sidebarVisible)
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
@@ -122,6 +123,30 @@ export default function App() {
     useCanvasStore.getState().zoomAroundCenter(zoomLevel - 0.1)
   }, [zoomLevel])
 
+  // ---------------------------------------------------------------------------
+  // Drag-and-drop folder from Finder
+  // ---------------------------------------------------------------------------
+  const handleFileDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
+
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    const files = Array.from(e.dataTransfer.files)
+    for (const file of files) {
+      const filePath = (file as any).path as string | undefined
+      if (!filePath) continue
+      try {
+        const stat = await window.electronAPI.fsStat(filePath)
+        if (stat.isDirectory) {
+          useAppStore.getState().setWorkspaceRootPath(selectedWorkspaceId, filePath)
+          break
+        }
+      } catch { /* ignore */ }
+    }
+  }, [selectedWorkspaceId])
+
   /** Called when the user right-clicks empty canvas and picks a panel type. */
   const onCreateAtPoint = useCallback(
     (type: PanelType, canvasPoint: Point) => {
@@ -200,7 +225,7 @@ export default function App() {
   const sortedNodes = Object.values(nodes).sort((a, b) => a.zOrder - b.zOrder)
 
   return (
-    <div className="h-screen w-screen flex bg-canvas-bg">
+    <div className="h-screen w-screen flex bg-canvas-bg" onDragOver={handleFileDragOver} onDrop={handleFileDrop}>
       {/* Sidebar */}
       <Sidebar isVisible={sidebarVisible} />
 
@@ -226,7 +251,8 @@ export default function App() {
                 panelId={node.panelId}
                 panelType={panel.type}
                 title={panel.title}
-                workspaceId={selectedWorkspaceId}
+                isFocused={focusedNodeId === node.id}
+                zoomLevel={zoomLevel}
               >
                 {renderPanelContent(node.panelId, node.id)}
               </CanvasNode>

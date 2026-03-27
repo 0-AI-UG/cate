@@ -13,6 +13,7 @@ import {
   FS_WATCH_START,
   FS_WATCH_STOP,
   FS_WATCH_EVENT,
+  FS_STAT,
 } from '../../shared/ipc-channels'
 import { FileTreeNode, FILE_EXCLUSIONS } from '../../shared/types'
 
@@ -167,5 +168,10 @@ export function registerHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(FS_WATCH_STOP, async (_event, dirPath: string) => {
     watchStop(dirPath)
+  })
+
+  ipcMain.handle(FS_STAT, async (_event, filePath: string) => {
+    const stat = await fs.stat(filePath)
+    return { isDirectory: stat.isDirectory(), isFile: stat.isFile() }
   })
 }

@@ -117,6 +117,10 @@ export function useShortcuts(): void {
         case 'saveFile':
           window.dispatchEvent(new CustomEvent('save-file'))
           break
+
+        case 'zoomToFit':
+          canvasStore().zoomToFit()
+          break
       }
     }
 

@@ -29,7 +29,7 @@ export function useNodeDrag(nodeId: string, zoomLevel: number): UseNodeDragRetur
       e.preventDefault()
 
       const node = useCanvasStore.getState().nodes[nodeId]
-      if (!node) return
+      if (!node || node.isPinned) return
 
       dragStateRef.current = {
         lastClientX: e.clientX,

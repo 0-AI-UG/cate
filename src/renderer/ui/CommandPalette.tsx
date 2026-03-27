@@ -89,6 +89,17 @@ function ZoomResetIcon() {
   )
 }
 
+function ZoomToFitIcon() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 3h6v6" />
+      <path d="M9 21H3v-6" />
+      <path d="M21 3l-7 7" />
+      <path d="M3 21l7-7" />
+    </svg>
+  )
+}
+
 // -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
@@ -166,6 +177,13 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '\u23180',
         icon: <ZoomResetIcon />,
         action: () => setZoom(1.0),
+      },
+      {
+        id: 'zoomToFit',
+        title: 'Zoom to Fit',
+        shortcutText: '\u23181',
+        icon: <ZoomToFitIcon />,
+        action: () => useCanvasStore.getState().zoomToFit(),
       },
     ],
     [

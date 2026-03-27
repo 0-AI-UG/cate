@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useState } from 'react'
-import { Terminal, Globe, FileText, Maximize2, Minimize2, X } from 'lucide-react'
+import { Terminal, Globe, FileText, Maximize2, Minimize2, Pin, X } from 'lucide-react'
 import type { PanelType } from '../../shared/types'
 import { panelColor } from '../panels/types'
 import { useCanvasStore } from '../stores/canvasStore'
@@ -20,8 +20,10 @@ interface TitleBarProps {
   title: string
   isFocused: boolean
   isMaximized: boolean
+  isPinned: boolean
   onClose: () => void
   onToggleMaximize: () => void
+  onTogglePin: () => void
   onDragStart: (e: React.MouseEvent) => void
   onRename?: () => void
   onDuplicate?: () => void
@@ -53,8 +55,10 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
   title,
   isFocused,
   isMaximized,
+  isPinned,
   onClose,
   onToggleMaximize,
+  onTogglePin,
   onDragStart,
   onRename,
   onDuplicate,
@@ -157,6 +161,16 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
         <div className="min-w-0 flex-1 truncate text-xs font-medium text-white/80">
           {title}
         </div>
+
+        {/* Pin button — always visible when pinned, hover-only otherwise */}
+        <button
+          data-titlebar-button
+          className={`ml-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm transition-opacity hover:bg-white/[0.15] ${isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          onClick={(e) => { e.stopPropagation(); onTogglePin() }}
+          title={isPinned ? 'Unpin' : 'Pin'}
+        >
+          <Pin size={12} className={isPinned ? 'text-blue-400' : 'text-white/80'} />
+        </button>
 
         {/* Maximize/Restore button — visible on hover */}
         <button

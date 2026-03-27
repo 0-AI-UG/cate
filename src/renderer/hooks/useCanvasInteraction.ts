@@ -34,6 +34,7 @@ export function useCanvasInteraction(
 ): CanvasInteractionHandlers {
   const isPanning = useRef(false)
   const lastPanPos = useRef<{ x: number; y: number } | null>(null)
+  const panButton = useRef<number | null>(null)
 
   // Right-click drag detection
   const rightClickStart = useRef<{ x: number; y: number } | null>(null)
@@ -52,17 +53,8 @@ export function useCanvasInteraction(
 
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
-      // If a node is focused and the scroll originated inside it, let the
-      // node content (terminal scrollback, editor scroll, etc.) handle it.
-      const { focusedNodeId } = useCanvasStore.getState()
-      if (focusedNodeId) {
-        const nodeEl = document.querySelector(`[data-node-id="${focusedNodeId}"]`)
-        if (nodeEl && nodeEl.contains(e.target as Node)) {
-          return
-        }
-      }
-
       e.preventDefault()
+      e.stopPropagation()
 
       const { zoomLevel, viewportOffset, setZoom, setViewportOffset } =
         useCanvasStore.getState()
@@ -115,12 +107,15 @@ export function useCanvasInteraction(
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.button === 2) {
-        // Right-click: track start position for drag detection
+      if (e.button === 2 || e.button === 1) {
         isPanning.current = true
+        panButton.current = e.button
         lastPanPos.current = { x: e.clientX, y: e.clientY }
-        rightClickStart.current = { x: e.clientX, y: e.clientY }
-        rightClickDidDrag.current = false
+        // Only track right-click for context menu
+        if (e.button === 2) {
+          rightClickStart.current = { x: e.clientX, y: e.clientY }
+          rightClickDidDrag.current = false
+        }
         e.preventDefault()
       } else if (e.button === 0) {
         // Left-click on canvas background (not on a node) => unfocus
@@ -189,9 +184,12 @@ export function useCanvasInteraction(
         }
       }
 
-      isPanning.current = false
-      lastPanPos.current = null
-      rightClickStart.current = null
+      if (e.button === 2 || e.button === panButton.current) {
+        isPanning.current = false
+        panButton.current = null
+        lastPanPos.current = null
+        rightClickStart.current = null
+      }
     },
     [canvasRef],
   )

@@ -44,6 +44,7 @@ export interface CanvasNodeState {
   creationIndex: number
   preMaximizeOrigin?: Point
   preMaximizeSize?: Size
+  isPinned?: boolean
 }
 
 /** Computed helper — mirrors the Swift `isMaximized` computed property. */
@@ -179,6 +180,7 @@ export type ShortcutAction =
   | 'focusNext'
   | 'focusPrevious'
   | 'saveFile'
+  | 'zoomToFit'
 
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
@@ -196,6 +198,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'focusNext',
   'focusPrevious',
   'saveFile',
+  'zoomToFit',
 ]
 
 export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
@@ -214,6 +217,7 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   focusNext: 'Focus Next Panel',
   focusPrevious: 'Focus Previous Panel',
   saveFile: 'Save File',
+  zoomToFit: 'Zoom to Fit',
 }
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
@@ -232,6 +236,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   focusNext: storedShortcut('\t', { control: true }),
   focusPrevious: storedShortcut('\t', { shift: true, control: true }),
   saveFile: storedShortcut('s', { command: true }),
+  zoomToFit: storedShortcut('1', { command: true }),
 }
 
 // -----------------------------------------------------------------------------

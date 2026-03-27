@@ -20,6 +20,7 @@ export const FS_READ_DIR = 'fs:readDir'
 export const FS_WATCH_START = 'fs:watchStart'
 export const FS_WATCH_STOP = 'fs:watchStop'
 export const FS_WATCH_EVENT = 'fs:watchEvent' // main -> renderer
+export const FS_STAT = 'fs:stat'
 
 // Git
 export const GIT_IS_REPO = 'git:isRepo'

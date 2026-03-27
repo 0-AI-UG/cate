@@ -15,6 +15,7 @@ import {
   FS_WATCH_START,
   FS_WATCH_STOP,
   FS_WATCH_EVENT,
+  FS_STAT,
   GIT_IS_REPO,
   GIT_LS_FILES,
   GIT_BRANCH_UPDATE,
@@ -127,6 +128,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   fsWatchStop(dirPath: string): Promise<void> {
     return ipcRenderer.invoke(FS_WATCH_STOP, dirPath)
+  },
+
+  fsStat(filePath: string): Promise<{ isDirectory: boolean; isFile: boolean }> {
+    return ipcRenderer.invoke(FS_STAT, filePath)
   },
 
   onFsWatchEvent(

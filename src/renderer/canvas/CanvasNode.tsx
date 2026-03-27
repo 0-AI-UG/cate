@@ -23,7 +23,7 @@ interface CanvasNodeProps {
   panelType: PanelType
   title: string
   isFocused: boolean
-  activityState: NodeActivityState
+  activityState?: NodeActivityState
   zoomLevel: number
   children: React.ReactNode
 }
@@ -54,7 +54,8 @@ function boxShadow(focused: boolean): string {
 }
 
 /** Activity outline style. Returns empty string when no activity decoration needed. */
-function activityOutline(activity: NodeActivityState): string {
+function activityOutline(activity: NodeActivityState | undefined): string {
+  if (!activity) return 'none'
   switch (activity.type) {
     case 'commandFinished':
       return '2px solid rgba(77, 217, 100, 0.7)'
@@ -182,6 +183,10 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     toggleMaximize(nodeId, viewportSize)
   }, [toggleMaximize, nodeId])
 
+  const handleTogglePin = useCallback(() => {
+    useCanvasStore.getState().togglePin(nodeId)
+  }, [nodeId])
+
   /** Inline rename via prompt. */
   const handleRename = useCallback(() => {
     const name = window.prompt('Rename panel:', title)
@@ -221,7 +226,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const containerStyle = useMemo<React.CSSProperties>(() => {
     if (!node) return { display: 'none' }
 
-    const isPulsing = activityState.type === 'claudeWaitingForInput'
+    const isPulsing = activityState?.type === 'claudeWaitingForInput'
 
     return {
       position: 'absolute',
@@ -263,8 +268,10 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         title={title}
         isFocused={isFocused}
         isMaximized={maximized}
+        isPinned={node?.isPinned ?? false}
         onClose={handleClose}
         onToggleMaximize={handleToggleMaximize}
+        onTogglePin={handleTogglePin}
         onDragStart={handleDragStart}
         onRename={handleRename}
         onDuplicate={handleDuplicate}

@@ -193,7 +193,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     // Add canvas node (only if this is the active workspace)
     if (workspaceId === get().selectedWorkspaceId) {
-      useCanvasStore.getState().addNode(panelId, 'terminal', position)
+      const nodeId = useCanvasStore.getState().addNode(panelId, 'terminal', position)
+      useCanvasStore.getState().focusAndCenter(nodeId)
     }
 
     return panelId
@@ -218,7 +219,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }))
 
     if (workspaceId === get().selectedWorkspaceId) {
-      useCanvasStore.getState().addNode(panelId, 'browser', position)
+      const nodeId = useCanvasStore.getState().addNode(panelId, 'browser', position)
+      useCanvasStore.getState().focusAndCenter(nodeId)
     }
 
     return panelId
@@ -244,7 +246,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }))
 
     if (workspaceId === get().selectedWorkspaceId) {
-      useCanvasStore.getState().addNode(panelId, 'editor', position)
+      const nodeId = useCanvasStore.getState().addNode(panelId, 'editor', position)
+      useCanvasStore.getState().focusAndCenter(nodeId)
     }
 
     return panelId

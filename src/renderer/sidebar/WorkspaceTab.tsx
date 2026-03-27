@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { Bell, X } from 'lucide-react'
 import type { WorkspaceState } from '../../shared/types'
@@ -81,6 +81,41 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return 'notRunning'
   }, [wsStatus?.claudeCodeState])
 
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }, [])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [contextMenu])
+
+  const handleCopyWorkingDirectory = useCallback(async () => {
+    const statusState = useStatusStore.getState()
+    const wsStatus = statusState.workspaces[workspace.id]
+    let cwd: string | undefined
+    if (wsStatus) {
+      const cwds = Object.values(wsStatus.terminalCwd)
+      cwd = cwds[0]
+    }
+    if (!cwd) cwd = workspace.rootPath || undefined
+    if (cwd) {
+      await navigator.clipboard.writeText(cwd)
+    }
+    setContextMenu(null)
+  }, [workspace.id, workspace.rootPath])
+
   const panelCount = Object.keys(workspace.panels).length
 
   const showClaudeStatus = claudeState === 'running' || claudeState === 'waitingForInput'
@@ -112,6 +147,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       }`}
       style={isSelected ? { backgroundColor: workspace.color } : undefined}
       onClick={onClick}
+      onContextMenu={handleContextMenu}
     >
       {/* Row 1: Badge + Path + Close */}
       <div className="flex items-center gap-2">
@@ -170,6 +206,23 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       {ports.length > 0 && (
         <div className="mt-0.5 text-[11px] opacity-60">
           {ports.map((p) => `:${p}`).join(', ')}
+        </div>
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[180px] rounded-md border border-white/10 bg-[#1e1e1e] py-1 shadow-xl"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="w-full px-3 py-1.5 text-left text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+            onClick={handleCopyWorkingDirectory}
+          >
+            Copy Working Directory
+          </button>
         </div>
       )}
     </div>
