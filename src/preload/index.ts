@@ -379,6 +379,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(PLUGIN_LIST)
   },
 
+  capturePage(): Promise<string | null> {
+    return ipcRenderer.invoke('capture-page')
+  },
+
   // ---------------------------------------------------------------------------
   // Menu actions (main -> renderer)
   // ---------------------------------------------------------------------------

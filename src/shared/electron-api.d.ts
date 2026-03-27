@@ -217,6 +217,9 @@ export interface ElectronAPI {
   /** List installed plugins. Scaffold: always returns empty array. */
   pluginList(): Promise<Array<{ name: string; version: string; description: string }>>
 
+  /** Capture the current page as a data URL for panel previews. */
+  capturePage(): Promise<string | null>
+
   // ---------------------------------------------------------------------------
   // Menu actions (main -> renderer)
   // ---------------------------------------------------------------------------

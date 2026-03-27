@@ -92,6 +92,13 @@ ipcMain.handle('dialog:saveFile', async (_event, options: { defaultPath?: string
   return result.filePath
 })
 
+// Capture page screenshot for panel previews
+ipcMain.handle('capture-page', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return null
+  const image = await mainWindow.webContents.capturePage()
+  return image.toDataURL()
+})
+
 // Build application menu
 buildApplicationMenu()
 

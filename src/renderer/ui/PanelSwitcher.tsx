@@ -14,6 +14,64 @@ function panelColor(type: PanelType): string {
   }
 }
 
+/**
+ * Capture real panel thumbnails by screenshotting the page and cropping
+ * each panel's bounding rect.
+ */
+function usePanelScreenshots(show: boolean, nodeIds: string[]) {
+  const [screenshots, setScreenshots] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!show || nodeIds.length === 0) return
+
+    // Collect bounding rects BEFORE capturing (overlay isn't rendered yet on first frame)
+    const rects: Record<string, DOMRect> = {}
+    for (const id of nodeIds) {
+      const el = document.querySelector(`[data-node-id="${id}"]`)
+      if (el) rects[id] = el.getBoundingClientRect()
+    }
+
+    window.electronAPI.capturePage().then((dataUrl) => {
+      if (!dataUrl) return
+
+      const img = new Image()
+      img.onload = () => {
+        // Electron capturePage returns image at device pixel ratio
+        const dpr = window.devicePixelRatio || 1
+        const result: Record<string, string> = {}
+
+        for (const id of nodeIds) {
+          const rect = rects[id]
+          if (!rect || rect.width === 0 || rect.height === 0) continue
+
+          const canvas = document.createElement('canvas')
+          const thumbW = 180
+          const aspect = rect.width / rect.height
+          const thumbH = thumbW / aspect
+          canvas.width = thumbW * 2 // render at 2x for sharpness
+          canvas.height = thumbH * 2
+          const ctx = canvas.getContext('2d')
+          if (!ctx) continue
+
+          ctx.drawImage(
+            img,
+            rect.left * dpr, rect.top * dpr,
+            rect.width * dpr, rect.height * dpr,
+            0, 0,
+            canvas.width, canvas.height,
+          )
+          result[id] = canvas.toDataURL()
+        }
+
+        setScreenshots(result)
+      }
+      img.src = dataUrl
+    }).catch(() => {})
+  }, [show, nodeIds.join(',')])
+
+  return screenshots
+}
+
 export function PanelSwitcher() {
   const show = useUIStore((s) => s.showPanelSwitcher)
   const nodes = useCanvasStore((s) => s.nodes)
@@ -23,6 +81,8 @@ export function PanelSwitcher() {
   const nodeList = Object.values(nodes).sort((a, b) => a.creationIndex - b.creationIndex)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selectedRef = useRef<HTMLDivElement>(null)
+
+  const screenshots = usePanelScreenshots(show, nodeList.map(n => n.id))
 
   // Reset selection when opened — start at next panel after focused
   useEffect(() => {
@@ -104,8 +164,9 @@ export function PanelSwitcher() {
           const title = panel?.title || 'Panel'
           const isSelected = i === selectedIndex
           const color = panelColor(type)
+          const screenshot = screenshots[node.id]
 
-          // Compute thumbnail dimensions preserving real aspect ratio
+          // Real aspect ratio
           const maxThumbW = 180
           const maxThumbH = 120
           const aspect = node.size.width / Math.max(node.size.height, 1)
@@ -129,72 +190,40 @@ export function PanelSwitcher() {
               }}
               onClick={() => selectItem(i)}
             >
-              {/* Panel preview — real proportions, no wrapper card */}
               <div
                 style={{
                   width: thumbW,
                   height: thumbH,
                   borderRadius: 8,
                   overflow: 'hidden',
-                  backgroundColor: '#1E1E24',
                   border: isSelected ? `2px solid ${color}` : '2px solid rgba(255,255,255,0.08)',
                   boxShadow: isSelected
                     ? `0 0 20px ${color}33, 0 4px 16px rgba(0,0,0,0.4)`
                     : '0 2px 8px rgba(0,0,0,0.3)',
-                  position: 'relative',
                   transition: 'border-color 0.15s, box-shadow 0.15s',
+                  backgroundColor: '#1E1E24',
                 }}
               >
-                {/* Title bar */}
-                <div style={{
-                  height: 14,
-                  backgroundColor: '#28282E',
-                  display: 'flex',
-                  alignItems: 'center',
-                  paddingLeft: 4,
-                  gap: 2,
-                }}>
-                  <div style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: color, opacity: 0.8 }} />
-                  <span style={{ fontSize: 5, color: 'rgba(255,255,255,0.4)', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    {title}
-                  </span>
-                </div>
-                {/* Content area — simulated based on panel type */}
-                <div style={{ padding: '3px 4px' }}>
-                  {type === 'terminal' && (
-                    <>
-                      <div style={{ height: 3, width: '60%', backgroundColor: 'rgba(52,199,89,0.25)', borderRadius: 1, marginBottom: 3 }} />
-                      <div style={{ height: 3, width: '45%', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 1, marginBottom: 3 }} />
-                      <div style={{ height: 3, width: '70%', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 1, marginBottom: 3 }} />
-                      <div style={{ height: 3, width: '30%', backgroundColor: 'rgba(52,199,89,0.2)', borderRadius: 1 }} />
-                    </>
-                  )}
-                  {type === 'editor' && (
-                    <>
-                      <div style={{ height: 3, width: '80%', backgroundColor: 'rgba(255,149,0,0.15)', borderRadius: 1, marginBottom: 2 }} />
-                      <div style={{ height: 3, width: '55%', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 1, marginBottom: 2 }} />
-                      <div style={{ height: 3, width: '90%', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 1, marginBottom: 2 }} />
-                      <div style={{ height: 3, width: '40%', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 1, marginBottom: 2 }} />
-                      <div style={{ height: 3, width: '65%', backgroundColor: 'rgba(255,149,0,0.12)', borderRadius: 1 }} />
-                    </>
-                  )}
-                  {type === 'browser' && (
-                    <>
-                      <div style={{ height: 5, width: '100%', backgroundColor: 'rgba(0,122,255,0.08)', borderRadius: 2, marginBottom: 3 }} />
-                      <div style={{ height: 3, width: '85%', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 1, marginBottom: 2 }} />
-                      <div style={{ height: 3, width: '60%', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 1 }} />
-                    </>
-                  )}
-                  {(type === 'aiChat' || type === 'git') && (
-                    <>
-                      <div style={{ height: 3, width: '70%', backgroundColor: `${color}20`, borderRadius: 1, marginBottom: 2 }} />
-                      <div style={{ height: 3, width: '50%', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 1, marginBottom: 2 }} />
-                      <div style={{ height: 3, width: '80%', backgroundColor: `${color}15`, borderRadius: 1 }} />
-                    </>
-                  )}
-                </div>
+                {screenshot ? (
+                  <img
+                    src={screenshot}
+                    alt={title}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                ) : (
+                  <div style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'rgba(255,255,255,0.2)',
+                    fontSize: 10,
+                  }}>
+                    Loading...
+                  </div>
+                )}
               </div>
-              {/* Label below */}
               <span
                 className="truncate text-center mt-2"
                 style={{
