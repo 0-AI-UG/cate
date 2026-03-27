@@ -14,6 +14,7 @@ import type {
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT } from '../../shared/types'
 import { useCanvasStore } from './canvasStore'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { deferredSnapshots, restoreDeferredWorkspace } from '../lib/session'
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -137,6 +138,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ws.zoomLevel,
         ws.focusedNodeId,
       )
+
+      // Check for deferred restore (lazy workspace loading)
+      if (deferredSnapshots.has(id)) {
+        restoreDeferredWorkspace(id)
+      }
     }
   },
 

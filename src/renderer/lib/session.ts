@@ -15,6 +15,9 @@ import { terminalRegistry } from './terminalRegistry'
 
 export const terminalRestoreData = new Map<string, { cwd?: string; replayFromId?: string }>()
 
+// Deferred snapshots for inactive workspaces — restored on first switch
+export const deferredSnapshots = new Map<string, SessionSnapshot>()
+
 // -----------------------------------------------------------------------------
 // Save
 // -----------------------------------------------------------------------------
@@ -53,18 +56,25 @@ export async function saveSession(): Promise<void> {
     })
 
     // For each terminal node in the selected workspace, fetch current working directory
+    // Batch all CWD requests concurrently for better performance
     if (isSelected) {
+      const cwdPromises: { snap: NodeSnapshot; promise: Promise<string | null> }[] = []
       for (const snap of nodeSnapshots) {
         if (snap.panelType === 'terminal') {
           const entry = terminalRegistry.getEntry(snap.panelId)
           if (entry?.ptyId) {
-            try {
-              const cwd = await window.electronAPI.terminalGetCwd(entry.ptyId)
-              snap.workingDirectory = cwd
-            } catch {
-              // ignore — workingDirectory will be omitted
-            }
+            cwdPromises.push({
+              snap,
+              promise: window.electronAPI.terminalGetCwd(entry.ptyId).catch(() => null),
+            })
           }
+        }
+      }
+      const results = await Promise.all(cwdPromises.map((p) => p.promise))
+      for (let j = 0; j < cwdPromises.length; j++) {
+        const cwd = results[j]
+        if (cwd) {
+          cwdPromises[j].snap.workingDirectory = cwd
         }
       }
     }
@@ -225,27 +235,43 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
     appStore.removeWorkspace(id)
   }
 
+  const selectedIdx = session.selectedWorkspaceIndex ?? 0
+
+  // Create all workspaces (entries only) and only restore the active one's panels
+  const wsIds: string[] = []
   for (let i = 0; i < session.workspaces.length; i++) {
     const snapshot = session.workspaces[i]
     console.debug(`[session] workspace ${i + 1}/${session.workspaces.length}: "${snapshot.workspaceName}" (${snapshot.nodes.length} nodes)`)
     const wsId = appStore.addWorkspace(snapshot.workspaceName, snapshot.rootPath ?? undefined)
+    wsIds.push(wsId)
 
-    // Select this workspace so the canvas store is active for it
-    appStore.selectWorkspace(wsId)
-
-    // Restore panels into this workspace
-    await restoreSession(snapshot)
+    if (i === selectedIdx) {
+      // Select and fully restore the active workspace
+      appStore.selectWorkspace(wsId)
+      await restoreSession(snapshot)
+    } else {
+      // Defer restoration — store the snapshot for lazy loading on first switch
+      deferredSnapshots.set(wsId, snapshot)
+    }
   }
 
-  // Re-select the originally selected workspace
-  if (
-    session.selectedWorkspaceIndex != null &&
-    session.selectedWorkspaceIndex < appStore.workspaces.length
-  ) {
-    appStore.selectWorkspace(appStore.workspaces[session.selectedWorkspaceIndex].id)
+  // Re-select the originally selected workspace (may be a no-op if already selected)
+  if (selectedIdx < wsIds.length) {
+    appStore.selectWorkspace(wsIds[selectedIdx])
   }
 
   console.debug(`[session] full session restored in ${(performance.now() - tTotal).toFixed(1)}ms`)
+}
+
+// -----------------------------------------------------------------------------
+// Restore a deferred workspace — called on first switch to an inactive workspace
+// -----------------------------------------------------------------------------
+
+export async function restoreDeferredWorkspace(workspaceId: string): Promise<void> {
+  const snapshot = deferredSnapshots.get(workspaceId)
+  if (!snapshot) return
+  deferredSnapshots.delete(workspaceId)
+  await restoreSession(snapshot)
 }
 
 // -----------------------------------------------------------------------------
