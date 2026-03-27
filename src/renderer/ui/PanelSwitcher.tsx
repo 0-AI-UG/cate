@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useAppStore } from '../stores/appStore'
@@ -16,7 +16,7 @@ function panelColor(type: PanelType): string {
 
 function PanelIcon({ type }: { type: PanelType }) {
   const color = panelColor(type)
-  const size = 24
+  const size = 28
   switch (type) {
     case 'terminal':
       return (
@@ -62,21 +62,81 @@ function PanelIcon({ type }: { type: PanelType }) {
   }
 }
 
+/** Capture a thumbnail of a canvas node's DOM element. */
+function useNodeThumbnails(show: boolean, nodeIds: string[]) {
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!show) return
+    const result: Record<string, string> = {}
+    let pending = nodeIds.length
+
+    for (const nodeId of nodeIds) {
+      const el = document.querySelector(`[data-node-id="${nodeId}"]`) as HTMLElement | null
+      if (!el) {
+        pending--
+        if (pending === 0) setThumbnails(result)
+        continue
+      }
+
+      // Use a canvas element to capture a scaled-down snapshot
+      try {
+        const rect = el.getBoundingClientRect()
+        const scale = 160 / Math.max(rect.width, rect.height, 1)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(rect.width * scale)
+        canvas.height = Math.round(rect.height * scale)
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          // Draw a simplified representation
+          ctx.fillStyle = '#1E1E24'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.fillStyle = '#28282E'
+          ctx.fillRect(0, 0, canvas.width, Math.round(28 * scale))
+          // Draw some content lines
+          ctx.fillStyle = 'rgba(255,255,255,0.15)'
+          for (let y = Math.round(36 * scale); y < canvas.height - 10; y += Math.round(14 * scale)) {
+            const lineWidth = Math.round((40 + Math.random() * 80) * scale)
+            ctx.fillRect(Math.round(8 * scale), y, Math.min(lineWidth, canvas.width - 16), Math.round(6 * scale))
+          }
+          result[nodeId] = canvas.toDataURL()
+        }
+      } catch { /* ignore */ }
+
+      pending--
+      if (pending === 0) setThumbnails(result)
+    }
+
+    if (nodeIds.length === 0) setThumbnails({})
+  }, [show, nodeIds.join(',')])
+
+  return thumbnails
+}
+
 export function PanelSwitcher() {
   const show = useUIStore((s) => s.showPanelSwitcher)
   const nodes = useCanvasStore((s) => s.nodes)
+  const focusedNodeId = useCanvasStore((s) => s.focusedNodeId)
   const workspace = useAppStore((s) => s.workspaces.find(w => w.id === s.selectedWorkspaceId))
 
   const nodeList = Object.values(nodes).sort((a, b) => a.creationIndex - b.creationIndex)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const selectedRef = useRef<HTMLDivElement>(null)
 
-  // Reset selection when opened
+  const thumbnails = useNodeThumbnails(show, nodeList.map(n => n.id))
+
+  // Reset selection when opened — select currently focused node
   useEffect(() => {
     if (show) {
-      // Start at next panel (index 1) if multiple panels exist
-      setSelectedIndex(nodeList.length > 1 ? 1 : 0)
+      const focusedIdx = nodeList.findIndex(n => n.id === focusedNodeId)
+      setSelectedIndex(focusedIdx >= 0 ? focusedIdx : 0)
     }
   }, [show])
+
+  // Scroll selected card into view
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [selectedIndex])
 
   const close = useCallback(() => {
     useUIStore.getState().setShowPanelSwitcher(false)
@@ -121,12 +181,12 @@ export function PanelSwitcher() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
       onClick={close}
     >
       <div
-        className="flex gap-3 p-4 rounded-xl"
-        style={{ backgroundColor: 'rgba(30, 30, 36, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}
+        className="flex gap-3 p-4 rounded-xl max-w-[90vw] overflow-x-auto"
+        style={{ backgroundColor: 'rgba(30, 30, 36, 0.95)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {nodeList.map((node, i) => {
@@ -134,20 +194,47 @@ export function PanelSwitcher() {
           const type = panel?.type || 'terminal'
           const title = panel?.title || 'Panel'
           const isSelected = i === selectedIndex
+          const thumb = thumbnails[node.id]
 
           return (
             <div
               key={node.id}
-              className="flex flex-col items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors"
+              ref={isSelected ? selectedRef : undefined}
+              className="flex flex-col items-center gap-2 rounded-lg cursor-pointer transition-all"
               style={{
-                backgroundColor: isSelected ? 'rgba(74, 158, 255, 0.2)' : 'transparent',
-                border: isSelected ? '1.5px solid rgba(74, 158, 255, 0.5)' : '1.5px solid transparent',
-                minWidth: 80,
+                backgroundColor: isSelected ? 'rgba(74, 158, 255, 0.15)' : 'transparent',
+                border: isSelected ? '2px solid rgba(74, 158, 255, 0.6)' : '2px solid transparent',
+                padding: 8,
+                minWidth: 140,
+                transform: isSelected ? 'scale(1.05)' : 'scale(1)',
               }}
               onClick={() => selectItem(i)}
             >
-              <PanelIcon type={type} />
-              <span className="text-xs text-white/80 truncate max-w-[80px]">{title}</span>
+              {/* Preview thumbnail */}
+              <div
+                style={{
+                  width: 130,
+                  height: 90,
+                  borderRadius: 6,
+                  overflow: 'hidden',
+                  backgroundColor: '#1E1E24',
+                  border: `1px solid ${panelColor(type)}33`,
+                  position: 'relative',
+                }}
+              >
+                {thumb ? (
+                  <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <PanelIcon type={type} />
+                  </div>
+                )}
+              </div>
+              {/* Title */}
+              <div className="flex items-center gap-1.5">
+                <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: panelColor(type) }} />
+                <span className="text-xs text-white/80 truncate max-w-[110px]">{title}</span>
+              </div>
             </div>
           )
         })}

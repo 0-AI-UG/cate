@@ -38,6 +38,10 @@ export function useShortcuts(): void {
       const action = shortcutStore().matchEvent(e)
       if (!action) return
 
+      // When panel switcher is open, only handle the toggle shortcut
+      const ui = useUIStore.getState()
+      if (ui.showPanelSwitcher && action !== 'panelSwitcher') return
+
       e.preventDefault()
       e.stopPropagation()
 
@@ -86,9 +90,11 @@ export function useShortcuts(): void {
           useUIStore.getState().setShowNodeSwitcher(true)
           break
 
-        case 'panelSwitcher':
-          useUIStore.getState().setShowPanelSwitcher(true)
+        case 'panelSwitcher': {
+          const ui = useUIStore.getState()
+          ui.setShowPanelSwitcher(!ui.showPanelSwitcher)
           break
+        }
 
         case 'commandPalette':
           useUIStore.getState().setShowCommandPalette(true)
