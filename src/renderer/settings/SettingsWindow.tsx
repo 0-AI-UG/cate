@@ -1,8 +1,7 @@
 // =============================================================================
-// SettingsWindow — Tabbed settings modal. Ported from SettingsView.swift
+// SettingsWindow — Single scrollable settings card with all sections.
 // =============================================================================
 
-import { useState } from 'react'
 import { X } from 'lucide-react'
 import { GeneralSettings } from './GeneralSettings'
 import { AppearanceSettings } from './AppearanceSettings'
@@ -13,18 +12,26 @@ import { SidebarSettings } from './SidebarSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 
-const TABS = [
-  'General',
-  'Appearance',
-  'Canvas',
-  'Terminal',
-  'Browser',
-  'Sidebar',
-  'Notifications',
-  'Shortcuts',
-] as const
+function PluginsSettings() {
+  return (
+    <div className="text-white/40 text-sm">
+      <p>Plugin system coming soon.</p>
+      <p className="text-xs mt-1">Plugins will be loaded from a configurable directory.</p>
+    </div>
+  )
+}
 
-type Tab = (typeof TABS)[number]
+const SECTIONS = [
+  { title: 'General', component: GeneralSettings },
+  { title: 'Appearance', component: AppearanceSettings },
+  { title: 'Canvas', component: CanvasSettings },
+  { title: 'Terminal', component: TerminalSettings },
+  { title: 'Browser', component: BrowserSettings },
+  { title: 'Sidebar', component: SidebarSettings },
+  { title: 'Notifications', component: NotificationSettings },
+  { title: 'Shortcuts', component: ShortcutSettings },
+  { title: 'Plugins', component: PluginsSettings },
+] as const
 
 interface SettingsWindowProps {
   isOpen: boolean
@@ -32,22 +39,7 @@ interface SettingsWindowProps {
 }
 
 export function SettingsWindow({ isOpen, onClose }: SettingsWindowProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('General')
-
   if (!isOpen) return null
-
-  const renderTab = () => {
-    switch (activeTab) {
-      case 'General': return <GeneralSettings />
-      case 'Appearance': return <AppearanceSettings />
-      case 'Canvas': return <CanvasSettings />
-      case 'Terminal': return <TerminalSettings />
-      case 'Browser': return <BrowserSettings />
-      case 'Sidebar': return <SidebarSettings />
-      case 'Notifications': return <NotificationSettings />
-      case 'Shortcuts': return <ShortcutSettings />
-    }
-  }
 
   return (
     <div
@@ -55,41 +47,32 @@ export function SettingsWindow({ isOpen, onClose }: SettingsWindowProps) {
       onClick={onClose}
     >
       <div
-        className="w-[640px] h-[480px] bg-[#2A2A32] rounded-xl border border-white/[0.12] shadow-2xl overflow-hidden flex"
+        className="w-[520px] max-h-[80vh] bg-[#2A2A32] rounded-xl border border-white/[0.12] shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Tab sidebar */}
-        <div className="w-44 bg-[#1E1E24] border-r border-white/10 pt-8 px-2 flex flex-col gap-0.5">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-3 py-1.5 text-sm rounded-md text-left transition-colors ${
-                activeTab === tab
-                  ? 'bg-white/[0.1] text-white'
-                  : 'text-white/50 hover:text-white/70 hover:bg-white/[0.05]'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0 border-b border-white/[0.08]">
+          <h2 className="text-lg font-semibold text-white/90">Settings</h2>
+          <button
+            onClick={onClose}
+            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/[0.1] text-white/50 hover:text-white/80"
+          >
+            <X size={14} />
+          </button>
         </div>
 
-        {/* Content area */}
-        <div className="flex-1 flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 pt-5 pb-3">
-            <h2 className="text-lg font-semibold text-white/90">{activeTab}</h2>
-            <button
-              onClick={onClose}
-              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/[0.1] text-white/50 hover:text-white/80"
-            >
-              <X size={14} />
-            </button>
+        {/* Scrollable sections */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="flex flex-col gap-6">
+            {SECTIONS.map(({ title, component: Component }) => (
+              <section key={title}>
+                <h3 className="text-xs font-medium text-white/40 uppercase tracking-wider mb-2">
+                  {title}
+                </h3>
+                <Component />
+              </section>
+            ))}
           </div>
-
-          {/* Tab content */}
-          <div className="flex-1 px-6 pb-6 overflow-y-auto">{renderTab()}</div>
         </div>
       </div>
     </div>

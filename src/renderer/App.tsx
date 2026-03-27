@@ -21,6 +21,7 @@ const TerminalPanel = React.lazy(() => import('./panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('./panels/EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./panels/BrowserPanel'))
 const AIChatPanel = React.lazy(() => import('./panels/AIChatPanel'))
+const GitPanel = React.lazy(() => import('./panels/GitPanel'))
 import { NodeSwitcher } from './ui/NodeSwitcher'
 import { PanelSwitcher } from './ui/PanelSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
@@ -126,6 +127,10 @@ export default function App() {
     useAppStore.getState().createAIChat(selectedWorkspaceId)
   }, [selectedWorkspaceId])
 
+  const onNewGit = useCallback(() => {
+    useAppStore.getState().createGit(selectedWorkspaceId)
+  }, [selectedWorkspaceId])
+
   const onZoomIn = useCallback(() => {
     useCanvasStore.getState().zoomAroundCenter(zoomLevel + 0.1)
   }, [zoomLevel])
@@ -175,6 +180,9 @@ export default function App() {
         case 'aiChat':
           store.createAIChat(selectedWorkspaceId, canvasPoint)
           break
+        case 'git':
+          store.createGit(selectedWorkspaceId, canvasPoint)
+          break
       }
     },
     [selectedWorkspaceId],
@@ -223,6 +231,15 @@ export default function App() {
         case 'aiChat':
           content = (
             <AIChatPanel
+              panelId={panelId}
+              workspaceId={selectedWorkspaceId}
+              nodeId={nodeId}
+            />
+          )
+          break
+        case 'git':
+          content = (
+            <GitPanel
               panelId={panelId}
               workspaceId={selectedWorkspaceId}
               nodeId={nodeId}
@@ -306,6 +323,7 @@ export default function App() {
           onNewBrowser={onNewBrowser}
           onNewEditor={onNewEditor}
           onNewAIChat={onNewAIChat}
+          onNewGit={onNewGit}
           onZoomIn={onZoomIn}
           onZoomOut={onZoomOut}
         />

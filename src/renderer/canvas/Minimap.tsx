@@ -28,7 +28,6 @@ const Minimap: React.FC = () => {
   const minimapRef = useRef<HTMLDivElement>(null)
 
   const nodeList = Object.values(nodes)
-  if (nodeList.length === 0) return null
 
   // Compute bounding box of all nodes
   const minX = Math.min(...nodeList.map(n => n.origin.x))
@@ -86,6 +85,8 @@ const Minimap: React.FC = () => {
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
   }, [navigateToPoint])
+
+  if (nodeList.length === 0) return null
 
   return (
     <div

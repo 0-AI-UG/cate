@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
+import { WINDOW_DETACH_PANEL } from '../shared/ipc-channels'
 import { registerHandlers as registerTerminalHandlers, flushAllLoggers } from './ipc/terminal'
 import { registerHandlers as registerFilesystemHandlers } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
@@ -47,6 +48,30 @@ function createWindow(): void {
   registerGitMonitorHandlers(mainWindow)
   registerStoreHandlers()
 }
+
+// Window: Detach Panel (Task 23: Multi-Window Support scaffold)
+ipcMain.handle(WINDOW_DETACH_PANEL, async (_event, options: { title: string; width: number; height: number }) => {
+  const detachedWindow = new BrowserWindow({
+    width: options.width,
+    height: options.height,
+    title: options.title,
+    backgroundColor: '#1E1E24',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: true,
+    },
+  })
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    detachedWindow.loadURL(process.env.ELECTRON_RENDERER_URL + '?detached=true')
+  } else {
+    detachedWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  }
+
+  return detachedWindow.id
+})
 
 // Dialog handlers
 ipcMain.handle('dialog:openFolder', async () => {

@@ -224,6 +224,18 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     }
   }, [nodeId, panelType])
 
+  const handleDetach = useCallback(async () => {
+    if (!node) return
+    const panel = useAppStore.getState().workspaces
+      .find(w => w.id === useAppStore.getState().selectedWorkspaceId)
+      ?.panels[node.panelId]
+    await window.electronAPI.detachPanel({
+      title: panel?.title || 'Panel',
+      width: Math.round(node.size.width),
+      height: Math.round(node.size.height),
+    })
+  }, [node])
+
   const handleSplitHorizontal = useCallback(() => {
     const wsId = useAppStore.getState().selectedWorkspaceId
     const panelId = crypto.randomUUID()
@@ -314,6 +326,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         onSplitHorizontal={!node?.split ? handleSplitHorizontal : undefined}
         onSplitVertical={!node?.split ? handleSplitVertical : undefined}
         onAddTab={handleAddTab}
+        onDetach={handleDetach}
       />
 
       {/* Tab bar — rendered when node has stacked panels */}

@@ -26,7 +26,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'aiChat'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'aiChat' | 'git'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -403,6 +403,9 @@ export interface AppSettings {
   // Notifications
   soundNotificationsEnabled: boolean
   visualNotificationsEnabled: boolean
+
+  // Plugins (Task 25: Plugin/Extension System scaffold)
+  pluginDirectory: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -439,6 +442,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Notifications
   soundNotificationsEnabled: true,
   visualNotificationsEnabled: true,
+
+  // Plugins (Task 25: Plugin/Extension System scaffold)
+  pluginDirectory: '',
 }
 
 // -----------------------------------------------------------------------------
@@ -450,6 +456,7 @@ export const PANEL_DEFAULT_SIZES: Record<PanelType, Size> = {
   browser: { width: 800, height: 600 },
   editor: { width: 600, height: 500 },
   aiChat: { width: 400, height: 600 },
+  git: { width: 500, height: 600 },
 }
 
 export const PANEL_MINIMUM_SIZES: Record<PanelType, Size> = {
@@ -457,6 +464,7 @@ export const PANEL_MINIMUM_SIZES: Record<PanelType, Size> = {
   browser: { width: 400, height: 300 },
   editor: { width: 300, height: 250 },
   aiChat: { width: 300, height: 300 },
+  git: { width: 350, height: 300 },
 }
 
 // -----------------------------------------------------------------------------

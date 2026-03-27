@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React from 'react'
-import { Terminal, Globe, FileText, Bot, Minus, Plus } from 'lucide-react'
+import { Terminal, Globe, FileText, Bot, GitBranch, Minus, Plus } from 'lucide-react'
 
 interface CanvasToolbarProps {
   zoom: number
@@ -12,6 +12,7 @@ interface CanvasToolbarProps {
   onNewBrowser: () => void
   onNewEditor: () => void
   onNewAIChat: () => void
+  onNewGit: () => void
   onZoomIn: () => void
   onZoomOut: () => void
 }
@@ -40,6 +41,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onNewBrowser,
   onNewEditor,
   onNewAIChat,
+  onNewGit,
   onZoomIn,
   onZoomOut,
 }) => {
@@ -60,6 +62,9 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         </ToolbarButton>
         <ToolbarButton onClick={onNewAIChat} title="AI Chat" size="panel">
           <Bot size={16} className="text-purple-400/85" />
+        </ToolbarButton>
+        <ToolbarButton onClick={onNewGit} title="Git" size="panel">
+          <GitBranch size={16} className="text-red-400/85" />
         </ToolbarButton>
 
         {/* Divider */}

@@ -2,7 +2,8 @@
 // Application menu — standard macOS menu bar
 // =============================================================================
 
-import { Menu, app } from 'electron'
+import { BrowserWindow, Menu, app } from 'electron'
+import { MENU_OPEN_SETTINGS } from '../shared/ipc-channels'
 
 export function buildApplicationMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -16,7 +17,8 @@ export function buildApplicationMenu(): void {
           label: 'Preferences...',
           accelerator: 'Cmd+,',
           click: (): void => {
-            // TODO: open preferences window or send IPC to renderer
+            const win = BrowserWindow.getFocusedWindow()
+            if (win) win.webContents.send(MENU_OPEN_SETTINGS)
           },
         },
         { type: 'separator' },

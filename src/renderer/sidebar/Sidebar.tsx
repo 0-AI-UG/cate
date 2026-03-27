@@ -9,7 +9,8 @@ import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { FolderOpen } from 'lucide-react'
+import { useUIStore } from '../stores/uiStore'
+import { FolderOpen, PanelLeft, Bell, Plus } from 'lucide-react'
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -18,6 +19,7 @@ import { FolderOpen } from 'lucide-react'
 const DEFAULT_WIDTH = 220
 const MIN_WIDTH = 140
 const MAX_WIDTH = 500
+const COLLAPSED_WIDTH = 40
 
 const DEFAULT_DIVIDER_POSITION = 0.5 // fraction of available height
 
@@ -148,15 +150,53 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
 
   const rootPath = selectedWorkspace?.rootPath ?? ''
 
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const toggleFileExplorer = useUIStore((s) => s.toggleFileExplorer)
+  const addWorkspace = useAppStore((s) => s.addWorkspace)
+
+  // --- Collapsed icon strip ---
+  if (!isVisible) {
+    return (
+      <div
+        className="flex-shrink-0 flex flex-col items-center h-full bg-canvas-bg border-r border-white/10 select-none"
+        style={{ width: `${COLLAPSED_WIDTH}px` }}
+      >
+        {/* macOS titlebar drag region */}
+        <div className="h-7 w-full flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+
+        <div className="flex flex-col items-center gap-1 py-2">
+          <button
+            className="text-white/40 hover:text-white/70 transition-colors p-1.5 rounded hover:bg-white/10"
+            onClick={toggleSidebar}
+            title="Expand Sidebar"
+          >
+            <PanelLeft size={16} />
+          </button>
+          <button
+            className="text-white/40 hover:text-white/70 transition-colors p-1.5 rounded hover:bg-white/10"
+            onClick={toggleFileExplorer}
+            title="Toggle File Explorer"
+          >
+            <FolderOpen size={16} />
+          </button>
+          <button
+            className="text-white/40 hover:text-white/70 transition-colors p-1.5 rounded hover:bg-white/10"
+            onClick={() => addWorkspace()}
+            title="New Workspace"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // --- Expanded sidebar ---
   return (
     <div
       ref={sidebarRef}
       className="flex-shrink-0 relative flex flex-col h-full bg-canvas-bg border-r border-white/10 select-none overflow-hidden"
-      style={{
-        width: `${width}px`,
-        marginLeft: isVisible ? 0 : `-${width}px`,
-        transition: 'margin-left 200ms ease-in-out',
-      }}
+      style={{ width: `${width}px` }}
     >
       {/* macOS titlebar drag region */}
       <div className="h-7 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />

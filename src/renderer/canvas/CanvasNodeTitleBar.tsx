@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useState } from 'react'
-import { Terminal, Globe, FileText, Bot, Maximize2, Minimize2, Pin, X } from 'lucide-react'
+import { Terminal, Globe, FileText, Bot, GitBranch, Maximize2, Minimize2, Pin, X } from 'lucide-react'
 import type { PanelType } from '../../shared/types'
 import { panelColor } from '../panels/types'
 import { useCanvasStore } from '../stores/canvasStore'
@@ -30,6 +30,7 @@ interface TitleBarProps {
   onSplitHorizontal?: () => void
   onSplitVertical?: () => void
   onAddTab?: () => void
+  onDetach?: () => void
 }
 
 // -----------------------------------------------------------------------------
@@ -47,6 +48,8 @@ function PanelIcon({ type, color }: { type: PanelType; color: string }) {
       return <FileText {...props} />
     case 'aiChat':
       return <Bot {...props} />
+    case 'git':
+      return <GitBranch {...props} />
   }
 }
 
@@ -70,6 +73,7 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
   onSplitHorizontal,
   onSplitVertical,
   onAddTab,
+  onDetach,
 }) => {
   const iconColor = panelColor(panelType)
 
@@ -156,6 +160,12 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
       : []),
     ...(onAddTab
       ? [{ label: 'Add Tab', onClick: onAddTab }]
+      : []),
+    ...(onDetach
+      ? [{ label: '', separator: true, onClick: () => {} }]
+      : []),
+    ...(onDetach
+      ? [{ label: 'Detach to Window', onClick: onDetach }]
       : []),
     { label: '', separator: true, onClick: () => {} },
     {

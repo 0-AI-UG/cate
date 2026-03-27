@@ -10,6 +10,7 @@ function panelColor(type: PanelType): string {
     case 'browser': return '#007AFF'
     case 'editor': return '#FF9500'
     case 'aiChat': return '#AF52DE'
+    case 'git': return '#FF3B30'
   }
 }
 
@@ -47,6 +48,15 @@ function PanelIcon({ type }: { type: PanelType }) {
           <rect x="3" y="11" width="18" height="10" rx="2" ry="2" />
           <circle cx="12" cy="5" r="2" />
           <line x1="12" y1="7" x2="12" y2="11" />
+        </svg>
+      )
+    case 'git':
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <line x1="6" y1="3" x2="6" y2="15" />
+          <circle cx="18" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <path d="M18 9a9 9 0 0 1-9 9" />
         </svg>
       )
   }

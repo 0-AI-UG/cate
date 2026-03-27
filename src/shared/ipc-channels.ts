@@ -28,6 +28,11 @@ export const GIT_LS_FILES = 'git:lsFiles'
 export const GIT_BRANCH_UPDATE = 'git:branch-update'         // main -> renderer
 export const GIT_MONITOR_START = 'git:monitor-start'
 export const GIT_MONITOR_STOP = 'git:monitor-stop'
+export const GIT_STATUS = 'git:status'
+export const GIT_DIFF = 'git:diff'
+export const GIT_STAGE = 'git:stage'
+export const GIT_UNSTAGE = 'git:unstage'
+export const GIT_COMMIT = 'git:commit'
 
 // Shell / Process Monitor
 export const SHELL_REGISTER_TERMINAL = 'shell:registerTerminal'
@@ -67,3 +72,9 @@ export const LAYOUT_SAVE = 'layout:save'
 export const LAYOUT_LIST = 'layout:list'
 export const LAYOUT_LOAD = 'layout:load'
 export const LAYOUT_DELETE = 'layout:delete'
+
+// Window (Task 23: Multi-Window Support)
+export const WINDOW_DETACH_PANEL = 'window:detachPanel'
+
+// Plugin / Extension System (Task 25)
+export const PLUGIN_LIST = 'plugin:list'

@@ -21,6 +21,11 @@ import {
   GIT_BRANCH_UPDATE,
   GIT_MONITOR_START,
   GIT_MONITOR_STOP,
+  GIT_STATUS,
+  GIT_DIFF,
+  GIT_STAGE,
+  GIT_UNSTAGE,
+  GIT_COMMIT,
   SHELL_REGISTER_TERMINAL,
   SHELL_UNREGISTER_TERMINAL,
   SHELL_ACTIVITY_UPDATE,
@@ -43,6 +48,8 @@ import {
   LAYOUT_LIST,
   LAYOUT_LOAD,
   LAYOUT_DELETE,
+  WINDOW_DETACH_PANEL,
+  PLUGIN_LIST,
 } from '../shared/ipc-channels'
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -164,6 +171,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   gitLsFiles(dirPath: string): Promise<string[]> {
     return ipcRenderer.invoke(GIT_LS_FILES, dirPath)
+  },
+
+  gitStatus(cwd: string): Promise<unknown> {
+    return ipcRenderer.invoke(GIT_STATUS, cwd)
+  },
+
+  gitDiff(cwd: string, filePath?: string): Promise<string> {
+    return ipcRenderer.invoke(GIT_DIFF, cwd, filePath)
+  },
+
+  gitStage(cwd: string, filePath: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_STAGE, cwd, filePath)
+  },
+
+  gitUnstage(cwd: string, filePath: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_UNSTAGE, cwd, filePath)
+  },
+
+  gitCommit(cwd: string, message: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_COMMIT, cwd, message)
   },
 
   // ---------------------------------------------------------------------------
@@ -334,6 +361,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   layoutDelete(name: string): Promise<void> {
     return ipcRenderer.invoke(LAYOUT_DELETE, name)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Window (Task 23: Multi-Window Support scaffold)
+  // ---------------------------------------------------------------------------
+
+  detachPanel(options: { title: string; width: number; height: number }): Promise<number> {
+    return ipcRenderer.invoke(WINDOW_DETACH_PANEL, options)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Plugins (Task 25: Plugin/Extension System scaffold)
+  // ---------------------------------------------------------------------------
+
+  pluginList(): Promise<Array<{ name: string; version: string; description: string }>> {
+    return ipcRenderer.invoke(PLUGIN_LIST)
   },
 
   // ---------------------------------------------------------------------------

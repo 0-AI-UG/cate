@@ -45,6 +45,8 @@ export function panelIcon(type: PanelType): string {
       return 'FileText'
     case 'aiChat':
       return 'Bot'
+    case 'git':
+      return 'GitBranch'
   }
 }
 
@@ -59,5 +61,7 @@ export function panelColor(type: PanelType): string {
       return '#FF9F0A' // orange
     case 'aiChat':
       return '#AF52DE' // purple
+    case 'git':
+      return '#FF3B30' // red
   }
 }

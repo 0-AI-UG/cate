@@ -78,6 +78,27 @@ export interface ElectronAPI {
   /** List tracked + untracked files (git ls-files --cached --others --exclude-standard). */
   gitLsFiles(dirPath: string): Promise<string[]>
 
+  /** Get git status for a repository. */
+  gitStatus(cwd: string): Promise<{
+    files: Array<{ path: string; index: string; working_dir: string }>
+    current: string | null
+    tracking: string | null
+    ahead: number
+    behind: number
+  }>
+
+  /** Get diff output for a file or the whole working tree. */
+  gitDiff(cwd: string, filePath?: string): Promise<string>
+
+  /** Stage a file. */
+  gitStage(cwd: string, filePath: string): Promise<void>
+
+  /** Unstage a file. */
+  gitUnstage(cwd: string, filePath: string): Promise<void>
+
+  /** Commit staged changes with a message. */
+  gitCommit(cwd: string, message: string): Promise<void>
+
   // ---------------------------------------------------------------------------
   // Shell / Process Monitor
   // ---------------------------------------------------------------------------
@@ -181,6 +202,20 @@ export interface ElectronAPI {
 
   /** Delete a named layout. */
   layoutDelete(name: string): Promise<void>
+
+  // ---------------------------------------------------------------------------
+  // Window (Task 23: Multi-Window Support scaffold)
+  // ---------------------------------------------------------------------------
+
+  /** Open panel content in a detached Electron BrowserWindow. Returns the new window ID. */
+  detachPanel(options: { title: string; width: number; height: number }): Promise<number>
+
+  // ---------------------------------------------------------------------------
+  // Plugins (Task 25: Plugin/Extension System scaffold)
+  // ---------------------------------------------------------------------------
+
+  /** List installed plugins. Scaffold: always returns empty array. */
+  pluginList(): Promise<Array<{ name: string; version: string; description: string }>>
 
   // ---------------------------------------------------------------------------
   // Menu actions (main -> renderer)
