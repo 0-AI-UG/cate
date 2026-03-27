@@ -17,6 +17,9 @@ interface UIStoreState {
   fileExplorerVisible: boolean
   /** Pre-captured page screenshot for panel switcher previews. */
   panelSwitcherScreenshot: string | null
+  rightSidebarVisible: boolean
+  rightSidebarActiveTab: string
+  rightSidebarDetached: boolean
 }
 
 interface UIStoreActions {
@@ -28,6 +31,10 @@ interface UIStoreActions {
   toggleFileExplorer: () => void
   setSidebarVisible: (visible: boolean) => void
   setFileExplorerVisible: (visible: boolean) => void
+  toggleRightSidebar: () => void
+  setRightSidebarTab: (tab: string) => void
+  setRightSidebarVisible: (visible: boolean) => void
+  setRightSidebarDetached: (detached: boolean) => void
 }
 
 export type UIStore = UIStoreState & UIStoreActions
@@ -45,6 +52,9 @@ export const useUIStore = create<UIStore>((set) => ({
   showGlobalSearch: false,
   sidebarVisible: true,
   fileExplorerVisible: false,
+  rightSidebarVisible: false,
+  rightSidebarActiveTab: 'git',
+  rightSidebarDetached: false,
 
   // --- Actions ---
 
@@ -78,5 +88,18 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setFileExplorerVisible(visible) {
     set({ fileExplorerVisible: visible })
+  },
+
+  toggleRightSidebar() {
+    set((state) => ({ rightSidebarVisible: !state.rightSidebarVisible }))
+  },
+  setRightSidebarTab(tab) {
+    set({ rightSidebarActiveTab: tab, rightSidebarVisible: true })
+  },
+  setRightSidebarVisible(visible) {
+    set({ rightSidebarVisible: visible })
+  },
+  setRightSidebarDetached(detached) {
+    set({ rightSidebarDetached: detached })
   },
 }))
