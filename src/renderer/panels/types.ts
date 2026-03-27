@@ -43,6 +43,8 @@ export function panelIcon(type: PanelType): string {
       return 'Globe'
     case 'editor':
       return 'FileText'
+    case 'aiChat':
+      return 'Bot'
   }
 }
 
@@ -55,5 +57,7 @@ export function panelColor(type: PanelType): string {
       return '#4A9EFF' // blue
     case 'editor':
       return '#FF9F0A' // orange
+    case 'aiChat':
+      return '#AF52DE' // purple
   }
 }

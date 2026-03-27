@@ -128,6 +128,28 @@ function DownloadIcon() {
   )
 }
 
+function UploadIcon() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  )
+}
+
+function BotIcon() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="10" rx="2" ry="2" />
+      <circle cx="12" cy="5" r="2" />
+      <line x1="12" y1="7" x2="12" y2="11" />
+      <line x1="8" y1="16" x2="8" y2="16" />
+      <line x1="16" y1="16" x2="16" y2="16" />
+    </svg>
+  )
+}
+
 // -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
@@ -140,6 +162,7 @@ export const CommandPalette: React.FC = () => {
   const createTerminal = useAppStore((s) => s.createTerminal)
   const createBrowser = useAppStore((s) => s.createBrowser)
   const createEditor = useAppStore((s) => s.createEditor)
+  const createAIChat = useAppStore((s) => s.createAIChat)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const toggleFileExplorer = useUIStore((s) => s.toggleFileExplorer)
   const setZoom = useCanvasStore((s) => s.setZoom)
@@ -190,6 +213,13 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '\u2318\u21E7E',
         icon: <FileTextIcon />,
         action: () => createEditor(selectedWorkspaceId),
+      },
+      {
+        id: 'newAIChat',
+        title: 'New AI Chat',
+        shortcutText: '',
+        icon: <BotIcon />,
+        action: () => createAIChat(selectedWorkspaceId),
       },
       {
         id: 'toggleSidebar',
@@ -290,12 +320,94 @@ export const CommandPalette: React.FC = () => {
           useCanvasStore.getState().zoomToFit()
         },
       },
+      {
+        id: 'exportWorkspace',
+        title: 'Export Workspace Layout',
+        shortcutText: '',
+        icon: <UploadIcon />,
+        action: async () => {
+          const state = useCanvasStore.getState()
+          const appState = useAppStore.getState()
+          const workspace = appState.workspaces.find((w) => w.id === appState.selectedWorkspaceId)
+          if (!workspace) return
+
+          const exportData = {
+            version: 1,
+            name: workspace.name,
+            nodes: Object.values(state.nodes).map((n) => {
+              const panel = workspace.panels[n.panelId]
+              return {
+                panelType: panel?.type || 'terminal',
+                title: panel?.title || 'Panel',
+                origin: n.origin,
+                size: n.size,
+                filePath: panel?.filePath,
+                url: panel?.url,
+              }
+            }),
+            regions: Object.values(state.regions).map((r) => ({
+              origin: r.origin, size: r.size, label: r.label, color: r.color,
+            })),
+            zoomLevel: state.zoomLevel,
+            viewportOffset: state.viewportOffset,
+          }
+
+          const filePath = await window.electronAPI.saveFileDialog({
+            defaultPath: `${workspace.name}-layout.json`,
+            filters: [{ name: 'Workspace Layout', extensions: ['json'] }],
+          })
+          if (filePath) {
+            await window.electronAPI.fsWriteFile(filePath, JSON.stringify(exportData, null, 2))
+          }
+        },
+      },
+      {
+        id: 'importWorkspace',
+        title: 'Import Workspace Layout',
+        shortcutText: '',
+        icon: <DownloadIcon />,
+        action: async () => {
+          const filePath = window.prompt('Enter path to layout JSON file:')
+          if (!filePath?.trim()) return
+
+          try {
+            const content = await window.electronAPI.fsReadFile(filePath.trim())
+            const data = JSON.parse(content) as any
+            if (!data.version || !data.nodes) {
+              alert('Invalid layout file')
+              return
+            }
+
+            const wsId = useAppStore.getState().selectedWorkspaceId
+            useAppStore.getState().closeAllPanels(wsId)
+
+            for (const node of data.nodes) {
+              switch (node.panelType) {
+                case 'terminal': useAppStore.getState().createTerminal(wsId, undefined, node.origin); break
+                case 'editor': useAppStore.getState().createEditor(wsId, node.filePath, node.origin); break
+                case 'browser': useAppStore.getState().createBrowser(wsId, node.url, node.origin); break
+                case 'aiChat': useAppStore.getState().createAIChat(wsId, node.origin); break
+              }
+            }
+
+            for (const region of data.regions || []) {
+              useCanvasStore.getState().addRegion(region.label, region.origin, region.size, region.color)
+            }
+
+            if (data.zoomLevel) useCanvasStore.getState().setZoom(data.zoomLevel)
+            if (data.viewportOffset) useCanvasStore.getState().setViewportOffset(data.viewportOffset)
+          } catch {
+            alert('Failed to load layout file')
+          }
+        },
+      },
     ],
     [
       selectedWorkspaceId,
       createTerminal,
       createBrowser,
       createEditor,
+      createAIChat,
       toggleSidebar,
       toggleFileExplorer,
       setShowNodeSwitcher,

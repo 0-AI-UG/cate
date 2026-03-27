@@ -9,6 +9,7 @@ function panelColor(type: PanelType): string {
     case 'terminal': return '#34C759'
     case 'browser': return '#007AFF'
     case 'editor': return '#FF9500'
+    case 'aiChat': return '#AF52DE'
   }
 }
 
@@ -38,6 +39,14 @@ function PanelIcon({ type }: { type: PanelType }) {
           <polyline points="14 2 14 8 20 8" />
           <line x1="16" y1="13" x2="8" y2="13" />
           <line x1="16" y1="17" x2="8" y2="17" />
+        </svg>
+      )
+    case 'aiChat':
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="11" width="18" height="10" rx="2" ry="2" />
+          <circle cx="12" cy="5" r="2" />
+          <line x1="12" y1="7" x2="12" y2="11" />
         </svg>
       )
   }

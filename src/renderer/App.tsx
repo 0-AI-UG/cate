@@ -20,6 +20,7 @@ import { FileExplorerSidebar } from './sidebar/FileExplorerSidebar'
 const TerminalPanel = React.lazy(() => import('./panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('./panels/EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./panels/BrowserPanel'))
+const AIChatPanel = React.lazy(() => import('./panels/AIChatPanel'))
 import { NodeSwitcher } from './ui/NodeSwitcher'
 import { PanelSwitcher } from './ui/PanelSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
@@ -121,6 +122,10 @@ export default function App() {
     useAppStore.getState().createEditor(selectedWorkspaceId)
   }, [selectedWorkspaceId])
 
+  const onNewAIChat = useCallback(() => {
+    useAppStore.getState().createAIChat(selectedWorkspaceId)
+  }, [selectedWorkspaceId])
+
   const onZoomIn = useCallback(() => {
     useCanvasStore.getState().zoomAroundCenter(zoomLevel + 0.1)
   }, [zoomLevel])
@@ -167,6 +172,9 @@ export default function App() {
         case 'editor':
           store.createEditor(selectedWorkspaceId, undefined, canvasPoint)
           break
+        case 'aiChat':
+          store.createAIChat(selectedWorkspaceId, canvasPoint)
+          break
       }
     },
     [selectedWorkspaceId],
@@ -209,6 +217,15 @@ export default function App() {
               workspaceId={selectedWorkspaceId}
               nodeId={nodeId}
               url={panel.url}
+            />
+          )
+          break
+        case 'aiChat':
+          content = (
+            <AIChatPanel
+              panelId={panelId}
+              workspaceId={selectedWorkspaceId}
+              nodeId={nodeId}
             />
           )
           break
@@ -288,6 +305,7 @@ export default function App() {
           onNewTerminal={onNewTerminal}
           onNewBrowser={onNewBrowser}
           onNewEditor={onNewEditor}
+          onNewAIChat={onNewAIChat}
           onZoomIn={onZoomIn}
           onZoomOut={onZoomOut}
         />

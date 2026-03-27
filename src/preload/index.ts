@@ -36,6 +36,7 @@ import {
   APP_GET_PATH,
   MENU_OPEN_SETTINGS,
   DIALOG_OPEN_FOLDER,
+  DIALOG_SAVE_FILE,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   LAYOUT_SAVE,
@@ -297,6 +298,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openFolderDialog(): Promise<string | null> {
     return ipcRenderer.invoke(DIALOG_OPEN_FOLDER)
+  },
+
+  saveFileDialog(options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> {
+    return ipcRenderer.invoke(DIALOG_SAVE_FILE, options)
   },
 
   // ---------------------------------------------------------------------------

@@ -56,6 +56,7 @@ export const MENU_OPEN_SETTINGS = 'menu:openSettings'
 
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
+export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 
 // Recent Projects
 export const RECENT_PROJECTS_GET = 'recent-projects:get'

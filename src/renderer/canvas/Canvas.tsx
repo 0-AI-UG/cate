@@ -12,6 +12,7 @@ import CanvasGrid from './CanvasGrid'
 import SnapGuides from './SnapGuides'
 import ContextMenu from '../ui/ContextMenu'
 import CanvasRegionComponent from './CanvasRegionComponent'
+import CanvasAnnotationComponent from './CanvasAnnotationComponent'
 import type { Point, PanelType } from '../../shared/types'
 
 interface CanvasProps {
@@ -27,6 +28,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   const zoom = useCanvasStore((s) => s.zoomLevel)
   const offset = useCanvasStore((s) => s.viewportOffset)
   const regions = useCanvasStore((s) => s.regions)
+  const annotations = useCanvasStore((s) => s.annotations)
 
   const {
     handleWheel,
@@ -149,6 +151,22 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
             )
           },
         },
+        {
+          label: 'New Sticky Note',
+          onClick: () => {
+            if (canvasContextMenu) {
+              useCanvasStore.getState().addAnnotation('stickyNote', canvasContextMenu.canvasPoint)
+            }
+          },
+        },
+        {
+          label: 'New Text Label',
+          onClick: () => {
+            if (canvasContextMenu) {
+              useCanvasStore.getState().addAnnotation('textLabel', canvasContextMenu.canvasPoint)
+            }
+          },
+        },
       ]
     : []
 
@@ -182,6 +200,9 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
         />
         {Object.values(regions).map((region) => (
           <CanvasRegionComponent key={region.id} region={region} zoomLevel={zoom} />
+        ))}
+        {Object.values(annotations).map((ann) => (
+          <CanvasAnnotationComponent key={ann.id} annotation={ann} />
         ))}
         <SnapGuides />
         {children}

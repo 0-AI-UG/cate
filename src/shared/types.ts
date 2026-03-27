@@ -26,7 +26,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'aiChat'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -72,6 +72,19 @@ export interface CanvasRegion {
   label: string
   color: string
   zOrder: number
+}
+
+// -----------------------------------------------------------------------------
+// Canvas annotation (sticky notes and text labels)
+// -----------------------------------------------------------------------------
+
+export interface CanvasAnnotation {
+  id: string
+  type: 'stickyNote' | 'textLabel'
+  origin: Point
+  size: Size
+  content: string
+  color: string
 }
 
 // -----------------------------------------------------------------------------
@@ -436,12 +449,14 @@ export const PANEL_DEFAULT_SIZES: Record<PanelType, Size> = {
   terminal: { width: 640, height: 400 },
   browser: { width: 800, height: 600 },
   editor: { width: 600, height: 500 },
+  aiChat: { width: 400, height: 600 },
 }
 
 export const PANEL_MINIMUM_SIZES: Record<PanelType, Size> = {
   terminal: { width: 320, height: 200 },
   browser: { width: 400, height: 300 },
   editor: { width: 300, height: 250 },
+  aiChat: { width: 300, height: 300 },
 }
 
 // -----------------------------------------------------------------------------

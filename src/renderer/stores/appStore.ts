@@ -75,6 +75,7 @@ interface AppStoreActions {
   createTerminal: (workspaceId: string, initialInput?: string, position?: Point) => string
   createBrowser: (workspaceId: string, url?: string, position?: Point) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point) => string
+  createAIChat: (workspaceId: string, position?: Point) => string
 
   // Panel management
   closePanel: (workspaceId: string, panelId: string) => void
@@ -254,6 +255,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
       useCanvasStore.getState().focusAndCenter(nodeId)
     }
 
+    return panelId
+  },
+
+  createAIChat(workspaceId, position?) {
+    const panelId = generateId()
+    const panel: PanelState = {
+      id: panelId,
+      type: 'aiChat',
+      title: 'AI Chat',
+      isDirty: false,
+    }
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === workspaceId
+          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
+          : ws,
+      ),
+    }))
+    if (workspaceId === get().selectedWorkspaceId) {
+      const nodeId = useCanvasStore.getState().addNode(panelId, 'aiChat', position)
+      useCanvasStore.getState().focusAndCenter(nodeId)
+    }
     return panelId
   },
 

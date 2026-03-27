@@ -153,6 +153,9 @@ export interface ElectronAPI {
   /** Open a native folder picker. Returns the selected path or null if canceled. */
   openFolderDialog(): Promise<string | null>
 
+  /** Open a native save dialog. Returns the chosen file path or null if canceled. */
+  saveFileDialog(options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>
+
   // ---------------------------------------------------------------------------
   // Recent Projects
   // ---------------------------------------------------------------------------

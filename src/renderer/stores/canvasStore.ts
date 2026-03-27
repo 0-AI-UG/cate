@@ -7,6 +7,7 @@ import { create } from 'zustand'
 import type {
   CanvasNodeId,
   CanvasNodeState,
+  CanvasAnnotation,
   CanvasRegion,
   Point,
   Size,
@@ -28,6 +29,7 @@ import { autoLayout as computeAutoLayout } from '../canvas/layoutEngine'
 interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
+  annotations: Record<string, CanvasAnnotation>
   viewportOffset: Point
   zoomLevel: number
   focusedNodeId: CanvasNodeId | null
@@ -87,6 +89,12 @@ interface CanvasStoreActions {
   moveRegion: (id: string, origin: Point) => void
   resizeRegion: (id: string, size: Size, origin?: Point) => void
   renameRegion: (id: string, label: string) => void
+
+  // Annotation management
+  addAnnotation: (type: 'stickyNote' | 'textLabel', origin: Point, content?: string) => string
+  removeAnnotation: (id: string) => void
+  moveAnnotation: (id: string, origin: Point) => void
+  updateAnnotation: (id: string, content: string) => void
 
   // Split panel actions
   splitNode: (nodeId: CanvasNodeId, direction: 'horizontal' | 'vertical', newPanelId: string) => void
@@ -185,6 +193,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // --- State ---
   nodes: {},
   regions: {},
+  annotations: {},
   viewportOffset: { x: 0, y: 0 },
   zoomLevel: ZOOM_DEFAULT,
   focusedNodeId: null,
@@ -611,6 +620,45 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return {
         regions: { ...state.regions, [id]: { ...region, label } },
       }
+    })
+  },
+
+  addAnnotation(type, origin, content) {
+    const id = generateId()
+    const annotation: CanvasAnnotation = {
+      id,
+      type,
+      origin,
+      size: type === 'stickyNote' ? { width: 200, height: 150 } : { width: 200, height: 30 },
+      content: content || (type === 'stickyNote' ? 'Note...' : 'Label'),
+      color: type === 'stickyNote' ? 'rgba(255, 214, 0, 0.9)' : 'transparent',
+    }
+    set((state) => ({
+      annotations: { ...state.annotations, [id]: annotation },
+    }))
+    return id
+  },
+
+  removeAnnotation(id) {
+    set((state) => {
+      const { [id]: _, ...rest } = state.annotations
+      return { annotations: rest }
+    })
+  },
+
+  moveAnnotation(id, origin) {
+    set((state) => {
+      const ann = state.annotations[id]
+      if (!ann) return state
+      return { annotations: { ...state.annotations, [id]: { ...ann, origin } } }
+    })
+  },
+
+  updateAnnotation(id, content) {
+    set((state) => {
+      const ann = state.annotations[id]
+      if (!ann) return state
+      return { annotations: { ...state.annotations, [id]: { ...ann, content } } }
     })
   },
 

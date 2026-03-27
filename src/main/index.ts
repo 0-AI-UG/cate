@@ -58,6 +58,15 @@ ipcMain.handle('dialog:openFolder', async () => {
   return result.filePaths[0]
 })
 
+ipcMain.handle('dialog:saveFile', async (_event, options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
+  const result = await dialog.showSaveDialog({
+    defaultPath: options.defaultPath,
+    filters: options.filters || [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePath) return null
+  return result.filePath
+})
+
 // Build application menu
 buildApplicationMenu()
 
