@@ -1,9 +1,12 @@
 {
   "name": "canvas-ide",
   "version": "0.1.0",
+  "productName": "CanvasIDE",
   "description": "Infinite zoomable canvas IDE",
   "main": "dist/main/index.js",
   "scripts": {
+    "postinstall": "bash scripts/patch-electron-name.sh",
+    "predev": "bash scripts/patch-electron-name.sh",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview"
@@ -22,6 +25,7 @@
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "simple-git": "^3.27.0",
+    "use-sync-external-store": "^1.6.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

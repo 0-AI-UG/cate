@@ -3,3 +3,13 @@ dist/
 .DS_Store
 *.tsbuildinfo
 .worktrees/
+
+# Build artifacts
+build/
+test-results/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Website build artifacts
+website/node_modules/

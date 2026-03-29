@@ -16,6 +16,7 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 2) { e.stopPropagation(); return }
     if (e.button !== 0 || isEditing) return
     e.stopPropagation()
     dragRef.current = {

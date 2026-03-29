@@ -24,6 +24,8 @@ export interface ContextMenuItem {
   disabled?: boolean
   separator?: boolean
   submenu?: ContextMenuItem[]
+  /** Render a small icon/swatch before the label */
+  icon?: React.ReactNode
 }
 
 export interface ContextMenuProps {
@@ -155,6 +157,9 @@ const MenuItemRow: React.FC<MenuItemRowProps> = ({ item, onClose }) => {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Icon */}
+      {item.icon && <span className="flex-shrink-0 mr-2">{item.icon}</span>}
+
       {/* Label */}
       <span className={`text-sm flex-1 truncate ${labelColor}`}>
         {item.label}

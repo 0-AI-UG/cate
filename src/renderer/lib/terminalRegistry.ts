@@ -125,8 +125,9 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     webglAddon = null
   }
 
-  // Initial fit against the temp div (establishes cols/rows for PTY)
-  fitAddon.fit()
+  // Skip fitting against the temp div — its arbitrary 800×600 size produces
+  // wrong cols/rows that desync the PTY until the real container attach().
+  // Use standard 80×24 defaults; attach() will fit to the real container.
 
   // Build the entry with a placeholder ptyId; we'll fill it in once the PTY
   // is ready. Any code that reads ptyId should await getOrCreate() to finish.
@@ -144,8 +145,10 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
 
   // 5. Spawn PTY via IPC (async — wires up listeners once ptyId is known)
   try {
-    const cols = terminal.cols
-    const rows = terminal.rows
+    // Use standard defaults — the real fit happens in attach() once the
+    // terminal is placed in its actual container.
+    const cols = 80
+    const rows = 24
 
     // Resolve cwd: prefer explicit opt, then fall back to restore data
     const resolvedCwd = opts.cwd ?? terminalRestoreData.get(panelId)?.cwd
@@ -225,6 +228,10 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
  *
  * If the terminal is currently attached to a different container it is
  * detached first. Safe to call multiple times with the same container.
+ *
+ * When reparenting, the WebGL addon is disposed and reloaded because its
+ * internal canvas buffers can become stale after a DOM move, causing garbled
+ * rendering (characters drawn at wrong positions).
  */
 function attach(panelId: string, container: HTMLDivElement): void {
   const entry = registry.get(panelId)
@@ -249,11 +256,54 @@ function attach(panelId: string, container: HTMLDivElement): void {
 
   container.appendChild(el)
 
+  // Force layout reflow so the browser has calculated the new container size
+  // before we resize the terminal / WebGL canvas.
+  void container.offsetHeight
+
+  // Reload the WebGL addon — its internal canvas buffers are tied to the old
+  // container dimensions and cannot survive a DOM reparent reliably.
+  if (entry.webglAddon) {
+    try { entry.webglAddon.dispose() } catch { /* ignore */ }
+    entry.webglAddon = null
+  }
+  try {
+    const newWebgl = new WebglAddon()
+    newWebgl.onContextLoss(() => {
+      newWebgl.dispose()
+      const e = registry.get(panelId)
+      if (e) e.webglAddon = null
+    })
+    terminal.loadAddon(newWebgl)
+    entry.webglAddon = newWebgl
+  } catch {
+    // Canvas renderer fallback — no action needed
+  }
+
   try {
     fitAddon.fit()
   } catch {
     // Ignore fit errors (e.g. zero-size container during layout)
   }
+
+  // Belt-and-suspenders: schedule a second fit + full redraw after the next
+  // frame in case the container was still mid-layout during the sync fit.
+  requestAnimationFrame(() => {
+    if (!registry.has(panelId)) return
+    try {
+      fitAddon.fit()
+      terminal.refresh(0, terminal.rows - 1)
+    } catch { /* ignore */ }
+  })
+
+  // Third fit after a short delay — catches cases where the WebGL addon's
+  // internal canvas buffers aren't fully initialized on the first RAF.
+  setTimeout(() => {
+    if (!registry.has(panelId)) return
+    try {
+      fitAddon.fit()
+      terminal.refresh(0, terminal.rows - 1)
+    } catch { /* ignore */ }
+  }, 50)
 }
 
 /**

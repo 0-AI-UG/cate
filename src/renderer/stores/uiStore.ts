@@ -3,23 +3,31 @@
 // =============================================================================
 
 import { create } from 'zustand'
+import type { DockZonePosition } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
+
+export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'aiConfig'
 
 interface UIStoreState {
   showNodeSwitcher: boolean
   showCommandPalette: boolean
   showPanelSwitcher: boolean
   showGlobalSearch: boolean
+  showAISetupDialog: boolean
+  showAIConfigDialog: boolean
   sidebarVisible: boolean
   fileExplorerVisible: boolean
   /** Pre-captured page screenshot for panel switcher previews. */
   panelSwitcherScreenshot: string | null
-  rightSidebarVisible: boolean
-  rightSidebarActiveTab: string
-  rightSidebarDetached: boolean
+  /** Active marquee selection rectangle in canvas-space coordinates, or null when idle. */
+  marquee: { startX: number; startY: number; currentX: number; currentY: number } | null
+  /** The dock zone currently highlighted as a drop target during a drag operation. */
+  dockDropTarget: DockZonePosition | null
+  /** Active view in the right sidebar, null = collapsed */
+  activeRightSidebarView: SidebarView | null
 }
 
 interface UIStoreActions {
@@ -27,14 +35,15 @@ interface UIStoreActions {
   setShowCommandPalette: (show: boolean) => void
   setShowPanelSwitcher: (show: boolean) => void
   setShowGlobalSearch: (show: boolean) => void
+  setShowAISetupDialog: (show: boolean) => void
+  setShowAIConfigDialog: (show: boolean) => void
   toggleSidebar: () => void
   toggleFileExplorer: () => void
   setSidebarVisible: (visible: boolean) => void
   setFileExplorerVisible: (visible: boolean) => void
-  toggleRightSidebar: () => void
-  setRightSidebarTab: (tab: string) => void
-  setRightSidebarVisible: (visible: boolean) => void
-  setRightSidebarDetached: (detached: boolean) => void
+  setMarquee: (marquee: { startX: number; startY: number; currentX: number; currentY: number } | null) => void
+  setDockDropTarget: (zone: DockZonePosition | null) => void
+  setActiveRightSidebarView: (view: SidebarView | null) => void
 }
 
 export type UIStore = UIStoreState & UIStoreActions
@@ -50,11 +59,13 @@ export const useUIStore = create<UIStore>((set) => ({
   showPanelSwitcher: false,
   panelSwitcherScreenshot: null,
   showGlobalSearch: false,
+  showAISetupDialog: false,
+  showAIConfigDialog: false,
   sidebarVisible: true,
   fileExplorerVisible: false,
-  rightSidebarVisible: false,
-  rightSidebarActiveTab: 'git',
-  rightSidebarDetached: false,
+  marquee: null,
+  dockDropTarget: null,
+  activeRightSidebarView: null,
 
   // --- Actions ---
 
@@ -74,6 +85,14 @@ export const useUIStore = create<UIStore>((set) => ({
     set({ showGlobalSearch: show })
   },
 
+  setShowAISetupDialog(show) {
+    set({ showAISetupDialog: show })
+  },
+
+  setShowAIConfigDialog(show) {
+    set({ showAIConfigDialog: show })
+  },
+
   toggleSidebar() {
     set((state) => ({ sidebarVisible: !state.sidebarVisible }))
   },
@@ -90,16 +109,16 @@ export const useUIStore = create<UIStore>((set) => ({
     set({ fileExplorerVisible: visible })
   },
 
-  toggleRightSidebar() {
-    set((state) => ({ rightSidebarVisible: !state.rightSidebarVisible }))
+  setMarquee(marquee) {
+    set({ marquee })
   },
-  setRightSidebarTab(tab) {
-    set({ rightSidebarActiveTab: tab, rightSidebarVisible: true })
+
+  setDockDropTarget(zone) {
+    set({ dockDropTarget: zone })
   },
-  setRightSidebarVisible(visible) {
-    set({ rightSidebarVisible: visible })
+
+  setActiveRightSidebarView(view) {
+    set({ activeRightSidebarView: view })
   },
-  setRightSidebarDetached(detached) {
-    set({ rightSidebarDetached: detached })
-  },
+
 }))

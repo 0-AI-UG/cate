@@ -7,6 +7,7 @@ import React, { useRef, useCallback, useEffect, useState } from 'react'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
+import { useUIStore } from '../stores/uiStore'
 import { viewToCanvas } from '../lib/coordinates'
 import CanvasGrid from './CanvasGrid'
 import SnapGuides from './SnapGuides'
@@ -29,6 +30,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   const offset = useCanvasStore((s) => s.viewportOffset)
   const regions = useCanvasStore((s) => s.regions)
   const annotations = useCanvasStore((s) => s.annotations)
+  const marquee = useUIStore((s) => s.marquee)
 
   const {
     handleWheel,
@@ -40,19 +42,37 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
     closeCanvasContextMenu,
   } = useCanvasInteraction(canvasRef)
 
+  // Inject a one-time global style that disables pointer events on iframes,
+  // webviews, and Monaco editors while a canvas interaction is in progress.
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.textContent = `
+      .canvas-interacting iframe,
+      .canvas-interacting webview,
+      .canvas-interacting .monaco-editor {
+        pointer-events: none !important;
+      }
+    `
+    document.head.appendChild(style)
+    return () => { document.head.removeChild(style) }
+  }, [])
+
   // Register wheel listener with { passive: false } so preventDefault works
   // React's onWheel is passive by default, which silently ignores preventDefault
+  const handleWheelRef = useRef(handleWheel)
+  handleWheelRef.current = handleWheel
+
   useEffect(() => {
     const el = canvasRef.current
     if (!el) return
 
     const onWheel = (e: WheelEvent) => {
-      handleWheel(e as unknown as React.WheelEvent<HTMLDivElement>)
+      handleWheelRef.current(e as unknown as React.WheelEvent<HTMLDivElement>)
     }
 
     el.addEventListener('wheel', onWheel, { capture: true, passive: false })
     return () => el.removeEventListener('wheel', onWheel, { capture: true })
-  }, [handleWheel])
+  }, []) // mount-only — no dependency on handleWheel
 
   // Track container size for grid visibility calculations
   useEffect(() => {
@@ -85,7 +105,8 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   const handleWorldClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       // Only unfocus if clicking directly on the world div, not on a child node
-      if (e.target === e.currentTarget) {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-node-id]') && !target.closest('[data-region-id]')) {
         useCanvasStore.getState().unfocus()
       }
     },
@@ -205,6 +226,28 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
           <CanvasAnnotationComponent key={ann.id} annotation={ann} />
         ))}
         <SnapGuides />
+        {marquee && (() => {
+          const x = Math.min(marquee.startX, marquee.currentX)
+          const y = Math.min(marquee.startY, marquee.currentY)
+          const w = Math.abs(marquee.currentX - marquee.startX)
+          const h = Math.abs(marquee.currentY - marquee.startY)
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                left: x,
+                top: y,
+                width: w,
+                height: h,
+                backgroundColor: 'rgba(74, 158, 255, 0.1)',
+                border: '1px solid rgba(74, 158, 255, 0.5)',
+                borderRadius: 2,
+                pointerEvents: 'none',
+                zIndex: 99999,
+              }}
+            />
+          )
+        })()}
         {children}
       </div>
 

@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(xcodebuild -scheme CanvasIDE -configuration Debug build)"
-    ]
-  }
-}

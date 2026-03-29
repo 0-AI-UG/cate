@@ -10,9 +10,11 @@ import type {
   PanelType,
   Point,
   Size,
+  DockZonePosition,
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT } from '../../shared/types'
 import { useCanvasStore } from './canvasStore'
+import { useDockStore } from './dockStore'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { deferredSnapshots, restoreDeferredWorkspace } from '../lib/session'
 
@@ -25,7 +27,7 @@ function generateId(): string {
 }
 
 /** Workspace accent colors, cycled through. */
-const WORKSPACE_COLORS = [
+export const WORKSPACE_COLORS = [
   '#007AFF', // systemBlue
   '#FF9500', // systemOrange
   '#34C759', // systemGreen
@@ -77,6 +79,9 @@ interface AppStoreActions {
   createEditor: (workspaceId: string, filePath?: string, position?: Point) => string
   createAIChat: (workspaceId: string, position?: Point) => string
   createGit: (workspaceId: string, position?: Point) => string
+  createFileExplorer: (workspaceId: string, position?: Point) => string
+  createProjectList: (workspaceId: string, position?: Point) => string
+  createPanelInDock: (workspaceId: string, type: PanelType, zone: DockZonePosition, title: string) => string
 
   // Panel management
   closePanel: (workspaceId: string, panelId: string) => void
@@ -116,11 +121,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   addWorkspace(name?, rootPath?) {
     const ws = createDefaultWorkspace(name, rootPath)
+    const isFirst = get().workspaces.length === 0
     set((state) => ({
       workspaces: [...state.workspaces, ws],
       // Auto-select if this is the first workspace
       selectedWorkspaceId: state.workspaces.length === 0 ? ws.id : state.selectedWorkspaceId,
     }))
+    // When auto-selected as the first workspace, load its (empty) canvas
+    if (isFirst) {
+      useCanvasStore.getState().loadWorkspaceCanvas(
+        ws.canvasNodes,
+        ws.viewportOffset,
+        ws.zoomLevel,
+        ws.focusedNodeId,
+        ws.regions,
+      )
+    }
     return ws.id
   },
 
@@ -145,6 +161,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ws.regions,
       )
 
+      // Load or reset dock state for the incoming workspace
+      if (ws.dockLayout) {
+        useDockStore.getState().loadDockLayout(ws.dockLayout)
+      } else {
+        useDockStore.getState().reset()
+      }
+
       // Check for deferred restore (lazy workspace loading)
       if (deferredSnapshots.has(id)) {
         restoreDeferredWorkspace(id)
@@ -157,6 +180,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     deferredSnapshots.delete(id)
     // Dispose terminals before removing workspace state
     get().closeAllPanels(id)
+
+    const wasSelected = get().selectedWorkspaceId === id
 
     set((state) => {
       const remaining = state.workspaces.filter((w) => w.id !== id)
@@ -175,6 +200,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedWorkspaceId: newSelected,
       }
     })
+
+    // If the removed workspace was selected, load the new workspace's canvas
+    if (wasSelected) {
+      const newWs = get().workspaces.find((w) => w.id === get().selectedWorkspaceId)
+      if (newWs) {
+        useCanvasStore.getState().loadWorkspaceCanvas(
+          newWs.canvasNodes,
+          newWs.viewportOffset,
+          newWs.zoomLevel,
+          newWs.focusedNodeId,
+          newWs.regions,
+        )
+      }
+    }
   },
 
   // --- Panel creation ---
@@ -303,6 +342,69 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return panelId
   },
 
+  createFileExplorer(workspaceId, position?) {
+    const panelId = generateId()
+    const panel: PanelState = {
+      id: panelId,
+      type: 'fileExplorer',
+      title: 'File Explorer',
+      isDirty: false,
+    }
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === workspaceId
+          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
+          : ws,
+      ),
+    }))
+    if (workspaceId === get().selectedWorkspaceId) {
+      const nodeId = useCanvasStore.getState().addNode(panelId, 'fileExplorer', position)
+      useCanvasStore.getState().focusAndCenter(nodeId)
+    }
+    return panelId
+  },
+
+  createProjectList(workspaceId, position?) {
+    const panelId = generateId()
+    const panel: PanelState = {
+      id: panelId,
+      type: 'projectList',
+      title: 'Projects',
+      isDirty: false,
+    }
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === workspaceId
+          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
+          : ws,
+      ),
+    }))
+    if (workspaceId === get().selectedWorkspaceId) {
+      const nodeId = useCanvasStore.getState().addNode(panelId, 'projectList', position)
+      useCanvasStore.getState().focusAndCenter(nodeId)
+    }
+    return panelId
+  },
+
+  createPanelInDock(workspaceId, type, zone, title) {
+    const panelId = generateId()
+    const panel: PanelState = {
+      id: panelId,
+      type,
+      title,
+      isDirty: false,
+    }
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === workspaceId
+          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
+          : ws,
+      ),
+    }))
+    useDockStore.getState().dockPanel(panelId, zone)
+    return panelId
+  },
+
   // --- Panel management ---
 
   closePanel(workspaceId, panelId) {
@@ -330,6 +432,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         canvasState.removeNode(nodeId)
       }
     }
+
+    // Also remove from dock zones if docked
+    useDockStore.getState().removePanelFromZones(panelId)
   },
 
   updatePanelTitle(workspaceId, panelId, title) {
@@ -382,6 +487,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   syncCanvasToWorkspace(workspaceId) {
     const canvas = useCanvasStore.getState()
+    const dock = useDockStore.getState()
     set((state) => ({
       workspaces: state.workspaces.map((ws) =>
         ws.id === workspaceId
@@ -392,6 +498,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
               viewportOffset: { ...canvas.viewportOffset },
               zoomLevel: canvas.zoomLevel,
               focusedNodeId: canvas.focusedNodeId,
+              dockLayout: dock.serialize(),
             }
           : ws,
       ),

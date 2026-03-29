@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { PanelLeft, Bell, Plus, FolderOpen } from 'lucide-react'
+import React, { useState, useCallback } from 'react'
+import { Bell, Plus } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useStatusStore } from '../stores/statusStore'
 import { useUIStore } from '../stores/uiStore'
@@ -12,8 +12,10 @@ export const ProjectList: React.FC = () => {
   const selectWorkspace = useAppStore((s) => s.selectWorkspace)
   const removeWorkspace = useAppStore((s) => s.removeWorkspace)
 
-  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
-  const toggleFileExplorer = useUIStore((s) => s.toggleFileExplorer)
+  const handleNewWorkspace = useCallback(() => {
+    const wsId = addWorkspace()
+    selectWorkspace(wsId)
+  }, [addWorkspace, selectWorkspace])
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
@@ -30,22 +32,6 @@ export const ProjectList: React.FC = () => {
       {/* Icon toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0">
         <button
-          className="text-white/40 hover:text-white/70 transition-colors p-1"
-          onClick={toggleSidebar}
-          title="Toggle Sidebar"
-        >
-          <PanelLeft size={16} />
-        </button>
-
-        <button
-          className="text-white/40 hover:text-white/70 transition-colors p-1"
-          onClick={toggleFileExplorer}
-          title="Toggle File Explorer"
-        >
-          <FolderOpen size={16} />
-        </button>
-
-        <button
           className="relative text-white/40 hover:text-white/70 transition-colors p-1"
           title="Notifications"
         >
@@ -59,7 +45,7 @@ export const ProjectList: React.FC = () => {
 
         <button
           className="text-white/40 hover:text-white/70 transition-colors p-1"
-          onClick={() => addWorkspace()}
+          onClick={handleNewWorkspace}
           title="New Workspace"
         >
           <Plus size={16} />

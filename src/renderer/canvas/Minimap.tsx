@@ -21,6 +21,7 @@ function panelColor(panelType: string): string {
 
 const Minimap: React.FC = () => {
   const nodes = useCanvasStore((s) => s.nodes)
+  const regions = useCanvasStore((s) => s.regions)
   const viewportOffset = useCanvasStore((s) => s.viewportOffset)
   const zoomLevel = useCanvasStore((s) => s.zoomLevel)
   const containerSize = useCanvasStore((s) => s.containerSize)
@@ -28,6 +29,7 @@ const Minimap: React.FC = () => {
   const minimapRef = useRef<HTMLDivElement>(null)
 
   const nodeList = Object.values(nodes)
+  const regionList = Object.values(regions)
 
   // Handle click/drag to navigate (must be before any early returns)
   const navigateToPoint = useCallback((clientX: number, clientY: number) => {
@@ -76,11 +78,23 @@ const Minimap: React.FC = () => {
 
   if (nodeList.length === 0) return null
 
-  // Compute bounding box of all nodes
-  const minX = Math.min(...nodeList.map(n => n.origin.x))
-  const minY = Math.min(...nodeList.map(n => n.origin.y))
-  const maxX = Math.max(...nodeList.map(n => n.origin.x + n.size.width))
-  const maxY = Math.max(...nodeList.map(n => n.origin.y + n.size.height))
+  // Compute bounding box of all nodes and regions
+  const minX = Math.min(
+    ...nodeList.map(n => n.origin.x),
+    ...(regionList.length > 0 ? regionList.map(r => r.origin.x) : []),
+  )
+  const minY = Math.min(
+    ...nodeList.map(n => n.origin.y),
+    ...(regionList.length > 0 ? regionList.map(r => r.origin.y) : []),
+  )
+  const maxX = Math.max(
+    ...nodeList.map(n => n.origin.x + n.size.width),
+    ...(regionList.length > 0 ? regionList.map(r => r.origin.x + r.size.width) : []),
+  )
+  const maxY = Math.max(
+    ...nodeList.map(n => n.origin.y + n.size.height),
+    ...(regionList.length > 0 ? regionList.map(r => r.origin.y + r.size.height) : []),
+  )
 
   // Add padding and include viewport bounds
   const vpLeft = -viewportOffset.x / zoomLevel
@@ -122,6 +136,23 @@ const Minimap: React.FC = () => {
       }}
       onMouseDown={handleMouseDown}
     >
+      {/* Region rectangles */}
+      {regionList.map((region) => (
+        <div
+          key={`region-${region.id}`}
+          style={{
+            position: 'absolute',
+            left: toMiniX(region.origin.x),
+            top: toMiniY(region.origin.y),
+            width: Math.max(region.size.width * scale, 3),
+            height: Math.max(region.size.height * scale, 3),
+            border: `1px solid ${region.color.replace(/[\d.]+\)$/, '0.5)')}`,
+            borderRadius: 1,
+            backgroundColor: region.color.replace(/[\d.]+\)$/, '0.15)'),
+          }}
+        />
+      ))}
+
       {/* Node rectangles */}
       {nodeList.map((node) => {
         const panel = currentWorkspace?.panels[node.panelId]

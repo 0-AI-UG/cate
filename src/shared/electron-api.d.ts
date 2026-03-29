@@ -212,11 +212,17 @@ export interface ElectronAPI {
   layoutDelete(name: string): Promise<void>
 
   // ---------------------------------------------------------------------------
-  // Window (Task 23: Multi-Window Support scaffold)
+  // Window (Task 23: Multi-Window Support)
   // ---------------------------------------------------------------------------
 
   /** Open panel content in a detached Electron BrowserWindow. Returns the new window ID. */
-  detachPanel(options: { title: string; width: number; height: number }): Promise<number>
+  detachPanel(options: { panelId: string; panelType: string; title: string; width: number; height: number }): Promise<number>
+
+  /** Close a detached window by its window ID (reattach flow). */
+  reattachPanel(windowId: number): Promise<void>
+
+  /** Subscribe to detached window closed events (main -> renderer). Returns unsubscribe function. */
+  onDetachedWindowClosed(callback: (data: { windowId: number; panelId: string }) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Plugins (Task 25: Plugin/Extension System scaffold)
@@ -227,6 +233,24 @@ export interface ElectronAPI {
 
   /** Capture the current page as a data URL for panel previews. */
   capturePage(): Promise<string | null>
+
+  // ---------------------------------------------------------------------------
+  // Shell utilities
+  // ---------------------------------------------------------------------------
+
+  shellWhich(command: string): Promise<string | null>
+  fsDelete(filePath: string): Promise<void>
+  shellShowInFolder(filePath: string): Promise<void>
+  httpFetch(url: string): Promise<{ ok: boolean; status: number; text: string }>
+
+  // ---------------------------------------------------------------------------
+  // MCP Server Management
+  // ---------------------------------------------------------------------------
+
+  mcpSpawn(name: string, command: string, args: string[], env: Record<string, string>): Promise<void>
+  mcpStop(name: string): Promise<void>
+  mcpTest(command: string, args: string[], env: Record<string, string>): Promise<{ success: boolean; error?: string }>
+  onMcpStatusUpdate(callback: (update: { name: string; status: string; error?: string }) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Menu actions (main -> renderer)

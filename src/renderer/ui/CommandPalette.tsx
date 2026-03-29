@@ -164,7 +164,7 @@ export const CommandPalette: React.FC = () => {
   const createEditor = useAppStore((s) => s.createEditor)
   const createAIChat = useAppStore((s) => s.createAIChat)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
-  const toggleFileExplorer = useUIStore((s) => s.toggleFileExplorer)
+  const setActiveRightSidebarView = useUIStore((s) => s.setActiveRightSidebarView)
   const setZoom = useCanvasStore((s) => s.setZoom)
 
   const rootPath = useAppStore((s) => {
@@ -233,7 +233,7 @@ export const CommandPalette: React.FC = () => {
         title: 'Toggle File Explorer',
         shortcutText: '\u2318\u21E7F',
         icon: <FolderOpenIcon />,
-        action: () => toggleFileExplorer(),
+        action: () => { setActiveRightSidebarView('explorer') },
       },
       {
         id: 'nodeSwitcher',
@@ -409,7 +409,7 @@ export const CommandPalette: React.FC = () => {
       createEditor,
       createAIChat,
       toggleSidebar,
-      toggleFileExplorer,
+      setActiveRightSidebarView,
       setShowNodeSwitcher,
       setZoom,
     ],

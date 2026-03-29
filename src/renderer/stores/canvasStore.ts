@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { create } from 'zustand'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
 import type {
   CanvasNodeId,
   CanvasNodeState,
@@ -21,6 +22,20 @@ import {
   PANEL_DEFAULT_SIZES,
 } from '../../shared/types'
 import { autoLayout as computeAutoLayout } from '../canvas/layoutEngine'
+import { viewToCanvas as viewToCanvasCoords } from '../lib/coordinates'
+
+// -----------------------------------------------------------------------------
+// Module-level zoom animation state — shared across all store action calls
+// -----------------------------------------------------------------------------
+
+let activeZoomAnimationRafId = 0
+
+export function cancelZoomAnimation() {
+  if (activeZoomAnimationRafId) {
+    cancelAnimationFrame(activeZoomAnimationRafId)
+    activeZoomAnimationRafId = 0
+  }
+}
 
 // -----------------------------------------------------------------------------
 // Store interface
@@ -36,7 +51,15 @@ interface CanvasStoreState {
   nextZOrder: number
   nextCreationIndex: number
   containerSize: Size
-  snapGuides: { x: number | null; y: number | null }
+  snapGuides: {
+    lines: Array<{
+      axis: 'x' | 'y'
+      position: number
+      type: 'edge' | 'center'
+    }>
+  }
+  selectedNodeIds: Set<string>
+  selectedRegionIds: Set<string>
 }
 
 interface CanvasStoreActions {
@@ -48,6 +71,8 @@ interface CanvasStoreActions {
     size?: Size,
   ) => CanvasNodeId
   removeNode: (id: CanvasNodeId) => void
+  finalizeRemoveNode: (nodeId: CanvasNodeId) => void
+  setNodeAnimationState: (nodeId: CanvasNodeId, state: 'entering' | 'exiting' | 'idle') => void
   moveNode: (id: CanvasNodeId, origin: Point) => void
   resizeNode: (id: CanvasNodeId, size: Size, origin?: Point) => void
   focusNode: (id: CanvasNodeId) => void
@@ -55,8 +80,10 @@ interface CanvasStoreActions {
   toggleMaximize: (id: CanvasNodeId, viewportSize: Size) => void
   setZoom: (level: number) => void
   setViewportOffset: (offset: Point) => void
+  setZoomAndOffset: (zoom: number, offset: Point) => void
   setContainerSize: (size: Size) => void
   zoomAroundCenter: (newZoom: number) => void
+  animateZoomTo: (targetZoom: number) => void
 
   // Derived getters
   canvasToView: (point: Point) => Point
@@ -78,10 +105,25 @@ interface CanvasStoreActions {
 
   togglePin: (id: CanvasNodeId) => void
 
-  setSnapGuides: (guides: { x: number | null; y: number | null }) => void
+  setSnapGuides: (guides: {
+    lines: Array<{
+      axis: 'x' | 'y'
+      position: number
+      type: 'edge' | 'center'
+    }>
+  }) => void
   clearSnapGuides: () => void
 
   autoLayout: () => void
+
+  // Selection
+  selectNodes: (ids: string[], additive?: boolean) => void
+  selectRegions: (ids: string[], additive?: boolean) => void
+  clearSelection: () => void
+  selectAll: () => void
+  toggleNodeSelection: (id: string) => void
+  toggleRegionSelection: (id: string) => void
+  deleteSelection: (includeRegionContents?: boolean) => void
 
   // Region management
   addRegion: (label: string, origin: Point, size: Size, color?: string) => string
@@ -89,6 +131,13 @@ interface CanvasStoreActions {
   moveRegion: (id: string, origin: Point) => void
   resizeRegion: (id: string, size: Size, origin?: Point) => void
   renameRegion: (id: string, label: string) => void
+  updateRegionColor: (id: string, color: string) => void
+
+  // Containment
+  setNodeRegion: (nodeId: string, regionId: string | undefined) => void
+  getNodesInRegion: (regionId: string) => CanvasNodeState[]
+  groupSelectedIntoRegion: () => string | null
+  dissolveRegion: (regionId: string) => void
 
   // Annotation management
   addAnnotation: (type: 'stickyNote' | 'textLabel', origin: Point, content?: string) => string
@@ -200,7 +249,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   nextZOrder: 0,
   nextCreationIndex: 0,
   containerSize: { width: 0, height: 0 },
-  snapGuides: { x: null, y: null },
+  snapGuides: { lines: [] },
+  selectedNodeIds: new Set<string>(),
+  selectedRegionIds: new Set<string>(),
 
   // --- Actions ---
 
@@ -217,6 +268,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       size: defaultSize,
       zOrder: state.nextZOrder,
       creationIndex: state.nextCreationIndex,
+      animationState: 'entering',
     }
 
     set({
@@ -230,12 +282,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   removeNode(id) {
     set((state) => {
-      const { [id]: _removed, ...remaining } = state.nodes
+      const node = state.nodes[id]
+      if (!node) return state
       return {
-        nodes: remaining,
+        nodes: {
+          ...state.nodes,
+          [id]: { ...node, animationState: 'exiting' as const },
+        },
         focusedNodeId: state.focusedNodeId === id ? null : state.focusedNodeId,
       }
     })
+  },
+
+  finalizeRemoveNode(nodeId) {
+    const { [nodeId]: _, ...rest } = get().nodes
+    set({ nodes: rest })
+  },
+
+  setNodeAnimationState(nodeId, state) {
+    const node = get().nodes[nodeId]
+    if (node) {
+      set({ nodes: { ...get().nodes, [nodeId]: { ...node, animationState: state } } })
+    }
   },
 
   moveNode(id, origin) {
@@ -347,6 +415,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({ viewportOffset: offset })
   },
 
+  setZoomAndOffset(zoom, offset) {
+    const clamped = Math.min(Math.max(zoom, ZOOM_MIN), ZOOM_MAX)
+    set({ zoomLevel: clamped, viewportOffset: offset })
+  },
+
   setContainerSize(size) {
     set({ containerSize: size })
   },
@@ -373,6 +446,49 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         y: centerView.y - centerCanvas.y * clamped,
       },
     })
+  },
+
+  animateZoomTo(targetZoom) {
+    cancelZoomAnimation()
+
+    const clampedTarget = Math.min(Math.max(targetZoom, ZOOM_MIN), ZOOM_MAX)
+
+    const tick = () => {
+      const state = get()
+      const diff = clampedTarget - state.zoomLevel
+
+      if (Math.abs(diff) < 0.001) {
+        // Snap to exact target
+        const centerX = (state.containerSize?.width || window.innerWidth) / 2
+        const centerY = (state.containerSize?.height || window.innerHeight) / 2
+        const canvasPoint = viewToCanvasCoords({ x: centerX, y: centerY }, state.zoomLevel, state.viewportOffset)
+        set({
+          zoomLevel: clampedTarget,
+          viewportOffset: {
+            x: centerX - canvasPoint.x * clampedTarget,
+            y: centerY - canvasPoint.y * clampedTarget,
+          },
+        })
+        activeZoomAnimationRafId = 0
+        return
+      }
+
+      const newZoom = state.zoomLevel + diff * 0.15
+      const centerX = (state.containerSize?.width || window.innerWidth) / 2
+      const centerY = (state.containerSize?.height || window.innerHeight) / 2
+      const canvasPoint = viewToCanvasCoords({ x: centerX, y: centerY }, state.zoomLevel, state.viewportOffset)
+      set({
+        zoomLevel: newZoom,
+        viewportOffset: {
+          x: centerX - canvasPoint.x * newZoom,
+          y: centerY - canvasPoint.y * newZoom,
+        },
+      })
+
+      activeZoomAnimationRafId = requestAnimationFrame(tick)
+    }
+
+    activeZoomAnimationRafId = requestAnimationFrame(tick)
   },
 
   // --- Derived getters ---
@@ -523,7 +639,117 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   clearSnapGuides() {
-    set({ snapGuides: { x: null, y: null } })
+    set({ snapGuides: { lines: [] } })
+  },
+
+  // --- Selection ---
+
+  selectNodes(ids, additive) {
+    set((state) => {
+      const next = additive ? new Set(state.selectedNodeIds) : new Set<string>()
+      for (const id of ids) next.add(id)
+      return { selectedNodeIds: next }
+    })
+  },
+
+  selectRegions(ids, additive) {
+    set((state) => {
+      const nextRegions = additive ? new Set(state.selectedRegionIds) : new Set<string>()
+      let nextNodes = additive ? new Set(state.selectedNodeIds) : new Set<string>()
+      for (const id of ids) {
+        nextRegions.add(id)
+        // Cascade: select all contained nodes
+        for (const node of Object.values(state.nodes)) {
+          if (node.regionId === id) nextNodes.add(node.id)
+        }
+      }
+      return { selectedRegionIds: nextRegions, selectedNodeIds: nextNodes }
+    })
+  },
+
+  clearSelection() {
+    set({ selectedNodeIds: new Set<string>(), selectedRegionIds: new Set<string>() })
+  },
+
+  selectAll() {
+    set((state) => ({
+      selectedNodeIds: new Set(Object.keys(state.nodes)),
+      selectedRegionIds: new Set(Object.keys(state.regions)),
+    }))
+  },
+
+  toggleNodeSelection(id) {
+    set((state) => {
+      const next = new Set(state.selectedNodeIds)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return { selectedNodeIds: next }
+    })
+  },
+
+  toggleRegionSelection(id) {
+    set((state) => {
+      const nextRegions = new Set(state.selectedRegionIds)
+      const nextNodes = new Set(state.selectedNodeIds)
+      if (nextRegions.has(id)) {
+        nextRegions.delete(id)
+        // Also deselect contained nodes
+        for (const node of Object.values(state.nodes)) {
+          if (node.regionId === id) nextNodes.delete(node.id)
+        }
+      } else {
+        nextRegions.add(id)
+        // Also select contained nodes
+        for (const node of Object.values(state.nodes)) {
+          if (node.regionId === id) nextNodes.add(node.id)
+        }
+      }
+      return { selectedRegionIds: nextRegions, selectedNodeIds: nextNodes }
+    })
+  },
+
+  deleteSelection(includeRegionContents) {
+    const state = get()
+
+    // Collect node IDs to remove (selected nodes + region contents if requested)
+    const nodeIdsToRemove = new Set(state.selectedNodeIds)
+    for (const regionId of state.selectedRegionIds) {
+      if (includeRegionContents) {
+        for (const node of Object.values(state.nodes)) {
+          if (node.regionId === regionId) nodeIdsToRemove.add(node.id)
+        }
+      }
+    }
+
+    // Trigger exit animation for each node (cleanup happens in component lifecycle)
+    for (const nodeId of nodeIdsToRemove) {
+      get().removeNode(nodeId)
+    }
+
+    // Handle regions: detach children of non-content-deleted regions, then remove
+    set((s) => {
+      const updatedNodes = { ...s.nodes }
+      const updatedRegions = { ...s.regions }
+
+      for (const regionId of state.selectedRegionIds) {
+        if (!includeRegionContents) {
+          // Detach children that weren't deleted
+          for (const nodeId of Object.keys(updatedNodes)) {
+            if (updatedNodes[nodeId].regionId === regionId) {
+              updatedNodes[nodeId] = { ...updatedNodes[nodeId], regionId: undefined }
+            }
+          }
+        }
+        delete updatedRegions[regionId]
+      }
+
+      return {
+        nodes: updatedNodes,
+        regions: updatedRegions,
+        selectedNodeIds: new Set<string>(),
+        selectedRegionIds: new Set<string>(),
+      }
+    })
   },
 
   autoLayout() {
@@ -583,10 +809,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const dy = origin.y - region.origin.y
       const updatedNodes = { ...state.nodes }
       for (const node of Object.values(state.nodes)) {
-        if (rectsOverlap(
-          { origin: node.origin, size: node.size },
-          { origin: region.origin, size: region.size },
-        )) {
+        if (node.regionId === id) {
           updatedNodes[node.id] = {
             ...node,
             origin: { x: node.origin.x + dx, y: node.origin.y + dy },
@@ -620,6 +843,80 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return {
         regions: { ...state.regions, [id]: { ...region, label } },
       }
+    })
+  },
+
+  updateRegionColor(id, color) {
+    set((state) => {
+      const region = state.regions[id]
+      if (!region) return state
+      return {
+        regions: { ...state.regions, [id]: { ...region, color } },
+      }
+    })
+  },
+
+  // --- Containment ---
+
+  setNodeRegion(nodeId, regionId) {
+    set((state) => {
+      const node = state.nodes[nodeId]
+      if (!node) return state
+      return {
+        nodes: { ...state.nodes, [nodeId]: { ...node, regionId } },
+      }
+    })
+  },
+
+  getNodesInRegion(regionId) {
+    return Object.values(get().nodes).filter((n) => n.regionId === regionId)
+  },
+
+  groupSelectedIntoRegion() {
+    const state = get()
+    const selectedNodes = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+    if (selectedNodes.length === 0) return null
+
+    // Compute bounding box with padding
+    const padding = 30
+    const minX = Math.min(...selectedNodes.map((n) => n.origin.x)) - padding
+    const minY = Math.min(...selectedNodes.map((n) => n.origin.y)) - padding
+    const maxX = Math.max(...selectedNodes.map((n) => n.origin.x + n.size.width)) + padding
+    const maxY = Math.max(...selectedNodes.map((n) => n.origin.y + n.size.height)) + padding
+
+    const regionId = get().addRegion(
+      'Region',
+      { x: minX, y: minY },
+      { width: maxX - minX, height: maxY - minY },
+    )
+
+    // Assign regionId to all selected nodes
+    set((s) => {
+      const updatedNodes = { ...s.nodes }
+      for (const node of selectedNodes) {
+        updatedNodes[node.id] = { ...updatedNodes[node.id], regionId }
+      }
+      return { nodes: updatedNodes }
+    })
+
+    return regionId
+  },
+
+  dissolveRegion(regionId) {
+    set((state) => {
+      // Detach all children
+      const updatedNodes = { ...state.nodes }
+      for (const nodeId of Object.keys(updatedNodes)) {
+        if (updatedNodes[nodeId].regionId === regionId) {
+          updatedNodes[nodeId] = { ...updatedNodes[nodeId], regionId: undefined }
+        }
+      }
+      // Remove the region
+      const { [regionId]: _, ...restRegions } = state.regions
+      // Remove from selection
+      const nextRegionIds = new Set(state.selectedRegionIds)
+      nextRegionIds.delete(regionId)
+      return { nodes: updatedNodes, regions: restRegions, selectedRegionIds: nextRegionIds }
     })
   },
 
@@ -785,14 +1082,46 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const maxZOrder = nodeList.reduce((max, n) => Math.max(max, n.zOrder), -1)
     const maxCreationIndex = nodeList.reduce((max, n) => Math.max(max, n.creationIndex), -1)
 
+    // Ensure all loaded nodes have animationState: 'idle' so they don't animate on restore
+    const idleNodes: Record<string, CanvasNodeState> = {}
+    for (const [id, node] of Object.entries(nodes)) {
+      idleNodes[id] = { ...node, animationState: 'idle' }
+    }
+
     set({
-      nodes,
+      nodes: idleNodes,
       regions: regions ?? {},
       viewportOffset,
       zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
       focusedNodeId,
       nextZOrder: maxZOrder + 1,
       nextCreationIndex: maxCreationIndex + 1,
+      selectedNodeIds: new Set<string>(),
+      selectedRegionIds: new Set<string>(),
     })
   },
 }))
+
+// -----------------------------------------------------------------------------
+// Granular selectors
+// -----------------------------------------------------------------------------
+
+/**
+ * Returns a stable sorted array of node IDs ordered by zOrder.
+ * Only triggers a re-render when nodes are added, removed, or z-order changes.
+ */
+export function useNodeIds(): string[] {
+  return useStoreWithEqualityFn(
+    useCanvasStore,
+    (s) => Object.values(s.nodes)
+      .sort((a, b) => a.zOrder - b.zOrder)
+      .map(n => n.id),
+    (a, b) => {
+      if (a.length !== b.length) return false
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false
+      }
+      return true
+    },
+  )
+}

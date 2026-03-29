@@ -18,6 +18,7 @@ import '@xterm/xterm/css/xterm.css'
 import type { TerminalPanelProps } from './types'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useAppStore } from '../stores/appStore'
+import { useCanvasStore } from '../stores/canvasStore'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -38,6 +39,9 @@ export default function TerminalPanel({
   const rootPath = useAppStore((state) =>
     state.workspaces.find((w) => w.id === workspaceId)?.rootPath,
   )
+
+  const zoomLevel = useCanvasStore((s) => s.zoomLevel)
+  const isFocused = useCanvasStore((s) => s.focusedNodeId === nodeId)
 
   // -------------------------------------------------------------------------
   // Search handlers
@@ -151,6 +155,78 @@ export default function TerminalPanel({
   }, [panelId, workspaceId, nodeId, initialInput, rootPath])
 
   // -------------------------------------------------------------------------
+  // Focus xterm when this node becomes the focused node
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!isFocused) return
+    const entry = terminalRegistry.getEntry(panelId)
+    if (!entry) return
+    // Small delay to ensure the overlay is removed and xterm can receive focus
+    requestAnimationFrame(() => {
+      entry.terminal.focus()
+    })
+  }, [isFocused, panelId])
+
+  // -------------------------------------------------------------------------
+  // Re-fit terminal when canvas zoom changes
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    const entry = terminalRegistry.getEntry(panelId)
+    if (!entry) return
+    requestAnimationFrame(() => {
+      try {
+        entry.fitAddon.fit()
+      } catch { /* ignore */ }
+    })
+  }, [panelId, zoomLevel])
+
+  // -------------------------------------------------------------------------
+  // Fix mouse coordinates for CSS-scaled canvas
+  //
+  // xterm.js measures cell dimensions via OffscreenCanvas.measureText() or
+  // offsetWidth (both unaffected by CSS transforms), but computes mouse
+  // offsets using getBoundingClientRect() (affected by transforms). When the
+  // terminal is inside a scale(zoom) container, this mismatch causes text
+  // selection to target the wrong row/column. We intercept mouse events in
+  // the capture phase and adjust clientX/clientY to cancel out the zoom.
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const adjustCoords = (e: MouseEvent) => {
+      if (Math.abs(zoomLevel - 1.0) < 0.001) return
+
+      // Find xterm's screen element — the same element xterm uses for its
+      // own getBoundingClientRect() call in getCoordsRelativeToElement()
+      const screenEl = container.querySelector('.xterm-screen') as HTMLElement | null
+      if (!screenEl) return
+
+      const rect = screenEl.getBoundingClientRect()
+      // Convert screen-space offset to local (unscaled) offset
+      const adjustedX = rect.left + (e.clientX - rect.left) / zoomLevel
+      const adjustedY = rect.top + (e.clientY - rect.top) / zoomLevel
+
+      Object.defineProperty(e, 'clientX', { value: adjustedX, configurable: true })
+      Object.defineProperty(e, 'clientY', { value: adjustedY, configurable: true })
+    }
+
+    // Capture phase runs before xterm's own handlers
+    container.addEventListener('mousedown', adjustCoords, { capture: true })
+    container.addEventListener('mousemove', adjustCoords, { capture: true })
+    container.addEventListener('mouseup', adjustCoords, { capture: true })
+
+    return () => {
+      container.removeEventListener('mousedown', adjustCoords, { capture: true })
+      container.removeEventListener('mousemove', adjustCoords, { capture: true })
+      container.removeEventListener('mouseup', adjustCoords, { capture: true })
+    }
+  }, [zoomLevel])
+
+  // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
 
@@ -199,6 +275,8 @@ export default function TerminalPanel({
         ref={containerRef}
         className="flex-1"
         style={{ padding: 0, overflow: 'hidden' }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => e.preventDefault()}
       />
     </div>
   )

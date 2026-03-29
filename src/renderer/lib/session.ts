@@ -5,7 +5,18 @@
 
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStore } from '../stores/canvasStore'
-import type { SessionSnapshot, NodeSnapshot, MultiWorkspaceSession } from '../../shared/types'
+import { useDockStore } from '../stores/dockStore'
+import type {
+  SessionSnapshot,
+  NodeSnapshot,
+  MultiWorkspaceSession,
+  WorkspaceState,
+  DockZonePosition,
+  DockZoneSnapshot,
+  DockSnapshotPanel,
+  PanelState,
+  PanelType,
+} from '../../shared/types'
 import { terminalRegistry } from './terminalRegistry'
 
 // -----------------------------------------------------------------------------
@@ -17,6 +28,46 @@ export const terminalRestoreData = new Map<string, { cwd?: string; replayFromId?
 
 // Deferred snapshots for inactive workspaces — restored on first switch
 export const deferredSnapshots = new Map<string, SessionSnapshot>()
+
+// -----------------------------------------------------------------------------
+// Dock layout serialization helper
+// -----------------------------------------------------------------------------
+
+function serializeDockLayout(
+  workspace: WorkspaceState,
+): Record<DockZonePosition, DockZoneSnapshot> | undefined {
+  const dockState = useDockStore.getState()
+  const result: Record<string, DockZoneSnapshot> = {}
+
+  for (const position of ['left', 'right', 'bottom'] as DockZonePosition[]) {
+    const zone = dockState.zones[position]
+    const panels: DockSnapshotPanel[] = zone.panelIds
+      .map((panelId) => {
+        const panel = workspace.panels[panelId]
+        if (!panel) return null
+        return {
+          panelId: panel.id,
+          panelType: panel.type,
+          title: panel.title,
+          filePath: panel.filePath ?? null,
+          url: panel.url ?? null,
+        }
+      })
+      .filter(Boolean) as DockSnapshotPanel[]
+
+    result[position] = {
+      panelIds: zone.panelIds,
+      activePanelIndex: zone.activePanelIndex,
+      size: zone.size,
+      collapsed: zone.collapsed,
+      panels,
+    }
+  }
+
+  return Object.values(result).some((z) => z.panelIds.length > 0)
+    ? (result as Record<DockZonePosition, DockZoneSnapshot>)
+    : undefined
+}
 
 // -----------------------------------------------------------------------------
 // Save
@@ -61,6 +112,7 @@ export async function saveSession(): Promise<void> {
         size: node.size,
         filePath: panel?.filePath ?? undefined,
         url: panel?.url ?? undefined,
+        regionId: node.regionId ?? undefined,
       }
     })
 
@@ -96,6 +148,7 @@ export async function saveSession(): Promise<void> {
       viewportOffset: isSelected ? canvasState.viewportOffset : workspace.viewportOffset,
       nodes: nodeSnapshots,
       regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
+      dockLayout: serializeDockLayout(workspace),
     })
   }
 
@@ -150,6 +203,15 @@ export async function restoreSession(snapshot: SessionSnapshot): Promise<void> {
   console.debug(`[session] restoring workspace ${wsId}: ${snapshot.nodes.length} nodes`)
   const t0 = performance.now()
 
+  // Restore regions first and build old→new ID mapping
+  const regionIdMap = new Map<string, string>()
+  if (snapshot.regions) {
+    for (const region of Object.values(snapshot.regions)) {
+      const newId = canvasStore.addRegion(region.label, region.origin, region.size, region.color)
+      regionIdMap.set(region.id, newId)
+    }
+  }
+
   for (let i = 0; i < snapshot.nodes.length; i++) {
     const nodeSnap = snapshot.nodes[i]
     console.debug(`[session] restoring node ${i + 1}/${snapshot.nodes.length}: ${nodeSnap.panelType} (panelId=${nodeSnap.panelId})`)
@@ -169,6 +231,12 @@ export async function restoreSession(snapshot: SessionSnapshot): Promise<void> {
         if (newNodeId) {
           canvasStore.moveNode(newNodeId, position)
           canvasStore.resizeNode(newNodeId, size)
+          if (nodeSnap.regionId) {
+            const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
+            if (mappedRegionId) {
+              canvasStore.setNodeRegion(newNodeId, mappedRegionId)
+            }
+          }
         }
         break
       }
@@ -178,6 +246,12 @@ export async function restoreSession(snapshot: SessionSnapshot): Promise<void> {
         if (newNodeId) {
           canvasStore.moveNode(newNodeId, position)
           canvasStore.resizeNode(newNodeId, size)
+          if (nodeSnap.regionId) {
+            const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
+            if (mappedRegionId) {
+              canvasStore.setNodeRegion(newNodeId, mappedRegionId)
+            }
+          }
         }
         break
       }
@@ -187,6 +261,12 @@ export async function restoreSession(snapshot: SessionSnapshot): Promise<void> {
         if (newNodeId) {
           canvasStore.moveNode(newNodeId, position)
           canvasStore.resizeNode(newNodeId, size)
+          if (nodeSnap.regionId) {
+            const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
+            if (mappedRegionId) {
+              canvasStore.setNodeRegion(newNodeId, mappedRegionId)
+            }
+          }
         }
         break
       }
@@ -196,10 +276,55 @@ export async function restoreSession(snapshot: SessionSnapshot): Promise<void> {
   canvasStore.setZoom(snapshot.zoomLevel)
   canvasStore.setViewportOffset(snapshot.viewportOffset)
 
-  // Restore regions if present
-  if (snapshot.regions) {
-    for (const region of Object.values(snapshot.regions)) {
-      canvasStore.addRegion(region.label, region.origin, region.size, region.color)
+  // Auto-assign regionId for migrated workspaces (nodes without regionId)
+  const finalState = useCanvasStore.getState()
+  const allRegions = Object.values(finalState.regions)
+  for (const node of Object.values(finalState.nodes)) {
+    if (!node.regionId && allRegions.length > 0) {
+      for (const region of allRegions) {
+        const overlapX = Math.max(0, Math.min(node.origin.x + node.size.width, region.origin.x + region.size.width) - Math.max(node.origin.x, region.origin.x))
+        const overlapY = Math.max(0, Math.min(node.origin.y + node.size.height, region.origin.y + region.size.height) - Math.max(node.origin.y, region.origin.y))
+        const overlapArea = overlapX * overlapY
+        const nodeArea = node.size.width * node.size.height
+        if (nodeArea > 0 && overlapArea / nodeArea > 0.5) {
+          canvasStore.setNodeRegion(node.id, region.id)
+          break
+        }
+      }
+    }
+  }
+
+  // Restore dock layout
+  if (snapshot.dockLayout) {
+    const dockStore = useDockStore.getState()
+    dockStore.reset()
+
+    for (const position of ['left', 'right', 'bottom'] as DockZonePosition[]) {
+      const zoneSnap = snapshot.dockLayout[position]
+      if (!zoneSnap || zoneSnap.panels.length === 0) continue
+
+      for (const dockedPanel of zoneSnap.panels) {
+        // Register the panel in the workspace (not as a canvas node)
+        const panel: PanelState = {
+          id: dockedPanel.panelId,
+          type: dockedPanel.panelType as PanelType,
+          title: dockedPanel.title,
+          isDirty: false,
+          filePath: dockedPanel.filePath ?? undefined,
+          url: dockedPanel.url ?? undefined,
+        }
+        appStore.addPanel(wsId, panel)
+
+        // Dock it into the appropriate zone
+        useDockStore.getState().dockPanel(dockedPanel.panelId, position)
+      }
+
+      // Restore zone settings
+      useDockStore.getState().resizeZone(position, zoneSnap.size)
+      useDockStore.getState().setActiveTab(position, zoneSnap.activePanelIndex)
+      if (zoneSnap.collapsed) {
+        useDockStore.getState().setZoneCollapsed(position, true)
+      }
     }
   }
 
@@ -314,9 +439,15 @@ export function setupAutoSave(): () => void {
     autoSaveTimer = setTimeout(() => saveSession(), 5000)
   })
 
+  const unsubDock = useDockStore.subscribe(() => {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer)
+    autoSaveTimer = setTimeout(() => saveSession(), 5000)
+  })
+
   return () => {
     unsubCanvas()
     unsubApp()
+    unsubDock()
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
     autoSaveSetUp = false
   }

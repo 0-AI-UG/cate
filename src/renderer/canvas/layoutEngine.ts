@@ -38,62 +38,110 @@ export function snapSize(size: Size, origin: Point, gridSize = 20): Size {
 // Edge snapping
 // -----------------------------------------------------------------------------
 
+export interface SnapLine {
+  axis: 'x' | 'y'
+  position: number
+  type: 'edge' | 'center'
+}
+
+export interface SnapResult {
+  /** The position to snap the node to (same as input origin if no snap). */
+  snappedOrigin: Point
+  /** All alignment lines within threshold to render as guides. */
+  lines: SnapLine[]
+}
+
 /**
- * Snap a rect's origin to nearby edges of neighbor rects.
- * Returns `{ x, y }` where each axis is either the snapped value or null if
- * no neighbor edge was within threshold.
+ * Snap a rect's origin to nearby edges (and center lines) of neighbor rects.
+ *
+ * Returns a `SnapResult` with:
+ *  - `snappedOrigin`: where the node should be placed (closest match per axis)
+ *  - `lines`: every alignment line within `threshold` for guide rendering
+ *
+ * Edge checks per axis (X example):
+ *   node.left  vs neighbor.left / neighbor.right
+ *   node.right vs neighbor.left / neighbor.right
+ *   node.centerX vs neighbor.centerX
+ * Same pattern applies to Y with top / bottom / centerY.
  */
 export function snapToEdges(
   rect: Rect,
   neighbors: Rect[],
   threshold = 8,
-): { x: number | null; y: number | null } {
-  let snapX: number | null = null
-  let snapY: number | null = null
+): SnapResult {
+  // Best snapped origin per axis and the distance that achieved it
+  let bestSnapX: number | null = null
+  let bestSnapY: number | null = null
   let bestDX = Infinity
   let bestDY = Infinity
 
-  const rMinX = rect.origin.x
-  const rMaxX = rect.origin.x + rect.size.width
-  const rMinY = rect.origin.y
-  const rMaxY = rect.origin.y + rect.size.height
+  const lines: SnapLine[] = []
+
+  const rLeft   = rect.origin.x
+  const rRight  = rect.origin.x + rect.size.width
+  const rCenterX = rect.origin.x + rect.size.width / 2
+  const rTop    = rect.origin.y
+  const rBottom = rect.origin.y + rect.size.height
+  const rCenterY = rect.origin.y + rect.size.height / 2
 
   for (const neighbor of neighbors) {
-    const nMinX = neighbor.origin.x
-    const nMaxX = neighbor.origin.x + neighbor.size.width
-    const nMinY = neighbor.origin.y
-    const nMaxY = neighbor.origin.y + neighbor.size.height
+    const nLeft    = neighbor.origin.x
+    const nRight   = neighbor.origin.x + neighbor.size.width
+    const nCenterX = neighbor.origin.x + neighbor.size.width / 2
+    const nTop     = neighbor.origin.y
+    const nBottom  = neighbor.origin.y + neighbor.size.height
+    const nCenterY = neighbor.origin.y + neighbor.size.height / 2
 
-    // X-axis candidates: (distance, snapped origin.x)
-    const xCandidates: [number, number][] = [
-      [Math.abs(rMinX - nMinX), nMinX],
-      [Math.abs(rMinX - nMaxX), nMaxX],
-      [Math.abs(rMaxX - nMinX), nMinX - rect.size.width],
-      [Math.abs(rMaxX - nMaxX), nMaxX - rect.size.width],
+    // ---- X-axis candidates: [distance, snapped origin.x, guide line position, type] ----
+    const xCandidates: [number, number, number, 'edge' | 'center'][] = [
+      [Math.abs(rLeft   - nLeft),    nLeft,                  nLeft,    'edge'],
+      [Math.abs(rLeft   - nRight),   nRight,                 nRight,   'edge'],
+      [Math.abs(rRight  - nLeft),    nLeft   - rect.size.width, nLeft, 'edge'],
+      [Math.abs(rRight  - nRight),   nRight  - rect.size.width, nRight,'edge'],
+      [Math.abs(rCenterX - nCenterX), nCenterX - rect.size.width / 2, nCenterX, 'center'],
     ]
-    for (const [dist, snappedX] of xCandidates) {
-      if (dist < threshold && dist < bestDX) {
-        bestDX = dist
-        snapX = snappedX
+
+    for (const [dist, snappedOriginX, guideX, type] of xCandidates) {
+      if (dist < threshold) {
+        // Add guide line if not already present at this position/axis/type
+        if (!lines.some((l) => l.axis === 'x' && l.position === guideX && l.type === type)) {
+          lines.push({ axis: 'x', position: guideX, type })
+        }
+        if (dist < bestDX) {
+          bestDX = dist
+          bestSnapX = snappedOriginX
+        }
       }
     }
 
-    // Y-axis candidates: (distance, snapped origin.y)
-    const yCandidates: [number, number][] = [
-      [Math.abs(rMinY - nMinY), nMinY],
-      [Math.abs(rMinY - nMaxY), nMaxY],
-      [Math.abs(rMaxY - nMinY), nMinY - rect.size.height],
-      [Math.abs(rMaxY - nMaxY), nMaxY - rect.size.height],
+    // ---- Y-axis candidates ----
+    const yCandidates: [number, number, number, 'edge' | 'center'][] = [
+      [Math.abs(rTop    - nTop),    nTop,                   nTop,    'edge'],
+      [Math.abs(rTop    - nBottom), nBottom,                nBottom, 'edge'],
+      [Math.abs(rBottom - nTop),    nTop    - rect.size.height, nTop, 'edge'],
+      [Math.abs(rBottom - nBottom), nBottom - rect.size.height, nBottom, 'edge'],
+      [Math.abs(rCenterY - nCenterY), nCenterY - rect.size.height / 2, nCenterY, 'center'],
     ]
-    for (const [dist, snappedY] of yCandidates) {
-      if (dist < threshold && dist < bestDY) {
-        bestDY = dist
-        snapY = snappedY
+
+    for (const [dist, snappedOriginY, guideY, type] of yCandidates) {
+      if (dist < threshold) {
+        if (!lines.some((l) => l.axis === 'y' && l.position === guideY && l.type === type)) {
+          lines.push({ axis: 'y', position: guideY, type })
+        }
+        if (dist < bestDY) {
+          bestDY = dist
+          bestSnapY = snappedOriginY
+        }
       }
     }
   }
 
-  return { x: snapX, y: snapY }
+  const snappedOrigin: Point = {
+    x: bestSnapX !== null ? bestSnapX : rect.origin.x,
+    y: bestSnapY !== null ? bestSnapY : rect.origin.y,
+  }
+
+  return { snappedOrigin, lines }
 }
 
 // -----------------------------------------------------------------------------
@@ -113,23 +161,24 @@ export function snap(
   const gridOrigin = snapToGrid(rect.origin, gridSize)
   const gridRect: Rect = { origin: gridOrigin, size: rect.size }
   const edgeResult = snapToEdges(gridRect, neighbors, edgeThreshold)
+  const edgeSnappedOrigin = edgeResult.snappedOrigin
 
   // For each axis, pick the snap with the smaller displacement from the original
   let x = gridOrigin.x
-  if (edgeResult.x !== null) {
-    const edgeDist = Math.abs(edgeResult.x - rect.origin.x)
+  {
+    const edgeDist = Math.abs(edgeSnappedOrigin.x - rect.origin.x)
     const gridDist = Math.abs(gridOrigin.x - rect.origin.x)
-    if (edgeDist < gridDist) {
-      x = edgeResult.x
+    if (edgeResult.lines.some((l) => l.axis === 'x') && edgeDist < gridDist) {
+      x = edgeSnappedOrigin.x
     }
   }
 
   let y = gridOrigin.y
-  if (edgeResult.y !== null) {
-    const edgeDist = Math.abs(edgeResult.y - rect.origin.y)
+  {
+    const edgeDist = Math.abs(edgeSnappedOrigin.y - rect.origin.y)
     const gridDist = Math.abs(gridOrigin.y - rect.origin.y)
-    if (edgeDist < gridDist) {
-      y = edgeResult.y
+    if (edgeResult.lines.some((l) => l.axis === 'y') && edgeDist < gridDist) {
+      y = edgeSnappedOrigin.y
     }
   }
 

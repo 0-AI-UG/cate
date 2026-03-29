@@ -3,6 +3,9 @@ import { useShallow } from 'zustand/shallow'
 import { Bell, X } from 'lucide-react'
 import type { WorkspaceState } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
+import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
+import { useUIStore } from '../stores/uiStore'
+import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
 
 const PULSE_KEYFRAMES = `
 @keyframes sidebar-pulse-ring {
@@ -17,6 +20,15 @@ function ensurePulseStyles() {
   const style = document.createElement('style')
   style.textContent = PULSE_KEYFRAMES
   document.head.appendChild(style)
+}
+
+const COLOR_NAMES: Record<string, string> = {
+  '#007AFF': 'Blue',
+  '#FF9500': 'Orange',
+  '#34C759': 'Green',
+  '#AF52DE': 'Purple',
+  '#FF3B30': 'Red',
+  '#5AC8FA': 'Teal',
 }
 
 function truncatePath(fullPath: string): string {
@@ -82,7 +94,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }, [wsStatus?.claudeCodeState])
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
-  const contextMenuRef = useRef<HTMLDivElement>(null)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -90,38 +104,112 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     setContextMenu({ x: e.clientX, y: e.clientY })
   }, [])
 
-  useEffect(() => {
-    if (!contextMenu) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
-        setContextMenu(null)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [contextMenu])
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
-  const handleCopyWorkingDirectory = useCallback(async () => {
-    const statusState = useStatusStore.getState()
-    const wsStatus = statusState.workspaces[workspace.id]
-    let cwd: string | undefined
-    if (wsStatus) {
-      const cwds = Object.values(wsStatus.terminalCwd)
-      cwd = cwds[0]
+  // Focus rename input when entering rename mode
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
     }
-    if (!cwd) cwd = workspace.rootPath || undefined
-    if (cwd) {
-      await navigator.clipboard.writeText(cwd)
+  }, [isRenaming])
+
+  const handleRenameSubmit = useCallback(() => {
+    const trimmed = renameValue.trim()
+    if (trimmed && trimmed !== workspace.name) {
+      useAppStore.getState().renameWorkspace(workspace.id, trimmed)
     }
-    setContextMenu(null)
-  }, [workspace.id, workspace.rootPath])
+    setIsRenaming(false)
+  }, [renameValue, workspace.id, workspace.name])
+
+  const contextMenuItems = useMemo((): ContextMenuItem[] => {
+    const { selectWorkspace, setWorkspaceColor, duplicateWorkspace, removeWorkspace, setWorkspaceRootPath, closeAllPanels } = useAppStore.getState()
+
+    const colorSwatch = (c: string) => (
+      <span className="inline-block w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
+    )
+    const colorSubmenu: ContextMenuItem[] = WORKSPACE_COLORS.map((color) => ({
+      label: COLOR_NAMES[color] || color,
+      icon: colorSwatch(color),
+      onClick: () => setWorkspaceColor(workspace.id, color),
+      disabled: color === workspace.color,
+    }))
+
+    return [
+      {
+        label: 'Select Workspace',
+        onClick: () => selectWorkspace(workspace.id),
+        disabled: isSelected,
+      },
+      {
+        label: 'Rename Workspace',
+        onClick: () => {
+          setRenameValue(workspace.name || workspace.rootPath.split('/').pop() || 'Workspace')
+          setIsRenaming(true)
+        },
+      },
+      {
+        label: 'Change Color',
+        onClick: () => {},
+        submenu: colorSubmenu,
+      },
+      { label: '', onClick: () => {}, separator: true },
+      {
+        label: 'Select Project Folder',
+        onClick: async () => {
+          const path = await window.electronAPI.openFolderDialog()
+          if (path) setWorkspaceRootPath(workspace.id, path)
+        },
+      },
+      {
+        label: 'Agent Setup',
+        onClick: () => {
+          selectWorkspace(workspace.id)
+          useUIStore.getState().setActiveRightSidebarView('aiConfig')
+        },
+      },
+      {
+        label: 'Copy Working Directory',
+        onClick: () => {
+          const statusState = useStatusStore.getState()
+          const wsStatus = statusState.workspaces[workspace.id]
+          let dir: string | undefined
+          if (wsStatus) {
+            const cwds = Object.values(wsStatus.terminalCwd)
+            dir = cwds[0]
+          }
+          if (!dir) dir = workspace.rootPath || undefined
+          if (dir) navigator.clipboard.writeText(dir)
+        },
+      },
+      { label: '', onClick: () => {}, separator: true },
+      {
+        label: 'Duplicate Workspace',
+        onClick: () => duplicateWorkspace(workspace.id),
+      },
+      {
+        label: 'Close All Panels',
+        onClick: () => closeAllPanels(workspace.id),
+        disabled: Object.keys(workspace.panels).length === 0,
+      },
+      { label: '', onClick: () => {}, separator: true },
+      {
+        label: 'Close Workspace',
+        onClick: () => removeWorkspace(workspace.id),
+        danger: true,
+      },
+    ]
+  }, [workspace.id, workspace.name, workspace.rootPath, workspace.panels, isSelected])
 
   const panelCount = Object.keys(workspace.panels).length
 
   const showClaudeStatus = claudeState === 'running' || claudeState === 'waitingForInput'
   const showNeedsInput = claudeState === 'waitingForInput'
 
-  const displayPath = truncatePath(workspace.rootPath || workspace.name)
+  // Show custom name if user renamed the workspace, otherwise show the path
+  const defaultName = workspace.rootPath ? workspace.rootPath.split('/').pop() || 'Workspace' : 'Workspace'
+  const hasCustomName = workspace.name && workspace.name !== defaultName && workspace.name !== 'Workspace'
+  const displayPath = hasCustomName ? workspace.name : truncatePath(workspace.rootPath || workspace.name)
 
   // Shorten home dir prefix to ~
   const home = typeof window !== 'undefined'
@@ -160,9 +248,24 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           </span>
         )}
 
-        <span className="flex-1 min-w-0 text-sm font-semibold truncate">
-          {displayPath}
-        </span>
+        {isRenaming ? (
+          <input
+            ref={renameInputRef}
+            className="flex-1 min-w-0 text-sm font-semibold bg-black/30 border border-white/20 rounded px-1 py-0 outline-none text-white"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={handleRenameSubmit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleRenameSubmit()
+              if (e.key === 'Escape') setIsRenaming(false)
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="flex-1 min-w-0 text-sm font-semibold truncate">
+            {displayPath}
+          </span>
+        )}
 
         <button
           className="flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
@@ -211,19 +314,12 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
 
       {/* Context menu */}
       {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className="fixed z-50 min-w-[180px] rounded-md border border-white/10 bg-[#1e1e1e] py-1 shadow-xl"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            className="w-full px-3 py-1.5 text-left text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors"
-            onClick={handleCopyWorkingDirectory}
-          >
-            Copy Working Directory
-          </button>
-        </div>
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={closeContextMenu}
+        />
       )}
     </div>
   )

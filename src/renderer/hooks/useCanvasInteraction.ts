@@ -3,15 +3,24 @@
 // Ported from CanvasView.swift scroll/zoom/right-click-drag handlers.
 // =============================================================================
 
-import { useCallback, useRef, useState } from 'react'
-import { useCanvasStore } from '../stores/canvasStore'
+import { useCallback, useRef, useState, useEffect } from 'react'
+import { useCanvasStore, cancelZoomAnimation } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStore } from '../stores/uiStore'
 import { viewToCanvas } from '../lib/coordinates'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
 import type { Point } from '../../shared/types'
 
 // How many pixels the mouse must move before a right-click becomes a drag
 const RIGHT_CLICK_DRAG_THRESHOLD = 4
+
+// AABB overlap test for marquee selection
+function rectsIntersect(
+  ax: number, ay: number, aw: number, ah: number,
+  bx: number, by: number, bw: number, bh: number,
+): boolean {
+  return !(ax + aw <= bx || bx + bw <= ax || ay + ah <= by || by + bh <= ay)
+}
 
 export interface CanvasContextMenuState {
   x: number       // screen X for the menu
@@ -40,11 +49,69 @@ export function useCanvasInteraction(
   const rightClickStart = useRef<{ x: number; y: number } | null>(null)
   const rightClickDidDrag = useRef(false)
 
+  // Momentum/inertia panning
+  const velocityHistory = useRef<Array<{ dx: number; dy: number; time: number }>>([])
+  const cancelInertia = useRef<(() => void) | null>(null)
+
+  // Smooth zoom refs
+  const targetZoom = useRef<number | null>(null)
+  const zoomRafId = useRef<number>(0)
+  const cursorViewPoint = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+
   const [canvasContextMenu, setCanvasContextMenu] =
     useState<CanvasContextMenuState | null>(null)
 
   const closeCanvasContextMenu = useCallback(() => {
     setCanvasContextMenu(null)
+  }, [])
+
+  // Cancel animations on unmount to avoid memory leaks
+  useEffect(() => {
+    return () => {
+      if (cancelInertia.current) {
+        cancelInertia.current()
+        cancelInertia.current = null
+      }
+      if (zoomRafId.current) {
+        cancelAnimationFrame(zoomRafId.current)
+        zoomRafId.current = 0
+      }
+    }
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // Smooth zoom animation — interpolates zoomLevel toward targetZoom each frame
+  // ---------------------------------------------------------------------------
+
+  const smoothZoomTick = useCallback(() => {
+    if (targetZoom.current === null) return
+
+    const state = useCanvasStore.getState()
+    const current = state.zoomLevel
+    const target = targetZoom.current
+
+    const diff = target - current
+    if (Math.abs(diff) < 0.001) {
+      // Close enough — snap to target
+      const canvasPoint = viewToCanvas(cursorViewPoint.current, current, state.viewportOffset)
+      useCanvasStore.getState().setZoomAndOffset(target, {
+        x: cursorViewPoint.current.x - canvasPoint.x * target,
+        y: cursorViewPoint.current.y - canvasPoint.y * target,
+      })
+      targetZoom.current = null
+      zoomRafId.current = 0
+      return
+    }
+
+    // Lerp toward target (0.15 per 16.67ms frame equivalent)
+    const newZoom = current + diff * 0.15
+    const canvasPoint = viewToCanvas(cursorViewPoint.current, current, state.viewportOffset)
+    useCanvasStore.getState().setZoomAndOffset(newZoom, {
+      x: cursorViewPoint.current.x - canvasPoint.x * newZoom,
+      y: cursorViewPoint.current.y - canvasPoint.y * newZoom,
+    })
+
+    zoomRafId.current = requestAnimationFrame(smoothZoomTick)
   }, [])
 
   // ---------------------------------------------------------------------------
@@ -53,19 +120,29 @@ export function useCanvasInteraction(
 
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
-      e.preventDefault()
       e.stopPropagation()
 
-      const { zoomLevel, viewportOffset, setZoom, setViewportOffset } =
+      const { zoomLevel, viewportOffset, setViewportOffset } =
         useCanvasStore.getState()
       const { zoomSpeed } = useSettingsStore.getState()
 
       if (e.metaKey || e.ctrlKey) {
-        // Zoom around cursor — port of CanvasView.swift zoomAround()
+        e.preventDefault() // Only prevent default for zoom, not pan
+
+        // Cancel any inertia when a zoom starts
+        if (cancelInertia.current) {
+          cancelInertia.current()
+          cancelInertia.current = null
+        }
+
+        // Cancel any toolbar animateZoomTo animation
+        cancelZoomAnimation()
+
         const rect = canvasRef.current?.getBoundingClientRect()
         if (!rect) return
 
-        const cursorViewPoint = {
+        // Update cursor position for the animation
+        cursorViewPoint.current = {
           x: e.clientX - rect.left,
           y: e.clientY - rect.top,
         }
@@ -73,32 +150,28 @@ export function useCanvasInteraction(
         const scrollDelta = -e.deltaY
         const zoomDelta = scrollDelta * 0.01 * zoomSpeed
 
-        const oldZoom = zoomLevel
-        const newZoom = Math.min(
-          Math.max(oldZoom + zoomDelta, ZOOM_MIN),
+        // Accumulate target zoom from current target (or live zoom if idle)
+        targetZoom.current = Math.min(
+          Math.max(
+            (targetZoom.current ?? zoomLevel) + zoomDelta,
+            ZOOM_MIN,
+          ),
           ZOOM_MAX,
         )
-        if (newZoom === oldZoom) return
 
-        // Keep cursor fixed in canvas space:
-        //   cursorView = canvasPoint * oldZoom + oldOffset
-        //   cursorView = canvasPoint * newZoom + newOffset
-        //   => newOffset = cursorView - canvasPoint * newZoom
-        const canvasPoint = viewToCanvas(cursorViewPoint, oldZoom, viewportOffset)
-        setZoom(newZoom)
-        setViewportOffset({
-          x: cursorViewPoint.x - canvasPoint.x * newZoom,
-          y: cursorViewPoint.y - canvasPoint.y * newZoom,
-        })
+        // Start animation loop if not already running
+        if (!zoomRafId.current) {
+          zoomRafId.current = requestAnimationFrame(smoothZoomTick)
+        }
       } else {
-        // Two-finger scroll = pan (negate for natural scrolling)
+        // Two-finger scroll = pan — don't preventDefault to allow native macOS trackpad momentum
         setViewportOffset({
           x: viewportOffset.x - e.deltaX,
           y: viewportOffset.y - e.deltaY,
         })
       }
     },
-    [canvasRef],
+    [canvasRef, smoothZoomTick],
   )
 
   // ---------------------------------------------------------------------------
@@ -108,6 +181,11 @@ export function useCanvasInteraction(
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (e.button === 2 || e.button === 1) {
+        // Cancel any running inertia before starting a new drag
+        if (cancelInertia.current) {
+          cancelInertia.current()
+          cancelInertia.current = null
+        }
         isPanning.current = true
         panButton.current = e.button
         lastPanPos.current = { x: e.clientX, y: e.clientY }
@@ -115,13 +193,94 @@ export function useCanvasInteraction(
         if (e.button === 2) {
           rightClickStart.current = { x: e.clientX, y: e.clientY }
           rightClickDidDrag.current = false
+          velocityHistory.current = []
         }
+        if (canvasRef.current) {
+          canvasRef.current.style.cursor = 'grabbing'
+        }
+        document.body.classList.add('canvas-interacting')
         e.preventDefault()
       } else if (e.button === 0) {
-        // Left-click on canvas background (not on a node) => unfocus
-        // Only unfocus if the click target is the canvas itself (not a child node)
-        if (e.target === e.currentTarget || e.target === canvasRef.current) {
-          useCanvasStore.getState().unfocus()
+        // Left-click on canvas background (not on a node/region) => marquee selection or clear
+        const target = e.target as HTMLElement
+        const isOnNode = target.closest('[data-node-id]') !== null
+        const isOnRegion = target.closest('[data-region-id]') !== null
+        if (!isOnNode && !isOnRegion) {
+          const rect = canvasRef.current?.getBoundingClientRect()
+          if (!rect) return
+          const { zoomLevel, viewportOffset } = useCanvasStore.getState()
+          const startCanvasX = (e.clientX - rect.left - viewportOffset.x) / zoomLevel
+          const startCanvasY = (e.clientY - rect.top - viewportOffset.y) / zoomLevel
+
+          const startClientX = e.clientX
+          const startClientY = e.clientY
+          const shiftHeld = e.shiftKey
+
+          let didDrag = false
+
+          const handleMarqueeMove = (ev: MouseEvent) => {
+            const dx = ev.clientX - startClientX
+            const dy = ev.clientY - startClientY
+            if (!didDrag && Math.sqrt(dx * dx + dy * dy) >= 4) {
+              didDrag = true
+            }
+            if (didDrag) {
+              const { zoomLevel: z, viewportOffset: vo } = useCanvasStore.getState()
+              const r = canvasRef.current?.getBoundingClientRect()
+              if (!r) return
+              const currentCanvasX = (ev.clientX - r.left - vo.x) / z
+              const currentCanvasY = (ev.clientY - r.top - vo.y) / z
+              useUIStore.getState().setMarquee({
+                startX: startCanvasX,
+                startY: startCanvasY,
+                currentX: currentCanvasX,
+                currentY: currentCanvasY,
+              })
+            }
+          }
+
+          const handleMarqueeUp = (ev: MouseEvent) => {
+            window.removeEventListener('mousemove', handleMarqueeMove)
+            window.removeEventListener('mouseup', handleMarqueeUp)
+            useUIStore.getState().setMarquee(null)
+
+            if (!didDrag) {
+              useCanvasStore.getState().clearSelection()
+              useCanvasStore.getState().unfocus()
+              return
+            }
+
+            // Compute final marquee rect in canvas-space
+            const { zoomLevel: z, viewportOffset: vo } = useCanvasStore.getState()
+            const r = canvasRef.current?.getBoundingClientRect()
+            if (!r) return
+            const endCanvasX = (ev.clientX - r.left - vo.x) / z
+            const endCanvasY = (ev.clientY - r.top - vo.y) / z
+            const mx = Math.min(startCanvasX, endCanvasX)
+            const my = Math.min(startCanvasY, endCanvasY)
+            const mw = Math.abs(endCanvasX - startCanvasX)
+            const mh = Math.abs(endCanvasY - startCanvasY)
+
+            const { nodes, regions } = useCanvasStore.getState()
+
+            const hitNodeIds = Object.values(nodes)
+              .filter((n) => rectsIntersect(mx, my, mw, mh, n.origin.x, n.origin.y, n.size.width, n.size.height))
+              .map((n) => n.id)
+
+            const hitRegionIds = Object.values(regions)
+              .filter((rg) => rectsIntersect(mx, my, mw, mh, rg.origin.x, rg.origin.y, rg.size.width, rg.size.height))
+              .map((rg) => rg.id)
+
+            // Must select both atomically — selectRegions overwrites selectedNodeIds
+            if (!shiftHeld) {
+              useCanvasStore.getState().clearSelection()
+            }
+            useCanvasStore.getState().selectNodes(hitNodeIds, true)
+            useCanvasStore.getState().selectRegions(hitRegionIds, true)
+          }
+
+          window.addEventListener('mousemove', handleMarqueeMove)
+          window.addEventListener('mouseup', handleMarqueeUp)
         }
       }
     },
@@ -153,6 +312,15 @@ export function useCanvasInteraction(
       })
 
       lastPanPos.current = { x: e.clientX, y: e.clientY }
+
+      // Record velocity sample for right-click drag inertia
+      if (panButton.current === 2) {
+        velocityHistory.current.push({ dx, dy, time: performance.now() })
+        // Keep only last 5 samples
+        if (velocityHistory.current.length > 5) {
+          velocityHistory.current.shift()
+        }
+      }
     },
     [],
   )
@@ -162,10 +330,10 @@ export function useCanvasInteraction(
       if (e.button === 2) {
         // If the right-click never dragged, show the canvas background context menu
         // — but only if the click landed on empty canvas (not on a node).
-        if (!rightClickDidDrag.current) {
+        if (!rightClickDidDrag.current && rightClickStart.current) {
           const target = e.target as HTMLElement
-          const isOnNode = target.closest('[data-node-id]') !== null
-          if (!isOnNode) {
+          const isOnInteractive = target.closest('[data-node-id]') !== null || target.closest('[data-region-id]') !== null || target.closest('[data-annotation-id]') !== null
+          if (!isOnInteractive) {
             const rect = canvasRef.current?.getBoundingClientRect()
             if (rect) {
               const viewPoint = {
@@ -189,6 +357,73 @@ export function useCanvasInteraction(
         panButton.current = null
         lastPanPos.current = null
         rightClickStart.current = null
+        if (canvasRef.current) {
+          canvasRef.current.style.cursor = ''
+        }
+        document.body.classList.remove('canvas-interacting')
+      }
+
+      // Start inertia after right-click drag release
+      if (e.button === 2) {
+        // Cancel any previously running inertia
+        if (cancelInertia.current) {
+          cancelInertia.current()
+          cancelInertia.current = null
+        }
+
+        if (rightClickDidDrag.current && velocityHistory.current.length >= 2) {
+          const samples = velocityHistory.current
+          const recent = samples.slice(-3) // Use last 3 samples
+          const now = performance.now()
+
+          // Only use samples from the last 100ms
+          const validSamples = recent.filter(s => now - s.time < 100)
+
+          if (validSamples.length >= 2) {
+            const avgDx = validSamples.reduce((sum, s) => sum + s.dx, 0) / validSamples.length
+            const avgDy = validSamples.reduce((sum, s) => sum + s.dy, 0) / validSamples.length
+
+            const speed = Math.hypot(avgDx, avgDy)
+            if (speed > 2) {
+              let velX = avgDx
+              let velY = avgDy
+              let lastTime = performance.now()
+              let rafId = 0
+
+              const tick = () => {
+                const now = performance.now()
+                const dt = Math.min(now - lastTime, 32)
+                lastTime = now
+
+                // Frame-rate independent decay
+                const factor = Math.pow(0.95, dt / 16.67)
+                velX *= factor
+                velY *= factor
+
+                if (Math.abs(velX) < 0.5 && Math.abs(velY) < 0.5) {
+                  cancelInertia.current = null
+                  return
+                }
+
+                const { viewportOffset, setViewportOffset } = useCanvasStore.getState()
+                const scale = dt / 16.67
+                setViewportOffset({
+                  x: viewportOffset.x + velX * scale,
+                  y: viewportOffset.y + velY * scale,
+                })
+
+                rafId = requestAnimationFrame(tick)
+              }
+
+              rafId = requestAnimationFrame(tick)
+              cancelInertia.current = () => {
+                if (rafId) cancelAnimationFrame(rafId)
+              }
+            }
+          }
+        }
+
+        velocityHistory.current = []
       }
     },
     [canvasRef],

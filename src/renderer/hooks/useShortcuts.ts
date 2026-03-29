@@ -9,6 +9,23 @@ import { useCanvasStore } from '../stores/canvasStore'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
+import { useDockStore } from '../stores/dockStore'
+
+/**
+ * Ensures the workspace has a rootPath before proceeding.
+ * If no rootPath is set, opens the folder dialog first.
+ * Returns the workspaceId if ready, or null if the user cancelled.
+ */
+export async function ensureWorkspaceFolder(workspaceId: string): Promise<string | null> {
+  const ws = useAppStore.getState().getWorkspace(workspaceId)
+  if (ws?.rootPath) return workspaceId
+
+  const folderPath = await window.electronAPI.openFolderDialog()
+  if (!folderPath) return null
+
+  useAppStore.getState().setWorkspaceRootPath(workspaceId, folderPath)
+  return workspaceId
+}
 
 /**
  * Registers global keyboard shortcut listeners on `document`.
@@ -34,6 +51,67 @@ export function useShortcuts(): void {
         shortcutStore().cancelHintHold()
       }
 
+      // --- Selection & region shortcuts (hardcoded) ---
+
+      // Cmd+A — select all
+      if (e.metaKey && !e.shiftKey && e.key === 'a') {
+        // Don't select-all if a text input/editor is focused
+        const active = document.activeElement
+        const isEditable = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.getAttribute('contenteditable') === 'true'
+        if (!isEditable) {
+          e.preventDefault()
+          e.stopPropagation()
+          canvasStore().selectAll()
+          return
+        }
+      }
+
+      // Cmd+G — group selected nodes into region
+      if (e.metaKey && !e.shiftKey && e.key === 'g') {
+        e.preventDefault()
+        e.stopPropagation()
+        canvasStore().groupSelectedIntoRegion()
+        return
+      }
+
+      // Cmd+Shift+G — dissolve selected regions
+      if (e.metaKey && e.shiftKey && e.key === 'G') {
+        e.preventDefault()
+        e.stopPropagation()
+        const state = canvasStore()
+        for (const regionId of state.selectedRegionIds) {
+          canvasStore().dissolveRegion(regionId)
+        }
+        return
+      }
+
+      // Escape — clear selection (when no overlay is open)
+      if (e.key === 'Escape') {
+        const ui = useUIStore.getState()
+        if (!ui.showCommandPalette && !ui.showNodeSwitcher && !ui.showPanelSwitcher && !ui.showGlobalSearch) {
+          canvasStore().clearSelection()
+          // Don't prevent default — Escape might also close other things
+          return
+        }
+      }
+
+      // Delete/Backspace — delete selection
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const state = canvasStore()
+        if (state.selectedNodeIds.size > 0 || state.selectedRegionIds.size > 0) {
+          // Don't delete if a text input is focused
+          const active = document.activeElement
+          const isEditable = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.getAttribute('contenteditable') === 'true'
+          if (!isEditable) {
+            e.preventDefault()
+            e.stopPropagation()
+            // Shift+Delete deletes region contents too
+            state.deleteSelection(e.shiftKey)
+            return
+          }
+        }
+      }
+
       // --- Shortcut matching ---
       const action = shortcutStore().matchEvent(e)
       if (!action) return
@@ -49,23 +127,43 @@ export function useShortcuts(): void {
 
       switch (action) {
         case 'newTerminal':
-          appStore().createTerminal(selectedWorkspaceId)
+          ensureWorkspaceFolder(selectedWorkspaceId).then((wsId) => {
+            if (wsId) appStore().createTerminal(wsId)
+          })
           break
 
         case 'newBrowser':
-          appStore().createBrowser(selectedWorkspaceId)
+          ensureWorkspaceFolder(selectedWorkspaceId).then((wsId) => {
+            if (wsId) appStore().createBrowser(wsId)
+          })
           break
 
         case 'newEditor':
-          appStore().createEditor(selectedWorkspaceId)
+          ensureWorkspaceFolder(selectedWorkspaceId).then((wsId) => {
+            if (wsId) appStore().createEditor(wsId)
+          })
           break
 
         case 'closePanel': {
+          // First check canvas focused node
           const focusedNodeId = canvasStore().focusedNodeId
           if (focusedNodeId) {
             const node = canvasStore().nodes[focusedNodeId]
             if (node) {
               appStore().closePanel(selectedWorkspaceId, node.panelId)
+            }
+            break
+          }
+          // If no canvas node focused, try closing the active docked panel
+          const dockState = useDockStore.getState()
+          for (const position of ['left', 'right', 'bottom'] as const) {
+            const zone = dockState.zones[position]
+            if (zone.panelIds.length > 0 && !zone.collapsed) {
+              const activePanelId = zone.panelIds[zone.activePanelIndex]
+              if (activePanelId) {
+                appStore().closePanel(selectedWorkspaceId, activePanelId)
+                break
+              }
             }
           }
           break
@@ -75,9 +173,15 @@ export function useShortcuts(): void {
           useUIStore.getState().toggleSidebar()
           break
 
-        case 'toggleFileExplorer':
-          useUIStore.getState().toggleFileExplorer()
+        case 'toggleFileExplorer': {
+          const ui = useUIStore.getState()
+          if (ui.activeRightSidebarView === 'explorer') {
+            ui.setActiveRightSidebarView(null)
+          } else {
+            ui.setActiveRightSidebarView('explorer')
+          }
           break
+        }
 
         case 'toggleMinimap':
           useSettingsStore.getState().setSetting(
@@ -114,16 +218,29 @@ export function useShortcuts(): void {
           break
 
         case 'zoomIn':
-          useCanvasStore.getState().zoomAroundCenter(useCanvasStore.getState().zoomLevel + 0.1)
-          break
-
         case 'zoomOut':
-          useCanvasStore.getState().zoomAroundCenter(useCanvasStore.getState().zoomLevel - 0.1)
-          break
+        case 'zoomReset': {
+          // When a browser panel is focused, let zoom shortcuts pass through
+          // to the webview so Cmd+=/- zoom the browser content, not the canvas.
+          const focusedId = canvasStore().focusedNodeId
+          const focusedNode = focusedId ? canvasStore().nodes[focusedId] : null
+          const focusedPanel = focusedNode
+            ? appStore().workspaces.find(w => w.id === selectedWorkspaceId)?.panels[focusedNode.panelId]
+            : null
+          if (focusedPanel?.type === 'browser') {
+            // Don't prevent default — let the event reach the webview
+            return
+          }
 
-        case 'zoomReset':
-          useCanvasStore.getState().zoomAroundCenter(1.0)
+          if (action === 'zoomIn') {
+            canvasStore().animateZoomTo(canvasStore().zoomLevel + 0.1)
+          } else if (action === 'zoomOut') {
+            canvasStore().animateZoomTo(canvasStore().zoomLevel - 0.1)
+          } else {
+            canvasStore().animateZoomTo(1.0)
+          }
           break
+        }
 
         case 'focusNext': {
           const next = canvasStore().nextNode()
@@ -147,6 +264,18 @@ export function useShortcuts(): void {
 
         case 'globalSearch':
           useUIStore.getState().setShowGlobalSearch(true)
+          break
+
+        case 'toggleLeftDock':
+          useDockStore.getState().toggleZoneCollapse('left')
+          break
+
+        case 'toggleRightDock':
+          useDockStore.getState().toggleZoneCollapse('right')
+          break
+
+        case 'toggleBottomDock':
+          useDockStore.getState().toggleZoneCollapse('bottom')
           break
       }
     }

@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+}
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: #333 #1E1E24;
+  }
+
+  body {
+    @apply bg-[#1E1E24] text-white font-sans m-0 p-0 overflow-x-hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    @apply bg-white/20 text-white;
+  }
+}
+
+/* Fade-in stagger */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-up {
+  animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+/* Terminal typing cursor blink */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Subtle glow behind hero card */
+.hero-glow {
+  background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(255, 255, 255, 0.03) 0%, transparent 70%);
+}
+
+/* Window chrome card */
+.window-chrome {
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.05),
+    0 20px 50px -12px rgba(0, 0, 0, 0.5),
+    0 0 80px -20px rgba(255, 255, 255, 0.02);
+}
+
+.window-chrome-bar {
+  background: #1a1a1a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+@media (prefers-reduced-motion) {
+  *, ::before, ::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -21,6 +21,13 @@ export const FS_WATCH_START = 'fs:watchStart'
 export const FS_WATCH_STOP = 'fs:watchStop'
 export const FS_WATCH_EVENT = 'fs:watchEvent' // main -> renderer
 export const FS_STAT = 'fs:stat'
+export const FS_DELETE = 'fs:delete'
+
+// Shell utilities
+export const SHELL_SHOW_IN_FOLDER = 'shell:showInFolder'
+
+// HTTP (main process, no CORS)
+export const HTTP_FETCH = 'http:fetch'
 
 // Git
 export const GIT_IS_REPO = 'git:isRepo'
@@ -36,6 +43,7 @@ export const GIT_COMMIT = 'git:commit'
 export const GIT_WORKTREE_LIST = 'git:worktreeList'
 
 // Shell / Process Monitor
+export const SHELL_WHICH = 'shell:which'
 export const SHELL_REGISTER_TERMINAL = 'shell:registerTerminal'
 export const SHELL_UNREGISTER_TERMINAL = 'shell:unregisterTerminal'
 export const SHELL_ACTIVITY_UPDATE = 'shell:activityUpdate' // main -> renderer
@@ -76,6 +84,14 @@ export const LAYOUT_DELETE = 'layout:delete'
 
 // Window (Task 23: Multi-Window Support)
 export const WINDOW_DETACH_PANEL = 'window:detachPanel'
+export const WINDOW_REATTACH_PANEL = 'window:reattachPanel'
+export const WINDOW_DETACHED_CLOSED = 'window:detachedClosed'  // main -> renderer
+
+// MCP Server Management
+export const MCP_SPAWN = 'mcp:spawn'
+export const MCP_STOP = 'mcp:stop'
+export const MCP_TEST = 'mcp:test'
+export const MCP_STATUS_UPDATE = 'mcp:statusUpdate'  // main -> renderer
 
 // Plugin / Extension System (Task 25)
 export const PLUGIN_LIST = 'plugin:list'

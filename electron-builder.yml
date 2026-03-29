@@ -1,0 +1,12 @@
+appId: com.canvaside.app
+productName: CanvasIDE
+directories:
+  output: release
+mac:
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+win:
+  icon: build/icon.ico
+linux:
+  icon: build/icon.png
+  category: Development

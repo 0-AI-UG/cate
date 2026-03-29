@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { RotateCw } from 'lucide-react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
 import { useAppStore } from '../stores/appStore'
@@ -121,7 +122,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center px-3 py-2 flex-shrink-0">
-        <span className="text-xs text-white/40 font-semibold uppercase tracking-wider">
+        <span className="text-[12px] text-white/40 font-medium">
           Explorer
         </span>
         <div className="flex-1" />
@@ -130,19 +131,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
           onClick={handleReload}
           title="Reload"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M11.5 7a4.5 4.5 0 1 1-1.3-3.2" />
-            <polyline points="11.5 2.5 11.5 4.8 9.2 4.8" />
-          </svg>
+          <RotateCw size={14} strokeWidth={1.5} />
         </button>
       </div>
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import {
   Terminal,
   Globe,
@@ -41,16 +42,19 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
     [workspaceId],
   )
 
-  const newTerminal = useCallback(() => {
-    useAppStore.getState().createTerminal(workspaceId)
+  const newTerminal = useCallback(async () => {
+    const wsId = await ensureWorkspaceFolder(workspaceId)
+    if (wsId) useAppStore.getState().createTerminal(wsId)
   }, [workspaceId])
 
-  const newEditor = useCallback(() => {
-    useAppStore.getState().createEditor(workspaceId)
+  const newEditor = useCallback(async () => {
+    const wsId = await ensureWorkspaceFolder(workspaceId)
+    if (wsId) useAppStore.getState().createEditor(wsId)
   }, [workspaceId])
 
-  const newBrowser = useCallback(() => {
-    useAppStore.getState().createBrowser(workspaceId)
+  const newBrowser = useCallback(async () => {
+    const wsId = await ensureWorkspaceFolder(workspaceId)
+    if (wsId) useAppStore.getState().createBrowser(wsId)
   }, [workspaceId])
 
   return (

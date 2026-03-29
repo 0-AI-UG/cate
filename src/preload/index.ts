@@ -50,7 +50,17 @@ import {
   LAYOUT_LOAD,
   LAYOUT_DELETE,
   WINDOW_DETACH_PANEL,
+  WINDOW_REATTACH_PANEL,
+  WINDOW_DETACHED_CLOSED,
   PLUGIN_LIST,
+  SHELL_WHICH,
+  FS_DELETE,
+  SHELL_SHOW_IN_FOLDER,
+  HTTP_FETCH,
+  MCP_SPAWN,
+  MCP_STOP,
+  MCP_TEST,
+  MCP_STATUS_UPDATE,
 } from '../shared/ipc-channels'
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -372,8 +382,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Window (Task 23: Multi-Window Support scaffold)
   // ---------------------------------------------------------------------------
 
-  detachPanel(options: { title: string; width: number; height: number }): Promise<number> {
+  detachPanel(options: { panelId: string; panelType: string; title: string; width: number; height: number }): Promise<number> {
     return ipcRenderer.invoke(WINDOW_DETACH_PANEL, options)
+  },
+
+  reattachPanel(windowId: number): Promise<void> {
+    return ipcRenderer.invoke(WINDOW_REATTACH_PANEL, windowId)
+  },
+
+  onDetachedWindowClosed(callback: (data: { windowId: number; panelId: string }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, data: { windowId: number; panelId: string }): void => {
+      callback(data)
+    }
+    ipcRenderer.on(WINDOW_DETACHED_CLOSED, listener)
+    return () => { ipcRenderer.removeListener(WINDOW_DETACHED_CLOSED, listener) }
   },
 
   // ---------------------------------------------------------------------------
@@ -386,6 +408,50 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   capturePage(): Promise<string | null> {
     return ipcRenderer.invoke('capture-page')
+  },
+
+  // ---------------------------------------------------------------------------
+  // Shell utilities
+  // ---------------------------------------------------------------------------
+
+  shellWhich(command: string): Promise<string | null> {
+    return ipcRenderer.invoke(SHELL_WHICH, command)
+  },
+
+  fsDelete(filePath: string): Promise<void> {
+    return ipcRenderer.invoke(FS_DELETE, filePath)
+  },
+
+  shellShowInFolder(filePath: string): Promise<void> {
+    return ipcRenderer.invoke(SHELL_SHOW_IN_FOLDER, filePath)
+  },
+
+  httpFetch(url: string): Promise<{ ok: boolean; status: number; text: string }> {
+    return ipcRenderer.invoke(HTTP_FETCH, url)
+  },
+
+  // ---------------------------------------------------------------------------
+  // MCP Server Management
+  // ---------------------------------------------------------------------------
+
+  mcpSpawn(name: string, command: string, args: string[], env: Record<string, string>): Promise<void> {
+    return ipcRenderer.invoke(MCP_SPAWN, name, command, args, env)
+  },
+
+  mcpStop(name: string): Promise<void> {
+    return ipcRenderer.invoke(MCP_STOP, name)
+  },
+
+  mcpTest(command: string, args: string[], env: Record<string, string>): Promise<{ success: boolean; error?: string }> {
+    return ipcRenderer.invoke(MCP_TEST, command, args, env)
+  },
+
+  onMcpStatusUpdate(callback: (update: { name: string; status: string; error?: string }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, update: { name: string; status: string; error?: string }): void => {
+      callback(update)
+    }
+    ipcRenderer.on(MCP_STATUS_UPDATE, listener)
+    return () => { ipcRenderer.removeListener(MCP_STATUS_UPDATE, listener) }
   },
 
   // ---------------------------------------------------------------------------

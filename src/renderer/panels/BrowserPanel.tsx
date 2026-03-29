@@ -65,6 +65,7 @@ export default function BrowserPanel({
   workspaceId,
   nodeId,
   url,
+  zoomLevel = 1,
 }: BrowserPanelProps) {
   const browserHomepage = useSettingsStore((s) => s.browserHomepage)
   const browserSearchEngine = useSettingsStore((s) => s.browserSearchEngine)
@@ -251,7 +252,7 @@ export default function BrowserPanel({
         ref={webviewRef as any}
         src={initialUrl}
         className={`w-full flex-1 ${loadError ? 'hidden' : ''}`}
-        allowpopups={true}
+        allowpopups="true"
       />
     </div>
   )

@@ -6,6 +6,7 @@
 import { execFile } from 'child_process'
 import { ipcMain, BrowserWindow } from 'electron'
 import {
+  SHELL_WHICH,
   SHELL_REGISTER_TERMINAL,
   SHELL_UNREGISTER_TERMINAL,
   SHELL_ACTIVITY_UPDATE,
@@ -386,6 +387,18 @@ export function registerHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(SHELL_UNREGISTER_TERMINAL, async (_event, terminalId: string) => {
     registeredTerminals.delete(terminalId)
     previousStates.delete(terminalId)
+  })
+
+  ipcMain.handle(SHELL_WHICH, async (_event, command: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+      execFile('which', [command], (err, stdout) => {
+        if (err) {
+          resolve(null)
+        } else {
+          resolve(stdout.trim() || null)
+        }
+      })
+    })
   })
 
   // Start polling only when first terminal is registered (not immediately)

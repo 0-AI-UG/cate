@@ -4,10 +4,11 @@
 // =============================================================================
 
 import React, { useCallback, useState } from 'react'
-import { Terminal, Globe, FileText, Bot, GitBranch, Maximize2, Minimize2, Pin, X } from 'lucide-react'
+import { Terminal, Globe, FileText, Bot, GitBranch, Maximize2, Minimize2, Lock, Unlock, X } from 'lucide-react'
 import type { PanelType } from '../../shared/types'
 import { panelColor } from '../panels/types'
 import { useCanvasStore } from '../stores/canvasStore'
+import { useDockStore } from '../stores/dockStore'
 import ContextMenu from '../ui/ContextMenu'
 
 // -----------------------------------------------------------------------------
@@ -161,6 +162,37 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
     ...(onAddTab
       ? [{ label: 'Add Tab', onClick: onAddTab }]
       : []),
+    { label: '', separator: true, onClick: () => {} },
+    {
+      label: 'Dock to Left',
+      onClick: () => {
+        const node = useCanvasStore.getState().nodes[nodeId]
+        if (node) {
+          useDockStore.getState().dockPanel(node.panelId, 'left')
+          useCanvasStore.getState().removeNode(nodeId)
+        }
+      },
+    },
+    {
+      label: 'Dock to Right',
+      onClick: () => {
+        const node = useCanvasStore.getState().nodes[nodeId]
+        if (node) {
+          useDockStore.getState().dockPanel(node.panelId, 'right')
+          useCanvasStore.getState().removeNode(nodeId)
+        }
+      },
+    },
+    {
+      label: 'Dock to Bottom',
+      onClick: () => {
+        const node = useCanvasStore.getState().nodes[nodeId]
+        if (node) {
+          useDockStore.getState().dockPanel(node.panelId, 'bottom')
+          useCanvasStore.getState().removeNode(nodeId)
+        }
+      },
+    },
     ...(onDetach
       ? [{ label: '', separator: true, onClick: () => {} }]
       : []),
@@ -197,9 +229,9 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
           data-titlebar-button
           className={`ml-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm transition-opacity hover:bg-white/[0.15] ${isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
           onClick={(e) => { e.stopPropagation(); onTogglePin() }}
-          title={isPinned ? 'Unpin' : 'Pin'}
+          title={isPinned ? 'Unlock' : 'Lock'}
         >
-          <Pin size={12} className={isPinned ? 'text-blue-400' : 'text-white/80'} />
+          {isPinned ? <Lock size={12} className="text-blue-400" /> : <Unlock size={12} className="text-white/80" />}
         </button>
 
         {/* Maximize/Restore button — visible on hover */}

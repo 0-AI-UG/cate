@@ -3,26 +3,27 @@
 // Ported from MainWindowView.swift
 // =============================================================================
 
-import React, { useEffect, useState, useCallback, Suspense } from 'react'
+import React, { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useAppStore } from './stores/appStore'
-import { useCanvasStore } from './stores/canvasStore'
+import { useCanvasStore, useNodeIds } from './stores/canvasStore'
 import type { PanelType, Point } from '../shared/types'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
-import { useShortcuts } from './hooks/useShortcuts'
+import { useShortcuts, ensureWorkspaceFolder } from './hooks/useShortcuts'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
 import Canvas from './canvas/Canvas'
 import CanvasNode from './canvas/CanvasNode'
 import CanvasToolbar from './canvas/CanvasToolbar'
 import Minimap from './canvas/Minimap'
-import { Sidebar } from './sidebar/Sidebar'
-import { FileExplorerSidebar } from './sidebar/FileExplorerSidebar'
-import { RightSidebar } from './sidebar/RightSidebar'
+import { Sidebar, RightSidebar } from './sidebar/Sidebar'
+import { DockZone, DockDropIndicator } from './dock'
 const TerminalPanel = React.lazy(() => import('./panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('./panels/EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./panels/BrowserPanel'))
 const AIChatPanel = React.lazy(() => import('./panels/AIChatPanel'))
 const GitPanel = React.lazy(() => import('./panels/GitPanel'))
+const FileExplorerPanel = React.lazy(() => import('./panels/FileExplorerPanel'))
+const ProjectListPanel = React.lazy(() => import('./panels/ProjectListPanel'))
 import { NodeSwitcher } from './ui/NodeSwitcher'
 import { PanelSwitcher } from './ui/PanelSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
@@ -30,8 +31,50 @@ import { GlobalSearch } from './ui/GlobalSearch'
 import { ShortcutHintOverlay } from './ui/ShortcutHintOverlay'
 import { SettingsWindow } from './settings/SettingsWindow'
 import WelcomePage from './ui/WelcomePage'
+import { AISetupDialog } from './dialogs/AISetupDialog'
 import { loadSession, restoreSession, restoreMultiWorkspaceSession, setupAutoSave, saveSession } from './lib/session'
 import type { MultiWorkspaceSession } from '../shared/types'
+
+// -----------------------------------------------------------------------------
+// CanvasNodeWrapper — reads its own node slice so re-renders stay local
+// -----------------------------------------------------------------------------
+
+const CanvasNodeWrapper = React.memo(({ nodeId, zoomLevel, renderPanelContent }: {
+  nodeId: string
+  zoomLevel: number
+  renderPanelContent: (panelId: string, nodeId: string, zoomLevel: number) => React.ReactNode
+}) => {
+  const node = useCanvasStore((s) => s.nodes[nodeId])
+  const isFocused = useCanvasStore((s) => s.focusedNodeId === nodeId)
+  const currentWorkspace = useAppStore((s) => s.workspaces.find(w => w.id === s.selectedWorkspaceId))
+
+  if (!node) return null
+
+  const panel = currentWorkspace?.panels[node.panelId]
+  if (!panel) return null
+
+  const hasStack = node.stackedPanelIds && node.stackedPanelIds.length > 1
+  const activePanelId = hasStack
+    ? node.stackedPanelIds![node.activeStackIndex || 0]
+    : node.split ? node.split.panelIds[0] : node.panelId
+  const secondaryPanelId = !hasStack && node.split ? node.split.panelIds[1] : undefined
+
+  const activePanel = currentWorkspace?.panels[activePanelId] || panel
+
+  return (
+    <CanvasNode
+      nodeId={node.id}
+      panelId={activePanelId}
+      panelType={activePanel.type}
+      title={activePanel.title}
+      isFocused={isFocused}
+      zoomLevel={zoomLevel}
+      splitContent={secondaryPanelId ? renderPanelContent(secondaryPanelId, node.id, zoomLevel) : undefined}
+    >
+      {renderPanelContent(activePanelId, node.id, zoomLevel)}
+    </CanvasNode>
+  )
+})
 
 // -----------------------------------------------------------------------------
 // App
@@ -39,19 +82,19 @@ import type { MultiWorkspaceSession } from '../shared/types'
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false)
-  const [initialized, setInitialized] = useState(false)
+  const initializedRef = useRef(false)
 
   // Store state
   const workspaces = useAppStore((s) => s.workspaces)
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
-  const nodes = useCanvasStore((s) => s.nodes)
+  const nodeIds = useNodeIds()
   const zoomLevel = useCanvasStore((s) => s.zoomLevel)
-  const focusedNodeId = useCanvasStore((s) => s.focusedNodeId)
   const sidebarVisible = useUIStore((s) => s.sidebarVisible)
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   const showPanelSwitcher = useUIStore((s) => s.showPanelSwitcher)
   const showGlobalSearch = useUIStore((s) => s.showGlobalSearch)
+  const showAISetupDialog = useUIStore((s) => s.showAISetupDialog)
   const showMinimap = useSettingsStore((s) => s.showMinimap)
 
   // Current workspace
@@ -65,8 +108,8 @@ export default function App() {
   // Initialization — load settings, create first terminal
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (initialized) return
-    setInitialized(true)
+    if (initializedRef.current) return
+    initializedRef.current = true
 
     const init = async () => {
       await useSettingsStore.getState().loadSettings()
@@ -98,7 +141,7 @@ export default function App() {
       setupAutoSave()
     }
     init()
-  }, [initialized])
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Settings window (Cmd+, via native menu)
@@ -112,28 +155,27 @@ export default function App() {
   // ---------------------------------------------------------------------------
   // Toolbar callbacks
   // ---------------------------------------------------------------------------
-  const onNewTerminal = useCallback(() => {
-    useAppStore.getState().createTerminal(selectedWorkspaceId)
+  const onNewTerminal = useCallback(async () => {
+    const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
+    if (wsId) useAppStore.getState().createTerminal(wsId)
   }, [selectedWorkspaceId])
 
-  const onNewBrowser = useCallback(() => {
-    useAppStore.getState().createBrowser(selectedWorkspaceId)
+  const onNewBrowser = useCallback(async () => {
+    const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
+    if (wsId) useAppStore.getState().createBrowser(wsId)
   }, [selectedWorkspaceId])
 
-  const onNewEditor = useCallback(() => {
-    useAppStore.getState().createEditor(selectedWorkspaceId)
+  const onNewEditor = useCallback(async () => {
+    const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
+    if (wsId) useAppStore.getState().createEditor(wsId)
   }, [selectedWorkspaceId])
-
-  const onNewGit = useCallback(() => {
-    useUIStore.getState().setRightSidebarTab('git')
-  }, [])
 
   const onZoomIn = useCallback(() => {
-    useCanvasStore.getState().zoomAroundCenter(zoomLevel + 0.1)
+    useCanvasStore.getState().animateZoomTo(zoomLevel + 0.1)
   }, [zoomLevel])
 
   const onZoomOut = useCallback(() => {
-    useCanvasStore.getState().zoomAroundCenter(zoomLevel - 0.1)
+    useCanvasStore.getState().animateZoomTo(zoomLevel - 0.1)
   }, [zoomLevel])
 
   // ---------------------------------------------------------------------------
@@ -180,6 +222,12 @@ export default function App() {
         case 'git':
           store.createGit(selectedWorkspaceId, canvasPoint)
           break
+        case 'fileExplorer':
+          store.createFileExplorer(selectedWorkspaceId, canvasPoint)
+          break
+        case 'projectList':
+          store.createProjectList(selectedWorkspaceId, canvasPoint)
+          break
       }
     },
     [selectedWorkspaceId],
@@ -189,7 +237,7 @@ export default function App() {
   // Render panel content for a node
   // ---------------------------------------------------------------------------
   const renderPanelContent = useCallback(
-    (panelId: string, nodeId: string) => {
+    (panelId: string, nodeId: string, zoom: number) => {
       if (!currentWorkspace) return null
       const panel = currentWorkspace.panels[panelId]
       if (!panel) return null
@@ -222,6 +270,7 @@ export default function App() {
               workspaceId={selectedWorkspaceId}
               nodeId={nodeId}
               url={panel.url}
+              zoomLevel={zoom}
             />
           )
           break
@@ -243,6 +292,24 @@ export default function App() {
             />
           )
           break
+        case 'fileExplorer':
+          content = (
+            <FileExplorerPanel
+              panelId={panelId}
+              workspaceId={selectedWorkspaceId}
+              nodeId={nodeId}
+            />
+          )
+          break
+        case 'projectList':
+          content = (
+            <ProjectListPanel
+              panelId={panelId}
+              workspaceId={selectedWorkspaceId}
+              nodeId={nodeId}
+            />
+          )
+          break
         default:
           return null
       }
@@ -256,79 +323,59 @@ export default function App() {
     [currentWorkspace, selectedWorkspaceId],
   )
 
-  // ---------------------------------------------------------------------------
-  // Sorted nodes for rendering
-  // ---------------------------------------------------------------------------
-  const sortedNodes = Object.values(nodes).sort((a, b) => a.zOrder - b.zOrder)
-
   return (
     <div className="h-screen w-screen flex bg-canvas-bg" onDragOver={handleFileDragOver} onDrop={handleFileDrop}>
       {/* Sidebar */}
       <Sidebar isVisible={sidebarVisible} />
 
-      {/* File Explorer — separate collapsible sidebar */}
-      <FileExplorerSidebar />
+      {/* Canvas workspace area with dock zones */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex overflow-hidden">
+          <DockZone position="left" renderPanelContent={renderPanelContent} />
 
-      {/* Canvas workspace area */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* Welcome page overlay when no panels exist */}
-        {Object.keys(nodes).length === 0 && (
-          <WelcomePage workspaceId={selectedWorkspaceId} />
-        )}
+          <div className="flex-1 relative overflow-hidden">
+            {/* Welcome page overlay when no panels exist */}
+            {nodeIds.length === 0 && (
+              <WelcomePage workspaceId={selectedWorkspaceId} />
+            )}
 
-        <Canvas onCreateAtPoint={onCreateAtPoint}>
-          {sortedNodes.map((node) => {
-            const panel = currentWorkspace?.panels[node.panelId]
-            if (!panel) return null
+            <Canvas onCreateAtPoint={onCreateAtPoint}>
+              {nodeIds.map((nodeId) => (
+                <CanvasNodeWrapper
+                  key={nodeId}
+                  nodeId={nodeId}
+                  zoomLevel={zoomLevel}
+                  renderPanelContent={renderPanelContent}
+                />
+              ))}
+            </Canvas>
 
-            // For stacked nodes, show the active tab's panel.
-            // For split nodes, render the primary panel as children and the
-            // secondary panel as splitContent.
-            const hasStack = node.stackedPanelIds && node.stackedPanelIds.length > 1
-            const activePanelId = hasStack
-              ? node.stackedPanelIds![node.activeStackIndex || 0]
-              : node.split ? node.split.panelIds[0] : node.panelId
-            const secondaryPanelId = !hasStack && node.split ? node.split.panelIds[1] : undefined
+            {/* Minimap overlay */}
+            {showMinimap && <Minimap />}
 
-            // Resolve the panel for title/type using the active panel
-            const activePanel = currentWorkspace?.panels[activePanelId] || panel
+            {/* Toolbar overlay */}
+            <CanvasToolbar
+              zoom={zoomLevel}
+              onNewTerminal={onNewTerminal}
+              onNewBrowser={onNewBrowser}
+              onNewEditor={onNewEditor}
+              onZoomIn={onZoomIn}
+              onZoomOut={onZoomOut}
+            />
 
-            return (
-              <CanvasNode
-                key={node.id}
-                nodeId={node.id}
-                panelId={activePanelId}
-                panelType={activePanel.type}
-                title={activePanel.title}
-                isFocused={focusedNodeId === node.id}
-                zoomLevel={zoomLevel}
-                splitContent={secondaryPanelId ? renderPanelContent(secondaryPanelId, node.id) : undefined}
-              >
-                {renderPanelContent(activePanelId, node.id)}
-              </CanvasNode>
-            )
-          })}
-        </Canvas>
+            {/* Shortcut hint overlay */}
+            <ShortcutHintOverlay />
+          </div>
 
-        {/* Minimap overlay */}
-        {showMinimap && <Minimap />}
-
-        {/* Toolbar overlay */}
-        <CanvasToolbar
-          zoom={zoomLevel}
-          onNewTerminal={onNewTerminal}
-          onNewBrowser={onNewBrowser}
-          onNewEditor={onNewEditor}
-          onNewGit={onNewGit}
-          onZoomIn={onZoomIn}
-          onZoomOut={onZoomOut}
-        />
-
-        {/* Shortcut hint overlay */}
-        <ShortcutHintOverlay />
+          <DockZone position="right" renderPanelContent={renderPanelContent} />
+        </div>
+        <DockZone position="bottom" renderPanelContent={renderPanelContent} />
       </div>
 
+      {/* Right Sidebar */}
       <RightSidebar />
+
+      <DockDropIndicator />
 
       {/* Modal overlays */}
       {showNodeSwitcher && <NodeSwitcher />}
@@ -337,6 +384,9 @@ export default function App() {
       {showGlobalSearch && <GlobalSearch />}
       {showSettings && (
         <SettingsWindow isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      )}
+      {showAISetupDialog && (
+        <AISetupDialog workspaceId={selectedWorkspaceId} />
       )}
     </div>
   )

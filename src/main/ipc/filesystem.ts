@@ -14,6 +14,7 @@ import {
   FS_WATCH_STOP,
   FS_WATCH_EVENT,
   FS_STAT,
+  FS_DELETE,
 } from '../../shared/ipc-channels'
 import { FileTreeNode, FILE_EXCLUSIONS } from '../../shared/types'
 
@@ -28,6 +29,7 @@ async function readFile(filePath: string): Promise<string> {
 }
 
 async function writeFile(filePath: string, content: string): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
   await fs.writeFile(filePath, content, 'utf-8')
 }
 
@@ -173,5 +175,14 @@ export function registerHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(FS_STAT, async (_event, filePath: string) => {
     const stat = await fs.stat(filePath)
     return { isDirectory: stat.isDirectory(), isFile: stat.isFile() }
+  })
+
+  ipcMain.handle(FS_DELETE, async (_event, filePath: string) => {
+    const stat = await fs.stat(filePath)
+    if (stat.isDirectory()) {
+      await fs.rm(filePath, { recursive: true })
+    } else {
+      await fs.unlink(filePath)
+    }
   })
 }

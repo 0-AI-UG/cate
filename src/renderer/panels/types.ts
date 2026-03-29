@@ -11,7 +11,7 @@ import type { PanelType } from '../../shared/types'
 export interface PanelProps {
   panelId: string
   workspaceId: string
-  nodeId: string
+  nodeId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -28,6 +28,7 @@ export interface EditorPanelProps extends PanelProps {
 
 export interface BrowserPanelProps extends PanelProps {
   url?: string
+  zoomLevel?: number
 }
 
 // -----------------------------------------------------------------------------
@@ -47,6 +48,10 @@ export function panelIcon(type: PanelType): string {
       return 'Bot'
     case 'git':
       return 'GitBranch'
+    case 'fileExplorer':
+      return 'FolderOpen'
+    case 'projectList':
+      return 'Layers'
   }
 }
 
@@ -63,5 +68,9 @@ export function panelColor(type: PanelType): string {
       return '#AF52DE' // purple
     case 'git':
       return '#FF3B30' // red
+    case 'fileExplorer':
+      return '#5AC8FA' // teal
+    case 'projectList':
+      return '#FFD60A' // yellow
   }
 }

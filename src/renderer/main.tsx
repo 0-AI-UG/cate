@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import DetachedPanelApp from './DetachedPanelApp'
 import './styles/globals.css'
 
 class ErrorBoundary extends React.Component<
@@ -25,10 +26,12 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+const isDetached = new URLSearchParams(window.location.search).has('detached')
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      {isDetached ? <DetachedPanelApp /> : <App />}
     </ErrorBoundary>
   </React.StrictMode>
 )

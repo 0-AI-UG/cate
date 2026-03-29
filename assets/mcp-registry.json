@@ -1,0 +1,137 @@
+[
+  {
+    "name": "GitHub",
+    "description": "GitHub API — repos, issues, PRs, code search",
+    "category": "development",
+    "package": "@modelcontextprotocol/server-github",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "requiredEnv": ["GITHUB_TOKEN"]
+  },
+  {
+    "name": "Filesystem",
+    "description": "Read/write files and directories",
+    "category": "filesystem",
+    "package": "@modelcontextprotocol/server-filesystem",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+    "requiredEnv": []
+  },
+  {
+    "name": "PostgreSQL",
+    "description": "Query PostgreSQL databases",
+    "category": "database",
+    "package": "@modelcontextprotocol/server-postgres",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres"],
+    "requiredEnv": ["POSTGRES_URL"]
+  },
+  {
+    "name": "SQLite",
+    "description": "Query SQLite databases",
+    "category": "database",
+    "package": "@modelcontextprotocol/server-sqlite",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-sqlite"],
+    "requiredEnv": ["SQLITE_PATH"]
+  },
+  {
+    "name": "Slack",
+    "description": "Read/send Slack messages, channels, threads",
+    "category": "communication",
+    "package": "@modelcontextprotocol/server-slack",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-slack"],
+    "requiredEnv": ["SLACK_BOT_TOKEN"]
+  },
+  {
+    "name": "Google Drive",
+    "description": "Search and read Google Drive files",
+    "category": "productivity",
+    "package": "@modelcontextprotocol/server-gdrive",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+    "requiredEnv": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
+  },
+  {
+    "name": "Brave Search",
+    "description": "Web search via Brave Search API",
+    "category": "search",
+    "package": "@modelcontextprotocol/server-brave-search",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+    "requiredEnv": ["BRAVE_API_KEY"]
+  },
+  {
+    "name": "Fetch",
+    "description": "Fetch web pages and convert to markdown",
+    "category": "web",
+    "package": "@modelcontextprotocol/server-fetch",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-fetch"],
+    "requiredEnv": []
+  },
+  {
+    "name": "Memory",
+    "description": "Knowledge graph-based persistent memory",
+    "category": "utility",
+    "package": "@modelcontextprotocol/server-memory",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-memory"],
+    "requiredEnv": []
+  },
+  {
+    "name": "Puppeteer",
+    "description": "Browser automation and web scraping",
+    "category": "web",
+    "package": "@modelcontextprotocol/server-puppeteer",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+    "requiredEnv": []
+  },
+  {
+    "name": "Git",
+    "description": "Git operations — clone, log, diff, branch",
+    "category": "development",
+    "package": "@modelcontextprotocol/server-git",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-git"],
+    "requiredEnv": []
+  },
+  {
+    "name": "Linear",
+    "description": "Linear project management — issues, projects, teams",
+    "category": "productivity",
+    "package": "@modelcontextprotocol/server-linear",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-linear"],
+    "requiredEnv": ["LINEAR_API_KEY"]
+  },
+  {
+    "name": "Sentry",
+    "description": "Error tracking and monitoring via Sentry",
+    "category": "monitoring",
+    "package": "@modelcontextprotocol/server-sentry",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-sentry"],
+    "requiredEnv": ["SENTRY_AUTH_TOKEN"]
+  },
+  {
+    "name": "Docker",
+    "description": "Manage Docker containers and images",
+    "category": "infrastructure",
+    "package": "@modelcontextprotocol/server-docker",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-docker"],
+    "requiredEnv": []
+  },
+  {
+    "name": "Notion",
+    "description": "Read and search Notion pages and databases",
+    "category": "productivity",
+    "package": "@modelcontextprotocol/server-notion",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-notion"],
+    "requiredEnv": ["NOTION_API_KEY"]
+  }
+]

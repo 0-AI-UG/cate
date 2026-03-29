@@ -9,6 +9,11 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { minimumSize, snap } from '../canvas/layoutEngine'
 import type { PanelType, Point, Size, Rect } from '../../shared/types'
 
+interface PendingResize {
+  origin: Point
+  size: Size
+}
+
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
@@ -107,6 +112,8 @@ export function useNodeResize(
   const resizeStateRef = useRef<ResizeState | null>(null)
   const isResizingRef = useRef(false)
   const currentEdgeRef = useRef<ResizeEdge | null>(null)
+  const rafId = useRef<number>(0)
+  const pendingResize = useRef<PendingResize | null>(null)
 
   const minSize = minimumSize(panelType)
 
@@ -203,11 +210,27 @@ export function useNodeResize(
           }
         }
 
-        useCanvasStore.getState().resizeNode(
-          nodeId,
-          { width: newWidth, height: newHeight },
-          { x: newOriginX, y: newOriginY },
-        )
+        // Accumulate geometry — don't update store directly
+        pendingResize.current = {
+          origin: { x: newOriginX, y: newOriginY },
+          size: { width: newWidth, height: newHeight },
+        }
+
+        // Schedule RAF if not already pending
+        if (!rafId.current) {
+          rafId.current = requestAnimationFrame(() => {
+            rafId.current = 0
+            const pending = pendingResize.current
+            if (!pending) return
+
+            useCanvasStore.getState().resizeNode(
+              nodeId,
+              pending.size,
+              pending.origin,
+            )
+            pendingResize.current = null
+          })
+        }
       }
 
       const handleMouseUp = () => {
@@ -216,6 +239,20 @@ export function useNodeResize(
 
         isResizingRef.current = false
         currentEdgeRef.current = null
+
+        // Cancel any pending RAF and flush the last geometry immediately
+        if (rafId.current) {
+          cancelAnimationFrame(rafId.current)
+          rafId.current = 0
+        }
+        if (pendingResize.current) {
+          useCanvasStore.getState().resizeNode(
+            nodeId,
+            pendingResize.current.size,
+            pendingResize.current.origin,
+          )
+          pendingResize.current = null
+        }
 
         // Snap to grid if enabled
         const settings = useSettingsStore.getState()
