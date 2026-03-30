@@ -11,6 +11,8 @@ function panelColor(type: PanelType): string {
     case 'editor': return '#FF9500'
     case 'aiChat': return '#AF52DE'
     case 'git': return '#FF3B30'
+    case 'fileExplorer': return '#5AC8FA'
+    case 'projectList': return '#FFD60A'
   }
 }
 
