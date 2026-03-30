@@ -3,7 +3,6 @@
 // =============================================================================
 
 import { create } from 'zustand'
-import type { DockZonePosition } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
 // Store interface
@@ -24,8 +23,6 @@ interface UIStoreState {
   panelSwitcherScreenshot: string | null
   /** Active marquee selection rectangle in canvas-space coordinates, or null when idle. */
   marquee: { startX: number; startY: number; currentX: number; currentY: number } | null
-  /** The dock zone currently highlighted as a drop target during a drag operation. */
-  dockDropTarget: DockZonePosition | null
   /** Active view in the right sidebar, null = collapsed */
   activeRightSidebarView: SidebarView | null
 }
@@ -42,7 +39,6 @@ interface UIStoreActions {
   setSidebarVisible: (visible: boolean) => void
   setFileExplorerVisible: (visible: boolean) => void
   setMarquee: (marquee: { startX: number; startY: number; currentX: number; currentY: number } | null) => void
-  setDockDropTarget: (zone: DockZonePosition | null) => void
   setActiveRightSidebarView: (view: SidebarView | null) => void
 }
 
@@ -64,7 +60,6 @@ export const useUIStore = create<UIStore>((set) => ({
   sidebarVisible: true,
   fileExplorerVisible: false,
   marquee: null,
-  dockDropTarget: null,
   activeRightSidebarView: null,
 
   // --- Actions ---
@@ -111,10 +106,6 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setMarquee(marquee) {
     set({ marquee })
-  },
-
-  setDockDropTarget(zone) {
-    set({ dockDropTarget: zone })
   },
 
   setActiveRightSidebarView(view) {
