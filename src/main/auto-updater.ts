@@ -8,32 +8,47 @@ import { autoUpdater } from 'electron-updater'
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
 
-let updateAvailable = false
+let isManualCheck = false
+
+function showUpdateDialog(info: { version: string }): void {
+  const win = BrowserWindow.getFocusedWindow()
+  dialog
+    .showMessageBox({
+      ...(win ? { parentWindow: win } : {}),
+      type: 'info',
+      title: 'Update Available',
+      message: `A new version of Cate (v${info.version}) is available.`,
+      detail: 'Would you like to download and install it?',
+      buttons: ['Update', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    })
+    .then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.downloadUpdate()
+      }
+    })
+}
 
 export function initAutoUpdater(): void {
   // Don't check for updates in dev mode
   if (!app.isPackaged) return
 
   autoUpdater.on('update-available', (info) => {
-    updateAvailable = true
+    showUpdateDialog(info)
+  })
 
-    const win = BrowserWindow.getFocusedWindow()
-    dialog
-      .showMessageBox({
+  autoUpdater.on('update-not-available', () => {
+    if (isManualCheck) {
+      isManualCheck = false
+      const win = BrowserWindow.getFocusedWindow()
+      dialog.showMessageBox({
         ...(win ? { parentWindow: win } : {}),
         type: 'info',
-        title: 'Update Available',
-        message: `A new version of Cate (v${info.version}) is available.`,
-        detail: 'Would you like to download and install it?',
-        buttons: ['Update', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
+        title: 'No Updates',
+        message: 'You are running the latest version of Cate.',
       })
-      .then(({ response }) => {
-        if (response === 0) {
-          autoUpdater.downloadUpdate()
-        }
-      })
+    }
   })
 
   autoUpdater.on('update-downloaded', () => {
@@ -56,8 +71,23 @@ export function initAutoUpdater(): void {
       })
   })
 
+  autoUpdater.on('checking-for-update', () => {
+    console.log('Auto-updater: checking for update...')
+  })
+
   autoUpdater.on('error', (err) => {
     console.error('Auto-updater error:', err)
+    if (isManualCheck) {
+      isManualCheck = false
+      const win = BrowserWindow.getFocusedWindow()
+      dialog.showMessageBox({
+        ...(win ? { parentWindow: win } : {}),
+        type: 'error',
+        title: 'Update Check Failed',
+        message: 'Could not check for updates.',
+        detail: err.message || 'Please check your internet connection.',
+      })
+    }
   })
 
   // Check on launch (after a short delay to not block startup)
@@ -68,37 +98,23 @@ export function initAutoUpdater(): void {
   // Check every 4 hours
   setInterval(
     () => {
-      if (!updateAvailable) {
-        autoUpdater.checkForUpdates().catch(() => {})
-      }
+      autoUpdater.checkForUpdates().catch(() => {})
     },
     4 * 60 * 60 * 1000,
   )
 }
 
 export function checkForUpdatesManually(): void {
-  updateAvailable = false
-  autoUpdater
-    .checkForUpdates()
-    .then((result) => {
-      if (!result || !result.updateInfo || result.updateInfo.version === app.getVersion()) {
-        const win = BrowserWindow.getFocusedWindow()
-        dialog.showMessageBox({
-          ...(win ? { parentWindow: win } : {}),
-          type: 'info',
-          title: 'No Updates',
-          message: 'You are running the latest version of Cate.',
-        })
-      }
+  isManualCheck = true
+  autoUpdater.checkForUpdates().catch((err) => {
+    isManualCheck = false
+    const win = BrowserWindow.getFocusedWindow()
+    dialog.showMessageBox({
+      ...(win ? { parentWindow: win } : {}),
+      type: 'error',
+      title: 'Update Check Failed',
+      message: 'Could not check for updates.',
+      detail: err.message || 'Please check your internet connection.',
     })
-    .catch((err) => {
-      const win = BrowserWindow.getFocusedWindow()
-      dialog.showMessageBox({
-        ...(win ? { parentWindow: win } : {}),
-        type: 'error',
-        title: 'Update Check Failed',
-        message: 'Could not check for updates.',
-        detail: err.message || 'Please check your internet connection.',
-      })
-    })
+  })
 }
