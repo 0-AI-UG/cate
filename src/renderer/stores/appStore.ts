@@ -4,6 +4,8 @@
 // =============================================================================
 
 import { create } from 'zustand'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
+import { shallow } from 'zustand/shallow'
 import type {
   WorkspaceState,
   PanelState,
@@ -75,6 +77,7 @@ interface AppStoreActions {
   createTerminal: (workspaceId: string, initialInput?: string, position?: Point) => string
   createBrowser: (workspaceId: string, url?: string, position?: Point) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point) => string
+  createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point) => string
   createGit: (workspaceId: string, position?: Point) => string
   createFileExplorer: (workspaceId: string, position?: Point) => string
   createProjectList: (workspaceId: string, position?: Point) => string
@@ -269,6 +272,35 @@ export const useAppStore = create<AppStore>((set, get) => ({
       title: fileName,
       isDirty: false,
       filePath,
+    }
+
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === workspaceId
+          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
+          : ws,
+      ),
+    }))
+
+    if (workspaceId === get().selectedWorkspaceId) {
+      const nodeId = useCanvasStore.getState().addNode(panelId, 'editor', position)
+      useCanvasStore.getState().focusAndCenter(nodeId)
+    }
+
+    return panelId
+  },
+
+  createDiffEditor(workspaceId, filePath, diffMode, position?) {
+    const panelId = generateId()
+    const fileName = filePath.split('/').pop() ?? 'Untitled'
+    const label = diffMode === 'staged' ? 'Staged' : 'Working'
+    const panel: PanelState = {
+      id: panelId,
+      type: 'editor',
+      title: `${fileName} (${label} Diff)`,
+      isDirty: false,
+      filePath,
+      diffMode,
     }
 
     set((state) => ({
@@ -539,3 +571,47 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 }))
+
+// -----------------------------------------------------------------------------
+// Granular selectors
+// -----------------------------------------------------------------------------
+
+/** Returns the selected workspace. Uses shallow equality to avoid re-renders
+ *  when unrelated workspaces change. */
+export function useSelectedWorkspace(): WorkspaceState | undefined {
+  return useStoreWithEqualityFn(
+    useAppStore,
+    (s) => s.workspaces.find((w) => w.id === s.selectedWorkspaceId),
+    shallow,
+  )
+}
+
+/** Returns just the panels record of the selected workspace. */
+export function useWorkspacePanels(): Record<string, PanelState> | undefined {
+  return useAppStore(
+    (s) => s.workspaces.find((w) => w.id === s.selectedWorkspaceId)?.panels,
+  )
+}
+
+/** Returns the rootPath for a workspace (defaults to selected). */
+export function useWorkspaceRootPath(wsId?: string): string | undefined {
+  return useAppStore((s) => {
+    const id = wsId ?? s.selectedWorkspaceId
+    return s.workspaces.find((w) => w.id === id)?.rootPath
+  })
+}
+
+/** Returns workspaces array, re-rendering only on add/remove/reorder. */
+export function useWorkspaceList(): WorkspaceState[] {
+  return useStoreWithEqualityFn(
+    useAppStore,
+    (s) => s.workspaces,
+    (a, b) => {
+      if (a.length !== b.length) return false
+      for (let i = 0; i < a.length; i++) {
+        if (a[i].id !== b[i].id) return false
+      }
+      return true
+    },
+  )
+}

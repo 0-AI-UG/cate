@@ -53,13 +53,24 @@ function createTerminal(
   terminals.set(id, ptyProcess)
   terminalPids.set(id, ptyProcess.pid)
 
+  // Buffer PTY output and flush at ~60fps to avoid hammering IPC on fast output
+  let dataBuffer = ''
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+
   ptyProcess.onData((data: string) => {
     // Log to disk for session restore
     const logger = getOrCreateLogger(id)
     logger.append(data)
 
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(TERMINAL_DATA, id, data)
+    dataBuffer += data
+    if (!flushTimer) {
+      flushTimer = setTimeout(() => {
+        flushTimer = null
+        if (dataBuffer && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(TERMINAL_DATA, id, dataBuffer)
+        }
+        dataBuffer = ''
+      }, 16)
     }
   })
 

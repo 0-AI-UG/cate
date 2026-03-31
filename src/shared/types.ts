@@ -146,6 +146,8 @@ export interface PanelState {
   isDirty: boolean
   filePath?: string
   url?: string
+  /** When set, EditorPanel renders as a Monaco diff editor. */
+  diffMode?: 'staged' | 'working'
 }
 
 // -----------------------------------------------------------------------------

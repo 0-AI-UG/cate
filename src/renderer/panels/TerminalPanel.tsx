@@ -32,6 +32,7 @@ export default function TerminalPanel({
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const fitTimeoutRef = useRef<(() => void) | null>(null)
 
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -39,9 +40,11 @@ export default function TerminalPanel({
   const rootPath = useAppStore((state) =>
     state.workspaces.find((w) => w.id === workspaceId)?.rootPath,
   )
+  const rootPathRef = useRef(rootPath)
+  rootPathRef.current = rootPath
 
-  const zoomLevel = useCanvasStore((s) => s.zoomLevel)
   const isFocused = useCanvasStore((s) => s.focusedNodeId === nodeId)
+  const zoomLevel = useCanvasStore((s) => s.zoomLevel)
 
   // -------------------------------------------------------------------------
   // Search handlers
@@ -77,14 +80,19 @@ export default function TerminalPanel({
   // Keyboard shortcut: Cmd+F / Ctrl+F opens search; Escape closes it
   // -------------------------------------------------------------------------
 
+  const showSearchRef = useRef(showSearch)
+  showSearchRef.current = showSearch
+  const handleCloseSearchRef = useRef(handleCloseSearch)
+  handleCloseSearchRef.current = handleCloseSearch
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault()
         setShowSearch(true)
       }
-      if (e.key === 'Escape' && showSearch) {
-        handleCloseSearch()
+      if (e.key === 'Escape' && showSearchRef.current) {
+        handleCloseSearchRef.current()
       }
     }
 
@@ -93,7 +101,7 @@ export default function TerminalPanel({
       container.addEventListener('keydown', handleKeyDown)
       return () => container.removeEventListener('keydown', handleKeyDown)
     }
-  }, [panelId, showSearch, handleCloseSearch])
+  }, [panelId])
 
   // -------------------------------------------------------------------------
   // Terminal lifecycle
@@ -109,7 +117,7 @@ export default function TerminalPanel({
     terminalRegistry
       .getOrCreate(panelId, {
         workspaceId,
-        cwd: rootPath || undefined,
+        cwd: rootPathRef.current || undefined,
         initialInput,
       })
       .then((entry) => {
@@ -119,22 +127,21 @@ export default function TerminalPanel({
         terminalRegistry.attach(panelId, container)
 
         // 3. ResizeObserver — keep xterm sized to the container
-        //    RAF-gated to prevent multiple fit() calls per frame during drag resize
-        let fitPending = false
+        //    Debounced to avoid expensive fit() calls during rapid resize (e.g. node drag).
+        let fitTimeoutId = 0
         const resizeObserver = new ResizeObserver(() => {
-          if (fitPending) return
-          fitPending = true
-          requestAnimationFrame(() => {
-            fitPending = false
+          clearTimeout(fitTimeoutId)
+          fitTimeoutId = window.setTimeout(() => {
             try {
               entry.fitAddon.fit()
             } catch {
               // Ignore fit errors during rapid resizing or zero-size frames
             }
-          })
+          }, 50)
         })
         resizeObserver.observe(container)
         resizeObserverRef.current = resizeObserver
+        fitTimeoutRef.current = () => clearTimeout(fitTimeoutId)
       })
       .catch(() => {
         // getOrCreate writes its own error message into the terminal; nothing
@@ -145,6 +152,12 @@ export default function TerminalPanel({
     return () => {
       cancelled = true
 
+      // Clear pending fit timeout to prevent fit() on a disposed entry
+      if (fitTimeoutRef.current) {
+        fitTimeoutRef.current()
+        fitTimeoutRef.current = null
+      }
+
       terminalRegistry.detach(panelId)
 
       if (resizeObserverRef.current) {
@@ -152,7 +165,7 @@ export default function TerminalPanel({
         resizeObserverRef.current = null
       }
     }
-  }, [panelId, workspaceId, nodeId, initialInput, rootPath])
+  }, [panelId, workspaceId, nodeId, initialInput])
 
   // -------------------------------------------------------------------------
   // Focus xterm when this node becomes the focused node
@@ -168,19 +181,8 @@ export default function TerminalPanel({
     })
   }, [isFocused, panelId])
 
-  // -------------------------------------------------------------------------
-  // Re-fit terminal when canvas zoom changes
-  // -------------------------------------------------------------------------
-
-  useEffect(() => {
-    const entry = terminalRegistry.getEntry(panelId)
-    if (!entry) return
-    requestAnimationFrame(() => {
-      try {
-        entry.fitAddon.fit()
-      } catch { /* ignore */ }
-    })
-  }, [panelId, zoomLevel])
+  // NOTE: No separate zoom-level re-fit needed — zoom only changes the CSS
+  // transform, not the container size. The ResizeObserver handles actual resizes.
 
   // -------------------------------------------------------------------------
   // Fix mouse coordinates for CSS-scaled canvas

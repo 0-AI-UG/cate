@@ -78,17 +78,18 @@ function PanelIcon({ type }: { type: PanelType }) {
 export const NodeSwitcher: React.FC = () => {
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const setShowNodeSwitcher = useUIStore((s) => s.setShowNodeSwitcher)
-  const nodes = useCanvasStore((s) => s.nodes)
   const focusNode = useCanvasStore((s) => s.focusNode)
   const setViewportOffset = useCanvasStore((s) => s.setViewportOffset)
   const zoomLevel = useCanvasStore((s) => s.zoomLevel)
-  const sortedNodesByCreationOrder = useCanvasStore((s) => s.sortedNodesByCreationOrder)
+  const nodes = useCanvasStore((s) => s.nodes)
   const workspace = useAppStore((s) => s.selectedWorkspace())
 
   // Build items list: sorted by creation order, with panel info
+  // Keyed on workspace id and node count to avoid recomputing on unrelated node property changes
+  const nodeIds = useMemo(() => Object.keys(nodes).sort(), [nodes])
   const items = useMemo(() => {
     if (!workspace) return []
-    const sorted = sortedNodesByCreationOrder()
+    const sorted = useCanvasStore.getState().sortedNodesByCreationOrder()
     return sorted.map((node) => {
       const panel = workspace.panels[node.panelId]
       return {
@@ -97,7 +98,7 @@ export const NodeSwitcher: React.FC = () => {
         type: (panel?.type ?? 'terminal') as PanelType,
       }
     })
-  }, [workspace, nodes, sortedNodesByCreationOrder])
+  }, [workspace, nodeIds])
 
   // Default selection: second item (next panel after current)
   const [selectedIndex, setSelectedIndex] = useState(items.length > 1 ? 1 : 0)

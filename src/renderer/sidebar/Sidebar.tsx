@@ -3,7 +3,7 @@ import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SourceControlView } from './SourceControlView'
 import { AIConfigSidebarView } from './AIConfigSidebarView'
-import { useAppStore } from '../stores/appStore'
+import { useAppStore, useWorkspaceList } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { useStatusStore } from '../stores/statusStore'
 import type { SidebarView } from '../stores/uiStore'
@@ -45,7 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
   const startWidthRef = useRef(0)
 
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
-  const workspaces = useAppStore((s) => s.workspaces)
+  const workspaces = useWorkspaceList()
   const addWorkspace = useAppStore((s) => s.addWorkspace)
   const selectWorkspace = useAppStore((s) => s.selectWorkspace)
   const needsInputCount = useStatusStore((s) => {
@@ -70,20 +70,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
 
   useEffect(() => {
     if (!isResizing) return
-    let raf = false
+    let pendingX = startXRef.current
+    let rafId = 0
     const onMove = (e: MouseEvent) => {
-      if (raf) return
-      raf = true
-      requestAnimationFrame(() => {
-        raf = false
-        const delta = e.clientX - startXRef.current
-        setWidth(Math.min(LEFT_MAX_WIDTH, Math.max(LEFT_MIN_WIDTH, startWidthRef.current + delta)))
-      })
+      pendingX = e.clientX
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = 0
+          const delta = pendingX - startXRef.current
+          setWidth(Math.min(LEFT_MAX_WIDTH, Math.max(LEFT_MIN_WIDTH, startWidthRef.current + delta)))
+        })
+      }
     }
     const onUp = () => setIsResizing(false)
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
   }, [isResizing])
 
   return (
@@ -94,7 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
       {/* macOS titlebar drag region */}
       <div className="h-7 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
-      {/* When collapsed: show icons vertically. When expanded: ProjectList renders them. */}
+      {/* When collapsed: show workspace dots + action icons */}
       {!isVisible && (
         <div className="flex flex-col items-center gap-1 py-2 flex-shrink-0">
           <button
@@ -115,6 +121,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ isVisible }) => {
           >
             <Plus size={16} />
           </button>
+          <div className="w-5 border-t border-white/10 my-1" />
+          {workspaces.map((ws) => {
+            const isSelected = ws.id === useAppStore.getState().selectedWorkspaceId
+            const panelCount = Object.keys(ws.panels).length
+            const label = ws.name || ws.rootPath?.split('/').pop() || 'Workspace'
+            return (
+              <button
+                key={ws.id}
+                className={`relative flex items-center justify-center w-7 h-7 rounded-md transition-colors ${
+                  isSelected ? 'ring-1 ring-white/30' : 'hover:bg-white/10'
+                }`}
+                style={{ backgroundColor: isSelected ? ws.color : `${ws.color}66` }}
+                onClick={() => selectWorkspace(ws.id)}
+                title={label}
+              >
+                <span className="text-[10px] font-bold text-white">
+                  {panelCount > 0 ? panelCount : label.charAt(0).toUpperCase()}
+                </span>
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -220,20 +247,26 @@ export const RightSidebar: React.FC = () => {
 
   useEffect(() => {
     if (!isResizing) return
-    let raf = false
+    let pendingX = startXRef.current
+    let rafId = 0
     const onMove = (e: MouseEvent) => {
-      if (raf) return
-      raf = true
-      requestAnimationFrame(() => {
-        raf = false
-        const delta = startXRef.current - e.clientX
-        setWidth(Math.min(RIGHT_MAX_WIDTH, Math.max(RIGHT_MIN_WIDTH, startWidthRef.current + delta)))
-      })
+      pendingX = e.clientX
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = 0
+          const delta = startXRef.current - pendingX
+          setWidth(Math.min(RIGHT_MAX_WIDTH, Math.max(RIGHT_MIN_WIDTH, startWidthRef.current + delta)))
+        })
+      }
     }
     const onUp = () => setIsResizing(false)
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
   }, [isResizing])
 
   const handleIconClick = useCallback((view: SidebarView) => {

@@ -3,7 +3,7 @@
 // Ported from CanvasView.swift.
 // =============================================================================
 
-import React, { useRef, useCallback, useEffect, useState } from 'react'
+import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
@@ -15,6 +15,22 @@ import ContextMenu from '../ui/ContextMenu'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import CanvasAnnotationComponent from './CanvasAnnotationComponent'
 import type { Point, PanelType } from '../../shared/types'
+
+// Module-level style injection — shared across all Canvas instances
+let canvasStyleInjected = false
+function injectCanvasInteractingStyle(): void {
+  if (canvasStyleInjected) return
+  canvasStyleInjected = true
+  const style = document.createElement('style')
+  style.textContent = `
+    .canvas-interacting iframe,
+    .canvas-interacting webview,
+    .canvas-interacting .monaco-editor {
+      pointer-events: none !important;
+    }
+  `
+  document.head.appendChild(style)
+}
 
 interface CanvasProps {
   children?: React.ReactNode
@@ -42,20 +58,8 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
     closeCanvasContextMenu,
   } = useCanvasInteraction(canvasRef)
 
-  // Inject a one-time global style that disables pointer events on iframes,
-  // webviews, and Monaco editors while a canvas interaction is in progress.
-  useEffect(() => {
-    const style = document.createElement('style')
-    style.textContent = `
-      .canvas-interacting iframe,
-      .canvas-interacting webview,
-      .canvas-interacting .monaco-editor {
-        pointer-events: none !important;
-      }
-    `
-    document.head.appendChild(style)
-    return () => { document.head.removeChild(style) }
-  }, [])
+  // Inject the canvas-interacting style once at module level (not per mount)
+  useEffect(injectCanvasInteractingStyle, [])
 
   // Register wheel listener with { passive: false } so preventDefault works
   // React's onWheel is passive by default, which silently ignores preventDefault
@@ -133,63 +137,71 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
     useAppStore.getState().createEditor(wsId, filePath, canvasPoint)
   }, [canvasRef])
 
+  // Memoize marquee rect to avoid recalculation in render
+  const marqueeRect = useMemo(() => {
+    if (!marquee) return null
+    return {
+      x: Math.min(marquee.startX, marquee.currentX),
+      y: Math.min(marquee.startY, marquee.currentY),
+      w: Math.abs(marquee.currentX - marquee.startX),
+      h: Math.abs(marquee.currentY - marquee.startY),
+    }
+  }, [marquee])
+
   // CSS transform: scale first, then translate (divide offset by zoom since
   // the translate happens in the scaled coordinate space)
   const worldTransform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
 
   // Build context menu items for creating panels at a specific canvas position
-  const contextMenuItems = canvasContextMenu
-    ? [
-        ...(onCreateAtPoint
-          ? [
-              {
-                label: 'New Terminal',
-                onClick: () => {
-                  onCreateAtPoint('terminal', canvasContextMenu.canvasPoint)
-                },
+  const contextMenuItems = useMemo(() => {
+    if (!canvasContextMenu) return []
+    return [
+      ...(onCreateAtPoint
+        ? [
+            {
+              label: 'New Terminal',
+              onClick: () => {
+                onCreateAtPoint('terminal', canvasContextMenu.canvasPoint)
               },
-              {
-                label: 'New Editor',
-                onClick: () => {
-                  onCreateAtPoint('editor', canvasContextMenu.canvasPoint)
-                },
+            },
+            {
+              label: 'New Editor',
+              onClick: () => {
+                onCreateAtPoint('editor', canvasContextMenu.canvasPoint)
               },
-              {
-                label: 'New Browser',
-                onClick: () => {
-                  onCreateAtPoint('browser', canvasContextMenu.canvasPoint)
-                },
+            },
+            {
+              label: 'New Browser',
+              onClick: () => {
+                onCreateAtPoint('browser', canvasContextMenu.canvasPoint)
               },
-            ]
-          : []),
-        {
-          label: 'New Region',
-          onClick: () => {
-            useCanvasStore.getState().addRegion(
-              'Region',
-              canvasContextMenu.canvasPoint,
-              { width: 400, height: 300 },
-            )
-          },
+            },
+          ]
+        : []),
+      {
+        label: 'New Region',
+        onClick: () => {
+          useCanvasStore.getState().addRegion(
+            'Region',
+            canvasContextMenu.canvasPoint,
+            { width: 400, height: 300 },
+          )
         },
-        {
-          label: 'New Sticky Note',
-          onClick: () => {
-            if (canvasContextMenu) {
-              useCanvasStore.getState().addAnnotation('stickyNote', canvasContextMenu.canvasPoint)
-            }
-          },
+      },
+      {
+        label: 'New Sticky Note',
+        onClick: () => {
+          useCanvasStore.getState().addAnnotation('stickyNote', canvasContextMenu.canvasPoint)
         },
-        {
-          label: 'New Text Label',
-          onClick: () => {
-            if (canvasContextMenu) {
-              useCanvasStore.getState().addAnnotation('textLabel', canvasContextMenu.canvasPoint)
-            }
-          },
+      },
+      {
+        label: 'New Text Label',
+        onClick: () => {
+          useCanvasStore.getState().addAnnotation('textLabel', canvasContextMenu.canvasPoint)
         },
-      ]
-    : []
+      },
+    ]
+  }, [canvasContextMenu, onCreateAtPoint])
 
   return (
     <div
@@ -212,6 +224,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
           height: 1,
           transform: worldTransform,
           transformOrigin: '0 0',
+          willChange: 'transform',
         }}
         onClick={handleWorldClick}
       >
@@ -226,28 +239,22 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
           <CanvasAnnotationComponent key={ann.id} annotation={ann} />
         ))}
         <SnapGuides />
-        {marquee && (() => {
-          const x = Math.min(marquee.startX, marquee.currentX)
-          const y = Math.min(marquee.startY, marquee.currentY)
-          const w = Math.abs(marquee.currentX - marquee.startX)
-          const h = Math.abs(marquee.currentY - marquee.startY)
-          return (
-            <div
-              style={{
-                position: 'absolute',
-                left: x,
-                top: y,
-                width: w,
-                height: h,
-                backgroundColor: 'rgba(74, 158, 255, 0.1)',
-                border: '1px solid rgba(74, 158, 255, 0.5)',
-                borderRadius: 2,
-                pointerEvents: 'none',
-                zIndex: 99999,
-              }}
-            />
-          )
-        })()}
+        {marqueeRect && (
+          <div
+            style={{
+              position: 'absolute',
+              left: marqueeRect.x,
+              top: marqueeRect.y,
+              width: marqueeRect.w,
+              height: marqueeRect.h,
+              backgroundColor: 'rgba(74, 158, 255, 0.1)',
+              border: '1px solid rgba(74, 158, 255, 0.5)',
+              borderRadius: 2,
+              pointerEvents: 'none',
+              zIndex: 99999,
+            }}
+          />
+        )}
         {children}
       </div>
 

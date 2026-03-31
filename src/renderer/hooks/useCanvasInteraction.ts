@@ -49,14 +49,20 @@ export function useCanvasInteraction(
   const rightClickStart = useRef<{ x: number; y: number } | null>(null)
   const rightClickDidDrag = useRef(false)
 
-  // Momentum/inertia panning
-  const velocityHistory = useRef<Array<{ dx: number; dy: number; time: number }>>([])
+  // Momentum/inertia panning — circular buffer avoids shift() on every mousemove
+  const velocityBuffer = useRef<Array<{ dx: number; dy: number; time: number }>>(new Array(5))
+  const velocityIndex = useRef(0)
+  const velocityCount = useRef(0)
   const cancelInertia = useRef<(() => void) | null>(null)
 
   // Smooth zoom refs
   const targetZoom = useRef<number | null>(null)
   const zoomRafId = useRef<number>(0)
   const cursorViewPoint = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  // Wheel-pan throttle refs
+  const panRafId = useRef<number>(0)
+  const pendingPanDelta = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
   const [canvasContextMenu, setCanvasContextMenu] =
     useState<CanvasContextMenuState | null>(null)
@@ -75,6 +81,10 @@ export function useCanvasInteraction(
       if (zoomRafId.current) {
         cancelAnimationFrame(zoomRafId.current)
         zoomRafId.current = 0
+      }
+      if (panRafId.current) {
+        cancelAnimationFrame(panRafId.current)
+        panRafId.current = 0
       }
     }
   }, [])
@@ -121,7 +131,8 @@ export function useCanvasInteraction(
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
       // If the scroll originated inside a focused panel's content area,
-      // let the panel handle it (editor scrolling, terminal scrolling, etc.)
+      // let the panel handle it — but only if the panel can scroll in that direction.
+      // Horizontal swipes should pan the canvas when the panel has no horizontal scroll.
       const target = e.target as HTMLElement
       const panelContent = target.closest?.('[data-panel-content]')
       if (panelContent) {
@@ -129,7 +140,19 @@ export function useCanvasInteraction(
         const nodeId = nodeEl?.getAttribute('data-node-id')
         const { focusedNodeId } = useCanvasStore.getState()
         if (nodeId && nodeId === focusedNodeId) {
-          return // Let the panel handle the scroll
+          const isHorizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
+          if (!isHorizontal) {
+            return // Vertical scroll — panel handles it
+          }
+          // Check if any element between target and panel boundary can scroll horizontally
+          let el: HTMLElement | null = target
+          while (el && el !== panelContent) {
+            if (el.scrollWidth > el.clientWidth) {
+              return // Panel has horizontal scroll — let it handle it
+            }
+            el = el.parentElement
+          }
+          // No horizontal scrollability — fall through to canvas pan
         }
       }
 
@@ -177,11 +200,20 @@ export function useCanvasInteraction(
           zoomRafId.current = requestAnimationFrame(smoothZoomTick)
         }
       } else {
-        // Two-finger scroll = pan — don't preventDefault to allow native macOS trackpad momentum
-        setViewportOffset({
-          x: viewportOffset.x - e.deltaX,
-          y: viewportOffset.y - e.deltaY,
-        })
+        // Two-finger scroll = pan — accumulate deltas and apply once per frame
+        pendingPanDelta.current.x += e.deltaX
+        pendingPanDelta.current.y += e.deltaY
+        if (!panRafId.current) {
+          panRafId.current = requestAnimationFrame(() => {
+            panRafId.current = 0
+            const dx = pendingPanDelta.current.x
+            const dy = pendingPanDelta.current.y
+            pendingPanDelta.current.x = 0
+            pendingPanDelta.current.y = 0
+            const { viewportOffset: vo, setViewportOffset: setVO } = useCanvasStore.getState()
+            setVO({ x: vo.x - dx, y: vo.y - dy })
+          })
+        }
       }
     },
     [canvasRef, smoothZoomTick],
@@ -206,7 +238,8 @@ export function useCanvasInteraction(
         if (e.button === 2) {
           rightClickStart.current = { x: e.clientX, y: e.clientY }
           rightClickDidDrag.current = false
-          velocityHistory.current = []
+          velocityIndex.current = 0
+          velocityCount.current = 0
         }
         if (canvasRef.current) {
           canvasRef.current.style.cursor = 'grabbing'
@@ -326,13 +359,11 @@ export function useCanvasInteraction(
 
       lastPanPos.current = { x: e.clientX, y: e.clientY }
 
-      // Record velocity sample for right-click drag inertia
+      // Record velocity sample for right-click drag inertia (circular buffer)
       if (panButton.current === 2) {
-        velocityHistory.current.push({ dx, dy, time: performance.now() })
-        // Keep only last 5 samples
-        if (velocityHistory.current.length > 5) {
-          velocityHistory.current.shift()
-        }
+        velocityBuffer.current[velocityIndex.current] = { dx, dy, time: performance.now() }
+        velocityIndex.current = (velocityIndex.current + 1) % 5
+        if (velocityCount.current < 5) velocityCount.current++
       }
     },
     [],
@@ -384,10 +415,14 @@ export function useCanvasInteraction(
           cancelInertia.current = null
         }
 
-        if (rightClickDidDrag.current && velocityHistory.current.length >= 2) {
-          const samples = velocityHistory.current
-          const recent = samples.slice(-3) // Use last 3 samples
+        if (rightClickDidDrag.current && velocityCount.current >= 2) {
+          // Read last 3 samples from circular buffer
           const now = performance.now()
+          const recent: Array<{ dx: number; dy: number; time: number }> = []
+          for (let i = 0; i < Math.min(3, velocityCount.current); i++) {
+            const idx = (velocityIndex.current - 1 - i + 5) % 5
+            recent.push(velocityBuffer.current[idx])
+          }
 
           // Only use samples from the last 100ms
           const validSamples = recent.filter(s => now - s.time < 100)
@@ -401,6 +436,7 @@ export function useCanvasInteraction(
               let velX = avgDx
               let velY = avgDy
               let lastTime = performance.now()
+              const startTime = lastTime
               let rafId = 0
 
               const tick = () => {
@@ -413,7 +449,8 @@ export function useCanvasInteraction(
                 velX *= factor
                 velY *= factor
 
-                if (Math.abs(velX) < 0.5 && Math.abs(velY) < 0.5) {
+                // Stop on low velocity or after 500ms max
+                if ((Math.abs(velX) < 0.5 && Math.abs(velY) < 0.5) || now - startTime > 500) {
                   cancelInertia.current = null
                   return
                 }
@@ -436,7 +473,8 @@ export function useCanvasInteraction(
           }
         }
 
-        velocityHistory.current = []
+        velocityIndex.current = 0
+        velocityCount.current = 0
       }
     },
     [canvasRef],

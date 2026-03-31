@@ -1,12 +1,12 @@
 import React, { useState, useCallback } from 'react'
 import { Bell, Plus } from 'lucide-react'
-import { useAppStore } from '../stores/appStore'
+import { useAppStore, useWorkspaceList } from '../stores/appStore'
 import { useStatusStore } from '../stores/statusStore'
 import { useUIStore } from '../stores/uiStore'
 import { WorkspaceTab } from './WorkspaceTab'
 
 export const ProjectList: React.FC = () => {
-  const workspaces = useAppStore((s) => s.workspaces)
+  const workspaces = useWorkspaceList()
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const addWorkspace = useAppStore((s) => s.addWorkspace)
   const selectWorkspace = useAppStore((s) => s.selectWorkspace)

@@ -4,7 +4,7 @@
 
 import React, { useCallback, useRef } from 'react'
 import { useCanvasStore } from '../stores/canvasStore'
-import { useAppStore } from '../stores/appStore'
+import { useWorkspacePanels } from '../stores/appStore'
 
 const MINIMAP_WIDTH = 200
 const MINIMAP_HEIGHT = 150
@@ -25,7 +25,7 @@ const Minimap: React.FC = () => {
   const viewportOffset = useCanvasStore((s) => s.viewportOffset)
   const zoomLevel = useCanvasStore((s) => s.zoomLevel)
   const containerSize = useCanvasStore((s) => s.containerSize)
-  const currentWorkspace = useAppStore((s) => s.workspaces.find(w => w.id === s.selectedWorkspaceId))
+  const panels = useWorkspacePanels()
   const minimapRef = useRef<HTMLDivElement>(null)
 
   const nodeList = Object.values(nodes)
@@ -155,7 +155,7 @@ const Minimap: React.FC = () => {
 
       {/* Node rectangles */}
       {nodeList.map((node) => {
-        const panel = currentWorkspace?.panels[node.panelId]
+        const panel = panels?.[node.panelId]
         const type = panel?.type || 'terminal'
         return (
           <div

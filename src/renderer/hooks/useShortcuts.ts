@@ -263,12 +263,14 @@ export function useShortcuts(): void {
      * The store handles hint hold start/stop logic internally.
      */
     function updateModifierState(e: KeyboardEvent) {
-      shortcutStore().updateModifiers({
-        command: e.metaKey,
-        shift: e.shiftKey,
-        option: e.altKey,
-        control: e.ctrlKey,
-      })
+      const prev = shortcutStore().activeModifiers
+      const command = e.metaKey
+      const shift = e.shiftKey
+      const option = e.altKey
+      const control = e.ctrlKey
+      // Skip store update if nothing changed
+      if (prev.command === command && prev.shift === shift && prev.option === option && prev.control === control) return
+      shortcutStore().updateModifiers({ command, shift, option, control })
     }
 
     /**

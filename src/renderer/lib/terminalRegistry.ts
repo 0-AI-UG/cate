@@ -109,6 +109,14 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
   document.body.appendChild(tempDiv)
   terminal.open(tempDiv)
 
+  // Remove the temp div from the DOM — xterm's element is now detached and
+  // will be reparented by attach(). Leaving it leaks a DOM node per terminal.
+  const xtermEl = (terminal as unknown as { element?: HTMLElement }).element
+  if (xtermEl && tempDiv.contains(xtermEl)) {
+    tempDiv.removeChild(xtermEl)
+  }
+  document.body.removeChild(tempDiv)
+
   // 4. Try WebGL renderer, fall back to canvas silently
   let webglAddon: WebglAddon | null = null
   try {
@@ -279,14 +287,8 @@ function attach(panelId: string, container: HTMLDivElement): void {
     // Canvas renderer fallback — no action needed
   }
 
-  try {
-    fitAddon.fit()
-  } catch {
-    // Ignore fit errors (e.g. zero-size container during layout)
-  }
-
-  // Belt-and-suspenders: schedule a second fit + full redraw after the next
-  // frame in case the container was still mid-layout during the sync fit.
+  // Fit after the next frame — the container may still be mid-layout during
+  // the sync DOM append (e.g. WebGL canvas initialization).
   requestAnimationFrame(() => {
     if (!registry.has(panelId)) return
     try {
@@ -294,16 +296,6 @@ function attach(panelId: string, container: HTMLDivElement): void {
       terminal.refresh(0, terminal.rows - 1)
     } catch { /* ignore */ }
   })
-
-  // Third fit after a short delay — catches cases where the WebGL addon's
-  // internal canvas buffers aren't fully initialized on the first RAF.
-  setTimeout(() => {
-    if (!registry.has(panelId)) return
-    try {
-      fitAddon.fit()
-      terminal.refresh(0, terminal.rows - 1)
-    } catch { /* ignore */ }
-  }, 50)
 }
 
 /**

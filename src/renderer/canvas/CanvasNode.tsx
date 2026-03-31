@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PanelType, NodeActivityState } from '../../shared/types'
 import { isMaximized as checkMaximized } from '../../shared/types'
 import { useCanvasStore } from '../stores/canvasStore'
-import { useAppStore } from '../stores/appStore'
+import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
 import { useNodeDrag } from '../hooks/useNodeDrag'
 import { useNodeResize, detectEdge, getCursorForEdge } from '../hooks/useNodeResize'
 import CanvasNodeTitleBar from './CanvasNodeTitleBar'
@@ -303,7 +303,16 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   // Stack state
   const hasStack = node?.stackedPanelIds && node.stackedPanelIds.length > 1
-  const currentWorkspace = useAppStore((s) => s.workspaces.find(w => w.id === s.selectedWorkspaceId))
+  const currentWorkspace = useSelectedWorkspace()
+
+  // Memoize tabs array to avoid re-creating on every render
+  const tabs = useMemo(() => {
+    if (!hasStack || !node?.stackedPanelIds) return []
+    return node.stackedPanelIds.map(pid => {
+      const p = currentWorkspace?.panels[pid]
+      return { panelId: pid, title: p?.title || 'Panel', type: (p?.type || 'editor') as PanelType }
+    })
+  }, [hasStack, node?.stackedPanelIds, currentWorkspace?.panels])
 
   // --- Computed styles -------------------------------------------------------
 
@@ -380,10 +389,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       {/* Tab bar — rendered when node has stacked panels */}
       {hasStack && (
         <CanvasNodeTabBar
-          tabs={(node.stackedPanelIds || []).map(pid => {
-            const p = currentWorkspace?.panels[pid]
-            return { panelId: pid, title: p?.title || 'Panel', type: (p?.type || 'editor') as PanelType }
-          })}
+          tabs={tabs}
           activeIndex={node.activeStackIndex || 0}
           onSelectTab={handleSelectTab}
           onCloseTab={handleCloseTab}

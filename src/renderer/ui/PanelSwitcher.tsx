@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStore } from '../stores/canvasStore'
-import { useAppStore } from '../stores/appStore'
+import { useSelectedWorkspace } from '../stores/appStore'
 import type { PanelType } from '../../shared/types'
 
 function panelColor(type: PanelType): string {
@@ -82,7 +82,7 @@ export function PanelSwitcher() {
   const pageScreenshot = useUIStore((s) => s.panelSwitcherScreenshot)
   const nodes = useCanvasStore((s) => s.nodes)
   const focusedNodeId = useCanvasStore((s) => s.focusedNodeId)
-  const workspace = useAppStore((s) => s.workspaces.find(w => w.id === s.selectedWorkspaceId))
+  const workspace = useSelectedWorkspace()
 
   const nodeList = Object.values(nodes).sort((a, b) => a.creationIndex - b.creationIndex)
   const [selectedIndex, setSelectedIndex] = useState(0)

@@ -107,6 +107,59 @@ export interface ElectronAPI {
     isCurrent: boolean
   }>>
 
+  /** Push to remote. */
+  gitPush(cwd: string, remote?: string, branch?: string): Promise<void>
+
+  /** Pull from remote. */
+  gitPull(cwd: string, remote?: string, branch?: string): Promise<{
+    summary: { changes: number; insertions: number; deletions: number }
+  }>
+
+  /** Fetch from remote. */
+  gitFetch(cwd: string, remote?: string): Promise<void>
+
+  /** Get commit log. */
+  gitLog(cwd: string, maxCount?: number): Promise<Array<{
+    hash: string
+    message: string
+    author_name: string
+    author_email: string
+    date: string
+  }>>
+
+  /** List all branches. */
+  gitBranchList(cwd: string): Promise<{
+    current: string
+    branches: Array<{
+      name: string
+      current: boolean
+      commit: string
+      label: string
+      isRemote: boolean
+    }>
+  }>
+
+  /** Create a new branch and switch to it. */
+  gitBranchCreate(cwd: string, branchName: string, startPoint?: string): Promise<void>
+
+  /** Delete a branch. */
+  gitBranchDelete(cwd: string, branchName: string, force?: boolean): Promise<void>
+
+  /** Checkout a branch. */
+  gitCheckout(cwd: string, branchName: string): Promise<void>
+
+  /** Get diff of staged changes. */
+  gitDiffStaged(cwd: string, filePath?: string): Promise<string>
+
+  /** Stash changes. */
+  gitStash(cwd: string, message?: string): Promise<void>
+
+  /** Pop stashed changes. */
+  gitStashPop(cwd: string): Promise<void>
+
+  /** Discard changes to a file (checkout -- file). */
+  gitDiscardFile(cwd: string, filePath: string): Promise<void>
+
   // ---------------------------------------------------------------------------
   // Shell / Process Monitor
   // ---------------------------------------------------------------------------

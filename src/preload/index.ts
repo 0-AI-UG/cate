@@ -27,6 +27,18 @@ import {
   GIT_UNSTAGE,
   GIT_COMMIT,
   GIT_WORKTREE_LIST,
+  GIT_PUSH,
+  GIT_PULL,
+  GIT_FETCH,
+  GIT_LOG,
+  GIT_BRANCH_LIST,
+  GIT_BRANCH_CREATE,
+  GIT_BRANCH_DELETE,
+  GIT_CHECKOUT,
+  GIT_DIFF_STAGED,
+  GIT_STASH,
+  GIT_STASH_POP,
+  GIT_DISCARD_FILE,
   SHELL_REGISTER_TERMINAL,
   SHELL_UNREGISTER_TERMINAL,
   SHELL_ACTIVITY_UPDATE,
@@ -202,6 +214,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   gitWorktreeList(cwd: string): Promise<Array<{ path: string; branch: string; isBare: boolean; isCurrent: boolean }>> {
     return ipcRenderer.invoke(GIT_WORKTREE_LIST, cwd)
+  },
+
+  gitPush(cwd: string, remote?: string, branch?: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_PUSH, cwd, remote, branch)
+  },
+
+  gitPull(cwd: string, remote?: string, branch?: string): Promise<unknown> {
+    return ipcRenderer.invoke(GIT_PULL, cwd, remote, branch)
+  },
+
+  gitFetch(cwd: string, remote?: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_FETCH, cwd, remote)
+  },
+
+  gitLog(cwd: string, maxCount?: number): Promise<Array<{ hash: string; message: string; author_name: string; author_email: string; date: string }>> {
+    return ipcRenderer.invoke(GIT_LOG, cwd, maxCount)
+  },
+
+  gitBranchList(cwd: string): Promise<{ current: string; branches: Array<{ name: string; current: boolean; commit: string; label: string; isRemote: boolean }> }> {
+    return ipcRenderer.invoke(GIT_BRANCH_LIST, cwd)
+  },
+
+  gitBranchCreate(cwd: string, branchName: string, startPoint?: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_BRANCH_CREATE, cwd, branchName, startPoint)
+  },
+
+  gitBranchDelete(cwd: string, branchName: string, force?: boolean): Promise<void> {
+    return ipcRenderer.invoke(GIT_BRANCH_DELETE, cwd, branchName, force)
+  },
+
+  gitCheckout(cwd: string, branchName: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_CHECKOUT, cwd, branchName)
+  },
+
+  gitDiffStaged(cwd: string, filePath?: string): Promise<string> {
+    return ipcRenderer.invoke(GIT_DIFF_STAGED, cwd, filePath)
+  },
+
+  gitStash(cwd: string, message?: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_STASH, cwd, message)
+  },
+
+  gitStashPop(cwd: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_STASH_POP, cwd)
+  },
+
+  gitDiscardFile(cwd: string, filePath: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_DISCARD_FILE, cwd, filePath)
   },
 
   // ---------------------------------------------------------------------------

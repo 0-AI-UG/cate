@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React, { useEffect, useRef, useState, useCallback, Suspense } from 'react'
-import { useAppStore } from './stores/appStore'
+import { useAppStore, useSelectedWorkspace } from './stores/appStore'
 import { useCanvasStore, useNodeIds } from './stores/canvasStore'
 import type { PanelType, Point } from '../shared/types'
 import { useSettingsStore } from './stores/settingsStore'
@@ -44,7 +44,7 @@ const CanvasNodeWrapper = React.memo(({ nodeId, zoomLevel, renderPanelContent }:
 }) => {
   const node = useCanvasStore((s) => s.nodes[nodeId])
   const isFocused = useCanvasStore((s) => s.focusedNodeId === nodeId)
-  const currentWorkspace = useAppStore((s) => s.workspaces.find(w => w.id === s.selectedWorkspaceId))
+  const currentWorkspace = useSelectedWorkspace()
 
   if (!node) return null
 
@@ -83,7 +83,7 @@ export default function App() {
   const initializedRef = useRef(false)
 
   // Store state
-  const workspaces = useAppStore((s) => s.workspaces)
+  const currentWorkspace = useSelectedWorkspace()
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const nodeIds = useNodeIds()
   const zoomLevel = useCanvasStore((s) => s.zoomLevel)
@@ -94,9 +94,6 @@ export default function App() {
   const showGlobalSearch = useUIStore((s) => s.showGlobalSearch)
   const showAISetupDialog = useUIStore((s) => s.showAISetupDialog)
   const showMinimap = useSettingsStore((s) => s.showMinimap)
-
-  // Current workspace
-  const currentWorkspace = workspaces.find((w) => w.id === selectedWorkspaceId)
 
   // Global hooks
   useShortcuts()

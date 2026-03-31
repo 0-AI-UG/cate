@@ -30,10 +30,15 @@ export function useNodeDrag(nodeId: string, zoomLevel: number): UseNodeDragRetur
   const wasDraggedRef = useRef(false)
   const rafId = useRef<number>(0)
   const pendingOrigin = useRef<Point | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
-  // Cleanup on unmount: ensure interaction class is removed if drag was active
+  // Cleanup on unmount: abort any active drag listeners and clean up state
   useEffect(() => {
     return () => {
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
       if (isDraggingRef.current) {
         document.body.classList.remove('canvas-interacting')
       }
@@ -209,8 +214,10 @@ export function useNodeDrag(nodeId: string, zoomLevel: number): UseNodeDragRetur
       }
 
       const handleMouseUp = () => {
-        window.removeEventListener('mousemove', handleMouseMove)
-        window.removeEventListener('mouseup', handleMouseUp)
+        if (abortRef.current) {
+          abortRef.current.abort()
+          abortRef.current = null
+        }
 
         isDraggingRef.current = false
         dragStartedRef.current = false
@@ -291,8 +298,10 @@ export function useNodeDrag(nodeId: string, zoomLevel: number): UseNodeDragRetur
         dragStateRef.current = null
       }
 
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
+      const controller = new AbortController()
+      abortRef.current = controller
+      window.addEventListener('mousemove', handleMouseMove, { signal: controller.signal })
+      window.addEventListener('mouseup', handleMouseUp, { signal: controller.signal })
     },
     [nodeId, zoomLevel],
   )
