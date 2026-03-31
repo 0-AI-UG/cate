@@ -392,6 +392,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
       {/* Content area */}
       <div
+        data-panel-content
         style={{
           position: 'relative',
           height: `calc(100% - ${TITLE_BAR_HEIGHT}px${hasStack ? ' - 24px' : ''})`,

@@ -120,6 +120,19 @@ export function useCanvasInteraction(
 
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
+      // If the scroll originated inside a focused panel's content area,
+      // let the panel handle it (editor scrolling, terminal scrolling, etc.)
+      const target = e.target as HTMLElement
+      const panelContent = target.closest?.('[data-panel-content]')
+      if (panelContent) {
+        const nodeEl = panelContent.closest('[data-node-id]')
+        const nodeId = nodeEl?.getAttribute('data-node-id')
+        const { focusedNodeId } = useCanvasStore.getState()
+        if (nodeId && nodeId === focusedNodeId) {
+          return // Let the panel handle the scroll
+        }
+      }
+
       e.stopPropagation()
 
       const { zoomLevel, viewportOffset, setViewportOffset } =
