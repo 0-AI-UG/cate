@@ -6,6 +6,7 @@ publish:
   provider: github
   owner: 0-AI-UG
   repo: cate
+  releaseType: release
 mac:
   icon: build/icon.icns
   category: public.app-category.developer-tools
