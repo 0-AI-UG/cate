@@ -186,8 +186,6 @@ export default function GitPanel({ panelId: _panelId, workspaceId, nodeId: _node
     try {
       await window.electronAPI.gitCommit(rootPath, commitMsg.trim())
       setCommitMsg('')
-      setSelectedFile(null)
-      setSelectedDiff('')
       refresh()
     } catch (err: any) {
       setActionError(err?.message || 'Commit failed')
