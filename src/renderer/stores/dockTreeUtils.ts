@@ -38,6 +38,22 @@ export function findZoneForStack(
   return null
 }
 
+/** Find the first tab stack containing a given panelId anywhere in a layout tree. */
+export function findStackContainingPanel(
+  node: DockLayoutNode | null,
+  panelId: string,
+): DockTabStack | null {
+  if (!node) return null
+  if (node.type === 'tabs') {
+    return node.panelIds.includes(panelId) ? node : null
+  }
+  for (const child of node.children) {
+    const found = findStackContainingPanel(child, panelId)
+    if (found) return found
+  }
+  return null
+}
+
 /** Find a tab stack by ID across all zones. */
 export function findTabStackAcrossZones(
   zones: WindowDockState,

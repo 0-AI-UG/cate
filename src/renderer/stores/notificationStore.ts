@@ -7,8 +7,9 @@ import { useSettingsStore } from './settingsStore'
 import { useAppStore, getCanvasOperations } from './appStore'
 import { useDockStore } from './dockStore'
 import { terminalRegistry } from '../lib/terminalRegistry'
-import { findTabStack } from './dockTreeUtils'
-import type { NotificationAction } from '../../shared/types'
+import { findTabStack, findStackContainingPanel } from './dockTreeUtils'
+import type { NotificationAction, PanelLocation } from '../../shared/types'
+import { ALL_ZONES } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
 // Types
@@ -40,7 +41,7 @@ interface NotificationStoreActions {
   dismissToast: (id: string) => void
   dismissNotification: (id: string) => void
   clearAll: () => void
-  executeAction: (action: NotificationAction) => void
+  executeAction: (action: NotificationAction) => Promise<void>
 }
 
 export type NotificationStore = NotificationStoreState & NotificationStoreActions
@@ -55,6 +56,37 @@ export type Toast = Notification
 const MAX_TOASTS = 3
 const MAX_NOTIFICATIONS = 50
 const AUTO_DISMISS_MS = 5000
+
+// -----------------------------------------------------------------------------
+// Helpers for executeAction
+// -----------------------------------------------------------------------------
+
+type DockStoreState = ReturnType<typeof useDockStore.getState>
+
+function focusDockPanel(dock: DockStoreState, panelId: string, location: PanelLocation): void {
+  if (location.type !== 'dock') return
+  const zone = dock.zones[location.zone]
+  if (!zone.visible) dock.toggleZone(location.zone)
+  if (zone.layout) {
+    const stack = findTabStack(zone.layout, location.stackId)
+    if (stack) {
+      const tabIndex = stack.panelIds.indexOf(panelId)
+      if (tabIndex >= 0) dock.setActiveTab(location.stackId, tabIndex)
+    }
+  }
+}
+
+function findPanelInZones(dock: DockStoreState, panelId: string): PanelLocation | null {
+  for (const zoneName of ALL_ZONES) {
+    const zone = dock.zones[zoneName]
+    if (!zone.layout) continue
+    const stack = findStackContainingPanel(zone.layout, panelId)
+    if (stack) {
+      return { type: 'dock', zone: zoneName, stackId: stack.id }
+    }
+  }
+  return null
+}
 
 // -----------------------------------------------------------------------------
 // Store
@@ -122,38 +154,51 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     set({ notifications: [], toasts: [] })
   },
 
-  executeAction(action) {
+  async executeAction(action) {
     switch (action.type) {
       case 'focusTerminal': {
         const { workspaceId, terminalId } = action
-        useAppStore.getState().selectWorkspace(workspaceId)
-        // terminalId is the ptyId — resolve to panelId for canvas lookup
-        const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
-        // Wait for React to process the workspace switch before focusing the panel
-        requestAnimationFrame(() => {
-          const dock = useDockStore.getState()
-          const location = dock.getPanelLocation(panelId)
 
-          if (location?.type === 'dock') {
-            // Panel is in a dock zone — ensure zone is visible and activate the tab
-            const zone = dock.zones[location.zone]
-            if (!zone.visible) {
-              dock.toggleZone(location.zone)
-            }
-            if (zone.layout) {
-              const stack = findTabStack(zone.layout, location.stackId)
-              if (stack) {
-                const tabIndex = stack.panelIds.indexOf(panelId)
-                if (tabIndex >= 0) {
-                  dock.setActiveTab(location.stackId, tabIndex)
-                }
-              }
-            }
-          } else {
-            // Panel is on the canvas (or location unknown) — focus via canvas
-            getCanvasOperations()?.focusPanelNode(panelId)
+        // Switch workspace (awaits deferred restore for lazy-loaded workspaces)
+        await useAppStore.getState().selectWorkspace(workspaceId)
+
+        // Poll for the panel to become locatable — handles async restore and
+        // React render settling. Retry up to 10 times (~500ms total).
+        const MAX_ATTEMPTS = 10
+        const INTERVAL_MS = 50
+
+        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+          if (attempt > 0) {
+            await new Promise<void>((r) => setTimeout(r, INTERVAL_MS))
           }
-        })
+
+          // Resolve ptyId → panelId (may not exist yet for deferred workspaces)
+          const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
+
+          const dock = useDockStore.getState()
+
+          // Try panel location map first
+          const location = dock.getPanelLocation(panelId)
+          if (location?.type === 'dock') {
+            focusDockPanel(dock, panelId, location)
+            return
+          }
+
+          // Fallback: search dock zone layouts directly
+          const found = findPanelInZones(dock, panelId)
+          if (found) {
+            focusDockPanel(dock, panelId, found)
+            return
+          }
+
+          // Try canvas
+          const canvasOps = getCanvasOperations()
+          const nodeId = canvasOps?.storeApi?.getState()?.nodeForPanel(panelId)
+          if (nodeId) {
+            canvasOps!.focusPanelNode(panelId)
+            return
+          }
+        }
         break
       }
     }

@@ -161,7 +161,7 @@ interface AppStoreState {
 interface AppStoreActions {
   // Workspace management
   addWorkspace: (name?: string, rootPath?: string) => string
-  selectWorkspace: (id: string) => void
+  selectWorkspace: (id: string) => Promise<void>
   removeWorkspace: (id: string) => void
 
   // Panel creation — each adds a PanelState to the workspace AND places it
@@ -276,7 +276,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return ws.id
   },
 
-  selectWorkspace(id) {
+  async selectWorkspace(id) {
     const state = get()
     if (state.selectedWorkspaceId === id) return
 
@@ -340,7 +340,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // Check for deferred restore (lazy workspace loading)
       try {
         if (deferredSnapshots.has(id)) {
-          restoreDeferredWorkspace(id, canvasOps?.storeApi)
+          await restoreDeferredWorkspace(id, canvasOps?.storeApi)
         }
       } catch (error) {
         log.error('Failed to restore deferred workspace:', error)

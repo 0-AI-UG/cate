@@ -572,8 +572,12 @@ function attach(panelId: string, container: HTMLDivElement): void {
   function fitAndScroll(): void {
     if (!registry.has(panelId)) return
     try {
-      const buf = terminal.buffer.active
-      const wasAtBottom = buf.viewportY >= buf.baseY
+      // Use DOM-based scroll check — buffer indices (viewportY/baseY) become
+      // stale after fit() changes the row count.
+      const viewport = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
+      const wasAtBottom = viewport
+        ? Math.abs(viewport.scrollTop - (viewport.scrollHeight - viewport.clientHeight)) < 5
+        : true
 
       fitAddon.fit()
       terminal.refresh(0, terminal.rows - 1)

@@ -8,6 +8,7 @@ import log from '../lib/logger'
 import { RotateCw } from 'lucide-react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
+import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
 import type { DockLayoutNode } from '../../shared/types'
@@ -48,6 +49,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [isLoading, setIsLoading] = useState(false)
   const [gitFiles, setGitFiles] = useState<Set<string> | undefined>(undefined)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [rootContextMenu, setRootContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
+  const [rootCreateValue, setRootCreateValue] = useState('')
+  const rootCreateInputRef = useRef<HTMLInputElement>(null)
   const lastSelectedPath = useRef<string | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const rootPathRef = useRef(rootPath)
@@ -199,6 +204,42 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     if (rootPath) loadTree(rootPath)
   }, [rootPath, loadTree])
 
+  const startRootCreate = useCallback((type: 'file' | 'folder') => {
+    setRootCreateValue('')
+    setRootCreating(type)
+    setTimeout(() => rootCreateInputRef.current?.focus(), 0)
+  }, [])
+
+  const commitRootCreate = useCallback(async () => {
+    const type = rootCreating
+    setRootCreating(null)
+    const trimmed = rootCreateValue.trim()
+    if (!trimmed || !window.electronAPI || !type) return
+    const newPath = rootPath + '/' + trimmed
+    try {
+      if (type === 'folder') {
+        await window.electronAPI.fsMkdir(newPath)
+      } else {
+        await window.electronAPI.fsWriteFile(newPath, '')
+      }
+      loadTree(rootPath)
+    } catch {
+      /* ignore */
+    }
+  }, [rootCreating, rootCreateValue, rootPath, loadTree])
+
+  const handleRootContextMenu = useCallback((e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      e.preventDefault()
+      setRootContextMenu({ x: e.clientX, y: e.clientY })
+    }
+  }, [])
+
+  const rootContextMenuItems: ContextMenuItem[] = [
+    { label: 'New File…', onClick: () => startRootCreate('file') },
+    { label: 'New Folder…', onClick: () => startRootCreate('folder') },
+  ]
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -247,6 +288,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
             // Click on empty area clears selection
             if (e.target === e.currentTarget) setSelectedPaths(new Set())
           }}
+          onContextMenu={handleRootContextMenu}
         >
           {nodes.map((node) => (
             <FileTreeNode
@@ -261,6 +303,49 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               visiblePaths={visiblePaths}
             />
           ))}
+
+          {/* Inline create input for root-level creation (from empty space context menu) */}
+          {rootCreating && (
+            <div className="h-7 flex items-center gap-1.5 px-2" style={{ paddingLeft: '8px' }}>
+              <span className="flex-shrink-0 w-3" />
+              <span className="flex-shrink-0" style={{ color: rootCreating === 'folder' ? '#E2B855' : '#9CA3AF' }}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+                  {rootCreating === 'folder' ? (
+                    <path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3.5H3a1 1 0 0 0-1 1z" />
+                  ) : (
+                    <>
+                      <path d="M9 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V6L9 2z" />
+                      <polyline points="9 2 9 6 13 6" />
+                    </>
+                  )}
+                </svg>
+              </span>
+              <input
+                ref={rootCreateInputRef}
+                className="flex-1 min-w-0 bg-[#2a2a30] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
+                value={rootCreateValue}
+                placeholder={rootCreating === 'folder' ? 'folder name' : 'file name'}
+                onChange={(e) => setRootCreateValue(e.target.value)}
+                onBlur={commitRootCreate}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRootCreate()
+                  if (e.key === 'Escape') setRootCreating(null)
+                  e.stopPropagation()
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
+
+          {/* Root-level context menu (empty space) */}
+          {rootContextMenu && (
+            <ContextMenu
+              x={rootContextMenu.x}
+              y={rootContextMenu.y}
+              items={rootContextMenuItems}
+              onClose={() => setRootContextMenu(null)}
+            />
+          )}
         </div>
       )}
     </div>

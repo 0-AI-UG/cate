@@ -431,11 +431,11 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         )}
       </div>
 
-      {/* Inline create input (shows as first child for directories) */}
-      {node.isDirectory && isExpanded && isCreating && (
+      {/* Inline create input (shows as first child for directories, or sibling for files) */}
+      {isCreating && (node.isDirectory ? isExpanded : true) && (
         <div
           className="h-7 flex items-center gap-1.5 px-2"
-          style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
+          style={{ paddingLeft: `${(node.isDirectory ? depth + 1 : depth) * 16 + 8}px` }}
         >
           <span className="flex-shrink-0 w-3" />
           <span className="flex-shrink-0" style={{ color: isCreating === 'folder' ? '#E2B855' : '#9CA3AF' }}>

@@ -133,7 +133,16 @@ export default function TerminalPanel({
           clearTimeout(fitTimeoutId)
           fitTimeoutId = window.setTimeout(() => {
             try {
+              const viewport = entry.terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
+              const wasAtBottom = viewport
+                ? Math.abs(viewport.scrollTop - (viewport.scrollHeight - viewport.clientHeight)) < 5
+                : true
+
               entry.fitAddon.fit()
+
+              if (wasAtBottom) {
+                entry.terminal.scrollToBottom()
+              }
             } catch {
               // Ignore fit errors during rapid resizing or zero-size frames
             }
@@ -175,13 +184,25 @@ export default function TerminalPanel({
     if (!isFocused) return
     const entry = terminalRegistry.getEntry(panelId)
     if (!entry) return
-    // Focus the hidden textarea with preventScroll to stop the browser from
-    // resetting the .xterm-viewport scroll position to 0.
+
+    // Save the xterm viewport scroll position before focusing — the browser
+    // can reset .xterm-viewport.scrollTop during focus mechanics even with
+    // preventScroll.
+    const viewport = entry.terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
+    const savedScrollTop = viewport?.scrollTop ?? null
+
     const textarea = entry.terminal.element?.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
     if (textarea) {
       textarea.focus({ preventScroll: true })
     } else {
       entry.terminal.focus()
+    }
+
+    // Restore scroll position after the browser's focus-triggered scroll
+    if (viewport && savedScrollTop !== null) {
+      requestAnimationFrame(() => {
+        viewport.scrollTop = savedScrollTop
+      })
     }
   }, [isFocused, panelId])
 
