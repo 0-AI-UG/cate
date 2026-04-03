@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { Terminal } from '@xterm/xterm'
+import log from './logger'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
@@ -67,6 +68,10 @@ interface CreateOpts {
 
 const registry = new Map<string, RegistryEntry>()
 
+// Transfer data deposited by shell code before TerminalPanel mounts in a new
+// window.  getOrCreate() checks this map and enters reconnect mode if found.
+const pendingTransfers = new Map<string, { ptyId: string; scrollback?: string }>()
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -80,6 +85,13 @@ const registry = new Map<string, RegistryEntry>()
 async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryEntry> {
   const existing = registry.get(panelId)
   if (existing) return existing
+
+  // Check for a pending cross-window transfer — reconnect to existing PTY
+  const transfer = pendingTransfers.get(panelId)
+  if (transfer) {
+    pendingTransfers.delete(panelId)
+    return reconnectTerminal(panelId, transfer.ptyId, transfer.scrollback, opts)
+  }
 
   const { electronAPI } = window
   const cleanupListeners: Array<() => void> = []
@@ -270,7 +282,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     cleanupListeners.push(() => resizeDisposable.dispose())
 
     // 10. Register with shell/process monitor (best-effort)
-    electronAPI.shellRegisterTerminal(ptyId).catch(() => {})
+    electronAPI.shellRegisterTerminal(ptyId).catch((err) => log.warn('[terminal] Shell register failed:', err))
     useStatusStore.getState().registerTerminal(ptyId, opts.workspaceId)
 
     // 11. Write initialInput after a short delay so the shell prompt is ready
@@ -282,7 +294,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
 
     // 12. Replay scrollback log if this terminal was restored from a session
     if (terminalRestoreData.has(panelId)) {
-      replayTerminalLog(panelId).catch(() => {})
+      replayTerminalLog(panelId).catch((err) => log.warn('[terminal] Replay log failed:', err))
     }
   } catch (err) {
     if (registry.has(panelId)) {
@@ -291,6 +303,199 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
   }
 
   return entry
+}
+
+/**
+ * Reconnect to an existing PTY in a new renderer process (cross-window transfer).
+ * Creates a fresh xterm Terminal (objects can't cross process boundaries) and wires
+ * it to the existing PTY ID.  Calls panelTransferAck AFTER listeners are registered
+ * so no buffered data is lost.
+ */
+async function reconnectTerminal(
+  panelId: string,
+  ptyId: string,
+  scrollback: string | undefined,
+  opts: CreateOpts,
+): Promise<RegistryEntry> {
+  const { electronAPI } = window
+  const cleanupListeners: Array<() => void> = []
+
+  // 1. Create a fresh xterm Terminal (same config as getOrCreate)
+  const terminal = new Terminal({
+    theme: TERMINAL_THEME,
+    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+    fontSize: 13,
+    cursorBlink: true,
+    allowProposedApi: true,
+    scrollback: 10000,
+    macOptionIsMeta: true,
+    altClickMovesCursor: true,
+    drawBoldTextInBrightColors: false,
+  })
+
+  const fitAddon = new FitAddon()
+  terminal.loadAddon(fitAddon)
+
+  const searchAddon = new SearchAddon()
+  terminal.loadAddon(searchAddon)
+
+  // Open into a temporary off-screen div
+  const tempDiv = document.createElement('div')
+  tempDiv.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:800px;height:600px;visibility:hidden'
+  document.body.appendChild(tempDiv)
+  terminal.open(tempDiv)
+
+  const xtermEl = (terminal as unknown as { element?: HTMLElement }).element
+  if (xtermEl && tempDiv.contains(xtermEl)) {
+    tempDiv.removeChild(xtermEl)
+  }
+  document.body.removeChild(tempDiv)
+
+  // WebGL addon
+  let webglAddon: WebglAddon | null = null
+  try {
+    webglAddon = new WebglAddon()
+    webglAddon.onContextLoss(() => {
+      webglAddon!.dispose()
+      const entry = registry.get(panelId)
+      if (entry) {
+        entry.webglAddon = null
+        setTimeout(() => {
+          const e = registry.get(panelId)
+          if (!e || e.webglAddon) return
+          try {
+            const recovered = new WebglAddon()
+            recovered.onContextLoss(() => {
+              recovered.dispose()
+              const ent = registry.get(panelId)
+              if (ent) ent.webglAddon = null
+            })
+            e.terminal.loadAddon(recovered)
+            e.webglAddon = recovered
+          } catch { /* Canvas renderer fallback */ }
+        }, 500)
+      }
+    })
+    terminal.loadAddon(webglAddon)
+  } catch {
+    webglAddon = null
+  }
+
+  const entry: RegistryEntry = {
+    terminal,
+    fitAddon,
+    webglAddon,
+    searchAddon,
+    ptyId,
+    cleanupListeners,
+  }
+
+  registry.set(panelId, entry)
+
+  // 2. Write scrollback to give visual continuity (plain text, no ANSI colors)
+  if (scrollback) {
+    terminal.write(scrollback + '\r\n')
+  }
+
+  // 3. Wire up listeners to the EXISTING PTY
+  const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
+    if (id === ptyId) {
+      terminal.write(data)
+    }
+  })
+  cleanupListeners.push(removeDataListener)
+
+  const removeExitListener = electronAPI.onTerminalExit((id: string, exitCode: number) => {
+    if (id === ptyId) {
+      terminal.write(
+        `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`,
+      )
+    }
+  })
+  cleanupListeners.push(removeExitListener)
+
+  // CSI u key handler (same as getOrCreate)
+  const CSI_U_KEYS: Record<string, number> = {
+    Enter: 13, Tab: 9, Backspace: 127, Escape: 27, Space: 32,
+  }
+  terminal.attachCustomKeyEventHandler((event) => {
+    if (event.type !== 'keydown') return true
+    const keyCode = CSI_U_KEYS[event.key]
+    if (keyCode === undefined) return true
+    let mod = 1
+    if (event.shiftKey) mod += 1
+    if (event.altKey) mod += 2
+    if (event.ctrlKey) mod += 4
+    if (event.metaKey) mod += 8
+    if (mod === 1) return true
+    if (event.key === 'Tab' && mod === 2) return true
+    if (event.metaKey) return true
+    electronAPI.terminalWrite(ptyId, `\x1b[${keyCode};${mod}u`)
+    event.preventDefault()
+    return false
+  })
+
+  const dataDisposable = terminal.onData((data) => {
+    electronAPI.terminalWrite(ptyId, data)
+  })
+  cleanupListeners.push(() => dataDisposable.dispose())
+
+  const resizeDisposable = terminal.onResize(({ cols, rows }) => {
+    electronAPI.terminalResize(ptyId, cols, rows)
+  })
+  cleanupListeners.push(() => resizeDisposable.dispose())
+
+  electronAPI.shellRegisterTerminal(ptyId).catch((err) => log.warn('[terminal] Shell register failed:', err))
+  useStatusStore.getState().registerTerminal(ptyId, opts.workspaceId)
+
+  // 4. ACK the transfer AFTER listeners are wired — flushes buffered PTY data
+  electronAPI.panelTransferAck(ptyId).catch((err) => log.warn('[terminal] Transfer ack failed:', err))
+
+  return entry
+}
+
+/**
+ * Deposit transfer data for a panel about to be received in this window.
+ * Must be called BEFORE React renders the TerminalPanel so that getOrCreate()
+ * finds the pending transfer and reconnects instead of spawning a new PTY.
+ */
+function setPendingTransfer(panelId: string, ptyId: string, scrollback?: string): void {
+  pendingTransfers.set(panelId, { ptyId, scrollback })
+}
+
+/**
+ * Release a terminal from this window's registry without killing the PTY.
+ * Used by the source window after a cross-window transfer — the PTY continues
+ * to live in the main process, owned by the target window.
+ */
+function release(panelId: string): void {
+  const entry = registry.get(panelId)
+  if (!entry) return
+
+  registry.delete(panelId)
+
+  const { terminal, fitAddon, webglAddon, cleanupListeners } = entry
+
+  // Remove all IPC listeners and xterm disposables
+  for (const cleanup of cleanupListeners) {
+    cleanup()
+  }
+  cleanupListeners.length = 0
+
+  // Detach DOM element before disposing
+  const el = (terminal as unknown as { element?: HTMLElement }).element
+  if (el?.parentElement) {
+    el.parentElement.removeChild(el)
+  }
+
+  if (webglAddon) {
+    try { webglAddon.dispose() } catch { /* ignore */ }
+    entry.webglAddon = null
+  }
+  if (typeof (fitAddon as unknown as { dispose?: () => void }).dispose === 'function') {
+    try { (fitAddon as unknown as { dispose: () => void }).dispose() } catch { /* ignore */ }
+  }
+  try { terminal.dispose() } catch { /* ignore */ }
 }
 
 /**
@@ -350,36 +555,34 @@ function attach(panelId: string, container: HTMLDivElement): void {
   }
 
   // Fit after the next frame — the container may still be mid-layout during
-  // the sync DOM append (e.g. WebGL canvas initialization).  When a dock zone
-  // transitions from hidden→visible the container may have 0×0 dimensions for
-  // a few frames, so retry up to 3 times.
-  const attemptFit = (retriesLeft: number): void => {
+  // the sync DOM append (e.g. WebGL canvas initialization).  Retry up to 5
+  // frames for new windows that are still settling layout.
+  let retries = 0
+  function tryFit(): void {
     if (!registry.has(panelId)) return
-
-    if (retriesLeft > 0 && (container.offsetWidth === 0 || container.offsetHeight === 0)) {
-      requestAnimationFrame(() => attemptFit(retriesLeft - 1))
+    if ((container.offsetWidth === 0 || container.offsetHeight === 0) && retries < 5) {
+      retries++
+      requestAnimationFrame(tryFit)
       return
     }
+    fitAndScroll()
+  }
+  requestAnimationFrame(tryFit)
 
+  function fitAndScroll(): void {
+    if (!registry.has(panelId)) return
     try {
-      // Check if user was at (or near) the bottom before fit
       const buf = terminal.buffer.active
       const wasAtBottom = buf.viewportY >= buf.baseY
 
       fitAddon.fit()
       terminal.refresh(0, terminal.rows - 1)
 
-      // If the user was at the bottom, ensure we stay there — fit() can
-      // change the row count which shifts the scroll area dimensions.
-      // If they were scrolled up, let xterm keep its internal viewport
-      // position (do NOT force a stale scrollTop which desyncs the viewport).
       if (wasAtBottom) {
         terminal.scrollToBottom()
       }
     } catch { /* ignore */ }
   }
-
-  requestAnimationFrame(() => attemptFit(3))
 }
 
 /**
@@ -420,8 +623,8 @@ function dispose(panelId: string): void {
 
   // Kill PTY and unregister from shell monitor
   if (ptyId) {
-    electronAPI.terminalKill(ptyId).catch(() => {})
-    electronAPI.shellUnregisterTerminal(ptyId).catch(() => {})
+    electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
+    electronAPI.shellUnregisterTerminal(ptyId).catch((err) => log.warn('[terminal] Shell unregister failed:', err))
     useStatusStore.getState().unregisterTerminal(ptyId)
   }
 
@@ -499,6 +702,8 @@ export const terminalRegistry = {
   attach,
   detach,
   dispose,
+  release,
+  setPendingTransfer,
   getEntry,
   has,
   panelIdForPty,

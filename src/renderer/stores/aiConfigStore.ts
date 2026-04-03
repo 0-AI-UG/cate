@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import log from '../lib/logger'
 import type { AIToolId, AIToolPresence, MCPServerConfig, MCPServerDefinition } from '../../shared/types'
 import { scanWorkspace } from '../lib/aiConfig/scanner'
 import { getTemplateContent, type ProjectContext } from '../lib/aiConfig/templates'
@@ -69,7 +70,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       ])
       set({ tools, scanning: false, lastScanAt: Date.now() })
     } catch (err) {
-      console.error('[aiConfigStore] scan failed:', err)
+      log.error('[aiConfigStore] scan failed:', err)
       set({ scanning: false })
     }
   },
@@ -173,7 +174,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
     try {
       await window.electronAPI.mcpStop(name)
     } catch (err) {
-      console.error('[aiConfigStore] stopMcpServer failed:', err)
+      log.error('[aiConfigStore] stopMcpServer failed:', err)
     }
   },
 
@@ -208,14 +209,14 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       debounceTimer = setTimeout(() => {
         debounceTimer = null
         get().scan(rootPath).catch((err) => {
-          console.error('[aiConfigStore] watchConfigFiles rescan failed:', err)
+          log.error('[aiConfigStore] watchConfigFiles rescan failed:', err)
         })
       }, 500)
     }
 
     // Start the underlying fs watch (fire-and-forget; errors are non-fatal)
     window.electronAPI.fsWatchStart(rootPath).catch((err) => {
-      console.warn('[aiConfigStore] fsWatchStart failed:', err)
+      log.warn('[aiConfigStore] fsWatchStart failed:', err)
     })
 
     const unsubscribeFsEvents = window.electronAPI.onFsWatchEvent((event) => {
@@ -233,7 +234,7 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
       }
       unsubscribeFsEvents()
       window.electronAPI.fsWatchStop(rootPath).catch((err) => {
-        console.warn('[aiConfigStore] fsWatchStop failed:', err)
+        log.warn('[aiConfigStore] fsWatchStop failed:', err)
       })
     }
   },

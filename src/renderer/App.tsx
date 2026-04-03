@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useEffect, useRef, useState, useCallback, Suspense } from 'react'
+import log from './lib/logger'
 import { useAppStore, useSelectedWorkspace, setupWorkspaceSync } from './stores/appStore'
 import { useCanvasStore } from './stores/canvasStore'
 import { CanvasStoreProvider } from './stores/CanvasStoreContext'
@@ -37,6 +38,7 @@ import DockWindowShell from './shells/DockWindowShell'
 import DragGhost from './docking/DragGhost'
 import { WindowTypeContext } from './stores/WindowTypeContext'
 import { setupCrossWindowDragListeners } from './hooks/useDockDrag'
+import { terminalRegistry } from './lib/terminalRegistry'
 
 // -----------------------------------------------------------------------------
 // App
@@ -120,10 +122,13 @@ function MainApp() {
     initializedRef.current = true
 
     const init = async () => {
+      log.info('Initializing main window...')
+
       // Wire canvas operations bridge before any workspace/panel creation
       setCanvasOperations(createCanvasOps(useCanvasStore))
 
       await useSettingsStore.getState().loadSettings()
+      log.info('Settings loaded')
 
       // Try to restore previous session
       const settings = useSettingsStore.getState()
@@ -141,9 +146,14 @@ function MainApp() {
         }
       }
 
+      if (restored) {
+        log.info('Session restored (%d workspaces)', useAppStore.getState().workspaces.length)
+      }
+
       // Fallback: create a default workspace with a welcome terminal only if
       // no workspaces exist (fresh install or empty session).
       if (useAppStore.getState().workspaces.length === 0) {
+        log.info('No session to restore, creating default workspace')
         const wsId = useAppStore.getState().addWorkspace()
         useAppStore.getState().selectWorkspace(wsId)
       }
@@ -158,9 +168,21 @@ function MainApp() {
       // Start auto-save and cross-window workspace sync
       setupAutoSave(useCanvasStore)
       setupWorkspaceSync()
+      log.info('Auto-save configured, initialization complete')
     }
     init()
   }, [])
+
+  // ---------------------------------------------------------------------------
+  // Auto-recreate canvas when center dock zone empties (e.g. canvas tab dragged out)
+  // ---------------------------------------------------------------------------
+  const centerLayout = useDockStore((s) => s.zones.center.layout)
+
+  useEffect(() => {
+    if (!centerLayout && selectedWorkspaceId) {
+      useAppStore.getState().createCanvas(selectedWorkspaceId)
+    }
+  }, [centerLayout, selectedWorkspaceId])
 
   // ---------------------------------------------------------------------------
   // Settings window (Cmd+, via native menu)
@@ -189,6 +211,11 @@ function MainApp() {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     return setupCrossWindowDragListeners((snapshot, target) => {
+      // Deposit transfer data BEFORE updating state (which triggers TerminalPanel mount)
+      if (snapshot.terminalPtyId) {
+        terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
+      }
+
       // A panel was dropped into the main window from another window
       const wsId = useAppStore.getState().selectedWorkspaceId
       useAppStore.getState().addPanel(wsId, snapshot.panel)
@@ -197,11 +224,6 @@ function MainApp() {
         target.type === 'zone' ? target.zone : 'center',
         target,
       )
-
-      // ACK terminal transfer if applicable
-      if (snapshot.terminalPtyId) {
-        window.electronAPI.panelTransferAck(snapshot.terminalPtyId)
-      }
     })
   }, [])
 

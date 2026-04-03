@@ -301,9 +301,19 @@ export function useCanvasInteraction(
             }
           }
 
-          const handleMarqueeUp = (ev: MouseEvent) => {
+          const cleanupMarquee = () => {
             window.removeEventListener('mousemove', handleMarqueeMove)
             window.removeEventListener('mouseup', handleMarqueeUp)
+            window.removeEventListener('blur', handleMarqueeBlur)
+          }
+
+          const handleMarqueeBlur = () => {
+            cleanupMarquee()
+            useUIStore.getState().setMarquee(null)
+          }
+
+          const handleMarqueeUp = (ev: MouseEvent) => {
+            cleanupMarquee()
             useUIStore.getState().setMarquee(null)
 
             if (!didDrag) {
@@ -343,6 +353,7 @@ export function useCanvasInteraction(
 
           window.addEventListener('mousemove', handleMarqueeMove)
           window.addEventListener('mouseup', handleMarqueeUp)
+          window.addEventListener('blur', handleMarqueeBlur)
         }
       }
     },

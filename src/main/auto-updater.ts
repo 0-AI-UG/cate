@@ -4,6 +4,7 @@
 
 import { app, dialog, BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import log from './logger'
 
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
@@ -34,11 +35,15 @@ export function initAutoUpdater(): void {
   // Don't check for updates in dev mode
   if (!app.isPackaged) return
 
+  log.info('Auto-updater initialized')
+
   autoUpdater.on('update-available', (info) => {
+    log.info('Update available: v%s', info.version)
     showUpdateDialog(info)
   })
 
   autoUpdater.on('update-not-available', () => {
+    log.info('No updates available')
     if (isManualCheck) {
       isManualCheck = false
       const win = BrowserWindow.getFocusedWindow()
@@ -52,6 +57,7 @@ export function initAutoUpdater(): void {
   })
 
   autoUpdater.on('update-downloaded', () => {
+    log.info('Update downloaded, ready to install')
     const win = BrowserWindow.getFocusedWindow()
     dialog
       .showMessageBox({
@@ -72,11 +78,11 @@ export function initAutoUpdater(): void {
   })
 
   autoUpdater.on('checking-for-update', () => {
-    console.log('Auto-updater: checking for update...')
+    log.info('Checking for updates...')
   })
 
   autoUpdater.on('error', (err) => {
-    console.error('Auto-updater error:', err)
+    log.error('Auto-updater error:', err)
     if (isManualCheck) {
       isManualCheck = false
       const win = BrowserWindow.getFocusedWindow()
@@ -92,13 +98,13 @@ export function initAutoUpdater(): void {
 
   // Check on launch (after a short delay to not block startup)
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {})
+    autoUpdater.checkForUpdates().catch((err) => log.warn('[auto-updater] Update check failed:', err))
   }, 5000)
 
   // Check every 4 hours
   setInterval(
     () => {
-      autoUpdater.checkForUpdates().catch(() => {})
+      autoUpdater.checkForUpdates().catch((err) => log.warn('[auto-updater] Update check failed:', err))
     },
     4 * 60 * 60 * 1000,
   )

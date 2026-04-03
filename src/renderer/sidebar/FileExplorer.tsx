@@ -3,7 +3,8 @@
 // Ported from FileExplorerView.swift + FileTreeModel.swift
 // =============================================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import log from '../lib/logger'
 import { RotateCw } from 'lucide-react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
@@ -46,11 +47,32 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [gitFiles, setGitFiles] = useState<Set<string> | undefined>(undefined)
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const lastSelectedPath = useRef<string | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const rootPathRef = useRef(rootPath)
 
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const createEditor = useAppStore((s) => s.createEditor)
+
+  // Build flat list of visible paths for shift-click range selection
+  const visiblePaths = useMemo(() => {
+    const paths: string[] = []
+    // We just collect top-level node paths; child visibility is managed by
+    // each FileTreeNode's local expansion state, so we flatten all nodes here.
+    // For shift-select we only need top-level; deeper nodes will be gathered
+    // by the recursive component passing the same visiblePaths down.
+    const collect = (nodeList: FileTreeNodeType[]) => {
+      for (const n of nodeList) {
+        paths.push(n.path)
+        // Children are loaded lazily by FileTreeNode, so we can't reliably
+        // enumerate them here. The shift-select will work on sibling level.
+        if (n.children.length > 0) collect(n.children)
+      }
+    }
+    collect(nodes)
+    return paths
+  }, [nodes])
 
   // ---------------------------------------------------------------------------
   // Load tree
@@ -99,7 +121,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     loadTree(rootPath)
 
     // Start watcher
-    window.electronAPI.fsWatchStart(rootPath).catch(() => {})
+    window.electronAPI.fsWatchStart(rootPath).catch((err) => log.warn('[file-explorer] Watch start failed:', err))
 
     // Listen for events
     const unsubscribe = window.electronAPI.onFsWatchEvent(() => {
@@ -111,7 +133,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
 
     cleanupRef.current = () => {
       unsubscribe()
-      window.electronAPI?.fsWatchStop(rootPath).catch(() => {})
+      window.electronAPI?.fsWatchStop(rootPath).catch((err) => log.warn('[file-explorer] Watch stop failed:', err))
     }
 
     return () => {
@@ -126,12 +148,49 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleFileClick = useCallback(
-    (filePath: string) => {
+  const handleSelect = useCallback(
+    (path: string, meta: { shift?: boolean; cmd?: boolean }) => {
+      setSelectedPaths((prev) => {
+        if (meta.cmd) {
+          // Toggle individual selection
+          const next = new Set(prev)
+          if (next.has(path)) {
+            next.delete(path)
+          } else {
+            next.add(path)
+          }
+          lastSelectedPath.current = path
+          return next
+        }
+        if (meta.shift && lastSelectedPath.current) {
+          // Range selection
+          const startIdx = visiblePaths.indexOf(lastSelectedPath.current)
+          const endIdx = visiblePaths.indexOf(path)
+          if (startIdx !== -1 && endIdx !== -1) {
+            const [lo, hi] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx]
+            const next = new Set(prev)
+            for (let i = lo; i <= hi; i++) {
+              next.add(visiblePaths[i])
+            }
+            return next
+          }
+        }
+        // Plain click — select only this
+        lastSelectedPath.current = path
+        return new Set([path])
+      })
+    },
+    [visiblePaths],
+  )
+
+  const handleFileOpen = useCallback(
+    (filePaths: string[]) => {
       const placement = isCanvasActiveInCenter()
         ? undefined
         : { target: 'dock' as const, zone: 'center' as const }
-      createEditor(selectedWorkspaceId, filePath, undefined, placement)
+      for (const filePath of filePaths) {
+        createEditor(selectedWorkspaceId, filePath, undefined, placement)
+      }
     },
     [createEditor, selectedWorkspaceId],
   )
@@ -182,15 +241,24 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
           <span>No files found</span>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto py-1">
+        <div
+          className="flex-1 overflow-y-auto py-1"
+          onClick={(e) => {
+            // Click on empty area clears selection
+            if (e.target === e.currentTarget) setSelectedPaths(new Set())
+          }}
+        >
           {nodes.map((node) => (
             <FileTreeNode
               key={node.path}
               node={node}
               depth={0}
               gitFiles={gitFiles}
-              onFileClick={handleFileClick}
+              selectedPaths={selectedPaths}
+              onSelect={handleSelect}
+              onFileOpen={handleFileOpen}
               onTreeChanged={handleReload}
+              visiblePaths={visiblePaths}
             />
           ))}
         </div>

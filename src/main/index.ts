@@ -1,6 +1,8 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen } from 'electron'
+import log from './logger'
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents } from 'electron'
+import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE } from '../shared/ipc-channels'
 import {
   WINDOW_CREATE, WINDOW_GET_ID, WINDOW_GET_TYPE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -8,18 +10,20 @@ import {
   DRAG_START, DRAG_DETACH, DRAG_END,
   DOCK_WINDOW_INIT, DOCK_WINDOW_SYNC_STATE, DOCK_WINDOWS_LIST,
   CROSS_WINDOW_DRAG_START, CROSS_WINDOW_DRAG_UPDATE, CROSS_WINDOW_DRAG_DROP, CROSS_WINDOW_DRAG_CANCEL, CROSS_WINDOW_DRAG_RESOLVE,
+  SESSION_FLUSH_SAVE,
 } from '../shared/ipc-channels'
 import { registerHandlers as registerTerminalHandlers, flushAllLoggers } from './ipc/terminal'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers } from './store'
+import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync } from './store'
 import { registerHandlers as registerMCPHandlers } from './ipc/mcp'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
 import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
+import { addAllowedRoot, validatePath } from './ipc/pathValidation'
 import { buildApplicationMenu, rebuildApplicationMenu } from './menu'
 import { initShellEnv } from './shellEnv'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer } from './ipc/terminal'
@@ -54,14 +58,24 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
 
   // Capture ID before window is destroyed (win.id throws after 'closed')
   const windowId = win.id
+  log.info('Creating window type=%s id=%d', windowType, windowId)
 
   // Clean up window-owned resources on close
   win.on('closed', () => {
+    log.debug('Window closed id=%d', windowId)
     stopWatchersForWindow(windowId)
     unregisterTerminalsForWindow(windowId)
     stopMonitorsForWindow(windowId)
     // Rebuild menu to update panel/dock window list
     if (isPanel || isDock) rebuildApplicationMenu()
+    // Trigger immediate session save from main window when a child window closes
+    if (windowType !== 'main') {
+      const allWindows = BrowserWindow.getAllWindows()
+      const mainWin = allWindows.find((w) => !w.isDestroyed() && getWindowType(w.id) === 'main')
+      if (mainWin) {
+        mainWin.webContents.send(SESSION_FLUSH_SAVE)
+      }
+    }
   })
 
   // Rebuild menu when panel/dock windows are created
@@ -125,10 +139,15 @@ function createDragGhostWindow(panelType: string, panelTitle: string): void {
 
   // Render a simple HTML pill as the ghost
   const iconMap: Record<string, string> = {
-    terminal: '⬛', browser: '🌐', editor: '📄', git: '🔀',
-    fileExplorer: '📁', projectList: '📋', canvas: '🖼️',
+    terminal: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(77,217,100)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
+    browser: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(74,158,255)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+    editor: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(255,159,10)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+    git: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(255,59,48)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
+    fileExplorer: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(90,200,250)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+    projectList: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(255,214,10)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+    canvas: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(191,90,242)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>',
   }
-  const icon = iconMap[panelType] || '📄'
+  const icon = iconMap[panelType] || iconMap['editor']
   const safeTitle = panelTitle.replace(/'/g, '&#39;').replace(/</g, '&lt;').slice(0, 30)
   const html = `data:text/html;charset=utf-8,<!DOCTYPE html>
 <html><head><style>
@@ -139,6 +158,7 @@ function createDragGhostWindow(panelType: string, panelTitle: string): void {
     border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     font: 12px -apple-system, sans-serif; color: rgba(255,255,255,0.8);
     white-space: nowrap; }
+  .pill svg { flex-shrink: 0; }
 </style></head><body><div class="pill"><span>${icon}</span><span>${safeTitle}</span></div></body></html>`
 
   dragGhostWin.loadURL(html)
@@ -179,7 +199,12 @@ function registerAllHandlers(): void {
 
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, async (_event, filePath: string) => {
-    shell.showItemInFolder(filePath)
+    try {
+      shell.showItemInFolder(validatePath(filePath))
+    } catch (error) {
+      log.error('[SHELL_SHOW_IN_FOLDER]', error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   // HTTP: Fetch from main process (no CORS)
@@ -200,7 +225,7 @@ function registerAllHandlers(): void {
   })
 
   // Dialog handlers
-  ipcMain.handle('dialog:openFolder', async () => {
+  ipcMain.handle(DIALOG_OPEN_FOLDER, async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       title: 'Choose Project Folder',
@@ -209,7 +234,7 @@ function registerAllHandlers(): void {
     return result.filePaths[0]
   })
 
-  ipcMain.handle('dialog:saveFile', async (_event, options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
+  ipcMain.handle(DIALOG_SAVE_FILE, async (_event, options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
     const result = await dialog.showSaveDialog({
       defaultPath: options.defaultPath,
       filters: options.filters || [{ name: 'JSON', extensions: ['json'] }],
@@ -219,11 +244,65 @@ function registerAllHandlers(): void {
   })
 
   // Capture page screenshot for panel previews
-  ipcMain.handle('capture-page', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed()) return null
-    const image = await win.webContents.capturePage()
-    return image.toDataURL()
+  ipcMain.handle(CAPTURE_PAGE, async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win || win.isDestroyed()) return null
+      const image = await win.webContents.capturePage()
+      return image.toDataURL()
+    } catch (error) {
+      log.error('[CAPTURE_PAGE]', error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+  })
+
+  // Capture a webview's visible content, save to Desktop, return dataUrl + path
+  ipcMain.handle(WEBVIEW_SCREENSHOT, async (event, webContentsId: number) => {
+    try {
+      // Validate the webContentsId belongs to a webview guest of the calling window
+      const callerWin = BrowserWindow.fromWebContents(event.sender)
+      const wc = webContents.fromId(webContentsId)
+      if (!wc || wc.isDestroyed()) return null
+      // Ensure the target webContents belongs to the caller's window
+      const targetWin = BrowserWindow.fromWebContents(wc)
+      if (!callerWin || !targetWin || targetWin.id !== callerWin.id) {
+        // For webview guests, the host window should match the caller
+        const hostWc = wc.hostWebContents
+        if (!hostWc || hostWc.id !== event.sender.id) {
+          log.warn(`[webview:screenshot] Denied: webContentsId ${webContentsId} does not belong to calling window`)
+          return null
+        }
+      }
+      const image = await wc.capturePage()
+      if (image.isEmpty()) return null
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const fileName = `screenshot-${timestamp}.png`
+      const filePath = path.join(app.getPath('desktop'), fileName)
+      await fs.promises.writeFile(filePath, image.toPNG())
+
+      return { filePath, dataUrl: image.toDataURL() }
+    } catch (error) {
+      log.error(`[${WEBVIEW_SCREENSHOT}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+  })
+
+  // Native file drag from renderer (for screenshot thumbnails etc.)
+  ipcMain.handle(NATIVE_FILE_DRAG, async (event, filePath: string) => {
+    try {
+      const validPath = validatePath(filePath)
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win) return
+      // Create a small drag icon from the file
+      const iconSize = 64
+      const iconImage = nativeImage.createFromPath(validPath)
+      const icon = iconImage.isEmpty() ? nativeImage.createEmpty() : iconImage.resize({ width: iconSize })
+      event.sender.startDrag({ file: validPath, icon })
+    } catch (error) {
+      log.error('[NATIVE_FILE_DRAG]', error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   // Window management
@@ -536,15 +615,29 @@ app.setName('Cate')
 // Build application menu
 buildApplicationMenu()
 
+log.info('Cate v%s starting (electron %s, node %s, platform %s)', app.getVersion(), process.versions.electron, process.versions.node, process.platform)
+
 app.whenReady().then(async () => {
+  log.info('App ready, resolving shell environment...')
+
   // Resolve the user's real shell environment before registering handlers.
   // This ensures MCP servers, `which` lookups, etc. see the full PATH.
   await initShellEnv()
+  log.info('Shell environment resolved')
+
+  // Register the user's home directory as an allowed root so workspace paths
+  // under ~ are accessible. The Desktop is also allowed for screenshot saves.
+  addAllowedRoot(app.getPath('home'))
+
   registerAllHandlers()
-  createWindow({ type: 'main' })
+  log.info('IPC handlers registered')
+
+  const mainWin = createWindow({ type: 'main' })
+  log.info('Main window created (id=%d)', mainWin.id)
 })
 
 app.on('window-all-closed', () => {
+  log.info('All windows closed, quitting')
   app.quit()
 })
 
@@ -555,6 +648,20 @@ app.on('activate', () => {
 })
 
 app.on('before-quit', () => {
-  // Flush all terminal loggers so scrollback is persisted to disk
+  log.info('Before quit, flushing loggers and requesting session save')
   flushAllLoggers()
+  // Ask the main window renderer to save immediately (cancels debounce)
+  const allWindows = BrowserWindow.getAllWindows()
+  const mainWin = allWindows.find((w) => !w.isDestroyed() && getWindowType(w.id) === 'main')
+  if (mainWin) {
+    mainWin.webContents.send(SESSION_FLUSH_SAVE)
+  }
+})
+
+app.on('will-quit', () => {
+  // Last-resort synchronous save from cached session data.
+  // The renderer flush above may not have completed, so this ensures
+  // we at least write the most recent successfully-saved state.
+  log.info('will-quit: sync session save fallback')
+  saveSessionSync(getLastSavedSession())
 })

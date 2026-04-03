@@ -218,6 +218,9 @@ export interface ElectronAPI {
   /** Load the last saved session snapshot. Returns null if none exists. */
   sessionLoad(): Promise<SessionSnapshot | null>
 
+  /** Register a callback for flush-save requests from the main process. Returns unsubscribe. */
+  onSessionFlushSave(callback: () => void): () => void
+
   // ---------------------------------------------------------------------------
   // App
   // ---------------------------------------------------------------------------
@@ -263,6 +266,12 @@ export interface ElectronAPI {
 
   /** Capture the current page as a data URL for panel previews. */
   capturePage(): Promise<string | null>
+
+  /** Capture a webview's content and save as PNG. Returns file path + data URL or null. */
+  webviewScreenshot(webContentsId: number): Promise<{ filePath: string; dataUrl: string } | null>
+
+  /** Initiate a native OS file drag from the renderer. */
+  nativeFileDrag(filePath: string): Promise<void>
 
   // ---------------------------------------------------------------------------
   // Shell utilities

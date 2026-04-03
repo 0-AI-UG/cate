@@ -6,6 +6,7 @@
 // =============================================================================
 
 import { ipcMain } from 'electron'
+import log from './logger'
 import {
   WORKSPACE_LIST,
   WORKSPACE_CREATE,
@@ -16,6 +17,7 @@ import {
 } from '../shared/ipc-channels'
 import type { WorkspaceInfo } from '../shared/types'
 import { broadcastToAll, windowFromEvent } from './windowRegistry'
+import { addAllowedRoot } from './ipc/pathValidation'
 
 // In-memory workspace list — authoritative source of truth
 const workspaces: Map<string, WorkspaceInfo> = new Map()
@@ -61,6 +63,11 @@ function createWorkspace(name?: string, rootPath?: string, id?: string): Workspa
     rootPath: rootPath ?? '',
   }
   workspaces.set(info.id, info)
+  log.info('Workspace created: %s (%s)', info.id, info.rootPath || 'no root')
+  // Register workspace root as an allowed path for filesystem/git access
+  if (info.rootPath) {
+    addAllowedRoot(info.rootPath)
+  }
   return info
 }
 
@@ -69,11 +76,17 @@ function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 'id'>>
   if (!existing) return null
   const updated = { ...existing, ...changes }
   workspaces.set(id, updated)
+  // Register updated workspace root as an allowed path
+  if (updated.rootPath) {
+    addAllowedRoot(updated.rootPath)
+  }
   return updated
 }
 
 function removeWorkspace(id: string): boolean {
-  return workspaces.delete(id)
+  const removed = workspaces.delete(id)
+  if (removed) log.info('Workspace removed: %s', id)
+  return removed
 }
 
 // -----------------------------------------------------------------------------

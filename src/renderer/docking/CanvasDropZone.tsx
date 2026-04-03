@@ -3,11 +3,20 @@
 // Dropping a panel here merges it back into the canvas as a new node.
 // =============================================================================
 
-import React, { useState, useEffect, useContext } from 'react'
+import { useState, useContext, useEffect } from 'react'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useDockDragStore } from '../hooks/useDockDrag'
 import { DockStoreContext } from '../stores/DockStoreContext'
+
+/**
+ * When true, drag handlers should skip setting activeDropTarget because
+ * the CanvasDropZone overlay is handling the drop. Exported as a simple
+ * module-level flag so the hot mousemove path can check it synchronously
+ * without a store subscription — eliminates the race between the 50ms
+ * interval and per-frame mousemove that caused indicator flickering.
+ */
+export let canvasDropZoneHovered = false
 
 interface CanvasDropZoneProps {
   canvasStoreApi: StoreApi<CanvasStore>
@@ -16,9 +25,12 @@ interface CanvasDropZoneProps {
 export default function CanvasDropZone({ canvasStoreApi }: CanvasDropZoneProps) {
   const isDragging = useDockDragStore((s) => s.isDragging)
   const dragSource = useDockDragStore((s) => s.dragSource)
+  const draggedPanelType = useDockDragStore((s) => s.draggedPanelType)
 
-  // Only show for dock-sourced drags (not canvas-to-canvas)
+  // Only show for dock-sourced drags (not canvas-to-canvas), and never for
+  // canvas panels — nesting a canvas inside a canvas is not supported.
   if (!isDragging || !dragSource || dragSource.type !== 'dock') return null
+  if (draggedPanelType === 'canvas') return null
 
   return <CanvasDropZoneInner canvasStoreApi={canvasStoreApi} />
 }
@@ -27,26 +39,23 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
   const [hovering, setHovering] = useState(false)
   const dockStoreApi = useContext(DockStoreContext)
 
-  // While hovering, suppress dock drop targets that the mousemove handler
-  // keeps resolving underneath us
+  // Reset the module-level flag on unmount — onPointerLeave won't fire if
+  // the component unmounts while hovered (e.g. when endDrag() is called).
   useEffect(() => {
-    if (!hovering) return
-    const interval = setInterval(() => {
-      const state = useDockDragStore.getState()
-      if (state.activeDropTarget) {
-        state.setDropTarget(null)
-      }
-    }, 50)
-    return () => clearInterval(interval)
-  }, [hovering])
+    return () => { canvasDropZoneHovered = false }
+  }, [])
 
   return (
     <div
       onPointerEnter={() => {
         setHovering(true)
+        canvasDropZoneHovered = true
         useDockDragStore.getState().setDropTarget(null)
       }}
-      onPointerLeave={() => setHovering(false)}
+      onPointerLeave={() => {
+        setHovering(false)
+        canvasDropZoneHovered = false
+      }}
       onPointerUp={() => {
         const dragState = useDockDragStore.getState()
         const { draggedPanelId, draggedPanelType, dragSource } = dragState
@@ -57,8 +66,16 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
           dockStoreApi.getState().undockPanel(draggedPanelId)
         }
 
-        // Add to canvas
-        canvasStoreApi.getState().addNode(draggedPanelId, draggedPanelType)
+        // Add to canvas at the center of the current viewport
+        const cs = canvasStoreApi.getState()
+        const zoom = cs.zoomLevel
+        const vp = cs.viewportOffset
+        const containerSize = cs.containerSize
+        const centerX = (containerSize.width / 2 - vp.x) / zoom
+        const centerY = (containerSize.height / 2 - vp.y) / zoom
+        const defaults = { width: 600, height: 400 }
+        const position = { x: centerX - defaults.width / 2, y: centerY - defaults.height / 2 }
+        canvasStoreApi.getState().addNode(draggedPanelId, draggedPanelType, position)
 
         // End the drag immediately so the initiator's mouseup is a no-op
         useDockDragStore.getState().endDrag()

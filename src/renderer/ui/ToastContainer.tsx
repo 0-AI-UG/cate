@@ -10,12 +10,14 @@ const TYPE_COLORS: Record<Toast['type'], string> = {
   info: 'border-white/10',
   success: 'border-emerald-500/40',
   warning: 'border-amber-500/40',
+  error: 'border-red-500/40',
 }
 
 const TYPE_DOTS: Record<Toast['type'], string> = {
   info: 'bg-white/40',
   success: 'bg-emerald-400',
   warning: 'bg-amber-400',
+  error: 'bg-red-400',
 }
 
 export function ToastContainer() {

@@ -4,8 +4,10 @@
 
 import { simpleGit } from 'simple-git'
 import { ipcMain } from 'electron'
+import log from '../logger'
 import fs from 'fs/promises'
 import path from 'path'
+import { validateCwd } from './pathValidation'
 import {
   GIT_IS_REPO,
   GIT_LS_FILES,
@@ -65,150 +67,241 @@ async function lsFiles(dirPath: string): Promise<string[]> {
 
 export function registerHandlers(): void {
   ipcMain.handle(GIT_IS_REPO, async (_event, dirPath: string) => {
-    return isGitRepo(dirPath)
+    return isGitRepo(validateCwd(dirPath))
   })
 
   ipcMain.handle(GIT_LS_FILES, async (_event, dirPath: string) => {
-    return lsFiles(dirPath)
+    return lsFiles(validateCwd(dirPath))
   })
 
   ipcMain.handle(GIT_STATUS, async (_event, cwd: string) => {
-    const git = simpleGit(cwd)
-    const status = await git.status()
-    return {
-      files: status.files.map(f => ({
-        path: f.path,
-        index: f.index,
-        working_dir: f.working_dir,
-      })),
-      current: status.current,
-      tracking: status.tracking,
-      ahead: status.ahead,
-      behind: status.behind,
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      const status = await git.status()
+      return {
+        files: status.files.map((f) => ({
+          path: f.path,
+          index: f.index,
+          working_dir: f.working_dir,
+        })),
+        current: status.current,
+        tracking: status.tracking,
+        ahead: status.ahead,
+        behind: status.behind,
+      }
+    } catch (error) {
+      log.error(`[${GIT_STATUS}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
   ipcMain.handle(GIT_DIFF, async (_event, cwd: string, filePath?: string) => {
-    const git = simpleGit(cwd)
-    if (filePath) {
-      return await git.diff([filePath])
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      if (filePath) {
+        return await git.diff([filePath])
+      }
+      return await git.diff()
+    } catch (error) {
+      log.error(`[${GIT_DIFF}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
-    return await git.diff()
   })
 
   ipcMain.handle(GIT_STAGE, async (_event, cwd: string, filePath: string) => {
-    const git = simpleGit(cwd)
-    await git.add(filePath)
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      await git.add(filePath)
+    } catch (error) {
+      log.error(`[${GIT_STAGE}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_UNSTAGE, async (_event, cwd: string, filePath: string) => {
-    const git = simpleGit(cwd)
-    await git.reset([filePath])
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      await git.reset([filePath])
+    } catch (error) {
+      log.error(`[${GIT_UNSTAGE}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_COMMIT, async (_event, cwd: string, message: string) => {
-    const git = simpleGit(cwd)
-    await git.commit(message)
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      await git.commit(message)
+    } catch (error) {
+      log.error(`[${GIT_COMMIT}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_PUSH, async (_event, cwd: string, remote?: string, branch?: string) => {
-    const git = simpleGit(cwd)
-    await git.push(remote || 'origin', branch)
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      await git.push(remote || 'origin', branch)
+    } catch (error) {
+      log.error(`[${GIT_PUSH}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_PULL, async (_event, cwd: string, remote?: string, branch?: string) => {
-    const git = simpleGit(cwd)
-    const result = await git.pull(remote || 'origin', branch)
-    return {
-      summary: {
-        changes: result.summary.changes,
-        insertions: result.summary.insertions,
-        deletions: result.summary.deletions,
-      },
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      const result = await git.pull(remote || 'origin', branch)
+      return {
+        summary: {
+          changes: result.summary.changes,
+          insertions: result.summary.insertions,
+          deletions: result.summary.deletions,
+        },
+      }
+    } catch (error) {
+      log.error(`[${GIT_PULL}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
   ipcMain.handle(GIT_FETCH, async (_event, cwd: string, remote?: string) => {
-    const git = simpleGit(cwd)
-    await git.fetch(remote || 'origin')
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      await git.fetch(remote || 'origin')
+    } catch (error) {
+      log.error(`[${GIT_FETCH}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_LOG, async (_event, cwd: string, maxCount?: number) => {
-    const git = simpleGit(cwd)
-    const log = await git.log({ maxCount: maxCount || 50 })
-    return log.all.map(entry => ({
-      hash: entry.hash,
-      message: entry.message,
-      author_name: entry.author_name,
-      author_email: entry.author_email,
-      date: entry.date,
-    }))
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      const log = await git.log({ maxCount: maxCount || 50 })
+      return log.all.map((entry) => ({
+        hash: entry.hash,
+        message: entry.message,
+        author_name: entry.author_name,
+        author_email: entry.author_email,
+        date: entry.date,
+      }))
+    } catch (error) {
+      log.error(`[${GIT_LOG}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_BRANCH_LIST, async (_event, cwd: string) => {
-    const git = simpleGit(cwd)
-    const result = await git.branch(['-a', '--sort=-committerdate'])
-    return {
-      current: result.current,
-      branches: Object.entries(result.branches).map(([name, info]) => ({
-        name,
-        current: info.current,
-        commit: info.commit,
-        label: info.label,
-        isRemote: name.startsWith('remotes/'),
-      })),
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      const result = await git.branch(['-a', '--sort=-committerdate'])
+      return {
+        current: result.current,
+        branches: Object.entries(result.branches).map(([name, info]) => ({
+          name,
+          current: info.current,
+          commit: info.commit,
+          label: info.label,
+          isRemote: name.startsWith('remotes/'),
+        })),
+      }
+    } catch (error) {
+      log.error(`[${GIT_BRANCH_LIST}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
-  ipcMain.handle(GIT_BRANCH_CREATE, async (_event, cwd: string, branchName: string, startPoint?: string) => {
-    const git = simpleGit(cwd)
-    await git.checkoutLocalBranch(branchName)
-  })
+  ipcMain.handle(
+    GIT_BRANCH_CREATE,
+    async (_event, cwd: string, branchName: string, startPoint?: string) => {
+      try {
+        const git = simpleGit(validateCwd(cwd))
+        await git.checkoutLocalBranch(branchName)
+      } catch (error) {
+        log.error(`[${GIT_BRANCH_CREATE}]`, error)
+        throw error instanceof Error ? error : new Error(String(error))
+      }
+    },
+  )
 
-  ipcMain.handle(GIT_BRANCH_DELETE, async (_event, cwd: string, branchName: string, force?: boolean) => {
-    const git = simpleGit(cwd)
-    if (force) {
-      await git.branch(['-D', branchName])
-    } else {
-      await git.branch(['-d', branchName])
-    }
-  })
+  ipcMain.handle(
+    GIT_BRANCH_DELETE,
+    async (_event, cwd: string, branchName: string, force?: boolean) => {
+      try {
+        const git = simpleGit(validateCwd(cwd))
+        if (force) {
+          await git.branch(['-D', branchName])
+        } else {
+          await git.branch(['-d', branchName])
+        }
+      } catch (error) {
+        log.error(`[${GIT_BRANCH_DELETE}]`, error)
+        throw error instanceof Error ? error : new Error(String(error))
+      }
+    },
+  )
 
   ipcMain.handle(GIT_CHECKOUT, async (_event, cwd: string, branchName: string) => {
-    const git = simpleGit(cwd)
-    await git.checkout(branchName)
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      await git.checkout(branchName)
+    } catch (error) {
+      log.error(`[${GIT_CHECKOUT}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_DIFF_STAGED, async (_event, cwd: string, filePath?: string) => {
-    const git = simpleGit(cwd)
-    if (filePath) {
-      return await git.diff(['--cached', filePath])
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      if (filePath) {
+        return await git.diff(['--cached', filePath])
+      }
+      return await git.diff(['--cached'])
+    } catch (error) {
+      log.error(`[${GIT_DIFF_STAGED}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
-    return await git.diff(['--cached'])
   })
 
   ipcMain.handle(GIT_STASH, async (_event, cwd: string, message?: string) => {
-    const git = simpleGit(cwd)
-    if (message) {
-      await git.stash(['push', '-m', message])
-    } else {
-      await git.stash()
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      if (message) {
+        await git.stash(['push', '-m', message])
+      } else {
+        await git.stash()
+      }
+    } catch (error) {
+      log.error(`[${GIT_STASH}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
   ipcMain.handle(GIT_STASH_POP, async (_event, cwd: string) => {
-    const git = simpleGit(cwd)
-    await git.stash(['pop'])
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      await git.stash(['pop'])
+    } catch (error) {
+      log.error(`[${GIT_STASH_POP}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_DISCARD_FILE, async (_event, cwd: string, filePath: string) => {
-    const git = simpleGit(cwd)
-    await git.checkout(['--', filePath])
+    try {
+      const git = simpleGit(validateCwd(cwd))
+      await git.checkout(['--', filePath])
+    } catch (error) {
+      log.error(`[${GIT_DISCARD_FILE}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_WORKTREE_LIST, async (_event, cwd: string) => {
     try {
-      const git = simpleGit(cwd)
+      const git = simpleGit(validateCwd(cwd))
       const raw = await git.raw(['worktree', 'list', '--porcelain'])
       const worktrees: Array<{
         path: string

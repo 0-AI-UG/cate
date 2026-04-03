@@ -175,16 +175,14 @@ export default function TerminalPanel({
     if (!isFocused) return
     const entry = terminalRegistry.getEntry(panelId)
     if (!entry) return
-    requestAnimationFrame(() => {
-      // Save viewport scroll position before focus — the browser may auto-scroll
-      // the .xterm-viewport div to 0 when the hidden textarea receives focus.
-      const viewportEl = entry.terminal.element?.querySelector('.xterm-viewport')
-      const savedScrollTop = viewportEl?.scrollTop ?? 0
+    // Focus the hidden textarea with preventScroll to stop the browser from
+    // resetting the .xterm-viewport scroll position to 0.
+    const textarea = entry.terminal.element?.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
+    if (textarea) {
+      textarea.focus({ preventScroll: true })
+    } else {
       entry.terminal.focus()
-      if (viewportEl && viewportEl.scrollTop !== savedScrollTop) {
-        viewportEl.scrollTop = savedScrollTop
-      }
-    })
+    }
   }, [isFocused, panelId])
 
   // NOTE: No separate zoom-level re-fit needed — zoom only changes the CSS
@@ -346,7 +344,7 @@ export default function TerminalPanel({
       )}
       <div
         ref={containerRef}
-        className="flex-1 relative"
+        className="flex-1 relative min-h-0"
         style={{ padding: 0, overflow: 'hidden' }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

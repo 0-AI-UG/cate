@@ -2,7 +2,7 @@
 // CanvasAnnotationComponent — renders sticky notes and text labels on the canvas.
 // =============================================================================
 
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useRef, useState, useEffect } from 'react'
 import type { CanvasAnnotation } from '../../shared/types'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 
@@ -15,6 +15,11 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(annotation.content)
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+  const dragAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    return () => { dragAbortRef.current?.abort() }
+  }, [])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 2) { e.stopPropagation(); return }
@@ -35,12 +40,16 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
       })
     }
     const handleUp = () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
+      dragAbortRef.current?.abort()
+      dragAbortRef.current = null
       dragRef.current = null
     }
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
+    dragAbortRef.current?.abort()
+    const controller = new AbortController()
+    dragAbortRef.current = controller
+    const { signal } = controller
+    window.addEventListener('mousemove', handleMove, { signal })
+    window.addEventListener('mouseup', handleUp, { signal })
   }, [annotation.id, annotation.origin, isEditing])
 
   const handleDoubleClick = useCallback(() => {

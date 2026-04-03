@@ -13,6 +13,7 @@ const TYPE_DOTS: Record<Notification['type'], string> = {
 export const NotificationBell: React.FC = () => {
   const notifications = useNotificationStore((s) => s.notifications)
   const dismissNotification = useNotificationStore((s) => s.dismissNotification)
+  const clearAll = useNotificationStore((s) => s.clearAll)
   const executeAction = useNotificationStore((s) => s.executeAction)
   const [open, setOpen] = useState(false)
   const bellRef = useRef<HTMLButtonElement>(null)
@@ -62,8 +63,16 @@ export const NotificationBell: React.FC = () => {
           className="fixed z-[9999] w-72 rounded-lg border border-white/10 bg-[#2A2A32] shadow-2xl overflow-hidden"
           style={{ top: position.top, left: position.left }}
         >
-          <div className="px-3 py-2 border-b border-white/10 text-xs font-medium text-white/50">
-            Notifications
+          <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
+            <span className="text-xs font-medium text-white/50">Notifications</span>
+            {notifications.length > 0 && (
+              <button
+                className="text-[11px] text-white/30 hover:text-white/60 transition-colors"
+                onClick={() => clearAll()}
+              >
+                Remove all
+              </button>
+            )}
           </div>
           {notifications.length === 0 ? (
             <div className="px-3 py-4 text-xs text-white/30 text-center">No notifications</div>

@@ -5,6 +5,7 @@
 // =============================================================================
 
 import React, { useEffect, useCallback, useState, useRef, type DragEvent } from 'react'
+import log from '../lib/logger'
 import {
   Sparkles, Cpu, Diamond, MousePointer, Code,
   X, Plus, Trash2, Play, Square, Zap,
@@ -110,14 +111,14 @@ function ToolRow({ tool, rootPath, workspaceId, onRescan }: {
   const handleEnable = useCallback(async () => {
     setBusy(true)
     try { await createAllForTool(tool.id, rootPath) }
-    catch (e) { console.error(e) }
+    catch (e) { log.error(e) }
     finally { setBusy(false) }
   }, [createAllForTool, tool.id, rootPath])
 
   const handleCreateFile = useCallback(async (relativePath: string) => {
     setBusy(true)
     try { await createConfig(tool.id, relativePath, rootPath) }
-    catch (e) { console.error(e) }
+    catch (e) { log.error(e) }
     finally { setBusy(false) }
   }, [createConfig, tool.id, rootPath])
 

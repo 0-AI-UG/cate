@@ -4,6 +4,7 @@
 
 import { execFile } from 'child_process'
 import { ipcMain } from 'electron'
+import { validateCwd } from './pathValidation'
 import {
   GIT_BRANCH_UPDATE,
   GIT_MONITOR_START,
@@ -65,6 +66,7 @@ export function stopMonitorsForWindow(windowId: number): void {
 
 export function registerHandlers(): void {
   ipcMain.on(GIT_MONITOR_START, (event, workspaceId: string, rootPath: string) => {
+    const validRoot = validateCwd(rootPath)
     const existing = activeMonitors.get(workspaceId)
     if (existing) {
       clearInterval(existing.interval)
@@ -73,9 +75,9 @@ export function registerHandlers(): void {
     const win = windowFromEvent(event)
     const ownerWindowId = win?.id ?? -1
 
-    pollGitStatus(ownerWindowId, workspaceId, rootPath)
+    pollGitStatus(ownerWindowId, workspaceId, validRoot)
     const interval = setInterval(() => {
-      pollGitStatus(ownerWindowId, workspaceId, rootPath)
+      pollGitStatus(ownerWindowId, workspaceId, validRoot)
     }, POLL_INTERVAL_MS)
 
     activeMonitors.set(workspaceId, { interval, ownerWindowId })

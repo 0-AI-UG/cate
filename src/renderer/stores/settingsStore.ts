@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { create } from 'zustand'
+import log from '../lib/logger'
 import type { AppSettings } from '../../shared/types'
 import { DEFAULT_SETTINGS } from '../../shared/types'
 
@@ -62,9 +63,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     // Fire-and-forget IPC save
     const api = getElectronAPI()
     if (api) {
-      api.settingsSet(key, value).catch(() => {
-        // Silently ignore save failures
-      })
+      api.settingsSet(key, value).catch((err) => log.warn('[settings] Save failed for %s:', key, err))
     }
   },
 
@@ -73,7 +72,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ [key]: defaultValue } as Partial<SettingsStoreState>)
     const api = getElectronAPI()
     if (api) {
-      api.settingsReset(key).catch(() => {})
+      api.settingsReset(key).catch((err) => log.warn('[settings] Reset failed for %s:', key, err))
     }
   },
 
@@ -83,7 +82,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     if (api) {
       // Reset each key individually via IPC
       for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[]) {
-        api.settingsReset(key).catch(() => {})
+        api.settingsReset(key).catch((err) => log.warn('[settings] Reset failed for %s:', key, err))
       }
     }
   },

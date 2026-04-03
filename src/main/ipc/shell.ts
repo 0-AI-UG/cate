@@ -5,6 +5,7 @@
 
 import { execFile } from 'child_process'
 import { ipcMain } from 'electron'
+import log from '../logger'
 import {
   SHELL_WHICH,
   SHELL_REGISTER_TERMINAL,
@@ -418,7 +419,7 @@ export function registerHandlers(): void {
       // Look up the shell PID from the terminal module if not provided
       const shellPid = pid ?? terminalPids.get(terminalId)
       if (shellPid == null) {
-        console.warn(`[shell] No PID found for terminal ${terminalId}`)
+        log.warn(`[shell] No PID found for terminal ${terminalId}`)
         return
       }
 
@@ -446,6 +447,9 @@ export function registerHandlers(): void {
   ipcMain.handle(SHELL_UNREGISTER_TERMINAL, async (_event, terminalId: string) => {
     registeredTerminals.delete(terminalId)
     previousStates.delete(terminalId)
+    if (registeredTerminals.size === 0) {
+      stopPolling()
+    }
   })
 
   ipcMain.handle(SHELL_WHICH, async (_event, command: string): Promise<string | null> => {

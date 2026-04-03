@@ -35,7 +35,7 @@ interface CanvasNodeProps {
 // Constants
 // -----------------------------------------------------------------------------
 
-const TITLE_BAR_HEIGHT = 28
+const TITLE_BAR_HEIGHT = 24
 const CORNER_RADIUS = 8
 
 // -----------------------------------------------------------------------------
@@ -487,16 +487,16 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           key={corner}
           style={{
             position: 'absolute',
-            width: 8,
-            height: 8,
-            borderRadius: 2,
-            backgroundColor: 'rgba(255, 255, 255, 0.2)',
-            border: '1.5px solid rgba(255, 255, 255, 0.4)',
+            width: 6,
+            height: 6,
+            borderRadius: 1.5,
+            backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
             opacity: isHovered ? 1 : 0,
             transition: 'opacity 150ms ease',
             pointerEvents: 'none',
-            ...(corner.includes('top') ? { top: -2 } : { bottom: -2 }),
-            ...(corner.includes('left') ? { left: -2 } : { right: -2 }),
+            ...(corner.includes('top') ? { top: -1 } : { bottom: -1 }),
+            ...(corner.includes('left') ? { left: -1 } : { right: -1 }),
           }}
         />
       ))}

@@ -8,6 +8,7 @@
 // =============================================================================
 
 import { spawn } from 'child_process'
+import log from './logger'
 
 let resolvedEnv: Record<string, string> | null = null
 let resolvePromise: Promise<Record<string, string>> | null = null
@@ -19,6 +20,7 @@ let resolvePromise: Promise<Record<string, string>> | null = null
  */
 function resolveShellEnv(): Promise<Record<string, string>> {
   const shell = process.env.SHELL || '/bin/zsh'
+  log.debug('Resolving shell environment from %s', shell)
 
   return new Promise((resolve) => {
     const child = spawn(shell, ['-ilc', 'env -0'], {
@@ -41,13 +43,16 @@ function resolveShellEnv(): Promise<Record<string, string>> {
     child.on('close', () => {
       const env = parseEnv(stdout)
       if (env && Object.keys(env).length > 0) {
+        log.debug('Shell environment resolved (%d vars)', Object.keys(env).length)
         resolve(env)
       } else {
+        log.warn('Shell environment resolution returned empty, using process.env')
         resolve({ ...process.env } as Record<string, string>)
       }
     })
 
     child.on('error', () => {
+      log.warn('Shell environment resolution failed, using process.env')
       resolve({ ...process.env } as Record<string, string>)
     })
 

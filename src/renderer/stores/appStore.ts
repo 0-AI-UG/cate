@@ -7,6 +7,7 @@
 import { create } from 'zustand'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { shallow } from 'zustand/shallow'
+import log from '../lib/logger'
 import type {
   WorkspaceState,
   WorkspaceInfo,
@@ -128,15 +129,15 @@ function syncCreateToMain(ws: WorkspaceState): void {
     name: ws.name,
     rootPath: ws.rootPath,
     id: ws.id,
-  }).catch(() => {})
+  }).catch((err) => log.warn('[workspace-sync] Create failed:', err))
 }
 
 function syncUpdateToMain(id: string, changes: Partial<Omit<WorkspaceInfo, 'id'>>): void {
-  window.electronAPI.workspaceUpdate(id, changes).catch(() => {})
+  window.electronAPI.workspaceUpdate(id, changes).catch((err) => log.warn('[workspace-sync] Update failed:', err))
 }
 
 function syncRemoveFromMain(id: string): void {
-  window.electronAPI.workspaceRemove(id).catch(() => {})
+  window.electronAPI.workspaceRemove(id).catch((err) => log.warn('[workspace-sync] Remove failed:', err))
 }
 
 // -----------------------------------------------------------------------------
@@ -288,49 +289,61 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Load the new workspace's canvas state into the canvas store
     const ws = get().workspaces.find((w) => w.id === id)
     if (ws) {
-      canvasOps?.loadWorkspaceCanvas(
-        ws.canvasNodes,
-        ws.viewportOffset,
-        ws.zoomLevel,
-        ws.focusedNodeId,
-        ws.regions,
-      )
+      try {
+        canvasOps?.loadWorkspaceCanvas(
+          ws.canvasNodes,
+          ws.viewportOffset,
+          ws.zoomLevel,
+          ws.focusedNodeId,
+          ws.regions,
+        )
+      } catch (error) {
+        log.error('Failed to load canvas for workspace:', error)
+      }
 
       // Restore dock state for the incoming workspace.
       // If the workspace has saved dock state, restore it. Otherwise reset
       // the dock to a clean state so panels from the previous workspace
       // don't bleed through. Preserve the center zone (shared canvas panel).
-      if (ws.dockState) {
-        useDockStore.getState().restoreSnapshot(ws.dockState)
-      } else {
-        const currentDock = useDockStore.getState()
-        const centerZone = currentDock.zones.center
-        // Build a minimal locations map containing only center-zone panels
-        const centerLocations: Record<string, import('../../shared/types').PanelLocation> = {}
-        if (centerZone.layout) {
-          const collectPanelIds = (node: import('../../shared/types').DockLayoutNode): string[] => {
-            if (node.type === 'tabs') return [...node.panelIds]
-            return node.children.flatMap(collectPanelIds)
+      try {
+        if (ws.dockState) {
+          useDockStore.getState().restoreSnapshot(ws.dockState)
+        } else {
+          const currentDock = useDockStore.getState()
+          const centerZone = currentDock.zones.center
+          // Build a minimal locations map containing only center-zone panels
+          const centerLocations: Record<string, import('../../shared/types').PanelLocation> = {}
+          if (centerZone.layout) {
+            const collectPanelIds = (node: import('../../shared/types').DockLayoutNode): string[] => {
+              if (node.type === 'tabs') return [...node.panelIds]
+              return node.children.flatMap(collectPanelIds)
+            }
+            for (const pid of collectPanelIds(centerZone.layout)) {
+              const loc = currentDock.panelLocations[pid]
+              if (loc) centerLocations[pid] = loc
+            }
           }
-          for (const pid of collectPanelIds(centerZone.layout)) {
-            const loc = currentDock.panelLocations[pid]
-            if (loc) centerLocations[pid] = loc
-          }
+          useDockStore.getState().restoreSnapshot({
+            zones: {
+              left: { position: 'left', visible: false, size: 260, layout: null },
+              right: { position: 'right', visible: false, size: 260, layout: null },
+              bottom: { position: 'bottom', visible: false, size: 240, layout: null },
+              center: centerZone,
+            },
+            locations: centerLocations,
+          })
         }
-        useDockStore.getState().restoreSnapshot({
-          zones: {
-            left: { position: 'left', visible: false, size: 260, layout: null },
-            right: { position: 'right', visible: false, size: 260, layout: null },
-            bottom: { position: 'bottom', visible: false, size: 240, layout: null },
-            center: centerZone,
-          },
-          locations: centerLocations,
-        })
+      } catch (error) {
+        log.error('Failed to restore dock state for workspace:', error)
       }
 
       // Check for deferred restore (lazy workspace loading)
-      if (deferredSnapshots.has(id)) {
-        restoreDeferredWorkspace(id, canvasOps?.storeApi)
+      try {
+        if (deferredSnapshots.has(id)) {
+          restoreDeferredWorkspace(id, canvasOps?.storeApi)
+        }
+      } catch (error) {
+        log.error('Failed to restore deferred workspace:', error)
       }
 
       // Ensure the center dock zone has a canvas panel — covers the case where
@@ -409,7 +422,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ),
     }))
 
-    placePanel(panelId, 'terminal', placement, position, workspaceId === get().selectedWorkspaceId)
+    try {
+      placePanel(panelId, 'terminal', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place terminal panel:', error)
+      return null as unknown as string
+    }
 
     return panelId
   },
@@ -432,7 +459,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ),
     }))
 
-    placePanel(panelId, 'browser', placement, position, workspaceId === get().selectedWorkspaceId)
+    try {
+      placePanel(panelId, 'browser', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place browser panel:', error)
+      return null as unknown as string
+    }
 
     return panelId
   },
@@ -456,7 +497,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ),
     }))
 
-    placePanel(panelId, 'editor', placement, position, workspaceId === get().selectedWorkspaceId)
+    try {
+      placePanel(panelId, 'editor', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place editor panel:', error)
+      return null as unknown as string
+    }
 
     return panelId
   },
@@ -482,7 +537,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ),
     }))
 
-    placePanel(panelId, 'editor', placement, position, workspaceId === get().selectedWorkspaceId)
+    try {
+      placePanel(panelId, 'editor', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place diff editor panel:', error)
+      return null as unknown as string
+    }
 
     return panelId
   },
@@ -502,7 +571,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
           : ws,
       ),
     }))
-    placePanel(panelId, 'git', placement, position, workspaceId === get().selectedWorkspaceId)
+    try {
+      placePanel(panelId, 'git', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place git panel:', error)
+      return null as unknown as string
+    }
     return panelId
   },
 
@@ -521,7 +604,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
           : ws,
       ),
     }))
-    placePanel(panelId, 'fileExplorer', placement, position, workspaceId === get().selectedWorkspaceId)
+    try {
+      placePanel(panelId, 'fileExplorer', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place file explorer panel:', error)
+      return null as unknown as string
+    }
     return panelId
   },
 
@@ -540,7 +637,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
           : ws,
       ),
     }))
-    placePanel(panelId, 'projectList', placement, position, workspaceId === get().selectedWorkspaceId)
+    try {
+      placePanel(panelId, 'projectList', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place project list panel:', error)
+      return null as unknown as string
+    }
     return panelId
   },
 
@@ -559,7 +670,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
           : ws,
       ),
     }))
-    placePanel(panelId, 'canvas', placement, position, workspaceId === get().selectedWorkspaceId)
+    try {
+      placePanel(panelId, 'canvas', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place canvas panel:', error)
+      return null as unknown as string
+    }
     return panelId
   },
 
@@ -573,7 +698,36 @@ export const useAppStore = create<AppStore>((set, get) => ({
       terminalRegistry.dispose(panelId)
     }
 
-    // Remove from workspace panels
+    // Remove from dock/canvas first (less critical — log errors but continue)
+    try {
+      const dockLocation = useDockStore.getState().panelLocations[panelId]
+      if (dockLocation?.type === 'dock') {
+        useDockStore.getState().undockPanel(panelId)
+      } else if (workspaceId === get().selectedWorkspaceId) {
+        // Try all registered canvas stores (panel could be on any canvas)
+        let removed = false
+        for (const ops of canvasOpsRegistry.values()) {
+          const nodeId = ops.storeApi.getState().nodeForPanel(panelId)
+          if (nodeId) {
+            ops.removeNodeForPanel(panelId)
+            removed = true
+            break
+          }
+        }
+        if (!removed) canvasOps?.removeNodeForPanel(panelId)
+      }
+    } catch (error) {
+      log.error('Failed to remove panel from dock/canvas during close:', error)
+    }
+
+    // Clean up location tracking
+    try {
+      useDockStore.getState().removePanelLocation(panelId)
+    } catch (error) {
+      log.error('Failed to clean up panel location tracking:', error)
+    }
+
+    // Remove from workspace panels (always do this to ensure cleanup)
     set((state) => ({
       workspaces: state.workspaces.map((ws) => {
         if (ws.id !== workspaceId) return ws
@@ -581,26 +735,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return { ...ws, panels: remainingPanels }
       }),
     }))
-
-    // Remove from dock if docked, otherwise remove canvas node
-    const dockLocation = useDockStore.getState().panelLocations[panelId]
-    if (dockLocation?.type === 'dock') {
-      useDockStore.getState().undockPanel(panelId)
-    } else if (workspaceId === get().selectedWorkspaceId) {
-      // Try all registered canvas stores (panel could be on any canvas)
-      let removed = false
-      for (const ops of canvasOpsRegistry.values()) {
-        const nodeId = ops.storeApi.getState().nodeForPanel(panelId)
-        if (nodeId) {
-          ops.removeNodeForPanel(panelId)
-          removed = true
-          break
-        }
-      }
-      if (!removed) canvasOps?.removeNodeForPanel(panelId)
-    }
-    // Clean up location tracking
-    useDockStore.getState().removePanelLocation(panelId)
   },
 
   updatePanelTitle(workspaceId, panelId, title) {

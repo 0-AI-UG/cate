@@ -5,7 +5,9 @@
 import { create } from 'zustand'
 import { useSettingsStore } from './settingsStore'
 import { useAppStore, getCanvasOperations } from './appStore'
+import { useDockStore } from './dockStore'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { findTabStack } from './dockTreeUtils'
 import type { NotificationAction } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -16,7 +18,7 @@ export interface Notification {
   id: string
   title: string
   body: string
-  type: 'info' | 'success' | 'warning'
+  type: 'info' | 'success' | 'warning' | 'error'
   timestamp: number
   action?: NotificationAction
 }
@@ -96,9 +98,11 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       })
 
       // Auto-dismiss toast only (notification stays in history)
+      // Errors get a longer dismiss time so they're not missed
+      const dismissMs = type === 'error' ? 10000 : AUTO_DISMISS_MS
       setTimeout(() => {
         get().dismissToast(id)
-      }, AUTO_DISMISS_MS)
+      }, dismissMs)
     }
   },
 
@@ -125,10 +129,31 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         useAppStore.getState().selectWorkspace(workspaceId)
         // terminalId is the ptyId — resolve to panelId for canvas lookup
         const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
-        // Use setTimeout to ensure workspace switch has applied
-        setTimeout(() => {
-          getCanvasOperations()?.focusPanelNode(panelId)
-        }, 50)
+        // Wait for React to process the workspace switch before focusing the panel
+        requestAnimationFrame(() => {
+          const dock = useDockStore.getState()
+          const location = dock.getPanelLocation(panelId)
+
+          if (location?.type === 'dock') {
+            // Panel is in a dock zone — ensure zone is visible and activate the tab
+            const zone = dock.zones[location.zone]
+            if (!zone.visible) {
+              dock.toggleZone(location.zone)
+            }
+            if (zone.layout) {
+              const stack = findTabStack(zone.layout, location.stackId)
+              if (stack) {
+                const tabIndex = stack.panelIds.indexOf(panelId)
+                if (tabIndex >= 0) {
+                  dock.setActiveTab(location.stackId, tabIndex)
+                }
+              }
+            }
+          } else {
+            // Panel is on the canvas (or location unknown) — focus via canvas
+            getCanvasOperations()?.focusPanelNode(panelId)
+          }
+        })
         break
       }
     }

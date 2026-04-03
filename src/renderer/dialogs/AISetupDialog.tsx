@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react'
+import log from '../lib/logger'
 import {
   Check,
   X,
@@ -196,7 +197,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
         await createAllForTool(toolId, rootPath)
         created.push(toolId)
       } catch (err) {
-        console.error(`[AISetupDialog] createAllForTool failed for ${toolId}:`, err)
+        log.error(`[AISetupDialog] createAllForTool failed for ${toolId}:`, err)
       }
     }
     setCreatedTools(created)

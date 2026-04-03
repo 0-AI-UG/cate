@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Globe, ArrowLeft, ArrowRight, RotateCw } from 'lucide-react'
+import { Globe, ArrowLeft, ArrowRight, RotateCw, Camera } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
@@ -27,6 +27,7 @@ interface WebviewElement extends HTMLElement {
   canGoForward(): boolean
   getURL(): string
   getTitle(): string
+  getWebContentsId(): number
   addEventListener(type: string, listener: (event: any) => void): void
   removeEventListener(type: string, listener: (event: any) => void): void
 }
@@ -105,6 +106,8 @@ export default function BrowserPanel({
   const [canGoForward, setCanGoForward] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
+  const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // -------------------------------------------------------------------------
   // Navigation helpers
@@ -140,6 +143,38 @@ export default function BrowserPanel({
 
   const handleReload = useCallback(() => {
     webviewRef.current?.reload()
+  }, [])
+
+  const handleScreenshot = useCallback(async () => {
+    const webview = webviewRef.current
+    if (!webview) return
+    const wcId = webview.getWebContentsId()
+    if (!wcId) return
+
+    const result = await window.electronAPI.webviewScreenshot(wcId)
+    if (!result) return
+
+    // Clear any existing timer
+    if (screenshotTimerRef.current) clearTimeout(screenshotTimerRef.current)
+
+    setScreenshot(result)
+
+    // Auto-dismiss after 5 seconds
+    screenshotTimerRef.current = setTimeout(() => {
+      setScreenshot(null)
+      screenshotTimerRef.current = null
+    }, 5000)
+  }, [])
+
+  const handleScreenshotDragStart = useCallback((e: React.DragEvent) => {
+    if (!screenshot) return
+    e.preventDefault()
+    window.electronAPI.nativeFileDrag(screenshot.filePath)
+  }, [screenshot])
+
+  const dismissScreenshot = useCallback(() => {
+    if (screenshotTimerRef.current) clearTimeout(screenshotTimerRef.current)
+    setScreenshot(null)
   }, [])
 
   const handleUrlBarKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -262,6 +297,13 @@ export default function BrowserPanel({
         >
           <RotateCw size={14} className={isLoading ? 'animate-spin' : ''} />
         </button>
+        <button
+          onClick={handleScreenshot}
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/70"
+          title="Screenshot"
+        >
+          <Camera size={14} />
+        </button>
         <input
           type="text"
           value={inputUrl}
@@ -272,28 +314,58 @@ export default function BrowserPanel({
         />
       </div>
 
-      {/* Error state overlay */}
-      {loadError && (
-        <div className="flex-1 flex flex-col items-center justify-center bg-[#1E1E24] text-white/60 p-4 text-center">
-          <Globe size={32} className="mb-2 text-white/30" />
-          <p className="text-sm font-medium mb-1">Failed to load page</p>
-          <p className="text-xs text-white/40">{loadError}</p>
-          <button
-            onClick={handleReload}
-            className="mt-3 px-3 py-1 text-xs rounded bg-white/10 hover:bg-white/15 text-white/70"
-          >
-            Try Again
-          </button>
-        </div>
-      )}
+      {/* Webview + overlays container */}
+      <div className="flex-1 relative">
+        {/* Error state overlay */}
+        {loadError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1E1E24] text-white/60 p-4 text-center z-10">
+            <Globe size={32} className="mb-2 text-white/30" />
+            <p className="text-sm font-medium mb-1">Failed to load page</p>
+            <p className="text-xs text-white/40">{loadError}</p>
+            <button
+              onClick={handleReload}
+              className="mt-3 px-3 py-1 text-xs rounded bg-white/10 hover:bg-white/15 text-white/70"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
 
-      {/* Webview */}
-      <webview
-        ref={webviewRef as any}
-        src={initialUrl}
-        className={`w-full flex-1 ${loadError ? 'hidden' : ''}`}
-        allowpopups={true as any}
-      />
+        {/* Webview */}
+        <webview
+          ref={webviewRef as any}
+          src={initialUrl}
+          className={`w-full h-full ${loadError ? 'hidden' : ''}`}
+          allowpopups={true as any}
+        />
+
+        {/* Screenshot thumbnail */}
+        {screenshot && (
+          <div
+            className="absolute bottom-3 right-3 z-20 group cursor-grab active:cursor-grabbing"
+            style={{ animation: 'screenshot-in 0.3s ease-out' }}
+          >
+            <div
+              className="relative w-44 rounded-lg overflow-hidden shadow-2xl border border-white/15 hover:border-white/30 transition-all"
+              draggable
+              onDragStart={handleScreenshotDragStart}
+            >
+              <img
+                src={screenshot.dataUrl}
+                alt="Screenshot"
+                className="w-full h-auto block pointer-events-none"
+                draggable={false}
+              />
+              <button
+                onClick={dismissScreenshot}
+                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white/80 hover:bg-black/80 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

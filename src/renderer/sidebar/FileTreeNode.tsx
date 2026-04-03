@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useRef, useState } from 'react'
+import log from '../lib/logger'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
 
@@ -172,16 +173,23 @@ interface FileTreeNodeProps {
   node: FileTreeNodeType
   depth: number
   gitFiles?: Set<string>
-  onFileClick: (path: string) => void
+  selectedPaths: Set<string>
+  onSelect: (path: string, meta: { shift?: boolean; cmd?: boolean }) => void
+  onFileOpen: (paths: string[]) => void
   onTreeChanged?: () => void
+  /** Flat ordered list of visible file paths for shift-click range selection */
+  visiblePaths: string[]
 }
 
 export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   node,
   depth,
   gitFiles,
-  onFileClick,
+  selectedPaths,
+  onSelect,
+  onFileOpen,
   onTreeChanged,
+  visiblePaths,
 }) => {
   const [isExpanded, setIsExpanded] = useState(node.isExpanded)
   const [children, setChildren] = useState<FileTreeNodeType[]>(node.children)
@@ -197,6 +205,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   // Determine if this node should be dimmed (not in git tracked files)
   const isDimmed = gitFiles != null && !node.isDirectory && !gitFiles.has(node.path)
 
+  const isSelected = selectedPaths.has(node.path)
   const iconDef = getFileIcon(node.fileExtension, node.isDirectory, isExpanded)
 
   // ---------------------------------------------------------------------------
@@ -219,26 +228,31 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleClick = useCallback(async () => {
+  const handleClick = useCallback(async (e: React.MouseEvent) => {
+    const meta = { shift: e.shiftKey, cmd: e.metaKey || e.ctrlKey }
     if (node.isDirectory) {
-      const willExpand = !isExpanded
-      setIsExpanded(willExpand)
+      // Directories: toggle expand on click, but also select
+      onSelect(node.path, meta)
+      if (!meta.shift && !meta.cmd) {
+        const willExpand = !isExpanded
+        setIsExpanded(willExpand)
 
-      if (willExpand && children.length === 0 && window.electronAPI) {
-        setIsLoading(true)
-        try {
-          const entries = await window.electronAPI.fsReadDir(node.path)
-          setChildren(entries)
-        } catch {
-          setChildren([])
-        } finally {
-          setIsLoading(false)
+        if (willExpand && children.length === 0 && window.electronAPI) {
+          setIsLoading(true)
+          try {
+            const entries = await window.electronAPI.fsReadDir(node.path)
+            setChildren(entries)
+          } catch {
+            setChildren([])
+          } finally {
+            setIsLoading(false)
+          }
         }
       }
     } else {
-      onFileClick(node.path)
+      onSelect(node.path, meta)
     }
-  }, [node, isExpanded, children.length, onFileClick])
+  }, [node, isExpanded, children.length, onSelect])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -278,7 +292,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     if (node.isDirectory) {
       setIsExpanded(true)
       if (children.length === 0) {
-        window.electronAPI?.fsReadDir(node.path).then(setChildren).catch(() => {})
+        window.electronAPI?.fsReadDir(node.path).then(setChildren).catch((err) => log.warn('[file-tree] Read dir failed:', err))
       }
     }
     setCreateValue('')
@@ -323,8 +337,19 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 
   // --- Context menu items ---
   const contextMenuItems: ContextMenuItem[] = []
+  const selectedFiles = [...selectedPaths].filter((p) => {
+    // Only include non-directory selected items for "Open"
+    // We can't easily check directory status here, so we include all selected
+    return true
+  })
+  const pathsToOpen = selectedPaths.has(node.path) && selectedFiles.length > 0
+    ? selectedFiles
+    : [node.path]
   if (!node.isDirectory) {
-    contextMenuItems.push({ label: 'Open', onClick: () => onFileClick(node.path) })
+    contextMenuItems.push({
+      label: pathsToOpen.length > 1 ? `Open ${pathsToOpen.length} Files` : 'Open',
+      onClick: () => onFileOpen(pathsToOpen),
+    })
   }
   contextMenuItems.push(
     { label: 'New File…', onClick: () => startCreate('file') },
@@ -347,15 +372,20 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     <div>
       {/* Node row */}
       <div
-        className={`h-7 flex items-center gap-1.5 px-2 text-sm text-white/70 hover:bg-white/[0.05] cursor-pointer rounded-sm ${
-          isDimmed ? 'opacity-40' : ''
-        }`}
+        className={`h-7 flex items-center gap-1.5 px-2 text-sm text-white/70 cursor-pointer rounded-sm ${
+          isSelected ? 'bg-white/[0.1] text-white/90' : 'hover:bg-white/[0.05]'
+        } ${isDimmed ? 'opacity-40' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         draggable
         onDragStart={(e: React.DragEvent) => {
-          e.dataTransfer.setData('application/cate-file', node.path)
+          // If this node is selected and there are multiple selections, drag all
+          const dragPaths = isSelected && selectedPaths.size > 1
+            ? [...selectedPaths]
+            : [node.path]
+          e.dataTransfer.setData('application/cate-file', dragPaths[0])
+          e.dataTransfer.setData('application/cate-files', JSON.stringify(dragPaths))
           e.dataTransfer.effectAllowed = 'copy'
         }}
       >
@@ -437,8 +467,11 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
               node={child}
               depth={depth + 1}
               gitFiles={gitFiles}
-              onFileClick={onFileClick}
+              selectedPaths={selectedPaths}
+              onSelect={onSelect}
+              onFileOpen={onFileOpen}
               onTreeChanged={onTreeChanged}
+              visiblePaths={visiblePaths}
             />
           ))}
         </div>

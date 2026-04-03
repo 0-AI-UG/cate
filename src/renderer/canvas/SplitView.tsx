@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef, useEffect } from 'react'
 
 interface SplitViewProps {
   direction: 'horizontal' | 'vertical'
@@ -9,6 +9,12 @@ interface SplitViewProps {
 }
 
 function SplitView({ direction, ratio, onRatioChange, children, splitContent }: SplitViewProps) {
+  const dragAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    return () => { dragAbortRef.current?.abort() }
+  }, [])
+
   const isHorizontal = direction === 'horizontal'
   const sizeProperty = isHorizontal ? 'width' : 'height'
 
@@ -39,7 +45,7 @@ function SplitView({ direction, ratio, onRatioChange, children, splitContent }: 
       <div
         style={{
           [sizeProperty]: 4,
-          backgroundColor: 'rgba(255,255,255,0.1)',
+          backgroundColor: 'rgba(255,255,255,0.06)',
           cursor: isHorizontal ? 'col-resize' : 'row-resize',
           flexShrink: 0,
         }}
@@ -56,11 +62,15 @@ function SplitView({ direction, ratio, onRatioChange, children, splitContent }: 
             onRatioChange(startRatio + delta)
           }
           const handleUp = () => {
-            window.removeEventListener('mousemove', handleMove)
-            window.removeEventListener('mouseup', handleUp)
+            dragAbortRef.current?.abort()
+            dragAbortRef.current = null
           }
-          window.addEventListener('mousemove', handleMove)
-          window.addEventListener('mouseup', handleUp)
+          dragAbortRef.current?.abort()
+          const controller = new AbortController()
+          dragAbortRef.current = controller
+          const { signal } = controller
+          window.addEventListener('mousemove', handleMove, { signal })
+          window.addEventListener('mouseup', handleUp, { signal })
         }}
       />
 

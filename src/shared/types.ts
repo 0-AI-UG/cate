@@ -531,6 +531,8 @@ export interface SessionSnapshot {
   regions?: Record<string, CanvasRegion>
   /** Dock zone layout state — added in Phase 5. Missing = empty dock (migration). */
   dockState?: DockStateSnapshot
+  /** Panels that live in dock zones (canvas, git, fileExplorer, etc.) — not on the canvas. */
+  dockPanels?: Record<string, PanelState>
 }
 
 /** Serialized dock zone state for session persistence. */

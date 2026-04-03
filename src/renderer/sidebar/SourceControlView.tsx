@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import log from '../lib/logger'
 import {
   GitBranch,
   RotateCw,
@@ -411,7 +412,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       setWorktrees(worktreeResult as Worktree[])
       setLogEntries(logResult)
     } catch (err) {
-      console.error('Git status error:', err)
+      log.error('Git status error:', err)
     } finally {
       setLoading(false)
     }

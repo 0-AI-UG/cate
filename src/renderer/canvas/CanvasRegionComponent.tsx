@@ -39,6 +39,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
   const canvasApi = useCanvasStoreApi()
   const isSelected = useCanvasStoreContext((s) => s.selectedRegionIds.has(region.id))
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; lastClientX: number; lastClientY: number } | null>(null)
+  const listenersAbortRef = useRef<AbortController | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(region.label)
@@ -66,6 +67,11 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
       inputRef.current.select()
     }
   }, [isEditing])
+
+  // Clean up any active drag/resize listeners on unmount
+  useEffect(() => {
+    return () => { listenersAbortRef.current?.abort() }
+  }, [])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 2) {
@@ -142,13 +148,17 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
     }
 
     const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      listenersAbortRef.current?.abort()
+      listenersAbortRef.current = null
       dragRef.current = null
     }
 
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
+    listenersAbortRef.current?.abort()
+    const controller = new AbortController()
+    listenersAbortRef.current = controller
+    const { signal } = controller
+    window.addEventListener('mousemove', handleMouseMove, { signal })
+    window.addEventListener('mouseup', handleMouseUp, { signal })
   }, [region.id, region.origin.x, region.origin.y])
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
@@ -212,12 +222,16 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
     }
 
     const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      listenersAbortRef.current?.abort()
+      listenersAbortRef.current = null
     }
 
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
+    listenersAbortRef.current?.abort()
+    const controller = new AbortController()
+    listenersAbortRef.current = controller
+    const { signal } = controller
+    window.addEventListener('mousemove', handleMouseMove, { signal })
+    window.addEventListener('mouseup', handleMouseUp, { signal })
   }, [region.id, region.origin, region.size])
 
   const handleSize = 8

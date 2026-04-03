@@ -8,10 +8,12 @@ import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext
 import { useDockDragStore, registerDropZone, hitTestDropTarget } from '../hooks/useDockDrag'
 import { executeDrop } from './dropExecution'
 import { createTransferSnapshot } from '../lib/panelTransfer'
+import { terminalRegistry } from '../lib/terminalRegistry'
 import type { DockTabStack as DockTabStackType, PanelState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { X } from 'lucide-react'
 import DropZoneOverlay from './DropZoneOverlay'
+import { canvasDropZoneHovered } from './CanvasDropZone'
 
 interface DockTabStackProps {
   stack: DockTabStackType
@@ -28,9 +30,15 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
   const setActiveTab = useDockStoreContext((s) => s.setActiveTab)
   const dockStoreApi = useDockStoreApi()
   const stackRef = useRef<HTMLDivElement>(null)
+  const dragAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    return () => { dragAbortRef.current?.abort() }
+  }, [])
 
   const isDragging = useDockDragStore((s) => s.isDragging)
   const activeDropTarget = useDockDragStore((s) => s.activeDropTarget)
+  const dragSource = useDockDragStore((s) => s.dragSource)
 
   // Register this tab stack as a drop zone
   useEffect(() => {
@@ -91,8 +99,12 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         // causing a local drop instead of a detach.
         const outsideWindow = ev.clientX <= 0 || ev.clientY <= 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight
         if (!outsideWindow) {
-          const target = hitTestDropTarget(ev.clientX, ev.clientY)
-          dockDrag.setDropTarget(target)
+          // Skip hit-testing when the CanvasDropZone overlay is hovered —
+          // it handles the drop itself via onPointerUp.
+          if (!canvasDropZoneHovered) {
+            const target = hitTestDropTarget(ev.clientX, ev.clientY)
+            dockDrag.setDropTarget(target)
+          }
         } else {
           dockDrag.setDropTarget(null)
         }
@@ -111,10 +123,14 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         }
       }
 
-      const handleUp = (ev: MouseEvent) => {
-        window.removeEventListener('mousemove', handleMove)
-        window.removeEventListener('mouseup', handleUp)
+      const cleanup = () => {
+        dragAbortRef.current?.abort()
+        dragAbortRef.current = null
         document.body.classList.remove('canvas-interacting')
+      }
+
+      const handleUp = (ev: MouseEvent) => {
+        cleanup()
 
         if (dragStarted) {
           const dockDrag = useDockDragStore.getState()
@@ -147,10 +163,12 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                 if (claimed) {
                   // Target window accepted — remove panel from this dock
                   dockStoreApi.getState().undockPanel(draggedId)
+                  if (panel?.type === 'terminal') terminalRegistry.release(draggedId)
                   onPanelRemoved?.(draggedId)
                 } else {
                   // No target — fall back to creating a new dock window
                   dockStoreApi.getState().undockPanel(draggedId)
+                  if (panel?.type === 'terminal') terminalRegistry.release(draggedId)
                   onPanelRemoved?.(draggedId)
                   const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
                   window.electronAPI.dragDetach(cwSnapshot, wsId)
@@ -164,6 +182,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                 { origin: { x: ev.screenX, y: ev.screenY }, size: { width: 700, height: 500 } },
               )
               dockStoreApi.getState().undockPanel(draggedId)
+              if (panel.type === 'terminal') terminalRegistry.release(draggedId)
               onPanelRemoved?.(draggedId)
               const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
               window.electronAPI.dragDetach(snapshot, wsId)
@@ -173,17 +192,38 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         }
       }
 
-      window.addEventListener('mousemove', handleMove)
-      window.addEventListener('mouseup', handleUp)
+      // Cancel drag on window blur — OS won't deliver mouseup
+      const handleBlur = () => {
+        if (dragStarted) {
+          cleanup()
+          if (cwDragSnapshot) {
+            cwDragSnapshot = null
+            window.electronAPI.crossWindowDragCancel()
+          }
+          useDockDragStore.getState().endDrag()
+        }
+      }
+
+      dragAbortRef.current?.abort()
+      const controller = new AbortController()
+      dragAbortRef.current = controller
+      const { signal } = controller
+      window.addEventListener('mousemove', handleMove, { signal })
+      window.addEventListener('mouseup', handleUp, { signal })
+      window.addEventListener('blur', handleBlur, { signal })
     },
     [stack.id, zoneProp, getPanelProp, workspaceIdProp, onPanelRemoved, dockStoreApi],
   )
 
   const activePanelId = stack.panelIds[stack.activeIndex]
 
-  // Check if this stack is the active drop target
+  // Check if this stack is the active drop target, but suppress indicators
+  // when dragging a panel over the stack it originated from (self-drop is a no-op)
+  const isSelfDrop =
+    dragSource?.type === 'dock' && dragSource.stackId === stack.id
   const isOver =
     isDragging &&
+    !isSelfDrop &&
     activeDropTarget != null &&
     (activeDropTarget.type === 'tab' || activeDropTarget.type === 'split') &&
     'stackId' in activeDropTarget &&
@@ -191,64 +231,40 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
 
   return (
     <div ref={stackRef} className="flex flex-col h-full min-h-0 relative">
-      {/* Tab bar */}
-      {stack.panelIds.length > 1 && (
-        <div
-          className="flex items-center bg-[#1e1e1e] border-b border-[#333] min-h-[30px] overflow-x-auto"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          {stack.panelIds.map((panelId, i) => (
-            <button
-              key={panelId}
-              className={`
-                flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap
-                border-r border-[#333] transition-colors cursor-grab
-                ${i === stack.activeIndex
-                  ? 'bg-[#2a2a2a] text-white'
-                  : 'bg-[#1e1e1e] text-zinc-400 hover:text-zinc-200'
-                }
-              `}
-              onClick={() => handleTabClick(i)}
-              onMouseDown={(e) => handleTabMouseDown(e, panelId)}
-            >
-              <span className="truncate max-w-[120px]">{getPanelTitle(panelId)}</span>
-              {onClosePanel && (
-                <span
-                  className="ml-1 p-0.5 rounded hover:bg-white/10"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onClosePanel(panelId)
-                  }}
-                >
-                  <X size={10} />
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Single tab — draggable header when only one panel */}
-      {stack.panelIds.length === 1 && (
-        <div
-          className="flex items-center bg-[#1e1e1e] border-b border-[#333] min-h-[26px] px-2 cursor-grab"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          onMouseDown={(e) => handleTabMouseDown(e, stack.panelIds[0])}
-        >
-          <span className="text-xs text-zinc-400 truncate">{getPanelTitle(stack.panelIds[0])}</span>
-          {onClosePanel && (
-            <span
-              className="ml-auto p-0.5 rounded hover:bg-white/10 cursor-pointer"
-              onClick={(e) => {
-                e.stopPropagation()
-                onClosePanel!(stack.panelIds[0])
-              }}
-            >
-              <X size={10} className="text-zinc-500" />
-            </span>
-          )}
-        </div>
-      )}
+      {/* Tab bar — always rendered, same markup for single or multiple tabs */}
+      <div
+        className="flex items-center bg-[#1E1E24] border-b border-white/[0.06] min-h-[30px] overflow-x-auto"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      >
+        {stack.panelIds.map((panelId, i) => (
+          <button
+            key={panelId}
+            className={`
+              flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap
+              border-r border-white/[0.06] transition-colors cursor-grab
+              ${i === stack.activeIndex
+                ? 'bg-[#28282E] text-white/90'
+                : 'text-white/50 hover:text-white/70 hover:bg-white/[0.03]'
+              }
+            `}
+            onClick={() => handleTabClick(i)}
+            onMouseDown={(e) => handleTabMouseDown(e, panelId)}
+          >
+            <span className="truncate max-w-[120px]">{getPanelTitle(panelId)}</span>
+            {onClosePanel && (
+              <span
+                className="ml-1 p-0.5 rounded-sm hover:bg-white/10"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onClosePanel(panelId)
+                }}
+              >
+                <X size={10} />
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
       {/* Active panel content */}
       <div className="flex-1 min-h-0 overflow-hidden">

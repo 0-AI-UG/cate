@@ -5,12 +5,14 @@
 // =============================================================================
 
 import React, { useEffect, useRef, useState, useCallback, Suspense, useMemo } from 'react'
+import log from '../lib/logger'
 import type { DockWindowInitPayload, PanelState, PanelTransferSnapshot } from '../../shared/types'
 import { createDockStore } from '../stores/dockStore'
 import { DockStoreProvider } from '../stores/DockStoreContext'
 import DockZone from '../docking/DockZone'
 import DragGhost from '../docking/DragGhost'
 import { setupCrossWindowDragListeners } from '../hooks/useDockDrag'
+import { terminalRegistry } from '../lib/terminalRegistry'
 
 const TerminalPanel = React.lazy(() => import('../panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
@@ -18,6 +20,7 @@ const BrowserPanel = React.lazy(() => import('../panels/BrowserPanel'))
 const GitPanel = React.lazy(() => import('../panels/GitPanel'))
 const FileExplorerPanel = React.lazy(() => import('../panels/FileExplorerPanel'))
 const ProjectListPanel = React.lazy(() => import('../panels/ProjectListPanel'))
+const CanvasPanel = React.lazy(() => import('../panels/CanvasPanel'))
 
 interface DockWindowShellProps {
   workspaceId?: string
@@ -53,15 +56,16 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // Listen for incoming panel transfers (drag from other windows)
   useEffect(() => {
     const cleanup = window.electronAPI.onPanelReceive((snapshot: PanelTransferSnapshot) => {
+      // Deposit transfer data BEFORE setting state (which triggers TerminalPanel mount)
+      if (snapshot.terminalPtyId) {
+        terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
+        // ACK is deferred to terminalRegistry.reconnectTerminal() after listeners are wired
+      }
+
       setPanels((prev) => ({
         ...prev,
         [snapshot.panel.id]: snapshot.panel,
       }))
-
-      // ACK the transfer so buffered terminal data flushes
-      if (snapshot.terminalPtyId) {
-        window.electronAPI.panelTransferAck(snapshot.terminalPtyId)
-      }
     })
 
     return cleanup
@@ -70,17 +74,17 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // Set up cross-window drag listeners
   useEffect(() => {
     return setupCrossWindowDragListeners((snapshot, target) => {
+      // Deposit transfer data BEFORE updating state (which triggers TerminalPanel mount)
+      if (snapshot.terminalPtyId) {
+        terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
+      }
+
       // A panel was dropped into this dock window from another window
       setPanels((prev) => ({
         ...prev,
         [snapshot.panel.id]: snapshot.panel,
       }))
       dockStore.getState().dockPanel(snapshot.panel.id, target.type === 'zone' ? target.zone : 'center', target)
-
-      // ACK terminal transfer if applicable
-      if (snapshot.terminalPtyId) {
-        window.electronAPI.panelTransferAck(snapshot.terminalPtyId)
-      }
     })
   }, [dockStore])
 
@@ -106,31 +110,31 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     }
   }, [dockStore, panels])
 
-  // Render panel content
-  const renderPanel = useCallback(
-    (panelId: string) => {
+  // Render panel content inside canvas nodes (used by CanvasPanel's renderPanelContent)
+  const renderPanelContent = useCallback(
+    (panelId: string, nodeId: string, zoom: number) => {
       const panel = panels[panelId]
       if (!panel) return null
 
       let content: React.ReactNode = null
       switch (panel.type) {
         case 'terminal':
-          content = <TerminalPanel panelId={panelId} workspaceId={wsId} nodeId="" />
+          content = <TerminalPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} />
           break
         case 'editor':
-          content = <EditorPanel panelId={panelId} workspaceId={wsId} nodeId="" filePath={panel.filePath} />
+          content = <EditorPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} filePath={panel.filePath} />
           break
         case 'browser':
-          content = <BrowserPanel panelId={panelId} workspaceId={wsId} nodeId="" url={panel.url} zoomLevel={1} />
+          content = <BrowserPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} url={panel.url} zoomLevel={zoom} />
           break
         case 'git':
-          content = <GitPanel panelId={panelId} workspaceId={wsId} nodeId="" />
+          content = <GitPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} />
           break
         case 'fileExplorer':
-          content = <FileExplorerPanel panelId={panelId} workspaceId={wsId} nodeId="" />
+          content = <FileExplorerPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} />
           break
         case 'projectList':
-          content = <ProjectListPanel panelId={panelId} workspaceId={wsId} nodeId="" />
+          content = <ProjectListPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} />
           break
         default:
           return null
@@ -143,6 +147,32 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       )
     },
     [panels, wsId],
+  )
+
+  // Render panel content for dock zones
+  const renderPanel = useCallback(
+    (panelId: string) => {
+      const panel = panels[panelId]
+      if (!panel) return null
+
+      // Canvas panels get their own full canvas with renderPanelContent for nodes
+      if (panel.type === 'canvas') {
+        return (
+          <Suspense fallback={<div className="w-full h-full bg-[#1e1e1e] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+            <CanvasPanel
+              panelId={panelId}
+              workspaceId={wsId}
+              nodeId=""
+              renderPanelContent={renderPanelContent}
+            />
+          </Suspense>
+        )
+      }
+
+      // All other panels render directly
+      return renderPanelContent(panelId, '', 1)
+    },
+    [panels, wsId, renderPanelContent],
   )
 
   const getPanelTitle = useCallback(
@@ -162,7 +192,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // Kill terminal PTY if applicable
       const panel = panels[panelId]
       if (panel?.type === 'terminal') {
-        window.electronAPI.terminalKill(panelId).catch(() => {})
+        window.electronAPI.terminalKill(panelId).catch((err) => log.warn('[dock-window] Terminal kill failed:', err))
       }
 
       // Close window if no panels left

@@ -137,15 +137,18 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   }, [])
 
   const handleFileDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
-    const filePath = e.dataTransfer.getData('application/cate-file')
-    if (!filePath) return
-    // Don't create editors for directories — they can only be dropped on terminals
-    try {
-      const stat = await window.electronAPI.fsStat(filePath)
-      if (stat?.isDirectory) return
-    } catch {
-      // If we can't stat, fall through and try to open it anyway
+    // Support multi-file drops
+    const multiData = e.dataTransfer.getData('application/cate-files')
+    const singlePath = e.dataTransfer.getData('application/cate-file')
+    let filePaths: string[] = []
+    if (multiData) {
+      try { filePaths = JSON.parse(multiData) } catch { /* ignore */ }
     }
+    if (filePaths.length === 0 && singlePath) {
+      filePaths = [singlePath]
+    }
+    if (filePaths.length === 0) return
+
     e.preventDefault()
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -153,7 +156,21 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
     const { zoomLevel, viewportOffset } = canvasApi.getState()
     const canvasPoint = viewToCanvas(viewPoint, zoomLevel, viewportOffset)
     const wsId = useAppStore.getState().selectedWorkspaceId
-    useAppStore.getState().createEditor(wsId, filePath, canvasPoint)
+
+    // Open each file, staggering position so they don't stack exactly
+    let offsetX = 0
+    for (const filePath of filePaths) {
+      // Don't create editors for directories
+      try {
+        const stat = await window.electronAPI.fsStat(filePath)
+        if (stat?.isDirectory) continue
+      } catch { /* fall through */ }
+      useAppStore.getState().createEditor(wsId, filePath, {
+        x: canvasPoint.x + offsetX,
+        y: canvasPoint.y,
+      })
+      offsetX += 40
+    }
   }, [canvasRef])
 
   // Memoize marquee rect to avoid recalculation in render

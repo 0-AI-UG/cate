@@ -8,6 +8,7 @@
 // Note: The actual IPC handlers are registered in index.ts alongside the
 // panel transfer handlers, since they need access to createWindow().
 // This file exports helper utilities for the drag system.
+import log from '../logger'
 // =============================================================================
 
 import { app, nativeImage } from 'electron'
@@ -25,7 +26,12 @@ let dragTempFile: string | null = null
 export function writeDragTempFile(snapshot: PanelTransferSnapshot): string {
   const tempDir = app.getPath('temp')
   dragTempFile = path.join(tempDir, `cate-drag-${Date.now()}.json`)
-  fs.writeFileSync(dragTempFile, JSON.stringify(snapshot), 'utf-8')
+  try {
+    fs.writeFileSync(dragTempFile, JSON.stringify(snapshot), 'utf-8')
+  } catch (error) {
+    log.error('[writeDragTempFile]', error)
+    throw error instanceof Error ? error : new Error(String(error))
+  }
   return dragTempFile
 }
 

@@ -9,10 +9,12 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { snapToEdges, snapNodeToGrid } from '../canvas/layoutEngine'
+import { snapToEdges, snapNodeToGrid, snapNodeToGridSelective } from '../canvas/layoutEngine'
 import type { Point, PanelTransferSnapshot } from '../../shared/types'
 import { createTransferSnapshot } from '../lib/panelTransfer'
+import { terminalRegistry } from '../lib/terminalRegistry'
 import { useDockDragStore, hitTestDropTarget } from './useDockDrag'
+import { canvasDropZoneHovered } from '../docking/CanvasDropZone'
 import { useAppStore } from '../stores/appStore'
 import { executeDrop } from '../docking/dropExecution'
 
@@ -59,30 +61,70 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
   const rafId = useRef<number>(0)
   const pendingOrigin = useRef<Point | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // Track which axes were magnetically snapped in the last drag frame (for Bug B fix)
+  const lastMagneticAxes = useRef<{ x: boolean; y: boolean }>({ x: false, y: false })
   // Track whether we've transitioned to dock-drag mode
   const inDockDragRef = useRef(false)
   // Track cross-window drag state (when cursor exits the OS window)
   const crossWindowRef = useRef<{ snapshot: PanelTransferSnapshot; panelId: string; nodeId: string } | null>(null)
 
-  // Cleanup on unmount: abort any active drag listeners and clean up state
-  useEffect(() => {
-    return () => {
-      if (abortRef.current) {
-        abortRef.current.abort()
-        abortRef.current = null
-      }
-      if (isDraggingRef.current) {
-        document.body.classList.remove('canvas-interacting')
-      }
-      if (rafId.current) {
-        cancelAnimationFrame(rafId.current)
-      }
+  // Shared cleanup logic — used by mouseup, blur handler, and unmount
+  const cancelDrag = useCallback((revert?: boolean) => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
     }
-  }, [])
+
+    const wasDragging = isDraggingRef.current
+    isDraggingRef.current = false
+    dragStartedRef.current = false
+
+    if (wasDragging) {
+      document.body.classList.remove('canvas-interacting')
+    }
+
+    if (rafId.current) {
+      cancelAnimationFrame(rafId.current)
+      rafId.current = 0
+    }
+
+    if (inDockDragRef.current) {
+      inDockDragRef.current = false
+      if (crossWindowRef.current) {
+        crossWindowRef.current = null
+        window.electronAPI.crossWindowDragCancel()
+      }
+      useDockDragStore.getState().endDrag()
+    }
+
+    if (revert) {
+      const ds = dragStateRef.current
+      if (ds) {
+        canvasStoreApi.getState().moveNode(nodeId, ds.initialOrigin)
+      }
+    } else if (pendingOrigin.current) {
+      canvasStoreApi.getState().moveNode(nodeId, pendingOrigin.current)
+    }
+
+    pendingOrigin.current = null
+    canvasStoreApi.getState().clearSnapGuides()
+    dragStateRef.current = null
+  }, [nodeId, canvasStoreApi])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => cancelDrag(true)
+  }, [cancelDrag])
 
   const handleDragStart = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
+
+      // Abort any previous drag listeners to prevent orphaned handlers
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
 
       const node = canvasStoreApi.getState().nodes[nodeId]
       if (!node || node.isPinned) return
@@ -157,8 +199,10 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
           // causing a local drop instead of a detach.
           const outsideWindow = isCursorOutsideWindow(ev.clientX, ev.clientY)
           if (!outsideWindow) {
-            const target = hitTestDropTarget(ev.clientX, ev.clientY)
-            dockDrag.setDropTarget(target)
+            if (!canvasDropZoneHovered) {
+              const target = hitTestDropTarget(ev.clientX, ev.clientY)
+              dockDrag.setDropTarget(target)
+            }
           } else {
             dockDrag.setDropTarget(null)
           }
@@ -271,36 +315,32 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
                   8,
                 )
 
-                // Apply magnetic snapping:
-                //   within 4px  → lock to snap line
-                //   4–8px       → interpolate (pull) toward snap line
+                // Apply magnetic snapping with continuous quadratic pull
+                // across the full 0–8px range (no dead zones).
+                const snapped = snapResult.snappedOrigin
+                const dx = Math.abs(snapped.x - currentNode2.origin.x)
+                const dy = Math.abs(snapped.y - currentNode2.origin.y)
+
+                const magneticOrigin = { ...currentNode2.origin }
+                const axes = { x: false, y: false }
+
+                // X-axis magnetic pull (only if x snapped)
+                if (snapResult.lines.some((l) => l.axis === 'x') && dx < 8) {
+                  const t = 1 - (dx / 8) ** 2
+                  magneticOrigin.x = currentNode2.origin.x + (snapped.x - currentNode2.origin.x) * t
+                  axes.x = dx < 6
+                }
+
+                // Y-axis magnetic pull (only if y snapped)
+                if (snapResult.lines.some((l) => l.axis === 'y') && dy < 8) {
+                  const t = 1 - (dy / 8) ** 2
+                  magneticOrigin.y = currentNode2.origin.y + (snapped.y - currentNode2.origin.y) * t
+                  axes.y = dy < 6
+                }
+
+                lastMagneticAxes.current = axes
+
                 if (snapResult.lines.length > 0) {
-                  const snapped = snapResult.snappedOrigin
-                  const dx = Math.abs(snapped.x - currentNode2.origin.x)
-                  const dy = Math.abs(snapped.y - currentNode2.origin.y)
-
-                  const magneticOrigin = { ...currentNode2.origin }
-
-                  // X-axis magnetic pull (only if x snapped)
-                  if (snapResult.lines.some((l) => l.axis === 'x')) {
-                    if (dx < 4) {
-                      magneticOrigin.x = snapped.x
-                    } else if (dx < 8) {
-                      const t = 1 - (dx - 4) / 4
-                      magneticOrigin.x = currentNode2.origin.x + (snapped.x - currentNode2.origin.x) * t
-                    }
-                  }
-
-                  // Y-axis magnetic pull (only if y snapped)
-                  if (snapResult.lines.some((l) => l.axis === 'y')) {
-                    if (dy < 4) {
-                      magneticOrigin.y = snapped.y
-                    } else if (dy < 8) {
-                      const t = 1 - (dy - 4) / 4
-                      magneticOrigin.y = currentNode2.origin.y + (snapped.y - currentNode2.origin.y) * t
-                    }
-                  }
-
                   canvasStoreApi.getState().moveNode(nodeId, magneticOrigin)
                 }
 
@@ -312,24 +352,8 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
       }
 
       const handleMouseUp = (ev: MouseEvent) => {
-        if (abortRef.current) {
-          abortRef.current.abort()
-          abortRef.current = null
-        }
-
-        isDraggingRef.current = false
-        dragStartedRef.current = false
-        document.body.classList.remove('canvas-interacting')
-
-        // Cancel any pending RAF
-        if (rafId.current) {
-          cancelAnimationFrame(rafId.current)
-          rafId.current = 0
-        }
-
         // --- Handle dock-drag drop ---
         if (inDockDragRef.current) {
-          inDockDragRef.current = false
           const dockDrag = useDockDragStore.getState()
           const target = dockDrag.activeDropTarget
           const panelId = dockDrag.draggedPanelId
@@ -340,11 +364,14 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
               crossWindowRef.current = null
               window.electronAPI.crossWindowDragCancel()
             }
+            // Clean up drag state (cancelDrag will call endDrag since inDockDragRef is still true)
+            cancelDrag()
             executeDrop(panelId, { type: 'canvas', nodeId }, target, canvasStoreApi)
           } else if (isCursorOutsideWindow(ev.clientX, ev.clientY) && panelId) {
             // Cursor is outside the window — try cross-window drop first, then fall back to detach
             const cwState = crossWindowRef.current
             crossWindowRef.current = null
+            cancelDrag()
 
             if (cwState) {
               // Ask main process to resolve: did any target window claim the drop?
@@ -352,9 +379,11 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
                 if (claimed) {
                   // Target window accepted — remove panel from canvas
                   canvasStoreApi.getState().finalizeRemoveNode(nodeId)
+                  if (cwState.snapshot.panel.type === 'terminal') terminalRegistry.release(panelId)
                 } else {
                   // No target — fall back to creating a new dock window
                   canvasStoreApi.getState().finalizeRemoveNode(nodeId)
+                  if (cwState.snapshot.panel.type === 'terminal') terminalRegistry.release(panelId)
                   const wsId = useAppStore.getState().selectedWorkspaceId
                   window.electronAPI.dragDetach(cwState.snapshot, wsId)
                 }
@@ -370,37 +399,33 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
                   { origin: node.origin, size: node.size },
                 )
                 canvasStoreApi.getState().finalizeRemoveNode(nodeId)
+                if (panel.type === 'terminal') terminalRegistry.release(panelId)
                 const wsId = useAppStore.getState().selectedWorkspaceId
                 window.electronAPI.dragDetach(snapshot, wsId)
               }
             }
           } else {
-            // No valid drop target — cancel cross-window drag and revert
-            if (crossWindowRef.current) {
-              crossWindowRef.current = null
-              window.electronAPI.crossWindowDragCancel()
-            }
-            const ds = dragStateRef.current
-            if (ds) {
-              canvasStoreApi.getState().moveNode(nodeId, ds.initialOrigin)
-            }
+            // No valid drop target — revert position
+            cancelDrag(true)
+            return
           }
-          useDockDragStore.getState().endDrag()
-          canvasStoreApi.getState().clearSnapGuides()
-          dragStateRef.current = null
           return
         }
 
-        // Flush the last position immediately
-        if (pendingOrigin.current) {
-          canvasStoreApi.getState().moveNode(nodeId, pendingOrigin.current)
-          pendingOrigin.current = null
-        }
+        // Normal drag end — flush position and clean up
+        cancelDrag()
 
-        // Snap to grid if enabled
+        // Snap to grid if enabled — skip axes that were magnetically snapped
+        // to avoid a visible jump from magnetic position to grid position.
         const settings = useSettingsStore.getState()
         if (settings.snapToGridEnabled) {
-          snapNodeToGrid(canvasStoreApi, nodeId, settings.gridSpacing, true)
+          const skipAxes = lastMagneticAxes.current
+          if (skipAxes.x || skipAxes.y) {
+            snapNodeToGridSelective(canvasStoreApi, nodeId, settings.gridSpacing, true, skipAxes)
+          } else {
+            snapNodeToGrid(canvasStoreApi, nodeId, settings.gridSpacing, true)
+          }
+          lastMagneticAxes.current = { x: false, y: false }
         }
 
         // Containment detection: assign/remove regionId for single-node drags
@@ -438,17 +463,23 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
             }
           }
         }
+      }
 
-        canvasStoreApi.getState().clearSnapGuides()
-        dragStateRef.current = null
+      // Cancel drag on window blur (e.g. Cmd+Tab, clicking another app)
+      // — the OS won't deliver mouseup in these cases
+      const handleBlur = () => {
+        if (isDraggingRef.current) {
+          cancelDrag(true)
+        }
       }
 
       const controller = new AbortController()
       abortRef.current = controller
       window.addEventListener('mousemove', handleMouseMove, { signal: controller.signal })
       window.addEventListener('mouseup', handleMouseUp, { signal: controller.signal })
+      window.addEventListener('blur', handleBlur, { signal: controller.signal })
     },
-    [nodeId, zoomLevel],
+    [nodeId, zoomLevel, cancelDrag],
   )
 
   return {

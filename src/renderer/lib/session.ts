@@ -3,6 +3,7 @@
 // Ported from SessionSnapshot.swift + SessionStore.swift
 // =============================================================================
 
+import log from './logger'
 import { useAppStore, getCanvasOperations } from '../stores/appStore'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
@@ -106,6 +107,24 @@ export async function saveSession(): Promise<void> {
       ? useDockStore.getState().getSnapshot()
       : workspace.dockState ?? undefined
 
+    // Collect panels that live in dock zones (not on the canvas).
+    // These are panels like canvas, git, fileExplorer, projectList that are
+    // referenced by the dock layout but not saved as canvas NodeSnapshots.
+    let dockPanels: Record<string, import('../../shared/types').PanelState> | undefined
+    if (dockSnapshot) {
+      const dockPanelIds = collectPanelIdsFromDockState(dockSnapshot.zones)
+      // Exclude panels already captured as canvas nodes
+      const canvasNodePanelIds = new Set(nodeSnapshots.map((n) => n.panelId))
+      const dockOnlyIds = dockPanelIds.filter((id) => !canvasNodePanelIds.has(id))
+      if (dockOnlyIds.length > 0) {
+        dockPanels = {}
+        for (const id of dockOnlyIds) {
+          const panel = workspace.panels[id]
+          if (panel) dockPanels[id] = panel
+        }
+      }
+    }
+
     snapshots.push({
       workspaceId: workspace.id,
       workspaceName: workspace.name,
@@ -115,6 +134,7 @@ export async function saveSession(): Promise<void> {
       nodes: nodeSnapshots,
       regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
       dockState: dockSnapshot,
+      dockPanels,
     })
   }
 
@@ -131,8 +151,8 @@ export async function saveSession(): Promise<void> {
         workspaceId: pw.workspaceId,
       }))
     }
-  } catch {
-    // Panel window listing not available — skip
+  } catch (err) {
+    log.warn('[session] Panel window listing failed:', err)
   }
 
   // Capture dock window snapshots from main process
@@ -142,8 +162,8 @@ export async function saveSession(): Promise<void> {
     if (dwList && dwList.length > 0) {
       dockWindows = dwList
     }
-  } catch {
-    // Dock window listing not available — skip
+  } catch (err) {
+    log.warn('[session] Dock window listing failed:', err)
   }
 
   const session: MultiWorkspaceSession = {
@@ -156,8 +176,8 @@ export async function saveSession(): Promise<void> {
 
   try {
     await window.electronAPI.sessionSave(session as any) // session save accepts any JSON
-  } catch {
-    // Silently ignore save failures
+  } catch (err) {
+    log.warn('[session] Save failed:', err)
   }
 }
 
@@ -175,7 +195,8 @@ export async function loadSession(): Promise<MultiWorkspaceSession | SessionSnap
     }
     // Legacy single-workspace format
     return data as SessionSnapshot
-  } catch {
+  } catch (err) {
+    log.warn('[session] Load failed:', err)
     return null
   }
 }
@@ -186,7 +207,7 @@ export async function loadSession(): Promise<MultiWorkspaceSession | SessionSnap
 
 export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?: StoreApi<CanvasStore>): Promise<void> {
   if (!snapshot?.nodes) {
-    console.warn('[session] invalid snapshot (no nodes), skipping restore')
+    log.warn('[session] invalid snapshot (no nodes), skipping restore')
     return
   }
 
@@ -196,7 +217,7 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
   const getCanvasState = () => canvasStoreApi?.getState() ?? null
 
   const wsId = appStore.selectedWorkspaceId
-  console.debug(`[session] restoring workspace ${wsId}: ${snapshot.nodes.length} nodes`)
+  log.debug(`[session] restoring workspace ${wsId}: ${snapshot.nodes.length} nodes`)
   const t0 = performance.now()
 
   // Restore regions first and build old→new ID mapping
@@ -211,7 +232,7 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
 
   for (let i = 0; i < snapshot.nodes.length; i++) {
     const nodeSnap = snapshot.nodes[i]
-    console.debug(`[session] restoring node ${i + 1}/${snapshot.nodes.length}: ${nodeSnap.panelType} (panelId=${nodeSnap.panelId})`)
+    log.debug(`[session] restoring node ${i + 1}/${snapshot.nodes.length}: ${nodeSnap.panelType} (panelId=${nodeSnap.panelId})`)
     const position = nodeSnap.origin
     const size = nodeSnap.size
 
@@ -295,17 +316,37 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
     }
   }
 
+  // Restore dock-zone panels (canvas, git, fileExplorer, etc.) that aren't canvas nodes
+  if (snapshot.dockPanels) {
+    for (const panel of Object.values(snapshot.dockPanels)) {
+      appStore.addPanel(wsId, panel)
+    }
+    log.debug(`[session] restored ${Object.keys(snapshot.dockPanels).length} dock-zone panels for workspace ${wsId}`)
+  } else if (snapshot.dockState) {
+    // Migration: sessions saved before dockPanels was introduced.
+    // Any panel IDs in the dock state that don't exist in the workspace are
+    // almost certainly canvas panels (the only dock-only panel type).
+    const dockPanelIds = collectPanelIdsFromDockState(snapshot.dockState.zones)
+    const ws = appStore.getWorkspace(wsId)
+    for (const panelId of dockPanelIds) {
+      if (!ws?.panels[panelId]) {
+        appStore.addPanel(wsId, { id: panelId, type: 'canvas', title: 'Canvas', isDirty: false })
+        log.debug(`[session] migration: created missing dock panel ${panelId} as canvas`)
+      }
+    }
+  }
+
   // Restore dock state if present
   if (snapshot.dockState) {
     try {
       useDockStore.getState().restoreSnapshot(snapshot.dockState)
-      console.debug(`[session] dock state restored for workspace ${wsId}`)
+      log.debug(`[session] dock state restored for workspace ${wsId}`)
     } catch (err) {
-      console.warn('[session] failed to restore dock state:', err)
+      log.warn('[session] failed to restore dock state:', err)
     }
   }
 
-  console.debug(`[session] workspace ${wsId} restored in ${(performance.now() - t0).toFixed(1)}ms`)
+  log.debug(`[session] workspace ${wsId} restored in ${(performance.now() - t0).toFixed(1)}ms`)
 }
 
 // -----------------------------------------------------------------------------
@@ -346,7 +387,7 @@ export async function replayTerminalLog(panelId: string): Promise<void> {
 export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSession, canvasStoreApi?: StoreApi<CanvasStore>): Promise<void> {
   const appStore = useAppStore.getState()
   const tTotal = performance.now()
-  console.debug(`[session] restoring multi-workspace session: ${session.workspaces.length} workspaces`)
+  log.debug(`[session] restoring multi-workspace session: ${session.workspaces.length} workspaces`)
 
   // Clear any existing workspaces so we don't duplicate on every restart
   const existingIds = appStore.workspaces.map((w) => w.id)
@@ -360,7 +401,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
   const wsIds: string[] = []
   for (let i = 0; i < session.workspaces.length; i++) {
     const snapshot = session.workspaces[i]
-    console.debug(`[session] workspace ${i + 1}/${session.workspaces.length}: "${snapshot.workspaceName}" (${snapshot.nodes.length} nodes)`)
+    log.debug(`[session] workspace ${i + 1}/${session.workspaces.length}: "${snapshot.workspaceName}" (${snapshot.nodes.length} nodes)`)
     const wsId = appStore.addWorkspace(snapshot.workspaceName, snapshot.rootPath ?? undefined)
     wsIds.push(wsId)
 
@@ -381,7 +422,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
 
   // Recreate panel windows that were open at the time of last save
   if (session.panelWindows && session.panelWindows.length > 0) {
-    console.debug(`[session] restoring ${session.panelWindows.length} panel windows`)
+    log.debug(`[session] restoring ${session.panelWindows.length} panel windows`)
     for (const pw of session.panelWindows) {
       try {
         const snapshot: import('../../shared/types').PanelTransferSnapshot = {
@@ -396,17 +437,17 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
         if (typeof newWindowId === 'number') {
           // Position the new panel window to its saved bounds
           // The main process createWindow positions it, but we passed geometry in the snapshot
-          console.debug(`[session] panel window restored: ${pw.panel.title} (windowId=${newWindowId})`)
+          log.debug(`[session] panel window restored: ${pw.panel.title} (windowId=${newWindowId})`)
         }
       } catch (err) {
-        console.warn(`[session] failed to restore panel window "${pw.panel.title}":`, err)
+        log.warn(`[session] failed to restore panel window "${pw.panel.title}":`, err)
       }
     }
   }
 
   // Recreate dock windows that were open at the time of last save
   if (session.dockWindows && session.dockWindows.length > 0) {
-    console.debug(`[session] restoring ${session.dockWindows.length} dock windows`)
+    log.debug(`[session] restoring ${session.dockWindows.length} dock windows`)
     for (const dw of session.dockWindows) {
       try {
         // For each panel in the dock window, create a transfer snapshot and create
@@ -426,14 +467,14 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
         }
 
         await window.electronAPI.dragDetach(snapshot, dw.workspaceId)
-        console.debug(`[session] dock window restored: ${panelIds.length} panels`)
+        log.debug(`[session] dock window restored: ${panelIds.length} panels`)
       } catch (err) {
-        console.warn(`[session] failed to restore dock window:`, err)
+        log.warn(`[session] failed to restore dock window:`, err)
       }
     }
   }
 
-  console.debug(`[session] full session restored in ${(performance.now() - tTotal).toFixed(1)}ms`)
+  log.debug(`[session] full session restored in ${(performance.now() - tTotal).toFixed(1)}ms`)
 }
 
 // -----------------------------------------------------------------------------
@@ -477,11 +518,42 @@ export function setupAutoSave(canvasStoreApi?: StoreApi<CanvasStore>): () => voi
     autoSaveTimer = setTimeout(() => saveSession(), 5000)
   })
 
+  // Listen for flush-save requests from main process (quit, window close)
+  const unsubFlush = window.electronAPI.onSessionFlushSave(() => {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+    saveSession()
+  })
+
   return () => {
     unsubCanvas()
     unsubApp()
     unsubDock()
+    unsubFlush()
     if (autoSaveTimer) clearTimeout(autoSaveTimer)
     autoSaveSetUp = false
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+/** Collect all panel IDs referenced in a WindowDockState layout tree. */
+function collectPanelIdsFromDockState(zones: import('../../shared/types').WindowDockState): string[] {
+  const ids: string[] = []
+  for (const zone of Object.values(zones)) {
+    if (zone.layout) collectPanelIdsFromNode(zone.layout, ids)
+  }
+  return ids
+}
+
+function collectPanelIdsFromNode(node: import('../../shared/types').DockLayoutNode, ids: string[]): void {
+  if (node.type === 'tabs') {
+    ids.push(...node.panelIds)
+  } else {
+    for (const child of node.children) {
+      collectPanelIdsFromNode(child, ids)
+    }
   }
 }

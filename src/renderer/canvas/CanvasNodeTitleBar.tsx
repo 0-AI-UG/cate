@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useState } from 'react'
-import { Terminal, Globe, FileText, GitBranch, Maximize2, Minimize2, Lock, Unlock, X } from 'lucide-react'
+import { Terminal, Globe, FileText, GitBranch, Lock, X } from 'lucide-react'
 import type { PanelType } from '../../shared/types'
 import { panelColor } from '../panels/types'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
@@ -83,6 +83,10 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
       const target = e.target as HTMLElement
       if (target.closest('[data-titlebar-button]')) return
 
+      // Stop propagation so CanvasNode's resize edge detection doesn't
+      // also fire on the same mousedown event.
+      e.stopPropagation()
+
       // Double-click toggles maximize
       if (e.detail === 2) {
         onToggleMaximize()
@@ -100,14 +104,6 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
       onClose()
     },
     [onClose],
-  )
-
-  const handleMaximizeClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      onToggleMaximize()
-    },
-    [onToggleMaximize],
   )
 
   const handleContextMenu = useCallback(
@@ -134,6 +130,15 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
     ...(onRename || onDuplicate
       ? [{ label: '', separator: true, onClick: () => {} }]
       : []),
+    {
+      label: isMaximized ? 'Restore' : 'Maximize',
+      onClick: onToggleMaximize,
+    },
+    {
+      label: isPinned ? 'Unlock' : 'Lock',
+      onClick: onTogglePin,
+    },
+    { label: '', separator: true, onClick: () => {} },
     {
       label: 'Move to Front',
       onClick: () => {
@@ -169,53 +174,32 @@ const CanvasNodeTitleBar: React.FC<TitleBarProps> = ({
   return (
     <>
       <div
-        className="group flex h-7 items-center bg-[#28282E] px-2 select-none cursor-grab hover:bg-[#32323A] transition-colors"
-        onMouseDown={handleMouseDown}
+        className="flex h-6 bg-[#1E1E24] border-b border-white/[0.05] select-none"
         onContextMenu={handleContextMenu}
       >
-        {/* Panel type icon */}
-        <div className="mr-1.5 flex-shrink-0">
+        {/* Single tab item — matches stacked tab style */}
+        <div
+          className="group flex items-center gap-1 px-2 cursor-grab bg-[#28282E] text-white/90 border-r border-white/[0.05] shrink-0"
+          onMouseDown={handleMouseDown}
+        >
           <PanelIcon type={panelType} color={iconColor} />
+          <span className="truncate max-w-[120px] text-xs">{title}</span>
+          {/* Close button — visible on hover */}
+          <button
+            data-titlebar-button
+            className="ml-1 p-0.5 rounded-sm opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-white/10"
+            onClick={handleCloseClick}
+          >
+            <X size={10} className="text-white/60" />
+          </button>
         </div>
 
-        {/* Title */}
-        <div className="min-w-0 flex-1 truncate text-xs font-medium text-white/80">
-          {title}
-        </div>
-
-        {/* Pin button — always visible when pinned, hover-only otherwise */}
-        <button
-          data-titlebar-button
-          className={`ml-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm transition-opacity hover:bg-white/[0.15] ${isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-          onClick={(e) => { e.stopPropagation(); onTogglePin() }}
-          title={isPinned ? 'Unlock' : 'Lock'}
-        >
-          {isPinned ? <Lock size={12} className="text-blue-400" /> : <Unlock size={12} className="text-white/80" />}
-        </button>
-
-        {/* Maximize/Restore button — visible on hover */}
-        <button
-          data-titlebar-button
-          className="ml-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity hover:bg-white/[0.15] group-hover:opacity-100"
-          onClick={handleMaximizeClick}
-          title={isMaximized ? 'Restore' : 'Maximize'}
-        >
-          {isMaximized ? (
-            <Minimize2 size={12} className="text-white/80" />
-          ) : (
-            <Maximize2 size={12} className="text-white/80" />
-          )}
-        </button>
-
-        {/* Close button — visible on hover */}
-        <button
-          data-titlebar-button
-          className="ml-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity hover:bg-red-500/30 group-hover:opacity-100"
-          onClick={handleCloseClick}
-          title="Close"
-        >
-          <X size={12} className="text-white/80" />
-        </button>
+        {/* Pin indicator — shown inline after the tab when pinned */}
+        {isPinned && (
+          <div className="flex items-center px-1">
+            <Lock size={10} className="text-blue-400/60" />
+          </div>
+        )}
       </div>
 
       {/* Node title bar right-click context menu */}

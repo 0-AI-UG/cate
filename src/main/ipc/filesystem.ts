@@ -6,6 +6,8 @@ import fs from 'fs/promises'
 import path from 'path'
 import { watch, FSWatcher } from 'chokidar'
 import { ipcMain } from 'electron'
+import log from '../logger'
+import { validatePath } from './pathValidation'
 import {
   FS_READ_FILE,
   FS_WRITE_FILE,
@@ -176,50 +178,98 @@ export function stopWatchersForWindow(windowId: number): void {
 
 export function registerHandlers(): void {
   ipcMain.handle(FS_READ_FILE, async (_event, filePath: string) => {
-    return readFile(filePath)
+    try {
+      return await readFile(validatePath(filePath))
+    } catch (error) {
+      log.error(`[${FS_READ_FILE}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(FS_WRITE_FILE, async (_event, filePath: string, content: string) => {
-    await writeFile(filePath, content)
+    try {
+      await writeFile(validatePath(filePath), content)
+    } catch (error) {
+      log.error(`[${FS_WRITE_FILE}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(FS_READ_DIR, async (_event, dirPath: string) => {
-    return readDir(dirPath)
+    try {
+      return await readDir(validatePath(dirPath))
+    } catch (error) {
+      log.error(`[${FS_READ_DIR}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(FS_WATCH_START, async (event, dirPath: string) => {
-    const win = windowFromEvent(event)
-    if (win) {
-      watchStart(dirPath, win.id)
+    try {
+      const validPath = validatePath(dirPath)
+      const win = windowFromEvent(event)
+      if (win) {
+        watchStart(validPath, win.id)
+      }
+    } catch (error) {
+      log.error(`[${FS_WATCH_START}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
   ipcMain.handle(FS_WATCH_STOP, async (event, dirPath: string) => {
-    const win = windowFromEvent(event)
-    if (win) {
-      watchStop(dirPath, win.id)
+    try {
+      const validPath = validatePath(dirPath)
+      const win = windowFromEvent(event)
+      if (win) {
+        watchStop(validPath, win.id)
+      }
+    } catch (error) {
+      log.error(`[${FS_WATCH_STOP}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
   ipcMain.handle(FS_STAT, async (_event, filePath: string) => {
-    const stat = await fs.stat(filePath)
-    return { isDirectory: stat.isDirectory(), isFile: stat.isFile() }
+    try {
+      const stat = await fs.stat(validatePath(filePath))
+      return { isDirectory: stat.isDirectory(), isFile: stat.isFile() }
+    } catch (error) {
+      log.error(`[${FS_STAT}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(FS_DELETE, async (_event, filePath: string) => {
-    const stat = await fs.stat(filePath)
-    if (stat.isDirectory()) {
-      await fs.rm(filePath, { recursive: true })
-    } else {
-      await fs.unlink(filePath)
+    try {
+      const validPath = validatePath(filePath)
+      const stat = await fs.stat(validPath)
+      if (stat.isDirectory()) {
+        await fs.rm(validPath, { recursive: true })
+      } else {
+        await fs.unlink(validPath)
+      }
+    } catch (error) {
+      log.error(`[${FS_DELETE}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
   ipcMain.handle(FS_RENAME, async (_event, oldPath: string, newPath: string) => {
-    await fs.rename(oldPath, newPath)
+    try {
+      await fs.rename(validatePath(oldPath), validatePath(newPath))
+    } catch (error) {
+      log.error(`[${FS_RENAME}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(FS_MKDIR, async (_event, dirPath: string) => {
-    await fs.mkdir(dirPath, { recursive: true })
+    try {
+      await fs.mkdir(validatePath(dirPath), { recursive: true })
+    } catch (error) {
+      log.error(`[${FS_MKDIR}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 }

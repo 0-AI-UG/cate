@@ -81,7 +81,6 @@ export function buildApplicationMenu(): void {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },

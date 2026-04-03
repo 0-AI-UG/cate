@@ -51,6 +51,7 @@ import {
   SESSION_SAVE,
   SESSION_LOAD,
   SESSION_CLEAR,
+  SESSION_FLUSH_SAVE,
   APP_GET_PATH,
   MENU_OPEN_SETTINGS,
   DIALOG_OPEN_FOLDER,
@@ -98,6 +99,9 @@ import {
   WORKSPACE_REMOVE,
   WORKSPACE_GET,
   WORKSPACE_CHANGED,
+  WEBVIEW_SCREENSHOT,
+  NATIVE_FILE_DRAG,
+  CAPTURE_PAGE,
 } from '../shared/ipc-channels'
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -412,6 +416,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(SESSION_CLEAR)
   },
 
+  onSessionFlushSave(callback: () => void): () => void {
+    const handler = () => callback()
+    ipcRenderer.on(SESSION_FLUSH_SAVE, handler)
+    return () => ipcRenderer.removeListener(SESSION_FLUSH_SAVE, handler)
+  },
+
   // ---------------------------------------------------------------------------
   // App
   // ---------------------------------------------------------------------------
@@ -465,7 +475,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   capturePage(): Promise<string | null> {
-    return ipcRenderer.invoke('capture-page')
+    return ipcRenderer.invoke(CAPTURE_PAGE)
+  },
+
+  webviewScreenshot(webContentsId: number): Promise<{ filePath: string; dataUrl: string } | null> {
+    return ipcRenderer.invoke(WEBVIEW_SCREENSHOT, webContentsId)
+  },
+
+  nativeFileDrag(filePath: string): Promise<void> {
+    return ipcRenderer.invoke(NATIVE_FILE_DRAG, filePath)
   },
 
   // ---------------------------------------------------------------------------

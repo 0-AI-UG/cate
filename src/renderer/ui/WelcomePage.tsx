@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import log from '../lib/logger'
 import { useAppStore } from '../stores/appStore'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import {
@@ -25,7 +26,7 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
   const [recentProjects, setRecentProjects] = useState<string[]>([])
 
   useEffect(() => {
-    window.electronAPI.recentProjectsGet().then(setRecentProjects).catch(() => {})
+    window.electronAPI.recentProjectsGet().then(setRecentProjects).catch((err) => log.warn('[welcome] Failed to load recent projects:', err))
   }, [])
 
   const openFolder = useCallback(async () => {

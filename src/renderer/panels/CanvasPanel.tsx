@@ -95,7 +95,15 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
     registerCanvasOps(panelId, ops)
     // Set as active by default if it's the first canvas
     if (firstCanvasId === panelId) setActiveCanvasPanelId(panelId)
-    return () => unregisterCanvasOps(panelId)
+    return () => {
+      unregisterCanvasOps(panelId)
+      // Reset first canvas tracking so the next canvas panel
+      // in this window claims the singleton store (preserving nodes)
+      if (firstCanvasId === panelId) {
+        firstCanvasId = null
+        defaultStoreAssigned.delete(panelId)
+      }
+    }
   }, [panelId, store])
 
   const handlePointerDown = useCallback(() => {

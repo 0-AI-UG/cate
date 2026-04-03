@@ -6,7 +6,7 @@
 import type { StoreApi } from 'zustand'
 // Type-only import — no runtime circular dependency with canvasStore
 import type { CanvasStore } from '../stores/canvasStore'
-import type { Point, Size, Rect, PanelType } from '../../shared/types'
+import type { Point, Size, Rect, PanelType, CanvasNodeState } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, PANEL_MINIMUM_SIZES } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -359,4 +359,117 @@ export function rectsOverlap(a: Rect, b: Rect): boolean {
     a.origin.y + a.size.height <= b.origin.y ||
     b.origin.y + b.size.height <= a.origin.y
   )
+}
+
+// -----------------------------------------------------------------------------
+// Selective grid snap (preserves magnetically-snapped axes)
+// -----------------------------------------------------------------------------
+
+/**
+ * Like `snapNodeToGrid` but skips axes that were magnetically snapped during
+ * drag to prevent a visible jump on release.
+ */
+export function snapNodeToGridSelective(
+  canvasStoreApi: StoreApi<CanvasStore>,
+  nodeId: string,
+  gridSpacing: number,
+  includeRegions: boolean,
+  skipAxes: { x: boolean; y: boolean },
+): void {
+  const state = canvasStoreApi.getState()
+  const node = state.nodes[nodeId]
+  if (!node) return
+
+  const nodeRect: Rect = { origin: node.origin, size: node.size }
+  const neighbors: Rect[] = Object.values(state.nodes)
+    .filter((n) => n.id !== nodeId)
+    .map((n) => ({ origin: n.origin, size: n.size }))
+
+  if (includeRegions) {
+    for (const r of Object.values(state.regions)) {
+      neighbors.push({ origin: r.origin, size: r.size })
+    }
+  }
+
+  const snappedOrigin = snap(nodeRect, neighbors, gridSpacing, 8)
+  const finalOrigin: Point = {
+    x: skipAxes.x ? node.origin.x : snappedOrigin.x,
+    y: skipAxes.y ? node.origin.y : snappedOrigin.y,
+  }
+  canvasStoreApi.getState().moveNode(nodeId, finalOrigin)
+}
+
+// -----------------------------------------------------------------------------
+// Shared border detection (for synchronized resize)
+// -----------------------------------------------------------------------------
+
+export interface SharedBorder {
+  neighborId: string
+  /** Which edge of the neighbor is shared. */
+  neighborEdge: 'left' | 'right' | 'top' | 'bottom'
+}
+
+/**
+ * Find nodes whose edge aligns with the given node's edge (shared border).
+ * Only checks the opposite edge (e.g., if resizing `right`, looks for neighbors
+ * whose `left` edge aligns). Also verifies perpendicular overlap so only
+ * actually adjacent panels are returned.
+ */
+export function findSharedBorders(
+  nodeId: string,
+  edge: 'left' | 'right' | 'top' | 'bottom',
+  nodes: Record<string, CanvasNodeState>,
+  tolerance = 2,
+): SharedBorder[] {
+  const node = nodes[nodeId]
+  if (!node) return []
+
+  const results: SharedBorder[] = []
+
+  // Determine which edge position to match and the opposite edge to look for
+  const isHorizontal = edge === 'left' || edge === 'right'
+
+  let edgePos: number
+  if (edge === 'right') edgePos = node.origin.x + node.size.width
+  else if (edge === 'left') edgePos = node.origin.x
+  else if (edge === 'bottom') edgePos = node.origin.y + node.size.height
+  else edgePos = node.origin.y // top
+
+  const oppositeEdge: 'left' | 'right' | 'top' | 'bottom' =
+    edge === 'right' ? 'left' : edge === 'left' ? 'right' : edge === 'bottom' ? 'top' : 'bottom'
+
+  for (const other of Object.values(nodes)) {
+    if (other.id === nodeId) continue
+
+    // Get the neighbor's opposite edge position
+    let neighborEdgePos: number
+    if (oppositeEdge === 'left') neighborEdgePos = other.origin.x
+    else if (oppositeEdge === 'right') neighborEdgePos = other.origin.x + other.size.width
+    else if (oppositeEdge === 'top') neighborEdgePos = other.origin.y
+    else neighborEdgePos = other.origin.y + other.size.height
+
+    // Check alignment within tolerance
+    if (Math.abs(edgePos - neighborEdgePos) > tolerance) continue
+
+    // Check perpendicular overlap (panels must actually share a border segment)
+    if (isHorizontal) {
+      const overlapStart = Math.max(node.origin.y, other.origin.y)
+      const overlapEnd = Math.min(
+        node.origin.y + node.size.height,
+        other.origin.y + other.size.height,
+      )
+      if (overlapEnd <= overlapStart) continue
+    } else {
+      const overlapStart = Math.max(node.origin.x, other.origin.x)
+      const overlapEnd = Math.min(
+        node.origin.x + node.size.width,
+        other.origin.x + other.size.width,
+      )
+      if (overlapEnd <= overlapStart) continue
+    }
+
+    results.push({ neighborId: other.id, neighborEdge: oppositeEdge })
+  }
+
+  return results
 }

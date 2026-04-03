@@ -4,7 +4,8 @@
 // =============================================================================
 
 import { ipcMain } from 'electron'
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
+import log from '../logger'
 import {
   MCP_SPAWN,
   MCP_STOP,
@@ -44,10 +45,18 @@ export function registerHandlers(): void {
       const win = windowFromEvent(event)
       const ownerWindowId = win?.id ?? -1
 
-      const child = spawn(command, args, {
-        env: { ...getShellEnv(), ...env },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      })
+      let child: ChildProcess
+      try {
+        child = spawn(command, args, {
+          env: { ...getShellEnv(), ...env },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('[mcp] Failed to spawn "%s":', command, err)
+        sendStatusUpdate(ownerWindowId, { name, status: 'error', error: message })
+        return
+      }
 
       runningServers.set(name, { process: child, ownerWindowId })
       sendStatusUpdate(ownerWindowId, { name, status: 'running' })

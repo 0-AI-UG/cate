@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useCallback } from 'react'
+import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
 import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
@@ -180,7 +181,7 @@ export default function EditorPanel({
     try {
       await window.electronAPI.fsWriteFile(filePathRef.current, content)
     } catch (err) {
-      console.error('[EditorPanel] Failed to save file:', err)
+      log.error('[EditorPanel] Failed to save file:', err)
       return
     }
 
@@ -290,16 +291,20 @@ export default function EditorPanel({
 
     editorRef.current = editor
 
+    let cancelled = false
+
     if (filePath) {
       const language = detectLanguage(filePath)
       window.electronAPI
         .fsReadFile(filePath)
         .then((content) => {
+          if (cancelled) return
           const model = monaco.editor.createModel(content, language)
           editor.setModel(model)
         })
         .catch((err) => {
-          console.error('[EditorPanel] Failed to read file:', err)
+          if (cancelled) return
+          log.error('[EditorPanel] Failed to read file:', err)
           const model = monaco.editor.createModel('', language)
           editor.setModel(model)
         })
@@ -323,6 +328,7 @@ export default function EditorPanel({
     })
 
     return () => {
+      cancelled = true
       layoutObserver.disconnect()
       changeDisposable.dispose()
       const model = editor.getModel()

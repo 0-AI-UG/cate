@@ -74,6 +74,7 @@ export const SETTINGS_RESET = 'settings:reset'
 export const SESSION_SAVE = 'session:save'
 export const SESSION_LOAD = 'session:load'
 export const SESSION_CLEAR = 'session:clear'
+export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer
 
 // App
 export const APP_GET_PATH = 'app:getPath'
@@ -135,6 +136,13 @@ export const CROSS_WINDOW_DRAG_UPDATE = 'crossDrag:update'     // main -> render
 export const CROSS_WINDOW_DRAG_DROP = 'crossDrag:drop'         // renderer -> main
 export const CROSS_WINDOW_DRAG_CANCEL = 'crossDrag:cancel'     // renderer -> main
 export const CROSS_WINDOW_DRAG_RESOLVE = 'crossDrag:resolve'   // renderer -> main (mouseup — resolve drop or create window)
+
+// Webview
+export const WEBVIEW_SCREENSHOT = 'webview:screenshot'
+export const NATIVE_FILE_DRAG = 'native:fileDrag'
+
+// Page capture
+export const CAPTURE_PAGE = 'capture-page'
 
 // Workspace management (main process is source of truth)
 export const WORKSPACE_LIST = 'workspace:list'

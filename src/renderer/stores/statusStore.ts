@@ -404,39 +404,3 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
   },
 }))
 
-// =============================================================================
-// Standalone selectors for proper Zustand subscriptions
-// =============================================================================
-
-export function selectAllPorts(workspaceId: string): number[] {
-  const state = useStatusStore.getState()
-  const ws = state.workspaces[workspaceId]
-  if (!ws) return []
-
-  const allPorts = new Set<number>()
-  for (const [terminalId, wsId] of Object.entries(state.terminalWorkspaceMap)) {
-    if (wsId === workspaceId && ws.listeningPorts[terminalId]) {
-      for (const port of ws.listeningPorts[terminalId]) {
-        allPorts.add(port)
-      }
-    }
-  }
-  return Array.from(allPorts).sort((a, b) => a - b)
-}
-
-export function selectPrimaryCwd(workspaceId: string): string | null {
-  const state = useStatusStore.getState()
-  const ws = state.workspaces[workspaceId]
-  if (!ws) return null
-
-  for (const [terminalId, wsId] of Object.entries(state.terminalWorkspaceMap)) {
-    if (wsId === workspaceId && ws.terminalCwd[terminalId]) {
-      return ws.terminalCwd[terminalId]
-    }
-  }
-  return null
-}
-
-export function selectGitInfo(workspaceId: string): GitInfo | null {
-  return useStatusStore.getState().gitInfo[workspaceId] ?? null
-}

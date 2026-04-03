@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState, useCallback, Suspense } from 'react'
 import type { PanelState, PanelTransferSnapshot } from '../../shared/types'
+import { terminalRegistry } from '../lib/terminalRegistry'
 
 const TerminalPanel = React.lazy(() => import('../panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
@@ -26,13 +27,13 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
   // Listen for incoming panel transfers from the main process
   useEffect(() => {
     const cleanup = window.electronAPI.onPanelReceive((snapshot: PanelTransferSnapshot) => {
+      // Deposit transfer data BEFORE setting state (which triggers TerminalPanel mount)
+      if (snapshot.terminalPtyId) {
+        terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
+      }
+
       setPanel(snapshot.panel)
       setReceivedSnapshot(snapshot)
-
-      // ACK the transfer so buffered terminal data flushes
-      if (snapshot.terminalPtyId) {
-        window.electronAPI.panelTransferAck(snapshot.terminalPtyId)
-      }
     })
 
     return cleanup

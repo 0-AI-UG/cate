@@ -377,11 +377,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
         preMaximizeSize: undefined,
       }
     } else {
-      // Save current geometry and maximize to fill visible viewport
+      // Save current geometry and maximize to fill visible canvas area
+      const cs = state.containerSize
       const topLeft = get().viewToCanvas({ x: 0, y: 0 })
       const bottomRight = get().viewToCanvas({
-        x: viewportSize.width,
-        y: viewportSize.height,
+        x: cs.width || viewportSize.width,
+        y: cs.height || viewportSize.height,
       })
       const padding = 20 / state.zoomLevel
 
