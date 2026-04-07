@@ -9,6 +9,7 @@ import * as monaco from 'monaco-editor'
 import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { registerEditorSave, unregisterEditorSave } from '../lib/editorSaveRegistry'
 
 // -----------------------------------------------------------------------------
 // Monaco worker setup for Electron (Vite bundler)
@@ -21,6 +22,36 @@ window.MonacoEnvironment = {
       { type: 'module' },
     )
   },
+}
+
+// -----------------------------------------------------------------------------
+// Module-level model cache keyed by file path
+// -----------------------------------------------------------------------------
+
+const modelCache = new Map<string, monaco.editor.ITextModel>()
+
+// -----------------------------------------------------------------------------
+// Custom Monaco theme — matches the canvas-node background (#1f1e1c) so editor
+// panels blend seamlessly with terminal panels and the node chrome.
+// -----------------------------------------------------------------------------
+
+const CATE_THEME = 'cate-dark'
+let cateThemeDefined = false
+function ensureCateTheme() {
+  if (cateThemeDefined) return
+  monaco.editor.defineTheme(CATE_THEME, {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#1f1e1c',
+      'editorGutter.background': '#1f1e1c',
+      'minimap.background': '#1f1e1c',
+      'editor.lineHighlightBorder': '#00000000',
+      'contrastBorder': '#00000000',
+    },
+  })
+  cateThemeDefined = true
 }
 
 // -----------------------------------------------------------------------------
@@ -199,6 +230,7 @@ export default function EditorPanel({
   useEffect(() => {
     if (!containerRef.current) return
 
+    ensureCateTheme()
     const fontSize = useSettingsStore.getState().editorFontSize
 
     // =======================================================================
@@ -206,7 +238,7 @@ export default function EditorPanel({
     // =======================================================================
     if (diffMode && filePath && rootPath) {
       const diffEditor = monaco.editor.createDiffEditor(containerRef.current, {
-        theme: 'vs-dark',
+        theme: CATE_THEME,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
         fontSize: fontSize || 12,
         automaticLayout: false,
@@ -272,12 +304,14 @@ export default function EditorPanel({
     // REGULAR EDITOR
     // =======================================================================
     const editor = monaco.editor.create(containerRef.current, {
-      theme: 'vs-dark',
+      theme: CATE_THEME,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       fontSize: fontSize || 12,
       minimap: { enabled: false },
       automaticLayout: false,
       scrollBeyondLastLine: false,
+      scrollbar: { useShadows: false },
+      overviewRulerBorder: false,
       padding: { top: 8, bottom: 8 },
       lineNumbers: 'on',
       renderWhitespace: 'none',
@@ -292,24 +326,35 @@ export default function EditorPanel({
     editorRef.current = editor
 
     let cancelled = false
+    let createdModel: monaco.editor.ITextModel | null = null
 
     if (filePath) {
-      const language = detectLanguage(filePath)
-      window.electronAPI
-        .fsReadFile(filePath)
-        .then((content) => {
-          if (cancelled) return
-          const model = monaco.editor.createModel(content, language)
-          editor.setModel(model)
-        })
-        .catch((err) => {
-          if (cancelled) return
-          log.error('[EditorPanel] Failed to read file:', err)
-          const model = monaco.editor.createModel('', language)
-          editor.setModel(model)
-        })
+      const cached = modelCache.get(filePath)
+      if (cached && !cached.isDisposed()) {
+        editor.setModel(cached)
+      } else {
+        const language = detectLanguage(filePath)
+        window.electronAPI
+          .fsReadFile(filePath)
+          .then((content) => {
+            if (cancelled) return
+            const model = monaco.editor.createModel(content, language)
+            createdModel = model
+            modelCache.set(filePath, model)
+            editor.setModel(model)
+          })
+          .catch((err) => {
+            if (cancelled) return
+            log.error('[EditorPanel] Failed to read file:', err)
+            const model = monaco.editor.createModel('', language)
+            createdModel = model
+            modelCache.set(filePath, model)
+            editor.setModel(model)
+          })
+      }
     } else {
       const model = monaco.editor.createModel('', 'plaintext')
+      createdModel = model
       editor.setModel(model)
     }
 
@@ -331,13 +376,15 @@ export default function EditorPanel({
       cancelled = true
       layoutObserver.disconnect()
       changeDisposable.dispose()
-      const model = editor.getModel()
-      if (model) model.dispose()
+      if (createdModel && !createdModel.isDisposed()) {
+        if (filePath) modelCache.delete(filePath)
+        createdModel.dispose()
+      }
       editor.dispose()
       editorRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panelId, workspaceId, diffMode])
+  }, [filePath, workspaceId, diffMode])
 
   // ---------------------------------------------------------------------------
   // Listen for save-file custom event
@@ -346,8 +393,12 @@ export default function EditorPanel({
   useEffect(() => {
     const handler = () => { save() }
     window.addEventListener('save-file', handler)
-    return () => window.removeEventListener('save-file', handler)
-  }, [save])
+    registerEditorSave(panelId, save)
+    return () => {
+      window.removeEventListener('save-file', handler)
+      unregisterEditorSave(panelId)
+    }
+  }, [save, panelId])
 
   // ---------------------------------------------------------------------------
   // Watch settings changes: editor font size

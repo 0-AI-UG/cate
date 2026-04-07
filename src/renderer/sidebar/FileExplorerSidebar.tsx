@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { FileExplorer } from './FileExplorer'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen } from '@phosphor-icons/react'
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -83,9 +83,6 @@ export const FileExplorerSidebar: React.FC = () => {
     >
       {fileExplorerVisible && (
         <>
-          {/* macOS titlebar drag region */}
-          <div className="h-7 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
-
           {/* File explorer content */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             {rootPath ? (

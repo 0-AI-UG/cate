@@ -4,10 +4,11 @@
 // =============================================================================
 
 import { createContext, useContext } from 'react'
-import { useStore } from 'zustand'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from './canvasStore'
 import { useCanvasStore as defaultCanvasStore } from './canvasStore'
+export { shallow } from 'zustand/shallow'
 
 export const CanvasStoreContext = createContext<StoreApi<CanvasStore>>(defaultCanvasStore)
 
@@ -28,7 +29,10 @@ export function useCanvasStoreApi(): StoreApi<CanvasStore> {
 }
 
 /** Reactive selector hook — reads from the context-provided canvas store */
-export function useCanvasStoreContext<T>(selector: (s: CanvasStore) => T): T {
+export function useCanvasStoreContext<T>(
+  selector: (s: CanvasStore) => T,
+  equalityFn?: (a: T, b: T) => boolean,
+): T {
   const store = useContext(CanvasStoreContext)
-  return useStore(store, selector)
+  return useStoreWithEqualityFn(store, selector, equalityFn)
 }

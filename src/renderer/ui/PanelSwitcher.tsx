@@ -206,7 +206,7 @@ export function PanelSwitcher() {
                     ? `0 0 20px ${color}33, 0 4px 16px rgba(0,0,0,0.4)`
                     : '0 2px 8px rgba(0,0,0,0.3)',
                   transition: 'border-color 0.15s, box-shadow 0.15s',
-                  backgroundColor: '#1E1E24',
+                  backgroundColor: '#1f1e1c',
                 }}
               >
                 {thumb ? (

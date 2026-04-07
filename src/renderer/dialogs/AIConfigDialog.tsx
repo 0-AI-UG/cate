@@ -7,17 +7,17 @@
 import React, { useEffect, useCallback, useState, useRef, type DragEvent } from 'react'
 import log from '../lib/logger'
 import {
-  Sparkles, Cpu, Diamond, MousePointer, Code,
-  X, Plus, Trash2, Play, Square, Zap,
-  RefreshCw, FolderOpen, Loader2, Eye, EyeOff,
-  ExternalLink, Download, Link, Check,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+  Sparkle, Cpu, Diamond, CursorClick, Code,
+  X, Plus, Trash, Play, Square, Lightning,
+  ArrowsClockwise, FolderOpen, CircleNotch, Eye, EyeSlash,
+  ArrowSquareOut, Download, Link, Check,
+} from '@phosphor-icons/react'
+import type { Icon as LucideIcon } from '@phosphor-icons/react'
 import type { AIToolId, AIToolPresence, MCPServerConfig } from '../../shared/types'
 import { useAIConfigStore } from '../stores/aiConfigStore'
 import { useAppStore } from '../stores/appStore'
 import { searchRegistry, type MCPRegistryEntry } from '../lib/aiConfig/mcpRegistry'
-import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
+import type { NativeContextMenuItem } from '../../shared/electron-api'
 
 // =============================================================================
 // Types & constants
@@ -32,7 +32,7 @@ interface AIConfigDialogProps {
 type Tab = 'configs' | 'skills' | 'mcp'
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
-  Sparkles, Cpu, Diamond, MousePointer, Code,
+  Sparkles: Sparkle, Cpu, Diamond, MousePointer: CursorClick, Code,
 }
 
 const INPUT_CLS = 'w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-[13px] text-white/70 placeholder:text-white/30 focus:border-white/25 focus:outline-none font-mono'
@@ -103,7 +103,6 @@ function ToolRow({ tool, rootPath, workspaceId, onRescan }: {
   onRescan: () => void
 }) {
   const [busy, setBusy] = useState(false)
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
   const createAllForTool = useAIConfigStore((s) => s.createAllForTool)
   const createConfig = useAIConfigStore((s) => s.createConfig)
   const Icon = TOOL_ICONS[tool.icon]
@@ -122,37 +121,25 @@ function ToolRow({ tool, rootPath, workspaceId, onRescan }: {
     finally { setBusy(false) }
   }, [createConfig, tool.id, rootPath])
 
-  const buildRowContextMenu = useCallback((fullPath: string, exists: boolean) => {
-    const items: ContextMenuItem[] = [
-      {
-        label: 'Open in Editor',
-        onClick: () => useAppStore.getState().createEditor(workspaceId, fullPath),
-      },
-      {
-        label: 'Reveal in Finder',
-        onClick: () => window.electronAPI.shellShowInFolder(fullPath),
-      },
-    ]
-    if (exists) {
-      items.push({ label: '', onClick: () => {}, separator: true })
-      items.push({
-        label: 'Delete',
-        danger: true,
-        onClick: async () => {
-          await window.electronAPI.fsDelete(fullPath)
-          onRescan()
-        },
-      })
-    }
-    return items
-  }, [workspaceId, onRescan])
-
-  const handleRowContextMenu = useCallback((e: React.MouseEvent, relativePath: string, exists: boolean) => {
+  const handleRowContextMenu = useCallback(async (e: React.MouseEvent, relativePath: string, exists: boolean) => {
     e.preventDefault()
     e.stopPropagation()
     const fullPath = `${rootPath}/${relativePath}`
-    setCtxMenu({ x: e.clientX, y: e.clientY, items: buildRowContextMenu(fullPath, exists) })
-  }, [rootPath, buildRowContextMenu])
+    const items: NativeContextMenuItem[] = [
+      { id: 'open', label: 'Open in Editor' },
+      { id: 'reveal', label: 'Reveal in Finder' },
+    ]
+    if (exists) {
+      items.push({ type: 'separator' })
+      items.push({ id: 'delete', label: 'Delete' })
+    }
+    const id = await window.electronAPI.showContextMenu(items)
+    switch (id) {
+      case 'open': useAppStore.getState().createEditor(workspaceId, fullPath); break
+      case 'reveal': window.electronAPI.shellShowInFolder(fullPath); break
+      case 'delete': await window.electronAPI.fsDelete(fullPath); onRescan(); break
+    }
+  }, [rootPath, workspaceId, onRescan])
 
   // All files (existing + missing), skipping directory entries
   const nonDirFiles = tool.configFiles.filter((f) => !f.isDirectory)
@@ -166,7 +153,7 @@ function ToolRow({ tool, rootPath, workspaceId, onRescan }: {
         <span className="text-[13px] text-white/80 flex-1">{tool.name}</span>
 
         {busy ? (
-          <Loader2 size={13} className="text-white/40 animate-spin" />
+          <CircleNotch size={13} className="text-white/40 animate-spin" />
         ) : !tool.detected ? (
           <button onClick={handleEnable} className="text-[12px] text-white/50 hover:text-white/80 transition-colors">
             Enable
@@ -207,7 +194,7 @@ function ToolRow({ tool, rootPath, workspaceId, onRescan }: {
                   {f.relativePath}
                 </span>
                 {f.exists && (
-                  <ExternalLink size={11} className="text-white/0 group-hover:text-white/40 transition-colors shrink-0" />
+                  <ArrowSquareOut size={11} className="text-white/0 group-hover:text-white/40 transition-colors shrink-0" />
                 )}
               </button>
             )
@@ -215,14 +202,6 @@ function ToolRow({ tool, rootPath, workspaceId, onRescan }: {
         </div>
       )}
 
-      {ctxMenu && (
-        <ContextMenu
-          x={ctxMenu.x}
-          y={ctxMenu.y}
-          items={ctxMenu.items}
-          onClose={() => setCtxMenu(null)}
-        />
-      )}
     </div>
   )
 }
@@ -263,7 +242,6 @@ function SkillsContent({ rootPath, workspaceId }: { rootPath: string; workspaceI
   const [dragOver, setDragOver] = useState(false)
   const [showNewSkillInput, setShowNewSkillInput] = useState(false)
   const [newSkillName, setNewSkillName] = useState('')
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
   const dropRef = useRef<HTMLDivElement>(null)
   const newSkillInputRef = useRef<HTMLInputElement>(null)
 
@@ -324,40 +302,30 @@ function SkillsContent({ rootPath, workspaceId }: { rootPath: string; workspaceI
     if (showNewSkillInput) newSkillInputRef.current?.focus()
   }, [showNewSkillInput])
 
-  const buildSkillContextMenu = useCallback((skillName: string) => {
-    const fullPath = `${rootPath}/.claude/skills/${skillName}`
-    return [
-      {
-        label: 'Open in Editor',
-        onClick: () => useAppStore.getState().createEditor(workspaceId, fullPath),
-      },
-      {
-        label: 'Reveal in Finder',
-        onClick: () => window.electronAPI.shellShowInFolder(fullPath),
-      },
-      { label: '', onClick: () => {}, separator: true },
-      {
-        label: 'Delete',
-        danger: true,
-        onClick: async () => {
-          // Delete from primary location
-          try { await window.electronAPI.fsDelete(fullPath) } catch { /* ignore */ }
-          // Try to delete from .cursor/rules too
-          try {
-            const cursorPath = `${rootPath}/.cursor/rules/${skillName}`
-            await window.electronAPI.fsDelete(cursorPath)
-          } catch { /* not there, that's fine */ }
-          loadSkills()
-        },
-      },
-    ] as ContextMenuItem[]
-  }, [rootPath, workspaceId, loadSkills])
-
-  const handleSkillContextMenu = useCallback((e: React.MouseEvent, skillName: string) => {
+  const handleSkillContextMenu = useCallback(async (e: React.MouseEvent, skillName: string) => {
     e.preventDefault()
     e.stopPropagation()
-    setCtxMenu({ x: e.clientX, y: e.clientY, items: buildSkillContextMenu(skillName) })
-  }, [buildSkillContextMenu])
+    const fullPath = `${rootPath}/.claude/skills/${skillName}`
+    const items: NativeContextMenuItem[] = [
+      { id: 'open', label: 'Open in Editor' },
+      { id: 'reveal', label: 'Reveal in Finder' },
+      { type: 'separator' },
+      { id: 'delete', label: 'Delete' },
+    ]
+    const id = await window.electronAPI.showContextMenu(items)
+    switch (id) {
+      case 'open': useAppStore.getState().createEditor(workspaceId, fullPath); break
+      case 'reveal': window.electronAPI.shellShowInFolder(fullPath); break
+      case 'delete':
+        try { await window.electronAPI.fsDelete(fullPath) } catch { /* ignore */ }
+        try {
+          const cursorPath = `${rootPath}/.cursor/rules/${skillName}`
+          await window.electronAPI.fsDelete(cursorPath)
+        } catch { /* not there */ }
+        loadSkills()
+        break
+    }
+  }, [rootPath, workspaceId, loadSkills])
 
   const handleReveal = useCallback((name: string) => {
     window.electronAPI.shellShowInFolder(`${rootPath}/.claude/skills/${name}`)
@@ -571,14 +539,6 @@ Add your skill instructions here. This skill will be available to AI coding tool
         </>
       )}
 
-      {ctxMenu && (
-        <ContextMenu
-          x={ctxMenu.x}
-          y={ctxMenu.y}
-          items={ctxMenu.items}
-          onClose={() => setCtxMenu(null)}
-        />
-      )}
     </div>
   )
 }
@@ -629,10 +589,10 @@ function MCPRow({ server, rootPath }: { server: MCPServerConfig; rootPath: strin
             className="p-1 text-white/40 hover:text-white/70 disabled:opacity-30"
             title="Test"
           >
-            {testing ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
+            {testing ? <CircleNotch size={11} className="animate-spin" /> : <Lightning size={11} />}
           </button>
           <button onClick={() => remove(server.name, rootPath)} className="p-1 text-white/40 hover:text-red-400" title="Remove">
-            <Trash2 size={11} />
+            <Trash size={11} />
           </button>
         </div>
       </div>
@@ -684,7 +644,7 @@ function AddServerForm({ rootPath, onDone }: { rootPath: string; onDone: () => v
             className={INPUT_CLS} style={{ flex: 1 }}
           />
           <button onClick={() => { const u = [...envPairs]; u[i] = { ...u[i], vis: !u[i].vis }; setEnvPairs(u) }} className="p-1 text-white/40 hover:text-white/60">
-            {p.vis ? <EyeOff size={12} /> : <Eye size={12} />}
+            {p.vis ? <EyeSlash size={12} /> : <Eye size={12} />}
           </button>
           <button onClick={() => setEnvPairs(envPairs.filter((_, j) => j !== i))} className="p-1 text-white/40 hover:text-red-400">
             <X size={12} />
@@ -845,7 +805,7 @@ export function AIConfigDialog({ isOpen, onClose, workspaceId }: AIConfigDialogP
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="w-[540px] h-[480px] bg-[#252529] rounded-lg border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
+        className="w-[540px] h-[480px] bg-[#262523] rounded-lg border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with tabs */}
@@ -871,7 +831,7 @@ export function AIConfigDialog({ isOpen, onClose, workspaceId }: AIConfigDialogP
                 className="p-1.5 text-white/40 hover:text-white/60 disabled:opacity-30"
                 title="Refresh"
               >
-                <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />
+                <ArrowsClockwise size={13} className={scanning ? 'animate-spin' : ''} />
               </button>
             )}
             <button onClick={onClose} className="p-1.5 text-white/40 hover:text-white/60">
@@ -886,7 +846,7 @@ export function AIConfigDialog({ isOpen, onClose, workspaceId }: AIConfigDialogP
             <NoRootPrompt workspaceId={workspaceId} />
           ) : scanning && !tools ? (
             <div className="flex items-center gap-2 py-6 text-[13px] text-white/40">
-              <Loader2 size={14} className="animate-spin" /> Scanning...
+              <CircleNotch size={14} className="animate-spin" /> Scanning...
             </div>
           ) : (
             <>

@@ -13,6 +13,8 @@ import DockZone from '../docking/DockZone'
 import DragGhost from '../docking/DragGhost'
 import { setupCrossWindowDragListeners } from '../hooks/useDockDrag'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { terminalRestoreData } from '../lib/session'
+import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 
 const TerminalPanel = React.lazy(() => import('../panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
@@ -60,6 +62,9 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       if (snapshot.terminalPtyId) {
         terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
         // ACK is deferred to terminalRegistry.reconnectTerminal() after listeners are wired
+      } else if (snapshot.terminalReplayPtyId && snapshot.panel.type === 'terminal') {
+        // Session restore: spawn fresh PTY but replay the saved scrollback log
+        terminalRestoreData.set(snapshot.panel.id, { replayFromId: snapshot.terminalReplayPtyId })
       }
 
       setPanels((prev) => ({
@@ -91,21 +96,60 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // Periodic state sync to main process for session persistence
   useEffect(() => {
     const syncNow = () => {
+      // Capture per-terminal ptyIds + persist their scrollback so the next
+      // launch can replay it into a freshly spawned PTY.
+      const terminalPtyIds: Record<string, string> = {}
+      for (const panel of Object.values(panels)) {
+        if (panel.type !== 'terminal') continue
+        const entry = terminalRegistry.getEntry(panel.id)
+        if (!entry?.ptyId) continue
+        terminalPtyIds[panel.id] = entry.ptyId
+
+        const buffer = entry.terminal.buffer.active
+        const lastRow = buffer.baseY + buffer.cursorY
+        const lines: string[] = []
+        for (let i = 0; i < lastRow; i++) {
+          const line = buffer.getLine(i)
+          if (line) lines.push(line.translateToString(true))
+        }
+        while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+        const content = lines.join('\n')
+        if (content) {
+          window.electronAPI.terminalScrollbackSave(entry.ptyId, content).catch(() => {})
+        }
+      }
+
       const snapshot = dockStore.getState().getSnapshot()
       window.electronAPI.dockWindowSyncState({
         ...snapshot,
         panels,
+        terminalPtyIds,
       })
     }
 
-    syncTimerRef.current = setInterval(syncNow, 5000) // every 5s
+    // Initial sync ~1s after panels are populated so main learns ptyIds quickly
+    const initialSync = setTimeout(syncNow, 1000)
+    syncTimerRef.current = setInterval(() => {
+      if (document.visibilityState === 'visible') syncNow()
+    }, 5000)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') syncNow()
+    }
+    const handleFocus = () => syncNow()
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
 
     // Final sync before window closes to avoid losing state
     const handleBeforeUnload = () => syncNow()
     window.addEventListener('beforeunload', handleBeforeUnload)
 
     return () => {
+      clearTimeout(initialSync)
       if (syncTimerRef.current) clearInterval(syncTimerRef.current)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [dockStore, panels])
@@ -141,7 +185,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       }
 
       return (
-        <Suspense fallback={<div className="w-full h-full bg-[#1e1e1e] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+        <Suspense fallback={<div className="w-full h-full bg-[#1f1e1c] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
           {content}
         </Suspense>
       )
@@ -158,7 +202,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // Canvas panels get their own full canvas with renderPanelContent for nodes
       if (panel.type === 'canvas') {
         return (
-          <Suspense fallback={<div className="w-full h-full bg-[#1e1e1e] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+          <Suspense fallback={<div className="w-full h-full bg-[#1f1e1c] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
             <CanvasPanel
               panelId={panelId}
               workspaceId={wsId}
@@ -181,7 +225,9 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   )
 
   const handleClosePanel = useCallback(
-    (panelId: string) => {
+    async (panelId: string) => {
+      const ok = await confirmCloseDirtyPanels([panels[panelId]])
+      if (!ok) return
       // Undock from this window's dock store
       dockStore.getState().undockPanel(panelId)
       setPanels((prev) => {
@@ -218,7 +264,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
   if (!ready) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#1E1E24] text-zinc-500">
+      <div className="h-screen w-screen flex items-center justify-center bg-[#1f1e1c] text-zinc-500">
         <div className="text-sm">Loading...</div>
       </div>
     )
@@ -226,12 +272,17 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
   return (
     <DockStoreProvider store={dockStore}>
-      <div className="h-screen w-screen flex flex-col bg-[#1E1E24] overflow-hidden">
-        {/* macOS titlebar drag region — space for traffic lights */}
-        <div
-          className="h-7 flex-shrink-0"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-        />
+      <div className="dock-window-root h-screen w-screen flex flex-col bg-[#1f1e1c] overflow-hidden">
+        {/* Make the top tab bar act as the macOS titlebar drag region, with
+            left padding reserved for the traffic lights. Children remain
+            interactive via no-drag. */}
+        <style>{`
+          .dock-window-root .dock-tab-bar {
+            padding-left: 78px;
+            -webkit-app-region: drag;
+          }
+          .dock-window-root .dock-tab-bar > * { -webkit-app-region: no-drag; }
+        `}</style>
         {/* Full content area — center zone only */}
         <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
           <DockZone

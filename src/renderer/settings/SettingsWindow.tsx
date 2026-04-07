@@ -2,7 +2,7 @@
 // SettingsWindow — Single scrollable settings card with all sections.
 // =============================================================================
 
-import { X } from 'lucide-react'
+import { X } from '@phosphor-icons/react'
 import { GeneralSettings } from './GeneralSettings'
 import { AppearanceSettings } from './AppearanceSettings'
 import { CanvasSettings } from './CanvasSettings'
@@ -37,7 +37,7 @@ export function SettingsWindow({ isOpen, onClose }: SettingsWindowProps) {
       onClick={onClose}
     >
       <div
-        className="w-[520px] max-h-[80vh] bg-[#2A2A32] rounded-xl border border-white/[0.12] shadow-2xl flex flex-col"
+        className="w-[520px] max-h-[80vh] bg-[#262523] rounded-xl border border-white/[0.12] shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

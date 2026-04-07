@@ -62,6 +62,7 @@ export async function saveSession(): Promise<void> {
     // After syncCanvasToWorkspace, workspace data is always up to date
     const nodes = workspace.canvasNodes
     const regions = workspace.regions
+    const annotations = workspace.annotations
 
     const nodeSnapshots: NodeSnapshot[] = Object.values(nodes).map((node) => {
       const panel = workspace.panels[node.panelId]
@@ -159,6 +160,7 @@ export async function saveSession(): Promise<void> {
       viewportOffset: workspace.viewportOffset,
       nodes: nodeSnapshots,
       regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
+      annotations: annotations && Object.keys(annotations).length > 0 ? { ...annotations } : undefined,
       dockState: dockSnapshot,
       dockPanels,
     })
@@ -175,6 +177,7 @@ export async function saveSession(): Promise<void> {
         panel: pw.panel,
         bounds: pw.bounds,
         workspaceId: pw.workspaceId,
+        terminalPtyId: pw.terminalPtyId,
       }))
     }
   } catch (err) {
@@ -314,6 +317,24 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
           }
         }
         break
+      }
+    }
+  }
+
+  // Restore annotations (sticky notes, text labels) by recreating them with
+  // their saved content — addAnnotation doesn't auto-edit when content is
+  // supplied, so restored annotations render in their final form.
+  if (snapshot.annotations) {
+    const cs2 = getCanvasState()
+    if (cs2) {
+      for (const ann of Object.values(snapshot.annotations)) {
+        const id = cs2.addAnnotation(ann.type, ann.origin, ann.content || ' ')
+        // Restore exact content (addAnnotation requires non-empty to skip
+        // auto-edit; we passed a space, now overwrite with the real value).
+        cs2.updateAnnotation(id, ann.content)
+        cs2.resizeAnnotation(id, ann.size)
+        if (ann.color) cs2.updateAnnotationColor(id, ann.color)
+        if (ann.fontSize) cs2.setAnnotationFontSize(id, ann.fontSize)
       }
     }
   }
@@ -462,6 +483,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
             size: { width: pw.bounds.width, height: pw.bounds.height },
           },
           sourceLocation: { type: 'canvas', canvasId: '', canvasNodeId: '' },
+          terminalReplayPtyId: pw.panel.type === 'terminal' ? pw.terminalPtyId : undefined,
         }
         const newWindowId = await window.electronAPI.panelTransfer(snapshot)
         if (typeof newWindowId === 'number') {
@@ -487,6 +509,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
         if (panelIds.length === 0) continue
 
         const firstPanel = dw.panels[panelIds[0]]
+        const replayPtyId = firstPanel.type === 'terminal' ? dw.terminalPtyIds?.[firstPanel.id] : undefined
         const snapshot: import('../../shared/types').PanelTransferSnapshot = {
           panel: firstPanel,
           geometry: {
@@ -494,6 +517,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
             size: { width: dw.bounds.width, height: dw.bounds.height },
           },
           sourceLocation: { type: 'detached', windowId: -1 },
+          terminalReplayPtyId: replayPtyId,
         }
 
         await window.electronAPI.dragDetach(snapshot, dw.workspaceId)

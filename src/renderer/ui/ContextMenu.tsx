@@ -92,7 +92,7 @@ const SubmenuPanel: React.FC<SubmenuPanelProps> = ({
   return (
     <div
       ref={ref}
-      className="fixed py-1 bg-[#1e1e22] border border-[#3a3a44] rounded-lg shadow-2xl"
+      className="fixed py-1 bg-[#1f1e1c] border border-[#3a3a36] rounded-lg shadow-2xl"
       style={{ left: pos.x, top: pos.y, width: MENU_WIDTH, zIndex: 10000 }}
     >
       <MenuItemList items={items} onClose={onClose} />
@@ -201,7 +201,7 @@ const MenuItemList: React.FC<MenuItemListProps> = ({ items, onClose }) => {
           return (
             <div
               key={index}
-              className="my-1 border-t border-[#333340]"
+              className="my-1 border-t border-[#2d2c2a]"
             />
           )
         }
@@ -274,7 +274,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }) => {
       {/* Menu panel */}
       <div
         ref={menuRef}
-        className="absolute py-1 bg-[#1e1e22] border border-[#3a3a44] rounded-lg shadow-2xl"
+        className="absolute py-1 bg-[#1f1e1c] border border-[#3a3a36] rounded-lg shadow-2xl"
         style={{ left: pos.x, top: pos.y, width: MENU_WIDTH }}
         onMouseDown={(e) => e.stopPropagation()}
       >

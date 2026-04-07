@@ -69,8 +69,8 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
       {/* Visible indicator on hover */}
       <div
         className={`
-          absolute bg-white/0 group-hover:bg-white/[0.12] transition-colors duration-150
-          ${isHorizontal ? 'inset-y-0 left-[1px] right-[1px]' : 'inset-x-0 top-[1px] bottom-[1px]'}
+          absolute bg-white/[0.10] group-hover:bg-white/[0.20] transition-colors duration-150
+          ${isHorizontal ? 'inset-y-0 left-[2px] right-[2px]' : 'inset-x-0 top-[2px] bottom-[2px]'}
         `}
       />
     </div>

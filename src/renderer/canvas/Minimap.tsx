@@ -2,35 +2,121 @@
 // Minimap — Bird's-eye overview of all panels on the canvas.
 // =============================================================================
 
-import React, { useCallback, useRef } from 'react'
-import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
+import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useWorkspacePanels } from '../stores/appStore'
 
-const MINIMAP_WIDTH = 200
-const MINIMAP_HEIGHT = 150
+const MINIMAP_DEFAULT_WIDTH = 200
+const MINIMAP_DEFAULT_HEIGHT = 150
+const MINIMAP_MIN_WIDTH = 120
+const MINIMAP_MIN_HEIGHT = 90
+const MINIMAP_MAX_WIDTH = 600
+const MINIMAP_MAX_HEIGHT = 500
 const MINIMAP_PADDING = 10
+const MINIMAP_GAP = 12
+
+type Corner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+const CORNER_KEY = 'cate.minimap.corner'
+const SIZE_KEY = 'cate.minimap.size'
+const loadCorner = (): Corner => {
+  const v = (typeof localStorage !== 'undefined' && localStorage.getItem(CORNER_KEY)) as Corner | null
+  return v || 'bottom-right'
+}
+const loadSize = (): { w: number; h: number } => {
+  try {
+    const raw = localStorage.getItem(SIZE_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      if (typeof p.w === 'number' && typeof p.h === 'number') return { w: p.w, h: p.h }
+    }
+  } catch {}
+  return { w: MINIMAP_DEFAULT_WIDTH, h: MINIMAP_DEFAULT_HEIGHT }
+}
 
 function panelColor(panelType: string): string {
   switch (panelType) {
-    case 'terminal': return '#34C759'
-    case 'editor': return '#FF9500'
-    case 'browser': return '#007AFF'
+    case 'terminal': return '#4a9960'
+    case 'editor': return '#b07440'
+    case 'browser': return '#4a7ab0'
     default: return '#888'
   }
 }
 
 const Minimap: React.FC = () => {
-  const nodes = useCanvasStoreContext((s) => s.nodes)
-  const regions = useCanvasStoreContext((s) => s.regions)
+  const nodeList = useCanvasStoreContext((s) => Object.values(s.nodes), shallow)
+  const regionList = useCanvasStoreContext((s) => Object.values(s.regions), shallow)
   const viewportOffset = useCanvasStoreContext((s) => s.viewportOffset)
   const zoomLevel = useCanvasStoreContext((s) => s.zoomLevel)
-  const containerSize = useCanvasStoreContext((s) => s.containerSize)
+  const containerSize = useCanvasStoreContext(
+    (s) => s.containerSize,
+    (a, b) => a.width === b.width && a.height === b.height,
+  )
   const panels = useWorkspacePanels()
   const canvasApi = useCanvasStoreApi()
   const minimapRef = useRef<HTMLDivElement>(null)
+  const [corner, setCorner] = useState<Corner>(loadCorner)
+  const [size, setSize] = useState<{ w: number; h: number }>(loadSize)
+  const MINIMAP_WIDTH = size.w
+  const MINIMAP_HEIGHT = size.h
 
-  const nodeList = Object.values(nodes)
-  const regionList = Object.values(regions)
+  const sizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cornerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const startX = e.clientX
+    const startY = e.clientY
+    const startW = size.w
+    const startH = size.h
+    // Resize handle sits on the corner pointing toward canvas center (opposite of `corner`).
+    // Dragging that corner away from the minimap's anchored corner grows it.
+    const signX = corner.endsWith('right') ? -1 : 1 // anchored right → grow when moving left
+    const signY = corner.startsWith('bottom') ? -1 : 1 // anchored bottom → grow when moving up
+    const handleMove = (ev: MouseEvent) => {
+      const dx = (ev.clientX - startX) * signX
+      const dy = (ev.clientY - startY) * signY
+      const w = Math.max(MINIMAP_MIN_WIDTH, Math.min(MINIMAP_MAX_WIDTH, startW + dx))
+      const h = Math.max(MINIMAP_MIN_HEIGHT, Math.min(MINIMAP_MAX_HEIGHT, startH + dy))
+      setSize({ w, h })
+      if (sizeDebounceRef.current) clearTimeout(sizeDebounceRef.current)
+      sizeDebounceRef.current = setTimeout(() => {
+        try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w, h })) } catch {}
+      }, 500)
+    }
+    const handleUp = () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+  }, [size.w, size.h, corner])
+
+  const handleDragHandleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const handleMove = (ev: MouseEvent) => {
+      const cw = containerSize.width
+      const ch = containerSize.height
+      const right = ev.clientX > cw / 2
+      const bottom = ev.clientY > ch / 2
+      const next: Corner = `${bottom ? 'bottom' : 'top'}-${right ? 'right' : 'left'}` as Corner
+      setCorner((prev) => {
+        if (prev === next) return prev
+        if (cornerDebounceRef.current) clearTimeout(cornerDebounceRef.current)
+        cornerDebounceRef.current = setTimeout(() => {
+          try { localStorage.setItem(CORNER_KEY, next) } catch {}
+        }, 500)
+        return next
+      })
+    }
+    const handleUp = () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+  }, [containerSize.width, containerSize.height])
 
   // Handle click/drag to navigate (must be before any early returns)
   const navigateToPoint = useCallback((clientX: number, clientY: number) => {
@@ -77,25 +163,30 @@ const Minimap: React.FC = () => {
     window.addEventListener('mouseup', handleUp)
   }, [navigateToPoint])
 
-  if (nodeList.length === 0) return null
+  const contentBounds = useMemo(() => {
+    if (nodeList.length === 0) return null
+    const minX = Math.min(
+      ...nodeList.map(n => n.origin.x),
+      ...(regionList.length > 0 ? regionList.map(r => r.origin.x) : []),
+    )
+    const minY = Math.min(
+      ...nodeList.map(n => n.origin.y),
+      ...(regionList.length > 0 ? regionList.map(r => r.origin.y) : []),
+    )
+    const maxX = Math.max(
+      ...nodeList.map(n => n.origin.x + n.size.width),
+      ...(regionList.length > 0 ? regionList.map(r => r.origin.x + r.size.width) : []),
+    )
+    const maxY = Math.max(
+      ...nodeList.map(n => n.origin.y + n.size.height),
+      ...(regionList.length > 0 ? regionList.map(r => r.origin.y + r.size.height) : []),
+    )
+    return { minX, minY, maxX, maxY }
+  }, [nodeList, regionList])
 
-  // Compute bounding box of all nodes and regions
-  const minX = Math.min(
-    ...nodeList.map(n => n.origin.x),
-    ...(regionList.length > 0 ? regionList.map(r => r.origin.x) : []),
-  )
-  const minY = Math.min(
-    ...nodeList.map(n => n.origin.y),
-    ...(regionList.length > 0 ? regionList.map(r => r.origin.y) : []),
-  )
-  const maxX = Math.max(
-    ...nodeList.map(n => n.origin.x + n.size.width),
-    ...(regionList.length > 0 ? regionList.map(r => r.origin.x + r.size.width) : []),
-  )
-  const maxY = Math.max(
-    ...nodeList.map(n => n.origin.y + n.size.height),
-    ...(regionList.length > 0 ? regionList.map(r => r.origin.y + r.size.height) : []),
-  )
+  if (!contentBounds) return null
+
+  const { minX, minY, maxX, maxY } = contentBounds
 
   // Add padding and include viewport bounds
   const vpLeft = -viewportOffset.x / zoomLevel
@@ -124,11 +215,11 @@ const Minimap: React.FC = () => {
       ref={minimapRef}
       style={{
         position: 'absolute',
-        bottom: 60,
-        right: 12,
+        ...(corner.startsWith('bottom') ? { bottom: MINIMAP_GAP } : { top: MINIMAP_GAP }),
+        ...(corner.endsWith('right') ? { right: MINIMAP_GAP } : { left: MINIMAP_GAP }),
         width: MINIMAP_WIDTH,
         height: MINIMAP_HEIGHT,
-        backgroundColor: 'rgba(30, 30, 36, 0.9)',
+        backgroundColor: 'rgba(31, 30, 28, 0.9)',
         borderRadius: 8,
         border: '1px solid rgba(255,255,255,0.1)',
         overflow: 'hidden',
@@ -137,6 +228,44 @@ const Minimap: React.FC = () => {
       }}
       onMouseDown={handleMouseDown}
     >
+      {/* Resize handle — on the inner corner (pointing toward canvas center) */}
+      <div
+        onMouseDown={handleResizeMouseDown}
+        title="Drag to resize minimap"
+        style={{
+          position: 'absolute',
+          ...(corner.startsWith('bottom') ? { top: 0 } : { bottom: 0 }),
+          ...(corner.endsWith('right') ? { left: 0 } : { right: 0 }),
+          width: 14,
+          height: 14,
+          cursor: (corner === 'bottom-right' || corner === 'top-left') ? 'nwse-resize' : 'nesw-resize',
+          zIndex: 3,
+        }}
+      />
+
+      {/* Drag handle — on the outer corner (against the screen edge) */}
+      <div
+        onMouseDown={handleDragHandleMouseDown}
+        title="Drag to move minimap"
+        style={{
+          position: 'absolute',
+          ...(corner.startsWith('bottom') ? { bottom: 2 } : { top: 2 }),
+          ...(corner.endsWith('right') ? { right: 2 } : { left: 2 }),
+          width: 14,
+          height: 14,
+          borderRadius: 3,
+          cursor: 'grab',
+          zIndex: 2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'rgba(255,255,255,0.45)',
+          fontSize: 10,
+          lineHeight: 1,
+          userSelect: 'none',
+        }}
+      >⠿</div>
+
       {/* Region rectangles */}
       {regionList.map((region) => (
         <div
@@ -169,7 +298,7 @@ const Minimap: React.FC = () => {
               height: Math.max(node.size.height * scale, 2),
               backgroundColor: panelColor(type),
               borderRadius: 1,
-              opacity: 0.7,
+              opacity: 1,
             }}
           />
         )

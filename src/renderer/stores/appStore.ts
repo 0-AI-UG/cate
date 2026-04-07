@@ -23,6 +23,7 @@ import type { StoreApi } from 'zustand'
 import type { CanvasStore } from './canvasStore'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useDockStore } from './dockStore'
+import { releaseCanvasStoreForPanel } from './canvasStore'
 
 // -----------------------------------------------------------------------------
 // Canvas operations callback — injected at init to decouple from canvasStore
@@ -37,10 +38,12 @@ export interface CanvasOperations {
     zoomLevel: number,
     focusedNodeId: CanvasNodeId | null,
     regions?: Record<string, CanvasRegion>,
+    annotations?: Record<string, import('../../shared/types').CanvasAnnotation>,
   ) => void
   syncCanvasSnapshot: () => {
     nodes: Record<CanvasNodeId, CanvasNodeState>
     regions: Record<string, CanvasRegion>
+    annotations: Record<string, import('../../shared/types').CanvasAnnotation>
     viewportOffset: Point
     zoomLevel: number
     focusedNodeId: CanvasNodeId | null
@@ -61,6 +64,9 @@ let activeCanvasPanelId: string | null = null
 
 export function registerCanvasOps(canvasPanelId: string, ops: CanvasOperations) {
   canvasOpsRegistry.set(canvasPanelId, ops)
+}
+export function getCanvasOpsById(canvasPanelId: string): CanvasOperations | null {
+  return canvasOpsRegistry.get(canvasPanelId) ?? null
 }
 export function unregisterCanvasOps(canvasPanelId: string) {
   canvasOpsRegistry.delete(canvasPanelId)
@@ -90,12 +96,12 @@ function generateId(): string {
 
 /** Workspace accent colors, cycled through. */
 export const WORKSPACE_COLORS = [
-  '#007AFF', // systemBlue
-  '#FF9500', // systemOrange
-  '#34C759', // systemGreen
-  '#AF52DE', // systemPurple
-  '#FF3B30', // systemRed
-  '#5AC8FA', // systemTeal
+  '#0080ff', // pure blue
+  '#ff8000', // pure orange
+  '#00e000', // pure green
+  '#aa00ff', // pure violet
+  '#ff0000', // pure red
+  '#00e0e0', // pure cyan
 ]
 
 let colorIndex = 0
@@ -114,6 +120,7 @@ function createDefaultWorkspace(name?: string, rootPath?: string): WorkspaceStat
     panels: {},
     canvasNodes: {},
     regions: {},
+    annotations: {},
     zoomLevel: ZOOM_DEFAULT,
     viewportOffset: { x: 0, y: 0 },
     focusedNodeId: null,
@@ -148,6 +155,10 @@ export type PanelPlacement =
   | { target: 'canvas'; position?: Point }
   | { target: 'dock'; zone: DockZonePosition }
   | { target: 'auto' } // default: canvas
+  /** No global routing — caller (e.g. canvas-node mini-dock) will place the
+   *  panel itself into a private DockStore. The panel is added to the
+   *  workspace.panels record only. */
+  | { target: 'none' }
 
 // -----------------------------------------------------------------------------
 // Store interface
@@ -214,6 +225,8 @@ function placePanel(
   position: Point | undefined,
   isActiveWorkspace: boolean,
 ): void {
+  // No-op: caller is placing the panel itself into a private DockStore.
+  if (placement?.target === 'none') return
   // Canvas panels go to the center dock zone, not onto a canvas as a node
   if (panelType === 'canvas') {
     useDockStore.getState().dockPanel(panelId, 'center')
@@ -240,21 +253,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // --- Workspace management ---
 
   addWorkspace(name?, rootPath?) {
-    const ws = createDefaultWorkspace(name, rootPath)
-    const isFirst = get().workspaces.length === 0
-
-    // Copy canvas panel entries from an existing workspace so the shared dock
-    // center zone canvas panel is present in the new workspace's panels map.
-    if (!isFirst) {
-      const existing = get().workspaces[0]
-      if (existing) {
-        for (const panel of Object.values(existing.panels)) {
-          if (panel.type === 'canvas') {
-            ws.panels[panel.id] = { ...panel }
-          }
-        }
-      }
+    const existingCount = get().workspaces.length
+    if (existingCount >= 10) {
+      // Cap at 10 workspaces — no-op, return current selection
+      return get().selectedWorkspaceId || get().workspaces[0]?.id || ''
     }
+    const ws = createDefaultWorkspace(name, rootPath)
+    const isFirst = existingCount === 0
+
+    // Note: the new workspace starts with an empty panels map. selectWorkspace
+    // will reset the dock and the safety-net createCanvas will mint a fresh
+    // canvas panel for the center zone. Copying panels from another workspace
+    // here led to orphaned/duplicate canvas panels and the "empty pane" bug.
 
     set((state) => ({
       workspaces: [...state.workspaces, ws],
@@ -269,6 +279,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ws.zoomLevel,
         ws.focusedNodeId,
         ws.regions,
+        ws.annotations,
       )
     }
     // Sync to main process
@@ -296,6 +307,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ws.zoomLevel,
           ws.focusedNodeId,
           ws.regions,
+          ws.annotations,
         )
       } catch (error) {
         log.error('Failed to load canvas for workspace:', error)
@@ -309,28 +321,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
         if (ws.dockState) {
           useDockStore.getState().restoreSnapshot(ws.dockState)
         } else {
-          const currentDock = useDockStore.getState()
-          const centerZone = currentDock.zones.center
-          // Build a minimal locations map containing only center-zone panels
-          const centerLocations: Record<string, import('../../shared/types').PanelLocation> = {}
-          if (centerZone.layout) {
-            const collectPanelIds = (node: import('../../shared/types').DockLayoutNode): string[] => {
-              if (node.type === 'tabs') return [...node.panelIds]
-              return node.children.flatMap(collectPanelIds)
-            }
-            for (const pid of collectPanelIds(centerZone.layout)) {
-              const loc = currentDock.panelLocations[pid]
-              if (loc) centerLocations[pid] = loc
-            }
-          }
+          // Brand new workspace — fully reset dock so leftover splits/panels
+          // from the previously selected workspace don't bleed through. The
+          // safety net below will create a fresh canvas panel for the center.
           useDockStore.getState().restoreSnapshot({
             zones: {
               left: { position: 'left', visible: false, size: 260, layout: null },
               right: { position: 'right', visible: false, size: 260, layout: null },
               bottom: { position: 'bottom', visible: false, size: 240, layout: null },
-              center: centerZone,
+              center: { position: 'center', visible: true, size: 0, layout: null },
             },
-            locations: centerLocations,
+            locations: {},
           })
         }
       } catch (error) {
@@ -392,9 +393,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
           newWs.zoomLevel,
           newWs.focusedNodeId,
           newWs.regions,
+          newWs.annotations,
         )
         if (newWs.dockState) {
           useDockStore.getState().restoreSnapshot(newWs.dockState)
+        } else {
+          // Fresh workspace (e.g. the auto-created replacement when the last
+          // workspace is closed) has no dock state — reset to a clean dock so
+          // panel IDs from the removed workspace don't leave an empty pane
+          // behind, then mint a fresh canvas panel for the center zone.
+          useDockStore.getState().restoreSnapshot({
+            zones: {
+              left: { position: 'left', visible: false, size: 260, layout: null },
+              right: { position: 'right', visible: false, size: 260, layout: null },
+              bottom: { position: 'bottom', visible: false, size: 240, layout: null },
+              center: { position: 'center', visible: true, size: 0, layout: null },
+            },
+            locations: {},
+          })
+          get().createCanvas(newWs.id)
         }
       }
     }
@@ -697,6 +714,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (panel?.type === 'terminal') {
       terminalRegistry.dispose(panelId)
     }
+    if (panel?.type === 'canvas') {
+      releaseCanvasStoreForPanel(panelId)
+    }
 
     // Remove from dock/canvas first (less critical — log errors but continue)
     try {
@@ -813,6 +833,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
               ...ws,
               canvasNodes: snapshot.nodes,
               regions: snapshot.regions,
+              annotations: snapshot.annotations,
               viewportOffset: snapshot.viewportOffset,
               zoomLevel: snapshot.zoomLevel,
               focusedNodeId: snapshot.focusedNodeId,
@@ -872,6 +893,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       panels: {},
       canvasNodes: {},
       regions: {},
+      annotations: {},
       zoomLevel: ZOOM_DEFAULT,
       viewportOffset: { x: 0, y: 0 },
       focusedNodeId: null,
@@ -949,6 +971,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
             panels: {},
             canvasNodes: {},
             regions: {},
+            annotations: {},
             zoomLevel: ZOOM_DEFAULT,
             viewportOffset: { x: 0, y: 0 },
             focusedNodeId: null,

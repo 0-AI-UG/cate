@@ -11,6 +11,7 @@ import type {
   CanvasNodeState,
   CanvasAnnotation,
   CanvasRegion,
+  DockLayoutNode,
   Point,
   Size,
   PanelType,
@@ -48,6 +49,19 @@ export interface CanvasStoreState {
   }
   selectedNodeIds: Set<string>
   selectedRegionIds: Set<string>
+  /** Region currently being hovered as a drop target during a node drag. */
+  dropTargetRegionId: string | null
+  /** Undo history — snapshots of {nodes, regions, annotations}. */
+  history: CanvasHistoryEntry[]
+  /** Redo stack — populated when undo() is called. */
+  future: CanvasHistoryEntry[]
+}
+
+export interface CanvasHistoryEntry {
+  nodes: Record<CanvasNodeId, CanvasNodeState>
+  regions: Record<string, CanvasRegion>
+  annotations: Record<string, CanvasAnnotation>
+  focusedNodeId: CanvasNodeId | null
 }
 
 export interface CanvasStoreActions {
@@ -136,16 +150,21 @@ export interface CanvasStoreActions {
   moveAnnotation: (id: string, origin: Point) => void
   updateAnnotation: (id: string, content: string) => void
   updateAnnotationColor: (id: string, color: string) => void
+  setAnnotationFontSize: (id: string, fontSize: 'sm' | 'md' | 'lg' | 'xl') => void
+  setAnnotationBold: (id: string, bold: boolean) => void
+  setAnnotationFontSizePx: (id: string, fontSizePx: number) => void
+  resizeAnnotation: (id: string, size: { width: number; height: number }) => void
 
-  // Split panel actions
-  splitNode: (nodeId: CanvasNodeId, direction: 'horizontal' | 'vertical', newPanelId: string) => void
-  unsplitNode: (nodeId: CanvasNodeId) => void
-  setSplitRatio: (nodeId: CanvasNodeId, ratio: number) => void
+  // Per-node dock layout — replaces split/stack actions. Each canvas node owns
+  // a tree (rendered via the dock primitives) that lives here as serialised
+  // state. The per-node DockStore in CanvasNodeWrapper writes back via this.
+  setNodeDockLayout: (nodeId: CanvasNodeId, layout: DockLayoutNode | null) => void
 
-  // Stack/tab management
-  stackPanel: (targetNodeId: CanvasNodeId, panelId: string) => void
-  unstackPanel: (nodeId: CanvasNodeId, panelId: string) => void
-  setActiveStackPanel: (nodeId: CanvasNodeId, index: number) => void
+  // Undo/redo history
+  pushHistory: () => void
+  undo: () => void
+  redo: () => void
+  clearHistory: () => void
 
   // Bulk reset (used when switching workspaces)
   loadWorkspaceCanvas: (
@@ -154,7 +173,22 @@ export interface CanvasStoreActions {
     zoomLevel: number,
     focusedNodeId: CanvasNodeId | null,
     regions?: Record<string, CanvasRegion>,
+    annotations?: Record<string, CanvasAnnotation>,
   ) => void
+}
+
+// -----------------------------------------------------------------------------
+// Pending auto-edit annotations — module-level set so newly-created annotations
+// enter edit mode automatically on first render (no store churn).
+// -----------------------------------------------------------------------------
+
+const pendingEditAnnotations = new Set<string>()
+export function consumePendingAnnotationEdit(id: string): boolean {
+  if (pendingEditAnnotations.has(id)) {
+    pendingEditAnnotations.delete(id)
+    return true
+  }
+  return false
 }
 
 export type CanvasStore = CanvasStoreState & CanvasStoreActions
@@ -167,54 +201,82 @@ function generateId(): string {
   return crypto.randomUUID()
 }
 
-/** Find a free position near the focused node or last node. */
+/**
+ * Find a free position for a new node that does not overlap any existing node.
+ * Starts from a preferred anchor (explicit position, focused node, or last
+ * node) and searches outward in a spiral until a non-overlapping slot is
+ * found. Guarantees the returned rect does not overlap any existing node.
+ */
 function findFreePosition(
   nodes: Record<CanvasNodeId, CanvasNodeState>,
   focusedNodeId: CanvasNodeId | null,
   defaultSize: Size,
+  preferred?: Point,
 ): Point {
   const nodeList = Object.values(nodes)
   if (nodeList.length === 0) {
-    return { x: 100, y: 100 }
+    return preferred ?? { x: 100, y: 100 }
   }
 
-  // Prefer placing near the focused node, otherwise near the last node
-  let reference: CanvasNodeState | undefined
-  if (focusedNodeId && nodes[focusedNodeId]) {
-    reference = nodes[focusedNodeId]
-  } else {
-    reference = nodeList[nodeList.length - 1]
-  }
-
-  if (!reference) {
-    return { x: 100, y: 100 }
-  }
-
-  // Try placing to the right with a 40px gap
   const gap = 40
-  const candidate: Point = {
-    x: reference.origin.x + reference.size.width + gap,
-    y: reference.origin.y,
+
+  // Determine the anchor point we'd ideally place the new node at.
+  let anchor: Point
+  if (preferred) {
+    anchor = preferred
+  } else {
+    const reference =
+      (focusedNodeId && nodes[focusedNodeId]) ||
+      nodeList[nodeList.length - 1]
+    anchor = {
+      x: reference.origin.x + reference.size.width + gap,
+      y: reference.origin.y,
+    }
   }
 
-  // Check for overlap with existing nodes
-  const candidateRect = {
-    origin: candidate,
-    size: defaultSize,
+  const fits = (p: Point): boolean => {
+    const rect = { origin: p, size: defaultSize }
+    return !nodeList.some((n) =>
+      rectsOverlap({ origin: n.origin, size: n.size }, rect),
+    )
   }
 
-  const overlaps = nodeList.some((n) => rectsOverlap(
-    { origin: n.origin, size: n.size },
-    candidateRect,
-  ))
+  if (fits(anchor)) return anchor
 
-  if (!overlaps) return candidate
-
-  // Fall back: stack below with a 40px gap
-  return {
-    x: reference.origin.x,
-    y: reference.origin.y + reference.size.height + gap,
+  // Spiral search outward from the anchor on a coarse grid until we find a
+  // slot. Step is sized so we explore quickly but never miss small gaps.
+  const stepX = Math.max(40, Math.floor(defaultSize.width / 2))
+  const stepY = Math.max(40, Math.floor(defaultSize.height / 2))
+  // Directions: right, down, left, up
+  const dirs: Array<[number, number]> = [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ]
+  let x = anchor.x
+  let y = anchor.y
+  let legLen = 1
+  const maxRings = 80
+  for (let ring = 0; ring < maxRings; ring++) {
+    for (let d = 0; d < 4; d++) {
+      const [dx, dy] = dirs[d]
+      for (let s = 0; s < legLen; s++) {
+        x += dx * stepX
+        y += dy * stepY
+        const candidate = { x, y }
+        if (fits(candidate)) return candidate
+      }
+      if (d === 1 || d === 3) legLen++
+    }
   }
+
+  // Last-resort fallback: stack far to the right of the rightmost node.
+  const rightmost = nodeList.reduce((acc, n) => {
+    const right = n.origin.x + n.size.width
+    return right > acc ? right : acc
+  }, -Infinity)
+  return { x: rightmost + gap, y: anchor.y }
 }
 
 function rectsOverlap(a: Rect, b: Rect): boolean {
@@ -255,16 +317,84 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   snapGuides: { lines: [] },
   selectedNodeIds: new Set<string>(),
   selectedRegionIds: new Set<string>(),
+  dropTargetRegionId: null,
+  history: [],
+  future: [],
 
   // --- Actions ---
 
   cancelZoomAnimation: cancelZoomAnim,
 
+  pushHistory() {
+    const state = get()
+    const entry: CanvasHistoryEntry = {
+      nodes: state.nodes,
+      regions: state.regions,
+      annotations: state.annotations,
+      focusedNodeId: state.focusedNodeId,
+    }
+    const MAX = 100
+    const history = state.history.length >= MAX
+      ? [...state.history.slice(1), entry]
+      : [...state.history, entry]
+    set({ history, future: [] })
+  },
+
+  undo() {
+    const state = get()
+    if (state.history.length === 0) return
+    const prev = state.history[state.history.length - 1]
+    const current: CanvasHistoryEntry = {
+      nodes: state.nodes,
+      regions: state.regions,
+      annotations: state.annotations,
+      focusedNodeId: state.focusedNodeId,
+    }
+    set({
+      nodes: prev.nodes,
+      regions: prev.regions,
+      annotations: prev.annotations,
+      focusedNodeId: prev.focusedNodeId,
+      history: state.history.slice(0, -1),
+      future: [...state.future, current],
+    })
+  },
+
+  redo() {
+    const state = get()
+    if (state.future.length === 0) return
+    const next = state.future[state.future.length - 1]
+    const current: CanvasHistoryEntry = {
+      nodes: state.nodes,
+      regions: state.regions,
+      annotations: state.annotations,
+      focusedNodeId: state.focusedNodeId,
+    }
+    set({
+      nodes: next.nodes,
+      regions: next.regions,
+      annotations: next.annotations,
+      focusedNodeId: next.focusedNodeId,
+      history: [...state.history, current],
+      future: state.future.slice(0, -1),
+    })
+  },
+
+  clearHistory() {
+    set({ history: [], future: [] })
+  },
+
   addNode(panelId, panelType, position?, size?) {
+    get().pushHistory()
     const state = get()
     const nodeId = generateId()
     const defaultSize = size ?? PANEL_DEFAULT_SIZES[panelType]
-    const origin = position ?? findFreePosition(state.nodes, state.focusedNodeId, defaultSize)
+    // If the caller provided an explicit position (e.g. a drop at the cursor),
+    // respect it exactly — overlapping is fine, the user picked the spot.
+    // Otherwise run smart placement so auto-created nodes don't overlap.
+    const origin = position
+      ? position
+      : findFreePosition(state.nodes, state.focusedNodeId, defaultSize, undefined)
 
     const node: CanvasNodeState = {
       id: nodeId,
@@ -274,6 +404,15 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       zOrder: state.nextZOrder,
       creationIndex: state.nextCreationIndex,
       animationState: 'entering',
+      // Seed the per-node dock layout with a single tab stack containing the
+      // initial panel. The CanvasNodeWrapper hydrates this into a per-node
+      // DockStore on mount.
+      dockLayout: {
+        type: 'tabs',
+        id: generateId(),
+        panelIds: [panelId],
+        activeIndex: 0,
+      },
     }
 
     set({
@@ -286,6 +425,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   },
 
   removeNode(id) {
+    if (get().nodes[id]) get().pushHistory()
     set((state) => {
       const node = state.nodes[id]
       if (!node) return state
@@ -716,6 +856,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 
   deleteSelection(includeRegionContents) {
     const state = get()
+    if (state.selectedNodeIds.size > 0 || state.selectedRegionIds.size > 0) {
+      state.pushHistory()
+    }
 
     // Collect node IDs to remove (selected nodes + region contents if requested)
     const nodeIdsToRemove = new Set(state.selectedNodeIds)
@@ -932,10 +1075,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       id,
       type,
       origin,
-      size: type === 'stickyNote' ? { width: 200, height: 150 } : { width: 200, height: 30 },
-      content: content || (type === 'stickyNote' ? 'Note...' : 'Label'),
-      color: type === 'stickyNote' ? 'rgba(255, 214, 0, 0.9)' : 'transparent',
+      size: type === 'stickyNote' ? { width: 180, height: 140 } : { width: 120, height: 28 },
+      content: content || '',
+      color: type === 'stickyNote' ? 'rgba(255, 221, 87, 0.92)' : 'transparent',
     }
+    // Mark the new annotation to enter edit mode on first render — unless the
+    // caller provided initial content (e.g. session restore).
+    if (!content) pendingEditAnnotations.add(id)
     set((state) => ({
       annotations: { ...state.annotations, [id]: annotation },
     }))
@@ -973,124 +1119,60 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     })
   },
 
-  splitNode(nodeId, direction, newPanelId) {
+  setAnnotationFontSize(id, fontSize) {
     set((state) => {
-      const node = state.nodes[nodeId]
-      if (!node || node.split) return state // Already split
+      const ann = state.annotations[id]
+      if (!ann) return state
+      return { annotations: { ...state.annotations, [id]: { ...ann, fontSize } } }
+    })
+  },
+
+  setAnnotationFontSizePx(id, fontSizePx) {
+    set((state) => {
+      const ann = state.annotations[id]
+      if (!ann) return state
+      const clamped = Math.max(6, Math.min(400, fontSizePx))
+      return { annotations: { ...state.annotations, [id]: { ...ann, fontSizePx: clamped } } }
+    })
+  },
+
+  setAnnotationBold(id, bold) {
+    set((state) => {
+      const ann = state.annotations[id]
+      if (!ann) return state
+      return { annotations: { ...state.annotations, [id]: { ...ann, bold } } }
+    })
+  },
+
+  resizeAnnotation(id, size) {
+    set((state) => {
+      const ann = state.annotations[id]
+      if (!ann) return state
+      const w = Math.max(60, size.width)
+      const h = Math.max(40, size.height)
       return {
-        nodes: {
-          ...state.nodes,
-          [nodeId]: {
-            ...node,
-            split: {
-              direction,
-              panelIds: [node.panelId, newPanelId],
-              ratio: 0.5,
-            },
-          },
+        annotations: {
+          ...state.annotations,
+          [id]: { ...ann, size: { width: w, height: h } },
         },
       }
     })
   },
 
-  unsplitNode(nodeId) {
-    set((state) => {
-      const node = state.nodes[nodeId]
-      if (!node || !node.split) return state
-      return {
-        nodes: {
-          ...state.nodes,
-          [nodeId]: {
-            ...node,
-            split: undefined,
-          },
-        },
-      }
-    })
-  },
-
-  setSplitRatio(nodeId, ratio) {
-    set((state) => {
-      const node = state.nodes[nodeId]
-      if (!node || !node.split) return state
-      return {
-        nodes: {
-          ...state.nodes,
-          [nodeId]: {
-            ...node,
-            split: { ...node.split, ratio: Math.max(0.2, Math.min(0.8, ratio)) },
-          },
-        },
-      }
-    })
-  },
-
-  stackPanel(targetNodeId, panelId) {
-    set((state) => {
-      const node = state.nodes[targetNodeId]
-      if (!node) return state
-      const currentStack = node.stackedPanelIds || [node.panelId]
-      if (currentStack.includes(panelId)) return state
-      return {
-        nodes: {
-          ...state.nodes,
-          [targetNodeId]: {
-            ...node,
-            stackedPanelIds: [...currentStack, panelId],
-            activeStackIndex: currentStack.length, // Focus the new tab
-          },
-        },
-      }
-    })
-  },
-
-  unstackPanel(nodeId, panelId) {
-    set((state) => {
-      const node = state.nodes[nodeId]
-      if (!node || !node.stackedPanelIds) return state
-      const newStack = node.stackedPanelIds.filter(id => id !== panelId)
-      if (newStack.length <= 1) {
-        // Unstack completely — revert to single panel
-        return {
-          nodes: {
-            ...state.nodes,
-            [nodeId]: {
-              ...node,
-              panelId: newStack[0] || node.panelId,
-              stackedPanelIds: undefined,
-              activeStackIndex: undefined,
-            },
-          },
-        }
-      }
-      const activeIndex = Math.min(node.activeStackIndex || 0, newStack.length - 1)
-      return {
-        nodes: {
-          ...state.nodes,
-          [nodeId]: {
-            ...node,
-            stackedPanelIds: newStack,
-            activeStackIndex: activeIndex,
-          },
-        },
-      }
-    })
-  },
-
-  setActiveStackPanel(nodeId, index) {
+  setNodeDockLayout(nodeId, layout) {
     set((state) => {
       const node = state.nodes[nodeId]
       if (!node) return state
       return {
         nodes: {
           ...state.nodes,
-          [nodeId]: { ...node, activeStackIndex: index },
+          [nodeId]: { ...node, dockLayout: layout },
         },
       }
     })
   },
 
-  loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions) {
+  loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions, annotations) {
     // Compute next counters from loaded data
     const nodeList = Object.values(nodes)
     const maxZOrder = nodeList.reduce((max, n) => Math.max(max, n.zOrder), -1)
@@ -1105,6 +1187,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     set({
       nodes: idleNodes,
       regions: regions ?? {},
+      annotations: annotations ?? {},
       viewportOffset,
       zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
       focusedNodeId,
@@ -1112,6 +1195,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       nextCreationIndex: maxCreationIndex + 1,
       selectedNodeIds: new Set<string>(),
       selectedRegionIds: new Set<string>(),
+      history: [],
+      future: [],
     })
   },
 }))
@@ -1122,6 +1207,50 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 // -----------------------------------------------------------------------------
 
 export const useCanvasStore = createCanvasStore()
+
+// -----------------------------------------------------------------------------
+// Per-panel store registry — gives each CanvasPanel a stable, unique store
+// keyed by panelId. Persists across remounts so dock layout reshuffles don't
+// destroy a canvas's state. The first canvas to register aliases the legacy
+// singleton store so existing canvasOps/session restore code keeps working.
+// -----------------------------------------------------------------------------
+
+const canvasStoresByPanelId = new Map<string, UseBoundStore<StoreApi<CanvasStore>>>()
+let defaultStoreOwnerPanelId: string | null = null
+
+export function getOrCreateCanvasStoreForPanel(
+  panelId: string,
+): UseBoundStore<StoreApi<CanvasStore>> {
+  const existing = canvasStoresByPanelId.get(panelId)
+  if (existing) return existing
+  if (defaultStoreOwnerPanelId === null) {
+    defaultStoreOwnerPanelId = panelId
+    canvasStoresByPanelId.set(panelId, useCanvasStore)
+    return useCanvasStore
+  }
+  const store = createCanvasStore()
+  canvasStoresByPanelId.set(panelId, store)
+  return store
+}
+
+export function releaseCanvasStoreForPanel(panelId: string): void {
+  canvasStoresByPanelId.delete(panelId)
+  if (defaultStoreOwnerPanelId === panelId) defaultStoreOwnerPanelId = null
+}
+
+/** Iterate every live CanvasStore (one per canvas panel currently mounted).
+ *  Used by drag handlers to find the source canvas of a given node id. */
+export function getAllCanvasStores(): UseBoundStore<StoreApi<CanvasStore>>[] {
+  return Array.from(canvasStoresByPanelId.values())
+}
+
+/** Find the canvas store that currently owns the given node id, if any. */
+export function findCanvasStoreForNode(nodeId: string): UseBoundStore<StoreApi<CanvasStore>> | null {
+  for (const store of canvasStoresByPanelId.values()) {
+    if (store.getState().nodes[nodeId]) return store
+  }
+  return null
+}
 
 /** @deprecated Use store.getState().cancelZoomAnimation() instead */
 export function cancelZoomAnimation() {

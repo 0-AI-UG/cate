@@ -3,7 +3,7 @@
 // =============================================================================
 
 import React from 'react'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen } from '@phosphor-icons/react'
 import { FileExplorer } from '../sidebar/FileExplorer'
 import { useAppStore } from '../stores/appStore'
 import type { PanelProps } from './types'
@@ -17,7 +17,7 @@ export default function FileExplorerPanel({ panelId, workspaceId }: PanelProps) 
   const setWorkspaceRootPath = useAppStore((s) => s.setWorkspaceRootPath)
 
   return (
-    <div className="w-full h-full overflow-auto bg-[#1e1e1e] flex flex-col">
+    <div className="w-full h-full overflow-auto bg-[#1f1e1c] flex flex-col">
       {rootPath ? (
         <FileExplorer rootPath={rootPath} />
       ) : (

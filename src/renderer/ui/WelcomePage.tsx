@@ -5,11 +5,11 @@ import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import {
   Terminal,
   Globe,
-  FileCode2,
+  FileCode,
   FolderOpen,
   Keyboard,
   Folder,
-} from 'lucide-react'
+} from '@phosphor-icons/react'
 
 // Abbreviate home directory in paths
 function abbreviatePath(fullPath: string): string {
@@ -32,13 +32,17 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
   const openFolder = useCallback(async () => {
     const path = await window.electronAPI.openFolderDialog()
     if (path) {
-      useAppStore.getState().setWorkspaceRootPath(workspaceId, path)
+      const app = useAppStore.getState()
+      app.setWorkspaceRootPath(workspaceId, path)
+      app.createTerminal(workspaceId)
     }
   }, [workspaceId])
 
   const openRecentProject = useCallback(
     (path: string) => {
-      useAppStore.getState().setWorkspaceRootPath(workspaceId, path)
+      const app = useAppStore.getState()
+      app.setWorkspaceRootPath(workspaceId, path)
+      app.createTerminal(workspaceId)
     },
     [workspaceId],
   )
@@ -94,7 +98,7 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
                 onClick={newTerminal}
               />
               <ActionItem
-                icon={<FileCode2 size={16} />}
+                icon={<FileCode size={16} />}
                 label="New Editor"
                 shortcut="⌘⇧E"
                 onClick={newEditor}

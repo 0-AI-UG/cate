@@ -1,19 +1,27 @@
-import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react'
+import React, { useCallback, useRef, useState, useEffect } from 'react'
 import type { CanvasRegion } from '../../shared/types'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
-import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
+import type { NativeContextMenuItem } from '../../shared/electron-api'
+import { useAppStore, getCanvasOpsById } from '../stores/appStore'
 
 // Preset region colors
 const REGION_COLORS = [
-  'rgba(74, 158, 255, 0.08)',   // blue (default)
-  'rgba(52, 199, 89, 0.08)',    // green
-  'rgba(255, 149, 0, 0.08)',    // orange
-  'rgba(255, 69, 58, 0.08)',    // red
-  'rgba(175, 82, 222, 0.08)',   // purple
-  'rgba(255, 214, 10, 0.08)',   // yellow
-  'rgba(0, 199, 190, 0.08)',    // teal
-  'rgba(255, 55, 95, 0.08)',    // pink
+  'rgba(0, 128, 255, 0.08)',    // blue (default)
+  'rgba(0, 255, 0, 0.08)',      // green
+  'rgba(255, 128, 0, 0.08)',    // orange
+  'rgba(255, 0, 0, 0.08)',      // red
+  'rgba(170, 0, 255, 0.08)',    // purple
+  'rgba(255, 255, 0, 0.08)',    // yellow
+  'rgba(0, 255, 255, 0.08)',    // teal
+  'rgba(255, 0, 128, 0.08)',    // pink
 ]
+
+// Parse rgba(...) string → { r, g, b, a }
+function parseRgba(str: string): { r: number; g: number; b: number; a: number } {
+  const m = str.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/)
+  if (!m) return { r: 74, g: 158, b: 255, a: 0.08 }
+  return { r: +m[1], g: +m[2], b: +m[3], a: m[4] ? +m[4] : 1 }
+}
 
 const REGION_MIN_SIZE = 100
 
@@ -38,9 +46,9 @@ const HANDLE_CURSORS: Record<ResizeHandle, string> = {
 const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
   const canvasApi = useCanvasStoreApi()
   const isSelected = useCanvasStoreContext((s) => s.selectedRegionIds.has(region.id))
+  const isDropTarget = useCanvasStoreContext((s) => s.dropTargetRegionId === region.id)
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; lastClientX: number; lastClientY: number } | null>(null)
   const listenersAbortRef = useRef<AbortController | null>(null)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(region.label)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -111,16 +119,20 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
         dragRef.current.lastClientX = ev.clientX
         dragRef.current.lastClientY = ev.clientY
 
-        // Move all selected nodes
-        for (const nodeId of state.selectedNodeIds) {
-          const n = state.nodes[nodeId]
-          if (n) state.moveNode(nodeId, { x: n.origin.x + incrDx, y: n.origin.y + incrDy })
-        }
-        // Move all selected regions (without cascading to children — they're already moved above)
-        for (const rid of state.selectedRegionIds) {
-          const r = canvasApi.getState().regions[rid]
-          if (r) canvasApi.getState().resizeRegion(rid, r.size, { x: r.origin.x + incrDx, y: r.origin.y + incrDy })
-        }
+        // Batch all node + region moves into a single store update
+        canvasApi.setState((s) => {
+          const updatedNodes = { ...s.nodes }
+          for (const nodeId of state.selectedNodeIds) {
+            const n = s.nodes[nodeId]
+            if (n) updatedNodes[nodeId] = { ...n, origin: { x: n.origin.x + incrDx, y: n.origin.y + incrDy } }
+          }
+          const updatedRegions = { ...s.regions }
+          for (const rid of state.selectedRegionIds) {
+            const r = s.regions[rid]
+            if (r) updatedRegions[rid] = { ...r, origin: { x: r.origin.x + incrDx, y: r.origin.y + incrDy } }
+          }
+          return { nodes: updatedNodes, regions: updatedRegions }
+        })
       } else {
         // Single-region drag: use moveRegion which cascades to contained nodes
         const totalDx = (ev.clientX - dragRef.current.startX) / zoom
@@ -159,54 +171,112 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
     setIsEditing(false)
   }, [region.id, editValue])
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY })
-  }, [])
+  const extractRegionToNewCanvas = useCallback(() => {
+    const state = canvasApi.getState()
+    const src = state.regions[region.id]
+    if (!src) return
+    const containedNodes = Object.values(state.nodes).filter((n) => n.regionId === region.id)
 
-  const contextMenuItems = useMemo((): ContextMenuItem[] => {
-    const colorSubmenu: ContextMenuItem[] = REGION_COLORS.map((color) => ({
-      label: color === REGION_COLORS[0] ? 'Blue' : color === REGION_COLORS[1] ? 'Green' : color === REGION_COLORS[2] ? 'Orange' : color === REGION_COLORS[3] ? 'Red' : color === REGION_COLORS[4] ? 'Purple' : color === REGION_COLORS[5] ? 'Yellow' : color === REGION_COLORS[6] ? 'Teal' : 'Pink',
-      icon: (
-        <span style={{
-          display: 'inline-block', width: 14, height: 14, borderRadius: 3,
-          backgroundColor: color.replace(/[\d.]+\)$/, '0.4)'),
-          border: region.color === color ? '2px solid rgba(74, 158, 255, 0.8)' : '1px solid rgba(255,255,255,0.2)',
-        }} />
-      ),
-      onClick: () => canvasApi.getState().updateRegionColor(region.id, color),
+    // Shift so region origin becomes (200, 200) in the new canvas
+    const TARGET_X = 200
+    const TARGET_Y = 200
+    const dx = TARGET_X - src.origin.x
+    const dy = TARGET_Y - src.origin.y
+
+    const newRegion: CanvasRegion = {
+      ...src,
+      origin: { x: src.origin.x + dx, y: src.origin.y + dy },
+      zOrder: -1000,
+    }
+    const newNodes = containedNodes.map((n) => ({
+      ...n,
+      origin: { x: n.origin.x + dx, y: n.origin.y + dy },
     }))
 
-    return [
-      {
-        label: 'Rename',
-        onClick: () => { setEditValue(region.label); setIsEditing(true) },
-      },
-      {
-        label: 'Change Color',
-        onClick: () => {},
-        submenu: colorSubmenu,
-      },
-      { label: '', separator: true, onClick: () => {} },
-      {
-        label: 'Dissolve Region',
-        onClick: () => canvasApi.getState().dissolveRegion(region.id),
-      },
-      {
-        label: 'Delete Region',
-        onClick: () => canvasApi.getState().removeRegion(region.id),
-      },
-      {
-        label: 'Delete Region + Contents',
-        danger: true,
-        onClick: () => {
-          canvasApi.getState().selectRegions([region.id])
-          canvasApi.getState().deleteSelection(true)
-        },
-      },
-    ]
-  }, [region.id, region.label, region.color])
+    const workspaceId = useAppStore.getState().selectedWorkspaceId
+    if (!workspaceId) return
+    const newPanelId = useAppStore.getState().createCanvas(workspaceId)
+    if (!newPanelId) return
+
+    // Wait for the new canvas store to register, then transfer nodes+region.
+    let attempts = 0
+    const tryTransfer = () => {
+      attempts++
+      const ops = getCanvasOpsById(newPanelId)
+      if (!ops) {
+        if (attempts < 120) requestAnimationFrame(tryTransfer)
+        return
+      }
+      ops.storeApi.setState((s) => {
+        const addedNodes = { ...s.nodes }
+        for (const n of newNodes) addedNodes[n.id] = n
+        return {
+          nodes: addedNodes,
+          regions: { ...s.regions, [newRegion.id]: newRegion },
+        }
+      })
+
+      // Remove from current canvas
+      canvasApi.setState((s) => {
+        const { [region.id]: _r, ...restRegions } = s.regions
+        const restNodes = { ...s.nodes }
+        for (const n of newNodes) delete restNodes[n.id]
+        const nextRegionSel = new Set(s.selectedRegionIds)
+        nextRegionSel.delete(region.id)
+        const nextNodeSel = new Set(s.selectedNodeIds)
+        for (const n of newNodes) nextNodeSel.delete(n.id)
+        return {
+          regions: restRegions,
+          nodes: restNodes,
+          selectedRegionIds: nextRegionSel,
+          selectedNodeIds: nextNodeSel,
+        }
+      })
+    }
+    requestAnimationFrame(tryTransfer)
+  }, [region.id, canvasApi])
+
+  const REGION_COLOR_LABELS = ['Blue', 'Green', 'Orange', 'Red', 'Purple', 'Yellow', 'Teal', 'Pink']
+
+  const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!window.electronAPI) return
+    const colorSubmenu: NativeContextMenuItem[] = REGION_COLORS.map((color, i) => ({
+      id: `color:${i}`,
+      label: region.color === color ? `${REGION_COLOR_LABELS[i]} ✓` : REGION_COLOR_LABELS[i],
+    }))
+    const id = await window.electronAPI.showContextMenu([
+      { id: 'rename', label: 'Rename' },
+      { label: 'Change Color', submenu: colorSubmenu },
+      { type: 'separator' },
+      { id: 'extract', label: 'Extract to New Canvas' },
+      { type: 'separator' },
+      { id: 'dissolve', label: 'Dissolve Region' },
+      { id: 'delete', label: 'Delete Region' },
+      { id: 'delete-contents', label: 'Delete Region + Contents' },
+    ])
+    if (!id) return
+    if (id === 'rename') {
+      setEditValue(region.label)
+      setIsEditing(true)
+      return
+    }
+    if (id.startsWith('color:')) {
+      const idx = parseInt(id.slice(6), 10)
+      canvasApi.getState().updateRegionColor(region.id, REGION_COLORS[idx])
+      return
+    }
+    switch (id) {
+      case 'extract': extractRegionToNewCanvas(); break
+      case 'dissolve': canvasApi.getState().dissolveRegion(region.id); break
+      case 'delete': canvasApi.getState().removeRegion(region.id); break
+      case 'delete-contents':
+        canvasApi.getState().selectRegions([region.id])
+        canvasApi.getState().deleteSelection(true)
+        break
+    }
+  }, [region.id, region.label, region.color, canvasApi])
 
   // Resize handle mouse down
   const handleResizeStart = useCallback((e: React.MouseEvent, handle: ResizeHandle) => {
@@ -274,10 +344,19 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
           top: region.origin.y,
           width: region.size.width,
           height: region.size.height,
-          backgroundColor: region.color,
-          borderRadius: 12,
-          border: isSelected ? '2px solid rgba(74, 158, 255, 0.8)' : '1.5px dashed rgba(255,255,255,0.15)',
-          zIndex: region.zOrder,
+          background: `linear-gradient(135deg, rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, ${isDropTarget ? 0.22 : 0.10}) 0%, rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, ${isDropTarget ? 0.12 : 0.04}) 100%)`,
+          borderRadius: 16,
+          border: isDropTarget
+            ? `2px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 1)`
+            : isSelected
+            ? `1.5px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.9)`
+            : `1px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.35)`,
+          boxShadow: isDropTarget
+            ? `0 0 0 6px rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.18), inset 0 1px 0 rgba(255,255,255,0.06)`
+            : isSelected
+            ? `0 0 0 4px rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.12), inset 0 1px 0 rgba(255,255,255,0.04)`
+            : `inset 0 1px 0 rgba(255,255,255,0.04)`,
+          transition: 'background 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
           cursor: 'grab',
         }}
         onMouseDown={handleMouseDown}
@@ -313,16 +392,30 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
           />
         ) : (
           <div
+            onMouseDown={(e) => { e.stopPropagation() }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setEditValue(region.label)
+              setIsEditing(true)
+            }}
+            title="Click to rename"
             style={{
               position: 'absolute',
-              top: -24,
-              left: 8,
-              fontSize: 12,
+              top: -28,
+              left: 6,
+              fontSize: 11,
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.5)',
+              letterSpacing: 0.2,
+              color: 'rgba(255,255,255,0.8)',
+              background: `rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.22)`,
+              border: `1px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.5)`,
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+              borderRadius: 999,
+              padding: '2px 10px',
               whiteSpace: 'nowrap',
               userSelect: 'none',
-              pointerEvents: 'none',
+              cursor: 'text',
             }}
           >
             {region.label}
@@ -346,7 +439,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
                 backgroundColor: 'rgba(74, 158, 255, 0.9)',
                 borderRadius: 2,
                 cursor: HANDLE_CURSORS[handle],
-                zIndex: 99998,
+                zIndex: 1,
               }}
               onMouseDown={(e) => handleResizeStart(e, handle)}
             />
@@ -366,7 +459,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
                   backgroundColor: 'rgba(74, 158, 255, 0.7)',
                   borderRadius: 2,
                   cursor: HANDLE_CURSORS[handle],
-                  zIndex: 99998,
+                  zIndex: 1,
                 }}
                 onMouseDown={(e) => handleResizeStart(e, handle)}
               />
@@ -375,14 +468,6 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
         </>
       )}
 
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={contextMenuItems}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
     </>
   )
 }

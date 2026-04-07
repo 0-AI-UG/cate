@@ -5,19 +5,19 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import {
   GitBranch,
-  RotateCw,
+  ArrowClockwise,
   Plus,
   Minus,
   ArrowUp,
   ArrowDown,
   Download,
-  Undo2,
+  ArrowUUpLeft,
   Archive,
-  ArchiveRestore,
+  BoxArrowUp,
   X,
   Check,
-  Trash2,
-} from 'lucide-react'
+  Trash,
+} from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 
 // ---------------------------------------------------------------------------
@@ -302,7 +302,7 @@ export default function GitPanel({ panelId: _panelId, workspaceId, nodeId: _node
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#1E1E24] text-sm">
+    <div className="flex flex-col h-full bg-[#1f1e1c] text-sm">
       {/* Header: branch + actions */}
       <div className="flex items-center gap-1 px-3 py-2 border-b border-white/[0.05] flex-shrink-0">
         <GitBranch size={14} className="text-white/40 flex-shrink-0" />
@@ -316,7 +316,7 @@ export default function GitPanel({ panelId: _panelId, workspaceId, nodeId: _node
         <button onClick={handleFetch} className="p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60" title="Fetch"><Download size={13} /></button>
         <button onClick={handlePull} className={`p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 ${pulling ? 'animate-pulse' : ''}`} title="Pull" disabled={pulling}><ArrowDown size={13} /></button>
         <button onClick={handlePush} className={`p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 ${pushing ? 'animate-pulse' : ''}`} title="Push" disabled={pushing}><ArrowUp size={13} /></button>
-        <button onClick={refresh} className={`p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 ${isLoading ? 'animate-spin' : ''}`} title="Refresh"><RotateCw size={13} /></button>
+        <button onClick={refresh} className={`p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 ${isLoading ? 'animate-spin' : ''}`} title="Refresh"><ArrowClockwise size={13} /></button>
       </div>
 
       {/* Error banner */}
@@ -354,7 +354,7 @@ export default function GitPanel({ panelId: _panelId, workspaceId, nodeId: _node
                 value={commitMsg}
                 onChange={(e) => setCommitMsg(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleCommit() }}
-                className="w-full bg-[#28282E] text-white text-xs px-2 py-1.5 rounded border border-white/[0.1] outline-none focus:border-blue-500/50 mb-1.5"
+                className="w-full bg-[#1a1917] text-white text-xs px-2 py-1.5 rounded border border-white/[0.1] outline-none focus:border-blue-500/50 mb-1.5"
                 placeholder="Commit message..."
               />
               <div className="flex gap-1">
@@ -369,7 +369,7 @@ export default function GitPanel({ panelId: _panelId, workspaceId, nodeId: _node
                   <Archive size={13} />
                 </button>
                 <button onClick={handleStashPop} className="px-2 py-1.5 bg-white/5 hover:bg-white/10 text-white/50 text-xs rounded" title="Pop Stash">
-                  <ArchiveRestore size={13} />
+                  <BoxArrowUp size={13} />
                 </button>
               </div>
             </div>
@@ -421,7 +421,7 @@ export default function GitPanel({ panelId: _panelId, workspaceId, nodeId: _node
                         <span className={`w-4 text-center mr-1 font-mono text-[11px] ${statusColor(f.working_dir)}`}>{f.working_dir}</span>
                         <span className="text-white/70 flex-1 truncate text-xs">{f.path}</span>
                         <div className="hidden group-hover:flex items-center gap-0.5 ml-1">
-                          <button onClick={(e) => { e.stopPropagation(); handleDiscard(f.path) }} className="text-white/30 hover:text-red-400"><Undo2 size={12} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); handleDiscard(f.path) }} className="text-white/30 hover:text-red-400"><ArrowUUpLeft size={12} /></button>
                           <button onClick={(e) => { e.stopPropagation(); handleStage(f.path) }} className="text-white/30 hover:text-white/60"><Plus size={12} /></button>
                         </div>
                       </div>
@@ -495,7 +495,7 @@ export default function GitPanel({ panelId: _panelId, workspaceId, nodeId: _node
                     value={newBranchName}
                     onChange={(e) => setNewBranchName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleCreateBranch(); if (e.key === 'Escape') setCreatingBranch(false) }}
-                    className="flex-1 bg-[#28282E] text-white text-xs px-2 py-1 rounded border border-white/[0.1] outline-none focus:border-blue-500/50"
+                    className="flex-1 bg-[#1a1917] text-white text-xs px-2 py-1 rounded border border-white/[0.1] outline-none focus:border-blue-500/50"
                     placeholder="Branch name..."
                     autoFocus
                   />
@@ -528,7 +528,7 @@ export default function GitPanel({ panelId: _panelId, workspaceId, nodeId: _node
                     className="hidden group-hover:block p-0.5 rounded hover:bg-white/10 text-white/30 hover:text-red-400"
                     onClick={(e) => { e.stopPropagation(); handleDeleteBranch(b.name) }}
                     title="Delete"
-                  ><Trash2 size={11} /></button>
+                  ><Trash size={11} /></button>
                 )}
               </div>
             ))}

@@ -12,10 +12,10 @@ const windows = new Map<number, BrowserWindow>()
 const windowTypes = new Map<number, CateWindowType>()
 
 /** Panel metadata for panel windows (set after transfer). */
-const panelWindowMeta = new Map<number, { panel: PanelState; workspaceId?: string }>()
+const panelWindowMeta = new Map<number, { panel: PanelState; workspaceId?: string; terminalPtyId?: string }>()
 
 /** Dock window state — synced periodically from renderer for session persistence. */
-const dockWindowState = new Map<number, { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string }>()
+const dockWindowState = new Map<number, { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> }>()
 
 /**
  * Register a BrowserWindow. Automatically unregisters on close.
@@ -41,8 +41,19 @@ export function setPanelWindowMeta(windowId: number, panel: PanelState, workspac
 /**
  * Get panel metadata for a panel window.
  */
-export function getPanelWindowMeta(windowId: number): { panel: PanelState; workspaceId?: string } | undefined {
+export function getPanelWindowMeta(windowId: number): { panel: PanelState; workspaceId?: string; terminalPtyId?: string } | undefined {
   return panelWindowMeta.get(windowId)
+}
+
+/**
+ * Update the terminal ptyId for a panel window. The renderer reports this
+ * shortly after the terminal panel is mounted so that session persistence can
+ * later replay its scrollback log.
+ */
+export function setPanelWindowTerminalPtyId(windowId: number, ptyId: string): void {
+  const meta = panelWindowMeta.get(windowId)
+  if (!meta) return
+  meta.terminalPtyId = ptyId
 }
 
 /**
@@ -117,8 +128,8 @@ export function windowFromEvent(event: Electron.IpcMainInvokeEvent | Electron.Ip
 /**
  * Get all active panel windows with their metadata and bounds.
  */
-export function listPanelWindows(): Array<{ windowId: number; panel: PanelState; workspaceId?: string; bounds: { x: number; y: number; width: number; height: number } }> {
-  const result: Array<{ windowId: number; panel: PanelState; workspaceId?: string; bounds: { x: number; y: number; width: number; height: number } }> = []
+export function listPanelWindows(): Array<{ windowId: number; panel: PanelState; workspaceId?: string; bounds: { x: number; y: number; width: number; height: number }; terminalPtyId?: string }> {
+  const result: Array<{ windowId: number; panel: PanelState; workspaceId?: string; bounds: { x: number; y: number; width: number; height: number }; terminalPtyId?: string }> = []
   for (const [id, type] of windowTypes.entries()) {
     if (type !== 'panel') continue
     const win = windows.get(id)
@@ -131,6 +142,7 @@ export function listPanelWindows(): Array<{ windowId: number; panel: PanelState;
       panel: meta.panel,
       workspaceId: meta.workspaceId,
       bounds,
+      terminalPtyId: meta.terminalPtyId,
     })
   }
   return result
@@ -145,7 +157,7 @@ export function listPanelWindows(): Array<{ windowId: number; panel: PanelState;
  */
 export function setDockWindowState(
   windowId: number,
-  state: { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string },
+  state: { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> },
 ): void {
   dockWindowState.set(windowId, state)
 }
@@ -153,7 +165,7 @@ export function setDockWindowState(
 /**
  * Get dock window state.
  */
-export function getDockWindowState(windowId: number): { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string } | undefined {
+export function getDockWindowState(windowId: number): { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> } | undefined {
   return dockWindowState.get(windowId)
 }
 
@@ -166,6 +178,7 @@ export function listDockWindows(): Array<{
   panels: Record<string, PanelState>
   bounds: { x: number; y: number; width: number; height: number }
   workspaceId: string
+  terminalPtyIds?: Record<string, string>
 }> {
   const result: Array<{
     windowId: number
@@ -173,6 +186,7 @@ export function listDockWindows(): Array<{
     panels: Record<string, PanelState>
     bounds: { x: number; y: number; width: number; height: number }
     workspaceId: string
+    terminalPtyIds?: Record<string, string>
   }> = []
   for (const [id, type] of windowTypes.entries()) {
     if (type !== 'dock') continue

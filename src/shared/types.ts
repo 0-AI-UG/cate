@@ -75,14 +75,11 @@ export interface MCPStatusUpdate {
 /** Opaque string identifier (UUID) for canvas nodes. */
 export type CanvasNodeId = string
 
-export interface SplitState {
-  direction: 'horizontal' | 'vertical'
-  panelIds: [string, string]
-  ratio: number // 0-1, position of the divider
-}
-
 export interface CanvasNodeState {
   id: CanvasNodeId
+  /** Primary panel id — the panel the node was originally created from. The
+   *  authoritative panel layout lives in `dockLayout` (a per-node dock tree),
+   *  but `panelId` is preserved for legacy code paths and as a stable identity. */
   panelId: string
   origin: Point
   size: Size
@@ -91,9 +88,11 @@ export interface CanvasNodeState {
   preMaximizeOrigin?: Point
   preMaximizeSize?: Size
   isPinned?: boolean
-  split?: SplitState
-  stackedPanelIds?: string[]
-  activeStackIndex?: number
+  /** Per-node dock layout tree — what's actually rendered inside the node.
+   *  Each canvas node owns a private DockStore whose `center` zone holds this
+   *  layout. Splits, stacks and drag-and-drop all use the same primitives as
+   *  the main dock zones. */
+  dockLayout?: DockLayoutNode | null
   animationState?: 'entering' | 'exiting' | 'idle'
   regionId?: string
 }
@@ -127,6 +126,9 @@ export interface CanvasAnnotation {
   size: Size
   content: string
   color: string
+  fontSize?: 'sm' | 'md' | 'lg' | 'xl'
+  fontSizePx?: number
+  bold?: boolean
 }
 
 // -----------------------------------------------------------------------------
@@ -190,6 +192,8 @@ export interface DetachedDockWindowSnapshot {
   panels: Record<string, PanelState>
   bounds: { x: number; y: number; width: number; height: number }
   workspaceId: string
+  /** Map of terminal panelId → ptyId, so the scrollback log can be replayed on restore. */
+  terminalPtyIds?: Record<string, string>
 }
 
 // -----------------------------------------------------------------------------
@@ -204,6 +208,9 @@ export interface PanelTransferSnapshot {
   // Terminal-specific
   terminalPtyId?: string
   terminalScrollback?: string
+  /** Set during session restore: ptyId of the original (now-dead) PTY whose
+   *  scrollback log should be replayed into the freshly-spawned terminal. */
+  terminalReplayPtyId?: string
 
   // Editor-specific
   editorState?: {
@@ -284,6 +291,7 @@ export interface CanvasSnapshot {
   id: string
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
+  annotations?: Record<string, CanvasAnnotation>
   zoomLevel: number
   viewportOffset: Point
   focusedNodeId: CanvasNodeId | null
@@ -302,6 +310,7 @@ export interface WorkspaceState {
   // Primary canvas state (current behavior)
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
+  annotations: Record<string, CanvasAnnotation>
   zoomLevel: number
   viewportOffset: Point
   focusedNodeId: CanvasNodeId | null
@@ -388,6 +397,24 @@ export function displayString(s: StoredShortcut): string {
   return parts.join('')
 }
 
+// -----------------------------------------------------------------------------
+// Token usage tracking
+// -----------------------------------------------------------------------------
+
+export type AgentTool = 'claude' | 'codex' | 'opencode'
+
+export interface TokenCounts { input: number; output: number; cacheCreate: number; cacheRead: number }
+
+export interface ModelUsage { model: string; tool: AgentTool; tokens: TokenCounts; costUsd: number | null; messageCount: number }
+
+export interface DayUsage { date: string; tokens: TokenCounts; costUsd: number | null }
+
+export interface ProjectTotals { tokens: TokenCounts; costUsd: number | null; messageCount: number }
+
+export interface ProjectUsage { projectPath: string; byModel: ModelUsage[]; byDay: DayUsage[]; totals: ProjectTotals; lastActivity: string }
+
+export interface UsageSummary { totals: ProjectTotals; projects: ProjectUsage[]; unattributed: ProjectUsage }
+
 // All 17 shortcut actions — matches Swift ShortcutAction enum exactly.
 export type ShortcutAction =
   | 'newTerminal'
@@ -408,6 +435,14 @@ export type ShortcutAction =
   | 'saveFile'
   | 'zoomToFit'
   | 'globalSearch'
+  | 'undo'
+  | 'redo'
+  | 'deleteNode'
+
+/** Actions the native menu can dispatch into the renderer. Superset of
+ *  ShortcutAction — includes a few menu-only items that have no keyboard
+ *  binding. */
+export type MenuActionId = ShortcutAction | 'openFolder'
 
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
@@ -428,6 +463,9 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'saveFile',
   'zoomToFit',
   'globalSearch',
+  'undo',
+  'redo',
+  'deleteNode',
 ]
 
 export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
@@ -449,6 +487,9 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   saveFile: 'Save File',
   zoomToFit: 'Zoom to Fit',
   globalSearch: 'Global Search',
+  undo: 'Undo',
+  redo: 'Redo',
+  deleteNode: 'Delete Focused Panel',
 }
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
@@ -470,6 +511,9 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   saveFile: storedShortcut('s', { command: true }),
   zoomToFit: storedShortcut('1', { command: true }),
   globalSearch: storedShortcut('h', { command: true, shift: true }),
+  undo: storedShortcut('z', { command: true }),
+  redo: storedShortcut('z', { command: true, shift: true }),
+  deleteNode: storedShortcut('Backspace', { command: true }),
 }
 
 // -----------------------------------------------------------------------------
@@ -530,6 +574,7 @@ export interface SessionSnapshot {
   zoomLevel: number
   nodes: NodeSnapshot[]
   regions?: Record<string, CanvasRegion>
+  annotations?: Record<string, CanvasAnnotation>
   /** Dock zone layout state — added in Phase 5. Missing = empty dock (migration). */
   dockState?: DockStateSnapshot
   /** Panels that live in dock zones (canvas, git, fileExplorer, etc.) — not on the canvas. */
@@ -547,6 +592,8 @@ export interface PanelWindowSnapshot {
   panel: PanelState
   bounds: { x: number; y: number; width: number; height: number }
   workspaceId?: string
+  /** ptyId of the terminal in this window (terminal panels only). */
+  terminalPtyId?: string
 }
 
 export interface MultiWorkspaceSession {
@@ -595,6 +642,9 @@ export interface AppSettings {
   restoreSessionOnLaunch: boolean
   defaultShellPath: string
   warnBeforeQuit: boolean
+  /** macOS only: enable native window tabs (tabbingIdentifier on main windows).
+   *  Takes effect on next launch. */
+  nativeTabs: boolean
 
   // Appearance
   appearanceMode: AppearanceMode
@@ -608,6 +658,9 @@ export interface AppSettings {
   defaultPanelWidth: number
   defaultPanelHeight: number
   zoomSpeed: number
+  /** When enabled, the node that occupies the most visible canvas area is
+   *  automatically focused as the user pans/zooms. */
+  autoFocusLargestVisibleNode: boolean
 
   // Terminal
   terminalFontFamily: string
@@ -634,6 +687,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   restoreSessionOnLaunch: true,
   defaultShellPath: '/bin/zsh',
   warnBeforeQuit: false,
+  nativeTabs: true,
 
   // Appearance
   appearanceMode: 'system',
@@ -647,6 +701,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultPanelWidth: 600,
   defaultPanelHeight: 400,
   zoomSpeed: 1.0,
+  autoFocusLargestVisibleNode: false,
 
   // Terminal
   terminalFontFamily: '',

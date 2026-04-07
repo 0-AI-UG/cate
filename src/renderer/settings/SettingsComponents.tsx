@@ -129,7 +129,7 @@ export function Select({ value, onChange, options }: SelectProps) {
       className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white/80 focus:border-focus-blue focus:outline-none cursor-pointer"
     >
       {options.map((opt) => (
-        <option key={opt.value} value={opt.value} className="bg-[#2A2A32] text-white">
+        <option key={opt.value} value={opt.value} className="bg-[#262523] text-white">
           {opt.label}
         </option>
       ))}

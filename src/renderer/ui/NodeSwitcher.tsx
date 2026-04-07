@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Terminal, Globe, FileText } from '@phosphor-icons/react'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore } from '../stores/appStore'
@@ -17,57 +18,11 @@ function PanelIcon({ type }: { type: PanelType }) {
   const size = 20
   switch (type) {
     case 'terminal':
-      return (
-        <svg
-          width={size}
-          height={size}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#34C759"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="4 17 10 11 4 5" />
-          <line x1="12" y1="19" x2="20" y2="19" />
-        </svg>
-      )
+      return <Terminal size={size} color="#34C759" />
     case 'browser':
-      return (
-        <svg
-          width={size}
-          height={size}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#007AFF"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <line x1="2" y1="12" x2="22" y2="12" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-        </svg>
-      )
+      return <Globe size={size} color="#007AFF" />
     case 'editor':
-      return (
-        <svg
-          width={size}
-          height={size}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#FF9500"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-          <polyline points="10 9 9 9 8 9" />
-        </svg>
-      )
+      return <FileText size={size} color="#FF9500" />
   }
 }
 
@@ -184,7 +139,7 @@ export const NodeSwitcher: React.FC = () => {
       onClick={close}
     >
       <div
-        className="w-80 max-h-[400px] bg-[#2A2A32] rounded-xl border border-white/[0.12] shadow-2xl overflow-hidden"
+        className="w-80 max-h-[400px] bg-[#262523] rounded-xl border border-white/[0.12] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {items.length === 0 ? (

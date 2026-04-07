@@ -2,7 +2,7 @@ import { useShortcutStore } from '../stores/shortcutStore'
 import { SHORTCUT_ACTIONS, SHORTCUT_DISPLAY_NAMES, displayString } from '../../shared/types'
 import type { ShortcutAction } from '../../shared/types'
 import { ShortcutRecorder } from './ShortcutRecorder'
-import { RotateCcw } from 'lucide-react'
+import { ArrowCounterClockwise } from '@phosphor-icons/react'
 
 export function ShortcutSettings() {
   const shortcuts = useShortcutStore((s) => s.shortcuts)
@@ -30,7 +30,7 @@ export function ShortcutSettings() {
               className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/[0.1] text-white/30 hover:text-white/60"
               title="Reset to default"
             >
-              <RotateCcw size={12} />
+              <ArrowCounterClockwise size={12} />
             </button>
           </div>
         </div>

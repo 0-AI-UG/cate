@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Bell, X } from 'lucide-react'
+import { Bell, X } from '@phosphor-icons/react'
 import { useNotificationStore } from '../stores/notificationStore'
 import type { Notification } from '../stores/notificationStore'
 
@@ -61,7 +61,7 @@ export const NotificationBell: React.FC = () => {
       {open && createPortal(
         <div
           ref={popoverRef}
-          className="fixed z-[9999] w-72 rounded-lg border border-white/10 bg-[#2A2A32] shadow-2xl overflow-hidden"
+          className="fixed z-[9999] w-72 rounded-lg border border-white/10 bg-[#262523] shadow-2xl overflow-hidden"
           style={{ top: position.top, left: position.left }}
         >
           <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">

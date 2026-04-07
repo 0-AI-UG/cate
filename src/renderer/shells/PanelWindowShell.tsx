@@ -4,8 +4,10 @@
 // =============================================================================
 
 import React, { useEffect, useState, useCallback, Suspense } from 'react'
+import { X, Terminal, FileText, Globe, Square } from '@phosphor-icons/react'
 import type { PanelState, PanelTransferSnapshot } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { terminalRestoreData } from '../lib/session'
 
 const TerminalPanel = React.lazy(() => import('../panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
@@ -30,6 +32,11 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
       // Deposit transfer data BEFORE setting state (which triggers TerminalPanel mount)
       if (snapshot.terminalPtyId) {
         terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
+      } else if (snapshot.terminalReplayPtyId && snapshot.panel.type === 'terminal') {
+        // Session restore: no live PTY, but a previous run wrote a scrollback
+        // log under this ptyId. Seed terminalRestoreData so getOrCreate runs
+        // replayTerminalLog after spawning a fresh PTY.
+        terminalRestoreData.set(snapshot.panel.id, { replayFromId: snapshot.terminalReplayPtyId })
       }
 
       setPanel(snapshot.panel)
@@ -38,6 +45,49 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
 
     return cleanup
   }, [])
+
+  // For terminal panel windows: report ptyId to main + periodically save
+  // scrollback so it can be replayed on next launch.
+  useEffect(() => {
+    if (!panel || panel.type !== 'terminal') return
+    const panelId = panel.id
+
+    let reportedPtyId: string | null = null
+
+    const captureScrollback = (): void => {
+      const entry = terminalRegistry.getEntry(panelId)
+      if (!entry?.ptyId) return
+      if (reportedPtyId !== entry.ptyId) {
+        reportedPtyId = entry.ptyId
+        window.electronAPI.panelWindowSyncPty(entry.ptyId).catch(() => {})
+      }
+      const buffer = entry.terminal.buffer.active
+      const lastRow = buffer.baseY + buffer.cursorY
+      const lines: string[] = []
+      for (let i = 0; i < lastRow; i++) {
+        const line = buffer.getLine(i)
+        if (line) lines.push(line.translateToString(true))
+      }
+      while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+      const content = lines.join('\n')
+      if (content) {
+        window.electronAPI.terminalScrollbackSave(entry.ptyId, content).catch(() => {})
+      }
+    }
+
+    // Wait for the terminal to be created before the first capture
+    const initialDelay = setTimeout(captureScrollback, 1000)
+    const interval = setInterval(captureScrollback, 5000)
+
+    const handleBeforeUnload = (): void => captureScrollback()
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      clearTimeout(initialDelay)
+      clearInterval(interval)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [panel])
 
   // If we have panel info from query params but no transfer yet, show a loading state
   const displayPanel = panel
@@ -53,17 +103,17 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
 
   if (!displayPanel) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#1E1E24] text-zinc-500">
+      <div className="h-screen w-screen flex items-center justify-center bg-[#1f1e1c] text-zinc-500">
         <div className="text-sm">Loading panel...</div>
       </div>
     )
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#1E1E24] overflow-hidden">
+    <div className="h-screen w-screen flex flex-col bg-[#1f1e1c] overflow-hidden">
       {/* Custom title bar — serves as drag handle */}
       <div
-        className="flex items-center h-8 px-2 bg-[#1A1A20] border-b border-zinc-800 select-none shrink-0"
+        className="flex items-center h-8 px-2 bg-[#1a1917] border-b border-zinc-800 select-none shrink-0"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         onDoubleClick={handleTitleDoubleClick}
       >
@@ -77,16 +127,13 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
           onClick={handleClose}
           title="Close"
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <line x1="1" y1="1" x2="9" y2="9" />
-            <line x1="9" y1="1" x2="1" y2="9" />
-          </svg>
+          <X size={10} />
         </button>
       </div>
 
       {/* Panel content */}
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
-        <Suspense fallback={<div className="w-full h-full bg-[#1e1e1e] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+        <Suspense fallback={<div className="w-full h-full bg-[#1f1e1c] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
           <PanelContent panel={displayPanel} workspaceId={workspaceId ?? ''} />
         </Suspense>
       </div>
@@ -122,37 +169,16 @@ function PanelContent({ panel, workspaceId }: { panel: PanelState; workspaceId: 
 // -----------------------------------------------------------------------------
 
 function PanelTypeIcon({ type }: { type: string }) {
-  const iconClass = "w-3.5 h-3.5 text-zinc-500"
+  const iconClass = "text-zinc-500"
+  const props = { size: 14, className: iconClass }
   switch (type) {
     case 'terminal':
-      return (
-        <svg className={iconClass} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <polyline points="4,4 8,8 4,12" />
-          <line x1="9" y1="12" x2="13" y2="12" />
-        </svg>
-      )
+      return <Terminal {...props} />
     case 'editor':
-      return (
-        <svg className={iconClass} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <rect x="2" y="2" width="12" height="12" rx="1" />
-          <line x1="5" y1="5" x2="11" y2="5" />
-          <line x1="5" y1="8" x2="9" y2="8" />
-          <line x1="5" y1="11" x2="11" y2="11" />
-        </svg>
-      )
+      return <FileText {...props} />
     case 'browser':
-      return (
-        <svg className={iconClass} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="8" cy="8" r="6" />
-          <line x1="2" y1="8" x2="14" y2="8" />
-          <ellipse cx="8" cy="8" rx="3" ry="6" />
-        </svg>
-      )
+      return <Globe {...props} />
     default:
-      return (
-        <svg className={iconClass} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <rect x="2" y="2" width="12" height="12" rx="1" />
-        </svg>
-      )
+      return <Square {...props} />
   }
 }

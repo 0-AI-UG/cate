@@ -3,10 +3,22 @@
 // Ported from FileTreeNodeView in FileExplorerView.swift + FileTreeNode.swift
 // =============================================================================
 
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  CaretRight,
+  Folder,
+  FolderOpen,
+  File,
+  FileCode,
+  Code,
+  FileText,
+  BracketsCurly,
+  Globe,
+  PaintBrush,
+  Image as ImageIcon,
+} from '@phosphor-icons/react'
 import log from '../lib/logger'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
-import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
 
 // -----------------------------------------------------------------------------
 // Icon mapping — extension to inline SVG icons with colors
@@ -56,114 +68,22 @@ function getFileIcon(extension: string, isDirectory: boolean, isExpanded: boolea
 }
 
 // -----------------------------------------------------------------------------
-// SVG icon components (simple inline, no external dependency)
-// Using lucide-react style paths at 16x16
+// Pre-created phosphor icon elements (sized 14)
 // -----------------------------------------------------------------------------
 
-const ChevronRight: React.FC<{ className?: string }> = ({ className }) => (
-  <svg
-    width="12"
-    height="12"
-    viewBox="0 0 12 12"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={className}
-  >
-    <polyline points="4.5 2.5 7.5 6 4.5 9.5" />
-  </svg>
-)
+const ICON_PROPS = { size: 14 } as const
 
-const FolderIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3.5H3a1 1 0 0 0-1 1z" />
-  </svg>
-)
-
-const FolderOpenIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3.5H3a1 1 0 0 0-1 1z" />
-    <path d="M2 8h12" />
-  </svg>
-)
-
-const FileIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V6L9 2z" />
-    <polyline points="9 2 9 6 13 6" />
-  </svg>
-)
-
-const FileCodeIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V6L9 2z" />
-    <polyline points="9 2 9 6 13 6" />
-    <polyline points="6.5 9.5 5 11 6.5 12.5" />
-    <polyline points="9.5 9.5 11 11 9.5 12.5" />
-  </svg>
-)
-
-const CodeIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="4.5 4 1.5 8 4.5 12" />
-    <polyline points="11.5 4 14.5 8 11.5 12" />
-    <line x1="9.5" y1="3" x2="6.5" y2="13" />
-  </svg>
-)
-
-const FileTextIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V6L9 2z" />
-    <polyline points="9 2 9 6 13 6" />
-    <line x1="5.5" y1="9" x2="10.5" y2="9" />
-    <line x1="5.5" y1="11.5" x2="8.5" y2="11.5" />
-  </svg>
-)
-
-const BracesIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 3C3 3 2.5 3.5 2.5 4.5V6.5C2.5 7.5 1.5 8 1.5 8s1 .5 1 1.5v2c0 1 .5 1.5 1.5 1.5" />
-    <path d="M12 3c1 0 1.5.5 1.5 1.5V6.5c0 1 1 1.5 1 1.5s-1 .5-1 1.5v2c0 1-.5 1.5-1.5 1.5" />
-  </svg>
-)
-
-const GlobeIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="8" cy="8" r="6" />
-    <line x1="2" y1="8" x2="14" y2="8" />
-    <path d="M8 2a10.5 10.5 0 0 1 2.8 6A10.5 10.5 0 0 1 8 14a10.5 10.5 0 0 1-2.8-6A10.5 10.5 0 0 1 8 2z" />
-  </svg>
-)
-
-const PaintbrushIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M10 2l4 4-6 6H4v-4l6-6z" />
-    <path d="M4 12c-1 1-2 1.5-2.5 1.5S1 13 1 12.5 1.5 11 2.5 11" />
-  </svg>
-)
-
-const ImageIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="2" width="12" height="12" rx="1.5" />
-    <circle cx="5.5" cy="5.5" r="1" />
-    <polyline points="14 10 10.5 7 4 14" />
-  </svg>
-)
-
-// Pre-created icon elements to avoid recreating JSX on every render
-const ICON_FOLDER_OPEN: IconDef = { icon: <FolderOpenIcon />, color: '#E2B855' }
-const ICON_FOLDER: IconDef = { icon: <FolderIcon />, color: '#E2B855' }
-const ICON_SWIFT: IconDef = { icon: <CodeIcon />, color: '#F97316' }
-const ICON_JS: IconDef = { icon: <FileCodeIcon />, color: '#EAB308' }
-const ICON_PY: IconDef = { icon: <FileCodeIcon />, color: '#3B82F6' }
-const ICON_JSON: IconDef = { icon: <BracesIcon />, color: '#A78BFA' }
-const ICON_MD: IconDef = { icon: <FileTextIcon />, color: '#9CA3AF' }
-const ICON_HTML: IconDef = { icon: <GlobeIcon />, color: '#3B82F6' }
-const ICON_CSS: IconDef = { icon: <PaintbrushIcon />, color: '#A855F7' }
-const ICON_IMAGE: IconDef = { icon: <ImageIcon />, color: '#14B8A6' }
-const ICON_DEFAULT: IconDef = { icon: <FileIcon />, color: '#9CA3AF' }
+const ICON_FOLDER_OPEN: IconDef = { icon: <FolderOpen {...ICON_PROPS} />, color: '#E2B855' }
+const ICON_FOLDER: IconDef = { icon: <Folder {...ICON_PROPS} />, color: '#E2B855' }
+const ICON_SWIFT: IconDef = { icon: <Code {...ICON_PROPS} />, color: '#F97316' }
+const ICON_JS: IconDef = { icon: <FileCode {...ICON_PROPS} />, color: '#EAB308' }
+const ICON_PY: IconDef = { icon: <FileCode {...ICON_PROPS} />, color: '#3B82F6' }
+const ICON_JSON: IconDef = { icon: <BracketsCurly {...ICON_PROPS} />, color: '#A78BFA' }
+const ICON_MD: IconDef = { icon: <FileText {...ICON_PROPS} />, color: '#9CA3AF' }
+const ICON_HTML: IconDef = { icon: <Globe {...ICON_PROPS} />, color: '#3B82F6' }
+const ICON_CSS: IconDef = { icon: <PaintBrush {...ICON_PROPS} />, color: '#A855F7' }
+const ICON_IMAGE: IconDef = { icon: <ImageIcon {...ICON_PROPS} />, color: '#14B8A6' }
+const ICON_DEFAULT: IconDef = { icon: <File {...ICON_PROPS} />, color: '#9CA3AF' }
 
 // -----------------------------------------------------------------------------
 // FileTreeNode component
@@ -175,10 +95,14 @@ interface FileTreeNodeProps {
   gitFiles?: Set<string>
   selectedPaths: Set<string>
   onSelect: (path: string, meta: { shift?: boolean; cmd?: boolean }) => void
-  onFileOpen: (paths: string[]) => void
+  onFileOpen: (paths: string[], mode?: 'dock' | 'canvas') => void
   onTreeChanged?: () => void
   /** Flat ordered list of visible file paths for shift-click range selection */
   visiblePaths: string[]
+  /** Lowercased search query; when non-empty, filters files and force-expands directories */
+  searchQuery?: string
+  /** Workspace root path — used to compute relative paths for "Copy Relative Path". */
+  rootPath: string
 }
 
 export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
@@ -190,11 +114,13 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   onFileOpen,
   onTreeChanged,
   visiblePaths,
+  searchQuery,
+  rootPath,
 }) => {
+  const isSearching = !!searchQuery
   const [isExpanded, setIsExpanded] = useState(node.isExpanded)
   const [children, setChildren] = useState<FileTreeNodeType[]>(node.children)
   const [isLoading, setIsLoading] = useState(false)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isRenaming, setIsRenaming] = useState(false)
   const [isCreating, setIsCreating] = useState<'file' | 'folder' | null>(null)
   const [renameValue, setRenameValue] = useState(node.name)
@@ -206,7 +132,20 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   const isDimmed = gitFiles != null && !node.isDirectory && !gitFiles.has(node.path)
 
   const isSelected = selectedPaths.has(node.path)
-  const iconDef = getFileIcon(node.fileExtension, node.isDirectory, isExpanded)
+  const effectiveExpanded = isExpanded || isSearching
+  const iconDef = getFileIcon(node.fileExtension, node.isDirectory, effectiveExpanded)
+
+  // Auto-load directory children when search becomes active
+  useEffect(() => {
+    if (isSearching && node.isDirectory && children.length === 0 && window.electronAPI) {
+      window.electronAPI.fsReadDir(node.path).then(setChildren).catch(() => {})
+    }
+  }, [isSearching, node.isDirectory, node.path, children.length])
+
+  // While searching, hide files whose name doesn't match
+  if (isSearching && !node.isDirectory && !node.name.toLowerCase().includes(searchQuery!)) {
+    return null
+  }
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -251,14 +190,71 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       }
     } else {
       onSelect(node.path, meta)
+      // Plain click on a file: open it as a dock tab next to the canvas.
+      // Modifier-clicks (cmd/shift) only adjust the selection.
+      if (!meta.shift && !meta.cmd) {
+        onFileOpen([node.path], 'dock')
+      }
     }
-  }, [node, isExpanded, children.length, onSelect])
+  }, [node, isExpanded, children.length, onSelect, onFileOpen])
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  // Forward declarations are filled in below; handleContextMenu uses them via refs
+  // through closure on the latest functions defined later in render.
+  const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY })
-  }, [])
+    if (!window.electronAPI) return
+
+    const selectedFiles = [...selectedPaths]
+    const pathsToOpen = selectedPaths.has(node.path) && selectedFiles.length > 0
+      ? selectedFiles
+      : [node.path]
+
+    const relPath = node.path.startsWith(rootPath + '/')
+      ? node.path.slice(rootPath.length + 1)
+      : node.path
+
+    const items: import('../../shared/electron-api').NativeContextMenuItem[] = []
+    if (!node.isDirectory) {
+      items.push({
+        id: 'open',
+        label: pathsToOpen.length > 1 ? `Open ${pathsToOpen.length} Files` : 'Open',
+      })
+      items.push({
+        id: 'open-on-canvas',
+        label: pathsToOpen.length > 1 ? `Open ${pathsToOpen.length} Files on Canvas` : 'Open on Canvas',
+      })
+      items.push({ type: 'separator' })
+    }
+    items.push(
+      { id: 'new-file', label: 'New File…' },
+      { id: 'new-folder', label: 'New Folder…' },
+      { type: 'separator' },
+      { id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' },
+      { type: 'separator' },
+      { id: 'rename', label: 'Rename…', accelerator: 'Return' },
+      { id: 'copy-path', label: 'Copy Path', accelerator: 'Alt+Cmd+C' },
+      { id: 'copy-rel-path', label: 'Copy Relative Path', accelerator: 'Alt+Shift+Cmd+C' },
+      { id: 'copy-name', label: 'Copy Name' },
+      { type: 'separator' },
+      { id: 'delete', label: 'Delete', accelerator: 'Cmd+Backspace' },
+    )
+
+    const id = await window.electronAPI.showContextMenu(items)
+    switch (id) {
+      case 'open': onFileOpen(pathsToOpen, 'dock'); break
+      case 'open-on-canvas': onFileOpen(pathsToOpen, 'canvas'); break
+      case 'new-file': startCreate('file'); break
+      case 'new-folder': startCreate('folder'); break
+      case 'reveal': window.electronAPI.shellShowInFolder(node.path); break
+      case 'rename': startRename(); break
+      case 'copy-path': navigator.clipboard.writeText(node.path); break
+      case 'copy-rel-path': navigator.clipboard.writeText(relPath); break
+      case 'copy-name': navigator.clipboard.writeText(node.name); break
+      case 'delete': handleDelete(); break
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node, rootPath, selectedPaths, onFileOpen])
 
   // --- Rename ---
   const startRename = useCallback(() => {
@@ -335,35 +331,6 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     }
   }, [node.name, node.path, node.isDirectory, onTreeChanged])
 
-  // --- Context menu items ---
-  const contextMenuItems: ContextMenuItem[] = []
-  const selectedFiles = [...selectedPaths].filter((p) => {
-    // Only include non-directory selected items for "Open"
-    // We can't easily check directory status here, so we include all selected
-    return true
-  })
-  const pathsToOpen = selectedPaths.has(node.path) && selectedFiles.length > 0
-    ? selectedFiles
-    : [node.path]
-  if (!node.isDirectory) {
-    contextMenuItems.push({
-      label: pathsToOpen.length > 1 ? `Open ${pathsToOpen.length} Files` : 'Open',
-      onClick: () => onFileOpen(pathsToOpen),
-    })
-  }
-  contextMenuItems.push(
-    { label: 'New File…', onClick: () => startCreate('file') },
-    { label: 'New Folder…', onClick: () => startCreate('folder') },
-    { label: '', separator: true, onClick: () => {} },
-    { label: 'Rename…', onClick: startRename },
-    { label: 'Copy Path', onClick: () => navigator.clipboard.writeText(node.path) },
-    { label: 'Copy Name', onClick: () => navigator.clipboard.writeText(node.name) },
-    { label: '', separator: true, onClick: () => {} },
-    { label: 'Reveal in Finder', onClick: () => window.electronAPI?.shellShowInFolder(node.path) },
-    { label: '', separator: true, onClick: () => {} },
-    { label: 'Delete', onClick: handleDelete, danger: true },
-  )
-
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -393,24 +360,26 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         {node.isDirectory ? (
           <span
             className="flex-shrink-0 text-white/40 transition-transform duration-150"
-            style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+            style={{ transform: effectiveExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
           >
-            <ChevronRight />
+            <CaretRight size={12} />
           </span>
         ) : (
           <span className="flex-shrink-0 w-3" />
         )}
 
-        {/* File/folder icon */}
-        <span className="flex-shrink-0" style={{ color: iconDef.color }}>
-          {iconDef.icon}
-        </span>
+        {/* File icon (folders show only the chevron) */}
+        {!node.isDirectory && (
+          <span className="flex-shrink-0" style={{ color: iconDef.color }}>
+            {iconDef.icon}
+          </span>
+        )}
 
         {/* Name or rename input */}
         {isRenaming ? (
           <input
             ref={renameInputRef}
-            className="flex-1 min-w-0 bg-[#2a2a30] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
+            className="flex-1 min-w-0 bg-[#262523] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onBlur={commitRename}
@@ -439,11 +408,11 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         >
           <span className="flex-shrink-0 w-3" />
           <span className="flex-shrink-0" style={{ color: isCreating === 'folder' ? '#E2B855' : '#9CA3AF' }}>
-            {isCreating === 'folder' ? <FolderIcon /> : <FileIcon />}
+            {isCreating === 'folder' ? <Folder {...ICON_PROPS} /> : <File {...ICON_PROPS} />}
           </span>
           <input
             ref={createInputRef}
-            className="flex-1 min-w-0 bg-[#2a2a30] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
+            className="flex-1 min-w-0 bg-[#262523] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
             value={createValue}
             placeholder={isCreating === 'folder' ? 'folder name' : 'file name'}
             onChange={(e) => setCreateValue(e.target.value)}
@@ -459,8 +428,12 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       )}
 
       {/* Expanded children */}
-      {node.isDirectory && isExpanded && (
-        <div>
+      {node.isDirectory && effectiveExpanded && (
+        <div className="relative">
+          <div
+            className="absolute top-0 bottom-0 w-px bg-white/[0.08] pointer-events-none"
+            style={{ left: `${depth * 16 + 8 + 5}px` }}
+          />
           {children.map((child) => (
             <FileTreeNode
               key={child.path}
@@ -472,20 +445,13 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
               onFileOpen={onFileOpen}
               onTreeChanged={onTreeChanged}
               visiblePaths={visiblePaths}
+              searchQuery={searchQuery}
+              rootPath={rootPath}
             />
           ))}
         </div>
       )}
 
-      {/* Context menu */}
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={contextMenuItems}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
     </div>
   )
 }

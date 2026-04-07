@@ -6,7 +6,7 @@
 import React, { useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useDockDragStore } from '../hooks/useDockDrag'
-import { Terminal, Globe, FileText, GitBranch, FolderOpen, LayoutGrid, Layout } from 'lucide-react'
+import { Terminal, Globe, FileText, GitBranch, FolderOpen, SquaresFour, Square } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
 
 function PanelIcon({ type }: { type: PanelType }) {
@@ -17,8 +17,8 @@ function PanelIcon({ type }: { type: PanelType }) {
     case 'editor': return <FileText {...props} />
     case 'git': return <GitBranch {...props} />
     case 'fileExplorer': return <FolderOpen {...props} />
-    case 'projectList': return <LayoutGrid {...props} />
-    case 'canvas': return <Layout {...props} />
+    case 'projectList': return <SquaresFour {...props} />
+    case 'canvas': return <Square {...props} />
   }
 }
 
@@ -61,7 +61,7 @@ export default function DragGhost() {
         pointerEvents: 'none',
       }}
     >
-      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#2a2a3a] border border-[#4a9eff]/40 rounded-md shadow-lg">
+      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#262523] border border-[#4a9eff]/40 rounded-md shadow-lg">
         <PanelIcon type={panelType} />
         <span className="text-xs text-white/80 whitespace-nowrap max-w-[150px] truncate">
           {panelTitle}

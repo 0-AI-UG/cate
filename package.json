@@ -30,6 +30,7 @@
     "package:linux": "npm run icons && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-webgl": "^0.18.0",
@@ -38,7 +39,6 @@
     "electron-log": "^5.4.3",
     "electron-store": "^10.0.0",
     "electron-updater": "^6.8.3",
-    "lucide-react": "^0.468.0",
     "monaco-editor": "^0.52.0",
     "node-pty": "^1.0.0",
     "react": "^18.3.0",

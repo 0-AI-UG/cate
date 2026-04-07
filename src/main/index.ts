@@ -2,12 +2,13 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED } from '../shared/ipc-channels'
 import {
-  WINDOW_CREATE, WINDOW_GET_ID, WINDOW_GET_TYPE,
+  WINDOW_CREATE, WINDOW_GET_ID, WINDOW_GET_TYPE, WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
-  PANEL_WINDOWS_LIST, PANEL_WINDOW_DOCK_BACK,
+  PANEL_WINDOWS_LIST, PANEL_WINDOW_DOCK_BACK, PANEL_WINDOW_SYNC_PTY,
   DRAG_START, DRAG_DETACH, DRAG_END,
+  WINDOW_FULLSCREEN_STATE,
   DOCK_WINDOW_INIT, DOCK_WINDOW_SYNC_STATE, DOCK_WINDOWS_LIST,
   CROSS_WINDOW_DRAG_START, CROSS_WINDOW_DRAG_UPDATE, CROSS_WINDOW_DRAG_DROP, CROSS_WINDOW_DRAG_CANCEL, CROSS_WINDOW_DRAG_RESOLVE,
   SESSION_FLUSH_SAVE,
@@ -17,18 +18,31 @@ import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow }
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync } from './store'
+import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync, loadSettingsSyncFromDisk, getSettingSync } from './store'
 import { registerHandlers as registerMCPHandlers } from './ipc/mcp'
+import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
-import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
+import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
+import { registerUsageHandlers } from './ipc/usage'
 import { addAllowedRoot, validatePath } from './ipc/pathValidation'
-import { buildApplicationMenu, rebuildApplicationMenu } from './menu'
+import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
 import { initAutoUpdater } from './auto-updater'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer } from './ipc/terminal'
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
+
+/** True when any existing Cate BrowserWindow is in macOS native fullscreen.
+ *  Used to reject window-creation IPCs so the app can never "escape" into a
+ *  separate Space while the user is in fullscreen mode. */
+function anyWindowFullscreen(): boolean {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed()) continue
+    try { if (w.isFullScreen()) return true } catch { /* noop */ }
+  }
+  return false
+}
 
 function createWindow(params?: CateWindowParams): BrowserWindow {
   const iconPath = path.join(__dirname, '../../build/icon-1024.png')
@@ -42,9 +56,25 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     minWidth: isDock ? 400 : isPanel ? undefined : 800,
     minHeight: isDock ? 300 : isPanel ? undefined : 600,
     title: isDock ? 'Cate' : isPanel ? 'Cate Panel' : 'Cate',
-    titleBarStyle: isPanel ? 'hidden' : isDock ? 'hiddenInset' : 'hiddenInset',
-    frame: isDock ? true : !isPanel,
-    backgroundColor: '#1E1E24',
+    // macOS native window tabs require a standard title bar — `hiddenInset`
+    // suppresses the tab bar entirely. When native tabs are enabled for main
+    // windows we fall back to the default title bar so the tab strip (app
+    // name tab + "+" button) can render.
+    titleBarStyle: isPanel
+      ? 'hidden'
+      : (process.platform === 'darwin' && windowType === 'main' && getSettingSync('nativeTabs'))
+        ? 'default'
+        : 'hiddenInset',
+    trafficLightPosition: isDock ? { x: 12, y: 11 } : undefined,
+    frame: !(isPanel || isDock),
+    // macOS native window tabs — only on main windows. Setting tabbingIdentifier
+    // makes new windows in this group join as native tabs in the title bar
+    // (subject to System Settings → Desktop & Dock → "Prefer tabs"). Panel and
+    // dock windows are excluded so they stay free-floating.
+    ...(process.platform === 'darwin' && windowType === 'main' && getSettingSync('nativeTabs')
+      ? { tabbingIdentifier: 'cate-main' }
+      : {}),
+    backgroundColor: '#1f1e1c',
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -60,6 +90,21 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   // Capture ID before window is destroyed (win.id throws after 'closed')
   const windowId = win.id
   log.info('Creating window type=%s id=%d', windowType, windowId)
+
+  // When the main window is closed, also close any detached panel/dock
+  // windows so the app actually quits (otherwise they keep the process
+  // alive and `window-all-closed` never fires).
+  if (windowType === 'main') {
+    win.on('close', () => {
+      for (const other of BrowserWindow.getAllWindows()) {
+        if (other.id === windowId || other.isDestroyed()) continue
+        const t = getWindowType(other.id)
+        if (t === 'panel' || t === 'dock') {
+          other.destroy()
+        }
+      }
+    })
+  }
 
   // Clean up window-owned resources on close
   win.on('closed', () => {
@@ -85,6 +130,38 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
       rebuildApplicationMenu()
     })
   }
+
+  // Broadcast fullscreen state changes so the renderer can react
+  // (e.g., hide detach affordances). The authoritative check is a sync IPC
+  // handler registered once below, but these broadcasts cover the cache
+  // path used by any listener that wants push updates.
+  const broadcastFullscreenState = (): void => {
+    const isFullscreen = anyWindowFullscreen()
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isDestroyed()) continue
+      try { w.webContents.send(WINDOW_FULLSCREEN_STATE, isFullscreen) } catch { /* noop */ }
+    }
+  }
+  win.on('enter-full-screen', broadcastFullscreenState)
+  win.on('leave-full-screen', broadcastFullscreenState)
+  // Fire at the *start* of the transition too so the renderer can hide the
+  // header drag-region before macOS begins its slide animation, instead of
+  // waiting for the post-animation enter/leave events.
+  const broadcastEntering = (): void => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isDestroyed()) continue
+      try { w.webContents.send(WINDOW_FULLSCREEN_STATE, true) } catch { /* noop */ }
+    }
+  }
+  const broadcastLeaving = (): void => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isDestroyed()) continue
+      try { w.webContents.send(WINDOW_FULLSCREEN_STATE, false) } catch { /* noop */ }
+    }
+  }
+  win.on('will-enter-full-screen', broadcastEntering)
+  win.on('will-leave-full-screen', broadcastLeaving)
+  win.webContents.once('did-finish-load', broadcastFullscreenState)
 
   // Build query string from params
   const queryParts: string[] = []
@@ -195,8 +272,10 @@ function registerAllHandlers(): void {
   registerGitMonitorHandlers()
   registerStoreHandlers()
   registerMCPHandlers()
+  registerMenuHandlers()
   registerNotificationHandlers()
   registerWorkspaceHandlers()
+  registerUsageHandlers()
 
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, async (_event, filePath: string) => {
@@ -242,6 +321,25 @@ function registerAllHandlers(): void {
     })
     if (result.canceled || !result.filePath) return null
     return result.filePath
+  })
+
+  // Native unsaved-changes confirmation. Returns 'save' | 'discard' | 'cancel'.
+  ipcMain.handle(DIALOG_CONFIRM_UNSAVED, async (event, payload: { fileName?: string; multiple?: boolean }) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const name = payload?.fileName ?? 'this file'
+    const message = payload?.multiple
+      ? `Do you want to save the changes you made to ${payload?.fileName ?? 'these files'}?`
+      : `Do you want to save the changes you made to ${name}?`
+    const result = await dialog.showMessageBox(win!, {
+      type: 'warning',
+      message,
+      detail: "Your changes will be lost if you don't save them.",
+      buttons: ['Save', "Don't Save", 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    })
+    return result.response === 0 ? 'save' : result.response === 1 ? 'discard' : 'cancel'
   })
 
   // Capture page screenshot for panel previews
@@ -308,6 +406,9 @@ function registerAllHandlers(): void {
 
   // Window management
   ipcMain.handle(WINDOW_CREATE, async (_event, params?: CateWindowParams) => {
+    // Refuse new panel/dock windows while any window is fullscreen — they
+    // would land in a separate Space and appear as a black page.
+    if (anyWindowFullscreen() && params?.type !== 'main') return null
     const win = createWindow(params)
     return win.id
   })
@@ -323,6 +424,16 @@ function registerAllHandlers(): void {
     return getWindowType(win.id) ?? 'main'
   })
 
+  // Renderer-driven title sync — used so each native macOS tab shows the
+  // active workspace name instead of the generic app title.
+  ipcMain.handle(WINDOW_SET_TITLE, async (event, title: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    if (typeof title === 'string' && title.length > 0) {
+      win.setTitle(title)
+    }
+  })
+
   // Panel transfer protocol
   ipcMain.handle(PANEL_TRANSFER, async (event, snapshot: PanelTransferSnapshot, targetWindowId?: number) => {
     // Begin terminal buffering if this is a terminal transfer
@@ -336,6 +447,11 @@ function registerAllHandlers(): void {
       // Track panel metadata for the target window
       setPanelWindowMeta(targetWindowId, snapshot.panel, undefined)
     } else {
+      // Refuse creating a new panel window while any Cate window is in
+      // macOS native fullscreen — the new window would land in a separate
+      // Space and appear as an empty black page. Caller should fall back to
+      // keeping the panel in the source window.
+      if (anyWindowFullscreen()) return null
       // Create a new panel window and send the transfer there
       const newWin = createWindow({
         type: 'panel',
@@ -382,6 +498,13 @@ function registerAllHandlers(): void {
     return listPanelWindows()
   })
 
+  // Renderer reports a panel window's terminal ptyId so we can persist it for replay on next launch
+  ipcMain.handle(PANEL_WINDOW_SYNC_PTY, async (event, ptyId: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    setPanelWindowTerminalPtyId(win.id, ptyId)
+  })
+
   // Double-click panel window title bar → close the panel window and signal main window to dock
   ipcMain.handle(PANEL_WINDOW_DOCK_BACK, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -408,6 +531,12 @@ function registerAllHandlers(): void {
 
   ipcMain.handle(DRAG_DETACH, async (_event, snapshot: PanelTransferSnapshot, workspaceId?: string) => {
     const cursor = screen.getCursorScreenPoint()
+
+    // Refuse to create a new window while any Cate window is in macOS
+    // native fullscreen — the new window would land in a different Space
+    // (black screen). Caller treats a null return as "detach rejected —
+    // put the panel back where it came from".
+    if (anyWindowFullscreen()) return null
 
     // Begin terminal buffering if applicable
     if (snapshot.terminalPtyId) {
@@ -446,12 +575,27 @@ function registerAllHandlers(): void {
     newWin.webContents.once('did-finish-load', () => {
       sendToWindow(newWin.id, DOCK_WINDOW_INIT, initPayload)
       sendToWindow(newWin.id, PANEL_RECEIVE, snapshot)
+      // Force show + focus — on macOS in fullscreen, the new window may not
+      // auto-show because the OS thinks it belongs to a different Space.
+      try {
+        newWin.show()
+        newWin.focus()
+      } catch {
+        /* window may already be destroyed */
+      }
     })
 
     cleanupDragTempFile()
     broadcastToAll(DRAG_END)
 
     return newWin.id
+  })
+
+  // Synchronous fullscreen getter — renderers hit this on every drag
+  // mousemove to decide whether to enter dock-drag / cross-window mode.
+  // sendSync is fine at ~60 Hz and guarantees no stale state.
+  ipcMain.on(WINDOW_FULLSCREEN_STATE, (event) => {
+    event.returnValue = anyWindowFullscreen()
   })
 
   ipcMain.on(DRAG_END, () => {
@@ -485,6 +629,11 @@ function registerAllHandlers(): void {
   ipcMain.handle(CROSS_WINDOW_DRAG_START, async (event, snapshot: PanelTransferSnapshot, _screenPos: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
+
+    // Refuse any cross-window drag while any Cate window is in macOS
+    // native fullscreen — the drag ghost would land in a different Space
+    // (black window). Lock the drag to the source window entirely.
+    if (anyWindowFullscreen()) return
 
     crossWindowDragState = {
       snapshot,
@@ -622,6 +771,14 @@ if (!app.isPackaged) {
 buildApplicationMenu()
 
 log.info('Cate v%s starting (electron %s, node %s, platform %s)', app.getVersion(), process.versions.electron, process.versions.node, process.platform)
+
+// Load persisted settings synchronously so window-creation code paths can read
+// them before the async electron-store finishes initializing.
+loadSettingsSyncFromDisk()
+
+// Provide the menu module a way to spawn additional main windows without
+// importing this file (which would create a circular dependency).
+setNewMainWindowFn(() => createWindow({ type: 'main' }))
 
 app.whenReady().then(async () => {
   log.info('App ready, resolving shell environment...')

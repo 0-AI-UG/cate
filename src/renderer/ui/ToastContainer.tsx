@@ -2,7 +2,7 @@
 // ToastContainer — Renders in-app notification toasts
 // =============================================================================
 
-import { X } from 'lucide-react'
+import { X } from '@phosphor-icons/react'
 import { useNotificationStore } from '../stores/notificationStore'
 import type { Toast } from '../stores/notificationStore'
 
@@ -32,7 +32,7 @@ export function ToastContainer() {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`pointer-events-auto flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border bg-[#2A2A32] shadow-xl backdrop-blur-sm max-w-[320px] animate-in fade-in slide-in-from-bottom-2 ${TYPE_COLORS[toast.type]} ${toast.action ? 'cursor-pointer hover:bg-[#32323C]' : ''}`}
+          className={`pointer-events-auto flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border bg-[#262523] shadow-xl backdrop-blur-sm max-w-[320px] animate-in fade-in slide-in-from-bottom-2 ${TYPE_COLORS[toast.type]} ${toast.action ? 'cursor-pointer hover:bg-[#2d2c2a]' : ''}`}
           onClick={() => {
             if (toast.action) {
               executeAction(toast.action)

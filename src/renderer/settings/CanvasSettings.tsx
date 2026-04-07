@@ -35,6 +35,15 @@ export function CanvasSettings() {
       <SettingRow label="Zoom speed" description={`${store.zoomSpeed.toFixed(1)}x`}>
         <Slider value={store.zoomSpeed} onChange={(v) => store.setSetting('zoomSpeed', v)} min={0.5} max={3.0} step={0.1} />
       </SettingRow>
+      <SettingRow
+        label="Auto-focus largest visible panel"
+        description="Automatically activate whichever panel occupies the most visible area as you pan and zoom."
+      >
+        <Toggle
+          checked={store.autoFocusLargestVisibleNode}
+          onChange={(v) => store.setSetting('autoFocusLargestVisibleNode', v)}
+        />
+      </SettingRow>
       <SettingRow label="Show minimap">
         <Toggle checked={store.showMinimap} onChange={(v) => store.setSetting('showMinimap', v)} />
       </SettingRow>

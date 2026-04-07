@@ -82,10 +82,17 @@ export const APP_GET_PATH = 'app:getPath'
 
 // Menu actions (main -> renderer)
 export const MENU_OPEN_SETTINGS = 'menu:openSettings'
+/** Generic menu-action dispatch — main sends a MenuActionId and the focused
+ *  renderer runs the matching handler (via useShortcuts). */
+export const MENU_TRIGGER_ACTION = 'menu:triggerAction'
+
+// Native context menu (renderer -> main)
+export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
 export const DIALOG_SAVE_FILE = 'dialog:saveFile'
+export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 
 // Recent Projects
 export const RECENT_PROJECTS_GET = 'recent-projects:get'
@@ -111,6 +118,7 @@ export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notificatio
 export const WINDOW_CREATE = 'window:create'
 export const WINDOW_GET_ID = 'window:getId'
 export const WINDOW_GET_TYPE = 'window:getType'
+export const WINDOW_SET_TITLE = 'window:setTitle'
 
 // Panel transfer (cross-window)
 export const PANEL_TRANSFER = 'panel:transfer'
@@ -120,11 +128,17 @@ export const PANEL_TRANSFER_ACK = 'panel:transferAck'
 // Panel window queries (session persistence)
 export const PANEL_WINDOWS_LIST = 'panel:windowsList'
 export const PANEL_WINDOW_DOCK_BACK = 'panel:dockBack'  // renderer -> main (double-click title bar)
+export const PANEL_WINDOW_SYNC_PTY = 'panel:windowSyncPty' // renderer -> main: register panelId -> ptyId for calling panel window
 
 // Cross-window drag-and-drop
 export const DRAG_START = 'drag:start'
 export const DRAG_DETACH = 'drag:detach'
 export const DRAG_END = 'drag:end'                 // main -> renderer
+
+// Fullscreen state — main broadcasts every time a window enters/leaves native
+// fullscreen. Renderers cache the value so drag handlers can synchronously
+// refuse cross-window detach while fullscreen is active.
+export const WINDOW_FULLSCREEN_STATE = 'window:fullscreenState' // main -> renderer
 
 // Dock window management
 export const DOCK_WINDOW_INIT = 'dock:windowInit'           // main -> renderer
@@ -144,6 +158,11 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 
 // Page capture
 export const CAPTURE_PAGE = 'capture-page'
+
+// Token usage tracking
+export const USAGE_GET_SUMMARY = 'usage:getSummary'
+export const USAGE_GET_PROJECT = 'usage:getProject'
+export const USAGE_UPDATE = 'usage:update'
 
 // Workspace management (main process is source of truth)
 export const WORKSPACE_LIST = 'workspace:list'

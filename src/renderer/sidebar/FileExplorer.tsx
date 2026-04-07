@@ -5,12 +5,12 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import log from '../lib/logger'
-import { RotateCw } from 'lucide-react'
+import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X, Folder, File } from '@phosphor-icons/react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
-import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
+import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { DockLayoutNode } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -49,9 +49,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [isLoading, setIsLoading] = useState(false)
   const [gitFiles, setGitFiles] = useState<Set<string> | undefined>(undefined)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
-  const [rootContextMenu, setRootContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
   const [rootCreateValue, setRootCreateValue] = useState('')
+  const [searchVisible, setSearchVisible] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const rootCreateInputRef = useRef<HTMLInputElement>(null)
   const lastSelectedPath = useRef<string | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
@@ -59,6 +61,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
 
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const createEditor = useAppStore((s) => s.createEditor)
+  const createTerminal = useAppStore((s) => s.createTerminal)
+  const removeWorkspace = useAppStore((s) => s.removeWorkspace)
+
+  const openSearch = useCallback(() => {
+    setSearchVisible(true)
+    setTimeout(() => searchInputRef.current?.focus(), 0)
+  }, [])
 
   // Build flat list of visible paths for shift-click range selection
   const visiblePaths = useMemo(() => {
@@ -189,8 +198,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   )
 
   const handleFileOpen = useCallback(
-    (filePaths: string[]) => {
-      const placement = isCanvasActiveInCenter()
+    (filePaths: string[], mode?: 'dock' | 'canvas') => {
+      // Resolve mode: explicit > infer from active center panel
+      // Default: always open as a dock tab in the center zone (alongside the
+      // canvas tab). Opening as a floating canvas node requires an explicit
+      // 'canvas' mode from the context menu.
+      const resolved = mode ?? 'dock'
+      const placement = resolved === 'canvas'
         ? undefined
         : { target: 'dock' as const, zone: 'center' as const }
       for (const filePath of filePaths) {
@@ -228,48 +242,114 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     }
   }, [rootCreating, rootCreateValue, rootPath, loadTree])
 
-  const handleRootContextMenu = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      e.preventDefault()
-      setRootContextMenu({ x: e.clientX, y: e.clientY })
-    }
-  }, [])
+  const folderName = rootPath.split('/').filter(Boolean).pop() ?? 'Explorer'
 
-  const rootContextMenuItems: ContextMenuItem[] = [
-    { label: 'New File…', onClick: () => startRootCreate('file') },
-    { label: 'New Folder…', onClick: () => startRootCreate('folder') },
-  ]
+  const handleRootContextMenu = useCallback(async (e: React.MouseEvent) => {
+    if (e.target !== e.currentTarget) return
+    e.preventDefault()
+    if (!window.electronAPI) return
+    const id = await window.electronAPI.showContextMenu([
+      { id: 'new-file', label: 'New File…' },
+      { id: 'new-folder', label: 'New Folder…' },
+      { type: 'separator' },
+      { id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' },
+      { id: 'open-terminal', label: 'Open in Integrated Terminal' },
+      { type: 'separator' },
+      { id: 'remove-workspace', label: 'Remove Folder from Workspace' },
+      { type: 'separator' },
+      { id: 'find-in-folder', label: 'Find in Folder…', accelerator: 'Alt+Shift+F' },
+      { type: 'separator' },
+      { id: 'copy-path', label: 'Copy Path', accelerator: 'Alt+Cmd+C' },
+      { id: 'copy-rel-path', label: 'Copy Relative Path', accelerator: 'Alt+Shift+Cmd+C' },
+    ])
+    switch (id) {
+      case 'new-file': startRootCreate('file'); break
+      case 'new-folder': startRootCreate('folder'); break
+      case 'reveal': window.electronAPI.shellShowInFolder(rootPath); break
+      case 'open-terminal':
+        createTerminal(selectedWorkspaceId, undefined, undefined, { target: 'dock', zone: 'bottom' })
+        break
+      case 'remove-workspace':
+        if (window.confirm(`Remove "${folderName}" from your workspaces?`)) {
+          removeWorkspace(selectedWorkspaceId)
+        }
+        break
+      case 'find-in-folder': openSearch(); break
+      case 'copy-path': navigator.clipboard.writeText(rootPath); break
+      case 'copy-rel-path': navigator.clipboard.writeText(folderName); break
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootPath, startRootCreate, createTerminal, selectedWorkspaceId, removeWorkspace, openSearch])
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
-  const folderName = rootPath.split('/').filter(Boolean).pop() ?? 'Explorer'
-
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center px-3 py-2 flex-shrink-0">
-        <span className="text-[12px] text-white/40 font-medium">
-          Explorer
-        </span>
-        <div className="flex-1" />
-        <button
-          className="text-white/40 hover:text-white/70 transition-colors"
-          onClick={handleReload}
-          title="Reload"
-        >
-          <RotateCw size={14} strokeWidth={1.5} />
-        </button>
-      </div>
+      <SidebarSectionHeader
+        title="Explorer"
+        subtitle={folderName}
+        actions={
+          <>
+            <SidebarHeaderButton onClick={() => startRootCreate('file')} title="New File">
+              <FilePlus size={13} />
+            </SidebarHeaderButton>
+            <SidebarHeaderButton onClick={() => startRootCreate('folder')} title="New Folder">
+              <FolderPlus size={13} />
+            </SidebarHeaderButton>
+            <SidebarHeaderButton
+              onClick={() => {
+                setSearchVisible((v) => {
+                  const next = !v
+                  if (next) setTimeout(() => searchInputRef.current?.focus(), 0)
+                  else setSearchQuery('')
+                  return next
+                })
+              }}
+              title="Search Files"
+            >
+              <MagnifyingGlass size={13} />
+            </SidebarHeaderButton>
+            <SidebarHeaderButton onClick={handleReload} title="Reload">
+              <ArrowClockwise size={12} />
+            </SidebarHeaderButton>
+          </>
+        }
+      />
 
-      {/* Divider */}
-      <div className="h-[1px] bg-white/10 mx-2 flex-shrink-0" />
-
-      {/* Folder name label */}
-      <div className="px-3 py-1 flex-shrink-0">
-        <span className="text-xs text-white/30 font-medium truncate block">{folderName}</span>
-      </div>
+      {searchVisible && (
+        <div className="px-2 py-1.5 border-b border-white/[0.06] flex items-center gap-1">
+          <div className="flex-1 relative">
+            <MagnifyingGlass
+              size={11}
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-white/30"
+            />
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchQuery('')
+                  setSearchVisible(false)
+                }
+                e.stopPropagation()
+              }}
+              placeholder="Search files"
+              className="w-full bg-white/[0.04] text-white/80 text-xs pl-7 pr-2 py-1 rounded border border-white/[0.06] focus:border-blue-500/50 outline-none"
+            />
+          </div>
+          {searchQuery && (
+            <SidebarHeaderButton
+              onClick={() => setSearchQuery('')}
+              title="Clear"
+            >
+              <X size={12} />
+            </SidebarHeaderButton>
+          )}
+        </div>
+      )}
 
       {/* Tree content */}
       {isLoading && nodes.length === 0 ? (
@@ -301,6 +381,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               onFileOpen={handleFileOpen}
               onTreeChanged={handleReload}
               visiblePaths={visiblePaths}
+              searchQuery={searchQuery.trim().toLowerCase()}
+              rootPath={rootPath}
             />
           ))}
 
@@ -309,20 +391,15 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
             <div className="h-7 flex items-center gap-1.5 px-2" style={{ paddingLeft: '8px' }}>
               <span className="flex-shrink-0 w-3" />
               <span className="flex-shrink-0" style={{ color: rootCreating === 'folder' ? '#E2B855' : '#9CA3AF' }}>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                  {rootCreating === 'folder' ? (
-                    <path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3.5H3a1 1 0 0 0-1 1z" />
-                  ) : (
-                    <>
-                      <path d="M9 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V6L9 2z" />
-                      <polyline points="9 2 9 6 13 6" />
-                    </>
-                  )}
-                </svg>
+                {rootCreating === 'folder' ? (
+                  <Folder size={14} />
+                ) : (
+                  <File size={14} />
+                )}
               </span>
               <input
                 ref={rootCreateInputRef}
-                className="flex-1 min-w-0 bg-[#2a2a30] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
+                className="flex-1 min-w-0 bg-[#262523] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
                 value={rootCreateValue}
                 placeholder={rootCreating === 'folder' ? 'folder name' : 'file name'}
                 onChange={(e) => setRootCreateValue(e.target.value)}
@@ -335,16 +412,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
-          )}
-
-          {/* Root-level context menu (empty space) */}
-          {rootContextMenu && (
-            <ContextMenu
-              x={rootContextMenu.x}
-              y={rootContextMenu.y}
-              items={rootContextMenuItems}
-              onClose={() => setRootContextMenu(null)}
-            />
           )}
         </div>
       )}

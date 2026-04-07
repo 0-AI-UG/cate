@@ -24,12 +24,12 @@ const workspaces: Map<string, WorkspaceInfo> = new Map()
 
 // Accent colors cycled for new workspaces
 const WORKSPACE_COLORS = [
-  '#007AFF', // systemBlue
-  '#FF9500', // systemOrange
-  '#34C759', // systemGreen
-  '#AF52DE', // systemPurple
-  '#FF3B30', // systemRed
-  '#5AC8FA', // systemTeal
+  '#0080ff', // pure blue
+  '#ff8000', // pure orange
+  '#00e000', // pure green
+  '#aa00ff', // pure violet
+  '#ff0000', // pure red
+  '#00e0e0', // pure cyan
 ]
 let colorIndex = 0
 

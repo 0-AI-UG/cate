@@ -8,18 +8,18 @@ import log from '../lib/logger'
 import {
   Check,
   X,
-  ChevronRight,
+  CaretRight,
   Terminal,
   Cpu,
   Diamond,
-  MousePointer,
+  CursorClick,
   Code,
-  Loader2,
-  Sparkles,
+  CircleNotch,
+  Sparkle,
   FileText,
   Folder,
-  Bot,
-} from 'lucide-react'
+  Robot,
+} from '@phosphor-icons/react'
 import type { AIToolId, AIConfigFile } from '../../shared/types'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
@@ -37,10 +37,10 @@ interface ToolMeta {
 }
 
 const TOOLS: ToolMeta[] = [
-  { id: 'claude',   name: 'Claude Code',   cliCommand: 'claude',   Icon: Sparkles },
+  { id: 'claude',   name: 'Claude Code',   cliCommand: 'claude',   Icon: Sparkle },
   { id: 'codex',    name: 'OpenAI Codex',  cliCommand: 'codex',    Icon: Cpu },
   { id: 'gemini',   name: 'Gemini CLI',    cliCommand: 'gemini',   Icon: Diamond },
-  { id: 'cursor',   name: 'Cursor',        cliCommand: 'cursor',   Icon: MousePointer },
+  { id: 'cursor',   name: 'Cursor',        cliCommand: 'cursor',   Icon: CursorClick },
   { id: 'opencode', name: 'OpenCode',      cliCommand: 'opencode', Icon: Code },
 ]
 
@@ -262,7 +262,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
       onClick={handleClose}
     >
       <div
-        className="relative bg-[#1E1E24] border border-white/[0.08] rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+        className="relative bg-[#1f1e1c] border border-white/[0.08] rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
@@ -302,7 +302,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                       <tool.Icon size={16} className="text-white/50 flex-shrink-0" />
                       <span className="text-sm text-white/80 flex-1">{tool.name}</span>
                       {checking ? (
-                        <Loader2 size={14} className="text-white/30 animate-spin" />
+                        <CircleNotch size={14} className="text-white/30 animate-spin" />
                       ) : installed ? (
                         <span className="flex items-center gap-1 text-xs text-emerald-400/80">
                           <Check size={12} />
@@ -323,7 +323,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white/[0.08] text-white/80 hover:bg-white/[0.12] hover:text-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
-                  <ChevronRight size={14} />
+                  <CaretRight size={14} />
                 </button>
               </div>
             </>
@@ -389,13 +389,13 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                 >
                   {scanning ? (
                     <>
-                      <Loader2 size={14} className="animate-spin" />
+                      <CircleNotch size={14} className="animate-spin" />
                       Scanning…
                     </>
                   ) : (
                     <>
                       Next
-                      <ChevronRight size={14} />
+                      <CaretRight size={14} />
                     </>
                   )}
                 </button>
@@ -423,7 +423,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                 <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                   {filePreviewEntries.map(({ toolId, toolName, file }) => {
                     const toolMeta = TOOLS.find((t) => t.id === toolId)
-                    const Icon = toolMeta?.Icon ?? Bot
+                    const Icon = toolMeta?.Icon ?? Robot
                     return (
                       <div
                         key={`${toolId}:${file.relativePath}`}
@@ -457,13 +457,13 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                 >
                   {creating ? (
                     <>
-                      <Loader2 size={14} className="animate-spin" />
+                      <CircleNotch size={14} className="animate-spin" />
                       Creating…
                     </>
                   ) : filePreviewEntries.length === 0 ? (
                     <>
                       Continue
-                      <ChevronRight size={14} />
+                      <CaretRight size={14} />
                     </>
                   ) : (
                     <>
@@ -519,7 +519,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                   onClick={handleOpenAIConfig}
                   className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white/[0.08] text-white/80 hover:bg-white/[0.12] hover:text-white/90 transition-colors"
                 >
-                  <Bot size={14} />
+                  <Robot size={14} />
                   Open AI Config Panel
                 </button>
                 <button

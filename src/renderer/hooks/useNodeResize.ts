@@ -9,8 +9,8 @@ import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
-import { minimumSize, snapNodeToGrid, findSharedBorders } from '../canvas/layoutEngine'
-import type { SharedBorder } from '../canvas/layoutEngine'
+import { minimumSize, snapNodeToGrid, snapNodeToGridSelective, findSharedBorders } from '../canvas/layoutEngine'
+import type { SharedBorder, SnapLine } from '../canvas/layoutEngine'
 import type { PanelType, Point, Size } from '../../shared/types'
 
 interface PendingResize {
@@ -138,6 +138,8 @@ export function useNodeResize(
   // Shared border state
   const sharedBordersRef = useRef<SharedBorder[]>([])
   const neighborStartRef = useRef<NeighborStartState[]>([])
+  // Track which axes were magnetically snapped in the last resize frame
+  const lastMagneticAxesRef = useRef<{ x: boolean; y: boolean }>({ x: false, y: false })
 
   const minSize = minimumSize(panelType)
 
@@ -149,6 +151,9 @@ export function useNodeResize(
       const state = canvasStoreApi.getState()
       const node = state.nodes[nodeId]
       if (!node || node.isPinned) return
+
+      // Snapshot canvas state so this resize can be undone (Cmd+Z).
+      state.pushHistory()
 
       resizeStateRef.current = {
         edge,
@@ -343,6 +348,118 @@ export function useNodeResize(
           }
         }
 
+        // -------- Magnetic snap (grid + neighbor edges) during hold --------
+        // Skip when shared-border resize is active (those neighbors are handled
+        // separately and we don't want to fight that constraint).
+        const settings = useSettingsStore.getState()
+        const magneticAxes = { x: false, y: false }
+        const guideLines: SnapLine[] = []
+
+        if (settings.snapToGridEnabled && neighborStarts.length === 0) {
+          const grid = settings.gridSpacing
+          const THRESHOLD = 8
+          const state2 = canvasStoreApi.getState()
+
+          const xCandidates: number[] = []
+          const yCandidates: number[] = []
+          for (const o of Object.values(state2.nodes)) {
+            if (o.id === nodeId) continue
+            xCandidates.push(o.origin.x, o.origin.x + o.size.width)
+            yCandidates.push(o.origin.y, o.origin.y + o.size.height)
+          }
+          for (const r of Object.values(state2.regions)) {
+            xCandidates.push(r.origin.x, r.origin.x + r.size.width)
+            yCandidates.push(r.origin.y, r.origin.y + r.size.height)
+          }
+
+          const findSnap = (value: number, candidates: number[]) => {
+            // Grid candidate
+            const gridSnap = Math.round(value / grid) * grid
+            let best = gridSnap
+            let bestDist = Math.abs(gridSnap - value)
+            for (const c of candidates) {
+              const d = Math.abs(c - value)
+              if (d < bestDist) {
+                bestDist = d
+                best = c
+              }
+            }
+            return { best, dist: bestDist }
+          }
+
+          // Continuous quadratic pull (matches drag magnetic feel)
+          const pull = (value: number, target: number, dist: number) => {
+            const t = 1 - (dist / THRESHOLD) ** 2
+            return value + (target - value) * t
+          }
+
+          const movesLeft =
+            rs.edge === 'left' || rs.edge === 'topLeft' || rs.edge === 'bottomLeft'
+          const movesRight =
+            rs.edge === 'right' || rs.edge === 'topRight' || rs.edge === 'bottomRight'
+          const movesTop =
+            rs.edge === 'top' || rs.edge === 'topLeft' || rs.edge === 'topRight'
+          const movesBottom =
+            rs.edge === 'bottom' || rs.edge === 'bottomLeft' || rs.edge === 'bottomRight'
+
+          if (movesLeft) {
+            const { best, dist } = findSnap(newOriginX, xCandidates)
+            if (dist < THRESHOLD) {
+              const right = newOriginX + newWidth
+              const pulled = pull(newOriginX, best, dist)
+              newOriginX = pulled
+              newWidth = right - pulled
+              magneticAxes.x = dist < 6
+              guideLines.push({ axis: 'x', position: best, type: 'edge' })
+            }
+          } else if (movesRight) {
+            const right = newOriginX + newWidth
+            const { best, dist } = findSnap(right, xCandidates)
+            if (dist < THRESHOLD) {
+              const pulled = pull(right, best, dist)
+              newWidth = pulled - newOriginX
+              magneticAxes.x = dist < 6
+              guideLines.push({ axis: 'x', position: best, type: 'edge' })
+            }
+          }
+
+          if (movesTop) {
+            const { best, dist } = findSnap(newOriginY, yCandidates)
+            if (dist < THRESHOLD) {
+              const bottom = newOriginY + newHeight
+              const pulled = pull(newOriginY, best, dist)
+              newOriginY = pulled
+              newHeight = bottom - pulled
+              magneticAxes.y = dist < 6
+              guideLines.push({ axis: 'y', position: best, type: 'edge' })
+            }
+          } else if (movesBottom) {
+            const bottom = newOriginY + newHeight
+            const { best, dist } = findSnap(bottom, yCandidates)
+            if (dist < THRESHOLD) {
+              const pulled = pull(bottom, best, dist)
+              newHeight = pulled - newOriginY
+              magneticAxes.y = dist < 6
+              guideLines.push({ axis: 'y', position: best, type: 'edge' })
+            }
+          }
+
+          // Re-clamp after magnetic adjustment
+          if (newWidth < minSize.width) {
+            const excess = minSize.width - newWidth
+            newWidth = minSize.width
+            if (movesLeft) newOriginX -= excess
+          }
+          if (newHeight < minSize.height) {
+            const excess = minSize.height - newHeight
+            newHeight = minSize.height
+            if (movesTop) newOriginY -= excess
+          }
+        }
+
+        lastMagneticAxesRef.current = magneticAxes
+        canvasStoreApi.getState().setSnapGuides({ lines: guideLines })
+
         // Accumulate geometry — don't update store directly
         pendingResize.current = {
           origin: { x: newOriginX, y: newOriginY },
@@ -395,10 +512,20 @@ export function useNodeResize(
           pendingResize.current = null
         }
 
-        // Snap primary node to grid if enabled
+        // Clear any snap guides shown during the resize
+        canvasStoreApi.getState().clearSnapGuides()
+
+        // Snap primary node to grid if enabled — skip axes that were
+        // magnetically pulled during the hold to avoid a visible jump.
         const settings = useSettingsStore.getState()
         if (settings.snapToGridEnabled) {
-          snapNodeToGrid(canvasStoreApi, nodeId, settings.gridSpacing, false)
+          const skipAxes = lastMagneticAxesRef.current
+          if (skipAxes.x || skipAxes.y) {
+            snapNodeToGridSelective(canvasStoreApi, nodeId, settings.gridSpacing, false, skipAxes)
+          } else {
+            snapNodeToGrid(canvasStoreApi, nodeId, settings.gridSpacing, false)
+          }
+          lastMagneticAxesRef.current = { x: false, y: false }
 
           // Adjust neighbors so shared border stays aligned after snap
           if (sharedBordersRef.current.length > 0) {

@@ -61,7 +61,7 @@ export default function TerminalPanel({
   const containerRef = useRef<HTMLDivElement>(null)
   const renderBoxRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
-  const fitTimeoutRef = useRef<(() => void) | null>(null)
+  const fitRafRef = useRef<number | null>(null)
   const [renderScale, setRenderScale] = useState(1.0)
 
   const [showSearch, setShowSearch] = useState(false)
@@ -158,10 +158,10 @@ export default function TerminalPanel({
 
         // 3. ResizeObserver — keep xterm sized to the render box
         //    Debounced to avoid expensive fit() calls during rapid resize (e.g. node drag).
-        let fitTimeoutId = 0
         const resizeObserver = new ResizeObserver(() => {
-          clearTimeout(fitTimeoutId)
-          fitTimeoutId = window.setTimeout(() => {
+          if (fitRafRef.current !== null) cancelAnimationFrame(fitRafRef.current)
+          fitRafRef.current = requestAnimationFrame(() => {
+            fitRafRef.current = null
             try {
               const viewport = entry.terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
               const wasAtBottom = viewport
@@ -176,11 +176,10 @@ export default function TerminalPanel({
             } catch {
               // Ignore fit errors during rapid resizing or zero-size frames
             }
-          }, 50)
+          })
         })
         resizeObserver.observe(renderBox)
         resizeObserverRef.current = resizeObserver
-        fitTimeoutRef.current = () => clearTimeout(fitTimeoutId)
       })
       .catch(() => {
         // getOrCreate writes its own error message into the terminal; nothing
@@ -191,10 +190,10 @@ export default function TerminalPanel({
     return () => {
       cancelled = true
 
-      // Clear pending fit timeout to prevent fit() on a disposed entry
-      if (fitTimeoutRef.current) {
-        fitTimeoutRef.current()
-        fitTimeoutRef.current = null
+      // Cancel pending fit RAF to prevent fit() on a disposed entry
+      if (fitRafRef.current !== null) {
+        cancelAnimationFrame(fitRafRef.current)
+        fitRafRef.current = null
       }
 
       terminalRegistry.detach(panelId, renderBox)
@@ -241,15 +240,28 @@ export default function TerminalPanel({
   // scale(zoom) — is unchanged. Cols × rows stay constant because both the
   // box and the cell grow by the same factor before fit() runs.
   //
-  // Debounced 150ms after the last zoom change so a continuous pinch only
-  // rebuilds the atlas at gesture end (each rebuild is expensive).
+  // Waits 2 idle animation frames after the last zoom change so a continuous
+  // pinch only rebuilds the atlas at gesture end (each rebuild is expensive).
   // -------------------------------------------------------------------------
 
+  const rescaleRafRef = useRef<number | null>(null)
   useEffect(() => {
     const target = snapRenderScale(zoomLevel)
     if (target === renderScale) return
-    const id = window.setTimeout(() => setRenderScale(target), 150)
-    return () => clearTimeout(id)
+    if (rescaleRafRef.current !== null) cancelAnimationFrame(rescaleRafRef.current)
+    const capturedZoom = zoomLevel
+    rescaleRafRef.current = requestAnimationFrame(() => {
+      rescaleRafRef.current = requestAnimationFrame(() => {
+        rescaleRafRef.current = null
+        if (snapRenderScale(capturedZoom) === target) setRenderScale(target)
+      })
+    })
+    return () => {
+      if (rescaleRafRef.current !== null) {
+        cancelAnimationFrame(rescaleRafRef.current)
+        rescaleRafRef.current = null
+      }
+    }
   }, [zoomLevel, renderScale])
 
   useEffect(() => {
@@ -404,7 +416,7 @@ export default function TerminalPanel({
   return (
     <div className="w-full h-full flex flex-col" style={{ padding: 0 }}>
       {showSearch && (
-        <div className="flex items-center gap-1 px-2 py-1 bg-[#28282E] border-b border-white/[0.05] shrink-0">
+        <div className="flex items-center gap-1 px-2 py-1 bg-[#1a1917] border-b border-white/[0.05] shrink-0">
           <input
             autoFocus
             type="text"
@@ -416,7 +428,7 @@ export default function TerminalPanel({
               }
               if (e.key === 'Escape') handleCloseSearch()
             }}
-            className="flex-1 bg-[#1E1E24] text-white text-xs px-2 py-1 rounded border border-white/[0.1] outline-none focus:border-blue-500/50"
+            className="flex-1 bg-[#1f1e1c] text-white text-xs px-2 py-1 rounded border border-white/[0.1] outline-none focus:border-blue-500/50"
             placeholder="Search terminal..."
           />
           <button

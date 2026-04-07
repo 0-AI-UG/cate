@@ -91,11 +91,10 @@ function createProgressWindow(): BrowserWindow {
     resizable: false,
     minimizable: false,
     maximizable: false,
-    closable: false,
     frame: false,
     show: false,
     alwaysOnTop: true,
-    backgroundColor: '#1E1E24',
+    backgroundColor: '#1f1e1c',
     webPreferences: { contextIsolation: true },
   })
 
@@ -103,7 +102,7 @@ function createProgressWindow(): BrowserWindow {
 <html><head><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-         background: #1E1E24; color: #e0e0e0; padding: 24px; display: flex;
+         background: #1f1e1c; color: #e0e0e0; padding: 24px; display: flex;
          flex-direction: column; justify-content: center; height: 100vh;
          -webkit-app-region: drag; }
   .label { font-size: 13px; margin-bottom: 12px; }
@@ -121,8 +120,18 @@ function createProgressWindow(): BrowserWindow {
 }
 
 function setProgress(win: BrowserWindow, pct: number): void {
+  if (win.isDestroyed()) return
   const js = `document.getElementById('bar').style.width='${Math.round(pct)}%';`
     + `document.getElementById('label').textContent='Downloading update… ${Math.round(pct)}%';`
+  win.webContents.executeJavaScript(js).catch(() => {})
+}
+
+function setStatus(win: BrowserWindow, text: string, indeterminate = false): void {
+  if (win.isDestroyed()) return
+  const bar = indeterminate ? '100' : null
+  const js =
+    (bar ? `document.getElementById('bar').style.width='${bar}%';` : '') +
+    `document.getElementById('label').textContent=${JSON.stringify(text)};`
   win.webContents.executeJavaScript(js).catch(() => {})
 }
 
@@ -167,9 +176,9 @@ async function downloadFile(
 // Platform-specific install
 // ---------------------------------------------------------------------------
 
-function exec(cmd: string, args: string[]): Promise<string> {
+function exec(cmd: string, args: string[], timeoutMs = 10 * 60 * 1000): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: 60000 }, (err, stdout) => {
+    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
       if (err) reject(err)
       else resolve(stdout.trim())
     })
@@ -313,27 +322,26 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
       await downloadFile(asset.browser_download_url, destPath, (pct) => {
         setProgress(progressWin, pct)
       })
-      progressWin.close()
-    } catch (err) {
-      progressWin.close()
-      throw err
-    }
 
-    log.info('[fallback-updater] Downloaded %s', destPath)
+      log.info('[fallback-updater] Downloaded %s', destPath)
+      setStatus(progressWin, 'Installing update…', true)
 
-    // Install per platform
-    switch (process.platform) {
-      case 'darwin':
-        await installMacOS(destPath)
-        break
-      case 'win32':
-        await installWindows(destPath)
-        break
-      case 'linux':
-        await installLinux(destPath)
-        break
-      default:
-        shell.openExternal(data.html_url)
+      // Install per platform
+      switch (process.platform) {
+        case 'darwin':
+          await installMacOS(destPath)
+          break
+        case 'win32':
+          await installWindows(destPath)
+          break
+        case 'linux':
+          await installLinux(destPath)
+          break
+        default:
+          shell.openExternal(data.html_url)
+      }
+    } finally {
+      if (!progressWin.isDestroyed()) progressWin.destroy()
     }
   } catch (err: any) {
     log.error('[fallback-updater] Error:', err)

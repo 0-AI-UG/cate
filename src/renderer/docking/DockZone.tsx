@@ -87,7 +87,7 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
   return (
     <div
       ref={zoneRef}
-      className={`flex flex-col overflow-hidden relative ${isCenter ? 'bg-canvas-bg' : 'bg-[#1e1e1e]'}`}
+      className={`flex flex-col overflow-hidden relative ${isCenter ? 'bg-canvas-bg' : 'bg-[#1f1e1c]'}`}
       style={style}
     >
       {zone.layout ? renderNode(zone.layout) : (

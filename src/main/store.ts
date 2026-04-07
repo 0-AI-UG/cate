@@ -34,7 +34,38 @@ async function getStore(): Promise<any> {
   if (storeInstance) return storeInstance
   const { default: Store } = await import('electron-store')
   storeInstance = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
+  // Hydrate sync cache from the freshly loaded store
+  try {
+    Object.assign(settingsCache, storeInstance.store as Partial<AppSettings>)
+  } catch { /* noop */ }
   return storeInstance
+}
+
+// ---------------------------------------------------------------------------
+// Synchronous settings cache
+// Loaded at startup directly from the electron-store JSON file so that the
+// main process can read settings before the async ESM store is initialized
+// (e.g. inside BrowserWindow constructors). Kept in sync on every SETTINGS_SET.
+// ---------------------------------------------------------------------------
+const settingsCache: Partial<AppSettings> = {}
+
+/** Read settings from the on-disk electron-store JSON file (sync). */
+export function loadSettingsSyncFromDisk(): void {
+  try {
+    const cfgPath = path.join(app.getPath('userData'), 'config.json')
+    if (!fsSync.existsSync(cfgPath)) return
+    const raw = fsSync.readFileSync(cfgPath, 'utf-8')
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') {
+      Object.assign(settingsCache, parsed)
+    }
+  } catch (err) {
+    log.warn('Sync settings load failed: %O', err)
+  }
+}
+
+export function getSettingSync<K extends keyof AppSettings>(key: K): AppSettings[K] {
+  return (settingsCache[key] ?? DEFAULT_SETTINGS[key]) as AppSettings[K]
 }
 
 function getSessionPath(): string {
@@ -127,6 +158,7 @@ export function registerHandlers(): void {
     async (_event, key: keyof AppSettings, value: unknown) => {
       const store = await getStore()
       store.set(key, value as never)
+      ;(settingsCache as Record<string, unknown>)[key as string] = value
     },
   )
 

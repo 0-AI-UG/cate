@@ -55,8 +55,11 @@ import {
   SESSION_FLUSH_SAVE,
   APP_GET_PATH,
   MENU_OPEN_SETTINGS,
+  MENU_TRIGGER_ACTION,
+  MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
   DIALOG_SAVE_FILE,
+  DIALOG_CONFIRM_UNSAVED,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   LAYOUT_SAVE,
@@ -78,13 +81,16 @@ import {
   WINDOW_CREATE,
   WINDOW_GET_ID,
   WINDOW_GET_TYPE,
+  WINDOW_SET_TITLE,
   PANEL_TRANSFER,
   PANEL_RECEIVE,
   PANEL_TRANSFER_ACK,
   PANEL_WINDOWS_LIST,
   PANEL_WINDOW_DOCK_BACK,
+  PANEL_WINDOW_SYNC_PTY,
   DRAG_START,
   DRAG_DETACH,
+  WINDOW_FULLSCREEN_STATE,
   DRAG_END,
   DOCK_WINDOW_INIT,
   DOCK_WINDOW_SYNC_STATE,
@@ -100,10 +106,32 @@ import {
   WORKSPACE_REMOVE,
   WORKSPACE_GET,
   WORKSPACE_CHANGED,
+  USAGE_GET_SUMMARY,
+  USAGE_GET_PROJECT,
+  USAGE_UPDATE,
   WEBVIEW_SCREENSHOT,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
 } from '../shared/ipc-channels'
+
+// Cache native-fullscreen state so renderer drag handlers can synchronously
+// check it without an IPC round-trip on every mousemove. Main BROADCASTS
+// `WINDOW_FULLSCREEN_STATE` whenever any window enters/leaves fullscreen
+// (push updates) AND also supports `sendSync` with the same channel as a
+// definitive pull — used once per drag start to avoid stale state.
+let cachedFullscreen = false
+ipcRenderer.on(WINDOW_FULLSCREEN_STATE, (_event, value: boolean) => {
+  cachedFullscreen = Boolean(value)
+})
+function fullscreenLiveCheck(): boolean {
+  try {
+    const v = ipcRenderer.sendSync(WINDOW_FULLSCREEN_STATE)
+    cachedFullscreen = Boolean(v)
+    return cachedFullscreen
+  } catch {
+    return cachedFullscreen
+  }
+}
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ---------------------------------------------------------------------------
@@ -447,6 +475,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DIALOG_SAVE_FILE, options)
   },
 
+  confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean }): Promise<'save' | 'discard' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_CONFIRM_UNSAVED, payload)
+  },
+
   // ---------------------------------------------------------------------------
   // Recent Projects
   // ---------------------------------------------------------------------------
@@ -575,6 +607,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(WINDOW_GET_TYPE)
   },
 
+  windowSetTitle(title: string): Promise<void> {
+    return ipcRenderer.invoke(WINDOW_SET_TITLE, title)
+  },
+
   // ---------------------------------------------------------------------------
   // Panel transfer (cross-window)
   // ---------------------------------------------------------------------------
@@ -599,6 +635,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(PANEL_WINDOWS_LIST)
   },
 
+  panelWindowSyncPty(ptyId: string): Promise<void> {
+    return ipcRenderer.invoke(PANEL_WINDOW_SYNC_PTY, ptyId)
+  },
+
   panelWindowDockBack(): Promise<void> {
     return ipcRenderer.invoke(PANEL_WINDOW_DOCK_BACK)
   },
@@ -619,8 +659,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DRAG_START, snapshot)
   },
 
-  dragDetach(snapshot: unknown, workspaceId?: string): Promise<number> {
+  dragDetach(snapshot: unknown, workspaceId?: string): Promise<number | null> {
     return ipcRenderer.invoke(DRAG_DETACH, snapshot, workspaceId)
+  },
+
+  /** Synchronous check: is any Cate BrowserWindow currently in macOS
+   *  native fullscreen? Uses the cached push value when available and
+   *  falls back to a sync IPC for the authoritative answer. Drag handlers
+   *  call this on every mousemove — that's fine at ~60 Hz. */
+  isMainWindowFullscreen(): boolean {
+    return fullscreenLiveCheck()
+  },
+
+  /** Subscribe to fullscreen state changes. Fires whenever any Cate window
+   *  enters or leaves macOS native fullscreen. */
+  onFullscreenChange(callback: (isFullscreen: boolean) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: boolean): void => {
+      callback(Boolean(value))
+    }
+    ipcRenderer.on(WINDOW_FULLSCREEN_STATE, listener)
+    return () => { ipcRenderer.removeListener(WINDOW_FULLSCREEN_STATE, listener) }
   },
 
   onDragEnd(callback: () => void): () => void {
@@ -728,9 +786,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Menu actions (main -> renderer)
   // ---------------------------------------------------------------------------
 
+  showContextMenu(items: unknown): Promise<string | null> {
+    return ipcRenderer.invoke(MENU_SHOW_CONTEXT, items)
+  },
+
   onMenuOpenSettings(callback: () => void): () => void {
     const listener = (): void => { callback() }
     ipcRenderer.on(MENU_OPEN_SETTINGS, listener)
     return () => { ipcRenderer.removeListener(MENU_OPEN_SETTINGS, listener) }
+  },
+
+  onMenuTriggerAction(callback: (action: string) => void): () => void {
+    const listener = (_e: unknown, action: string): void => { callback(action) }
+    ipcRenderer.on(MENU_TRIGGER_ACTION, listener)
+    return () => { ipcRenderer.removeListener(MENU_TRIGGER_ACTION, listener) }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Token usage tracking
+  // ---------------------------------------------------------------------------
+
+  usageGetSummary(): Promise<unknown> {
+    return ipcRenderer.invoke(USAGE_GET_SUMMARY)
+  },
+
+  usageGetProject(projectPath: string): Promise<unknown> {
+    return ipcRenderer.invoke(USAGE_GET_PROJECT, projectPath)
+  },
+
+  onUsageUpdate(callback: (changedProjects: string[]) => void): () => void {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: { changedProjects: string[] },
+    ): void => {
+      callback(payload.changedProjects)
+    }
+    ipcRenderer.on(USAGE_UPDATE, listener)
+    return () => { ipcRenderer.removeListener(USAGE_UPDATE, listener) }
   },
 })

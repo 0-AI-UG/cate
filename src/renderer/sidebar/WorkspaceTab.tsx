@@ -1,11 +1,74 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
-import { X } from 'lucide-react'
-import type { WorkspaceState } from '../../shared/types'
+import { X, CaretRight, Terminal as TerminalIcon, Globe, FileCode, GitBranch, Folder, FolderPlus, SquaresFour, List } from '@phosphor-icons/react'
+import type { WorkspaceState, PanelType, PanelLocation } from '../../shared/types'
+import { ALL_ZONES } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
-import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
+import { useAppStore, WORKSPACE_COLORS, getCanvasOperations } from '../stores/appStore'
+import { useDockStore } from '../stores/dockStore'
+import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import { useUIStore } from '../stores/uiStore'
-import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
+import { useProjectUsage } from '../stores/usageStore'
+import type { NativeContextMenuItem } from '../../shared/electron-api'
+
+// -----------------------------------------------------------------------------
+// Panel jump helper — focus a panel inside a workspace, switching workspace
+// first if necessary. Mirrors notificationStore.executeAction polling logic.
+// -----------------------------------------------------------------------------
+
+async function focusWorkspacePanel(workspaceId: string, panelId: string): Promise<void> {
+  const app = useAppStore.getState()
+  if (app.selectedWorkspaceId !== workspaceId) {
+    await app.selectWorkspace(workspaceId)
+  }
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (attempt > 0) await new Promise<void>((r) => setTimeout(r, 50))
+
+    const dock = useDockStore.getState()
+    let location: PanelLocation | null = dock.getPanelLocation(panelId) ?? null
+    if (!location) {
+      for (const zoneName of ALL_ZONES) {
+        const zone = dock.zones[zoneName]
+        if (!zone.layout) continue
+        const stack = findStackContainingPanel(zone.layout, panelId)
+        if (stack) { location = { type: 'dock', zone: zoneName, stackId: stack.id }; break }
+      }
+    }
+    if (location?.type === 'dock') {
+      const zone = dock.zones[location.zone]
+      if (!zone.visible) dock.toggleZone(location.zone)
+      if (zone.layout) {
+        const stack = findTabStack(zone.layout, location.stackId)
+        if (stack) {
+          const idx = stack.panelIds.indexOf(panelId)
+          if (idx >= 0) dock.setActiveTab(location.stackId, idx)
+        }
+      }
+      return
+    }
+
+    const ops = getCanvasOperations()
+    const nodeId = ops?.storeApi?.getState()?.nodeForPanel(panelId)
+    if (nodeId) { ops!.focusPanelNode(panelId); return }
+  }
+}
+
+const PANEL_ICONS: Record<PanelType, typeof TerminalIcon> = {
+  terminal: TerminalIcon,
+  browser: Globe,
+  editor: FileCode,
+  git: GitBranch,
+  fileExplorer: Folder,
+  projectList: List,
+  canvas: SquaresFour,
+}
+
+function formatTokensBadge(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
 
 const PULSE_KEYFRAMES = `
 @keyframes sidebar-pulse-ring {
@@ -23,12 +86,12 @@ function ensurePulseStyles() {
 }
 
 const COLOR_NAMES: Record<string, string> = {
-  '#007AFF': 'Blue',
-  '#FF9500': 'Orange',
-  '#34C759': 'Green',
-  '#AF52DE': 'Purple',
-  '#FF3B30': 'Red',
-  '#5AC8FA': 'Teal',
+  '#5a9ed6': 'Blue',
+  '#e8893a': 'Amber',
+  '#7fc063': 'Green',
+  '#b57ad0': 'Orchid',
+  '#e05a4a': 'Red',
+  '#4ec2c2': 'Teal',
 }
 
 function truncatePath(fullPath: string): string {
@@ -65,6 +128,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }))
 
   const gitInfo = useStatusStore((s) => s.gitInfo[workspace.id] ?? null)
+  const projectUsage = useProjectUsage(workspace.rootPath || undefined)
 
   // Derive ports, cwd, claudeState from the single store snapshot
   const ports = useMemo(() => {
@@ -82,18 +146,73 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return cwds.length > 0 ? cwds[0] : null
   }, [wsStatus?.terminalCwd])
 
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [isExpanded, setIsExpanded] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY })
-  }, [])
-
-  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+    if (!window.electronAPI) return
+    const colorSubmenu: NativeContextMenuItem[] = WORKSPACE_COLORS.map((color) => ({
+      id: `color:${color}`,
+      label: (COLOR_NAMES[color] || color) + (color === workspace.color ? ' ✓' : ''),
+      enabled: color !== workspace.color,
+    }))
+    const items: NativeContextMenuItem[] = [
+      { id: 'select', label: 'Select Workspace', enabled: !isSelected },
+      { id: 'rename', label: 'Rename Workspace' },
+      { label: 'Change Color', submenu: colorSubmenu },
+      { type: 'separator' },
+      { id: 'select-folder', label: 'Select Project Folder' },
+      { id: 'agent-setup', label: 'Agent Setup' },
+      { id: 'copy-cwd', label: 'Copy Working Directory' },
+      { type: 'separator' },
+      { id: 'duplicate', label: 'Duplicate Workspace' },
+      { id: 'close-panels', label: 'Close All Panels', enabled: Object.keys(workspace.panels).length > 0 },
+      { type: 'separator' },
+      { id: 'remove', label: 'Close Workspace' },
+    ]
+    const id = await window.electronAPI.showContextMenu(items)
+    if (!id) return
+    const app = useAppStore.getState()
+    if (id.startsWith('color:')) {
+      app.setWorkspaceColor(workspace.id, id.slice(6))
+      return
+    }
+    switch (id) {
+      case 'select': app.selectWorkspace(workspace.id); break
+      case 'rename':
+        setRenameValue(workspace.name || workspace.rootPath.split('/').pop() || 'Workspace')
+        setIsRenaming(true)
+        break
+      case 'select-folder': {
+        const path = await window.electronAPI.openFolderDialog()
+        if (path) app.setWorkspaceRootPath(workspace.id, path)
+        break
+      }
+      case 'agent-setup':
+        app.selectWorkspace(workspace.id)
+        useUIStore.getState().setActiveRightSidebarView('aiConfig')
+        break
+      case 'copy-cwd': {
+        const statusState = useStatusStore.getState()
+        const ws = statusState.workspaces[workspace.id]
+        let dir: string | undefined
+        if (ws) {
+          const cwds = Object.values(ws.terminalCwd)
+          dir = cwds[0]
+        }
+        if (!dir) dir = workspace.rootPath || undefined
+        if (dir) navigator.clipboard.writeText(dir)
+        break
+      }
+      case 'duplicate': app.duplicateWorkspace(workspace.id); break
+      case 'close-panels': app.closeAllPanels(workspace.id); break
+      case 'remove': app.removeWorkspace(workspace.id); break
+    }
+  }, [workspace.id, workspace.name, workspace.rootPath, workspace.color, workspace.panels, isSelected])
 
   // Focus rename input when entering rename mode
   useEffect(() => {
@@ -111,86 +230,69 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     setIsRenaming(false)
   }, [renameValue, workspace.id, workspace.name])
 
-  const contextMenuItems = useMemo((): ContextMenuItem[] => {
-    const { selectWorkspace, setWorkspaceColor, duplicateWorkspace, removeWorkspace, setWorkspaceRootPath, closeAllPanels } = useAppStore.getState()
-
-    const colorSwatch = (c: string) => (
-      <span className="inline-block w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
-    )
-    const colorSubmenu: ContextMenuItem[] = WORKSPACE_COLORS.map((color) => ({
-      label: COLOR_NAMES[color] || color,
-      icon: colorSwatch(color),
-      onClick: () => setWorkspaceColor(workspace.id, color),
-      disabled: color === workspace.color,
-    }))
-
-    return [
-      {
-        label: 'Select Workspace',
-        onClick: () => selectWorkspace(workspace.id),
-        disabled: isSelected,
-      },
-      {
-        label: 'Rename Workspace',
-        onClick: () => {
-          setRenameValue(workspace.name || workspace.rootPath.split('/').pop() || 'Workspace')
-          setIsRenaming(true)
-        },
-      },
-      {
-        label: 'Change Color',
-        onClick: () => {},
-        submenu: colorSubmenu,
-      },
-      { label: '', onClick: () => {}, separator: true },
-      {
-        label: 'Select Project Folder',
-        onClick: async () => {
-          const path = await window.electronAPI.openFolderDialog()
-          if (path) setWorkspaceRootPath(workspace.id, path)
-        },
-      },
-      {
-        label: 'Agent Setup',
-        onClick: () => {
-          selectWorkspace(workspace.id)
-          useUIStore.getState().setActiveRightSidebarView('aiConfig')
-        },
-      },
-      {
-        label: 'Copy Working Directory',
-        onClick: () => {
-          const statusState = useStatusStore.getState()
-          const wsStatus = statusState.workspaces[workspace.id]
-          let dir: string | undefined
-          if (wsStatus) {
-            const cwds = Object.values(wsStatus.terminalCwd)
-            dir = cwds[0]
-          }
-          if (!dir) dir = workspace.rootPath || undefined
-          if (dir) navigator.clipboard.writeText(dir)
-        },
-      },
-      { label: '', onClick: () => {}, separator: true },
-      {
-        label: 'Duplicate Workspace',
-        onClick: () => duplicateWorkspace(workspace.id),
-      },
-      {
-        label: 'Close All Panels',
-        onClick: () => closeAllPanels(workspace.id),
-        disabled: Object.keys(workspace.panels).length === 0,
-      },
-      { label: '', onClick: () => {}, separator: true },
-      {
-        label: 'Close Workspace',
-        onClick: () => removeWorkspace(workspace.id),
-        danger: true,
-      },
-    ]
-  }, [workspace.id, workspace.name, workspace.rootPath, workspace.panels, isSelected])
-
   const panelCount = Object.keys(workspace.panels).length
+
+  // Sorted panel list for expanded view (group by type for stability)
+  const panelList = useMemo(() => {
+    const TYPE_ORDER: Record<string, number> = { terminal: 0, editor: 1, browser: 2, git: 3, fileExplorer: 4, projectList: 5, canvas: 6 }
+    return Object.values(workspace.panels).slice().sort((a, b) => {
+      const ta = TYPE_ORDER[a.type] ?? 99
+      const tb = TYPE_ORDER[b.type] ?? 99
+      if (ta !== tb) return ta - tb
+      return (a.title || '').localeCompare(b.title || '')
+    })
+  }, [workspace.panels])
+
+  const handlePanelClick = useCallback(async (e: React.MouseEvent, panelId: string) => {
+    e.stopPropagation()
+    await focusWorkspacePanel(workspace.id, panelId)
+  }, [workspace.id])
+
+  // Empty state: workspace has no folder selected yet — render a muted
+  // "Add new Workspace" card that opens the folder picker on click.
+  // NOTE: placed after all hooks to keep hook order stable across renders.
+  if (!workspace.rootPath) {
+    const handlePickFolder = async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!isSelected) onClick()
+      const path = await window.electronAPI.openFolderDialog()
+      if (path) {
+        useAppStore.getState().setWorkspaceRootPath(workspace.id, path)
+      }
+    }
+    return (
+      <div
+        className={`group relative rounded-lg cursor-pointer transition-colors px-3 py-2.5 border border-dashed ${
+          isSelected
+            ? 'border-white/30 bg-white/[0.04] text-white/70'
+            : 'border-white/10 bg-white/[0.02] text-white/40 hover:text-white/70 hover:border-white/25 hover:bg-white/[0.04]'
+        }`}
+        onClick={handlePickFolder}
+        onContextMenu={handleContextMenu}
+        title="Click to choose a project folder"
+      >
+        <div className="flex items-center gap-2">
+          <FolderPlus size={14} className="flex-shrink-0 opacity-70" />
+          <span className="flex-1 min-w-0 text-sm font-medium truncate">
+            Add new Workspace
+          </span>
+          <button
+            className="flex-shrink-0 opacity-40 hover:opacity-100 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose()
+            }}
+            title="Close Workspace"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div className="mt-1 text-[11px] opacity-60 truncate">
+          Choose a project folder
+        </div>
+      </div>
+    )
+  }
 
   // Show custom name if user renamed the workspace, otherwise show the path
   const defaultName = workspace.rootPath ? workspace.rootPath.split('/').pop() || 'Workspace' : 'Workspace'
@@ -214,25 +316,39 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
 
   return (
     <div
-      className={`relative rounded-lg cursor-pointer transition-colors px-3 py-2.5 ${
-        isSelected
-          ? 'text-white'
-          : 'hover:bg-white/[0.05] text-white/80'
+      className={`group relative rounded-lg cursor-pointer transition-colors px-3 py-2.5 text-white ${
+        isSelected ? '' : 'bg-white/[0.05] hover:text-white'
       }`}
-      style={isSelected ? { backgroundColor: workspace.color } : undefined}
+      style={
+        isSelected
+          ? { backgroundColor: workspace.color }
+          : ({ ['--ws-hover-bg' as never]: workspace.color } as React.CSSProperties)
+      }
+      onMouseEnter={(e) => {
+        if (!isSelected) e.currentTarget.style.backgroundColor = workspace.color
+      }}
+      onMouseLeave={(e) => {
+        if (!isSelected) e.currentTarget.style.backgroundColor = ''
+      }}
       onClick={onClick}
       onContextMenu={handleContextMenu}
     >
       {/* Row 1: Badge + Path + Close */}
       <div className="flex items-center gap-2">
-        {panelCount > 0 && (
-          <span
-            className="flex-shrink-0 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-white"
+        {panelCount > 0 ? (
+          <button
+            className="flex-shrink-0 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-white relative group/badge"
             style={{ backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : workspace.color }}
+            onClick={(e) => { e.stopPropagation(); setIsExpanded((v) => !v) }}
+            title={isExpanded ? 'Collapse panels' : 'Expand panels'}
           >
-            {panelCount}
-          </span>
-        )}
+            <span className="group-hover/badge:opacity-0 transition-opacity">{panelCount}</span>
+            <CaretRight
+              size={12}
+              className={`absolute opacity-0 group-hover/badge:opacity-100 transition-all ${isExpanded ? 'rotate-90' : ''}`}
+            />
+          </button>
+        ) : null}
 
         {isRenaming ? (
           <input
@@ -290,15 +406,44 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         </div>
       )}
 
-      {/* Context menu */}
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={contextMenuItems}
-          onClose={closeContextMenu}
-        />
+      {/* Row 6: Token usage badge */}
+      {projectUsage && projectUsage.totals.messageCount > 0 && (() => {
+        const totalTok = projectUsage.totals.tokens.input
+          + projectUsage.totals.tokens.output
+          + projectUsage.totals.tokens.cacheCreate
+          + projectUsage.totals.tokens.cacheRead
+        if (totalTok === 0) return null
+        const costStr = projectUsage.totals.costUsd !== null
+          ? ` · $${projectUsage.totals.costUsd.toFixed(2)}`
+          : ''
+        return (
+          <div className="mt-0.5 text-[10px] opacity-50 font-mono">
+            {`\u25C6 ${formatTokensBadge(totalTok)} tok${costStr}`}
+          </div>
+        )
+      })()}
+
+      {/* Expanded panel list — click to jump */}
+      {isExpanded && panelList.length > 0 && (
+        <div className="mt-2 -mx-1 flex flex-col gap-0.5">
+          {panelList.map((p) => {
+            const Icon = PANEL_ICONS[p.type] ?? SquaresFour
+            const label = p.title || p.filePath?.split('/').pop() || p.url || p.type
+            return (
+              <button
+                key={p.id}
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-white/80 hover:text-white hover:bg-black/25 text-left min-w-0"
+                onClick={(e) => handlePanelClick(e, p.id)}
+                title={p.filePath || p.url || label}
+              >
+                <Icon size={12} className="flex-shrink-0 opacity-70" />
+                <span className="truncate min-w-0 flex-1">{label}</span>
+              </button>
+            )
+          })}
+        </div>
       )}
+
     </div>
   )
 }

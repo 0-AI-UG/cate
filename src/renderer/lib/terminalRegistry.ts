@@ -19,26 +19,29 @@ import { terminalRestoreData, replayTerminalLog } from './session'
 // ---------------------------------------------------------------------------
 
 const TERMINAL_THEME = {
-  background: '#1E1E24',
+  background: '#1f1e1c',
   foreground: '#D4D4D4',
   cursor: '#AEAFAD',
   selectionBackground: '#264F78',
   selectionForeground: '#D4D4D4',
-  black: '#1E1E24',
-  red: '#F44747',
-  green: '#4EC9B0',
-  yellow: '#D7BA7D',
-  blue: '#569CD6',
-  magenta: '#C586C0',
-  cyan: '#9CDCFE',
-  white: '#D4D4D4',
-  brightBlack: '#808080',
-  brightRed: '#F44747',
-  brightGreen: '#4EC9B0',
-  brightYellow: '#D7BA7D',
-  brightBlue: '#569CD6',
-  brightMagenta: '#C586C0',
-  brightCyan: '#9CDCFE',
+  // Standard ANSI palette (VS Code Dark+ terminal defaults). Keep these
+  // close to what shells, ls, git, and TUI apps expect — mapping them to
+  // editor syntax colors makes ordinary terminal output look wrong.
+  black: '#000000',
+  red: '#CD3131',
+  green: '#0DBC79',
+  yellow: '#E5E510',
+  blue: '#2472C8',
+  magenta: '#BC3FBC',
+  cyan: '#11A8CD',
+  white: '#E5E5E5',
+  brightBlack: '#666666',
+  brightRed: '#F14C4C',
+  brightGreen: '#23D18B',
+  brightYellow: '#F5F543',
+  brightBlue: '#3B8EEA',
+  brightMagenta: '#D670D6',
+  brightCyan: '#29B8DB',
   brightWhite: '#FFFFFF',
 }
 
@@ -108,7 +111,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     scrollback: 10000,
     macOptionIsMeta: true,
     altClickMovesCursor: true,
-    drawBoldTextInBrightColors: false,
+    minimumContrastRatio: 1,
   })
 
   // 2. FitAddon — load before opening so fit() is available immediately
@@ -119,54 +122,13 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
   const searchAddon = new SearchAddon()
   terminal.loadAddon(searchAddon)
 
-  // 3. Open into a temporary off-screen div so xterm creates its DOM element.
-  //    attach() will move that element into the real container later.
-  const tempDiv = document.createElement('div')
-  tempDiv.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:800px;height:600px;visibility:hidden'
-  document.body.appendChild(tempDiv)
-  terminal.open(tempDiv)
-
-  // Remove the temp div from the DOM — xterm's element is now detached and
-  // will be reparented by attach(). Leaving it leaks a DOM node per terminal.
-  const xtermEl = (terminal as unknown as { element?: HTMLElement }).element
-  if (xtermEl && tempDiv.contains(xtermEl)) {
-    tempDiv.removeChild(xtermEl)
-  }
-  document.body.removeChild(tempDiv)
-
-  // 4. Try WebGL renderer, fall back to canvas silently
-  let webglAddon: WebglAddon | null = null
-  try {
-    webglAddon = new WebglAddon()
-    webglAddon.onContextLoss(() => {
-      webglAddon!.dispose()
-      const entry = registry.get(panelId)
-      if (entry) {
-        entry.webglAddon = null
-        // Attempt to recover WebGL after a short delay
-        setTimeout(() => {
-          const e = registry.get(panelId)
-          if (!e || e.webglAddon) return
-          try {
-            const recovered = new WebglAddon()
-            recovered.onContextLoss(() => {
-              recovered.dispose()
-              const ent = registry.get(panelId)
-              if (ent) ent.webglAddon = null
-            })
-            e.terminal.loadAddon(recovered)
-            e.webglAddon = recovered
-          } catch {
-            // Canvas renderer fallback — no further retry
-          }
-        }, 500)
-      }
-    })
-    terminal.loadAddon(webglAddon)
-  } catch {
-    // Canvas renderer fallback — no action needed
-    webglAddon = null
-  }
+  // 3. Do NOT call terminal.open() here. attach() opens the terminal directly
+  //    into its real container the first time it runs. Opening into a temp div
+  //    and then reparenting the xterm element worked on Electron 33 but breaks
+  //    on Electron 41 — the WebGL2 context created against the detached canvas
+  //    never paints, leaving an all-white terminal. terminal.write() before
+  //    open() is fine: xterm buffers writes until the renderer is initialized.
+  const webglAddon: WebglAddon | null = null
 
   // Skip fitting against the temp div — its arbitrary 800×600 size produces
   // wrong cols/rows that desync the PTY until the real container attach().
@@ -333,7 +295,7 @@ async function reconnectTerminal(
     scrollback: 10000,
     macOptionIsMeta: true,
     altClickMovesCursor: true,
-    drawBoldTextInBrightColors: false,
+    minimumContrastRatio: 1,
   })
 
   const fitAddon = new FitAddon()
@@ -342,47 +304,9 @@ async function reconnectTerminal(
   const searchAddon = new SearchAddon()
   terminal.loadAddon(searchAddon)
 
-  // Open into a temporary off-screen div
-  const tempDiv = document.createElement('div')
-  tempDiv.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:800px;height:600px;visibility:hidden'
-  document.body.appendChild(tempDiv)
-  terminal.open(tempDiv)
-
-  const xtermEl = (terminal as unknown as { element?: HTMLElement }).element
-  if (xtermEl && tempDiv.contains(xtermEl)) {
-    tempDiv.removeChild(xtermEl)
-  }
-  document.body.removeChild(tempDiv)
-
-  // WebGL addon
-  let webglAddon: WebglAddon | null = null
-  try {
-    webglAddon = new WebglAddon()
-    webglAddon.onContextLoss(() => {
-      webglAddon!.dispose()
-      const entry = registry.get(panelId)
-      if (entry) {
-        entry.webglAddon = null
-        setTimeout(() => {
-          const e = registry.get(panelId)
-          if (!e || e.webglAddon) return
-          try {
-            const recovered = new WebglAddon()
-            recovered.onContextLoss(() => {
-              recovered.dispose()
-              const ent = registry.get(panelId)
-              if (ent) ent.webglAddon = null
-            })
-            e.terminal.loadAddon(recovered)
-            e.webglAddon = recovered
-          } catch { /* Canvas renderer fallback */ }
-        }, 500)
-      }
-    })
-    terminal.loadAddon(webglAddon)
-  } catch {
-    webglAddon = null
-  }
+  // attach() will call terminal.open() directly into the real container —
+  // see getOrCreate() for the rationale.
+  const webglAddon: WebglAddon | null = null
 
   const entry: RegistryEntry = {
     terminal,
@@ -568,22 +492,28 @@ function attach(panelId: string, container: HTMLDivElement): void {
 
   const { terminal, fitAddon } = entry
 
-  // xterm's internal viewport/screen elements live inside terminal.element
-  const el = (terminal as unknown as { element?: HTMLElement }).element
-  if (!el) return
+  // First-time attach: terminal.open() hasn't been called yet (see
+  // getOrCreate). Open directly into the real container so xterm builds its
+  // DOM and WebGL canvas with valid layout dimensions from the start.
+  let el = (terminal as unknown as { element?: HTMLElement }).element
+  if (!el) {
+    terminal.open(container)
+    el = (terminal as unknown as { element?: HTMLElement }).element
+    if (!el) return
+  } else {
+    // Already attached to this exact container — just re-fit
+    if (el.parentElement === container) {
+      try { safeFit(terminal, fitAddon, container) } catch { /* ignore */ }
+      return
+    }
 
-  // Already attached to this exact container — just re-fit
-  if (el.parentElement === container) {
-    try { safeFit(terminal, fitAddon, container) } catch { /* ignore */ }
-    return
+    // Detach from any previous container without disposing
+    if (el.parentElement) {
+      el.parentElement.removeChild(el)
+    }
+
+    container.appendChild(el)
   }
-
-  // Detach from any previous container without disposing
-  if (el.parentElement) {
-    el.parentElement.removeChild(el)
-  }
-
-  container.appendChild(el)
 
   // Track viewport scroll position continuously so we can restore it on focus.
   // The listener is cleaned up via the entry's cleanupListeners on dispose/release.

@@ -4,15 +4,15 @@
 // =============================================================================
 
 import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react'
-import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
+import { useAutoFocusLargestVisible } from '../hooks/useAutoFocusLargestVisible'
 import { useUIStore } from '../stores/uiStore'
 import { registerDropZone } from '../hooks/useDockDrag'
 import { viewToCanvas } from '../lib/coordinates'
 import CanvasGrid from './CanvasGrid'
 import SnapGuides from './SnapGuides'
-import ContextMenu from '../ui/ContextMenu'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import CanvasAnnotationComponent from './CanvasAnnotationComponent'
 import type { Point, PanelType } from '../../shared/types'
@@ -26,12 +26,47 @@ function injectCanvasInteractingStyle(): void {
   style.textContent = `
     .canvas-interacting iframe,
     .canvas-interacting webview,
-    .canvas-interacting .monaco-editor {
+    .canvas-interacting .monaco-editor,
+    .canvas-interacting .xterm,
+    .canvas-interacting .xterm-screen,
+    .canvas-interacting .xterm-helper-textarea {
       pointer-events: none !important;
+    }
+    .canvas-interacting .xterm,
+    .canvas-interacting .xterm * {
+      cursor: grabbing !important;
     }
   `
   document.head.appendChild(style)
 }
+
+const RegionsLayer: React.FC<{ zoomLevel: number }> = React.memo(({ zoomLevel }) => {
+  const regionList = useCanvasStoreContext(
+    (s) => Object.values(s.regions),
+    shallow,
+  )
+  return (
+    <>
+      {regionList.map((region) => (
+        <CanvasRegionComponent key={region.id} region={region} zoomLevel={zoomLevel} />
+      ))}
+    </>
+  )
+})
+
+const AnnotationsLayer: React.FC = React.memo(() => {
+  const annotationList = useCanvasStoreContext(
+    (s) => Object.values(s.annotations),
+    shallow,
+  )
+  return (
+    <>
+      {annotationList.map((ann) => (
+        <CanvasAnnotationComponent key={ann.id} annotation={ann} />
+      ))}
+    </>
+  )
+})
 
 interface CanvasProps {
   children?: React.ReactNode
@@ -46,8 +81,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
 
   const zoom = useCanvasStoreContext((s) => s.zoomLevel)
   const offset = useCanvasStoreContext((s) => s.viewportOffset)
-  const regions = useCanvasStoreContext((s) => s.regions)
-  const annotations = useCanvasStoreContext((s) => s.annotations)
   const marquee = useUIStore((s) => s.marquee)
 
   const {
@@ -62,6 +95,9 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
 
   // Inject the canvas-interacting style once at module level (not per mount)
   useEffect(injectCanvasInteractingStyle, [])
+
+  // Auto-focus the node that occupies the most visible viewport area (opt-in).
+  useAutoFocusLargestVisible(canvasApi)
 
   // Register canvas as a drop zone for dock-aware drag-and-drop
   // Canvases live in the center dock zone
@@ -188,62 +224,48 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   // the translate happens in the scaled coordinate space)
   const worldTransform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
 
-  // Build context menu items for creating panels at a specific canvas position
-  const contextMenuItems = useMemo(() => {
-    if (!canvasContextMenu) return []
-    return [
-      ...(onCreateAtPoint
-        ? [
-            {
-              label: 'New Terminal',
-              onClick: () => {
-                onCreateAtPoint('terminal', canvasContextMenu.canvasPoint)
-              },
-            },
-            {
-              label: 'New Editor',
-              onClick: () => {
-                onCreateAtPoint('editor', canvasContextMenu.canvasPoint)
-              },
-            },
-            {
-              label: 'New Browser',
-              onClick: () => {
-                onCreateAtPoint('browser', canvasContextMenu.canvasPoint)
-              },
-            },
-            {
-              label: 'New Canvas',
-              onClick: () => {
-                onCreateAtPoint('canvas', canvasContextMenu.canvasPoint)
-              },
-            },
-          ]
-        : []),
-      {
-        label: 'New Region',
-        onClick: () => {
-          canvasApi.getState().addRegion(
-            'Region',
-            canvasContextMenu.canvasPoint,
-            { width: 400, height: 300 },
-          )
-        },
-      },
-      {
-        label: 'New Sticky Note',
-        onClick: () => {
-          canvasApi.getState().addAnnotation('stickyNote', canvasContextMenu.canvasPoint)
-        },
-      },
-      {
-        label: 'New Text Label',
-        onClick: () => {
-          canvasApi.getState().addAnnotation('textLabel', canvasContextMenu.canvasPoint)
-        },
-      },
-    ]
-  }, [canvasContextMenu, onCreateAtPoint])
+  // When the interaction hook flags a right-click on empty canvas, fire a
+  // native context menu and dispatch the picked action.
+  useEffect(() => {
+    if (!canvasContextMenu || !window.electronAPI) return
+    let cancelled = false
+    const point = canvasContextMenu.canvasPoint
+    const items: Array<{ id?: string; label?: string; type?: 'separator' }> = []
+    if (onCreateAtPoint) {
+      items.push(
+        { id: 'new-terminal', label: 'New Terminal' },
+        { id: 'new-editor', label: 'New Editor' },
+        { id: 'new-browser', label: 'New Browser' },
+        { id: 'new-canvas', label: 'New Canvas' },
+        { type: 'separator' },
+      )
+    }
+    items.push(
+      { id: 'new-region', label: 'New Region' },
+      { id: 'new-sticky', label: 'New Sticky Note' },
+      { id: 'new-label', label: 'New Text Label' },
+    )
+    window.electronAPI.showContextMenu(items).then((id) => {
+      if (cancelled) return
+      closeCanvasContextMenu()
+      switch (id) {
+        case 'new-terminal': onCreateAtPoint?.('terminal', point); break
+        case 'new-editor': onCreateAtPoint?.('editor', point); break
+        case 'new-browser': onCreateAtPoint?.('browser', point); break
+        case 'new-canvas': onCreateAtPoint?.('canvas', point); break
+        case 'new-region':
+          canvasApi.getState().addRegion('Region', point, { width: 400, height: 300 })
+          break
+        case 'new-sticky':
+          canvasApi.getState().addAnnotation('stickyNote', point)
+          break
+        case 'new-label':
+          canvasApi.getState().addAnnotation('textLabel', point)
+          break
+      }
+    })
+    return () => { cancelled = true }
+  }, [canvasContextMenu, onCreateAtPoint, canvasApi, closeCanvasContextMenu])
 
   return (
     <div
@@ -268,6 +290,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
           transform: worldTransform,
           transformOrigin: '0 0',
           willChange: 'transform',
+          ['--zoom' as string]: zoom,
         }}
         onClick={handleWorldClick}
       >
@@ -275,12 +298,8 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
           containerWidth={containerSize.width}
           containerHeight={containerSize.height}
         />
-        {Object.values(regions).map((region) => (
-          <CanvasRegionComponent key={region.id} region={region} zoomLevel={zoom} />
-        ))}
-        {Object.values(annotations).map((ann) => (
-          <CanvasAnnotationComponent key={ann.id} annotation={ann} />
-        ))}
+        <RegionsLayer zoomLevel={zoom} />
+        <AnnotationsLayer />
         <SnapGuides />
         {marqueeRect && (
           <div
@@ -301,15 +320,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
         {children}
       </div>
 
-      {/* Canvas background right-click context menu */}
-      {canvasContextMenu && (
-        <ContextMenu
-          x={canvasContextMenu.x}
-          y={canvasContextMenu.y}
-          items={contextMenuItems}
-          onClose={closeCanvasContextMenu}
-        />
-      )}
     </div>
   )
 }

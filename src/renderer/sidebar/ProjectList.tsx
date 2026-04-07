@@ -1,18 +1,24 @@
-import React, { useState, useCallback } from 'react'
-import { Plus } from 'lucide-react'
+import React, { useState, useCallback, useEffect, useMemo } from 'react'
+import { Plus } from '@phosphor-icons/react'
 import { SidebarToggleIcon } from './SidebarToggleIcon'
 import { useAppStore, useWorkspaceList } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { NotificationBell } from '../ui/NotificationPopover'
 import { WorkspaceTab } from './WorkspaceTab'
+import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 
-export const ProjectList: React.FC = () => {
+interface ProjectListProps {
+  onCollapse?: () => void
+}
+
+export const ProjectList: React.FC<ProjectListProps> = ({ onCollapse }) => {
   const workspaces = useWorkspaceList()
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const addWorkspace = useAppStore((s) => s.addWorkspace)
   const selectWorkspace = useAppStore((s) => s.selectWorkspace)
   const removeWorkspace = useAppStore((s) => s.removeWorkspace)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const handleCollapse = onCollapse ?? toggleSidebar
 
   const handleNewWorkspace = useCallback(() => {
     const wsId = addWorkspace()
@@ -21,32 +27,45 @@ export const ProjectList: React.FC = () => {
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
+  // Collapse the "Add new Workspace" placeholder card so it only shows once,
+  // and only when no real (folder-backed) workspace exists. Extra empty
+  // workspaces (e.g. from stale sessions or accidental double-adds) are
+  // cleaned up from the store so they don't resurface later.
+  const displayWorkspaces = useMemo(() => {
+    const real = workspaces.filter((w) => w.rootPath)
+    if (real.length > 0) return real
+    const firstEmpty = workspaces.find((w) => !w.rootPath)
+    return firstEmpty ? [firstEmpty] : []
+  }, [workspaces])
+
+  useEffect(() => {
+    const real = workspaces.filter((w) => w.rootPath)
+    const empties = workspaces.filter((w) => !w.rootPath)
+    const toRemove = real.length > 0 ? empties : empties.slice(1)
+    for (const ws of toRemove) removeWorkspace(ws.id)
+  }, [workspaces, removeWorkspace])
+
   return (
     <div className="flex flex-col h-full">
-      {/* Icon toolbar */}
-      <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0">
-        <NotificationBell />
-        <button
-          className="text-white/40 hover:text-white/70 transition-colors p-1"
-          onClick={handleNewWorkspace}
-          title="New Workspace"
-        >
-          <Plus size={16} />
-        </button>
-        <div className="flex-1" />
-        <button
-          className="text-white/30 hover:text-white/60 transition-colors p-1"
-          onClick={toggleSidebar}
-          title="Collapse sidebar (⌘\\)"
-        >
-          <SidebarToggleIcon size={16} direction="close" />
-        </button>
-      </div>
+      <SidebarSectionHeader
+        title=""
+        actions={
+          <>
+            <NotificationBell />
+            <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
+              <Plus size={13} />
+            </SidebarHeaderButton>
+            <SidebarHeaderButton onClick={handleCollapse} title="Collapse sidebar (⌘\\)">
+              <SidebarToggleIcon size={13} direction="close" />
+            </SidebarHeaderButton>
+          </>
+        }
+      />
 
       {/* Scrollable workspace list */}
       <div className="flex-1 overflow-y-auto px-2 py-1">
         <div className="flex flex-col gap-1.5">
-          {workspaces.map((ws, index) => (
+          {displayWorkspaces.map((ws, index) => (
             <div
               key={ws.id}
               draggable

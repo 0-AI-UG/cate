@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Globe, ArrowLeft, ArrowRight, RotateCw, Camera } from 'lucide-react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
@@ -273,7 +273,7 @@ export default function BrowserPanel({
   return (
     <div className="flex flex-col w-full h-full">
       {/* URL bar */}
-      <div className="h-8 flex items-center gap-1 px-1 bg-[#1E1E24] border-b border-white/10 shrink-0">
+      <div className="h-8 flex items-center gap-1 px-1 bg-[#1f1e1c] border-b border-white/10 shrink-0">
         <button
           onClick={handleGoBack}
           disabled={!canGoBack}
@@ -295,7 +295,7 @@ export default function BrowserPanel({
           className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/70"
           title="Reload"
         >
-          <RotateCw size={14} className={isLoading ? 'animate-spin' : ''} />
+          <ArrowClockwise size={14} className={isLoading ? 'animate-spin' : ''} />
         </button>
         <button
           onClick={handleScreenshot}
@@ -318,7 +318,7 @@ export default function BrowserPanel({
       <div className="flex-1 relative">
         {/* Error state overlay */}
         {loadError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1E1E24] text-white/60 p-4 text-center z-10">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1f1e1c] text-white/60 p-4 text-center z-10">
             <Globe size={32} className="mb-2 text-white/30" />
             <p className="text-sm font-medium mb-1">Failed to load page</p>
             <p className="text-xs text-white/40">{loadError}</p>

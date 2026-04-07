@@ -2,7 +2,16 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AppSettings, AgentState, CateWindowParams, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileTreeNode, GitInfo, NotificationAction, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, Point, SessionSnapshot, TerminalActivity, WorkspaceInfo } from './types'
+import type { AppSettings, AgentState, CateWindowParams, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileTreeNode, GitInfo, NotificationAction, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, Point, ProjectUsage, SessionSnapshot, TerminalActivity, UsageSummary, WorkspaceInfo } from './types'
+
+export interface NativeContextMenuItem {
+  id?: string
+  label?: string
+  accelerator?: string
+  enabled?: boolean
+  type?: 'normal' | 'separator'
+  submenu?: NativeContextMenuItem[]
+}
 
 export interface ElectronAPI {
   // ---------------------------------------------------------------------------
@@ -241,6 +250,9 @@ export interface ElectronAPI {
   /** Open a native save dialog. Returns the chosen file path or null if canceled. */
   saveFileDialog(options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>
 
+  /** Native unsaved-changes confirmation. Returns 'save' | 'discard' | 'cancel'. */
+  confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean }): Promise<'save' | 'discard' | 'cancel'>
+
   // ---------------------------------------------------------------------------
   // Recent Projects
   // ---------------------------------------------------------------------------
@@ -333,7 +345,10 @@ export interface ElectronAPI {
   onPanelReceive(callback: (snapshot: PanelTransferSnapshot) => void): () => void
 
   /** List all active panel windows with their metadata and bounds. */
-  panelWindowsList(): Promise<Array<{ windowId: number; panel: PanelState; workspaceId?: string; bounds: { x: number; y: number; width: number; height: number } }>>
+  panelWindowsList(): Promise<Array<{ windowId: number; panel: PanelState; workspaceId?: string; bounds: { x: number; y: number; width: number; height: number }; terminalPtyId?: string }>>
+
+  /** Report the terminal ptyId for this panel window so the main process can persist it. */
+  panelWindowSyncPty(ptyId: string): Promise<void>
 
   /** Request this panel window to dock back into the main window. */
   panelWindowDockBack(): Promise<void>
@@ -348,8 +363,18 @@ export interface ElectronAPI {
   /** Start an OS-level drag with a panel transfer snapshot. */
   dragStart(snapshot: PanelTransferSnapshot): Promise<void>
 
-  /** Panel was dropped on desktop — create a new dock window. */
-  dragDetach(snapshot: PanelTransferSnapshot, workspaceId?: string): Promise<number>
+  /** Panel was dropped on desktop — create a new dock window. Resolves to
+   *  `null` when the main window is in macOS native fullscreen; the caller
+   *  should treat that as "detach refused" and keep the panel where it was. */
+  dragDetach(snapshot: PanelTransferSnapshot, workspaceId?: string): Promise<number | null>
+
+  /** Synchronous cached check: is the main window currently in native
+   *  fullscreen? Drag handlers use this to refuse cross-window detach
+   *  without an IPC round-trip per mousemove. */
+  isMainWindowFullscreen(): boolean
+
+  /** Subscribe to fullscreen enter/leave events for any Cate window. */
+  onFullscreenChange(callback: (isFullscreen: boolean) => void): () => void
 
   /** Subscribe to drag end events (main -> renderer). */
   onDragEnd(callback: () => void): () => void
@@ -362,7 +387,7 @@ export interface ElectronAPI {
   onDockWindowInit(callback: (payload: DockWindowInitPayload) => void): () => void
 
   /** Sync dock window state to main process for session persistence. */
-  dockWindowSyncState(state: DockStateSnapshot & { panels: Record<string, PanelState> }): Promise<void>
+  dockWindowSyncState(state: DockStateSnapshot & { panels: Record<string, PanelState>; terminalPtyIds?: Record<string, string> }): Promise<void>
 
   /** List all dock windows with their state and bounds. */
   dockWindowsList(): Promise<DetachedDockWindowSnapshot[]>
@@ -421,6 +446,25 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   onMenuOpenSettings(callback: () => void): () => void
+
+  /** Subscribe to native menu action dispatches (File, Edit, etc.). */
+  onMenuTriggerAction(callback: (action: import('./types').MenuActionId) => void): () => void
+
+  /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
+  showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>
+
+  // ---------------------------------------------------------------------------
+  // Token usage tracking
+  // ---------------------------------------------------------------------------
+
+  /** Get the full usage summary across all tools and projects. */
+  usageGetSummary(): Promise<UsageSummary>
+
+  /** Get usage detail for a specific project path. Returns null if not found. */
+  usageGetProject(projectPath: string): Promise<ProjectUsage | null>
+
+  /** Subscribe to usage update events (main -> renderer). Returns unsubscribe. */
+  onUsageUpdate(callback: (changedProjects: string[]) => void): () => void
 }
 
 declare global {

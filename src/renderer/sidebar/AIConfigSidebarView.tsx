@@ -5,16 +5,17 @@
 
 import React, { useEffect, useCallback, useState, type DragEvent } from 'react'
 import {
-  Check, X, Plus, Trash2, Play, Square, Zap,
-  RefreshCw, FolderOpen, Loader2, Eye, EyeOff,
-  Download, ChevronDown, ChevronRight, BookOpen, Server,
-} from 'lucide-react'
+  Check, X, Plus, Trash, Play, Square, Lightning,
+  ArrowsClockwise, FolderOpen, CircleNotch, Eye, EyeSlash,
+  Download, CaretDown, CaretRight, BookOpen, HardDrives,
+} from '@phosphor-icons/react'
 import type { AIToolId, AIToolPresence, MCPServerConfig, DockLayoutNode } from '../../shared/types'
 import { useAIConfigStore } from '../stores/aiConfigStore'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
 import { searchRegistry } from '../lib/aiConfig/mcpRegistry'
-import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
+import type { NativeContextMenuItem } from '../../shared/electron-api'
+import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 
 // =============================================================================
 // Constants & helpers
@@ -43,17 +44,6 @@ function getEditorPlacement() {
 
 const INPUT_CLS = 'w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-[12px] text-white/70 placeholder:text-white/30 focus:border-white/25 focus:outline-none font-mono'
 const SKILL_DESTINATIONS = ['.claude/skills', '.cursor/rules'] as const
-
-function useCtxMenu() {
-  const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
-  return {
-    menu,
-    open: useCallback((e: React.MouseEvent, items: ContextMenuItem[]) => {
-      e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, items })
-    }, []),
-    close: useCallback(() => setMenu(null), []),
-  }
-}
 
 // =============================================================================
 // Official monochrome product logos (from assets/logos/)
@@ -111,9 +101,8 @@ const TOOL_LOGOS: Record<AIToolId, React.FC<{ size?: number }>> = {
 // Tool card
 // =============================================================================
 
-function ToolCard({ tool, rootPath, workspaceId, onCtx }: {
+function ToolCard({ tool, rootPath, workspaceId }: {
   tool: AIToolPresence; rootPath: string; workspaceId: string
-  onCtx: (e: React.MouseEvent, items: ContextMenuItem[]) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const createConfig = useAIConfigStore((s) => s.createConfig)
@@ -125,21 +114,28 @@ function ToolCard({ tool, rootPath, workspaceId, onCtx }: {
   return (
     <div
       className="rounded-md bg-white/[0.03] border border-white/[0.06] overflow-hidden"
-      onContextMenu={(e) => onCtx(e, [
-        { label: 'Open config files', onClick: () => setExpanded(true) },
-        { label: 'Reveal in Finder', onClick: () => window.electronAPI.shellShowInFolder(rootPath) },
-        { label: '', onClick: () => {}, separator: true },
-        {
-          label: 'Remove Setup', danger: true,
-          onClick: async () => {
+      onContextMenu={async (e) => {
+        e.preventDefault()
+        const items: NativeContextMenuItem[] = [
+          { id: 'open', label: 'Open config files' },
+          { id: 'reveal', label: 'Reveal in Finder' },
+          { type: 'separator' },
+          { id: 'remove', label: 'Remove Setup' },
+        ]
+        const id = await window.electronAPI.showContextMenu(items)
+        switch (id) {
+          case 'open': setExpanded(true); break
+          case 'reveal': window.electronAPI.shellShowInFolder(rootPath); break
+          case 'remove': {
             const files = tool.configFiles.filter((f) => f.exists && !f.isDirectory)
             const dirs = tool.configFiles.filter((f) => f.exists && f.isDirectory)
             for (const f of files) try { await window.electronAPI.fsDelete(`${rootPath}/${f.relativePath}`) } catch {}
             for (const d of dirs) try { await window.electronAPI.fsDelete(`${rootPath}/${d.relativePath}`) } catch {}
             scan(rootPath)
-          },
-        },
-      ])}
+            break
+          }
+        }
+      }}
     >
       {/* Card header */}
       <button
@@ -156,8 +152,8 @@ function ToolCard({ tool, rootPath, workspaceId, onCtx }: {
           </div>
         </div>
         {expanded
-          ? <ChevronDown size={13} className="text-white/30 shrink-0" />
-          : <ChevronRight size={13} className="text-white/30 shrink-0" />
+          ? <CaretDown size={13} className="text-white/30 shrink-0" />
+          : <CaretRight size={13} className="text-white/30 shrink-0" />
         }
       </button>
 
@@ -171,19 +167,27 @@ function ToolCard({ tool, rootPath, workspaceId, onCtx }: {
                 key={f.relativePath}
                 className="flex items-center h-6 px-2 rounded hover:bg-white/[0.04] group cursor-pointer"
                 onClick={() => f.exists && !f.isDirectory && window.electronAPI.shellShowInFolder(fullPath)}
-                onContextMenu={(e) => {
-                  const items: ContextMenuItem[] = []
+                onContextMenu={async (e) => {
+                  e.preventDefault()
+                  const items: NativeContextMenuItem[] = []
                   if (f.exists && !f.isDirectory) {
                     items.push(
-                      { label: 'Open in Editor', onClick: () => useAppStore.getState().createEditor(workspaceId, fullPath, undefined, getEditorPlacement()) },
-                      { label: 'Reveal in Finder', onClick: () => window.electronAPI.shellShowInFolder(fullPath) },
-                      { label: '', onClick: () => {}, separator: true },
-                      { label: 'Delete', danger: true, onClick: async () => { await window.electronAPI.fsDelete(fullPath); scan(rootPath) } },
+                      { id: 'open', label: 'Open in Editor' },
+                      { id: 'reveal', label: 'Reveal in Finder' },
+                      { type: 'separator' },
+                      { id: 'delete', label: 'Delete' },
                     )
                   } else if (!f.exists && !f.isDirectory) {
-                    items.push({ label: 'Create', onClick: () => createConfig(tool.id, f.relativePath, rootPath) })
+                    items.push({ id: 'create', label: 'Create' })
                   }
-                  if (items.length) onCtx(e, items)
+                  if (!items.length) return
+                  const id = await window.electronAPI.showContextMenu(items)
+                  switch (id) {
+                    case 'open': useAppStore.getState().createEditor(workspaceId, fullPath, undefined, getEditorPlacement()); break
+                    case 'reveal': window.electronAPI.shellShowInFolder(fullPath); break
+                    case 'delete': await window.electronAPI.fsDelete(fullPath); scan(rootPath); break
+                    case 'create': createConfig(tool.id, f.relativePath, rootPath); break
+                  }
                 }}
               >
                 {f.exists ? (
@@ -217,10 +221,14 @@ function AddAgentView({ rootPath, unconfiguredTools, onBack }: {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center h-8 px-3 border-b border-white/5 shrink-0">
-        <button onClick={onBack} className="text-[12px] text-white/40 hover:text-white/70 mr-2">&larr;</button>
-        <span className="text-[11px] text-white/50 uppercase tracking-wider">Add Agent</span>
-      </div>
+      <SidebarSectionHeader
+        title="Add Agent"
+        actions={
+          <SidebarHeaderButton onClick={onBack} title="Back" className="text-white/50 hover:text-white/90 text-[13px] leading-none">
+            <span className="px-1">&larr;</span>
+          </SidebarHeaderButton>
+        }
+      />
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {unconfiguredTools.map((tool) => {
           const Logo = TOOL_LOGOS[tool.id]
@@ -238,7 +246,7 @@ function AddAgentView({ rootPath, unconfiguredTools, onBack }: {
                 <div className="text-[13px] text-white/80 font-medium">{tool.name}</div>
                 <div className="text-[11px] text-white/35">{tool.configFiles.length} config files</div>
               </div>
-              {busy === tool.id && <Loader2 size={14} className="text-white/40 animate-spin shrink-0" />}
+              {busy === tool.id && <CircleNotch size={14} className="text-white/40 animate-spin shrink-0" />}
             </button>
           )
         })}
@@ -293,9 +301,8 @@ async function downloadGitHubDir(owner: string, repo: string, dirPath: string, r
   } catch {}
 }
 
-function SkillsCard({ rootPath, workspaceId, onCtx }: {
+function SkillsCard({ rootPath, workspaceId }: {
   rootPath: string; workspaceId: string
-  onCtx: (e: React.MouseEvent, items: ContextMenuItem[]) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [skills, setSkills] = useState<{ name: string; displayName: string; desc: string; isDir: boolean }[]>([])
@@ -436,7 +443,7 @@ function SkillsCard({ rootPath, workspaceId, onCtx }: {
         <BookOpen size={14} className="text-white/40 shrink-0" />
         <span className="text-[12px] text-white/60 flex-1 text-left">Skills</span>
         {skills.length > 0 && <span className="text-[10px] text-white/30">{skills.length}</span>}
-        {expanded ? <ChevronDown size={11} className="text-white/25" /> : <ChevronRight size={11} className="text-white/25" />}
+        {expanded ? <CaretDown size={11} className="text-white/25" /> : <CaretRight size={11} className="text-white/25" />}
       </button>
 
       {expanded && (
@@ -452,12 +459,21 @@ function SkillsCard({ rootPath, workspaceId, onCtx }: {
                 <div key={s.name}
                   className="flex items-center h-6 px-2 rounded hover:bg-white/[0.04] group cursor-pointer"
                   onClick={() => window.electronAPI.shellShowInFolder(`${rootPath}/.claude/skills/${s.name}`)}
-                  onContextMenu={(e) => onCtx(e, [
-                    { label: 'Open in Editor', onClick: () => useAppStore.getState().createEditor(workspaceId, `${rootPath}/.claude/skills/${s.name}`, undefined, getEditorPlacement()) },
-                    { label: 'Reveal in Finder', onClick: () => window.electronAPI.shellShowInFolder(`${rootPath}/.claude/skills/${s.name}`) },
-                    { label: '', onClick: () => {}, separator: true },
-                    { label: 'Delete', danger: true, onClick: () => handleDelete(s.name) },
-                  ])}
+                  onContextMenu={async (e) => {
+                    e.preventDefault()
+                    const items: NativeContextMenuItem[] = [
+                      { id: 'open', label: 'Open in Editor' },
+                      { id: 'reveal', label: 'Reveal in Finder' },
+                      { type: 'separator' },
+                      { id: 'delete', label: 'Delete' },
+                    ]
+                    const id = await window.electronAPI.showContextMenu(items)
+                    switch (id) {
+                      case 'open': useAppStore.getState().createEditor(workspaceId, `${rootPath}/.claude/skills/${s.name}`, undefined, getEditorPlacement()); break
+                      case 'reveal': window.electronAPI.shellShowInFolder(`${rootPath}/.claude/skills/${s.name}`); break
+                      case 'delete': handleDelete(s.name); break
+                    }
+                  }}
                 >
                   <span className="text-[10px] text-white/60 flex-1 truncate">{s.displayName}</span>
                   {s.desc && <span className="text-[9px] text-white/25 truncate max-w-[80px] ml-1">{s.desc}</span>}
@@ -472,7 +488,7 @@ function SkillsCard({ rootPath, workspaceId, onCtx }: {
                     <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleImport()}
                       placeholder="GitHub repo or file URL" className={INPUT_CLS} autoFocus />
                     <button onClick={handleImport} disabled={!url.trim() || importing} className="text-[10px] text-white/50 hover:text-white/80 disabled:opacity-30 shrink-0">
-                      {importing ? <Loader2 size={10} className="animate-spin" /> : 'Scan'}
+                      {importing ? <CircleNotch size={10} className="animate-spin" /> : 'Scan'}
                     </button>
                     <button onClick={() => { setShowUrl(false); setUrl(''); setRemoteSkills([]); setRepoInfo(null) }} className="text-white/30 shrink-0"><X size={10} /></button>
                   </div>
@@ -542,10 +558,10 @@ function MCPCard({ rootPath }: { rootPath: string }) {
   return (
     <div className="rounded-md bg-white/[0.03] border border-white/[0.06] overflow-hidden">
       <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.02] transition-colors">
-        <Server size={14} className="text-white/40 shrink-0" />
+        <HardDrives size={14} className="text-white/40 shrink-0" />
         <span className="text-[12px] text-white/60 flex-1 text-left">MCP Servers</span>
         {servers.length > 0 && <span className="text-[10px] text-white/30">{servers.length}</span>}
-        {expanded ? <ChevronDown size={11} className="text-white/25" /> : <ChevronRight size={11} className="text-white/25" />}
+        {expanded ? <CaretDown size={11} className="text-white/25" /> : <CaretRight size={11} className="text-white/25" />}
       </button>
 
       {expanded && (
@@ -561,7 +577,7 @@ function MCPCard({ rootPath }: { rootPath: string }) {
                     ? <button onClick={() => stop(s.name)} className="p-0.5 text-white/40 hover:text-white/70"><Square size={9} /></button>
                     : <button onClick={() => spawn(s.name)} className="p-0.5 text-white/40 hover:text-white/70"><Play size={9} /></button>
                   }
-                  <button onClick={() => remove(s.name, rootPath)} className="p-0.5 text-white/40 hover:text-red-400"><Trash2 size={9} /></button>
+                  <button onClick={() => remove(s.name, rootPath)} className="p-0.5 text-white/40 hover:text-red-400"><Trash size={9} /></button>
                 </div>
               </div>
             )
@@ -626,7 +642,6 @@ export const AIConfigSidebarView: React.FC<{ rootPath: string; workspaceId: stri
   const scanning = useAIConfigStore((s) => s.scanning)
   const scan = useAIConfigStore((s) => s.scan)
   const watch = useAIConfigStore((s) => s.watchConfigFiles)
-  const ctx = useCtxMenu()
   const [subPage, setSubPage] = useState<'main' | 'addAgent'>('main')
 
   useEffect(() => { if (rootPath) scan(rootPath) }, [rootPath]) // eslint-disable-line
@@ -651,27 +666,25 @@ export const AIConfigSidebarView: React.FC<{ rootPath: string; workspaceId: stri
   // Sub-page: Add Agent
   if (subPage === 'addAgent') {
     return (
-      <>
-        <AddAgentView rootPath={rootPath} unconfiguredTools={unconfiguredTools} onBack={() => setSubPage('main')} />
-        {ctx.menu && <ContextMenu x={ctx.menu.x} y={ctx.menu.y} items={ctx.menu.items} onClose={ctx.close} />}
-      </>
+      <AddAgentView rootPath={rootPath} unconfiguredTools={unconfiguredTools} onBack={() => setSubPage('main')} />
     )
   }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center h-8 px-3 border-b border-white/5 shrink-0">
-        <span className="text-[11px] text-white/40 uppercase tracking-wider flex-1">Agent Setup</span>
-        <button onClick={() => scan(rootPath)} disabled={scanning} className="p-1 text-white/30 hover:text-white/60 disabled:opacity-30">
-          <RefreshCw size={11} className={scanning ? 'animate-spin' : ''} />
-        </button>
-      </div>
+      <SidebarSectionHeader
+        title="Agent Setup"
+        actions={
+          <SidebarHeaderButton onClick={() => scan(rootPath)} disabled={scanning} title="Rescan" spinning={scanning}>
+            <ArrowsClockwise size={12} />
+          </SidebarHeaderButton>
+        }
+      />
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         {scanning && !tools ? (
-          <div className="flex items-center gap-2 py-4 px-3 text-[12px] text-white/40"><Loader2 size={12} className="animate-spin" /> Scanning...</div>
+          <div className="flex items-center gap-2 py-4 px-3 text-[12px] text-white/40"><CircleNotch size={12} className="animate-spin" /> Scanning...</div>
         ) : (
           <div className="p-2 space-y-2">
             {/* Tool cards */}
@@ -679,7 +692,7 @@ export const AIConfigSidebarView: React.FC<{ rootPath: string; workspaceId: stri
               <div className="text-[12px] text-white/40 px-1 py-3">No agents configured yet</div>
             )}
             {configuredTools.map((tool) => (
-              <ToolCard key={tool.id} tool={tool} rootPath={rootPath} workspaceId={workspaceId} onCtx={ctx.open} />
+              <ToolCard key={tool.id} tool={tool} rootPath={rootPath} workspaceId={workspaceId} />
             ))}
 
             {/* Add agent button */}
@@ -693,13 +706,11 @@ export const AIConfigSidebarView: React.FC<{ rootPath: string; workspaceId: stri
             )}
 
             {/* Skills & MCP cards */}
-            <SkillsCard rootPath={rootPath} workspaceId={workspaceId} onCtx={ctx.open} />
+            <SkillsCard rootPath={rootPath} workspaceId={workspaceId} />
             <MCPCard rootPath={rootPath} />
           </div>
         )}
       </div>
-
-      {ctx.menu && <ContextMenu x={ctx.menu.x} y={ctx.menu.y} items={ctx.menu.items} onClose={ctx.close} />}
     </div>
   )
 }

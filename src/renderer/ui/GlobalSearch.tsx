@@ -135,7 +135,7 @@ export function GlobalSearch() {
     >
       <div
         className="w-[600px] max-h-[500px] rounded-xl overflow-hidden flex flex-col"
-        style={{ backgroundColor: '#1E1E24', border: '1px solid rgba(255,255,255,0.1)' }}
+        style={{ backgroundColor: '#1f1e1c', border: '1px solid rgba(255,255,255,0.1)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-3">
@@ -144,7 +144,7 @@ export function GlobalSearch() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full bg-[#28282E] text-white text-sm px-3 py-2 rounded-lg border border-white/[0.1] outline-none focus:border-blue-500/50"
+            className="w-full bg-[#1a1917] text-white text-sm px-3 py-2 rounded-lg border border-white/[0.1] outline-none focus:border-blue-500/50"
             placeholder="Search in open editors..."
           />
         </div>

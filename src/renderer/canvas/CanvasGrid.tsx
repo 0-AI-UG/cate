@@ -58,6 +58,7 @@ const CanvasGrid: React.FC<CanvasGridProps> = ({
           width: gridWidth,
           height: gridHeight,
           pointerEvents: 'none',
+          zIndex: 0,
         }}
       >
         <defs>
@@ -98,6 +99,7 @@ const CanvasGrid: React.FC<CanvasGridProps> = ({
         width: gridWidth,
         height: gridHeight,
         pointerEvents: 'none',
+        zIndex: 0,
       }}
     >
       <defs>

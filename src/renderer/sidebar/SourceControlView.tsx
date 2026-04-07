@@ -2,23 +2,24 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import log from '../lib/logger'
 import {
   GitBranch,
-  RotateCw,
-  ChevronDown,
-  ChevronRight,
+  ArrowClockwise,
+  CaretDown,
+  CaretRight,
   Plus,
   Minus,
   ArrowUp,
   ArrowDown,
   Download,
-  Trash2,
-  Undo2,
+  Trash,
+  ArrowUUpLeft,
   Archive,
-  ArchiveRestore,
-  History,
+  BoxArrowUp,
+  ClockCounterClockwise,
   X,
   Check,
-} from 'lucide-react'
+} from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
+import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -122,7 +123,7 @@ const Section: React.FC<{
         className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-white/40 cursor-pointer hover:bg-white/5 select-none"
         onClick={() => setOpen(!open)}
       >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {open ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <span className="flex-1">{title}</span>
         <span className="text-white/30 font-normal normal-case">{count}</span>
         {actions && (
@@ -168,7 +169,7 @@ const FileEntry: React.FC<{
             onClick={(e) => { e.stopPropagation(); onDiscard() }}
             title="Discard Changes"
           >
-            <Undo2 size={13} />
+            <ArrowUUpLeft size={13} />
           </button>
         )}
         {onStage && (
@@ -279,7 +280,7 @@ const BranchPicker: React.FC<{
         className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-white/40 cursor-pointer hover:bg-white/5 select-none"
         onClick={() => setIsOpen(!isOpen)}
       >
-        {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {isOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <span className="flex-1">Branches</span>
         <span className="text-white/30 font-normal normal-case">{branchCount}</span>
         {!isOpen && (
@@ -343,7 +344,7 @@ const BranchPicker: React.FC<{
                   onClick={(e) => handleDelete(b.name, e)}
                   title="Delete branch"
                 >
-                  <Trash2 size={10} />
+                  <Trash size={10} />
                 </button>
               )}
             </div>
@@ -601,52 +602,41 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
     )
   }
 
+  const branchSubtitle = (
+    <span className="flex items-center gap-1.5">
+      <GitBranch size={11} className="text-white/35 flex-shrink-0" />
+      <span className="truncate">{status?.current ?? '...'}</span>
+      {status && (status.ahead > 0 || status.behind > 0) && (
+        <span className="text-white/40 text-[10px] flex-shrink-0 tabular-nums">
+          {status.ahead > 0 && `↑${status.ahead}`}
+          {status.behind > 0 && ` ↓${status.behind}`}
+        </span>
+      )}
+    </span>
+  )
+
   return (
     <div className="flex flex-col h-full overflow-hidden text-[12px]">
-      {/* Branch + actions */}
-      <div className="flex items-center gap-1 px-2 py-1.5 flex-shrink-0">
-        <GitBranch size={13} className="text-white/40 flex-shrink-0" />
-        <span className="truncate text-[12px] text-white/40 flex-1 min-w-0">
-          {status?.current ?? '...'}
-        </span>
-        {status && (status.ahead > 0 || status.behind > 0) && (
-          <span className="text-white/30 text-[10px] flex-shrink-0 mr-1">
-            {status.ahead > 0 && `↑${status.ahead}`}
-            {status.behind > 0 && ` ↓${status.behind}`}
-          </span>
-        )}
-        <button
-          className={`p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors flex-shrink-0 ${fetching ? 'animate-spin' : ''}`}
-          onClick={fetch_}
-          title="Fetch"
-          disabled={fetching}
-        >
-          <Download size={13} strokeWidth={1.5} />
-        </button>
-        <button
-          className={`p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors flex-shrink-0 ${pulling ? 'animate-pulse' : ''}`}
-          onClick={pull}
-          title="Pull"
-          disabled={pulling}
-        >
-          <ArrowDown size={13} strokeWidth={1.5} />
-        </button>
-        <button
-          className={`p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors flex-shrink-0 ${pushing ? 'animate-pulse' : ''}`}
-          onClick={push}
-          title="Push"
-          disabled={pushing}
-        >
-          <ArrowUp size={13} strokeWidth={1.5} />
-        </button>
-        <button
-          className={`p-1 rounded hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors flex-shrink-0 ${loading ? 'animate-spin' : ''}`}
-          onClick={refresh}
-          title="Refresh"
-        >
-          <RotateCw size={13} strokeWidth={1.5} />
-        </button>
-      </div>
+      <SidebarSectionHeader
+        title="Source Control"
+        subtitle={branchSubtitle}
+        actions={
+          <>
+            <SidebarHeaderButton onClick={fetch_} title="Fetch" disabled={fetching} spinning={fetching}>
+              <Download size={12} />
+            </SidebarHeaderButton>
+            <SidebarHeaderButton onClick={pull} title="Pull" disabled={pulling}>
+              <ArrowDown size={12} />
+            </SidebarHeaderButton>
+            <SidebarHeaderButton onClick={push} title="Push" disabled={pushing}>
+              <ArrowUp size={12} />
+            </SidebarHeaderButton>
+            <SidebarHeaderButton onClick={refresh} title="Refresh" spinning={loading}>
+              <ArrowClockwise size={12} />
+            </SidebarHeaderButton>
+          </>
+        }
+      />
 
       {/* Error banner */}
       {actionError && (
@@ -659,7 +649,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       )}
 
       {/* Commit area */}
-      <div className="px-2 pb-2 flex-shrink-0">
+      <div className="px-2 pt-2 pb-2 flex-shrink-0">
         <textarea
           ref={textareaRef}
           className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[12px] text-white/80 placeholder-white/25 resize-none focus:outline-none focus:border-white/20"
@@ -694,7 +684,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
             onClick={stashPop}
             title="Stash Pop"
           >
-            <ArchiveRestore size={13} />
+            <BoxArrowUp size={13} />
           </button>
         </div>
       </div>
@@ -792,7 +782,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
               key={entry.hash}
               className="flex items-start gap-1.5 px-3 py-[4px] hover:bg-white/5 text-[11px]"
             >
-              <History size={11} className="text-white/20 flex-shrink-0 mt-0.5" />
+              <ClockCounterClockwise size={11} className="text-white/20 flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div className="text-white/70 truncate">{entry.message}</div>
                 <div className="flex items-center gap-1.5 text-white/30">

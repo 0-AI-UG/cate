@@ -29,6 +29,8 @@ interface NotificationStoreState {
   notifications: Notification[]
   /** Transient toasts shown bottom-right, auto-dismissed */
   toasts: Notification[]
+  /** Workspaces with unread notifications (for sidebar dot indicator) */
+  unreadWorkspaceIds: string[]
 }
 
 interface NotificationStoreActions {
@@ -42,6 +44,7 @@ interface NotificationStoreActions {
   dismissNotification: (id: string) => void
   clearAll: () => void
   executeAction: (action: NotificationAction) => Promise<void>
+  markWorkspaceRead: (workspaceId: string) => void
 }
 
 export type NotificationStore = NotificationStoreState & NotificationStoreActions
@@ -97,6 +100,14 @@ let counter = 0
 export const useNotificationStore = create<NotificationStore>((set, get) => ({
   notifications: [],
   toasts: [],
+  unreadWorkspaceIds: [],
+
+  markWorkspaceRead(workspaceId) {
+    set((state) => {
+      if (!state.unreadWorkspaceIds.includes(workspaceId)) return state
+      return { unreadWorkspaceIds: state.unreadWorkspaceIds.filter((id) => id !== workspaceId) }
+    })
+  },
 
   notify({ title, body, type = 'info', action }) {
     const settings = useSettingsStore.getState()
@@ -115,10 +126,22 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     const id = `notif-${++counter}`
     const entry: Notification = { id, title, body, type, timestamp: Date.now(), action }
 
+    // Mark workspace as unread when notification targets a non-active workspace
+    const targetWorkspaceId = (action as any)?.workspaceId as string | undefined
+    const currentWorkspaceId = useAppStore.getState().selectedWorkspaceId
+
     // Always add to persistent history
     set((state) => {
       const notifications = [entry, ...state.notifications].slice(0, MAX_NOTIFICATIONS)
-      return { notifications }
+      let unreadWorkspaceIds = state.unreadWorkspaceIds
+      if (
+        targetWorkspaceId &&
+        targetWorkspaceId !== currentWorkspaceId &&
+        !unreadWorkspaceIds.includes(targetWorkspaceId)
+      ) {
+        unreadWorkspaceIds = [...unreadWorkspaceIds, targetWorkspaceId]
+      }
+      return { notifications, unreadWorkspaceIds }
     })
 
     // In-app toast (always shown regardless of focus)

@@ -7,7 +7,7 @@
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import type { CanvasOperations } from '../stores/appStore'
-import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion } from '../../shared/types'
+import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, CanvasAnnotation } from '../../shared/types'
 
 export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperations {
   return {
@@ -32,8 +32,9 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       zoomLevel: number,
       focusedNodeId: CanvasNodeId | null,
       regions?: Record<string, CanvasRegion>,
+      annotations?: Record<string, CanvasAnnotation>,
     ) {
-      storeApi.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions)
+      storeApi.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions, annotations)
     },
 
     syncCanvasSnapshot() {
@@ -41,6 +42,7 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       return {
         nodes: { ...s.nodes },
         regions: { ...s.regions },
+        annotations: { ...s.annotations },
         viewportOffset: { ...s.viewportOffset },
         zoomLevel: s.zoomLevel,
         focusedNodeId: s.focusedNodeId,
