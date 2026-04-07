@@ -24,6 +24,34 @@ import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
 // Component
 // ---------------------------------------------------------------------------
 
+// Base xterm font size — must match the value used in terminalRegistry.ts when
+// creating the Terminal. We re-rasterize at BASE_FONT_SIZE * renderScale when
+// the canvas zooms in, so glyph atlases stay crisp instead of being CSS-upscaled.
+const BASE_FONT_SIZE = 13
+
+// Discrete render-scale steps. We snap canvas zoom to one of these so a
+// continuous pinch only triggers a small number of expensive atlas rebuilds.
+// Capped at 2.5× — beyond that, atlas memory grows without perceptible gain.
+const RENDER_SCALE_STEPS: number[] = [1.0, 1.5, 2.0, 2.5]
+
+function snapRenderScale(zoom: number): number {
+  if (zoom <= 1.0) return 1.0
+  let best = RENDER_SCALE_STEPS[0]
+  let bestDist = Math.abs(zoom - best)
+  for (const step of RENDER_SCALE_STEPS) {
+    const d = Math.abs(zoom - step)
+    if (d < bestDist) {
+      best = step
+      bestDist = d
+    }
+  }
+  // For zoom above the top step, just use the top step.
+  if (zoom > RENDER_SCALE_STEPS[RENDER_SCALE_STEPS.length - 1]) {
+    return RENDER_SCALE_STEPS[RENDER_SCALE_STEPS.length - 1]
+  }
+  return best
+}
+
 export default function TerminalPanel({
   panelId,
   workspaceId,
@@ -31,8 +59,10 @@ export default function TerminalPanel({
   initialInput,
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const renderBoxRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const fitTimeoutRef = useRef<(() => void) | null>(null)
+  const [renderScale, setRenderScale] = useState(1.0)
 
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -108,8 +138,8 @@ export default function TerminalPanel({
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
+    const renderBox = renderBoxRef.current
+    if (!renderBox) return
 
     let cancelled = false
 
@@ -123,10 +153,10 @@ export default function TerminalPanel({
       .then((entry) => {
         if (cancelled) return
 
-        // 2. Move the xterm DOM element into this container and fit it
-        terminalRegistry.attach(panelId, container)
+        // 2. Move the xterm DOM element into the render box and fit it
+        terminalRegistry.attach(panelId, renderBox)
 
-        // 3. ResizeObserver — keep xterm sized to the container
+        // 3. ResizeObserver — keep xterm sized to the render box
         //    Debounced to avoid expensive fit() calls during rapid resize (e.g. node drag).
         let fitTimeoutId = 0
         const resizeObserver = new ResizeObserver(() => {
@@ -148,7 +178,7 @@ export default function TerminalPanel({
             }
           }, 50)
         })
-        resizeObserver.observe(container)
+        resizeObserver.observe(renderBox)
         resizeObserverRef.current = resizeObserver
         fitTimeoutRef.current = () => clearTimeout(fitTimeoutId)
       })
@@ -167,7 +197,7 @@ export default function TerminalPanel({
         fitTimeoutRef.current = null
       }
 
-      terminalRegistry.detach(panelId, container)
+      terminalRegistry.detach(panelId, renderBox)
 
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect()
@@ -199,8 +229,57 @@ export default function TerminalPanel({
     requestAnimationFrame(() => terminalRegistry.restoreScroll(panelId))
   }, [isFocused, panelId])
 
-  // NOTE: No separate zoom-level re-fit needed — zoom only changes the CSS
-  // transform, not the container size. The ResizeObserver handles actual resizes.
+  // -------------------------------------------------------------------------
+  // Crisp rendering at high canvas zoom
+  //
+  // The canvas applies a single scale(zoom) transform to the world div. That
+  // CSS-upscales xterm's pre-rasterized glyph atlas, which looks pixelated at
+  // zoom > 1. To stay sharp we mimic VS Code's webFrame-zoom trick: when zoom
+  // settles on a higher step, we bump xterm's fontSize to BASE * renderScale
+  // (forcing a fresh higher-resolution atlas) and counter-scale the render
+  // box by 1/renderScale so the on-screen size — after the world div's outer
+  // scale(zoom) — is unchanged. Cols × rows stay constant because both the
+  // box and the cell grow by the same factor before fit() runs.
+  //
+  // Debounced 150ms after the last zoom change so a continuous pinch only
+  // rebuilds the atlas at gesture end (each rebuild is expensive).
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    const target = snapRenderScale(zoomLevel)
+    if (target === renderScale) return
+    const id = window.setTimeout(() => setRenderScale(target), 150)
+    return () => clearTimeout(id)
+  }, [zoomLevel, renderScale])
+
+  useEffect(() => {
+    const renderBox = renderBoxRef.current
+    if (!renderBox) return
+    // Skip rebuilds when the panel is offscreen / hidden — cheap and avoids
+    // burning GPU on terminals the user can't see.
+    if (renderBox.offsetParent === null) return
+    const rect = renderBox.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
+
+    const entry = terminalRegistry.getEntry(panelId)
+    if (!entry) return
+
+    try {
+      const viewport = entry.terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
+      const wasAtBottom = viewport
+        ? Math.abs(viewport.scrollTop - (viewport.scrollHeight - viewport.clientHeight)) < 5
+        : true
+
+      // Mutating options.fontSize triggers xterm's internal renderer refresh,
+      // which rebuilds the WebGL glyph atlas at the new resolution.
+      entry.terminal.options.fontSize = BASE_FONT_SIZE * renderScale
+      terminalRegistry.fit(panelId)
+
+      if (wasAtBottom) entry.terminal.scrollToBottom()
+    } catch {
+      // Ignore — fit can throw on zero-size frames during layout transitions.
+    }
+  }, [renderScale, panelId])
 
   // -------------------------------------------------------------------------
   // Fix mouse coordinates for CSS-scaled canvas
@@ -217,8 +296,15 @@ export default function TerminalPanel({
     const container = containerRef.current
     if (!container) return
 
+    // The full transform chain on .xterm-screen is:
+    //   inner render box: scale(1/renderScale)   (counter-scale, see effect above)
+    //   outer world div : scale(zoomLevel)
+    // so screen pixels = DOM pixels × (zoomLevel / renderScale).
+    // xterm computes hit-testing against its own DOM-space cell metrics, so we
+    // must convert the incoming screen-space offset back into DOM space.
     const adjustCoords = (e: MouseEvent) => {
-      if (Math.abs(zoomLevel - 1.0) < 0.001) return
+      const effective = zoomLevel / renderScale
+      if (Math.abs(effective - 1.0) < 0.001) return
 
       // Find xterm's screen element — the same element xterm uses for its
       // own getBoundingClientRect() call in getCoordsRelativeToElement()
@@ -226,9 +312,9 @@ export default function TerminalPanel({
       if (!screenEl) return
 
       const rect = screenEl.getBoundingClientRect()
-      // Convert screen-space offset to local (unscaled) offset
-      const adjustedX = rect.left + (e.clientX - rect.left) / zoomLevel
-      const adjustedY = rect.top + (e.clientY - rect.top) / zoomLevel
+      // Convert screen-space offset to local (DOM-space) offset
+      const adjustedX = rect.left + (e.clientX - rect.left) / effective
+      const adjustedY = rect.top + (e.clientY - rect.top) / effective
 
       Object.defineProperty(e, 'clientX', { value: adjustedX, configurable: true })
       Object.defineProperty(e, 'clientY', { value: adjustedY, configurable: true })
@@ -244,7 +330,7 @@ export default function TerminalPanel({
       container.removeEventListener('mousemove', adjustCoords, { capture: true })
       container.removeEventListener('mouseup', adjustCoords, { capture: true })
     }
-  }, [zoomLevel])
+  }, [zoomLevel, renderScale])
 
   // -------------------------------------------------------------------------
   // Drag-and-drop: accept files from OS or internal file explorer
@@ -364,6 +450,26 @@ export default function TerminalPanel({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {/*
+          Render box: counter-scaled by 1/renderScale so that xterm renders
+          into a virtual area renderScale× larger in DOM pixels (and at a
+          renderScale× larger fontSize), then is shrunk back to fill the
+          actual panel before the world div applies its outer scale(zoom).
+          The net visual size is unchanged, but glyphs come from a higher-
+          resolution atlas.
+        */}
+        <div
+          ref={renderBoxRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: `${100 * renderScale}%`,
+            height: `${100 * renderScale}%`,
+            transform: `scale(${1 / renderScale})`,
+            transformOrigin: '0 0',
+          }}
+        />
         {isDragOver && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-blue-500/10 border-2 border-dashed border-blue-500/40 rounded pointer-events-none">
             <span className="text-blue-400 text-sm font-medium">Drop to paste path</span>

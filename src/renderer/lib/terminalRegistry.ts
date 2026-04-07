@@ -513,17 +513,43 @@ function release(panelId: string): void {
  * scrollToBottom() leaves content invisible.
  */
 function safeFit(terminal: Terminal, fitAddon: FitAddon, container: HTMLElement): void {
-  fitAddon.fit()
+  // Coalesce into a single terminal.resize() call so the PTY only receives one
+  // SIGWINCH per fit. Two rapid resizes confuse TUI agents (claude code, vim,
+  // htop) which redraw their full frame on each SIGWINCH — the second redraw
+  // can land at a row index that the first resize had already invalidated,
+  // leaving the bottom row clipped from view.
+  const proposed = fitAddon.proposeDimensions()
+  if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return
 
+  let { cols, rows } = proposed
+  cols = Math.max(1, Math.floor(cols))
+  rows = Math.max(1, Math.floor(rows))
+
+  // Sub-pixel overflow guard: FitAddon derives rows from getComputedStyle
+  // height which can round up past the actual visible (overflow:hidden) area.
+  // Probe the cell height by reading any existing row, falling back to a
+  // single-resize-then-measure if the terminal hasn't been opened yet.
   const xtermEl = (terminal as unknown as { element?: HTMLElement }).element
-  if (!xtermEl) return
-
-  if (xtermEl.offsetHeight > container.offsetHeight + 0.5) {
-    const newRows = Math.max(1, terminal.rows - 1)
-    if (newRows !== terminal.rows) {
-      terminal.resize(terminal.cols, newRows)
+  if (xtermEl) {
+    const cellHeight = xtermEl.offsetHeight > 0 && terminal.rows > 0
+      ? xtermEl.offsetHeight / terminal.rows
+      : 0
+    if (cellHeight > 0 && rows * cellHeight > container.offsetHeight + 0.5) {
+      rows = Math.max(1, rows - 1)
     }
   }
+
+  if (cols !== terminal.cols || rows !== terminal.rows) {
+    terminal.resize(cols, rows)
+  }
+
+  // Make sure the visible grid and the buffer agree on the new size in a
+  // single settled state — refresh the rendered cells and pin the viewport
+  // to the bottom so the freshest TUI frame is on screen.
+  try {
+    terminal.refresh(0, terminal.rows - 1)
+    terminal.scrollToBottom()
+  } catch { /* ignore */ }
 }
 
 /**
@@ -566,6 +592,13 @@ function attach(panelId: string, container: HTMLDivElement): void {
     const onScroll = (): void => {
       const e = registry.get(panelId)
       if (e) e.lastScrollTop = viewport.scrollTop
+      // Self-heal the bug where the DOM scrollbar reaches the bottom but the
+      // xterm buffer's viewportY is one short of baseY (leaving the freshest
+      // row invisible). When the user drags the scrollbar all the way down,
+      // force the buffer index to match.
+      if (viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 2) {
+        try { entry.terminal.scrollToBottom() } catch { /* ignore */ }
+      }
     }
     viewport.addEventListener('scroll', onScroll, { passive: true })
     entry.cleanupListeners.push(() => viewport.removeEventListener('scroll', onScroll))
