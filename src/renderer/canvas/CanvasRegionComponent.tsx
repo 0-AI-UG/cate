@@ -352,10 +352,10 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
             ? `1.5px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.9)`
             : `1px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.35)`,
           boxShadow: isDropTarget
-            ? `0 0 0 6px rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.18), inset 0 1px 0 rgba(255,255,255,0.06)`
+            ? `0 0 0 6px rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.18), inset 0 1px 0 var(--border-subtle)`
             : isSelected
-            ? `0 0 0 4px rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.12), inset 0 1px 0 rgba(255,255,255,0.04)`
-            : `inset 0 1px 0 rgba(255,255,255,0.04)`,
+            ? `0 0 0 4px rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.12), inset 0 1px 0 var(--border-subtle)`
+            : `inset 0 1px 0 var(--border-subtle)`,
           transition: 'background 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
           cursor: 'grab',
         }}
@@ -381,8 +381,8 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
               left: 6,
               fontSize: 12,
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.8)',
-              backgroundColor: 'rgba(30, 30, 36, 0.9)',
+              color: 'var(--text-primary)',
+              backgroundColor: 'var(--surface-3)',
               border: '1px solid rgba(74, 158, 255, 0.5)',
               borderRadius: 4,
               padding: '1px 6px',
@@ -406,7 +406,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
               fontSize: 11,
               fontWeight: 600,
               letterSpacing: 0.2,
-              color: 'rgba(255,255,255,0.8)',
+              color: 'var(--text-primary)',
               background: `rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.22)`,
               border: `1px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.5)`,
               backdropFilter: 'blur(6px)',

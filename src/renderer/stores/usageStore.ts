@@ -17,7 +17,9 @@ interface UsageStoreState {
 
 interface UsageStoreActions {
   loadSummary: () => Promise<void>
-  /** Initialize the store: load once and subscribe to live updates. Returns cleanup fn. */
+  /** Load once if not already loaded. Safe to call multiple times. */
+  ensureLoaded: () => Promise<void>
+  /** Subscribe to live updates (no initial load). Returns cleanup fn. */
   init: () => () => void
 }
 
@@ -45,12 +47,15 @@ export const useUsageStore = create<UsageStore>((set, _get) => ({
     }
   },
 
+  async ensureLoaded() {
+    const s = useUsageStore.getState()
+    if (s.summary || s.loading) return
+    await s.loadSummary()
+  },
+
   init() {
-    const store = useUsageStore.getState()
-
-    // Initial load
-    store.loadSummary()
-
+    // Subscribe only — the initial load is explicit (ensureLoaded), so startup
+    // isn't blocked by the main-process usage scan.
     // Subscribe to live updates with ~300ms debounce
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
 

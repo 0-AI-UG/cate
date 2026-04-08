@@ -139,11 +139,11 @@ export const NodeSwitcher: React.FC = () => {
       onClick={close}
     >
       <div
-        className="w-80 max-h-[400px] bg-[#262523] rounded-xl border border-white/[0.12] shadow-2xl overflow-hidden"
+        className="w-80 max-h-[400px] bg-surface-5 rounded-xl border border-subtle shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {items.length === 0 ? (
-          <div className="text-white/50 text-sm text-center py-5">
+          <div className="text-secondary text-sm text-center py-5">
             No open panels
           </div>
         ) : (
@@ -153,13 +153,13 @@ export const NodeSwitcher: React.FC = () => {
                 key={item.nodeId}
                 className={`h-10 flex items-center px-3 gap-3 cursor-pointer transition-colors ${
                   index === selectedIndex
-                    ? 'bg-white/[0.1] rounded-lg'
-                    : 'hover:bg-white/[0.05]'
+                    ? 'bg-surface-6 rounded-lg'
+                    : 'hover:bg-hover'
                 }`}
                 onClick={() => selectItem(item.nodeId)}
               >
                 <PanelIcon type={item.type} />
-                <span className="text-sm text-white/90 truncate flex-1">
+                <span className="text-sm text-primary truncate flex-1">
                   {item.title}
                 </span>
               </div>

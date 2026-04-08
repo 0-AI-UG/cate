@@ -201,12 +201,12 @@ export function PanelSwitcher() {
                   height: thumbH,
                   borderRadius: 8,
                   overflow: 'hidden',
-                  border: isSelected ? `2px solid ${color}` : '2px solid rgba(255,255,255,0.08)',
+                  border: isSelected ? `2px solid ${color}` : `2px solid var(--border-subtle)`,
                   boxShadow: isSelected
-                    ? `0 0 20px ${color}33, 0 4px 16px rgba(0,0,0,0.4)`
-                    : '0 2px 8px rgba(0,0,0,0.3)',
+                    ? `0 0 20px ${color}33, 0 4px 16px var(--shadow-node)`
+                    : 'var(--shadow-node)',
                   transition: 'border-color 0.15s, box-shadow 0.15s',
-                  backgroundColor: '#1f1e1c',
+                  backgroundColor: 'var(--surface-4)',
                 }}
               >
                 {thumb ? (
@@ -219,7 +219,7 @@ export function PanelSwitcher() {
                   <div style={{
                     width: '100%', height: '100%',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'rgba(255,255,255,0.15)', fontSize: 10,
+                    color: 'var(--text-muted)', fontSize: 10,
                   }}>
                     ...
                   </div>
@@ -229,7 +229,7 @@ export function PanelSwitcher() {
                 className="truncate text-center mt-2"
                 style={{
                   fontSize: 11,
-                  color: isSelected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)',
+                  color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
                   maxWidth: thumbW,
                   fontWeight: isSelected ? 500 : 400,
                 }}

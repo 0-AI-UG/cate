@@ -1280,3 +1280,64 @@ export function useNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>): string
     },
   )
 }
+
+/**
+ * Viewport-culled variant of useNodeIds. Only returns ids for nodes whose
+ * bounding box intersects the visible canvas rect (expanded by a 1-screen
+ * margin so panning doesn't thrash mount state at the edges). Focused and
+ * pinned nodes are always included so they keep their live state.
+ *
+ * This is the primary lever for reducing memory/CPU when many terminals or
+ * editors are open on a canvas — off-screen nodes don't mount at all.
+ */
+export function useVisibleNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>): string[] {
+  return useStoreWithEqualityFn(
+    store ?? useCanvasStore,
+    (s) => {
+      const { nodes, viewportOffset, zoomLevel, containerSize, focusedNodeId } = s
+      const z = zoomLevel
+      const cw = containerSize.width
+      const ch = containerSize.height
+
+      const sorted = Object.values(nodes).sort((a, b) => a.zOrder - b.zOrder)
+
+      // Before the container size is known, render everything — prevents an
+      // initial flash where no nodes appear while the ResizeObserver settles.
+      if (cw === 0 || ch === 0 || z <= 0) {
+        return sorted.map((n) => n.id)
+      }
+
+      // Visible canvas-space rect. worldTransform is scale(z) then
+      // translate(offset/z), so a canvas point p maps to p*z + offset in view
+      // space. Inverting: canvas = (view - offset) / z.
+      const marginX = cw / z
+      const marginY = ch / z
+      const left = -viewportOffset.x / z - marginX
+      const top = -viewportOffset.y / z - marginY
+      const right = (cw - viewportOffset.x) / z + marginX
+      const bottom = (ch - viewportOffset.y) / z + marginY
+
+      const result: string[] = []
+      for (const n of sorted) {
+        if (n.id === focusedNodeId || n.isPinned) {
+          result.push(n.id)
+          continue
+        }
+        const nx = n.origin.x
+        const ny = n.origin.y
+        const nr = nx + n.size.width
+        const nb = ny + n.size.height
+        if (nr < left || nx > right || nb < top || ny > bottom) continue
+        result.push(n.id)
+      }
+      return result
+    },
+    (a, b) => {
+      if (a.length !== b.length) return false
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false
+      }
+      return true
+    },
+  )
+}

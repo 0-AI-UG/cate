@@ -5,7 +5,7 @@
 // =============================================================================
 
 import React, { useMemo, useCallback, useEffect } from 'react'
-import { getOrCreateCanvasStoreForPanel, useNodeIds } from '../stores/canvasStore'
+import { getOrCreateCanvasStoreForPanel, useNodeIds, useVisibleNodeIds } from '../stores/canvasStore'
 import { CanvasStoreProvider, useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import Canvas from '../canvas/Canvas'
 import CanvasNode from '../canvas/CanvasNode'
@@ -181,7 +181,13 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   }, [panelId])
 
   const zoomLevel = useStore(store, (s) => s.zoomLevel)
+  // `nodeIds` is the full ordered list (used where we need to know about every
+  // node regardless of visibility — e.g. the "canvas empty" welcome page).
+  // `visibleNodeIds` is viewport-culled: we only mount CanvasNodeWrapper for
+  // nodes whose bbox overlaps the visible canvas rect (plus a 1-screen margin),
+  // so off-screen terminals/editors don't hold live xterm/Monaco instances.
   const nodeIds = useNodeIds(store)
+  const visibleNodeIds = useVisibleNodeIds(store)
   const showMinimap = useSettingsStore((s) => s.showMinimap)
 
   const onCreateAtPoint = useCallback(
@@ -285,7 +291,7 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
         )}
 
         <Canvas onCreateAtPoint={onCreateAtPoint}>
-          {nodeIds.map((nId) => (
+          {visibleNodeIds.map((nId) => (
             <CanvasNodeWrapper
               key={nId}
               nodeId={nId}

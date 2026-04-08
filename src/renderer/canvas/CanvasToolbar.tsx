@@ -40,14 +40,14 @@ const ToolbarButton: React.FC<{
   children: React.ReactNode
 }> = ({ onClick, title, size = 'panel', active = false, children }) => {
   const sizeClass = size === 'panel' ? 'w-7 h-7' : 'w-6 h-6'
-  const activeClass = active ? 'bg-white/10' : 'bg-transparent'
+  const activeClass = active ? 'bg-hover-strong' : 'bg-transparent'
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
       style={{ WebkitTapHighlightColor: 'transparent' }}
-      className={`${sizeClass} ${activeClass} flex items-center justify-center rounded-full text-white/80 hover:bg-white/10 hover:text-white active:bg-white/[0.14] active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
+      className={`${sizeClass} ${activeClass} flex items-center justify-center rounded-full text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
     >
       {children}
     </button>
@@ -63,7 +63,7 @@ const MenuItem: React.FC<{
     type="button"
     onClick={onClick}
     style={{ WebkitTapHighlightColor: 'transparent' }}
-    className="group w-full flex items-center justify-between gap-3 px-2.5 py-1 rounded-md text-left text-[13px] text-white/90 bg-transparent hover:bg-[#0A84FF] hover:text-white focus:outline-none focus-visible:outline-none transition-colors"
+    className="group w-full flex items-center justify-between gap-3 px-2.5 py-1 rounded-md text-left text-[13px] text-primary bg-transparent hover:bg-focus-blue hover:text-inverse focus:outline-none focus-visible:outline-none transition-colors"
   >
     <span>{label}</span>
     <span className="w-4 h-4 flex items-center justify-center opacity-80 group-hover:opacity-100">{icon}</span>
@@ -118,7 +118,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         {/* Drop-up menu */}
         {menuOpen && (
           <div
-            className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 min-w-[200px] rounded-lg border border-white/[0.06] bg-black/30 backdrop-blur-xl backdrop-saturate-150 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] p-1"
+            className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 min-w-[200px] rounded-lg border border-subtle bg-surface-4/80 backdrop-blur-xl backdrop-saturate-150 shadow-[0_10px_30px_-10px_var(--shadow-node)] p-1"
           >
             <MenuItem
               onClick={pick(onNewRegion)}
@@ -135,7 +135,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
               icon={<TextT size={16} />}
               label="New Text Label"
             />
-            <div className="h-px bg-white/[0.10] my-1" />
+            <div className="h-px bg-surface-5 my-1" />
             <MenuItem
               onClick={pick(onZoomToFit)}
               icon={<ArrowsOutSimple size={16} />}
@@ -144,7 +144,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           </div>
         )}
 
-        <div className="rounded-full border border-white/[0.06] bg-black/20 backdrop-blur-md shadow-[0_8px_24px_-8px_rgba(0,0,0,0.4)]">
+        <div className="rounded-full border border-strong bg-surface-6 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
           <div className="flex items-center gap-1 px-3 py-1.5">
             {/* Basic panel buttons */}
             <ToolbarButton onClick={onNewTerminal} title="Terminal" size="panel">
@@ -158,7 +158,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             </ToolbarButton>
 
             {/* Divider */}
-            <div className="w-px h-4 bg-white/10 mx-0.5" />
+            <div className="w-px h-4 bg-surface-5 mx-0.5" />
 
             {/* More — opens drop-up with extra creators */}
             <ToolbarButton
@@ -171,7 +171,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             </ToolbarButton>
 
             {/* Divider */}
-            <div className="w-px h-4 bg-white/10 mx-0.5" />
+            <div className="w-px h-4 bg-surface-5 mx-0.5" />
 
             {/* Zoom controls */}
             <ToolbarButton onClick={onZoomOut} title="Zoom Out" size="zoom">
@@ -182,7 +182,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
               onClick={() => canvasApi.getState().animateZoomTo(1.0)}
               title="Reset zoom to 100%"
               style={{ WebkitTapHighlightColor: 'transparent' }}
-              className="text-[10px] font-mono text-white/70 min-w-[38px] text-center select-none rounded-full bg-transparent hover:bg-white/10 hover:text-white active:bg-white/[0.14] cursor-pointer px-1 py-0.5 focus:outline-none focus-visible:outline-none transition-all duration-100"
+              className="text-[10px] font-mono text-primary min-w-[38px] text-center select-none rounded-full bg-transparent hover:bg-hover-strong active:bg-hover-strong cursor-pointer px-1 py-0.5 focus:outline-none focus-visible:outline-none transition-all duration-100"
             >
               {zoomText}
             </button>

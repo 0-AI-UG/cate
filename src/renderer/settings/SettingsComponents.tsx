@@ -16,10 +16,10 @@ interface SettingRowProps {
 
 export function SettingRow({ label, description, children }: SettingRowProps) {
   return (
-    <div className="flex items-center justify-between py-2.5 border-b border-white/5">
+    <div className="flex items-center justify-between py-2.5 border-b border-subtle">
       <div className="flex flex-col">
-        <span className="text-sm text-white/80">{label}</span>
-        {description && <span className="text-xs text-white/40 mt-0.5">{description}</span>}
+        <span className="text-sm text-primary">{label}</span>
+        {description && <span className="text-xs text-muted mt-0.5">{description}</span>}
       </div>
       <div className="flex-shrink-0 ml-4">{children}</div>
     </div>
@@ -40,7 +40,7 @@ export function Toggle({ checked, onChange }: ToggleProps) {
     <button
       onClick={() => onChange(!checked)}
       className={`relative w-9 h-5 rounded-full transition-colors ${
-        checked ? 'bg-focus-blue' : 'bg-white/20'
+        checked ? 'bg-focus-blue' : 'bg-surface-6'
       }`}
     >
       <div
@@ -69,7 +69,7 @@ export function TextInput({ value, onChange, placeholder }: TextInputProps) {
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-48 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white/80 placeholder:text-white/30 focus:border-focus-blue focus:outline-none"
+      className="w-48 bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary placeholder:text-muted focus:border-focus-blue focus:outline-none"
     />
   )
 }
@@ -101,7 +101,7 @@ export function NumberInput({ value, onChange, min, max, step = 1 }: NumberInput
       min={min}
       max={max}
       step={step}
-      className="w-20 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white/80 text-center focus:border-focus-blue focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      className="w-20 bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary text-center focus:border-focus-blue focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
     />
   )
 }
@@ -126,10 +126,10 @@ export function Select({ value, onChange, options }: SelectProps) {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white/80 focus:border-focus-blue focus:outline-none cursor-pointer"
+      className="bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary focus:border-focus-blue focus:outline-none cursor-pointer"
     >
       {options.map((opt) => (
-        <option key={opt.value} value={opt.value} className="bg-[#262523] text-white">
+        <option key={opt.value} value={opt.value} className="bg-surface-5 text-primary">
           {opt.label}
         </option>
       ))}
@@ -158,7 +158,7 @@ export function Slider({ value, onChange, min, max, step }: SliderProps) {
       min={min}
       max={max}
       step={step}
-      className="w-32 h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-focus-blue [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-focus-blue"
+      className="w-32 h-1.5 bg-surface-6 rounded-full appearance-none cursor-pointer accent-focus-blue [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-focus-blue"
     />
   )
 }

@@ -185,7 +185,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       }
 
       return (
-        <Suspense fallback={<div className="w-full h-full bg-[#1f1e1c] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+        <Suspense fallback={<div className="w-full h-full bg-surface-4 flex items-center justify-center text-muted text-sm">Loading...</div>}>
           {content}
         </Suspense>
       )
@@ -202,7 +202,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // Canvas panels get their own full canvas with renderPanelContent for nodes
       if (panel.type === 'canvas') {
         return (
-          <Suspense fallback={<div className="w-full h-full bg-[#1f1e1c] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+          <Suspense fallback={<div className="w-full h-full bg-surface-4 flex items-center justify-center text-muted text-sm">Loading...</div>}>
             <CanvasPanel
               panelId={panelId}
               workspaceId={wsId}
@@ -264,7 +264,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
   if (!ready) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#1f1e1c] text-zinc-500">
+      <div className="h-screen w-screen flex items-center justify-center bg-surface-4 text-muted">
         <div className="text-sm">Loading...</div>
       </div>
     )
@@ -272,7 +272,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
   return (
     <DockStoreProvider store={dockStore}>
-      <div className="dock-window-root h-screen w-screen flex flex-col bg-[#1f1e1c] overflow-hidden">
+      <div className="dock-window-root h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
         {/* Make the top tab bar act as the macOS titlebar drag region, with
             left padding reserved for the traffic lights. Children remain
             interactive via no-drag. */}

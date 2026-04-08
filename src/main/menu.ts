@@ -131,17 +131,6 @@ export function buildApplicationMenu(): void {
         { role: 'selectAll' },
         { type: 'separator' },
         { label: 'Find in Files...', accelerator: 'CmdOrCtrl+Shift+H', click: dispatch('globalSearch') },
-        { label: 'Command Palette...', accelerator: 'CmdOrCtrl+K', click: dispatch('commandPalette') },
-      ],
-    },
-    // Selection menu
-    {
-      label: 'Selection',
-      submenu: [
-        { role: 'selectAll', label: 'Select All' },
-        { type: 'separator' },
-        { label: 'Focus Next Panel', accelerator: 'Ctrl+Tab', click: dispatch('focusNext') },
-        { label: 'Focus Previous Panel', accelerator: 'Ctrl+Shift+Tab', click: dispatch('focusPrevious') },
       ],
     },
     // View menu
@@ -176,21 +165,6 @@ export function buildApplicationMenu(): void {
         { label: 'Previous Panel', accelerator: 'Ctrl+Shift+Tab', click: dispatch('focusPrevious') },
       ],
     },
-    // Run menu — placeholder for future debug/run support; for now it drives
-    // the terminal (the closest thing Cate has to a "run" surface).
-    {
-      label: 'Run',
-      submenu: [
-        { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: dispatch('newTerminal') },
-      ],
-    },
-    // Terminal menu
-    {
-      label: 'Terminal',
-      submenu: [
-        { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: dispatch('newTerminal') },
-      ],
-    },
     // Window menu
     {
       label: 'Window',
@@ -216,9 +190,11 @@ export function buildApplicationMenu(): void {
           label: 'Main Window',
           click: (): void => {
             for (const win of BrowserWindow.getAllWindows()) {
-              if (!win.isDestroyed()) {
+              if (win.isDestroyed()) continue
+              if (getWindowType(win.id) === 'main') {
+                win.show()
                 win.focus()
-                break
+                return
               }
             }
           },
@@ -236,13 +212,13 @@ export function buildApplicationMenu(): void {
         {
           label: 'Cate Documentation',
           click: (): void => {
-            shell.openExternal('https://github.com/anthropics/claude-code')
+            shell.openExternal('https://github.com/0-AI-UG/cate')
           },
         },
         {
           label: 'Report Issue...',
           click: (): void => {
-            shell.openExternal('https://github.com/anthropics/claude-code/issues')
+            shell.openExternal('https://github.com/0-AI-UG/cate/issues')
           },
         },
         { type: 'separator' },

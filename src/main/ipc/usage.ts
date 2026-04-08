@@ -266,19 +266,31 @@ async function walkJsonlFiles(dir: string): Promise<string[]> {
   return results
 }
 
+const SCAN_BATCH_SIZE = 16
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
 async function scanRoot(dir: string, tool: AgentTool, claudeProjectsRoot?: string): Promise<void> {
   const files = await walkJsonlFiles(dir)
-  await Promise.all(files.map(async (filePath) => {
-    let projectPath: string
-    if (tool === 'claude' && claudeProjectsRoot) {
-      projectPath = claudeProjectPath(filePath, claudeProjectsRoot)
-    } else {
-      // Codex / OpenCode: read first line for session_meta.cwd
-      const cwd = await readSessionCwd(filePath)
-      projectPath = cwd ?? 'unattributed'
-    }
-    await parseFileIncremental(filePath, tool, projectPath)
-  }))
+  // Process in small batches and yield between them, so thousands of files
+  // don't monopolise the main-process event loop and block IPC from the
+  // renderer (which makes the app feel unresponsive for seconds at startup).
+  for (let i = 0; i < files.length; i += SCAN_BATCH_SIZE) {
+    const batch = files.slice(i, i + SCAN_BATCH_SIZE)
+    await Promise.all(batch.map(async (filePath) => {
+      let projectPath: string
+      if (tool === 'claude' && claudeProjectsRoot) {
+        projectPath = claudeProjectPath(filePath, claudeProjectsRoot)
+      } else {
+        const cwd = await readSessionCwd(filePath)
+        projectPath = cwd ?? 'unattributed'
+      }
+      await parseFileIncremental(filePath, tool, projectPath)
+    }))
+    await yieldToEventLoop()
+  }
 }
 
 async function scanAll(): Promise<void> {
@@ -517,18 +529,35 @@ function startWatching(): void {
 // Public: register IPC handlers + kick off initial scan
 // =============================================================================
 
-export function registerUsageHandlers(): void {
-  // Kick off background scan — don't await, fire-and-forget on startup
-  scanAll().then(() => {
-    log.info('[usage] Initial scan complete, %d files cached', fileCache.size)
-  }).catch((err: unknown) => {
-    log.error('[usage] Initial scan error', err)
-  })
+let initialScanPromise: Promise<void> | null = null
+let watchingStarted = false
 
-  startWatching()
+function ensureInitialScan(): Promise<void> {
+  if (!initialScanPromise) {
+    const t0 = Date.now()
+    initialScanPromise = scanAll().then(() => {
+      log.info('[usage] Initial scan complete, %d files cached (%dms)', fileCache.size, Date.now() - t0)
+    }).catch((err: unknown) => {
+      log.error('[usage] Initial scan error', err)
+      // Allow retry on next request
+      initialScanPromise = null
+    })
+  }
+  if (!watchingStarted) {
+    watchingStarted = true
+    try { startWatching() } catch (err) { log.error('[usage] startWatching error', err) }
+  }
+  return initialScanPromise
+}
+
+export function registerUsageHandlers(): void {
+  // Initial scan is lazy — deferred until the renderer first requests usage
+  // data. This keeps startup fast by not competing with window load for
+  // filesystem I/O and the event loop.
 
   ipcMain.handle(USAGE_GET_SUMMARY, async () => {
     try {
+      await ensureInitialScan()
       return buildSummary()
     } catch (error) {
       log.error(`[${USAGE_GET_SUMMARY}]`, error)
@@ -538,6 +567,7 @@ export function registerUsageHandlers(): void {
 
   ipcMain.handle(USAGE_GET_PROJECT, async (_event, projectPath: string) => {
     try {
+      await ensureInitialScan()
       const summary = buildSummary()
       if (projectPath === 'unattributed') return summary.unattributed
       const found = summary.projects.find((p) => p.projectPath === projectPath)

@@ -5,7 +5,7 @@ import { useNotificationStore } from '../stores/notificationStore'
 import type { Notification } from '../stores/notificationStore'
 
 const TYPE_DOTS: Record<Notification['type'], string> = {
-  info: 'bg-white/40',
+  info: 'bg-surface-6',
   success: 'bg-emerald-400',
   warning: 'bg-amber-400',
   error: 'bg-red-400',
@@ -21,11 +21,23 @@ export const NotificationBell: React.FC = () => {
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
 
-  // Position the popover next to the bell
+  // Position the popover below the bell, aligned to its right edge
   useEffect(() => {
     if (!open || !bellRef.current) return
     const rect = bellRef.current.getBoundingClientRect()
-    setPosition({ top: rect.top, left: rect.right + 6 })
+    const popoverWidth = 220 // w-66
+    const margin = 8
+    let left = rect.right - popoverWidth
+    if (left + popoverWidth + margin > window.innerWidth) {
+      left = window.innerWidth - popoverWidth - margin
+    }
+    if (left < margin) left = margin
+    let top = rect.bottom + 6
+    const estHeight = 300
+    if (top + estHeight + margin > window.innerHeight) {
+      top = Math.max(margin, rect.top - estHeight - 6)
+    }
+    setPosition({ top, left })
   }, [open])
 
   // Close on outside click
@@ -47,7 +59,7 @@ export const NotificationBell: React.FC = () => {
     <>
       <button
         ref={bellRef}
-        className="relative text-white/40 hover:text-white/70 transition-colors p-1"
+        className="relative text-muted hover:text-primary transition-colors p-1"
         title="Notifications"
         onClick={() => setOpen((v) => !v)}
       >
@@ -61,44 +73,44 @@ export const NotificationBell: React.FC = () => {
       {open && createPortal(
         <div
           ref={popoverRef}
-          className="fixed z-[9999] w-72 rounded-lg border border-white/10 bg-[#262523] shadow-2xl overflow-hidden"
-          style={{ top: position.top, left: position.left }}
+          className="fixed z-[9999] rounded-md border border-subtle bg-surface-5 backdrop-blur-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
+          style={{ top: position.top, left: position.left, width: 220 }}
         >
-          <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-            <span className="text-xs font-medium text-white/50">Notifications</span>
+          <div className="px-3 py-2 border-b border-subtle flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-primary tracking-wide">Notifications</span>
             {notifications.length > 0 && (
               <button
-                className="text-[11px] text-white/30 hover:text-white/60 transition-colors"
+                className="text-[10px] text-muted hover:text-secondary transition-colors"
                 onClick={() => clearAll()}
               >
-                Remove all
+                Clear all
               </button>
             )}
           </div>
           {notifications.length === 0 ? (
-            <div className="px-3 py-4 text-xs text-white/30 text-center">No notifications</div>
+            <div className="px-3 py-6 text-[11px] text-muted text-center">You're all caught up</div>
           ) : (
-            <div className="max-h-64 overflow-y-auto">
+            <div className="max-h-72 overflow-y-auto py-1">
               {notifications.map((n) => (
                 <div
                   key={n.id}
-                  className={`flex items-start gap-2 px-3 py-2 border-b border-white/5 last:border-b-0 ${n.action ? 'cursor-pointer hover:bg-white/5' : ''}`}
+                  className={`group flex items-start gap-2.5 mx-1 px-2 py-1.5 rounded-md ${n.action ? 'cursor-pointer hover:bg-hover' : ''}`}
                   onClick={() => {
                     if (n.action) executeAction(n.action)
                     dismissNotification(n.id)
                     setOpen(false)
                   }}
                 >
-                  <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${TYPE_DOTS[n.type]}`} />
+                  <div className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${TYPE_DOTS[n.type]}`} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-white/80 leading-tight">{n.title}</div>
-                    <div className="text-[11px] text-white/40 mt-0.5">{n.body}</div>
+                    <div className="text-[11px] font-medium text-primary leading-snug truncate">{n.title}</div>
+                    <div className="text-[10px] text-muted leading-snug mt-0.5 line-clamp-2">{n.body}</div>
                   </div>
                   <button
-                    className="flex-shrink-0 mt-0.5 w-4 h-4 flex items-center justify-center rounded hover:bg-white/10 text-white/20 hover:text-white/50"
+                    className="flex-shrink-0 mt-0.5 w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-surface-7 text-muted hover:text-secondary transition-opacity"
                     onClick={(e) => { e.stopPropagation(); dismissNotification(n.id) }}
                   >
-                    <X size={10} />
+                    <X size={9} />
                   </button>
                 </div>
               ))}

@@ -273,11 +273,11 @@ export default function BrowserPanel({
   return (
     <div className="flex flex-col w-full h-full">
       {/* URL bar */}
-      <div className="h-8 flex items-center gap-1 px-1 bg-[#1f1e1c] border-b border-white/10 shrink-0">
+      <div className="h-8 flex items-center gap-1 px-1 bg-surface-4 border-b border-subtle shrink-0">
         <button
           onClick={handleGoBack}
           disabled={!canGoBack}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 disabled:opacity-30 text-white/70"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover disabled:opacity-30 text-primary"
           title="Back"
         >
           <ArrowLeft size={14} />
@@ -285,21 +285,21 @@ export default function BrowserPanel({
         <button
           onClick={handleGoForward}
           disabled={!canGoForward}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 disabled:opacity-30 text-white/70"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover disabled:opacity-30 text-primary"
           title="Forward"
         >
           <ArrowRight size={14} />
         </button>
         <button
           onClick={handleReload}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/70"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-primary"
           title="Reload"
         >
           <ArrowClockwise size={14} className={isLoading ? 'animate-spin' : ''} />
         </button>
         <button
           onClick={handleScreenshot}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/70"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-primary"
           title="Screenshot"
         >
           <Camera size={14} />
@@ -309,7 +309,7 @@ export default function BrowserPanel({
           value={inputUrl}
           onChange={(e) => setInputUrl(e.target.value)}
           onKeyDown={handleUrlBarKeyDown}
-          className="flex-1 h-6 bg-white/5 border border-white/10 rounded-md px-2 text-sm text-white/80 outline-none focus:border-white/25"
+          className="flex-1 h-6 bg-surface-5 border border-subtle rounded-md px-2 text-sm text-primary outline-none focus:border-strong"
           placeholder="Enter URL or search..."
         />
       </div>
@@ -318,13 +318,13 @@ export default function BrowserPanel({
       <div className="flex-1 relative">
         {/* Error state overlay */}
         {loadError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1f1e1c] text-white/60 p-4 text-center z-10">
-            <Globe size={32} className="mb-2 text-white/30" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-4 text-secondary p-4 text-center z-10">
+            <Globe size={32} className="mb-2 text-muted" />
             <p className="text-sm font-medium mb-1">Failed to load page</p>
-            <p className="text-xs text-white/40">{loadError}</p>
+            <p className="text-xs text-muted">{loadError}</p>
             <button
               onClick={handleReload}
-              className="mt-3 px-3 py-1 text-xs rounded bg-white/10 hover:bg-white/15 text-white/70"
+              className="mt-3 px-3 py-1 text-xs rounded bg-surface-6 hover:bg-hover text-primary"
             >
               Try Again
             </button>
@@ -346,7 +346,7 @@ export default function BrowserPanel({
             style={{ animation: 'screenshot-in 0.3s ease-out' }}
           >
             <div
-              className="relative w-44 rounded-lg overflow-hidden shadow-2xl border border-white/15 hover:border-white/30 transition-all"
+              className="relative w-44 rounded-lg overflow-hidden shadow-2xl border border-subtle hover:border-strong transition-all"
               draggable
               onDragStart={handleScreenshotDragStart}
             >
@@ -358,7 +358,7 @@ export default function BrowserPanel({
               />
               <button
                 onClick={dismissScreenshot}
-                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white/80 hover:bg-black/80 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-primary hover:bg-black/80 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 ×
               </button>

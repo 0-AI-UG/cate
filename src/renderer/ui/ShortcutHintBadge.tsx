@@ -19,9 +19,9 @@ export const ShortcutHintBadge: React.FC<ShortcutHintBadgeProps> = ({
     <span
       className={`
         inline-flex items-center gap-0.5
-        bg-white/10 backdrop-blur-sm
-        border border-white/20
-        text-[11px] font-semibold text-white/90
+        bg-surface-6 backdrop-blur-sm
+        border border-subtle
+        text-[11px] font-semibold text-primary
         px-2 py-0.5
         rounded-full
         shadow-sm

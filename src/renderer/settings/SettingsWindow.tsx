@@ -37,15 +37,15 @@ export function SettingsWindow({ isOpen, onClose }: SettingsWindowProps) {
       onClick={onClose}
     >
       <div
-        className="w-[520px] max-h-[80vh] bg-[#262523] rounded-xl border border-white/[0.12] shadow-2xl flex flex-col"
+        className="w-[520px] max-h-[80vh] bg-surface-5 rounded-xl border border-subtle shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0 border-b border-white/[0.08]">
-          <h2 className="text-lg font-semibold text-white/90">Settings</h2>
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0 border-b border-subtle">
+          <h2 className="text-lg font-semibold text-primary">Settings</h2>
           <button
             onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/[0.1] text-white/50 hover:text-white/80"
+            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-hover text-secondary hover:text-primary"
           >
             <X size={14} />
           </button>
@@ -56,7 +56,7 @@ export function SettingsWindow({ isOpen, onClose }: SettingsWindowProps) {
           <div className="flex flex-col gap-6">
             {SECTIONS.map(({ title, component: Component }) => (
               <section key={title}>
-                <h3 className="text-xs font-medium text-white/40 uppercase tracking-wider mb-2">
+                <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">
                   {title}
                 </h3>
                 <Component />

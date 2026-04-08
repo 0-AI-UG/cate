@@ -48,10 +48,10 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string; onColl
       return rootPath ? (
         <FileExplorer rootPath={rootPath} />
       ) : (
-        <div className="flex flex-col items-center justify-center h-full text-white/30 text-xs gap-3 p-4">
+        <div className="flex flex-col items-center justify-center h-full text-muted text-xs gap-3 p-4">
           <span>No folder open</span>
           <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-white/50 hover:text-white/80 bg-white/5 hover:bg-white/10 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-secondary hover:text-primary bg-surface-5 hover:bg-hover transition-colors"
             onClick={async () => {
               const path = await window.electronAPI.openFolderDialog()
               if (path && selectedWorkspaceId) {
@@ -255,7 +255,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const bar = (
     <div
       className={`flex-shrink-0 flex flex-col items-center h-full relative ${
-        isExpanded ? 'bg-[#141311]' : ''
+        isExpanded ? 'bg-surface-0' : ''
       }`}
       style={{ width: BAR_WIDTH }}
       onDragEnter={handleBarDragEnter}
@@ -284,14 +284,14 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
                 onDragStart={(e) => handleIconDragStart(e, view)}
                 onDragEnd={handleIconDragEnd}
                 className={`relative flex items-center justify-center w-9 h-8 my-0.5 rounded transition-colors cursor-pointer ${
-                  isActive ? 'text-white/90' : 'text-white/30 hover:text-white/60'
+                  isActive ? 'text-primary' : 'text-muted hover:text-secondary'
                 }`}
                 onClick={() => handleIconClick(view)}
                 title={meta.title}
               >
                 {isActive && (
                   <div
-                    className={`absolute top-1.5 bottom-1.5 w-[2px] bg-white/80 pointer-events-none ${
+                    className={`absolute top-1.5 bottom-1.5 w-[2px] bg-primary pointer-events-none ${
                       side === 'left' ? 'left-0 rounded-r' : 'right-0 rounded-l'
                     }`}
                   />
@@ -328,13 +328,13 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
       {/* Version marker — shown on whichever side hosts the workspaces view */}
       {isExpanded && activeView === 'workspaces' && (
         <div className="flex-shrink-0 px-2 py-1.5 flex items-center justify-center gap-1.5 select-none">
-          <svg viewBox="0 0 389 204" className="h-3 w-auto text-white/25" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-label="Cate">
+          <svg viewBox="0 0 389 204" className="h-3 w-auto text-secondary" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-label="Cate">
             <path d="M274 203.2L307.29 1.79999H388.29L384.51 24.84H329.97L320.5 80.16H342.22H366.34L362.74 103.2H338.62H316.5L304.06 180.16H358.6L355 203.2H314.5H274Z" />
             <path d="M201.264 203.2L230.424 26.5H197.124L201.264 1.3H294.864L290.724 26.5H257.424L228.264 203.2H201.264Z" />
             <path d="M89 133.2L142.1 1.79999H176.3L188 133.2H161.18L159.56 103.5H128.24L117.26 133.2H89ZM136.16 81.9H158.3L157.04 50.22C156.92 45.66 156.68 41.16 156.32 36.72C156.08 32.16 155.9 28.62 155.78 26.1C154.94 28.62 153.8 32.1 152.36 36.54C151.04 40.98 149.54 45.48 147.86 50.04L136.16 81.9Z" />
             <path d="M38.1825 135C29.4225 135 21.9825 133.38 15.8625 130.14C9.7425 126.78 5.3625 122.16 2.7225 116.28C0.0824997 110.28 -0.6375 103.32 0.5625 95.4L9.3825 39.6C10.7025 31.56 13.6425 24.6 18.2025 18.72C22.7625 12.84 28.5825 8.27999 35.6625 5.04C42.8625 1.68 50.8425 0 59.6025 0C68.4825 0 75.9225 1.68 81.9225 5.04C87.9225 8.27999 92.3025 12.84 95.0625 18.72C97.8225 24.6 98.5425 31.56 97.2225 39.6H70.2225C71.1825 34.32 70.4025 30.3 67.8825 27.54C65.3625 24.78 61.4025 23.4 56.0025 23.4C50.6025 23.4 46.2225 24.78 42.8625 27.54C39.5025 30.3 37.3425 34.32 36.3825 39.6L27.5625 95.4C26.7225 100.56 27.5625 104.58 30.0825 107.46C32.6025 110.22 36.5625 111.6 41.9625 111.6C47.3625 111.6 51.7425 110.22 55.1025 107.46C58.4625 104.58 60.5625 100.56 61.4025 95.4H88.4025C87.2025 103.32 84.2625 110.28 79.5825 116.28C75.0225 122.16 69.2025 126.78 62.1225 130.14C55.0425 133.38 47.0625 135 38.1825 135Z" />
           </svg>
-          <span className="text-[10px] text-white/25">v{pkg.version}</span>
+          <span className="text-[10px] text-muted">v{pkg.version}</span>
         </div>
       )}
     </div>
@@ -342,7 +342,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
 
   return (
     <div
-      className={`flex-shrink-0 relative flex flex-row h-full bg-[#161513] select-none overflow-hidden ${
+      className={`flex-shrink-0 relative flex flex-row h-full bg-surface-1 select-none overflow-hidden ${
         isResizing ? '' : 'transition-[width] duration-200 ease-in-out'
       }`}
       style={{

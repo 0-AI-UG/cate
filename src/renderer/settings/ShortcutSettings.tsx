@@ -14,9 +14,9 @@ export function ShortcutSettings() {
       {SHORTCUT_ACTIONS.map((action) => (
         <div
           key={action}
-          className="flex items-center justify-between py-2 border-b border-white/5"
+          className="flex items-center justify-between py-2 border-b border-subtle"
         >
-          <span className="text-sm text-white/80">
+          <span className="text-sm text-primary">
             {SHORTCUT_DISPLAY_NAMES[action]}
           </span>
           <div className="flex items-center gap-2">
@@ -27,7 +27,7 @@ export function ShortcutSettings() {
             />
             <button
               onClick={() => resetShortcut(action)}
-              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/[0.1] text-white/30 hover:text-white/60"
+              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-hover text-muted hover:text-secondary"
               title="Reset to default"
             >
               <ArrowCounterClockwise size={12} />
@@ -38,7 +38,7 @@ export function ShortcutSettings() {
       <div className="mt-4 flex justify-end">
         <button
           onClick={resetAll}
-          className="px-3 py-1.5 text-xs text-white/60 hover:text-white/80 bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+          className="px-3 py-1.5 text-xs text-secondary hover:text-primary bg-surface-5 hover:bg-hover rounded-md transition-colors"
         >
           Reset All to Defaults
         </button>

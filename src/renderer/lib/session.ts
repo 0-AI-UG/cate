@@ -471,6 +471,15 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
     appStore.selectWorkspace(wsIds[selectedIdx])
   }
 
+  log.debug(`[session] core session restored in ${(performance.now() - tTotal).toFixed(1)}ms`)
+}
+
+// -----------------------------------------------------------------------------
+// Restore detached (panel + dock) windows — split out so the main window can
+// paint before these (potentially slow) IPC calls run.
+// -----------------------------------------------------------------------------
+
+export async function restoreDetachedWindows(session: MultiWorkspaceSession): Promise<void> {
   // Recreate panel windows that were open at the time of last save
   if (session.panelWindows && session.panelWindows.length > 0) {
     log.debug(`[session] restoring ${session.panelWindows.length} panel windows`)
@@ -528,7 +537,6 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
     }
   }
 
-  log.debug(`[session] full session restored in ${(performance.now() - tTotal).toFixed(1)}ms`)
 }
 
 // -----------------------------------------------------------------------------

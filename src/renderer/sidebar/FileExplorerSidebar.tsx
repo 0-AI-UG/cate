@@ -74,7 +74,7 @@ export const FileExplorerSidebar: React.FC = () => {
 
   return (
     <div
-      className="flex-shrink-0 relative flex flex-col h-full bg-canvas-bg border-r border-white/10 select-none overflow-hidden"
+      className="flex-shrink-0 relative flex flex-col h-full bg-canvas-bg border-r border-subtle select-none overflow-hidden"
       style={{
         width: fileExplorerVisible ? `${width}px` : '0px',
         minWidth: fileExplorerVisible ? `${MIN_WIDTH}px` : '0px',
@@ -88,10 +88,10 @@ export const FileExplorerSidebar: React.FC = () => {
             {rootPath ? (
               <FileExplorer rootPath={rootPath} />
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-white/30 text-xs gap-3 p-4">
+              <div className="flex-1 flex flex-col items-center justify-center text-muted text-xs gap-3 p-4">
                 <span>No folder open</span>
                 <button
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-white/50 hover:text-white/80 bg-white/5 hover:bg-white/10 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-secondary hover:text-primary bg-surface-5 hover:bg-hover transition-colors"
                   onClick={async () => {
                     const path = await window.electronAPI.openFolderDialog()
                     if (!path) return

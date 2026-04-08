@@ -54,13 +54,13 @@ const CANVAS_EXCLUDED_TYPES: PanelType[] = ['canvas']
 // -----------------------------------------------------------------------------
 
 function borderColor(focused: boolean): string {
-  return focused ? 'rgba(74, 158, 255, 0.5)' : 'rgba(255, 255, 255, 0.1)'
+  return focused ? 'var(--border-focus)' : 'var(--border-subtle)'
 }
 
 const SCALE = 'calc(1/max(var(--zoom,1),0.3))'
-const SHADOW_FOCUSED = `0 calc(-2*${SCALE}) calc(8*${SCALE}) rgba(74,158,255,0.3)`
-const SHADOW_UNFOCUSED = `0 calc(-1*${SCALE}) calc(4*${SCALE}) rgba(0,0,0,0.3)`
-const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 calc(-2*${SCALE}) calc(6*${SCALE}) rgba(255,255,255,0.15)`
+const SHADOW_FOCUSED = `0 calc(-2*${SCALE}) calc(8*${SCALE}) var(--shadow-node-focused)`
+const SHADOW_UNFOCUSED = `0 calc(-1*${SCALE}) calc(4*${SCALE}) var(--shadow-node)`
+const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 calc(-2*${SCALE}) calc(6*${SCALE}) var(--border-strong)`
 
 function boxShadow(focused: boolean, hovered: boolean): string {
   if (focused) return SHADOW_FOCUSED
@@ -72,9 +72,9 @@ function activityOutline(activity: NodeActivityState | undefined): string {
   if (!activity) return 'none'
   switch (activity.type) {
     case 'commandFinished':
-      return '2px solid rgba(77, 217, 100, 0.7)'
+      return '2px solid var(--activity-green)'
     case 'agentWaitingForInput':
-      return '2px solid rgba(255, 149, 0, 0.8)'
+      return '2px solid var(--activity-orange)'
     default:
       return 'none'
   }
@@ -86,12 +86,12 @@ function activityOutline(activity: NodeActivityState | undefined): string {
 
 const PULSE_KEYFRAMES = `
 @keyframes pulseActivity {
-  0% { outline-color: rgba(255, 149, 0, 0.4); }
-  100% { outline-color: rgba(255, 149, 0, 1.0); }
+  0% { outline-color: color-mix(in srgb, var(--activity-orange) 40%, transparent); }
+  100% { outline-color: var(--activity-orange); }
 }
 /* Match the tab-bar's bottom border to the active tab color so it reads as
    a continuous surface instead of a hard divider. */
-[data-node-id] .dock-tab-bar { border-bottom-color: #1f1e1c !important; }
+[data-node-id] .dock-tab-bar { border-bottom-color: var(--surface-3) !important; }
 /* Hide tab-bar action icons (add/split/lock/maximize/close and per-tab X)
    when the node isn't focused — they'd just be visual noise from afar. */
 [data-node-id][data-node-active="false"] .dock-tab-bar button,
@@ -129,13 +129,13 @@ function GrabButton({
   color?: string
   children: React.ReactNode
 }) {
-  const baseColor = color ?? 'rgba(255,255,255,0.55)'
+  const baseColor = color ?? 'var(--text-secondary)'
   return (
     <button
       data-grab-button
       title={title}
       onClick={onClick}
-      className="flex items-center justify-center w-[18px] h-[18px] rounded text-white/55 hover:text-white/90 hover:bg-white/10"
+      className="flex items-center justify-center w-[18px] h-[18px] rounded text-secondary hover:text-primary hover:bg-hover"
       style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: baseColor }}
     >
       {children}
@@ -314,7 +314,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       <GrabButton
         title={node?.isPinned ? 'Unlock' : 'Lock'}
         onClick={(e) => { e.stopPropagation(); handleTogglePin() }}
-        color={node?.isPinned ? 'rgba(96,165,250,0.85)' : undefined}
+        color={node?.isPinned ? 'var(--focus-blue)' : undefined}
       >
         {node?.isPinned
           ? <Lock size={TAB_ICON_SIZE} />
@@ -501,12 +501,12 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       zIndex: 1000 + node.zOrder,
       borderRadius: CORNER_RADIUS,
       overflow: 'hidden',
-      border: `1.5px solid ${isSelected ? 'rgba(74, 158, 255, 0.8)' : borderColor(isFocused)}`,
+      border: `1.5px solid ${isSelected ? 'var(--focus-blue)' : borderColor(isFocused)}`,
       boxShadow: boxShadow(isFocused, isHovered),
       outline: activityOutline(activityState),
       outlineOffset: -1,
       animation: isPulsing ? 'pulseActivity 1s ease-in-out infinite alternate' : undefined,
-      backgroundColor: '#1f1e1c',
+      backgroundColor: 'var(--surface-3)',
       transition: baseTransition + layoutTransition,
       transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
       opacity: isEntering ? 0 : isExiting ? 0 : 1,
@@ -539,8 +539,8 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
             height: GRAB_STRIP_HEIGHT,
             display: 'flex',
             alignItems: 'center',
-            backgroundColor: '#161513',
-            borderBottom: '1px solid rgba(255,255,255,0.05)',
+            backgroundColor: 'var(--surface-1)',
+            borderBottom: '1px solid var(--border-subtle)',
             flexShrink: 0,
             cursor: 'grab',
           }}
@@ -615,7 +615,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           style={{
             position: 'absolute',
             inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.15)',
+            backgroundColor: 'var(--shadow-node)',
             pointerEvents: isFocused ? 'none' : 'auto',
             cursor: isFocused ? undefined : 'default',
             zIndex: 1,
@@ -628,7 +628,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         <DockStoreProvider store={dockStoreApi}>
           <div style={{ position: 'relative', zIndex: 0, width: '100%', height: '100%' }}>
             {layout ? renderLayoutNode(layout) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 12 }}>
                 Empty
               </div>
             )}

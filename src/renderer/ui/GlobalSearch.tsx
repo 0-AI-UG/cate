@@ -129,13 +129,11 @@ export function GlobalSearch() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20"
-      style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+      className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/40"
       onClick={close}
     >
       <div
-        className="w-[600px] max-h-[500px] rounded-xl overflow-hidden flex flex-col"
-        style={{ backgroundColor: '#1f1e1c', border: '1px solid rgba(255,255,255,0.1)' }}
+        className="w-[600px] max-h-[500px] rounded-xl overflow-hidden flex flex-col bg-surface-4 border border-subtle"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-3">
@@ -144,27 +142,27 @@ export function GlobalSearch() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full bg-[#1a1917] text-white text-sm px-3 py-2 rounded-lg border border-white/[0.1] outline-none focus:border-blue-500/50"
+            className="w-full bg-surface-3 text-primary text-sm px-3 py-2 rounded-lg border border-subtle outline-none focus:border-blue-500/50"
             placeholder="Search in open editors..."
           />
         </div>
 
         {results.length > 0 && (
-          <div className="flex-1 overflow-y-auto border-t border-white/[0.05]">
+          <div className="flex-1 overflow-y-auto border-t border-subtle">
             {results.map((result, i) => (
               <div
                 key={`${result.filePath}:${result.line}`}
                 className={`px-3 py-2 cursor-pointer text-sm ${
-                  i === selectedIndex ? 'bg-blue-600/20' : 'hover:bg-white/[0.03]'
+                  i === selectedIndex ? 'bg-blue-600/20' : 'hover:bg-hover'
                 }`}
                 onClick={() => selectResult(result)}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-white/40 text-xs font-mono">
+                  <span className="text-muted text-xs font-mono">
                     {result.filePath.split('/').pop()}:{result.line}
                   </span>
                 </div>
-                <div className="text-white/70 text-xs font-mono truncate mt-0.5">
+                <div className="text-primary text-xs font-mono truncate mt-0.5">
                   {result.text}
                 </div>
               </div>
@@ -173,7 +171,7 @@ export function GlobalSearch() {
         )}
 
         {query.length >= 2 && results.length === 0 && (
-          <div className="px-3 py-4 text-sm text-white/40 text-center border-t border-white/[0.05]">
+          <div className="px-3 py-4 text-sm text-muted text-center border-t border-subtle">
             No results found
           </div>
         )}

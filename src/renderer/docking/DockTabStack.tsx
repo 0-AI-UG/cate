@@ -569,7 +569,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       {/* Tab bar — VS Code style: dark strip with active tab merging into the
           content area below via a top accent border. */}
       <div
-        className={`dock-tab-bar flex items-stretch bg-[#181816] overflow-x-auto ${compact ? 'min-h-[24px]' : 'min-h-[35px]'}`}
+        className={`dock-tab-bar flex items-stretch bg-surface-1 overflow-x-auto ${compact ? 'min-h-[24px]' : 'min-h-[35px]'}`}
         onContextMenu={handleTabBarContextMenu}
         onMouseDown={(e) => {
           // Empty area of the tab bar — host (e.g. canvas node) may want to
@@ -596,8 +596,8 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                   cursor-grab select-none
                   ${compact ? 'pl-2 pr-1.5 text-[11px]' : 'pl-3 pr-2 text-xs'}
                   ${isActive
-                    ? 'bg-[#1f1e1c] text-white/90'
-                    : 'bg-[#181816] text-white/55 hover:text-white/80 hover:bg-white/[0.025]'
+                    ? 'bg-surface-3 text-primary'
+                    : 'bg-surface-1 text-secondary hover:text-primary hover:bg-surface-2'
                   }
                 `}
                 onClick={() => handleTabClick(i)}
@@ -626,7 +626,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                 <span className="truncate max-w-[160px]">{getPanelTitle(panelId)}</span>
                 {onClosePanel && (
                   <span
-                    className={`p-0.5 rounded-sm hover:bg-white/10 ${
+                    className={`p-0.5 rounded-sm hover:bg-hover ${
                       isActive ? 'opacity-80' : 'opacity-0 group-hover:opacity-70'
                     }`}
                     onClick={(e) => {
@@ -659,7 +659,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         {/* "+" tab — adds a new tab of the active panel's type into this stack. */}
         {activePanel && (
           <button
-            className={`flex items-center justify-center self-center rounded text-white/45 hover:text-white/85 hover:bg-white/[0.06] ${compact ? 'mx-0.5 my-0.5 w-[18px] h-[18px]' : 'mx-1 my-1 w-[22px] h-[22px]'}`}
+            className={`flex items-center justify-center self-center rounded text-secondary hover:text-primary hover:bg-hover ${compact ? 'mx-0.5 my-0.5 w-[18px] h-[18px]' : 'mx-1 my-1 w-[22px] h-[22px]'}`}
             title={`New ${PANEL_TYPE_LABELS[activePanel.type] ?? 'Tab'}`}
             onClick={() => addTabOfType(activePanel.type)}
           >
@@ -673,7 +673,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           <div className={`relative flex items-center self-center ${compact ? 'px-0.5' : 'px-1'}`}>
             <button
               ref={splitButtonRef}
-              className={`flex items-center justify-center rounded text-white/55 hover:text-white/90 hover:bg-white/10 ${compact ? 'w-[18px] h-[18px]' : 'w-[22px] h-[22px]'}`}
+              className={`flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-hover ${compact ? 'w-[18px] h-[18px]' : 'w-[22px] h-[22px]'}`}
               title="Split (hold to choose type)"
               onClick={handleSplitClick}
               onMouseDown={handleSplitMouseDown}
@@ -684,20 +684,20 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             </button>
             {splitMenuOpen && splitMenuPos && createPortal(
               <div
-                className="fixed z-[1000] min-w-[170px] rounded-md border border-white/10 bg-[#1f1e1c] shadow-xl py-1 text-xs"
+                className="fixed z-[1000] min-w-[170px] rounded-md border border-subtle bg-surface-3 shadow-xl py-1 text-xs"
                 style={{ top: splitMenuPos.top, right: splitMenuPos.right }}
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 {visibleSplitItems.map(({ type, label, Icon }) => (
                   <button
                     key={type}
-                    className="flex items-center gap-2 w-full px-3 py-1.5 text-white/75 hover:bg-white/[0.06] hover:text-white"
+                    className="flex items-center gap-2 w-full px-3 py-1.5 text-secondary hover:bg-surface-4 hover:text-primary"
                     onClick={() => {
                       setSplitMenuOpen(false)
                       splitWithType(type)
                     }}
                   >
-                    <Icon size={13} className="text-white/55" />
+                    <Icon size={13} className="text-muted" />
                     <span>Split with {label}</span>
                   </button>
                 ))}
@@ -721,7 +721,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       {/* Active panel content */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {activePanelId ? renderPanel(activePanelId) : (
-          <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+          <div className="flex items-center justify-center h-full text-muted text-sm">
             No panel
           </div>
         )}

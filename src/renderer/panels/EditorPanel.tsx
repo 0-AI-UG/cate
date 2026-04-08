@@ -10,6 +10,7 @@ import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { registerEditorSave, unregisterEditorSave } from '../lib/editorSaveRegistry'
+import { getResolvedTheme, subscribeTheme } from '../lib/themeManager'
 
 // -----------------------------------------------------------------------------
 // Monaco worker setup for Electron (Vite bundler)
@@ -31,15 +32,17 @@ window.MonacoEnvironment = {
 const modelCache = new Map<string, monaco.editor.ITextModel>()
 
 // -----------------------------------------------------------------------------
-// Custom Monaco theme — matches the canvas-node background (#1f1e1c) so editor
-// panels blend seamlessly with terminal panels and the node chrome.
+// Custom Monaco themes — one per app theme.
+// Defined once at module load; setTheme() swaps them at runtime.
 // -----------------------------------------------------------------------------
 
-const CATE_THEME = 'cate-dark'
-let cateThemeDefined = false
-function ensureCateTheme() {
-  if (cateThemeDefined) return
-  monaco.editor.defineTheme(CATE_THEME, {
+let cateThemesDefined = false
+
+function ensureCateThemes() {
+  if (cateThemesDefined) return
+
+  // Dark Warm — original warm palette, canvas-node background #1f1e1c
+  monaco.editor.defineTheme('cate-dark-warm', {
     base: 'vs-dark',
     inherit: true,
     rules: [],
@@ -51,7 +54,46 @@ function ensureCateTheme() {
       'contrastBorder': '#00000000',
     },
   })
-  cateThemeDefined = true
+
+  // Dark Cold — VS Code Dark+ defaults, minimal overrides
+  monaco.editor.defineTheme('cate-dark-cold', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#1e1e1e',
+      'editorGutter.background': '#1e1e1e',
+      'minimap.background': '#1e1e1e',
+      'editor.lineHighlightBorder': '#00000000',
+      'contrastBorder': '#00000000',
+    },
+  })
+
+  // Light Subtle — Solarized-warm cream palette matching app chrome
+  monaco.editor.defineTheme('cate-light-subtle', {
+    base: 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#faf4e3',
+      'editorGutter.background': '#faf4e3',
+      'minimap.background': '#faf4e3',
+      'editor.foreground': '#1c1813',
+      'editorLineNumber.foreground': '#7a6d58',
+      'editorLineNumber.activeForeground': '#1c1813',
+      'editor.lineHighlightBackground': '#f2ebd3',
+      'editor.lineHighlightBorder': '#00000000',
+      'editor.selectionBackground': '#e4dcbe',
+      'editorCursor.foreground': '#268bd2',
+      'contrastBorder': '#00000000',
+    },
+  })
+
+  cateThemesDefined = true
+}
+
+function resolvedMonacoTheme(): string {
+  return 'cate-' + getResolvedTheme()
 }
 
 // -----------------------------------------------------------------------------
@@ -230,7 +272,8 @@ export default function EditorPanel({
   useEffect(() => {
     if (!containerRef.current) return
 
-    ensureCateTheme()
+    ensureCateThemes()
+    monaco.editor.setTheme(resolvedMonacoTheme())
     const fontSize = useSettingsStore.getState().editorFontSize
 
     // =======================================================================
@@ -238,7 +281,7 @@ export default function EditorPanel({
     // =======================================================================
     if (diffMode && filePath && rootPath) {
       const diffEditor = monaco.editor.createDiffEditor(containerRef.current, {
-        theme: CATE_THEME,
+        theme: resolvedMonacoTheme(),
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
         fontSize: fontSize || 12,
         automaticLayout: false,
@@ -304,7 +347,7 @@ export default function EditorPanel({
     // REGULAR EDITOR
     // =======================================================================
     const editor = monaco.editor.create(containerRef.current, {
-      theme: CATE_THEME,
+      theme: resolvedMonacoTheme(),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       fontSize: fontSize || 12,
       minimap: { enabled: false },
@@ -414,6 +457,17 @@ export default function EditorPanel({
           diffEditorRef.current.updateOptions({ fontSize: state.editorFontSize })
         }
       }
+    })
+    return unsub
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // Watch app theme changes and update Monaco theme
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const unsub = subscribeTheme(() => {
+      monaco.editor.setTheme(resolvedMonacoTheme())
     })
     return unsub
   }, [])

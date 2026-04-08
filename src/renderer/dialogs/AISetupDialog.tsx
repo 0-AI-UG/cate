@@ -78,9 +78,9 @@ interface FilePreviewEntry {
 
 function FileEntryIcon({ isDirectory }: { isDirectory?: boolean }) {
   if (isDirectory) {
-    return <Folder size={14} className="text-white/40 flex-shrink-0" />
+    return <Folder size={14} className="text-muted flex-shrink-0" />
   }
-  return <FileText size={14} className="text-white/40 flex-shrink-0" />
+  return <FileText size={14} className="text-muted flex-shrink-0" />
 }
 
 // -----------------------------------------------------------------------------
@@ -239,13 +239,13 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
             <div
               className={`w-2 h-2 rounded-full transition-colors ${
                 s === current
-                  ? 'bg-white/70'
+                  ? 'bg-primary'
                   : s < current
-                  ? 'bg-white/30'
-                  : 'bg-white/10'
+                  ? 'bg-surface-6'
+                  : 'bg-surface-6'
               }`}
             />
-            {s < 4 && <div className="w-4 h-px bg-white/10" />}
+            {s < 4 && <div className="w-4 h-px bg-surface-6" />}
           </React.Fragment>
         ))}
       </div>
@@ -262,13 +262,13 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
       onClick={handleClose}
     >
       <div
-        className="relative bg-[#1f1e1c] border border-white/[0.08] rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+        className="relative bg-surface-4 border border-subtle rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
         <button
           onClick={handleClose}
-          className="absolute top-4 right-4 p-1 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/[0.06] transition-colors"
+          className="absolute top-4 right-4 p-1 rounded-lg text-muted hover:text-primary hover:bg-hover transition-colors"
           aria-label="Close"
         >
           <X size={16} />
@@ -282,10 +282,10 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
           {/* ------------------------------------------------------------------ */}
           {step === 1 && (
             <>
-              <h2 className="text-white/90 font-semibold text-lg mb-1">
+              <h2 className="text-primary font-semibold text-lg mb-1">
                 Detect AI Tools
               </h2>
-              <p className="text-white/40 text-sm mb-5">
+              <p className="text-muted text-sm mb-5">
                 Checking which AI CLI tools are installed on your system.
               </p>
 
@@ -297,19 +297,19 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                   return (
                     <div
                       key={tool.id}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06]"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-5 border border-subtle"
                     >
-                      <tool.Icon size={16} className="text-white/50 flex-shrink-0" />
-                      <span className="text-sm text-white/80 flex-1">{tool.name}</span>
+                      <tool.Icon size={16} className="text-secondary flex-shrink-0" />
+                      <span className="text-sm text-primary flex-1">{tool.name}</span>
                       {checking ? (
-                        <CircleNotch size={14} className="text-white/30 animate-spin" />
+                        <CircleNotch size={14} className="text-muted animate-spin" />
                       ) : installed ? (
                         <span className="flex items-center gap-1 text-xs text-emerald-400/80">
                           <Check size={12} />
                           Installed
                         </span>
                       ) : (
-                        <span className="text-xs text-white/25">Not found</span>
+                        <span className="text-xs text-muted">Not found</span>
                       )}
                     </div>
                   )
@@ -320,7 +320,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                 <button
                   onClick={() => setStep(2)}
                   disabled={!detectionDone}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white/[0.08] text-white/80 hover:bg-white/[0.12] hover:text-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-surface-5 text-primary hover:bg-hover hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
                   <CaretRight size={14} />
@@ -334,10 +334,10 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
           {/* ------------------------------------------------------------------ */}
           {step === 2 && (
             <>
-              <h2 className="text-white/90 font-semibold text-lg mb-1">
+              <h2 className="text-primary font-semibold text-lg mb-1">
                 Select Tools to Configure
               </h2>
-              <p className="text-white/40 text-sm mb-5">
+              <p className="text-muted text-sm mb-5">
                 Choose which AI tools to set up configuration files for.
               </p>
 
@@ -350,7 +350,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                   return (
                     <label
                       key={tool.id}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06] cursor-pointer hover:bg-white/[0.06] transition-colors"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-5 border border-subtle cursor-pointer hover:bg-hover transition-colors"
                     >
                       <input
                         type="checkbox"
@@ -365,8 +365,8 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                         }}
                         className="w-4 h-4 accent-white/70 flex-shrink-0"
                       />
-                      <tool.Icon size={16} className="text-white/50 flex-shrink-0" />
-                      <span className="text-sm text-white/80 flex-1">{tool.name}</span>
+                      <tool.Icon size={16} className="text-secondary flex-shrink-0" />
+                      <span className="text-sm text-primary flex-1">{tool.name}</span>
                       {isInstalled && (
                         <span className="text-xs text-emerald-400/60">Installed</span>
                       )}
@@ -378,14 +378,14 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
               <div className="mt-6 flex items-center justify-between">
                 <button
                   onClick={() => setStep(1)}
-                  className="text-sm text-white/35 hover:text-white/60 transition-colors"
+                  className="text-sm text-muted hover:text-secondary transition-colors"
                 >
                   Back
                 </button>
                 <button
                   onClick={handleGoToPreview}
                   disabled={selectedTools.size === 0}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white/[0.08] text-white/80 hover:bg-white/[0.12] hover:text-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-surface-5 text-primary hover:bg-hover hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   {scanning ? (
                     <>
@@ -408,15 +408,15 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
           {/* ------------------------------------------------------------------ */}
           {step === 3 && (
             <>
-              <h2 className="text-white/90 font-semibold text-lg mb-1">
+              <h2 className="text-primary font-semibold text-lg mb-1">
                 Preview Files
               </h2>
-              <p className="text-white/40 text-sm mb-5">
+              <p className="text-muted text-sm mb-5">
                 The following files will be created in your project.
               </p>
 
               {filePreviewEntries.length === 0 ? (
-                <div className="py-6 text-center text-sm text-white/30">
+                <div className="py-6 text-center text-sm text-muted">
                   All configuration files already exist — nothing to create.
                 </div>
               ) : (
@@ -427,14 +427,14 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                     return (
                       <div
                         key={`${toolId}:${file.relativePath}`}
-                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06]"
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-surface-5 border border-subtle"
                       >
-                        <Icon size={13} className="text-white/35 flex-shrink-0" />
-                        <span className="text-xs text-white/40 flex-shrink-0 w-20 truncate">
+                        <Icon size={13} className="text-muted flex-shrink-0" />
+                        <span className="text-xs text-muted flex-shrink-0 w-20 truncate">
                           {toolName}
                         </span>
                         <FileEntryIcon isDirectory={file.isDirectory} />
-                        <span className="text-xs text-white/70 font-mono truncate flex-1">
+                        <span className="text-xs text-primary font-mono truncate flex-1">
                           {file.relativePath}
                         </span>
                       </div>
@@ -446,14 +446,14 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
               <div className="mt-6 flex items-center justify-between">
                 <button
                   onClick={() => setStep(2)}
-                  className="text-sm text-white/35 hover:text-white/60 transition-colors"
+                  className="text-sm text-muted hover:text-secondary transition-colors"
                 >
                   Back
                 </button>
                 <button
                   onClick={filePreviewEntries.length === 0 ? () => setStep(4) : handleCreateAll}
                   disabled={creating}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white/[0.08] text-white/80 hover:bg-white/[0.12] hover:text-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-surface-5 text-primary hover:bg-hover hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   {creating ? (
                     <>
@@ -485,10 +485,10 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                 <Check size={20} className="text-emerald-400" />
               </div>
 
-              <h2 className="text-white/90 font-semibold text-lg mb-1">
+              <h2 className="text-primary font-semibold text-lg mb-1">
                 Setup Complete
               </h2>
-              <p className="text-white/40 text-sm mb-5">
+              <p className="text-muted text-sm mb-5">
                 {createdTools.length > 0
                   ? `Configuration files created for ${createdTools.length} tool${createdTools.length !== 1 ? 's' : ''}.`
                   : 'No new files were needed — everything was already configured.'}
@@ -506,7 +506,7 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
                         className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-emerald-500/[0.05] border border-emerald-500/[0.12]"
                       >
                         <Icon size={14} className="text-emerald-400/60 flex-shrink-0" />
-                        <span className="text-sm text-white/70">{toolMeta.name}</span>
+                        <span className="text-sm text-primary">{toolMeta.name}</span>
                         <Check size={12} className="text-emerald-400/70 ml-auto flex-shrink-0" />
                       </div>
                     )
@@ -517,14 +517,14 @@ export function AISetupDialog({ workspaceId }: AISetupDialogProps) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleOpenAIConfig}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white/[0.08] text-white/80 hover:bg-white/[0.12] hover:text-white/90 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-surface-5 text-primary hover:bg-hover hover:text-primary transition-colors"
                 >
                   <Robot size={14} />
                   Open AI Config Panel
                 </button>
                 <button
                   onClick={handleClose}
-                  className="px-4 py-2 rounded-lg text-sm text-white/35 hover:text-white/60 hover:bg-white/[0.05] transition-colors"
+                  className="px-4 py-2 rounded-lg text-sm text-muted hover:text-secondary hover:bg-hover transition-colors"
                 >
                   Close
                 </button>

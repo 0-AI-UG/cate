@@ -121,7 +121,7 @@ export const ShortcutHintOverlay: React.FC = () => {
           key={hint.action}
           className="flex items-center gap-2 animate-in fade-in duration-150"
         >
-          <span className="text-[11px] text-white/60">{hint.displayName}</span>
+          <span className="text-[11px] text-secondary">{hint.displayName}</span>
           <ShortcutHintBadge label={hint.badgeLabel} />
         </div>
       ))}

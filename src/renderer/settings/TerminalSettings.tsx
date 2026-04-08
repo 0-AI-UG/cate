@@ -6,7 +6,7 @@ export function TerminalSettings() {
 
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-xs text-white/40 mb-3">
+      <p className="text-xs text-muted mb-3">
         Leave fields blank to use system defaults.
       </p>
       <SettingRow label="Font family override">

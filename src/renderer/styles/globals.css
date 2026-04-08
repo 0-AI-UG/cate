@@ -2,6 +2,191 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =============================================================================
+   Theme tokens — defined per [data-theme] attribute on <html>.
+   :root provides a safe fallback (dark-warm values) for any un-themed render.
+   ============================================================================= */
+
+:root {
+  --surface-0: #141311;
+  --surface-1: #161513;
+  --surface-2: #181816;
+  --surface-3: #1a1917;
+  --surface-4: #1f1e1c;
+  --surface-5: #262523;
+  --surface-6: #2d2c2a;
+  --titlebar-bg: #1a1917;
+  --canvas-bg: #1f1e1c;
+  --canvas-bg-alt: #262523;
+  --grid-dot: rgba(255, 255, 255, 0.13);
+  --grid-line: rgba(255, 255, 255, 0.05);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --border-focus: #4a9eff;
+  --text-primary: #e8e6e3;
+  --text-secondary: #a8a49e;
+  --text-muted: #6b6762;
+  --text-inverse: #141311;
+  --focus-blue: #4a9eff;
+  --activity-green: #4dd964;
+  --activity-orange: #ff9f0a;
+  --shadow-node: rgba(0, 0, 0, 0.45);
+  --shadow-node-focused: rgba(74, 158, 255, 0.35);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-hover-strong: rgba(255, 255, 255, 0.12);
+  --git-added: #4dd964;
+  --git-modified: #ff9f0a;
+  --git-deleted: #ff453a;
+  --git-untracked: #4a9eff;
+  --git-renamed: #bf5af2;
+}
+
+[data-theme="dark-warm"] {
+  --surface-0: #141311;
+  --surface-1: #161513;
+  --surface-2: #181816;
+  --surface-3: #1a1917;
+  --surface-4: #1f1e1c;
+  --surface-5: #262523;
+  --surface-6: #2d2c2a;
+  --titlebar-bg: #1a1917;
+  --canvas-bg: #1f1e1c;
+  --canvas-bg-alt: #262523;
+  --grid-dot: rgba(255, 255, 255, 0.13);
+  --grid-line: rgba(255, 255, 255, 0.05);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --border-focus: #4a9eff;
+  --text-primary: #e8e6e3;
+  --text-secondary: #a8a49e;
+  --text-muted: #6b6762;
+  --text-inverse: #141311;
+  --focus-blue: #4a9eff;
+  --activity-green: #4dd964;
+  --activity-orange: #ff9f0a;
+  --shadow-node: rgba(0, 0, 0, 0.45);
+  --shadow-node-focused: rgba(74, 158, 255, 0.35);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-hover-strong: rgba(255, 255, 255, 0.12);
+  --git-added: #4dd964;
+  --git-modified: #ff9f0a;
+  --git-deleted: #ff453a;
+  --git-untracked: #4a9eff;
+  --git-renamed: #bf5af2;
+}
+
+[data-theme="light-subtle"] {
+  /* Solarized-warm light: creamy warm-grey surfaces with clearly layered
+     depth, near-black warm text, Solarized blue accents. */
+  --surface-0: #bfb89f;
+  --surface-1: #ccc5ac;
+  --surface-2: #d6cfb6;
+  --surface-3: #dfd8be;
+  --surface-4: #ebe3c8;
+  --surface-5: #f2ebd3;
+  --surface-6: #faf4e3;
+  --titlebar-bg: #b5ad93;
+  --canvas-bg: #d6cfb6;
+  --canvas-bg-alt: #dfd8be;
+  --grid-dot: rgba(48, 36, 20, 0.18);
+  --grid-line: rgba(48, 36, 20, 0.06);
+  --border-subtle: rgba(48, 36, 20, 0.14);
+  --border-strong: rgba(48, 36, 20, 0.26);
+  --border-focus: #268bd2;
+  --text-primary: #1c1813;
+  --text-secondary: #4a3f30;
+  --text-muted: #7a6d58;
+  --text-inverse: #faf4e3;
+  --focus-blue: #268bd2;
+  --activity-green: #859900;
+  --activity-orange: #cb4b16;
+  --shadow-node: rgba(48, 36, 20, 0.14);
+  --shadow-node-focused: rgba(38, 139, 210, 0.32);
+  --scrollbar-thumb: rgba(48, 36, 20, 0.22);
+  --scrollbar-thumb-hover: rgba(48, 36, 20, 0.38);
+  --surface-hover: rgba(48, 36, 20, 0.10);
+  --surface-hover-strong: rgba(48, 36, 20, 0.18);
+  --git-added: #859900;
+  --git-modified: #b58900;
+  --git-deleted: #dc322f;
+  --git-untracked: #268bd2;
+  --git-renamed: #6c71c4;
+}
+
+[data-theme="dark-cold"] {
+  /* Neutral iOS-native dark greys. No blue tint. */
+  --surface-0: #0a0a0b;
+  --surface-1: #111113;
+  --surface-2: #161618;
+  --surface-3: #1c1c1e;
+  --surface-4: #202022;
+  --surface-5: #252527;
+  --surface-6: #2c2c2e;
+  --titlebar-bg: #141416;
+  --canvas-bg: #161618;
+  --canvas-bg-alt: #1c1c1e;
+  --grid-dot: rgba(235, 235, 245, 0.10);
+  --grid-line: rgba(235, 235, 245, 0.04);
+  --border-subtle: rgba(235, 235, 245, 0.06);
+  --border-strong: rgba(235, 235, 245, 0.12);
+  --border-focus: #0a84ff;
+  --text-primary: #f2f2f7;
+  --text-secondary: #8e8e93;
+  --text-muted: #636366;
+  --text-inverse: #0a0a0b;
+  --focus-blue: #0a84ff;
+  --activity-green: #30d158;
+  --activity-orange: #ff9f0a;
+  --shadow-node: rgba(0, 0, 0, 0.60);
+  --shadow-node-focused: rgba(10, 132, 255, 0.32);
+  --scrollbar-thumb: rgba(235, 235, 245, 0.12);
+  --scrollbar-thumb-hover: rgba(235, 235, 245, 0.22);
+  --surface-hover: rgba(235, 235, 245, 0.06);
+  --surface-hover-strong: rgba(235, 235, 245, 0.12);
+  --git-added: #30d158;
+  --git-modified: #ff9f0a;
+  --git-deleted: #ff453a;
+  --git-untracked: #0a84ff;
+  --git-renamed: #bf5af2;
+}
+
+/* Semantic utility classes. Declared directly (not via Tailwind colors) so
+   names like `text-primary` / `border-subtle` don't collide with Tailwind's
+   `text-<color>` / `border-<color>` scale naming. */
+@layer utilities {
+  .text-primary { color: var(--text-primary); }
+  .text-secondary { color: var(--text-secondary); }
+  .text-muted { color: var(--text-muted); }
+  .text-inverse { color: var(--text-inverse); }
+  .hover\:text-primary:hover { color: var(--text-primary); }
+  .hover\:text-secondary:hover { color: var(--text-secondary); }
+  .hover\:text-muted:hover { color: var(--text-muted); }
+  .hover\:text-inverse:hover { color: var(--text-inverse); }
+
+  .border-subtle { border-color: var(--border-subtle); }
+  .border-strong { border-color: var(--border-strong); }
+  .border-focus { border-color: var(--border-focus); }
+  .hover\:border-subtle:hover { border-color: var(--border-subtle); }
+  .hover\:border-strong:hover { border-color: var(--border-strong); }
+  .focus\:border-subtle:focus { border-color: var(--border-subtle); }
+  .focus\:border-strong:focus { border-color: var(--border-strong); }
+  .focus\:border-focus:focus { border-color: var(--border-focus); }
+
+  .placeholder\:text-muted::placeholder { color: var(--text-muted); }
+  .placeholder\:text-secondary::placeholder { color: var(--text-secondary); }
+
+  .bg-hover { background-color: var(--surface-hover); }
+  .bg-hover-strong { background-color: var(--surface-hover-strong); }
+  .hover\:bg-hover:hover { background-color: var(--surface-hover); }
+  .hover\:bg-hover-strong:hover { background-color: var(--surface-hover-strong); }
+  .active\:bg-hover-strong:active { background-color: var(--surface-hover-strong); }
+  .group:hover .group-hover\:bg-hover { background-color: var(--surface-hover); }
+}
+
 @layer base {
   html, body, #root {
     @apply h-full w-full m-0 p-0 overflow-hidden;
@@ -9,7 +194,7 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Custom scrollbar for dark theme */
+  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -18,11 +203,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--scrollbar-thumb);
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--scrollbar-thumb-hover);
   }
 }
 

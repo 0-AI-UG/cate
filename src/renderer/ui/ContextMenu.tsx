@@ -92,7 +92,7 @@ const SubmenuPanel: React.FC<SubmenuPanelProps> = ({
   return (
     <div
       ref={ref}
-      className="fixed py-1 bg-[#1f1e1c] border border-[#3a3a36] rounded-lg shadow-2xl"
+      className="fixed py-1 bg-surface-4 border border-subtle rounded-lg shadow-2xl"
       style={{ left: pos.x, top: pos.y, width: MENU_WIDTH, zIndex: 10000 }}
     >
       <MenuItemList items={items} onClose={onClose} />
@@ -141,8 +141,8 @@ const MenuItemRow: React.FC<MenuItemRowProps> = ({ item, onClose }) => {
   const labelColor = item.danger
     ? 'text-red-400'
     : item.disabled
-      ? 'text-white/25'
-      : 'text-white/85'
+      ? 'text-muted'
+      : 'text-primary'
 
   return (
     <div
@@ -150,7 +150,7 @@ const MenuItemRow: React.FC<MenuItemRowProps> = ({ item, onClose }) => {
       className={`relative flex items-center px-3 rounded-md mx-1 select-none transition-colors ${
         item.disabled
           ? 'cursor-default'
-          : 'cursor-pointer hover:bg-white/[0.08] active:bg-white/[0.12]'
+          : 'cursor-pointer hover:bg-hover active:bg-hover-strong'
       }`}
       style={{ height: ITEM_HEIGHT }}
       onClick={handleClick}
@@ -167,7 +167,7 @@ const MenuItemRow: React.FC<MenuItemRowProps> = ({ item, onClose }) => {
 
       {/* Chevron for submenu */}
       {item.submenu && item.submenu.length > 0 && (
-        <span className="text-white/40 text-xs flex-shrink-0">›</span>
+        <span className="text-muted text-xs flex-shrink-0">›</span>
       )}
 
       {/* Submenu portal */}
@@ -201,7 +201,7 @@ const MenuItemList: React.FC<MenuItemListProps> = ({ items, onClose }) => {
           return (
             <div
               key={index}
-              className="my-1 border-t border-[#2d2c2a]"
+              className="my-1 border-t border-subtle"
             />
           )
         }
@@ -274,7 +274,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }) => {
       {/* Menu panel */}
       <div
         ref={menuRef}
-        className="absolute py-1 bg-[#1f1e1c] border border-[#3a3a36] rounded-lg shadow-2xl"
+        className="absolute py-1 bg-surface-4 border border-subtle rounded-lg shadow-2xl"
         style={{ left: pos.x, top: pos.y, width: MENU_WIDTH }}
         onMouseDown={(e) => e.stopPropagation()}
       >

@@ -339,8 +339,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     <div>
       {/* Node row */}
       <div
-        className={`h-7 flex items-center gap-1.5 px-2 text-sm text-white/70 cursor-pointer rounded-sm ${
-          isSelected ? 'bg-white/[0.1] text-white/90' : 'hover:bg-white/[0.05]'
+        className={`h-7 flex items-center gap-1.5 px-2 text-sm text-primary cursor-pointer rounded-sm ${
+          isSelected ? 'bg-surface-6 text-primary' : 'hover:bg-hover'
         } ${isDimmed ? 'opacity-40' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
@@ -359,7 +359,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         {/* Chevron for directories */}
         {node.isDirectory ? (
           <span
-            className="flex-shrink-0 text-white/40 transition-transform duration-150"
+            className="flex-shrink-0 text-muted transition-transform duration-150"
             style={{ transform: effectiveExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
           >
             <CaretRight size={12} />
@@ -379,7 +379,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         {isRenaming ? (
           <input
             ref={renameInputRef}
-            className="flex-1 min-w-0 bg-[#262523] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
+            className="flex-1 min-w-0 bg-surface-5 text-primary text-sm px-1 rounded border border-blue-500/50 outline-none"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onBlur={commitRename}
@@ -396,7 +396,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 
         {/* Loading indicator for lazy-loaded directories */}
         {isLoading && (
-          <span className="text-xs text-white/30 ml-auto">...</span>
+          <span className="text-xs text-muted ml-auto">...</span>
         )}
       </div>
 
@@ -412,7 +412,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
           </span>
           <input
             ref={createInputRef}
-            className="flex-1 min-w-0 bg-[#262523] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
+            className="flex-1 min-w-0 bg-surface-5 text-primary text-sm px-1 rounded border border-blue-500/50 outline-none"
             value={createValue}
             placeholder={isCreating === 'folder' ? 'folder name' : 'file name'}
             onChange={(e) => setCreateValue(e.target.value)}
@@ -431,7 +431,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       {node.isDirectory && effectiveExpanded && (
         <div className="relative">
           <div
-            className="absolute top-0 bottom-0 w-px bg-white/[0.08] pointer-events-none"
+            className="absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none"
             style={{ left: `${depth * 16 + 8 + 5}px` }}
           />
           {children.map((child) => (

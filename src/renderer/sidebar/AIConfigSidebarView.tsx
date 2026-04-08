@@ -42,7 +42,7 @@ function getEditorPlacement() {
     : { target: 'dock' as const, zone: 'center' as const }
 }
 
-const INPUT_CLS = 'w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-[12px] text-white/70 placeholder:text-white/30 focus:border-white/25 focus:outline-none font-mono'
+const INPUT_CLS = 'w-full bg-surface-5 border border-subtle rounded px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:border-strong focus:outline-none font-mono'
 const SKILL_DESTINATIONS = ['.claude/skills', '.cursor/rules'] as const
 
 // =============================================================================
@@ -113,7 +113,7 @@ function ToolCard({ tool, rootPath, workspaceId }: {
 
   return (
     <div
-      className="rounded-md bg-white/[0.03] border border-white/[0.06] overflow-hidden"
+      className="rounded-md bg-surface-5 border border-subtle overflow-hidden"
       onContextMenu={async (e) => {
         e.preventDefault()
         const items: NativeContextMenuItem[] = [
@@ -140,32 +140,32 @@ function ToolCard({ tool, rootPath, workspaceId }: {
       {/* Card header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-3 px-3 py-3 hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center gap-3 px-3 py-3 hover:bg-hover transition-colors"
       >
-        <div className="w-8 h-8 rounded-md bg-white/[0.06] flex items-center justify-center shrink-0 text-white/50">
+        <div className="w-8 h-8 rounded-md bg-surface-5 flex items-center justify-center shrink-0 text-secondary">
           <Logo size={16} />
         </div>
         <div className="flex-1 text-left min-w-0">
-          <div className="text-[13px] text-white/80 font-medium">{tool.name}</div>
-          <div className="text-[11px] text-white/35">
+          <div className="text-[13px] text-primary font-medium">{tool.name}</div>
+          <div className="text-[11px] text-muted">
             {existCount === totalCount ? 'All files configured' : `${existCount}/${totalCount} files`}
           </div>
         </div>
         {expanded
-          ? <CaretDown size={13} className="text-white/30 shrink-0" />
-          : <CaretRight size={13} className="text-white/30 shrink-0" />
+          ? <CaretDown size={13} className="text-muted shrink-0" />
+          : <CaretRight size={13} className="text-muted shrink-0" />
         }
       </button>
 
       {/* Expanded file list */}
       {expanded && (
-        <div className="px-1 pb-1.5 border-t border-white/[0.04]">
+        <div className="px-1 pb-1.5 border-t border-subtle">
           {tool.configFiles.map((f) => {
             const fullPath = `${rootPath}/${f.relativePath}`
             return (
               <div
                 key={f.relativePath}
-                className="flex items-center h-6 px-2 rounded hover:bg-white/[0.04] group cursor-pointer"
+                className="flex items-center h-6 px-2 rounded hover:bg-hover group cursor-pointer"
                 onClick={() => f.exists && !f.isDirectory && window.electronAPI.shellShowInFolder(fullPath)}
                 onContextMenu={async (e) => {
                   e.preventDefault()
@@ -191,13 +191,13 @@ function ToolCard({ tool, rootPath, workspaceId }: {
                 }}
               >
                 {f.exists ? (
-                  <Check size={10} className="text-white/30 shrink-0 mr-1.5" />
+                  <Check size={10} className="text-muted shrink-0 mr-1.5" />
                 ) : (
-                  <button onClick={(e) => { e.stopPropagation(); createConfig(tool.id, f.relativePath, rootPath) }} className="text-white/20 hover:text-white/60 shrink-0 mr-1.5">
+                  <button onClick={(e) => { e.stopPropagation(); createConfig(tool.id, f.relativePath, rootPath) }} className="text-muted hover:text-secondary shrink-0 mr-1.5">
                     <Plus size={10} />
                   </button>
                 )}
-                <span className={`text-[10px] font-mono flex-1 truncate ${f.exists ? 'text-white/45' : 'text-white/25'}`}>
+                <span className={`text-[10px] font-mono flex-1 truncate ${f.exists ? 'text-secondary' : 'text-muted'}`}>
                   {f.relativePath}
                 </span>
               </div>
@@ -224,7 +224,7 @@ function AddAgentView({ rootPath, unconfiguredTools, onBack }: {
       <SidebarSectionHeader
         title="Add Agent"
         actions={
-          <SidebarHeaderButton onClick={onBack} title="Back" className="text-white/50 hover:text-white/90 text-[13px] leading-none">
+          <SidebarHeaderButton onClick={onBack} title="Back" className="text-secondary hover:text-primary text-[13px] leading-none">
             <span className="px-1">&larr;</span>
           </SidebarHeaderButton>
         }
@@ -237,21 +237,21 @@ function AddAgentView({ rootPath, unconfiguredTools, onBack }: {
               key={tool.id}
               onClick={async () => { setBusy(tool.id); await createAllForTool(tool.id, rootPath); setBusy(null); onBack() }}
               disabled={busy !== null}
-              className="w-full flex items-center gap-3 px-3 py-3.5 rounded-md bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.1] transition-all disabled:opacity-50"
+              className="w-full flex items-center gap-3 px-3 py-3.5 rounded-md bg-surface-5 border border-subtle hover:bg-hover hover:border-subtle transition-all disabled:opacity-50"
             >
-              <div className="w-8 h-8 rounded-md bg-white/[0.06] flex items-center justify-center shrink-0 text-white/50">
+              <div className="w-8 h-8 rounded-md bg-surface-5 flex items-center justify-center shrink-0 text-secondary">
                 <Logo size={16} />
               </div>
               <div className="flex-1 text-left">
-                <div className="text-[13px] text-white/80 font-medium">{tool.name}</div>
-                <div className="text-[11px] text-white/35">{tool.configFiles.length} config files</div>
+                <div className="text-[13px] text-primary font-medium">{tool.name}</div>
+                <div className="text-[11px] text-muted">{tool.configFiles.length} config files</div>
               </div>
-              {busy === tool.id && <CircleNotch size={14} className="text-white/40 animate-spin shrink-0" />}
+              {busy === tool.id && <CircleNotch size={14} className="text-muted animate-spin shrink-0" />}
             </button>
           )
         })}
         {unconfiguredTools.length === 0 && (
-          <div className="text-[12px] text-white/40 py-4 text-center">All agents are configured</div>
+          <div className="text-[12px] text-muted py-4 text-center">All agents are configured</div>
         )}
       </div>
     </div>
@@ -434,30 +434,30 @@ function SkillsCard({ rootPath, workspaceId }: {
 
   return (
     <div
-      className="rounded-md bg-white/[0.03] border border-white/[0.06] overflow-hidden"
+      className="rounded-md bg-surface-5 border border-subtle overflow-hidden"
       onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.02] transition-colors">
-        <BookOpen size={14} className="text-white/40 shrink-0" />
-        <span className="text-[12px] text-white/60 flex-1 text-left">Skills</span>
-        {skills.length > 0 && <span className="text-[10px] text-white/30">{skills.length}</span>}
-        {expanded ? <CaretDown size={11} className="text-white/25" /> : <CaretRight size={11} className="text-white/25" />}
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover transition-colors">
+        <BookOpen size={14} className="text-muted shrink-0" />
+        <span className="text-[12px] text-secondary flex-1 text-left">Skills</span>
+        {skills.length > 0 && <span className="text-[10px] text-muted">{skills.length}</span>}
+        {expanded ? <CaretDown size={11} className="text-muted" /> : <CaretRight size={11} className="text-muted" />}
       </button>
 
       {expanded && (
-        <div className={`border-t border-white/[0.04] ${dragOver ? 'bg-white/[0.04]' : ''}`}>
+        <div className={`border-t border-subtle ${dragOver ? 'bg-surface-5' : ''}`}>
           {dragOver ? (
-            <div className="flex items-center justify-center py-4 text-[11px] text-white/50"><Download size={12} className="mr-1" /> Drop .md files</div>
+            <div className="flex items-center justify-center py-4 text-[11px] text-secondary"><Download size={12} className="mr-1" /> Drop .md files</div>
           ) : (
             <div className="px-1 pb-1.5">
-              {loading && <div className="text-[11px] text-white/40 px-2 py-2">Scanning...</div>}
-              {!loading && skills.length === 0 && !showUrl && <div className="text-[11px] text-white/35 px-2 py-2">No skills found</div>}
+              {loading && <div className="text-[11px] text-muted px-2 py-2">Scanning...</div>}
+              {!loading && skills.length === 0 && !showUrl && <div className="text-[11px] text-muted px-2 py-2">No skills found</div>}
 
               {skills.map((s) => (
                 <div key={s.name}
-                  className="flex items-center h-6 px-2 rounded hover:bg-white/[0.04] group cursor-pointer"
+                  className="flex items-center h-6 px-2 rounded hover:bg-hover group cursor-pointer"
                   onClick={() => window.electronAPI.shellShowInFolder(`${rootPath}/.claude/skills/${s.name}`)}
                   onContextMenu={async (e) => {
                     e.preventDefault()
@@ -475,8 +475,8 @@ function SkillsCard({ rootPath, workspaceId }: {
                     }
                   }}
                 >
-                  <span className="text-[10px] text-white/60 flex-1 truncate">{s.displayName}</span>
-                  {s.desc && <span className="text-[9px] text-white/25 truncate max-w-[80px] ml-1">{s.desc}</span>}
+                  <span className="text-[10px] text-secondary flex-1 truncate">{s.displayName}</span>
+                  {s.desc && <span className="text-[9px] text-muted truncate max-w-[80px] ml-1">{s.desc}</span>}
                 </div>
               ))}
 
@@ -487,23 +487,23 @@ function SkillsCard({ rootPath, workspaceId }: {
                   <div className="flex items-center gap-1">
                     <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleImport()}
                       placeholder="GitHub repo or file URL" className={INPUT_CLS} autoFocus />
-                    <button onClick={handleImport} disabled={!url.trim() || importing} className="text-[10px] text-white/50 hover:text-white/80 disabled:opacity-30 shrink-0">
+                    <button onClick={handleImport} disabled={!url.trim() || importing} className="text-[10px] text-secondary hover:text-primary disabled:opacity-30 shrink-0">
                       {importing ? <CircleNotch size={10} className="animate-spin" /> : 'Scan'}
                     </button>
-                    <button onClick={() => { setShowUrl(false); setUrl(''); setRemoteSkills([]); setRepoInfo(null) }} className="text-white/30 shrink-0"><X size={10} /></button>
+                    <button onClick={() => { setShowUrl(false); setUrl(''); setRemoteSkills([]); setRepoInfo(null) }} className="text-muted shrink-0"><X size={10} /></button>
                   </div>
                   {remoteSkills.length > 0 && (
                     <div className="mt-1.5">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] text-white/40 flex-1">Found in repo</span>
-                        <button onClick={handleImportAll} disabled={importing} className="text-[10px] text-white/50 hover:text-white/80 disabled:opacity-30">Import all</button>
+                        <span className="text-[10px] text-muted flex-1">Found in repo</span>
+                        <button onClick={handleImportAll} disabled={importing} className="text-[10px] text-secondary hover:text-primary disabled:opacity-30">Import all</button>
                       </div>
                       <div className="max-h-24 overflow-y-auto">
                         {remoteSkills.map((rs) => (
                           <div key={rs.path} className="flex items-center h-5 gap-1 group">
-                            <span className="text-[10px] text-white/50 flex-1 truncate font-mono">{rs.name}</span>
+                            <span className="text-[10px] text-secondary flex-1 truncate font-mono">{rs.name}</span>
                             <button onClick={() => handleImportRemote(rs)} disabled={importing}
-                              className="text-[9px] text-white/40 hover:text-white/80 opacity-0 group-hover:opacity-100 disabled:opacity-30 shrink-0">Import</button>
+                              className="text-[9px] text-muted hover:text-primary opacity-0 group-hover:opacity-100 disabled:opacity-30 shrink-0">Import</button>
                           </div>
                         ))}
                       </div>
@@ -516,16 +516,16 @@ function SkillsCard({ rootPath, workspaceId }: {
                 <div className="flex items-center gap-1 px-2 pt-1.5">
                   <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
                     placeholder="skill-name" className={INPUT_CLS} autoFocus />
-                  <button onClick={handleCreate} className="text-[10px] text-white/50 hover:text-white/80 shrink-0">OK</button>
-                  <button onClick={() => { setShowNew(false); setNewName('') }} className="text-white/30 shrink-0"><X size={10} /></button>
+                  <button onClick={handleCreate} className="text-[10px] text-secondary hover:text-primary shrink-0">OK</button>
+                  <button onClick={() => { setShowNew(false); setNewName('') }} className="text-muted shrink-0"><X size={10} /></button>
                 </div>
               )}
 
               {!showUrl && !showNew && (
                 <div className="flex items-center gap-2 px-2 pt-1.5">
-                  <button onClick={() => setShowNew(true)} className="text-[10px] text-white/40 hover:text-white/70">+ New</button>
-                  <button onClick={() => setShowUrl(true)} className="text-[10px] text-white/40 hover:text-white/70">Import</button>
-                  <span className="text-[9px] text-white/20">or drop .md</span>
+                  <button onClick={() => setShowNew(true)} className="text-[10px] text-muted hover:text-primary">+ New</button>
+                  <button onClick={() => setShowUrl(true)} className="text-[10px] text-muted hover:text-primary">Import</button>
+                  <span className="text-[9px] text-muted">or drop .md</span>
                 </div>
               )}
             </div>
@@ -556,33 +556,33 @@ function MCPCard({ rootPath }: { rootPath: string }) {
   const servers = Object.values(mcpServers)
 
   return (
-    <div className="rounded-md bg-white/[0.03] border border-white/[0.06] overflow-hidden">
-      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.02] transition-colors">
-        <HardDrives size={14} className="text-white/40 shrink-0" />
-        <span className="text-[12px] text-white/60 flex-1 text-left">MCP Servers</span>
-        {servers.length > 0 && <span className="text-[10px] text-white/30">{servers.length}</span>}
-        {expanded ? <CaretDown size={11} className="text-white/25" /> : <CaretRight size={11} className="text-white/25" />}
+    <div className="rounded-md bg-surface-5 border border-subtle overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover transition-colors">
+        <HardDrives size={14} className="text-muted shrink-0" />
+        <span className="text-[12px] text-secondary flex-1 text-left">MCP Servers</span>
+        {servers.length > 0 && <span className="text-[10px] text-muted">{servers.length}</span>}
+        {expanded ? <CaretDown size={11} className="text-muted" /> : <CaretRight size={11} className="text-muted" />}
       </button>
 
       {expanded && (
-        <div className="border-t border-white/[0.04] px-1 pb-1.5">
+        <div className="border-t border-subtle px-1 pb-1.5">
           {servers.map((s) => {
-            const dot = s.status === 'running' ? 'bg-emerald-400' : s.status === 'error' ? 'bg-red-400' : s.status === 'starting' ? 'bg-amber-400 animate-pulse' : 'bg-white/20'
+            const dot = s.status === 'running' ? 'bg-emerald-400' : s.status === 'error' ? 'bg-red-400' : s.status === 'starting' ? 'bg-amber-400 animate-pulse' : 'bg-surface-6'
             return (
-              <div key={s.name} className="flex items-center h-6 px-2 rounded hover:bg-white/[0.04] group">
+              <div key={s.name} className="flex items-center h-6 px-2 rounded hover:bg-hover group">
                 <div className={`w-1.5 h-1.5 rounded-full shrink-0 mr-1.5 ${dot}`} />
-                <span className="text-[10px] text-white/60 flex-1 truncate">{s.name}</span>
+                <span className="text-[10px] text-secondary flex-1 truncate">{s.name}</span>
                 <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                   {s.status === 'running'
-                    ? <button onClick={() => stop(s.name)} className="p-0.5 text-white/40 hover:text-white/70"><Square size={9} /></button>
-                    : <button onClick={() => spawn(s.name)} className="p-0.5 text-white/40 hover:text-white/70"><Play size={9} /></button>
+                    ? <button onClick={() => stop(s.name)} className="p-0.5 text-muted hover:text-primary"><Square size={9} /></button>
+                    : <button onClick={() => spawn(s.name)} className="p-0.5 text-muted hover:text-primary"><Play size={9} /></button>
                   }
-                  <button onClick={() => remove(s.name, rootPath)} className="p-0.5 text-white/40 hover:text-red-400"><Trash size={9} /></button>
+                  <button onClick={() => remove(s.name, rootPath)} className="p-0.5 text-muted hover:text-red-400"><Trash size={9} /></button>
                 </div>
               </div>
             )
           })}
-          {servers.length === 0 && !adding && <div className="text-[11px] text-white/35 px-2 py-2">None configured</div>}
+          {servers.length === 0 && !adding && <div className="text-[11px] text-muted px-2 py-2">None configured</div>}
 
           {adding ? (
             <div className="px-2 pt-1.5 space-y-1">
@@ -590,14 +590,14 @@ function MCPCard({ rootPath }: { rootPath: string }) {
                 <input value={cmd} onChange={(e) => setCmd(e.target.value)} placeholder="cmd" className={INPUT_CLS} style={{ flex: 1 }} /></div>
               <input value={args} onChange={(e) => setArgs(e.target.value)} placeholder="args" className={INPUT_CLS} />
               <div className="flex gap-2">
-                <button onClick={async () => { if (name.trim() && cmd.trim()) { await addServer({ name: name.trim(), command: cmd.trim(), args: args.split(/\s+/).filter(Boolean), env: {} }, rootPath); setName(''); setCmd(''); setArgs(''); setAdding(false) } }} className="text-[10px] text-white/50 hover:text-white/80">Add</button>
-                <button onClick={() => setAdding(false)} className="text-[10px] text-white/35">Cancel</button>
+                <button onClick={async () => { if (name.trim() && cmd.trim()) { await addServer({ name: name.trim(), command: cmd.trim(), args: args.split(/\s+/).filter(Boolean), env: {} }, rootPath); setName(''); setCmd(''); setArgs(''); setAdding(false) } }} className="text-[10px] text-secondary hover:text-primary">Add</button>
+                <button onClick={() => setAdding(false)} className="text-[10px] text-muted">Cancel</button>
               </div>
             </div>
           ) : (
             <div className="flex gap-3 px-2 pt-1.5">
-              <button onClick={() => setAdding(true)} className="text-[10px] text-white/40 hover:text-white/70">+ Add</button>
-              <button onClick={() => setShowReg(!showReg)} className="text-[10px] text-white/40 hover:text-white/70">{showReg ? 'Hide' : 'Browse'}</button>
+              <button onClick={() => setAdding(true)} className="text-[10px] text-muted hover:text-primary">+ Add</button>
+              <button onClick={() => setShowReg(!showReg)} className="text-[10px] text-muted hover:text-primary">{showReg ? 'Hide' : 'Browse'}</button>
             </div>
           )}
 
@@ -615,9 +615,9 @@ function MCPCard({ rootPath }: { rootPath: string }) {
                       const key = entry.name.toLowerCase().replace(/\s+/g, '-')
                       return (
                         <div key={entry.name} className="flex items-center h-5 gap-1">
-                          <span className="text-[10px] text-white/55 flex-1 truncate">{entry.name}</span>
-                          {existing[key] ? <span className="text-[9px] text-white/25">added</span>
-                            : <button onClick={() => add({ name: key, command: entry.command, args: entry.args, env: {} }, rootPath)} className="text-[9px] text-white/45 hover:text-white/80">Add</button>}
+                          <span className="text-[10px] text-secondary flex-1 truncate">{entry.name}</span>
+                          {existing[key] ? <span className="text-[9px] text-muted">added</span>
+                            : <button onClick={() => add({ name: key, command: entry.command, args: entry.args, env: {} }, rootPath)} className="text-[9px] text-secondary hover:text-primary">Add</button>}
                         </div>
                       )
                     })}
@@ -649,10 +649,10 @@ export const AIConfigSidebarView: React.FC<{ rootPath: string; workspaceId: stri
 
   if (!rootPath) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-white/40 text-[12px] gap-3 p-4">
-        <FolderOpen size={20} className="text-white/20" />
+      <div className="flex flex-col items-center justify-center h-full text-muted text-[12px] gap-3 p-4">
+        <FolderOpen size={20} className="text-muted" />
         <span>No folder open</span>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded text-white/50 hover:text-white/80 bg-white/5 hover:bg-white/10 transition-colors"
+        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded text-secondary hover:text-primary bg-surface-5 hover:bg-hover transition-colors"
           onClick={async () => { const p = await window.electronAPI.openFolderDialog(); if (p && workspaceId) useAppStore.getState().setWorkspaceRootPath(workspaceId, p) }}>
           <FolderOpen size={12} /> Open Folder
         </button>
@@ -684,12 +684,12 @@ export const AIConfigSidebarView: React.FC<{ rootPath: string; workspaceId: stri
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         {scanning && !tools ? (
-          <div className="flex items-center gap-2 py-4 px-3 text-[12px] text-white/40"><CircleNotch size={12} className="animate-spin" /> Scanning...</div>
+          <div className="flex items-center gap-2 py-4 px-3 text-[12px] text-muted"><CircleNotch size={12} className="animate-spin" /> Scanning...</div>
         ) : (
           <div className="p-2 space-y-2">
             {/* Tool cards */}
             {configuredTools.length === 0 && (
-              <div className="text-[12px] text-white/40 px-1 py-3">No agents configured yet</div>
+              <div className="text-[12px] text-muted px-1 py-3">No agents configured yet</div>
             )}
             {configuredTools.map((tool) => (
               <ToolCard key={tool.id} tool={tool} rootPath={rootPath} workspaceId={workspaceId} />
@@ -699,7 +699,7 @@ export const AIConfigSidebarView: React.FC<{ rootPath: string; workspaceId: stri
             {unconfiguredTools.length > 0 && (
               <button
                 onClick={() => setSubPage('addAgent')}
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[12px] text-white/40 hover:text-white/60 hover:bg-white/[0.03] rounded-md border border-dashed border-white/[0.08] transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[12px] text-muted hover:text-secondary hover:bg-hover rounded-md border border-dashed border-subtle transition-colors"
               >
                 <Plus size={13} /> Add Agent
               </button>

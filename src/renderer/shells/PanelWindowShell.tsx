@@ -103,26 +103,26 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
 
   if (!displayPanel) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#1f1e1c] text-zinc-500">
+      <div className="h-screen w-screen flex items-center justify-center bg-surface-4 text-muted">
         <div className="text-sm">Loading panel...</div>
       </div>
     )
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#1f1e1c] overflow-hidden">
+    <div className="h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
       {/* Custom title bar — serves as drag handle */}
       <div
-        className="flex items-center h-8 px-2 bg-[#1a1917] border-b border-zinc-800 select-none shrink-0"
+        className="flex items-center h-8 px-2 bg-titlebar-bg border-b border-subtle select-none shrink-0"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         onDoubleClick={handleTitleDoubleClick}
       >
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <PanelTypeIcon type={displayPanel.type} />
-          <span className="text-xs text-zinc-400 truncate">{displayPanel.title}</span>
+          <span className="text-xs text-secondary truncate">{displayPanel.title}</span>
         </div>
         <button
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-muted hover:text-primary transition-colors"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           onClick={handleClose}
           title="Close"
@@ -133,7 +133,7 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
 
       {/* Panel content */}
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
-        <Suspense fallback={<div className="w-full h-full bg-[#1f1e1c] flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+        <Suspense fallback={<div className="w-full h-full bg-surface-4 flex items-center justify-center text-muted text-sm">Loading...</div>}>
           <PanelContent panel={displayPanel} workspaceId={workspaceId ?? ''} />
         </Suspense>
       </div>
@@ -160,7 +160,7 @@ function PanelContent({ panel, workspaceId }: { panel: PanelState; workspaceId: 
     case 'projectList':
       return <ProjectListPanel panelId={panel.id} workspaceId={workspaceId} nodeId="" />
     default:
-      return <div className="w-full h-full flex items-center justify-center text-zinc-500">Unknown panel type</div>
+      return <div className="w-full h-full flex items-center justify-center text-muted">Unknown panel type</div>
   }
 }
 
@@ -169,7 +169,7 @@ function PanelContent({ panel, workspaceId }: { panel: PanelState; workspaceId: 
 // -----------------------------------------------------------------------------
 
 function PanelTypeIcon({ type }: { type: string }) {
-  const iconClass = "text-zinc-500"
+  const iconClass = "text-muted"
   const props = { size: 14, className: iconClass }
   switch (type) {
     case 'terminal':

@@ -422,7 +422,7 @@ export const CommandPalette: React.FC = () => {
       onClick={close}
     >
       <div
-        className="w-96 bg-[#262523] rounded-xl border border-white/[0.12] shadow-2xl overflow-hidden"
+        className="w-96 bg-surface-5 rounded-xl border border-subtle shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
@@ -436,17 +436,17 @@ export const CommandPalette: React.FC = () => {
               setSelectedIndex(0)
             }}
             placeholder="Type a command..."
-            className="w-full h-10 bg-transparent text-sm text-white/90 placeholder-white/30 outline-none"
+            className="w-full h-10 bg-transparent text-sm text-primary placeholder:text-muted outline-none"
           />
         </div>
 
         {/* Divider */}
-        <div className="border-b border-white/10" />
+        <div className="border-b border-subtle" />
 
         {/* Commands list */}
         <div className="max-h-[300px] overflow-y-auto py-1">
           {filteredCommands.length === 0 && matchingFiles.length === 0 ? (
-            <div className="text-white/40 text-sm text-center py-4">
+            <div className="text-muted text-sm text-center py-4">
               No matching commands
             </div>
           ) : (
@@ -456,22 +456,22 @@ export const CommandPalette: React.FC = () => {
                   key={cmd.id}
                   className={`flex items-center px-3 py-2 gap-3 cursor-pointer transition-colors ${
                     index === selectedIndex
-                      ? 'bg-white/[0.1]'
-                      : 'hover:bg-white/[0.05]'
+                      ? 'bg-surface-6'
+                      : 'hover:bg-hover'
                   }`}
                   onClick={() => executeCommand(cmd)}
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
-                  <span className="text-white/60 flex-shrink-0">{cmd.icon}</span>
-                  <span className="text-sm text-white/90 flex-1">{cmd.title}</span>
-                  <span className="text-xs text-white/40 flex-shrink-0">
+                  <span className="text-secondary flex-shrink-0">{cmd.icon}</span>
+                  <span className="text-sm text-primary flex-1">{cmd.title}</span>
+                  <span className="text-xs text-muted flex-shrink-0">
                     {cmd.shortcutText}
                   </span>
                 </div>
               ))}
               {matchingFiles.length > 0 && (
                 <>
-                  <div className="px-3 py-1 text-xs text-zinc-500 uppercase tracking-wider">
+                  <div className="px-3 py-1 text-xs text-muted uppercase tracking-wider">
                     Files
                   </div>
                   {matchingFiles.map((file, i) => {
@@ -481,8 +481,8 @@ export const CommandPalette: React.FC = () => {
                         key={file}
                         className={`flex items-center px-3 py-2 gap-3 cursor-pointer transition-colors ${
                           fileIndex === selectedIndex
-                            ? 'bg-white/[0.1]'
-                            : 'hover:bg-white/[0.05]'
+                            ? 'bg-surface-6'
+                            : 'hover:bg-hover'
                         }`}
                         onClick={() => {
                           const wsId = useAppStore.getState().selectedWorkspaceId
@@ -492,10 +492,10 @@ export const CommandPalette: React.FC = () => {
                         }}
                         onMouseEnter={() => setSelectedIndex(fileIndex)}
                       >
-                        <span className="text-white/60 flex-shrink-0">
+                        <span className="text-secondary flex-shrink-0">
                           <FileTextIcon />
                         </span>
-                        <span className="text-sm text-white/90 flex-1 truncate">{file}</span>
+                        <span className="text-sm text-primary flex-1 truncate">{file}</span>
                       </div>
                     )
                   })}

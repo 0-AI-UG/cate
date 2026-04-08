@@ -142,8 +142,8 @@ const Card: React.FC<React.PropsWithChildren<{ className?: string; onClick?: () 
   title,
 }) => (
   <div
-    className={`rounded-md bg-white/[0.03] border border-white/[0.06] overflow-hidden ${
-      onClick ? 'cursor-pointer hover:bg-white/[0.06] hover:border-white/[0.1] transition-all' : ''
+    className={`rounded-md bg-surface-3 border border-subtle overflow-hidden ${
+      onClick ? 'cursor-pointer hover:bg-hover hover:border-strong transition-all' : ''
     } ${className}`}
     onClick={onClick}
     title={title}
@@ -153,17 +153,17 @@ const Card: React.FC<React.PropsWithChildren<{ className?: string; onClick?: () 
 )
 
 const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="text-[10px] text-white/40 uppercase tracking-wider font-medium px-0.5">{children}</div>
+  <div className="text-[10px] text-muted uppercase tracking-wider font-medium px-0.5">{children}</div>
 )
 
 const StatCard: React.FC<{ label: string; tokens: number; costUsd: number | null }> = ({ label, tokens, costUsd }) => (
   <Card className="flex-1 min-w-0">
     <div className="px-2.5 py-2 flex flex-col gap-0.5">
-      <span className="text-[9px] text-white/40 uppercase tracking-wider leading-none">{label}</span>
-      <span className="text-[14px] font-semibold text-white/90 tabular-nums leading-tight mt-1">
+      <span className="text-[9px] text-muted uppercase tracking-wider leading-none">{label}</span>
+      <span className="text-[14px] font-semibold text-primary tabular-nums leading-tight mt-1">
         {formatTokens(tokens)}
       </span>
-      <span className="text-[10px] text-white/50 tabular-nums leading-none">{formatCost(costUsd)}</span>
+      <span className="text-[10px] text-secondary tabular-nums leading-none">{formatCost(costUsd)}</span>
     </div>
   </Card>
 )
@@ -176,6 +176,11 @@ export const UsageSidebarView: React.FC = () => {
   const summary = useUsageStore((s) => s.summary)
   const loading = useUsageStore((s) => s.loading)
   const loadSummary = useUsageStore((s) => s.loadSummary)
+
+  // Trigger the main-process usage scan the first time this view is shown.
+  React.useEffect(() => {
+    useUsageStore.getState().ensureLoaded()
+  }, [])
 
   const today = useMemo(() => todayIso(), [])
   const last7 = useMemo(() => last7DaysSet(), [])
@@ -204,7 +209,7 @@ export const UsageSidebarView: React.FC = () => {
   const hasAnyData = summary && allProjects.length > 0
 
   return (
-    <div className="flex flex-col h-full overflow-hidden text-white/80">
+    <div className="flex flex-col h-full overflow-hidden text-primary">
       <SidebarSectionHeader
         title="Token Usage"
         actions={
@@ -226,15 +231,15 @@ export const UsageSidebarView: React.FC = () => {
 
         {!hasAnyData && !loading && (
           <Card>
-            <div className="px-3 py-6 text-[12px] text-white/40 text-center">
+            <div className="px-3 py-6 text-[12px] text-muted text-center">
               No usage data yet.
-              <div className="text-[10px] text-white/25 mt-1">Run an agent in a workspace to start tracking.</div>
+              <div className="text-[10px] text-muted mt-1">Run an agent in a workspace to start tracking.</div>
             </div>
           </Card>
         )}
 
         {loading && !summary && (
-          <div className="text-[12px] text-white/30 text-center py-4">Loading…</div>
+          <div className="text-[12px] text-muted text-center py-4">Loading…</div>
         )}
 
         {/* By Model — one card per tool */}
@@ -248,13 +253,13 @@ export const UsageSidebarView: React.FC = () => {
               const totals = toolTotals(rows)
               return (
                 <Card key={tool}>
-                  <div className="flex items-center gap-2 px-3 py-2 border-b border-white/[0.04]">
-                    <div className="w-6 h-6 rounded bg-white/[0.06] flex items-center justify-center shrink-0 text-white/60">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-subtle">
+                    <div className="w-6 h-6 rounded bg-surface-2 flex items-center justify-center shrink-0 text-secondary">
                       <Icon size={12} />
                     </div>
-                    <span className="text-[12px] font-medium text-white/80 flex-1 truncate">{TOOL_LABELS[tool]}</span>
-                    <span className="text-[10px] text-white/40 tabular-nums">{formatTokens(totals.tokens)}</span>
-                    <span className="text-[10px] text-white/60 tabular-nums w-12 text-right">
+                    <span className="text-[12px] font-medium text-primary flex-1 truncate">{TOOL_LABELS[tool]}</span>
+                    <span className="text-[10px] text-muted tabular-nums">{formatTokens(totals.tokens)}</span>
+                    <span className="text-[10px] text-secondary tabular-nums w-12 text-right">
                       {formatCost(totals.costUsd)}
                     </span>
                   </div>
@@ -262,13 +267,13 @@ export const UsageSidebarView: React.FC = () => {
                     {rows.map((mu) => (
                       <div
                         key={mu.model}
-                        className="flex items-center gap-2 h-6 px-2 rounded hover:bg-white/[0.04]"
+                        className="flex items-center gap-2 h-6 px-2 rounded hover:bg-hover"
                       >
-                        <span className="text-[11px] text-white/65 truncate flex-1 font-mono">{mu.model}</span>
-                        <span className="text-[10px] text-white/40 tabular-nums">
+                        <span className="text-[11px] text-secondary truncate flex-1 font-mono">{mu.model}</span>
+                        <span className="text-[10px] text-muted tabular-nums">
                           {formatTokens(totalTokenCount(mu.tokens))}
                         </span>
-                        <span className="text-[10px] text-white/50 tabular-nums w-12 text-right">
+                        <span className="text-[10px] text-secondary tabular-nums w-12 text-right">
                           {formatCost(mu.costUsd)}
                         </span>
                       </div>
@@ -305,13 +310,13 @@ export const UsageSidebarView: React.FC = () => {
                           className="w-1.5 h-1.5 rounded-full shrink-0"
                           style={{ backgroundColor: dotColor }}
                         />
-                        <span className="text-[12px] text-white/85 font-medium truncate flex-1">{basename}</span>
-                        <span className="text-[10px] text-white/40 tabular-nums">{formatTokens(total)}</span>
-                        <span className="text-[10px] text-white/60 tabular-nums w-12 text-right">
+                        <span className="text-[12px] text-primary font-medium truncate flex-1">{basename}</span>
+                        <span className="text-[10px] text-muted tabular-nums">{formatTokens(total)}</span>
+                        <span className="text-[10px] text-secondary tabular-nums w-12 text-right">
                           {formatCost(proj.totals.costUsd)}
                         </span>
                       </div>
-                      <div className="text-[10px] text-white/30 truncate mt-0.5 pl-3.5 font-mono">
+                      <div className="text-[10px] text-muted truncate mt-0.5 pl-3.5 font-mono">
                         {proj.projectPath}
                       </div>
                     </div>

@@ -27,6 +27,13 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
     let debounceTimer: number | null = null
     let rafId: number | null = null
     let disposed = false
+    // Id we most recently set via auto-focus. Used to distinguish a focus
+    // change that originated from this hook vs. a manual user click.
+    let autoSetId: string | null = null
+    // When the user clicks into a different node, we treat it as a manual
+    // override and stop auto-focusing until that node is no longer visible
+    // enough to claim focus. Then we resume.
+    let overrideId: string | null = null
 
     const compute = (): void => {
       rafId = null
@@ -49,6 +56,10 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
 
       let bestId: string | null = null
       let bestArea = 0
+      // Track the override node's visible area in the same pass so we can
+      // decide whether the manual override is still in effect.
+      let overrideArea = 0
+      let overrideStillExists = false
 
       // Cheap loop: avoid allocating Object.values() on every tick.
       for (const id in nodes) {
@@ -57,6 +68,8 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
         // Ignore nodes that are on their way out so we don't briefly focus
         // a panel that is already unmounting.
         if (n.animationState === 'exiting') continue
+
+        if (id === overrideId) overrideStillExists = true
 
         const nLeft = n.origin.x
         const nTop = n.origin.y
@@ -72,9 +85,22 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
         if (iw <= 0 || ih <= 0) continue
 
         const area = iw * ih
+        if (id === overrideId) overrideArea = area
         if (area > bestArea) {
           bestArea = area
           bestId = id
+        }
+      }
+
+      // Honor the manual override while the clicked node still has a
+      // meaningful footprint on screen. Once it drops below the coverage
+      // threshold (panned/zoomed away) or is removed, release the override
+      // and let auto-focus resume.
+      if (overrideId) {
+        if (!overrideStillExists || overrideArea < viewArea * MIN_COVERAGE_FRACTION) {
+          overrideId = null
+        } else {
+          return
         }
       }
 
@@ -82,6 +108,7 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
       if (bestArea < viewArea * MIN_COVERAGE_FRACTION) return
       if (bestId === focusedNodeId) return
 
+      autoSetId = bestId
       canvasApi.getState().focusNode(bestId)
     }
 
@@ -101,8 +128,17 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
     let prevZoom = seed.zoomLevel
     let prevNodes = seed.nodes
     let prevSize = seed.containerSize
+    let prevFocused = seed.focusedNodeId
 
     const unsubscribe = canvasApi.subscribe((s) => {
+      // A focus change we didn't originate = user clicked a panel. Latch it
+      // as an override until that node leaves the viewport.
+      if (s.focusedNodeId !== prevFocused) {
+        if (s.focusedNodeId && s.focusedNodeId !== autoSetId) {
+          overrideId = s.focusedNodeId
+        }
+        prevFocused = s.focusedNodeId
+      }
       if (
         s.viewportOffset !== prevOffset ||
         s.zoomLevel !== prevZoom ||

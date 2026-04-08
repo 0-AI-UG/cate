@@ -82,9 +82,9 @@ function statusColor(status: string): string {
     case 'A': return 'text-green-400'
     case 'D': return 'text-red-400'
     case 'R': return 'text-blue-400'
-    case '?': return 'text-white/40'
+    case '?': return 'text-muted'
     case 'U': return 'text-orange-400'
-    default: return 'text-white/40'
+    default: return 'text-muted'
   }
 }
 
@@ -120,12 +120,12 @@ const Section: React.FC<{
   return (
     <div className="mb-1">
       <div
-        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-white/40 cursor-pointer hover:bg-white/5 select-none"
+        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-muted cursor-pointer hover:bg-hover select-none"
         onClick={() => setOpen(!open)}
       >
         {open ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <span className="flex-1">{title}</span>
-        <span className="text-white/30 font-normal normal-case">{count}</span>
+        <span className="text-muted font-normal normal-case">{count}</span>
         {actions && (
           <div className="flex items-center gap-0.5 ml-1" onClick={(e) => e.stopPropagation()}>
             {actions}
@@ -152,20 +152,20 @@ const FileEntry: React.FC<{
   const dir = dirName(file.path)
   return (
     <div
-      className="group flex items-center gap-1 px-3 py-[3px] text-[12px] cursor-pointer hover:bg-white/5"
+      className="group flex items-center gap-1 px-3 py-[3px] text-[12px] cursor-pointer hover:bg-hover"
       onClick={onClick}
     >
       <span className={`w-4 text-center font-mono text-[11px] flex-shrink-0 ${statusColor(statusChar)}`}>
         {statusChar}
       </span>
-      <span className="truncate text-white/80 flex-1 min-w-0">
+      <span className="truncate text-primary flex-1 min-w-0">
         {fileName(file.path)}
-        {dir && <span className="text-white/30 ml-1">{dir}</span>}
+        {dir && <span className="text-muted ml-1">{dir}</span>}
       </span>
       <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
         {onDiscard && (
           <button
-            className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-red-400"
+            className="p-0.5 rounded hover:bg-hover text-muted hover:text-red-400"
             onClick={(e) => { e.stopPropagation(); onDiscard() }}
             title="Discard Changes"
           >
@@ -174,7 +174,7 @@ const FileEntry: React.FC<{
         )}
         {onStage && (
           <button
-            className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70"
+            className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
             onClick={(e) => { e.stopPropagation(); onStage() }}
             title="Stage"
           >
@@ -183,7 +183,7 @@ const FileEntry: React.FC<{
         )}
         {onUnstage && (
           <button
-            className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70"
+            className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
             onClick={(e) => { e.stopPropagation(); onUnstage() }}
             title="Unstage"
           >
@@ -277,14 +277,14 @@ const BranchPicker: React.FC<{
     <div className="mb-1">
       {/* Section header — matches Section component style */}
       <div
-        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-white/40 cursor-pointer hover:bg-white/5 select-none"
+        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-muted cursor-pointer hover:bg-hover select-none"
         onClick={() => setIsOpen(!isOpen)}
       >
         {isOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <span className="flex-1">Branches</span>
-        <span className="text-white/30 font-normal normal-case">{branchCount}</span>
+        <span className="text-muted font-normal normal-case">{branchCount}</span>
         {!isOpen && (
-          <span className="text-white/30 font-normal text-[10px] truncate max-w-[80px]">{currentBranch}</span>
+          <span className="text-muted font-normal text-[10px] truncate max-w-[80px]">{currentBranch}</span>
         )}
       </div>
 
@@ -298,24 +298,24 @@ const BranchPicker: React.FC<{
                   value={newBranchName}
                   onChange={(e) => setNewBranchName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setCreating(false) }}
-                  className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white/80 placeholder-white/25 focus:outline-none focus:border-white/20"
+                  className="flex-1 min-w-0 bg-surface-5 border border-subtle rounded px-2 py-1 text-[11px] text-primary placeholder:text-muted focus:outline-none focus:border-subtle"
                   placeholder="New branch name..."
                   autoFocus
                 />
-                <button onClick={handleCreate} className="p-0.5 rounded hover:bg-white/10 text-green-400/70"><Check size={13} /></button>
-                <button onClick={() => setCreating(false)} className="p-0.5 rounded hover:bg-white/10 text-white/40"><X size={13} /></button>
+                <button onClick={handleCreate} className="p-0.5 rounded hover:bg-hover text-green-400/70"><Check size={13} /></button>
+                <button onClick={() => setCreating(false)} className="p-0.5 rounded hover:bg-hover text-muted"><X size={13} /></button>
               </div>
             ) : (
               <div className="flex gap-1">
                 <input
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
-                  className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-2 py-1 text-[11px] text-white/80 placeholder-white/25 focus:outline-none focus:border-white/20"
+                  className="flex-1 min-w-0 bg-surface-5 border border-subtle rounded px-2 py-1 text-[11px] text-primary placeholder:text-muted focus:outline-none focus:border-subtle"
                   placeholder="Filter branches..."
                 />
                 <button
                   onClick={() => setCreating(true)}
-                  className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70"
+                  className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
                   title="Create branch"
                 >
                   <Plus size={13} />
@@ -332,7 +332,7 @@ const BranchPicker: React.FC<{
           {filtered(localBranches).map(b => (
             <div
               key={b.name}
-              className={`group flex items-center gap-1 px-3 py-[3px] cursor-pointer hover:bg-white/5 text-[12px] ${b.current ? 'text-white/90' : 'text-white/60'}`}
+              className={`group flex items-center gap-1 px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] ${b.current ? 'text-primary' : 'text-secondary'}`}
               onClick={() => handleCheckout(b.name)}
             >
               <GitBranch size={11} className="flex-shrink-0" />
@@ -340,7 +340,7 @@ const BranchPicker: React.FC<{
               {b.current && <span className="text-[9px] text-green-400/60 flex-shrink-0">current</span>}
               {!b.current && (
                 <button
-                  className="hidden group-hover:block p-0.5 rounded hover:bg-white/10 text-white/30 hover:text-red-400 flex-shrink-0"
+                  className="hidden group-hover:block p-0.5 rounded hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
                   onClick={(e) => handleDelete(b.name, e)}
                   title="Delete branch"
                 >
@@ -351,11 +351,11 @@ const BranchPicker: React.FC<{
           ))}
           {filtered(remoteBranches).length > 0 && (
             <>
-              <div className="px-3 py-0.5 text-[10px] text-white/25 uppercase mt-1">Remote</div>
+              <div className="px-3 py-0.5 text-[10px] text-muted uppercase mt-1">Remote</div>
               {filtered(remoteBranches).map(b => (
                 <div
                   key={b.name}
-                  className="flex items-center gap-1 px-3 py-[3px] cursor-pointer hover:bg-white/5 text-[12px] text-white/40"
+                  className="flex items-center gap-1 px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] text-muted"
                   onClick={() => handleCheckout(b.name)}
                 >
                   <GitBranch size={11} className="flex-shrink-0" />
@@ -596,7 +596,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
 
   if (!rootPath) {
     return (
-      <div className="flex items-center justify-center h-full text-white/30 text-xs p-4">
+      <div className="flex items-center justify-center h-full text-muted text-xs p-4">
         No folder open
       </div>
     )
@@ -604,10 +604,10 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
 
   const branchSubtitle = (
     <span className="flex items-center gap-1.5">
-      <GitBranch size={11} className="text-white/35 flex-shrink-0" />
+      <GitBranch size={11} className="text-muted flex-shrink-0" />
       <span className="truncate">{status?.current ?? '...'}</span>
       {status && (status.ahead > 0 || status.behind > 0) && (
-        <span className="text-white/40 text-[10px] flex-shrink-0 tabular-nums">
+        <span className="text-muted text-[10px] flex-shrink-0 tabular-nums">
           {status.ahead > 0 && `↑${status.ahead}`}
           {status.behind > 0 && ` ↓${status.behind}`}
         </span>
@@ -642,7 +642,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       {actionError && (
         <div className="flex items-center gap-1 px-2 py-1 bg-red-500/[0.1] text-red-400/80 text-[11px] flex-shrink-0">
           <span className="flex-1 truncate">{actionError}</span>
-          <button onClick={() => setActionError(null)} className="p-0.5 hover:bg-white/10 rounded">
+          <button onClick={() => setActionError(null)} className="p-0.5 hover:bg-hover rounded">
             <X size={12} />
           </button>
         </div>
@@ -652,7 +652,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       <div className="px-2 pt-2 pb-2 flex-shrink-0">
         <textarea
           ref={textareaRef}
-          className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[12px] text-white/80 placeholder-white/25 resize-none focus:outline-none focus:border-white/20"
+          className="w-full bg-surface-5 border border-subtle rounded px-2 py-1.5 text-[12px] text-primary placeholder:text-muted resize-none focus:outline-none focus:border-subtle"
           placeholder="Commit message"
           value={commitMessage}
           onChange={(e) => setCommitMessage(e.target.value)}
@@ -666,21 +666,21 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
         />
         <div className="flex gap-1 mt-1.5">
           <button
-            className="flex-1 py-1 rounded text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-white/10 hover:bg-white/15 text-white/80"
+            className="flex-1 py-1 rounded text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-surface-6 hover:bg-hover text-primary"
             disabled={!commitMessage.trim() || stagedFiles.length === 0 || committing}
             onClick={commit}
           >
             {committing ? 'Committing...' : 'Commit'}
           </button>
           <button
-            className="px-2 py-1 rounded text-[11px] transition-colors bg-white/5 hover:bg-white/10 text-white/50"
+            className="px-2 py-1 rounded text-[11px] transition-colors bg-surface-5 hover:bg-hover text-secondary"
             onClick={stash}
             title="Stash"
           >
             <Archive size={13} />
           </button>
           <button
-            className="px-2 py-1 rounded text-[11px] transition-colors bg-white/5 hover:bg-white/10 text-white/50"
+            className="px-2 py-1 rounded text-[11px] transition-colors bg-surface-5 hover:bg-hover text-secondary"
             onClick={stashPop}
             title="Stash Pop"
           >
@@ -697,7 +697,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           count={stagedFiles.length}
           actions={
             <button
-              className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70"
+              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
               onClick={() => unstageAll(stagedFiles)}
               title="Unstage All"
             >
@@ -722,7 +722,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           count={changedFiles.length}
           actions={
             <button
-              className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70"
+              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
               onClick={() => stageAll(changedFiles)}
               title="Stage All"
             >
@@ -749,7 +749,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           defaultOpen={false}
           actions={
             <button
-              className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70"
+              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
               onClick={() => stageAll(untrackedFiles)}
               title="Stage All"
             >
@@ -780,12 +780,12 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           {logEntries.map((entry) => (
             <div
               key={entry.hash}
-              className="flex items-start gap-1.5 px-3 py-[4px] hover:bg-white/5 text-[11px]"
+              className="flex items-start gap-1.5 px-3 py-[4px] hover:bg-hover text-[11px]"
             >
-              <ClockCounterClockwise size={11} className="text-white/20 flex-shrink-0 mt-0.5" />
+              <ClockCounterClockwise size={11} className="text-muted flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <div className="text-white/70 truncate">{entry.message}</div>
-                <div className="flex items-center gap-1.5 text-white/30">
+                <div className="text-primary truncate">{entry.message}</div>
+                <div className="flex items-center gap-1.5 text-muted">
                   <span className="font-mono">{entry.hash.slice(0, 7)}</span>
                   <span>{entry.author_name}</span>
                   <span>{relativeTime(entry.date)}</span>
@@ -800,8 +800,8 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           {worktrees.map((wt) => (
             <div
               key={wt.path}
-              className={`flex items-center gap-1.5 px-3 py-[3px] cursor-pointer hover:bg-white/5 ${
-                wt.isCurrent ? 'text-white/80' : 'text-white/50'
+              className={`flex items-center gap-1.5 px-3 py-[3px] cursor-pointer hover:bg-hover ${
+                wt.isCurrent ? 'text-primary' : 'text-secondary'
               }`}
               onClick={() => {
                 if (selectedWorkspaceId) {
@@ -820,7 +820,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
 
         {/* Empty state */}
         {status && stagedFiles.length === 0 && changedFiles.length === 0 && untrackedFiles.length === 0 && (
-          <div className="flex items-center justify-center py-8 text-white/25 text-[11px]">
+          <div className="flex items-center justify-center py-8 text-muted text-[11px]">
             No changes detected
           </div>
         )}

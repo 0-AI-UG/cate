@@ -35,7 +35,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   Sparkles: Sparkle, Cpu, Diamond, MousePointer: CursorClick, Code,
 }
 
-const INPUT_CLS = 'w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-[13px] text-white/70 placeholder:text-white/30 focus:border-white/25 focus:outline-none font-mono'
+const INPUT_CLS = 'w-full bg-surface-5 border border-subtle rounded px-2.5 py-1.5 text-[13px] text-primary placeholder:text-muted focus:border-strong focus:outline-none font-mono'
 
 // All known skill destinations across tools
 const SKILL_DESTINATIONS = [
@@ -66,23 +66,23 @@ function ConfigsContent({ tools, rootPath, workspaceId }: {
     <div>
       {/* Quick setup templates — shown only when nothing is configured */}
       {!anyConfigured && (
-        <div className="flex items-center gap-2 pb-3 mb-3 border-b border-white/5">
-          <span className="text-[12px] text-white/40 shrink-0">Quick setup:</span>
+        <div className="flex items-center gap-2 pb-3 mb-3 border-b border-subtle">
+          <span className="text-[12px] text-muted shrink-0">Quick setup:</span>
           <button
             onClick={() => handleQuickSetup(['claude', 'codex', 'cursor'] as AIToolId[])}
-            className="px-2 py-0.5 text-[12px] text-white/50 hover:text-white/80 border border-white/10 hover:border-white/25 rounded transition-colors"
+            className="px-2 py-0.5 text-[12px] text-secondary hover:text-primary border border-subtle hover:border-strong rounded transition-colors"
           >
             Full Stack
           </button>
           <button
             onClick={() => handleQuickSetup(['claude', 'codex'] as AIToolId[])}
-            className="px-2 py-0.5 text-[12px] text-white/50 hover:text-white/80 border border-white/10 hover:border-white/25 rounded transition-colors"
+            className="px-2 py-0.5 text-[12px] text-secondary hover:text-primary border border-subtle hover:border-strong rounded transition-colors"
           >
             Python
           </button>
           <button
             onClick={() => handleQuickSetup(['claude'] as AIToolId[])}
-            className="px-2 py-0.5 text-[12px] text-white/50 hover:text-white/80 border border-white/10 hover:border-white/25 rounded transition-colors"
+            className="px-2 py-0.5 text-[12px] text-secondary hover:text-primary border border-subtle hover:border-strong rounded transition-colors"
           >
             Minimal
           </button>
@@ -147,23 +147,23 @@ function ToolRow({ tool, rootPath, workspaceId, onRescan }: {
   const fileCount = nonDirFiles.length
 
   return (
-    <div className="border-b border-white/5 last:border-b-0">
+    <div className="border-b border-subtle last:border-b-0">
       <div className="flex items-center h-9 px-1 gap-3">
-        {Icon && <Icon size={15} className="text-white/40 shrink-0" />}
-        <span className="text-[13px] text-white/80 flex-1">{tool.name}</span>
+        {Icon && <Icon size={15} className="text-muted shrink-0" />}
+        <span className="text-[13px] text-primary flex-1">{tool.name}</span>
 
         {busy ? (
-          <CircleNotch size={13} className="text-white/40 animate-spin" />
+          <CircleNotch size={13} className="text-muted animate-spin" />
         ) : !tool.detected ? (
-          <button onClick={handleEnable} className="text-[12px] text-white/50 hover:text-white/80 transition-colors">
+          <button onClick={handleEnable} className="text-[12px] text-secondary hover:text-primary transition-colors">
             Enable
           </button>
         ) : existCount < fileCount ? (
-          <button onClick={handleEnable} className="text-[12px] text-white/50 hover:text-white/80 transition-colors">
+          <button onClick={handleEnable} className="text-[12px] text-secondary hover:text-primary transition-colors">
             {existCount}/{fileCount}
           </button>
         ) : (
-          <span className="text-[12px] text-white/40">enabled</span>
+          <span className="text-[12px] text-muted">enabled</span>
         )}
       </div>
 
@@ -183,18 +183,18 @@ function ToolRow({ tool, rootPath, workspaceId, onRescan }: {
                   }
                 }}
                 onContextMenu={(e) => handleRowContextMenu(e, f.relativePath, f.exists)}
-                className="flex items-center h-7 pl-9 pr-2 gap-2 w-full text-left hover:bg-white/[0.03] transition-colors group"
+                className="flex items-center h-7 pl-9 pr-2 gap-2 w-full text-left hover:bg-hover transition-colors group"
               >
                 {f.exists ? (
-                  <Check size={11} className="text-white/40 shrink-0" />
+                  <Check size={11} className="text-muted shrink-0" />
                 ) : (
-                  <Plus size={11} className="text-white/25 shrink-0" />
+                  <Plus size={11} className="text-muted shrink-0" />
                 )}
-                <span className={`text-[12px] font-mono flex-1 truncate ${f.exists ? 'text-white/50' : 'text-white/30'}`}>
+                <span className={`text-[12px] font-mono flex-1 truncate ${f.exists ? 'text-secondary' : 'text-muted'}`}>
                   {f.relativePath}
                 </span>
                 {f.exists && (
-                  <ArrowSquareOut size={11} className="text-white/0 group-hover:text-white/40 transition-colors shrink-0" />
+                  <ArrowSquareOut size={11} className="text-white/0 group-hover:text-muted transition-colors shrink-0" />
                 )}
               </button>
             )
@@ -409,7 +409,7 @@ Add your skill instructions here. This skill will be available to AI coding tool
   }, [rootPath, loadSkills])
 
   if (loading) {
-    return <div className="text-[13px] text-white/40 py-3 px-1">Scanning skills...</div>
+    return <div className="text-[13px] text-muted py-3 px-1">Scanning skills...</div>
   }
 
   return (
@@ -418,17 +418,17 @@ Add your skill instructions here. This skill will be available to AI coding tool
       onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
-      className={`min-h-[200px] transition-colors ${dragOver ? 'bg-white/[0.03] rounded' : ''}`}
+      className={`min-h-[200px] transition-colors ${dragOver ? 'bg-surface-5 rounded' : ''}`}
     >
       {dragOver ? (
-        <div className="flex items-center justify-center py-8 text-[13px] text-white/50">
+        <div className="flex items-center justify-center py-8 text-[13px] text-secondary">
           <Download size={16} className="mr-2" />
           Drop .md skill files here
         </div>
       ) : (
         <>
           {skills.length === 0 ? (
-            <div className="text-[13px] text-white/40 py-3 px-1">
+            <div className="text-[13px] text-muted py-3 px-1">
               No skills found. Add skills from a URL, drag .md files here, or create a new one.
             </div>
           ) : (
@@ -437,11 +437,11 @@ Add your skill instructions here. This skill will be available to AI coding tool
                 key={skill.name}
                 onClick={() => handleReveal(skill.name)}
                 onContextMenu={(e) => handleSkillContextMenu(e, skill.name)}
-                className="flex items-center h-9 px-1 border-b border-white/5 w-full text-left hover:bg-white/[0.03] transition-colors group"
+                className="flex items-center h-9 px-1 border-b border-subtle w-full text-left hover:bg-hover transition-colors group"
               >
-                <span className="text-[13px] text-white/70 truncate">{skill.displayName}</span>
+                <span className="text-[13px] text-primary truncate">{skill.displayName}</span>
                 {skill.description && (
-                  <span className="text-[11px] text-white/40 truncate ml-2 flex-1">{skill.description}</span>
+                  <span className="text-[11px] text-muted truncate ml-2 flex-1">{skill.description}</span>
                 )}
               </button>
             ))
@@ -474,13 +474,13 @@ Add your skill instructions here. This skill will be available to AI coding tool
               <button
                 onClick={handleCreateNewSkill}
                 disabled={!newSkillName.trim()}
-                className="text-[12px] text-white/50 hover:text-white/80 disabled:opacity-30 shrink-0"
+                className="text-[12px] text-secondary hover:text-primary disabled:opacity-30 shrink-0"
               >
                 Create
               </button>
               <button
                 onClick={() => { setShowNewSkillInput(false); setNewSkillName('') }}
-                className="text-[12px] text-white/40 hover:text-white/60 shrink-0"
+                className="text-[12px] text-muted hover:text-secondary shrink-0"
               >
                 Cancel
               </button>
@@ -490,7 +490,7 @@ Add your skill instructions here. This skill will be available to AI coding tool
           {/* Import from URL input */}
           {showUrlInput && (
             <div className="flex items-center gap-2 pt-3 px-1">
-              <Link size={13} className="text-white/30 shrink-0" />
+              <Link size={13} className="text-muted shrink-0" />
               <input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
@@ -505,13 +505,13 @@ Add your skill instructions here. This skill will be available to AI coding tool
               <button
                 onClick={handleImportUrl}
                 disabled={!url.trim() || importing}
-                className="text-[12px] text-white/50 hover:text-white/80 disabled:opacity-30 shrink-0"
+                className="text-[12px] text-secondary hover:text-primary disabled:opacity-30 shrink-0"
               >
                 {importing ? '...' : 'Import'}
               </button>
               <button
                 onClick={() => { setShowUrlInput(false); setUrl(''); setImportError(null) }}
-                className="text-[12px] text-white/40 hover:text-white/60 shrink-0"
+                className="text-[12px] text-muted hover:text-secondary shrink-0"
               >
                 Cancel
               </button>
@@ -523,17 +523,17 @@ Add your skill instructions here. This skill will be available to AI coding tool
             <div className="flex items-center gap-4 pt-3 px-1">
               <button
                 onClick={() => setShowNewSkillInput(true)}
-                className="text-[12px] text-white/50 hover:text-white/80 transition-colors"
+                className="text-[12px] text-secondary hover:text-primary transition-colors"
               >
                 + New skill
               </button>
               <button
                 onClick={() => { setShowUrlInput(true); setImportError(null) }}
-                className="text-[12px] text-white/50 hover:text-white/80 transition-colors"
+                className="text-[12px] text-secondary hover:text-primary transition-colors"
               >
                 Import from URL
               </button>
-              <span className="text-[11px] text-white/40">or drag .md files here</span>
+              <span className="text-[11px] text-muted">or drag .md files here</span>
             </div>
           )}
         </>
@@ -558,24 +558,24 @@ function MCPRow({ server, rootPath }: { server: MCPServerConfig; rootPath: strin
   const dotColor = server.status === 'running' ? 'bg-emerald-400'
     : server.status === 'error' ? 'bg-red-400'
     : server.status === 'starting' ? 'bg-amber-400 animate-pulse'
-    : 'bg-white/20'
+    : 'bg-surface-6'
 
   return (
-    <div className="border-b border-white/5 last:border-b-0">
+    <div className="border-b border-subtle last:border-b-0">
       <div className="flex items-center h-9 px-1 gap-2.5">
         <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
-        <span className="text-[13px] text-white/70 flex-1 truncate">{server.name}</span>
-        <span className="text-[11px] text-white/40 font-mono truncate max-w-[180px]">
+        <span className="text-[13px] text-primary flex-1 truncate">{server.name}</span>
+        <span className="text-[11px] text-muted font-mono truncate max-w-[180px]">
           {server.command} {server.args[0] || ''}
         </span>
 
         <div className="flex items-center gap-0.5 shrink-0">
           {server.status === 'running' ? (
-            <button onClick={() => stop(server.name)} className="p-1 text-white/40 hover:text-white/70" title="Stop">
+            <button onClick={() => stop(server.name)} className="p-1 text-muted hover:text-primary" title="Stop">
               <Square size={11} />
             </button>
           ) : (
-            <button onClick={() => spawn(server.name)} className="p-1 text-white/40 hover:text-white/70" title="Start">
+            <button onClick={() => spawn(server.name)} className="p-1 text-muted hover:text-primary" title="Start">
               <Play size={11} />
             </button>
           )}
@@ -586,12 +586,12 @@ function MCPRow({ server, rootPath }: { server: MCPServerConfig; rootPath: strin
               setTestOk(r.success); setTesting(false)
             }}
             disabled={testing}
-            className="p-1 text-white/40 hover:text-white/70 disabled:opacity-30"
+            className="p-1 text-muted hover:text-primary disabled:opacity-30"
             title="Test"
           >
             {testing ? <CircleNotch size={11} className="animate-spin" /> : <Lightning size={11} />}
           </button>
-          <button onClick={() => remove(server.name, rootPath)} className="p-1 text-white/40 hover:text-red-400" title="Remove">
+          <button onClick={() => remove(server.name, rootPath)} className="p-1 text-muted hover:text-red-400" title="Remove">
             <Trash size={11} />
           </button>
         </div>
@@ -643,24 +643,24 @@ function AddServerForm({ rootPath, onDone }: { rootPath: string; onDone: () => v
             onChange={(e) => { const u = [...envPairs]; u[i] = { ...u[i], value: e.target.value }; setEnvPairs(u) }}
             className={INPUT_CLS} style={{ flex: 1 }}
           />
-          <button onClick={() => { const u = [...envPairs]; u[i] = { ...u[i], vis: !u[i].vis }; setEnvPairs(u) }} className="p-1 text-white/40 hover:text-white/60">
+          <button onClick={() => { const u = [...envPairs]; u[i] = { ...u[i], vis: !u[i].vis }; setEnvPairs(u) }} className="p-1 text-muted hover:text-secondary">
             {p.vis ? <EyeSlash size={12} /> : <Eye size={12} />}
           </button>
-          <button onClick={() => setEnvPairs(envPairs.filter((_, j) => j !== i))} className="p-1 text-white/40 hover:text-red-400">
+          <button onClick={() => setEnvPairs(envPairs.filter((_, j) => j !== i))} className="p-1 text-muted hover:text-red-400">
             <X size={12} />
           </button>
         </div>
       ))}
       <div className="flex items-center gap-4">
-        <button onClick={() => setEnvPairs([...envPairs, { key: '', value: '', vis: false }])} className="text-[12px] text-white/40 hover:text-white/60">
+        <button onClick={() => setEnvPairs([...envPairs, { key: '', value: '', vis: false }])} className="text-[12px] text-muted hover:text-secondary">
           + env var
         </button>
       </div>
       <div className="flex gap-3 pt-1">
-        <button onClick={handleAdd} disabled={!name.trim() || !command.trim()} className="text-[12px] text-white/60 hover:text-white/90 disabled:opacity-30">
+        <button onClick={handleAdd} disabled={!name.trim() || !command.trim()} className="text-[12px] text-secondary hover:text-primary disabled:opacity-30">
           Add
         </button>
-        <button onClick={onDone} className="text-[12px] text-white/40 hover:text-white/60">
+        <button onClick={onDone} className="text-[12px] text-muted hover:text-secondary">
           Cancel
         </button>
       </div>
@@ -681,7 +681,7 @@ function MCPContent({ rootPath }: { rootPath: string }) {
   return (
     <div>
       {servers.length === 0 && !adding && !showRegistry && (
-        <div className="text-[13px] text-white/40 py-3 px-1">No MCP servers configured</div>
+        <div className="text-[13px] text-muted py-3 px-1">No MCP servers configured</div>
       )}
 
       {servers.map((s) => <MCPRow key={s.name} server={s} rootPath={rootPath} />)}
@@ -690,10 +690,10 @@ function MCPContent({ rootPath }: { rootPath: string }) {
         <AddServerForm rootPath={rootPath} onDone={() => setAdding(false)} />
       ) : (
         <div className="flex items-center gap-4 pt-3 px-1">
-          <button onClick={() => setAdding(true)} className="text-[12px] text-white/50 hover:text-white/80 transition-colors">
+          <button onClick={() => setAdding(true)} className="text-[12px] text-secondary hover:text-primary transition-colors">
             + Add server
           </button>
-          <button onClick={() => setShowRegistry(!showRegistry)} className="text-[12px] text-white/40 hover:text-white/60 transition-colors">
+          <button onClick={() => setShowRegistry(!showRegistry)} className="text-[12px] text-muted hover:text-secondary transition-colors">
             {showRegistry ? 'Hide registry' : 'Browse registry'}
           </button>
         </div>
@@ -720,12 +720,12 @@ function RegistryBrowser({ rootPath }: { rootPath: string }) {
           const key = entry.name.toLowerCase().replace(/\s+/g, '-')
           const installed = !!existing[key]
           return (
-            <div key={entry.name} className="border-b border-white/5 py-2 px-1">
+            <div key={entry.name} className="border-b border-subtle py-2 px-1">
               <div className="flex items-center gap-2">
-                <span className="text-[13px] text-white/70 flex-1">{entry.name}</span>
-                <span className="text-[11px] text-white/40">{entry.category}</span>
+                <span className="text-[13px] text-primary flex-1">{entry.name}</span>
+                <span className="text-[11px] text-muted">{entry.category}</span>
                 {installed ? (
-                  <span className="text-[11px] text-white/40">added</span>
+                  <span className="text-[11px] text-muted">added</span>
                 ) : (
                   <button
                     onClick={async () => {
@@ -736,13 +736,13 @@ function RegistryBrowser({ rootPath }: { rootPath: string }) {
                       setInstalling(null)
                     }}
                     disabled={installing !== null}
-                    className="text-[11px] text-white/50 hover:text-white/80 disabled:opacity-30"
+                    className="text-[11px] text-secondary hover:text-primary disabled:opacity-30"
                   >
                     {installing === entry.name ? '...' : 'Add'}
                   </button>
                 )}
               </div>
-              <div className="text-[11px] text-white/40 mt-0.5">{entry.description}</div>
+              <div className="text-[11px] text-muted mt-0.5">{entry.description}</div>
               {!installed && entry.requiredEnv.length > 0 && (
                 <div className="mt-1.5 space-y-1">
                   {entry.requiredEnv.map((k) => (
@@ -805,18 +805,18 @@ export function AIConfigDialog({ isOpen, onClose, workspaceId }: AIConfigDialogP
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="w-[540px] h-[480px] bg-[#262523] rounded-lg border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
+        className="w-[540px] h-[480px] bg-surface-5 rounded-lg border border-subtle shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with tabs */}
-        <div className="flex items-center justify-between px-5 h-11 shrink-0 border-b border-white/[0.06]">
+        <div className="flex items-center justify-between px-5 h-11 shrink-0 border-b border-subtle">
           <div className="flex items-center gap-4">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`text-[13px] transition-colors ${
-                  tab === t.id ? 'text-white/80' : 'text-white/40 hover:text-white/60'
+                  tab === t.id ? 'text-primary' : 'text-muted hover:text-secondary'
                 }`}
               >
                 {t.label}
@@ -828,13 +828,13 @@ export function AIConfigDialog({ isOpen, onClose, workspaceId }: AIConfigDialogP
               <button
                 onClick={() => scan(rootPath)}
                 disabled={scanning}
-                className="p-1.5 text-white/40 hover:text-white/60 disabled:opacity-30"
+                className="p-1.5 text-muted hover:text-secondary disabled:opacity-30"
                 title="Refresh"
               >
                 <ArrowsClockwise size={13} className={scanning ? 'animate-spin' : ''} />
               </button>
             )}
-            <button onClick={onClose} className="p-1.5 text-white/40 hover:text-white/60">
+            <button onClick={onClose} className="p-1.5 text-muted hover:text-secondary">
               <X size={14} />
             </button>
           </div>
@@ -845,7 +845,7 @@ export function AIConfigDialog({ isOpen, onClose, workspaceId }: AIConfigDialogP
           {!rootPath ? (
             <NoRootPrompt workspaceId={workspaceId} />
           ) : scanning && !tools ? (
-            <div className="flex items-center gap-2 py-6 text-[13px] text-white/40">
+            <div className="flex items-center gap-2 py-6 text-[13px] text-muted">
               <CircleNotch size={14} className="animate-spin" /> Scanning...
             </div>
           ) : (
@@ -874,8 +874,8 @@ function NoRootPrompt({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3">
-      <FolderOpen size={28} className="text-white/20" />
-      <p className="text-[13px] text-white/40">Select a project folder first</p>
+      <FolderOpen size={28} className="text-muted" />
+      <p className="text-[13px] text-muted">Select a project folder first</p>
       <button
         onClick={async () => {
           setOpening(true)
@@ -884,7 +884,7 @@ function NoRootPrompt({ workspaceId }: { workspaceId: string }) {
           setOpening(false)
         }}
         disabled={opening}
-        className="text-[13px] text-white/50 hover:text-white/80 transition-colors disabled:opacity-30"
+        className="text-[13px] text-secondary hover:text-primary transition-colors disabled:opacity-30"
       >
         {opening ? 'Opening...' : 'Open Folder'}
       </button>

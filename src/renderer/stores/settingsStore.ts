@@ -103,6 +103,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           ;(merged as Record<string, unknown>)[key] = stored[key]
         }
       }
+      // Migrate legacy appearanceMode values
+      if ((merged.appearanceMode as string) === 'dark') merged.appearanceMode = 'dark-warm'
+      if ((merged.appearanceMode as string) === 'light') merged.appearanceMode = 'light-subtle'
       set({ ...merged, _loaded: true })
     } catch {
       // Fall back to defaults on error

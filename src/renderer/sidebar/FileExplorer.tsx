@@ -319,11 +319,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       />
 
       {searchVisible && (
-        <div className="px-2 py-1.5 border-b border-white/[0.06] flex items-center gap-1">
+        <div className="px-2 py-1.5 border-b border-subtle flex items-center gap-1">
           <div className="flex-1 relative">
             <MagnifyingGlass
               size={11}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-white/30"
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-muted"
             />
             <input
               ref={searchInputRef}
@@ -337,7 +337,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
                 e.stopPropagation()
               }}
               placeholder="Search files"
-              className="w-full bg-white/[0.04] text-white/80 text-xs pl-7 pr-2 py-1 rounded border border-white/[0.06] focus:border-blue-500/50 outline-none"
+              className="w-full bg-surface-5 text-primary text-xs pl-7 pr-2 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
             />
           </div>
           {searchQuery && (
@@ -353,11 +353,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
 
       {/* Tree content */}
       {isLoading && nodes.length === 0 ? (
-        <div className="flex items-center justify-center flex-1 text-xs text-white/30">
+        <div className="flex items-center justify-center flex-1 text-xs text-muted">
           Loading...
         </div>
       ) : nodes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center flex-1 text-white/30 text-xs gap-2 p-4">
+        <div className="flex flex-col items-center justify-center flex-1 text-muted text-xs gap-2 p-4">
           <span className="text-2xl">&#128193;</span>
           <span>No files found</span>
         </div>
@@ -399,7 +399,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               </span>
               <input
                 ref={rootCreateInputRef}
-                className="flex-1 min-w-0 bg-[#262523] text-white/90 text-sm px-1 rounded border border-blue-500/50 outline-none"
+                className="flex-1 min-w-0 bg-surface-5 text-primary text-sm px-1 rounded border border-blue-500/50 outline-none"
                 value={rootCreateValue}
                 placeholder={rootCreating === 'folder' ? 'folder name' : 'file name'}
                 onChange={(e) => setRootCreateValue(e.target.value)}

@@ -72,7 +72,7 @@ export function ShortcutRecorder({ action, currentShortcut, onRecord }: Shortcut
       className={`min-w-[80px] px-2 py-1 text-xs rounded-md border transition-colors text-center ${
         isRecording
           ? 'bg-focus-blue/20 border-focus-blue/50 text-focus-blue animate-pulse'
-          : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+          : 'bg-surface-5 border-subtle text-primary hover:bg-hover'
       }`}
     >
       {isRecording ? 'Press keys...' : displayString(currentShortcut)}

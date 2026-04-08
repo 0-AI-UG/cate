@@ -8,7 +8,7 @@ import type { PanelProps } from './types'
 
 export default function ProjectListPanel({ panelId, workspaceId }: PanelProps) {
   return (
-    <div className="w-full h-full overflow-auto bg-[#1f1e1c]">
+    <div className="w-full h-full overflow-auto bg-surface-4">
       <ProjectList />
     </div>
   )

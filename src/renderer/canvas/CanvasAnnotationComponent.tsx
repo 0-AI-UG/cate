@@ -124,10 +124,10 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
   }, [annotation.id, annotation.content, isStickyNote, canvasApi])
   const currentFontSize = FONT_SIZE_MAP[annotation.fontSize ?? 'md']
   const textColor = isStickyNote
-    ? '#1f1f23'
+    ? 'var(--text-inverse)'
     : annotation.color === 'transparent'
-      ? 'rgba(255,255,255,0.85)'
-      : '#1f1f23'
+      ? 'var(--text-primary)'
+      : 'var(--text-inverse)'
 
   const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -214,7 +214,7 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
   }, [annotation.id, canvasApi])
 
   const baseShadow = isStickyNote
-    ? '0 1px 2px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.18)'
+    ? '0 1px 2px var(--shadow-node), 0 4px 12px var(--shadow-node)'
     : 'none'
   const hoverRing = '0 0 0 1.5px rgba(74,158,255,0.5)'
   const showRing = hovered || isEditing
@@ -261,7 +261,7 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
           height: isStickyNote ? annotation.size.height : 'auto',
           backgroundColor: annotation.color,
           borderRadius: isStickyNote ? 8 : 4,
-          border: isStickyNote ? '1px solid rgba(0,0,0,0.08)' : 'none',
+          border: isStickyNote ? `1px solid var(--border-subtle)` : 'none',
           padding: isStickyNote ? '14px 16px' : '4px 6px',
           cursor: isEditing ? 'text' : 'grab',
           zIndex: -500, // Between regions (-1000) and panels (0+)
@@ -286,8 +286,8 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
               width: 20,
               height: 20,
               borderRadius: 10,
-              background: 'rgba(0,0,0,0.35)',
-              color: '#fff',
+              background: 'var(--shadow-node)',
+              color: 'var(--text-primary)',
               border: 'none',
               display: 'flex',
               alignItems: 'center',
@@ -423,10 +423,10 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
               width: 12,
               height: 12,
               cursor: 'nwse-resize',
-              background: '#4a9eff',
-              border: '1.5px solid #fff',
+              background: 'var(--focus-blue)',
+              border: `1.5px solid var(--surface-6)`,
               borderRadius: 2,
-              boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+              boxShadow: '0 1px 2px var(--shadow-node)',
               zIndex: 3,
             }}
           />
@@ -456,7 +456,7 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
                   bottom: 3,
                   width: 1.5,
                   height: 7,
-                  background: 'rgba(0,0,0,0.35)',
+                  background: 'var(--shadow-node)',
                   borderRadius: 1,
                 }} />
                 {/* horizontal line of inverted-L handle */}
@@ -466,7 +466,7 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
                   bottom: 3,
                   width: 7,
                   height: 1.5,
-                  background: 'rgba(0,0,0,0.35)',
+                  background: 'var(--shadow-node)',
                   borderRadius: 1,
                 }} />
               </>

@@ -74,7 +74,7 @@ const CanvasGrid: React.FC<CanvasGridProps> = ({
               cx={0}
               cy={0}
               r={1}
-              fill="rgba(255, 255, 255, 0.15)"
+              fill="var(--grid-dot)"
             />
           </pattern>
         </defs>
@@ -116,7 +116,7 @@ const CanvasGrid: React.FC<CanvasGridProps> = ({
             y1={0}
             x2={0}
             y2={gridSpacing}
-            stroke="rgba(255, 255, 255, 0.06)"
+            stroke="var(--grid-line)"
             strokeWidth={0.5}
           />
           <line
@@ -124,7 +124,7 @@ const CanvasGrid: React.FC<CanvasGridProps> = ({
             y1={0}
             x2={gridSpacing}
             y2={0}
-            stroke="rgba(255, 255, 255, 0.06)"
+            stroke="var(--grid-line)"
             strokeWidth={0.5}
           />
         </pattern>

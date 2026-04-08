@@ -331,7 +331,7 @@ export type CanvasGridStyle = 'blank' | 'lines' | 'dots'
 // Appearance mode
 // -----------------------------------------------------------------------------
 
-export type AppearanceMode = 'system' | 'light' | 'dark'
+export type AppearanceMode = 'system' | 'dark-warm' | 'light-subtle' | 'dark-cold'
 
 // -----------------------------------------------------------------------------
 // Browser search engine
@@ -665,6 +665,8 @@ export interface AppSettings {
   // Terminal
   terminalFontFamily: string
   terminalFontSize: number
+  /** xterm.js scrollback buffer size, in lines. Lower = less memory per terminal. */
+  terminalScrollback: number
 
   // Browser
   browserHomepage: string
@@ -706,6 +708,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Terminal
   terminalFontFamily: '',
   terminalFontSize: 0,
+  terminalScrollback: 2000,
 
   // Browser
   browserHomepage: 'about:blank',

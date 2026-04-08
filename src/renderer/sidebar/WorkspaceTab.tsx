@@ -264,8 +264,8 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       <div
         className={`group relative rounded-lg cursor-pointer transition-colors px-3 py-2.5 border border-dashed ${
           isSelected
-            ? 'border-white/30 bg-white/[0.04] text-white/70'
-            : 'border-white/10 bg-white/[0.02] text-white/40 hover:text-white/70 hover:border-white/25 hover:bg-white/[0.04]'
+            ? 'border-subtle bg-surface-5 text-secondary'
+            : 'border-subtle bg-surface-4 text-muted hover:text-secondary hover:border-strong hover:bg-hover'
         }`}
         onClick={handlePickFolder}
         onContextMenu={handleContextMenu}
@@ -316,8 +316,8 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
 
   return (
     <div
-      className={`group relative rounded-lg cursor-pointer transition-colors px-3 py-2.5 text-white ${
-        isSelected ? '' : 'bg-white/[0.05] hover:text-white'
+      className={`group relative rounded-lg cursor-pointer transition-colors px-3 py-2.5 text-primary ${
+        isSelected ? '' : 'bg-surface-5 hover:text-primary'
       }`}
       style={
         isSelected
@@ -353,7 +353,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         {isRenaming ? (
           <input
             ref={renameInputRef}
-            className="flex-1 min-w-0 text-sm font-semibold bg-black/30 border border-white/20 rounded px-1 py-0 outline-none text-white"
+            className="flex-1 min-w-0 text-sm font-semibold bg-surface-3 border border-subtle rounded px-1 py-0 outline-none text-primary"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onBlur={handleRenameSubmit}
@@ -432,7 +432,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
             return (
               <button
                 key={p.id}
-                className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-white/80 hover:text-white hover:bg-black/25 text-left min-w-0"
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-secondary hover:text-primary hover:bg-surface-3 text-left min-w-0"
                 onClick={(e) => handlePanelClick(e, p.id)}
                 title={p.filePath || p.url || label}
               >

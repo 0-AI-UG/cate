@@ -416,7 +416,7 @@ export default function TerminalPanel({
   return (
     <div className="w-full h-full flex flex-col" style={{ padding: 0 }}>
       {showSearch && (
-        <div className="flex items-center gap-1 px-2 py-1 bg-[#1a1917] border-b border-white/[0.05] shrink-0">
+        <div className="flex items-center gap-1 px-2 py-1 bg-surface-3 border-b border-subtle shrink-0">
           <input
             autoFocus
             type="text"
@@ -428,26 +428,26 @@ export default function TerminalPanel({
               }
               if (e.key === 'Escape') handleCloseSearch()
             }}
-            className="flex-1 bg-[#1f1e1c] text-white text-xs px-2 py-1 rounded border border-white/[0.1] outline-none focus:border-blue-500/50"
+            className="flex-1 bg-surface-4 text-primary text-xs px-2 py-1 rounded border border-subtle outline-none focus:border-blue-500/50"
             placeholder="Search terminal..."
           />
           <button
             onClick={handleFindPrevious}
-            className="text-white/60 hover:text-white/90 text-xs px-1"
+            className="text-secondary hover:text-primary text-xs px-1"
             title="Previous match (Shift+Enter)"
           >
             ↑
           </button>
           <button
             onClick={handleFindNext}
-            className="text-white/60 hover:text-white/90 text-xs px-1"
+            className="text-secondary hover:text-primary text-xs px-1"
             title="Next match (Enter)"
           >
             ↓
           </button>
           <button
             onClick={handleCloseSearch}
-            className="text-white/60 hover:text-white/90 text-xs px-1"
+            className="text-secondary hover:text-primary text-xs px-1"
             title="Close (Escape)"
           >
             ✕

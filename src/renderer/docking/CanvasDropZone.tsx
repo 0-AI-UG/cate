@@ -207,10 +207,10 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
             position: 'relative',
             overflow: 'hidden',
             borderRadius: 20,
-            background: inCenter ? 'rgba(74, 158, 255, 0.15)' : 'rgba(30, 30, 30, 0.9)',
+            background: inCenter ? 'rgba(74, 158, 255, 0.15)' : 'var(--surface-3)',
             border: inCenter
               ? '1px solid rgba(74, 158, 255, 0.6)'
-              : '1px solid rgba(255, 255, 255, 0.1)',
+              : `1px solid var(--border-subtle)`,
             backdropFilter: 'blur(12px)',
             padding: '10px 24px',
             minWidth: 200,
@@ -225,7 +225,7 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
             style={{
               fontSize: 12,
               fontWeight: 500,
-              color: inCenter ? 'rgba(74, 158, 255, 1)' : 'rgba(255, 255, 255, 0.5)',
+              color: inCenter ? 'var(--focus-blue)' : 'var(--text-secondary)',
               transition: 'color 200ms ease',
               whiteSpace: 'nowrap',
               userSelect: 'none',
@@ -249,7 +249,7 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
             borderRadius: 8,
             border: '1.5px solid rgba(74, 158, 255, 0.7)',
             background: 'rgba(74, 158, 255, 0.08)',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
+            boxShadow: '0 8px 24px var(--shadow-node)',
             pointerEvents: 'none',
             display: 'flex',
             flexDirection: 'column',
@@ -261,13 +261,13 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
           <div
             style={{
               height: 24,
-              background: 'rgba(40, 40, 46, 0.95)',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+              background: 'var(--surface-2)',
+              borderBottom: `1px solid var(--border-subtle)`,
               display: 'flex',
               alignItems: 'center',
               padding: '0 10px',
               fontSize: 11,
-              color: 'rgba(255, 255, 255, 0.85)',
+              color: 'var(--text-primary)',
               fontWeight: 500,
               letterSpacing: 0.2,
             }}

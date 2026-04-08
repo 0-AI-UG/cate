@@ -13,8 +13,9 @@ export function AppearanceSettings() {
           onChange={(v) => store.setSetting('appearanceMode', v as AppearanceMode)}
           options={[
             { value: 'system', label: 'System' },
-            { value: 'light', label: 'Light' },
-            { value: 'dark', label: 'Dark' },
+            { value: 'dark-warm', label: 'Dark — Warm' },
+            { value: 'dark-cold', label: 'Dark — Cold' },
+            { value: 'light-subtle', label: 'Light — Subtle' },
           ]}
         />
       </SettingRow>

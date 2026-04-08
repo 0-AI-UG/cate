@@ -12,13 +12,23 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import { useStatusStore } from '../stores/statusStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { terminalRestoreData, replayTerminalLog } from './session'
+import { getResolvedTheme, subscribeTheme, type ResolvedTheme } from './themeManager'
+
+/** Read the configured scrollback limit, clamped to a sane range. */
+function getScrollback(): number {
+  const raw = useSettingsStore.getState().terminalScrollback
+  if (!Number.isFinite(raw) || raw <= 0) return 2000
+  return Math.max(100, Math.min(raw, 100000))
+}
 
 // ---------------------------------------------------------------------------
-// Theme — matches CanvasIDE dark palette (kept in sync with TerminalPanel.tsx)
+// Themes — three palettes for dark-warm, light-subtle, dark-cold
 // ---------------------------------------------------------------------------
 
-const TERMINAL_THEME = {
+/** Dark Warm — the original CanvasIDE warm dark palette. */
+export const TERMINAL_THEME_DARK_WARM = {
   background: '#1f1e1c',
   foreground: '#D4D4D4',
   cursor: '#AEAFAD',
@@ -43,6 +53,68 @@ const TERMINAL_THEME = {
   brightMagenta: '#D670D6',
   brightCyan: '#29B8DB',
   brightWhite: '#FFFFFF',
+}
+
+/** Dark Cold — VS Code Dark+ neutral/cool style. */
+export const TERMINAL_THEME_DARK_COLD = {
+  background: '#1c1c1e',
+  foreground: '#f2f2f7',
+  cursor: '#0a84ff',
+  selectionBackground: 'rgba(10, 132, 255, 0.28)',
+  selectionForeground: '#f2f2f7',
+  black: '#1c1c1e',
+  red: '#ff453a',
+  green: '#30d158',
+  yellow: '#ffd60a',
+  blue: '#0a84ff',
+  magenta: '#bf5af2',
+  cyan: '#64d2ff',
+  white: '#d1d1d6',
+  brightBlack: '#636366',
+  brightRed: '#ff6961',
+  brightGreen: '#5de36e',
+  brightYellow: '#ffe066',
+  brightBlue: '#5eb0ff',
+  brightMagenta: '#d28cf6',
+  brightCyan: '#8ee0ff',
+  brightWhite: '#f2f2f7',
+}
+
+/** Light Subtle — Solarized-light palette on the warm cream surface-4 background. */
+export const TERMINAL_THEME_LIGHT_SUBTLE = {
+  background: '#ebe3c8',
+  foreground: '#1c1813',
+  cursor: '#4a3f30',
+  cursorAccent: '#ebe3c8',
+  selectionBackground: '#d6cfb6',
+  selectionForeground: '#1c1813',
+  // Solarized-inspired ANSI, tuned for readability on warm cream.
+  black: '#073642',
+  red: '#dc322f',
+  green: '#859900',
+  yellow: '#b58900',
+  blue: '#268bd2',
+  magenta: '#d33682',
+  cyan: '#2aa198',
+  white: '#657b83',
+  brightBlack: '#586e75',
+  brightRed: '#cb4b16',
+  brightGreen: '#93a1a1',
+  brightYellow: '#b58900',
+  brightBlue: '#6c71c4',
+  brightMagenta: '#d33682',
+  brightCyan: '#2aa198',
+  brightWhite: '#1c1813',
+}
+
+/** Map a resolved theme name to the corresponding xterm theme object. */
+export function getTerminalTheme(resolved: ResolvedTheme): typeof TERMINAL_THEME_DARK_WARM {
+  switch (resolved) {
+    case 'dark-cold': return TERMINAL_THEME_DARK_COLD
+    case 'light-subtle': return TERMINAL_THEME_LIGHT_SUBTLE
+    case 'dark-warm':
+    default: return TERMINAL_THEME_DARK_WARM
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +150,17 @@ const registry = new Map<string, RegistryEntry>()
 const pendingTransfers = new Map<string, { ptyId: string; scrollback?: string }>()
 
 // ---------------------------------------------------------------------------
+// Live theme swap — update all live terminals when the app theme changes
+// ---------------------------------------------------------------------------
+
+subscribeTheme((resolved) => {
+  const theme = getTerminalTheme(resolved)
+  for (const entry of registry.values()) {
+    entry.terminal.options.theme = theme
+  }
+})
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -103,12 +186,12 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
 
   // 1. Create xterm.js Terminal
   const terminal = new Terminal({
-    theme: TERMINAL_THEME,
+    theme: getTerminalTheme(getResolvedTheme()),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     fontSize: 13,
     cursorBlink: true,
     allowProposedApi: true,
-    scrollback: 10000,
+    scrollback: getScrollback(),
     macOptionIsMeta: true,
     altClickMovesCursor: true,
     minimumContrastRatio: 1,
@@ -287,12 +370,12 @@ async function reconnectTerminal(
 
   // 1. Create a fresh xterm Terminal (same config as getOrCreate)
   const terminal = new Terminal({
-    theme: TERMINAL_THEME,
+    theme: getTerminalTheme(getResolvedTheme()),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     fontSize: 13,
     cursorBlink: true,
     allowProposedApi: true,
-    scrollback: 10000,
+    scrollback: getScrollback(),
     macOptionIsMeta: true,
     altClickMovesCursor: true,
     minimumContrastRatio: 1,
