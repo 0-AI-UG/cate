@@ -159,8 +159,9 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
       try { w.webContents.send(WINDOW_FULLSCREEN_STATE, false) } catch { /* noop */ }
     }
   }
-  win.on('will-enter-full-screen', broadcastEntering)
-  win.on('will-leave-full-screen', broadcastLeaving)
+  // macOS-only events; cast to sidestep missing type overloads.
+  ;(win as unknown as { on: (e: string, fn: () => void) => void }).on('will-enter-full-screen', broadcastEntering)
+  ;(win as unknown as { on: (e: string, fn: () => void) => void }).on('will-leave-full-screen', broadcastLeaving)
   win.webContents.once('did-finish-load', broadcastFullscreenState)
 
   // Build query string from params
