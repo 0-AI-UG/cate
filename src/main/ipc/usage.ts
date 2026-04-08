@@ -462,9 +462,18 @@ function startWatching(): void {
   for (const { dir, tool } of roots) {
     if (!fsSync.existsSync(dir)) continue
 
+    // Limit watcher scope to avoid EMFILE on machines with many session files.
+    // Layout for all supported tools is <root>/<project>/<session>.jsonl, so
+    // depth 2 covers everything we care about. Ignore non-jsonl paths so we
+    // don't open fs handles for unrelated files.
     const watcher = watch(dir, {
       ignoreInitial: true,
       persistent: false,
+      depth: 2,
+      ignored: (p: string, stats?: { isFile: () => boolean }) => {
+        if (stats?.isFile() && !p.endsWith('.jsonl')) return true
+        return false
+      },
     })
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
