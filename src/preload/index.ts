@@ -45,6 +45,7 @@ import {
   SHELL_ACTIVITY_UPDATE,
   SHELL_PORTS_UPDATE,
   SHELL_CWD_UPDATE,
+  SHELL_KILL_PROCESS,
   SETTINGS_GET,
   SETTINGS_SET,
   SETTINGS_GET_ALL,
@@ -342,6 +343,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   shellUnregisterTerminal(terminalId: string): Promise<void> {
     return ipcRenderer.invoke(SHELL_UNREGISTER_TERMINAL, terminalId)
+  },
+
+  shellKillProcess(terminalId: string): Promise<void> {
+    return ipcRenderer.invoke(SHELL_KILL_PROCESS, terminalId)
   },
 
   onShellActivityUpdate(

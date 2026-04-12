@@ -182,6 +182,9 @@ export interface ElectronAPI {
   /** Unregister a terminal from process monitoring. */
   shellUnregisterTerminal(terminalId: string): Promise<void>
 
+  /** Kill child processes of a terminal's shell without killing the terminal itself. */
+  shellKillProcess(terminalId: string): Promise<void>
+
   /** Subscribe to shell activity updates (main -> renderer). */
   onShellActivityUpdate(
     callback: (terminalId: string, activity: TerminalActivity, agentState: AgentState, agentName: string | null) => void,

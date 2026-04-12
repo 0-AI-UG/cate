@@ -13,6 +13,7 @@ import {
   SHELL_ACTIVITY_UPDATE,
   SHELL_PORTS_UPDATE,
   SHELL_CWD_UPDATE,
+  SHELL_KILL_PROCESS,
 } from '../../shared/ipc-channels'
 import { terminalPids } from './terminal'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
@@ -485,6 +486,18 @@ export function registerHandlers(): void {
     skipNextScan.delete(terminalId)
     if (registeredTerminals.size === 0) {
       stopPolling()
+    }
+  })
+
+  ipcMain.handle(SHELL_KILL_PROCESS, async (_event, terminalId: string) => {
+    const info = registeredTerminals.get(terminalId)
+    if (!info) return
+    // Kill direct children of the shell (dev servers, etc.) but keep the shell alive
+    const children = await getChildPids(info.shellPid)
+    for (const childPid of children) {
+      try { process.kill(-childPid, 'SIGTERM') } catch { /* process group may be gone */ }
+      // Fallback: kill the process directly if group kill didn't work
+      try { process.kill(childPid, 'SIGTERM') } catch { /* already gone */ }
     }
   })
 

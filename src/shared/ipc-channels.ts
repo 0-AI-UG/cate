@@ -64,6 +64,7 @@ export const SHELL_UNREGISTER_TERMINAL = 'shell:unregisterTerminal'
 export const SHELL_ACTIVITY_UPDATE = 'shell:activityUpdate' // main -> renderer
 export const SHELL_PORTS_UPDATE = 'shell:ports-update'       // main -> renderer
 export const SHELL_CWD_UPDATE = 'shell:cwd-update'           // main -> renderer
+export const SHELL_KILL_PROCESS = 'shell:killProcess'         // renderer -> main (kill child processes, keep terminal)
 
 // Settings
 export const SETTINGS_GET = 'settings:get'
