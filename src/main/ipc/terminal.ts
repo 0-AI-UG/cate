@@ -364,26 +364,26 @@ export function killAllTerminals(): void {
   shuttingDown = true
   // Dispose all terminal loggers (flush + stop timers + clear map)
   disposeAllLoggers()
-  for (const [id, pty] of terminals) {
+  for (const [id] of terminals) {
     // Kill the entire process group so child processes (dev servers, watchers,
     // etc.) don't survive as zombies keeping ports open after Cate quits.
     const pid = terminalPids.get(id)
     if (pid) {
       try {
-        process.kill(-pid, 'SIGTERM')
+        process.kill(-pid, 'SIGKILL')
       } catch {
         // Process group may already be gone
       }
     }
-    try {
-      pty.kill()
-    } catch {
-      // ignore
-    }
-    terminals.delete(id)
-    terminalPids.delete(id)
-    terminalOwners.delete(id)
+    // Intentionally do NOT call pty.kill() here. Doing so enqueues an exit
+    // callback on node-pty's ThreadSafeFunction, which fires during
+    // node::Environment::CleanupHandles after the JS context is torn down,
+    // causing Napi::Error::ThrowAsJavaScriptException → abort(). The OS
+    // will clean up the PTY file descriptors when the process exits.
   }
+  terminals.clear()
+  terminalPids.clear()
+  terminalOwners.clear()
 }
 
 export { getTerminalPid, flushAllLoggers }

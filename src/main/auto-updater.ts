@@ -4,13 +4,16 @@
 // download when native updating fails (e.g. unsigned builds).
 // =============================================================================
 
-import { app, dialog, BrowserWindow, shell } from 'electron'
+import { app, dialog, BrowserWindow, shell, ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { execFile, spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import log from './logger'
+import { flushAllLoggers } from './ipc/terminal'
+import { SESSION_FLUSH_SAVE, SESSION_FLUSH_SAVE_DONE } from '../shared/ipc-channels'
+import { getWindowType } from './windowRegistry'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -22,6 +25,34 @@ const API_LATEST_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_RE
 
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
+
+// ---------------------------------------------------------------------------
+// Pre-update session flush — ask the renderer to persist session state before
+// the app restarts for an update. Returns a promise that resolves once the
+// renderer ACKs (or after a 3s timeout if the renderer is unresponsive).
+// ---------------------------------------------------------------------------
+
+function flushSessionBeforeUpdate(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    flushAllLoggers()
+    const allWindows = BrowserWindow.getAllWindows()
+    const mainWin = allWindows.find((w) => !w.isDestroyed() && getWindowType(w.id) === 'main')
+    if (!mainWin) {
+      resolve()
+      return
+    }
+    const timeout = setTimeout(() => {
+      log.warn('[auto-updater] Session flush timed out, proceeding with update')
+      resolve()
+    }, 3000)
+    ipcMain.once(SESSION_FLUSH_SAVE_DONE, () => {
+      clearTimeout(timeout)
+      log.info('[auto-updater] Session flush confirmed before update')
+      resolve()
+    })
+    mainWin.webContents.send(SESSION_FLUSH_SAVE)
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -212,12 +243,16 @@ async function installMacOS(dmgPath: string): Promise<void> {
     await exec('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {})
   }
 
+  // Flush session before relaunch so workspace state survives the update
+  await flushSessionBeforeUpdate()
+
   // Relaunch from new location
   app.relaunch({ execPath: '/Applications/Cate.app/Contents/MacOS/Cate' })
   app.quit()
 }
 
 async function installWindows(exePath: string): Promise<void> {
+  await flushSessionBeforeUpdate()
   // Launch NSIS installer — it handles uninstalling the old version
   spawn(exePath, [], { detached: true, stdio: 'ignore' }).unref()
   app.quit()
@@ -228,6 +263,7 @@ async function installLinux(appImagePath: string): Promise<void> {
   fs.copyFileSync(appImagePath, currentPath)
   fs.chmodSync(currentPath, 0o755)
   log.info('[fallback-updater] Replaced AppImage at %s', currentPath)
+  await flushSessionBeforeUpdate()
   app.relaunch()
   app.quit()
 }
@@ -403,8 +439,9 @@ export function initAutoUpdater(): void {
         defaultId: 0,
         cancelId: 1,
       })
-      .then(({ response }) => {
+      .then(async ({ response }) => {
         if (response === 0) {
+          await flushSessionBeforeUpdate()
           autoUpdater.quitAndInstall()
         }
       })

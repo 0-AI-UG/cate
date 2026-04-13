@@ -959,11 +959,11 @@ app.on('will-quit', () => {
   // during Environment::CleanupHandles, node-pty's ThreadSafeFunction exit
   // callback throws into a torn-down context and SIGABRTs the process.
   killAllTerminals()
-  // Force immediate exit to avoid node-pty's ThreadSafeFunction firing into
-  // a torn-down JS environment during node::Environment::CleanupHandles,
-  // which aborts the process with SIGABRT (Napi::Error::ThrowAsJavaScriptException).
-  // Use app.exit() instead of process.exit() because the latter still runs
-  // FreeEnvironment → CleanupHandles → uv_run, which flushes pending
-  // ThreadSafeFunction callbacks queued by pty.kill().
-  app.exit(0)
+  // Force immediate exit via _exit(0) to bypass node::FreeEnvironment →
+  // CleanupHandles → uv_run, which drains pending ThreadSafeFunction
+  // callbacks. Even app.exit(0) eventually calls process.exit() which runs
+  // that cleanup path, so we must use the raw _exit() to truly skip it.
+  // All important cleanup (session save, logger flush, watcher disposal,
+  // process group kills) is already done above.
+  ;(process as unknown as { _exit(code: number): never })._exit(0)
 })

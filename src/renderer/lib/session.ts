@@ -556,7 +556,7 @@ export async function restoreDeferredWorkspace(workspaceId: string, canvasStoreA
 }
 
 // -----------------------------------------------------------------------------
-// Auto-save (idle debounce + max-wait + periodic safety net)
+// Auto-save (idle debounce + max-wait + periodic unconditional save)
 //
 // Rationale: a pure trailing debounce never flushes during sustained activity
 // (continuous canvas drag, typing into editor). We want background persistence
@@ -564,20 +564,22 @@ export async function restoreDeferredWorkspace(workspaceId: string, canvasStoreA
 //
 // - IDLE_DELAY: save this long after the last change (covers quiet periods)
 // - MAX_WAIT:   guaranteed flush during sustained activity
-// - SAFETY_INTERVAL: periodic catch-all; no-op if nothing pending
+// - PERIODIC_INTERVAL: unconditional periodic save to protect against crashes
 // saveSession itself is async + IPC, so it doesn't block the render thread.
 // -----------------------------------------------------------------------------
 
-const IDLE_DELAY = 1200
-const MAX_WAIT = 8000
-const SAFETY_INTERVAL = 60_000
+const IDLE_DELAY = 800
+const MAX_WAIT = 4000
+const PERIODIC_INTERVAL = 30_000
 
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 let maxWaitTimer: ReturnType<typeof setTimeout> | null = null
-let safetyTimer: ReturnType<typeof setInterval> | null = null
+let periodicTimer: ReturnType<typeof setInterval> | null = null
 let pendingSave = false
 let saveInFlight = false
 let autoSaveSetUp = false
+// Resolvers for flush requests waiting on an in-flight save to finish
+let flushWaiters: (() => void)[] = []
 
 function runSave(): void {
   if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
@@ -594,6 +596,10 @@ function runSave(): void {
     .catch(() => {})
     .finally(() => {
       saveInFlight = false
+      // Notify any flush waiters that the save completed
+      const waiters = flushWaiters
+      flushWaiters = []
+      for (const resolve of waiters) resolve()
       // If more changes arrived while saving, re-arm idle timer.
       if (pendingSave) scheduleSave()
     })
@@ -618,32 +624,43 @@ export function setupAutoSave(canvasStoreApi?: StoreApi<CanvasStore>): () => voi
   const unsubApp = useAppStore.subscribe(scheduleSave)
   const unsubDock = useDockStore.subscribe(scheduleSave)
 
-  // Periodic safety net — cheap no-op when nothing is pending.
-  safetyTimer = setInterval(() => {
-    if (pendingSave) runSave()
-  }, SAFETY_INTERVAL)
+  // Unconditional periodic save — ensures on-disk state is never more than
+  // PERIODIC_INTERVAL stale, even without detected store changes. Protects
+  // against crashes, force-kills, and update restarts.
+  periodicTimer = setInterval(() => {
+    if (pendingSave) {
+      runSave()
+    } else if (!saveInFlight) {
+      // Force a save even without detected changes — workspace sync may have
+      // drifted or external state (terminal CWD) changed without store updates.
+      pendingSave = true
+      runSave()
+    }
+  }, PERIODIC_INTERVAL)
 
   // Listen for flush-save requests from main process (quit, window close)
   const unsubFlush = window.electronAPI.onSessionFlushSave(() => {
-    // Run save synchronously and notify main process when done so it can
-    // proceed with quit. Without this ACK, the app may exit before the
-    // async session save completes.
-    pendingSave = true
-    if (saveInFlight) {
-      // A save is already running — mark dirty and ACK when it finishes
-      pendingSave = true
-      return
-    }
-    saveInFlight = true
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
     if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null }
-    pendingSave = false
-    saveSession()
-      .catch(() => {})
-      .finally(() => {
-        saveInFlight = false
-        window.electronAPI.sessionFlushSaveDone()
-      })
+
+    const doFlushSave = () => {
+      saveInFlight = true
+      pendingSave = false
+      saveSession()
+        .catch(() => {})
+        .finally(() => {
+          saveInFlight = false
+          window.electronAPI.sessionFlushSaveDone()
+        })
+    }
+
+    if (saveInFlight) {
+      // A save is already in flight — wait for it to finish, then run a
+      // fresh save with current state before sending the ACK.
+      flushWaiters.push(doFlushSave)
+    } else {
+      doFlushSave()
+    }
   })
 
   return () => {
@@ -653,7 +670,7 @@ export function setupAutoSave(canvasStoreApi?: StoreApi<CanvasStore>): () => voi
     unsubFlush()
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
     if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null }
-    if (safetyTimer) { clearInterval(safetyTimer); safetyTimer = null }
+    if (periodicTimer) { clearInterval(periodicTimer); periodicTimer = null }
     autoSaveSetUp = false
   }
 }
