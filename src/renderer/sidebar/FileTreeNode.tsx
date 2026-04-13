@@ -89,6 +89,12 @@ const ICON_DEFAULT: IconDef = { icon: <File {...ICON_PROPS} />, color: '#9CA3AF'
 // FileTreeNode component
 // -----------------------------------------------------------------------------
 
+interface CreateRequest {
+  type: 'file' | 'folder'
+  targetDir: string
+  seq: number
+}
+
 interface FileTreeNodeProps {
   node: FileTreeNodeType
   depth: number
@@ -103,6 +109,10 @@ interface FileTreeNodeProps {
   searchQuery?: string
   /** Workspace root path — used to compute relative paths for "Copy Relative Path". */
   rootPath: string
+  /** External request to create a file/folder in a specific directory */
+  createRequest?: CreateRequest | null
+  /** Called when this node has handled the createRequest */
+  onCreateRequestHandled?: () => void
 }
 
 export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
@@ -116,6 +126,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   visiblePaths,
   searchQuery,
   rootPath,
+  createRequest,
+  onCreateRequestHandled,
 }) => {
   const isSearching = !!searchQuery
   const [isExpanded, setIsExpanded] = useState(node.isExpanded)
@@ -125,8 +137,10 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   const [isCreating, setIsCreating] = useState<'file' | 'folder' | null>(null)
   const [renameValue, setRenameValue] = useState(node.name)
   const [createValue, setCreateValue] = useState('')
+  const [isDragOver, setIsDragOver] = useState(false)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const createInputRef = useRef<HTMLInputElement>(null)
+  const dragCounterRef = useRef(0)
 
   // Determine if this node should be dimmed (not in git tracked files)
   const isDimmed = gitFiles != null && !node.isDirectory && !gitFiles.has(node.path)
@@ -143,9 +157,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   }, [isSearching, node.isDirectory, node.path, children.length])
 
   // While searching, hide files whose name doesn't match
-  if (isSearching && !node.isDirectory && !node.name.toLowerCase().includes(searchQuery!)) {
-    return null
-  }
+  const isHiddenBySearch = isSearching && !node.isDirectory && !node.name.toLowerCase().includes(searchQuery!)
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -317,6 +329,21 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     setTimeout(() => createInputRef.current?.focus(), 0)
   }, [node.isDirectory, node.path, children.length])
 
+  // Handle external create requests (from header buttons targeting a selected folder)
+  const lastHandledSeqRef = useRef(0)
+  useEffect(() => {
+    if (
+      createRequest &&
+      node.isDirectory &&
+      createRequest.targetDir === node.path &&
+      createRequest.seq !== lastHandledSeqRef.current
+    ) {
+      lastHandledSeqRef.current = createRequest.seq
+      startCreate(createRequest.type)
+      onCreateRequestHandled?.()
+    }
+  }, [createRequest, node.isDirectory, node.path, startCreate, onCreateRequestHandled])
+
   const commitCreate = useCallback(async () => {
     const type = isCreating
     setIsCreating(null)
@@ -352,9 +379,62 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     }
   }, [node.name, node.path, node.isDirectory, onTreeChanged])
 
+  // --- Drag-and-drop move ---
+  const dropTargetDir = node.isDirectory ? node.path : parentDir
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/cate-file')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }, [])
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/cate-file')) return
+    e.preventDefault()
+    dragCounterRef.current++
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    dragCounterRef.current--
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounterRef.current = 0
+    setIsDragOver(false)
+    if (!window.electronAPI) return
+
+    const raw = e.dataTransfer.getData('application/cate-files')
+    if (!raw) return
+    const sourcePaths: string[] = JSON.parse(raw)
+
+    for (const srcPath of sourcePaths) {
+      const fileName = srcPath.substring(srcPath.lastIndexOf('/') + 1)
+      const destPath = dropTargetDir + '/' + fileName
+      // Don't move onto itself or into the same directory
+      if (srcPath === destPath) continue
+      // Don't move a directory into itself
+      if (node.isDirectory && destPath.startsWith(srcPath + '/')) continue
+      try {
+        await window.electronAPI.fsRename(srcPath, destPath)
+      } catch (err) {
+        console.error('[file-tree] Failed to move file:', err)
+      }
+    }
+    onTreeChanged?.()
+  }, [dropTargetDir, node.isDirectory, onTreeChanged])
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+
+  if (isHiddenBySearch) return null
 
   return (
     <div>
@@ -362,7 +442,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       <div
         className={`h-7 flex items-center gap-1.5 px-2 text-sm text-primary cursor-pointer rounded-sm ${
           isSelected ? 'bg-surface-6 text-primary' : 'hover:bg-hover'
-        } ${isDimmed ? 'opacity-40' : ''}`}
+        } ${isDimmed ? 'opacity-40' : ''} ${isDragOver && node.isDirectory ? 'ring-1 ring-blue-500/60 bg-blue-500/10' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
@@ -375,8 +455,12 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
             : [node.path]
           e.dataTransfer.setData('application/cate-file', dragPaths[0])
           e.dataTransfer.setData('application/cate-files', JSON.stringify(dragPaths))
-          e.dataTransfer.effectAllowed = 'copy'
+          e.dataTransfer.effectAllowed = 'copyMove'
         }}
+        onDragOver={node.isDirectory ? handleDragOver : undefined}
+        onDragEnter={node.isDirectory ? handleDragEnter : undefined}
+        onDragLeave={node.isDirectory ? handleDragLeave : undefined}
+        onDrop={node.isDirectory ? handleDrop : undefined}
       >
         {/* Chevron for directories */}
         {node.isDirectory ? (
@@ -469,6 +553,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
               visiblePaths={visiblePaths}
               searchQuery={searchQuery}
               rootPath={rootPath}
+              createRequest={createRequest}
+              onCreateRequestHandled={onCreateRequestHandled}
             />
           ))}
         </div>

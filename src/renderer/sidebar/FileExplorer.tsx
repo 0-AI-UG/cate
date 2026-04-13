@@ -51,6 +51,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
   const [rootCreateValue, setRootCreateValue] = useState('')
+  const [createRequest, setCreateRequest] = useState<{ type: 'file' | 'folder'; targetDir: string; seq: number } | null>(null)
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -58,6 +59,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const lastSelectedPath = useRef<string | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const rootPathRef = useRef(rootPath)
+  const createSeqRef = useRef(0)
 
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const createEditor = useAppStore((s) => s.createEditor)
@@ -218,11 +220,39 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     if (rootPath) loadTree(rootPath)
   }, [rootPath, loadTree])
 
+  // Resolve the target directory for new file/folder creation based on selection
+  const getSelectedDir = useCallback((): string | null => {
+    if (selectedPaths.size !== 1) return null
+    const selectedPath = [...selectedPaths][0]
+    // Find if the selected path is a directory by searching the tree
+    const findNode = (nodeList: FileTreeNodeType[]): FileTreeNodeType | null => {
+      for (const n of nodeList) {
+        if (n.path === selectedPath) return n
+        if (n.children.length > 0) {
+          const found = findNode(n.children)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    const node = findNode(nodes)
+    if (!node) return null
+    return node.isDirectory ? node.path : node.path.substring(0, node.path.lastIndexOf('/'))
+  }, [selectedPaths, nodes])
+
   const startRootCreate = useCallback((type: 'file' | 'folder') => {
-    setRootCreateValue('')
-    setRootCreating(type)
-    setTimeout(() => rootCreateInputRef.current?.focus(), 0)
-  }, [])
+    const targetDir = getSelectedDir()
+    if (targetDir && targetDir !== rootPath) {
+      // Delegate creation to the selected folder's FileTreeNode
+      createSeqRef.current++
+      setCreateRequest({ type, targetDir, seq: createSeqRef.current })
+    } else {
+      // No folder selected or root — create at root level
+      setRootCreateValue('')
+      setRootCreating(type)
+      setTimeout(() => rootCreateInputRef.current?.focus(), 0)
+    }
+  }, [getSelectedDir, rootPath])
 
   const commitRootCreate = useCallback(async () => {
     const type = rootCreating
@@ -369,6 +399,30 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
             if (e.target === e.currentTarget) setSelectedPaths(new Set())
           }}
           onContextMenu={handleRootContextMenu}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes('application/cate-file')) {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+            }
+          }}
+          onDrop={async (e) => {
+            e.preventDefault()
+            if (!window.electronAPI) return
+            const raw = e.dataTransfer.getData('application/cate-files')
+            if (!raw) return
+            const sourcePaths: string[] = JSON.parse(raw)
+            for (const srcPath of sourcePaths) {
+              const fileName = srcPath.substring(srcPath.lastIndexOf('/') + 1)
+              const destPath = rootPath + '/' + fileName
+              if (srcPath === destPath) continue
+              try {
+                await window.electronAPI.fsRename(srcPath, destPath)
+              } catch (err) {
+                console.error('[file-explorer] Failed to move file:', err)
+              }
+            }
+            handleReload()
+          }}
         >
           {nodes.map((node) => (
             <FileTreeNode
@@ -383,6 +437,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               visiblePaths={visiblePaths}
               searchQuery={searchQuery.trim().toLowerCase()}
               rootPath={rootPath}
+              createRequest={createRequest}
+              onCreateRequestHandled={() => setCreateRequest(null)}
             />
           ))}
 
