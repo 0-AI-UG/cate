@@ -82,6 +82,9 @@ export const SESSION_FLUSH_SAVE_DONE = 'session:flushSaveDone' // renderer -> ma
 // App
 export const APP_GET_PATH = 'app:getPath'
 
+// Crash reporting
+export const CRASH_REPORT_SAVE = 'crash:reportSave'
+
 // Menu actions (main -> renderer)
 export const MENU_OPEN_SETTINGS = 'menu:openSettings'
 /** Generic menu-action dispatch — main sends a MenuActionId and the focused

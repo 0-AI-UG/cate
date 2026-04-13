@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, CRASH_REPORT_SAVE } from '../shared/ipc-channels'
 import {
   WINDOW_CREATE, WINDOW_GET_ID, WINDOW_GET_TYPE, WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -14,7 +14,7 @@ import {
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
 } from '../shared/ipc-channels'
-import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals } from './ipc/terminal'
+import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals, terminalPids } from './ipc/terminal'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
@@ -31,6 +31,7 @@ import { addAllowedRoot, validatePath } from './ipc/pathValidation'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
 import { initAutoUpdater } from './auto-updater'
+import { saveCrashReport, checkPendingCrashReport } from './crashReporter'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer } from './ipc/terminal'
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
 
@@ -285,6 +286,14 @@ function registerAllHandlers(): void {
   registerNotificationHandlers()
   registerWorkspaceHandlers()
   registerUsageHandlers()
+
+  // Crash reporting: renderer can save a crash report via IPC
+  ipcMain.handle(CRASH_REPORT_SAVE, async (_event, error: { name?: string; message: string; stack?: string }) => {
+    saveCrashReport(
+      { name: error.name ?? 'Error', message: error.message, stack: error.stack },
+      'renderer',
+    )
+  })
 
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, async (_event, filePath: string) => {
@@ -828,14 +837,40 @@ loadSettingsSyncFromDisk()
 // importing this file (which would create a circular dependency).
 setNewMainWindowFn(() => createWindow({ type: 'main' }))
 
-// Swallow stray errors during teardown so they don't surface as a
-// "Cate quit unexpectedly" crash dialog on macOS. Real problems are
-// still captured in the log.
+// ---------------------------------------------------------------------------
+// Emergency PTY cleanup — kill child process groups on crash or signal so
+// dev servers, watchers, etc. don't survive as zombies keeping ports open.
+// Defined before the error handlers that call it.
+// ---------------------------------------------------------------------------
+
+function emergencyKillPTYs(): void {
+  for (const pid of terminalPids.values()) {
+    try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ }
+  }
+}
+
+// Global error handlers — save a crash report to disk so the user can opt-in
+// to sending it on next launch. Also kill PTY process groups.
 process.on('uncaughtException', (err) => {
   log.error('uncaughtException: %O', err)
+  saveCrashReport(err, 'main')
+  emergencyKillPTYs()
+  process.exit(1)
 })
 process.on('unhandledRejection', (reason) => {
   log.error('unhandledRejection: %O', reason)
+})
+
+process.on('SIGTERM', () => {
+  log.info('Received SIGTERM, killing PTY process groups')
+  emergencyKillPTYs()
+  process.exit(0)
+})
+
+process.on('SIGINT', () => {
+  log.info('Received SIGINT, killing PTY process groups')
+  emergencyKillPTYs()
+  process.exit(0)
 })
 
 app.whenReady().then(async () => {
@@ -873,6 +908,13 @@ app.whenReady().then(async () => {
   log.info('Main window created (id=%d)', mainWin.id)
 
   initAutoUpdater()
+
+  // Check for a crash report from the previous session — shows an opt-in
+  // dialog if one exists. Deferred until after the window is ready so the
+  // dialog has a parent window and doesn't block startup.
+  mainWin.once('ready-to-show', () => {
+    checkPendingCrashReport().catch((err) => log.warn('Crash report check failed:', err))
+  })
 })
 
 app.on('window-all-closed', () => {
@@ -967,3 +1009,4 @@ app.on('will-quit', () => {
   // process group kills) is already done above.
   ;(process as unknown as { _exit(code: number): never })._exit(0)
 })
+

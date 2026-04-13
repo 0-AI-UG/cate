@@ -247,6 +247,13 @@ export interface ElectronAPI {
   appGetPath(name: string): Promise<string>
 
   // ---------------------------------------------------------------------------
+  // Crash reporting
+  // ---------------------------------------------------------------------------
+
+  /** Save a crash report from the renderer (shown on next launch with opt-in send). */
+  crashReportSave(error: { name?: string; message: string; stack?: string }): Promise<void>
+
+  // ---------------------------------------------------------------------------
   // Dialog
   // ---------------------------------------------------------------------------
 

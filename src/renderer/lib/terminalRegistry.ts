@@ -20,7 +20,7 @@ import { getResolvedTheme, subscribeTheme, type ResolvedTheme } from './themeMan
 function getScrollback(): number {
   const raw = useSettingsStore.getState().terminalScrollback
   if (!Number.isFinite(raw) || raw <= 0) return 2000
-  return Math.max(100, Math.min(raw, 100000))
+  return Math.max(100, Math.min(raw, 10000))
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +131,8 @@ export interface RegistryEntry {
   cleanupListeners: Array<() => void>
   /** Last known viewport scrollTop — continuously tracked for scroll restore on focus. */
   lastScrollTop: number
+  /** True once a scroll listener has been attached — prevents duplicates across re-attach cycles. */
+  hasScrollListener: boolean
 }
 
 interface CreateOpts {
@@ -227,6 +229,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     ptyId: '', // filled below
     cleanupListeners,
     lastScrollTop: 0,
+    hasScrollListener: false,
   }
 
   // Register entry immediately so concurrent calls return the same object
@@ -399,6 +402,7 @@ async function reconnectTerminal(
     ptyId,
     cleanupListeners,
     lastScrollTop: 0,
+    hasScrollListener: false,
   }
 
   registry.set(panelId, entry)
@@ -599,22 +603,29 @@ function attach(panelId: string, container: HTMLDivElement): void {
   }
 
   // Track viewport scroll position continuously so we can restore it on focus.
-  // The listener is cleaned up via the entry's cleanupListeners on dispose/release.
-  const viewport = el.querySelector('.xterm-viewport') as HTMLElement | null
-  if (viewport) {
-    const onScroll = (): void => {
-      const e = registry.get(panelId)
-      if (e) e.lastScrollTop = viewport.scrollTop
-      // Self-heal the bug where the DOM scrollbar reaches the bottom but the
-      // xterm buffer's viewportY is one short of baseY (leaving the freshest
-      // row invisible). When the user drags the scrollbar all the way down,
-      // force the buffer index to match.
-      if (viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 2) {
-        try { entry.terminal.scrollToBottom() } catch { /* ignore */ }
+  // Only add the listener once — attach() may be called many times by the
+  // IntersectionObserver visibility toggle, and the xterm DOM tree (including
+  // .xterm-viewport) is the same object across reparents. Adding duplicates
+  // leaks closures and grows cleanupListeners without bound.
+  if (!entry.hasScrollListener) {
+    const viewport = el.querySelector('.xterm-viewport') as HTMLElement | null
+    if (viewport) {
+      const onScroll = (): void => {
+        const e = registry.get(panelId)
+        if (e) e.lastScrollTop = viewport.scrollTop
+        // Self-heal the bug where the DOM scrollbar reaches the bottom but the
+        // xterm buffer's viewportY is one short of baseY (leaving the freshest
+        // row invisible). When the user drags the scrollbar all the way down,
+        // force the buffer index to match.
+        if (viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 2) {
+          const current = registry.get(panelId)
+          try { current?.terminal.scrollToBottom() } catch { /* ignore */ }
+        }
       }
+      viewport.addEventListener('scroll', onScroll, { passive: true })
+      entry.cleanupListeners.push(() => viewport.removeEventListener('scroll', onScroll))
+      entry.hasScrollListener = true
     }
-    viewport.addEventListener('scroll', onScroll, { passive: true })
-    entry.cleanupListeners.push(() => viewport.removeEventListener('scroll', onScroll))
   }
 
   // Force layout reflow so the browser has calculated the new container size

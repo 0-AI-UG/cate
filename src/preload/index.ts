@@ -56,6 +56,7 @@ import {
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
   APP_GET_PATH,
+  CRASH_REPORT_SAVE,
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
   MENU_SHOW_CONTEXT,
@@ -472,6 +473,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   appGetPath(name: string): Promise<string> {
     return ipcRenderer.invoke(APP_GET_PATH, name)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Crash reporting
+  // ---------------------------------------------------------------------------
+
+  /** Save a crash report from the renderer process (shown on next launch). */
+  crashReportSave(error: { name?: string; message: string; stack?: string }): Promise<void> {
+    return ipcRenderer.invoke(CRASH_REPORT_SAVE, error)
   },
 
   // ---------------------------------------------------------------------------

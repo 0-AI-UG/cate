@@ -6,8 +6,14 @@ import './styles/globals.css'
 
 log.info('Renderer starting (window type=%s)', new URLSearchParams(window.location.search).get('type') ?? 'main')
 
-window.addEventListener('error', (e) => log.error('Uncaught error:', e.error ?? e.message))
-window.addEventListener('unhandledrejection', (e) => log.error('Unhandled promise rejection:', e.reason))
+window.addEventListener('error', (e) => {
+  log.error('Uncaught error:', e.error ?? e.message)
+  const err = e.error instanceof Error ? e.error : new Error(String(e.error ?? e.message))
+  window.electronAPI?.crashReportSave({ name: err.name, message: err.message, stack: err.stack })
+})
+window.addEventListener('unhandledrejection', (e) => {
+  log.error('Unhandled promise rejection:', e.reason)
+})
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -19,6 +25,11 @@ class ErrorBoundary extends React.Component<
   }
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     log.error('React render error:', error.message, errorInfo.componentStack)
+    window.electronAPI?.crashReportSave({
+      name: error.name,
+      message: error.message,
+      stack: [error.stack, '\nComponent stack:', errorInfo.componentStack].filter(Boolean).join('\n'),
+    })
   }
   render() {
     if (this.state.error) {
