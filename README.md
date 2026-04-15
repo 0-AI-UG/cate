@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="build/icon.png" alt="Cate" width="160" />
+  <img src="assets/cate-logo.svg" alt="Cate" width="240" />
 </p>
 
 <h1 align="center">Cate</h1>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Current source version:</strong> v0.2.17
+  <strong>Current source version:</strong> v0.2.18
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@ Cate is an Electron desktop app for arranging development tools in freeform spac
 
 ## Download
 
-This repository currently targets **v0.2.17**.
+This repository currently targets **v0.2.18**.
 
 | Platform | Formats | Link |
 |----------|---------|------|
