@@ -78,6 +78,15 @@ async function lsFiles(dirPath: string): Promise<string[]> {
   }
 }
 
+export async function createBranch(cwd: string, branchName: string, startPoint?: string): Promise<void> {
+  const git = simpleGit(validateCwd(cwd))
+  if (startPoint) {
+    await git.checkoutBranch(branchName, startPoint)
+  } else {
+    await git.checkoutLocalBranch(branchName)
+  }
+}
+
 export function registerHandlers(): void {
   ipcMain.handle(GIT_IS_REPO, async (_event, dirPath: string) => {
     return isGitRepo(validateCwd(dirPath))
@@ -232,8 +241,7 @@ export function registerHandlers(): void {
     GIT_BRANCH_CREATE,
     async (_event, cwd: string, branchName: string, startPoint?: string) => {
       try {
-        const git = simpleGit(validateCwd(cwd))
-        await git.checkoutLocalBranch(branchName)
+        await createBranch(cwd, branchName, startPoint)
       } catch (error) {
         log.error(`[${GIT_BRANCH_CREATE}]`, error)
         throw error instanceof Error ? error : new Error(String(error))

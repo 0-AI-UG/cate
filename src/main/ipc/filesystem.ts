@@ -7,7 +7,7 @@ import path from 'path'
 import { watch, FSWatcher } from 'chokidar'
 import { ipcMain } from 'electron'
 import log from '../logger'
-import { validatePathStrict, validatePathForCreation } from './pathValidation'
+import { consumeScopedWriteAllowance, validatePathStrict, validatePathForCreation } from './pathValidation'
 import {
   FS_READ_FILE,
   FS_WRITE_FILE,
@@ -19,8 +19,9 @@ import {
   FS_DELETE,
   FS_RENAME,
   FS_MKDIR,
+  FS_SEARCH,
 } from '../../shared/ipc-channels'
-import { FileTreeNode, FILE_EXCLUSIONS } from '../../shared/types'
+import { FileTreeNode, FileSearchResult, FileSearchOptions, FILE_EXCLUSIONS } from '../../shared/types'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
 
 // Set of exclusion names for fast lookup
@@ -123,6 +124,133 @@ async function readDir(dirPath: string): Promise<FileTreeNode[]> {
   files.sort(caseInsensitiveSort)
 
   return [...dirs, ...files]
+}
+
+// ---------------------------------------------------------------------------
+// File search — name + content matching with a flat result list.
+// ---------------------------------------------------------------------------
+
+const BINARY_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'icns', 'tiff', 'avif',
+  'pdf', 'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'jar', 'war',
+  'mp3', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'wav', 'flac', 'ogg', 'm4a',
+  'woff', 'woff2', 'ttf', 'otf', 'eot',
+  'so', 'dylib', 'dll', 'exe', 'bin', 'o', 'a', 'class', 'wasm',
+  'sqlite', 'db', 'lock', 'pack', 'idx',
+])
+
+async function searchFiles(
+  rootPath: string,
+  query: string,
+  opts: FileSearchOptions = {},
+): Promise<FileSearchResult[]> {
+  const maxResults = opts.maxResults ?? 200
+  const maxFileBytes = opts.maxFileBytes ?? 1024 * 1024
+  const lowerQuery = query.toLowerCase()
+  const allowDotFiles = query.startsWith('.')
+  const results: FileSearchResult[] = []
+  const seenPaths = new Set<string>()
+
+  const pushResult = (r: FileSearchResult): boolean => {
+    if (seenPaths.has(r.path)) return results.length < maxResults
+    seenPaths.add(r.path)
+    results.push(r)
+    return results.length < maxResults
+  }
+
+  const walk = async (dir: string): Promise<boolean> => {
+    let entries: string[]
+    try {
+      entries = await fs.readdir(dir)
+    } catch {
+      return true
+    }
+
+    // Match names first (cheap), then recurse, then content-search files.
+    const subdirs: string[] = []
+    const files: { full: string; name: string; ext: string; size: number }[] = []
+
+    for (const entry of entries) {
+      if (exclusionSet.has(entry)) continue
+      if (!allowDotFiles && entry.startsWith('.')) continue
+      const full = path.join(dir, entry)
+      let stat
+      try {
+        stat = await fs.lstat(full)
+      } catch {
+        continue
+      }
+      if (stat.isSymbolicLink()) continue
+
+      const isDirectory = stat.isDirectory()
+      const nameMatches = entry.toLowerCase().includes(lowerQuery)
+      if (nameMatches) {
+        const relativePath = path.relative(rootPath, full).split(path.sep).join('/')
+        if (!pushResult({ name: entry, path: full, relativePath, isDirectory, nameMatch: true })) return false
+      }
+
+      if (isDirectory) {
+        subdirs.push(full)
+      } else {
+        const ext = path.extname(entry).replace(/^\./, '').toLowerCase()
+        files.push({ full, name: entry, ext, size: stat.size })
+      }
+    }
+
+    // Content-search files at this level (skip ones already added by name).
+    for (const f of files) {
+      if (results.length >= maxResults) return false
+      if (seenPaths.has(f.full)) continue
+      if (f.size === 0 || f.size > maxFileBytes) continue
+      if (BINARY_EXTENSIONS.has(f.ext)) continue
+      let buf: Buffer
+      try {
+        buf = await fs.readFile(f.full)
+      } catch {
+        continue
+      }
+      // Quick binary sniff: NUL byte in first 8KB → skip.
+      const sniffEnd = Math.min(buf.length, 8192)
+      let isBinary = false
+      for (let i = 0; i < sniffEnd; i++) {
+        if (buf[i] === 0) { isBinary = true; break }
+      }
+      if (isBinary) continue
+
+      const text = buf.toString('utf-8')
+      const idx = text.toLowerCase().indexOf(lowerQuery)
+      if (idx === -1) continue
+
+      // Locate the line containing the match.
+      const before = text.slice(0, idx)
+      const lineStart = before.lastIndexOf('\n') + 1
+      const lineEndRel = text.indexOf('\n', idx)
+      const lineEnd = lineEndRel === -1 ? text.length : lineEndRel
+      const line = text.slice(lineStart, lineEnd).trim().slice(0, 200)
+      const lineNumber = (text.slice(0, lineStart).match(/\n/g)?.length ?? 0) + 1
+      const relativePath = path.relative(rootPath, f.full).split(path.sep).join('/')
+      if (!pushResult({
+        name: f.name, path: f.full, relativePath,
+        isDirectory: false, nameMatch: false,
+        contentPreview: line, contentLine: lineNumber,
+      })) return false
+    }
+
+    for (const sub of subdirs) {
+      if (results.length >= maxResults) return false
+      const cont = await walk(sub)
+      if (!cont) return false
+    }
+    return true
+  }
+
+  await walk(rootPath)
+  // Sort: name matches first, then by relative path length (shallower first).
+  results.sort((a, b) => {
+    if (a.nameMatch !== b.nameMatch) return a.nameMatch ? -1 : 1
+    return a.relativePath.length - b.relativePath.length
+  })
+  return results
 }
 
 function watchStart(dirPath: string, ownerWindowId: number): void {
@@ -239,9 +367,12 @@ export function registerHandlers(): void {
     }
   })
 
-  ipcMain.handle(FS_WRITE_FILE, async (_event, filePath: string, content: string) => {
+  ipcMain.handle(FS_WRITE_FILE, async (event, filePath: string, content: string) => {
     try {
-      await writeFile(await validatePathForCreation(filePath), content)
+      const win = windowFromEvent(event)
+      const safePath = await validatePathForCreation(filePath, win?.id)
+      await writeFile(safePath, content)
+      if (win) consumeScopedWriteAllowance(win.id, safePath)
     } catch (error) {
       log.error(`[${FS_WRITE_FILE}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -332,6 +463,18 @@ export function registerHandlers(): void {
       await fs.mkdir(await validatePathForCreation(dirPath), { recursive: true })
     } catch (error) {
       log.error(`[${FS_MKDIR}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+  })
+
+  ipcMain.handle(FS_SEARCH, async (_event, rootPath: string, query: string, options?: FileSearchOptions) => {
+    try {
+      const validRoot = await validatePathStrict(rootPath)
+      const trimmed = (query ?? '').trim()
+      if (!trimmed) return []
+      return await searchFiles(validRoot, trimmed, options ?? {})
+    } catch (error) {
+      log.error(`[${FS_SEARCH}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
     }
   })
