@@ -17,6 +17,8 @@ import log from './logger'
 const CRASH_REPORT_ENDPOINT = 'https://crashes.cate.dev/api/v1/reports'
 
 const CRASH_REPORT_FILENAME = 'crash-report.json'
+const CRASH_REPORT_ARCHIVE_DIR = 'crash-reports'
+const MAX_ARCHIVED_REPORTS = 50
 const MAX_RECENT_LOG_LINES = 80
 
 // ---------------------------------------------------------------------------
@@ -53,6 +55,38 @@ export interface CrashReport {
 
 function crashReportPath(): string {
   return path.join(app.getPath('userData'), CRASH_REPORT_FILENAME)
+}
+
+function crashReportArchiveDir(): string {
+  return path.join(app.getPath('userData'), CRASH_REPORT_ARCHIVE_DIR)
+}
+
+/**
+ * Save a copy of a sent report to the archive directory so reports remain
+ * available locally regardless of whether the remote upload succeeds. Prunes
+ * the oldest entries once MAX_ARCHIVED_REPORTS is exceeded.
+ */
+function archiveCrashReport(report: CrashReport): void {
+  try {
+    const dir = crashReportArchiveDir()
+    fs.mkdirSync(dir, { recursive: true })
+    const safeStamp = report.timestamp.replace(/[:.]/g, '-')
+    const filename = `crash-${safeStamp}.json`
+    fs.writeFileSync(path.join(dir, filename), JSON.stringify(report, null, 2), 'utf-8')
+    log.info('Archived crash report to %s', path.join(dir, filename))
+
+    const entries = fs
+      .readdirSync(dir)
+      .filter((name) => name.startsWith('crash-') && name.endsWith('.json'))
+      .sort()
+    if (entries.length > MAX_ARCHIVED_REPORTS) {
+      for (const stale of entries.slice(0, entries.length - MAX_ARCHIVED_REPORTS)) {
+        tryUnlink(path.join(dir, stale))
+      }
+    }
+  } catch (err) {
+    log.warn('Failed to archive crash report:', err)
+  }
 }
 
 /** Read the last N lines from the main log file (best-effort). */
@@ -173,6 +207,7 @@ export async function checkPendingCrashReport(): Promise<void> {
     if (!checkboxChecked) {
       report.recentLogs = []
     }
+    archiveCrashReport(report)
     await sendCrashReport(report)
   } else {
     log.info('User declined to send crash report')
