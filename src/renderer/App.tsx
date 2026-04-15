@@ -164,20 +164,17 @@ function MainApp() {
       // Try to restore previous session — only the core (active workspace).
       // Detached panel/dock windows are recreated afterwards so the main
       // window can paint without waiting on their IPC round-trips.
-      const settings = useSettingsStore.getState()
       let restoredSession: MultiWorkspaceSession | null = null
       let restored = false
-      if (settings.restoreSessionOnLaunch) {
-        const session = await loadSession()
-        if (session) {
-          if ((session as MultiWorkspaceSession).version === 2) {
-            restoredSession = session as MultiWorkspaceSession
-            await restoreMultiWorkspaceSession(restoredSession, useCanvasStore)
-            restored = true
-          } else {
-            await restoreSession(session as any, useCanvasStore)
-            restored = true
-          }
+      const session = await loadSession()
+      if (session) {
+        if ((session as MultiWorkspaceSession).version === 2) {
+          restoredSession = session as MultiWorkspaceSession
+          await restoreMultiWorkspaceSession(restoredSession, useCanvasStore)
+          restored = true
+        } else {
+          await restoreSession(session as any, useCanvasStore)
+          restored = true
         }
       }
 
@@ -250,6 +247,32 @@ function MainApp() {
   }, [])
 
   // ---------------------------------------------------------------------------
+  // OS-forwarded folder opens — dock drop / "Open With Cate"
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    return window.electronAPI.onOpenPath(async (filePath) => {
+      try {
+        const stat = await window.electronAPI.fsStat(filePath)
+        if (!stat.isDirectory) return
+        const app = useAppStore.getState()
+        const folderName = filePath.split('/').filter(Boolean).pop() ?? 'Workspace'
+        // If the only workspace is the untouched default (no root, empty
+        // panels), reuse it rather than stacking a second empty workspace.
+        const existing = app.workspaces.find((w) => w.rootPath === filePath)
+        if (existing) {
+          app.selectWorkspace(existing.id)
+          return
+        }
+        const wsId = app.addWorkspace(folderName, filePath)
+        window.electronAPI.recentProjectsAdd(filePath)
+        await app.selectWorkspace(wsId)
+      } catch (err) {
+        log.warn('onOpenPath failed:', err)
+      }
+    })
+  }, [])
+
+  // ---------------------------------------------------------------------------
   // Panel window dock-back (double-click title bar)
   // ---------------------------------------------------------------------------
   useEffect(() => {
@@ -296,15 +319,10 @@ function MainApp() {
     const files = Array.from(e.dataTransfer.files)
     if (files.length === 0) return
     for (const file of files) {
-      const filePath = (file as any).path as string | undefined
+      const filePath = window.electronAPI.getPathForFile(file)
       if (!filePath) continue
-      try {
-        const stat = await window.electronAPI.fsStat(filePath)
-        if (stat.isDirectory) {
-          useAppStore.getState().setWorkspaceRootPath(selectedWorkspaceId, filePath)
-          break
-        }
-      } catch { /* ignore */ }
+      useAppStore.getState().setWorkspaceRootPath(selectedWorkspaceId, filePath)
+      break
     }
   }, [selectedWorkspaceId])
 

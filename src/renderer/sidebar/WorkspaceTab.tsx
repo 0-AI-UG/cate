@@ -292,7 +292,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           </button>
         </div>
         <div className="mt-1 text-[11px] opacity-60 truncate">
-          Choose a project folder
+          {workspace.isRootPathPending
+            ? 'Connecting workspace...'
+            : workspace.rootPathError || 'Choose a project folder'}
         </div>
       </div>
     )

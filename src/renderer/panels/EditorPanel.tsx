@@ -16,15 +16,87 @@ import { getResolvedTheme, subscribeTheme } from '../lib/themeManager'
 // Monaco worker setup for Electron (Vite bundler)
 // -----------------------------------------------------------------------------
 
-window.MonacoEnvironment = {
-  getWorker: function (_: string, _label: string) {
+let monacoWorkersShuttingDown = false
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'beforeunload',
+    () => {
+      monacoWorkersShuttingDown = true
+    },
+    { once: true },
+  )
+}
+
+function createMonacoWorker(url: URL, label: string): Worker {
+  return new Worker(url, {
+    type: 'module',
+    name: `monaco-${label || 'worker'}`,
+  })
+}
+
+function createBundledMonacoWorker(label: string): Worker {
+  const normalizedLabel = label.toLowerCase()
+
+  if (monacoWorkersShuttingDown) {
+    return new Worker(new URL('../workers/noop.worker.ts', import.meta.url), {
+      type: 'module',
+      name: `monaco-${normalizedLabel || 'noop'}`,
+    })
+  }
+
+  if (normalizedLabel === 'json' || normalizedLabel === 'jsonc') {
+    return createMonacoWorker(
+      new URL('monaco-editor/esm/vs/language/json/json.worker.js', import.meta.url),
+      normalizedLabel,
+    )
+  }
+
+  if (normalizedLabel === 'css' || normalizedLabel === 'scss' || normalizedLabel === 'less') {
+    return createMonacoWorker(
+      new URL('monaco-editor/esm/vs/language/css/css.worker.js', import.meta.url),
+      normalizedLabel,
+    )
+  }
+
+  if (normalizedLabel === 'html' || normalizedLabel === 'handlebars' || normalizedLabel === 'razor') {
+    return createMonacoWorker(
+      new URL('monaco-editor/esm/vs/language/html/html.worker.js', import.meta.url),
+      normalizedLabel,
+    )
+  }
+
+  if (
+    normalizedLabel === 'typescript'
+    || normalizedLabel === 'javascript'
+    || normalizedLabel === 'typescriptreact'
+    || normalizedLabel === 'javascriptreact'
+  ) {
+    return createMonacoWorker(
+      new URL('monaco-editor/esm/vs/language/typescript/ts.worker.js', import.meta.url),
+      normalizedLabel,
+    )
+  }
+
+  return new Worker(new URL('../workers/editorService.worker.ts', import.meta.url), {
+    type: 'module',
+    name: `monaco-${normalizedLabel || 'worker'}`,
+  })
+}
+
+const monacoGlobal = globalThis as typeof globalThis & {
+  MonacoEnvironment?: Record<string, unknown> & {
+    getWorker?: (moduleId: string, label: string) => Worker
+  }
+}
+
+monacoGlobal.MonacoEnvironment = {
+  ...(monacoGlobal.MonacoEnvironment ?? {}),
+  getWorker: function (_: string, label: string) {
     try {
-      return new Worker(
-        new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url),
-        { type: 'module' },
-      )
+      return createBundledMonacoWorker(label)
     } catch (err) {
-      log.error('[EditorPanel] Failed to create Monaco worker:', err)
+      log.error('[EditorPanel] Failed to create Monaco worker for label %s:', label, err)
       throw err
     }
   },

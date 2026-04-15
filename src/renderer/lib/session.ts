@@ -4,8 +4,14 @@
 // =============================================================================
 
 import log from './logger'
-import { useAppStore, getCanvasOperations } from '../stores/appStore'
+import {
+  useAppStore,
+  ensureCanvasOpsForPanel,
+  getWorkspaceCanvasStore,
+  setActiveCanvasPanelId,
+} from '../stores/appStore'
 import type { StoreApi } from 'zustand'
+import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import type { CanvasStore } from '../stores/canvasStore'
 import type {
   SessionSnapshot,
@@ -27,6 +33,61 @@ export const terminalRestoreData = new Map<string, { cwd?: string; replayFromId?
 
 // Deferred snapshots for inactive workspaces — restored on first switch
 export const deferredSnapshots = new Map<string, SessionSnapshot>()
+
+function restoreDockPanelsForWorkspace(workspaceId: string, snapshot: SessionSnapshot): number {
+  const appStore = useAppStore.getState()
+  let restoredCount = 0
+
+  if (snapshot.dockPanels) {
+    for (const panel of Object.values(snapshot.dockPanels)) {
+      const existing = appStore.getWorkspace(workspaceId)?.panels[panel.id]
+      if (!existing) {
+        appStore.addPanel(workspaceId, panel)
+        restoredCount += 1
+      }
+    }
+    return restoredCount
+  }
+
+  if (!snapshot.dockState) return 0
+
+  // Migration: sessions saved before dockPanels was introduced.
+  // Any panel IDs in the dock state that don't exist in the workspace are
+  // almost certainly canvas panels (the only dock-only panel type).
+  const dockPanelIds = collectPanelIdsFromDockState(snapshot.dockState.zones)
+  for (const panelId of dockPanelIds) {
+    const existing = appStore.getWorkspace(workspaceId)?.panels[panelId]
+    if (!existing) {
+      appStore.addPanel(workspaceId, { id: panelId, type: 'canvas', title: 'Canvas', isDirty: false })
+      restoredCount += 1
+      log.debug(`[session] migration: created missing dock panel ${panelId} as canvas`)
+    }
+  }
+
+  return restoredCount
+}
+
+function resolveSnapshotCanvasPanelId(snapshot: SessionSnapshot): string | null {
+  if (snapshot.dockState) {
+    const centerPanelIds = collectPanelIdsFromDockState({
+      center: snapshot.dockState.zones.center,
+      left: { position: 'left', visible: false, size: 0, layout: null },
+      right: { position: 'right', visible: false, size: 0, layout: null },
+      bottom: { position: 'bottom', visible: false, size: 0, layout: null },
+    })
+    for (const panelId of centerPanelIds) {
+      if (!snapshot.dockPanels || snapshot.dockPanels[panelId]?.type === 'canvas') return panelId
+    }
+
+    const dockPanelIds = collectPanelIdsFromDockState(snapshot.dockState.zones)
+    for (const panelId of dockPanelIds) {
+      if (!snapshot.dockPanels || snapshot.dockPanels[panelId]?.type === 'canvas') return panelId
+    }
+  }
+
+  const canvasPanel = Object.values(snapshot.dockPanels ?? {}).find((panel) => panel.type === 'canvas')
+  return canvasPanel?.id ?? null
+}
 
 // -----------------------------------------------------------------------------
 // Save
@@ -241,11 +302,25 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
   }
 
   const appStore = useAppStore.getState()
-
-  // Get canvas store state — either from explicit parameter or via canvasOps
-  const getCanvasState = () => canvasStoreApi?.getState() ?? null
-
   const wsId = appStore.selectedWorkspaceId
+  const restoredDockPanelCount = restoreDockPanelsForWorkspace(wsId, snapshot)
+  if (restoredDockPanelCount > 0) {
+    log.debug(`[session] restored ${restoredDockPanelCount} dock-zone panels for workspace ${wsId}`)
+  }
+
+  const preferredCanvasPanelId = resolveSnapshotCanvasPanelId(snapshot)
+  if (preferredCanvasPanelId) {
+    ensureCanvasOpsForPanel(preferredCanvasPanelId)
+    setActiveCanvasPanelId(preferredCanvasPanelId)
+  }
+
+  // Get the workspace's primary canvas store. Fall back to the passed-in store
+  // only when we have no saved canvas panel to target yet.
+  const getCanvasState = () =>
+    (preferredCanvasPanelId
+      ? getOrCreateCanvasStoreForPanel(preferredCanvasPanelId).getState()
+      : getWorkspaceCanvasStore(wsId)?.getState() ?? canvasStoreApi?.getState()) ?? null
+
   log.debug(`[session] restoring workspace ${wsId}: ${snapshot.nodes.length} nodes`)
   const t0 = performance.now()
 
@@ -359,26 +434,6 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
             break
           }
         }
-      }
-    }
-  }
-
-  // Restore dock-zone panels (canvas, git, fileExplorer, etc.) that aren't canvas nodes
-  if (snapshot.dockPanels) {
-    for (const panel of Object.values(snapshot.dockPanels)) {
-      appStore.addPanel(wsId, panel)
-    }
-    log.debug(`[session] restored ${Object.keys(snapshot.dockPanels).length} dock-zone panels for workspace ${wsId}`)
-  } else if (snapshot.dockState) {
-    // Migration: sessions saved before dockPanels was introduced.
-    // Any panel IDs in the dock state that don't exist in the workspace are
-    // almost certainly canvas panels (the only dock-only panel type).
-    const dockPanelIds = collectPanelIdsFromDockState(snapshot.dockState.zones)
-    const ws = appStore.getWorkspace(wsId)
-    for (const panelId of dockPanelIds) {
-      if (!ws?.panels[panelId]) {
-        appStore.addPanel(wsId, { id: panelId, type: 'canvas', title: 'Canvas', isDirty: false })
-        log.debug(`[session] migration: created missing dock panel ${panelId} as canvas`)
       }
     }
   }

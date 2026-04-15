@@ -11,6 +11,7 @@ import log from '../lib/logger'
 import type {
   WorkspaceState,
   WorkspaceInfo,
+  WorkspaceMutationResult,
   PanelState,
   PanelType,
   Point,
@@ -23,7 +24,8 @@ import type { StoreApi } from 'zustand'
 import type { CanvasStore } from './canvasStore'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useDockStore } from './dockStore'
-import { releaseCanvasStoreForPanel } from './canvasStore'
+import { createCanvasOps } from '../lib/canvasBridge'
+import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from './canvasStore'
 
 // -----------------------------------------------------------------------------
 // Canvas operations callback — injected at init to decouple from canvasStore
@@ -68,6 +70,13 @@ export function registerCanvasOps(canvasPanelId: string, ops: CanvasOperations) 
 export function getCanvasOpsById(canvasPanelId: string): CanvasOperations | null {
   return canvasOpsRegistry.get(canvasPanelId) ?? null
 }
+export function ensureCanvasOpsForPanel(canvasPanelId: string): CanvasOperations {
+  const existing = canvasOpsRegistry.get(canvasPanelId)
+  if (existing) return existing
+  const ops = createCanvasOps(getOrCreateCanvasStoreForPanel(canvasPanelId))
+  canvasOpsRegistry.set(canvasPanelId, ops)
+  return ops
+}
 export function unregisterCanvasOps(canvasPanelId: string) {
   canvasOpsRegistry.delete(canvasPanelId)
   if (activeCanvasPanelId === canvasPanelId) activeCanvasPanelId = null
@@ -110,6 +119,8 @@ function createDefaultWorkspace(name?: string, rootPath?: string): WorkspaceStat
     name: name ?? 'Workspace',
     color: '',
     rootPath: rootPath ?? '',
+    rootPathError: null,
+    isRootPathPending: false,
     panels: {},
     canvasNodes: {},
     regions: {},
@@ -120,6 +131,51 @@ function createDefaultWorkspace(name?: string, rootPath?: string): WorkspaceStat
   }
 }
 
+function collectDockPanelIds(
+  node: import('../../shared/types').DockLayoutNode | null | undefined,
+  out: Set<string>,
+): void {
+  if (!node) return
+  if (node.type === 'tabs') {
+    for (const panelId of node.panelIds) out.add(panelId)
+    return
+  }
+  for (const child of node.children) collectDockPanelIds(child, out)
+}
+
+export function getWorkspaceCanvasPanelId(workspaceId: string): string | null {
+  const state = useAppStore.getState()
+  const ws = state.workspaces.find((candidate) => candidate.id === workspaceId)
+  if (!ws) return null
+
+  const dockSnapshot = workspaceId === state.selectedWorkspaceId
+    ? useDockStore.getState().getSnapshot()
+    : ws.dockState
+
+  if (dockSnapshot) {
+    const panelIds = new Set<string>()
+    collectDockPanelIds(dockSnapshot.zones.center.layout, panelIds)
+    for (const panelId of panelIds) {
+      if (ws.panels[panelId]?.type === 'canvas') return panelId
+    }
+    for (const zoneName of ALL_ZONES) {
+      collectDockPanelIds(dockSnapshot.zones[zoneName].layout, panelIds)
+    }
+    for (const panelId of panelIds) {
+      if (ws.panels[panelId]?.type === 'canvas') return panelId
+    }
+  }
+
+  const fallback = Object.values(ws.panels).find((panel) => panel.type === 'canvas')
+  return fallback?.id ?? null
+}
+
+export function getWorkspaceCanvasStore(workspaceId: string): StoreApi<CanvasStore> | null {
+  const panelId = getWorkspaceCanvasPanelId(workspaceId)
+  if (panelId) return ensureCanvasOpsForPanel(panelId).storeApi
+  return canvasOps?.storeApi ?? null
+}
+
 // -----------------------------------------------------------------------------
 // Main-process sync helpers (fire-and-forget — local state is optimistic)
 // -----------------------------------------------------------------------------
@@ -128,14 +184,29 @@ function createDefaultWorkspace(name?: string, rootPath?: string): WorkspaceStat
 // renderer state when multiple updates fire in quick succession (the previous
 // fire-and-forget approach allowed them to land out of order).
 let workspaceSyncQueue: Promise<unknown> = Promise.resolve()
-function enqueueWorkspaceSync(label: string, fn: () => Promise<unknown>): void {
+function enqueueWorkspaceSync<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
+  let resultPromise: Promise<T | undefined>
   workspaceSyncQueue = workspaceSyncQueue
     .then(fn, fn)
     .catch((err) => log.warn(`[workspace-sync] ${label} failed:`, err))
+  resultPromise = workspaceSyncQueue as Promise<T | undefined>
+  return resultPromise
 }
 
-function syncCreateToMain(ws: WorkspaceState): void {
-  enqueueWorkspaceSync('Create', () =>
+function applyWorkspaceInfo(ws: WorkspaceState, info: WorkspaceInfo): WorkspaceState {
+  return {
+    ...ws,
+    id: info.id,
+    name: info.name,
+    color: info.color,
+    rootPath: info.rootPath,
+    rootPathError: null,
+    isRootPathPending: false,
+  }
+}
+
+function syncCreateToMain(ws: WorkspaceState): Promise<WorkspaceMutationResult | undefined> {
+  return enqueueWorkspaceSync('Create', () =>
     window.electronAPI.workspaceCreate({
       name: ws.name,
       rootPath: ws.rootPath,
@@ -144,8 +215,8 @@ function syncCreateToMain(ws: WorkspaceState): void {
   )
 }
 
-function syncUpdateToMain(id: string, changes: Partial<Omit<WorkspaceInfo, 'id'>>): void {
-  enqueueWorkspaceSync('Update', () => window.electronAPI.workspaceUpdate(id, changes))
+function syncUpdateToMain(id: string, changes: Partial<Omit<WorkspaceInfo, 'id'>>): Promise<WorkspaceMutationResult | undefined> {
+  return enqueueWorkspaceSync('Update', () => window.electronAPI.workspaceUpdate(id, changes))
 }
 
 function syncRemoveFromMain(id: string): void {
@@ -210,7 +281,7 @@ interface AppStoreActions {
   syncCanvasToWorkspace: (workspaceId: string) => void
 
   // Workspace operations
-  setWorkspaceRootPath: (wsId: string, rootPath: string) => void
+  setWorkspaceRootPath: (wsId: string, rootPath: string) => Promise<boolean>
   setWorkspaceColor: (wsId: string, color: string) => void
   renameWorkspace: (wsId: string, name: string) => void
   duplicateWorkspace: (wsId: string) => string
@@ -293,7 +364,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
       )
     }
     // Sync to main process
-    syncCreateToMain(ws)
+    syncCreateToMain(ws).then((result) => {
+      if (!result?.ok) {
+        log.warn('[workspace-sync] Create rejected:', result?.error?.message)
+        return
+      }
+      set((state) => ({
+        workspaces: state.workspaces.map((candidate) => (
+          candidate.id === ws.id ? applyWorkspaceInfo(candidate, result.workspace) : candidate
+        )),
+      }))
+    })
     return ws.id
   },
 
@@ -310,8 +391,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Load the new workspace's canvas state into the canvas store
     const ws = get().workspaces.find((w) => w.id === id)
     if (ws) {
+      const canvasPanelId = getWorkspaceCanvasPanelId(id)
+      if (canvasPanelId) setActiveCanvasPanelId(canvasPanelId)
       try {
-        canvasOps?.loadWorkspaceCanvas(
+        getWorkspaceCanvasStore(id)?.getState().loadWorkspaceCanvas(
           ws.canvasNodes,
           ws.viewportOffset,
           ws.zoomLevel,
@@ -883,8 +966,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   syncCanvasToWorkspace(workspaceId) {
-    const snapshot = canvasOps?.syncCanvasSnapshot()
-    if (!snapshot) return
+    const canvasStore = getWorkspaceCanvasStore(workspaceId)
+    const canvasState = canvasStore?.getState()
+    if (!canvasState) return
 
     // Also snapshot dock state so it's saved per workspace
     const dockSnapshot = useDockStore.getState().getSnapshot()
@@ -894,12 +978,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ws.id === workspaceId
           ? {
               ...ws,
-              canvasNodes: snapshot.nodes,
-              regions: snapshot.regions,
-              annotations: snapshot.annotations,
-              viewportOffset: snapshot.viewportOffset,
-              zoomLevel: snapshot.zoomLevel,
-              focusedNodeId: snapshot.focusedNodeId,
+              canvasNodes: { ...canvasState.nodes },
+              regions: { ...canvasState.regions },
+              annotations: { ...canvasState.annotations },
+              viewportOffset: { ...canvasState.viewportOffset },
+              zoomLevel: canvasState.zoomLevel,
+              focusedNodeId: canvasState.focusedNodeId,
               dockState: dockSnapshot,
             }
           : ws,
@@ -908,21 +992,39 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setWorkspaceRootPath(wsId, rootPath) {
-    const folderName = rootPath.split('/').filter(Boolean).pop() ?? rootPath
     set((state) => ({
       workspaces: state.workspaces.map((ws) => {
         if (ws.id !== wsId) return ws
-        const newName = ws.name === 'Workspace' ? folderName : ws.name
-        return { ...ws, rootPath, name: newName }
+        return { ...ws, isRootPathPending: true, rootPathError: null }
       }),
     }))
-    // Sync metadata to main process
     const ws = get().workspaces.find((w) => w.id === wsId)
-    if (ws) {
-      syncUpdateToMain(wsId, { rootPath, name: ws.name })
-    }
-    // Track in recent projects
-    window.electronAPI.recentProjectsAdd(rootPath)
+    if (!ws) return Promise.resolve(false)
+    const folderName = rootPath.split('/').filter(Boolean).pop() ?? rootPath
+    const desiredName = ws.name === 'Workspace' ? folderName : ws.name
+    return syncUpdateToMain(wsId, { rootPath, name: desiredName }).then((result) => {
+      if (!result?.ok) {
+        const message = result?.error?.message ?? 'Failed to update workspace root'
+        set((state) => ({
+          workspaces: state.workspaces.map((candidate) => (
+            candidate.id === wsId
+              ? { ...candidate, isRootPathPending: false, rootPathError: message }
+              : candidate
+          )),
+        }))
+        log.warn('[workspace-sync] Update rejected:', message)
+        return false
+      }
+      set((state) => ({
+        workspaces: state.workspaces.map((candidate) => (
+          candidate.id === wsId
+            ? applyWorkspaceInfo(candidate, result.workspace)
+            : candidate
+        )),
+      }))
+      window.electronAPI.recentProjectsAdd(result.workspace.rootPath)
+      return true
+    })
   },
 
   setWorkspaceColor(wsId, color) {
@@ -1017,12 +1119,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
             existing.color !== info.color ||
             existing.rootPath !== info.rootPath
           ) {
-            existingMap.set(info.id, {
-              ...existing,
-              name: info.name,
-              color: info.color,
-              rootPath: info.rootPath,
-            })
+          existingMap.set(info.id, {
+            ...existing,
+            name: info.name,
+            color: info.color,
+            rootPath: info.rootPath,
+            rootPathError: null,
+            isRootPathPending: false,
+          })
           }
         } else {
           // New workspace from another window — create empty local state
@@ -1031,6 +1135,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
             name: info.name,
             color: info.color,
             rootPath: info.rootPath,
+            rootPathError: null,
+            isRootPathPending: false,
             panels: {},
             canvasNodes: {},
             regions: {},
@@ -1115,7 +1221,9 @@ export function useWorkspaceList(): WorkspaceState[] {
           a[i].id !== b[i].id ||
           a[i].name !== b[i].name ||
           a[i].color !== b[i].color ||
-          a[i].rootPath !== b[i].rootPath
+          a[i].rootPath !== b[i].rootPath ||
+          a[i].rootPathError !== b[i].rootPathError ||
+          a[i].isRootPathPending !== b[i].isRootPathPending
         ) return false
       }
       return true
