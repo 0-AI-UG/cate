@@ -156,12 +156,13 @@ export function PanelSwitcher() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-center justify-center p-8"
       style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
       onClick={close}
     >
       <div
-        className="flex gap-4 px-2 py-3 max-w-[90vw] overflow-x-auto"
+        className="flex flex-wrap items-start justify-center gap-4 overflow-y-auto"
+        style={{ maxWidth: 'min(90vw, 1400px)', maxHeight: '85vh' }}
         onClick={(e) => e.stopPropagation()}
       >
         {nodeList.map((node, i) => {
