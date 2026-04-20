@@ -3,6 +3,8 @@ import { Terminal, Globe, FileText, GitBranch, TreeStructure, SquaresFour, List 
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useSelectedWorkspace } from '../stores/appStore'
+import { useDockStore } from '../stores/dockStore'
+import { findTabStack } from '../stores/dockTreeUtils'
 import type { PanelType } from '../../shared/types'
 
 function panelColor(type: PanelType): string {
@@ -92,6 +94,24 @@ function useCroppedThumbnails(
   return thumbnails
 }
 
+type SwitcherItem =
+  | {
+      kind: 'canvas'
+      id: string
+      panelId: string
+      nodeId: string
+      type: PanelType
+      title: string
+      aspect: number
+    }
+  | {
+      kind: 'dock'
+      id: string
+      panelId: string
+      type: PanelType
+      title: string
+    }
+
 export function PanelSwitcher() {
   const show = useUIStore((s) => s.showPanelSwitcher)
   const pageScreenshot = useUIStore((s) => s.panelSwitcherScreenshot)
@@ -100,19 +120,56 @@ export function PanelSwitcher() {
   const focusedNodeId = useCanvasStoreContext((s) => s.focusedNodeId)
   const workspace = useSelectedWorkspace()
 
-  const nodeList = Object.values(nodes).sort((a, b) => a.creationIndex - b.creationIndex)
+  // Canvas panels — rendered with node-based thumbnails + real aspect ratios.
+  const canvasItems: SwitcherItem[] = useMemo(() => {
+    return Object.values(nodes)
+      .sort((a, b) => a.creationIndex - b.creationIndex)
+      .map((n) => {
+        const panel = workspace?.panels[n.panelId]
+        return {
+          kind: 'canvas' as const,
+          id: n.id,
+          panelId: n.panelId,
+          nodeId: n.id,
+          type: (panel?.type ?? 'terminal') as PanelType,
+          title: panel?.title ?? 'Panel',
+          aspect: n.size.width / Math.max(n.size.height, 1),
+        }
+      })
+  }, [nodes, workspace])
+
+  // Dock-zone panels — file explorer, git, project list, canvas host, etc.
+  // These live in workspace.panels but have no canvas node.
+  const dockItems: SwitcherItem[] = useMemo(() => {
+    if (!workspace) return []
+    const canvasPanelIds = new Set(canvasItems.map((i) => i.panelId))
+    return Object.values(workspace.panels)
+      .filter((p) => !canvasPanelIds.has(p.id))
+      .map((p) => ({
+        kind: 'dock' as const,
+        id: p.id,
+        panelId: p.id,
+        type: p.type,
+        title: p.title,
+      }))
+  }, [workspace, canvasItems])
+
+  const items: SwitcherItem[] = useMemo(() => [...canvasItems, ...dockItems], [canvasItems, dockItems])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selectedRef = useRef<HTMLDivElement>(null)
 
-  const thumbnails = useCroppedThumbnails(show ? pageScreenshot : null, nodeList.map(n => n.id))
+  const canvasNodeIds = useMemo(
+    () => canvasItems.flatMap((i) => (i.kind === 'canvas' ? [i.nodeId] : [])),
+    [canvasItems],
+  )
+  const thumbnails = useCroppedThumbnails(show ? pageScreenshot : null, canvasNodeIds)
 
   useEffect(() => {
     if (show) {
-      const focusedIdx = nodeList.findIndex(n => n.id === focusedNodeId)
-      const nextIdx = focusedIdx >= 0 ? (focusedIdx + 1) % nodeList.length : 0
+      const focusedIdx = items.findIndex((it) => it.kind === 'canvas' && it.id === focusedNodeId)
+      const nextIdx = focusedIdx >= 0 ? (focusedIdx + 1) % items.length : 0
       setSelectedIndex(nextIdx)
     } else {
-      // Clear screenshot when closing
       useUIStore.setState({ panelSwitcherScreenshot: null })
     }
   }, [show])
@@ -126,15 +183,32 @@ export function PanelSwitcher() {
   }, [])
 
   const selectItem = useCallback((index: number) => {
-    const node = nodeList[index]
-    if (!node) return
-    canvasApi.getState().focusAndCenter(node.id)
+    const item = items[index]
+    if (!item) return
+    if (item.kind === 'canvas') {
+      canvasApi.getState().focusAndCenter(item.nodeId)
+    } else {
+      // Dock panel: reveal its zone (unhide if collapsed) and activate its tab.
+      const dock = useDockStore.getState()
+      const loc = dock.getPanelLocation(item.panelId)
+      if (loc && loc.type === 'dock') {
+        const zone = dock.zones[loc.zone]
+        if (!zone.visible) dock.toggleZone(loc.zone)
+        if (zone.layout) {
+          const stack = findTabStack(zone.layout, loc.stackId)
+          if (stack) {
+            const idx = stack.panelIds.indexOf(item.panelId)
+            if (idx >= 0) dock.setActiveTab(loc.stackId, idx)
+          }
+        }
+      }
+    }
     close()
-  }, [nodeList, close])
+  }, [items, canvasApi, close])
 
   const advanceSelection = useCallback(() => {
-    setSelectedIndex((prev) => (prev + 1) % nodeList.length)
-  }, [nodeList.length])
+    setSelectedIndex((prev) => (prev + 1) % items.length)
+  }, [items.length])
 
   useEffect(() => {
     if (!show) return
@@ -153,7 +227,7 @@ export function PanelSwitcher() {
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         e.preventDefault()
         e.stopPropagation()
-        setSelectedIndex((prev) => (prev - 1 + nodeList.length) % nodeList.length)
+        setSelectedIndex((prev) => (prev - 1 + items.length) % items.length)
       } else if (e.key === 'Escape') {
         e.preventDefault()
         close()
@@ -164,9 +238,9 @@ export function PanelSwitcher() {
     }
     document.addEventListener('keydown', handleKeyDown, { capture: true })
     return () => document.removeEventListener('keydown', handleKeyDown, { capture: true })
-  }, [show, selectedIndex, nodeList, close, selectItem, advanceSelection])
+  }, [show, selectedIndex, items, close, selectItem, advanceSelection])
 
-  if (!show || nodeList.length === 0) return null
+  if (!show || items.length === 0) return null
 
   // Fixed tile width; height follows each node's true aspect ratio so the
   // grid flows as real masonry. Clamped so extreme aspects don't produce
@@ -196,21 +270,22 @@ export function PanelSwitcher() {
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {nodeList.map((node, i) => {
-            const panel = workspace?.panels[node.panelId]
-            const type = panel?.type || 'terminal'
-            const title = panel?.title || 'Panel'
+          {items.map((item, i) => {
+            const type = item.type
+            const title = item.title
             const isSelected = i === selectedIndex
             const color = panelColor(type)
-            const thumb = thumbnails[node.id]
+            const thumb = item.kind === 'canvas' ? thumbnails[item.nodeId] : undefined
 
-            const aspect = node.size.width / Math.max(node.size.height, 1)
+            // Canvas items use the node's real aspect; dock items get a
+            // uniform 4:3 so their tiles stay grid-friendly.
+            const aspect = item.kind === 'canvas' ? item.aspect : 4 / 3
             const rawH = TILE_W / aspect
             const tileH = Math.max(MIN_TILE_H, Math.min(MAX_TILE_H, rawH))
 
             return (
               <div
-                key={node.id}
+                key={item.id}
                 ref={isSelected ? selectedRef : undefined}
                 className="flex flex-col items-center cursor-pointer transition-all duration-150 mb-5"
                 style={{
