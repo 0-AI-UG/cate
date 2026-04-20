@@ -602,7 +602,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(MCP_STOP, name)
   },
 
-  mcpTest(command: string, args: string[], env: Record<string, string>): Promise<{ success: boolean; error?: string }> {
+  mcpTest(command: string, args: string[], env: Record<string, string>) {
     return ipcRenderer.invoke(MCP_TEST, command, args, env)
   },
 

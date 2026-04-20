@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import log from '../lib/logger'
-import type { AIToolId, AIToolPresence, MCPServerConfig, MCPServerDefinition } from '../../shared/types'
+import type { AIToolId, AIToolPresence, MCPServerConfig, MCPServerDefinition, MCPTestResult } from '../../shared/types'
 import { scanWorkspace } from '../lib/aiConfig/scanner'
 import { getTemplateContent, type ProjectContext } from '../lib/aiConfig/templates'
 import { parseMcpJson, serializeMcpJson } from '../lib/aiConfig/mcpConfig'
@@ -18,11 +18,12 @@ interface AIConfigStoreActions {
   createAllForTool: (toolId: AIToolId, rootPath: string) => Promise<void>
   loadMcpServers: (rootPath: string) => Promise<void>
   addMcpServer: (def: MCPServerDefinition, rootPath: string) => Promise<void>
+  updateMcpServer: (originalName: string, def: MCPServerDefinition, rootPath: string) => Promise<void>
   removeMcpServer: (name: string, rootPath: string) => Promise<void>
   updateMcpServerStatus: (name: string, status: MCPServerConfig['status'], error?: string) => void
   spawnMcpServer: (name: string) => Promise<void>
   stopMcpServer: (name: string) => Promise<void>
-  testMcpServer: (name: string) => Promise<{ success: boolean; error?: string }>
+  testMcpServer: (name: string) => Promise<MCPTestResult>
   watchConfigFiles: (rootPath: string) => () => void
   reset: () => void
 }
@@ -131,6 +132,25 @@ export const useAIConfigStore = create<AIConfigStore>((set, get) => ({
     const defs: Record<string, MCPServerDefinition> = {}
     for (const [name, server] of Object.entries(updated)) {
       defs[name] = { name: server.name, command: server.command, args: server.args, env: server.env }
+    }
+    await window.electronAPI.fsWriteFile(`${rootPath}/.mcp.json`, serializeMcpJson(defs))
+  },
+
+  async updateMcpServer(originalName: string, def: MCPServerDefinition, rootPath: string) {
+    const { mcpServers } = get()
+    const existing = mcpServers[originalName]
+    const updated: Record<string, MCPServerConfig> = { ...mcpServers }
+    if (originalName !== def.name) delete updated[originalName]
+    updated[def.name] = {
+      ...def,
+      status: existing?.status ?? 'stopped',
+      error: existing?.error,
+    }
+    set({ mcpServers: updated })
+
+    const defs: Record<string, MCPServerDefinition> = {}
+    for (const [n, server] of Object.entries(updated)) {
+      defs[n] = { name: server.name, command: server.command, args: server.args, env: server.env }
     }
     await window.electronAPI.fsWriteFile(`${rootPath}/.mcp.json`, serializeMcpJson(defs))
   },

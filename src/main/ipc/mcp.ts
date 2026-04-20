@@ -48,6 +48,35 @@ function filterRendererEnv(env: Record<string, string>): Record<string, string> 
   return filtered
 }
 
+/**
+ * Convert a JSON-RPC initialize response into an MCPTestResult.
+ * Surfaces serverInfo, advertised capabilities, and protocol version so the UI
+ * can preview what the server actually supports before it's spawned for real.
+ */
+function extractTestResult(parsed: unknown): import('../../shared/types').MCPTestResult {
+  if (!parsed || typeof parsed !== 'object') return { success: true }
+  const resp = parsed as { result?: Record<string, unknown>; error?: { message?: string } }
+  if (resp.error?.message) {
+    return { success: false, error: resp.error.message }
+  }
+  const result = resp.result
+  if (!result || typeof result !== 'object') return { success: true }
+  const serverInfo = (result as { serverInfo?: { name?: string; version?: string } }).serverInfo
+  const caps = (result as { capabilities?: Record<string, unknown> }).capabilities ?? {}
+  const protocolVersion = (result as { protocolVersion?: string }).protocolVersion
+  return {
+    success: true,
+    serverInfo: serverInfo && typeof serverInfo === 'object' ? { name: serverInfo.name, version: serverInfo.version } : undefined,
+    capabilities: {
+      tools: !!caps.tools,
+      resources: !!caps.resources,
+      prompts: !!caps.prompts,
+      logging: !!caps.logging,
+    },
+    protocolVersion,
+  }
+}
+
 // Map from server name to its running child process + owning window
 const runningServers: Map<string, { process: ChildProcess; ownerWindowId: number }> = new Map()
 
@@ -127,7 +156,7 @@ export function registerHandlers(): void {
       command: string,
       args: string[],
       env: Record<string, string>,
-    ): Promise<{ success: boolean; error?: string }> => {
+    ): Promise<import('../../shared/types').MCPTestResult> => {
       try {
         validateCommand(command)
       } catch (err) {
@@ -143,7 +172,7 @@ export function registerHandlers(): void {
           stdio: ['pipe', 'pipe', 'pipe'],
         })
 
-        const done = (result: { success: boolean; error?: string }) => {
+        const done = (result: import('../../shared/types').MCPTestResult) => {
           if (settled) return
           settled = true
           try {
@@ -189,10 +218,9 @@ export function registerHandlers(): void {
             if (!trimmed) continue
             try {
               const parsed = JSON.parse(trimmed)
-              // A valid JSON-RPC 2.0 response has an 'id' field
               if (parsed && typeof parsed === 'object' && 'id' in parsed) {
                 clearTimeout(timeout)
-                done({ success: true })
+                done(extractTestResult(parsed))
                 return
               }
             } catch {
@@ -200,13 +228,12 @@ export function registerHandlers(): void {
             }
           }
 
-          // Also try the full buffer in case the server doesn't send newlines
           if (buffer.trim()) {
             try {
               const parsed = JSON.parse(buffer.trim())
               if (parsed && typeof parsed === 'object' && 'id' in parsed) {
                 clearTimeout(timeout)
-                done({ success: true })
+                done(extractTestResult(parsed))
               }
             } catch {
               // incomplete JSON, wait for more data

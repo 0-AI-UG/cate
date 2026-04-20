@@ -68,6 +68,23 @@ export interface MCPStatusUpdate {
   error?: string
 }
 
+/** Result of a one-shot MCP server probe — advertised capabilities + server info. */
+export interface MCPTestResult {
+  success: boolean
+  error?: string
+  /** Server `serverInfo` from the initialize response. */
+  serverInfo?: { name?: string; version?: string }
+  /** Capability flags the server advertised. */
+  capabilities?: {
+    tools?: boolean
+    resources?: boolean
+    prompts?: boolean
+    logging?: boolean
+  }
+  /** Protocol version the server responded with. */
+  protocolVersion?: string
+}
+
 // -----------------------------------------------------------------------------
 // Canvas node
 // -----------------------------------------------------------------------------

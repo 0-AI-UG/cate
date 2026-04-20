@@ -331,7 +331,7 @@ export interface ElectronAPI {
 
   mcpSpawn(name: string, command: string, args: string[], env: Record<string, string>): Promise<void>
   mcpStop(name: string): Promise<void>
-  mcpTest(command: string, args: string[], env: Record<string, string>): Promise<{ success: boolean; error?: string }>
+  mcpTest(command: string, args: string[], env: Record<string, string>): Promise<import('./types').MCPTestResult>
   onMcpStatusUpdate(callback: (update: { name: string; status: string; error?: string }) => void): () => void
 
   // ---------------------------------------------------------------------------
