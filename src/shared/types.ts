@@ -728,7 +728,10 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   // General
-  defaultShellPath: '/bin/zsh',
+  // Empty string = auto-detect from $SHELL / platform fallback chain at spawn
+  // time (see src/main/shellResolver.ts). Avoids hardcoding /bin/zsh on Linux,
+  // where it commonly isn't installed.
+  defaultShellPath: '',
   warnBeforeQuit: false,
   nativeTabs: true,
 

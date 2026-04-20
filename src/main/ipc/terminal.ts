@@ -24,6 +24,8 @@ import {
 import { getOrCreateLogger, removeLogger, flushAll as flushAllLoggers, disposeAll as disposeAllLoggers } from './terminalLogger'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
 import { getShellEnv } from '../shellEnv'
+import { resolveShell, type ResolvedShell } from '../shellResolver'
+import log from '../logger'
 
 // Active terminal PTY instances keyed by terminal ID
 const terminals: Map<string, IPty> = new Map()
@@ -121,7 +123,7 @@ export function reassignTerminalWindow(terminalId: string, newWindowId: number):
 
 function createTerminal(
   id: string,
-  shell: string,
+  resolved: ResolvedShell,
   cwd: string,
   cols: number,
   rows: number,
@@ -137,7 +139,7 @@ function createTerminal(
     ),
   )
 
-  const ptyProcess = ptySpawn(shell, [], {
+  const ptyProcess = ptySpawn(resolved.path, [], {
     name: 'xterm-256color',
     cols,
     rows,
@@ -148,6 +150,25 @@ function createTerminal(
   terminals.set(id, ptyProcess)
   terminalPids.set(id, ptyProcess.pid)
   terminalOwners.set(id, ownerWindowId)
+
+  // Surface fallback details inside the terminal — otherwise users only see
+  // a cryptic exit code when their configured shell is missing.
+  if (resolved.fallback) {
+    const reasonText =
+      resolved.reason === 'missing' ? 'not found'
+      : resolved.reason === 'not-executable' ? 'not executable'
+      : resolved.reason === 'disallowed' ? 'not allowed'
+      : 'not set'
+    const requested = resolved.requested ?? '(unset)'
+    const notice =
+      `\x1b[33m[cate] Configured shell '${requested}' is ${reasonText}; ` +
+      `using '${resolved.path}' instead. Update Settings → General → Default shell path.\x1b[0m\r\n`
+    log.warn(
+      'Shell fallback for terminal %s: requested=%s reason=%s using=%s',
+      id, requested, resolved.reason, resolved.path,
+    )
+    sendToWindow(ownerWindowId, TERMINAL_DATA, id, notice)
+  }
 
   // Buffer PTY output and flush at ~60fps to avoid hammering IPC on fast output
   let dataBuffer = ''
@@ -246,17 +267,10 @@ export function registerHandlers(): void {
     ): Promise<string> => {
       const id = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
-      const ALLOWED_SHELLS = new Set(['bash', 'zsh', 'sh', 'fish', 'dash', 'ksh'])
-      let shell: string
-      if (options.shell) {
-        const shellBase = path.basename(options.shell)
-        if (!ALLOWED_SHELLS.has(shellBase)) {
-          throw new Error(`Shell not allowed: ${options.shell}`)
-        }
-        shell = options.shell
-      } else {
-        shell = process.env.SHELL || '/bin/zsh'
-      }
+      // Validate + auto-fallback so a stale/invalid `defaultShellPath` doesn't
+      // make every terminal die with `execvp(3) failed.: No such file or
+      // directory` (see GitHub issue #2).
+      const resolved = resolveShell(options.shell)
 
       let cwd: string
       if (options.cwd) {
@@ -266,7 +280,7 @@ export function registerHandlers(): void {
       }
       const win = windowFromEvent(event)
       const windowId = win?.id ?? -1
-      createTerminal(id, shell, cwd, options.cols, options.rows, {}, windowId)
+      createTerminal(id, resolved, cwd, options.cols, options.rows, {}, windowId)
       return id
     },
   )

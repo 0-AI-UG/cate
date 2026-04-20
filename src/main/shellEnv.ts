@@ -9,6 +9,7 @@
 
 import { spawn } from 'child_process'
 import log from './logger'
+import { resolveShell } from './shellResolver'
 
 let resolvedEnv: Record<string, string> | null = null
 let resolvePromise: Promise<Record<string, string>> | null = null
@@ -19,7 +20,10 @@ let resolvePromise: Promise<Record<string, string>> | null = null
  * Times out after 10 seconds, falling back to process.env.
  */
 function resolveShellEnv(): Promise<Record<string, string>> {
-  const shell = process.env.SHELL || '/bin/zsh'
+  // Use the validated shell — picking a non-existent path here would make
+  // env resolution silently fall back to process.env on every launch.
+  const resolved = resolveShell(process.env.SHELL)
+  const shell = resolved.path
   log.debug('Resolving shell environment from %s', shell)
 
   return new Promise((resolve) => {
