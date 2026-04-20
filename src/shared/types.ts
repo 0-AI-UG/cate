@@ -512,7 +512,9 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   newEditor: storedShortcut('e', { command: true, shift: true }),
   closePanel: storedShortcut('w', { command: true }),
   toggleSidebar: storedShortcut('\\', { command: true }),
-  toggleFileExplorer: storedShortcut('f', { command: true, shift: true }),
+  // Moved from Cmd+Shift+F so `globalSearch` can take the find-in-files
+  // standard binding without a collision.
+  toggleFileExplorer: storedShortcut('x', { command: true, shift: true }),
   toggleMinimap: storedShortcut('m', { command: true, shift: true }),
   nodeSwitcher: storedShortcut(' ', { control: true }),
   panelSwitcher: storedShortcut('e', { command: true }),
