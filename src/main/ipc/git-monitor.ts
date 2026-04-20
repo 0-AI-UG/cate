@@ -120,7 +120,23 @@ export function stopMonitorsForWindow(windowId: number): void {
 
 export function registerHandlers(): void {
   ipcMain.on(GIT_MONITOR_START, (event, workspaceId: string, rootPath: string) => {
-    const validRoot = validateCwd(rootPath)
+    // `ipcMain.on` handlers have no promise boundary, so any throw inside
+    // escapes as an uncaught exception and crashes the main process with a
+    // fatal Electron dialog. Path validation is legitimately expected to fail
+    // here during session restore (renderer requests monitoring before the
+    // workspace root has been registered as an allowed root), so treat a
+    // validation failure as "don't start monitoring" instead of a hard error.
+    let validRoot: string
+    try {
+      validRoot = validateCwd(rootPath)
+    } catch (err) {
+      log.warn(
+        '[git-monitor] skipping monitor for workspace %s: %s',
+        workspaceId,
+        err instanceof Error ? err.message : String(err),
+      )
+      return
+    }
     const existing = activeMonitors.get(workspaceId)
     if (existing) {
       clearInterval(existing.interval)
