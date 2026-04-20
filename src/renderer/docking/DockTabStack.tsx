@@ -27,6 +27,30 @@ const PANEL_TYPE_LABELS: Record<PanelType, string> = {
   canvas: 'Canvas',
 }
 
+// Type → icon/tint mirrors the Spotlight overlay so tabs, search results, and
+// the command palette speak the same visual language.
+const PANEL_TYPE_TINT: Record<PanelType, string> = {
+  terminal: 'text-emerald-400',
+  browser: 'text-sky-400',
+  editor: 'text-orange-400',
+  git: 'text-red-400',
+  fileExplorer: 'text-cyan-400',
+  projectList: 'text-yellow-400',
+  canvas: 'text-violet-400',
+}
+
+function TabIcon({ type, size }: { type: PanelType; size: number }) {
+  switch (type) {
+    case 'terminal':     return <TerminalIcon size={size} />
+    case 'browser':      return <Globe size={size} />
+    case 'editor':       return <FileText size={size} />
+    case 'git':          return <GitBranch size={size} />
+    case 'fileExplorer': return <TreeStructure size={size} />
+    case 'projectList':  return <List size={size} />
+    case 'canvas':       return <SquaresFour size={size} />
+  }
+}
+
 // Items shown in the long-press split menu (order = display order).
 type SplitMenuItem = { type: PanelType; label: string; Icon: React.ComponentType<any> }
 const SPLIT_MENU_ITEMS: SplitMenuItem[] = [
@@ -578,7 +602,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       {/* Tab bar — VS Code style: dark strip with active tab merging into the
           content area below via a top accent border. */}
       <div
-        className={`dock-tab-bar flex items-stretch bg-surface-1 overflow-x-auto ${compact ? 'min-h-[24px]' : 'min-h-[35px]'}`}
+        className={`dock-tab-bar flex items-stretch bg-surface-1 overflow-hidden ${compact ? 'min-h-[26px]' : 'min-h-[36px]'}`}
         onContextMenu={handleTabBarContextMenu}
         onMouseDown={(e) => {
           // Empty area of the tab bar — host (e.g. canvas node) may want to
@@ -597,15 +621,19 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         >
           {stack.panelIds.map((panelId, i) => {
             const isActive = i === stack.activeIndex
+            const panel = getPanelProp?.(panelId)
+              ?? useAppStore.getState().workspaces.find((w) => w.id === (workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId))?.panels[panelId]
+            const panelType = (panel?.type ?? 'editor') as PanelType
             return (
               <div
                 key={panelId}
                 className={`
                   group relative flex items-center gap-1.5 whitespace-nowrap
-                  cursor-grab select-none
+                  cursor-grab select-none min-w-0 flex-1 max-w-[200px]
+                  border-r border-white/5
                   ${compact ? 'pl-2 pr-1.5 text-[11px]' : 'pl-3 pr-2 text-xs'}
                   ${isActive
-                    ? 'bg-surface-3 text-primary'
+                    ? 'bg-surface-3 text-primary font-medium'
                     : 'bg-surface-1 text-secondary hover:text-primary hover:bg-surface-2'
                   }
                 `}
@@ -631,11 +659,20 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                   }
                 }}
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                title={getPanelTitle(panelId)}
               >
-                <span className="truncate max-w-[160px]">{getPanelTitle(panelId)}</span>
+                {/* Top accent bar on the active tab — VS Code convention, but
+                    brighter so it reads against the dark surface. */}
+                {isActive && (
+                  <span className="absolute left-0 right-0 top-0 h-[2px] bg-blue-500" />
+                )}
+                <span className={`shrink-0 ${isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}>
+                  <TabIcon type={panelType} size={compact ? 11 : 13} />
+                </span>
+                <span className="truncate flex-1 min-w-0">{getPanelTitle(panelId)}</span>
                 {onClosePanel && (
                   <span
-                    className={`p-0.5 rounded-sm hover:bg-hover ${
+                    className={`shrink-0 p-0.5 rounded-sm hover:bg-hover ${
                       isActive ? 'opacity-80' : 'opacity-0 group-hover:opacity-70'
                     }`}
                     onClick={(e) => {
