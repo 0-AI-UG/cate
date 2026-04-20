@@ -154,92 +154,92 @@ export function PanelSwitcher() {
 
   if (!show || nodeList.length === 0) return null
 
+  // Uniform tile size so the grid aligns cleanly. Thumbnails keep their
+  // aspect ratio via `objectFit: contain` inside the fixed box.
+  const TILE_W = 220
+  const TILE_H = 140
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-8"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-black/60"
       onClick={close}
     >
       <div
-        className="flex flex-wrap items-start justify-center gap-4 overflow-y-auto"
-        style={{ maxWidth: 'min(90vw, 1400px)', maxHeight: '85vh' }}
+        className="rounded-3xl bg-surface-4/90 backdrop-blur-2xl border border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.5)] p-6 overflow-y-auto"
+        style={{ maxWidth: 'min(92vw, 1200px)', maxHeight: '82vh' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {nodeList.map((node, i) => {
-          const panel = workspace?.panels[node.panelId]
-          const type = panel?.type || 'terminal'
-          const title = panel?.title || 'Panel'
-          const isSelected = i === selectedIndex
-          const color = panelColor(type)
-          const thumb = thumbnails[node.id]
+        <div
+          className="grid gap-5"
+          style={{
+            gridTemplateColumns: `repeat(auto-fit, ${TILE_W}px)`,
+            justifyContent: 'center',
+          }}
+        >
+          {nodeList.map((node, i) => {
+            const panel = workspace?.panels[node.panelId]
+            const type = panel?.type || 'terminal'
+            const title = panel?.title || 'Panel'
+            const isSelected = i === selectedIndex
+            const color = panelColor(type)
+            const thumb = thumbnails[node.id]
 
-          const maxThumbW = 180
-          const maxThumbH = 120
-          const aspect = node.size.width / Math.max(node.size.height, 1)
-          let thumbW: number, thumbH: number
-          if (aspect > maxThumbW / maxThumbH) {
-            thumbW = maxThumbW
-            thumbH = maxThumbW / aspect
-          } else {
-            thumbH = maxThumbH
-            thumbW = maxThumbH * aspect
-          }
-
-          return (
-            <div
-              key={node.id}
-              ref={isSelected ? selectedRef : undefined}
-              className="flex flex-col items-center cursor-pointer transition-all duration-150"
-              style={{
-                opacity: isSelected ? 1 : 0.5,
-                transform: isSelected ? 'scale(1.08)' : 'scale(1)',
-              }}
-              onClick={() => selectItem(i)}
-            >
+            return (
               <div
+                key={node.id}
+                ref={isSelected ? selectedRef : undefined}
+                className="flex flex-col items-center cursor-pointer transition-all duration-150"
                 style={{
-                  width: thumbW,
-                  height: thumbH,
-                  borderRadius: 8,
-                  overflow: 'hidden',
-                  border: isSelected ? `2px solid ${color}` : `2px solid var(--border-subtle)`,
-                  boxShadow: isSelected
-                    ? `0 0 20px ${color}33, 0 4px 16px var(--shadow-node)`
-                    : 'var(--shadow-node)',
-                  transition: 'border-color 0.15s, box-shadow 0.15s',
-                  backgroundColor: 'var(--surface-4)',
+                  opacity: isSelected ? 1 : 0.65,
+                  transform: isSelected ? 'scale(1.04)' : 'scale(1)',
                 }}
+                onClick={() => selectItem(i)}
               >
-                {thumb ? (
-                  <img
-                    src={thumb}
-                    alt={title}
-                    style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
-                  />
-                ) : (
-                  <div style={{
-                    width: '100%', height: '100%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'var(--text-muted)', fontSize: 10,
-                  }}>
-                    ...
-                  </div>
-                )}
+                <div
+                  style={{
+                    width: TILE_W,
+                    height: TILE_H,
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    border: isSelected ? `2px solid ${color}` : `1px solid rgba(255,255,255,0.08)`,
+                    boxShadow: isSelected
+                      ? `0 0 24px ${color}44, 0 4px 20px rgba(0,0,0,0.4)`
+                      : '0 2px 10px rgba(0,0,0,0.25)',
+                    transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+                    backgroundColor: 'var(--surface-5)',
+                  }}
+                >
+                  {thumb ? (
+                    <img
+                      src={thumb}
+                      alt={title}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: '100%', height: '100%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'var(--text-muted)', fontSize: 11,
+                    }}>
+                      ...
+                    </div>
+                  )}
+                </div>
+                <span
+                  className="truncate text-center mt-2"
+                  style={{
+                    fontSize: 12,
+                    color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    maxWidth: TILE_W,
+                    fontWeight: isSelected ? 600 : 400,
+                  }}
+                >
+                  {title}
+                </span>
               </div>
-              <span
-                className="truncate text-center mt-2"
-                style={{
-                  fontSize: 11,
-                  color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  maxWidth: thumbW,
-                  fontWeight: isSelected ? 500 : 400,
-                }}
-              >
-                {title}
-              </span>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </div>
   )
