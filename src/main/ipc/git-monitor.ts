@@ -23,61 +23,85 @@ interface MonitorEntry {
 }
 
 const activeMonitors: Map<string, MonitorEntry> = new Map()
-const lastState: Map<string, { branch: string; isDirty: boolean }> = new Map()
+const lastState: Map<string, { branch: string; isDirty: boolean; branchesKey: string }> = new Map()
 
-function pollGitStatus(
+function runGit(rootPath: string, args: string[], signal: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'git',
+      ['-C', rootPath, ...args],
+      { timeout: 3000, signal },
+      (err, stdout, stderr) => {
+        if (err) {
+          if ((err as NodeJS.ErrnoException).code === 'ABORT_ERR') {
+            reject(err)
+            return
+          }
+          // Surface stderr when available so the caller can log it.
+          reject(new Error(stderr?.trim() || err.message))
+          return
+        }
+        resolve(stdout)
+      },
+    )
+  })
+}
+
+async function pollGitStatus(
   ownerWindowId: number,
   workspaceId: string,
   rootPath: string,
   entry: MonitorEntry,
-): void {
+): Promise<void> {
   // Abort any previous in-flight calls for this workspace
   entry.abortController?.abort()
   const ac = new AbortController()
   entry.abortController = ac
 
-  execFile(
-    'git',
-    ['-C', rootPath, 'branch', '--show-current'],
-    { timeout: 3000, signal: ac.signal },
-    (err, branchOut, branchErr) => {
-      if (err) {
-        // Ignore AbortError — this is intentional cancellation on stop
-        if ((err as NodeJS.ErrnoException).code === 'ABORT_ERR') return
-        log.debug('git branch failed for %s: %s', rootPath, branchErr || err.message)
-        return
-      }
+  try {
+    // Current branch, dirty flag, and the full local branch list run in
+    // parallel — deletion of a non-current branch doesn't change the
+    // first two, so we need the third to detect it and re-notify the UI.
+    const [branchOut, statusOut, branchesOut] = await Promise.all([
+      runGit(rootPath, ['branch', '--show-current'], ac.signal),
+      runGit(rootPath, ['status', '--porcelain', '-uno'], ac.signal),
+      runGit(rootPath, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], ac.signal),
+    ])
 
-      const branch = branchOut.trim()
-      if (!branch) return
+    if (entry.abortController === ac) entry.abortController = null
 
-      execFile(
-        'git',
-        ['-C', rootPath, 'status', '--porcelain', '-uno'],
-        { timeout: 3000, signal: ac.signal },
-        (err2, statusOut, statusErr) => {
-          if (err2) {
-            if ((err2 as NodeJS.ErrnoException).code === 'ABORT_ERR') return
-            log.debug('git status failed for %s: %s', rootPath, statusErr || err2.message)
-            return
-          }
+    const branch = branchOut.trim()
+    if (!branch) return
 
-          // Clear the in-flight controller now that this poll completed
-          if (entry.abortController === ac) {
-            entry.abortController = null
-          }
+    const isDirty = statusOut.trim().length > 0
+    // Sort so reordering (e.g. committerdate changes) doesn't spuriously
+    // look like a list change; a newline-joined canonical string is
+    // cheaper to diff than the array.
+    const branchesKey = branchesOut
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .sort()
+      .join('\n')
 
-          const isDirty = statusOut.trim().length > 0
+    const prev = lastState.get(workspaceId)
+    if (
+      prev
+      && prev.branch === branch
+      && prev.isDirty === isDirty
+      && prev.branchesKey === branchesKey
+    ) return
 
-          const prev = lastState.get(workspaceId)
-          if (prev && prev.branch === branch && prev.isDirty === isDirty) return
-
-          lastState.set(workspaceId, { branch, isDirty })
-          sendToWindow(ownerWindowId, GIT_BRANCH_UPDATE, workspaceId, branch, isDirty)
-        },
-      )
-    },
-  )
+    lastState.set(workspaceId, { branch, isDirty, branchesKey })
+    sendToWindow(ownerWindowId, GIT_BRANCH_UPDATE, workspaceId, branch, isDirty)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException | undefined)?.code === 'ABORT_ERR') return
+    log.debug(
+      'git monitor poll failed for %s: %s',
+      rootPath,
+      err instanceof Error ? err.message : String(err),
+    )
+  }
 }
 
 /**
