@@ -154,96 +154,95 @@ export function PanelSwitcher() {
 
   if (!show || nodeList.length === 0) return null
 
-  // Uniform tile size so the grid aligns cleanly. Thumbnails keep their
-  // aspect ratio via `objectFit: contain` inside the fixed box.
+  // Fixed tile width; height follows each node's true aspect ratio so the
+  // grid flows as real masonry. Clamped so extreme aspects don't produce
+  // absurdly tall/short tiles.
   const TILE_W = 220
-  const TILE_H = 140
+  const MIN_TILE_H = 110
+  const MAX_TILE_H = 260
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-black/60"
+      className="fixed inset-0 z-50 flex items-start justify-center p-10 bg-black/70 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+      style={{ scrollbarWidth: 'none' }}
       onClick={close}
     >
       <div
-        className="rounded-3xl bg-surface-4/90 backdrop-blur-2xl border border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.5)] p-6 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+        className="[column-gap:20px]"
         style={{
           width: 'min(92vw, 1200px)',
-          maxHeight: '82vh',
-          scrollbarWidth: 'none',
+          columnWidth: `${TILE_W}px`,
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="grid gap-5"
-          style={{
-            gridTemplateColumns: `repeat(auto-fit, ${TILE_W}px)`,
-            justifyContent: 'center',
-          }}
-        >
-          {nodeList.map((node, i) => {
-            const panel = workspace?.panels[node.panelId]
-            const type = panel?.type || 'terminal'
-            const title = panel?.title || 'Panel'
-            const isSelected = i === selectedIndex
-            const color = panelColor(type)
-            const thumb = thumbnails[node.id]
+        {nodeList.map((node, i) => {
+          const panel = workspace?.panels[node.panelId]
+          const type = panel?.type || 'terminal'
+          const title = panel?.title || 'Panel'
+          const isSelected = i === selectedIndex
+          const color = panelColor(type)
+          const thumb = thumbnails[node.id]
 
-            return (
+          const aspect = node.size.width / Math.max(node.size.height, 1)
+          const rawH = TILE_W / aspect
+          const tileH = Math.max(MIN_TILE_H, Math.min(MAX_TILE_H, rawH))
+
+          return (
+            <div
+              key={node.id}
+              ref={isSelected ? selectedRef : undefined}
+              className="flex flex-col items-center cursor-pointer transition-all duration-150 mb-5"
+              style={{
+                breakInside: 'avoid',
+                opacity: isSelected ? 1 : 0.65,
+                transform: isSelected ? 'scale(1.03)' : 'scale(1)',
+              }}
+              onClick={() => selectItem(i)}
+            >
               <div
-                key={node.id}
-                ref={isSelected ? selectedRef : undefined}
-                className="flex flex-col items-center cursor-pointer transition-all duration-150"
                 style={{
-                  opacity: isSelected ? 1 : 0.65,
-                  transform: isSelected ? 'scale(1.04)' : 'scale(1)',
+                  width: TILE_W,
+                  height: tileH,
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  border: isSelected ? `2px solid ${color}` : `1px solid rgba(255,255,255,0.08)`,
+                  boxShadow: isSelected
+                    ? `0 0 24px ${color}44, 0 4px 20px rgba(0,0,0,0.4)`
+                    : '0 2px 10px rgba(0,0,0,0.25)',
+                  transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+                  backgroundColor: 'var(--surface-5)',
                 }}
-                onClick={() => selectItem(i)}
               >
-                <div
-                  style={{
-                    width: TILE_W,
-                    height: TILE_H,
-                    borderRadius: 10,
-                    overflow: 'hidden',
-                    border: isSelected ? `2px solid ${color}` : `1px solid rgba(255,255,255,0.08)`,
-                    boxShadow: isSelected
-                      ? `0 0 24px ${color}44, 0 4px 20px rgba(0,0,0,0.4)`
-                      : '0 2px 10px rgba(0,0,0,0.25)',
-                    transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
-                    backgroundColor: 'var(--surface-5)',
-                  }}
-                >
-                  {thumb ? (
-                    <img
-                      src={thumb}
-                      alt={title}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
-                  ) : (
-                    <div style={{
-                      width: '100%', height: '100%',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      color: 'var(--text-muted)', fontSize: 11,
-                    }}>
-                      ...
-                    </div>
-                  )}
-                </div>
-                <span
-                  className="truncate text-center mt-2"
-                  style={{
-                    fontSize: 12,
-                    color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    maxWidth: TILE_W,
-                    fontWeight: isSelected ? 600 : 400,
-                  }}
-                >
-                  {title}
-                </span>
+                {thumb ? (
+                  <img
+                    src={thumb}
+                    alt={title}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                ) : (
+                  <div style={{
+                    width: '100%', height: '100%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'var(--text-muted)', fontSize: 11,
+                  }}>
+                    ...
+                  </div>
+                )}
               </div>
-            )
-          })}
-        </div>
+              <span
+                className="truncate text-center mt-2"
+                style={{
+                  fontSize: 12,
+                  color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  maxWidth: TILE_W,
+                  fontWeight: isSelected ? 600 : 400,
+                }}
+              >
+                {title}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
