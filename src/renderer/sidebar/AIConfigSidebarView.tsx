@@ -5,11 +5,12 @@
 
 import React, { useEffect, useCallback, useState, type DragEvent } from 'react'
 import {
-  Check, X, Plus, Trash, Play, Square, Lightning,
+  Check, X, Plus, Trash, Play, Square, Lightning, PencilSimple,
   ArrowsClockwise, FolderOpen, CircleNotch, Eye, EyeSlash,
   Download, CaretDown, CaretRight, BookOpen, HardDrives,
 } from '@phosphor-icons/react'
-import type { AIToolId, AIToolPresence, MCPServerConfig, DockLayoutNode } from '../../shared/types'
+import type { AIToolId, AIToolPresence, MCPServerConfig, MCPServerDefinition, DockLayoutNode } from '../../shared/types'
+import { MCPServerEditor } from '../dialogs/MCPServerEditor'
 import { useAIConfigStore } from '../stores/aiConfigStore'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
@@ -547,13 +548,18 @@ function MCPCard({ rootPath }: { rootPath: string }) {
   const spawn = useAIConfigStore((s) => s.spawnMcpServer)
   const stop = useAIConfigStore((s) => s.stopMcpServer)
   const remove = useAIConfigStore((s) => s.removeMcpServer)
-  const addServer = useAIConfigStore((s) => s.addMcpServer)
-  const [adding, setAdding] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editingServer, setEditingServer] = useState<MCPServerDefinition | undefined>(undefined)
   const [showReg, setShowReg] = useState(false)
-  const [name, setName] = useState(''); const [cmd, setCmd] = useState(''); const [args, setArgs] = useState('')
 
   useEffect(() => { if (expanded) load(rootPath) }, [expanded, rootPath, load])
   const servers = Object.values(mcpServers)
+
+  const openAdd = () => { setEditingServer(undefined); setEditorOpen(true) }
+  const openEdit = (s: MCPServerConfig) => {
+    setEditingServer({ name: s.name, command: s.command, args: s.args, env: s.env })
+    setEditorOpen(true)
+  }
 
   return (
     <div className="rounded-md bg-surface-5 border border-subtle overflow-hidden">
@@ -574,32 +580,21 @@ function MCPCard({ rootPath }: { rootPath: string }) {
                 <span className="text-[10px] text-secondary flex-1 truncate">{s.name}</span>
                 <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                   {s.status === 'running'
-                    ? <button onClick={() => stop(s.name)} className="p-0.5 text-muted hover:text-primary"><Square size={9} /></button>
-                    : <button onClick={() => spawn(s.name)} className="p-0.5 text-muted hover:text-primary"><Play size={9} /></button>
+                    ? <button onClick={() => stop(s.name)} className="p-0.5 text-muted hover:text-primary" title="Stop"><Square size={9} /></button>
+                    : <button onClick={() => spawn(s.name)} className="p-0.5 text-muted hover:text-primary" title="Start"><Play size={9} /></button>
                   }
-                  <button onClick={() => remove(s.name, rootPath)} className="p-0.5 text-muted hover:text-red-400"><Trash size={9} /></button>
+                  <button onClick={() => openEdit(s)} className="p-0.5 text-muted hover:text-primary" title="Edit"><PencilSimple size={9} /></button>
+                  <button onClick={() => remove(s.name, rootPath)} className="p-0.5 text-muted hover:text-red-400" title="Delete"><Trash size={9} /></button>
                 </div>
               </div>
             )
           })}
-          {servers.length === 0 && !adding && <div className="text-[11px] text-muted px-2 py-2">None configured</div>}
+          {servers.length === 0 && <div className="text-[11px] text-muted px-2 py-2">None configured</div>}
 
-          {adding ? (
-            <div className="px-2 pt-1.5 space-y-1">
-              <div className="flex gap-1"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="name" className={INPUT_CLS} style={{ flex: 1 }} />
-                <input value={cmd} onChange={(e) => setCmd(e.target.value)} placeholder="cmd" className={INPUT_CLS} style={{ flex: 1 }} /></div>
-              <input value={args} onChange={(e) => setArgs(e.target.value)} placeholder="args" className={INPUT_CLS} />
-              <div className="flex gap-2">
-                <button onClick={async () => { if (name.trim() && cmd.trim()) { await addServer({ name: name.trim(), command: cmd.trim(), args: args.split(/\s+/).filter(Boolean), env: {} }, rootPath); setName(''); setCmd(''); setArgs(''); setAdding(false) } }} className="text-[10px] text-secondary hover:text-primary">Add</button>
-                <button onClick={() => setAdding(false)} className="text-[10px] text-muted">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex gap-3 px-2 pt-1.5">
-              <button onClick={() => setAdding(true)} className="text-[10px] text-muted hover:text-primary">+ Add</button>
-              <button onClick={() => setShowReg(!showReg)} className="text-[10px] text-muted hover:text-primary">{showReg ? 'Hide' : 'Browse'}</button>
-            </div>
-          )}
+          <div className="flex gap-3 px-2 pt-1.5">
+            <button onClick={openAdd} className="text-[10px] text-muted hover:text-primary">+ Add</button>
+            <button onClick={() => setShowReg(!showReg)} className="text-[10px] text-muted hover:text-primary">{showReg ? 'Hide' : 'Browse'}</button>
+          </div>
 
           {showReg && (() => {
             const Reg = () => {
@@ -628,6 +623,14 @@ function MCPCard({ rootPath }: { rootPath: string }) {
             return <Reg />
           })()}
         </div>
+      )}
+
+      {editorOpen && (
+        <MCPServerEditor
+          rootPath={rootPath}
+          editingServer={editingServer}
+          onClose={() => setEditorOpen(false)}
+        />
       )}
     </div>
   )
