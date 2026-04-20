@@ -622,5 +622,37 @@ export default function EditorPanel({
   // Render
   // ---------------------------------------------------------------------------
 
-  return <div ref={containerRef} className="w-full h-full" />
+  const showBreadcrumb = !!filePath && !diffMode
+  return (
+    <div className="w-full h-full flex flex-col">
+      {showBreadcrumb && <EditorBreadcrumb filePath={filePath!} rootPath={rootPath} />}
+      <div ref={containerRef} className="flex-1 min-h-0 w-full" />
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Breadcrumb strip — workspace-relative path segments above the editor
+// -----------------------------------------------------------------------------
+
+function EditorBreadcrumb({ filePath, rootPath }: { filePath: string; rootPath?: string }) {
+  const rel = rootPath && filePath.startsWith(rootPath + '/')
+    ? filePath.slice(rootPath.length + 1)
+    : filePath
+  const segments = rel.split('/').filter(Boolean)
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-neutral-500 dark:text-neutral-400 border-b border-neutral-200 dark:border-neutral-800 overflow-hidden whitespace-nowrap select-none"
+      title={filePath}
+    >
+      {segments.map((seg, i) => (
+        <span key={i} className="flex items-center gap-1 min-w-0">
+          {i > 0 && <span className="opacity-50">›</span>}
+          <span className={i === segments.length - 1 ? 'text-neutral-700 dark:text-neutral-200 truncate' : 'truncate'}>
+            {seg}
+          </span>
+        </span>
+      ))}
+    </div>
+  )
 }
