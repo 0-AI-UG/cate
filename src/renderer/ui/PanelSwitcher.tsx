@@ -165,8 +165,12 @@ export function PanelSwitcher() {
       onClick={close}
     >
       <div
-        className="rounded-3xl bg-surface-4/90 backdrop-blur-2xl border border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.5)] p-6 overflow-y-auto"
-        style={{ maxWidth: 'min(92vw, 1200px)', maxHeight: '82vh' }}
+        className="rounded-3xl bg-surface-4/90 backdrop-blur-2xl border border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.5)] p-6 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+        style={{
+          width: 'min(92vw, 1200px)',
+          maxHeight: '82vh',
+          scrollbarWidth: 'none',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
