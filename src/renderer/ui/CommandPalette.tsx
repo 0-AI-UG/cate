@@ -16,8 +16,6 @@ import {
   ArrowsOutSimple,
   Square,
   FloppyDisk,
-  Download,
-  Upload,
 } from '@phosphor-icons/react'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
@@ -48,8 +46,6 @@ const ZoomResetIcon = () => <MagnifyingGlass size={ICON_SIZE} />
 const ZoomToFitIcon = () => <ArrowsOutSimple size={ICON_SIZE} />
 const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
-const DownloadIcon = () => <Download size={ICON_SIZE} />
-const UploadIcon = () => <Upload size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
 // Component
@@ -135,7 +131,7 @@ export const CommandPalette: React.FC = () => {
       {
         id: 'toggleFileExplorer',
         title: 'Toggle File Explorer',
-        shortcutText: '\u2318\u21E7F',
+        shortcutText: '\u2318\u21E7X',
         icon: <FolderOpenIcon />,
         action: () => { setActiveRightSidebarView('explorer') },
       },
@@ -175,135 +171,11 @@ export const CommandPalette: React.FC = () => {
         action: () => canvasApi.getState().addRegion('Region', { x: 200, y: 200 }, { width: 400, height: 300 }),
       },
       {
-        id: 'saveLayout',
-        title: 'Save Layout As...',
+        id: 'manageLayouts',
+        title: 'Saved Layouts…',
         shortcutText: '',
         icon: <SaveIcon />,
-        action: async () => {
-          const name = window.prompt('Layout name:')
-          if (!name?.trim()) return
-          const state = canvasApi.getState()
-          const appState = useAppStore.getState()
-          const workspace = appState.workspaces.find((w) => w.id === appState.selectedWorkspaceId)
-          const snapshot = {
-            nodes: Object.values(state.nodes).map((n) => {
-              const panel = workspace?.panels[n.panelId]
-              return { panelType: panel?.type ?? 'terminal', origin: n.origin, size: n.size }
-            }),
-            regions: Object.values(state.regions).map((r) => ({
-              origin: r.origin, size: r.size, label: r.label, color: r.color,
-            })),
-          }
-          await window.electronAPI.layoutSave(name.trim(), snapshot)
-        },
-      },
-      {
-        id: 'loadLayout',
-        title: 'Load Layout...',
-        shortcutText: '',
-        icon: <DownloadIcon />,
-        action: async () => {
-          const names = await window.electronAPI.layoutList()
-          if (names.length === 0) { alert('No saved layouts'); return }
-          const name = window.prompt('Available layouts:\n' + names.join('\n') + '\n\nEnter name:')
-          if (!name?.trim()) return
-          const snapshot = await window.electronAPI.layoutLoad(name.trim()) as any
-          if (!snapshot) { alert('Layout not found'); return }
-          const wsId = useAppStore.getState().selectedWorkspaceId
-          useAppStore.getState().closeAllPanels(wsId)
-          for (const node of snapshot.nodes || []) {
-            switch (node.panelType) {
-              case 'terminal': useAppStore.getState().createTerminal(wsId, undefined, node.origin); break
-              case 'editor': useAppStore.getState().createEditor(wsId, undefined, node.origin); break
-              case 'browser': useAppStore.getState().createBrowser(wsId, undefined, node.origin); break
-            }
-          }
-          for (const region of snapshot.regions || []) {
-            canvasApi.getState().addRegion(region.label, region.origin, region.size, region.color)
-          }
-          canvasApi.getState().zoomToFit()
-        },
-      },
-      {
-        id: 'exportWorkspace',
-        title: 'Export Workspace Layout',
-        shortcutText: '',
-        icon: <UploadIcon />,
-        action: async () => {
-          const state = canvasApi.getState()
-          const appState = useAppStore.getState()
-          const workspace = appState.workspaces.find((w) => w.id === appState.selectedWorkspaceId)
-          if (!workspace) return
-
-          const exportData = {
-            version: 1,
-            name: workspace.name,
-            nodes: Object.values(state.nodes).map((n) => {
-              const panel = workspace.panels[n.panelId]
-              return {
-                panelType: panel?.type || 'terminal',
-                title: panel?.title || 'Panel',
-                origin: n.origin,
-                size: n.size,
-                filePath: panel?.filePath,
-                url: panel?.url,
-              }
-            }),
-            regions: Object.values(state.regions).map((r) => ({
-              origin: r.origin, size: r.size, label: r.label, color: r.color,
-            })),
-            zoomLevel: state.zoomLevel,
-            viewportOffset: state.viewportOffset,
-          }
-
-          const filePath = await window.electronAPI.saveFileDialog({
-            defaultPath: `${workspace.name}-layout.json`,
-            filters: [{ name: 'Workspace Layout', extensions: ['json'] }],
-          })
-          if (filePath) {
-            await window.electronAPI.fsWriteFile(filePath, JSON.stringify(exportData, null, 2))
-          }
-        },
-      },
-      {
-        id: 'importWorkspace',
-        title: 'Import Workspace Layout',
-        shortcutText: '',
-        icon: <DownloadIcon />,
-        action: async () => {
-          const filePath = window.prompt('Enter path to layout JSON file:')
-          if (!filePath?.trim()) return
-
-          try {
-            const content = await window.electronAPI.fsReadFile(filePath.trim())
-            const data = JSON.parse(content) as any
-            if (!data.version || !data.nodes) {
-              alert('Invalid layout file')
-              return
-            }
-
-            const wsId = useAppStore.getState().selectedWorkspaceId
-            useAppStore.getState().closeAllPanels(wsId)
-
-            for (const node of data.nodes) {
-              switch (node.panelType) {
-                case 'terminal': useAppStore.getState().createTerminal(wsId, undefined, node.origin); break
-                case 'editor': useAppStore.getState().createEditor(wsId, node.filePath, node.origin); break
-                case 'browser': useAppStore.getState().createBrowser(wsId, node.url, node.origin); break
-
-              }
-            }
-
-            for (const region of data.regions || []) {
-              canvasApi.getState().addRegion(region.label, region.origin, region.size, region.color)
-            }
-
-            if (data.zoomLevel) canvasApi.getState().setZoom(data.zoomLevel)
-            if (data.viewportOffset) canvasApi.getState().setViewportOffset(data.viewportOffset)
-          } catch {
-            alert('Failed to load layout file')
-          }
-        },
+        action: () => useUIStore.getState().setShowLayoutsDialog(true),
       },
     ],
     [
@@ -418,15 +290,16 @@ export const CommandPalette: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 bg-black/20 flex items-start justify-center pt-[20vh] z-50"
+      className="fixed inset-0 bg-black/40 flex items-start justify-center pt-40 z-50"
       onClick={close}
     >
       <div
-        className="w-96 bg-surface-5 rounded-xl border border-subtle shadow-2xl overflow-hidden"
+        className="w-[640px] max-h-[560px] rounded-3xl overflow-hidden flex flex-col bg-surface-4/85 backdrop-blur-2xl border border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.5)]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Search input */}
-        <div className="px-3 py-2">
+        {/* Search input — matches the Spotlight-style bar used by Cmd+Shift+F */}
+        <div className="flex items-center gap-3 px-5 h-14">
+          <MagnifyingGlass size={20} className="text-muted shrink-0" weight="bold" />
           <input
             ref={inputRef}
             type="text"
@@ -435,54 +308,53 @@ export const CommandPalette: React.FC = () => {
               setSearchText(e.target.value)
               setSelectedIndex(0)
             }}
-            placeholder="Type a command..."
-            className="w-full h-10 bg-transparent text-sm text-primary placeholder:text-muted outline-none"
+            placeholder="Type a command…"
+            className="flex-1 bg-transparent text-primary text-base font-medium outline-none placeholder:text-muted placeholder:font-normal"
           />
         </div>
 
-        {/* Divider */}
-        <div className="border-b border-subtle" />
-
-        {/* Commands list */}
-        <div className="max-h-[300px] overflow-y-auto py-1">
+        {/* Commands + files list */}
+        <div className="flex-1 overflow-y-auto pb-2">
           {filteredCommands.length === 0 && matchingFiles.length === 0 ? (
-            <div className="text-muted text-sm text-center py-4">
+            <div className="text-muted text-sm text-center py-6">
               No matching commands
             </div>
           ) : (
             <>
-              {filteredCommands.map((cmd, index) => (
-                <div
-                  key={cmd.id}
-                  className={`flex items-center px-3 py-2 gap-3 cursor-pointer transition-colors ${
-                    index === selectedIndex
-                      ? 'bg-surface-6'
-                      : 'hover:bg-hover'
-                  }`}
-                  onClick={() => executeCommand(cmd)}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                >
-                  <span className="text-secondary flex-shrink-0">{cmd.icon}</span>
-                  <span className="text-sm text-primary flex-1">{cmd.title}</span>
-                  <span className="text-xs text-muted flex-shrink-0">
-                    {cmd.shortcutText}
-                  </span>
-                </div>
-              ))}
+              {filteredCommands.map((cmd, index) => {
+                const isSelected = index === selectedIndex
+                return (
+                  <div
+                    key={cmd.id}
+                    className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
+                      isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
+                    }`}
+                    onClick={() => executeCommand(cmd)}
+                    onMouseEnter={() => setSelectedIndex(index)}
+                  >
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-blue-500/15 text-blue-400">
+                      {cmd.icon}
+                    </div>
+                    <span className="text-sm text-primary font-medium flex-1 truncate">{cmd.title}</span>
+                    {cmd.shortcutText && (
+                      <span className="text-[11px] text-muted flex-shrink-0 font-mono">
+                        {cmd.shortcutText}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
               {matchingFiles.length > 0 && (
                 <>
-                  <div className="px-3 py-1 text-xs text-muted uppercase tracking-wider">
-                    Files
-                  </div>
+                  {filteredCommands.length > 0 && <div className="mx-5 my-1 border-t border-white/10" />}
                   {matchingFiles.map((file, i) => {
                     const fileIndex = filteredCommands.length + i
+                    const isSelected = fileIndex === selectedIndex
                     return (
                       <div
                         key={file}
-                        className={`flex items-center px-3 py-2 gap-3 cursor-pointer transition-colors ${
-                          fileIndex === selectedIndex
-                            ? 'bg-surface-6'
-                            : 'hover:bg-hover'
+                        className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
+                          isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
                         }`}
                         onClick={() => {
                           const wsId = useAppStore.getState().selectedWorkspaceId
@@ -492,10 +364,10 @@ export const CommandPalette: React.FC = () => {
                         }}
                         onMouseEnter={() => setSelectedIndex(fileIndex)}
                       >
-                        <span className="text-secondary flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-500/15 text-amber-400">
                           <FileTextIcon />
-                        </span>
-                        <span className="text-sm text-primary flex-1 truncate">{file}</span>
+                        </div>
+                        <span className="text-sm text-primary font-medium flex-1 truncate">{file}</span>
                       </div>
                     )
                   })}

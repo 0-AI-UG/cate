@@ -54,6 +54,7 @@ interface UIStoreState {
   showGlobalSearch: boolean
   showAISetupDialog: boolean
   showAIConfigDialog: boolean
+  showLayoutsDialog: boolean
   fileExplorerVisible: boolean
   /** Pre-captured page screenshot for panel switcher previews. */
   panelSwitcherScreenshot: string | null
@@ -76,6 +77,7 @@ interface UIStoreActions {
   setShowGlobalSearch: (show: boolean) => void
   setShowAISetupDialog: (show: boolean) => void
   setShowAIConfigDialog: (show: boolean) => void
+  setShowLayoutsDialog: (show: boolean) => void
   toggleSidebar: () => void
   toggleFileExplorer: () => void
   setFileExplorerVisible: (visible: boolean) => void
@@ -101,6 +103,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showGlobalSearch: false,
   showAISetupDialog: false,
   showAIConfigDialog: false,
+  showLayoutsDialog: false,
   fileExplorerVisible: false,
   marquee: null,
   sidebarLayout: loadLayout(),
@@ -132,6 +135,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setShowAIConfigDialog(show) {
     set({ showAIConfigDialog: show })
+  },
+
+  setShowLayoutsDialog(show) {
+    set({ showLayoutsDialog: show })
   },
 
   toggleSidebar() {

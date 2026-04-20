@@ -38,6 +38,7 @@ import { GlobalSearch } from './ui/GlobalSearch'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { ToastContainer } from './ui/ToastContainer'
 import { AISetupDialog } from './dialogs/AISetupDialog'
+import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
 import type { MultiWorkspaceSession } from '../shared/types'
 import { useDockStore } from './stores/dockStore'
@@ -455,6 +456,7 @@ function MainApp() {
       {showAISetupDialog && (
         <AISetupDialog workspaceId={selectedWorkspaceId} />
       )}
+      <SavedLayoutsDialog />
 
       <ToastContainer />
       <DragGhost />
