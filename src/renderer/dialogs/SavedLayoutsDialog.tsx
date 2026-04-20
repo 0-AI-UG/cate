@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { FloppyDisk, Trash, FolderOpen, SquaresFour } from '@phosphor-icons/react'
 import { useUIStore } from '../stores/uiStore'
-import { useAppStore } from '../stores/appStore'
+import { useAppStore, getWorkspaceCanvasStore } from '../stores/appStore'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import log from '../lib/logger'
 
@@ -89,7 +89,12 @@ export function SavedLayoutsDialog() {
         | null
       if (!snap) { setError('Layout not found'); return }
       const wsId = useAppStore.getState().selectedWorkspaceId
-      useAppStore.getState().closeAllPanels(wsId)
+      const app = useAppStore.getState()
+      app.closeAllPanels(wsId)
+      // closeAllPanels wipes every panel — including the 'canvas' host panel
+      // that owns the dock center zone. Recreate it before we start adding
+      // nodes so the fresh canvas exists to receive them.
+      app.ensureCenterCanvas(wsId)
       for (const node of snap.nodes ?? []) {
         switch (node.panelType) {
           case 'terminal': useAppStore.getState().createTerminal(wsId, undefined, node.origin); break
@@ -97,10 +102,13 @@ export function SavedLayoutsDialog() {
           case 'browser':  useAppStore.getState().createBrowser(wsId, node.url, node.origin); break
         }
       }
+      // Use the *new* canvas store, not the one captured at mount time — the
+      // previous one was disposed along with its panel.
+      const freshCanvas = getWorkspaceCanvasStore(wsId) ?? canvasApi
       for (const region of snap.regions ?? []) {
-        canvasApi.getState().addRegion(region.label, region.origin, region.size, region.color)
+        freshCanvas.getState().addRegion(region.label, region.origin, region.size, region.color)
       }
-      canvasApi.getState().zoomToFit()
+      freshCanvas.getState().zoomToFit()
       close()
     } catch (err) {
       log.error('[SavedLayoutsDialog] load failed', err)
