@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Terminal, Globe, FileText, GitBranch, TreeStructure, SquaresFour, List } from '@phosphor-icons/react'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useSelectedWorkspace } from '../stores/appStore'
@@ -13,6 +14,19 @@ function panelColor(type: PanelType): string {
     case 'fileExplorer': return '#5AC8FA'
     case 'projectList': return '#FFD60A'
     case 'canvas': return '#BF5AF2'
+  }
+}
+
+function PlaceholderIcon({ type, color }: { type: PanelType; color: string }) {
+  const size = 44
+  switch (type) {
+    case 'terminal':     return <Terminal size={size} color={color} weight="light" />
+    case 'browser':      return <Globe size={size} color={color} weight="light" />
+    case 'editor':       return <FileText size={size} color={color} weight="light" />
+    case 'git':          return <GitBranch size={size} color={color} weight="light" />
+    case 'fileExplorer': return <TreeStructure size={size} color={color} weight="light" />
+    case 'projectList':  return <List size={size} color={color} weight="light" />
+    case 'canvas':       return <SquaresFour size={size} color={color} weight="light" />
   }
 }
 
@@ -163,72 +177,89 @@ export function PanelSwitcher() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center p-10 bg-black/70 overflow-y-auto [&::-webkit-scrollbar]:hidden"
-      style={{ scrollbarWidth: 'none' }}
+      className="fixed inset-0 z-50 bg-black/80"
       onClick={close}
     >
+      {/* Scroll container — the flex centering on its inner grid lives in a
+          separate layer so `justify-center` isn't fighting `overflow-y-auto`
+          on the same element (caused left-hugging in the previous pass). */}
       <div
-        className="[column-gap:20px]"
-        style={{
-          width: 'min(92vw, 1200px)',
-          columnWidth: `${TILE_W}px`,
-        }}
-        onClick={(e) => e.stopPropagation()}
+        className="absolute inset-0 overflow-y-auto [&::-webkit-scrollbar]:hidden flex items-start justify-center p-10"
+        style={{ scrollbarWidth: 'none' }}
+        onClick={close}
       >
-        {nodeList.map((node, i) => {
-          const panel = workspace?.panels[node.panelId]
-          const type = panel?.type || 'terminal'
-          const title = panel?.title || 'Panel'
-          const isSelected = i === selectedIndex
-          const color = panelColor(type)
-          const thumb = thumbnails[node.id]
+        <div
+          className="[column-gap:20px]"
+          style={{
+            width: 'min(92vw, 1200px)',
+            columnWidth: `${TILE_W}px`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {nodeList.map((node, i) => {
+            const panel = workspace?.panels[node.panelId]
+            const type = panel?.type || 'terminal'
+            const title = panel?.title || 'Panel'
+            const isSelected = i === selectedIndex
+            const color = panelColor(type)
+            const thumb = thumbnails[node.id]
 
-          const aspect = node.size.width / Math.max(node.size.height, 1)
-          const rawH = TILE_W / aspect
-          const tileH = Math.max(MIN_TILE_H, Math.min(MAX_TILE_H, rawH))
+            const aspect = node.size.width / Math.max(node.size.height, 1)
+            const rawH = TILE_W / aspect
+            const tileH = Math.max(MIN_TILE_H, Math.min(MAX_TILE_H, rawH))
 
-          return (
-            <div
-              key={node.id}
-              ref={isSelected ? selectedRef : undefined}
-              className="flex flex-col items-center cursor-pointer transition-all duration-150 mb-5"
-              style={{
-                breakInside: 'avoid',
-                opacity: isSelected ? 1 : 0.65,
-                transform: isSelected ? 'scale(1.03)' : 'scale(1)',
-              }}
-              onClick={() => selectItem(i)}
-            >
+            return (
               <div
+                key={node.id}
+                ref={isSelected ? selectedRef : undefined}
+                className="flex flex-col items-center cursor-pointer transition-all duration-150 mb-5"
                 style={{
-                  width: TILE_W,
-                  height: tileH,
-                  borderRadius: 10,
-                  overflow: 'hidden',
-                  border: isSelected ? `2px solid ${color}` : `1px solid rgba(255,255,255,0.08)`,
-                  boxShadow: isSelected
-                    ? `0 0 24px ${color}44, 0 4px 20px rgba(0,0,0,0.4)`
-                    : '0 2px 10px rgba(0,0,0,0.25)',
-                  transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
-                  backgroundColor: 'var(--surface-5)',
+                  breakInside: 'avoid',
+                  opacity: isSelected ? 1 : 0.75,
+                  transform: isSelected ? 'scale(1.03)' : 'scale(1)',
                 }}
+                onClick={() => selectItem(i)}
               >
-                {thumb ? (
-                  <img
-                    src={thumb}
-                    alt={title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
-                ) : (
-                  <div style={{
-                    width: '100%', height: '100%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'var(--text-muted)', fontSize: 11,
-                  }}>
-                    ...
-                  </div>
-                )}
-              </div>
+                <div
+                  style={{
+                    width: TILE_W,
+                    height: tileH,
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    border: isSelected ? `2px solid ${color}` : `1px solid rgba(255,255,255,0.08)`,
+                    boxShadow: isSelected
+                      ? `0 0 24px ${color}44, 0 4px 20px rgba(0,0,0,0.4)`
+                      : '0 2px 10px rgba(0,0,0,0.25)',
+                    transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+                    backgroundColor: 'var(--surface-5)',
+                  }}
+                >
+                  {thumb ? (
+                    <img
+                      src={thumb}
+                      alt={title}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  ) : (
+                    // Fallback when the node was off-screen at capture time:
+                    // show a type-tinted icon + label so tiles still convey
+                    // what panel they represent instead of a blank "...".
+                    <div
+                      style={{
+                        width: '100%', height: '100%',
+                        display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center',
+                        gap: 6,
+                        background: `linear-gradient(135deg, ${color}12 0%, transparent 70%)`,
+                      }}
+                    >
+                      <PlaceholderIcon type={type} color={color} />
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                        {type === 'fileExplorer' ? 'File Explorer' : type === 'projectList' ? 'Projects' : type}
+                      </span>
+                    </div>
+                  )}
+                </div>
               <span
                 className="truncate text-center mt-2"
                 style={{
@@ -242,7 +273,8 @@ export function PanelSwitcher() {
               </span>
             </div>
           )
-        })}
+          })}
+        </div>
       </div>
     </div>
   )
