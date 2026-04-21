@@ -994,7 +994,13 @@ app.whenReady().then(async () => {
   mainWin.once('ready-to-show', () => {
     mainWindowReady = true
     flushPendingOpenPaths()
-    checkPendingCrashReport().catch((err) => log.warn('Crash report check failed:', err))
+    // Skip the crash-report prompt in development — dev sessions hit a
+    // lot of transient renderer errors while iterating, and those
+    // shouldn't interrupt every launch with a "Cate crashed" dialog.
+    // Production builds keep the full flow.
+    if (app.isPackaged) {
+      checkPendingCrashReport().catch((err) => log.warn('Crash report check failed:', err))
+    }
     if (process.env.CATE_SMOKE_TEST === '1') {
       runSmokeAssertions(mainWin)
         .then(() => app.exit(0))

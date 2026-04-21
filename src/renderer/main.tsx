@@ -7,8 +7,26 @@ import './styles/globals.css'
 log.info('Renderer starting (window type=%s)', new URLSearchParams(window.location.search).get('type') ?? 'main')
 
 window.addEventListener('error', (e) => {
-  log.error('Uncaught error:', e.error ?? e.message)
-  const err = e.error instanceof Error ? e.error : new Error(String(e.error ?? e.message))
+  // Resource-load failures (img/script/link) fire a plain Event on the
+  // failing element with no `.error` / `.message`. They aren't app
+  // crashes and should not produce a crash report — otherwise every
+  // transient asset hiccup triggers the "Cate crashed unexpectedly"
+  // dialog on the next launch.
+  if (!(e instanceof ErrorEvent)) return
+
+  const err = e.error instanceof Error
+    ? e.error
+    : new Error(typeof e.message === 'string' && e.message ? e.message : 'Unknown error')
+
+  // Defence against the classic `[object Event]` / `[object Object]`
+  // stringification artefacts — those mean the handler received a
+  // non-Error payload, not a real crash. Log but don't persist.
+  if (err.message === '[object Event]' || err.message === '[object Object]' || !err.message) {
+    log.warn('Ignoring non-informative error event:', e.error ?? e.message)
+    return
+  }
+
+  log.error('Uncaught error:', err)
   window.electronAPI?.crashReportSave({ name: err.name, message: err.message, stack: err.stack })
 })
 window.addEventListener('unhandledrejection', (e) => {
