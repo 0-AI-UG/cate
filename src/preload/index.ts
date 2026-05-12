@@ -75,6 +75,7 @@ import {
   FS_DELETE,
   FS_RENAME,
   FS_MKDIR,
+  FS_COPY,
   FS_SEARCH,
   SHELL_SHOW_IN_FOLDER,
   HTTP_FETCH,
@@ -580,6 +581,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   fsMkdir(dirPath: string): Promise<void> {
     return ipcRenderer.invoke(FS_MKDIR, dirPath)
+  },
+
+  fsCopy(srcPath: string, destDir: string): Promise<string> {
+    return ipcRenderer.invoke(FS_COPY, srcPath, destDir)
   },
 
   shellShowInFolder(filePath: string): Promise<void> {

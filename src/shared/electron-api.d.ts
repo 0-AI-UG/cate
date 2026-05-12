@@ -322,6 +322,7 @@ export interface ElectronAPI {
   fsDelete(filePath: string): Promise<void>
   fsRename(oldPath: string, newPath: string): Promise<void>
   fsMkdir(dirPath: string): Promise<void>
+  fsCopy(srcPath: string, destDir: string): Promise<string>
   shellShowInFolder(filePath: string): Promise<void>
   httpFetch(url: string): Promise<{ ok: boolean; status: number; text: string }>
 

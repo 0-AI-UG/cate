@@ -25,6 +25,7 @@ export const FS_STAT = 'fs:stat'
 export const FS_DELETE = 'fs:delete'
 export const FS_RENAME = 'fs:rename'
 export const FS_MKDIR = 'fs:mkdir'
+export const FS_COPY = 'fs:copy'
 export const FS_SEARCH = 'fs:search'
 
 // Shell utilities

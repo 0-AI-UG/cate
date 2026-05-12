@@ -19,6 +19,7 @@ import {
   FS_DELETE,
   FS_RENAME,
   FS_MKDIR,
+  FS_COPY,
   FS_SEARCH,
 } from '../../shared/ipc-channels'
 import { FileTreeNode, FileSearchResult, FileSearchOptions, FILE_EXCLUSIONS } from '../../shared/types'
@@ -454,6 +455,52 @@ export function registerHandlers(): void {
       await fs.rename(await validatePathStrict(oldPath), await validatePathForCreation(newPath))
     } catch (error) {
       log.error(`[${FS_RENAME}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+  })
+
+  ipcMain.handle(FS_COPY, async (_event, srcPath: string, destDir: string) => {
+    try {
+      const safeSrc = await validatePathStrict(srcPath)
+      const safeDestDir = await validatePathStrict(destDir)
+
+      // If copying into the same parent, append "copy" suffix so we don't
+      // collide with the original. Otherwise keep the source name.
+      const srcParent = path.dirname(safeSrc)
+      const baseName = path.basename(safeSrc)
+      const ext = path.extname(baseName)
+      const stem = ext ? baseName.slice(0, -ext.length) : baseName
+
+      const intoSameDir = srcParent === safeDestDir
+      let candidate = intoSameDir ? `${stem} copy${ext}` : baseName
+      let n = 2
+      // Find a non-existing destination name in destDir.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const target = path.join(safeDestDir, candidate)
+        try {
+          await fs.lstat(target)
+        } catch {
+          // ENOENT — safe to use
+          break
+        }
+        candidate = intoSameDir
+          ? `${stem} copy ${n}${ext}`
+          : `${stem} (${n})${ext}`
+        n++
+      }
+
+      const finalDest = await validatePathForCreation(path.join(safeDestDir, candidate))
+
+      // Refuse to copy a directory into itself or one of its descendants.
+      if (finalDest === safeSrc || finalDest.startsWith(safeSrc + path.sep)) {
+        throw new Error('Cannot copy a folder into itself')
+      }
+
+      await fs.cp(safeSrc, finalDest, { recursive: true, errorOnExist: true, force: false })
+      return finalDest
+    } catch (error) {
+      log.error(`[${FS_COPY}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
     }
   })

@@ -19,6 +19,7 @@ import {
 } from '@phosphor-icons/react'
 import log from '../lib/logger'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
+import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
 
 // -----------------------------------------------------------------------------
 // Icon mapping — extension to inline SVG icons with colors
@@ -206,30 +207,15 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     }
   }, [node, isExpanded, children.length, onSelect])
 
-  const handleDoubleClick = useCallback(async (e: React.MouseEvent) => {
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (node.isDirectory) return
     e.preventDefault()
     e.stopPropagation()
-    if (node.isDirectory) {
-      // Double-click a folder: open all direct file children as dock tabs.
-      let entries = children
-      if (entries.length === 0 && window.electronAPI) {
-        try {
-          entries = await window.electronAPI.fsReadDir(node.path)
-          setChildren(entries)
-        } catch {
-          entries = []
-        }
-      }
-      const filePaths = entries.filter((c) => !c.isDirectory).map((c) => c.path)
-      if (filePaths.length > 0) onFileOpen(filePaths, 'dock')
-    } else {
-      // Double-click a file: if it's part of a multi-selection, open all selected files.
-      const paths = selectedPaths.has(node.path) && selectedPaths.size > 1
-        ? [...selectedPaths]
-        : [node.path]
-      onFileOpen(paths, 'dock')
-    }
-  }, [node, children, selectedPaths, onFileOpen])
+    const paths = selectedPaths.has(node.path) && selectedPaths.size > 1
+      ? [...selectedPaths]
+      : [node.path]
+    onFileOpen(paths, 'dock')
+  }, [node, selectedPaths, onFileOpen])
 
   // Forward declarations are filled in below; handleContextMenu uses them via refs
   // through closure on the latest functions defined later in render.
@@ -265,6 +251,9 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       { type: 'separator' },
       { id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' },
       { type: 'separator' },
+      { id: 'copy', label: pathsToOpen.length > 1 ? `Copy ${pathsToOpen.length} Items` : 'Copy', accelerator: 'Cmd+C' },
+      { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: hasClipboard() },
+      { type: 'separator' },
       { id: 'rename', label: 'Rename…', accelerator: 'Return' },
       { id: 'copy-path', label: 'Copy Path', accelerator: 'Alt+Cmd+C' },
       { id: 'copy-rel-path', label: 'Copy Relative Path', accelerator: 'Alt+Shift+Cmd+C' },
@@ -280,6 +269,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       case 'new-file': startCreate('file'); break
       case 'new-folder': startCreate('folder'); break
       case 'reveal': window.electronAPI.shellShowInFolder(node.path); break
+      case 'copy': setClipboard(pathsToOpen); break
+      case 'paste': await handlePaste(); break
       case 'rename': startRename(); break
       case 'copy-path': navigator.clipboard.writeText(node.path); break
       case 'copy-rel-path': navigator.clipboard.writeText(relPath); break
@@ -365,6 +356,24 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       console.error('[file-tree] Failed to create entry:', err)
     }
   }, [isCreating, createValue, node.isDirectory, node.path, parentDir, reloadChildren, onTreeChanged])
+
+  // --- Paste (copy from clipboard) ---
+  const handlePaste = useCallback(async () => {
+    if (!window.electronAPI) return
+    const sources = getClipboard()
+    if (sources.length === 0) return
+    const destDir = node.isDirectory ? node.path : parentDir
+    if (node.isDirectory && !isExpanded) setIsExpanded(true)
+    for (const src of sources) {
+      try {
+        await window.electronAPI.fsCopy(src, destDir)
+      } catch (err) {
+        console.error('[file-tree] Paste failed:', err)
+      }
+    }
+    onTreeChanged?.()
+    if (node.isDirectory) await reloadChildren()
+  }, [node.isDirectory, node.path, parentDir, isExpanded, reloadChildren, onTreeChanged])
 
   // --- Delete ---
   const handleDelete = useCallback(async () => {

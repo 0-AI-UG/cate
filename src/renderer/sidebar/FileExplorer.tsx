@@ -8,6 +8,7 @@ import log from '../lib/logger'
 import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X, Folder, File } from '@phosphor-icons/react'
 import type { FileTreeNode as FileTreeNodeType, FileSearchResult } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
+import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
@@ -317,6 +318,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       { id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' },
       { id: 'open-terminal', label: 'Open in Integrated Terminal' },
       { type: 'separator' },
+      { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: hasClipboard() },
+      { type: 'separator' },
       { id: 'remove-workspace', label: 'Remove Folder from Workspace' },
       { type: 'separator' },
       { id: 'find-in-folder', label: 'Find in Folder…', accelerator: 'Alt+Shift+F' },
@@ -331,6 +334,18 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       case 'open-terminal':
         createTerminal(selectedWorkspaceId, undefined, undefined, { target: 'dock', zone: 'bottom' })
         break
+      case 'paste': {
+        const sources = getClipboard()
+        for (const src of sources) {
+          try {
+            await window.electronAPI.fsCopy(src, rootPath)
+          } catch (err) {
+            console.error('[file-explorer] Paste failed:', err)
+          }
+        }
+        handleReload()
+        break
+      }
       case 'remove-workspace':
         if (window.confirm(`Remove "${folderName}" from your workspaces?`)) {
           removeWorkspace(selectedWorkspaceId)
