@@ -6,22 +6,33 @@ import './styles/globals.css'
 
 log.info('Renderer starting (window type=%s)', new URLSearchParams(window.location.search).get('type') ?? 'main')
 
+// Recognise non-informative error payloads — usually a DOM Event or plain
+// object that was thrown / rejected somewhere and got stringified into the
+// message. React 18's logCaughtError prefixes these with "Uncaught ", so
+// match both shapes. These aren't real crashes; persisting them resurfaces
+// the "Cate crashed unexpectedly" dialog on the next launch.
+function isNonInformativeMessage(message: string | undefined | null): boolean {
+  if (!message) return true
+  const m = message.trim()
+  return (
+    m === '[object Event]' ||
+    m === '[object Object]' ||
+    m === 'Uncaught [object Event]' ||
+    m === 'Uncaught [object Object]' ||
+    /^Uncaught \[object [A-Za-z]+\]$/.test(m)
+  )
+}
+
 window.addEventListener('error', (e) => {
   // Resource-load failures (img/script/link) fire a plain Event on the
-  // failing element with no `.error` / `.message`. They aren't app
-  // crashes and should not produce a crash report — otherwise every
-  // transient asset hiccup triggers the "Cate crashed unexpectedly"
-  // dialog on the next launch.
+  // failing element with no `.error` / `.message`. They aren't app crashes.
   if (!(e instanceof ErrorEvent)) return
 
   const err = e.error instanceof Error
     ? e.error
     : new Error(typeof e.message === 'string' && e.message ? e.message : 'Unknown error')
 
-  // Defence against the classic `[object Event]` / `[object Object]`
-  // stringification artefacts — those mean the handler received a
-  // non-Error payload, not a real crash. Log but don't persist.
-  if (err.message === '[object Event]' || err.message === '[object Object]' || !err.message) {
+  if (isNonInformativeMessage(err.message)) {
     log.warn('Ignoring non-informative error event:', e.error ?? e.message)
     return
   }
@@ -43,6 +54,7 @@ class ErrorBoundary extends React.Component<
   }
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     log.error('React render error:', error.message, errorInfo.componentStack)
+    if (isNonInformativeMessage(error.message)) return
     window.electronAPI?.crashReportSave({
       name: error.name,
       message: error.message,

@@ -29,6 +29,10 @@ export default defineConfig({
     root: '.',
     build: {
       outDir: 'dist/renderer',
+      // Emit source maps in production so crash-report stacks point at real
+      // source locations instead of opaque bundled offsets like
+      // "index-DULzyrhX.js:33061:54".
+      sourcemap: true,
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'index.html')
