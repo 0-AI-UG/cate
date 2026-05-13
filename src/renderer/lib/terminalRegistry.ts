@@ -14,6 +14,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { useStatusStore } from '../stores/statusStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { terminalRestoreData, replayTerminalLog } from './session'
+import { awaitWorkspaceSync } from '../stores/appStore'
 import { getResolvedTheme, subscribeTheme, type ResolvedTheme } from './themeManager'
 
 /** Read the configured scrollback limit, clamped to a sane range. */
@@ -244,6 +245,14 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
 
     // Resolve cwd: prefer explicit opt, then fall back to restore data
     const resolvedCwd = opts.cwd ?? terminalRestoreData.get(panelId)?.cwd
+
+    // If cwd points at a workspace rootPath that was just picked, the main
+    // process may not have registered it as an allowed root yet (workspace
+    // create/update is async). Wait for any pending sync so validateCwd in
+    // main sees the up-to-date allowedRoots set.
+    if (resolvedCwd) {
+      await awaitWorkspaceSync()
+    }
 
     const shell = await electronAPI.settingsGet('defaultShellPath')
     const ptyId = await electronAPI.terminalCreate({

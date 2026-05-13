@@ -193,6 +193,15 @@ function enqueueWorkspaceSync<T>(label: string, fn: () => Promise<T>): Promise<T
   return resultPromise
 }
 
+// Callers that need to invoke main-process IPC depending on a workspace's
+// rootPath (e.g. terminal:create with cwd=rootPath) must await this first.
+// Otherwise the IPC can race a pending workspace:create / workspace:update and
+// fail validation with "outside allowed directories" because the new root
+// hasn't been registered in allowedRoots yet.
+export function awaitWorkspaceSync(): Promise<void> {
+  return workspaceSyncQueue.then(() => undefined, () => undefined)
+}
+
 function applyWorkspaceInfo(ws: WorkspaceState, info: WorkspaceInfo): WorkspaceState {
   return {
     ...ws,
