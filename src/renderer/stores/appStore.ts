@@ -1007,16 +1007,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setWorkspaceRootPath(wsId, rootPath) {
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== wsId) return ws
-        return { ...ws, isRootPathPending: true, rootPathError: null }
-      }),
-    }))
     const ws = get().workspaces.find((w) => w.id === wsId)
     if (!ws) return Promise.resolve(false)
     const folderName = rootPath.split('/').filter(Boolean).pop() ?? rootPath
     const desiredName = ws.name === 'Workspace' ? folderName : ws.name
+    // Apply optimistically so any panel created synchronously after this call
+    // (e.g. WelcomePage spawning a terminal right after picking a folder)
+    // sees the new rootPath and uses it as cwd instead of falling back to $HOME.
+    set((state) => ({
+      workspaces: state.workspaces.map((candidate) => {
+        if (candidate.id !== wsId) return candidate
+        return {
+          ...candidate,
+          rootPath,
+          name: desiredName,
+          isRootPathPending: true,
+          rootPathError: null,
+        }
+      }),
+    }))
     return syncUpdateToMain(wsId, { rootPath, name: desiredName }).then((result) => {
       if (!result?.ok) {
         const message = result?.error?.message ?? 'Failed to update workspace root'
