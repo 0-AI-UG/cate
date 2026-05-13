@@ -205,9 +205,9 @@ function generateId(): string {
 
 /**
  * Find a free position for a new node that does not overlap any existing node.
- * Starts from a preferred anchor (explicit position, focused node, or last
- * node) and searches outward in a spiral until a non-overlapping slot is
- * found. Guarantees the returned rect does not overlap any existing node.
+ * From the reference node (focused, else most recently created) search outward
+ * in all four cardinal directions, jumping past obstacles along each ray, and
+ * return the slot whose center is closest to the reference's center.
  */
 function findFreePosition(
   nodes: Record<CanvasNodeId, CanvasNodeState>,
@@ -224,67 +224,74 @@ function findFreePosition(
   const grid = 20
   const snap = (v: number) => Math.round(v / grid) * grid
 
-  const fits = (p: Point): boolean => {
+  const overlaps = (p: Point) => {
     const rect = { origin: p, size: defaultSize }
-    return !nodeList.some((n) =>
+    return nodeList.find((n) =>
       rectsOverlap({ origin: n.origin, size: n.size }, rect),
     )
   }
 
-  // Pick a reference node: explicit focus, else the most recently created.
+  if (preferred) {
+    const snapped = { x: snap(preferred.x), y: snap(preferred.y) }
+    if (!overlaps(snapped)) return snapped
+  }
+
   const reference =
     (focusedNodeId && nodes[focusedNodeId]) ||
     nodeList.reduce((a, b) => (b.creationIndex > a.creationIndex ? b : a))
+  const ref = { origin: reference.origin, size: reference.size }
 
-  // Honour explicit anchors from callers (e.g. drop position).
-  if (preferred) {
-    const snapped = { x: snap(preferred.x), y: snap(preferred.y) }
-    if (fits(snapped)) return snapped
-  }
+  const directions: Array<{ dx: -1 | 0 | 1; dy: -1 | 0 | 1 }> = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
+  ]
 
-  // Tidy tiling: consider rows of existing nodes that share the reference's
-  // Y band. For each such row, try placing the new node immediately to the
-  // right of the rightmost node in the row, aligned to the row's top.
-  // Fall back to a fresh row beneath all existing nodes.
-  const rowTolerance = Math.max(40, Math.floor(defaultSize.height / 2))
-  const rowsSeen: number[] = []
-  const orderedRowAnchors: CanvasNodeState[] = []
-  // Ensure the reference row is tried first.
-  const candidates = [reference, ...nodeList.filter((n) => n !== reference)]
-  for (const n of candidates) {
-    if (rowsSeen.some((y) => Math.abs(y - n.origin.y) < rowTolerance)) continue
-    rowsSeen.push(n.origin.y)
-    orderedRowAnchors.push(n)
-  }
+  const slotInDirection = (dir: { dx: number; dy: number }): Point | null => {
+    let p: Point
+    if (dir.dx > 0) p = { x: ref.origin.x + ref.size.width + gap, y: ref.origin.y }
+    else if (dir.dx < 0) p = { x: ref.origin.x - defaultSize.width - gap, y: ref.origin.y }
+    else if (dir.dy > 0) p = { x: ref.origin.x, y: ref.origin.y + ref.size.height + gap }
+    else p = { x: ref.origin.x, y: ref.origin.y - defaultSize.height - gap }
 
-  for (const rowAnchor of orderedRowAnchors) {
-    const rowY = rowAnchor.origin.y
-    // Nodes that vertically overlap this row.
-    const rowNodes = nodeList.filter(
-      (n) =>
-        n.origin.y < rowY + defaultSize.height &&
-        n.origin.y + n.size.height > rowY,
-    )
-    const rightmost = rowNodes.reduce(
-      (acc, n) => Math.max(acc, n.origin.x + n.size.width),
-      -Infinity,
-    )
-    const candidate = {
-      x: snap(rightmost + gap),
-      y: snap(rowY),
+    for (let i = 0; i < 200; i++) {
+      const obstacle = overlaps(p)
+      if (!obstacle) return p
+      if (dir.dx > 0) p = { x: obstacle.origin.x + obstacle.size.width + gap, y: p.y }
+      else if (dir.dx < 0) p = { x: obstacle.origin.x - defaultSize.width - gap, y: p.y }
+      else if (dir.dy > 0) p = { x: p.x, y: obstacle.origin.y + obstacle.size.height + gap }
+      else p = { x: p.x, y: obstacle.origin.y - defaultSize.height - gap }
     }
-    if (fits(candidate)) return candidate
+    return null
   }
 
-  // New row below everything, left-aligned with the reference node.
+  const refCenter = {
+    x: ref.origin.x + ref.size.width / 2,
+    y: ref.origin.y + ref.size.height / 2,
+  }
+  let best: Point | null = null
+  let bestDist = Infinity
+  for (const dir of directions) {
+    const slot = slotInDirection(dir)
+    if (!slot) continue
+    const cx = slot.x + defaultSize.width / 2
+    const cy = slot.y + defaultSize.height / 2
+    const dist = Math.hypot(cx - refCenter.x, cy - refCenter.y)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = slot
+    }
+  }
+
+  if (best) return { x: snap(best.x), y: snap(best.y) }
+
+  // Fallback: stack below everything, aligned with the reference.
   const maxBottom = nodeList.reduce(
     (acc, n) => Math.max(acc, n.origin.y + n.size.height),
     -Infinity,
   )
-  return {
-    x: snap(reference.origin.x),
-    y: snap(maxBottom + gap),
-  }
+  return { x: snap(ref.origin.x), y: snap(maxBottom + gap) }
 }
 
 function rectsOverlap(a: Rect, b: Rect): boolean {
