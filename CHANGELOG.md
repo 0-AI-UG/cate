@@ -4,6 +4,14 @@ All notable changes to Cate will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-05-13
+
+Patch release with a single terminal-startup fix.
+
+### Fixed
+
+- **"Failed to create terminal: path is outside allowed directories"** — `setWorkspaceRootPath` applied the new `rootPath` optimistically in the renderer but the main-process `workspace:update` that registers the path with `allowedRoots` is async; a `terminal:create` firing in that window failed `validateCwd` in main and surfaced as a red error in the terminal panel (with a restart as the only workaround, because `SESSION_LOAD` preemptively re-adds persisted roots). `terminalRegistry.getOrCreate` now awaits a new `awaitWorkspaceSync()` helper exported from `appStore` before sending `terminal:create`, so any pending workspace create/update lands first.
+
 ## [0.3.1] - 2026-05-13
 
 Patch release with two papercut fixes from the v0.3.0 cycle and a file-explorer feature.
