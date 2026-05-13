@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Current source version:</strong> v0.3.0
+  <strong>Current source version:</strong> v0.3.1
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@ Cate is an Electron desktop app for arranging development tools in freeform spac
 
 ## Download
 
-This repository currently targets **v0.3.0**.
+This repository currently targets **v0.3.1**.
 
 | Platform | Formats | Link |
 |----------|---------|------|

@@ -4,6 +4,24 @@ All notable changes to Cate will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-05-13
+
+Patch release with two papercut fixes from the v0.3.0 cycle and a file-explorer feature.
+
+### Added
+
+- **File explorer copy/paste** — Copy / Paste entries on the file, folder, and root-background context menus, backed by a new `FS_COPY` IPC that uses `fs.cp` recursively with collision-safe renaming (`copy`, `copy 2`, …). Multi-select copy supported. Paste is disabled when the clipboard is empty.
+
+### Fixed
+
+- **Folder double-click no longer opens every direct child as a tab** — folders now ignore double-click; single-click still toggles expansion.
+- **New terminal opens in the picked folder, not `$HOME`** — `setWorkspaceRootPath` only flipped `isRootPathPending` locally and waited for the main-process IPC roundtrip before exposing `rootPath`, so `WelcomePage` spawning a terminal right after picking a folder mounted the panel before the path was readable and the PTY fell back to `os.homedir()`. Now applies `rootPath` (and the derived name) optimistically before the IPC roundtrip.
+- **"Cate crashed unexpectedly" dialog after a clean shutdown** — React 18's `logCaughtError` wraps thrown DOM `Event`s as `"Uncaught [object Event]"`, but the existing renderer filter only matched the bare `"[object Event]"` form, so a single non-Error throw during teardown persisted a crash report and resurfaced the dialog on next launch. Extracted `isNonInformativeMessage()` (also matches `"Uncaught [object Object]"` and the generic `^Uncaught \[object …\]$` shape) and applied it on both the `window` error path and the `ErrorBoundary`.
+
+### Internal
+
+- **Renderer source maps in production builds** — crash-report stacks now point at real source locations instead of opaque bundle offsets, which we need to track down whoever is throwing the raw `Event` in the first place.
+
 ## [0.3.0] - 2026-04-21
 
 First minor release since the open-source drop. Major focus: unified **Spotlight-style overlays** (command palette, canvas-wide search, panel switcher, saved layouts, MCP editor), **startup resilience** (shell fallback, git-monitor crash, crash-report loop), and a handful of long-standing papercuts.
