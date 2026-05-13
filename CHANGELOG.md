@@ -4,6 +4,14 @@ All notable changes to Cate will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.3] - 2026-05-13
+
+Patch release with one canvas-placement papercut.
+
+### Fixed
+
+- **New panels always opened to the right of the focused one**, even when an empty slot sat directly above, below, or to the left. `findFreePosition` in `canvasStore` now rays out in all four cardinal directions from the reference node, jumps past obstructing nodes along each ray, and returns the slot whose center is closest to the reference — so opening a terminal next to a focused panel uses whichever side actually has open space.
+
 ## [0.3.2] - 2026-05-13
 
 Patch release with a single terminal-startup fix.
