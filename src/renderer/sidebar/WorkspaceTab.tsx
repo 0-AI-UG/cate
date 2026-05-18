@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { CaretRight, Terminal as TerminalIcon, Globe, FileCode, GitBranch, Folder, FolderPlus, SquaresFour, List, DotsThree } from '@phosphor-icons/react'
 import type { WorkspaceState, PanelType, PanelLocation, DockLayoutNode } from '../../shared/types'
@@ -58,31 +58,29 @@ async function focusWorkspacePanel(workspaceId: string, panelId: string): Promis
   }
 }
 
-// Subscribe to a workspace's canvas store and return the set of panel ids
-// that currently live on that canvas. Resolves the correct store per-workspace
-// (the singleton `useCanvasStore` only mirrors whichever workspace's canvas
-// happened to mount first).
+// Subscribe to every canvas store in a workspace and return the union of
+// panel ids that currently live on those canvases. A workspace can host
+// multiple canvas panels, and the legacy singleton `useCanvasStore` only
+// mirrors whichever canvas mounted first — so we scan ALL canvas panels in
+// the workspace and union their live nodes' dockLayouts.
 function useWorkspaceCanvasPanelIds(workspaceId: string): Set<string> {
-  const canvasPanelId = useAppStore((s) => {
+  const canvasPanelIds = useAppStore(useShallow((s) => {
     const ws = s.workspaces.find((w) => w.id === workspaceId)
-    if (!ws) return null
-    for (const p of Object.values(ws.panels)) if (p.type === 'canvas') return p.id
-    return null
-  })
-  const store = useMemo(
-    () => (canvasPanelId ? getOrCreateCanvasStoreForPanel(canvasPanelId) : null),
-    [canvasPanelId],
+    if (!ws) return [] as string[]
+    return Object.values(ws.panels)
+      .filter((p) => p.type === 'canvas')
+      .map((p) => p.id)
+  }))
+
+  const stores = useMemo(
+    () => canvasPanelIds.map((id) => getOrCreateCanvasStoreForPanel(id)),
+    [canvasPanelIds],
   )
-  const subscribe = useCallback(
-    (cb: () => void) => (store ? store.subscribe(cb) : () => {}),
-    [store],
-  )
-  const getSnapshot = useCallback(() => (store ? store.getState().nodes : null), [store])
-  const nodes = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
-  return useMemo(() => {
+
+  const compute = useCallback(() => {
     const ids = new Set<string>()
-    if (nodes) {
-      for (const node of Object.values(nodes)) {
+    for (const store of stores) {
+      for (const node of Object.values(store.getState().nodes)) {
         // Each canvas node has its own mini-dock layout; a node may host
         // several tabbed panels. `node.panelId` is only the seed — walk the
         // full layout so additional tabs (e.g. Terminal 2, Terminal 4
@@ -93,7 +91,21 @@ function useWorkspaceCanvasPanelIds(workspaceId: string): Set<string> {
       }
     }
     return ids
-  }, [nodes])
+  }, [stores])
+
+  const [ids, setIds] = useState<Set<string>>(compute)
+
+  useEffect(() => {
+    // Recompute immediately on store-set change so we don't render one frame
+    // of stale ids after switching workspaces.
+    setIds(compute())
+    const unsubs = stores.map((s) => s.subscribe(() => setIds(compute())))
+    return () => {
+      for (const fn of unsubs) fn()
+    }
+  }, [stores, compute])
+
+  return ids
 }
 
 function collectPanelIdsFromDockLayout(
