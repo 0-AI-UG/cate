@@ -431,23 +431,28 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             useDockDragStore.getState().endDrag()
             return
           }
-          const target = dockDrag.activeDropTarget
+          // Always re-hit-test at release. `activeDropTarget` reflects the
+          // last pointermove and may be stale (e.g. cursor was briefly over
+          // a tab bar earlier in the drag, then moved onto empty canvas
+          // before release — using the stale target would dock the panel
+          // into the tab bar instead of letting the canvas drop take over).
+          // If the cursor is currently over the canvas drop overlay, treat
+          // the drop as no-target so the canvas handler claims it.
+          const hit = canvasDropZoneHovered
+            ? null
+            : hitTestDropTargetWithStore(ev.clientX, ev.clientY)
 
-          if (target && dockDrag.draggedPanelId) {
+          if (hit && dockDrag.draggedPanelId) {
             // Drop within this window — cancel any cross-window drag
             if (cwDragSnapshot) {
               cwDragSnapshot = null
               window.electronAPI.crossWindowDragCancel()
             }
-            // Re-resolve hit so we know which store owns the drop target.
-            // This lets a tab dragged out of a canvas-node mini-dock land
-            // inside a different mini-dock or the main dock.
-            const hit = hitTestDropTargetWithStore(ev.clientX, ev.clientY)
-            const targetStore = hit?.dockStoreApi ?? dockStoreApi
+            const targetStore = hit.dockStoreApi ?? dockStoreApi
             executeDrop(
               dockDrag.draggedPanelId,
               { type: 'dock', zone: sourceZone, stackId: stack.id },
-              hit?.target ?? target,
+              hit.target,
               undefined,
               targetStore,
               dockStoreApi,
