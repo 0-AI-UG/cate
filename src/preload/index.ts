@@ -113,9 +113,6 @@ import {
   WORKSPACE_REMOVE,
   WORKSPACE_GET,
   WORKSPACE_CHANGED,
-  USAGE_GET_SUMMARY,
-  USAGE_GET_PROJECT,
-  USAGE_UPDATE,
   WEBVIEW_SCREENSHOT,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
@@ -819,26 +816,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => { ipcRenderer.removeListener(MENU_TRIGGER_ACTION, listener) }
   },
 
-  // ---------------------------------------------------------------------------
-  // Token usage tracking
-  // ---------------------------------------------------------------------------
-
-  usageGetSummary(): Promise<unknown> {
-    return ipcRenderer.invoke(USAGE_GET_SUMMARY)
-  },
-
-  usageGetProject(projectPath: string): Promise<unknown> {
-    return ipcRenderer.invoke(USAGE_GET_PROJECT, projectPath)
-  },
-
-  onUsageUpdate(callback: (changedProjects: string[]) => void): () => void {
-    const listener = (
-      _event: Electron.IpcRendererEvent,
-      payload: { changedProjects: string[] },
-    ): void => {
-      callback(payload.changedProjects)
-    }
-    ipcRenderer.on(USAGE_UPDATE, listener)
-    return () => { ipcRenderer.removeListener(USAGE_UPDATE, listener) }
-  },
 })

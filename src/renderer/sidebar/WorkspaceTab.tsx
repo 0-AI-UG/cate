@@ -8,7 +8,6 @@ import { useAppStore, WORKSPACE_COLORS, getCanvasOperations } from '../stores/ap
 import { useDockStore } from '../stores/dockStore'
 import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import { useUIStore } from '../stores/uiStore'
-import { useProjectUsage } from '../stores/usageStore'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 
 // -----------------------------------------------------------------------------
@@ -64,12 +63,6 @@ const PANEL_ICONS: Record<PanelType, typeof TerminalIcon> = {
   canvas: SquaresFour,
 }
 
-function formatTokensBadge(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return String(n)
-}
-
 const PULSE_KEYFRAMES = `
 @keyframes sidebar-pulse-ring {
   0%   { transform: scale(1);   opacity: 0.6; }
@@ -123,7 +116,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const gitInfo = useStatusStore((s) => s.gitInfo[workspace.id] ?? null)
   const liveLocations = useDockStore((s) => s.panelLocations)
   const panelLocations = isSelected ? liveLocations : workspace.dockState?.locations
-  const projectUsage = useProjectUsage(workspace.rootPath || undefined)
 
   // Derive ports, cwd, claudeState from the single store snapshot
   const ports = useMemo(() => {
@@ -466,24 +458,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           <span className="truncate">{ports.map((p) => `:${p}`).join(' ')}</span>
         </div>
       )}
-
-      {/* Row 6: Token usage badge */}
-      {projectUsage && projectUsage.totals.messageCount > 0 && (() => {
-        const totalTok = projectUsage.totals.tokens.input
-          + projectUsage.totals.tokens.output
-          + projectUsage.totals.tokens.cacheCreate
-          + projectUsage.totals.tokens.cacheRead
-        if (totalTok === 0) return null
-        const costStr = projectUsage.totals.costUsd !== null
-          ? ` · $${projectUsage.totals.costUsd.toFixed(2)}`
-          : ''
-        return (
-          <div className="mt-0.5 text-[10px] opacity-50 font-mono">
-            {`\u25C6 ${formatTokensBadge(totalTok)} tok${costStr}`}
-          </div>
-        )
-      })()}
-
       {/* Expanded panel list — click to jump */}
       {isExpanded && panelList.length > 0 && (
         <div className="mt-2 -mx-1 flex flex-col gap-0.5">

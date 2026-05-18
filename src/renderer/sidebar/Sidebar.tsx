@@ -2,12 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SourceControlView } from './SourceControlView'
-import { UsageSidebarView } from './UsageSidebarView'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
 import {
-  Pulse,
   FolderOpen,
   GitBranch,
   Stack,
@@ -23,7 +21,6 @@ const VIEW_META: Record<SidebarView, { icon: PhosphorIcon; title: string }> = {
   workspaces: { icon: Stack, title: 'Workspaces' },
   explorer: { icon: FolderOpen, title: 'Explorer' },
   git: { icon: GitBranch, title: 'Source Control' },
-  usage: { icon: Pulse, title: 'Token Usage' },
 }
 
 // ---------------------------------------------------------------------------
@@ -63,8 +60,6 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string; onColl
       )
     case 'git':
       return <SourceControlView rootPath={rootPath} />
-    case 'usage':
-      return <UsageSidebarView />
     default:
       return null
   }

@@ -168,11 +168,6 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 // Page capture
 export const CAPTURE_PAGE = 'capture-page'
 
-// Token usage tracking
-export const USAGE_GET_SUMMARY = 'usage:getSummary'
-export const USAGE_GET_PROJECT = 'usage:getProject'
-export const USAGE_UPDATE = 'usage:update'
-
 // Workspace management (main process is source of truth)
 export const WORKSPACE_LIST = 'workspace:list'
 export const WORKSPACE_CREATE = 'workspace:create'

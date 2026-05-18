@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AppSettings, AgentState, CateWindowParams, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, Point, ProjectUsage, SessionSnapshot, TerminalActivity, UsageSummary, WorkspaceInfo, WorkspaceMutationResult } from './types'
+import type { AppSettings, AgentState, CateWindowParams, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, Point, SessionSnapshot, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult } from './types'
 
 export interface NativeContextMenuItem {
   id?: string
@@ -464,18 +464,6 @@ export interface ElectronAPI {
   /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
   showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>
 
-  // ---------------------------------------------------------------------------
-  // Token usage tracking
-  // ---------------------------------------------------------------------------
-
-  /** Get the full usage summary across all tools and projects. */
-  usageGetSummary(): Promise<UsageSummary>
-
-  /** Get usage detail for a specific project path. Returns null if not found. */
-  usageGetProject(projectPath: string): Promise<ProjectUsage | null>
-
-  /** Subscribe to usage update events (main -> renderer). Returns unsubscribe. */
-  onUsageUpdate(callback: (changedProjects: string[]) => void): () => void
 }
 
 declare global {

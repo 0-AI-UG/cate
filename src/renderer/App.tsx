@@ -44,7 +44,6 @@ import { WindowTypeContext } from './stores/WindowTypeContext'
 import { setupCrossWindowDragListeners } from './hooks/useDockDrag'
 import { terminalRegistry } from './lib/terminalRegistry'
 import { applyTheme } from './lib/themeManager'
-import { useUsageStore } from './stores/usageStore'
 import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
 import { confirmCloseCanvas } from './lib/confirmCloseCanvas'
 
@@ -214,12 +213,6 @@ function MainApp() {
         }
         setupAutoSave(useCanvasStore)
         setupWorkspaceSync()
-        // Subscribe to usage updates immediately (cheap), but delay the
-        // actual scan trigger so it doesn't compete with first-frame work.
-        useUsageStore.getState().init()
-        setTimeout(() => {
-          useUsageStore.getState().ensureLoaded()
-        }, 3000)
         log.info('Background init complete')
       })
     }

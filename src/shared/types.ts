@@ -371,24 +371,6 @@ export function displayString(s: StoredShortcut): string {
   return parts.join('')
 }
 
-// -----------------------------------------------------------------------------
-// Token usage tracking
-// -----------------------------------------------------------------------------
-
-export type AgentTool = 'claude' | 'codex' | 'opencode'
-
-export interface TokenCounts { input: number; output: number; cacheCreate: number; cacheRead: number }
-
-export interface ModelUsage { model: string; tool: AgentTool; tokens: TokenCounts; costUsd: number | null; messageCount: number }
-
-export interface DayUsage { date: string; tokens: TokenCounts; costUsd: number | null }
-
-export interface ProjectTotals { tokens: TokenCounts; costUsd: number | null; messageCount: number }
-
-export interface ProjectUsage { projectPath: string; byModel: ModelUsage[]; byDay: DayUsage[]; totals: ProjectTotals; lastActivity: string }
-
-export interface UsageSummary { totals: ProjectTotals; projects: ProjectUsage[]; unattributed: ProjectUsage }
-
 // All 17 shortcut actions — matches Swift ShortcutAction enum exactly.
 export type ShortcutAction =
   | 'newTerminal'

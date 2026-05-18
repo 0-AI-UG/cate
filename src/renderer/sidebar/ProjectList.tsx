@@ -3,8 +3,6 @@ import { Plus } from '@phosphor-icons/react'
 import { SidebarToggleIcon } from './SidebarToggleIcon'
 import { useAppStore, useWorkspaceList } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
-import { NotificationBell } from '../ui/NotificationPopover'
-import { ProcessPortsButton } from '../ui/ProcessPortsPopover'
 import { WorkspaceTab } from './WorkspaceTab'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 
@@ -36,8 +34,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onCollapse }) => {
         title=""
         actions={
           <>
-            <NotificationBell />
-            <ProcessPortsButton />
             <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
               <Plus size={13} />
             </SidebarHeaderButton>
