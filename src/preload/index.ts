@@ -114,11 +114,6 @@ import {
   WEBVIEW_SCREENSHOT,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
-  ORCH_REGISTRY_SYNC,
-  ORCH_INFLIGHT_UPDATE,
-  ORCH_RENDER_COMMAND,
-  ORCH_RENDER_RESPONSE,
-  ORCH_PORTAL_WC_REGISTER,
   UPDATE_STATUS,
   UPDATE_INSTALL,
   UPDATE_DOWNLOAD,
@@ -836,31 +831,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // ---------------------------------------------------------------------------
-  // Orchestrator (cate CLI graph sync + in-flight ask events)
-  // ---------------------------------------------------------------------------
-
-  orchSyncRegistry(snapshot: {
-    terminals: Array<{ ptyId: string | null; panelId: string; nodeId: string | null; name: string }>
-    portals?: Array<{ panelId: string; nodeId: string | null; name: string }>
-    connections: Array<{ from: string; to: string }>
-  }): Promise<void> {
-    return ipcRenderer.invoke(ORCH_REGISTRY_SYNC, snapshot)
-  },
-
-  onOrchInflight(callback: (payload: { fromNodeId: string; toNodeId: string; active: boolean }) => void): () => void {
-    const listener = (_e: Electron.IpcRendererEvent, payload: any): void => callback(payload)
-    ipcRenderer.on(ORCH_INFLIGHT_UPDATE, listener)
-    return () => { ipcRenderer.removeListener(ORCH_INFLIGHT_UPDATE, listener) }
-  },
-
-  /** Push a (panelId, webContentsId, alive) tuple to main when a BrowserPanel's
-   *  webview attaches or unmounts. Main uses this to build a webContents →
-   *  portal-panel reverse map for popup parent resolution. Fire-and-forget. */
-  orchRegisterPortalWc(payload: { panelId: string; webContentsId: number; alive: boolean }): void {
-    ipcRenderer.send(ORCH_PORTAL_WC_REGISTER, payload)
-  },
-
-  // ---------------------------------------------------------------------------
   // Auto-updater
   // ---------------------------------------------------------------------------
 
@@ -878,21 +848,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateInstall(): void { ipcRenderer.send(UPDATE_INSTALL) },
   updateOpenRelease(url?: string): void { ipcRenderer.send(UPDATE_OPEN_RELEASE, url) },
   updateDismiss(): void { ipcRenderer.send(UPDATE_DISMISS) },
-
-  /** Subscribe to orchestrator-driven UI commands (open/close panel, create
-   *  connection, note CRUD, portal CRUD). The handler MUST resolve to the
-   *  command's response data (or throw) — the preload wrapper packages that
-   *  into the ORCH_RENDER_RESPONSE envelope. Returns an unsubscribe fn. */
-  onOrchCommand(handler: (req: { id: number; verb: string; args?: any }) => Promise<any>): () => void {
-    const listener = async (_e: Electron.IpcRendererEvent, req: { id: number; verb: string; args?: any }): Promise<void> => {
-      try {
-        const data = await handler(req)
-        ipcRenderer.send(ORCH_RENDER_RESPONSE, { id: req.id, ok: true, data })
-      } catch (e: any) {
-        ipcRenderer.send(ORCH_RENDER_RESPONSE, { id: req.id, ok: false, error: e?.message ?? String(e) })
-      }
-    }
-    ipcRenderer.on(ORCH_RENDER_COMMAND, listener)
-    return () => { ipcRenderer.removeListener(ORCH_RENDER_COMMAND, listener) }
-  },
 })

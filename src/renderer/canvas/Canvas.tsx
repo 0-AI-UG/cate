@@ -16,7 +16,6 @@ import BulkActionChip from './BulkActionChip'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import CanvasAnnotationComponent from './CanvasAnnotationComponent'
-import CanvasConnections from './CanvasConnections'
 import CanvasDrawings from './CanvasDrawings'
 import type { Point, PanelType } from '../../shared/types'
 
@@ -532,7 +531,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
         <RegionsLayer />
         <AnnotationsLayer />
         <CanvasDrawings />
-        <CanvasConnections />
         <SnapGuides />
         {marqueeRect && (
           <div

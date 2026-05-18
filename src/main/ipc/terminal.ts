@@ -26,13 +26,6 @@ import { sendToWindow, windowFromEvent } from '../windowRegistry'
 import { getShellEnv } from '../shellEnv'
 import { resolveShell, type ResolvedShell } from '../shellResolver'
 import log from '../logger'
-import {
-  tapTerminalData,
-  disposeTerminal as disposeOrchTerminal,
-  setPtyWriter,
-  getSocketPath,
-} from '../orchestrator'
-
 // Active terminal PTY instances keyed by terminal ID
 const terminals: Map<string, IPty> = new Map()
 
@@ -145,19 +138,12 @@ function createTerminal(
     ),
   )
 
-  // Inject orchestrator env so anything inside this terminal can find the
-  // socket and identify which terminal it's running in.
-  const orchEnv: Record<string, string> = {
-    CATE_SOCKET: getSocketPath(),
-    CATE_TERMINAL_ID: id,
-  }
-
   const ptyProcess = ptySpawn(resolved.path, [], {
     name: 'xterm-256color',
     cols,
     rows,
     cwd,
-    env: { ...cleanEnv, ...env, ...orchEnv },
+    env: { ...cleanEnv, ...env },
   })
 
   terminals.set(id, ptyProcess)
@@ -193,10 +179,6 @@ function createTerminal(
     const logger = getOrCreateLogger(id)
     logger.append(data)
 
-    // Tap into orchestrator's per-terminal ring buffer + live subscribers.
-    // Used by `cate check` (read recent output) and `cate ask` (capture reply).
-    try { tapTerminalData(id, data) } catch { /* orchestrator errors must not break PTY flow */ }
-
     // If this terminal is being transferred, buffer instead of forwarding
     const transferState = transferStates.get(id)
     if (transferState) {
@@ -231,7 +213,6 @@ function createTerminal(
     terminals.delete(id)
     terminalPids.delete(id)
     terminalOwners.delete(id)
-    try { disposeOrchTerminal(id) } catch { /* shutdown path */ }
     if (windowId != null) {
       sendToWindow(windowId, TERMINAL_EXIT, id, exitCode)
     }
@@ -244,11 +225,6 @@ function writeTerminal(id: string, data: string): void {
     pty.write(data)
   }
 }
-
-// Register our writer with the orchestrator so `cate ask` can poke a target
-// terminal's PTY without the orchestrator having to import this module directly
-// (which would create a cycle: terminal -> orchestrator -> ask -> terminal).
-setPtyWriter(writeTerminal)
 
 function resizeTerminal(id: string, cols: number, rows: number): void {
   const pty = terminals.get(id)

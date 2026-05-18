@@ -14,7 +14,6 @@ import type { Point, Size, PanelTransferSnapshot, DockLayoutNode } from '../../s
 import { createTransferSnapshot } from '../lib/panelTransfer'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useDockDragStore, hitTestDropTarget, hitTestDropTargetWithStore } from './useDockDrag'
-import { livePositions } from '../canvas/livePositions'
 import { findNodeDockStore } from '../panels/CanvasPanel'
 import { canvasDropZoneHovered } from '../docking/CanvasDropZone'
 import { useAppStore } from '../stores/appStore'
@@ -206,9 +205,6 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
     pendingOrigin.current = null
     lastDomOrigin.current = null
     lastDomOrigins.current.clear()
-    // The store now owns the final positions — drop the live-position cache
-    // so subsequent reads come from the (canonical) canvasStore values.
-    livePositions.clearAll()
     lastRegionOrigins.current.clear()
     snapIndexRef.current = null
     canvasStoreApi.getState().clearSnapGuides()
@@ -487,9 +483,6 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
                       gl.style.top = `${newY}px`
                     }
                     lastDomOrigins.current.set(id, { x: newX, y: newY })
-                    // Mirror into livePositions so the SVG connection overlay
-                    // (CanvasConnections) can follow the move in real time.
-                    livePositions.set(id, newX, newY)
                   }
                 }
               }
@@ -516,8 +509,6 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
               ds.glowEl.style.top = `${origin.y}px`
             }
             lastDomOrigin.current = origin
-            // Mirror to livePositions so connection wires follow the cursor.
-            livePositions.set(nodeId, origin.x, origin.y)
             pendingOrigin.current = null
 
             // Update drop-target region highlight (single-node drag only).

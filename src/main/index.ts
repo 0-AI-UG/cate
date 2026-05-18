@@ -22,7 +22,6 @@ import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow }
 import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync, loadSettingsSyncFromDisk, getSettingSync } from './store'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
-import { startOrchestrator, stopOrchestrator, unregisterGraphSyncForWindow, clearPopupsForWindow } from './orchestrator'
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
 import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
@@ -171,8 +170,6 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     unregisterTerminalsForWindow(windowId)
     stopMonitorsForWindow(windowId)
     clearScopedWriteAllowancesForWindow(windowId)
-    unregisterGraphSyncForWindow(windowId)
-    clearPopupsForWindow(windowId)
     // Rebuild menu to update panel/dock window list
     if (isPanel || isDock) rebuildApplicationMenu()
     // Trigger immediate session save from main window when a child window closes
@@ -1066,10 +1063,6 @@ app.whenReady().then(async () => {
   registerAllHandlers()
   log.info('IPC handlers registered')
 
-  // Boot the orchestrator (cate CLI socket server + CLI binary install).
-  // Non-fatal if it fails — Cate still runs without inter-terminal orchestration.
-  startOrchestrator().catch((e) => log.error('Orchestrator failed to start: %s', e?.message ?? e))
-
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)
 
@@ -1144,9 +1137,6 @@ app.on('before-quit', (event) => {
 
   log.info('Before quit, flushing loggers and requesting session save')
   flushAllLoggers()
-  // Best-effort orchestrator shutdown (closes the socket + cleans up the .sock file).
-  stopOrchestrator().catch(() => { /* shutdown path, ignore */ })
-
   const allWindows = BrowserWindow.getAllWindows()
   const mainWin = allWindows.find((w) => !w.isDestroyed() && getWindowType(w.id) === 'main')
 

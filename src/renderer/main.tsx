@@ -2,16 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import log from './lib/logger'
 import App from './App'
-import { startOrchestratorSync } from './lib/orchestratorSync'
-import { registerOrchestratorCommandHandler } from './lib/orchestratorCommands'
 import './styles/globals.css'
-
-// Begin streaming terminal/canvas state to the main-process orchestrator so
-// the cate CLI can resolve panel names → ptyIds and (Phase B) walk the
-// connection graph. Safe to start before React renders — it just subscribes
-// to the zustand stores and schedules a debounced push.
-startOrchestratorSync()
-registerOrchestratorCommandHandler()
 
 log.info('Renderer starting (window type=%s)', new URLSearchParams(window.location.search).get('type') ?? 'main')
 

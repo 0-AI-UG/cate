@@ -1,7 +1,6 @@
 import { app, session, type Session, type WebContents } from 'electron'
 import log from './logger'
 import { disableWebviewHardening } from './featureFlags'
-import { describePopupParent, attachPopupWindow } from './orchestrator/popups'
 
 const configuredGuestSessions = new Set<string>()
 
@@ -65,51 +64,6 @@ export function installWebContentsSecurity(): void {
           log.warn('[security] Blocked app-window navigation to %s', url)
           event.preventDefault()
         }
-      })
-    }
-
-    // Webview guests (Cate's portal BrowserPanel) — allow window.open() so we
-    // can track OAuth pop-ups, Sign in with Google, etc. Each popup becomes
-    // a new Cate-tracked portal named "<Parent> #N".
-    if (contents.getType() === 'webview') {
-      const parentResolver = () => describePopupParent(contents.id)
-      contents.setWindowOpenHandler(({ url }) => {
-        if (!isAllowedGuestUrl(url)) {
-          log.warn('[webview] Blocked popup to disallowed URL %s', url)
-          return { action: 'deny' }
-        }
-        const parent = parentResolver()
-        if (!parent) {
-          // Parent isn't a known Cate portal — fall back to the global deny
-          // policy. This happens if a popup tries to open before the
-          // orchestrator's parentResolver is registered, or if the guest
-          // somehow isn't a tracked BrowserPanel.
-          log.warn('[webview] Popup denied (no known parent portal): %s', url)
-          return { action: 'deny' }
-        }
-        return {
-          action: 'allow',
-          outlivesOpener: false,
-          overrideBrowserWindowOptions: {
-            // Reasonable default so OAuth windows look sane.
-            width: 520,
-            height: 620,
-            // Don't show until the orchestrator has decided whether to embed
-            // it; webSecurity hooks below set the final visibility.
-            show: true,
-            webPreferences: {
-              nodeIntegration: false,
-              contextIsolation: true,
-              sandbox: true,
-              webSecurity: true,
-            },
-          },
-        }
-      })
-
-      contents.on('did-create-window' as any, (win: Electron.BrowserWindow) => {
-        try { attachPopupWindow(contents.id, win) }
-        catch (e: any) { log.warn('[webview] Failed to track popup: %s', e?.message ?? e) }
       })
     }
 
