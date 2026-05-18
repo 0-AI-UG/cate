@@ -21,6 +21,7 @@ import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { ShortcutHintBadge } from '../ui/ShortcutHintBadge'
 import type { ShortcutAction, StoredShortcut } from '../../shared/types'
+import { UpdateButton } from './UpdateButton'
 
 // Format a shortcut into a badge label (modifiers other than ⌘ + key).
 // The ⌘ glyph is rendered by ShortcutHintBadge itself.
@@ -158,7 +159,8 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   }
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50">
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+      <UpdateButton />
       <div ref={menuRef} className="relative">
         {/* Drop-up menu */}
         {menuOpen && (

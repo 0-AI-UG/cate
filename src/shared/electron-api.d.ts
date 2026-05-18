@@ -464,6 +464,22 @@ export interface ElectronAPI {
   /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
   showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>
 
+  // ---------------------------------------------------------------------------
+  // Auto-updater
+  // ---------------------------------------------------------------------------
+
+  /** Subscribe to update-status broadcasts from the main process. */
+  onUpdateStatus(callback: (status: unknown) => void): () => void
+  /** Fetch the current update status (e.g. on window mount). */
+  updateGetStatus(): Promise<unknown>
+  /** Start downloading the available update (electron-updater path only). */
+  updateDownload(): void
+  /** Apply the downloaded update and restart the app. */
+  updateInstall(): void
+  /** Open the GitHub release page for the available update. */
+  updateOpenRelease(url?: string): void
+  /** Dismiss the in-app update affordance (reverts status to idle). */
+  updateDismiss(): void
 }
 
 declare global {

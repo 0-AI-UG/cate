@@ -119,6 +119,13 @@ export const LAYOUT_LIST = 'layout:list'
 export const LAYOUT_LOAD = 'layout:load'
 export const LAYOUT_DELETE = 'layout:delete'
 
+// Auto-updater (main -> renderer for status; renderer -> main for actions)
+export const UPDATE_STATUS = 'update:status'
+export const UPDATE_INSTALL = 'update:install'
+export const UPDATE_DOWNLOAD = 'update:download'
+export const UPDATE_OPEN_RELEASE = 'update:openRelease'
+export const UPDATE_DISMISS = 'update:dismiss'
+
 // Notifications
 export const NOTIFY_OS = 'notify:os'
 export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notification clicked)

@@ -12,6 +12,7 @@ import { setCanvasOperations } from './stores/appStore'
 import { createCanvasOps } from './lib/canvasBridge'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
+import { useUpdateStore, type UpdateStatus } from './stores/updateStore'
 import { useShortcuts } from './hooks/useShortcuts'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
 import { Sidebar, RightSidebar } from './sidebar/Sidebar'
@@ -242,6 +243,19 @@ function MainApp() {
   useEffect(() => {
     return window.electronAPI.onMenuOpenSettings(() => {
       setShowSettings((s) => !s)
+    })
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // Auto-updater status — push from main, surfaced as a subtle in-app pill.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const setStatus = useUpdateStore.getState().setStatus
+    window.electronAPI.updateGetStatus?.().then((s: unknown) => {
+      if (s && typeof s === 'object') setStatus(s as UpdateStatus)
+    }).catch(() => {})
+    return window.electronAPI.onUpdateStatus((status: unknown) => {
+      setStatus(status as UpdateStatus)
     })
   }, [])
 

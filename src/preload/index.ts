@@ -83,6 +83,11 @@ import {
   FS_SEARCH,
   SHELL_SHOW_IN_FOLDER,
   HTTP_FETCH,
+  UPDATE_STATUS,
+  UPDATE_INSTALL,
+  UPDATE_DOWNLOAD,
+  UPDATE_OPEN_RELEASE,
+  UPDATE_DISMISS,
   NOTIFY_OS,
   NOTIFY_ACTION,
   WINDOW_CREATE,
@@ -816,4 +821,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => { ipcRenderer.removeListener(MENU_TRIGGER_ACTION, listener) }
   },
 
+  // ---------------------------------------------------------------------------
+  // Auto-updater
+  // ---------------------------------------------------------------------------
+
+  onUpdateStatus(callback: (status: unknown) => void): () => void {
+    const listener = (_e: Electron.IpcRendererEvent, status: unknown): void => callback(status)
+    ipcRenderer.on(UPDATE_STATUS, listener)
+    return () => { ipcRenderer.removeListener(UPDATE_STATUS, listener) }
+  },
+
+  updateGetStatus(): Promise<unknown> {
+    return ipcRenderer.invoke('update:getStatus')
+  },
+
+  updateDownload(): void { ipcRenderer.send(UPDATE_DOWNLOAD) },
+  updateInstall(): void { ipcRenderer.send(UPDATE_INSTALL) },
+  updateOpenRelease(url?: string): void { ipcRenderer.send(UPDATE_OPEN_RELEASE, url) },
+  updateDismiss(): void { ipcRenderer.send(UPDATE_DISMISS) },
 })
