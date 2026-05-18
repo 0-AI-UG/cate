@@ -16,8 +16,9 @@ import {
   ArrowsOutSimple,
   DotsThree,
   SquaresFour,
+  PencilSimple,
 } from '@phosphor-icons/react'
-import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { useCanvasStoreApi, useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { ShortcutHintBadge } from '../ui/ShortcutHintBadge'
 import type { ShortcutAction, StoredShortcut } from '../../shared/types'
@@ -129,6 +130,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onZoomOut,
 }) => {
   const canvasApi = useCanvasStoreApi()
+  const drawMode = useCanvasStoreContext((s) => s.drawMode)
   const zoomText = `${Math.round(zoom * 100)}%`
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -216,6 +218,16 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
               </ToolbarButton>
               <ToolbarHintBadge action="newEditor" />
             </span>
+
+            {/* Draw mode toggle */}
+            <ToolbarButton
+              onClick={() => canvasApi.getState().setDrawMode(!drawMode)}
+              title={drawMode ? 'Draw: On (click to disable)' : 'Draw on canvas'}
+              size="panel"
+              active={drawMode}
+            >
+              <PencilSimple size={14} weight={drawMode ? 'fill' : 'regular'} />
+            </ToolbarButton>
 
             {/* Divider */}
             <div className="w-px h-4 bg-surface-5 mx-0.5" />

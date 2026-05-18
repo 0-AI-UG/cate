@@ -15,6 +15,7 @@ import CanvasGrid from './CanvasGrid'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import CanvasAnnotationComponent from './CanvasAnnotationComponent'
+import CanvasDrawings from './CanvasDrawings'
 import type { Point, PanelType } from '../../shared/types'
 
 // Module-level style injection — shared across all Canvas instances
@@ -142,16 +143,63 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   }), [])
 
   const marquee = useUIStore((s) => s.marquee)
+  const drawMode = useCanvasStoreContext((s) => s.drawMode)
 
   const {
     handleWheel,
-    handleMouseDown,
+    handleMouseDown: baseHandleMouseDown,
     handleMouseMove,
     handleMouseUp,
     handleContextMenu,
     canvasContextMenu,
     closeCanvasContextMenu,
   } = useCanvasInteraction(canvasRef, canvasApi)
+
+  // Freehand drawing capture — when drawMode is on, mousedown on empty canvas
+  // begins a stroke. Points accumulate in a ref; mousemove appends; mouseup
+  // commits to the store as a CanvasDrawing. Suppresses pan/marquee while drawing.
+  const drawPointsRef = useRef<Point[] | null>(null)
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (drawMode && e.button === 0) {
+      const target = e.target as HTMLElement
+      // Only start drawing on the canvas background, not on a node/region/annotation.
+      const onNode = target.closest('[data-canvas-node],[data-region],[data-annotation]')
+      if (!onNode) {
+        const rect = canvasRef.current?.getBoundingClientRect()
+        if (rect) {
+          const state = canvasApi.getState()
+          const p = viewToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, state.zoomLevel, state.viewportOffset)
+          drawPointsRef.current = [p]
+          e.preventDefault()
+          e.stopPropagation()
+          return
+        }
+      }
+    }
+    baseHandleMouseDown(e)
+  }, [drawMode, canvasApi, baseHandleMouseDown])
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!drawPointsRef.current) return
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const state = canvasApi.getState()
+      const p = viewToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, state.zoomLevel, state.viewportOffset)
+      drawPointsRef.current.push(p)
+    }
+    const onUp = () => {
+      const pts = drawPointsRef.current
+      drawPointsRef.current = null
+      if (pts && pts.length >= 2) canvasApi.getState().addDrawing(pts)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [canvasApi])
 
   // Inject the canvas-interacting style once at module level (not per mount)
   useEffect(injectCanvasInteractingStyle, [])
@@ -402,6 +450,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
         />
         <RegionsLayer />
         <AnnotationsLayer />
+        <CanvasDrawings />
         <SnapGuides />
         {marqueeRect && (
           <div
