@@ -129,8 +129,14 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 
   return (
     <>
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50">
-      <div ref={menuRef} className="relative">
+    <div
+      className="absolute bottom-4 z-50 flex justify-center pointer-events-none"
+      style={{
+        left: 'var(--cate-left-sidebar-width, 0px)',
+        right: 'var(--cate-right-sidebar-width, 0px)',
+      }}
+    >
+      <div ref={menuRef} className="relative pointer-events-auto">
         {/* Drop-up menu */}
         {menuOpen && (
           <div

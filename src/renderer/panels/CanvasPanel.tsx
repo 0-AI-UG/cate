@@ -193,6 +193,11 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   // so off-screen terminals/editors don't hold live xterm/Monaco instances.
   const nodeIds = useNodeIds(store)
   const visibleNodeIds = useVisibleNodeIds(store)
+  // Welcome page only shows on a brand-new workspace (no rootPath chosen yet).
+  // After a folder is picked, deleting all panels leaves a blank canvas.
+  const workspaceRootPath = useAppStore(
+    (s) => s.workspaces.find((w) => w.id === workspaceId)?.rootPath ?? '',
+  )
 
   const onCreateAtPoint = useCallback(
     (type: PanelType, canvasPoint: Point) => {
@@ -307,8 +312,10 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   return (
     <CanvasStoreProvider store={store}>
       <div className="relative w-full h-full" onPointerDown={handlePointerDown}>
-        {/* Welcome page when canvas is empty */}
-        {nodeIds.length === 0 && (
+        {/* Welcome page only on a fresh, uninitialized workspace (no panels
+            yet AND no rootPath). Once a folder is picked, the canvas stays
+            blank when emptied — the start page does not return. */}
+        {nodeIds.length === 0 && !workspaceRootPath && (
           <WelcomePage workspaceId={workspaceId} />
         )}
 

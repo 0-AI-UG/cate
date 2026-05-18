@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useWorkspacePanels } from '../stores/appStore'
+import { panelColor as brandPanelColor } from '../panels/types'
 
 const MINIMAP_DEFAULT_WIDTH = 200
 const MINIMAP_DEFAULT_HEIGHT = 150
@@ -33,7 +34,7 @@ const loadSize = (): { w: number; h: number } => {
   return { w: MINIMAP_DEFAULT_WIDTH, h: MINIMAP_DEFAULT_HEIGHT }
 }
 
-function panelColor(panelType: string): string {
+function mutedPanelColor(panelType: string): string {
   switch (panelType) {
     case 'terminal': return '#4a9960'
     case 'editor': return '#b07440'
@@ -355,7 +356,7 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
               top: toMiniY(node.origin.y),
               width: Math.max(node.size.width * scale, 2),
               height: Math.max(node.size.height * scale, 2),
-              backgroundColor: panelColor(type),
+              backgroundColor: isPopover ? brandPanelColor(type as any) : mutedPanelColor(type),
               borderRadius: 1,
               opacity: 1,
             }}
