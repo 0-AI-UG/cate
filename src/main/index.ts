@@ -20,7 +20,6 @@ import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
 import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync, loadSettingsSyncFromDisk, getSettingSync, readBootSnapshot, writeBootSnapshot } from './store'
-import { registerHandlers as registerMCPHandlers } from './ipc/mcp'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
@@ -359,7 +358,6 @@ function registerCriticalHandlers(): void {
 function registerDeferredHandlers(): void {
   registerGitHandlers()
   registerGitMonitorHandlers()
-  registerMCPHandlers()
   registerNotificationHandlers()
   registerUsageHandlers()
 }

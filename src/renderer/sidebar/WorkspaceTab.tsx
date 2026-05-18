@@ -168,7 +168,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       { label: 'Change Color', submenu: colorSubmenu },
       { type: 'separator' },
       { id: 'select-folder', label: 'Select Project Folder' },
-      { id: 'agent-setup', label: 'Agent Setup' },
       { id: 'copy-cwd', label: 'Copy Working Directory' },
       { type: 'separator' },
       { id: 'duplicate', label: 'Duplicate Workspace' },
@@ -194,10 +193,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         if (path) app.setWorkspaceRootPath(workspace.id, path)
         break
       }
-      case 'agent-setup':
-        app.selectWorkspace(workspace.id)
-        useUIStore.getState().setActiveRightSidebarView('aiConfig')
-        break
       case 'copy-cwd': {
         const statusState = useStatusStore.getState()
         const ws = statusState.workspaces[workspace.id]

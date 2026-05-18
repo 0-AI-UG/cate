@@ -119,12 +119,6 @@ export const LAYOUT_LIST = 'layout:list'
 export const LAYOUT_LOAD = 'layout:load'
 export const LAYOUT_DELETE = 'layout:delete'
 
-// MCP Server Management
-export const MCP_SPAWN = 'mcp:spawn'
-export const MCP_STOP = 'mcp:stop'
-export const MCP_TEST = 'mcp:test'
-export const MCP_STATUS_UPDATE = 'mcp:statusUpdate'  // main -> renderer
-
 // Notifications
 export const NOTIFY_OS = 'notify:os'
 export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notification clicked)

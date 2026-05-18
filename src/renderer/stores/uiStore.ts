@@ -8,7 +8,7 @@ import { create } from 'zustand'
 // Store interface
 // -----------------------------------------------------------------------------
 
-export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'aiConfig' | 'usage'
+export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'usage'
 export type SidebarSide = 'left' | 'right'
 
 export interface SidebarLayout {
@@ -17,10 +17,10 @@ export interface SidebarLayout {
 }
 
 const LAYOUT_STORAGE_KEY = 'cate.sidebarLayout'
-const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git', 'aiConfig', 'usage']
+const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git', 'usage']
 const DEFAULT_LAYOUT: SidebarLayout = {
   left: ['workspaces'],
-  right: ['explorer', 'git', 'aiConfig', 'usage'],
+  right: ['explorer', 'git', 'usage'],
 }
 
 function loadLayout(): SidebarLayout {
@@ -52,8 +52,6 @@ interface UIStoreState {
   showCommandPalette: boolean
   showPanelSwitcher: boolean
   showGlobalSearch: boolean
-  showAISetupDialog: boolean
-  showAIConfigDialog: boolean
   showLayoutsDialog: boolean
   fileExplorerVisible: boolean
   /** Pre-captured page screenshot for panel switcher previews. */
@@ -75,8 +73,6 @@ interface UIStoreActions {
   setShowCommandPalette: (show: boolean) => void
   setShowPanelSwitcher: (show: boolean) => void
   setShowGlobalSearch: (show: boolean) => void
-  setShowAISetupDialog: (show: boolean) => void
-  setShowAIConfigDialog: (show: boolean) => void
   setShowLayoutsDialog: (show: boolean) => void
   toggleSidebar: () => void
   toggleFileExplorer: () => void
@@ -101,8 +97,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showPanelSwitcher: false,
   panelSwitcherScreenshot: null,
   showGlobalSearch: false,
-  showAISetupDialog: false,
-  showAIConfigDialog: false,
   showLayoutsDialog: false,
   fileExplorerVisible: false,
   marquee: null,
@@ -127,14 +121,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setShowGlobalSearch(show) {
     set({ showGlobalSearch: show })
-  },
-
-  setShowAISetupDialog(show) {
-    set({ showAISetupDialog: show })
-  },
-
-  setShowAIConfigDialog(show) {
-    set({ showAIConfigDialog: show })
   },
 
   setShowLayoutsDialog(show) {

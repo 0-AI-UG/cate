@@ -320,15 +320,6 @@ export interface ElectronAPI {
   httpFetch(url: string): Promise<{ ok: boolean; status: number; text: string }>
 
   // ---------------------------------------------------------------------------
-  // MCP Server Management
-  // ---------------------------------------------------------------------------
-
-  mcpSpawn(name: string, command: string, args: string[], env: Record<string, string>): Promise<void>
-  mcpStop(name: string): Promise<void>
-  mcpTest(command: string, args: string[], env: Record<string, string>): Promise<import('./types').MCPTestResult>
-  onMcpStatusUpdate(callback: (update: { name: string; status: string; error?: string }) => void): () => void
-
-  // ---------------------------------------------------------------------------
   // Notifications
   // ---------------------------------------------------------------------------
 

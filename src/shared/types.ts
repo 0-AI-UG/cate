@@ -29,63 +29,6 @@ export interface Rect {
 export type PanelType = 'terminal' | 'browser' | 'editor' | 'git' | 'fileExplorer' | 'projectList' | 'canvas'
 
 // -----------------------------------------------------------------------------
-// AI Tool Configuration
-// -----------------------------------------------------------------------------
-
-export type AIToolId = 'claude' | 'codex' | 'gemini' | 'cursor' | 'opencode'
-
-export interface AIConfigFile {
-  relativePath: string
-  exists: boolean
-  description: string
-  isDirectory?: boolean
-}
-
-export interface AIToolPresence {
-  id: AIToolId
-  name: string
-  icon: string
-  detected: boolean
-  configFiles: AIConfigFile[]
-}
-
-// MCP Server types
-export interface MCPServerDefinition {
-  name: string
-  command: string
-  args: string[]
-  env: Record<string, string>
-}
-
-export interface MCPServerConfig extends MCPServerDefinition {
-  status: 'stopped' | 'starting' | 'running' | 'error'
-  error?: string
-}
-
-export interface MCPStatusUpdate {
-  name: string
-  status: MCPServerConfig['status']
-  error?: string
-}
-
-/** Result of a one-shot MCP server probe — advertised capabilities + server info. */
-export interface MCPTestResult {
-  success: boolean
-  error?: string
-  /** Server `serverInfo` from the initialize response. */
-  serverInfo?: { name?: string; version?: string }
-  /** Capability flags the server advertised. */
-  capabilities?: {
-    tools?: boolean
-    resources?: boolean
-    prompts?: boolean
-    logging?: boolean
-  }
-  /** Protocol version the server responded with. */
-  protocolVersion?: string
-}
-
-// -----------------------------------------------------------------------------
 // Canvas node
 // -----------------------------------------------------------------------------
 

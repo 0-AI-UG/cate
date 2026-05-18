@@ -32,7 +32,6 @@ import { CommandPalette } from './ui/CommandPalette'
 import { GlobalSearch } from './ui/GlobalSearch'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { ToastContainer } from './ui/ToastContainer'
-import { AISetupDialog } from './dialogs/AISetupDialog'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
 import type { MultiWorkspaceSession } from '../shared/types'
@@ -120,7 +119,6 @@ function MainApp() {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   const showPanelSwitcher = useUIStore((s) => s.showPanelSwitcher)
   const showGlobalSearch = useUIStore((s) => s.showGlobalSearch)
-  const showAISetupDialog = useUIStore((s) => s.showAISetupDialog)
 
   // Theme — apply on mount and re-apply whenever appearanceMode changes
   const appearanceMode = useSettingsStore((s) => s.appearanceMode)
@@ -478,9 +476,6 @@ function MainApp() {
       {showGlobalSearch && <GlobalSearch />}
       {showSettings && (
         <SettingsWindow isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      )}
-      {showAISetupDialog && (
-        <AISetupDialog workspaceId={selectedWorkspaceId} />
       )}
       <SavedLayoutsDialog />
 

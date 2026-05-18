@@ -83,10 +83,6 @@ import {
   FS_SEARCH,
   SHELL_SHOW_IN_FOLDER,
   HTTP_FETCH,
-  MCP_SPAWN,
-  MCP_STOP,
-  MCP_TEST,
-  MCP_STATUS_UPDATE,
   NOTIFY_OS,
   NOTIFY_ACTION,
   WINDOW_CREATE,
@@ -594,30 +590,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   httpFetch(url: string): Promise<{ ok: boolean; status: number; text: string }> {
     return ipcRenderer.invoke(HTTP_FETCH, url)
-  },
-
-  // ---------------------------------------------------------------------------
-  // MCP Server Management
-  // ---------------------------------------------------------------------------
-
-  mcpSpawn(name: string, command: string, args: string[], env: Record<string, string>): Promise<void> {
-    return ipcRenderer.invoke(MCP_SPAWN, name, command, args, env)
-  },
-
-  mcpStop(name: string): Promise<void> {
-    return ipcRenderer.invoke(MCP_STOP, name)
-  },
-
-  mcpTest(command: string, args: string[], env: Record<string, string>) {
-    return ipcRenderer.invoke(MCP_TEST, command, args, env)
-  },
-
-  onMcpStatusUpdate(callback: (update: { name: string; status: string; error?: string }) => void): () => void {
-    const listener = (_event: Electron.IpcRendererEvent, update: { name: string; status: string; error?: string }): void => {
-      callback(update)
-    }
-    ipcRenderer.on(MCP_STATUS_UPDATE, listener)
-    return () => { ipcRenderer.removeListener(MCP_STATUS_UPDATE, listener) }
   },
 
   // ---------------------------------------------------------------------------
