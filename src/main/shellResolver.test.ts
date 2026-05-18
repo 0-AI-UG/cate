@@ -53,15 +53,25 @@ describe('isExecutable', () => {
 describe('resolveShell', () => {
   const originalPlatform = process.platform
   const originalShell = process.env.SHELL
+  const originalComspec = process.env.COMSPEC
+  const originalSystemRoot = process.env.SystemRoot
+  const originalProgramFiles = process.env.ProgramFiles
 
   function setPlatform(p: NodeJS.Platform) {
     Object.defineProperty(process, 'platform', { value: p, configurable: true })
   }
 
+  function restoreEnv(name: string, value: string | undefined) {
+    if (value === undefined) delete process.env[name]
+    else process.env[name] = value
+  }
+
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
-    if (originalShell === undefined) delete process.env.SHELL
-    else process.env.SHELL = originalShell
+    restoreEnv('SHELL', originalShell)
+    restoreEnv('COMSPEC', originalComspec)
+    restoreEnv('SystemRoot', originalSystemRoot)
+    restoreEnv('ProgramFiles', originalProgramFiles)
   })
 
   test('uses the requested path when it is executable', () => {
@@ -152,5 +162,62 @@ describe('resolveShell', () => {
     expect(r.path).toBe('/bin/bash')
     expect(r.fallback).toBe(true)
     expect(r.reason).toBe('not-executable')
+  })
+
+  describe('Windows', () => {
+    const POWERSHELL = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+    const CMD = 'C:\\Windows\\System32\\cmd.exe'
+    const PWSH = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
+
+    beforeEach(() => {
+      setPlatform('win32')
+      process.env.SystemRoot = 'C:\\Windows'
+      process.env.ProgramFiles = 'C:\\Program Files'
+      delete process.env.SHELL
+      delete process.env.COMSPEC
+    })
+
+    test('falls back through the Windows chain when no preferred path is set (the empty-settings case that produced "No usable shell found")', () => {
+      stubFs({ [POWERSHELL]: 'exec', [CMD]: 'exec' })
+      const r = resolveShell()
+      expect(r.path).toBe(POWERSHELL)
+    })
+
+    test('prefers pwsh.exe when PowerShell 7 is installed', () => {
+      stubFs({ [PWSH]: 'exec', [POWERSHELL]: 'exec', [CMD]: 'exec' })
+      const r = resolveShell()
+      expect(r.path).toBe(PWSH)
+    })
+
+    test('honours $COMSPEC ahead of the hardcoded cmd path', () => {
+      const customCmd = 'D:\\custom\\cmd.exe'
+      process.env.COMSPEC = customCmd
+      stubFs({ [customCmd]: 'exec', [CMD]: 'exec' })
+      const r = resolveShell()
+      expect(r.path).toBe(customCmd)
+    })
+
+    test('ignores $SHELL on Windows (Git Bash/MSYS leak /usr/bin/bash, which we cannot pty-spawn natively)', () => {
+      process.env.SHELL = '/usr/bin/bash'
+      stubFs({ [CMD]: 'exec' })
+      const r = resolveShell()
+      expect(r.path).toBe(CMD)
+    })
+
+    test('matches Windows shell basenames case-insensitively', () => {
+      const upper = 'C:\\Windows\\System32\\CMD.EXE'
+      stubFs({ [upper]: 'exec' })
+      const r = resolveShell(upper)
+      expect(r.path).toBe(upper)
+      expect(r.fallback).toBe(false)
+    })
+
+    test('falls back to cmd.exe when the configured shell is missing', () => {
+      stubFs({ [CMD]: 'exec' })
+      const r = resolveShell('C:\\nope\\pwsh.exe')
+      expect(r.path).toBe(CMD)
+      expect(r.fallback).toBe(true)
+      expect(r.reason).toBe('missing')
+    })
   })
 })
