@@ -221,20 +221,23 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return ws?.panels ?? workspace.panels
   }))
 
-  // Set of panelIds living on a canvas (for the selected workspace, use the
-  // live canvasStore; otherwise fall back to the workspace's persisted nodes).
+  // Set of panel ids living on this workspace's canvases. Union of:
+  //   (a) live canvas stores (covers the active workspace + any other
+  //       workspace whose canvas was mounted earlier this session — those
+  //       stores stay alive in the registry even after switching away), and
+  //   (b) the workspace's persisted canvasNodes (cold-start fallback before
+  //       any canvas has mounted in this session).
+  // Used regardless of isSelected so active and non-active workspaces apply
+  // the same classification rule.
   const liveCanvasPanelIds = useWorkspaceCanvasPanelIds(workspace.id)
   const canvasPanelIds = useMemo(() => {
-    if (isSelected) return liveCanvasPanelIds
-    const ids = new Set<string>()
+    const ids = new Set<string>(liveCanvasPanelIds)
     for (const node of Object.values(workspace.canvasNodes ?? {})) {
-      // Same logic as the live path: a canvas node's dockLayout can hold
-      // multiple tabbed panels; the seed `node.panelId` is only one of them.
       collectPanelIdsFromDockLayout(node.dockLayout, ids)
       if (node.panelId) ids.add(node.panelId)
     }
     return ids
-  }, [isSelected, liveCanvasPanelIds, workspace.canvasNodes])
+  }, [liveCanvasPanelIds, workspace.canvasNodes])
 
   // Map terminal panel id → agent state for activity dots
   const agentStateByPanel = wsStatus?.agentState ?? {}
