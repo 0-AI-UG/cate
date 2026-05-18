@@ -50,13 +50,18 @@ export default function CanvasDropZone({ canvasStoreApi }: CanvasDropZoneProps) 
 
 /** Outer strip (in px) reserved for the underlying DockTabStack's split-edge
  *  targets (top / bottom / left / right). When the cursor is inside this strip
- *  we deactivate the canvas drop so the dock's normal split indicator wins. */
-const EDGE_STRIP = 80
+ *  we deactivate the canvas drop so the dock's normal split indicator wins.
+ *  Kept tight so most of the canvas reads as drop-into-canvas territory. */
+const EDGE_STRIP = 32
 
 function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
   const [inCenter, setInCenter] = useState(false)
+  // Mirror `inCenter` in a ref so the pointerUp handler reads the freshest
+  // value — React state may not have committed the last setInCenter from the
+  // preceding pointerMove before the release event fires.
+  const inCenterRef = useRef(false)
   const draggedPanelType = useDockDragStore((s) => s.draggedPanelType)
   const draggedPanelTitle = useDockDragStore((s) => s.draggedPanelTitle)
   const dragSource = useDockDragStore((s) => s.dragSource)
@@ -133,6 +138,7 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
     const center = !inEdgeStrip && !overMiniDock
     setCursor({ x, y })
     setInCenter(center)
+    inCenterRef.current = center
     // The source's mousemove handler checks this flag to decide whether to
     // run its own hit-test. Only claim the cursor when we're in the center —
     // otherwise let the dock's split-edge / mini-dock indicators fire.
@@ -155,13 +161,18 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
       }}
       onPointerLeave={() => {
         canvasDropZoneHovered = false
+        inCenterRef.current = false
         setCursor(null)
         setInCenter(false)
       }}
       onPointerUp={(e) => {
+        // Re-compute cursor position right before deciding so the drop is
+        // gated on the FINAL cursor location, not the last pointermove.
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        updateCursor(e.clientX, e.clientY, rect)
         // Only handle drops that land in the center region — edge drops are
         // handled by the dock's normal split-target executeDrop path.
-        if (!inCenter) return
+        if (!inCenterRef.current) return
 
         const dragState = useDockDragStore.getState()
         const { draggedPanelId, draggedPanelType, dragSource, sourceDockStoreApi } = dragState
@@ -190,7 +201,6 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
         }
 
         // --- Add to this canvas at the cursor position ------------------
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
         const localX = e.clientX - rect.left
         const localY = e.clientY - rect.top
         const cs = canvasStoreApi.getState()

@@ -9,7 +9,6 @@ import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
 import { useAutoFocusLargestVisible } from '../hooks/useAutoFocusLargestVisible'
 import { useUIStore } from '../stores/uiStore'
-import { registerDropZone } from '../hooks/useDockDrag'
 import { canvasToView, viewToCanvas } from '../lib/coordinates'
 import CanvasGrid from './CanvasGrid'
 import BulkActionChip from './BulkActionChip'
@@ -243,15 +242,14 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   // Auto-focus the node that occupies the most visible viewport area (opt-in).
   useAutoFocusLargestVisible(canvasApi)
 
-  // Register canvas as a drop zone for dock-aware drag-and-drop
-  // Canvases live in the center dock zone
-  useEffect(() => {
-    return registerDropZone({
-      id: 'canvas-main',
-      zone: 'center',
-      getRect: () => canvasRef.current?.getBoundingClientRect() ?? null,
-    })
-  }, [])
+  // NOTE: the canvas is intentionally NOT registered in the dock drop-zone
+  // hit-test registry. The `CanvasDropZone` overlay handles canvas drops via
+  // its own pointer-event handlers (which create a new canvas node at the
+  // cursor). Registering it here as well would let `hitTestDropTarget` return
+  // a `{ type: 'zone', zone: 'center' }` target on empty canvas, which the
+  // dock's `executeDrop` would interpret as "dock into the center zone's tab
+  // stack" — placing the dropped panel inside the canvas-host instead of
+  // creating a new canvas node.
 
   // Register wheel listener with { passive: false } so preventDefault works
   // React's onWheel is passive by default, which silently ignores preventDefault
