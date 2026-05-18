@@ -62,7 +62,6 @@ import {
   BOOT_SNAPSHOT_WRITE,
   APP_GET_PATH,
   APP_OPEN_PATH,
-  CRASH_REPORT_SAVE,
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
   MENU_SHOW_CONTEXT,
@@ -499,15 +498,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     ipcRenderer.on(APP_OPEN_PATH, listener)
     return () => { ipcRenderer.removeListener(APP_OPEN_PATH, listener) }
-  },
-
-  // ---------------------------------------------------------------------------
-  // Crash reporting
-  // ---------------------------------------------------------------------------
-
-  /** Save a crash report from the renderer process (shown on next launch). */
-  crashReportSave(error: { name?: string; message: string; stack?: string }): Promise<void> {
-    return ipcRenderer.invoke(CRASH_REPORT_SAVE, error)
   },
 
   // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, CRASH_REPORT_SAVE, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_CREATE, WINDOW_GET_ID, WINDOW_GET_TYPE, WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -31,7 +31,7 @@ import { addAllowedRoot, clearScopedWriteAllowancesForWindow, registerScopedWrit
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
 import { initAutoUpdater } from './auto-updater'
-import { saveCrashReport, checkPendingCrashReport } from './crashReporter'
+import { initSentry } from './sentry'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer } from './ipc/terminal'
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
 import { disableRendererSandbox, disableTrustScoping } from './featureFlags'
@@ -375,14 +375,6 @@ function registerAllHandlers(): void {
  * registerCriticalHandlers can include them without duplicating the bodies.
  */
 function registerWindowAndDialogHandlers(): void {
-  // Crash reporting: renderer can save a crash report via IPC
-  ipcMain.handle(CRASH_REPORT_SAVE, async (_event, error: { name?: string; message: string; stack?: string }) => {
-    saveCrashReport(
-      { name: error.name ?? 'Error', message: error.message, stack: error.stack },
-      'renderer',
-    )
-  })
-
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, async (_event, filePath: string) => {
     try {
@@ -976,6 +968,11 @@ log.info('Cate v%s starting (electron %s, node %s, platform %s)', app.getVersion
 // them before the async electron-store finishes initializing.
 loadSettingsSyncFromDisk()
 
+// Initialize Sentry as early as possible — after settings load (so the opt-out
+// is honored) but before any IPC handlers or windows. No-op if DSN unset or
+// the user has disabled crash reporting.
+initSentry()
+
 // Provide the menu module a way to spawn additional main windows without
 // importing this file (which would create a circular dependency).
 setNewMainWindowFn(() => createWindow({ type: 'main' }))
@@ -992,11 +989,10 @@ function emergencyKillPTYs(): void {
   }
 }
 
-// Global error handlers — save a crash report to disk so the user can opt-in
-// to sending it on next launch. Also kill PTY process groups.
+// Global error handlers — Sentry (when configured) captures the error before
+// process exit. Also kill PTY process groups so dev servers don't survive.
 process.on('uncaughtException', (err) => {
   log.error('uncaughtException: %O', err)
-  saveCrashReport(err, 'main')
   emergencyKillPTYs()
   process.exit(1)
 })
@@ -1067,13 +1063,6 @@ app.whenReady().then(async () => {
     registerDeferredHandlers()
     log.info('Deferred IPC handlers registered')
     initAutoUpdater()
-    // Skip the crash-report prompt in development — dev sessions hit a
-    // lot of transient renderer errors while iterating, and those
-    // shouldn't interrupt every launch with a "Cate crashed" dialog.
-    // Production builds keep the full flow.
-    if (app.isPackaged) {
-      checkPendingCrashReport().catch((err) => log.warn('Crash report check failed:', err))
-    }
     if (process.env.CATE_SMOKE_TEST === '1') {
       runSmokeAssertions(mainWin)
         .then(() => app.exit(0))

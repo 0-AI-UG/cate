@@ -20,6 +20,12 @@ export function GeneralSettings() {
           <Toggle checked={store.nativeTabs} onChange={(v) => store.setSetting('nativeTabs', v)} />
         </SettingRow>
       )}
+      <SettingRow
+        label="Send crash reports"
+        description="Anonymously report unhandled errors to help us fix bugs. Takes effect on next launch."
+      >
+        <Toggle checked={store.crashReportingEnabled} onChange={(v) => store.setSetting('crashReportingEnabled', v)} />
+      </SettingRow>
     </div>
   )
 }

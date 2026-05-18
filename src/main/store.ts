@@ -59,6 +59,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   notificationMode: 'string',
   notifyOnTerminalHalt: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',
+  crashReportingEnabled: 'boolean',
 }
 
 /** Safely merge only known, type-correct keys from a parsed object into the settings cache. */
