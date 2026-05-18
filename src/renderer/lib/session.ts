@@ -23,6 +23,27 @@ import type {
 } from '../../shared/types'
 import { useDockStore } from '../stores/dockStore'
 import { terminalRegistry } from './terminalRegistry'
+import { mark } from './perfMarks'
+
+// ---------------------------------------------------------------------------
+// Session-aware panel chunk prefetch — kicks off dynamic imports for only the
+// panel types present in the session being restored. Fresh sessions prefetch
+// the common defaults (terminal + editor + canvas).
+// ---------------------------------------------------------------------------
+function prefetchPanelChunks(types: ReadonlySet<PanelType>): void {
+  if (types.has('terminal')) void import('../panels/TerminalPanel')
+  if (types.has('editor')) void import('../panels/EditorPanel')
+  if (types.has('browser')) void import('../panels/BrowserPanel')
+  if (types.has('git')) void import('../panels/GitPanel')
+  if (types.has('fileExplorer')) void import('../panels/FileExplorerPanel')
+  if (types.has('projectList')) void import('../panels/ProjectListPanel')
+  if (types.has('canvas')) void import('../panels/CanvasPanel')
+}
+
+/** Prefetch the common panel chunks for a fresh workspace with no session. */
+export function prefetchDefaultPanelChunks(): void {
+  prefetchPanelChunks(new Set<PanelType>(['terminal', 'editor', 'canvas']))
+}
 
 // -----------------------------------------------------------------------------
 // Terminal restore data — populated during restoreSession(), consumed by
@@ -594,6 +615,17 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
   const tTotal = performance.now()
   log.debug(`[session] restoring multi-workspace session: ${session.workspaces.length} workspaces`)
 
+  // Kick off dynamic imports for only the panel types this session uses, in
+  // parallel with the restore work below. Terminal-only sessions skip Monaco.
+  const presentTypes = new Set<PanelType>()
+  for (const ws of session.workspaces) {
+    for (const node of ws.nodes) presentTypes.add(node.panelType as PanelType)
+    if (ws.dockPanels) {
+      for (const p of Object.values(ws.dockPanels)) presentTypes.add(p.type as PanelType)
+    }
+  }
+  prefetchPanelChunks(presentTypes)
+
   // Clear any existing workspaces so we don't duplicate on every restart
   const existingIds = appStore.workspaces.map((w) => w.id)
   for (const id of existingIds) {
@@ -626,6 +658,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
   }
 
   log.debug(`[session] core session restored in ${(performance.now() - tTotal).toFixed(1)}ms`)
+  mark('session-restored')
 }
 
 // -----------------------------------------------------------------------------
@@ -717,7 +750,7 @@ export async function restoreDeferredWorkspace(workspaceId: string, canvasStoreA
 // saveSession itself is async + IPC, so it doesn't block the render thread.
 // -----------------------------------------------------------------------------
 
-const IDLE_DELAY = 800
+const IDLE_DELAY = 500
 const MAX_WAIT = 4000
 const PERIODIC_INTERVAL = 30_000
 
@@ -727,8 +760,17 @@ let periodicTimer: ReturnType<typeof setInterval> | null = null
 let pendingSave = false
 let saveInFlight = false
 let autoSaveSetUp = false
+// "Dirty since last save" flag — set by every store subscription that schedules
+// a save, cleared after a successful write. Lets the quit flush skip the IPC
+// round-trip entirely when there's nothing to persist.
+let sessionDirty = false
 // Resolvers for flush requests waiting on an in-flight save to finish
 let flushWaiters: (() => void)[] = []
+
+/** Whether session state has been mutated since the last successful save. */
+export function isSessionDirty(): boolean {
+  return sessionDirty || pendingSave || saveInFlight
+}
 
 function runSave(): void {
   if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
@@ -741,8 +783,13 @@ function runSave(): void {
     return
   }
   saveInFlight = true
+  // Snapshot dirty at the moment the save begins; further mutations re-set it.
+  sessionDirty = false
   saveSession()
-    .catch(() => {})
+    .catch(() => {
+      // Save failed — re-mark dirty so the next flush still writes.
+      sessionDirty = true
+    })
     .finally(() => {
       saveInFlight = false
       // Notify any flush waiters that the save completed
@@ -756,6 +803,7 @@ function runSave(): void {
 
 function scheduleSave(): void {
   pendingSave = true
+  sessionDirty = true
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = setTimeout(runSave, IDLE_DELAY)
   if (!maxWaitTimer) {
@@ -792,11 +840,19 @@ export function setupAutoSave(canvasStoreApi?: StoreApi<CanvasStore>): () => voi
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
     if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null }
 
+    // Phase 4.3: skip the round-trip entirely when nothing has changed since
+    // the last successful save. Cuts quit latency for read-only sessions.
+    if (!sessionDirty && !pendingSave && !saveInFlight) {
+      window.electronAPI.sessionFlushSaveDone()
+      return
+    }
+
     const doFlushSave = () => {
       saveInFlight = true
       pendingSave = false
+      sessionDirty = false
       saveSession()
-        .catch(() => {})
+        .catch(() => { sessionDirty = true })
         .finally(() => {
           saveInFlight = false
           window.electronAPI.sessionFlushSaveDone()

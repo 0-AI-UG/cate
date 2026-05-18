@@ -62,6 +62,8 @@ export default function TerminalPanel({
   const renderBoxRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const fitRafRef = useRef<number | null>(null)
+  const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastFitSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
   const [renderScale, setRenderScale] = useState(1.0)
 
   const [showSearch, setShowSearch] = useState(false)
@@ -156,28 +158,84 @@ export default function TerminalPanel({
       // Move the xterm DOM element into the render box and fit it
       terminalRegistry.attach(panelId, renderBox!)
 
-      // ResizeObserver — keep xterm sized to the render box
-      //    Debounced to avoid expensive fit() calls during rapid resize (e.g. node drag).
-      const resizeObserver = new ResizeObserver(() => {
-        if (fitRafRef.current !== null) cancelAnimationFrame(fitRafRef.current)
-        fitRafRef.current = requestAnimationFrame(() => {
-          fitRafRef.current = null
-          try {
-            const viewport = entry.terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
-            const wasAtBottom = viewport
-              ? Math.abs(viewport.scrollTop - (viewport.scrollHeight - viewport.clientHeight)) < 5
-              : true
+      // ResizeObserver — keep xterm sized to the render box.
+      //
+      // Two layers of gating to avoid the fit() storm a zoom gesture would
+      // otherwise produce (every transform tick fires layout, which fires the
+      // observer):
+      //   1. Skip the callback entirely if clientWidth/clientHeight hasn't
+      //      changed by more than 0.5 px since the last accepted fit. Pure
+      //      transform changes (canvas pan/zoom) leave clientWidth alone, so
+      //      this short-circuits before we touch xterm.
+      //   2. Debounce to a ~32 ms trailing edge so a continuous gesture
+      //      coalesces into one fit() at gesture end. After fit(), compare
+      //      cols/rows to before — if unchanged, the cleanup path skips the
+      //      scrollToBottom dance so we don't perturb the viewport.
+      const DEBOUNCE_MS = 32
+      const RESIZE_EPSILON = 0.5
 
-            terminalRegistry.fit(panelId)
+      const runFit = () => {
+        fitTimerRef.current = null
+        if (!renderBox) return
+        const w = renderBox.clientWidth
+        const h = renderBox.clientHeight
+        if (w === 0 || h === 0) return
+        if (
+          Math.abs(w - lastFitSizeRef.current.w) < RESIZE_EPSILON &&
+          Math.abs(h - lastFitSizeRef.current.h) < RESIZE_EPSILON
+        ) {
+          return
+        }
+        lastFitSizeRef.current = { w, h }
+        try {
+          const viewport = entry.terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
+          const wasAtBottom = viewport
+            ? Math.abs(viewport.scrollTop - (viewport.scrollHeight - viewport.clientHeight)) < 5
+            : true
+          const prevCols = entry.terminal.cols
+          const prevRows = entry.terminal.rows
 
-            if (wasAtBottom) {
-              entry.terminal.scrollToBottom()
-            }
-          } catch {
-            // Ignore fit errors during rapid resizing or zero-size frames
+          terminalRegistry.fit(panelId)
+
+          // Only re-pin scroll if the grid actually changed; an unchanged
+          // fit() shouldn't disturb the user's scroll position.
+          if (
+            wasAtBottom
+            && (entry.terminal.cols !== prevCols || entry.terminal.rows !== prevRows)
+          ) {
+            entry.terminal.scrollToBottom()
           }
-        })
-      })
+        } catch {
+          // Ignore fit errors during rapid resizing or zero-size frames
+        }
+      }
+
+      const scheduleFit = () => {
+        if (!renderBox) return
+        const w = renderBox.clientWidth
+        const h = renderBox.clientHeight
+        // Cheap early-out: dimensions haven't actually changed (this fires
+        // a lot during canvas transforms).
+        if (
+          Math.abs(w - lastFitSizeRef.current.w) < RESIZE_EPSILON &&
+          Math.abs(h - lastFitSizeRef.current.h) < RESIZE_EPSILON
+        ) {
+          return
+        }
+        if (fitTimerRef.current !== null) clearTimeout(fitTimerRef.current)
+        if (fitRafRef.current !== null) {
+          cancelAnimationFrame(fitRafRef.current)
+          fitRafRef.current = null
+        }
+        fitTimerRef.current = setTimeout(() => {
+          fitRafRef.current = requestAnimationFrame(() => {
+            fitRafRef.current = null
+            runFit()
+          })
+        }, DEBOUNCE_MS)
+      }
+
+      const resizeObserver = new ResizeObserver(scheduleFit)
       resizeObserver.observe(renderBox!)
       resizeObserverRef.current = resizeObserver
     }
@@ -186,6 +244,10 @@ export default function TerminalPanel({
       if (fitRafRef.current !== null) {
         cancelAnimationFrame(fitRafRef.current)
         fitRafRef.current = null
+      }
+      if (fitTimerRef.current !== null) {
+        clearTimeout(fitTimerRef.current)
+        fitTimerRef.current = null
       }
       terminalRegistry.detach(panelId, renderBox!)
       if (resizeObserverRef.current) {

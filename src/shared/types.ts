@@ -79,6 +79,17 @@ export interface CanvasRegion {
 }
 
 // -----------------------------------------------------------------------------
+// Canvas drawing (freehand pen stroke)
+// -----------------------------------------------------------------------------
+
+export interface CanvasDrawing {
+  id: string
+  points: Point[]
+  color: string
+  strokeWidth: number
+}
+
+// -----------------------------------------------------------------------------
 // Canvas annotation (sticky notes and text labels)
 // -----------------------------------------------------------------------------
 
@@ -770,6 +781,10 @@ export interface AppSettings {
 
   // AI
   aiAssistEnabled: boolean
+
+  // Privacy
+  /** Send automatic error/crash reports to Sentry. Takes effect on next launch. */
+  crashReportingEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -819,6 +834,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // AI
   aiAssistEnabled: false,
+
+  // Privacy
+  crashReportingEnabled: true,
 }
 
 // -----------------------------------------------------------------------------

@@ -24,6 +24,8 @@
     "postinstall": "bash scripts/patch-electron-name.sh",
     "predev": "bash scripts/patch-electron-name.sh",
     "dev": "electron-vite dev",
+    "dev:sentry": "SENTRY_DSN='https://any@analytics.cero-ai.com/1' electron-vite dev",
+    "sentry:test": "node scripts/sentry-test.mjs",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -31,13 +33,14 @@
     "test:smoke:electron": "node scripts/run-electron-smoke.mjs",
     "preview": "electron-vite preview",
     "icons": "node scripts/generate-icons.js",
-    "package": "npm run icons && electron-vite build && electron-builder",
-    "package:mac": "npm run icons && electron-vite build && electron-builder --mac",
-    "package:win": "npm run icons && electron-vite build && electron-builder --win",
-    "package:linux": "npm run icons && electron-vite build && electron-builder --linux"
+    "package": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder",
+    "package:mac": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder --mac",
+    "package:win": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder --win",
+    "package:linux": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
+    "@sentry/electron": "^5.11.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-webgl": "^0.18.0",

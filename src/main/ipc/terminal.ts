@@ -377,23 +377,31 @@ export function killAllTerminals(): void {
   shuttingDown = true
   // Dispose all terminal loggers (flush + stop timers + clear map)
   disposeAllLoggers()
+
+  // Snapshot pids so the SIGKILL pass below sees the same set even if
+  // entries are removed concurrently.
+  const pids: number[] = []
   for (const [id] of terminals) {
-    // Kill the entire process group so child processes (dev servers, watchers,
-    // etc.) don't survive as zombies keeping ports open after Cate quits.
     const pid = terminalPids.get(id)
-    if (pid) {
-      try {
-        process.kill(-pid, 'SIGKILL')
-      } catch {
-        // Process group may already be gone
-      }
-    }
-    // Intentionally do NOT call pty.kill() here. Doing so enqueues an exit
-    // callback on node-pty's ThreadSafeFunction, which fires during
-    // node::Environment::CleanupHandles after the JS context is torn down,
-    // causing Napi::Error::ThrowAsJavaScriptException → abort(). The OS
-    // will clean up the PTY file descriptors when the process exits.
+    if (pid) pids.push(pid)
   }
+
+  // Phase 4.2: issue SIGTERM to every process group in parallel — gives child
+  // processes (dev servers, watchers) a chance to clean up before we escalate.
+  for (const pid of pids) {
+    try { process.kill(-pid, 'SIGTERM') } catch { /* gone */ }
+  }
+
+  // After 150 ms, send SIGKILL to any survivors. We do NOT await waitpid —
+  // the main process will exit immediately after this function returns and
+  // the OS will reap any orphans. Intentionally do not call pty.kill() (see
+  // historical note: ThreadSafeFunction → SIGABRT during cleanup).
+  setTimeout(() => {
+    for (const pid of pids) {
+      try { process.kill(-pid, 'SIGKILL') } catch { /* gone */ }
+    }
+  }, 150)
+
   terminals.clear()
   terminalPids.clear()
   terminalOwners.clear()
