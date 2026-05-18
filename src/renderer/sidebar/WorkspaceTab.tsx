@@ -133,7 +133,7 @@ const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, dot,
   return (
     <button
       className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
-        indent ? 'pl-14' : 'pl-7'
+        indent ? 'pl-10' : 'pl-7'
       }`}
       onClick={handleRowClick}
       title={panel.filePath || panel.url || label}
@@ -215,7 +215,12 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const canvasPanelIds = useMemo(() => {
     if (isSelected) return liveCanvasPanelIds
     const ids = new Set<string>()
-    for (const node of Object.values(workspace.canvasNodes ?? {})) ids.add(node.panelId)
+    for (const node of Object.values(workspace.canvasNodes ?? {})) {
+      // Same logic as the live path: a canvas node's dockLayout can hold
+      // multiple tabbed panels; the seed `node.panelId` is only one of them.
+      collectPanelIdsFromDockLayout(node.dockLayout, ids)
+      if (node.panelId) ids.add(node.panelId)
+    }
     return ids
   }, [isSelected, liveCanvasPanelIds, workspace.canvasNodes])
 
@@ -438,7 +443,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       <button
         key={p.id}
         className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
-          indent ? 'pl-14' : 'pl-7'
+          indent ? 'pl-10' : 'pl-7'
         }`}
         onClick={(e) => handlePanelClick(e, p.id)}
         title={p.filePath || p.url || label}
