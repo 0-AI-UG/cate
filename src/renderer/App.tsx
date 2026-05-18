@@ -12,6 +12,7 @@ import { setCanvasOperations } from './stores/appStore'
 import { createCanvasOps } from './lib/canvasBridge'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
+import { useUpdateStore, type UpdateStatus } from './stores/updateStore'
 import { useShortcuts } from './hooks/useShortcuts'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
 import { Sidebar, RightSidebar } from './sidebar/Sidebar'
@@ -37,7 +38,6 @@ import { CommandPalette } from './ui/CommandPalette'
 import { GlobalSearch } from './ui/GlobalSearch'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { ToastContainer } from './ui/ToastContainer'
-import { AISetupDialog } from './dialogs/AISetupDialog'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
 import type { MultiWorkspaceSession } from '../shared/types'
@@ -50,7 +50,6 @@ import { WindowTypeContext } from './stores/WindowTypeContext'
 import { setupCrossWindowDragListeners } from './hooks/useDockDrag'
 import { terminalRegistry } from './lib/terminalRegistry'
 import { applyTheme } from './lib/themeManager'
-import { useUsageStore } from './stores/usageStore'
 import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
 import { confirmCloseCanvas } from './lib/confirmCloseCanvas'
 import pkg from '../../package.json'
@@ -112,7 +111,10 @@ export default function App() {
 // -----------------------------------------------------------------------------
 
 function MainApp() {
-  const [showSettings, setShowSettings] = useState(false)
+  const showSettings = useUIStore((s) => s.showSettings)
+  const settingsInitialTab = useUIStore((s) => s.settingsInitialTab)
+  const openSettings = useUIStore((s) => s.openSettings)
+  const closeSettings = useUIStore((s) => s.closeSettings)
   const [initializing, setInitializing] = useState(true)
   const initializedRef = useRef(false)
 
@@ -124,7 +126,6 @@ function MainApp() {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   const showPanelSwitcher = useUIStore((s) => s.showPanelSwitcher)
   const showGlobalSearch = useUIStore((s) => s.showGlobalSearch)
-  const showAISetupDialog = useUIStore((s) => s.showAISetupDialog)
 
   // Theme — apply on mount and re-apply whenever appearanceMode changes
   const appearanceMode = useSettingsStore((s) => s.appearanceMode)
@@ -215,12 +216,6 @@ function MainApp() {
         }
         setupAutoSave(useCanvasStore)
         setupWorkspaceSync()
-        // Subscribe to usage updates immediately (cheap), but delay the
-        // actual scan trigger so it doesn't compete with first-frame work.
-        useUsageStore.getState().init()
-        setTimeout(() => {
-          useUsageStore.getState().ensureLoaded()
-        }, 3000)
         log.info('Background init complete')
       })
     }
@@ -243,7 +238,21 @@ function MainApp() {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     return window.electronAPI.onMenuOpenSettings(() => {
-      setShowSettings((s) => !s)
+      if (useUIStore.getState().showSettings) closeSettings()
+      else openSettings()
+    })
+  }, [openSettings, closeSettings])
+
+  // ---------------------------------------------------------------------------
+  // Auto-updater status — push from main, surfaced as a subtle in-app pill.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const setStatus = useUpdateStore.getState().setStatus
+    window.electronAPI.updateGetStatus?.().then((s: unknown) => {
+      if (s && typeof s === 'object') setStatus(s as UpdateStatus)
+    }).catch(() => {})
+    return window.electronAPI.onUpdateStatus((status: unknown) => {
+      setStatus(status as UpdateStatus)
     })
   }, [])
 
@@ -431,19 +440,28 @@ function MainApp() {
 
   return (
     <CanvasStoreProvider store={useCanvasStore}>
-    <div className="h-screen w-screen flex bg-canvas-bg" onDragOver={handleFileDragOver} onDrop={handleFileDrop}>
-      {/* Sidebar */}
-      <Sidebar />
-
-      {/* Main window shell: all dock zones including center */}
+    <div
+      className="h-screen w-screen relative bg-canvas-bg"
+      onDragOver={handleFileDragOver}
+      onDrop={handleFileDrop}
+    >
+      {/* Main window shell fills the viewport so the canvas extends edge to
+          edge under the translucent sidebars. The top-level dock tab bar
+          insets itself via CSS vars (--cate-left/right-sidebar-width) so the
+          Canvas tab pill stays next to the sidebar. */}
       <MainWindowShell
         renderPanel={renderDockPanel}
         getPanelTitle={getPanelTitle}
         onClosePanel={handleDockClosePanel}
       />
 
-      {/* Right Sidebar */}
-      <RightSidebar />
+      {/* Sidebars: absolutely-positioned overlays on top of the shell */}
+      <div className="absolute inset-y-0 left-0 z-20 flex pointer-events-none">
+        <div className="pointer-events-auto h-full"><Sidebar /></div>
+      </div>
+      <div className="absolute inset-y-0 right-0 z-20 flex pointer-events-none">
+        <div className="pointer-events-auto h-full"><RightSidebar /></div>
+      </div>
 
       {/* Modal overlays */}
       {showNodeSwitcher && <NodeSwitcher />}
@@ -451,10 +469,7 @@ function MainApp() {
       {showCommandPalette && <CommandPalette />}
       {showGlobalSearch && <GlobalSearch />}
       {showSettings && (
-        <SettingsWindow isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      )}
-      {showAISetupDialog && (
-        <AISetupDialog workspaceId={selectedWorkspaceId} />
+        <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
       )}
       <SavedLayoutsDialog />
 

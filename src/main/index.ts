@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, CRASH_REPORT_SAVE, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_OPEN_IMAGE, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, FS_READ_IMAGE, CRASH_REPORT_SAVE, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_CREATE, WINDOW_GET_ID, WINDOW_GET_TYPE, WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -20,13 +20,12 @@ import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
 import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync, loadSettingsSyncFromDisk, getSettingSync } from './store'
-import { registerHandlers as registerMCPHandlers } from './ipc/mcp'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
+import { startOrchestrator, stopOrchestrator, unregisterGraphSyncForWindow, clearPopupsForWindow } from './orchestrator'
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
 import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
-import { registerUsageHandlers, disposeUsageWatchers } from './ipc/usage'
 import { addAllowedRoot, clearScopedWriteAllowancesForWindow, registerScopedWriteAllowance, validatePath } from './ipc/pathValidation'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
@@ -40,6 +39,38 @@ import { installWebContentsSecurity } from './webSecurity'
 /** True when any existing Cate BrowserWindow is in macOS native fullscreen.
  *  Used to reject window-creation IPCs so the app can never "escape" into a
  *  separate Space while the user is in fullscreen mode. */
+/** Identify common image formats by their magic bytes. Returns null when the
+ *  buffer does not match a supported format — used to safely render images
+ *  that may lack a file extension (macOS screenshot floating thumbnails). */
+function sniffImageMime(buf: Buffer): string | null {
+  if (buf.length >= 8 &&
+      buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
+      buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a) {
+    return 'image/png'
+  }
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  if (buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38 &&
+      (buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61) {
+    return 'image/gif'
+  }
+  if (buf.length >= 12 &&
+      buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) {
+    return 'image/webp'
+  }
+  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) {
+    return 'image/bmp'
+  }
+  // SVG — text-based, look for "<svg" or "<?xml" with svg later in the head.
+  const head = buf.slice(0, Math.min(buf.length, 256)).toString('utf8').trimStart().toLowerCase()
+  if (head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'))) {
+    return 'image/svg+xml'
+  }
+  return null
+}
+
 function anyWindowFullscreen(): boolean {
   for (const w of BrowserWindow.getAllWindows()) {
     if (w.isDestroyed()) continue
@@ -140,6 +171,8 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     unregisterTerminalsForWindow(windowId)
     stopMonitorsForWindow(windowId)
     clearScopedWriteAllowancesForWindow(windowId)
+    unregisterGraphSyncForWindow(windowId)
+    clearPopupsForWindow(windowId)
     // Rebuild menu to update panel/dock window list
     if (isPanel || isDock) rebuildApplicationMenu()
     // Trigger immediate session save from main window when a child window closes
@@ -303,11 +336,9 @@ function registerAllHandlers(): void {
   registerShellHandlers()
   registerGitMonitorHandlers()
   registerStoreHandlers()
-  registerMCPHandlers()
   registerMenuHandlers()
   registerNotificationHandlers()
   registerWorkspaceHandlers()
-  registerUsageHandlers()
 
   // Crash reporting: renderer can save a crash report via IPC
   ipcMain.handle(CRASH_REPORT_SAVE, async (_event, error: { name?: string; message: string; stack?: string }) => {
@@ -354,6 +385,37 @@ function registerAllHandlers(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  // Read a file from disk and return a base64 data URL if its content sniffs
+  // as a supported image format. Used so the renderer can display images
+  // without depending on the `file://` CSP allowance, and so files that lack
+  // an extension (macOS screenshots dragged from the floating thumbnail) can
+  // still be detected and rendered. Returns null for non-image content.
+  ipcMain.handle(FS_READ_IMAGE, async (_event, filePath: string) => {
+    try {
+      // Cap at 25 MB — plenty for screenshots, prevents accidental DoS via huge files.
+      const stat = await fs.promises.stat(filePath)
+      if (!stat.isFile() || stat.size > 25 * 1024 * 1024) return null
+      const buf = await fs.promises.readFile(filePath)
+      const mime = sniffImageMime(buf)
+      if (!mime) return null
+      return { mime, dataUrl: `data:${mime};base64,${buf.toString('base64')}` }
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle(DIALOG_OPEN_IMAGE, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      title: 'Add Image to Canvas',
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
+      ],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths
   })
 
   ipcMain.handle(DIALOG_SAVE_FILE, async (_event, options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
@@ -424,6 +486,23 @@ function registerAllHandlers(): void {
       noLink: true,
     })
     return result.response === 0 ? 'move' : result.response === 1 ? 'delete' : 'cancel'
+  })
+
+  // Confirm deletion of a region that contains panels. Lets the user choose
+  // between also deleting the panels inside or just removing the region frame.
+  ipcMain.handle(DIALOG_CONFIRM_DELETE_REGION, async (event, payload: { panelCount: number }) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const panelCount = payload?.panelCount ?? 0
+    const result = await dialog.showMessageBox(win!, {
+      type: 'warning',
+      message: 'Delete this region?',
+      detail: `This region contains ${panelCount} ${panelCount === 1 ? 'panel' : 'panels'}. Delete them too, or just remove the region around them?`,
+      buttons: ['Delete Region + Contents', 'Delete Region Only', 'Cancel'],
+      defaultId: 1,
+      cancelId: 2,
+      noLink: true,
+    })
+    return result.response === 0 ? 'with-contents' : result.response === 1 ? 'region-only' : 'cancel'
   })
 
   // Capture page screenshot for panel previews
@@ -958,6 +1037,15 @@ app.whenReady().then(async () => {
   await initShellEnv()
   log.info('Shell environment resolved')
 
+  if (process.platform === 'darwin') {
+    app.setAboutPanelOptions({
+      applicationName: app.getName(),
+      applicationVersion: app.getVersion(),
+      version: app.getVersion(),
+      copyright: `© ${new Date().getFullYear()} Cate`,
+    })
+  }
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const origin = details.url
     if (origin.startsWith('file://') || (process.env.ELECTRON_RENDERER_URL && origin.startsWith(process.env.ELECTRON_RENDERER_URL))) {
@@ -965,7 +1053,7 @@ app.whenReady().then(async () => {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-            `default-src 'self'; script-src 'self'${process.env.ELECTRON_RENDERER_URL ? " 'unsafe-inline' 'unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: ws: wss:; font-src 'self' data:; base-uri 'self'`,
+            `default-src 'self'; script-src 'self'${process.env.ELECTRON_RENDERER_URL ? " 'unsafe-inline' 'unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: file:; connect-src 'self' https: ws: wss:; font-src 'self' data:; base-uri 'self'`,
           ],
         },
       })
@@ -977,6 +1065,10 @@ app.whenReady().then(async () => {
   installWebContentsSecurity()
   registerAllHandlers()
   log.info('IPC handlers registered')
+
+  // Boot the orchestrator (cate CLI socket server + CLI binary install).
+  // Non-fatal if it fails — Cate still runs without inter-terminal orchestration.
+  startOrchestrator().catch((e) => log.error('Orchestrator failed to start: %s', e?.message ?? e))
 
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)
@@ -1052,6 +1144,8 @@ app.on('before-quit', (event) => {
 
   log.info('Before quit, flushing loggers and requesting session save')
   flushAllLoggers()
+  // Best-effort orchestrator shutdown (closes the socket + cleans up the .sock file).
+  stopOrchestrator().catch(() => { /* shutdown path, ignore */ })
 
   const allWindows = BrowserWindow.getAllWindows()
   const mainWin = allWindows.find((w) => !w.isDestroyed() && getWindowType(w.id) === 'main')
@@ -1093,8 +1187,6 @@ app.on('will-quit', () => {
   // we write something if it didn't.
   log.info('will-quit: sync session save fallback')
   saveSessionSync(getLastSavedSession())
-  // Close usage file watchers and clear caches to release file descriptors
-  disposeUsageWatchers()
   // Kill all PTYs now — AFTER session save so the renderer had access to live
   // PTY data (CWD, scrollback) during the flush triggered in before-quit.
   // Must happen while the JS environment is still alive. If we let them die

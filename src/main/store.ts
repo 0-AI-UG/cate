@@ -50,14 +50,18 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   terminalFontFamily: 'string',
   terminalFontSize: 'number',
   terminalScrollback: 'number',
+  terminalCustomThemes: 'array',
+  defaultTerminalTheme: 'string',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
+  autoOpenUrlsFromTerminal: 'boolean',
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',
   notificationsEnabled: 'boolean',
   notificationMode: 'string',
   notifyOnTerminalHalt: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',
+  aiAssistEnabled: 'boolean',
 }
 
 /** Safely merge only known, type-correct keys from a parsed object into the settings cache. */

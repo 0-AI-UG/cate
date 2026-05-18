@@ -92,15 +92,7 @@ export function buildApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+Shift+N',
           click: (): void => {
             if (!newMainWindowFn) return
-            const focused = BrowserWindow.getFocusedWindow()
-            const isMainFocused = focused && getWindowType(focused.id) === 'main'
-            const newWin = newMainWindowFn()
-            // On macOS, explicitly tab the new window onto the focused main
-            // window so tabbing happens regardless of the system "Prefer tabs"
-            // setting. Safe no-op when tabbingIdentifier is unset.
-            if (process.platform === 'darwin' && isMainFocused && focused && !focused.isDestroyed()) {
-              try { focused.addTabbedWindow(newWin) } catch { /* noop */ }
-            }
+            newMainWindowFn()
           },
         },
         { type: 'separator' },
@@ -109,6 +101,7 @@ export function buildApplicationMenu(): void {
         { label: 'New Browser', accelerator: 'CmdOrCtrl+Shift+B', click: dispatch('newBrowser') },
         { type: 'separator' },
         { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },
+        { label: 'Add Image to Canvas...', click: dispatch('addImageToCanvas') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: dispatch('saveFile') },
         { type: 'separator' },
@@ -144,6 +137,8 @@ export function buildApplicationMenu(): void {
         { label: 'Toggle Minimap', accelerator: 'CmdOrCtrl+Shift+M', click: dispatch('toggleMinimap') },
         { type: 'separator' },
         { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: dispatch('zoomIn') },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+Shift+=', click: dispatch('zoomIn'), visible: false, acceleratorWorksWhenHidden: true },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', click: dispatch('zoomIn'), visible: false, acceleratorWorksWhenHidden: true },
         { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: dispatch('zoomOut') },
         { label: 'Reset Zoom', accelerator: 'CmdOrCtrl+0', click: dispatch('zoomReset') },
         { label: 'Zoom to Fit', accelerator: 'CmdOrCtrl+1', click: dispatch('zoomToFit') },
@@ -174,12 +169,7 @@ export function buildApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+N',
           click: (): void => {
             if (!newMainWindowFn) return
-            const focused = BrowserWindow.getFocusedWindow()
-            const isMainFocused = focused && getWindowType(focused.id) === 'main'
-            const newWin = newMainWindowFn()
-            if (process.platform === 'darwin' && isMainFocused && focused && !focused.isDestroyed()) {
-              try { focused.addTabbedWindow(newWin) } catch { /* noop */ }
-            }
+            newMainWindowFn()
           },
         },
         { type: 'separator' },

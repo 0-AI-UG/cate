@@ -14,6 +14,7 @@ import type { Point, Size, PanelTransferSnapshot, DockLayoutNode } from '../../s
 import { createTransferSnapshot } from '../lib/panelTransfer'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useDockDragStore, hitTestDropTarget, hitTestDropTargetWithStore } from './useDockDrag'
+import { livePositions } from '../canvas/livePositions'
 import { findNodeDockStore } from '../panels/CanvasPanel'
 import { canvasDropZoneHovered } from '../docking/CanvasDropZone'
 import { useAppStore } from '../stores/appStore'
@@ -32,6 +33,13 @@ interface DragState {
   nodeEl: HTMLElement | null
   /** Cached DOM elements for co-selected nodes during multi-drag */
   selectedEls: Map<string, HTMLElement>
+  /** Cached focus-glow sibling element for the dragged node (if any). The glow
+   *  is a separate sibling div in the DOM, so it must be moved in lockstep
+   *  with the node element during drag — otherwise it lags behind and only
+   *  snaps to the final position on drop. */
+  glowEl: HTMLElement | null
+  /** Cached glow elements for co-selected nodes during multi-drag */
+  selectedGlowEls: Map<string, HTMLElement>
 }
 
 interface UseNodeDragReturn {
@@ -63,6 +71,24 @@ function isCursorInCanvas(clientX: number, clientY: number, nodeId: string): boo
     clientX <= rect.right - EDGE_INSET &&
     clientY >= rect.top &&
     clientY <= rect.bottom - EDGE_INSET
+  )
+}
+
+/** Cursor inside the canvas rect with NO inset. Used at mouseup to decide
+ *  whether a release counts as "on the canvas" even if the cursor sits in
+ *  the dock-drag arm strip. Without this guard a release inside the canvas
+ *  (e.g. on the "Drop into canvas" pill, or just near a canvas edge) can
+ *  resolve a stale dock activeDropTarget and call finalizeRemoveNode on the
+ *  source node — wiping that node and any connections referencing it. */
+function isCursorOverCanvasNoInset(clientX: number, clientY: number, nodeId: string): boolean {
+  const canvasEl = getOwningCanvasContainer(nodeId)
+  if (!canvasEl) return false
+  const rect = canvasEl.getBoundingClientRect()
+  return (
+    clientX >= rect.left &&
+    clientX <= rect.right &&
+    clientY >= rect.top &&
+    clientY <= rect.bottom
   )
 }
 
@@ -145,6 +171,10 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
           ds.nodeEl.style.left = `${ds.initialOrigin.x}px`
           ds.nodeEl.style.top = `${ds.initialOrigin.y}px`
         }
+        if (ds.glowEl) {
+          ds.glowEl.style.left = `${ds.initialOrigin.x}px`
+          ds.glowEl.style.top = `${ds.initialOrigin.y}px`
+        }
         canvasStoreApi.getState().moveNode(nodeId, ds.initialOrigin)
       }
     } else {
@@ -176,6 +206,9 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
     pendingOrigin.current = null
     lastDomOrigin.current = null
     lastDomOrigins.current.clear()
+    // The store now owns the final positions — drop the live-position cache
+    // so subsequent reads come from the (canonical) canvasStore values.
+    livePositions.clearAll()
     lastRegionOrigins.current.clear()
     snapIndexRef.current = null
     canvasStoreApi.getState().clearSnapGuides()
@@ -214,10 +247,14 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
 
       // Cache DOM elements for imperative position mutation during drag
       const nodeEl = document.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`)
+      const glowEl = document.querySelector<HTMLElement>(`[data-glow-for="${nodeId}"]`)
       const selectedEls = new Map<string, HTMLElement>()
+      const selectedGlowEls = new Map<string, HTMLElement>()
       for (const id of preState.selectedNodeIds) {
         const el = document.querySelector<HTMLElement>(`[data-node-id="${id}"]`)
         if (el) selectedEls.set(id, el)
+        const gl = document.querySelector<HTMLElement>(`[data-glow-for="${id}"]`)
+        if (gl) selectedGlowEls.set(id, gl)
       }
 
       dragStateRef.current = {
@@ -228,6 +265,8 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
         initialOrigin: { ...node.origin },
         nodeEl,
         selectedEls,
+        glowEl,
+        selectedGlowEls,
       }
       isDraggingRef.current = true
       dragStartedRef.current = false
@@ -383,22 +422,31 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
         const currentNode = canvasStoreApi.getState().nodes[nodeId]
         if (!currentNode) return
 
-        const deltaX = (ev.clientX - ds.lastClientX) / zoom
-        const deltaY = (ev.clientY - ds.lastClientY) / zoom
-
         ds.lastClientX = ev.clientX
         ds.lastClientY = ev.clientY
 
-        // Accumulate position — don't update store directly.
-        // Fall back chain: in-flight pending → last committed DOM origin →
-        // live store origin. Reading store.origin here would be wrong once
-        // the first RAF has fired, because the store isn't updated during
-        // drag — only lastDomOrigin tracks the true current position.
-        const prev = pendingOrigin.current || lastDomOrigin.current || currentNode.origin
-        pendingOrigin.current = {
-          x: prev.x + deltaX,
-          y: prev.y + deltaY,
+        // Compute total delta from drag start (un-snapped), then snap the
+        // resulting origin to the grid. Using an incremental delta against a
+        // snapped accumulator would repeatedly round sub-grid motion back to
+        // the same cell, making the node hard to move (especially upward,
+        // where Math.round biases ties toward 0).
+        const totalDx = (ev.clientX - ds.initialClientX) / zoom
+        const totalDy = (ev.clientY - ds.initialClientY) / zoom
+        let nextX = ds.initialOrigin.x + totalDx
+        let nextY = ds.initialOrigin.y + totalDy
+
+        const settingsLive = useSettingsStore.getState()
+        if (settingsLive.snapToGridEnabled) {
+          const g = settingsLive.gridSpacing
+          // Symmetric rounding so upward/leftward motion has the same
+          // threshold as downward/rightward (JS Math.round biases ties
+          // toward +Inf, which makes negative-direction drags feel sticky).
+          const snapDelta = (v: number) => Math.sign(v) * Math.round(Math.abs(v) / g) * g
+          nextX = ds.initialOrigin.x + snapDelta(totalDx)
+          nextY = ds.initialOrigin.y + snapDelta(totalDy)
         }
+
+        pendingOrigin.current = { x: nextX, y: nextY }
 
         // Schedule RAF if not already pending
         if (!rafId.current) {
@@ -433,7 +481,15 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
                     const newY = n.origin.y + dy
                     el.style.left = `${newX}px`
                     el.style.top = `${newY}px`
+                    const gl = ds.selectedGlowEls.get(id)
+                    if (gl) {
+                      gl.style.left = `${newX}px`
+                      gl.style.top = `${newY}px`
+                    }
                     lastDomOrigins.current.set(id, { x: newX, y: newY })
+                    // Mirror into livePositions so the SVG connection overlay
+                    // (CanvasConnections) can follow the move in real time.
+                    livePositions.set(id, newX, newY)
                   }
                 }
               }
@@ -455,7 +511,13 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
               ds.nodeEl.style.left = `${origin.x}px`
               ds.nodeEl.style.top = `${origin.y}px`
             }
+            if (ds?.glowEl) {
+              ds.glowEl.style.left = `${origin.x}px`
+              ds.glowEl.style.top = `${origin.y}px`
+            }
             lastDomOrigin.current = origin
+            // Mirror to livePositions so connection wires follow the cursor.
+            livePositions.set(nodeId, origin.x, origin.y)
             pendingOrigin.current = null
 
             // Update drop-target region highlight (single-node drag only).
@@ -542,6 +604,24 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
       }
 
       const handleMouseUp = (ev: MouseEvent) => {
+        // If the release lands inside the source canvas rect (regardless of
+        // dock-drag arm strip), force-exit dock-drag mode and treat this as a
+        // normal canvas drag end. Without this, releasing on the canvas with
+        // a stale activeDropTarget (resolved during a brief edge-strip excursion)
+        // would route through executeDrop → finalizeRemoveNode and delete the
+        // dragged node along with every connection that referenced it.
+        if (
+          inDockDragRef.current &&
+          isCursorOverCanvasNoInset(ev.clientX, ev.clientY, nodeId)
+        ) {
+          inDockDragRef.current = false
+          if (crossWindowRef.current) {
+            crossWindowRef.current = null
+            window.electronAPI.crossWindowDragCancel()
+          }
+          useDockDragStore.getState().endDrag()
+        }
+
         // --- Handle dock-drag drop ---
         if (inDockDragRef.current) {
           const dockDrag = useDockDragStore.getState()

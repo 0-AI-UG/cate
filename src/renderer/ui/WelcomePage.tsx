@@ -149,7 +149,7 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Keyboard shortcuts */}
-        <div className="mt-10 pt-6 border-t border-subtle">
+        <div className="mt-10 pt-6">
           <h2 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-3">
             Keyboard Shortcuts
           </h2>

@@ -19,17 +19,6 @@ interface HintEntry {
   displayName: string
 }
 
-// Actions that are anchored to toolbar buttons (handled inline in CanvasToolbar)
-const TOOLBAR_ANCHORED_ACTIONS: Set<ShortcutAction> = new Set([
-  'newTerminal',
-  'newBrowser',
-  'newEditor',
-  'zoomIn',
-  'zoomOut',
-  'zoomReset',
-  'toggleMinimap',
-])
-
 /**
  * Format a shortcut's badge text.
  * The command symbol is rendered separately in the badge component,
@@ -96,9 +85,6 @@ export const ShortcutHintOverlay: React.FC = () => {
     const entries: HintEntry[] = []
 
     for (const [action, shortcut] of Object.entries(shortcuts) as [ShortcutAction, StoredShortcut][]) {
-      // Skip toolbar-anchored shortcuts
-      if (TOOLBAR_ANCHORED_ACTIONS.has(action)) continue
-
       // Only show shortcuts whose modifiers match what is currently held
       if (!matchesActiveModifiers(shortcut, activeModifiers)) continue
 
@@ -115,16 +101,33 @@ export const ShortcutHintOverlay: React.FC = () => {
   if (!isShowingHints || globalHints.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 flex flex-col gap-1.5 items-end z-40 pointer-events-none">
-      {globalHints.map((hint) => (
-        <div
-          key={hint.action}
-          className="flex items-center gap-2 animate-in fade-in duration-150"
-        >
-          <span className="text-[11px] text-secondary">{hint.displayName}</span>
-          <ShortcutHintBadge label={hint.badgeLabel} />
-        </div>
-      ))}
+    <div
+      className="fixed z-40 pointer-events-none animate-in fade-in slide-in-from-bottom-1 duration-150"
+      style={{
+        // Sit above the minimap toggle (bottom-4 + ~44px button + gap).
+        bottom: 'calc(1rem + 44px + 0.5rem)',
+        right: 'calc(1rem + var(--cate-right-sidebar-width, 0px))',
+      }}
+    >
+      <div
+        className="flex flex-col gap-1 items-stretch rounded-xl border border-subtle p-2 shadow-[0_18px_40px_-12px_var(--shadow-node)]"
+        style={{
+          backgroundColor: 'color-mix(in srgb, var(--surface-6) 92%, transparent)',
+          backdropFilter: 'blur(8px) saturate(0.9)',
+          WebkitBackdropFilter: 'blur(8px) saturate(0.9)',
+          minWidth: 180,
+        }}
+      >
+        {globalHints.map((hint) => (
+          <div
+            key={hint.action}
+            className="flex items-center justify-between gap-3 pl-1.5"
+          >
+            <span className="text-[11px] text-secondary truncate">{hint.displayName}</span>
+            <ShortcutHintBadge label={hint.badgeLabel} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

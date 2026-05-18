@@ -1,6 +1,7 @@
 import { app, session, type Session, type WebContents } from 'electron'
 import log from './logger'
 import { disableWebviewHardening } from './featureFlags'
+import { describePopupParent, attachPopupWindow } from './orchestrator/popups'
 
 const configuredGuestSessions = new Set<string>()
 
@@ -52,6 +53,10 @@ function guestSessionFor(contents: WebContents, partition?: string): Session {
 
 export function installWebContentsSecurity(): void {
   app.on('web-contents-created', (_event, contents) => {
+    // Default: deny popups for every web-contents. Webview guests get a
+    // permissive handler installed below that allows popups but routes them
+    // through Cate's popup registry so the agent can drive them via the
+    // `cate portal` CLI.
     contents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
     if (contents.getType() === 'window') {
@@ -60,6 +65,51 @@ export function installWebContentsSecurity(): void {
           log.warn('[security] Blocked app-window navigation to %s', url)
           event.preventDefault()
         }
+      })
+    }
+
+    // Webview guests (Cate's portal BrowserPanel) — allow window.open() so we
+    // can track OAuth pop-ups, Sign in with Google, etc. Each popup becomes
+    // a new Cate-tracked portal named "<Parent> #N".
+    if (contents.getType() === 'webview') {
+      const parentResolver = () => describePopupParent(contents.id)
+      contents.setWindowOpenHandler(({ url }) => {
+        if (!isAllowedGuestUrl(url)) {
+          log.warn('[webview] Blocked popup to disallowed URL %s', url)
+          return { action: 'deny' }
+        }
+        const parent = parentResolver()
+        if (!parent) {
+          // Parent isn't a known Cate portal — fall back to the global deny
+          // policy. This happens if a popup tries to open before the
+          // orchestrator's parentResolver is registered, or if the guest
+          // somehow isn't a tracked BrowserPanel.
+          log.warn('[webview] Popup denied (no known parent portal): %s', url)
+          return { action: 'deny' }
+        }
+        return {
+          action: 'allow',
+          outlivesOpener: false,
+          overrideBrowserWindowOptions: {
+            // Reasonable default so OAuth windows look sane.
+            width: 520,
+            height: 620,
+            // Don't show until the orchestrator has decided whether to embed
+            // it; webSecurity hooks below set the final visibility.
+            show: true,
+            webPreferences: {
+              nodeIntegration: false,
+              contextIsolation: true,
+              sandbox: true,
+              webSecurity: true,
+            },
+          },
+        }
+      })
+
+      contents.on('did-create-window' as any, (win: Electron.BrowserWindow) => {
+        try { attachPopupWindow(contents.id, win) }
+        catch (e: any) { log.warn('[webview] Failed to track popup: %s', e?.message ?? e) }
       })
     }
 
@@ -83,7 +133,11 @@ export function installWebContentsSecurity(): void {
       webPreferences.webSecurity = true
       ;(webPreferences as { allowRunningInsecureContent?: boolean }).allowRunningInsecureContent = false
 
-      params.allowpopups = 'false'
+      // Allow `window.open()` from webview content so we can track OAuth /
+      // Sign-In popups via Cate's popup registry. The setWindowOpenHandler
+      // installed when the guest's webContents is created strictly filters
+      // which URLs are actually allowed; this just removes the blanket veto.
+      params.allowpopups = 'true'
 
       const partition = typeof webPreferences.partition === 'string' ? webPreferences.partition : undefined
       const targetSession = guestSessionFor(contents, partition)

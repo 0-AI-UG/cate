@@ -45,7 +45,6 @@ import {
   SHELL_ACTIVITY_UPDATE,
   SHELL_PORTS_UPDATE,
   SHELL_CWD_UPDATE,
-  SHELL_KILL_PROCESS,
   SETTINGS_GET,
   SETTINGS_SET,
   SETTINGS_GET_ALL,
@@ -62,9 +61,12 @@ import {
   MENU_TRIGGER_ACTION,
   MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
+  DIALOG_OPEN_IMAGE,
+  FS_READ_IMAGE,
   DIALOG_SAVE_FILE,
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_CANVAS,
+  DIALOG_CONFIRM_DELETE_REGION,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   LAYOUT_SAVE,
@@ -79,10 +81,6 @@ import {
   FS_SEARCH,
   SHELL_SHOW_IN_FOLDER,
   HTTP_FETCH,
-  MCP_SPAWN,
-  MCP_STOP,
-  MCP_TEST,
-  MCP_STATUS_UPDATE,
   NOTIFY_OS,
   NOTIFY_ACTION,
   WINDOW_CREATE,
@@ -113,12 +111,19 @@ import {
   WORKSPACE_REMOVE,
   WORKSPACE_GET,
   WORKSPACE_CHANGED,
-  USAGE_GET_SUMMARY,
-  USAGE_GET_PROJECT,
-  USAGE_UPDATE,
   WEBVIEW_SCREENSHOT,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
+  ORCH_REGISTRY_SYNC,
+  ORCH_INFLIGHT_UPDATE,
+  ORCH_RENDER_COMMAND,
+  ORCH_RENDER_RESPONSE,
+  ORCH_PORTAL_WC_REGISTER,
+  UPDATE_STATUS,
+  UPDATE_INSTALL,
+  UPDATE_DOWNLOAD,
+  UPDATE_OPEN_RELEASE,
+  UPDATE_DISMISS,
 } from '../shared/ipc-channels'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
@@ -353,10 +358,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(SHELL_UNREGISTER_TERMINAL, terminalId)
   },
 
-  shellKillProcess(terminalId: string): Promise<void> {
-    return ipcRenderer.invoke(SHELL_KILL_PROCESS, terminalId)
-  },
-
   onShellActivityUpdate(
     callback: (terminalId: string, activity: unknown, agentState: unknown, agentName: unknown) => void,
   ): () => void {
@@ -507,6 +508,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DIALOG_OPEN_FOLDER)
   },
 
+  openImageDialog(): Promise<string[] | null> {
+    return ipcRenderer.invoke(DIALOG_OPEN_IMAGE)
+  },
+
+  readImageAsDataUrl(filePath: string): Promise<{ mime: string; dataUrl: string } | null> {
+    return ipcRenderer.invoke(FS_READ_IMAGE, filePath)
+  },
+
   saveFileDialog(options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> {
     return ipcRenderer.invoke(DIALOG_SAVE_FILE, options)
   },
@@ -517,6 +526,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   confirmCloseCanvas(payload: { panelCount: number; isLast: boolean }): Promise<'move' | 'delete' | 'close' | 'cancel'> {
     return ipcRenderer.invoke(DIALOG_CONFIRM_CLOSE_CANVAS, payload)
+  },
+
+  confirmDeleteRegion(payload: { panelCount: number }): Promise<'with-contents' | 'region-only' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_CONFIRM_DELETE_REGION, payload)
   },
 
   // ---------------------------------------------------------------------------
@@ -593,30 +606,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   httpFetch(url: string): Promise<{ ok: boolean; status: number; text: string }> {
     return ipcRenderer.invoke(HTTP_FETCH, url)
-  },
-
-  // ---------------------------------------------------------------------------
-  // MCP Server Management
-  // ---------------------------------------------------------------------------
-
-  mcpSpawn(name: string, command: string, args: string[], env: Record<string, string>): Promise<void> {
-    return ipcRenderer.invoke(MCP_SPAWN, name, command, args, env)
-  },
-
-  mcpStop(name: string): Promise<void> {
-    return ipcRenderer.invoke(MCP_STOP, name)
-  },
-
-  mcpTest(command: string, args: string[], env: Record<string, string>) {
-    return ipcRenderer.invoke(MCP_TEST, command, args, env)
-  },
-
-  onMcpStatusUpdate(callback: (update: { name: string; status: string; error?: string }) => void): () => void {
-    const listener = (_event: Electron.IpcRendererEvent, update: { name: string; status: string; error?: string }): void => {
-      callback(update)
-    }
-    ipcRenderer.on(MCP_STATUS_UPDATE, listener)
-    return () => { ipcRenderer.removeListener(MCP_STATUS_UPDATE, listener) }
   },
 
   // ---------------------------------------------------------------------------
@@ -847,25 +836,63 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // ---------------------------------------------------------------------------
-  // Token usage tracking
+  // Orchestrator (cate CLI graph sync + in-flight ask events)
   // ---------------------------------------------------------------------------
 
-  usageGetSummary(): Promise<unknown> {
-    return ipcRenderer.invoke(USAGE_GET_SUMMARY)
+  orchSyncRegistry(snapshot: {
+    terminals: Array<{ ptyId: string | null; panelId: string; nodeId: string | null; name: string }>
+    portals?: Array<{ panelId: string; nodeId: string | null; name: string }>
+    connections: Array<{ from: string; to: string }>
+  }): Promise<void> {
+    return ipcRenderer.invoke(ORCH_REGISTRY_SYNC, snapshot)
   },
 
-  usageGetProject(projectPath: string): Promise<unknown> {
-    return ipcRenderer.invoke(USAGE_GET_PROJECT, projectPath)
+  onOrchInflight(callback: (payload: { fromNodeId: string; toNodeId: string; active: boolean }) => void): () => void {
+    const listener = (_e: Electron.IpcRendererEvent, payload: any): void => callback(payload)
+    ipcRenderer.on(ORCH_INFLIGHT_UPDATE, listener)
+    return () => { ipcRenderer.removeListener(ORCH_INFLIGHT_UPDATE, listener) }
   },
 
-  onUsageUpdate(callback: (changedProjects: string[]) => void): () => void {
-    const listener = (
-      _event: Electron.IpcRendererEvent,
-      payload: { changedProjects: string[] },
-    ): void => {
-      callback(payload.changedProjects)
+  /** Push a (panelId, webContentsId, alive) tuple to main when a BrowserPanel's
+   *  webview attaches or unmounts. Main uses this to build a webContents →
+   *  portal-panel reverse map for popup parent resolution. Fire-and-forget. */
+  orchRegisterPortalWc(payload: { panelId: string; webContentsId: number; alive: boolean }): void {
+    ipcRenderer.send(ORCH_PORTAL_WC_REGISTER, payload)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Auto-updater
+  // ---------------------------------------------------------------------------
+
+  onUpdateStatus(callback: (status: unknown) => void): () => void {
+    const listener = (_e: Electron.IpcRendererEvent, status: unknown): void => callback(status)
+    ipcRenderer.on(UPDATE_STATUS, listener)
+    return () => { ipcRenderer.removeListener(UPDATE_STATUS, listener) }
+  },
+
+  updateGetStatus(): Promise<unknown> {
+    return ipcRenderer.invoke('update:getStatus')
+  },
+
+  updateDownload(): void { ipcRenderer.send(UPDATE_DOWNLOAD) },
+  updateInstall(): void { ipcRenderer.send(UPDATE_INSTALL) },
+  updateOpenRelease(url?: string): void { ipcRenderer.send(UPDATE_OPEN_RELEASE, url) },
+  updateDismiss(): void { ipcRenderer.send(UPDATE_DISMISS) },
+
+  /** Subscribe to orchestrator-driven UI commands (open/close panel, create
+   *  connection, note CRUD, portal CRUD). The handler MUST resolve to the
+   *  command's response data (or throw) — the preload wrapper packages that
+   *  into the ORCH_RENDER_RESPONSE envelope. Returns an unsubscribe fn. */
+  onOrchCommand(handler: (req: { id: number; verb: string; args?: any }) => Promise<any>): () => void {
+    const listener = async (_e: Electron.IpcRendererEvent, req: { id: number; verb: string; args?: any }): Promise<void> => {
+      try {
+        const data = await handler(req)
+        ipcRenderer.send(ORCH_RENDER_RESPONSE, { id: req.id, ok: true, data })
+      } catch (e: any) {
+        ipcRenderer.send(ORCH_RENDER_RESPONSE, { id: req.id, ok: false, error: e?.message ?? String(e) })
+      }
     }
-    ipcRenderer.on(USAGE_UPDATE, listener)
-    return () => { ipcRenderer.removeListener(USAGE_UPDATE, listener) }
+    ipcRenderer.on(ORCH_RENDER_COMMAND, listener)
+    return () => { ipcRenderer.removeListener(ORCH_RENDER_COMMAND, listener) }
   },
 })

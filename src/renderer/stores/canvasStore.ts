@@ -10,6 +10,8 @@ import type {
   CanvasNodeId,
   CanvasNodeState,
   CanvasAnnotation,
+  CanvasConnection,
+  CanvasDrawing,
   CanvasRegion,
   DockLayoutNode,
   Point,
@@ -36,6 +38,19 @@ export interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
   annotations: Record<string, CanvasAnnotation>
+  /** Maestri-style undirected wires between canvas nodes. Used both for the
+   *  dotted-line rendering and for the orchestrator's `cate ask` auth check. */
+  connections: Record<string, CanvasConnection>
+  /** Freehand pen strokes laid down with the draw tool. */
+  drawings: Record<string, CanvasDrawing>
+  /** True when the draw tool is active — canvas mouse events become stroke
+   *  capture instead of pan/marquee. Transient, never persisted. */
+  drawMode: boolean
+  /** Currently-selected drawing (for click-to-select-then-delete). */
+  selectedDrawingId: string | null
+  /** Connection ids that currently have an in-flight `cate ask` — used to
+   *  brighten / animate the wire on the canvas. Transient, never persisted. */
+  inFlightConnectionIds: Set<string>
   viewportOffset: Point
   zoomLevel: number
   focusedNodeId: CanvasNodeId | null
@@ -63,6 +78,7 @@ export interface CanvasHistoryEntry {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
   annotations: Record<string, CanvasAnnotation>
+  drawings: Record<string, CanvasDrawing>
   focusedNodeId: CanvasNodeId | null
 }
 
@@ -139,15 +155,25 @@ export interface CanvasStoreActions {
   resizeRegion: (id: string, size: Size, origin?: Point) => void
   renameRegion: (id: string, label: string) => void
   updateRegionColor: (id: string, color: string) => void
+  setRegionDefaultCwd: (id: string, defaultCwd: string | undefined) => void
 
   // Containment
   setNodeRegion: (nodeId: string, regionId: string | undefined) => void
   getNodesInRegion: (regionId: string) => CanvasNodeState[]
   groupSelectedIntoRegion: () => string | null
+  groupSelectedHorizontal: () => string | null
+  stackSelected: (axis: 'row' | 'column', gap?: number) => void
+  tidyGridSelected: (gap?: number) => void
   dissolveRegion: (regionId: string) => void
+
+  // Connection management — Maestri-style wires between nodes
+  addConnection: (from: CanvasNodeId, to: CanvasNodeId) => string | null
+  removeConnection: (id: string) => void
+  setInflightConnection: (id: string, active: boolean) => void
 
   // Annotation management
   addAnnotation: (type: 'stickyNote' | 'textLabel', origin: Point, content?: string) => string
+  addImageAnnotation: (origin: Point, imagePath: string, size?: { width: number; height: number }) => string
   removeAnnotation: (id: string) => void
   moveAnnotation: (id: string, origin: Point) => void
   updateAnnotation: (id: string, content: string) => void
@@ -156,6 +182,14 @@ export interface CanvasStoreActions {
   setAnnotationBold: (id: string, bold: boolean) => void
   setAnnotationFontSizePx: (id: string, fontSizePx: number) => void
   resizeAnnotation: (id: string, size: { width: number; height: number }) => void
+
+  // Drawing management — freehand pen strokes
+  setDrawMode: (active: boolean) => void
+  addDrawing: (points: Point[], opts?: { color?: string; strokeWidth?: number }) => string
+  removeDrawing: (id: string) => void
+  selectDrawing: (id: string | null) => void
+  moveDrawing: (id: string, delta: Point) => void
+  setDrawingColor: (id: string, color: string) => void
 
   // Per-node dock layout — replaces split/stack actions. Each canvas node owns
   // a tree (rendered via the dock primitives) that lives here as serialised
@@ -176,6 +210,7 @@ export interface CanvasStoreActions {
     focusedNodeId: CanvasNodeId | null,
     regions?: Record<string, CanvasRegion>,
     annotations?: Record<string, CanvasAnnotation>,
+    connections?: Record<string, CanvasConnection>,
   ) => void
 }
 
@@ -323,6 +358,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   nodes: {},
   regions: {},
   annotations: {},
+  connections: {},
+  drawings: {},
+  drawMode: false,
+  selectedDrawingId: null,
+  inFlightConnectionIds: new Set<string>(),
   viewportOffset: { x: 0, y: 0 },
   zoomLevel: ZOOM_DEFAULT,
   focusedNodeId: null,
@@ -346,6 +386,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       nodes: state.nodes,
       regions: state.regions,
       annotations: state.annotations,
+      drawings: state.drawings,
       focusedNodeId: state.focusedNodeId,
     }
     const MAX = 100
@@ -363,12 +404,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       nodes: state.nodes,
       regions: state.regions,
       annotations: state.annotations,
+      drawings: state.drawings,
       focusedNodeId: state.focusedNodeId,
     }
     set({
       nodes: prev.nodes,
       regions: prev.regions,
       annotations: prev.annotations,
+      drawings: prev.drawings ?? {},
       focusedNodeId: prev.focusedNodeId,
       history: state.history.slice(0, -1),
       future: [...state.future, current],
@@ -383,12 +426,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       nodes: state.nodes,
       regions: state.regions,
       annotations: state.annotations,
+      drawings: state.drawings,
       focusedNodeId: state.focusedNodeId,
     }
     set({
       nodes: next.nodes,
       regions: next.regions,
       annotations: next.annotations,
+      drawings: next.drawings ?? {},
       focusedNodeId: next.focusedNodeId,
       history: [...state.history, current],
       future: state.future.slice(0, -1),
@@ -404,12 +449,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const state = get()
     const nodeId = generateId()
     const defaultSize = size ?? PANEL_DEFAULT_SIZES[panelType]
-    // If the caller provided an explicit position (e.g. a drop at the cursor),
-    // respect it exactly — overlapping is fine, the user picked the spot.
-    // Otherwise run smart placement so auto-created nodes don't overlap.
-    const origin = position
-      ? position
-      : findFreePosition(state.nodes, state.focusedNodeId, defaultSize, undefined)
+    // `position` is a preferred placement (cursor, drop point). If the spot is
+    // free we use it as-is; if it would overlap an existing node we slide to
+    // the nearest free slot. When no position is given, smart placement runs
+    // from the focused/most-recent node.
+    const origin = findFreePosition(state.nodes, state.focusedNodeId, defaultSize, position)
 
     const node: CanvasNodeState = {
       id: nodeId,
@@ -456,7 +500,15 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 
   finalizeRemoveNode(nodeId) {
     const { [nodeId]: _, ...rest } = get().nodes
-    set({ nodes: rest })
+    // Drop any connections whose endpoint just disappeared. Otherwise stale
+    // edges accumulate in canvasStore and the renderer tries to draw to ids
+    // that no longer exist.
+    const conns = get().connections
+    const survivingConns: Record<string, CanvasConnection> = {}
+    for (const c of Object.values(conns)) {
+      if (c.from !== nodeId && c.to !== nodeId) survivingConns[c.id] = c
+    }
+    set({ nodes: rest, connections: survivingConns })
   },
 
   setNodeAnimationState(nodeId, state) {
@@ -875,8 +927,18 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       state.pushHistory()
     }
 
-    // Collect node IDs to remove (selected nodes + region contents if requested)
+    // Collect node IDs to remove (selected nodes + region contents if requested).
+    // When NOT including region contents, exclude any selected node that lives
+    // inside a selected region — selectRegions() cascades into the children, so
+    // without this exclusion the "region only" path would still delete them.
     const nodeIdsToRemove = new Set(state.selectedNodeIds)
+    if (!includeRegionContents && state.selectedRegionIds.size > 0) {
+      for (const node of Object.values(state.nodes)) {
+        if (node.regionId && state.selectedRegionIds.has(node.regionId)) {
+          nodeIdsToRemove.delete(node.id)
+        }
+      }
+    }
     for (const regionId of state.selectedRegionIds) {
       if (includeRegionContents) {
         for (const node of Object.values(state.nodes)) {
@@ -1093,6 +1155,16 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     })
   },
 
+  setRegionDefaultCwd(id, defaultCwd) {
+    set((state) => {
+      const region = state.regions[id]
+      if (!region) return state
+      return {
+        regions: { ...state.regions, [id]: { ...region, defaultCwd } },
+      }
+    })
+  },
+
   // --- Containment ---
 
   setNodeRegion(nodeId, regionId) {
@@ -1139,6 +1211,127 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     return regionId
   },
 
+  groupSelectedHorizontal() {
+    const state = get()
+    const selectedNodes = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+    if (selectedNodes.length === 0) return null
+
+    get().pushHistory()
+
+    const gap = 12
+    const padding = 30
+    const n = selectedNodes.length
+
+    // Roughly-square grid: prefer slightly wider than tall.
+    const cols = Math.ceil(Math.sqrt(n))
+    const rows = Math.ceil(n / cols)
+
+    // Normalize cell size to the median of the selection so the grid looks tidy.
+    const median = (xs: number[]) => {
+      const s = [...xs].sort((a, b) => a - b)
+      const m = Math.floor(s.length / 2)
+      return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+    }
+    const cellW = Math.round(median(selectedNodes.map((nd) => nd.size.width)))
+    const cellH = Math.round(median(selectedNodes.map((nd) => nd.size.height)))
+
+    // Anchor the grid at the top-left of the current selection bounds.
+    const startX = Math.min(...selectedNodes.map((nd) => nd.origin.x))
+    const startY = Math.min(...selectedNodes.map((nd) => nd.origin.y))
+
+    // Preserve current visual order: sort row-major by (y, x).
+    const sorted = [...selectedNodes].sort(
+      (a, b) => a.origin.y - b.origin.y || a.origin.x - b.origin.x,
+    )
+
+    const regionId = get().addRegion(
+      'Group',
+      { x: startX - padding, y: startY - padding },
+      {
+        width: cols * cellW + (cols - 1) * gap + padding * 2,
+        height: rows * cellH + (rows - 1) * gap + padding * 2,
+      },
+    )
+
+    set((s) => {
+      const updatedNodes = { ...s.nodes }
+      sorted.forEach((nd, i) => {
+        const col = i % cols
+        const row = Math.floor(i / cols)
+        updatedNodes[nd.id] = {
+          ...updatedNodes[nd.id],
+          origin: { x: startX + col * (cellW + gap), y: startY + row * (cellH + gap) },
+          size: { width: cellW, height: cellH },
+          regionId,
+        }
+      })
+      return { nodes: updatedNodes }
+    })
+
+    return regionId
+  },
+
+  stackSelected(axis, gap = 16) {
+    get().pushHistory()
+    set((state) => {
+      const selected = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+      if (selected.length < 2) return state
+
+      const row = axis === 'row'
+      const sorted = [...selected].sort((a, b) =>
+        row ? a.origin.x - b.origin.x : a.origin.y - b.origin.y,
+      )
+      // Anchor at the selection's top-left so the stack stays where the user
+      // already placed it.
+      const startX = Math.min(...selected.map((n) => n.origin.x))
+      const startY = Math.min(...selected.map((n) => n.origin.y))
+
+      const next = { ...state.nodes }
+      let cursor = row ? startX : startY
+      for (const n of sorted) {
+        const x = row ? cursor : startX
+        const y = row ? startY : cursor
+        next[n.id] = { ...n, origin: { x, y } }
+        cursor += (row ? n.size.width : n.size.height) + gap
+      }
+      return { nodes: next }
+    })
+  },
+
+  tidyGridSelected(gap = 16) {
+    get().pushHistory()
+    set((state) => {
+      const selected = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+      if (selected.length < 2) return state
+
+      const n = selected.length
+      const cols = Math.ceil(Math.sqrt(n))
+
+      // Use the max dimensions so nothing overlaps even with mixed sizes.
+      const cellW = Math.max(...selected.map((nd) => nd.size.width))
+      const cellH = Math.max(...selected.map((nd) => nd.size.height))
+
+      const startX = Math.min(...selected.map((nd) => nd.origin.x))
+      const startY = Math.min(...selected.map((nd) => nd.origin.y))
+
+      // Preserve visual reading order: row-major by current (y, x).
+      const sorted = [...selected].sort(
+        (a, b) => a.origin.y - b.origin.y || a.origin.x - b.origin.x,
+      )
+
+      const next = { ...state.nodes }
+      sorted.forEach((nd, i) => {
+        const col = i % cols
+        const row = Math.floor(i / cols)
+        next[nd.id] = {
+          ...nd,
+          origin: { x: startX + col * (cellW + gap), y: startY + row * (cellH + gap) },
+        }
+      })
+      return { nodes: next }
+    })
+  },
+
   dissolveRegion(regionId) {
     set((state) => {
       // Detach all children
@@ -1157,6 +1350,43 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     })
   },
 
+  addConnection(from, to) {
+    if (from === to) return null
+    const state = get()
+    // Endpoints can be either canvas nodes OR annotations (sticky notes) so
+    // that note↔terminal, note↔note and note↔portal wires work the same way
+    // as terminal↔terminal — matching Maestri's behavior.
+    const fromExists = !!state.nodes[from] || !!state.annotations[from]
+    const toExists   = !!state.nodes[to]   || !!state.annotations[to]
+    if (!fromExists || !toExists) return null
+    // No parallel duplicates. Undirected: (from,to) and (to,from) count as the same.
+    for (const c of Object.values(state.connections)) {
+      if ((c.from === from && c.to === to) || (c.from === to && c.to === from)) return c.id
+    }
+    const id = generateId()
+    set({ connections: { ...state.connections, [id]: { id, from, to } } })
+    return id
+  },
+
+  removeConnection(id) {
+    const conns = get().connections
+    if (!conns[id]) return
+    const { [id]: _, ...rest } = conns
+    // Also clear any in-flight marker so the next render doesn't try to keep
+    // pulsing a wire that no longer exists.
+    const next = new Set(get().inFlightConnectionIds)
+    next.delete(id)
+    set({ connections: rest, inFlightConnectionIds: next })
+  },
+
+  setInflightConnection(id, active) {
+    const cur = get().inFlightConnectionIds
+    if (active === cur.has(id)) return
+    const next = new Set(cur)
+    if (active) next.add(id); else next.delete(id)
+    set({ inFlightConnectionIds: next })
+  },
+
   addAnnotation(type, origin, content) {
     const id = generateId()
     const annotation: CanvasAnnotation = {
@@ -1166,6 +1396,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       size: type === 'stickyNote' ? { width: 180, height: 140 } : { width: 120, height: 28 },
       content: content || '',
       color: type === 'stickyNote' ? 'rgba(255, 221, 87, 0.92)' : 'transparent',
+      ...(type === 'textLabel' ? { autoSize: true } : {}),
     }
     // Mark the new annotation to enter edit mode on first render — unless the
     // caller provided initial content (e.g. session restore).
@@ -1176,10 +1407,49 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     return id
   },
 
+  addImageAnnotation(origin, imagePath, size) {
+    const id = generateId()
+    const finalSize = size ?? { width: 400, height: 300 }
+    // Avoid dropping an image directly underneath a panel (panels render at
+    // zIndex 1000+ — an image hidden behind one looks like nothing happened).
+    // Search outward from the requested origin for a slot that doesn't overlap
+    // an existing node.
+    const state = get()
+    const safeOrigin = findFreePosition(
+      state.nodes,
+      state.focusedNodeId,
+      finalSize,
+      origin,
+    )
+    const annotation: CanvasAnnotation = {
+      id,
+      type: 'image',
+      origin: safeOrigin,
+      size: finalSize,
+      content: '',
+      color: 'transparent',
+      imagePath,
+    }
+    set((s) => ({
+      annotations: { ...s.annotations, [id]: annotation },
+    }))
+    return id
+  },
+
   removeAnnotation(id) {
     set((state) => {
       const { [id]: _, ...rest } = state.annotations
-      return { annotations: rest }
+      // Drop any wires that touched this annotation so the SVG overlay doesn't
+      // try to draw to a vanished endpoint.
+      const survivingConns: Record<string, CanvasConnection> = {}
+      for (const c of Object.values(state.connections)) {
+        if (c.from !== id && c.to !== id) survivingConns[c.id] = c
+      }
+      const nextInflight = new Set(state.inFlightConnectionIds)
+      for (const cid of state.inFlightConnectionIds) {
+        if (!survivingConns[cid]) nextInflight.delete(cid)
+      }
+      return { annotations: rest, connections: survivingConns, inFlightConnectionIds: nextInflight }
     })
   },
 
@@ -1237,13 +1507,67 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       const ann = state.annotations[id]
       if (!ann) return state
       const w = Math.max(60, size.width)
-      const h = Math.max(40, size.height)
+      const h = Math.max(28, size.height)
       return {
         annotations: {
           ...state.annotations,
-          [id]: { ...ann, size: { width: w, height: h } },
+          [id]: { ...ann, size: { width: w, height: h }, autoSize: false },
         },
       }
+    })
+  },
+
+  setDrawMode(active) {
+    set({ drawMode: active })
+  },
+
+  addDrawing(points, opts) {
+    if (points.length < 2) return ''
+    get().pushHistory()
+    const id = generateId()
+    const drawing: CanvasDrawing = {
+      id,
+      points,
+      color: opts?.color ?? 'rgba(255,90,90,0.95)',
+      strokeWidth: opts?.strokeWidth ?? 3,
+    }
+    set((state) => ({ drawings: { ...state.drawings, [id]: drawing } }))
+    return id
+  },
+
+  removeDrawing(id) {
+    if (!get().drawings[id]) return
+    get().pushHistory()
+    set((state) => {
+      const { [id]: _, ...rest } = state.drawings
+      const selectedDrawingId = state.selectedDrawingId === id ? null : state.selectedDrawingId
+      return { drawings: rest, selectedDrawingId }
+    })
+  },
+
+  selectDrawing(id) {
+    set({ selectedDrawingId: id })
+  },
+
+  moveDrawing(id, delta) {
+    if (!get().drawings[id]) return
+    if (delta.x === 0 && delta.y === 0) return
+    get().pushHistory()
+    set((state) => {
+      const d = state.drawings[id]
+      if (!d) return state
+      const points = d.points.map((p) => ({ x: p.x + delta.x, y: p.y + delta.y }))
+      return { drawings: { ...state.drawings, [id]: { ...d, points } } }
+    })
+  },
+
+  setDrawingColor(id, color) {
+    if (!get().drawings[id]) return
+    get().pushHistory()
+    set((state) => {
+      const d = state.drawings[id]
+      if (!d) return state
+      return { drawings: { ...state.drawings, [id]: { ...d, color } } }
     })
   },
 
@@ -1260,7 +1584,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     })
   },
 
-  loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions, annotations) {
+  loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions, annotations, connections) {
     // Compute next counters from loaded data
     const nodeList = Object.values(nodes)
     const maxZOrder = nodeList.reduce((max, n) => Math.max(max, n.zOrder), -1)
@@ -1272,10 +1596,18 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       idleNodes[id] = { ...node, animationState: 'idle' }
     }
 
+    // Drop any persisted connection whose endpoint node no longer exists.
+    const surviving: Record<string, CanvasConnection> = {}
+    for (const c of Object.values(connections ?? {})) {
+      if (idleNodes[c.from] && idleNodes[c.to]) surviving[c.id] = c
+    }
+
     set({
       nodes: idleNodes,
       regions: regions ?? {},
       annotations: annotations ?? {},
+      connections: surviving,
+      inFlightConnectionIds: new Set<string>(),
       viewportOffset,
       zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
       focusedNodeId,

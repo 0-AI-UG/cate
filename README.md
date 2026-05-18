@@ -26,6 +26,14 @@
 
 Cate is an Electron desktop app for arranging development tools in freeform space. You can mix floating canvas panels with docked tabs and splits, detach panels into separate windows, and keep multiple workspaces synced across sessions.
 
+## Why Cate?
+
+Alt-tab works fine — until you have 12 terminals, 6 files open, docs in another window, and notes scattered across desktops. At that point switching windows becomes the actual bottleneck.
+
+Cate replaces that pile of windows with **one persistent canvas per project**. Terminals, editors, browsers, and notes sit where you put them, grouped how you think about them, and they're still there when you come back the next day.
+
+> Cate is **not a window manager replacement**. Tiling/scrolling WMs (Hyprland, Niri, GlazeWM, KDE) are great if you mainly want to arrange OS windows. Cate is a spatial canvas around a single project's tools — closer to Figma's infinite canvas than to a WM.
+
 ## Features
 
 - **Infinite canvas + docking** — arrange panels spatially, or dock them into tabs and splits
@@ -40,9 +48,9 @@ Cate is an Electron desktop app for arranging development tools in freeform spac
 - **Layouts and commands** — command palette, saved layouts, workspace export/import, global search, and keyboard shortcuts
 - **Desktop polish** — auto-save/session restore, optional native macOS window tabs, and update checks
 
-## Download
+## Install
 
-This repository currently targets **v0.3.3**.
+If you just want to use Cate, download a prebuilt release — don't build from source. This repository currently targets **v0.3.3**.
 
 | Platform | Formats | Link |
 |----------|---------|------|
@@ -55,7 +63,11 @@ This repository currently targets **v0.3.3**.
 > xattr -cr /Applications/Cate.app
 > ```
 
+> **Linux note:** on Steam Deck or other read-only-root distros, prefer the `tar.gz` portable build. If the AppImage fails to launch, try `--no-sandbox` as a fallback (e.g. `./Cate.AppImage --no-sandbox`).
+
 ## Build from Source
+
+> The steps below are for **contributors** — use the prebuilt release above for daily use.
 
 ### Prerequisites
 

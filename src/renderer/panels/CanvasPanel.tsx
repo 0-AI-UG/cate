@@ -11,12 +11,12 @@ import Canvas from '../canvas/Canvas'
 import CanvasNode from '../canvas/CanvasNode'
 import CanvasToolbar from '../canvas/CanvasToolbar'
 import CanvasDropZone from '../docking/CanvasDropZone'
-import Minimap from '../canvas/Minimap'
 import { ShortcutHintOverlay } from '../ui/ShortcutHintOverlay'
 import WelcomePage from '../ui/WelcomePage'
 import type { PanelType, Point, DockLayoutNode, PanelLocation, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, setActiveCanvasPanelId } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStore } from '../stores/uiStore'
 import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
@@ -193,7 +193,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   // so off-screen terminals/editors don't hold live xterm/Monaco instances.
   const nodeIds = useNodeIds(store)
   const visibleNodeIds = useVisibleNodeIds(store)
-  const showMinimap = useSettingsStore((s) => s.showMinimap)
 
   const onCreateAtPoint = useCallback(
     (type: PanelType, canvasPoint: Point) => {
@@ -284,7 +283,21 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   }, [store, getViewCenter])
 
   const onNewTextLabel = useCallback(() => {
-    store.getState().addAnnotation('textLabel', getViewCenter())
+    // Enter placement mode: the next left-click on the canvas drops the label
+    // at the click point in edit mode. Click-to-place beats auto-centering
+    // because the center is usually occupied by panels.
+    useUIStore.getState().setPlacementMode('textLabel')
+  }, [])
+
+  const onAddImage = useCallback(async (point?: { x: number; y: number }) => {
+    const paths = await window.electronAPI.openImageDialog()
+    if (!paths || paths.length === 0) return
+    const origin = point ?? getViewCenter()
+    let offset = 0
+    for (const p of paths) {
+      store.getState().addImageAnnotation({ x: origin.x + offset, y: origin.y + offset }, p)
+      offset += 32
+    }
   }, [store, getViewCenter])
 
   const onAutoLayout = useCallback(() => {
@@ -311,8 +324,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
           ))}
         </Canvas>
 
-        {showMinimap && <Minimap />}
-
         <CanvasDropZone canvasStoreApi={store} />
 
         <CanvasToolbar
@@ -324,6 +335,7 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
           onNewRegion={onNewRegion}
           onNewStickyNote={onNewStickyNote}
           onNewTextLabel={onNewTextLabel}
+          onAddImage={() => onAddImage()}
           onAutoLayout={onAutoLayout}
           onZoomToFit={onZoomToFit}
           onZoomIn={onZoomIn}

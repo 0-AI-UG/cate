@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { FileExplorer } from './FileExplorer'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
-import { FolderOpen } from '@phosphor-icons/react'
+import { FolderOpen, FolderPlus, X } from '@phosphor-icons/react'
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -32,8 +32,17 @@ export const FileExplorerSidebar: React.FC = () => {
   })
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const setWorkspaceRootPath = useAppStore((s) => s.setWorkspaceRootPath)
+  const addAdditionalRoot = useAppStore((s) => s.addAdditionalRoot)
+  const removeAdditionalRoot = useAppStore((s) => s.removeAdditionalRoot)
 
   const rootPath = selectedWorkspace?.rootPath ?? ''
+  const additionalRoots = selectedWorkspace?.additionalRoots ?? []
+
+  const handleAddRoot = useCallback(async () => {
+    const path = await window.electronAPI.openFolderDialog()
+    if (!path || !selectedWorkspaceId) return
+    addAdditionalRoot(selectedWorkspaceId, path)
+  }, [selectedWorkspaceId, addAdditionalRoot])
 
   // ---------------------------------------------------------------------------
   // Width resize (right edge drag handle)
@@ -86,7 +95,31 @@ export const FileExplorerSidebar: React.FC = () => {
           {/* File explorer content */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             {rootPath ? (
-              <FileExplorer rootPath={rootPath} />
+              <>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <FileExplorer rootPath={rootPath} />
+                  {additionalRoots.map((p) => (
+                    <div key={p} className="group relative border-t border-subtle/40 mt-1 pt-1">
+                      <button
+                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted hover:text-primary hover:bg-hover"
+                        title="Remove root"
+                        onClick={() => selectedWorkspaceId && removeAdditionalRoot(selectedWorkspaceId, p)}
+                      >
+                        <X size={11} />
+                      </button>
+                      <FileExplorer rootPath={p} />
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 mt-1 mx-2 mb-2 text-[11px] rounded text-muted hover:text-primary bg-surface-2 hover:bg-hover border border-subtle transition-colors"
+                  onClick={handleAddRoot}
+                  title="Add another folder to this workspace"
+                >
+                  <FolderPlus size={12} />
+                  Add Folder
+                </button>
+              </>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-muted text-xs gap-3 p-4">
                 <span>No folder open</span>

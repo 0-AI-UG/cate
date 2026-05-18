@@ -1,19 +1,20 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
-import { X, CaretRight, Terminal as TerminalIcon, Globe, FileCode, GitBranch, Folder, FolderPlus, SquaresFour, List } from '@phosphor-icons/react'
+import { CaretRight, Terminal as TerminalIcon, Globe, FileCode, GitBranch, Folder, FolderPlus, SquaresFour, List, PencilSimple, DotsThree } from '@phosphor-icons/react'
 import type { WorkspaceState, PanelType, PanelLocation } from '../../shared/types'
 import { ALL_ZONES } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS, getCanvasOperations } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
+import { useCanvasStore } from '../stores/canvasStore'
 import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
-import { useUIStore } from '../stores/uiStore'
-import { useProjectUsage } from '../stores/usageStore'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
+import { TerminalNotificationInline, useTerminalNotifications } from './TerminalNotificationsButton'
+import { useNotificationStore } from '../stores/notificationStore'
 
 // -----------------------------------------------------------------------------
 // Panel jump helper — focus a panel inside a workspace, switching workspace
-// first if necessary. Mirrors notificationStore.executeAction polling logic.
+// first if necessary.
 // -----------------------------------------------------------------------------
 
 async function focusWorkspacePanel(workspaceId: string, panelId: string): Promise<void> {
@@ -54,6 +55,54 @@ async function focusWorkspacePanel(workspaceId: string, panelId: string): Promis
   }
 }
 
+interface TerminalPanelRowProps {
+  panel: { id: string; type: PanelType; title?: string; filePath?: string; url?: string }
+  indent: boolean
+  dot: string | null
+  hasPorts: boolean
+  onClick: (e: React.MouseEvent) => void
+}
+
+const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, dot, hasPorts, onClick }) => {
+  const Icon = TerminalIcon
+  const label = panel.title || panel.filePath?.split('/').pop() || panel.url || panel.type
+  const notifications = useTerminalNotifications(panel.id)
+  const hasNotif = notifications.length > 0
+  const dismissNotification = useNotificationStore((s) => s.dismissNotification)
+
+  const handleRowClick = useCallback((e: React.MouseEvent) => {
+    if (hasNotif) {
+      for (const n of notifications) dismissNotification(n.id)
+    }
+    onClick(e)
+  }, [hasNotif, notifications, dismissNotification, onClick])
+
+  return (
+    <button
+      className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
+        indent ? 'pl-14' : 'pl-7'
+      }`}
+      onClick={handleRowClick}
+      title={panel.filePath || panel.url || label}
+    >
+      <Icon size={11} className="flex-shrink-0 opacity-60" />
+      <span className={`truncate min-w-0 ${hasNotif ? 'flex-shrink-0 cate-notif-pulse' : 'flex-1'}`}>
+        {label}
+      </span>
+      <TerminalNotificationInline notifications={notifications} />
+      {!hasNotif && dot && (
+        <span
+          className="flex-shrink-0 w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: dot }}
+        />
+      )}
+      {!hasNotif && !dot && hasPorts && (
+        <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
+      )}
+    </button>
+  )
+}
+
 const PANEL_ICONS: Record<PanelType, typeof TerminalIcon> = {
   terminal: TerminalIcon,
   browser: Globe,
@@ -62,27 +111,6 @@ const PANEL_ICONS: Record<PanelType, typeof TerminalIcon> = {
   fileExplorer: Folder,
   projectList: List,
   canvas: SquaresFour,
-}
-
-function formatTokensBadge(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return String(n)
-}
-
-const PULSE_KEYFRAMES = `
-@keyframes sidebar-pulse-ring {
-  0%   { transform: scale(1);   opacity: 0.6; }
-  100% { transform: scale(2.2); opacity: 0; }
-}
-`
-let stylesInjected = false
-function ensurePulseStyles() {
-  if (stylesInjected) return
-  stylesInjected = true
-  const style = document.createElement('style')
-  style.textContent = PULSE_KEYFRAMES
-  document.head.appendChild(style)
 }
 
 const COLOR_NAMES: Record<string, string> = {
@@ -107,49 +135,56 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   onClick,
   onClose,
 }) => {
-  ensurePulseStyles()
-
-  // Single store read for all workspace status data (avoids multiple O(n) loops)
+  // Single store read for all workspace status data
   const wsStatus = useStatusStore(useShallow((s) => {
     const ws = s.workspaces[workspace.id]
     if (!ws) return null
     return {
       listeningPorts: ws.listeningPorts,
-      terminalCwd: ws.terminalCwd,
       agentState: ws.agentState,
     }
   }))
 
-  const gitInfo = useStatusStore((s) => s.gitInfo[workspace.id] ?? null)
   const liveLocations = useDockStore((s) => s.panelLocations)
   const panelLocations = isSelected ? liveLocations : workspace.dockState?.locations
-  const projectUsage = useProjectUsage(workspace.rootPath || undefined)
 
-  // Derive ports, cwd, claudeState from the single store snapshot
-  const ports = useMemo(() => {
-    if (!wsStatus) return []
-    const allPorts = new Set<number>()
-    for (const terminalPorts of Object.values(wsStatus.listeningPorts)) {
-      for (const port of terminalPorts) allPorts.add(port)
-    }
-    return Array.from(allPorts).sort((a, b) => a - b)
-  }, [wsStatus?.listeningPorts])
+  // useWorkspaceList's equality fn ignores `panels`, so subscribe to this
+  // workspace's panels separately to keep the tree in sync as panels are
+  // added/removed/renamed.
+  const panels = useAppStore(useShallow((s) => {
+    const ws = s.workspaces.find((w) => w.id === workspace.id)
+    return ws?.panels ?? workspace.panels
+  }))
 
-  const cwd = useMemo(() => {
-    if (!wsStatus) return null
-    const cwds = Object.values(wsStatus.terminalCwd)
-    return cwds.length > 0 ? cwds[0] : null
-  }, [wsStatus?.terminalCwd])
+  // Set of panelIds living on a canvas (for the selected workspace, use the
+  // live canvasStore; otherwise fall back to the workspace's persisted nodes).
+  const liveCanvasPanelIds = useCanvasStore(useShallow((s) => {
+    const ids = new Set<string>()
+    for (const node of Object.values(s.nodes)) ids.add(node.panelId)
+    return ids
+  }))
+  const canvasPanelIds = useMemo(() => {
+    if (isSelected) return liveCanvasPanelIds
+    const ids = new Set<string>()
+    for (const node of Object.values(workspace.canvasNodes ?? {})) ids.add(node.panelId)
+    return ids
+  }, [isSelected, liveCanvasPanelIds, workspace.canvasNodes])
+
+  // Map terminal panel id → agent state for activity dots
+  const agentStateByPanel = wsStatus?.agentState ?? {}
+  const portsByPanel = wsStatus?.listeningPorts ?? {}
 
   const [isExpanded, setIsExpanded] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
+  const [isContextActive, setIsContextActive] = useState(false)
   const renameInputRef = useRef<HTMLInputElement>(null)
 
   const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (!window.electronAPI) return
+    setIsContextActive(true)
     const colorSubmenu: NativeContextMenuItem[] = [
       {
         id: 'color:',
@@ -168,7 +203,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       { label: 'Change Color', submenu: colorSubmenu },
       { type: 'separator' },
       { id: 'select-folder', label: 'Select Project Folder' },
-      { id: 'agent-setup', label: 'Agent Setup' },
       { id: 'copy-cwd', label: 'Copy Working Directory' },
       { type: 'separator' },
       { id: 'duplicate', label: 'Duplicate Workspace' },
@@ -177,6 +211,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       { id: 'remove', label: 'Close Workspace' },
     ]
     const id = await window.electronAPI.showContextMenu(items)
+    setIsContextActive(false)
     if (!id) return
     const app = useAppStore.getState()
     if (id.startsWith('color:')) {
@@ -194,10 +229,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         if (path) app.setWorkspaceRootPath(workspace.id, path)
         break
       }
-      case 'agent-setup':
-        app.selectWorkspace(workspace.id)
-        useUIStore.getState().setActiveRightSidebarView('aiConfig')
-        break
       case 'copy-cwd': {
         const statusState = useStatusStore.getState()
         const ws = statusState.workspaces[workspace.id]
@@ -216,7 +247,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     }
   }, [workspace.id, workspace.name, workspace.rootPath, workspace.color, workspace.panels, isSelected])
 
-  // Focus rename input when entering rename mode
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {
       renameInputRef.current.focus()
@@ -232,27 +262,31 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     setIsRenaming(false)
   }, [renameValue, workspace.id, workspace.name])
 
-  const panelCount = Object.keys(workspace.panels).length
+  const panelCount = Object.keys(panels).length
 
-  // Sorted panel list for expanded view (group by type for stability)
+  // Sorted panel list grouped by type
   const panelList = useMemo(() => {
-    const TYPE_ORDER: Record<string, number> = { terminal: 0, editor: 1, browser: 2, git: 3, fileExplorer: 4, projectList: 5, canvas: 6 }
-    return Object.values(workspace.panels).slice().sort((a, b) => {
+    const TYPE_ORDER: Record<string, number> = { canvas: 0, terminal: 1, editor: 2, browser: 3, git: 4, fileExplorer: 5, projectList: 6 }
+    return Object.values(panels).slice().sort((a, b) => {
       const ta = TYPE_ORDER[a.type] ?? 99
       const tb = TYPE_ORDER[b.type] ?? 99
       if (ta !== tb) return ta - tb
       return (a.title || '').localeCompare(b.title || '')
     })
-  }, [workspace.panels])
+  }, [panels])
 
   const handlePanelClick = useCallback(async (e: React.MouseEvent, panelId: string) => {
     e.stopPropagation()
     await focusWorkspacePanel(workspace.id, panelId)
   }, [workspace.id])
 
-  // Empty state: workspace has no folder selected yet — render a muted
-  // "Add new Workspace" card that opens the folder picker on click.
-  // NOTE: placed after all hooks to keep hook order stable across renders.
+  const handleRenameClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    setRenameValue(workspace.name || workspace.rootPath?.split('/').pop() || 'Workspace')
+    setIsRenaming(true)
+  }, [workspace.name, workspace.rootPath])
+
+  // Empty state: workspace has no folder selected yet — flat row that opens picker
   if (!workspace.rootPath) {
     const handlePickFolder = async (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -264,135 +298,151 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     }
     return (
       <div
-        className={`group relative rounded-xl cursor-pointer transition-colors px-2.5 py-2 border border-dashed ${
-          isSelected
-            ? 'border-strong bg-surface-5 text-secondary'
-            : 'border-subtle bg-surface-4 text-muted hover:text-secondary hover:border-strong hover:bg-surface-5'
-        }`}
+        className={`group flex items-center gap-2 h-8 px-2 rounded-md cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
+          isContextActive ? 'ring-1 ring-strong' : ''
+        } ${isSelected ? 'bg-surface-3' : ''}`}
         onClick={handlePickFolder}
         onContextMenu={handleContextMenu}
-        title="Click to choose a project folder"
+        title={workspace.rootPathError || 'Click to choose a project folder'}
       >
-        <div className="flex items-center gap-2.5">
-          <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center border border-dashed border-subtle">
-            <FolderPlus size={14} className="opacity-70" />
-          </div>
-          <span className="flex-1 min-w-0 text-sm font-medium truncate">
-            Add new Workspace
-          </span>
-          <button
-            className="flex-shrink-0 opacity-40 hover:opacity-100 transition-opacity"
-            onClick={(e) => {
-              e.stopPropagation()
-              onClose()
-            }}
-            title="Close Workspace"
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <div className="mt-1 text-[11px] opacity-60 truncate">
-          {workspace.isRootPathPending
-            ? 'Connecting workspace...'
-            : workspace.rootPathError || 'Choose a project folder'}
-        </div>
+        <FolderPlus size={14} className="flex-shrink-0 opacity-60" />
+        <span className="flex-1 min-w-0 text-[14px] truncate italic">
+          {workspace.isRootPathPending ? 'Connecting…' : 'Add Workspace'}
+        </span>
+        <button
+          className="flex-shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+          onClick={(e) => { e.stopPropagation(); onClose() }}
+          title="Close Workspace"
+        >
+          <DotsThree size={14} />
+        </button>
       </div>
     )
   }
 
-  // Title: custom name if renamed, otherwise last folder segment of the path.
-  const lastSegment = workspace.rootPath ? workspace.rootPath.split('/').filter(Boolean).pop() || 'Workspace' : 'Workspace'
+  const lastSegment = workspace.rootPath.split('/').filter(Boolean).pop() || 'Workspace'
   const hasCustomName = workspace.name && workspace.name !== lastSegment && workspace.name !== 'Workspace'
   const displayTitle = hasCustomName ? workspace.name! : lastSegment
 
-  // Shorten home dir prefix to ~ for the full-path subtitle.
-  const home = typeof window !== 'undefined'
-    ? (window as unknown as { process?: { env?: { HOME?: string } } })?.process?.env?.HOME || ''
-    : ''
-  const fullPath = workspace.rootPath
-    ? (home && workspace.rootPath.startsWith(home) ? '~' + workspace.rootPath.slice(home.length) : workspace.rootPath)
-    : ''
-  const displayCwd = cwd
-    ? (home && cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd)
-    : null
-
-  const gitDisplay = gitInfo
-    ? `${gitInfo.branch}${gitInfo.isDirty ? '*' : ''}`
-    : null
-
-  // Only surface cwd when it differs from the workspace root
-  const showCwd = displayCwd && displayCwd !== fullPath
-  const hasInfoRow = gitDisplay || showCwd
-
-  // Resolve effective accent color — empty string means "use default UI color"
   const hasColor = !!workspace.color
   const accent = workspace.color || ''
 
-  // Accent styles — subtle tint, never fully saturated fills.
-  const badgeStyle: React.CSSProperties = hasColor
-    ? {
-        backgroundColor: `${accent}1a`, // ~10% alpha tint
-        borderColor: `${accent}55`,
-      }
-    : {}
-  const badgeFg = hasColor ? accent : undefined
+  // Activity dot color for terminal panels — derived from agent state
+  const dotColorForAgent = (state: string | undefined): string | null => {
+    if (!state) return null
+    if (state === 'working' || state === 'thinking' || state === 'running') return '#7aa074'
+    if (state === 'waiting' || state === 'needsInput') return '#c08a5a'
+    if (state === 'error' || state === 'failed') return '#c07070'
+    return null
+  }
 
-  // Selected state adds a faint accent ring on the card when a color is set.
-  const cardAccentStyle: React.CSSProperties = hasColor && isSelected
-    ? { borderColor: `${accent}66` }
-    : {}
+  // Partition: canvas panels (parents), free panels (siblings to canvas).
+  // A panel is a canvas child when EITHER the dock store says so OR a canvas
+  // node references it. Canvas nodes are the source of truth for nodes that
+  // were added directly to the canvas (vs. dragged from a dock zone).
+  const isCanvasChild = (id: string) =>
+    panelLocations?.[id]?.type === 'canvas' || canvasPanelIds.has(id)
+  const canvasPanels = panelList.filter((p) => p.type === 'canvas')
+  const canvasIds = new Set(canvasPanels.map((c) => c.id))
+  const childrenByCanvas: Record<string, typeof panelList> = {}
+  const orphanCanvasChildren: typeof panelList = []
+  const freePanels: typeof panelList = []
+  for (const p of panelList) {
+    if (p.type === 'canvas') continue
+    if (isCanvasChild(p.id)) {
+      const loc = panelLocations?.[p.id]
+      const cid = loc?.type === 'canvas' ? loc.canvasId : ''
+      // Attach to a specific canvas if known; otherwise to the first canvas in
+      // this workspace (canvasId is often empty for the implicit canvas).
+      const target = cid && canvasIds.has(cid) ? cid : canvasPanels[0]?.id
+      if (target) (childrenByCanvas[target] ||= []).push(p)
+      else orphanCanvasChildren.push(p)
+    } else {
+      freePanels.push(p)
+    }
+  }
+
+  const renderPanelRow = (p: typeof panelList[number], indent = false) => {
+    if (p.type === 'terminal') {
+      return (
+        <TerminalPanelRow
+          key={p.id}
+          panel={p}
+          indent={indent}
+          dot={dotColorForAgent(agentStateByPanel[p.id])}
+          hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
+          onClick={(e) => handlePanelClick(e, p.id)}
+        />
+      )
+    }
+    const Icon = PANEL_ICONS[p.type] ?? SquaresFour
+    const label = p.title || p.filePath?.split('/').pop() || p.url || p.type
+    const hasPorts = (portsByPanel[p.id]?.length ?? 0) > 0
+    return (
+      <button
+        key={p.id}
+        className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
+          indent ? 'pl-14' : 'pl-7'
+        }`}
+        onClick={(e) => handlePanelClick(e, p.id)}
+        title={p.filePath || p.url || label}
+      >
+        <Icon size={11} className="flex-shrink-0 opacity-60" />
+        <span className="truncate min-w-0 flex-1">{label}</span>
+        {hasPorts && (
+          <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
+        )}
+      </button>
+    )
+  }
 
   return (
-    <div
-      className={`group relative rounded-xl cursor-pointer transition-colors px-2.5 py-2 border text-primary ${
-        isSelected
-          ? 'bg-surface-5 border-strong'
-          : 'bg-surface-4 border-subtle hover:bg-surface-5 hover:border-strong'
-      }`}
-      style={cardAccentStyle}
-      onClick={onClick}
-      onContextMenu={handleContextMenu}
-    >
-      {/* Row 1: Icon tile + Title + Close */}
-      <div className="flex items-center gap-2.5">
+    <div onContextMenu={handleContextMenu}>
+      {/* Project row */}
+      <div
+        className={`group flex items-center gap-1 h-8 px-1.5 rounded-md cursor-pointer transition-colors outline-none ${
+          isContextActive ? 'ring-1 ring-strong' : ''
+        } ${
+          isSelected
+            ? 'bg-surface-3 text-primary'
+            : 'text-secondary hover:text-primary hover:bg-hover'
+        }`}
+        style={hasColor ? {
+          backgroundColor: isSelected ? `${accent}26` : `${accent}14`,
+        } : undefined}
+        onClick={onClick}
+      >
+        {/* Chevron / expand toggle */}
         <button
-          className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center relative group/badge border ${
-            hasColor ? '' : 'border-subtle bg-surface-3'
-          }`}
-          style={badgeStyle}
+          className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-muted hover:text-primary focus:outline-none"
           onClick={(e) => {
             e.stopPropagation()
             if (panelCount > 0) setIsExpanded((v) => !v)
           }}
-          title={panelCount > 0 ? (isExpanded ? 'Collapse panels' : 'Expand panels') : undefined}
+          title={panelCount > 0 ? (isExpanded ? 'Collapse' : 'Expand') : undefined}
+          disabled={panelCount === 0}
         >
-          {panelCount > 0 ? (
-            <>
-              <span
-                className="text-[11px] font-bold group-hover/badge:opacity-0 transition-opacity text-secondary"
-                style={badgeFg ? { color: badgeFg } : undefined}
-              >
-                {panelCount}
-              </span>
-              <CaretRight
-                size={13}
-                className={`absolute opacity-0 group-hover/badge:opacity-100 transition-all text-secondary ${isExpanded ? 'rotate-90' : ''}`}
-                style={badgeFg ? { color: badgeFg } : undefined}
-              />
-            </>
-          ) : (
-            <Folder
-              size={14}
-              className="text-muted"
-              style={badgeFg ? { color: badgeFg } : undefined}
+          {panelCount > 0 && (
+            <CaretRight
+              size={10}
+              className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}
             />
           )}
         </button>
 
+        {/* Folder icon (tinted by accent if set) */}
+        <Folder
+          size={14}
+          weight="bold"
+          className="flex-shrink-0 opacity-90"
+          style={hasColor ? { color: accent } : undefined}
+        />
+
+        {/* Name (or inline rename input) */}
         {isRenaming ? (
           <input
             ref={renameInputRef}
-            className="flex-1 min-w-0 text-sm font-semibold bg-surface-3 border border-subtle rounded px-1 py-0 outline-none text-primary"
+            className="flex-1 min-w-0 text-[14px] bg-surface-3 border border-subtle rounded px-1 py-0 outline-none text-primary"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onBlur={handleRenameSubmit}
@@ -404,139 +454,58 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           />
         ) : (
           <span
-            className="flex-1 min-w-0 text-sm font-semibold truncate"
-            title={fullPath || 'Click to rename'}
-            onClick={(e) => {
-              if (!isSelected) return
-              e.stopPropagation()
-              setRenameValue(workspace.name || workspace.rootPath.split('/').pop() || 'Workspace')
-              setIsRenaming(true)
-            }}
+            className="flex-1 min-w-0 text-[14px] truncate"
+            title={workspace.rootPath}
           >
             {displayTitle}
           </span>
         )}
 
+        {/* Panel count badge (only when collapsed and has panels) */}
+        {panelCount > 0 && !isExpanded && (
+          <span className="flex-shrink-0 text-[10px] text-secondary font-semibold opacity-80 group-hover:opacity-100 transition-opacity">
+            {panelCount}
+          </span>
+        )}
+
+        {/* Hover actions: dots menu + rename */}
         <button
-          className="flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
-          onClick={(e) => {
-            e.stopPropagation()
-            onClose()
-          }}
-          title="Close Workspace"
+          className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-80 hover:!opacity-100 text-secondary hover:text-primary transition-opacity focus:outline-none"
+          onClick={(e) => { e.stopPropagation(); handleContextMenu(e) }}
+          title="More actions"
         >
-          <X size={14} />
+          <DotsThree size={14} weight="bold" />
+        </button>
+        <button
+          className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-80 hover:!opacity-100 text-secondary hover:text-primary transition-opacity focus:outline-none"
+          onClick={handleRenameClick}
+          title="Rename"
+        >
+          <PencilSimple size={12} weight="bold" />
         </button>
       </div>
 
-      {/* Row 2: Full path — small, truncates START (left ellipsis) when overflowing */}
-      {fullPath && (
-        <div
-          className="mt-0.5 text-[10.5px] text-muted whitespace-nowrap overflow-hidden text-ellipsis"
-          dir="rtl"
-          title={fullPath}
-        >
-          <bdi dir="ltr">{fullPath}</bdi>
-        </div>
-      )}
-
-      {/* Row 3: Git branch + CWD */}
-      {hasInfoRow && (
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-secondary min-w-0">
-          {gitDisplay && (
-            <span className="flex items-center gap-1 min-w-0">
-              <GitBranch size={11} className="flex-shrink-0 opacity-60" />
-              <span className="truncate">{gitDisplay}</span>
-            </span>
+      {/* Tree of canvases + panels (when expanded) */}
+      {isExpanded && panelCount > 0 && (
+        <div className="flex flex-col">
+          {canvasPanels.map((cp) => (
+            <React.Fragment key={cp.id}>
+              {renderPanelRow(cp)}
+              {(childrenByCanvas[cp.id] || []).map((p) => renderPanelRow(p, true))}
+            </React.Fragment>
+          ))}
+          {orphanCanvasChildren.length > 0 && canvasPanels.length === 0 && (
+            <>
+              <div className="flex items-center gap-1.5 h-7 pl-6 pr-2 text-[13px] text-muted">
+                <SquaresFour size={12} className="flex-shrink-0 opacity-60" />
+                <span className="truncate">Canvas</span>
+              </div>
+              {orphanCanvasChildren.map((p) => renderPanelRow(p, true))}
+            </>
           )}
-          {showCwd && (
-            <span className="flex items-center gap-1 min-w-0">
-              <TerminalIcon size={11} className="flex-shrink-0 opacity-60" />
-              <span
-                className="truncate"
-                dir="rtl"
-                title={displayCwd!}
-              >
-                <bdi dir="ltr">{displayCwd}</bdi>
-              </span>
-            </span>
-          )}
+          {freePanels.map((p) => renderPanelRow(p))}
         </div>
       )}
-
-      {/* Row 4: Listening ports */}
-      {ports.length > 0 && (
-        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted">
-          <Globe size={11} className="flex-shrink-0 opacity-60" />
-          <span className="truncate">{ports.map((p) => `:${p}`).join(' ')}</span>
-        </div>
-      )}
-
-      {/* Row 6: Token usage badge */}
-      {projectUsage && projectUsage.totals.messageCount > 0 && (() => {
-        const totalTok = projectUsage.totals.tokens.input
-          + projectUsage.totals.tokens.output
-          + projectUsage.totals.tokens.cacheCreate
-          + projectUsage.totals.tokens.cacheRead
-        if (totalTok === 0) return null
-        const costStr = projectUsage.totals.costUsd !== null
-          ? ` · $${projectUsage.totals.costUsd.toFixed(2)}`
-          : ''
-        return (
-          <div className="mt-0.5 text-[10px] opacity-50 font-mono">
-            {`\u25C6 ${formatTokensBadge(totalTok)} tok${costStr}`}
-          </div>
-        )
-      })()}
-
-      {/* Expanded panel list — click to jump */}
-      {isExpanded && panelList.length > 0 && (
-        <div className="mt-2 -mx-1 flex flex-col gap-0.5">
-          {(() => {
-            const isOnCanvas = (id: string) =>
-              panelLocations?.[id]?.type === 'canvas'
-            const canvasPanel = panelList.find((p) => p.type === 'canvas')
-            const canvasChildren = panelList.filter(
-              (p) => p.type !== 'canvas' && isOnCanvas(p.id),
-            )
-            const rest = panelList.filter(
-              (p) => p.type !== 'canvas' && !isOnCanvas(p.id),
-            )
-            const renderRow = (p: typeof panelList[number], indent = false) => {
-              const Icon = PANEL_ICONS[p.type] ?? SquaresFour
-              const label = p.title || p.filePath?.split('/').pop() || p.url || p.type
-              return (
-                <button
-                  key={p.id}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-secondary hover:text-primary hover:bg-surface-3 text-left min-w-0 ${
-                    indent ? 'ml-4' : ''
-                  }`}
-                  onClick={(e) => handlePanelClick(e, p.id)}
-                  title={p.filePath || p.url || label}
-                >
-                  <Icon size={12} className="flex-shrink-0 opacity-70" />
-                  <span className="truncate min-w-0 flex-1">{label}</span>
-                </button>
-              )
-            }
-            return (
-              <>
-                {rest.map((p) => renderRow(p))}
-                {canvasPanel
-                  ? renderRow(canvasPanel)
-                  : canvasChildren.length > 0 && (
-                      <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted">
-                        <SquaresFour size={12} className="flex-shrink-0 opacity-70" />
-                        <span className="truncate">Canvas</span>
-                      </div>
-                    )}
-                {canvasChildren.map((p) => renderRow(p, true))}
-              </>
-            )
-          })()}
-        </div>
-      )}
-
     </div>
   )
 }

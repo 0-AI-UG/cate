@@ -66,7 +66,6 @@ export const SHELL_UNREGISTER_TERMINAL = 'shell:unregisterTerminal'
 export const SHELL_ACTIVITY_UPDATE = 'shell:activityUpdate' // main -> renderer
 export const SHELL_PORTS_UPDATE = 'shell:ports-update'       // main -> renderer
 export const SHELL_CWD_UPDATE = 'shell:cwd-update'           // main -> renderer
-export const SHELL_KILL_PROCESS = 'shell:killProcess'         // renderer -> main (kill child processes, keep terminal)
 
 // Settings
 export const SETTINGS_GET = 'settings:get'
@@ -90,6 +89,13 @@ export const APP_OPEN_PATH = 'app:openPath'
 // Crash reporting
 export const CRASH_REPORT_SAVE = 'crash:reportSave'
 
+// Auto-updater (main -> renderer for status; renderer -> main for actions)
+export const UPDATE_STATUS = 'update:status'
+export const UPDATE_INSTALL = 'update:install'
+export const UPDATE_DOWNLOAD = 'update:download'
+export const UPDATE_OPEN_RELEASE = 'update:openRelease'
+export const UPDATE_DISMISS = 'update:dismiss'
+
 // Menu actions (main -> renderer)
 export const MENU_OPEN_SETTINGS = 'menu:openSettings'
 /** Generic menu-action dispatch — main sends a MenuActionId and the focused
@@ -101,9 +107,12 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
+export const DIALOG_OPEN_IMAGE = 'dialog:openImage'
+export const FS_READ_IMAGE = 'fs:readImage'
 export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
+export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'
 
 // Recent Projects
 export const RECENT_PROJECTS_GET = 'recent-projects:get'
@@ -114,12 +123,6 @@ export const LAYOUT_SAVE = 'layout:save'
 export const LAYOUT_LIST = 'layout:list'
 export const LAYOUT_LOAD = 'layout:load'
 export const LAYOUT_DELETE = 'layout:delete'
-
-// MCP Server Management
-export const MCP_SPAWN = 'mcp:spawn'
-export const MCP_STOP = 'mcp:stop'
-export const MCP_TEST = 'mcp:test'
-export const MCP_STATUS_UPDATE = 'mcp:statusUpdate'  // main -> renderer
 
 // Notifications
 export const NOTIFY_OS = 'notify:os'
@@ -170,11 +173,6 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 // Page capture
 export const CAPTURE_PAGE = 'capture-page'
 
-// Token usage tracking
-export const USAGE_GET_SUMMARY = 'usage:getSummary'
-export const USAGE_GET_PROJECT = 'usage:getProject'
-export const USAGE_UPDATE = 'usage:update'
-
 // Workspace management (main process is source of truth)
 export const WORKSPACE_LIST = 'workspace:list'
 export const WORKSPACE_CREATE = 'workspace:create'
@@ -182,4 +180,11 @@ export const WORKSPACE_UPDATE = 'workspace:update'
 export const WORKSPACE_REMOVE = 'workspace:remove'
 export const WORKSPACE_GET = 'workspace:get'
 export const WORKSPACE_CHANGED = 'workspace:changed' // main -> renderer (broadcast)
+
+// Orchestrator (cate CLI / inter-terminal graph)
+export const ORCH_REGISTRY_SYNC = 'orch:registrySync'        // renderer -> main (full snapshot)
+export const ORCH_INFLIGHT_UPDATE = 'orch:inflightUpdate'    // main -> renderer (ask in-flight events)
+export const ORCH_RENDER_COMMAND = 'orch:renderCommand'      // main -> renderer (request a UI mutation; renderer replies)
+export const ORCH_RENDER_RESPONSE = 'orch:renderResponse'    // renderer -> main (response payload, keyed by requestId)
+export const ORCH_PORTAL_WC_REGISTER = 'orch:portalWcRegister' // renderer -> main (proactive (panelId, wcId) notification for popup parent resolution)
 

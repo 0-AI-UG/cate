@@ -1,6 +1,6 @@
 import { useSettingsStore } from '../stores/settingsStore'
 import type { BrowserSearchEngine } from '../../shared/types'
-import { SettingRow, TextInput, Select } from './SettingsComponents'
+import { SettingRow, TextInput, Select, Toggle } from './SettingsComponents'
 
 export function BrowserSettings() {
   const store = useSettingsStore()
@@ -24,6 +24,15 @@ export function BrowserSettings() {
             { value: 'bing', label: 'Bing' },
             { value: 'brave', label: 'Brave' },
           ]}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Auto-open URLs from terminal"
+        description="When a localhost or http(s) URL appears in terminal output, open it in an existing browser panel (or create one if none exists). Each URL is opened only once."
+      >
+        <Toggle
+          checked={store.autoOpenUrlsFromTerminal}
+          onChange={(v) => store.setSetting('autoOpenUrlsFromTerminal', v)}
         />
       </SettingRow>
     </div>

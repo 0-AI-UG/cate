@@ -42,7 +42,11 @@ function panelColor(panelType: string): string {
   }
 }
 
-const Minimap: React.FC = () => {
+interface MinimapProps {
+  mode?: 'floating' | 'popover'
+}
+
+const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
   const nodeList = useCanvasStoreContext((s) => Object.values(s.nodes), shallow)
   const regionList = useCanvasStoreContext((s) => Object.values(s.regions), shallow)
   // NOTE: viewportOffset is intentionally NOT subscribed via React here.
@@ -66,8 +70,8 @@ const Minimap: React.FC = () => {
   })
   const [corner, setCorner] = useState<Corner>(loadCorner)
   const [size, setSize] = useState<{ w: number; h: number }>(loadSize)
-  const MINIMAP_WIDTH = size.w
-  const MINIMAP_HEIGHT = size.h
+  const MINIMAP_WIDTH = mode === 'popover' ? 220 : size.w
+  const MINIMAP_HEIGHT = mode === 'popover' ? 160 : size.h
 
   const sizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cornerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -254,62 +258,72 @@ const Minimap: React.FC = () => {
     containerHeight: containerSize.height,
   }
 
+  const isPopover = mode === 'popover'
+
   return (
     <div
       ref={minimapRef}
       style={{
-        position: 'absolute',
-        ...(corner.startsWith('bottom') ? { bottom: MINIMAP_GAP } : { top: MINIMAP_GAP }),
-        ...(corner.endsWith('right') ? { right: MINIMAP_GAP } : { left: MINIMAP_GAP }),
+        ...(isPopover
+          ? { position: 'relative' as const }
+          : {
+              position: 'absolute' as const,
+              ...(corner.startsWith('bottom') ? { bottom: MINIMAP_GAP } : { top: MINIMAP_GAP }),
+              ...(corner.endsWith('right') ? { right: MINIMAP_GAP } : { left: MINIMAP_GAP }),
+              opacity: 0.7,
+              zIndex: 20,
+            }),
         width: MINIMAP_WIDTH,
         height: MINIMAP_HEIGHT,
         backgroundColor: 'var(--surface-2)',
-        opacity: 0.7,
         borderRadius: 8,
         border: `1px solid var(--border-subtle)`,
         overflow: 'hidden',
         cursor: 'crosshair',
-        zIndex: 20,
       }}
       onMouseDown={handleMouseDown}
     >
-      {/* Resize handle — on the inner corner (pointing toward canvas center) */}
-      <div
-        onMouseDown={handleResizeMouseDown}
-        title="Drag to resize minimap"
-        style={{
-          position: 'absolute',
-          ...(corner.startsWith('bottom') ? { top: 0 } : { bottom: 0 }),
-          ...(corner.endsWith('right') ? { left: 0 } : { right: 0 }),
-          width: 14,
-          height: 14,
-          cursor: (corner === 'bottom-right' || corner === 'top-left') ? 'nwse-resize' : 'nesw-resize',
-          zIndex: 3,
-        }}
-      />
+      {/* Resize handle — on the inner corner (pointing toward canvas center). Hidden in popover mode. */}
+      {!isPopover && (
+        <div
+          onMouseDown={handleResizeMouseDown}
+          title="Drag to resize minimap"
+          style={{
+            position: 'absolute',
+            ...(corner.startsWith('bottom') ? { top: 0 } : { bottom: 0 }),
+            ...(corner.endsWith('right') ? { left: 0 } : { right: 0 }),
+            width: 14,
+            height: 14,
+            cursor: (corner === 'bottom-right' || corner === 'top-left') ? 'nwse-resize' : 'nesw-resize',
+            zIndex: 3,
+          }}
+        />
+      )}
 
-      {/* Drag handle — on the outer corner (against the screen edge) */}
-      <div
-        onMouseDown={handleDragHandleMouseDown}
-        title="Drag to move minimap"
-        style={{
-          position: 'absolute',
-          ...(corner.startsWith('bottom') ? { bottom: 2 } : { top: 2 }),
-          ...(corner.endsWith('right') ? { right: 2 } : { left: 2 }),
-          width: 14,
-          height: 14,
-          borderRadius: 3,
-          cursor: 'grab',
-          zIndex: 2,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontSize: 10,
-          lineHeight: 1,
-          userSelect: 'none',
-        }}
-      >⠿</div>
+      {/* Drag handle — on the outer corner (against the screen edge). Hidden in popover mode. */}
+      {!isPopover && (
+        <div
+          onMouseDown={handleDragHandleMouseDown}
+          title="Drag to move minimap"
+          style={{
+            position: 'absolute',
+            ...(corner.startsWith('bottom') ? { bottom: 2 } : { top: 2 }),
+            ...(corner.endsWith('right') ? { right: 2 } : { left: 2 }),
+            width: 14,
+            height: 14,
+            borderRadius: 3,
+            cursor: 'grab',
+            zIndex: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--text-muted)',
+            fontSize: 10,
+            lineHeight: 1,
+            userSelect: 'none',
+          }}
+        >⠿</div>
+      )}
 
       {/* Region rectangles */}
       {regionList.map((region) => (

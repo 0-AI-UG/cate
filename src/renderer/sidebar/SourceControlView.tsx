@@ -394,6 +394,8 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
   const createDiffEditor = useAppStore((s) => s.createDiffEditor)
   const setWorkspaceRootPath = useAppStore((s) => s.setWorkspaceRootPath)
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
+  const createTerminal = useAppStore((s) => s.createTerminal)
+  const addAdditionalRoot = useAppStore((s) => s.addAdditionalRoot)
 
   // -------------------------------------------------------------------------
   // Data fetching
@@ -800,14 +802,35 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           {worktrees.map((wt) => (
             <div
               key={wt.path}
-              className={`flex items-center gap-1.5 px-3 py-[3px] cursor-pointer hover:bg-hover ${
+              className={`group flex items-center gap-1.5 px-3 py-[3px] cursor-pointer hover:bg-hover ${
                 wt.isCurrent ? 'text-primary' : 'text-secondary'
               }`}
+              onContextMenu={async (e) => {
+                e.preventDefault()
+                if (!window.electronAPI || !selectedWorkspaceId) return
+                const id = await window.electronAPI.showContextMenu([
+                  { id: 'switch', label: 'Switch Workspace To This Worktree' },
+                  { id: 'add-root', label: 'Add To Workspace As Folder' },
+                  { id: 'terminal', label: 'Open Terminal Here' },
+                ])
+                switch (id) {
+                  case 'switch':
+                    setWorkspaceRootPath(selectedWorkspaceId, wt.path)
+                    break
+                  case 'add-root':
+                    addAdditionalRoot(selectedWorkspaceId, wt.path)
+                    break
+                  case 'terminal':
+                    createTerminal(selectedWorkspaceId, undefined, undefined, undefined, wt.path)
+                    break
+                }
+              }}
               onClick={() => {
                 if (selectedWorkspaceId) {
                   setWorkspaceRootPath(selectedWorkspaceId, wt.path)
                 }
               }}
+              title="Click to switch · right-click for more"
             >
               <GitBranch size={12} className="flex-shrink-0" />
               <span className="truncate flex-1">{wt.branch || '(detached)'}</span>

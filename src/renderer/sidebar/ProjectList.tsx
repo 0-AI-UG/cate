@@ -1,25 +1,15 @@
 import React, { useState, useCallback } from 'react'
 import { Plus } from '@phosphor-icons/react'
-import { SidebarToggleIcon } from './SidebarToggleIcon'
 import { useAppStore, useWorkspaceList } from '../stores/appStore'
-import { useUIStore } from '../stores/uiStore'
-import { NotificationBell } from '../ui/NotificationPopover'
-import { ProcessPortsButton } from '../ui/ProcessPortsPopover'
 import { WorkspaceTab } from './WorkspaceTab'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 
-interface ProjectListProps {
-  onCollapse?: () => void
-}
-
-export const ProjectList: React.FC<ProjectListProps> = ({ onCollapse }) => {
+export const ProjectList: React.FC = () => {
   const workspaces = useWorkspaceList()
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const addWorkspace = useAppStore((s) => s.addWorkspace)
   const selectWorkspace = useAppStore((s) => s.selectWorkspace)
   const removeWorkspace = useAppStore((s) => s.removeWorkspace)
-  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
-  const handleCollapse = onCollapse ?? toggleSidebar
 
   const handleNewWorkspace = useCallback(() => {
     const wsId = addWorkspace()
@@ -33,24 +23,17 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onCollapse }) => {
   return (
     <div className="flex flex-col h-full">
       <SidebarSectionHeader
-        title=""
+        title="Projects"
         actions={
-          <>
-            <NotificationBell />
-            <ProcessPortsButton />
-            <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
-              <Plus size={13} />
-            </SidebarHeaderButton>
-            <SidebarHeaderButton onClick={handleCollapse} title="Collapse sidebar (⌘\\)">
-              <SidebarToggleIcon size={13} direction="close" />
-            </SidebarHeaderButton>
-          </>
+          <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
+            <Plus size={14} weight="bold" />
+          </SidebarHeaderButton>
         }
       />
 
       {/* Scrollable workspace list */}
-      <div className="flex-1 overflow-y-auto px-2 py-1">
-        <div className="flex flex-col gap-1.5">
+      <div className="flex-1 overflow-y-auto px-1 py-1">
+        <div className="flex flex-col">
           {displayWorkspaces.map((ws, index) => (
             <div
               key={ws.id}

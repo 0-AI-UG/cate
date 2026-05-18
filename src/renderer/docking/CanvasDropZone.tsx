@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { findCanvasStoreForNode } from '../stores/canvasStore'
-import { useDockDragStore } from '../hooks/useDockDrag'
+import { useDockDragStore, getDropZoneEntries } from '../hooks/useDockDrag'
 import { useDockStore } from '../stores/dockStore'
 import type { PanelType } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES } from '../../shared/types'
@@ -114,16 +114,28 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
   const updateCursor = (clientX: number, clientY: number, rect: DOMRect) => {
     const x = clientX - rect.left
     const y = clientY - rect.top
-    const center =
-      x > EDGE_STRIP &&
-      y > EDGE_STRIP &&
-      x < rect.width - EDGE_STRIP &&
-      y < rect.height - EDGE_STRIP
+    const inEdgeStrip =
+      !(x > EDGE_STRIP &&
+        y > EDGE_STRIP &&
+        x < rect.width - EDGE_STRIP &&
+        y < rect.height - EDGE_STRIP)
+    // Also yield to any registered mini-dock drop zone the cursor is sitting
+    // over — those are canvas-node mini-docks layered above the canvas, and
+    // we want their tab/split indicators to win over "Drop into canvas".
+    // Main-window dock zones (left/right/bottom) sit outside this overlay's
+    // rect so they're handled implicitly by onPointerLeave.
+    const overMiniDock = getDropZoneEntries().some((entry) => {
+      if (!entry.dockStoreApi) return false
+      const r = entry.getRect()
+      if (!r) return false
+      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom
+    })
+    const center = !inEdgeStrip && !overMiniDock
     setCursor({ x, y })
     setInCenter(center)
     // The source's mousemove handler checks this flag to decide whether to
     // run its own hit-test. Only claim the cursor when we're in the center —
-    // otherwise let the dock's split-edge indicators fire.
+    // otherwise let the dock's split-edge / mini-dock indicators fire.
     canvasDropZoneHovered = center
     if (center) {
       useDockDragStore.getState().setDropTarget(null)

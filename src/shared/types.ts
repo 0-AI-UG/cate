@@ -29,63 +29,6 @@ export interface Rect {
 export type PanelType = 'terminal' | 'browser' | 'editor' | 'git' | 'fileExplorer' | 'projectList' | 'canvas'
 
 // -----------------------------------------------------------------------------
-// AI Tool Configuration
-// -----------------------------------------------------------------------------
-
-export type AIToolId = 'claude' | 'codex' | 'gemini' | 'cursor' | 'opencode'
-
-export interface AIConfigFile {
-  relativePath: string
-  exists: boolean
-  description: string
-  isDirectory?: boolean
-}
-
-export interface AIToolPresence {
-  id: AIToolId
-  name: string
-  icon: string
-  detected: boolean
-  configFiles: AIConfigFile[]
-}
-
-// MCP Server types
-export interface MCPServerDefinition {
-  name: string
-  command: string
-  args: string[]
-  env: Record<string, string>
-}
-
-export interface MCPServerConfig extends MCPServerDefinition {
-  status: 'stopped' | 'starting' | 'running' | 'error'
-  error?: string
-}
-
-export interface MCPStatusUpdate {
-  name: string
-  status: MCPServerConfig['status']
-  error?: string
-}
-
-/** Result of a one-shot MCP server probe — advertised capabilities + server info. */
-export interface MCPTestResult {
-  success: boolean
-  error?: string
-  /** Server `serverInfo` from the initialize response. */
-  serverInfo?: { name?: string; version?: string }
-  /** Capability flags the server advertised. */
-  capabilities?: {
-    tools?: boolean
-    resources?: boolean
-    prompts?: boolean
-    logging?: boolean
-  }
-  /** Protocol version the server responded with. */
-  protocolVersion?: string
-}
-
-// -----------------------------------------------------------------------------
 // Canvas node
 // -----------------------------------------------------------------------------
 
@@ -130,6 +73,9 @@ export interface CanvasRegion {
   label: string
   color: string
   zOrder: number
+  /** Default working directory for terminals spawned inside this region.
+   *  Falls back to the workspace's primary `rootPath` when unset. */
+  defaultCwd?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -138,7 +84,7 @@ export interface CanvasRegion {
 
 export interface CanvasAnnotation {
   id: string
-  type: 'stickyNote' | 'textLabel'
+  type: 'stickyNote' | 'textLabel' | 'image'
   origin: Point
   size: Size
   content: string
@@ -146,6 +92,35 @@ export interface CanvasAnnotation {
   fontSize?: 'sm' | 'md' | 'lg' | 'xl'
   fontSizePx?: number
   bold?: boolean
+  /** Text labels only: when true (or undefined for legacy data), the label
+   *  auto-sizes to its content. Set to false after a user-driven resize. */
+  autoSize?: boolean
+  /** Image annotations only: absolute path to the image file on disk. */
+  imagePath?: string
+}
+
+// -----------------------------------------------------------------------------
+// Canvas drawing — freehand pen strokes laid down with the draw tool.
+// Points are stored in canvas-space so strokes pan/zoom with the canvas.
+// -----------------------------------------------------------------------------
+
+export interface CanvasDrawing {
+  id: string
+  points: Point[]
+  color: string
+  strokeWidth: number
+}
+
+// -----------------------------------------------------------------------------
+// Canvas connection — Maestri-style "wire" between two nodes. Undirected for
+// now (from/to are just endpoint slots); used both for visual rendering and
+// for the orchestrator's auth model (`cate ask` requires a connection).
+// -----------------------------------------------------------------------------
+
+export interface CanvasConnection {
+  id: string
+  from: string // CanvasNodeId
+  to: string   // CanvasNodeId
 }
 
 // -----------------------------------------------------------------------------
@@ -170,6 +145,13 @@ export interface PanelState {
   /** Unsaved buffer content for scratch (no-filePath) editors. Persisted so
    *  content survives canvas switches and app restarts. */
   unsavedContent?: string
+  /** Terminal panels only: id of a preset color palette. Unset = follow the
+   *  global app theme. See terminalRegistry.TERMINAL_PRESETS. */
+  themePreset?: string
+  /** Terminal panels only: explicit working directory override. When unset
+   *  the terminal uses the workspace's `rootPath`. Set when the terminal was
+   *  created from a dropped folder or worktree to scope it to that path. */
+  cwd?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -335,6 +317,9 @@ export interface WorkspaceState {
   name: string
   color: string
   rootPath: string
+  /** Additional project roots opened alongside the primary `rootPath`.
+   *  Used to keep multiple repos in one canvas. Order is user-controlled. */
+  additionalRoots?: string[]
   rootPathError?: string | null
   isRootPathPending?: boolean
   panels: Record<string, PanelState>
@@ -342,6 +327,14 @@ export interface WorkspaceState {
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
   annotations: Record<string, CanvasAnnotation>
+  /** Maestri-style wires between nodes. Runtime-only — node ids in this map
+   *  are NOT stable across restore. Use `connectionRefs` for persistence. */
+  connections?: Record<string, CanvasConnection>
+  /** Portable connection list for on-disk persistence. Each endpoint is a
+   *  "node:<panelId>" or "ann:<annotationId>" reference — panel ids and
+   *  annotation old-ids are remapped at restore time to the freshly-created
+   *  canvas elements. Generated by session save, consumed by session restore. */
+  connectionRefs?: Array<{ from: string; to: string }>
   zoomLevel: number
   viewportOffset: Point
   focusedNodeId: CanvasNodeId | null
@@ -428,24 +421,6 @@ export function displayString(s: StoredShortcut): string {
   return parts.join('')
 }
 
-// -----------------------------------------------------------------------------
-// Token usage tracking
-// -----------------------------------------------------------------------------
-
-export type AgentTool = 'claude' | 'codex' | 'opencode'
-
-export interface TokenCounts { input: number; output: number; cacheCreate: number; cacheRead: number }
-
-export interface ModelUsage { model: string; tool: AgentTool; tokens: TokenCounts; costUsd: number | null; messageCount: number }
-
-export interface DayUsage { date: string; tokens: TokenCounts; costUsd: number | null }
-
-export interface ProjectTotals { tokens: TokenCounts; costUsd: number | null; messageCount: number }
-
-export interface ProjectUsage { projectPath: string; byModel: ModelUsage[]; byDay: DayUsage[]; totals: ProjectTotals; lastActivity: string }
-
-export interface UsageSummary { totals: ProjectTotals; projects: ProjectUsage[]; unattributed: ProjectUsage }
-
 // All 17 shortcut actions — matches Swift ShortcutAction enum exactly.
 export type ShortcutAction =
   | 'newTerminal'
@@ -474,7 +449,7 @@ export type ShortcutAction =
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
  *  binding. */
-export type MenuActionId = ShortcutAction | 'openFolder'
+export type MenuActionId = ShortcutAction | 'openFolder' | 'addImageToCanvas'
 
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
@@ -635,6 +610,10 @@ export interface SessionSnapshot {
   nodes: NodeSnapshot[]
   regions?: Record<string, CanvasRegion>
   annotations?: Record<string, CanvasAnnotation>
+  /** Maestri-style connection wires between canvas elements. Each endpoint is
+   *  a "node:<panelId>" or "ann:<annotationId>" reference so they survive the
+   *  node-id regeneration that happens during restore. */
+  connectionRefs?: Array<{ from: string; to: string }>
   /** Dock zone layout state — added in Phase 5. Missing = empty dock (migration). */
   dockState?: DockStateSnapshot
   /** Panels that live in dock zones (canvas, git, fileExplorer, etc.) — not on the canvas. */
@@ -697,6 +676,44 @@ export type NotificationAction =
 // App settings — mirrors AppSettings.swift with all defaults
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Terminal theme data — both built-in presets and user-imported palettes use
+// this shape. `theme` mirrors xterm.js's ITheme.
+// -----------------------------------------------------------------------------
+
+export interface TerminalThemeData {
+  /** Stable identifier — used as the panel's `themePreset` field. */
+  id: string
+  /** Display name shown in the Theme submenu. */
+  label: string
+  /** Hex color used for the tab-accent tint. */
+  accent: string
+  theme: {
+    background: string
+    foreground: string
+    cursor?: string
+    cursorAccent?: string
+    selectionBackground?: string
+    selectionForeground?: string
+    black?: string
+    red?: string
+    green?: string
+    yellow?: string
+    blue?: string
+    magenta?: string
+    cyan?: string
+    white?: string
+    brightBlack?: string
+    brightRed?: string
+    brightGreen?: string
+    brightYellow?: string
+    brightBlue?: string
+    brightMagenta?: string
+    brightCyan?: string
+    brightWhite?: string
+  }
+}
+
 export interface AppSettings {
   // General
   defaultShellPath: string
@@ -726,10 +743,20 @@ export interface AppSettings {
   terminalFontSize: number
   /** xterm.js scrollback buffer size, in lines. Lower = less memory per terminal. */
   terminalScrollback: number
+  /** User-imported terminal color palettes. Appended to the built-in presets
+   *  in the terminal-tab Theme submenu. */
+  terminalCustomThemes: TerminalThemeData[]
+  /** Preset id used by terminals that have no per-panel override. When unset
+   *  (default), terminals follow the global app theme. */
+  defaultTerminalTheme?: string
 
   // Browser
   browserHomepage: string
   browserSearchEngine: BrowserSearchEngine
+  /** Auto-open URLs printed in terminal output (localhost dev servers, etc.)
+   *  in a browser panel. Reuses an existing browser panel when one exists in
+   *  the same workspace; opens each URL only once per session. */
+  autoOpenUrlsFromTerminal: boolean
 
   // Sidebar
   sidebarTintOpacity: number
@@ -741,6 +768,8 @@ export interface AppSettings {
   notifyOnTerminalHalt: boolean
   notifyOnlyWhenUnfocused: boolean
 
+  // AI
+  aiAssistEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -770,10 +799,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontFamily: '',
   terminalFontSize: 0,
   terminalScrollback: 2000,
+  terminalCustomThemes: [],
+  // defaultTerminalTheme is optional — unset means "follow app theme"
 
   // Browser
   browserHomepage: 'about:blank',
   browserSearchEngine: 'google',
+  autoOpenUrlsFromTerminal: true,
 
   // Sidebar
   sidebarTintOpacity: 1.0,
@@ -785,6 +817,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifyOnTerminalHalt: true,
   notifyOnlyWhenUnfocused: true,
 
+  // AI
+  aiAssistEnabled: false,
 }
 
 // -----------------------------------------------------------------------------

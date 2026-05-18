@@ -166,6 +166,20 @@ export function useNodeResize(
       isResizingRef.current = true
       currentEdgeRef.current = edge
 
+      // Lock the cursor for the whole document so the resize icon stays put
+      // even when the pointer drifts off the (narrow) edge hit-band — which
+      // happens easily when zoomed out. The `canvas-interacting` class force-
+      // pins xterm to `grabbing`, which would otherwise win over body.cursor
+      // when the focused panel is a terminal, so we inject a high-specificity
+      // override with the actual resize cursor. Cleaned up on mouseup.
+      const previousBodyCursor = document.body.style.cursor
+      const resizeCursor = getCursorForEdge(edge)
+      document.body.style.cursor = resizeCursor
+      document.body.classList.add('canvas-interacting')
+      const cursorStyleEl = document.createElement('style')
+      cursorStyleEl.textContent = `*, *::before, *::after { cursor: ${resizeCursor} !important; }`
+      document.head.appendChild(cursorStyleEl)
+
       // Detect shared borders for cardinal edges
       if (isCardinalEdge(edge)) {
         const borders = findSharedBorders(nodeId, edge, state.nodes)
@@ -199,6 +213,25 @@ export function useNodeResize(
         const zoom = canvasStoreApi.getState().zoomLevel
         let deltaX = (ev.clientX - rs.startClientX) / zoom
         let deltaY = (ev.clientY - rs.startClientY) / zoom
+
+        // Track the cursor 1:1 during the drag — the moving edge stays glued
+        // to the pointer. Grid snapping is applied once on mouseup so the
+        // node still lands on-grid without the cursor visibly detaching from
+        // the handle mid-drag.
+        const settingsLive = useSettingsStore.getState()
+        {
+          const movesRightEdge =
+            rs.edge === 'right' || rs.edge === 'topRight' || rs.edge === 'bottomRight'
+          const movesLeftEdge =
+            rs.edge === 'left' || rs.edge === 'topLeft' || rs.edge === 'bottomLeft'
+          const movesBottomEdge =
+            rs.edge === 'bottom' || rs.edge === 'bottomLeft' || rs.edge === 'bottomRight'
+          const movesTopEdge =
+            rs.edge === 'top' || rs.edge === 'topLeft' || rs.edge === 'topRight'
+
+          if (!movesRightEdge && !movesLeftEdge) deltaX = 0
+          if (!movesBottomEdge && !movesTopEdge) deltaY = 0
+        }
 
         let newOriginX = rs.startOrigin.x
         let newOriginY = rs.startOrigin.y
@@ -243,10 +276,20 @@ export function useNodeResize(
           newHeight -= deltaY
         }
 
-        // Clamp to minimum size, keeping the opposite edge fixed
-        if (newWidth < minSize.width) {
-          const excess = minSize.width - newWidth
-          newWidth = minSize.width
+        // Clamp to minimum size, keeping the opposite edge fixed.
+        // When snap-to-grid is on, round the effective minimum up to the
+        // grid so the clamp doesn't push width/height (or, for left/top
+        // edges, origin) off-grid as the node bottoms out.
+        const g = settingsLive.gridSpacing
+        const effMinW = settingsLive.snapToGridEnabled
+          ? Math.ceil(minSize.width / g) * g
+          : minSize.width
+        const effMinH = settingsLive.snapToGridEnabled
+          ? Math.ceil(minSize.height / g) * g
+          : minSize.height
+        if (newWidth < effMinW) {
+          const excess = effMinW - newWidth
+          newWidth = effMinW
           if (
             rs.edge === 'left' ||
             rs.edge === 'topLeft' ||
@@ -255,9 +298,9 @@ export function useNodeResize(
             newOriginX -= excess
           }
         }
-        if (newHeight < minSize.height) {
-          const excess = minSize.height - newHeight
-          newHeight = minSize.height
+        if (newHeight < effMinH) {
+          const excess = effMinH - newHeight
+          newHeight = effMinH
           if (
             rs.edge === 'top' ||
             rs.edge === 'topLeft' ||
@@ -297,11 +340,11 @@ export function useNodeResize(
               newOriginX = rs.startOrigin.x + clampedDelta
               newWidth = rs.startSize.width - clampedDelta
             }
-            // Re-clamp primary min size
-            if (newWidth < minSize.width) {
-              newWidth = minSize.width
+            // Re-clamp primary min size (grid-aligned when snap is on)
+            if (newWidth < effMinW) {
+              newWidth = effMinW
               if (rs.edge === 'left') {
-                newOriginX = rs.startOrigin.x + rs.startSize.width - minSize.width
+                newOriginX = rs.startOrigin.x + rs.startSize.width - effMinW
               }
             }
           } else {
@@ -311,10 +354,10 @@ export function useNodeResize(
               newOriginY = rs.startOrigin.y + clampedDelta
               newHeight = rs.startSize.height - clampedDelta
             }
-            if (newHeight < minSize.height) {
-              newHeight = minSize.height
+            if (newHeight < effMinH) {
+              newHeight = effMinH
               if (rs.edge === 'top') {
-                newOriginY = rs.startOrigin.y + rs.startSize.height - minSize.height
+                newOriginY = rs.startOrigin.y + rs.startSize.height - effMinH
               }
             }
           }
@@ -352,9 +395,9 @@ export function useNodeResize(
           }
         }
 
-        // -------- Magnetic snap (grid + neighbor edges) during hold --------
-        // Skip when shared-border resize is active (those neighbors are handled
-        // separately and we don't want to fight that constraint).
+        // -------- Snap guides (visual feedback only) --------
+        // Live grid snapping happens up-front via the delta; this block only
+        // surfaces neighbor-edge alignment guides while dragging.
         const settings = useSettingsStore.getState()
         const magneticAxes = { x: false, y: false }
         const guideLines: SnapLine[] = []
@@ -455,20 +498,128 @@ export function useNodeResize(
         isResizingRef.current = false
         currentEdgeRef.current = null
 
+        document.body.style.cursor = previousBodyCursor
+        document.body.classList.remove('canvas-interacting')
+        cursorStyleEl.remove()
+
         // Cancel any pending RAF and flush the last geometry immediately
         if (rafId.current) {
           cancelAnimationFrame(rafId.current)
           rafId.current = 0
         }
-        if (pendingResize.current) {
+        // Always run the mouseup snap pass, even if no resize frame is
+        // pending. The RAF flush nulls pendingResize as soon as it commits,
+        // so a brief pause before release would otherwise skip grid snap
+        // entirely and leave the node at its unsnapped 1:1 cursor position.
+        {
+          const rs = resizeStateRef.current
+          const settingsLive = useSettingsStore.getState()
+          const storeState = canvasStoreApi.getState()
+          const currentNode = storeState.nodes[nodeId]
+          const fallback = currentNode
+            ? {
+                origin: { ...currentNode.origin },
+                size: { ...currentNode.size },
+                neighbors: neighborStartRef.current.map((ns) => {
+                  const n = storeState.nodes[ns.id]
+                  return n
+                    ? { id: ns.id, origin: { ...n.origin }, size: { ...n.size } }
+                    : { id: ns.id, origin: ns.startOrigin, size: ns.startSize }
+                }),
+              }
+            : null
+          let { origin, size, neighbors } = pendingResize.current ?? fallback ?? {
+            origin: rs?.startOrigin ?? { x: 0, y: 0 },
+            size: rs?.startSize ?? { width: 0, height: 0 },
+            neighbors: [] as Array<{ id: string; origin: Point; size: Size }>,
+          }
+
+          // Snap the moving edges to the grid on release. The cursor tracks
+          // 1:1 during the drag (so the handle never visually detaches), and
+          // we only commit the grid-aligned values here on mouseup.
+          if (rs && settingsLive.snapToGridEnabled) {
+            const g = settingsLive.gridSpacing
+            const snap = (v: number) => Math.round(v / g) * g
+
+            const movesRight =
+              rs.edge === 'right' || rs.edge === 'topRight' || rs.edge === 'bottomRight'
+            const movesLeft =
+              rs.edge === 'left' || rs.edge === 'topLeft' || rs.edge === 'bottomLeft'
+            const movesBottom =
+              rs.edge === 'bottom' || rs.edge === 'bottomLeft' || rs.edge === 'bottomRight'
+            const movesTop =
+              rs.edge === 'top' || rs.edge === 'topLeft' || rs.edge === 'topRight'
+
+            const effMinW = Math.ceil(minSize.width / g) * g
+            const effMinH = Math.ceil(minSize.height / g) * g
+
+            let newOriginX = origin.x
+            let newOriginY = origin.y
+            let newWidth = size.width
+            let newHeight = size.height
+
+            if (movesRight) {
+              newWidth = Math.max(effMinW, snap(origin.x + size.width) - origin.x)
+            } else if (movesLeft) {
+              const right = origin.x + size.width
+              newOriginX = Math.min(snap(origin.x), right - effMinW)
+              newWidth = right - newOriginX
+            }
+            if (movesBottom) {
+              newHeight = Math.max(effMinH, snap(origin.y + size.height) - origin.y)
+            } else if (movesTop) {
+              const bottom = origin.y + size.height
+              newOriginY = Math.min(snap(origin.y), bottom - effMinH)
+              newHeight = bottom - newOriginY
+            }
+
+            // Re-derive neighbor geometry from the snapped primary so their
+            // shared edge stays aligned with the primary's snapped edge.
+            const snappedNeighbors: typeof neighbors = []
+            for (const n of neighbors) {
+              const ns = neighborStartRef.current.find((s) => s.id === n.id)
+              if (!ns) {
+                snappedNeighbors.push(n)
+                continue
+              }
+              let nOriginX = ns.startOrigin.x
+              let nOriginY = ns.startOrigin.y
+              let nWidth = ns.startSize.width
+              let nHeight = ns.startSize.height
+
+              if (rs.edge === 'right') {
+                const newRightOfPrimary = newOriginX + newWidth
+                nWidth = ns.startOrigin.x + ns.startSize.width - newRightOfPrimary
+                nOriginX = newRightOfPrimary
+              } else if (rs.edge === 'left') {
+                nWidth = newOriginX - ns.startOrigin.x
+              } else if (rs.edge === 'bottom') {
+                const newBottomOfPrimary = newOriginY + newHeight
+                nHeight = ns.startOrigin.y + ns.startSize.height - newBottomOfPrimary
+                nOriginY = newBottomOfPrimary
+              } else if (rs.edge === 'top') {
+                nHeight = newOriginY - ns.startOrigin.y
+              }
+
+              snappedNeighbors.push({
+                id: n.id,
+                origin: { x: nOriginX, y: nOriginY },
+                size: {
+                  width: Math.max(nWidth, ns.minSize.width),
+                  height: Math.max(nHeight, ns.minSize.height),
+                },
+              })
+            }
+
+            origin = { x: newOriginX, y: newOriginY }
+            size = { width: newWidth, height: newHeight }
+            neighbors = snappedNeighbors
+          }
+
           const store = canvasStoreApi.getState()
-          store.resizeNode(
-            nodeId,
-            pendingResize.current.size,
-            pendingResize.current.origin,
-          )
-          for (const n of pendingResize.current.neighbors) {
-            canvasStoreApi.getState().resizeNode(n.id, n.size, n.origin)
+          store.resizeNode(nodeId, size, origin)
+          for (const n of neighbors) {
+            store.resizeNode(n.id, n.size, n.origin)
           }
           pendingResize.current = null
         }
@@ -476,78 +627,6 @@ export function useNodeResize(
         // Clear any snap guides shown during the resize
         canvasStoreApi.getState().clearSnapGuides()
         lastMagneticAxesRef.current = { x: false, y: false }
-
-        // Snap the moving edge(s) on release — neighbor edges take priority,
-        // then grid. Only snap when the snap target is within SNAP_THRESHOLD
-        // screen pixels (converted to canvas units), so at any zoom the edge
-        // ends visually close to where the cursor released it. Keeps the
-        // opposite edge fixed.
-        const settings = useSettingsStore.getState()
-        const rs = resizeStateRef.current
-        if (settings.snapToGridEnabled && rs && neighborStartRef.current.length === 0) {
-          const zoomNow = canvasStoreApi.getState().zoomLevel
-          const SNAP_THRESHOLD = 8 / zoomNow
-          const g = settings.gridSpacing
-          const store = canvasStoreApi.getState()
-          const n = store.nodes[nodeId]
-          if (n) {
-            // Collect neighbor edge candidates
-            const xCandidates: number[] = []
-            const yCandidates: number[] = []
-            for (const o of Object.values(store.nodes)) {
-              if (o.id === nodeId) continue
-              xCandidates.push(o.origin.x, o.origin.x + o.size.width)
-              yCandidates.push(o.origin.y, o.origin.y + o.size.height)
-            }
-
-            const snapEdge = (value: number, candidates: number[]): number => {
-              // Neighbor edge first
-              let best = value
-              let bestDist = SNAP_THRESHOLD
-              for (const c of candidates) {
-                const d = Math.abs(c - value)
-                if (d < bestDist) {
-                  bestDist = d
-                  best = c
-                }
-              }
-              if (best !== value) return best
-              // Fall back to grid if within SNAP_THRESHOLD
-              const gridSnapped = Math.round(value / g) * g
-              if (Math.abs(gridSnapped - value) < SNAP_THRESHOLD) return gridSnapped
-              return value
-            }
-
-            let ox = n.origin.x
-            let oy = n.origin.y
-            let w = n.size.width
-            let h = n.size.height
-
-            const movesLeft = rs.edge === 'left' || rs.edge === 'topLeft' || rs.edge === 'bottomLeft'
-            const movesRight = rs.edge === 'right' || rs.edge === 'topRight' || rs.edge === 'bottomRight'
-            const movesTop = rs.edge === 'top' || rs.edge === 'topLeft' || rs.edge === 'topRight'
-            const movesBottom = rs.edge === 'bottom' || rs.edge === 'bottomLeft' || rs.edge === 'bottomRight'
-
-            if (movesLeft) {
-              const right = ox + w
-              ox = snapEdge(ox, xCandidates)
-              w = Math.max(minSize.width, right - ox)
-            } else if (movesRight) {
-              const snapped = snapEdge(ox + w, xCandidates)
-              w = Math.max(minSize.width, snapped - ox)
-            }
-            if (movesTop) {
-              const bottom = oy + h
-              oy = snapEdge(oy, yCandidates)
-              h = Math.max(minSize.height, bottom - oy)
-            } else if (movesBottom) {
-              const snapped = snapEdge(oy + h, yCandidates)
-              h = Math.max(minSize.height, snapped - oy)
-            }
-
-            store.resizeNode(nodeId, { width: w, height: h }, { x: ox, y: oy })
-          }
-        }
 
         // Clean up
         sharedBordersRef.current = []

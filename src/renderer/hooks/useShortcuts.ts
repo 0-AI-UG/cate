@@ -10,6 +10,7 @@ import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
+import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 
 /**
  * Ensures the workspace has a rootPath before proceeding.
@@ -57,6 +58,24 @@ export function useShortcuts(): void {
         const folder = await window.electronAPI.openFolderDialog()
         if (folder) {
           useAppStore.getState().setWorkspaceRootPath(selectedWorkspaceId, folder)
+        }
+        return
+      }
+
+      if (action === 'addImageToCanvas') {
+        const paths = await window.electronAPI.openImageDialog()
+        if (!paths || paths.length === 0) return
+        const cs = canvasStore()
+        // Drop the image at the current view-center, in canvas coordinates.
+        const { viewportOffset, zoomLevel, containerSize } = cs
+        const center = {
+          x: (containerSize.width / 2 - viewportOffset.x) / zoomLevel,
+          y: (containerSize.height / 2 - viewportOffset.y) / zoomLevel,
+        }
+        let offset = 0
+        for (const p of paths) {
+          cs.addImageAnnotation({ x: center.x + offset, y: center.y + offset }, p)
+          offset += 32
         }
         return
       }
@@ -217,12 +236,12 @@ export function useShortcuts(): void {
         }
       }
 
-      // Cmd+G — group selected nodes into region
+      // Cmd+G — arrange selected nodes horizontally and wrap in a region
       if (e.metaKey && !e.shiftKey && e.key === 'g') {
         if (terminalHasFocus) return
         e.preventDefault()
         e.stopPropagation()
-        canvasStore().groupSelectedIntoRegion()
+        canvasStore().groupSelectedHorizontal()
         return
       }
 
@@ -262,6 +281,19 @@ export function useShortcuts(): void {
           if (!isEditable) {
             e.preventDefault()
             e.stopPropagation()
+            // When any selected region has panels inside, prompt the user
+            // before destroying their work. Shift+Delete still bypasses the
+            // prompt and deletes contents along with the region.
+            const containedPanels = state.selectedRegionIds.size > 0
+              ? Object.values(state.nodes).filter((n) => n.regionId && state.selectedRegionIds.has(n.regionId)).length
+              : 0
+            if (!e.shiftKey && containedPanels > 0) {
+              confirmDeleteRegion(containedPanels).then((choice) => {
+                if (choice === 'cancel') return
+                canvasStore().deleteSelection(choice === 'with-contents')
+              })
+              return
+            }
             // Shift+Delete deletes region contents too
             state.deleteSelection(e.shiftKey)
             return

@@ -15,6 +15,7 @@ import { useStatusStore } from '../stores/statusStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { terminalRestoreData, replayTerminalLog } from './session'
 import { awaitWorkspaceSync } from '../stores/appStore'
+import { scanTerminalChunkForUrls, clearTerminalUrlBuffer } from './terminalUrlAutoOpen'
 import { getResolvedTheme, subscribeTheme, type ResolvedTheme } from './themeManager'
 
 /** Read the configured scrollback limit, clamped to a sane range. */
@@ -119,6 +120,123 @@ export function getTerminalTheme(resolved: ResolvedTheme): typeof TERMINAL_THEME
 }
 
 // ---------------------------------------------------------------------------
+// Per-terminal preset palettes — opt-in overrides selected via the terminal
+// tab's context menu. When a panel has no `themePreset`, it follows the app
+// theme via getTerminalTheme() above.
+// ---------------------------------------------------------------------------
+
+import type { TerminalThemeData } from '../../shared/types'
+
+export type TerminalPreset = TerminalThemeData
+
+const PRESET_SOLARIZED_DARK: TerminalPreset = {
+  id: 'solarized-dark',
+  label: 'Solarized Dark',
+  accent: '#268bd2',
+  theme: {
+    background: '#002b36', foreground: '#839496', cursor: '#93a1a1',
+    selectionBackground: '#073642', selectionForeground: '#93a1a1',
+    black: '#073642', red: '#dc322f', green: '#859900', yellow: '#b58900',
+    blue: '#268bd2', magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5',
+    brightBlack: '#002b36', brightRed: '#cb4b16', brightGreen: '#586e75',
+    brightYellow: '#657b83', brightBlue: '#839496', brightMagenta: '#6c71c4',
+    brightCyan: '#93a1a1', brightWhite: '#fdf6e3',
+  },
+}
+
+const PRESET_DRACULA: TerminalPreset = {
+  id: 'dracula',
+  label: 'Dracula',
+  accent: '#bd93f9',
+  theme: {
+    background: '#282a36', foreground: '#f8f8f2', cursor: '#f8f8f0',
+    selectionBackground: '#44475a', selectionForeground: '#f8f8f2',
+    black: '#21222c', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c',
+    blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2',
+    brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94',
+    brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df',
+    brightCyan: '#a4ffff', brightWhite: '#ffffff',
+  },
+}
+
+const PRESET_TOKYO_NIGHT: TerminalPreset = {
+  id: 'tokyo-night',
+  label: 'Tokyo Night',
+  accent: '#7aa2f7',
+  theme: {
+    background: '#1a1b26', foreground: '#a9b1d6', cursor: '#c0caf5',
+    selectionBackground: '#33467c', selectionForeground: '#c0caf5',
+    black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
+    blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
+    brightBlack: '#414868', brightRed: '#f7768e', brightGreen: '#9ece6a',
+    brightYellow: '#e0af68', brightBlue: '#7aa2f7', brightMagenta: '#bb9af7',
+    brightCyan: '#7dcfff', brightWhite: '#c0caf5',
+  },
+}
+
+const PRESET_NORD: TerminalPreset = {
+  id: 'nord',
+  label: 'Nord',
+  accent: '#88c0d0',
+  theme: {
+    background: '#2e3440', foreground: '#d8dee9', cursor: '#d8dee9',
+    selectionBackground: '#434c5e', selectionForeground: '#eceff4',
+    black: '#3b4252', red: '#bf616a', green: '#a3be8c', yellow: '#ebcb8b',
+    blue: '#81a1c1', magenta: '#b48ead', cyan: '#88c0d0', white: '#e5e9f0',
+    brightBlack: '#4c566a', brightRed: '#bf616a', brightGreen: '#a3be8c',
+    brightYellow: '#ebcb8b', brightBlue: '#81a1c1', brightMagenta: '#b48ead',
+    brightCyan: '#8fbcbb', brightWhite: '#eceff4',
+  },
+}
+
+export const TERMINAL_PRESETS: TerminalPreset[] = [
+  PRESET_SOLARIZED_DARK,
+  PRESET_DRACULA,
+  PRESET_TOKYO_NIGHT,
+  PRESET_NORD,
+]
+
+/** Returns built-in presets followed by user-imported custom themes from
+ *  settings. The Theme submenu and registry lookups both go through here. */
+export function getAllTerminalThemes(): TerminalPreset[] {
+  const custom = useSettingsStore.getState().terminalCustomThemes ?? []
+  return [...TERMINAL_PRESETS, ...custom]
+}
+
+export function getTerminalPreset(id: string | undefined): TerminalPreset | null {
+  if (!id) return null
+  return getAllTerminalThemes().find((p) => p.id === id) ?? null
+}
+
+/** Same fallback chain as resolveTerminalTheme but returns the full preset
+ *  (or null if no preset applies — e.g. "Follow App Theme" is selected). */
+export function resolveTerminalPreset(presetId: string | undefined): TerminalPreset | null {
+  const explicit = getTerminalPreset(presetId)
+  if (explicit) return explicit
+  const defaultId = useSettingsStore.getState().defaultTerminalTheme
+  return getTerminalPreset(defaultId)
+}
+
+/** Resolve the effective theme for a given panel.
+ *  Resolution order: per-panel preset → default-theme setting → app theme. */
+export function resolveTerminalTheme(presetId: string | undefined): typeof TERMINAL_THEME_DARK_WARM {
+  const explicit = getTerminalPreset(presetId)
+  if (explicit) return explicit.theme as typeof TERMINAL_THEME_DARK_WARM
+  const defaultId = useSettingsStore.getState().defaultTerminalTheme
+  const def = getTerminalPreset(defaultId)
+  if (def) return def.theme as typeof TERMINAL_THEME_DARK_WARM
+  return getTerminalTheme(getResolvedTheme())
+}
+
+/** Apply the resolved theme to every live terminal. Called when the app
+ *  theme changes OR when the user changes the default-theme setting. */
+function repaintAllTerminals(): void {
+  for (const entry of registry.values()) {
+    entry.terminal.options.theme = resolveTerminalTheme(entry.themePreset)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -134,12 +252,17 @@ export interface RegistryEntry {
   lastScrollTop: number
   /** True once a scroll listener has been attached — prevents duplicates across re-attach cycles. */
   hasScrollListener: boolean
+  /** Preset id (or undefined to follow the global theme). */
+  themePreset?: string
+  /** Owning workspace — used to route auto-detected URLs to the right browser panel. */
+  workspaceId: string
 }
 
 interface CreateOpts {
   workspaceId: string
   cwd?: string
   initialInput?: string
+  themePreset?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -156,10 +279,20 @@ const pendingTransfers = new Map<string, { ptyId: string; scrollback?: string }>
 // Live theme swap — update all live terminals when the app theme changes
 // ---------------------------------------------------------------------------
 
-subscribeTheme((resolved) => {
-  const theme = getTerminalTheme(resolved)
-  for (const entry of registry.values()) {
-    entry.terminal.options.theme = theme
+subscribeTheme(() => {
+  repaintAllTerminals()
+})
+
+// When the user changes the default-theme setting (or imports/deletes a
+// custom palette), repaint any terminal without an explicit override.
+let lastDefault = useSettingsStore.getState().defaultTerminalTheme
+let lastCustomCount = useSettingsStore.getState().terminalCustomThemes?.length ?? 0
+useSettingsStore.subscribe((state) => {
+  const customCount = state.terminalCustomThemes?.length ?? 0
+  if (state.defaultTerminalTheme !== lastDefault || customCount !== lastCustomCount) {
+    lastDefault = state.defaultTerminalTheme
+    lastCustomCount = customCount
+    repaintAllTerminals()
   }
 })
 
@@ -189,7 +322,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
 
   // 1. Create xterm.js Terminal
   const terminal = new Terminal({
-    theme: getTerminalTheme(getResolvedTheme()),
+    theme: resolveTerminalTheme(opts.themePreset),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     fontSize: 13,
     cursorBlink: true,
@@ -231,6 +364,8 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     cleanupListeners,
     lastScrollTop: 0,
     hasScrollListener: false,
+    themePreset: opts.themePreset,
+    workspaceId: opts.workspaceId,
   }
 
   // Register entry immediately so concurrent calls return the same object
@@ -274,6 +409,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
       if (id === ptyId) {
         terminal.write(data)
+        try { scanTerminalChunkForUrls(panelId, opts.workspaceId, data) } catch { /* ignore */ }
       }
     })
     cleanupListeners.push(removeDataListener)
@@ -382,7 +518,7 @@ async function reconnectTerminal(
 
   // 1. Create a fresh xterm Terminal (same config as getOrCreate)
   const terminal = new Terminal({
-    theme: getTerminalTheme(getResolvedTheme()),
+    theme: resolveTerminalTheme(opts.themePreset),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     fontSize: 13,
     cursorBlink: true,
@@ -412,6 +548,8 @@ async function reconnectTerminal(
     cleanupListeners,
     lastScrollTop: 0,
     hasScrollListener: false,
+    themePreset: opts.themePreset,
+    workspaceId: opts.workspaceId,
   }
 
   registry.set(panelId, entry)
@@ -425,6 +563,7 @@ async function reconnectTerminal(
   const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
     if (id === ptyId) {
       terminal.write(data)
+      try { scanTerminalChunkForUrls(panelId, opts.workspaceId, data) } catch { /* ignore */ }
     }
   })
   cleanupListeners.push(removeDataListener)
@@ -497,6 +636,7 @@ function release(panelId: string): void {
   if (!entry) return
 
   registry.delete(panelId)
+  clearTerminalUrlBuffer(panelId)
 
   const { terminal, fitAddon, webglAddon, cleanupListeners } = entry
 
@@ -758,6 +898,7 @@ function dispose(panelId: string): void {
 
   // Remove from registry first so re-entrant calls are no-ops
   registry.delete(panelId)
+  clearTerminalUrlBuffer(panelId)
 
   const { terminal, fitAddon, webglAddon, ptyId, cleanupListeners } = entry
   const { electronAPI } = window
@@ -829,6 +970,14 @@ function findPrevious(panelId: string, query: string): boolean {
   return entry.searchAddon.findPrevious(query)
 }
 
+/** Apply a preset (or clear it with undefined) to a live terminal. */
+function setThemePreset(panelId: string, presetId: string | undefined): void {
+  const entry = registry.get(panelId)
+  if (!entry) return
+  entry.themePreset = presetId
+  entry.terminal.options.theme = resolveTerminalTheme(presetId)
+}
+
 function clearSearch(panelId: string): void {
   const entry = registry.get(panelId)
   entry?.searchAddon?.clearDecorations()
@@ -853,4 +1002,5 @@ export const terminalRegistry = {
   findNext,
   findPrevious,
   clearSearch,
+  setThemePreset,
 } as const

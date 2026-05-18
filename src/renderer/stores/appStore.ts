@@ -41,6 +41,7 @@ export interface CanvasOperations {
     focusedNodeId: CanvasNodeId | null,
     regions?: Record<string, CanvasRegion>,
     annotations?: Record<string, import('../../shared/types').CanvasAnnotation>,
+    connections?: Record<string, import('../../shared/types').CanvasConnection>,
   ) => void
   syncCanvasSnapshot: () => {
     nodes: Record<CanvasNodeId, CanvasNodeState>
@@ -261,7 +262,7 @@ interface AppStoreActions {
   removeWorkspace: (id: string) => void
 
   // Panel creation — each adds a PanelState to the workspace AND places it
-  createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement) => string
+  createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement, cwd?: string) => string
   createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
@@ -281,6 +282,7 @@ interface AppStoreActions {
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
+  setPanelThemePreset: (workspaceId: string, panelId: string, themePreset: string | undefined) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
 
   // Helpers
@@ -297,6 +299,8 @@ interface AppStoreActions {
   duplicateWorkspace: (wsId: string) => string
   closeAllPanels: (wsId: string) => void
   reorderWorkspaces: (fromIndex: number, toIndex: number) => void
+  addAdditionalRoot: (wsId: string, rootPath: string) => void
+  removeAdditionalRoot: (wsId: string, rootPath: string) => void
 
   // Cross-window sync: merge metadata from main-process broadcast
   mergeWorkspaceInfos: (infos: WorkspaceInfo[]) => void
@@ -371,6 +375,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ws.focusedNodeId,
         ws.regions,
         ws.annotations,
+        ws.connections,
       )
     }
     // Sync to main process
@@ -550,6 +555,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           newWs.focusedNodeId,
           newWs.regions,
           newWs.annotations,
+          newWs.connections,
         )
         if (newWs.dockState) {
           useDockStore.getState().restoreSnapshot(newWs.dockState)
@@ -578,13 +584,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   // --- Panel creation ---
 
-  createTerminal(workspaceId, initialInput?, position?, placement?) {
+  createTerminal(workspaceId, initialInput?, position?, placement?, cwd?) {
     const panelId = generateId()
+    // Auto-number terminal titles within the workspace so `cate ask "Terminal 2"`
+    // and similar inter-panel calls can address each one unambiguously. Looks
+    // for the highest existing "Terminal N" name and picks N+1.
+    const ws = get().workspaces.find((w) => w.id === workspaceId)
+    let maxN = 0
+    if (ws) {
+      for (const p of Object.values(ws.panels)) {
+        if (p.type !== 'terminal') continue
+        const m = /^Terminal\s+(\d+)$/.exec(p.title)
+        if (m) {
+          const n = parseInt(m[1], 10)
+          if (n > maxN) maxN = n
+        }
+      }
+    }
     const panel: PanelState = {
       id: panelId,
       type: 'terminal',
-      title: 'Terminal',
+      title: `Terminal ${maxN + 1}`,
       isDirty: false,
+      ...(cwd ? { cwd } : {}),
     }
 
     set((state) => ({
@@ -969,6 +991,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }))
   },
 
+  setPanelThemePreset(workspaceId, panelId, themePreset) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        const panel = ws.panels[panelId]
+        if (!panel) return ws
+        return {
+          ...ws,
+          panels: { ...ws.panels, [panelId]: { ...panel, themePreset } },
+        }
+      }),
+    }))
+  },
+
   addPanel(workspaceId, panel) {
     set((state) => ({
       workspaces: state.workspaces.map((ws) =>
@@ -1005,6 +1041,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
               canvasNodes: { ...canvasState.nodes },
               regions: { ...canvasState.regions },
               annotations: { ...canvasState.annotations },
+              connections: { ...((canvasState as any).connections ?? {}) },
               viewportOffset: { ...canvasState.viewportOffset },
               zoomLevel: canvasState.zoomLevel,
               focusedNodeId: canvasState.focusedNodeId,
@@ -1108,6 +1145,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
       workspaces.splice(toIndex, 0, moved)
       return { workspaces }
     })
+  },
+
+  addAdditionalRoot(wsId, rootPath) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        const current = ws.additionalRoots ?? []
+        // Don't add duplicates or the primary root itself.
+        if (rootPath === ws.rootPath || current.includes(rootPath)) return ws
+        return { ...ws, additionalRoots: [...current, rootPath] }
+      }),
+    }))
+  },
+
+  removeAdditionalRoot(wsId, rootPath) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        const current = ws.additionalRoots ?? []
+        return { ...ws, additionalRoots: current.filter((p) => p !== rootPath) }
+      }),
+    }))
   },
 
   closeAllPanels(wsId) {

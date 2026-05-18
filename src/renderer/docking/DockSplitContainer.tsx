@@ -10,10 +10,23 @@ import DockResizeHandle from './DockResizeHandle'
 
 interface DockSplitContainerProps {
   node: DockSplitNode
-  renderNode: (node: import('../../shared/types').DockLayoutNode) => React.ReactNode
+  renderNode: (
+    node: import('../../shared/types').DockLayoutNode,
+    leftEdge: boolean,
+    rightEdge: boolean,
+  ) => React.ReactNode
+  /** True if this split's left edge sits on the viewport's left edge. */
+  leftEdge?: boolean
+  /** True if this split's right edge sits on the viewport's right edge. */
+  rightEdge?: boolean
 }
 
-export default function DockSplitContainer({ node, renderNode }: DockSplitContainerProps) {
+export default function DockSplitContainer({
+  node,
+  renderNode,
+  leftEdge = false,
+  rightEdge = false,
+}: DockSplitContainerProps) {
   const setSplitRatio = useDockStoreContext((s) => s.setSplitRatio)
   const isHorizontal = node.direction === 'horizontal'
   const containerRef = useRef<HTMLDivElement>(null)
@@ -55,7 +68,15 @@ export default function DockSplitContainer({ node, renderNode }: DockSplitContai
       ref={containerRef}
       className={`flex h-full w-full min-h-0 min-w-0 ${isHorizontal ? 'flex-row' : 'flex-col'}`}
     >
-      {node.children.map((child, i) => (
+      {node.children.map((child, i) => {
+        // Vertical splits stack top/bottom, so every child still touches the
+        // viewport's left/right edges. Horizontal splits only let the first
+        // child touch the left edge and the last touch the right edge.
+        const childLeftEdge = isHorizontal ? leftEdge && i === 0 : leftEdge
+        const childRightEdge = isHorizontal
+          ? rightEdge && i === node.children.length - 1
+          : rightEdge
+        return (
         <React.Fragment key={child.type === 'tabs' ? child.id : child.id}>
           <div
             style={{
@@ -63,7 +84,7 @@ export default function DockSplitContainer({ node, renderNode }: DockSplitContai
             }}
             className="min-h-0 min-w-0 overflow-hidden"
           >
-            {renderNode(child)}
+            {renderNode(child, childLeftEdge, childRightEdge)}
           </div>
           {i < node.children.length - 1 && (
             <DockResizeHandle
@@ -72,7 +93,8 @@ export default function DockSplitContainer({ node, renderNode }: DockSplitContai
             />
           )}
         </React.Fragment>
-      ))}
+        )
+      })}
     </div>
   )
 }

@@ -68,7 +68,15 @@ export default function TerminalPanel({
   const [searchQuery, setSearchQuery] = useState('')
 
   const workspaces = useAppStore((state) => state.workspaces)
-  const rootPath = workspaces.find((w) => w.id === workspaceId)?.rootPath
+  const themePreset = useAppStore(
+    (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.themePreset,
+  )
+  const panelCwd = useAppStore(
+    (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.cwd,
+  )
+  const workspaceRoot = workspaces.find((w) => w.id === workspaceId)?.rootPath
+  // Prefer an explicit per-panel cwd (drag-drop folder, worktree, etc.).
+  const rootPath = panelCwd || workspaceRoot
   const rootPathRef = useRef(rootPath)
   rootPathRef.current = rootPath
 
@@ -192,6 +200,7 @@ export default function TerminalPanel({
         workspaceId,
         cwd: rootPathRef.current || undefined,
         initialInput,
+        themePreset,
       })
       .then((entry) => {
         if (cancelled) return
@@ -233,6 +242,12 @@ export default function TerminalPanel({
       detachAndDisconnect()
     }
   }, [panelId, workspaceId, nodeId, initialInput])
+
+  // Hot-apply theme preset changes without recreating the terminal.
+  useEffect(() => {
+    if (!terminalRegistry.has(panelId)) return
+    terminalRegistry.setThemePreset(panelId, themePreset)
+  }, [panelId, themePreset])
 
   // -------------------------------------------------------------------------
   // Focus xterm when this node becomes the focused node

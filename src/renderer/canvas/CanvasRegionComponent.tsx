@@ -3,6 +3,8 @@ import type { CanvasRegion } from '../../shared/types'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { useAppStore, getCanvasOpsById } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
+import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 
 // Preset region colors
 const REGION_COLORS = [
@@ -112,10 +114,23 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
       })()
       const isMultiDrag = hasOtherRegions || hasExternalNodes
 
+      const settings = useSettingsStore.getState()
+      const snapX = (v: number) =>
+        settings.snapToGridEnabled
+          ? Math.round(v / settings.gridSpacing) * settings.gridSpacing
+          : v
+      const snapY = snapX
+
       if (isMultiDrag) {
         // Multi-drag: use incremental deltas to avoid compounding
-        const incrDx = (ev.clientX - dragRef.current.lastClientX) / zoom
-        const incrDy = (ev.clientY - dragRef.current.lastClientY) / zoom
+        let incrDx = (ev.clientX - dragRef.current.lastClientX) / zoom
+        let incrDy = (ev.clientY - dragRef.current.lastClientY) / zoom
+        if (settings.snapToGridEnabled) {
+          const g = settings.gridSpacing
+          incrDx = Math.round(incrDx / g) * g
+          incrDy = Math.round(incrDy / g) * g
+          if (incrDx === 0 && incrDy === 0) return
+        }
         dragRef.current.lastClientX = ev.clientX
         dragRef.current.lastClientY = ev.clientY
 
@@ -138,8 +153,8 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
         const totalDx = (ev.clientX - dragRef.current.startX) / zoom
         const totalDy = (ev.clientY - dragRef.current.startY) / zoom
         canvasApi.getState().moveRegion(region.id, {
-          x: dragRef.current.originX + totalDx,
-          y: dragRef.current.originY + totalDy,
+          x: snapX(dragRef.current.originX + totalDx),
+          y: snapY(dragRef.current.originY + totalDy),
         })
       }
     }
@@ -246,15 +261,19 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
       id: `color:${i}`,
       label: region.color === color ? `${REGION_COLOR_LABELS[i]} ✓` : REGION_COLOR_LABELS[i],
     }))
+    const cwdLabel = region.defaultCwd
+      ? `Default Folder: …/${region.defaultCwd.split('/').filter(Boolean).slice(-2).join('/')}`
+      : 'Set Default Folder…'
     const id = await window.electronAPI.showContextMenu([
       { id: 'rename', label: 'Rename' },
       { label: 'Change Color', submenu: colorSubmenu },
-      { type: 'separator' },
+      { id: 'set-cwd', label: cwdLabel },
+      ...(region.defaultCwd ? [{ id: 'clear-cwd', label: 'Clear Default Folder' }] : []),
+      { type: 'separator' as const },
       { id: 'extract', label: 'Extract to New Canvas' },
-      { type: 'separator' },
+      { type: 'separator' as const },
       { id: 'dissolve', label: 'Dissolve Region' },
-      { id: 'delete', label: 'Delete Region' },
-      { id: 'delete-contents', label: 'Delete Region + Contents' },
+      { id: 'delete', label: 'Delete Region…' },
     ])
     if (!id) return
     if (id === 'rename') {
@@ -267,16 +286,33 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
       canvasApi.getState().updateRegionColor(region.id, REGION_COLORS[idx])
       return
     }
+    if (id === 'set-cwd') {
+      const path = await window.electronAPI.openFolderDialog()
+      if (path) canvasApi.getState().setRegionDefaultCwd(region.id, path)
+      return
+    }
+    if (id === 'clear-cwd') {
+      canvasApi.getState().setRegionDefaultCwd(region.id, undefined)
+      return
+    }
     switch (id) {
       case 'extract': extractRegionToNewCanvas(); break
       case 'dissolve': canvasApi.getState().dissolveRegion(region.id); break
-      case 'delete': canvasApi.getState().removeRegion(region.id); break
-      case 'delete-contents':
-        canvasApi.getState().selectRegions([region.id])
-        canvasApi.getState().deleteSelection(true)
+      case 'delete': {
+        const state = canvasApi.getState()
+        const panelCount = Object.values(state.nodes).filter((n) => n.regionId === region.id).length
+        if (panelCount === 0) {
+          state.removeRegion(region.id)
+          break
+        }
+        const choice = await confirmDeleteRegion(panelCount)
+        if (choice === 'cancel') break
+        state.selectRegions([region.id])
+        state.deleteSelection(choice === 'with-contents')
         break
+      }
     }
-  }, [region.id, region.label, region.color, canvasApi])
+  }, [region.id, region.label, region.color, region.defaultCwd, canvasApi])
 
   // Resize handle mouse down
   const handleResizeStart = useCallback((e: React.MouseEvent, handle: ResizeHandle) => {
@@ -290,15 +326,38 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
 
     const handleMouseMove = (ev: MouseEvent) => {
       const zoom = canvasApi.getState().zoomLevel
-      const dx = (ev.clientX - startX) / zoom
-      const dy = (ev.clientY - startY) / zoom
+      let dx = (ev.clientX - startX) / zoom
+      let dy = (ev.clientY - startY) / zoom
+
+      // Live snap the moving edge to the grid (keeps opposite edge fixed).
+      const settings = useSettingsStore.getState()
+      const h = handle.toLowerCase()
+      if (settings.snapToGridEnabled) {
+        const g = settings.gridSpacing
+        const snap = (v: number) => Math.round(v / g) * g
+        if (h.includes('right')) {
+          const startRight = startOrigin.x + startSize.width
+          dx = snap(startRight + dx) - startRight
+        } else if (h.includes('left')) {
+          dx = snap(startOrigin.x + dx) - startOrigin.x
+        } else {
+          dx = 0
+        }
+        if (h.includes('bottom')) {
+          const startBottom = startOrigin.y + startSize.height
+          dy = snap(startBottom + dy) - startBottom
+        } else if (h.includes('top')) {
+          dy = snap(startOrigin.y + dy) - startOrigin.y
+        } else {
+          dy = 0
+        }
+      }
 
       let newX = startOrigin.x
       let newY = startOrigin.y
       let newW = startSize.width
       let newH = startSize.height
 
-      const h = handle.toLowerCase()
       if (h.includes('right')) { newW += dx }
       if (h.includes('left')) { newX += dx; newW -= dx }
       if (h.includes('bottom')) { newH += dy }
@@ -345,7 +404,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
           width: region.size.width,
           height: region.size.height,
           background: `linear-gradient(135deg, rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, ${isDropTarget ? 0.22 : 0.10}) 0%, rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, ${isDropTarget ? 0.12 : 0.04}) 100%)`,
-          borderRadius: 16,
+          borderRadius: 0,
           border: isDropTarget
             ? `2px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 1)`
             : isSelected
@@ -377,17 +436,23 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
             }}
             style={{
               position: 'absolute',
-              top: -26,
-              left: 6,
-              fontSize: 12,
-              fontWeight: 600,
+              bottom: '100%',
+              left: 4,
+              marginBottom: 8,
+              fontSize: 18,
+              fontWeight: 400,
+              letterSpacing: 0.3,
               color: 'var(--text-primary)',
-              backgroundColor: 'var(--surface-3)',
-              border: '1px solid rgba(74, 158, 255, 0.5)',
-              borderRadius: 4,
-              padding: '1px 6px',
+              textShadow: '0 1px 3px rgba(0, 0, 0, 0.7)',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: '1px solid var(--text-primary)',
+              borderRadius: 0,
+              padding: 0,
               outline: 'none',
               minWidth: 60,
+              transform: `scale(${1 / Math.max(zoomLevel, 0.6)})`,
+              transformOrigin: 'bottom left',
             }}
           />
         ) : (
@@ -401,21 +466,19 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
             title="Click to rename"
             style={{
               position: 'absolute',
-              top: -28,
-              left: 6,
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: 0.2,
+              bottom: '100%',
+              left: 4,
+              marginBottom: 8,
+              fontSize: 18,
+              fontWeight: 400,
+              letterSpacing: 0.3,
               color: 'var(--text-primary)',
-              background: `rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.22)`,
-              border: `1px solid rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.5)`,
-              backdropFilter: 'blur(6px)',
-              WebkitBackdropFilter: 'blur(6px)',
-              borderRadius: 999,
-              padding: '2px 10px',
+              textShadow: '0 1px 3px rgba(0, 0, 0, 0.7)',
               whiteSpace: 'nowrap',
               userSelect: 'none',
               cursor: 'text',
+              transform: `scale(${1 / Math.max(zoomLevel, 0.6)})`,
+              transformOrigin: 'bottom left',
             }}
           >
             {region.label}

@@ -4,7 +4,8 @@
 // center for tab. Overlays dock zones, tab stacks, and canvas.
 // =============================================================================
 
-import React, { useMemo } from 'react'
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useDockDragStore } from '../hooks/useDockDrag'
 import type { DockDropTarget } from '../../shared/types'
 
@@ -158,24 +159,55 @@ function resolveActiveEdge(target: DockDropTarget | null): 'top' | 'bottom' | 'l
 
 export default function DropZoneOverlay({ activeTarget, isOver }: DropZoneOverlayProps) {
   const isDragging = useDockDragStore((s) => s.isDragging)
+  // A hidden marker lets us look up the host container's bounding rect so we
+  // can portal the preview into document.body. Portalling escapes ancestor
+  // stacking contexts (canvas-node z-index trap, CanvasDropZone at z-9999)
+  // that would otherwise hide the indicator.
+  const markerRef = useRef<HTMLDivElement>(null)
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const active = isDragging && isOver
 
-  if (!isDragging) return null
+  useLayoutEffect(() => {
+    if (!active) {
+      setRect(null)
+      return
+    }
+    const measure = () => {
+      const host = markerRef.current?.parentElement
+      if (host) setRect(host.getBoundingClientRect())
+    }
+    measure()
+    // The host rect can shift mid-drag (canvas panning, layout updates).
+    // Subscribing to drag-store updates (cursor + target) is a cheap way to
+    // re-measure every frame the drag is alive.
+    const unsub = useDockDragStore.subscribe(measure)
+    return () => unsub()
+  }, [active])
 
-  if (!isOver) return null
+  if (!active) return <div ref={markerRef} style={{ display: 'none' }} />
 
   const activeEdge = resolveActiveEdge(activeTarget)
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 9999,
-        pointerEvents: 'none',
-      }}
-    >
-      {activeEdge && <DropPreview position={activeEdge} />}
-    </div>
+    <>
+      <div ref={markerRef} style={{ display: 'none' }} />
+      {rect && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+            zIndex: 99999,
+            pointerEvents: 'none',
+          }}
+        >
+          {activeEdge && <DropPreview position={activeEdge} />}
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }
 

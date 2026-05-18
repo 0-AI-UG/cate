@@ -5,12 +5,13 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera } from '@phosphor-icons/react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { SEARCH_ENGINE_URLS } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
+import { portalRegistry } from '../lib/portalRegistry'
 
 // -----------------------------------------------------------------------------
 // Type declarations for Electron's <webview> element
@@ -125,8 +126,11 @@ export default function BrowserPanel({
     setIsLoading(true)
     setCurrentUrl(targetUrl)
     setInputUrl(targetUrl)
+    // Persist immediately so a quick app close / workspace switch before
+    // did-navigate fires still restores to the URL the user typed.
+    updatePanelUrl(workspaceId, panelId, targetUrl)
     webview.loadURL(targetUrl)
-  }, [browserSearchEngine])
+  }, [browserSearchEngine, updatePanelUrl, workspaceId, panelId])
 
   const handleGoBack = useCallback(() => {
     webviewRef.current?.goBack()
@@ -163,8 +167,24 @@ export default function BrowserPanel({
 
   const handleScreenshotDragStart = useCallback((e: React.DragEvent) => {
     if (!screenshot) return
-    e.preventDefault()
-    window.electronAPI.nativeFileDrag(screenshot.filePath)
+    // Set internal MIME so Canvas and TerminalPanel drop handlers accept it,
+    // plus text/uri-list and text/plain so the path can be dropped into other
+    // editable surfaces (URL bar, search boxes, external apps that accept text).
+    try {
+      e.dataTransfer.effectAllowed = 'copy'
+      e.dataTransfer.setData('application/cate-file', screenshot.filePath)
+      e.dataTransfer.setData('text/uri-list', `file://${screenshot.filePath}`)
+      e.dataTransfer.setData('text/plain', screenshot.filePath)
+      // Use the screenshot itself as the drag image so the cursor shows the
+      // thumbnail mid-drag rather than the surrounding button chrome.
+      const img = new Image()
+      img.src = screenshot.dataUrl
+      e.dataTransfer.setDragImage(img, 20, 20)
+    } catch {
+      // Older Electron — fall back to native OS drag with the file on disk.
+      e.preventDefault()
+      window.electronAPI.nativeFileDrag(screenshot.filePath)
+    }
   }, [screenshot])
 
   const dismissScreenshot = useCallback(() => {
@@ -264,6 +284,15 @@ export default function BrowserPanel({
       }
     }
 
+    // Register with the portal registry once the guest webContents is live.
+    // dom-ready is the first event for which getWebContentsId() returns a
+    // stable id; we re-register on every dom-ready in case the webview was
+    // re-attached after a navigation crash.
+    const onDomReady = (): void => {
+      try { portalRegistry.register(panelId, webview as any) } catch { /* ignore */ }
+    }
+    webview.addEventListener('dom-ready', onDomReady)
+
     webview.addEventListener('did-navigate', onDidNavigate)
     webview.addEventListener('did-navigate-in-page', onDidNavigateInPage)
     webview.addEventListener('page-title-updated', onPageTitleUpdated)
@@ -274,12 +303,12 @@ export default function BrowserPanel({
     webview.addEventListener('new-window', onNewWindow)
 
     return () => {
-      try {
-        // May throw if webview was never attached / dom-ready before unmount
-        webview.loadURL('about:blank')
-      } catch {
-        // ignore — webview is being torn down anyway
-      }
+      // IMPORTANT: remove navigation listeners BEFORE kicking off any
+      // teardown navigation. Otherwise the late-firing did-navigate from
+      // loadURL('about:blank') below would overwrite panel.url with
+      // 'about:blank' in the store, and the URL would be lost on restart.
+      try { portalRegistry.unregister(panelId) } catch { /* ignore */ }
+      webview.removeEventListener('dom-ready', onDomReady)
       webview.removeEventListener('did-navigate', onDidNavigate)
       webview.removeEventListener('did-navigate-in-page', onDidNavigateInPage)
       webview.removeEventListener('page-title-updated', onPageTitleUpdated)
@@ -288,6 +317,12 @@ export default function BrowserPanel({
       webview.removeEventListener('did-stop-loading', onDidStopLoading)
       webview.removeEventListener('will-navigate', onWillNavigate)
       webview.removeEventListener('new-window', onNewWindow)
+      try {
+        // May throw if webview was never attached / dom-ready before unmount
+        webview.loadURL('about:blank')
+      } catch {
+        // ignore — webview is being torn down anyway
+      }
     }
   }, [panelId, workspaceId, updatePanelTitle, updatePanelUrl])
 
@@ -298,45 +333,57 @@ export default function BrowserPanel({
   return (
     <div className="flex flex-col w-full h-full">
       {/* URL bar */}
-      <div className="h-8 flex items-center gap-1 px-1 bg-surface-4 border-b border-subtle shrink-0">
-        <button
-          onClick={handleGoBack}
-          disabled={!canGoBack}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover disabled:opacity-30 text-primary"
-          title="Back"
-        >
-          <ArrowLeft size={14} />
-        </button>
-        <button
-          onClick={handleGoForward}
-          disabled={!canGoForward}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover disabled:opacity-30 text-primary"
-          title="Forward"
-        >
-          <ArrowRight size={14} />
-        </button>
-        <button
-          onClick={handleReload}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-primary"
-          title="Reload"
-        >
-          <ArrowClockwise size={14} className={isLoading ? 'animate-spin' : ''} />
-        </button>
+      <div className="h-10 flex items-center gap-2 px-2 bg-surface-4 border-b border-subtle shrink-0">
+        {/* Navigation pill */}
+        <div className="flex items-center h-7 rounded-full border border-subtle bg-surface-5 overflow-hidden">
+          <button
+            onClick={handleGoBack}
+            disabled={!canGoBack}
+            className="w-7 h-7 flex items-center justify-center hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-primary transition-colors"
+            title="Back"
+          >
+            <ArrowLeft size={13} />
+          </button>
+          <div className="w-px h-3.5 bg-subtle" />
+          <button
+            onClick={handleGoForward}
+            disabled={!canGoForward}
+            className="w-7 h-7 flex items-center justify-center hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-primary transition-colors"
+            title="Forward"
+          >
+            <ArrowRight size={13} />
+          </button>
+          <div className="w-px h-3.5 bg-subtle" />
+          <button
+            onClick={handleReload}
+            className="w-7 h-7 flex items-center justify-center hover:bg-hover text-primary transition-colors"
+            title="Reload"
+          >
+            <ArrowClockwise size={13} className={isLoading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+
+        {/* URL input */}
+        <div className="flex-1 flex items-center h-7 rounded-full border border-subtle bg-surface-5 px-3 gap-2 focus-within:border-strong transition-colors">
+          <MagnifyingGlass size={13} className="text-muted shrink-0" />
+          <input
+            type="text"
+            value={inputUrl}
+            onChange={(e) => setInputUrl(e.target.value)}
+            onKeyDown={handleUrlBarKeyDown}
+            className="flex-1 h-full bg-transparent text-sm text-primary outline-none placeholder:text-muted"
+            placeholder="Enter URL or search..."
+          />
+        </div>
+
+        {/* Screenshot tool */}
         <button
           onClick={handleScreenshot}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-primary"
+          className="w-7 h-7 flex items-center justify-center rounded-full border border-subtle bg-surface-5 hover:bg-hover text-primary transition-colors"
           title="Screenshot"
         >
-          <Camera size={14} />
+          <Camera size={13} />
         </button>
-        <input
-          type="text"
-          value={inputUrl}
-          onChange={(e) => setInputUrl(e.target.value)}
-          onKeyDown={handleUrlBarKeyDown}
-          className="flex-1 h-6 bg-surface-5 border border-subtle rounded-md px-2 text-sm text-primary outline-none focus:border-strong"
-          placeholder="Enter URL or search..."
-        />
       </div>
 
       {/* Webview + overlays container */}
@@ -373,6 +420,7 @@ export default function BrowserPanel({
             <div
               className="relative w-44 rounded-lg overflow-hidden shadow-2xl border border-subtle hover:border-strong transition-all"
               draggable
+              onMouseDown={(e) => e.stopPropagation()}
               onDragStart={handleScreenshotDragStart}
             >
               <img

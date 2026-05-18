@@ -9,7 +9,9 @@ import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext
 import { useDockDragStore, registerDropZone, hitTestDropTarget, hitTestDropTargetWithStore } from '../hooks/useDockDrag'
 import { executeDrop } from './dropExecution'
 import { createTransferSnapshot } from '../lib/panelTransfer'
-import { terminalRegistry } from '../lib/terminalRegistry'
+import { terminalRegistry, TERMINAL_PRESETS, getAllTerminalThemes } from '../lib/terminalRegistry'
+import { useUIStore } from '../stores/uiStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import type { DockTabStack as DockTabStackType, PanelState, PanelType } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { X, Columns, Plus, Terminal as TerminalIcon, Globe, FileText, GitBranch, TreeStructure, SquaresFour, List } from '@phosphor-icons/react'
@@ -89,13 +91,39 @@ interface DockTabStackProps {
   localOnly?: boolean
   /** When true, render a slimmer tab bar (used by canvas-node mini-docks). */
   compact?: boolean
+  /** True when this stack's left edge sits on the viewport's left edge.
+   *  Center-zone stacks at the left edge inset their tab bar by the left
+   *  sidebar width so tabs stay visible next to the overlay sidebar. */
+  leftEdge?: boolean
+  /** Same as leftEdge but for the right viewport edge / right sidebar. */
+  rightEdge?: boolean
 }
 
-export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact }: DockTabStackProps) {
+export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact, leftEdge, rightEdge }: DockTabStackProps) {
   const setActiveTab = useDockStoreContext((s) => s.setActiveTab)
   const dockStoreApi = useDockStoreApi()
   const stackRef = useRef<HTMLDivElement>(null)
   const dragAbortRef = useRef<AbortController | null>(null)
+
+  // Inline rename state — terminals can be renamed by double-clicking their tab.
+  // The new name is what `cate list` / `cate ask` use to address the panel.
+  const [renameId, setRenameId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement | null>(null)
+  useEffect(() => {
+    if (renameId && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [renameId])
+  const commitRename = (panelId: string) => {
+    const trimmed = renameValue.trim()
+    if (trimmed) {
+      const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
+      if (wsId) useAppStore.getState().updatePanelTitle(wsId, panelId, trimmed)
+    }
+    setRenameId(null)
+  }
 
   useEffect(() => {
     return () => { dragAbortRef.current?.abort() }
@@ -169,15 +197,66 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       const idx = stack.panelIds.indexOf(panelId)
       const hasOthers = stack.panelIds.length > 1
       const hasRight = idx >= 0 && idx < stack.panelIds.length - 1
+      const panel = getPanelLocal(panelId)
+      const isTerminal = panel?.type === 'terminal'
+      const currentPreset = panel?.themePreset
+      const allThemes = getAllTerminalThemes()
+      const customCount = allThemes.length - TERMINAL_PRESETS.length
+      // Surface what "Default" actually resolves to so users know what they
+      // get when they pick it.
+      const defaultThemeId = useSettingsStore.getState().defaultTerminalTheme
+      const defaultLabel = (() => {
+        if (!defaultThemeId) return 'Default (Follow App Theme)'
+        const p = allThemes.find((t) => t.id === defaultThemeId)
+        return p ? `Default (${p.label})` : 'Default'
+      })()
+      const themeSubmenu = isTerminal
+        ? [
+            { id: 'theme:__default__', label: !currentPreset ? `${defaultLabel} ✓` : defaultLabel },
+            { type: 'separator' as const },
+            ...TERMINAL_PRESETS.map((p) => ({
+              id: `theme:${p.id}`,
+              label: currentPreset === p.id ? `${p.label} ✓` : p.label,
+            })),
+            ...(customCount > 0
+              ? [
+                  { type: 'separator' as const },
+                  ...allThemes.slice(TERMINAL_PRESETS.length).map((p) => ({
+                    id: `theme:${p.id}`,
+                    label: currentPreset === p.id ? `${p.label} ✓` : p.label,
+                  })),
+                ]
+              : []),
+            { type: 'separator' as const },
+            { id: 'theme:__import__', label: 'Import Theme…' },
+          ]
+        : []
       const id = await window.electronAPI.showContextMenu([
         { id: 'close', label: 'Close', accelerator: 'Cmd+W' },
         { id: 'close-others', label: 'Close Others', enabled: hasOthers },
         { id: 'close-right', label: 'Close to the Right', enabled: hasRight },
         { id: 'close-all', label: 'Close All', accelerator: 'Cmd+K Cmd+W' },
-        { type: 'separator' },
+        { type: 'separator' as const },
         { id: 'split-right', label: 'Split Right' },
         { id: 'move-window', label: 'Move into New Window' },
+        ...(isTerminal
+          ? ([{ type: 'separator' as const }, { label: 'Theme', submenu: themeSubmenu }] as any[])
+          : []),
       ])
+      if (id?.startsWith('theme:')) {
+        const presetId = id.slice('theme:'.length)
+        if (presetId === '__import__') {
+          // Route the user to the Terminal section of settings so they can
+          // import a theme file. The submenu closes; settings opens scrolled
+          // to the right place.
+          useUIStore.getState().openSettings('terminal')
+          return
+        }
+        const next = presetId === '__default__' ? undefined : presetId
+        const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
+        if (wsId) useAppStore.getState().setPanelThemePreset(wsId, panelId, next)
+        return
+      }
       switch (id) {
         case 'close':
           onClosePanel?.(panelId)
@@ -196,7 +275,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           stack.panelIds.slice().forEach((p) => onClosePanel?.(p))
           break
         case 'split-right': {
-          const panel = getPanelLocal(panelId)
           if (panel) splitWithType(panel.type)
           break
         }
@@ -205,7 +283,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           break
       }
     },
-    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow],
+    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, workspaceIdProp],
   )
 
   const visibleSplitItems = useMemo<SplitMenuItem[]>(
@@ -602,7 +680,20 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       {/* Tab bar — VS Code style: dark strip with active tab merging into the
           content area below via a top accent border. */}
       <div
-        className={`dock-tab-bar flex items-stretch bg-surface-1 overflow-hidden ${compact ? 'min-h-[26px]' : 'min-h-[36px]'}`}
+        className={`dock-tab-bar flex items-stretch overflow-hidden ${compact ? 'min-h-[26px]' : 'min-h-[36px]'}`}
+        style={{
+          backgroundColor: 'var(--node-chrome-bg, var(--surface-1))',
+          // Use margin (not padding) so the tab bar's background ends at the
+          // inner edge of the sidebar — otherwise the surface-1 background
+          // would extend under the translucent sidebar and show up as a
+          // blurred strip there.
+          ...(zoneProp === 'center' && leftEdge
+            ? { marginLeft: 'var(--cate-left-sidebar-width, 0px)' }
+            : null),
+          ...(zoneProp === 'center' && rightEdge
+            ? { marginRight: 'var(--cate-right-sidebar-width, 0px)' }
+            : null),
+        }}
         onContextMenu={handleTabBarContextMenu}
         onMouseDown={(e) => {
           // Empty area of the tab bar — host (e.g. canvas node) may want to
@@ -632,19 +723,12 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                   cursor-grab select-none min-w-0 flex-1 max-w-[200px]
                   border-r border-white/5
                   ${compact ? 'pl-2 pr-1.5 text-[11px]' : 'pl-3 pr-2 text-xs'}
-                  ${isActive
-                    ? 'bg-surface-3 text-primary font-medium'
-                    : 'bg-surface-1 text-secondary hover:text-primary hover:bg-surface-2'
-                  }
+                  ${isActive ? 'text-primary font-medium' : 'text-secondary hover:text-primary'}
                 `}
                 onClick={() => handleTabClick(i)}
                 onMouseDown={(e) => handleTabMouseDown(e, panelId)}
                 onContextMenu={(e) => handleTabContextMenu(e, panelId)}
                 onPointerEnter={() => {
-                  // Spring-loaded tab: while a drag is in progress, hovering
-                  // a non-active tab for 600ms switches to it. Lets the user
-                  // drag a panel onto the "Canvas" tab and wait for the
-                  // canvas to spring open before placing the node on it.
                   if (isActive) return
                   if (!useDockDragStore.getState().isDragging) return
                   if (springLoadTimer.current) window.clearTimeout(springLoadTimer.current)
@@ -658,18 +742,55 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                     springLoadTimer.current = null
                   }
                 }}
-                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                style={{
+                  backgroundColor: isActive
+                    ? 'var(--node-chrome-active-bg, var(--surface-3))'
+                    : 'var(--node-chrome-bg, var(--surface-1))',
+                  WebkitAppRegion: 'no-drag',
+                } as React.CSSProperties}
                 title={getPanelTitle(panelId)}
               >
                 {/* Top accent bar on the active tab — VS Code convention, but
                     brighter so it reads against the dark surface. */}
                 {isActive && (
-                  <span className="absolute left-0 right-0 top-0 h-[2px] bg-blue-500" />
+                  <span
+                    className="absolute left-0 right-0 top-0 h-[2px]"
+                    style={{ backgroundColor: 'var(--node-chrome-accent, #3b82f6)' }}
+                  />
                 )}
                 <span className={`shrink-0 ${isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}>
                   <TabIcon type={panelType} size={compact ? 11 : 13} />
                 </span>
-                <span className="truncate flex-1 min-w-0">{getPanelTitle(panelId)}</span>
+                {renameId === panelId ? (
+                  <input
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={() => commitRename(panelId)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); commitRename(panelId) }
+                      else if (e.key === 'Escape') { e.preventDefault(); setRenameId(null) }
+                      e.stopPropagation()
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    className="truncate flex-1 min-w-0 bg-transparent outline-none border-b border-blue-500/60 text-primary px-0"
+                    style={{ font: 'inherit' }}
+                  />
+                ) : (
+                  <span
+                    className="truncate flex-1 min-w-0"
+                    onDoubleClick={(e) => {
+                      // Only terminal panels are addressable via cate CLI, so
+                      // limit inline rename to those (other panel types have
+                      // their title driven by content, e.g. filename).
+                      if (panel?.type !== 'terminal') return
+                      e.stopPropagation()
+                      setRenameValue(panel.title)
+                      setRenameId(panelId)
+                    }}
+                  >{getPanelTitle(panelId)}</span>
+                )}
                 {onClosePanel && (
                   <span
                     className={`shrink-0 p-0.5 rounded-sm hover:bg-hover ${
@@ -764,8 +885,21 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         )}
       </div>
 
-      {/* Active panel content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Active panel content — inset away from translucent sidebars so the
+          panel body (editor / browser / etc.) doesn't bleed behind them. The
+          canvas panel is intentionally allowed to extend under the sidebars
+          so its infinite surface reads as the backdrop. */}
+      <div
+        className="flex-1 min-h-0 overflow-hidden"
+        style={{
+          ...(zoneProp === 'center' && leftEdge && activePanel?.type !== 'canvas'
+            ? { marginLeft: 'var(--cate-left-sidebar-width, 0px)' }
+            : null),
+          ...(zoneProp === 'center' && rightEdge && activePanel?.type !== 'canvas'
+            ? { marginRight: 'var(--cate-right-sidebar-width, 0px)' }
+            : null),
+        }}
+      >
         {activePanelId ? renderPanel(activePanelId) : (
           <div className="flex items-center justify-center h-full text-muted text-sm">
             No panel

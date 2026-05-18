@@ -16,10 +16,10 @@ export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ titl
   return (
     <div className="flex-shrink-0">
       <div
-        className="flex items-center min-h-[35px] px-3 border-b border-black/40"
+        className="flex items-center min-h-[36px] px-3"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        <span className="text-xs text-primary flex-1 truncate">
+        <span className="text-[13px] text-primary flex-1 truncate">
           {title}
         </span>
         {actions && (
@@ -32,7 +32,7 @@ export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ titl
         )}
       </div>
       {subtitle && (
-        <div className="px-3 py-1 text-[11px] text-muted font-medium truncate">{subtitle}</div>
+        <div className="px-3 py-1 text-[12px] text-muted font-medium truncate">{subtitle}</div>
       )}
     </div>
   )
@@ -44,7 +44,7 @@ export const SidebarHeaderButton: React.FC<
 > = ({ children, className = '', spinning, ...rest }) => (
   <button
     {...rest}
-    className={`flex items-center justify-center w-[22px] h-[22px] my-1 rounded text-muted hover:text-primary hover:bg-hover transition-colors disabled:opacity-30 ${className}`}
+    className={`flex items-center justify-center w-[22px] h-[22px] my-1 rounded text-secondary hover:text-primary hover:bg-hover transition-colors disabled:opacity-30 ${className}`}
   >
     <span className={spinning ? 'inline-flex animate-spin' : 'inline-flex'}>{children}</span>
   </button>

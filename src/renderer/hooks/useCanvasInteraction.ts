@@ -164,6 +164,18 @@ export function useCanvasInteraction(
         }
       }
 
+      // Sticky-note content area — let the browser scroll the note natively
+      // when it can scroll in the wheel's primary direction. Matches the
+      // focused-panel-content behavior, but annotations aren't canvas nodes.
+      const annotationContent = target.closest?.('[data-annotation-content]') as HTMLElement | null
+      if (annotationContent) {
+        const isHorizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
+        const canScroll = isHorizontal
+          ? annotationContent.scrollWidth > annotationContent.clientWidth
+          : annotationContent.scrollHeight > annotationContent.clientHeight
+        if (canScroll) return
+      }
+
       const panelContent = target.closest?.('[data-panel-content]')
       if (panelContent) {
         const nodeEl = panelContent.closest('[data-node-id]')

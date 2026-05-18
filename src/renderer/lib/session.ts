@@ -34,6 +34,12 @@ export const terminalRestoreData = new Map<string, { cwd?: string; replayFromId?
 // Deferred snapshots for inactive workspaces — restored on first switch
 export const deferredSnapshots = new Map<string, SessionSnapshot>()
 
+// Last serialized session payload — used to skip disk writes when nothing
+// actually changed. saveSession() itself mutates the store via
+// syncCanvasToWorkspace, which re-fires the auto-save subscriptions; without
+// this guard those phantom changes produce a save loop every ~1s.
+let lastSerializedSession: string | null = null
+
 function restoreDockPanelsForWorkspace(workspaceId: string, snapshot: SessionSnapshot): number {
   const appStore = useAppStore.getState()
   let restoredCount = 0
@@ -216,6 +222,24 @@ export async function saveSession(): Promise<void> {
       }
     }
 
+    // Translate canvasStore-style connections (which reference live nodeIds)
+    // into a portable form keyed by panelId / annotationId. Restore uses
+    // these to re-create the wires once it knows the new live ids.
+    const nodeIdToPanelId = new Map<string, string>()
+    for (const n of Object.values(nodes)) nodeIdToPanelId.set(n.id, n.panelId)
+    const annIds = new Set(Object.keys(annotations ?? {}))
+    const wsConnections = (workspace as { connections?: Record<string, { id: string; from: string; to: string }> }).connections
+    const connectionRefs: Array<{ from: string; to: string }> = []
+    if (wsConnections) {
+      for (const c of Object.values(wsConnections)) {
+        const fromPid = nodeIdToPanelId.get(c.from)
+        const toPid   = nodeIdToPanelId.get(c.to)
+        const fromRef = fromPid ? `node:${fromPid}` : (annIds.has(c.from) ? `ann:${c.from}` : null)
+        const toRef   = toPid   ? `node:${toPid}`   : (annIds.has(c.to)   ? `ann:${c.to}`   : null)
+        if (fromRef && toRef && fromRef !== toRef) connectionRefs.push({ from: fromRef, to: toRef })
+      }
+    }
+
     snapshots.push({
       workspaceId: workspace.id,
       workspaceName: workspace.name,
@@ -225,6 +249,7 @@ export async function saveSession(): Promise<void> {
       nodes: nodeSnapshots,
       regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
       annotations: annotations && Object.keys(annotations).length > 0 ? { ...annotations } : undefined,
+      connectionRefs: connectionRefs.length > 0 ? connectionRefs : undefined,
       dockState: dockSnapshot,
       dockPanels,
     })
@@ -267,8 +292,15 @@ export async function saveSession(): Promise<void> {
     dockWindows,
   }
 
+  // Dedup: only hit IPC + disk when the serialized payload differs from the
+  // last successfully-saved one. Without this, syncCanvasToWorkspace above
+  // re-triggers the auto-save subscriptions and produces a save loop.
+  const serialized = JSON.stringify(session)
+  if (serialized === lastSerializedSession) return
+
   try {
     await window.electronAPI.sessionSave(session as any) // session save accepts any JSON
+    lastSerializedSession = serialized
   } catch (err) {
     log.warn('[session] Save failed:', err)
   }
@@ -337,6 +369,11 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
     }
   }
 
+  // appStore.createX generates fresh panelIds on restore. The saved
+  // `connectionRefs` use the OLD panelIds, so we track the mapping here and
+  // pass it to the connection-restore step below.
+  const panelIdMap = new Map<string, string>()
+
   for (let i = 0; i < snapshot.nodes.length; i++) {
     const nodeSnap = snapshot.nodes[i]
     log.debug(`[session] restoring node ${i + 1}/${snapshot.nodes.length}: ${nodeSnap.panelType} (panelId=${nodeSnap.panelId})`)
@@ -346,6 +383,12 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
     switch (nodeSnap.panelType) {
       case 'terminal': {
         const panelId = appStore.createTerminal(wsId, undefined, position)
+        panelIdMap.set(nodeSnap.panelId, panelId)
+        // Restore the original title (e.g. "Sage", "Reviewer") instead of the
+        // default "Terminal N" that createTerminal auto-assigned. Without this,
+        // every cate-recruit'd terminal comes back as "Terminal 1/2/3..." on
+        // reload and the cate CLI can no longer address them by name.
+        if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         terminalRestoreData.set(panelId, {
           cwd: nodeSnap.workingDirectory ?? undefined,
           replayFromId: nodeSnap.ptyId ?? nodeSnap.panelId,
@@ -366,6 +409,8 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
       }
       case 'editor': {
         const panelId = appStore.createEditor(wsId, nodeSnap.filePath ?? undefined)
+        panelIdMap.set(nodeSnap.panelId, panelId)
+        if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         if (!nodeSnap.filePath && nodeSnap.unsavedContent) {
           appStore.setPanelUnsavedContent(wsId, panelId, nodeSnap.unsavedContent)
         }
@@ -385,6 +430,10 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
       }
       case 'browser': {
         const panelId = appStore.createBrowser(wsId, nodeSnap.url ?? undefined)
+        panelIdMap.set(nodeSnap.panelId, panelId)
+        // Browser panels are addressed by their title in `cate portal` — same
+        // reason as terminals, the saved name must come back.
+        if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         const canvasState = getCanvasState()
         if (canvasState) {
           const newNodeId = canvasState.nodeForPanel(panelId)
@@ -404,12 +453,21 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
 
   // Restore annotations (sticky notes, text labels) by recreating them with
   // their saved content — addAnnotation doesn't auto-edit when content is
-  // supplied, so restored annotations render in their final form.
+  // supplied, so restored annotations render in their final form. We also
+  // track old-id → new-id so connectionRefs that touch annotations can be
+  // re-wired below.
+  const annIdMap = new Map<string, string>()
   if (snapshot.annotations) {
     const cs2 = getCanvasState()
     if (cs2) {
       for (const ann of Object.values(snapshot.annotations)) {
+        if (ann.type === 'image') {
+          const id = cs2.addImageAnnotation(ann.origin, ann.imagePath || '', ann.size)
+          annIdMap.set(ann.id, id)
+          continue
+        }
         const id = cs2.addAnnotation(ann.type, ann.origin, ann.content || ' ')
+        annIdMap.set(ann.id, id)
         // Restore exact content (addAnnotation requires non-empty to skip
         // auto-edit; we passed a space, now overwrite with the real value).
         cs2.updateAnnotation(id, ann.content)
@@ -417,6 +475,36 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
         if (ann.color) cs2.updateAnnotationColor(id, ann.color)
         if (ann.fontSize) cs2.setAnnotationFontSize(id, ann.fontSize)
       }
+    }
+  }
+
+  // Restore Maestri-style canvas connections. The saved refs use
+  // "node:<oldPanelId>" / "ann:<oldAnnId>"; we translate twice:
+  //   - old panelId → new panelId   (panelIdMap, populated above)
+  //   - new panelId → live nodeId   (via the current canvasStore)
+  //   - old annId   → new annId     (annIdMap, populated by annotation restore)
+  // Drops any ref whose endpoint didn't survive the restore.
+  if (snapshot.connectionRefs && snapshot.connectionRefs.length > 0) {
+    const csConn = getCanvasState()
+    if (csConn) {
+      const newPanelToNode = new Map<string, string>()
+      for (const node of Object.values(csConn.nodes)) newPanelToNode.set(node.panelId, node.id)
+      const resolveRef = (ref: string): string | null => {
+        if (ref.startsWith('node:')) {
+          const oldPid = ref.slice(5)
+          const newPid = panelIdMap.get(oldPid)
+          if (!newPid) return null
+          return newPanelToNode.get(newPid) ?? null
+        }
+        if (ref.startsWith('ann:')) return annIdMap.get(ref.slice(4)) ?? null
+        return null
+      }
+      for (const c of snapshot.connectionRefs) {
+        const f = resolveRef(c.from)
+        const t = resolveRef(c.to)
+        if (f && t) csConn.addConnection(f, t)
+      }
+      log.info('[session] restored %d/%d canvas connections', csConn.connections ? Object.keys(csConn.connections).length : 0, snapshot.connectionRefs.length)
     }
   }
 

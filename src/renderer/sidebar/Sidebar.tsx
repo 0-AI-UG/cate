@@ -2,17 +2,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SourceControlView } from './SourceControlView'
-import { AIConfigSidebarView } from './AIConfigSidebarView'
-import { UsageSidebarView } from './UsageSidebarView'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
 import {
-  Pulse,
-  Flask,
   FolderOpen,
   GitBranch,
   Stack,
+  Gear,
+  MagnifyingGlass,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import pkg from '../../../package.json'
@@ -25,25 +23,22 @@ const VIEW_META: Record<SidebarView, { icon: PhosphorIcon; title: string }> = {
   workspaces: { icon: Stack, title: 'Workspaces' },
   explorer: { icon: FolderOpen, title: 'Explorer' },
   git: { icon: GitBranch, title: 'Source Control' },
-  aiConfig: { icon: Flask, title: 'Agent Setup' },
-  usage: { icon: Pulse, title: 'Token Usage' },
 }
 
 // ---------------------------------------------------------------------------
 // Content renderer — renders whichever view is active, regardless of side
 // ---------------------------------------------------------------------------
 
-const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string; onCollapse: () => void }> = ({
+const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
   view,
   rootPath,
-  onCollapse,
 }) => {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const setWorkspaceRootPath = useAppStore((s) => s.setWorkspaceRootPath)
 
   switch (view) {
     case 'workspaces':
-      return <ProjectList onCollapse={onCollapse} />
+      return <ProjectList />
     case 'explorer':
       return rootPath ? (
         <FileExplorer rootPath={rootPath} />
@@ -66,10 +61,6 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string; onColl
       )
     case 'git':
       return <SourceControlView rootPath={rootPath} />
-    case 'aiConfig':
-      return <AIConfigSidebarView rootPath={rootPath} workspaceId={selectedWorkspaceId} />
-    case 'usage':
-      return <UsageSidebarView />
     default:
       return null
   }
@@ -132,6 +123,18 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
 
+  // Publish current total sidebar width to a CSS variable so the dock tab bar
+  // can inset itself and keep the tab pills next to (not under) the sidebar.
+  const totalWidth =
+    isEmpty && !dragRevealed ? 0 : isExpanded ? BAR_WIDTH + width : BAR_WIDTH
+  useEffect(() => {
+    const cssVar = side === 'left' ? '--cate-left-sidebar-width' : '--cate-right-sidebar-width'
+    document.documentElement.style.setProperty(cssVar, `${totalWidth}px`)
+    return () => {
+      document.documentElement.style.setProperty(cssVar, '0px')
+    }
+  }, [side, totalWidth])
+
   // Drop indicator: index where the drop would land. Mirrored in a ref so the
   // drop handler reads the latest value (state updates from dragOver may not
   // have flushed by the time drop fires).
@@ -185,8 +188,6 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
     if (activeView === view) setActiveView(null)
     else setActiveView(view)
   }, [activeView, setActiveView])
-
-  const handleCollapse = useCallback(() => setActiveView(null), [setActiveView])
 
   // --- Drag handlers ---
 
@@ -254,16 +255,19 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
 
   const bar = (
     <div
-      className={`flex-shrink-0 flex flex-col items-center h-full relative ${
-        isExpanded ? 'bg-surface-0' : ''
-      }`}
-      style={{ width: BAR_WIDTH }}
+      className="flex-shrink-0 flex flex-col items-center h-full relative"
+      style={{
+        width: BAR_WIDTH,
+        backgroundColor: isExpanded
+          ? 'color-mix(in srgb, var(--surface-0) 60%, transparent)'
+          : undefined,
+      }}
       onDragEnter={handleBarDragEnter}
       onDragOver={handleBarDragOver}
       onDragLeave={handleBarDragLeave}
       onDrop={handleBarDrop}
     >
-      <div ref={iconsContainerRef} className="flex flex-col items-center pt-[7px] w-full relative">
+      <div ref={iconsContainerRef} className="flex flex-col items-center pt-0.5 w-full relative">
         {views.map((view, index) => {
           const meta = VIEW_META[view]
           const Icon = meta.icon
@@ -283,20 +287,13 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
                 draggable
                 onDragStart={(e) => handleIconDragStart(e, view)}
                 onDragEnd={handleIconDragEnd}
-                className={`relative flex items-center justify-center w-9 h-8 my-0.5 rounded transition-colors cursor-pointer ${
+                className={`relative flex items-center justify-center w-8 h-8 my-1 rounded transition-colors cursor-pointer ${
                   isActive ? 'text-primary' : 'text-muted hover:text-secondary'
                 }`}
                 onClick={() => handleIconClick(view)}
-                title={meta.title}
+                title={isActive ? `${meta.title} — click to collapse` : meta.title}
               >
-                {isActive && (
-                  <div
-                    className={`absolute top-1.5 bottom-1.5 w-[2px] bg-primary pointer-events-none ${
-                      side === 'left' ? 'left-0 rounded-r' : 'right-0 rounded-l'
-                    }`}
-                  />
-                )}
-                <Icon size={18} className="pointer-events-none" />
+                <Icon size={16} className="pointer-events-none" />
               </div>
             </div>
               {showIndicatorAfter && (
@@ -309,6 +306,26 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
           <div className="w-7 h-[2px] my-0.5 bg-blue-400 rounded-full pointer-events-none" />
         )}
       </div>
+      {side === 'left' && (
+        <div className="mt-auto flex flex-col items-center pb-1 w-full">
+          <button
+            type="button"
+            className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+            onClick={() => useUIStore.getState().setShowCommandPalette(true)}
+            title="Search (⌘K)"
+          >
+            <MagnifyingGlass size={16} className="pointer-events-none" />
+          </button>
+          <button
+            type="button"
+            className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+            onClick={() => useUIStore.getState().openSettings()}
+            title="Settings"
+          >
+            <Gear size={16} className="pointer-events-none" />
+          </button>
+        </div>
+      )}
     </div>
   )
 
@@ -321,13 +338,13 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {activeView && (
           <div key={activeView} className="absolute inset-0 animate-sidebar-view-in">
-            <SidebarViewContent view={activeView} rootPath={rootPath} onCollapse={handleCollapse} />
+            <SidebarViewContent view={activeView} rootPath={rootPath} />
           </div>
         )}
       </div>
       {/* Version marker — shown on whichever side hosts the workspaces view */}
       {isExpanded && activeView === 'workspaces' && (
-        <div className="flex-shrink-0 px-2 py-1.5 flex items-center justify-center gap-1.5 select-none">
+        <div className="flex-shrink-0 px-2 pt-1.5 pb-4 flex items-center justify-center gap-1.5 select-none">
           <svg viewBox="0 0 389 204" className="h-3 w-auto text-secondary" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-label="Cate">
             <path d="M274 203.2L307.29 1.79999H388.29L384.51 24.84H329.97L320.5 80.16H342.22H366.34L362.74 103.2H338.62H316.5L304.06 180.16H358.6L355 203.2H314.5H274Z" />
             <path d="M201.264 203.2L230.424 26.5H197.124L201.264 1.3H294.864L290.724 26.5H257.424L228.264 203.2H201.264Z" />
@@ -342,7 +359,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
 
   return (
     <div
-      className={`flex-shrink-0 relative flex flex-row h-full bg-surface-1 select-none overflow-hidden ${
+      className={`flex-shrink-0 relative flex flex-row h-full select-none overflow-hidden ${
         isResizing ? '' : 'transition-[width] duration-200 ease-in-out'
       }`}
       style={{
@@ -352,8 +369,25 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
             : isExpanded
               ? BAR_WIDTH + width
               : BAR_WIDTH,
+        backgroundColor:
+          side === 'right'
+            ? 'color-mix(in srgb, var(--surface-0) 88%, transparent)'
+            : 'color-mix(in srgb, var(--surface-1) 88%, transparent)',
+        // Smaller blur radius avoids chromatic smearing from blue/purple
+        // borders behind the sidebar; saturate(0.6) tones any residual color
+        // cast down toward the neutral surface tint.
+        backdropFilter: 'blur(6px) saturate(0.6)',
+        WebkitBackdropFilter: 'blur(6px) saturate(0.6)',
       }}
     >
+      {/* Opaque top strip — matches the dock tab bar height (36px) so the
+          sidebar chrome lines up with the canvas tab bar. The right sidebar
+          uses a darker shade to stand out against the tab-bar chrome it sits
+          beside. */}
+      <div
+        className="pointer-events-none absolute top-0 left-0 right-0 h-9"
+        style={{ backgroundColor: side === 'right' ? 'var(--surface-0)' : 'var(--surface-1)' }}
+      />
       {side === 'left' ? (
         <>
           {bar}

@@ -4,13 +4,25 @@
 // fallback path only performs version discovery and manual release-page routing.
 // It intentionally does not mount, spawn, or replace downloaded assets unless
 // a verified installer path is added in the future.
+//
+// UI: status is pushed to the renderer via UPDATE_STATUS. The renderer renders
+// a subtle in-app affordance (no native popups). Renderer dispatches
+// UPDATE_DOWNLOAD / UPDATE_INSTALL / UPDATE_OPEN_RELEASE / UPDATE_DISMISS back.
 // =============================================================================
 
-import { app, dialog, BrowserWindow, shell, ipcMain } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import log from './logger'
 import { flushAllLoggers } from './ipc/terminal'
-import { SESSION_FLUSH_SAVE, SESSION_FLUSH_SAVE_DONE } from '../shared/ipc-channels'
+import {
+  SESSION_FLUSH_SAVE,
+  SESSION_FLUSH_SAVE_DONE,
+  UPDATE_STATUS,
+  UPDATE_INSTALL,
+  UPDATE_DOWNLOAD,
+  UPDATE_OPEN_RELEASE,
+  UPDATE_DISMISS,
+} from '../shared/ipc-channels'
 import { getWindowType } from './windowRegistry'
 
 // ---------------------------------------------------------------------------
@@ -23,6 +35,31 @@ const API_LATEST_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_RE
 
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
+
+// ---------------------------------------------------------------------------
+// Update status broadcast
+// ---------------------------------------------------------------------------
+
+export type UpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'available'; version: string; canAutoInstall: boolean; releaseUrl?: string }
+  | { state: 'downloading'; version: string; percent?: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'manual'; version: string; releaseUrl: string }
+  | { state: 'error'; message: string }
+
+let currentStatus: UpdateStatus = { state: 'idle' }
+let latestReleaseUrl: string | null = null
+
+function broadcastStatus(status: UpdateStatus): void {
+  currentStatus = status
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(UPDATE_STATUS, status)
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pre-update session flush — ask the renderer to persist session state before
@@ -71,30 +108,6 @@ function compareSemver(a: string, b: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Native-updater dialog (shown when electron-updater finds an update)
-// ---------------------------------------------------------------------------
-
-function showUpdateDialog(info: { version: string }): void {
-  const win = BrowserWindow.getFocusedWindow()
-  dialog
-    .showMessageBox({
-      ...(win ? { parentWindow: win } : {}),
-      type: 'info',
-      title: 'Update Available',
-      message: `A new version of Cate (v${info.version}) is available.`,
-      detail: 'Would you like to download and install it?',
-      buttons: ['Update', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-    })
-    .then(({ response }) => {
-      if (response === 0) {
-        autoUpdater.downloadUpdate()
-      }
-    })
-}
-
-// ---------------------------------------------------------------------------
 // Fallback update check via GitHub Releases API
 // ---------------------------------------------------------------------------
 
@@ -128,6 +141,7 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
 
     if (compareSemver(latestVersion, currentVersion) <= 0) {
       if (manual) {
+        // Surface "no updates" only for manual checks via a single quiet dialog.
         const win = BrowserWindow.getFocusedWindow()
         dialog.showMessageBox({
           ...(win ? { parentWindow: win } : {}),
@@ -136,24 +150,18 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
           message: 'You are running the latest version of Cate.',
         })
       }
+      broadcastStatus({ state: 'idle' })
       return
     }
 
     // Native fallback intentionally avoids installing downloaded binaries until
-    // a verified installer path exists.
-    const parentWin = BrowserWindow.getFocusedWindow()
-    const { response } = await dialog.showMessageBox({
-      ...(parentWin ? { parentWindow: parentWin } : {}),
-      type: 'info',
-      title: 'Update Available',
-      message: `Cate ${latestVersion} is available (you have v${currentVersion}).`,
-      detail: 'Automatic installation is unavailable in this build. Open the release page to download the verified installer manually?',
-      buttons: ['Open Release Page', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
+    // a verified installer path exists. Surface via in-app affordance.
+    latestReleaseUrl = data.html_url
+    broadcastStatus({
+      state: 'manual',
+      version: latestVersion.replace(/^v/, ''),
+      releaseUrl: data.html_url,
     })
-    if (response !== 0) return
-    shell.openExternal(data.html_url)
   } catch (err: any) {
     log.error('[fallback-updater] Error:', err)
     if (manual) {
@@ -166,6 +174,7 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
         detail: err.message || 'Please check your internet connection.',
       })
     }
+    broadcastStatus({ state: 'error', message: err?.message || 'Update check failed' })
   } finally {
     fallbackInProgress = false
   }
@@ -176,6 +185,35 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function initAutoUpdater(): void {
+  // Wire renderer-initiated actions regardless of dev/packaged so the UI never
+  // races against handler registration.
+  ipcMain.on(UPDATE_DOWNLOAD, () => {
+    if (!app.isPackaged) return
+    log.info('[auto-updater] Renderer requested download')
+    autoUpdater.downloadUpdate().catch((err) => {
+      log.error('[auto-updater] downloadUpdate failed:', err)
+      broadcastStatus({ state: 'error', message: err?.message || 'Download failed' })
+    })
+  })
+
+  ipcMain.on(UPDATE_INSTALL, async () => {
+    if (!app.isPackaged) return
+    log.info('[auto-updater] Renderer requested install')
+    await flushSessionBeforeUpdate()
+    autoUpdater.quitAndInstall()
+  })
+
+  ipcMain.on(UPDATE_OPEN_RELEASE, (_e, url?: string) => {
+    const target = url || latestReleaseUrl
+    if (target) shell.openExternal(target)
+  })
+
+  ipcMain.on(UPDATE_DISMISS, () => {
+    broadcastStatus({ state: 'idle' })
+  })
+
+  ipcMain.handle('update:getStatus', () => currentStatus)
+
   // Don't check for updates in dev mode
   if (!app.isPackaged) return
 
@@ -183,7 +221,11 @@ export function initAutoUpdater(): void {
 
   autoUpdater.on('update-available', (info) => {
     log.info('Update available: v%s', info.version)
-    showUpdateDialog(info)
+    broadcastStatus({
+      state: 'available',
+      version: String(info.version),
+      canAutoInstall: true,
+    })
   })
 
   autoUpdater.on('update-not-available', () => {
@@ -198,32 +240,29 @@ export function initAutoUpdater(): void {
         message: 'You are running the latest version of Cate.',
       })
     }
+    broadcastStatus({ state: 'idle' })
   })
 
-  autoUpdater.on('update-downloaded', () => {
+  autoUpdater.on('download-progress', (progress) => {
+    const cur = currentStatus
+    const version = cur.state === 'downloading' || cur.state === 'available' || cur.state === 'downloaded'
+      ? cur.version
+      : ''
+    broadcastStatus({
+      state: 'downloading',
+      version,
+      percent: typeof progress?.percent === 'number' ? progress.percent : undefined,
+    })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
     log.info('Update downloaded, ready to install')
-    const win = BrowserWindow.getFocusedWindow()
-    dialog
-      .showMessageBox({
-        ...(win ? { parentWindow: win } : {}),
-        type: 'info',
-        title: 'Update Ready',
-        message: 'The update has been downloaded.',
-        detail: 'Restart Cate now to apply the update?',
-        buttons: ['Restart', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-      })
-      .then(async ({ response }) => {
-        if (response === 0) {
-          await flushSessionBeforeUpdate()
-          autoUpdater.quitAndInstall()
-        }
-      })
+    broadcastStatus({ state: 'downloaded', version: String(info?.version ?? '') })
   })
 
   autoUpdater.on('checking-for-update', () => {
     log.info('Checking for updates...')
+    if (currentStatus.state === 'idle') broadcastStatus({ state: 'checking' })
   })
 
   autoUpdater.on('error', (err) => {
