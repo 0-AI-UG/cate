@@ -53,6 +53,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   terminalScrollback: 'number',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
+  autoOpenUrlsFromTerminal: 'boolean',
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',
   notificationsEnabled: 'boolean',

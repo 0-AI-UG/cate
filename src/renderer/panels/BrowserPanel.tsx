@@ -11,6 +11,7 @@ import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { SEARCH_ENGINE_URLS } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
+import { portalRegistry, type PortalWebview } from '../lib/portalRegistry'
 
 // -----------------------------------------------------------------------------
 // Type declarations for Electron's <webview> element
@@ -264,6 +265,10 @@ export default function BrowserPanel({
       }
     }
 
+    const onDomReady = () => {
+      portalRegistry.register(panelId, webview as unknown as PortalWebview)
+    }
+
     webview.addEventListener('did-navigate', onDidNavigate)
     webview.addEventListener('did-navigate-in-page', onDidNavigateInPage)
     webview.addEventListener('page-title-updated', onPageTitleUpdated)
@@ -272,8 +277,10 @@ export default function BrowserPanel({
     webview.addEventListener('did-stop-loading', onDidStopLoading)
     webview.addEventListener('will-navigate', onWillNavigate)
     webview.addEventListener('new-window', onNewWindow)
+    webview.addEventListener('dom-ready', onDomReady)
 
     return () => {
+      portalRegistry.unregister(panelId)
       try {
         // May throw if webview was never attached / dom-ready before unmount
         webview.loadURL('about:blank')
@@ -288,6 +295,7 @@ export default function BrowserPanel({
       webview.removeEventListener('did-stop-loading', onDidStopLoading)
       webview.removeEventListener('will-navigate', onWillNavigate)
       webview.removeEventListener('new-window', onNewWindow)
+      webview.removeEventListener('dom-ready', onDomReady)
     }
   }, [panelId, workspaceId, updatePanelTitle, updatePanelUrl])
 

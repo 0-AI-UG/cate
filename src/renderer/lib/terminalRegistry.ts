@@ -16,6 +16,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { terminalRestoreData, replayTerminalLog } from './session'
 import { awaitWorkspaceSync } from '../stores/appStore'
 import { getResolvedTheme, subscribeTheme, type ResolvedTheme } from './themeManager'
+import { scanTerminalChunkForUrls } from './terminalUrlAutoOpen'
 
 /** Read the configured scrollback limit, clamped to a sane range. */
 function getScrollback(): number {
@@ -349,6 +350,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
       } else {
         terminal.write(data)
       }
+      scanTerminalChunkForUrls(panelId, opts.workspaceId, data)
     })
     cleanupListeners.push(removeDataListener)
 
@@ -504,6 +506,7 @@ async function reconnectTerminal(
     } else {
       terminal.write(data)
     }
+    scanTerminalChunkForUrls(panelId, opts.workspaceId, data)
   })
   cleanupListeners.push(removeDataListener)
 
