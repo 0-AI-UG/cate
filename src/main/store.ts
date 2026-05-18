@@ -16,6 +16,7 @@ import {
   SESSION_SAVE,
   SESSION_LOAD,
   SESSION_CLEAR,
+  BOOT_SNAPSHOT_WRITE,
   APP_GET_PATH,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
@@ -58,6 +59,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   notificationMode: 'string',
   notifyOnTerminalHalt: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',
+  crashReportingEnabled: 'boolean',
 }
 
 /** Safely merge only known, type-correct keys from a parsed object into the settings cache. */
@@ -114,6 +116,71 @@ export function loadSettingsSyncFromDisk(): void {
 
 export function getSettingSync<K extends keyof AppSettings>(key: K): AppSettings[K] {
   return (settingsCache[key] ?? DEFAULT_SETTINGS[key]) as AppSettings[K]
+}
+
+// ---------------------------------------------------------------------------
+// Boot snapshot — minimal JSON read synchronously at launch so the main
+// process can construct the BrowserWindow with saved bounds + theme color
+// before the much larger settings / session JSON is parsed. Lives at
+// `<userData>/boot.json`.
+// ---------------------------------------------------------------------------
+
+export interface BootSnapshot {
+  geometry?: { x: number; y: number; width: number; height: number }
+  theme?: string
+  backgroundColor?: string
+  nativeTabs?: boolean
+  lastWorkspaceId?: string
+}
+
+function getBootSnapshotPath(): string {
+  return path.join(app.getPath('userData'), 'boot.json')
+}
+
+/** Read the boot snapshot synchronously. Returns null on any failure. */
+export function readBootSnapshot(): BootSnapshot | null {
+  try {
+    const p = getBootSnapshotPath()
+    if (!fsSync.existsSync(p)) return null
+    const raw = fsSync.readFileSync(p, 'utf-8')
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as BootSnapshot
+    }
+    return null
+  } catch (err) {
+    log.warn('Boot snapshot read failed: %O', err)
+    return null
+  }
+}
+
+// Debounced trailing-edge writer — coalesces bursts of setting changes into
+// a single 250 ms flush so we never thrash the disk on rapid setting updates.
+let bootSnapshotPending: BootSnapshot | null = null
+let bootSnapshotTimer: ReturnType<typeof setTimeout> | null = null
+const BOOT_SNAPSHOT_DEBOUNCE_MS = 250
+
+async function flushBootSnapshot(): Promise<void> {
+  bootSnapshotTimer = null
+  if (!bootSnapshotPending) return
+  const next = { ...(readBootSnapshot() ?? {}), ...bootSnapshotPending }
+  bootSnapshotPending = null
+  try {
+    const p = getBootSnapshotPath()
+    await fs.mkdir(path.dirname(p), { recursive: true })
+    const tmp = p + '.tmp'
+    await fs.writeFile(tmp, JSON.stringify(next), 'utf-8')
+    await fs.rename(tmp, p)
+  } catch (err) {
+    log.warn('Boot snapshot write failed: %O', err)
+  }
+}
+
+/** Merge `partial` into the current boot snapshot and flush after a short debounce. */
+export function writeBootSnapshot(partial: Partial<BootSnapshot>): void {
+  bootSnapshotPending = { ...(bootSnapshotPending ?? {}), ...partial }
+  if (bootSnapshotTimer) return
+  bootSnapshotTimer = setTimeout(() => { void flushBootSnapshot() }, BOOT_SNAPSHOT_DEBOUNCE_MS)
 }
 
 function getSessionPath(): string {
@@ -266,6 +333,14 @@ export function registerHandlers(): void {
       await atomicWriteSession(sessionPath, json)
       log.debug('Session saved to %s', sessionPath)
     })
+  })
+
+  // Boot snapshot — renderer pushes geometry/theme/etc. updates here. The
+  // write is debounced internally; this handler returns immediately.
+  ipcMain.handle(BOOT_SNAPSHOT_WRITE, async (_event, partial: Partial<BootSnapshot>) => {
+    if (partial && typeof partial === 'object') {
+      writeBootSnapshot(partial)
+    }
   })
 
   ipcMain.handle(SESSION_CLEAR, async () => {

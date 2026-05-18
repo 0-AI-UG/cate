@@ -12,6 +12,7 @@ import type { StoreApi } from 'zustand'
 import type { NodeActivityState, DockLayoutNode, PanelType } from '../../shared/types'
 import { isMaximized as checkMaximized } from '../../shared/types'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
+import { useViewportAABBApi } from './Canvas'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
 import { useNodeDrag } from '../hooks/useNodeDrag'
 import { useNodeResize, detectEdge, getCursorForEdge } from '../hooks/useNodeResize'
@@ -57,17 +58,6 @@ function borderColor(focused: boolean): string {
   return focused ? 'var(--border-focus)' : 'var(--border-subtle)'
 }
 
-const SCALE = 'calc(1/max(var(--zoom,1),0.3))'
-const SHADOW_FOCUSED = `0 calc(-2*${SCALE}) calc(8*${SCALE}) var(--shadow-node-focused)`
-const SHADOW_UNFOCUSED = `0 calc(-1*${SCALE}) calc(4*${SCALE}) var(--shadow-node)`
-const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 calc(-2*${SCALE}) calc(6*${SCALE}) var(--border-strong)`
-
-function boxShadow(focused: boolean, hovered: boolean): string {
-  if (focused) return SHADOW_FOCUSED
-  if (hovered) return SHADOW_HOVERED
-  return SHADOW_UNFOCUSED
-}
-
 function activityOutline(activity: NodeActivityState | undefined): string {
   if (!activity) return 'none'
   switch (activity.type) {
@@ -98,6 +88,19 @@ const PULSE_KEYFRAMES = `
 [data-node-id][data-node-active="false"] .dock-tab-bar .group > span:last-child {
   opacity: 0 !important;
   pointer-events: none !important;
+}
+/* Phase 2.6 — shadow driven by data attributes so hover/focus changes don't
+   trigger React renders. Uses --zoom inherited from the world div ancestor. */
+[data-node-id] {
+  --cn-scale: calc(1 / max(var(--zoom, 1), 0.3));
+  box-shadow: 0 calc(-1 * var(--cn-scale)) calc(4 * var(--cn-scale)) var(--shadow-node);
+}
+[data-node-id][data-hovered="true"] {
+  box-shadow: 0 calc(-1 * var(--cn-scale)) calc(4 * var(--cn-scale)) var(--shadow-node),
+              0 calc(-2 * var(--cn-scale)) calc(6 * var(--cn-scale)) var(--border-strong);
+}
+[data-node-id][data-focused="true"] {
+  box-shadow: 0 calc(-2 * var(--cn-scale)) calc(8 * var(--cn-scale)) var(--shadow-node-focused);
 }
 `
 
@@ -163,9 +166,21 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   const canvasApi = useCanvasStoreApi()
   const nodeRef = useRef<HTMLDivElement>(null)
-  const [isHovered, setIsHovered] = useState(false)
+  const panelContentRef = useRef<HTMLDivElement>(null)
   const [isAnimatingLayout, setIsAnimatingLayout] = useState(false)
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Imperative hover handlers — toggle data-hovered attribute, never re-render.
+  // Shadow is driven entirely by CSS (see PULSE_KEYFRAMES) so hover state is
+  // free of React work.
+  const handleMouseEnter = useCallback(() => {
+    if (nodeRef.current) nodeRef.current.setAttribute('data-hovered', 'true')
+  }, [])
+  const handleMouseLeaveImperative = useCallback(() => {
+    if (nodeRef.current) nodeRef.current.setAttribute('data-hovered', 'false')
+  }, [])
+
+  const viewportAABBApi = useViewportAABBApi()
 
   const node = useCanvasStoreContext(
     (s) => s.nodes[nodeId],
@@ -186,9 +201,35 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const focusNode = useCanvasStoreContext((s) => s.focusNode)
   const removeNode = useCanvasStoreContext((s) => s.removeNode)
   const toggleMaximize = useCanvasStoreContext((s) => s.toggleMaximize)
-  const isSelected = useCanvasStoreContext((s) => s.selectedNodeIds.has(nodeId))
+  // Select the Set with shallow eq, then test membership outside the selector
+  // so this doesn't re-run on every store tick (the inline closure captures
+  // nodeId).
+  const selectedNodeIds = useCanvasStoreContext((s) => s.selectedNodeIds, shallow)
+  const isSelected = selectedNodeIds.has(nodeId)
 
   const { handleDragStart, wasDragged } = useNodeDrag(nodeId, zoomLevel, canvasApi)
+
+  // Viewport culling — subscribe to AABB updates and toggle data-culled on the
+  // panel body. Title bar + frame stay visible. We only flip the attribute
+  // when the in/out boolean changes (the AABB has a generous margin already).
+  useEffect(() => {
+    if (!viewportAABBApi || !node) return
+    let lastCulled: boolean | null = null
+    const evaluate = (aabb: { left: number; top: number; right: number; bottom: number }) => {
+      const nx = node.origin.x
+      const ny = node.origin.y
+      const nr = nx + node.size.width
+      const nb = ny + node.size.height
+      // Pinned/focused nodes are never culled so their content stays warm.
+      const offscreen = !node.isPinned && nodeId !== canvasApi.getState().focusedNodeId &&
+        (nr < aabb.left || nx > aabb.right || nb < aabb.top || ny > aabb.bottom)
+      if (offscreen === lastCulled) return
+      lastCulled = offscreen
+      const el = panelContentRef.current
+      if (el) el.setAttribute('data-culled', offscreen ? 'true' : 'false')
+    }
+    return viewportAABBApi.subscribe(evaluate)
+  }, [viewportAABBApi, node, nodeId, canvasApi])
 
   const maximized = node ? checkMaximized(node) : false
 
@@ -517,7 +558,8 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       borderRadius: CORNER_RADIUS,
       overflow: 'hidden',
       border: `1.5px solid ${isSelected ? 'var(--focus-blue)' : borderColor(isFocused)}`,
-      boxShadow: boxShadow(isFocused, isHovered),
+      // boxShadow is driven by CSS via [data-focused] / [data-hovered] —
+      // see PULSE_KEYFRAMES. Avoids React renders on hover.
       outline: activityOutline(activityState),
       outlineOffset: -1,
       animation: isPulsing ? 'pulseActivity 1s ease-in-out infinite alternate' : undefined,
@@ -528,7 +570,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       pointerEvents: isExiting ? 'none' : undefined,
       userSelect: 'none',
     }
-  }, [node, isFocused, isSelected, activityState, zoomLevel, isAnimatingLayout, isHovered])
+  }, [node, isFocused, isSelected, activityState, zoomLevel, isAnimatingLayout])
 
   if (!node) return null
 
@@ -537,12 +579,14 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       ref={nodeRef}
       data-node-id={nodeId}
       data-node-active={isFocused ? 'true' : 'false'}
+      data-focused={isFocused ? 'true' : 'false'}
+      data-hovered="false"
       style={containerStyle}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeaveImperative}
     >
       {/* Standalone grab strip — only when the layout is split (or empty).
           When the root layout is a single tab stack, controls live inside the
@@ -582,7 +626,9 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
       {/* Dock layout area */}
       <div
+        ref={panelContentRef}
         data-panel-content
+        data-culled="false"
         onDragLeave={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node)) {
             const overlay = e.currentTarget.querySelector<HTMLElement>('[data-unfocused-overlay]')

@@ -41,6 +41,15 @@ function detachMediaListener() {
   }
 }
 
+// Background colors per theme — kept in sync with the CSS variables in
+// src/renderer/styles.css. Used to seed the BrowserWindow backgroundColor
+// via the boot snapshot so cold launches have no white flash.
+const THEME_BG: Record<ResolvedTheme, string> = {
+  'dark-warm': '#1f1e1c',
+  'dark-cold': '#1a1d22',
+  'light-subtle': '#f4f3f0',
+}
+
 export function applyTheme(mode: AppearanceMode): void {
   currentMode = mode
 
@@ -57,6 +66,16 @@ export function applyTheme(mode: AppearanceMode): void {
   currentResolved = resolved
   document.documentElement.dataset.theme = resolved
   notify(resolved)
+
+  // Persist resolved theme + matching background to boot snapshot so the
+  // next cold launch can construct the BrowserWindow with the right color
+  // before any JS runs.
+  try {
+    const api = (window as unknown as {
+      electronAPI?: { bootSnapshotWrite?: (p: Record<string, unknown>) => Promise<void> }
+    }).electronAPI
+    api?.bootSnapshotWrite?.({ theme: resolved, backgroundColor: THEME_BG[resolved] }).catch(() => { /* noop */ })
+  } catch { /* noop */ }
 }
 
 export function getResolvedTheme(): ResolvedTheme {

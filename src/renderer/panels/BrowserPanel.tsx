@@ -356,7 +356,14 @@ export default function BrowserPanel({
           </div>
         )}
 
-        {/* Webview */}
+        {/* Webview.
+            NOTE: we intentionally do NOT set `backgroundthrottling="false"`
+            here — Electron's default is `true`, meaning timers/animation
+            frames in hidden webviews get throttled by Chromium. That's what
+            we want: a backgrounded canvas (or hidden Cate window) should
+            let its embedded pages idle so they don't burn CPU/GPU. If you
+            ever need a webview to keep running while hidden (e.g. a media
+            player), opt-in locally rather than disabling the default. */}
         <webview
           ref={webviewRef as any}
           src={initialUrl}

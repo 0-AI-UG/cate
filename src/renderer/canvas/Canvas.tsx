@@ -3,7 +3,7 @@
 // Ported from CanvasView.swift.
 // =============================================================================
 
-import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useRef, useCallback, useEffect, useMemo, useState, createContext, useContext } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
@@ -36,38 +36,81 @@ function injectCanvasInteractingStyle(): void {
     .canvas-interacting .xterm * {
       cursor: grabbing !important;
     }
+    /* Phase 2.4 — viewport culling: when a canvas node is marked off-screen,
+       let the browser skip rendering of its body content. Title bar / frame
+       stay visible because content-visibility only applies to this element. */
+    [data-node-id] [data-panel-content][data-culled="true"] {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 400px;
+    }
+    /* Phase 2.6 — suppress shadow/border transitions during pan/zoom so the
+       browser doesn't tick interpolated styles for every node every frame. */
+    .canvas-interacting [data-node-id] {
+      transition: none !important;
+    }
   `
   document.head.appendChild(style)
 }
 
+const CanvasRegionItem: React.FC<{ id: string; zoomLevel: number }> = React.memo(({ id, zoomLevel }) => {
+  const region = useCanvasStoreContext((s) => s.regions[id])
+  if (!region) return null
+  return <CanvasRegionComponent region={region} zoomLevel={zoomLevel} />
+})
+
 const RegionsLayer: React.FC = React.memo(() => {
   const zoomLevel = useCanvasStoreContext((s) => s.zoomLevel)
-  const regionList = useCanvasStoreContext(
-    (s) => Object.values(s.regions),
-    shallow,
-  )
+  const regionIds = useCanvasStoreContext((s) => s.regionIdList, shallow)
   return (
     <>
-      {regionList.map((region) => (
-        <CanvasRegionComponent key={region.id} region={region} zoomLevel={zoomLevel} />
+      {regionIds.map((id) => (
+        <CanvasRegionItem key={id} id={id} zoomLevel={zoomLevel} />
       ))}
     </>
   )
 })
 
+const CanvasAnnotationItem: React.FC<{ id: string }> = React.memo(({ id }) => {
+  const annotation = useCanvasStoreContext((s) => s.annotations[id])
+  if (!annotation) return null
+  return <CanvasAnnotationComponent annotation={annotation} />
+})
+
 const AnnotationsLayer: React.FC = React.memo(() => {
-  const annotationList = useCanvasStoreContext(
-    (s) => Object.values(s.annotations),
-    shallow,
-  )
+  const annotationIds = useCanvasStoreContext((s) => s.annotationIdList, shallow)
   return (
     <>
-      {annotationList.map((ann) => (
-        <CanvasAnnotationComponent key={ann.id} annotation={ann} />
+      {annotationIds.map((id) => (
+        <CanvasAnnotationItem key={id} id={id} />
       ))}
     </>
   )
 })
+
+// -----------------------------------------------------------------------------
+// Viewport AABB context — exposes the visible canvas-space rect to nodes for
+// content-visibility culling. Updated imperatively from canvasApi.subscribe so
+// Canvas itself never re-renders during pan/zoom.
+// -----------------------------------------------------------------------------
+
+export interface ViewportAABB {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+interface ViewportAABBApi {
+  get: () => ViewportAABB | null
+  /** Subscribe to viewport AABB updates. Listener is called on every commit. */
+  subscribe: (listener: (aabb: ViewportAABB) => void) => () => void
+}
+
+const ViewportAABBContext = createContext<ViewportAABBApi | null>(null)
+
+export function useViewportAABBApi(): ViewportAABBApi | null {
+  return useContext(ViewportAABBContext)
+}
 
 interface CanvasProps {
   children?: React.ReactNode
@@ -80,6 +123,23 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   const worldRef = useRef<HTMLDivElement>(null)
   const canvasApi = useCanvasStoreApi()
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
+
+  // Viewport AABB (canvas-space) — refs + listener list so nodes can subscribe
+  // imperatively. Updated on every zoom/offset change inside the same
+  // canvasApi.subscribe block that writes the world transform.
+  const viewportAABBRef = useRef<ViewportAABB | null>(null)
+  const viewportAABBListeners = useRef<Set<(aabb: ViewportAABB) => void>>(new Set())
+  const viewportAABBApi = useMemo<ViewportAABBApi>(() => ({
+    get: () => viewportAABBRef.current,
+    subscribe: (listener) => {
+      viewportAABBListeners.current.add(listener)
+      // Push current value immediately so subscribers don't have to wait for a
+      // pan/zoom to learn the initial AABB.
+      const cur = viewportAABBRef.current
+      if (cur) listener(cur)
+      return () => { viewportAABBListeners.current.delete(listener) }
+    },
+  }), [])
 
   const marquee = useUIStore((s) => s.marquee)
 
@@ -106,14 +166,37 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
       el.style.setProperty('--zoom', String(zoom))
     }
 
+    // Compute and dispatch the visible canvas-space AABB with a generous
+    // margin so scrolling in doesn't pop culled content.
+    const CULL_MARGIN_PX = 200
+    const dispatchAABB = (zoom: number, offset: { x: number; y: number }) => {
+      const cw = canvasRef.current?.clientWidth ?? 0
+      const ch = canvasRef.current?.clientHeight ?? 0
+      if (cw === 0 || ch === 0 || zoom <= 0) return
+      const marginX = CULL_MARGIN_PX / zoom
+      const marginY = CULL_MARGIN_PX / zoom
+      const aabb: ViewportAABB = {
+        left: -offset.x / zoom - marginX,
+        top: -offset.y / zoom - marginY,
+        right: (cw - offset.x) / zoom + marginX,
+        bottom: (ch - offset.y) / zoom + marginY,
+      }
+      viewportAABBRef.current = aabb
+      for (const l of viewportAABBListeners.current) l(aabb)
+    }
+
     // Apply current state immediately on mount
     const { zoomLevel, viewportOffset } = canvasApi.getState()
     applyTransform(zoomLevel, viewportOffset)
+    dispatchAABB(zoomLevel, viewportOffset)
 
     // Subscribe to future changes
     const unsubscribe = canvasApi.subscribe((state, prev) => {
       if (state.zoomLevel !== prev.zoomLevel || state.viewportOffset !== prev.viewportOffset) {
         applyTransform(state.zoomLevel, state.viewportOffset)
+        dispatchAABB(state.zoomLevel, state.viewportOffset)
+      } else if (state.containerSize !== prev.containerSize) {
+        dispatchAABB(state.zoomLevel, state.viewportOffset)
       }
     })
     return unsubscribe
@@ -287,6 +370,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
   }, [canvasContextMenu, onCreateAtPoint, canvasApi, closeCanvasContextMenu])
 
   return (
+    <ViewportAABBContext.Provider value={viewportAABBApi}>
     <div
       ref={canvasRef}
       data-canvas-container
@@ -339,6 +423,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint }) => {
       </div>
 
     </div>
+    </ViewportAABBContext.Provider>
   )
 }
 

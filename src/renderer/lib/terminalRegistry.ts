@@ -153,6 +153,73 @@ const registry = new Map<string, RegistryEntry>()
 const pendingTransfers = new Map<string, { ptyId: string; scrollback?: string }>()
 
 // ---------------------------------------------------------------------------
+// Backgrounding: when document.hidden, route incoming PTY data into a ring
+// buffer instead of xterm.write(). xterm's renderer (especially WebGL) keeps
+// painting on hidden tabs and burns GPU; the terminal logger in main is the
+// canonical record, so dropping bytes from the visible buffer is safe as long
+// as we flush before the user sees the terminal again.
+//
+// Ring is per-panel and capped at HIDDEN_BUFFER_CAP — when the cap is hit we
+// keep only the tail (most-recent output). A "head" sentinel string is
+// emitted at flush time if we ever truncated, so the user knows output was
+// dropped.
+// ---------------------------------------------------------------------------
+
+const HIDDEN_BUFFER_CAP = 256 * 1024 // 256 KB per terminal
+const hiddenBuffers = new Map<string, { chunks: string[]; size: number; truncated: boolean }>()
+
+function appendHiddenChunk(panelId: string, data: string): void {
+  let buf = hiddenBuffers.get(panelId)
+  if (!buf) {
+    buf = { chunks: [], size: 0, truncated: false }
+    hiddenBuffers.set(panelId, buf)
+  }
+  buf.chunks.push(data)
+  buf.size += data.length
+  // Trim from the head while we're over the cap. Dropping whole chunks is
+  // coarse but cheap, and the visible result is "older output truncated"
+  // which we surface with a marker on flush.
+  while (buf.size > HIDDEN_BUFFER_CAP && buf.chunks.length > 1) {
+    const dropped = buf.chunks.shift()!
+    buf.size -= dropped.length
+    buf.truncated = true
+  }
+}
+
+function flushHiddenBuffer(panelId: string): void {
+  const buf = hiddenBuffers.get(panelId)
+  if (!buf || buf.chunks.length === 0) {
+    hiddenBuffers.delete(panelId)
+    return
+  }
+  const entry = registry.get(panelId)
+  hiddenBuffers.delete(panelId)
+  if (!entry) return
+  try {
+    if (buf.truncated) {
+      entry.terminal.write('\r\n\x1b[90m[output truncated while hidden]\x1b[0m\r\n')
+    }
+    // Single write — xterm internally chunks this for its parser, but we
+    // avoid N individual write() calls (each of which schedules a render).
+    entry.terminal.write(buf.chunks.join(''))
+  } catch { /* ignore */ }
+}
+
+function isDocumentHidden(): boolean {
+  return typeof document !== 'undefined' && document.hidden
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return
+    // Flush every buffered terminal in one tick.
+    for (const panelId of Array.from(hiddenBuffers.keys())) {
+      flushHiddenBuffer(panelId)
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Live theme swap — update all live terminals when the app theme changes
 // ---------------------------------------------------------------------------
 
@@ -270,9 +337,16 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
 
     entry.ptyId = ptyId
 
-    // 6. PTY -> xterm: incoming data
+    // 6. PTY -> xterm: incoming data.
+    // When the window is hidden, divert into a ring buffer instead of
+    // writing to xterm — the renderer keeps painting on hidden tabs and
+    // burns GPU on terminals nobody can see. The main-side terminal log
+    // remains the canonical record, so dropping bytes here is safe.
     const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
-      if (id === ptyId) {
+      if (id !== ptyId) return
+      if (isDocumentHidden()) {
+        appendHiddenChunk(panelId, data)
+      } else {
         terminal.write(data)
       }
     })
@@ -421,9 +495,13 @@ async function reconnectTerminal(
     terminal.write(scrollback + '\r\n')
   }
 
-  // 3. Wire up listeners to the EXISTING PTY
+  // 3. Wire up listeners to the EXISTING PTY (with hidden-buffer gating —
+  //    see getOrCreate() for rationale).
   const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
-    if (id === ptyId) {
+    if (id !== ptyId) return
+    if (isDocumentHidden()) {
+      appendHiddenChunk(panelId, data)
+    } else {
       terminal.write(data)
     }
   })
@@ -497,6 +575,7 @@ function release(panelId: string): void {
   if (!entry) return
 
   registry.delete(panelId)
+  hiddenBuffers.delete(panelId)
 
   const { terminal, fitAddon, webglAddon, cleanupListeners } = entry
 
@@ -643,22 +722,35 @@ function attach(panelId: string, container: HTMLDivElement): void {
 
   // Reload the WebGL addon — its internal canvas buffers are tied to the old
   // container dimensions and cannot survive a DOM reparent reliably.
+  //
+  // We defer the load by one animation frame so the canvas-renderer
+  // fallback paints the first visible frame first; this avoids a measurable
+  // hitch when many terminals attach simultaneously (e.g. workspace
+  // restore), at the cost of one frame of slightly softer glyphs.
   if (entry.webglAddon) {
     try { entry.webglAddon.dispose() } catch { /* ignore */ }
     entry.webglAddon = null
   }
-  try {
-    const newWebgl = new WebglAddon()
-    newWebgl.onContextLoss(() => {
-      newWebgl.dispose()
-      const e = registry.get(panelId)
-      if (e) e.webglAddon = null
-    })
-    terminal.loadAddon(newWebgl)
-    entry.webglAddon = newWebgl
-  } catch {
-    // Canvas renderer fallback — no action needed
-  }
+  requestAnimationFrame(() => {
+    // Guard against disposal/reparent between scheduling and running.
+    const current = registry.get(panelId)
+    if (!current || current !== entry) return
+    if (entry.webglAddon) return
+    const stillAttached = (terminal as unknown as { element?: HTMLElement }).element?.parentElement === container
+    if (!stillAttached) return
+    try {
+      const newWebgl = new WebglAddon()
+      newWebgl.onContextLoss(() => {
+        newWebgl.dispose()
+        const e = registry.get(panelId)
+        if (e) e.webglAddon = null
+      })
+      terminal.loadAddon(newWebgl)
+      entry.webglAddon = newWebgl
+    } catch {
+      // Canvas renderer fallback — no action needed
+    }
+  })
 
   // Fit after the next frame — the container may still be mid-layout during
   // the sync DOM append (e.g. WebGL canvas initialization).  Retry up to 5
@@ -758,6 +850,7 @@ function dispose(panelId: string): void {
 
   // Remove from registry first so re-entrant calls are no-ops
   registry.delete(panelId)
+  hiddenBuffers.delete(panelId)
 
   const { terminal, fitAddon, webglAddon, ptyId, cleanupListeners } = entry
   const { electronAPI } = window

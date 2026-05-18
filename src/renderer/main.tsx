@@ -1,44 +1,23 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import log from './lib/logger'
+import { mark } from './lib/perfMarks'
+import { initRendererSentry } from './lib/sentry'
 import App from './App'
 import './styles/globals.css'
 
+// Phase 0 perf marker — first executable statement in the renderer bundle.
+mark('renderer-script-start')
+
+// Wire Sentry before the global error listeners below so renderer errors are
+// captured both by Sentry and by the local crash-report dialog flow.
+initRendererSentry()
+
 log.info('Renderer starting (window type=%s)', new URLSearchParams(window.location.search).get('type') ?? 'main')
 
-// Recognise non-informative error payloads — usually a DOM Event or plain
-// object that was thrown / rejected somewhere and got stringified into the
-// message. React 18's logCaughtError prefixes these with "Uncaught ", so
-// match both shapes. These aren't real crashes; persisting them resurfaces
-// the "Cate crashed unexpectedly" dialog on the next launch.
-function isNonInformativeMessage(message: string | undefined | null): boolean {
-  if (!message) return true
-  const m = message.trim()
-  return (
-    m === '[object Event]' ||
-    m === '[object Object]' ||
-    m === 'Uncaught [object Event]' ||
-    m === 'Uncaught [object Object]' ||
-    /^Uncaught \[object [A-Za-z]+\]$/.test(m)
-  )
-}
-
 window.addEventListener('error', (e) => {
-  // Resource-load failures (img/script/link) fire a plain Event on the
-  // failing element with no `.error` / `.message`. They aren't app crashes.
   if (!(e instanceof ErrorEvent)) return
-
-  const err = e.error instanceof Error
-    ? e.error
-    : new Error(typeof e.message === 'string' && e.message ? e.message : 'Unknown error')
-
-  if (isNonInformativeMessage(err.message)) {
-    log.warn('Ignoring non-informative error event:', e.error ?? e.message)
-    return
-  }
-
-  log.error('Uncaught error:', err)
-  window.electronAPI?.crashReportSave({ name: err.name, message: err.message, stack: err.stack })
+  log.error('Uncaught error:', e.error ?? e.message)
 })
 window.addEventListener('unhandledrejection', (e) => {
   log.error('Unhandled promise rejection:', e.reason)
@@ -54,12 +33,6 @@ class ErrorBoundary extends React.Component<
   }
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     log.error('React render error:', error.message, errorInfo.componentStack)
-    if (isNonInformativeMessage(error.message)) return
-    window.electronAPI?.crashReportSave({
-      name: error.name,
-      message: error.message,
-      stack: [error.stack, '\nComponent stack:', errorInfo.componentStack].filter(Boolean).join('\n'),
-    })
   }
   render() {
     if (this.state.error) {

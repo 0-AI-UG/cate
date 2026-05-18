@@ -81,14 +81,18 @@ export const SESSION_CLEAR = 'session:clear'
 export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer
 export const SESSION_FLUSH_SAVE_DONE = 'session:flushSaveDone' // renderer -> main
 
+// Boot snapshot — a tiny JSON file (geometry, theme, last workspace id, native
+// tabs flag) written by the renderer whenever the relevant settings change.
+// Read synchronously at launch by the main process to construct the
+// BrowserWindow with the correct bounds + background color, eliminating the
+// white-flash before the renderer mounts.
+export const BOOT_SNAPSHOT_WRITE = 'boot:snapshotWrite' // renderer -> main
+
 // App
 export const APP_GET_PATH = 'app:getPath'
 /** Main -> renderer: user dropped a folder on the dock icon (or opened one
  *  via OS "Open With..."). Renderer opens it as a new workspace. */
 export const APP_OPEN_PATH = 'app:openPath'
-
-// Crash reporting
-export const CRASH_REPORT_SAVE = 'crash:reportSave'
 
 // Menu actions (main -> renderer)
 export const MENU_OPEN_SETTINGS = 'menu:openSettings'

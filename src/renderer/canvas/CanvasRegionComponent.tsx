@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react'
 import type { CanvasRegion } from '../../shared/types'
-import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { useAppStore, getCanvasOpsById } from '../stores/appStore'
 
@@ -45,8 +45,13 @@ const HANDLE_CURSORS: Record<ResizeHandle, string> = {
 
 const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
   const canvasApi = useCanvasStoreApi()
-  const isSelected = useCanvasStoreContext((s) => s.selectedRegionIds.has(region.id))
-  const isDropTarget = useCanvasStoreContext((s) => s.dropTargetRegionId === region.id)
+  // Select the Set with shallow eq, then test membership outside the selector.
+  // Avoids the inline selector closing over `region.id` and re-running every
+  // store tick.
+  const selectedRegionIds = useCanvasStoreContext((s) => s.selectedRegionIds, shallow)
+  const isSelected = selectedRegionIds.has(region.id)
+  const dropTargetRegionId = useCanvasStoreContext((s) => s.dropTargetRegionId)
+  const isDropTarget = dropTargetRegionId === region.id
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; lastClientX: number; lastClientY: number } | null>(null)
   const listenersAbortRef = useRef<AbortController | null>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -213,6 +218,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
         return {
           nodes: addedNodes,
           regions: { ...s.regions, [newRegion.id]: newRegion },
+          regionIdList: s.regions[newRegion.id] ? s.regionIdList : [...s.regionIdList, newRegion.id],
         }
       })
 
@@ -227,6 +233,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
         for (const n of newNodes) nextNodeSel.delete(n.id)
         return {
           regions: restRegions,
+          regionIdList: s.regionIdList.filter((rid) => rid !== region.id),
           nodes: restNodes,
           selectedRegionIds: nextRegionSel,
           selectedNodeIds: nextNodeSel,

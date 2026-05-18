@@ -741,6 +741,9 @@ export interface AppSettings {
   notifyOnTerminalHalt: boolean
   notifyOnlyWhenUnfocused: boolean
 
+  // Privacy
+  /** Send automatic error/crash reports to Sentry. Takes effect on next launch. */
+  crashReportingEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -785,6 +788,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifyOnTerminalHalt: true,
   notifyOnlyWhenUnfocused: true,
 
+  // Privacy
+  crashReportingEnabled: true,
 }
 
 // -----------------------------------------------------------------------------
