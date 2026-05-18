@@ -36,6 +36,12 @@ export interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
   annotations: Record<string, CanvasAnnotation>
+  /** Stable id list for regions — derived from `regions`. Maintained in every
+   *  mutator that adds/removes regions so per-id selectors don't re-render the
+   *  whole layer when an existing region's properties change. */
+  regionIdList: string[]
+  /** Stable id list for annotations — see regionIdList. */
+  annotationIdList: string[]
   viewportOffset: Point
   zoomLevel: number
   focusedNodeId: CanvasNodeId | null
@@ -323,6 +329,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   nodes: {},
   regions: {},
   annotations: {},
+  regionIdList: [],
+  annotationIdList: [],
   viewportOffset: { x: 0, y: 0 },
   zoomLevel: ZOOM_DEFAULT,
   focusedNodeId: null,
@@ -369,6 +377,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       nodes: prev.nodes,
       regions: prev.regions,
       annotations: prev.annotations,
+      regionIdList: Object.keys(prev.regions),
+      annotationIdList: Object.keys(prev.annotations),
       focusedNodeId: prev.focusedNodeId,
       history: state.history.slice(0, -1),
       future: [...state.future, current],
@@ -389,6 +399,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       nodes: next.nodes,
       regions: next.regions,
       annotations: next.annotations,
+      regionIdList: Object.keys(next.regions),
+      annotationIdList: Object.keys(next.annotations),
       focusedNodeId: next.focusedNodeId,
       history: [...state.history, current],
       future: state.future.slice(0, -1),
@@ -910,6 +922,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       return {
         nodes: updatedNodes,
         regions: updatedRegions,
+        regionIdList: s.regionIdList.filter((rid) => updatedRegions[rid] != null),
         selectedNodeIds: new Set<string>(),
         selectedRegionIds: new Set<string>(),
       }
@@ -1027,14 +1040,19 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     }
     set((state) => ({
       regions: { ...state.regions, [id]: region },
+      regionIdList: [...state.regionIdList, id],
     }))
     return id
   },
 
   removeRegion(id) {
     set((state) => {
+      if (!state.regions[id]) return state
       const { [id]: _, ...rest } = state.regions
-      return { regions: rest }
+      return {
+        regions: rest,
+        regionIdList: state.regionIdList.filter((rid) => rid !== id),
+      }
     })
   },
 
@@ -1153,7 +1171,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       // Remove from selection
       const nextRegionIds = new Set(state.selectedRegionIds)
       nextRegionIds.delete(regionId)
-      return { nodes: updatedNodes, regions: restRegions, selectedRegionIds: nextRegionIds }
+      return {
+        nodes: updatedNodes,
+        regions: restRegions,
+        regionIdList: state.regionIdList.filter((rid) => rid !== regionId),
+        selectedRegionIds: nextRegionIds,
+      }
     })
   },
 
@@ -1172,14 +1195,19 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     if (!content) pendingEditAnnotations.add(id)
     set((state) => ({
       annotations: { ...state.annotations, [id]: annotation },
+      annotationIdList: [...state.annotationIdList, id],
     }))
     return id
   },
 
   removeAnnotation(id) {
     set((state) => {
+      if (!state.annotations[id]) return state
       const { [id]: _, ...rest } = state.annotations
-      return { annotations: rest }
+      return {
+        annotations: rest,
+        annotationIdList: state.annotationIdList.filter((aid) => aid !== id),
+      }
     })
   },
 
@@ -1272,10 +1300,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       idleNodes[id] = { ...node, animationState: 'idle' }
     }
 
+    const resolvedRegions = regions ?? {}
+    const resolvedAnnotations = annotations ?? {}
     set({
       nodes: idleNodes,
-      regions: regions ?? {},
-      annotations: annotations ?? {},
+      regions: resolvedRegions,
+      annotations: resolvedAnnotations,
+      regionIdList: Object.keys(resolvedRegions),
+      annotationIdList: Object.keys(resolvedAnnotations),
       viewportOffset,
       zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
       focusedNodeId,

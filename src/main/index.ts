@@ -19,7 +19,7 @@ import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow }
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync, loadSettingsSyncFromDisk, getSettingSync } from './store'
+import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync, loadSettingsSyncFromDisk, getSettingSync, readBootSnapshot, writeBootSnapshot } from './store'
 import { registerHandlers as registerMCPHandlers } from './ipc/mcp'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
@@ -48,6 +48,9 @@ function anyWindowFullscreen(): boolean {
   return false
 }
 
+// NOTE: runSmokeAssertions only ever runs when CATE_SMOKE_TEST=1. The 1200 ms
+// wait below is part of the smoke-only branch in mainWin.once('ready-to-show')
+// and never executes on normal launches. Do not re-introduce it on the hot path.
 async function runSmokeAssertions(win: BrowserWindow): Promise<void> {
   const result = await win.webContents.executeJavaScript(`
     new Promise((resolve) => {
@@ -71,9 +74,19 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   const isPanel = windowType === 'panel'
   const isDock = windowType === 'dock'
 
+  // Boot snapshot — used only for the main window. Lets us restore the user's
+  // last window bounds + theme-matched background color synchronously, so the
+  // first frame matches the final UI and there's no white flash.
+  const bootSnap = windowType === 'main' ? readBootSnapshot() : null
+  const snapGeom = bootSnap?.geometry
+  const snapBg = bootSnap?.backgroundColor
+
   const win = new BrowserWindow({
-    width: isDock ? 700 : isPanel ? 700 : 1200,
-    height: isDock ? 500 : isPanel ? 500 : 800,
+    width: snapGeom?.width ?? (isDock ? 700 : isPanel ? 700 : 1200),
+    height: snapGeom?.height ?? (isDock ? 500 : isPanel ? 500 : 800),
+    x: snapGeom?.x,
+    y: snapGeom?.y,
+    show: false,
     minWidth: isDock ? 400 : isPanel ? undefined : 800,
     minHeight: isDock ? 300 : isPanel ? undefined : 600,
     title: isDock ? 'Cate' : isPanel ? 'Cate Panel' : 'Cate',
@@ -95,7 +108,7 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     ...(process.platform === 'darwin' && windowType === 'main' && getSettingSync('nativeTabs')
       ? { tabbingIdentifier: 'cate-main' }
       : {}),
-    backgroundColor: '#1f1e1c',
+    backgroundColor: snapBg ?? '#1f1e1c',
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -106,6 +119,28 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
       webviewTag: true,
     },
   })
+
+  // Show on ready-to-show so the first frame is fully painted before the
+  // window appears — eliminates the white flash from initial mount.
+  win.once('ready-to-show', () => {
+    try { win.show() } catch { /* destroyed */ }
+  })
+
+  // Persist main-window geometry to the boot snapshot so the next cold launch
+  // restores bounds synchronously (no white flash). The store debounces, so
+  // emitting on every move/resize is cheap.
+  if (windowType === 'main') {
+    const captureGeometry = (): void => {
+      try {
+        if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return
+        const [x, y] = win.getPosition()
+        const [width, height] = win.getSize()
+        writeBootSnapshot({ geometry: { x, y, width, height } })
+      } catch { /* noop */ }
+    }
+    win.on('move', captureGeometry)
+    win.on('resize', captureGeometry)
+  }
 
   // Track this window in the registry with its type
   registerWindow(win, windowType)
@@ -296,19 +331,50 @@ function destroyDragGhostWindow(): void {
 // Register all IPC handlers ONCE (not per-window)
 // =============================================================================
 
-function registerAllHandlers(): void {
-  registerTerminalHandlers()
-  registerFilesystemHandlers()
-  registerGitHandlers()
-  registerShellHandlers()
-  registerGitMonitorHandlers()
+/**
+ * Critical-path IPC handlers — registered synchronously before the first
+ * BrowserWindow is created. These are everything the renderer might call
+ * during settings load, session restore, and the first paint.
+ *
+ * Terminal + shell handlers are in the critical set because terminal:create
+ * can fire as soon as the session restore reaches a terminal node, which can
+ * happen before `ready-to-show`. Pushing them to the deferred set caused
+ * "no handler registered" errors in practice.
+ */
+function registerCriticalHandlers(): void {
   registerStoreHandlers()
-  registerMCPHandlers()
-  registerMenuHandlers()
-  registerNotificationHandlers()
   registerWorkspaceHandlers()
-  registerUsageHandlers()
+  registerFilesystemHandlers()
+  registerTerminalHandlers()
+  registerShellHandlers()
+  registerMenuHandlers()
+  registerWindowAndDialogHandlers()
+}
 
+/**
+ * Background IPC handlers — registered after the first paint inside
+ * mainWin.once('ready-to-show'). Nothing on the critical render path
+ * should depend on these.
+ */
+function registerDeferredHandlers(): void {
+  registerGitHandlers()
+  registerGitMonitorHandlers()
+  registerMCPHandlers()
+  registerNotificationHandlers()
+  registerUsageHandlers()
+}
+
+/** Union of critical + deferred — kept for any callers that want the full set in one call. */
+function registerAllHandlers(): void {
+  registerCriticalHandlers()
+  registerDeferredHandlers()
+}
+
+/**
+ * Window, dialog, panel-transfer, drag, and ad-hoc IPC handlers. Split out so
+ * registerCriticalHandlers can include them without duplicating the bodies.
+ */
+function registerWindowAndDialogHandlers(): void {
   // Crash reporting: renderer can save a crash report via IPC
   ipcMain.handle(CRASH_REPORT_SAVE, async (_event, error: { name?: string; message: string; stack?: string }) => {
     saveCrashReport(
@@ -951,6 +1017,9 @@ process.on('SIGINT', () => {
 })
 
 app.whenReady().then(async () => {
+  // Phase 0 perf marker — log a high-resolution timestamp at app.whenReady
+  // so cold-launch traces can be reconstructed from main + renderer logs.
+  log.info('[perf] app.whenReady t=%dms', Math.round(performance.now()))
   log.info('App ready, resolving shell environment...')
 
   // Resolve the user's real shell environment before registering handlers.
@@ -975,8 +1044,8 @@ app.whenReady().then(async () => {
   })
 
   installWebContentsSecurity()
-  registerAllHandlers()
-  log.info('IPC handlers registered')
+  registerCriticalHandlers()
+  log.info('Critical IPC handlers registered')
 
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)
@@ -986,14 +1055,18 @@ app.whenReady().then(async () => {
     log.warn('[security] Trust scoping disabled via dev-only flag; home directory restored to allowed roots')
   }
 
-  initAutoUpdater()
-
   // Check for a crash report from the previous session — shows an opt-in
   // dialog if one exists. Deferred until after the window is ready so the
   // dialog has a parent window and doesn't block startup.
   mainWin.once('ready-to-show', () => {
     mainWindowReady = true
     flushPendingOpenPaths()
+    // Register deferred IPC handlers and start the auto-updater now that the
+    // first paint has landed. Anything not on the cold-launch critical path
+    // belongs here.
+    registerDeferredHandlers()
+    log.info('Deferred IPC handlers registered')
+    initAutoUpdater()
     // Skip the crash-report prompt in development — dev sessions hit a
     // lot of transient renderer errors while iterating, and those
     // shouldn't interrupt every launch with a "Cate crashed" dialog.
@@ -1041,7 +1114,7 @@ app.on('activate', () => {
 // ---------------------------------------------------------------------------
 
 let sessionFlushed = false
-const FLUSH_TIMEOUT_MS = 3000
+const FLUSH_TIMEOUT_MS = 1500
 
 app.on('before-quit', (event) => {
   if (sessionFlushed) {

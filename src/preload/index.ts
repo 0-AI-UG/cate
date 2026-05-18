@@ -1,4 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+
+// Phase 0 perf marker — capture preload entry as early as possible.
+try { performance.mark('preload-start') } catch { /* noop */ }
+
 import {
   TERMINAL_CREATE,
   TERMINAL_WRITE,
@@ -55,6 +59,7 @@ import {
   SESSION_CLEAR,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
+  BOOT_SNAPSHOT_WRITE,
   APP_GET_PATH,
   APP_OPEN_PATH,
   CRASH_REPORT_SAVE,
@@ -472,6 +477,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   sessionFlushSaveDone(): void {
     ipcRenderer.send(SESSION_FLUSH_SAVE_DONE)
+  },
+
+  /** Push a partial boot snapshot to main (geometry, theme, etc.). Main
+   *  debounces and writes `<userData>/boot.json` for the next cold launch. */
+  bootSnapshotWrite(partial: Record<string, unknown>): Promise<void> {
+    return ipcRenderer.invoke(BOOT_SNAPSHOT_WRITE, partial)
   },
 
   // ---------------------------------------------------------------------------

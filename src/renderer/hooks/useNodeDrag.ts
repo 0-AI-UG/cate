@@ -22,6 +22,67 @@ import { executeDrop } from '../docking/dropExecution'
 type SnapCandidate = { origin: Point; size: Size }
 type SnapIndex = { cells: Map<string, SnapCandidate[]>; all: SnapCandidate[]; cellSize: number }
 
+// -----------------------------------------------------------------------------
+// Module-level pointermove dispatch (Phase 2.5)
+// -----------------------------------------------------------------------------
+// Instead of every active drag attaching its own window mousemove listener
+// (which during a multi-drag is one per selected node), we keep a single
+// listener for the whole module and dispatch to all registered draggers.
+// The dragging map keys by nodeId so we can clean up an individual drag on
+// mouseup without disturbing any others, and the listener is detached once
+// the map empties.
+
+type ActiveDragHandlers = {
+  onMove: (ev: MouseEvent) => void
+  onUp: (ev: MouseEvent) => void
+  onBlur: () => void
+}
+
+const activeDrags = new Map<string, ActiveDragHandlers>()
+let globalListenersAttached = false
+
+function globalMouseMove(ev: MouseEvent) {
+  // Snapshot values so handlers can synchronously remove themselves
+  // (e.g. by triggering a drop) without skewing iteration.
+  if (activeDrags.size === 0) return
+  for (const h of Array.from(activeDrags.values())) h.onMove(ev)
+}
+function globalMouseUp(ev: MouseEvent) {
+  if (activeDrags.size === 0) return
+  for (const h of Array.from(activeDrags.values())) h.onUp(ev)
+}
+function globalBlur() {
+  if (activeDrags.size === 0) return
+  for (const h of Array.from(activeDrags.values())) h.onBlur()
+}
+
+function ensureGlobalListeners() {
+  if (globalListenersAttached) return
+  globalListenersAttached = true
+  // passive: drag never calls preventDefault on mousemove
+  window.addEventListener('mousemove', globalMouseMove, { passive: true })
+  window.addEventListener('mouseup', globalMouseUp, { passive: true })
+  window.addEventListener('blur', globalBlur)
+}
+
+function maybeDetachGlobalListeners() {
+  if (!globalListenersAttached) return
+  if (activeDrags.size > 0) return
+  globalListenersAttached = false
+  window.removeEventListener('mousemove', globalMouseMove)
+  window.removeEventListener('mouseup', globalMouseUp)
+  window.removeEventListener('blur', globalBlur)
+}
+
+function registerDrag(nodeId: string, handlers: ActiveDragHandlers): void {
+  activeDrags.set(nodeId, handlers)
+  ensureGlobalListeners()
+}
+function unregisterDrag(nodeId: string): void {
+  activeDrags.delete(nodeId)
+  maybeDetachGlobalListeners()
+}
+
 interface DragState {
   lastClientX: number
   lastClientY: number
@@ -92,7 +153,9 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
   const wasDraggedRef = useRef(false)
   const rafId = useRef<number>(0)
   const pendingOrigin = useRef<Point | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
+  /** True while this hook instance is registered in the module-level dispatch.
+   *  Replaces the prior per-instance AbortController + window listeners. */
+  const registeredRef = useRef(false)
   // Track which axes were magnetically snapped in the last drag frame (for Bug B fix)
   const lastMagneticAxes = useRef<{ x: boolean; y: boolean }>({ x: false, y: false })
   // Track whether we've transitioned to dock-drag mode
@@ -110,9 +173,9 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
 
   // Shared cleanup logic — used by mouseup, blur handler, and unmount
   const cancelDrag = useCallback((revert?: boolean) => {
-    if (abortRef.current) {
-      abortRef.current.abort()
-      abortRef.current = null
+    if (registeredRef.current) {
+      unregisterDrag(nodeId)
+      registeredRef.current = false
     }
 
     const wasDragging = isDraggingRef.current
@@ -197,10 +260,10 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
     (e: React.MouseEvent) => {
       e.preventDefault()
 
-      // Abort any previous drag listeners to prevent orphaned handlers
-      if (abortRef.current) {
-        abortRef.current.abort()
-        abortRef.current = null
+      // Detach any previous drag registration to prevent orphaned handlers
+      if (registeredRef.current) {
+        unregisterDrag(nodeId)
+        registeredRef.current = false
       }
 
       const node = canvasStoreApi.getState().nodes[nodeId]
@@ -704,11 +767,12 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
         }
       }
 
-      const controller = new AbortController()
-      abortRef.current = controller
-      window.addEventListener('mousemove', handleMouseMove, { signal: controller.signal })
-      window.addEventListener('mouseup', handleMouseUp, { signal: controller.signal })
-      window.addEventListener('blur', handleBlur, { signal: controller.signal })
+      registerDrag(nodeId, {
+        onMove: handleMouseMove,
+        onUp: handleMouseUp,
+        onBlur: handleBlur,
+      })
+      registeredRef.current = true
     },
     [nodeId, zoomLevel, cancelDrag],
   )

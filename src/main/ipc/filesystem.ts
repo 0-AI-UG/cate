@@ -35,13 +35,20 @@ const exclusionSet = new Set(FILE_EXCLUSIONS)
 // receives its own events and cleanup is precise.
 // ---------------------------------------------------------------------------
 
+interface SubscriberEntry {
+  /** Only events whose path startsWith this prefix are dispatched. */
+  prefix: string
+  /** Per-subscriber dispatch function (a single event at a time). */
+  dispatch: (type: string, filePath: string) => void
+  /** Cancel any pending trailing-edge flush (called from watchStop). */
+  cancelFlush: () => void
+}
+
 interface SharedWatcher {
   watcher: FSWatcher
   refCount: number
-  /** Per-subscriber event dispatch functions keyed by "windowId:dirPath" */
-  dispatch: Map<string, (type: string, filePath: string) => void>
-  /** cancelFlush callbacks keyed by "windowId:dirPath" */
-  cancelFlushes: Map<string, () => void>
+  /** Per-subscriber entries keyed by an opaque subscriber key. */
+  subscribers: Map<string, SubscriberEntry>
 }
 
 /** Shared watcher pool keyed by normalised absolute directory path. */
@@ -52,6 +59,22 @@ const watcherKeys: Map<string, string> = new Map()
 
 function watcherKey(windowId: number, dirPath: string): string {
   return `${windowId}:${dirPath}`
+}
+
+/** Trailing-edge debounce window for coalescing chokidar bursts. */
+const DISPATCH_DEBOUNCE_MS = 16
+
+/**
+ * True iff `filePath` is `prefix` itself or lives under it. Comparison is a
+ * straightforward string-prefix check; chokidar emits absolute, OS-normalised
+ * paths so we trust them as-is (matching how `dirPath` is stored upstream).
+ */
+function pathHasPrefix(filePath: string, prefix: string): boolean {
+  if (filePath === prefix) return true
+  if (!filePath.startsWith(prefix)) return false
+  const next = filePath.charCodeAt(prefix.length)
+  // 47 = '/', 92 = '\\'
+  return next === 47 || next === 92
 }
 
 async function readFile(filePath: string): Promise<string> {
@@ -276,19 +299,35 @@ function watchStart(dirPath: string, ownerWindowId: number): void {
     shared = {
       watcher,
       refCount: 0,
-      dispatch: new Map(),
-      cancelFlushes: new Map(),
+      subscribers: new Map(),
     }
     sharedWatchers.set(dirPath, shared)
 
-    // Fan out each raw watcher event to all per-subscriber dispatch functions
-    const { dispatch } = shared
-    watcher.on('add', (fp: string) => { for (const fn of dispatch.values()) fn('create', fp) })
-    watcher.on('change', (fp: string) => { for (const fn of dispatch.values()) fn('update', fp) })
-    watcher.on('unlink', (fp: string) => { for (const fn of dispatch.values()) fn('delete', fp) })
+    // Fan out each raw watcher event only to subscribers whose `prefix` is an
+    // ancestor of the changed path. This avoids waking IPC consumers (and any
+    // in-process listeners such as the git monitor) for changes in unrelated
+    // subtrees that happen to share the same watcher root.
+    const fanOut = (type: string, fp: string) => {
+      for (const sub of shared!.subscribers.values()) {
+        if (pathHasPrefix(fp, sub.prefix)) sub.dispatch(type, fp)
+      }
+    }
+    watcher.on('add', (fp: string) => fanOut('create', fp))
+    watcher.on('change', (fp: string) => fanOut('update', fp))
+    watcher.on('unlink', (fp: string) => fanOut('delete', fp))
+
+    // Attach any previously-registered in-process subscribers whose prefix
+    // falls under this newly-created watcher root.
+    for (const sub of inProcSubs.values()) {
+      if (pathHasPrefix(sub.prefix, dirPath)) {
+        attachInProcToWatcher(sub, dirPath, shared)
+      }
+    }
   }
 
-  // Register per-requester batched dispatch
+  // Per-requester trailing-edge debounce — coalesces a burst (e.g. git status
+  // or a multi-file save) into a single IPC dispatch ~16ms after the last
+  // event, keeping the renderer-visible payload shape unchanged.
   let pendingEvents = new Map<string, { type: string; path: string }>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -296,31 +335,35 @@ function watchStart(dirPath: string, ownerWindowId: number): void {
     pendingEvents.set(filePath, { type, path: filePath })
     if (!flushTimer) {
       flushTimer = setTimeout(() => {
+        const events = pendingEvents
+        pendingEvents = new Map()
+        flushTimer = null
         try {
-          for (const event of pendingEvents.values()) {
+          for (const event of events.values()) {
             sendToWindow(ownerWindowId, FS_WATCH_EVENT, event)
           }
         } catch (err) {
           log.warn('[fs-watch] flush failed:', err)
-        } finally {
-          flushTimer = null
-          pendingEvents = new Map()
         }
-      }, 150)
+      }, DISPATCH_DEBOUNCE_MS)
     }
   }
 
-  shared.dispatch.set(key, queueEvent)
-  shared.refCount++
-  watcherKeys.set(key, dirPath)
-
-  shared.cancelFlushes.set(key, () => {
+  const cancelFlush = () => {
     if (flushTimer) {
       clearTimeout(flushTimer)
       flushTimer = null
     }
     pendingEvents = new Map()
+  }
+
+  shared.subscribers.set(key, {
+    prefix: dirPath,
+    dispatch: queueEvent,
+    cancelFlush,
   })
+  shared.refCount++
+  watcherKeys.set(key, dirPath)
 }
 
 function watchStop(dirPath: string, ownerWindowId: number): void {
@@ -330,17 +373,92 @@ function watchStop(dirPath: string, ownerWindowId: number): void {
 
   const shared = sharedWatchers.get(normPath)
   if (shared) {
-    shared.cancelFlushes.get(key)?.()
-    shared.cancelFlushes.delete(key)
-    shared.dispatch.delete(key)
-
-    shared.refCount--
+    const sub = shared.subscribers.get(key)
+    if (sub) {
+      sub.cancelFlush()
+      shared.subscribers.delete(key)
+      shared.refCount--
+    }
     if (shared.refCount <= 0) {
       shared.watcher.close()
       sharedWatchers.delete(normPath)
     }
   }
   watcherKeys.delete(key)
+}
+
+// ---------------------------------------------------------------------------
+// In-process fs change subscriptions
+//
+// Lets other main-process modules (e.g. the git monitor) react to filesystem
+// events without round-tripping through IPC. Subscribers register a path
+// prefix; we deliver any change underneath it via whichever shared watcher
+// roots happen to cover it. Subscribers that register before a covering
+// watcher exists simply receive nothing until one does, which matches the
+// existing renderer-side semantics.
+// ---------------------------------------------------------------------------
+
+type InProcListener = (filePath: string) => void
+
+interface InProcSub {
+  prefix: string
+  listener: InProcListener
+  // Reverse-lookup of (watcherRoot, key) we've attached to so we can detach
+  // on unsubscribe without scanning.
+  attachments: Array<{ root: string; key: string }>
+}
+
+let inProcSeq = 0
+const inProcSubs: Map<number, InProcSub> = new Map()
+
+function attachInProcToWatcher(sub: InProcSub, root: string, shared: SharedWatcher): void {
+  const key = `inproc:${inProcSeq}-${root}`
+  shared.subscribers.set(key, {
+    prefix: sub.prefix,
+    // No coalescing here — in-process consumers are expected to debounce
+    // themselves if they care; passing every event through makes "immediate
+    // poll on change" behaviour easy to reason about.
+    dispatch: (_type, filePath) => sub.listener(filePath),
+    cancelFlush: () => { /* no-op */ },
+  })
+  shared.refCount++
+  sub.attachments.push({ root, key })
+}
+
+/**
+ * Subscribe to filesystem change events under `prefix`. The listener fires
+ * once per chokidar event whose path is `prefix` itself or lives beneath it,
+ * provided some existing watcher root covers `prefix`. Returns an unsubscribe
+ * fn. Safe to call even if no covering watcher exists yet — the subscription
+ * is registered and will simply produce no events until one does.
+ */
+export function subscribeFsChanges(prefix: string, listener: InProcListener): () => void {
+  const id = ++inProcSeq
+  const sub: InProcSub = { prefix, listener, attachments: [] }
+  inProcSubs.set(id, sub)
+
+  for (const [root, shared] of sharedWatchers) {
+    if (pathHasPrefix(prefix, root)) {
+      attachInProcToWatcher(sub, root, shared)
+    }
+  }
+
+  return () => {
+    const s = inProcSubs.get(id)
+    if (!s) return
+    inProcSubs.delete(id)
+    for (const { root, key } of s.attachments) {
+      const shared = sharedWatchers.get(root)
+      if (!shared) continue
+      if (shared.subscribers.delete(key)) {
+        shared.refCount--
+        if (shared.refCount <= 0) {
+          shared.watcher.close()
+          sharedWatchers.delete(root)
+        }
+      }
+    }
+  }
 }
 
 /**

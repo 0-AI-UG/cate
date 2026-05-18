@@ -90,6 +90,9 @@ const monacoGlobal = globalThis as typeof globalThis & {
   }
 }
 
+// MonacoEnvironment.getWorker is assigned once at module load. Monaco caches
+// workers by label internally (one tsserver worker, one json worker, etc.) and
+// reuses them across all editor instances — no per-panel worker spawn.
 monacoGlobal.MonacoEnvironment = {
   ...(monacoGlobal.MonacoEnvironment ?? {}),
   getWorker: function (_: string, label: string) {
@@ -138,12 +141,11 @@ function retainModel(filePath: string): void {
 function releaseModel(filePath: string): void {
   const count = (modelRefCount.get(filePath) ?? 0) - 1
   if (count <= 0) {
+    // Drop the refcount entry but DO NOT dispose the model. Keeping it warm in
+    // the LRU cache makes the next open of the same file instant (no re-read,
+    // no re-tokenization). The LRU eviction path in rememberModel() will
+    // dispose the model later if it falls out of the cache.
     modelRefCount.delete(filePath)
-    const model = modelCache.get(filePath)
-    if (model && !model.isDisposed()) {
-      modelCache.delete(filePath)
-      try { model.dispose() } catch { /* noop */ }
-    }
   } else {
     modelRefCount.set(filePath, count)
   }
@@ -417,6 +419,8 @@ export default function EditorPanel({
         ? filePath.slice(rootPath.length + 1)
         : filePath
 
+      let cancelled = false
+
       const loadDiff = async () => {
         let modifiedContent = ''
         try {
@@ -433,6 +437,8 @@ export default function EditorPanel({
           originalContent = modifiedContent
         }
 
+        if (cancelled) return
+
         const originalModel = monaco.editor.createModel(originalContent, language)
         const modifiedModel = monaco.editor.createModel(modifiedContent, language)
 
@@ -445,13 +451,15 @@ export default function EditorPanel({
       loadDiff()
 
       return () => {
+        cancelled = true
         layoutObserver.disconnect()
         const model = diffEditor.getModel()
-        if (model) {
-          model.original?.dispose()
-          model.modified?.dispose()
-        }
+        // Dispose the diff editor BEFORE its models — Monaco's DiffEditorWidget
+        // still references them during teardown and throws "TextModel got disposed
+        // before DiffEditorWidget model got reset" otherwise.
         diffEditor.dispose()
+        model?.original?.dispose()
+        model?.modified?.dispose()
         diffEditorRef.current = null
       }
     }
@@ -486,7 +494,19 @@ export default function EditorPanel({
     let modelRetained = false
 
     if (filePath) {
-      const cached = modelCache.get(filePath)
+      // Reuse a warm model if our LRU has it, otherwise fall back to
+      // monaco.editor.getModel(uri) in case Monaco itself still owns one
+      // (e.g. across HMR boundaries). Models survive panel unmount in the
+      // cache so reopening the same file is instant.
+      const fileUri = monaco.Uri.file(filePath)
+      let cached = modelCache.get(filePath)
+      if (!cached || cached.isDisposed()) {
+        const byUri = monaco.editor.getModel(fileUri)
+        if (byUri && !byUri.isDisposed()) {
+          cached = byUri
+          rememberModel(filePath, byUri)
+        }
+      }
       if (cached && !cached.isDisposed()) {
         retainModel(filePath)
         modelRetained = true
@@ -497,7 +517,9 @@ export default function EditorPanel({
           .fsReadFile(filePath)
           .then((content) => {
             if (cancelled) return
-            const model = monaco.editor.createModel(content, language)
+            // Pass the file URI so Monaco indexes the model by it; this
+            // enables monaco.editor.getModel(uri) reuse on later opens.
+            const model = monaco.editor.createModel(content, language, fileUri)
             createdModel = model
             rememberModel(filePath, model)
             retainModel(filePath)
@@ -507,6 +529,8 @@ export default function EditorPanel({
           .catch((err) => {
             if (cancelled) return
             log.error('[EditorPanel] Failed to read file:', err)
+            // No URI here — we don't want a malformed/empty placeholder to
+            // squat on the file URI and be reused as the real model later.
             const model = monaco.editor.createModel('', language)
             createdModel = model
             rememberModel(filePath, model)

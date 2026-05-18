@@ -1,8 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import log from './lib/logger'
+import { mark } from './lib/perfMarks'
 import App from './App'
 import './styles/globals.css'
+
+// Phase 0 perf marker — first executable statement in the renderer bundle.
+mark('renderer-script-start')
 
 log.info('Renderer starting (window type=%s)', new URLSearchParams(window.location.search).get('type') ?? 'main')
 
