@@ -56,6 +56,7 @@ const EDGE_STRIP = 32
 
 function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
+  const pillRef = useRef<HTMLDivElement>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
   const [inCenter, setInCenter] = useState(false)
   // Mirror `inCenter` in a ref so the pointerUp handler reads the freshest
@@ -124,18 +125,26 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
         y > EDGE_STRIP &&
         x < rect.width - EDGE_STRIP &&
         y < rect.height - EDGE_STRIP)
+    // Pill-hover override: when the cursor is over the "Drop into canvas"
+    // pill itself, force center mode so the pill always wins regardless of
+    // a mini-dock underneath. The pill is a deliberate target — once the
+    // user lands on it, that's their intent.
+    const pillRect = pillRef.current?.getBoundingClientRect()
+    const overPill = !!pillRect &&
+      clientX >= pillRect.left && clientX <= pillRect.right &&
+      clientY >= pillRect.top && clientY <= pillRect.bottom
     // Also yield to any registered mini-dock drop zone the cursor is sitting
     // over — those are canvas-node mini-docks layered above the canvas, and
     // we want their tab/split indicators to win over "Drop into canvas".
     // Main-window dock zones (left/right/bottom) sit outside this overlay's
     // rect so they're handled implicitly by onPointerLeave.
-    const overMiniDock = getDropZoneEntries().some((entry) => {
+    const overMiniDock = !overPill && getDropZoneEntries().some((entry) => {
       if (!entry.dockStoreApi) return false
       const r = entry.getRect()
       if (!r) return false
       return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom
     })
-    const center = !inEdgeStrip && !overMiniDock
+    const center = overPill || (!inEdgeStrip && !overMiniDock)
     setCursor({ x, y })
     setInCenter(center)
     inCenterRef.current = center
@@ -289,30 +298,34 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
         }}
       >
         <div
+          ref={pillRef}
           style={{
             position: 'relative',
             overflow: 'hidden',
             borderRadius: 20,
-            background: inCenter ? 'rgba(74, 158, 255, 0.15)' : 'var(--surface-3)',
+            background: inCenter ? 'rgba(74, 158, 255, 0.22)' : 'var(--surface-3)',
             border: inCenter
-              ? '1px solid rgba(74, 158, 255, 0.6)'
+              ? '1px solid rgba(74, 158, 255, 0.9)'
               : `1px solid var(--border-subtle)`,
+            boxShadow: inCenter
+              ? '0 0 0 4px rgba(74, 158, 255, 0.18), 0 12px 32px -8px rgba(74, 158, 255, 0.5)'
+              : 'none',
             backdropFilter: 'blur(12px)',
             padding: '10px 24px',
             minWidth: 200,
             textAlign: 'center',
             transition:
-              'background 200ms ease, border-color 200ms ease, transform 200ms cubic-bezier(0.16, 1, 0.3, 1)',
-            transform: inCenter ? 'scale(1.05)' : 'scale(1)',
+              'background 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+            transform: inCenter ? 'scale(1.08)' : 'scale(1)',
             animation: inCenter ? 'canvasDropPulse 1.2s ease-in-out infinite' : 'none',
           }}
         >
           <span
             style={{
               fontSize: 12,
-              fontWeight: 500,
+              fontWeight: 600,
               color: inCenter ? 'var(--focus-blue)' : 'var(--text-secondary)',
-              transition: 'color 200ms ease',
+              transition: 'color 150ms ease',
               whiteSpace: 'nowrap',
               userSelect: 'none',
             }}
