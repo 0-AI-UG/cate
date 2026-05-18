@@ -23,7 +23,7 @@ export const ProjectList: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       <SidebarSectionHeader
-        title="Projects"
+        title="Workspace"
         actions={
           <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
             <Plus size={14} weight="bold" />
