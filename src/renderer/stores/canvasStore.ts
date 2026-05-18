@@ -10,6 +10,7 @@ import type {
   CanvasNodeId,
   CanvasNodeState,
   CanvasAnnotation,
+  CanvasDrawing,
   CanvasRegion,
   DockLayoutNode,
   Point,
@@ -36,6 +37,13 @@ export interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
   annotations: Record<string, CanvasAnnotation>
+  /** Freehand pen strokes laid down with the draw tool. */
+  drawings: Record<string, CanvasDrawing>
+  /** True when the draw tool is active — canvas mouse events become stroke
+   *  capture instead of pan/marquee. Transient, never persisted. */
+  drawMode: boolean
+  /** Currently-selected drawing (for click-to-select-then-delete). */
+  selectedDrawingId: string | null
   /** Stable id list for regions — derived from `regions`. Maintained in every
    *  mutator that adds/removes regions so per-id selectors don't re-render the
    *  whole layer when an existing region's properties change. */
@@ -162,6 +170,14 @@ export interface CanvasStoreActions {
   setAnnotationBold: (id: string, bold: boolean) => void
   setAnnotationFontSizePx: (id: string, fontSizePx: number) => void
   resizeAnnotation: (id: string, size: { width: number; height: number }) => void
+
+  // Drawing management — freehand pen strokes
+  setDrawMode: (active: boolean) => void
+  addDrawing: (points: Point[], opts?: { color?: string; strokeWidth?: number }) => string
+  removeDrawing: (id: string) => void
+  selectDrawing: (id: string | null) => void
+  moveDrawing: (id: string, delta: Point) => void
+  setDrawingColor: (id: string, color: string) => void
 
   // Per-node dock layout — replaces split/stack actions. Each canvas node owns
   // a tree (rendered via the dock primitives) that lives here as serialised
@@ -329,6 +345,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   nodes: {},
   regions: {},
   annotations: {},
+  drawings: {},
+  drawMode: false,
+  selectedDrawingId: null,
   regionIdList: [],
   annotationIdList: [],
   viewportOffset: { x: 0, y: 0 },
@@ -1272,6 +1291,61 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
           [id]: { ...ann, size: { width: w, height: h } },
         },
       }
+    })
+  },
+
+  // ---------------------------------------------------------------------------
+  // Drawing management — freehand pen strokes
+  // ---------------------------------------------------------------------------
+
+  setDrawMode(active) {
+    set({ drawMode: active, selectedDrawingId: active ? null : get().selectedDrawingId })
+  },
+
+  addDrawing(points, opts) {
+    const id = `drawing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const drawing: CanvasDrawing = {
+      id,
+      points: points.map((p) => ({ x: p.x, y: p.y })),
+      color: opts?.color ?? 'rgba(240,240,240,0.95)',
+      strokeWidth: opts?.strokeWidth ?? 2,
+    }
+    set((state) => ({ drawings: { ...state.drawings, [id]: drawing } }))
+    return id
+  },
+
+  removeDrawing(id) {
+    set((state) => {
+      if (!state.drawings[id]) return state
+      const { [id]: _omit, ...rest } = state.drawings
+      return {
+        drawings: rest,
+        selectedDrawingId: state.selectedDrawingId === id ? null : state.selectedDrawingId,
+      }
+    })
+  },
+
+  selectDrawing(id) {
+    set({ selectedDrawingId: id })
+  },
+
+  moveDrawing(id, delta) {
+    set((state) => {
+      const d = state.drawings[id]
+      if (!d) return state
+      const moved: CanvasDrawing = {
+        ...d,
+        points: d.points.map((p) => ({ x: p.x + delta.x, y: p.y + delta.y })),
+      }
+      return { drawings: { ...state.drawings, [id]: moved } }
+    })
+  },
+
+  setDrawingColor(id, color) {
+    set((state) => {
+      const d = state.drawings[id]
+      if (!d) return state
+      return { drawings: { ...state.drawings, [id]: { ...d, color } } }
     })
   },
 

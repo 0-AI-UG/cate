@@ -76,6 +76,17 @@ export interface CanvasRegion {
 }
 
 // -----------------------------------------------------------------------------
+// Canvas drawing (freehand pen stroke)
+// -----------------------------------------------------------------------------
+
+export interface CanvasDrawing {
+  id: string
+  points: Point[]
+  color: string
+  strokeWidth: number
+}
+
+// -----------------------------------------------------------------------------
 // Canvas annotation (sticky notes and text labels)
 // -----------------------------------------------------------------------------
 
