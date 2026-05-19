@@ -68,6 +68,27 @@ export default function TerminalPanel({
 
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  // Bumping this re-runs the create effect — used by the Retry button after
+  // a terminal create failure (issue #39).
+  const [retryKey, setRetryKey] = useState(0)
+  const [createError, setCreateError] = useState<string | null>(() =>
+    terminalRegistry.getFailure(panelId),
+  )
+
+  // Subscribe to create-failure changes for this panel so the Retry overlay
+  // appears (and disappears) without polling.
+  useEffect(() => {
+    setCreateError(terminalRegistry.getFailure(panelId))
+    const unsubscribe = terminalRegistry.subscribeFailure((id) => {
+      if (id === panelId) setCreateError(terminalRegistry.getFailure(panelId))
+    })
+    return unsubscribe
+  }, [panelId])
+
+  const handleRetry = useCallback(() => {
+    setCreateError(null)
+    setRetryKey((k) => k + 1)
+  }, [])
 
   const workspaces = useAppStore((state) => state.workspaces)
   const themePreset = useAppStore(
@@ -303,7 +324,7 @@ export default function TerminalPanel({
 
       detachAndDisconnect()
     }
-  }, [panelId, workspaceId, nodeId, initialInput])
+  }, [panelId, workspaceId, nodeId, initialInput, retryKey])
 
   // Hot-apply theme preset changes without recreating the terminal.
   useEffect(() => {
@@ -591,6 +612,25 @@ export default function TerminalPanel({
         {isDragOver && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-blue-500/10 border-2 border-dashed border-blue-500/40 rounded pointer-events-none">
             <span className="text-blue-400 text-sm font-medium">Drop to paste path</span>
+          </div>
+        )}
+        {createError && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-surface-1/85 backdrop-blur-sm">
+            <div className="max-w-md mx-6 rounded-lg border border-subtle bg-surface-3 shadow-[0_18px_40px_-12px_var(--shadow-node)] p-4 text-center">
+              <div className="text-[13px] font-semibold text-primary mb-1">
+                Failed to start terminal
+              </div>
+              <div className="text-[12px] text-secondary mb-3 break-words whitespace-pre-wrap leading-snug">
+                {createError}
+              </div>
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="px-3 py-1.5 rounded-md bg-[var(--focus-blue,#3b82f6)] text-white text-[12px] font-medium hover:brightness-110 active:scale-[0.97] focus:outline-none transition-all"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         )}
       </div>

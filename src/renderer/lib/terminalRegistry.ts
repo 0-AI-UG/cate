@@ -275,6 +275,16 @@ const registry = new Map<string, RegistryEntry>()
 // window.  getOrCreate() checks this map and enters reconnect mode if found.
 const pendingTransfers = new Map<string, { ptyId: string; scrollback?: string }>()
 
+// Per-panel last-known create failure, surfaced by TerminalPanel as a Retry
+// overlay so a dead panel can recover without restarting the app.
+const failures = new Map<string, string>()
+const failureListeners = new Set<(panelId: string) => void>()
+function notifyFailure(panelId: string): void {
+  for (const fn of failureListeners) {
+    try { fn(panelId) } catch { /* ignore listener errors */ }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Live theme swap — update all live terminals when the app theme changes
 // ---------------------------------------------------------------------------
@@ -309,6 +319,9 @@ useSettingsStore.subscribe((state) => {
 async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryEntry> {
   const existing = registry.get(panelId)
   if (existing) return existing
+  // A retry starts here — clear any prior failure so observers re-render
+  // back into the live terminal view.
+  if (failures.delete(panelId)) notifyFailure(panelId)
 
   // Check for a pending cross-window transfer — reconnect to existing PTY
   const transfer = pendingTransfers.get(panelId)
@@ -493,9 +506,20 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
       replayTerminalLog(panelId).catch((err) => log.warn('[terminal] Replay log failed:', err))
     }
   } catch (err) {
-    if (registry.has(panelId)) {
-      terminal.write(`\r\n\x1b[31mFailed to create terminal: ${err}\x1b[0m\r\n`)
+    // Tear down the half-built entry so retry() can rebuild from scratch
+    // instead of leaving a permanent tombstone with the red error frozen in it.
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : String(err)
+    failures.set(panelId, message)
+    if (registry.get(panelId) === entry) {
+      registry.delete(panelId)
+      try { terminal.dispose() } catch { /* ignore */ }
     }
+    notifyFailure(panelId)
   }
 
   return entry
@@ -941,6 +965,17 @@ function getEntry(panelId: string): RegistryEntry | undefined {
   return registry.get(panelId)
 }
 
+/** Returns the last create-failure message for panelId, or null. */
+function getFailure(panelId: string): string | null {
+  return failures.get(panelId) ?? null
+}
+
+/** Subscribe to failure-state changes for any panel. Returns an unsubscribe fn. */
+function subscribeFailure(listener: (panelId: string) => void): () => void {
+  failureListeners.add(listener)
+  return () => failureListeners.delete(listener)
+}
+
 /** Returns true if an entry exists for panelId. */
 function has(panelId: string): boolean {
   return registry.has(panelId)
@@ -998,6 +1033,8 @@ export const terminalRegistry = {
   setPendingTransfer,
   getEntry,
   has,
+  getFailure,
+  subscribeFailure,
   panelIdForPty,
   findNext,
   findPrevious,

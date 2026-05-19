@@ -109,7 +109,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       const isGit = await window.electronAPI.gitIsRepo(dirPath)
       if (isGit) {
         const trackedFiles = await window.electronAPI.gitLsFiles(dirPath)
-        setGitFiles(new Set(trackedFiles))
+        // gitLsFiles returns paths relative to repo root; convert to absolute
+        // so they match node.path in the tree.
+        setGitFiles(new Set(trackedFiles.map((p) => `${dirPath}/${p}`)))
       } else {
         setGitFiles(undefined)
       }
