@@ -17,6 +17,8 @@ import { useAppStore } from '../stores/appStore'
 import { X, Columns, Plus, Terminal as TerminalIcon, Globe, FileText, GitBranch, TreeStructure, SquaresFour, List } from '@phosphor-icons/react'
 import DropZoneOverlay from './DropZoneOverlay'
 import { canvasDropZoneHovered } from './CanvasDropZone'
+import { findNodeIdForDockStore } from '../panels/CanvasPanel'
+import { findCanvasStoreForNode } from '../stores/canvasStore'
 
 // Human-readable labels for each panel type, used in tooltips and the split menu.
 const PANEL_TYPE_LABELS: Record<PanelType, string> = {
@@ -366,6 +368,26 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           const sourceSize = stackRect
             ? { width: stackRect.width, height: stackRect.height }
             : null
+          // If this dock is a canvas-node mini-dock, capture the node's own
+          // canvas-space size so CanvasDropZone can preview + place at 1:1
+          // with the existing node instead of falling back to a default.
+          let sourceNodeSize: { width: number; height: number } | null = null
+          const ownedNodeId = findNodeIdForDockStore(dockStoreApi)
+          if (ownedNodeId) {
+            const cs = findCanvasStoreForNode(ownedNodeId)
+            const n = cs?.getState().nodes[ownedNodeId]
+            if (n) {
+              // If the node is maximized at drag-start, spring-load will
+              // un-maximize it shortly after, restoring node.size to its
+              // pre-maximize size. Use preMaximizeSize as the ghost size so
+              // the preview matches the final dropped/moved node, not the
+              // huge maximized rect that's about to shrink away.
+              const usePre = n.preMaximizeSize != null
+              const w = usePre ? n.preMaximizeSize!.width : n.size.width
+              const h = usePre ? n.preMaximizeSize!.height : n.size.height
+              sourceNodeSize = { width: w, height: h }
+            }
+          }
           useDockDragStore.getState().startDrag(
             panelId,
             panel.type,
@@ -374,6 +396,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             dockStoreApi,
             grabOffset,
             sourceSize,
+            sourceNodeSize,
           )
         }
 
@@ -679,6 +702,11 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     (activeDropTarget.type === 'tab' || activeDropTarget.type === 'split') &&
     'stackId' in activeDropTarget &&
     activeDropTarget.stackId === stack.id
+  // Show an inline "new tab" placeholder at the end of the existing tabs
+  // when a tab drop is active for this stack — gives the user a precise
+  // visual anchor for where the dropped panel will land, in place of the
+  // floating chip portal which can never quite sit beside the real tabs.
+  const showTabPlaceholder = isOver && activeDropTarget?.type === 'tab'
 
   return (
     <div ref={stackRef} className="flex flex-col h-full min-h-0 relative">
@@ -737,9 +765,15 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                   if (isActive) return
                   if (!useDockDragStore.getState().isDragging) return
                   if (springLoadTimer.current) window.clearTimeout(springLoadTimer.current)
+                  // Canvas tabs spring-load faster (250ms) — the user is
+                  // explicitly trying to reveal the canvas to drop a tab on
+                  // it, and a 600ms wait felt unresponsive. Non-canvas tabs
+                  // keep the normal 600ms to avoid accidental activation
+                  // when the cursor merely traverses the tab strip.
+                  const delay = panelType === 'canvas' ? 250 : 600
                   springLoadTimer.current = window.setTimeout(() => {
                     setActiveTab(stack.id, i)
-                  }, 600)
+                  }, delay)
                 }}
                 onPointerLeave={() => {
                   if (springLoadTimer.current) {
@@ -812,6 +846,21 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
               </div>
             )
           })}
+          {showTabPlaceholder && (
+            <div
+              aria-hidden
+              className={`flex items-center justify-center whitespace-nowrap select-none border-r border-white/5 ${compact ? 'px-2 text-[11px]' : 'px-3 text-xs'}`}
+              style={{
+                minWidth: 100,
+                color: 'var(--focus-blue, #3b82f6)',
+                backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
+                border: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
+                borderRadius: 4,
+              }}
+            >
+              + new tab
+            </div>
+          )}
           {/* Draggable spacer that fills the rest of the row. In a detached
               dock window this is the macOS title-bar drag region. In a
               canvas-node mini-dock (onTabBarMouseDown set) it's instead a

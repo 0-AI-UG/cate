@@ -6,11 +6,15 @@
 // =============================================================================
 
 import { useEffect, useRef, useState } from 'react'
+import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { findCanvasStoreForNode } from '../stores/canvasStore'
-import { useDockDragStore, getDropZoneEntries } from '../hooks/useDockDrag'
+import { useDockDragStore } from '../hooks/useDockDrag'
 import { useDockStore } from '../stores/dockStore'
+import { findNodeIdForDockStore } from '../panels/CanvasPanel'
+import { snapNodeToGrid } from '../canvas/layoutEngine'
+import { useSettingsStore } from '../stores/settingsStore'
 import type { PanelType } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES } from '../../shared/types'
 
@@ -23,6 +27,15 @@ export let canvasDropZoneHovered = false
 
 interface CanvasDropZoneProps {
   canvasStoreApi: StoreApi<CanvasStore>
+}
+
+/** Mirror the canvas-drag drop behavior: when the user's snap-to-grid
+ *  setting is on, align the just-moved/created node to the grid so dock
+ *  drops feel consistent with body drags. */
+function snapToGridIfEnabled(canvasStoreApi: StoreApi<CanvasStore>, nodeId: string) {
+  const settings = useSettingsStore.getState()
+  if (!settings.snapToGridEnabled) return
+  snapNodeToGrid(canvasStoreApi, nodeId, settings.gridSpacing, true)
 }
 
 const PANEL_TYPE_LABELS: Record<PanelType, string> = {
@@ -48,11 +61,13 @@ export default function CanvasDropZone({ canvasStoreApi }: CanvasDropZoneProps) 
   return <CanvasDropZoneInner canvasStoreApi={canvasStoreApi} />
 }
 
-/** Outer strip (in px) reserved for the underlying DockTabStack's split-edge
- *  targets (top / bottom / left / right). When the cursor is inside this strip
- *  we deactivate the canvas drop so the dock's normal split indicator wins.
- *  Kept tight so most of the canvas reads as drop-into-canvas territory. */
-const EDGE_STRIP = 32
+/** Outer strip (in px) along each canvas edge that the canvas overlay does
+ *  NOT claim as a drop target. When the cursor is inside this strip the
+ *  canvas drop yields to the underlying dock-zone drop indicators (left /
+ *  right / bottom edge of the window), so the user can still dock a panel
+ *  into a hidden side zone by dragging to the edge. Matches the 60 px width
+ *  used by MainWindowShell's DockZoneDropIndicator slots. */
+const EDGE_STRIP = 60
 
 function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -68,44 +83,57 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
   const dragSource = useDockDragStore((s) => s.dragSource)
   const grabOffsetCanvas = useDockDragStore((s) => s.dragGrabOffset)
   const dockSourceSize = useDockDragStore((s) => s.dragSourceSize)
+  const dragSourceNodeSize = useDockDragStore((s) => s.dragSourceNodeSize)
+  // Subscribe reactively so the ghost rescales live when the user zooms the
+  // target canvas mid-drag. Previously this was a one-shot getState().
+  const targetZoom = useStore(canvasStoreApi, (s) => s.zoomLevel)
+  const viewportOffset = useStore(canvasStoreApi, (s) => s.viewportOffset)
+  // Snap settings — read reactively so toggling snap mid-drag updates the
+  // ghost positioning. The ghost mirrors the body-drag behavior: while
+  // dragging, the preview rectangle snaps to the grid so the user sees where
+  // the node will actually land.
+  const snapEnabled = useSettingsStore((s) => s.snapToGridEnabled)
+  const gridSpacing = useSettingsStore((s) => s.gridSpacing)
 
-  // Source size in canvas-space units. This is the size the new node will
-  // have when added to the target canvas.
+  // ---- Unified source-size resolution ---------------------------------
+  // sourceSize is the canvas-space size the dropped/moved node will have.
+  // The ghost is rendered at sourceSize × targetZoom, and the dropped node
+  // is also sized to sourceSize, so what you see is what you get.
+  // Priority:
+  //   1. canvas source → the actual node's current size (real)
+  //   2. dock source backed by a canvas node → that node's size (mini-dock,
+  //      real — preserves a tab dragged out of a canvas-node back onto canvas)
+  //   3. fallback → PANEL_DEFAULT_SIZES — used for tabs coming from the main
+  //      dock (no canvas counterpart). The user expects these to land at a
+  //      sensible default size, not at the (often huge) dock-panel rect.
   let sourceSize =
     (draggedPanelType && PANEL_DEFAULT_SIZES[draggedPanelType]) ??
     { width: 600, height: 400 }
-  // Ghost is rendered in screen-space, so scale by the target canvas zoom
-  // to match what the node will actually look like once dropped.
-  const targetZoom = canvasStoreApi.getState().zoomLevel
-  // Screen-pixel offset from cursor to ghost top-left. Preference order:
-  //   1. canvas source → use grabOffset × targetZoom (canvas-space)
-  //   2. dock source → use dock rect directly in screen-pixels (no scaling)
-  //   3. fallback → center on cursor
-  let ghostPxSize: { width: number; height: number }
-  let ghostOffset: { x: number; y: number }
   if (dragSource?.type === 'canvas') {
     const sourceCanvas = findCanvasStoreForNode(dragSource.nodeId)
     const srcNode = sourceCanvas?.getState().nodes[dragSource.nodeId]
-    if (srcNode) {
-      sourceSize = { width: srcNode.size.width, height: srcNode.size.height }
+    if (srcNode) sourceSize = { width: srcNode.size.width, height: srcNode.size.height }
+  } else if (dragSourceNodeSize) {
+    sourceSize = dragSourceNodeSize
+  }
+
+  // Ghost is rendered in screen-space (px), scaled to match the target zoom.
+  const ghostPxSize = { width: sourceSize.width * targetZoom, height: sourceSize.height * targetZoom }
+  // Cursor → ghost-top-left offset, also in screen-px. Anchor the cursor at
+  // the same relative point inside the ghost that the user grabbed. The grab
+  // offset is in screen pixels (relative to the source's on-screen rect), so
+  // we proportionally remap it to the ghost's screen-px size.
+  let ghostOffset: { x: number; y: number } = { x: ghostPxSize.width / 2, y: ghostPxSize.height / 2 }
+  if (grabOffsetCanvas) {
+    if (dragSource?.type === 'canvas') {
+      // grab offset is in canvas-space here (set by useNodeDrag)
+      ghostOffset = { x: grabOffsetCanvas.x * targetZoom, y: grabOffsetCanvas.y * targetZoom }
+    } else if (dockSourceSize) {
+      ghostOffset = {
+        x: (grabOffsetCanvas.x / dockSourceSize.width) * ghostPxSize.width,
+        y: (grabOffsetCanvas.y / dockSourceSize.height) * ghostPxSize.height,
+      }
     }
-    ghostPxSize = { width: sourceSize.width * targetZoom, height: sourceSize.height * targetZoom }
-    ghostOffset = grabOffsetCanvas
-      ? { x: grabOffsetCanvas.x * targetZoom, y: grabOffsetCanvas.y * targetZoom }
-      : { x: ghostPxSize.width / 2, y: ghostPxSize.height / 2 }
-  } else if (dragSource?.type === 'dock' && dockSourceSize && grabOffsetCanvas) {
-    // Preview at the canvas-default size (what the dropped node will actually
-    // be), not the source dock rect — otherwise the ghost looks huge compared
-    // to the resulting node. Rescale the grab offset proportionally so the
-    // cursor stays at the same relative spot inside the ghost.
-    ghostPxSize = { width: sourceSize.width * targetZoom, height: sourceSize.height * targetZoom }
-    ghostOffset = {
-      x: (grabOffsetCanvas.x / dockSourceSize.width) * ghostPxSize.width,
-      y: (grabOffsetCanvas.y / dockSourceSize.height) * ghostPxSize.height,
-    }
-  } else {
-    ghostPxSize = { width: sourceSize.width * targetZoom, height: sourceSize.height * targetZoom }
-    ghostOffset = { x: ghostPxSize.width / 2, y: ghostPxSize.height / 2 }
   }
   const defaults = ghostPxSize
 
@@ -120,37 +148,22 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
   const updateCursor = (clientX: number, clientY: number, rect: DOMRect) => {
     const x = clientX - rect.left
     const y = clientY - rect.top
-    const inEdgeStrip =
-      !(x > EDGE_STRIP &&
-        y > EDGE_STRIP &&
-        x < rect.width - EDGE_STRIP &&
-        y < rect.height - EDGE_STRIP)
-    // Pill-hover override: when the cursor is over the "Drop into canvas"
-    // pill itself, force center mode so the pill always wins regardless of
-    // a mini-dock underneath. The pill is a deliberate target — once the
-    // user lands on it, that's their intent.
-    const pillRect = pillRef.current?.getBoundingClientRect()
-    const overPill = !!pillRect &&
-      clientX >= pillRect.left && clientX <= pillRect.right &&
-      clientY >= pillRect.top && clientY <= pillRect.bottom
-    // Also yield to any registered mini-dock drop zone the cursor is sitting
-    // over — those are canvas-node mini-docks layered above the canvas, and
-    // we want their tab/split indicators to win over "Drop into canvas".
-    // Main-window dock zones (left/right/bottom) sit outside this overlay's
-    // rect so they're handled implicitly by onPointerLeave.
-    const overMiniDock = !overPill && getDropZoneEntries().some((entry) => {
-      if (!entry.dockStoreApi) return false
-      const r = entry.getRect()
-      if (!r) return false
-      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom
-    })
-    const center = overPill || (!inEdgeStrip && !overMiniDock)
+    const inOverlay = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height
+    // Yield to the dock-zone drop indicators (left/right/bottom edges of the
+    // window) when the cursor sits in the outer edge strip. Without this,
+    // CanvasDropZone claims the whole canvas area and the underlying dock
+    // indicators never fire — so the user can't dock a panel into a hidden
+    // side zone by dragging to the edge anymore.
+    const inEdgeStrip = inOverlay && (
+      x < EDGE_STRIP ||
+      y < EDGE_STRIP ||
+      x > rect.width - EDGE_STRIP ||
+      y > rect.height - EDGE_STRIP
+    )
+    const center = inOverlay && !inEdgeStrip
     setCursor({ x, y })
     setInCenter(center)
     inCenterRef.current = center
-    // The source's mousemove handler checks this flag to decide whether to
-    // run its own hit-test. Only claim the cursor when we're in the center —
-    // otherwise let the dock's split-edge / mini-dock indicators fire.
     canvasDropZoneHovered = center
     if (center) {
       useDockDragStore.getState().setDropTarget(null)
@@ -191,16 +204,66 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
         // mouseup handler bails out instead of duplicating the drop.
         useDockDragStore.getState().markCanvasDropConsumed()
 
+        // Canvas-node mini-dock source — the user dragged the (only) tab of
+        // a canvas node back onto the same canvas. Treat as a reposition of
+        // the existing node instead of undock+add, which would leave an empty
+        // canvas node behind and spawn a duplicate.
+        if (dragSource?.type === 'dock' && sourceDockStoreApi) {
+          const ownedNodeId = findNodeIdForDockStore(sourceDockStoreApi)
+          if (ownedNodeId && canvasStoreApi.getState().nodes[ownedNodeId]) {
+            const sourceCs = canvasStoreApi.getState()
+            const localX = e.clientX - rect.left
+            const localY = e.clientY - rect.top
+            const zoom = sourceCs.zoomLevel
+            const vp = sourceCs.viewportOffset
+            const canvasX = (localX - vp.x) / zoom
+            const canvasY = (localY - vp.y) / zoom
+            const ownedNode = sourceCs.nodes[ownedNodeId]
+            // Map grab offset (screen-px inside the source dock rect) into
+            // canvas-space inside this node so the cursor lands at the same
+            // relative point of the node after the move.
+            let ox = ownedNode.size.width / 2
+            let oy = ownedNode.size.height / 2
+            if (grabOffsetCanvas && dockSourceSize) {
+              ox = (grabOffsetCanvas.x / dockSourceSize.width) * ownedNode.size.width
+              oy = (grabOffsetCanvas.y / dockSourceSize.height) * ownedNode.size.height
+            }
+            sourceCs.moveNode(ownedNodeId, { x: canvasX - ox, y: canvasY - oy })
+            snapToGridIfEnabled(canvasStoreApi, ownedNodeId)
+            useDockDragStore.getState().endDrag()
+            document.body.classList.remove('canvas-interacting')
+            setCursor(null)
+            setInCenter(false)
+            return
+          }
+        }
+
         // --- Remove from source -----------------------------------------
         if (dragSource?.type === 'dock') {
           const sourceStore = sourceDockStoreApi ?? useDockStore
           sourceStore.getState().undockPanel(draggedPanelId)
         } else if (dragSource?.type === 'canvas') {
-          // Self-drop guard: dropping back onto the same canvas → no-op move
-          // (the canvas-node body drag's regular path already moved it).
-          if (canvasStoreApi.getState().nodes[dragSource.nodeId]) {
+          // Self-drop onto the same canvas — reposition the existing node
+          // at the cursor instead of bailing. The body-drag path moves the
+          // node in real time, but a tab-initiated dock-drag never engages
+          // useNodeDrag, so without this the node stayed in place even though
+          // the user clearly meant to drop it at the cursor position.
+          const sourceCs = canvasStoreApi.getState()
+          if (sourceCs.nodes[dragSource.nodeId]) {
+            const localX = e.clientX - rect.left
+            const localY = e.clientY - rect.top
+            const zoom = sourceCs.zoomLevel
+            const vp = sourceCs.viewportOffset
+            const canvasX = (localX - vp.x) / zoom
+            const canvasY = (localY - vp.y) / zoom
+            const ox = grabOffsetCanvas?.x ?? sourceCs.nodes[dragSource.nodeId].size.width / 2
+            const oy = grabOffsetCanvas?.y ?? sourceCs.nodes[dragSource.nodeId].size.height / 2
+            sourceCs.moveNode(dragSource.nodeId, { x: canvasX - ox, y: canvasY - oy })
+            snapToGridIfEnabled(canvasStoreApi, dragSource.nodeId)
             useDockDragStore.getState().endDrag()
             document.body.classList.remove('canvas-interacting')
+            setCursor(null)
+            setInCenter(false)
             return
           }
           const sourceCanvas = findCanvasStoreForNode(dragSource.nodeId)
@@ -217,21 +280,17 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
         const vp = cs.viewportOffset
         const canvasX = (localX - vp.x) / zoom
         const canvasY = (localY - vp.y) / zoom
-        // Place the node's top-left so it matches the ghost preview. For
-        // canvas sources the grab offset is already in canvas-space. For
-        // dock sources it's in screen pixels and must be divided by zoom.
-        // The dropped node uses `sourceSize` (canvas default), but we want
-        // its top-left to match where the ghost was, which for dock is the
-        // grab offset centered on the real rect → we recenter inside the
-        // smaller canvas-default window to keep the cursor inside it.
+        // Place the node's top-left so the cursor lands at the same relative
+        // point inside the new node that the user grabbed in the source. For
+        // canvas sources the grab offset is already in canvas-space; for dock
+        // sources it's screen-px relative to the source rect and we rescale
+        // proportionally to the new node's canvas-space size.
         let offsetX: number
         let offsetY: number
         if (dragSource?.type === 'canvas' && grabOffsetCanvas) {
           offsetX = grabOffsetCanvas.x
           offsetY = grabOffsetCanvas.y
         } else if (dragSource?.type === 'dock' && dockSourceSize && grabOffsetCanvas) {
-          // Proportional offset inside the new (canvas-default) node so the
-          // cursor lands at the same relative position the user grabbed.
           offsetX = (grabOffsetCanvas.x / dockSourceSize.width) * sourceSize.width
           offsetY = (grabOffsetCanvas.y / dockSourceSize.height) * sourceSize.height
         } else {
@@ -254,6 +313,7 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
         // Focus the new node but DON'T pan the viewport — the user explicitly
         // dropped at this cursor position and expects it to stay there.
         canvasStoreApi.getState().focusNode(newNodeId)
+        snapToGridIfEnabled(canvasStoreApi, newNodeId)
 
         useDockDragStore.getState().endDrag()
         document.body.classList.remove('canvas-interacting')
@@ -336,13 +396,27 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
       </div>
 
       {/* Window-shaped ghost following the cursor — previews where the new
-          node will land. Centered on the cursor. */}
-      {cursor && (
+          node will land. Snaps to grid during drag when the setting is on,
+          mirroring the body-drag behavior. */}
+      {cursor && (() => {
+        // Unsnapped screen-space ghost top-left (cursor minus grab offset).
+        let ghostLeft = cursor.x - ghostOffset.x
+        let ghostTop = cursor.y - ghostOffset.y
+        if (snapEnabled && gridSpacing > 0) {
+          // Convert to canvas-space, snap, then back to screen-space.
+          const canvasX = (ghostLeft - viewportOffset.x) / targetZoom
+          const canvasY = (ghostTop - viewportOffset.y) / targetZoom
+          const snapX = Math.round(canvasX / gridSpacing) * gridSpacing
+          const snapY = Math.round(canvasY / gridSpacing) * gridSpacing
+          ghostLeft = snapX * targetZoom + viewportOffset.x
+          ghostTop = snapY * targetZoom + viewportOffset.y
+        }
+        return (
         <div
           style={{
             position: 'absolute',
-            left: cursor.x - ghostOffset.x,
-            top: cursor.y - ghostOffset.y,
+            left: ghostLeft,
+            top: ghostTop,
             width: defaults.width,
             height: defaults.height,
             borderRadius: 8,
@@ -389,7 +463,8 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
             Drop to place here
           </div>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

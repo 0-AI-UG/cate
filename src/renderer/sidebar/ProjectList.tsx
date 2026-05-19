@@ -12,7 +12,10 @@ export const ProjectList: React.FC = () => {
   const removeWorkspace = useAppStore((s) => s.removeWorkspace)
 
   const handleNewWorkspace = useCallback(() => {
-    const wsId = addWorkspace()
+    // If there's already an uninitialized workspace (no folder picked yet),
+    // reuse it instead of stacking another empty "Add Workspace" row.
+    const existing = useAppStore.getState().workspaces.find((w) => !w.rootPath)
+    const wsId = existing ? existing.id : addWorkspace()
     selectWorkspace(wsId)
   }, [addWorkspace, selectWorkspace])
 

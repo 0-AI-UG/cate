@@ -28,7 +28,7 @@ import { registerWorkspaceHandlers } from './workspaceManager'
 import { addAllowedRoot, clearScopedWriteAllowancesForWindow, registerScopedWriteAllowance, validatePath } from './ipc/pathValidation'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
-import { initAutoUpdater } from './auto-updater'
+import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
 import { initSentry } from './sentry'
 import { saveCrashReport, checkPendingCrashReport } from './crashReporter'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer } from './ipc/terminal'
@@ -1261,6 +1261,16 @@ app.on('will-quit', () => {
   // during Environment::CleanupHandles, node-pty's ThreadSafeFunction exit
   // callback throws into a torn-down context and SIGABRTs the process.
   killAllTerminals()
+  // When an update install is in flight, DO NOT reallyExit — that bypasses
+  // Electron's relaunch hook (queued by autoUpdater.quitAndInstall(_, true)).
+  // We need the natural quit path to run so the updater can launch the new
+  // version. The PTY/SIGABRT risk we guard against below is only a problem
+  // when many native handles are still alive; the updater install path takes
+  // over the process shortly anyway, so a plain return is safe here.
+  if (isInstallingUpdate()) {
+    log.info('will-quit: update install in progress, deferring to Electron relaunch')
+    return
+  }
   // Force immediate exit to bypass node::FreeEnvironment → CleanupHandles →
   // uv_run, which drains pending ThreadSafeFunction callbacks and can SIGABRT
   // after node-pty teardown. process.reallyExit is Node's binding to libc

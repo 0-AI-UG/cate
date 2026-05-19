@@ -385,13 +385,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         <span className="flex-1 min-w-0 text-[14px] truncate italic">
           {workspace.isRootPathPending ? 'Connecting…' : 'Add Workspace'}
         </span>
-        <button
-          className="flex-shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
-          onClick={(e) => { e.stopPropagation(); onClose() }}
-          title="Close Workspace"
-        >
-          <DotsThree size={14} />
-        </button>
       </div>
     )
   }

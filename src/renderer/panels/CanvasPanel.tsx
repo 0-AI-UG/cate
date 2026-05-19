@@ -39,6 +39,20 @@ export function findNodeDockStore(nodeId: string): StoreApi<DockStore> | null {
   return null
 }
 
+/** Reverse lookup — given a DockStore, return the canvas-node id it backs
+ *  (or null if the store isn't a per-canvas-node mini-dock). Lets drop handlers
+ *  recognise drags that originated inside a canvas node and treat them as a
+ *  node move instead of an undock + add. */
+export function findNodeIdForDockStore(store: StoreApi<DockStore>): string | null {
+  for (const [key, s] of nodeStoreMap.entries()) {
+    if (s === store) {
+      const idx = key.indexOf(':')
+      return idx >= 0 ? key.slice(idx + 1) : null
+    }
+  }
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // Helper — walk a DockLayoutNode tree and collect panel locations
 // ---------------------------------------------------------------------------
@@ -139,6 +153,34 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, render
       nodeStoreMap.delete(storeKey)
     }
   }, [storeKey])
+
+  // ------------------------------------------------------------------
+  // Sweep orphan panel IDs from this mini-dock's layout — IDs that don't
+  // exist in ws.panels (e.g. session-restore mismatch, panel cleanup that
+  // missed canvas-node layouts). These render as a generic "Panel" tab
+  // with the editor icon because the panel record can't be resolved.
+  // Watch the workspace's panels record reactively so a panel that's
+  // added later (e.g. async restore) doesn't get pruned by an early run.
+  // ------------------------------------------------------------------
+  const workspacePanels = useAppStore(
+    (s) => s.workspaces.find((w) => w.id === useAppStore.getState().selectedWorkspaceId)?.panels,
+  )
+  useEffect(() => {
+    if (!workspacePanels) return
+    const layout = dockStoreApi.getState().zones.center.layout
+    if (!layout) return
+    const collectOrphans = (n: DockLayoutNode): string[] => {
+      if (n.type === 'tabs') return n.panelIds.filter((id) => !workspacePanels[id])
+      const out: string[] = []
+      for (const c of n.children) out.push(...collectOrphans(c))
+      return out
+    }
+    const orphans = collectOrphans(layout)
+    if (orphans.length === 0) return
+    for (const id of orphans) {
+      try { dockStoreApi.getState().undockPanel(id) } catch { /* ignore */ }
+    }
+  }, [workspacePanels, dockStoreApi])
 
   const renderPanel = useCallback(
     (panelId: string) => renderPanelContent?.(panelId, nodeId, zoomLevel) ?? null,

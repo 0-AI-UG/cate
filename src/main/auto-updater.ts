@@ -36,6 +36,14 @@ const API_LATEST_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_RE
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = true
 
+/** True after the user clicked "Update & Restart". The will-quit handler in
+ *  src/main/index.ts reads this to skip its `process.reallyExit(0)` fallback —
+ *  reallyExit bypasses Electron's relaunch hooks, so the app would install
+ *  the update but never come back up. With this flag set, we let Electron's
+ *  natural quit path complete so the updater's relaunch fires. */
+let updateInstalling = false
+export function isInstallingUpdate(): boolean { return updateInstalling }
+
 // ---------------------------------------------------------------------------
 // Update status broadcast
 // ---------------------------------------------------------------------------
@@ -199,8 +207,12 @@ export function initAutoUpdater(): void {
   ipcMain.on(UPDATE_INSTALL, async () => {
     if (!app.isPackaged) return
     log.info('[auto-updater] Renderer requested install')
+    updateInstalling = true
     await flushSessionBeforeUpdate()
-    autoUpdater.quitAndInstall()
+    // (isSilent=false, isForceRunAfter=true) — force relaunch after install
+    // on every platform. The default `isForceRunAfter=false` makes Win/Linux
+    // exit without coming back up after the install completes.
+    autoUpdater.quitAndInstall(false, true)
   })
 
   ipcMain.on(UPDATE_OPEN_RELEASE, (_e, url?: string) => {

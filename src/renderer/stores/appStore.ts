@@ -400,8 +400,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Snapshot current canvas state back into the outgoing workspace
     get().syncCanvasToWorkspace(state.selectedWorkspaceId)
 
+    // Discard outgoing workspace if it was never initialized (no folder
+    // picked, not currently picking one). Keeps stray "Add Workspace" rows
+    // from accumulating in the sidebar.
+    const outgoing = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
+    const shouldDropOutgoing =
+      !!outgoing && !outgoing.rootPath && !outgoing.isRootPathPending && outgoing.id !== id
+
     // Switch selection
     set({ selectedWorkspaceId: id })
+
+    if (shouldDropOutgoing && outgoing) {
+      get().removeWorkspace(outgoing.id)
+    }
 
     // Load the new workspace's canvas state into the canvas store
     const ws = get().workspaces.find((w) => w.id === id)
@@ -500,6 +511,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
           return { ...w, panels }
         }),
       }))
+    }
+
+    // Sweep orphaned dock tabs (in some dock zone but not in ws.panels). These
+    // appear after a panel state was dropped without the dock layout being
+    // updated — e.g. closeAllPanels wiping ws.panels, or a stale snapshot
+    // restore — and render as a generic "Panel" tab with the editor icon.
+    const orphanedDockIds = Array.from(allDockPanelIds).filter((id) => !ws.panels[id])
+    if (orphanedDockIds.length > 0) {
+      for (const id of orphanedDockIds) {
+        try { useDockStore.getState().undockPanel(id) } catch { /* ignore */ }
+      }
     }
 
     // Check if the center zone now contains a canvas-type panel
@@ -1190,6 +1212,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Clear the canvas store if this is the active workspace
     if (wsId === get().selectedWorkspaceId) {
       canvasOps?.clearAllNodes()
+      // Reset the dock to a clean state so the just-cleared panel IDs don't
+      // linger in dock zones as orphan tabs (which render as a generic
+      // "Panel" tab with an editor icon).
+      useDockStore.getState().restoreSnapshot({
+        zones: {
+          left:   { position: 'left',   visible: false, size: 260, layout: null },
+          right:  { position: 'right',  visible: false, size: 260, layout: null },
+          bottom: { position: 'bottom', visible: false, size: 240, layout: null },
+          center: { position: 'center', visible: true,  size: 0,   layout: null },
+        },
+        locations: {},
+      })
+      get().ensureCenterCanvas(wsId)
     }
   },
 

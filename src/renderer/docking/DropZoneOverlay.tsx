@@ -128,7 +128,10 @@ function DropPreview({ position }: { position: 'top' | 'bottom' | 'left' | 'righ
       case 'right':
         return { ...base, top: pad, right: pad, bottom: pad, width: `calc(50% - ${pad}px)` }
       case 'center':
-        return { ...base, top: pad, left: pad, right: pad, bottom: pad }
+        // 'center' / tab targets render an inline placeholder chip in the
+        // tab list (see DockTabStack), not a full-area overlay. We hide the
+        // portal preview for tab drops to avoid the duplicate blue box.
+        return { ...base, display: 'none' }
     }
   }, [position])
 

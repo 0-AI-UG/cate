@@ -8,6 +8,7 @@ import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
+import { useDockDragStore } from './useDockDrag'
 import { viewToCanvas } from '../lib/coordinates'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
 import type { Point } from '../../shared/types'
@@ -77,33 +78,57 @@ export function useCanvasInteraction(
     setCanvasContextMenu(null)
   }, [])
 
+  // Helper — fully stop any in-flight zoom/pan animations and reset interaction
+  // refs. Called on unmount AND when a dock-drag begins, so canvas state can't
+  // continue mutating while the user is repositioning a panel via docking.
+  const cancelAllAnimations = useCallback(() => {
+    if (cancelInertia.current) {
+      cancelInertia.current()
+      cancelInertia.current = null
+    }
+    if (zoomRafId.current) {
+      cancelAnimationFrame(zoomRafId.current)
+      zoomRafId.current = 0
+    }
+    targetZoom.current = null
+    if (panRafId.current) {
+      cancelAnimationFrame(panRafId.current)
+      panRafId.current = 0
+    }
+    pendingPanDelta.current = { x: 0, y: 0 }
+    if (wheelPanEndTimer.current) {
+      clearTimeout(wheelPanEndTimer.current)
+      wheelPanEndTimer.current = null
+    }
+    if (wheelPanActive.current) {
+      document.body.classList.remove('canvas-interacting')
+      wheelPanActive.current = false
+    }
+    // Also stop the canvas store's own animateZoomTo rAF — it lives in a
+    // module-level variable inside canvasStore.ts (not in this hook's refs),
+    // so cancelling our local zoom rAF doesn't reach it. If a toolbar zoom or
+    // keyboard shortcut kicked it off and a dock-drag begins mid-flight,
+    // the world transform would keep scaling and the dimmed source would
+    // appear to "scale with movement" even though nothing's resizing it.
+    canvasStoreApi.getState().cancelZoomAnimation()
+  }, [canvasStoreApi])
+
   // Cancel animations on unmount to avoid memory leaks
   useEffect(() => {
-    return () => {
-      if (cancelInertia.current) {
-        cancelInertia.current()
-        cancelInertia.current = null
-      }
-      if (zoomRafId.current) {
-        cancelAnimationFrame(zoomRafId.current)
-        zoomRafId.current = 0
-      }
-      // Reset zoom target so a remount doesn't fire a stale animation
-      targetZoom.current = null
-      if (panRafId.current) {
-        cancelAnimationFrame(panRafId.current)
-        panRafId.current = 0
-      }
-      if (wheelPanEndTimer.current) {
-        clearTimeout(wheelPanEndTimer.current)
-        wheelPanEndTimer.current = null
-      }
-      if (wheelPanActive.current) {
-        document.body.classList.remove('canvas-interacting')
-        wheelPanActive.current = false
-      }
-    }
-  }, [])
+    return cancelAllAnimations
+  }, [cancelAllAnimations])
+
+  // When a dock-aware drag begins, immediately stop any zoom/pan momentum so
+  // the canvas isn't simultaneously moving + the user is dragging a tab.
+  // Subscribed on the store so the rAF/timer state is killed at the moment
+  // `isDragging` transitions to true, not on a re-render.
+  useEffect(() => {
+    let prev = useDockDragStore.getState().isDragging
+    return useDockDragStore.subscribe((s) => {
+      if (s.isDragging && !prev) cancelAllAnimations()
+      prev = s.isDragging
+    })
+  }, [cancelAllAnimations])
 
   // ---------------------------------------------------------------------------
   // Smooth zoom animation — interpolates zoomLevel toward targetZoom each frame
@@ -146,6 +171,14 @@ export function useCanvasInteraction(
 
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
+      // When a dock-drag is active, swallow wheel input. Trackpad gestures
+      // commonly fire alongside a mouse drag and would otherwise zoom/pan the
+      // canvas mid-drag, causing the ghost to misalign and the drop to land
+      // far from the cursor.
+      if (useDockDragStore.getState().isDragging) {
+        e.preventDefault()
+        return
+      }
       // If the scroll originated inside a focused panel's content area,
       // let the panel handle it — but only if the panel can scroll in that direction.
       // Horizontal swipes should pan the canvas when the panel has no horizontal scroll.

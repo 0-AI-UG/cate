@@ -49,6 +49,11 @@ export interface DockDragState {
    *  CanvasDropZone to render the ghost 1:1 with the real window. Null when
    *  unknown (e.g. canvas-source drags provide size via canvas node). */
   dragSourceSize: { width: number; height: number } | null
+  /** Canvas-space size of the source node when the drag originated inside a
+   *  canvas-node mini-dock (or from a canvas node body). Lets CanvasDropZone
+   *  preview AND place the dropped node at the existing node's actual size
+   *  instead of falling back to PANEL_DEFAULT_SIZES. Null otherwise. */
+  dragSourceNodeSize: { width: number; height: number } | null
 }
 
 interface DockDragActions {
@@ -61,6 +66,7 @@ interface DockDragActions {
     sourceDockStoreApi?: StoreApi<DockStore> | null,
     grabOffset?: Point | null,
     sourceSize?: { width: number; height: number } | null,
+    sourceNodeSize?: { width: number; height: number } | null,
   ) => void
   /** Update cursor position during drag */
   updateCursor: (position: Point) => void
@@ -89,8 +95,9 @@ export const useDockDragStore = create<DockDragState & DockDragActions>((set) =>
   canvasDropConsumed: false,
   dragGrabOffset: null,
   dragSourceSize: null,
+  dragSourceNodeSize: null,
 
-  startDrag(panelId, panelType, panelTitle, source, sourceDockStoreApi = null, grabOffset = null, sourceSize = null) {
+  startDrag(panelId, panelType, panelTitle, source, sourceDockStoreApi = null, grabOffset = null, sourceSize = null, sourceNodeSize = null) {
     set({
       isDragging: true,
       draggedPanelId: panelId,
@@ -103,6 +110,7 @@ export const useDockDragStore = create<DockDragState & DockDragActions>((set) =>
       canvasDropConsumed: false,
       dragGrabOffset: grabOffset,
       dragSourceSize: sourceSize,
+      dragSourceNodeSize: sourceNodeSize,
     })
   },
 
@@ -131,6 +139,7 @@ export const useDockDragStore = create<DockDragState & DockDragActions>((set) =>
       canvasDropConsumed: false,
       dragGrabOffset: null,
       dragSourceSize: null,
+      dragSourceNodeSize: null,
     })
   },
 }))
@@ -178,35 +187,45 @@ export function getDropZoneEntries(): readonly DropZoneEntry[] {
 const TAB_BAR_DROP_HINT = 38
 
 /** Resolve which of the 5 drop zones (top/bottom/left/right/center) the cursor
- *  is in relative to a container rect. Returns the edge or 'center'. */
+ *  is in relative to a container rect. Returns the edge, 'center' (only when
+ *  the cursor is over the tab strip), or null when the cursor is in the
+ *  body's safe zone — letting the drag pass through without activating any
+ *  drop target. This avoids the prior eager behavior where the entire panel
+ *  body lit up with a full-screen blue tab indicator the moment the cursor
+ *  passed over it. */
 export function resolveDropEdge(
   cursorX: number,
   cursorY: number,
   rect: DOMRect,
-): 'top' | 'bottom' | 'left' | 'right' | 'center' {
+): 'top' | 'bottom' | 'left' | 'right' | 'center' | null {
   const relX = cursorX - rect.left
   const relY = cursorY - rect.top
   const w = rect.width
   const h = rect.height
 
-  // Tab-bar zone: cursor over the tab strip → always a tab drop, never split.
-  // This makes "drag onto the header" land as a sibling tab rather than as
-  // a split-top, and prevents the drop indicator from overlapping the tab bar.
+  // Tab-bar zone: cursor over the tab strip → tab drop ("add as new tab").
+  // Anywhere else in the body returns null unless the cursor is genuinely
+  // on an edge, so docking only triggers when the user means it.
   if (relY >= 0 && relY < TAB_BAR_DROP_HINT) return 'center'
 
-  // Edge zones: 25% strip along each edge
-  const edgeFraction = 0.25
-  const leftEdge = w * edgeFraction
-  const rightEdge = w * (1 - edgeFraction)
-  const topEdge = h * edgeFraction
-  const bottomEdge = h * (1 - edgeFraction)
+  // Edge zones: a narrow ~12% strip (capped at 60px) along each edge.
+  // Previously 25%, which meant a quarter of every panel was a split zone
+  // and you couldn't drag a tab across the canvas without triggering one.
+  const edgeFraction = 0.12
+  const EDGE_MAX_PX = 60
+  const leftEdge = Math.min(w * edgeFraction, EDGE_MAX_PX)
+  const rightEdgeStart = w - leftEdge
+  const topEdge = Math.min(h * edgeFraction, EDGE_MAX_PX)
+  const bottomEdgeStart = h - topEdge
 
-  // Check edges in priority order
+  // Check edges in priority order — diagonal regions resolve to the nearer
+  // edge so a corner doesn't flicker between two split targets.
   if (relY < topEdge && relY < relX && relY < (w - relX)) return 'top'
-  if (relY > bottomEdge && (h - relY) < relX && (h - relY) < (w - relX)) return 'bottom'
+  if (relY > bottomEdgeStart && (h - relY) < relX && (h - relY) < (w - relX)) return 'bottom'
   if (relX < leftEdge) return 'left'
-  if (relX > rightEdge) return 'right'
-  return 'center'
+  if (relX > rightEdgeStart) return 'right'
+  // Body — no drop target, let the drag pass through.
+  return null
 }
 
 /** Full hit test that also returns the matched entry's owning DockStore (if any).
@@ -272,6 +291,11 @@ function hitTestInternal(
 
   if (best.entry.stackId) {
     const edge = resolveDropEdge(cursorX, cursorY, best.rect)
+    if (edge === null) {
+      // Body safe zone — no drop. Let the drag pass through (e.g. to the
+      // canvas) instead of hijacking it with a full-panel tab indicator.
+      return null
+    }
     if (edge === 'center') {
       return { target: { type: 'tab', stackId: best.entry.stackId }, entry: best.entry }
     }

@@ -192,6 +192,15 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   // lower stacking-context z-index) is visible. Without this, dropping a tab
   // onto an unfocused canvas panel shows no visual feedback.
   const isDockDragging = useDockDragStore((s) => s.isDragging)
+  // True while this canvas node is the source of an active dock-drag — i.e.
+  // the user has grabbed its (only) tab and is moving it as a dock ghost.
+  // The node is faded out so it doesn't sit duplicated next to the ghost
+  // during the drag; on drop it either reappears at the new location
+  // (canvas reposition) or is removed (docked elsewhere).
+  const isDockDragSource = useDockDragStore((s) => {
+    if (!s.isDragging || s.dragSource?.type !== 'dock') return false
+    return s.sourceDockStoreApi === dockStoreApi
+  })
 
   const { handleDragStart, wasDragged } = useNodeDrag(nodeId, zoomLevel, canvasApi)
 
@@ -362,15 +371,40 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   // --- Dock layout renderer --------------------------------------------------
 
-  const getPanelTitle = useCallback(
-    (panelId: string) => currentWorkspace?.panels[panelId]?.title ?? 'Panel',
+  // Both lookups fall back to a fresh appStore read so a brief gap in the
+  // selected-workspace subscription (e.g. mid-switch) doesn't make every tab
+  // collapse to a generic "Panel" / editor-icon label.
+  const resolvePanel = useCallback(
+    (panelId: string) => {
+      const p = currentWorkspace?.panels[panelId]
+      if (p) return p
+      const s = useAppStore.getState()
+      const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
+      return ws?.panels[panelId]
+    },
     [currentWorkspace],
   )
 
-  const getPanel = useCallback(
-    (panelId: string) => currentWorkspace?.panels[panelId],
-    [currentWorkspace],
+  const getPanelTitle = useCallback(
+    (panelId: string) => {
+      const p = resolvePanel(panelId)
+      if (p?.title) return p.title
+      // Panel exists but its title was cleared (e.g. browser nav to a blank
+      // page). Use the type label so the tab still reads as "Terminal" /
+      // "Browser" instead of a meaningless "Panel".
+      if (p?.type) {
+        const labels: Record<PanelType, string> = {
+          terminal: 'Terminal', browser: 'Browser', editor: 'Editor',
+          git: 'Git', fileExplorer: 'File Explorer', projectList: 'Projects', canvas: 'Canvas',
+        }
+        return labels[p.type] ?? 'Panel'
+      }
+      return 'Panel'
+    },
+    [resolvePanel],
   )
+
+  const getPanel = useCallback((panelId: string) => resolvePanel(panelId), [resolvePanel])
 
   // Collect all panel ids contained in a dock layout subtree.
   const collectPanelIds = useCallback((n: DockLayoutNode | null): string[] => {
@@ -433,6 +467,39 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     toggleMaximize(nodeId, viewportSize)
     setTimeout(() => setIsAnimatingLayout(false), 300)
   }, [toggleMaximize, nodeId])
+
+  // Spring-load: when ANY dock drag is active AND this node is maximized
+  // (covering the canvas), un-maximize after a short delay so the user can
+  // see the canvas underneath and target a drop point. Subscribes directly
+  // to the drag store (not via React selectors) so the timer is scheduled
+  // off React render cycles — re-renders of CanvasNode would otherwise tear
+  // down the effect and reset the timer before it fires.
+  const toggleMaximizeRef = useRef(handleToggleMaximize)
+  toggleMaximizeRef.current = handleToggleMaximize
+  const maximizedRef = useRef(maximized)
+  maximizedRef.current = maximized
+  useEffect(() => {
+    let timerId: number | null = null
+    const tryArm = () => {
+      const s = useDockDragStore.getState()
+      if (!s.isDragging || s.draggedPanelType === 'canvas') return
+      if (!maximizedRef.current) return
+      if (timerId !== null) return
+      timerId = window.setTimeout(() => {
+        timerId = null
+        if (maximizedRef.current) toggleMaximizeRef.current()
+      }, 200)
+    }
+    const cancel = () => {
+      if (timerId !== null) { window.clearTimeout(timerId); timerId = null }
+    }
+    tryArm()
+    const unsub = useDockDragStore.subscribe((s, prev) => {
+      if (s.isDragging && !prev.isDragging) tryArm()
+      else if (!s.isDragging && prev.isDragging) cancel()
+    })
+    return () => { cancel(); unsub() }
+  }, [])
 
   const handleTogglePin = useCallback(() => {
     canvasApi.getState().togglePin(nodeId)
@@ -620,7 +687,13 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
     const baseTransition =
       'border-color 150ms ease, box-shadow 200ms ease, outline-color 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out'
-    const layoutTransition = isAnimatingLayout
+    // Skip layout transitions while this node is the dock-drag source.
+    // Spring-load un-maximize sets isAnimatingLayout=true and the resulting
+    // left/top/width/height CSS transition makes the dimmed source visibly
+    // "scale" alongside the dock ghost — confusing the user. Snapping
+    // instantly to the un-maximized size keeps the source still while only
+    // the ghost moves.
+    const layoutTransition = isAnimatingLayout && !isDockDragSource
       ? ', left 250ms cubic-bezier(0.16, 1, 0.3, 1), top 250ms cubic-bezier(0.16, 1, 0.3, 1), width 250ms cubic-bezier(0.16, 1, 0.3, 1), height 250ms cubic-bezier(0.16, 1, 0.3, 1)'
       : ''
 
@@ -651,11 +724,18 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       ['--node-chrome-accent' as any]: chromeTint?.accent ?? 'var(--focus-blue)',
       transition: baseTransition + layoutTransition,
       transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
-      opacity: isEntering ? 0 : isExiting ? 0 : 1,
-      pointerEvents: isExiting ? 'none' : undefined,
+      // Hide the source entirely during a dock-drag. Showing it at 0.25
+      // opacity left a visible outline that overlapped the ghost, and any
+      // background re-render that touched the node's size/transform read as
+      // it "scaling with movement" since the ghost moved with the cursor.
+      // The ghost itself is the only thing the user should track during a
+      // dock-drag; the source reappears either at the new location (canvas
+      // reposition) or is removed (docked elsewhere).
+      opacity: isEntering ? 0 : isExiting ? 0 : isDockDragSource ? 0 : 1,
+      pointerEvents: isExiting || isDockDragSource ? 'none' : undefined,
       userSelect: 'none',
     }
-  }, [node, isFocused, isSelected, activityState, zoomLevel, isAnimatingLayout, isHovered, chromeTint])
+  }, [node, isFocused, isSelected, activityState, zoomLevel, isAnimatingLayout, isHovered, chromeTint, isDockDragSource])
 
   // Colored focus/selection glow rendered as a sibling at a fixed low z-index
   // so it sits behind every node — its halo can't bleed over neighbouring
@@ -665,7 +745,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     if (!(isFocused || isSelected)) return null
     const isEntering = node.animationState === 'entering'
     const isExiting = node.animationState === 'exiting'
-    const layoutTransition = isAnimatingLayout
+    const layoutTransition = isAnimatingLayout && !isDockDragSource
       ? 'left 250ms cubic-bezier(0.16, 1, 0.3, 1), top 250ms cubic-bezier(0.16, 1, 0.3, 1), width 250ms cubic-bezier(0.16, 1, 0.3, 1), height 250ms cubic-bezier(0.16, 1, 0.3, 1), '
       : ''
     return {
@@ -679,10 +759,10 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       boxShadow: FOCUS_GLOW,
       pointerEvents: 'none',
       transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
-      opacity: isEntering || isExiting ? 0 : 1,
+      opacity: isEntering || isExiting || isDockDragSource ? 0 : 1,
       transition: `${layoutTransition}transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out`,
     }
-  }, [node, isFocused, isSelected, isAnimatingLayout])
+  }, [node, isFocused, isSelected, isAnimatingLayout, isDockDragSource])
 
   if (!node) return null
 
@@ -785,7 +865,15 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           }}
           style={{
             position: 'absolute',
-            inset: 0,
+            // When this node uses its dock tab bar as the header (isHeaderHost),
+            // leave the tab strip uncovered so a mousedown on a tab can start
+            // a dock-drag in a single gesture instead of requiring a prior
+            // click-to-focus. Tab strip height matches DockTabStack's compact
+            // mode (min-h-[26px]).
+            top: rootIsTabs ? 26 : 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             backgroundColor: 'var(--node-dim-overlay)',
             pointerEvents: isFocused || isDockDragging ? 'none' : 'auto',
             cursor: isFocused ? undefined : 'default',
@@ -797,7 +885,17 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
         {/* Dock primitives */}
         <DockStoreProvider store={dockStoreApi}>
-          <div style={{ position: 'relative', zIndex: 0, width: '100%', height: '100%' }}>
+          <div
+            style={{ position: 'relative', zIndex: 0, width: '100%', height: '100%' }}
+            // Capture-phase: any mousedown inside the (now uncovered) dock tab
+            // bar should focus this canvas node before the tab handler runs, so
+            // a single click+hold on a tab both focuses the node and starts the
+            // dock drag in one gesture.
+            onMouseDownCapture={(e) => {
+              if (e.button !== 0 || isFocused) return
+              focusNode(nodeId)
+            }}
+          >
             {layout ? renderLayoutNode(layout) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 12 }}>
                 Empty
