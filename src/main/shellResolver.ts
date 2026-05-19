@@ -27,11 +27,13 @@ function isWindows(): boolean {
 
 function isAllowedBasename(candidate: string): boolean {
   if (!candidate) return false
-  const base = path.basename(candidate)
+  // Use the explicit platform variant so tests that stub process.platform on a
+  // POSIX host still parse Windows paths correctly (default `path.basename`
+  // follows the host OS, not the value we're branching on).
   if (isWindows()) {
-    return ALLOWED_SHELL_BASENAMES_WIN.has(base.toLowerCase())
+    return ALLOWED_SHELL_BASENAMES_WIN.has(path.win32.basename(candidate).toLowerCase())
   }
-  return ALLOWED_SHELL_BASENAMES_POSIX.has(base)
+  return ALLOWED_SHELL_BASENAMES_POSIX.has(path.posix.basename(candidate))
 }
 
 /** Build the Windows fallback chain from environment + canonical install paths. */
@@ -42,11 +44,11 @@ function windowsFallbacks(): string[] {
   // Honour the user's COMSPEC ahead of hardcoded paths when set.
   if (process.env.COMSPEC) fallbacks.push(process.env.COMSPEC)
   // PowerShell 7+ default install location (modern shell, opt-in install).
-  fallbacks.push(path.join(programFiles, 'PowerShell', '7', 'pwsh.exe'))
+  fallbacks.push(path.win32.join(programFiles, 'PowerShell', '7', 'pwsh.exe'))
   // Windows PowerShell 5.1 — ships with every supported Windows version.
-  fallbacks.push(path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'))
+  fallbacks.push(path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'))
   // cmd.exe — bedrock, always present.
-  fallbacks.push(path.join(systemRoot, 'System32', 'cmd.exe'))
+  fallbacks.push(path.win32.join(systemRoot, 'System32', 'cmd.exe'))
   return fallbacks
 }
 
