@@ -1,35 +1,32 @@
 // =============================================================================
-// UpdateButton — subtle blue pill in the bottom-right toolbar, shown only
-// when the auto-updater has a new release available. Replaces the native OS
-// popup with an in-app affordance + small popover.
+// UpdateButton — single blue pill in the bottom-right toolbar.
+// Click to download → progress fills inside the pill → auto-restart to install.
+// No popover; the button itself is the affordance.
 // =============================================================================
 
-import React, { useEffect, useRef, useState } from 'react'
-import { ArrowCircleUp, X } from '@phosphor-icons/react'
+import React, { useEffect, useRef } from 'react'
+import { ArrowCircleUp } from '@phosphor-icons/react'
 import { useUpdateStore } from '../stores/updateStore'
 
 export const UpdateButton: React.FC = () => {
   const status = useUpdateStore((s) => s.status)
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef<HTMLDivElement | null>(null)
+  // Guard so the auto-install transition fires exactly once per "downloaded" event.
+  const installedRef = useRef(false)
 
+  // When the download completes, trigger restart-to-install automatically.
   useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    if (status.state === 'downloaded' && !installedRef.current) {
+      installedRef.current = true
+      // Small delay lets the user see the "Restarting…" label flash before quit.
+      const t = setTimeout(() => window.electronAPI.updateInstall(), 600)
+      return () => clearTimeout(t)
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+    if (status.state !== 'downloaded' && status.state !== 'downloading') {
+      installedRef.current = false
     }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  }, [status.state])
 
-  // Only render for states that have an actionable update to offer.
+  // Only render for states with an actionable update.
   if (
     status.state !== 'available' &&
     status.state !== 'downloading' &&
@@ -39,13 +36,20 @@ export const UpdateButton: React.FC = () => {
     return null
   }
 
+  const percent =
+    status.state === 'downloading' && typeof status.percent === 'number'
+      ? Math.max(0, Math.min(100, status.percent))
+      : status.state === 'downloaded'
+        ? 100
+        : 0
+
   const label =
     status.state === 'downloading'
       ? typeof status.percent === 'number'
         ? `Updating… ${Math.round(status.percent)}%`
         : 'Updating…'
       : status.state === 'downloaded'
-        ? 'Restart to update'
+        ? 'Restarting…'
         : status.state === 'manual'
           ? `Update v${status.version}`
           : `Update v${status.version}`
@@ -54,12 +58,12 @@ export const UpdateButton: React.FC = () => {
     status.state === 'downloading'
       ? 'Downloading update'
       : status.state === 'downloaded'
-        ? 'Update ready — click to restart and install'
+        ? 'Restarting to install update…'
         : status.state === 'manual'
           ? 'Open release page to download manually'
-          : 'A new version of Cate is available'
+          : 'Click to download and install update'
 
-  const onPrimary = () => {
+  const onClick = () => {
     if (status.state === 'available') {
       window.electronAPI.updateDownload()
     } else if (status.state === 'downloaded') {
@@ -67,91 +71,30 @@ export const UpdateButton: React.FC = () => {
     } else if (status.state === 'manual') {
       window.electronAPI.updateOpenRelease(status.releaseUrl)
     }
+    // 'downloading' → no-op; button is non-interactive while progress fills.
   }
 
-  const primaryLabel =
-    status.state === 'available'
-      ? 'Download'
-      : status.state === 'downloading'
-        ? 'Downloading…'
-        : status.state === 'downloaded'
-          ? 'Restart & Install'
-          : 'Open Release Page'
+  const isProgressing = status.state === 'downloading' || status.state === 'downloaded'
 
   return (
-    <div ref={wrapRef} className="relative">
-      {/* Popover */}
-      {open && (
-        <div
-          data-theme="dark-warm"
-          className="absolute right-0 bottom-full mb-2 w-[260px] rounded-lg border border-subtle bg-surface-4/95 backdrop-blur-xl backdrop-saturate-150 shadow-[0_18px_40px_-12px_var(--shadow-node)] p-3"
-        >
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div>
-              <div className="text-[13px] font-semibold text-primary">
-                {status.state === 'downloaded'
-                  ? 'Update ready'
-                  : status.state === 'manual'
-                    ? 'Update available'
-                    : status.state === 'downloading'
-                      ? 'Downloading update'
-                      : 'Update available'}
-              </div>
-              {('version' in status) && status.version && (
-                <div className="text-[11px] text-secondary mt-0.5">Cate v{status.version}</div>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false)
-                window.electronAPI.updateDismiss()
-              }}
-              title="Dismiss"
-              className="w-5 h-5 flex items-center justify-center rounded text-secondary hover:bg-hover-strong focus:outline-none"
-            >
-              <X size={12} />
-            </button>
-          </div>
-          <div className="text-[12px] text-secondary leading-snug mb-3">
-            {status.state === 'downloaded'
-              ? 'The new version has been downloaded. Restart Cate to apply.'
-              : status.state === 'manual'
-                ? 'Automatic installation is unavailable in this build. Open the release page to download manually.'
-                : status.state === 'downloading'
-                  ? 'Download in progress. You can keep working — Cate will prompt to restart when ready.'
-                  : 'A new version of Cate is ready to install.'}
-          </div>
-          {status.state === 'downloading' && typeof status.percent === 'number' && (
-            <div className="h-1 rounded-full bg-surface-5 overflow-hidden mb-3">
-              <div
-                className="h-full bg-[var(--focus-blue,#3b82f6)] transition-[width] duration-200"
-                style={{ width: `${Math.max(2, Math.min(100, status.percent))}%` }}
-              />
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={onPrimary}
-            disabled={status.state === 'downloading'}
-            className="w-full px-3 py-1.5 rounded-md bg-[var(--focus-blue,#3b82f6)] text-white text-[12px] font-medium hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none transition-all"
-          >
-            {primaryLabel}
-          </button>
-        </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isProgressing}
+      title={title}
+      style={{ WebkitTapHighlightColor: 'transparent' }}
+      className="group relative overflow-hidden flex items-center gap-1.5 h-[34px] pl-2.5 pr-3 rounded-full bg-[var(--focus-blue,#3b82f6)] text-white text-[11px] font-medium shadow-[0_0_24px_-2px_rgba(59,130,246,0.7),0_8px_24px_-6px_rgba(59,130,246,0.55)] hover:brightness-110 active:scale-[0.97] disabled:active:scale-100 focus:outline-none transition-all"
+    >
+      {/* Progress fill — lighter blue overlay that grows left-to-right while downloading. */}
+      {isProgressing && (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-200 ease-out pointer-events-none"
+          style={{ width: `${percent}%` }}
+        />
       )}
-
-      {/* Pill button */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={title}
-        style={{ WebkitTapHighlightColor: 'transparent' }}
-        className="group flex items-center gap-1.5 h-[34px] pl-2.5 pr-3 rounded-full border border-[var(--focus-blue,#3b82f6)]/40 bg-[var(--focus-blue,#3b82f6)] text-white text-[11px] font-medium shadow-[0_8px_24px_-6px_rgba(59,130,246,0.55)] hover:brightness-110 active:scale-[0.97] focus:outline-none transition-all"
-      >
-        <ArrowCircleUp size={14} weight="fill" />
-        <span className="whitespace-nowrap">{label}</span>
-      </button>
-    </div>
+      <ArrowCircleUp size={14} weight="fill" className="relative z-[1]" />
+      <span className="relative z-[1] whitespace-nowrap">{label}</span>
+    </button>
   )
 }

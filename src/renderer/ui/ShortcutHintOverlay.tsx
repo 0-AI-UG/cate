@@ -102,7 +102,7 @@ export const ShortcutHintOverlay: React.FC = () => {
 
   return (
     <div
-      className="fixed z-40 pointer-events-none animate-in fade-in slide-in-from-bottom-1 duration-150"
+      className="fixed z-[60] pointer-events-none animate-in fade-in slide-in-from-bottom-1 duration-150"
       style={{
         // Sit above the minimap toggle (bottom-4 + ~44px button + gap).
         bottom: 'calc(1rem + 44px + 0.5rem)',
