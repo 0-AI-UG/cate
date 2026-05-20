@@ -1,6 +1,6 @@
 import { useSettingsStore } from '../stores/settingsStore'
-import type { BrowserSearchEngine } from '../../shared/types'
-import { SettingRow, TextInput, Select, Toggle } from './SettingsComponents'
+import type { BrowserSearchEngine, TerminalUrlAutoOpenMode } from '../../shared/types'
+import { SettingRow, TextInput, Select } from './SettingsComponents'
 
 export function BrowserSettings() {
   const store = useSettingsStore()
@@ -27,12 +27,17 @@ export function BrowserSettings() {
         />
       </SettingRow>
       <SettingRow
-        label="Auto-open URLs from terminal"
-        description="When a localhost or http(s) URL appears in terminal output, open it in an existing browser panel (or create one if none exists). Each URL is opened only once."
+        label="URLs from terminal"
+        description="What to do when a localhost or http(s) URL appears in terminal output. Off ignores them. Automatic opens each URL once in an existing browser panel (or a new one). Ask shows an inline prompt at the bottom of the terminal."
       >
-        <Toggle
-          checked={store.autoOpenUrlsFromTerminal}
-          onChange={(v) => store.setSetting('autoOpenUrlsFromTerminal', v)}
+        <Select
+          value={store.autoOpenUrlsFromTerminal}
+          onChange={(v) => store.setSetting('autoOpenUrlsFromTerminal', v as TerminalUrlAutoOpenMode)}
+          options={[
+            { value: 'off', label: 'Off' },
+            { value: 'auto', label: 'Automatic' },
+            { value: 'prompt', label: 'Ask before opening' },
+          ]}
         />
       </SettingRow>
     </div>

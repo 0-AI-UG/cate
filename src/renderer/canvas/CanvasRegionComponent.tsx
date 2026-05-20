@@ -3,7 +3,6 @@ import type { CanvasRegion } from '../../shared/types'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { useAppStore, getCanvasOpsById } from '../stores/appStore'
-import { useSettingsStore } from '../stores/settingsStore'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 
 // Preset region colors
@@ -114,23 +113,10 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
       })()
       const isMultiDrag = hasOtherRegions || hasExternalNodes
 
-      const settings = useSettingsStore.getState()
-      const snapX = (v: number) =>
-        settings.snapToGridEnabled
-          ? Math.round(v / settings.gridSpacing) * settings.gridSpacing
-          : v
-      const snapY = snapX
-
       if (isMultiDrag) {
         // Multi-drag: use incremental deltas to avoid compounding
-        let incrDx = (ev.clientX - dragRef.current.lastClientX) / zoom
-        let incrDy = (ev.clientY - dragRef.current.lastClientY) / zoom
-        if (settings.snapToGridEnabled) {
-          const g = settings.gridSpacing
-          incrDx = Math.round(incrDx / g) * g
-          incrDy = Math.round(incrDy / g) * g
-          if (incrDx === 0 && incrDy === 0) return
-        }
+        const incrDx = (ev.clientX - dragRef.current.lastClientX) / zoom
+        const incrDy = (ev.clientY - dragRef.current.lastClientY) / zoom
         dragRef.current.lastClientX = ev.clientX
         dragRef.current.lastClientY = ev.clientY
 
@@ -153,8 +139,8 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
         const totalDx = (ev.clientX - dragRef.current.startX) / zoom
         const totalDy = (ev.clientY - dragRef.current.startY) / zoom
         canvasApi.getState().moveRegion(region.id, {
-          x: snapX(dragRef.current.originX + totalDx),
-          y: snapY(dragRef.current.originY + totalDy),
+          x: dragRef.current.originX + totalDx,
+          y: dragRef.current.originY + totalDy,
         })
       }
     }
@@ -326,32 +312,9 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
 
     const handleMouseMove = (ev: MouseEvent) => {
       const zoom = canvasApi.getState().zoomLevel
-      let dx = (ev.clientX - startX) / zoom
-      let dy = (ev.clientY - startY) / zoom
-
-      // Live snap the moving edge to the grid (keeps opposite edge fixed).
-      const settings = useSettingsStore.getState()
+      const dx = (ev.clientX - startX) / zoom
+      const dy = (ev.clientY - startY) / zoom
       const h = handle.toLowerCase()
-      if (settings.snapToGridEnabled) {
-        const g = settings.gridSpacing
-        const snap = (v: number) => Math.round(v / g) * g
-        if (h.includes('right')) {
-          const startRight = startOrigin.x + startSize.width
-          dx = snap(startRight + dx) - startRight
-        } else if (h.includes('left')) {
-          dx = snap(startOrigin.x + dx) - startOrigin.x
-        } else {
-          dx = 0
-        }
-        if (h.includes('bottom')) {
-          const startBottom = startOrigin.y + startSize.height
-          dy = snap(startBottom + dy) - startBottom
-        } else if (h.includes('top')) {
-          dy = snap(startOrigin.y + dy) - startOrigin.y
-        } else {
-          dy = 0
-        }
-      }
 
       let newX = startOrigin.x
       let newY = startOrigin.y

@@ -7,7 +7,7 @@
 //
 // UI: status is pushed to the renderer via UPDATE_STATUS. The renderer renders
 // a subtle in-app affordance (no native popups). Renderer dispatches
-// UPDATE_DOWNLOAD / UPDATE_INSTALL / UPDATE_OPEN_RELEASE / UPDATE_DISMISS back.
+// UPDATE_DOWNLOAD / UPDATE_INSTALL / UPDATE_OPEN_RELEASE back.
 // =============================================================================
 
 import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron'
@@ -21,7 +21,6 @@ import {
   UPDATE_INSTALL,
   UPDATE_DOWNLOAD,
   UPDATE_OPEN_RELEASE,
-  UPDATE_DISMISS,
 } from '../shared/ipc-channels'
 import { getWindowType } from './windowRegistry'
 
@@ -218,10 +217,6 @@ export function initAutoUpdater(): void {
   ipcMain.on(UPDATE_OPEN_RELEASE, (_e, url?: string) => {
     const target = url || latestReleaseUrl
     if (target) shell.openExternal(target)
-  })
-
-  ipcMain.on(UPDATE_DISMISS, () => {
-    broadcastStatus({ state: 'idle' })
   })
 
   ipcMain.handle('update:getStatus', () => currentStatus)

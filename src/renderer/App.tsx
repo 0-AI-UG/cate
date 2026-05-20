@@ -37,7 +37,6 @@ import { PanelSwitcher } from './ui/PanelSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
 import { GlobalSearch } from './ui/GlobalSearch'
 import { SettingsWindow } from './settings/SettingsWindow'
-import { ToastContainer } from './ui/ToastContainer'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
 import type { MultiWorkspaceSession } from '../shared/types'
@@ -203,8 +202,8 @@ function MainApp() {
       // runs in the background so the first colorful frame lands ASAP.
       setInitializing(false)
 
-      // Defer detached window restore + auto-save + usage tracking until
-      // after the first paint so the user sees the app immediately.
+      // Defer detached window restore + auto-save until after the first
+      // paint so the user sees the app immediately.
       const defer = (fn: () => void) => {
         const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback
         if (ric) ric(fn)
@@ -473,7 +472,6 @@ function MainApp() {
       )}
       <SavedLayoutsDialog />
 
-      <ToastContainer />
       <DragGhost />
 
       {initializing && (

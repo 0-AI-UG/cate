@@ -402,6 +402,7 @@ export default function EditorPanel({
         automaticLayout: false,
         readOnly: true,
         renderSideBySide: true,
+        useInlineViewWhenSpaceIsLimited: false,
         scrollBeyondLastLine: false,
         minimap: { enabled: false },
         padding: { top: 8, bottom: 8 },

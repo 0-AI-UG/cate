@@ -11,7 +11,6 @@ export const TERMINAL_DATA = 'terminal:data' // main -> renderer
 export const TERMINAL_EXIT = 'terminal:exit' // main -> renderer
 export const TERMINAL_GET_CWD = 'terminal:getCwd'
 export const TERMINAL_LOG_READ = 'terminal:logRead'
-export const TERMINAL_LOG_DELETE = 'terminal:logDelete'
 export const TERMINAL_SCROLLBACK_SAVE = 'terminal:scrollbackSave'
 
 // Filesystem
@@ -30,9 +29,6 @@ export const FS_SEARCH = 'fs:search'
 
 // Shell utilities
 export const SHELL_SHOW_IN_FOLDER = 'shell:showInFolder'
-
-// HTTP (main process, no CORS)
-export const HTTP_FETCH = 'http:fetch'
 
 // Git
 export const GIT_IS_REPO = 'git:isRepo'
@@ -60,7 +56,6 @@ export const GIT_STASH_POP = 'git:stashPop'
 export const GIT_DISCARD_FILE = 'git:discardFile'
 
 // Shell / Process Monitor
-export const SHELL_WHICH = 'shell:which'
 export const SHELL_REGISTER_TERMINAL = 'shell:registerTerminal'
 export const SHELL_UNREGISTER_TERMINAL = 'shell:unregisterTerminal'
 export const SHELL_ACTIVITY_UPDATE = 'shell:activityUpdate' // main -> renderer
@@ -76,7 +71,6 @@ export const SETTINGS_RESET = 'settings:reset'
 // Session
 export const SESSION_SAVE = 'session:save'
 export const SESSION_LOAD = 'session:load'
-export const SESSION_CLEAR = 'session:clear'
 export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer
 export const SESSION_FLUSH_SAVE_DONE = 'session:flushSaveDone' // renderer -> main
 
@@ -88,20 +82,15 @@ export const SESSION_FLUSH_SAVE_DONE = 'session:flushSaveDone' // renderer -> ma
 export const BOOT_SNAPSHOT_WRITE = 'boot:snapshotWrite' // renderer -> main
 
 // App
-export const APP_GET_PATH = 'app:getPath'
 /** Main -> renderer: user dropped a folder on the dock icon (or opened one
  *  via OS "Open With..."). Renderer opens it as a new workspace. */
 export const APP_OPEN_PATH = 'app:openPath'
-
-// Crash reporting
-export const CRASH_REPORT_SAVE = 'crash:reportSave'
 
 // Auto-updater (main -> renderer for status; renderer -> main for actions)
 export const UPDATE_STATUS = 'update:status'
 export const UPDATE_INSTALL = 'update:install'
 export const UPDATE_DOWNLOAD = 'update:download'
 export const UPDATE_OPEN_RELEASE = 'update:openRelease'
-export const UPDATE_DISMISS = 'update:dismiss'
 
 
 // Menu actions (main -> renderer)
@@ -117,7 +106,6 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
 export const DIALOG_OPEN_IMAGE = 'dialog:openImage'
 export const FS_READ_IMAGE = 'fs:readImage'
-export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
 export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'
@@ -137,9 +125,6 @@ export const NOTIFY_OS = 'notify:os'
 export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notification clicked)
 
 // Window management
-export const WINDOW_CREATE = 'window:create'
-export const WINDOW_GET_ID = 'window:getId'
-export const WINDOW_GET_TYPE = 'window:getType'
 export const WINDOW_SET_TITLE = 'window:setTitle'
 
 // Panel transfer (cross-window)
@@ -182,17 +167,8 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 export const CAPTURE_PAGE = 'capture-page'
 
 // Workspace management (main process is source of truth)
-export const WORKSPACE_LIST = 'workspace:list'
 export const WORKSPACE_CREATE = 'workspace:create'
 export const WORKSPACE_UPDATE = 'workspace:update'
 export const WORKSPACE_REMOVE = 'workspace:remove'
-export const WORKSPACE_GET = 'workspace:get'
 export const WORKSPACE_CHANGED = 'workspace:changed' // main -> renderer (broadcast)
-
-// Orchestrator (cate CLI / inter-terminal graph)
-export const ORCH_REGISTRY_SYNC = 'orch:registrySync'        // renderer -> main (full snapshot)
-export const ORCH_INFLIGHT_UPDATE = 'orch:inflightUpdate'    // main -> renderer (ask in-flight events)
-export const ORCH_RENDER_COMMAND = 'orch:renderCommand'      // main -> renderer (request a UI mutation; renderer replies)
-export const ORCH_RENDER_RESPONSE = 'orch:renderResponse'    // renderer -> main (response payload, keyed by requestId)
-export const ORCH_PORTAL_WC_REGISTER = 'orch:portalWcRegister' // renderer -> main (proactive (panelId, wcId) notification for popup parent resolution)
 

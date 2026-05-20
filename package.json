@@ -66,6 +66,7 @@
     "electron": "^41.2.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
+    "jsdom": "^29.1.1",
     "png-to-ico": "^3.0.1",
     "postcss": "^8.4.0",
     "sharp": "^0.33.0",

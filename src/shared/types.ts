@@ -111,18 +111,6 @@ export interface CanvasAnnotation {
 }
 
 // -----------------------------------------------------------------------------
-// Canvas drawing — freehand pen strokes laid down with the draw tool.
-// Points are stored in canvas-space so strokes pan/zoom with the canvas.
-// -----------------------------------------------------------------------------
-
-export interface CanvasDrawing {
-  id: string
-  points: Point[]
-  color: string
-  strokeWidth: number
-}
-
-// -----------------------------------------------------------------------------
 // Canvas connection — Maestri-style "wire" between two nodes. Undirected for
 // now (from/to are just endpoint slots); used both for visual rendering and
 // for the orchestrator's auth model (`cate ask` requires a connection).
@@ -355,12 +343,6 @@ export interface WorkspaceState {
   canvases?: Record<string, CanvasSnapshot>
   activeCanvasId?: string
 }
-
-// -----------------------------------------------------------------------------
-// Canvas grid style
-// -----------------------------------------------------------------------------
-
-export type CanvasGridStyle = 'blank' | 'lines' | 'dots'
 
 // -----------------------------------------------------------------------------
 // Appearance mode
@@ -678,7 +660,7 @@ export interface LayoutSnapshot {
 // Notification types
 // -----------------------------------------------------------------------------
 
-export type NotificationMode = 'off' | 'os' | 'inApp' | 'both'
+export type TerminalUrlAutoOpenMode = 'off' | 'auto' | 'prompt'
 
 export type NotificationAction =
   | { type: 'focusTerminal'; workspaceId: string; terminalId: string }
@@ -738,9 +720,6 @@ export interface AppSettings {
   editorFontSize: number
 
   // Canvas
-  gridStyle: CanvasGridStyle
-  snapToGridEnabled: boolean
-  gridSpacing: number
   showMinimap: boolean
   defaultPanelWidth: number
   defaultPanelHeight: number
@@ -764,23 +743,20 @@ export interface AppSettings {
   // Browser
   browserHomepage: string
   browserSearchEngine: BrowserSearchEngine
-  /** Auto-open URLs printed in terminal output (localhost dev servers, etc.)
-   *  in a browser panel. Reuses an existing browser panel when one exists in
-   *  the same workspace; opens each URL only once per session. */
-  autoOpenUrlsFromTerminal: boolean
+  /** How to handle URLs printed in terminal output (localhost dev servers, etc.).
+   *  - 'off': ignore them.
+   *  - 'auto': open in an existing browser panel (or create one) automatically.
+   *  - 'prompt': surface an in-app prompt asking before opening.
+   *  Either way, each URL is acted on at most once per session. */
+  autoOpenUrlsFromTerminal: TerminalUrlAutoOpenMode
 
   // Sidebar
   sidebarTintOpacity: number
   showFileExplorerOnLaunch: boolean
 
-  // Notifications
+  // Notifications (OS-level only)
   notificationsEnabled: boolean
-  notificationMode: NotificationMode
-  notifyOnTerminalHalt: boolean
   notifyOnlyWhenUnfocused: boolean
-
-  // AI
-  aiAssistEnabled: boolean
 
   // Privacy
   /** Send automatic error/crash reports to Sentry. Takes effect on next launch. */
@@ -801,9 +777,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   editorFontSize: 12,
 
   // Canvas
-  gridStyle: 'lines',
-  snapToGridEnabled: true,
-  gridSpacing: 20,
   showMinimap: true,
   defaultPanelWidth: 600,
   defaultPanelHeight: 400,
@@ -820,20 +793,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Browser
   browserHomepage: 'about:blank',
   browserSearchEngine: 'google',
-  autoOpenUrlsFromTerminal: true,
+  autoOpenUrlsFromTerminal: 'prompt',
 
   // Sidebar
   sidebarTintOpacity: 1.0,
   showFileExplorerOnLaunch: false,
 
-  // Notifications
+  // Notifications (OS-level only)
   notificationsEnabled: true,
-  notificationMode: 'both',
-  notifyOnTerminalHalt: true,
   notifyOnlyWhenUnfocused: true,
-
-  // AI
-  aiAssistEnabled: false,
 
   // Privacy
   crashReportingEnabled: true,

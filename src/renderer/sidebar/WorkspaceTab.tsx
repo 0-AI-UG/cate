@@ -9,8 +9,7 @@ import { useDockStore } from '../stores/dockStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
-import { TerminalNotificationInline, useTerminalNotifications } from './TerminalNotificationsButton'
-import { useNotificationStore } from '../stores/notificationStore'
+import type { AgentState } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
 // Panel jump helper — focus a panel inside a workspace, switching workspace
@@ -123,47 +122,40 @@ function collectPanelIdsFromDockLayout(
 interface TerminalPanelRowProps {
   panel: { id: string; type: PanelType; title?: string; filePath?: string; url?: string }
   indent: boolean
-  dot: string | null
+  agentState: AgentState | undefined
   hasPorts: boolean
   onClick: (e: React.MouseEvent) => void
 }
 
-const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, dot, hasPorts, onClick }) => {
+const AWAIT_COLOR = '#c08a5a'
+
+const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, hasPorts, onClick }) => {
   const Icon = TerminalIcon
   const label = panel.title || panel.filePath?.split('/').pop() || panel.url || panel.type
-  const notifications = useTerminalNotifications(panel.id)
-  const hasNotif = notifications.length > 0
-  const dismissNotification = useNotificationStore((s) => s.dismissNotification)
 
-  const handleRowClick = useCallback((e: React.MouseEvent) => {
-    if (hasNotif) {
-      for (const n of notifications) dismissNotification(n.id)
-    }
-    onClick(e)
-  }, [hasNotif, notifications, dismissNotification, onClick])
+  const isRunning = agentState === 'running'
+  const isAwaiting = agentState === 'waitingForInput'
 
   return (
     <button
-      className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
+      className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
         indent ? 'pl-10' : 'pl-7'
-      }`}
-      onClick={handleRowClick}
+      } ${isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
+      onClick={onClick}
       title={panel.filePath || panel.url || label}
     >
       <Icon size={11} className="flex-shrink-0 opacity-60" />
-      <span className={`truncate min-w-0 ${hasNotif ? 'flex-shrink-0 cate-notif-pulse' : 'flex-1'}`}>
+      <span className={`truncate min-w-0 flex-1 ${isRunning ? 'cate-notif-pulse' : ''}`}>
         {label}
       </span>
-      <TerminalNotificationInline notifications={notifications} />
-      {!hasNotif && dot && (
-        <span
-          className="flex-shrink-0 w-1.5 h-1.5 rounded-full"
-          style={{ backgroundColor: dot }}
-        />
-      )}
-      {!hasNotif && !dot && hasPorts && (
+      {isAwaiting ? (
+        <span className="cate-await-indicator flex-shrink-0" aria-label="awaiting input">
+          <span className="cate-await-ring" style={{ borderColor: AWAIT_COLOR }} />
+          <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
+        </span>
+      ) : !isRunning && hasPorts ? (
         <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
-      )}
+      ) : null}
     </button>
   )
 }
@@ -396,15 +388,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const hasColor = !!workspace.color
   const accent = workspace.color || ''
 
-  // Activity dot color for terminal panels — derived from agent state
-  const dotColorForAgent = (state: string | undefined): string | null => {
-    if (!state) return null
-    if (state === 'working' || state === 'thinking' || state === 'running') return '#7aa074'
-    if (state === 'waiting' || state === 'needsInput') return '#c08a5a'
-    if (state === 'error' || state === 'failed') return '#c07070'
-    return null
-  }
-
   // Partition: canvas panels (parents), free panels (siblings to canvas).
   // A panel is a canvas child when EITHER the dock store says so OR a canvas
   // node references it. Canvas nodes are the source of truth for nodes that
@@ -438,7 +421,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           key={p.id}
           panel={p}
           indent={indent}
-          dot={dotColorForAgent(agentStateByPanel[p.id])}
+          agentState={agentStateByPanel[p.id]}
           hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
           onClick={(e) => handlePanelClick(e, p.id)}
         />

@@ -47,9 +47,6 @@ export interface ElectronAPI {
   /** Read the persisted scrollback log for a terminal. */
   terminalLogRead(terminalId: string): Promise<string | null>
 
-  /** Delete the persisted scrollback log for a terminal. */
-  terminalLogDelete(terminalId: string): Promise<void>
-
   /** Save terminal scrollback content (plain text) for session restore. */
   terminalScrollbackSave(ptyId: string, content: string): Promise<void>
 
@@ -243,20 +240,10 @@ export interface ElectronAPI {
   // App
   // ---------------------------------------------------------------------------
 
-  /** Get a well-known application path (e.g. 'userData', 'home'). */
-  appGetPath(name: string): Promise<string>
-
   /** Subscribe to folder/file paths forwarded from the OS — e.g. the user
    *  dropped a folder on the dock icon or opened one via "Open With Cate".
    *  Returns an unsubscribe function. */
   onOpenPath(callback: (filePath: string) => void): () => void
-
-  // ---------------------------------------------------------------------------
-  // Crash reporting
-  // ---------------------------------------------------------------------------
-
-  /** Save a crash report from the renderer (shown on next launch with opt-in send). */
-  crashReportSave(error: { name?: string; message: string; stack?: string }): Promise<void>
 
   // ---------------------------------------------------------------------------
   // Dialog
@@ -271,9 +258,6 @@ export interface ElectronAPI {
   /** Read a file and return a base64 data URL if its bytes sniff as an image
    *  (PNG/JPEG/GIF/WebP/BMP/SVG). Returns null for non-image or oversized files. */
   readImageAsDataUrl(filePath: string): Promise<{ mime: string; dataUrl: string } | null>
-
-  /** Open a native save dialog. Returns the chosen file path or null if canceled. */
-  saveFileDialog(options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>
 
   /** Native unsaved-changes confirmation. Returns 'save' | 'discard' | 'cancel'. */
   confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean }): Promise<'save' | 'discard' | 'cancel'>
@@ -327,13 +311,11 @@ export interface ElectronAPI {
   // Shell utilities
   // ---------------------------------------------------------------------------
 
-  shellWhich(command: string): Promise<string | null>
   fsDelete(filePath: string): Promise<void>
   fsRename(oldPath: string, newPath: string): Promise<void>
   fsMkdir(dirPath: string): Promise<void>
   fsCopy(srcPath: string, destDir: string): Promise<string>
   shellShowInFolder(filePath: string): Promise<void>
-  httpFetch(url: string): Promise<{ ok: boolean; status: number; text: string }>
 
   // ---------------------------------------------------------------------------
   // Notifications
@@ -348,15 +330,6 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
   // Window management
   // ---------------------------------------------------------------------------
-
-  /** Create a new Cate window. Returns the Electron window ID. */
-  windowCreate(params?: CateWindowParams): Promise<number>
-
-  /** Get the Electron window ID for this renderer's window. */
-  windowGetId(): Promise<number | null>
-
-  /** Get the window type for this renderer's window. */
-  windowGetType(): Promise<string>
 
   // ---------------------------------------------------------------------------
   // Panel transfer (cross-window)
@@ -400,9 +373,6 @@ export interface ElectronAPI {
    *  without an IPC round-trip per mousemove. */
   isMainWindowFullscreen(): boolean
 
-  /** Subscribe to fullscreen enter/leave events for any Cate window. */
-  onFullscreenChange(callback: (isFullscreen: boolean) => void): () => void
-
   /** Subscribe to drag end events (main -> renderer). */
   onDragEnd(callback: () => void): () => void
 
@@ -443,9 +413,6 @@ export interface ElectronAPI {
   // Workspace management (main process is source of truth)
   // ---------------------------------------------------------------------------
 
-  /** List all workspace metadata from the main process. */
-  workspaceList(): Promise<WorkspaceInfo[]>
-
   /** Create a new workspace in the main process. */
   workspaceCreate(options?: { name?: string; rootPath?: string; id?: string }): Promise<WorkspaceMutationResult>
 
@@ -454,9 +421,6 @@ export interface ElectronAPI {
 
   /** Remove a workspace from the main process. Returns true if removed. */
   workspaceRemove(id: string): Promise<boolean>
-
-  /** Get a single workspace's metadata by ID. */
-  workspaceGet(id: string): Promise<WorkspaceInfo | null>
 
   /** Subscribe to workspace list changes broadcast from main process. */
   onWorkspaceChanged(callback: (workspaces: WorkspaceInfo[], originWindowId: number | null) => void): () => void
@@ -520,8 +484,6 @@ export interface ElectronAPI {
   updateInstall(): void
   /** Open the GitHub release page when auto-install is unavailable. */
   updateOpenRelease(url?: string): void
-  /** Dismiss the in-app update affordance (reverts status to idle). */
-  updateDismiss(): void
 }
 
 declare global {

@@ -4,7 +4,11 @@ import log from './lib/logger'
 import { mark } from './lib/perfMarks'
 import { initRendererSentry } from './lib/sentry'
 import App from './App'
+import { subscribeToOsNotificationClicks } from './lib/osNotifications'
 import './styles/globals.css'
+
+// Listen for OS notification clicks (focus the originating terminal).
+subscribeToOsNotificationClicks()
 
 // Phase 0 perf marker — first executable statement in the renderer bundle.
 mark('renderer-script-start')

@@ -7,7 +7,6 @@ import { execFile } from 'child_process'
 import { ipcMain } from 'electron'
 import log from '../logger'
 import {
-  SHELL_WHICH,
   SHELL_REGISTER_TERMINAL,
   SHELL_UNREGISTER_TERMINAL,
   SHELL_ACTIVITY_UPDATE,
@@ -144,6 +143,11 @@ const AGENT_DEFINITIONS: { displayName: string; match: (name: string) => boolean
   {
     displayName: 'OpenCode',
     match: (n) => n === 'opencode',
+  },
+  {
+    // @mariozechner/pi-coding-agent — installs as the `pi` binary.
+    displayName: 'PI Agent',
+    match: (n) => n === 'pi',
   },
 ]
 
@@ -488,15 +492,4 @@ export function registerHandlers(): void {
     }
   })
 
-  ipcMain.handle(SHELL_WHICH, async (_event, command: string): Promise<string | null> => {
-    return new Promise((resolve) => {
-      execFile('which', [command], { env: getShellEnv() }, (err, stdout) => {
-        if (err) {
-          resolve(null)
-        } else {
-          resolve(stdout.trim() || null)
-        }
-      })
-    })
-  })
 }

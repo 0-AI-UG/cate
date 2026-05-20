@@ -18,7 +18,6 @@ import {
   TERMINAL_EXIT,
   TERMINAL_GET_CWD,
   TERMINAL_LOG_READ,
-  TERMINAL_LOG_DELETE,
   TERMINAL_SCROLLBACK_SAVE,
 } from '../../shared/ipc-channels'
 import { getOrCreateLogger, removeLogger, flushAll as flushAllLoggers, disposeAll as disposeAllLoggers } from './terminalLogger'
@@ -355,16 +354,6 @@ export function registerHandlers(): void {
     fs.writeFileSync(path.join(logDir, `${ptyId}.scrollback`), content, 'utf-8')
   })
 
-  // Delete terminal log files
-  ipcMain.handle(TERMINAL_LOG_DELETE, async (_event, terminalId: string): Promise<void> => {
-    // Use the existing logger if active, otherwise create one temporarily
-    // and clean it up immediately to avoid leaking the setInterval timer.
-    const logger = getOrCreateLogger(terminalId)
-    logger.delete()
-    if (!terminals.has(terminalId)) {
-      removeLogger(terminalId)
-    }
-  })
 }
 
 /**

@@ -15,9 +15,7 @@ import {
   SETTINGS_RESET,
   SESSION_SAVE,
   SESSION_LOAD,
-  SESSION_CLEAR,
   BOOT_SNAPSHOT_WRITE,
-  APP_GET_PATH,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   LAYOUT_SAVE,
@@ -40,9 +38,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   nativeTabs: 'boolean',
   appearanceMode: 'string',
   editorFontSize: 'number',
-  gridStyle: 'string',
-  snapToGridEnabled: 'boolean',
-  gridSpacing: 'number',
   showMinimap: 'boolean',
   defaultPanelWidth: 'number',
   defaultPanelHeight: 'number',
@@ -55,14 +50,11 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   defaultTerminalTheme: 'string',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
-  autoOpenUrlsFromTerminal: 'boolean',
+  autoOpenUrlsFromTerminal: 'string',
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',
   notificationsEnabled: 'boolean',
-  notificationMode: 'string',
-  notifyOnTerminalHalt: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',
-  aiAssistEnabled: 'boolean',
   crashReportingEnabled: 'boolean',
 }
 
@@ -70,8 +62,13 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
 function mergeValidatedSettings(target: Partial<AppSettings>, source: Record<string, unknown>): void {
   for (const key of Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>) {
     if (!(key in source)) continue
-    const val = source[key]
+    let val = source[key]
     const expected = SETTINGS_SCHEMA[key]
+    // Migration: autoOpenUrlsFromTerminal was a boolean prior to v0.4.5.
+    // Translate legacy values so users keep their previous behavior.
+    if (key === 'autoOpenUrlsFromTerminal' && typeof val === 'boolean') {
+      val = val ? 'auto' : 'off'
+    }
     if (expected === 'array') {
       if (!Array.isArray(val)) { log.warn('Settings schema mismatch: %s expected array, got %s', key, typeof val); continue }
     } else {
@@ -347,15 +344,6 @@ export function registerHandlers(): void {
     }
   })
 
-  ipcMain.handle(SESSION_CLEAR, async () => {
-    const sessionPath = getSessionPath()
-    try {
-      await fs.unlink(sessionPath)
-    } catch {
-      // file may not exist
-    }
-  })
-
   ipcMain.handle(SESSION_LOAD, async (): Promise<SessionSnapshot | null> => {
     const sessionPath = getSessionPath()
     const tmpPath = sessionPath + '.tmp'
@@ -387,13 +375,6 @@ export function registerHandlers(): void {
 
     log.debug('No valid session file found')
     return null
-  })
-
-  // App paths
-  const ALLOWED_PATHS = new Set(['home', 'appData', 'userData', 'temp', 'desktop', 'documents', 'downloads'])
-  ipcMain.handle(APP_GET_PATH, async (_event, name: string) => {
-    if (!ALLOWED_PATHS.has(name)) throw new Error(`Path '${name}' not allowed`)
-    return app.getPath(name as Parameters<typeof app.getPath>[0])
   })
 
   // Recent Projects

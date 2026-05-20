@@ -8,8 +8,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
-import { useSettingsStore } from '../stores/settingsStore'
-import { snapToEdges, snapNodeToGrid, snapNodeToGridSelective } from '../canvas/layoutEngine'
 import type { Point, Size, PanelTransferSnapshot, DockLayoutNode } from '../../shared/types'
 import { createTransferSnapshot } from '../lib/panelTransfer'
 import { terminalRegistry } from '../lib/terminalRegistry'
@@ -181,8 +179,6 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
   /** True while this hook instance is registered in the module-level dispatch.
    *  Replaces the prior per-instance AbortController + window listeners. */
   const registeredRef = useRef(false)
-  // Track which axes were magnetically snapped in the last drag frame (for Bug B fix)
-  const lastMagneticAxes = useRef<{ x: boolean; y: boolean }>({ x: false, y: false })
   // Track whether we've transitioned to dock-drag mode
   const inDockDragRef = useRef(false)
   // Track cross-window drag state (when cursor exits the OS window)
@@ -484,26 +480,10 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
         ds.lastClientX = ev.clientX
         ds.lastClientY = ev.clientY
 
-        // Compute total delta from drag start (un-snapped), then snap the
-        // resulting origin to the grid. Using an incremental delta against a
-        // snapped accumulator would repeatedly round sub-grid motion back to
-        // the same cell, making the node hard to move (especially upward,
-        // where Math.round biases ties toward 0).
         const totalDx = (ev.clientX - ds.initialClientX) / zoom
         const totalDy = (ev.clientY - ds.initialClientY) / zoom
-        let nextX = ds.initialOrigin.x + totalDx
-        let nextY = ds.initialOrigin.y + totalDy
-
-        const settingsLive = useSettingsStore.getState()
-        if (settingsLive.snapToGridEnabled) {
-          const g = settingsLive.gridSpacing
-          // Symmetric rounding so upward/leftward motion has the same
-          // threshold as downward/rightward (JS Math.round biases ties
-          // toward +Inf, which makes negative-direction drags feel sticky).
-          const snapDelta = (v: number) => Math.sign(v) * Math.round(Math.abs(v) / g) * g
-          nextX = ds.initialOrigin.x + snapDelta(totalDx)
-          nextY = ds.initialOrigin.y + snapDelta(totalDy)
-        }
+        const nextX = ds.initialOrigin.x + totalDx
+        const nextY = ds.initialOrigin.y + totalDy
 
         pendingOrigin.current = { x: nextX, y: nextY }
 
@@ -609,50 +589,6 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
               }
             }
 
-            // Magnetic snap guides (runs at most once per frame).
-            // Uses live drag origin for snap calculations, then applies
-            // the result via DOM mutation. pendingOrigin is updated so
-            // mouseup commits the snapped position.
-            const settings = useSettingsStore.getState()
-            if (settings.snapToGridEnabled) {
-              const currentState2 = canvasStoreApi.getState()
-              const storeNode2 = currentState2.nodes[nodeId]
-              if (storeNode2) {
-                // Use live drag position, not stale store position
-                const liveOrigin = origin
-                const idx = snapIndexRef.current
-                let neighbors: SnapCandidate[]
-                if (idx && idx.cells.size > 0) {
-                  const CELL_SIZE = idx.cellSize
-                  const seen = new Set<SnapCandidate>()
-                  const x0 = Math.floor((liveOrigin.x - 8) / CELL_SIZE)
-                  const y0 = Math.floor((liveOrigin.y - 8) / CELL_SIZE)
-                  const x1 = Math.floor((liveOrigin.x + storeNode2.size.width + 8) / CELL_SIZE)
-                  const y1 = Math.floor((liveOrigin.y + storeNode2.size.height + 8) / CELL_SIZE)
-                  for (let cx = x0; cx <= x1; cx++) {
-                    for (let cy = y0; cy <= y1; cy++) {
-                      const bucket = idx.cells.get(`${cx},${cy}`)
-                      if (bucket) for (const c of bucket) seen.add(c)
-                    }
-                  }
-                  neighbors = Array.from(seen)
-                } else {
-                  neighbors = idx ? idx.all : []
-                }
-                // Only show snap guides when we're actually close to a
-                // neighbor edge — no magnetic pull during hold, so the node
-                // stays locked 1:1 under the cursor. The hard grid snap on
-                // mouseup still runs below.
-                const GUIDE_THRESHOLD = 3
-                const snapResult = snapToEdges(
-                  { origin: liveOrigin, size: storeNode2.size },
-                  neighbors,
-                  GUIDE_THRESHOLD,
-                )
-                lastMagneticAxes.current = { x: false, y: false }
-                currentState2.setSnapGuides({ lines: snapResult.lines })
-              }
-            }
           })
         }
       }
@@ -774,19 +710,6 @@ export function useNodeDrag(nodeId: string, zoomLevel: number, canvasStoreApi: S
 
         // Normal drag end — flush position and clean up
         cancelDrag()
-
-        // Snap to grid if enabled — skip axes that were magnetically snapped
-        // to avoid a visible jump from magnetic position to grid position.
-        const settings = useSettingsStore.getState()
-        if (settings.snapToGridEnabled) {
-          const skipAxes = lastMagneticAxes.current
-          if (skipAxes.x || skipAxes.y) {
-            snapNodeToGridSelective(canvasStoreApi, nodeId, settings.gridSpacing, true, skipAxes)
-          } else {
-            snapNodeToGrid(canvasStoreApi, nodeId, settings.gridSpacing, true)
-          }
-          lastMagneticAxes.current = { x: false, y: false }
-        }
 
         // Clear drop-target highlight
         if (canvasStoreApi.getState().dropTargetRegionId !== null) {

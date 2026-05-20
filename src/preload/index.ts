@@ -12,7 +12,6 @@ import {
   TERMINAL_EXIT,
   TERMINAL_GET_CWD,
   TERMINAL_LOG_READ,
-  TERMINAL_LOG_DELETE,
   TERMINAL_SCROLLBACK_SAVE,
   FS_READ_FILE,
   FS_WRITE_FILE,
@@ -55,11 +54,9 @@ import {
   SETTINGS_RESET,
   SESSION_SAVE,
   SESSION_LOAD,
-  SESSION_CLEAR,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
   BOOT_SNAPSHOT_WRITE,
-  APP_GET_PATH,
   APP_OPEN_PATH,
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
@@ -67,7 +64,6 @@ import {
   DIALOG_OPEN_FOLDER,
   DIALOG_OPEN_IMAGE,
   FS_READ_IMAGE,
-  DIALOG_SAVE_FILE,
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_CANVAS,
   DIALOG_CONFIRM_DELETE_REGION,
@@ -77,19 +73,14 @@ import {
   LAYOUT_LIST,
   LAYOUT_LOAD,
   LAYOUT_DELETE,
-  SHELL_WHICH,
   FS_DELETE,
   FS_RENAME,
   FS_MKDIR,
   FS_COPY,
   FS_SEARCH,
   SHELL_SHOW_IN_FOLDER,
-  HTTP_FETCH,
   NOTIFY_OS,
   NOTIFY_ACTION,
-  WINDOW_CREATE,
-  WINDOW_GET_ID,
-  WINDOW_GET_TYPE,
   WINDOW_SET_TITLE,
   PANEL_TRANSFER,
   PANEL_RECEIVE,
@@ -109,11 +100,9 @@ import {
   CROSS_WINDOW_DRAG_DROP,
   CROSS_WINDOW_DRAG_CANCEL,
   CROSS_WINDOW_DRAG_RESOLVE,
-  WORKSPACE_LIST,
   WORKSPACE_CREATE,
   WORKSPACE_UPDATE,
   WORKSPACE_REMOVE,
-  WORKSPACE_GET,
   WORKSPACE_CHANGED,
   WEBVIEW_SCREENSHOT,
   NATIVE_FILE_DRAG,
@@ -122,7 +111,6 @@ import {
   UPDATE_INSTALL,
   UPDATE_DOWNLOAD,
   UPDATE_OPEN_RELEASE,
-  UPDATE_DISMISS,
 } from '../shared/ipc-channels'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
@@ -190,10 +178,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   terminalLogRead(terminalId: string): Promise<string | null> {
     return ipcRenderer.invoke(TERMINAL_LOG_READ, terminalId)
-  },
-
-  terminalLogDelete(terminalId: string): Promise<void> {
-    return ipcRenderer.invoke(TERMINAL_LOG_DELETE, terminalId)
   },
 
   terminalScrollbackSave(ptyId: string, content: string): Promise<void> {
@@ -460,10 +444,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(SESSION_LOAD)
   },
 
-  sessionClear(): Promise<void> {
-    return ipcRenderer.invoke(SESSION_CLEAR)
-  },
-
   onSessionFlushSave(callback: () => void): () => void {
     const handler = () => callback()
     ipcRenderer.on(SESSION_FLUSH_SAVE, handler)
@@ -483,10 +463,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ---------------------------------------------------------------------------
   // App
   // ---------------------------------------------------------------------------
-
-  appGetPath(name: string): Promise<string> {
-    return ipcRenderer.invoke(APP_GET_PATH, name)
-  },
 
   onOpenPath(callback: (filePath: string) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, filePath: string): void => {
@@ -510,10 +486,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   readImageAsDataUrl(filePath: string): Promise<{ mime: string; dataUrl: string } | null> {
     return ipcRenderer.invoke(FS_READ_IMAGE, filePath)
-  },
-
-  saveFileDialog(options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> {
-    return ipcRenderer.invoke(DIALOG_SAVE_FILE, options)
   },
 
   confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean }): Promise<'save' | 'discard' | 'cancel'> {
@@ -576,10 +548,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Shell utilities
   // ---------------------------------------------------------------------------
 
-  shellWhich(command: string): Promise<string | null> {
-    return ipcRenderer.invoke(SHELL_WHICH, command)
-  },
-
   fsDelete(filePath: string): Promise<void> {
     return ipcRenderer.invoke(FS_DELETE, filePath)
   },
@@ -598,10 +566,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   shellShowInFolder(filePath: string): Promise<void> {
     return ipcRenderer.invoke(SHELL_SHOW_IN_FOLDER, filePath)
-  },
-
-  httpFetch(url: string): Promise<{ ok: boolean; status: number; text: string }> {
-    return ipcRenderer.invoke(HTTP_FETCH, url)
   },
 
   // ---------------------------------------------------------------------------
@@ -623,18 +587,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ---------------------------------------------------------------------------
   // Window management
   // ---------------------------------------------------------------------------
-
-  windowCreate(params?: unknown): Promise<number> {
-    return ipcRenderer.invoke(WINDOW_CREATE, params)
-  },
-
-  windowGetId(): Promise<number | null> {
-    return ipcRenderer.invoke(WINDOW_GET_ID)
-  },
-
-  windowGetType(): Promise<string> {
-    return ipcRenderer.invoke(WINDOW_GET_TYPE)
-  },
 
   windowSetTitle(title: string): Promise<void> {
     return ipcRenderer.invoke(WINDOW_SET_TITLE, title)
@@ -700,16 +652,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return fullscreenLiveCheck()
   },
 
-  /** Subscribe to fullscreen state changes. Fires whenever any Cate window
-   *  enters or leaves macOS native fullscreen. */
-  onFullscreenChange(callback: (isFullscreen: boolean) => void): () => void {
-    const listener = (_event: Electron.IpcRendererEvent, value: boolean): void => {
-      callback(Boolean(value))
-    }
-    ipcRenderer.on(WINDOW_FULLSCREEN_STATE, listener)
-    return () => { ipcRenderer.removeListener(WINDOW_FULLSCREEN_STATE, listener) }
-  },
-
   onDragEnd(callback: () => void): () => void {
     const listener = (): void => { callback() }
     ipcRenderer.on(DRAG_END, listener)
@@ -768,10 +710,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Workspace management (main process is source of truth)
   // ---------------------------------------------------------------------------
 
-  workspaceList(): Promise<unknown[]> {
-    return ipcRenderer.invoke(WORKSPACE_LIST)
-  },
-
   workspaceCreate(options?: { name?: string; rootPath?: string; id?: string }): Promise<unknown> {
     return ipcRenderer.invoke(WORKSPACE_CREATE, options)
   },
@@ -782,10 +720,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   workspaceRemove(id: string): Promise<boolean> {
     return ipcRenderer.invoke(WORKSPACE_REMOVE, id)
-  },
-
-  workspaceGet(id: string): Promise<unknown> {
-    return ipcRenderer.invoke(WORKSPACE_GET, id)
   },
 
   onWorkspaceChanged(callback: (workspaces: unknown[], originWindowId: number | null) => void): () => void {
@@ -848,5 +782,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateDownload(): void { ipcRenderer.send(UPDATE_DOWNLOAD) },
   updateInstall(): void { ipcRenderer.send(UPDATE_INSTALL) },
   updateOpenRelease(url?: string): void { ipcRenderer.send(UPDATE_OPEN_RELEASE, url) },
-  updateDismiss(): void { ipcRenderer.send(UPDATE_DISMISS) },
 })

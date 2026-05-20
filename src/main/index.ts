@@ -2,9 +2,9 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, HTTP_FETCH, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_OPEN_IMAGE, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, FS_READ_IMAGE, CRASH_REPORT_SAVE, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_OPEN_IMAGE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, FS_READ_IMAGE, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
-  WINDOW_CREATE, WINDOW_GET_ID, WINDOW_GET_TYPE, WINDOW_SET_TITLE,
+  WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
   PANEL_WINDOWS_LIST, PANEL_WINDOW_DOCK_BACK, PANEL_WINDOW_SYNC_PTY,
   DRAG_START, DRAG_DETACH, DRAG_END,
@@ -25,7 +25,7 @@ import { registerHandlers as registerNotificationHandlers } from './ipc/notifica
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
 import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
-import { addAllowedRoot, clearScopedWriteAllowancesForWindow, registerScopedWriteAllowance, validatePath } from './ipc/pathValidation'
+import { addAllowedRoot, clearScopedWriteAllowancesForWindow, validatePath } from './ipc/pathValidation'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
 import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
@@ -404,14 +404,6 @@ function registerAllHandlers(): void {
  * registerCriticalHandlers can include them without duplicating the bodies.
  */
 function registerWindowAndDialogHandlers(): void {
-  // Crash reporting: renderer can save a crash report via IPC
-  ipcMain.handle(CRASH_REPORT_SAVE, async (_event, error: { name?: string; message: string; stack?: string }) => {
-    saveCrashReport(
-      { name: error.name ?? 'Error', message: error.message, stack: error.stack },
-      'renderer',
-    )
-  })
-
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, async (_event, filePath: string) => {
     try {
@@ -419,25 +411,6 @@ function registerWindowAndDialogHandlers(): void {
     } catch (error) {
       log.error('[SHELL_SHOW_IN_FOLDER]', error)
       throw error instanceof Error ? error : new Error(String(error))
-    }
-  })
-
-  // HTTP: Fetch from main process (no CORS)
-  ipcMain.handle(HTTP_FETCH, async (_event, url: string): Promise<{ ok: boolean; status: number; text: string }> => {
-    try {
-      const u = new URL(url)
-      if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Only http(s) URLs allowed')
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 15000)
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'Cate/1.0' },
-      })
-      clearTimeout(timeout)
-      const text = await res.text()
-      return { ok: res.ok, status: res.status, text }
-    } catch (err: any) {
-      return { ok: false, status: 0, text: err.message || 'Fetch failed' }
     }
   })
 
@@ -480,20 +453,6 @@ function registerWindowAndDialogHandlers(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths
-  })
-
-  ipcMain.handle(DIALOG_SAVE_FILE, async (_event, options: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
-    const callerWin = BrowserWindow.fromWebContents(_event.sender)
-    if (callerWin) clearScopedWriteAllowancesForWindow(callerWin.id)
-    const result = await dialog.showSaveDialog({
-      defaultPath: options.defaultPath,
-      filters: options.filters || [{ name: 'JSON', extensions: ['json'] }],
-    })
-    if (result.canceled || !result.filePath) return null
-    if (callerWin) {
-      await registerScopedWriteAllowance(callerWin.id, result.filePath)
-    }
-    return result.filePath
   })
 
   // Native unsaved-changes confirmation. Returns 'save' | 'discard' | 'cancel'.
@@ -629,26 +588,6 @@ function registerWindowAndDialogHandlers(): void {
       log.error('[NATIVE_FILE_DRAG]', error)
       throw error instanceof Error ? error : new Error(String(error))
     }
-  })
-
-  // Window management
-  ipcMain.handle(WINDOW_CREATE, async (_event, params?: CateWindowParams) => {
-    // Refuse new panel/dock windows while any window is fullscreen — they
-    // would land in a separate Space and appear as a black page.
-    if (anyWindowFullscreen() && params?.type !== 'main') return null
-    const win = createWindow(params)
-    return win.id
-  })
-
-  ipcMain.handle(WINDOW_GET_ID, async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    return win?.id ?? null
-  })
-
-  ipcMain.handle(WINDOW_GET_TYPE, async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) return null
-    return getWindowType(win.id) ?? 'main'
   })
 
   // Renderer-driven title sync — used so each native macOS tab shows the

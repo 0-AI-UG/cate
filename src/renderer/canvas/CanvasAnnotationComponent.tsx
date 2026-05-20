@@ -7,14 +7,6 @@ import { X } from '@phosphor-icons/react'
 import type { CanvasAnnotation } from '../../shared/types'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { consumePendingAnnotationEdit } from '../stores/canvasStore'
-import { useSettingsStore } from '../stores/settingsStore'
-
-function snapValue(v: number): number {
-  const s = useSettingsStore.getState()
-  if (!s.snapToGridEnabled) return v
-  const g = s.gridSpacing
-  return Math.round(v / g) * g
-}
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 
 // =============================================================================
@@ -68,8 +60,8 @@ const ImageAnnotation: React.FC<{ annotation: CanvasAnnotation }> = ({ annotatio
       if (!dragRef.current) return
       const zoom = canvasApi.getState().zoomLevel
       canvasApi.getState().moveAnnotation(annotation.id, {
-        x: snapValue(dragRef.current.originX + (ev.clientX - dragRef.current.startX) / zoom),
-        y: snapValue(dragRef.current.originY + (ev.clientY - dragRef.current.startY) / zoom),
+        x: dragRef.current.originX + (ev.clientX - dragRef.current.startX) / zoom,
+        y: dragRef.current.originY + (ev.clientY - dragRef.current.startY) / zoom,
       })
     }
     const handleUp = (): void => {
@@ -100,14 +92,8 @@ const ImageAnnotation: React.FC<{ annotation: CanvasAnnotation }> = ({ annotatio
     const onMove = (ev: MouseEvent): void => {
       const zoom = canvasApi.getState().zoomLevel
       const dw = (ev.clientX - startX) / zoom
-      let newW = Math.max(60, startW + dw)
-      let newH = Math.max(40, newW / ar)
-      const s = useSettingsStore.getState()
-      if (s.snapToGridEnabled) {
-        const g = s.gridSpacing
-        newW = Math.max(60, Math.round(newW / g) * g)
-        newH = Math.max(40, Math.round(newH / g) * g)
-      }
+      const newW = Math.max(60, startW + dw)
+      const newH = Math.max(40, newW / ar)
       canvasApi.getState().resizeAnnotation(annotation.id, { width: newW, height: newH })
     }
     const onUp = (): void => {
@@ -368,8 +354,8 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
       moved = true
       const zoom = canvasApi.getState().zoomLevel
       canvasApi.getState().moveAnnotation(annotation.id, {
-        x: snapValue(dragRef.current.originX + dxRaw / zoom),
-        y: snapValue(dragRef.current.originY + dyRaw / zoom),
+        x: dragRef.current.originX + dxRaw / zoom,
+        y: dragRef.current.originY + dyRaw / zoom,
       })
     }
     const handleUp = () => {
@@ -504,14 +490,8 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
       const zoom = canvasApi.getState().zoomLevel
       const dw = (ev.clientX - startX) / zoom
       const dh = (ev.clientY - startY) / zoom
-      const s = useSettingsStore.getState()
-      let w = startW + dw
-      let h = startH + dh
-      if (s.snapToGridEnabled) {
-        const g = s.gridSpacing
-        w = Math.max(g, Math.round(w / g) * g)
-        h = Math.max(g, Math.round(h / g) * g)
-      }
+      const w = startW + dw
+      const h = startH + dh
       canvasApi.getState().resizeAnnotation(annotation.id, { width: w, height: h })
     }
     const handleUp = () => {
@@ -585,14 +565,8 @@ const CanvasAnnotationComponent: React.FC<Props> = ({ annotation }) => {
       const zoom = canvasApi.getState().zoomLevel
       const dw = (ev.clientX - startX) / zoom
       const dh = (ev.clientY - startY) / zoom
-      const s = useSettingsStore.getState()
-      let w = startW + dw
-      let h = startH + dh
-      if (s.snapToGridEnabled) {
-        const g = s.gridSpacing
-        w = Math.max(g, Math.round(w / g) * g)
-        h = Math.max(g, Math.round(h / g) * g)
-      }
+      const w = startW + dw
+      const h = startH + dh
       canvasApi.getState().resizeAnnotation(annotation.id, { width: w, height: h })
     }
     const handleUp = () => {

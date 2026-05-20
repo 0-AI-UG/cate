@@ -13,8 +13,6 @@ import { findCanvasStoreForNode } from '../stores/canvasStore'
 import { useDockDragStore } from '../hooks/useDockDrag'
 import { useDockStore } from '../stores/dockStore'
 import { findNodeIdForDockStore } from '../panels/CanvasPanel'
-import { snapNodeToGrid } from '../canvas/layoutEngine'
-import { useSettingsStore } from '../stores/settingsStore'
 import type { PanelType } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES } from '../../shared/types'
 
@@ -27,15 +25,6 @@ export let canvasDropZoneHovered = false
 
 interface CanvasDropZoneProps {
   canvasStoreApi: StoreApi<CanvasStore>
-}
-
-/** Mirror the canvas-drag drop behavior: when the user's snap-to-grid
- *  setting is on, align the just-moved/created node to the grid so dock
- *  drops feel consistent with body drags. */
-function snapToGridIfEnabled(canvasStoreApi: StoreApi<CanvasStore>, nodeId: string) {
-  const settings = useSettingsStore.getState()
-  if (!settings.snapToGridEnabled) return
-  snapNodeToGrid(canvasStoreApi, nodeId, settings.gridSpacing, true)
 }
 
 const PANEL_TYPE_LABELS: Record<PanelType, string> = {
@@ -87,14 +76,6 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
   // Subscribe reactively so the ghost rescales live when the user zooms the
   // target canvas mid-drag. Previously this was a one-shot getState().
   const targetZoom = useStore(canvasStoreApi, (s) => s.zoomLevel)
-  const viewportOffset = useStore(canvasStoreApi, (s) => s.viewportOffset)
-  // Snap settings — read reactively so toggling snap mid-drag updates the
-  // ghost positioning. The ghost mirrors the body-drag behavior: while
-  // dragging, the preview rectangle snaps to the grid so the user sees where
-  // the node will actually land.
-  const snapEnabled = useSettingsStore((s) => s.snapToGridEnabled)
-  const gridSpacing = useSettingsStore((s) => s.gridSpacing)
-
   // ---- Unified source-size resolution ---------------------------------
   // sourceSize is the canvas-space size the dropped/moved node will have.
   // The ghost is rendered at sourceSize × targetZoom, and the dropped node
@@ -229,7 +210,6 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
               oy = (grabOffsetCanvas.y / dockSourceSize.height) * ownedNode.size.height
             }
             sourceCs.moveNode(ownedNodeId, { x: canvasX - ox, y: canvasY - oy })
-            snapToGridIfEnabled(canvasStoreApi, ownedNodeId)
             useDockDragStore.getState().endDrag()
             document.body.classList.remove('canvas-interacting')
             setCursor(null)
@@ -259,7 +239,6 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
             const ox = grabOffsetCanvas?.x ?? sourceCs.nodes[dragSource.nodeId].size.width / 2
             const oy = grabOffsetCanvas?.y ?? sourceCs.nodes[dragSource.nodeId].size.height / 2
             sourceCs.moveNode(dragSource.nodeId, { x: canvasX - ox, y: canvasY - oy })
-            snapToGridIfEnabled(canvasStoreApi, dragSource.nodeId)
             useDockDragStore.getState().endDrag()
             document.body.classList.remove('canvas-interacting')
             setCursor(null)
@@ -313,7 +292,6 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
         // Focus the new node but DON'T pan the viewport — the user explicitly
         // dropped at this cursor position and expects it to stay there.
         canvasStoreApi.getState().focusNode(newNodeId)
-        snapToGridIfEnabled(canvasStoreApi, newNodeId)
 
         useDockDragStore.getState().endDrag()
         document.body.classList.remove('canvas-interacting')
@@ -396,21 +374,10 @@ function CanvasDropZoneInner({ canvasStoreApi }: CanvasDropZoneProps) {
       </div>
 
       {/* Window-shaped ghost following the cursor — previews where the new
-          node will land. Snaps to grid during drag when the setting is on,
-          mirroring the body-drag behavior. */}
+          node will land. */}
       {cursor && (() => {
-        // Unsnapped screen-space ghost top-left (cursor minus grab offset).
-        let ghostLeft = cursor.x - ghostOffset.x
-        let ghostTop = cursor.y - ghostOffset.y
-        if (snapEnabled && gridSpacing > 0) {
-          // Convert to canvas-space, snap, then back to screen-space.
-          const canvasX = (ghostLeft - viewportOffset.x) / targetZoom
-          const canvasY = (ghostTop - viewportOffset.y) / targetZoom
-          const snapX = Math.round(canvasX / gridSpacing) * gridSpacing
-          const snapY = Math.round(canvasY / gridSpacing) * gridSpacing
-          ghostLeft = snapX * targetZoom + viewportOffset.x
-          ghostTop = snapY * targetZoom + viewportOffset.y
-        }
+        const ghostLeft = cursor.x - ghostOffset.x
+        const ghostTop = cursor.y - ghostOffset.y
         return (
         <div
           style={{

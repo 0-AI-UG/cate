@@ -9,11 +9,9 @@ import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import log from './logger'
 import {
-  WORKSPACE_LIST,
   WORKSPACE_CREATE,
   WORKSPACE_UPDATE,
   WORKSPACE_REMOVE,
-  WORKSPACE_GET,
   WORKSPACE_CHANGED,
 } from '../shared/ipc-channels'
 import type { WorkspaceInfo, WorkspaceMutationResult } from '../shared/types'
@@ -45,10 +43,6 @@ function generateId(): string {
 
 function listWorkspaces(): WorkspaceInfo[] {
   return Array.from(workspaces.values())
-}
-
-function getWorkspace(id: string): WorkspaceInfo | null {
-  return workspaces.get(id) ?? null
 }
 
 async function createWorkspace(name?: string, rootPath?: string, id?: string): Promise<WorkspaceMutationResult> {
@@ -167,16 +161,6 @@ function broadcastWorkspaceChange(originWindowId?: number): void {
 // -----------------------------------------------------------------------------
 
 export function registerWorkspaceHandlers(): void {
-  // List all workspaces
-  ipcMain.handle(WORKSPACE_LIST, async () => {
-    return listWorkspaces()
-  })
-
-  // Get a single workspace by ID
-  ipcMain.handle(WORKSPACE_GET, async (_event, id: string) => {
-    return getWorkspace(id)
-  })
-
   // Create a new workspace
   ipcMain.handle(
     WORKSPACE_CREATE,

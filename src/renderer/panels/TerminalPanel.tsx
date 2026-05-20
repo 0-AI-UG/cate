@@ -19,6 +19,7 @@ import type { TerminalPanelProps } from './types'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
+import { TerminalUrlPrompt } from './TerminalUrlPrompt'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -614,6 +615,8 @@ export default function TerminalPanel({
             <span className="text-blue-400 text-sm font-medium">Drop to paste path</span>
           </div>
         )}
+        {/* Inline URL prompt is rendered outside this scaled box so it
+            stays at panel scale regardless of renderScale. */}
         {createError && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-surface-1/85 backdrop-blur-sm">
             <div className="max-w-md mx-6 rounded-lg border border-subtle bg-surface-3 shadow-[0_18px_40px_-12px_var(--shadow-node)] p-4 text-center">
@@ -634,6 +637,7 @@ export default function TerminalPanel({
           </div>
         )}
       </div>
+      <TerminalUrlPrompt panelId={panelId} />
     </div>
   )
 }

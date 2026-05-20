@@ -6,9 +6,8 @@
 import { useEffect, useRef } from 'react'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore } from '../stores/appStore'
-import { useSettingsStore } from '../stores/settingsStore'
-import { useNotificationStore } from '../stores/notificationStore'
-import type { TerminalActivity, AgentState, NodeActivityState } from '../../shared/types'
+import { sendOsNotification } from '../lib/osNotifications'
+import type { TerminalActivity, AgentState } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
 // Previous state tracking for transition detection
@@ -17,7 +16,6 @@ import type { TerminalActivity, AgentState, NodeActivityState } from '../../shar
 interface PreviousTerminalState {
   agentState: AgentState
   agentName: string | null
-  nodeActivityType: NodeActivityState['type'] | null
 }
 
 // -----------------------------------------------------------------------------
@@ -26,10 +24,9 @@ interface PreviousTerminalState {
 
 /**
  * Subscribe to shell activity updates from the main process and update the
- * status store accordingly. Plays sound notifications on state transitions
- * (command finished, Claude waiting for input).
- *
- * Should be called once per workspace, typically in the workspace root component.
+ * status store accordingly. Fires OS notifications on agent state transitions
+ * (agent awaiting input, agent finished). Works for any agent in
+ * AGENT_DEFINITIONS (Claude Code, Codex, Gemini, etc.).
  */
 export function useProcessMonitor(workspaceId: string): void {
   // Track previous states per terminal to detect transitions
@@ -60,7 +57,6 @@ export function useProcessMonitor(workspaceId: string): void {
         const prev = prevMap.get(terminalId) || {
           agentState: 'notRunning' as AgentState,
           agentName: null,
-          nodeActivityType: null,
         }
 
         // --- Update status store (debounced for activity, immediate for state transitions) ---
@@ -86,71 +82,27 @@ export function useProcessMonitor(workspaceId: string): void {
           }, 200))
         }
 
-        // --- Derive node activity and trigger notifications ---
-        let currentNodeActivityType: NodeActivityState['type'] | null = null
-
-        // Use the current or previous agent name for display
+        // --- OS notification triggers ---
+        // Fire on transitions only — settings gating happens inside sendOsNotification.
         const displayName = agentName ?? prev.agentName ?? 'Agent'
+        const action = { type: 'focusTerminal' as const, workspaceId: actualWorkspaceId, terminalId }
 
-        // Detect transition to waitingForInput
         if (agentState === 'waitingForInput' && prev.agentState !== 'waitingForInput') {
-          currentNodeActivityType = 'agentWaitingForInput'
+          sendOsNotification({
+            title: `${displayName} needs input`,
+            body: `${displayName} is waiting for your response.`,
+            action,
+          })
+        } else if (agentState === 'finished' && prev.agentState !== 'finished') {
+          const finishedName = prev.agentName ?? displayName
+          sendOsNotification({
+            title: 'Task complete',
+            body: `${finishedName} has finished running.`,
+            action,
+          })
         }
 
-        // Detect command finished: terminal went from running to idle
-        if (
-          terminalActivity.type === 'idle' &&
-          prev.agentState === 'notRunning' &&
-          agentState === 'notRunning'
-        ) {
-          // Only trigger if we previously had activity (avoid initial idle state)
-          if (prev.nodeActivityType === null && prevMap.has(terminalId)) {
-            // Terminal was already idle — no transition
-          }
-        }
-
-        // Detect agent finished
-        if (agentState === 'finished' && prev.agentState !== 'finished') {
-          currentNodeActivityType = 'commandFinished'
-        }
-
-        // If agent transitions from waitingForInput to running, clear the node activity
-        if (agentState === 'running' && prev.agentState === 'waitingForInput') {
-          currentNodeActivityType = 'normal'
-        }
-
-        // --- Notification triggers ---
-        if (currentNodeActivityType === 'agentWaitingForInput') {
-          const settings = useSettingsStore.getState()
-          if (settings.notificationsEnabled && settings.notifyOnTerminalHalt) {
-            useNotificationStore.getState().notify({
-              title: `${displayName} needs input`,
-              body: `${displayName} is waiting for your response.`,
-              type: 'warning',
-              action: { type: 'focusTerminal', workspaceId: actualWorkspaceId, terminalId },
-            })
-          }
-        }
-
-        if (currentNodeActivityType === 'commandFinished') {
-          const settings = useSettingsStore.getState()
-          if (settings.notificationsEnabled && settings.notifyOnTerminalHalt) {
-            const finishedName = prev.agentName ?? displayName
-            useNotificationStore.getState().notify({
-              title: 'Task complete',
-              body: `${finishedName} has finished running.`,
-              type: 'success',
-              action: { type: 'focusTerminal', workspaceId: actualWorkspaceId, terminalId },
-            })
-          }
-        }
-
-        // Update previous state
-        prevMap.set(terminalId, {
-          agentState,
-          agentName,
-          nodeActivityType: currentNodeActivityType ?? prev.nodeActivityType,
-        })
+        prevMap.set(terminalId, { agentState, agentName })
       },
     )
 

@@ -13,6 +13,7 @@
 
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
+import { useUrlPromptStore } from '../stores/urlPromptStore'
 import { portalRegistry } from './portalRegistry'
 
 // Disallowed characters inside a URL match: whitespace, ASCII control bytes,
@@ -101,6 +102,10 @@ function findBrowserPanelId(workspaceId: string): string | null {
   return null
 }
 
+export function openTerminalUrl(workspaceId: string, url: string): void {
+  openInBrowser(workspaceId, url)
+}
+
 function openInBrowser(workspaceId: string, url: string): void {
   const existing = findBrowserPanelId(workspaceId)
   if (existing) {
@@ -127,7 +132,8 @@ export function scanTerminalChunkForUrls(
   workspaceId: string,
   chunk: string,
 ): void {
-  if (!useSettingsStore.getState().autoOpenUrlsFromTerminal) return
+  const mode = useSettingsStore.getState().autoOpenUrlsFromTerminal
+  if (mode === 'off') return
   if (!chunk) return
 
   const cleaned = chunk.replace(ANSI_REGEX, '')
@@ -172,7 +178,12 @@ export function scanTerminalChunkForUrls(
     }
   }
   for (const { url } of toOpen) {
-    openInBrowser(workspaceId, canonicalize(url))
+    const canonical = canonicalize(url)
+    if (mode === 'auto') {
+      openInBrowser(workspaceId, canonical)
+    } else {
+      useUrlPromptStore.getState().request(panelId, workspaceId, canonical)
+    }
   }
 
   BUFFERS.set(panelId, buffer.slice(lastFullyConsumed))
