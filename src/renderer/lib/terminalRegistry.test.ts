@@ -91,7 +91,7 @@ vi.mock('./logger', () => ({ default: { warn: () => {}, info: () => {}, error: (
 // a pre-existing ptyId. The bug manifests when a leaked pending-transfer
 // causes a fresh getOrCreate to silently go down the reconnect path.
 const terminalCreate = vi.fn(async () => 'pty-fresh')
-const panelTransferAck = vi.fn(async () => undefined)
+const panelTransferAck = vi.fn(async (_id: string) => undefined as undefined)
 const shellRegisterTerminal = vi.fn(async () => undefined)
 
 beforeEach(() => {
