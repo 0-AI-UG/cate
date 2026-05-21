@@ -129,7 +129,7 @@ Packaged binaries will be in the `release/` directory.
 
 ## Security & Packaging
 
-Cate uses a context-isolated preload bridge, workspace-scoped filesystem access, hardened browser panels, and a safer update fallback that opens the GitHub release page when a verified installer path is unavailable. See [docs/packaging-security.md](docs/packaging-security.md) for the current macOS entitlement notes.
+Cate uses a context-isolated preload bridge, workspace-scoped filesystem access, hardened browser panels, and a safer update fallback that opens the GitHub release page when a verified installer path is unavailable.
 
 ## Architecture
 
