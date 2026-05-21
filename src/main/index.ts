@@ -22,6 +22,13 @@ import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow }
 import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync, loadSettingsSyncFromDisk, getSettingSync, readBootSnapshot, writeBootSnapshot } from './store'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
+import { registerAgentHandlers } from '../agent/main/ipcAgent'
+import { registerAuthHandlers } from '../agent/main/ipcAuth'
+import { authManager } from '../agent/main/authManager'
+import { AgentManager } from '../agent/main/agentManager'
+
+// Shared singletons for pi agent + auth.
+const agentManager = new AgentManager(authManager)
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
 import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
@@ -392,6 +399,8 @@ function registerDeferredHandlers(): void {
   registerGitHandlers()
   registerGitMonitorHandlers()
   registerNotificationHandlers()
+  registerAuthHandlers(authManager)
+  registerAgentHandlers(authManager, agentManager)
 }
 
 /** Union of critical + deferred — kept for any callers that want the full set in one call. */

@@ -129,6 +129,18 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(255,214,10)', '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>'),
     canLiveOnCanvas: true,
   },
+  agent: {
+    type: 'agent',
+    label: 'Agent',
+    brandColor: '#A78BFA',
+    switcherColor: '#A78BFA',
+    mutedColor: '#7a6aa0',
+    tintClass: 'text-violet-400',
+    defaultSize: { width: 760, height: 480 },
+    minimumSize: { width: 360, height: 320 },
+    ghostSvg: ghost('rgb(167,139,250)', '<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"/>'),
+    canLiveOnCanvas: true,
+  },
   canvas: {
     type: 'canvas',
     label: 'Canvas',

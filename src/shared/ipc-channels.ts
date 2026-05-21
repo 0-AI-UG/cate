@@ -176,6 +176,63 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 // Page capture
 export const CAPTURE_PAGE = 'capture-page'
 
+// Pi agent (renderer <-> main)
+export const AGENT_CREATE = 'agent:create'           // renderer -> main
+export const AGENT_PROMPT = 'agent:prompt'           // renderer -> main
+export const AGENT_INTERRUPT = 'agent:interrupt'     // renderer -> main
+export const AGENT_DISPOSE = 'agent:dispose'         // renderer -> main
+export const AGENT_SET_MODEL = 'agent:setModel'      // renderer -> main
+export const AGENT_GET_COMMANDS = 'agent:getCommands' // renderer -> main (skills + prompts + extension cmds)
+export const AGENT_TOOL_DECISION = 'agent:toolDecision' // renderer -> main (allow/deny pending tool call)
+export const AGENT_EVENT = 'agent:event'             // main -> renderer (forwarded pi event)
+export const AGENT_TOOL_REQUEST = 'agent:toolRequest' // main -> renderer (approval needed)
+export const AGENT_OPEN_SKILLS_FOLDER = 'agent:openSkillsFolder' // renderer -> main
+export const AGENT_OPEN_SKILL_FILE = 'agent:openSkillFile' // renderer -> main
+export const AGENT_DELETE_SKILL_FILE = 'agent:deleteSkillFile' // renderer -> main
+export const AGENT_CREATE_SKILL = 'agent:createSkill' // renderer -> main
+export const AGENT_LIST_SKILL_FILES = 'agent:listSkillFiles' // renderer -> main
+
+// Pi agent — extended RPC surface
+export const AGENT_STEER = 'agent:steer'                       // renderer -> main
+export const AGENT_FOLLOW_UP = 'agent:followUp'                // renderer -> main
+export const AGENT_SET_THINKING_LEVEL = 'agent:setThinkingLevel' // renderer -> main
+export const AGENT_COMPACT = 'agent:compact'                   // renderer -> main
+export const AGENT_SET_AUTO_COMPACTION = 'agent:setAutoCompaction'
+export const AGENT_SET_AUTO_RETRY = 'agent:setAutoRetry'
+export const AGENT_ABORT_RETRY = 'agent:abortRetry'
+export const AGENT_GET_SESSION_STATS = 'agent:getSessionStats'
+export const AGENT_GET_STATE = 'agent:getState'
+export const AGENT_EXPORT_HTML = 'agent:exportHtml'
+export const AGENT_NEW_SESSION = 'agent:newSession'
+export const AGENT_SWITCH_SESSION = 'agent:switchSession'
+export const AGENT_FORK = 'agent:fork'
+export const AGENT_CLONE = 'agent:clone'
+export const AGENT_GET_FORK_MESSAGES = 'agent:getForkMessages'
+export const AGENT_GET_LAST_ASSISTANT_TEXT = 'agent:getLastAssistantText'
+export const AGENT_SET_SESSION_NAME = 'agent:setSessionName'
+export const AGENT_GET_MESSAGES = 'agent:getMessages'
+export const AGENT_BASH = 'agent:bash'                         // renderer -> main
+export const AGENT_ABORT_BASH = 'agent:abortBash'
+export const AGENT_SET_STEERING_MODE = 'agent:setSteeringMode'
+export const AGENT_SET_FOLLOW_UP_MODE = 'agent:setFollowUpMode'
+export const AGENT_GET_AVAILABLE_MODELS = 'agent:getAvailableModels'
+export const AGENT_UI_RESPONSE = 'agent:uiResponse'            // renderer -> main (reply to extension_ui_request)
+
+// Disk-backed pi sessions (~/.pi/agent/sessions/<encoded-cwd>/*.jsonl)
+export const AGENT_LIST_SESSIONS = 'agent:listSessions'         // renderer -> main
+export const AGENT_LOAD_SESSION_MESSAGES = 'agent:loadSessionMessages' // renderer -> main
+export const AGENT_DELETE_SESSION = 'agent:deleteSession'       // renderer -> main
+
+// Pi auth / providers
+export const AUTH_LIST_PROVIDERS = 'auth:listProviders'
+export const AUTH_STATUS = 'auth:status'
+export const AUTH_OAUTH_START = 'auth:oauthStart'
+export const AUTH_OAUTH_PROMPT_REPLY = 'auth:oauthPromptReply' // renderer -> main
+export const AUTH_OAUTH_EVENT = 'auth:oauthEvent'              // main -> renderer
+export const AUTH_SAVE_API_KEY = 'auth:saveApiKey'
+export const AUTH_DELETE = 'auth:delete'
+export const AUTH_LIST_MODELS = 'auth:listModels'
+
 // Workspace management (main process is source of truth)
 export const WORKSPACE_CREATE = 'workspace:create'
 export const WORKSPACE_UPDATE = 'workspace:update'

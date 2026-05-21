@@ -1,7 +1,11 @@
 import type { Config } from 'tailwindcss'
 
 export default {
-  content: ['./index.html', './src/renderer/**/*.{ts,tsx}'],
+  content: [
+    './index.html',
+    './src/renderer/**/*.{ts,tsx}',
+    './src/agent/renderer/**/*.{ts,tsx}',
+  ],
   darkMode: 'class',
   theme: {
     extend: {
@@ -27,6 +31,7 @@ export default {
       animation: {
         'pulse-activity': 'pulseActivity 1s ease-in-out infinite alternate',
         'sidebar-view-in': 'sidebarViewIn 200ms ease-out',
+        'thinking-dot': 'thinkingDot 1.2s ease-in-out infinite',
       },
       keyframes: {
         pulseActivity: {
@@ -36,6 +41,10 @@ export default {
         sidebarViewIn: {
           '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        thinkingDot: {
+          '0%, 80%, 100%': { opacity: '0.25', transform: 'translateY(0)' },
+          '40%': { opacity: '1', transform: 'translateY(-3px)' },
         },
       },
     },

@@ -41,6 +41,9 @@
     "package:linux": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.75.4",
+    "@earendil-works/pi-ai": "^0.75.4",
+    "@earendil-works/pi-coding-agent": "^0.75.4",
     "@phosphor-icons/react": "^2.1.10",
     "@sentry/electron": "^5.11.0",
     "@xterm/addon-fit": "^0.10.0",
@@ -55,6 +58,8 @@
     "node-pty": "^1.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "simple-git": "^3.27.0",
     "use-sync-external-store": "^1.6.0",
     "zustand": "^5.0.0"

@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AppSettings, AgentState, CateWindowParams, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, Point, SessionSnapshot, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, Point, SessionSnapshot, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult } from './types'
 
 export interface NativeContextMenuItem {
   id?: string
@@ -501,6 +501,163 @@ export interface ElectronAPI {
   submitFeedback(payload: { rating: number; comment?: string }): Promise<{ ok: boolean; buffered?: boolean }>
   /** Mark the feedback prompt as dismissed without submitting. */
   dismissFeedback(): void
+
+  // ---------------------------------------------------------------------------
+  // Pi agent
+  // ---------------------------------------------------------------------------
+
+  /** Create a new agent session bound to a panel. */
+  agentCreate(options: AgentCreateOptions): Promise<{ ok: true } | { ok: false; error: string }>
+
+  /** Send a user prompt to the panel's agent. Optional images go alongside as
+   *  pi `ImageContent` blocks (base64 + mime). */
+  agentPrompt(panelId: string, text: string, images?: AgentImageAttachment[]): Promise<void>
+
+  /** Queue a steering message to deliver after the current assistant turn. */
+  agentSteer(panelId: string, text: string, images?: AgentImageAttachment[]): Promise<void>
+
+  /** Queue a follow-up message to deliver after the agent fully completes. */
+  agentFollowUp(panelId: string, text: string, images?: AgentImageAttachment[]): Promise<void>
+
+  /** Set the reasoning level (off/minimal/low/medium/high/xhigh). */
+  agentSetThinkingLevel(panelId: string, level: AgentThinkingLevel): Promise<void>
+
+  /** Manually compact session context. */
+  agentCompact(panelId: string, customInstructions?: string): Promise<unknown>
+
+  /** Enable/disable automatic compaction on context-threshold overflow. */
+  agentSetAutoCompaction(panelId: string, enabled: boolean): Promise<void>
+
+  /** Enable/disable automatic retry on transient (overload/5xx) errors. */
+  agentSetAutoRetry(panelId: string, enabled: boolean): Promise<void>
+
+  /** Abort an in-progress auto-retry (cancels backoff and stops retrying). */
+  agentAbortRetry(panelId: string): Promise<void>
+
+  /** Get token + cost + context-usage stats for the current session. */
+  agentGetSessionStats(panelId: string): Promise<AgentSessionStats>
+
+  /** Get pi's RPC session state snapshot. */
+  agentGetState(panelId: string): Promise<AgentRpcState>
+
+  /** Export the current session to an HTML file. */
+  agentExportHtml(panelId: string, outputPath?: string): Promise<{ path: string }>
+
+  /** Start a new pi session in the same RPC process. */
+  agentNewSession(panelId: string, parentSession?: string): Promise<{ cancelled: boolean }>
+
+  /** Load a different pi session file in the same RPC process. */
+  agentSwitchSession(panelId: string, sessionPath: string): Promise<{ cancelled: boolean }>
+
+  /** Fork from a specific prior user message. */
+  agentFork(panelId: string, entryId: string): Promise<{ text: string; cancelled: boolean }>
+
+  /** Clone the current active branch into a new session. */
+  agentClone(panelId: string): Promise<{ cancelled: boolean }>
+
+  /** Fork-eligible user messages (entryId + text). */
+  agentGetForkMessages(panelId: string): Promise<Array<{ entryId: string; text: string }>>
+
+  /** Text of the last assistant message (or null). */
+  agentGetLastAssistantText(panelId: string): Promise<string | null>
+
+  /** Set a display name for the current session. */
+  agentSetSessionName(panelId: string, name: string): Promise<void>
+
+  /** Get all messages in the current pi session. */
+  agentGetMessages(panelId: string): Promise<unknown[]>
+
+  /** Execute a bash command in pi (result is added to the LLM context on the
+   *  next prompt). Returns BashResult. */
+  agentBash(panelId: string, command: string): Promise<unknown>
+
+  /** Abort a running bash command. */
+  agentAbortBash(panelId: string): Promise<void>
+
+  /** Control how steering messages drain. */
+  agentSetSteeringMode(panelId: string, mode: 'all' | 'one-at-a-time'): Promise<void>
+
+  /** Control how follow-up messages drain. */
+  agentSetFollowUpMode(panelId: string, mode: 'all' | 'one-at-a-time'): Promise<void>
+
+  /** Pi-derived list of available models (richer than authListModels). */
+  agentGetAvailableModels(panelId: string): Promise<Array<{ provider: string; id: string; contextWindow: number; reasoning: boolean }>>
+
+  /** Reply to a pending extension UI request (fire-and-forget). */
+  agentUiResponse(panelId: string, response: AgentExtensionUIResponse): void
+
+  /** List pi sessions on disk for a given workspace cwd. Newest first. */
+  agentListSessions(cwd: string): Promise<AgentSessionListEntry[]>
+
+  /** Load a pi session file from disk and return a renderer-shape transcript. */
+  agentLoadSessionMessages(sessionFile: string): Promise<unknown[]>
+
+  /** Delete a pi session file from disk. Refuses paths outside ~/.pi/agent/sessions. */
+  agentDeleteSession(sessionFile: string): Promise<void>
+
+  /** Interrupt the running agent (cancels current turn). */
+  agentInterrupt(panelId: string): Promise<void>
+
+  /** Dispose the agent session for this panel. */
+  agentDispose(panelId: string): Promise<void>
+
+  /** Change the model used by an existing agent session. */
+  agentSetModel(panelId: string, model: AgentModelRef): Promise<void>
+
+  /** Available slash commands (skills, prompt templates, extension commands). */
+  agentGetCommands(panelId: string): Promise<AgentSlashCommand[]>
+
+  /** Approve or deny a pending tool call. */
+  agentToolDecision(panelId: string, toolCallId: string, decision: 'allow' | 'deny', reason?: string): Promise<void>
+
+  /** Open ~/.pi/agent/{agents|prompts} in the OS file manager. */
+  agentOpenSkillsFolder(kind: 'agents' | 'prompts' | 'skills'): Promise<void>
+
+  /** Open a single skill/prompt/agent file in the OS default editor. */
+  agentOpenSkillFile(filePath: string): Promise<void>
+
+  /** Delete a skill/prompt/agent file. Only allowed under ~/.pi/agent. */
+  agentDeleteSkillFile(filePath: string): Promise<void>
+
+  /** Create a new skill/prompt file from a template, then open it. */
+  agentCreateSkill(kind: 'agents' | 'prompts' | 'skills', name: string): Promise<string>
+
+  /** List user files under ~/.pi/agent/{agents|prompts}. */
+  agentListSkillFiles(kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>>
+
+  /** Stream of agent events forwarded from the main process. */
+  onAgentEvent(callback: (envelope: AgentEventEnvelope) => void): () => void
+
+  /** Tool-call approvals requested by the agent. */
+  onAgentToolRequest(callback: (req: AgentToolApprovalRequest) => void): () => void
+
+  // ---------------------------------------------------------------------------
+  // Pi auth / providers
+  // ---------------------------------------------------------------------------
+
+  /** List all known providers (built-in + custom). */
+  authListProviders(): Promise<AuthProviderDescriptor[]>
+
+  /** Get current connection status for each provider. */
+  authStatus(): Promise<AuthProviderStatus[]>
+
+  /** Begin an OAuth login flow for the given provider. Returns when done or errored. */
+  authOAuthStart(providerId: string): Promise<{ ok: true } | { ok: false; error: string }>
+
+  /** Reply to an OAuth interactive prompt (text or selected option id). */
+  authOAuthPromptReply(promptId: string, value: string | null): Promise<void>
+
+  /** Subscribe to OAuth flow events for the in-app login UI. */
+  onAuthOAuthEvent(callback: (providerId: string, event: OAuthFlowEvent) => void): () => void
+
+  /** Save an API key for a built-in keyed provider (encrypted via safeStorage). */
+  authSaveApiKey(providerId: string, apiKey: string): Promise<void>
+
+  /** Disconnect a provider (clears stored credentials). */
+  authDelete(providerId: string): Promise<void>
+
+  /** List available models per provider (for the model picker). */
+  authListModels(): Promise<Array<{ provider: string; model: string; label?: string }>>
 }
 
 declare global {

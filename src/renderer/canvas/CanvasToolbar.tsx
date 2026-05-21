@@ -10,6 +10,7 @@ import {
   FileText,
   Minus,
   Plus,
+  Sparkle,
   Square,
   ArrowsOutSimple,
   DotsThree,
@@ -27,6 +28,7 @@ interface CanvasToolbarProps {
   onNewTerminal: () => void
   onNewBrowser: () => void
   onNewEditor: () => void
+  onNewAgent: () => void
   onNewCanvas: () => void
   onNewRegion: () => void
   onAutoLayout: () => void
@@ -78,6 +80,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onNewTerminal,
   onNewBrowser,
   onNewEditor,
+  onNewAgent,
   onNewCanvas,
   onNewRegion,
   onAutoLayout,
@@ -164,6 +167,9 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             </ToolbarButton>
             <ToolbarButton onClick={onNewEditor} title="Editor" size="panel">
               <FileText size={14} />
+            </ToolbarButton>
+            <ToolbarButton onClick={onNewAgent} title="Pi Agent" size="panel">
+              <Sparkle size={14} weight="fill" />
             </ToolbarButton>
 
             {/* Divider */}

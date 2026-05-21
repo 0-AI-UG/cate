@@ -21,6 +21,7 @@ import {
   TreeStructure,
   SquaresFour,
   List,
+  Sparkle,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import type { PanelType, Point } from '../../shared/types'
@@ -42,6 +43,7 @@ const GitPanel = React.lazy(() => import('./GitPanel'))
 const FileExplorerPanel = React.lazy(() => import('./FileExplorerPanel'))
 const ProjectListPanel = React.lazy(() => import('./ProjectListPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
+const AgentPanel = React.lazy(() => import('../../agent/renderer/AgentPanel'))
 
 // -----------------------------------------------------------------------------
 // Renderer definition
@@ -126,6 +128,13 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: CanvasPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
       useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null,
+  },
+  agent: {
+    ...PANEL_DEFINITIONS.agent,
+    icon: Sparkle,
+    Component: AgentPanel,
+    create: ({ workspaceId, canvasPoint, placement }) =>
+      useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null,
   },
 }
 

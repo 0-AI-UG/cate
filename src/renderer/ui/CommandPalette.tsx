@@ -16,6 +16,7 @@ import {
   ArrowsOutSimple,
   Square,
   FloppyDisk,
+  Sparkle,
 } from '@phosphor-icons/react'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
@@ -46,6 +47,7 @@ const ZoomResetIcon = () => <MagnifyingGlass size={ICON_SIZE} />
 const ZoomToFitIcon = () => <ArrowsOutSimple size={ICON_SIZE} />
 const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
+const AgentIcon = () => <Sparkle size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
 // Component
@@ -60,6 +62,7 @@ export const CommandPalette: React.FC = () => {
   const createBrowser = useAppStore((s) => s.createBrowser)
   const createEditor = useAppStore((s) => s.createEditor)
   const createCanvas = useAppStore((s) => s.createCanvas)
+  const createAgent = useAppStore((s) => s.createAgent)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const setActiveRightSidebarView = useUIStore((s) => s.setActiveRightSidebarView)
   const canvasApi = useCanvasStoreApi()
@@ -113,6 +116,13 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '\u2318\u21E7E',
         icon: <FileTextIcon />,
         action: () => createEditor(selectedWorkspaceId, undefined, undefined, dockCenter),
+      },
+      {
+        id: 'newAgent',
+        title: 'New Pi Agent',
+        shortcutText: '',
+        icon: <AgentIcon />,
+        action: () => createAgent(selectedWorkspaceId, undefined, dockCenter),
       },
       {
         id: 'newCanvas',
@@ -184,6 +194,7 @@ export const CommandPalette: React.FC = () => {
       createBrowser,
       createEditor,
       createCanvas,
+      createAgent,
       toggleSidebar,
       setActiveRightSidebarView,
       setShowNodeSwitcher,

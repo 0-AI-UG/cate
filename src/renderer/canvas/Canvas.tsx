@@ -273,6 +273,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       items.push(
         { id: 'new-editor', label: 'New Editor' },
         { id: 'new-browser', label: 'New Browser' },
+        { id: 'new-agent', label: 'New Pi Agent' },
         { id: 'new-canvas', label: 'New Canvas' },
         { type: 'separator' as const },
       )
@@ -310,6 +311,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           break
         case 'new-editor': onCreateAtPoint?.('editor', point); break
         case 'new-browser': onCreateAtPoint?.('browser', point); break
+        case 'new-agent': onCreateAtPoint?.('agent', point); break
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
         case 'new-region':
           canvasApi.getState().addRegion('Region', point, { width: 400, height: 300 })

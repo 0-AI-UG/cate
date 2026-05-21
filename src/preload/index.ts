@@ -114,6 +114,55 @@ import {
   ANALYTICS_FEEDBACK_PROMPT,
   ANALYTICS_FEEDBACK_SUBMIT,
   ANALYTICS_FEEDBACK_DISMISS,
+  AGENT_CREATE,
+  AGENT_PROMPT,
+  AGENT_INTERRUPT,
+  AGENT_DISPOSE,
+  AGENT_SET_MODEL,
+  AGENT_GET_COMMANDS,
+  AGENT_TOOL_DECISION,
+  AGENT_EVENT,
+  AGENT_TOOL_REQUEST,
+  AGENT_OPEN_SKILLS_FOLDER,
+  AGENT_OPEN_SKILL_FILE,
+  AGENT_DELETE_SKILL_FILE,
+  AGENT_CREATE_SKILL,
+  AGENT_LIST_SKILL_FILES,
+  AGENT_STEER,
+  AGENT_FOLLOW_UP,
+  AGENT_SET_THINKING_LEVEL,
+  AGENT_COMPACT,
+  AGENT_SET_AUTO_COMPACTION,
+  AGENT_SET_AUTO_RETRY,
+  AGENT_ABORT_RETRY,
+  AGENT_GET_SESSION_STATS,
+  AGENT_GET_STATE,
+  AGENT_EXPORT_HTML,
+  AGENT_NEW_SESSION,
+  AGENT_SWITCH_SESSION,
+  AGENT_FORK,
+  AGENT_CLONE,
+  AGENT_GET_FORK_MESSAGES,
+  AGENT_GET_LAST_ASSISTANT_TEXT,
+  AGENT_SET_SESSION_NAME,
+  AGENT_GET_MESSAGES,
+  AGENT_BASH,
+  AGENT_ABORT_BASH,
+  AGENT_SET_STEERING_MODE,
+  AGENT_SET_FOLLOW_UP_MODE,
+  AGENT_GET_AVAILABLE_MODELS,
+  AGENT_UI_RESPONSE,
+  AGENT_LIST_SESSIONS,
+  AGENT_LOAD_SESSION_MESSAGES,
+  AGENT_DELETE_SESSION,
+  AUTH_LIST_PROVIDERS,
+  AUTH_STATUS,
+  AUTH_OAUTH_START,
+  AUTH_OAUTH_PROMPT_REPLY,
+  AUTH_OAUTH_EVENT,
+  AUTH_SAVE_API_KEY,
+  AUTH_DELETE,
+  AUTH_LIST_MODELS,
 } from '../shared/ipc-channels'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
@@ -826,5 +875,217 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   dismissFeedback(): void {
     ipcRenderer.send(ANALYTICS_FEEDBACK_DISMISS)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Pi agent
+  // ---------------------------------------------------------------------------
+
+  agentCreate(options: unknown): Promise<unknown> {
+    return ipcRenderer.invoke(AGENT_CREATE, options)
+  },
+
+  agentPrompt(panelId: string, text: string, images?: unknown[]): Promise<void> {
+    return ipcRenderer.invoke(AGENT_PROMPT, panelId, text, images)
+  },
+
+  agentSteer(panelId: string, text: string, images?: unknown[]): Promise<void> {
+    return ipcRenderer.invoke(AGENT_STEER, panelId, text, images)
+  },
+
+  agentFollowUp(panelId: string, text: string, images?: unknown[]): Promise<void> {
+    return ipcRenderer.invoke(AGENT_FOLLOW_UP, panelId, text, images)
+  },
+
+  agentSetThinkingLevel(panelId: string, level: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_SET_THINKING_LEVEL, panelId, level)
+  },
+
+  agentCompact(panelId: string, customInstructions?: string): Promise<unknown> {
+    return ipcRenderer.invoke(AGENT_COMPACT, panelId, customInstructions)
+  },
+
+  agentSetAutoCompaction(panelId: string, enabled: boolean): Promise<void> {
+    return ipcRenderer.invoke(AGENT_SET_AUTO_COMPACTION, panelId, enabled)
+  },
+
+  agentSetAutoRetry(panelId: string, enabled: boolean): Promise<void> {
+    return ipcRenderer.invoke(AGENT_SET_AUTO_RETRY, panelId, enabled)
+  },
+
+  agentAbortRetry(panelId: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_ABORT_RETRY, panelId)
+  },
+
+  agentGetSessionStats(panelId: string): Promise<unknown> {
+    return ipcRenderer.invoke(AGENT_GET_SESSION_STATS, panelId)
+  },
+
+  agentGetState(panelId: string): Promise<unknown> {
+    return ipcRenderer.invoke(AGENT_GET_STATE, panelId)
+  },
+
+  agentExportHtml(panelId: string, outputPath?: string): Promise<{ path: string }> {
+    return ipcRenderer.invoke(AGENT_EXPORT_HTML, panelId, outputPath)
+  },
+
+  agentNewSession(panelId: string, parentSession?: string): Promise<{ cancelled: boolean }> {
+    return ipcRenderer.invoke(AGENT_NEW_SESSION, panelId, parentSession)
+  },
+
+  agentSwitchSession(panelId: string, sessionPath: string): Promise<{ cancelled: boolean }> {
+    return ipcRenderer.invoke(AGENT_SWITCH_SESSION, panelId, sessionPath)
+  },
+
+  agentFork(panelId: string, entryId: string): Promise<{ text: string; cancelled: boolean }> {
+    return ipcRenderer.invoke(AGENT_FORK, panelId, entryId)
+  },
+
+  agentClone(panelId: string): Promise<{ cancelled: boolean }> {
+    return ipcRenderer.invoke(AGENT_CLONE, panelId)
+  },
+
+  agentGetForkMessages(panelId: string): Promise<Array<{ entryId: string; text: string }>> {
+    return ipcRenderer.invoke(AGENT_GET_FORK_MESSAGES, panelId)
+  },
+
+  agentGetLastAssistantText(panelId: string): Promise<string | null> {
+    return ipcRenderer.invoke(AGENT_GET_LAST_ASSISTANT_TEXT, panelId)
+  },
+
+  agentSetSessionName(panelId: string, name: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_SET_SESSION_NAME, panelId, name)
+  },
+
+  agentGetMessages(panelId: string): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_GET_MESSAGES, panelId)
+  },
+
+  agentBash(panelId: string, command: string): Promise<unknown> {
+    return ipcRenderer.invoke(AGENT_BASH, panelId, command)
+  },
+
+  agentAbortBash(panelId: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_ABORT_BASH, panelId)
+  },
+
+  agentSetSteeringMode(panelId: string, mode: 'all' | 'one-at-a-time'): Promise<void> {
+    return ipcRenderer.invoke(AGENT_SET_STEERING_MODE, panelId, mode)
+  },
+
+  agentSetFollowUpMode(panelId: string, mode: 'all' | 'one-at-a-time'): Promise<void> {
+    return ipcRenderer.invoke(AGENT_SET_FOLLOW_UP_MODE, panelId, mode)
+  },
+
+  agentGetAvailableModels(panelId: string): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_GET_AVAILABLE_MODELS, panelId)
+  },
+
+  agentUiResponse(panelId: string, response: unknown): void {
+    ipcRenderer.send(AGENT_UI_RESPONSE, panelId, response)
+  },
+
+  agentListSessions(cwd: string): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_LIST_SESSIONS, cwd)
+  },
+
+  agentLoadSessionMessages(sessionFile: string): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_LOAD_SESSION_MESSAGES, sessionFile)
+  },
+
+  agentDeleteSession(sessionFile: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_DELETE_SESSION, sessionFile)
+  },
+
+  agentInterrupt(panelId: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_INTERRUPT, panelId)
+  },
+
+  agentDispose(panelId: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_DISPOSE, panelId)
+  },
+
+  agentSetModel(panelId: string, model: unknown): Promise<void> {
+    return ipcRenderer.invoke(AGENT_SET_MODEL, panelId, model)
+  },
+
+  agentGetCommands(panelId: string): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_GET_COMMANDS, panelId)
+  },
+
+  agentToolDecision(panelId: string, toolCallId: string, decision: 'allow' | 'deny', reason?: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_TOOL_DECISION, panelId, toolCallId, decision, reason)
+  },
+
+  agentOpenSkillsFolder(kind: 'agents' | 'prompts' | 'skills'): Promise<void> {
+    return ipcRenderer.invoke(AGENT_OPEN_SKILLS_FOLDER, kind)
+  },
+
+  agentOpenSkillFile(filePath: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_OPEN_SKILL_FILE, filePath)
+  },
+
+  agentDeleteSkillFile(filePath: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_DELETE_SKILL_FILE, filePath)
+  },
+
+  agentCreateSkill(kind: 'agents' | 'prompts' | 'skills', name: string): Promise<string> {
+    return ipcRenderer.invoke(AGENT_CREATE_SKILL, kind, name)
+  },
+
+  agentListSkillFiles(kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>> {
+    return ipcRenderer.invoke(AGENT_LIST_SKILL_FILES, kind)
+  },
+
+  onAgentEvent(callback: (envelope: unknown) => void): () => void {
+    const listener = (_e: Electron.IpcRendererEvent, envelope: unknown): void => { callback(envelope) }
+    ipcRenderer.on(AGENT_EVENT, listener)
+    return () => { ipcRenderer.removeListener(AGENT_EVENT, listener) }
+  },
+
+  onAgentToolRequest(callback: (req: unknown) => void): () => void {
+    const listener = (_e: Electron.IpcRendererEvent, req: unknown): void => { callback(req) }
+    ipcRenderer.on(AGENT_TOOL_REQUEST, listener)
+    return () => { ipcRenderer.removeListener(AGENT_TOOL_REQUEST, listener) }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Pi auth / providers
+  // ---------------------------------------------------------------------------
+
+  authListProviders(): Promise<unknown[]> {
+    return ipcRenderer.invoke(AUTH_LIST_PROVIDERS)
+  },
+
+  authStatus(): Promise<unknown[]> {
+    return ipcRenderer.invoke(AUTH_STATUS)
+  },
+
+  authOAuthStart(providerId: string): Promise<unknown> {
+    return ipcRenderer.invoke(AUTH_OAUTH_START, providerId)
+  },
+
+  authOAuthPromptReply(promptId: string, value: string | null): Promise<void> {
+    return ipcRenderer.invoke(AUTH_OAUTH_PROMPT_REPLY, promptId, value)
+  },
+
+  onAuthOAuthEvent(callback: (providerId: string, event: unknown) => void): () => void {
+    const listener = (_e: Electron.IpcRendererEvent, providerId: string, event: unknown): void => {
+      callback(providerId, event)
+    }
+    ipcRenderer.on(AUTH_OAUTH_EVENT, listener)
+    return () => { ipcRenderer.removeListener(AUTH_OAUTH_EVENT, listener) }
+  },
+
+  authSaveApiKey(providerId: string, apiKey: string): Promise<void> {
+    return ipcRenderer.invoke(AUTH_SAVE_API_KEY, providerId, apiKey)
+  },
+
+  authDelete(providerId: string): Promise<void> {
+    return ipcRenderer.invoke(AUTH_DELETE, providerId)
+  },
+
+  authListModels(): Promise<unknown[]> {
+    return ipcRenderer.invoke(AUTH_LIST_MODELS)
   },
 })
