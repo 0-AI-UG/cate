@@ -8,7 +8,7 @@ import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
-import { useDockDragStore } from './useDockDrag'
+import { useDragStore } from '../drag'
 import { viewToCanvas } from '../lib/coordinates'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
 import type { Point } from '../../shared/types'
@@ -123,8 +123,8 @@ export function useCanvasInteraction(
   // Subscribed on the store so the rAF/timer state is killed at the moment
   // `isDragging` transitions to true, not on a re-render.
   useEffect(() => {
-    let prev = useDockDragStore.getState().isDragging
-    return useDockDragStore.subscribe((s) => {
+    let prev = useDragStore.getState().isDragging
+    return useDragStore.subscribe((s) => {
       if (s.isDragging && !prev) cancelAllAnimations()
       prev = s.isDragging
     })
@@ -175,7 +175,7 @@ export function useCanvasInteraction(
       // commonly fire alongside a mouse drag and would otherwise zoom/pan the
       // canvas mid-drag, causing the ghost to misalign and the drop to land
       // far from the cursor.
-      if (useDockDragStore.getState().isDragging) {
+      if (useDragStore.getState().isDragging) {
         e.preventDefault()
         return
       }

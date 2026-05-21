@@ -10,6 +10,7 @@ import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
+import { terminalRegistry } from '../lib/terminalRegistry'
 
 // -----------------------------------------------------------------------------
 // Panel jump helper — focus a panel inside a workspace, switching workspace
@@ -231,9 +232,27 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return ids
   }, [liveCanvasPanelIds, workspace.canvasNodes])
 
-  // Map terminal panel id → agent state for activity dots
-  const agentStateByPanel = wsStatus?.agentState ?? {}
-  const portsByPanel = wsStatus?.listeningPorts ?? {}
+  // Agent state in the status store is keyed by ptyId, but panel rows are
+  // keyed by panelId. Translate via terminalRegistry so the awaiting/running
+  // indicators on the workspace overview actually light up.
+  const agentStateByPty = wsStatus?.agentState ?? {}
+  const portsByPty = wsStatus?.listeningPorts ?? {}
+  const agentStateByPanel = useMemo(() => {
+    const out: Record<string, AgentState> = {}
+    for (const [ptyId, state] of Object.entries(agentStateByPty)) {
+      const pid = terminalRegistry.panelIdForPty(ptyId)
+      if (pid) out[pid] = state
+    }
+    return out
+  }, [agentStateByPty])
+  const portsByPanel = useMemo(() => {
+    const out: Record<string, number[]> = {}
+    for (const [ptyId, ports] of Object.entries(portsByPty)) {
+      const pid = terminalRegistry.panelIdForPty(ptyId)
+      if (pid) out[pid] = ports
+    }
+    return out
+  }, [portsByPty])
 
   const [isExpanded, setIsExpanded] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)

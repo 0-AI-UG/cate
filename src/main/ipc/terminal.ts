@@ -113,6 +113,21 @@ export function getTerminalOwner(terminalId: string): number | undefined {
 }
 
 /**
+ * Cross-window drop hook: arm a transfer to `targetWindowId` so the receiver's
+ * subsequent panelTransferAck flips ownership. Without this, the target's ACK
+ * is a no-op (no transferStates entry) and PTY data keeps routing to the
+ * source window, which has already released its xterm — surfacing as the
+ * "gray terminal, no input, no output" bug.
+ */
+export function handleCrossWindowDropTerminalTransfer(
+  ptyId: string | undefined,
+  targetWindowId: number,
+): void {
+  if (!ptyId) return
+  beginTerminalTransfer(ptyId, targetWindowId)
+}
+
+/**
  * Reassign a terminal to a different window (e.g. when dragging a panel out).
  */
 export function reassignTerminalWindow(terminalId: string, newWindowId: number): void {

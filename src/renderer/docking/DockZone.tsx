@@ -9,9 +9,7 @@ import { useDockStoreContext } from '../stores/DockStoreContext'
 import type { DockZonePosition, DockLayoutNode, PanelState } from '../../shared/types'
 import DockTabStack from './DockTabStack'
 import DockSplitContainer from './DockSplitContainer'
-import { registerDropZone } from '../hooks/useDockDrag'
-import { useDockDragStore } from '../hooks/useDockDrag'
-import DropZoneOverlay from './DropZoneOverlay'
+import { registerDropZone } from '../drag'
 
 interface DockZoneProps {
   position: DockZonePosition
@@ -26,9 +24,6 @@ interface DockZoneProps {
 export default function DockZone({ position, renderPanel, getPanelTitle, onClosePanel, getPanel, workspaceId, onPanelRemoved }: DockZoneProps) {
   const zone = useDockStoreContext((s) => s.zones[position])
   const zoneRef = useRef<HTMLDivElement>(null)
-
-  const isDragging = useDockDragStore((s) => s.isDragging)
-  const activeDropTarget = useDockDragStore((s) => s.activeDropTarget)
 
   // Register this zone as a drop target
   useEffect(() => {
@@ -73,12 +68,6 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
 
   if (!zone.visible) return null
 
-  // Check if this zone is the active drop target
-  const isOver =
-    isDragging &&
-    activeDropTarget?.type === 'zone' &&
-    activeDropTarget.zone === position
-
   // Center zone fills its parent (100%); side zones use fixed size
   const isCenter = position === 'center'
   const style: React.CSSProperties = isCenter
@@ -98,8 +87,6 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
         // Empty center zone — show background
         isCenter && <div className="w-full h-full" />
       )}
-      {/* Only show zone-level overlay when zone is empty (stacks handle their own) */}
-      {!zone.layout && <DropZoneOverlay activeTarget={activeDropTarget} isOver={isOver} />}
     </div>
   )
 }

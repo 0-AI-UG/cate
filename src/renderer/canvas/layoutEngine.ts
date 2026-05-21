@@ -12,7 +12,6 @@ import type {
   Rect,
   PanelType,
   CanvasNodeState,
-  CanvasAnnotation,
   CanvasRegion,
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, PANEL_MINIMUM_SIZES } from '../../shared/types'
@@ -327,12 +326,11 @@ export function autoLayout(
 }
 
 // -----------------------------------------------------------------------------
-// Auto layout (whole canvas: nodes + regions + annotations)
+// Auto layout (whole canvas: nodes + regions)
 // -----------------------------------------------------------------------------
 
 export interface AutoLayoutAllInput {
   nodes: CanvasNodeState[]
-  annotations: CanvasAnnotation[]
   regions: CanvasRegion[]
   containerWidth: number
   containerHeight?: number
@@ -363,7 +361,6 @@ function chooseTargetWidth(
 
 export interface AutoLayoutAllResult {
   nodeOrigins: Record<string, Point>
-  annotationOrigins: Record<string, Point>
   regionOrigins: Record<string, Point>
   regionSizes: Record<string, Size>
 }
@@ -373,16 +370,15 @@ export interface AutoLayoutAllResult {
  *
  *  - Nodes contained in a region are grid-packed inside that region; the
  *    region is resized to fit them (with padding + a title-bar allowance).
- *  - Free nodes (no region), regions (as super-items) and free annotations
- *    are then packed together into a top-level row-wrap grid.
+ *  - Free nodes (no region) and regions (as super-items) are then packed
+ *    together into a top-level row-wrap grid.
  *  - Existing item sizes are preserved — this only sorts & aligns.
  *
- * Ordering is stable: items are ranked by `creationIndex` (nodes), by the
- * minimum `creationIndex` of their contents (regions), or pushed to the end
- * (annotations — labels/sticky-notes trail the structural content).
+ * Ordering is stable: items are ranked by `creationIndex` (nodes) or by the
+ * minimum `creationIndex` of their contents (regions).
  */
 export function autoLayoutAll(input: AutoLayoutAllInput): AutoLayoutAllResult {
-  const { nodes, annotations, regions, containerWidth } = input
+  const { nodes, regions, containerWidth } = input
   const containerHeight = input.containerHeight ?? Math.round(containerWidth * 0.625)
   const gap = input.gap ?? 40
   const regionPad = 24
@@ -393,7 +389,6 @@ export function autoLayoutAll(input: AutoLayoutAllInput): AutoLayoutAllResult {
 
   const result: AutoLayoutAllResult = {
     nodeOrigins: {},
-    annotationOrigins: {},
     regionOrigins: {},
     regionSizes: {},
   }
@@ -472,7 +467,6 @@ export function autoLayoutAll(input: AutoLayoutAllInput): AutoLayoutAllResult {
   type SuperItem =
     | { kind: 'node'; id: string; size: Size; rank: number }
     | { kind: 'region'; id: string; size: Size; rank: number }
-    | { kind: 'annotation'; id: string; size: Size; rank: number }
 
   const supers: SuperItem[] = []
 
@@ -509,17 +503,6 @@ export function autoLayoutAll(input: AutoLayoutAllInput): AutoLayoutAllResult {
     result.regionSizes[region.id] = { width, height }
   }
 
-  // Annotations rank after everything else, sticky notes before text labels,
-  // preserving their input order inside each bucket.
-  const annSorted = [
-    ...annotations.filter((a) => a.type === 'stickyNote'),
-    ...annotations.filter((a) => a.type === 'textLabel'),
-  ]
-  let annRank = Number.MAX_SAFE_INTEGER
-  for (const a of annSorted) {
-    supers.push({ kind: 'annotation', id: a.id, size: a.size, rank: annRank++ })
-  }
-
   supers.sort((a, b) => a.rank - b.rank)
 
   // ---- Pack super-items into a balanced grid -------------------------------
@@ -547,8 +530,6 @@ export function autoLayoutAll(input: AutoLayoutAllInput): AutoLayoutAllResult {
     const abs: Point = { x: baseX + rel.x, y: baseY + rel.y }
     if (s.kind === 'node') {
       result.nodeOrigins[s.id] = abs
-    } else if (s.kind === 'annotation') {
-      result.annotationOrigins[s.id] = abs
     } else {
       result.regionOrigins[s.id] = abs
       // Place contained nodes relative to region's inner content area.

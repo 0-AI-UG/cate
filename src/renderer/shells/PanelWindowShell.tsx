@@ -8,6 +8,7 @@ import { X, Terminal, FileText, Globe, Square } from '@phosphor-icons/react'
 import type { PanelState, PanelTransferSnapshot } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { terminalRestoreData } from '../lib/session'
+import { DragOverlay, setupCrossWindowDragListeners, useDragOp } from '../drag'
 
 const TerminalPanel = React.lazy(() => import('../panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
@@ -89,6 +90,12 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
     }
   }, [panel])
 
+  useEffect(() => {
+    return setupCrossWindowDragListeners()
+  }, [])
+
+  const { handleDragStart } = useDragOp()
+
   // If we have panel info from query params but no transfer yet, show a loading state
   const displayPanel = panel
 
@@ -101,6 +108,25 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
     window.electronAPI.panelWindowDockBack()
   }, [])
 
+  /** Mousedown on the title bar starts a cross-window drag of this panel.
+   *  When the cursor leaves the window, useDragOp emits cross-window-start,
+   *  and the main process hands the cursor's snapshot to other windows. On a
+   *  successful claim, commit's removeFromSource closes this window. */
+  const handleTitleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!displayPanel) return
+      if (e.button !== 0) return
+      handleDragStart(e, {
+        kind: 'panel-window',
+        panelId: displayPanel.id,
+        panelType: displayPanel.type,
+        panelTitle: displayPanel.title ?? '',
+        panel: displayPanel,
+      })
+    },
+    [displayPanel, handleDragStart],
+  )
+
   if (!displayPanel) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-surface-4 text-muted">
@@ -111,16 +137,26 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
 
   return (
     <div className="h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
-      {/* Custom title bar — serves as drag handle */}
+      {/* Custom title bar.
+       *  - Right side (title + close): -webkit-app-region: drag → OS-native
+       *    window move (so the user can still reposition the panel window).
+       *  - Left grip (panel icon): no-drag + onMouseDown → initiates a
+       *    cross-window panel drag, so the user can dock this panel back
+       *    into the main app or onto another Cate window. */}
       <div
         className="flex items-center h-8 px-2 bg-titlebar-bg border-b border-subtle select-none shrink-0"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         onDoubleClick={handleTitleDoubleClick}
       >
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        <div
+          className="flex items-center justify-center w-5 h-5 mr-1 rounded hover:bg-hover cursor-grab active:cursor-grabbing"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          onMouseDown={handleTitleMouseDown}
+          title="Drag to dock"
+        >
           <PanelTypeIcon type={displayPanel.type} />
-          <span className="text-xs text-secondary truncate">{displayPanel.title}</span>
         </div>
+        <span className="text-xs text-secondary truncate flex-1 min-w-0">{displayPanel.title}</span>
         <button
           className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-muted hover:text-primary transition-colors"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -130,6 +166,8 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
           <X size={10} />
         </button>
       </div>
+
+      <DragOverlay />
 
       {/* Panel content */}
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">

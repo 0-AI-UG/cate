@@ -62,24 +62,6 @@ export function useShortcuts(): void {
         return
       }
 
-      if (action === 'addImageToCanvas') {
-        const paths = await window.electronAPI.openImageDialog()
-        if (!paths || paths.length === 0) return
-        const cs = canvasStore()
-        // Drop the image at the current view-center, in canvas coordinates.
-        const { viewportOffset, zoomLevel, containerSize } = cs
-        const center = {
-          x: (containerSize.width / 2 - viewportOffset.x) / zoomLevel,
-          y: (containerSize.height / 2 - viewportOffset.y) / zoomLevel,
-        }
-        let offset = 0
-        for (const p of paths) {
-          cs.addImageAnnotation({ x: center.x + offset, y: center.y + offset }, p)
-          offset += 32
-        }
-        return
-      }
-
       switch (action as ShortcutAction) {
         case 'newTerminal': {
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)

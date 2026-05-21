@@ -9,9 +9,6 @@ import type { StoreApi } from 'zustand'
 import type {
   CanvasNodeId,
   CanvasNodeState,
-  CanvasAnnotation,
-  CanvasConnection,
-  CanvasDrawing,
   CanvasRegion,
   DockLayoutNode,
   Point,
@@ -37,20 +34,6 @@ import { viewToCanvas as viewToCanvasCoords } from '../lib/coordinates'
 export interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
-  annotations: Record<string, CanvasAnnotation>
-  /** Maestri-style undirected wires between canvas nodes. Used both for the
-   *  dotted-line rendering and for the orchestrator's `cate ask` auth check. */
-  connections: Record<string, CanvasConnection>
-  /** Freehand pen strokes laid down with the draw tool. */
-  drawings: Record<string, CanvasDrawing>
-  /** True when the draw tool is active — canvas mouse events become stroke
-   *  capture instead of pan/marquee. Transient, never persisted. */
-  drawMode: boolean
-  /** Currently-selected drawing (for click-to-select-then-delete). */
-  selectedDrawingId: string | null
-  /** Connection ids that currently have an in-flight `cate ask` — used to
-   *  brighten / animate the wire on the canvas. Transient, never persisted. */
-  inFlightConnectionIds: Set<string>
   viewportOffset: Point
   zoomLevel: number
   focusedNodeId: CanvasNodeId | null
@@ -68,7 +51,7 @@ export interface CanvasStoreState {
   selectedRegionIds: Set<string>
   /** Region currently being hovered as a drop target during a node drag. */
   dropTargetRegionId: string | null
-  /** Undo history — snapshots of {nodes, regions, annotations}. */
+  /** Undo history — snapshots of {nodes, regions}. */
   history: CanvasHistoryEntry[]
   /** Redo stack — populated when undo() is called. */
   future: CanvasHistoryEntry[]
@@ -77,8 +60,6 @@ export interface CanvasStoreState {
 export interface CanvasHistoryEntry {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
-  annotations: Record<string, CanvasAnnotation>
-  drawings: Record<string, CanvasDrawing>
   focusedNodeId: CanvasNodeId | null
 }
 
@@ -166,31 +147,6 @@ export interface CanvasStoreActions {
   tidyGridSelected: (gap?: number) => void
   dissolveRegion: (regionId: string) => void
 
-  // Connection management — Maestri-style wires between nodes
-  addConnection: (from: CanvasNodeId, to: CanvasNodeId) => string | null
-  removeConnection: (id: string) => void
-  setInflightConnection: (id: string, active: boolean) => void
-
-  // Annotation management
-  addAnnotation: (type: 'stickyNote' | 'textLabel', origin: Point, content?: string) => string
-  addImageAnnotation: (origin: Point, imagePath: string, size?: { width: number; height: number }) => string
-  removeAnnotation: (id: string) => void
-  moveAnnotation: (id: string, origin: Point) => void
-  updateAnnotation: (id: string, content: string) => void
-  updateAnnotationColor: (id: string, color: string) => void
-  setAnnotationFontSize: (id: string, fontSize: 'sm' | 'md' | 'lg' | 'xl') => void
-  setAnnotationBold: (id: string, bold: boolean) => void
-  setAnnotationFontSizePx: (id: string, fontSizePx: number) => void
-  resizeAnnotation: (id: string, size: { width: number; height: number }) => void
-
-  // Drawing management — freehand pen strokes
-  setDrawMode: (active: boolean) => void
-  addDrawing: (points: Point[], opts?: { color?: string; strokeWidth?: number }) => string
-  removeDrawing: (id: string) => void
-  selectDrawing: (id: string | null) => void
-  moveDrawing: (id: string, delta: Point) => void
-  setDrawingColor: (id: string, color: string) => void
-
   // Per-node dock layout — replaces split/stack actions. Each canvas node owns
   // a tree (rendered via the dock primitives) that lives here as serialised
   // state. The per-node DockStore in CanvasNodeWrapper writes back via this.
@@ -209,23 +165,7 @@ export interface CanvasStoreActions {
     zoomLevel: number,
     focusedNodeId: CanvasNodeId | null,
     regions?: Record<string, CanvasRegion>,
-    annotations?: Record<string, CanvasAnnotation>,
-    connections?: Record<string, CanvasConnection>,
   ) => void
-}
-
-// -----------------------------------------------------------------------------
-// Pending auto-edit annotations — module-level set so newly-created annotations
-// enter edit mode automatically on first render (no store churn).
-// -----------------------------------------------------------------------------
-
-const pendingEditAnnotations = new Set<string>()
-export function consumePendingAnnotationEdit(id: string): boolean {
-  if (pendingEditAnnotations.has(id)) {
-    pendingEditAnnotations.delete(id)
-    return true
-  }
-  return false
 }
 
 export type CanvasStore = CanvasStoreState & CanvasStoreActions
@@ -357,12 +297,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   // --- State ---
   nodes: {},
   regions: {},
-  annotations: {},
-  connections: {},
-  drawings: {},
-  drawMode: false,
-  selectedDrawingId: null,
-  inFlightConnectionIds: new Set<string>(),
   viewportOffset: { x: 0, y: 0 },
   zoomLevel: ZOOM_DEFAULT,
   focusedNodeId: null,
@@ -385,8 +319,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const entry: CanvasHistoryEntry = {
       nodes: state.nodes,
       regions: state.regions,
-      annotations: state.annotations,
-      drawings: state.drawings,
       focusedNodeId: state.focusedNodeId,
     }
     const MAX = 100
@@ -403,15 +335,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const current: CanvasHistoryEntry = {
       nodes: state.nodes,
       regions: state.regions,
-      annotations: state.annotations,
-      drawings: state.drawings,
       focusedNodeId: state.focusedNodeId,
     }
     set({
       nodes: prev.nodes,
       regions: prev.regions,
-      annotations: prev.annotations,
-      drawings: prev.drawings ?? {},
       focusedNodeId: prev.focusedNodeId,
       history: state.history.slice(0, -1),
       future: [...state.future, current],
@@ -425,15 +353,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const current: CanvasHistoryEntry = {
       nodes: state.nodes,
       regions: state.regions,
-      annotations: state.annotations,
-      drawings: state.drawings,
       focusedNodeId: state.focusedNodeId,
     }
     set({
       nodes: next.nodes,
       regions: next.regions,
-      annotations: next.annotations,
-      drawings: next.drawings ?? {},
       focusedNodeId: next.focusedNodeId,
       history: [...state.history, current],
       future: state.future.slice(0, -1),
@@ -447,12 +371,28 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   addNode(panelId, panelType, position?, size?) {
     get().pushHistory()
     const state = get()
-    const nodeId = generateId()
     const defaultSize = size ?? PANEL_DEFAULT_SIZES[panelType]
-    // `position` is a preferred placement (cursor, drop point). If the spot is
-    // free we use it as-is; if it would overlap an existing node we slide to
-    // the nearest free slot. When no position is given, smart placement runs
-    // from the focused/most-recent node.
+    // Dedupe on panelId: reposition + resize + focus the existing node.
+    const existing = Object.values(state.nodes).find((n) => n.panelId === panelId)
+    if (existing) {
+      const { [existing.id]: _omit, ...otherNodes } = state.nodes
+      const nextOrigin = findFreePosition(otherNodes, existing.id, defaultSize, position)
+      set({
+        nodes: {
+          ...state.nodes,
+          [existing.id]: {
+            ...existing,
+            origin: nextOrigin,
+            size: defaultSize,
+            zOrder: state.nextZOrder,
+          },
+        },
+        nextZOrder: state.nextZOrder + 1,
+        focusedNodeId: existing.id,
+      })
+      return existing.id
+    }
+    const nodeId = generateId()
     const origin = findFreePosition(state.nodes, state.focusedNodeId, defaultSize, position)
 
     const node: CanvasNodeState = {
@@ -500,15 +440,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 
   finalizeRemoveNode(nodeId) {
     const { [nodeId]: _, ...rest } = get().nodes
-    // Drop any connections whose endpoint just disappeared. Otherwise stale
-    // edges accumulate in canvasStore and the renderer tries to draw to ids
-    // that no longer exist.
-    const conns = get().connections
-    const survivingConns: Record<string, CanvasConnection> = {}
-    for (const c of Object.values(conns)) {
-      if (c.from !== nodeId && c.to !== nodeId) survivingConns[c.id] = c
-    }
-    set({ nodes: rest, connections: survivingConns })
+    set({ nodes: rest })
   },
 
   setNodeAnimationState(nodeId, state) {
@@ -984,12 +916,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       (a, b) => a.creationIndex - b.creationIndex,
     )
     const regionList = Object.values(state.regions)
-    const annotationList = Object.values(state.annotations)
-    if (
-      nodeList.length === 0 &&
-      regionList.length === 0 &&
-      annotationList.length === 0
-    ) {
+    if (nodeList.length === 0 && regionList.length === 0) {
       return
     }
 
@@ -1001,7 +928,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       : 1000
 
     // Nodes-only path: uniform-size grid sized to the viewport.
-    if (regionList.length === 0 && annotationList.length === 0) {
+    if (regionList.length === 0) {
       const gap = 6
       const n = nodeList.length
       const aspect = containerWidth / Math.max(containerHeight, 1)
@@ -1039,7 +966,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 
     const result = computeAutoLayoutAll({
       nodes: nodeList,
-      annotations: annotationList,
       regions: regionList,
       containerWidth,
       containerHeight,
@@ -1060,17 +986,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       updatedRegions[id] = { ...updatedRegions[id], origin, size }
     }
 
-    const updatedAnnotations = { ...state.annotations }
-    for (const [id, origin] of Object.entries(result.annotationOrigins)) {
-      if (updatedAnnotations[id]) {
-        updatedAnnotations[id] = { ...updatedAnnotations[id], origin }
-      }
-    }
-
     set({
       nodes: updatedNodes,
       regions: updatedRegions,
-      annotations: updatedAnnotations,
     })
 
     // Zoom to fit after layout
@@ -1350,227 +1268,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     })
   },
 
-  addConnection(from, to) {
-    if (from === to) return null
-    const state = get()
-    // Endpoints can be either canvas nodes OR annotations (sticky notes) so
-    // that note↔terminal, note↔note and note↔portal wires work the same way
-    // as terminal↔terminal — matching Maestri's behavior.
-    const fromExists = !!state.nodes[from] || !!state.annotations[from]
-    const toExists   = !!state.nodes[to]   || !!state.annotations[to]
-    if (!fromExists || !toExists) return null
-    // No parallel duplicates. Undirected: (from,to) and (to,from) count as the same.
-    for (const c of Object.values(state.connections)) {
-      if ((c.from === from && c.to === to) || (c.from === to && c.to === from)) return c.id
-    }
-    const id = generateId()
-    set({ connections: { ...state.connections, [id]: { id, from, to } } })
-    return id
-  },
-
-  removeConnection(id) {
-    const conns = get().connections
-    if (!conns[id]) return
-    const { [id]: _, ...rest } = conns
-    // Also clear any in-flight marker so the next render doesn't try to keep
-    // pulsing a wire that no longer exists.
-    const next = new Set(get().inFlightConnectionIds)
-    next.delete(id)
-    set({ connections: rest, inFlightConnectionIds: next })
-  },
-
-  setInflightConnection(id, active) {
-    const cur = get().inFlightConnectionIds
-    if (active === cur.has(id)) return
-    const next = new Set(cur)
-    if (active) next.add(id); else next.delete(id)
-    set({ inFlightConnectionIds: next })
-  },
-
-  addAnnotation(type, origin, content) {
-    const id = generateId()
-    const annotation: CanvasAnnotation = {
-      id,
-      type,
-      origin,
-      size: type === 'stickyNote' ? { width: 180, height: 140 } : { width: 120, height: 28 },
-      content: content || '',
-      color: type === 'stickyNote' ? 'rgba(255, 221, 87, 0.92)' : 'transparent',
-      ...(type === 'textLabel' ? { autoSize: true } : {}),
-    }
-    // Mark the new annotation to enter edit mode on first render — unless the
-    // caller provided initial content (e.g. session restore).
-    if (!content) pendingEditAnnotations.add(id)
-    set((state) => ({
-      annotations: { ...state.annotations, [id]: annotation },
-    }))
-    return id
-  },
-
-  addImageAnnotation(origin, imagePath, size) {
-    const id = generateId()
-    const finalSize = size ?? { width: 400, height: 300 }
-    // Avoid dropping an image directly underneath a panel (panels render at
-    // zIndex 1000+ — an image hidden behind one looks like nothing happened).
-    // Search outward from the requested origin for a slot that doesn't overlap
-    // an existing node.
-    const state = get()
-    const safeOrigin = findFreePosition(
-      state.nodes,
-      state.focusedNodeId,
-      finalSize,
-      origin,
-    )
-    const annotation: CanvasAnnotation = {
-      id,
-      type: 'image',
-      origin: safeOrigin,
-      size: finalSize,
-      content: '',
-      color: 'transparent',
-      imagePath,
-    }
-    set((s) => ({
-      annotations: { ...s.annotations, [id]: annotation },
-    }))
-    return id
-  },
-
-  removeAnnotation(id) {
-    set((state) => {
-      const { [id]: _, ...rest } = state.annotations
-      // Drop any wires that touched this annotation so the SVG overlay doesn't
-      // try to draw to a vanished endpoint.
-      const survivingConns: Record<string, CanvasConnection> = {}
-      for (const c of Object.values(state.connections)) {
-        if (c.from !== id && c.to !== id) survivingConns[c.id] = c
-      }
-      const nextInflight = new Set(state.inFlightConnectionIds)
-      for (const cid of state.inFlightConnectionIds) {
-        if (!survivingConns[cid]) nextInflight.delete(cid)
-      }
-      return { annotations: rest, connections: survivingConns, inFlightConnectionIds: nextInflight }
-    })
-  },
-
-  moveAnnotation(id, origin) {
-    set((state) => {
-      const ann = state.annotations[id]
-      if (!ann) return state
-      return { annotations: { ...state.annotations, [id]: { ...ann, origin } } }
-    })
-  },
-
-  updateAnnotation(id, content) {
-    set((state) => {
-      const ann = state.annotations[id]
-      if (!ann) return state
-      return { annotations: { ...state.annotations, [id]: { ...ann, content } } }
-    })
-  },
-
-  updateAnnotationColor(id, color) {
-    set((state) => {
-      const ann = state.annotations[id]
-      if (!ann) return state
-      return { annotations: { ...state.annotations, [id]: { ...ann, color } } }
-    })
-  },
-
-  setAnnotationFontSize(id, fontSize) {
-    set((state) => {
-      const ann = state.annotations[id]
-      if (!ann) return state
-      return { annotations: { ...state.annotations, [id]: { ...ann, fontSize } } }
-    })
-  },
-
-  setAnnotationFontSizePx(id, fontSizePx) {
-    set((state) => {
-      const ann = state.annotations[id]
-      if (!ann) return state
-      const clamped = Math.max(6, Math.min(400, fontSizePx))
-      return { annotations: { ...state.annotations, [id]: { ...ann, fontSizePx: clamped } } }
-    })
-  },
-
-  setAnnotationBold(id, bold) {
-    set((state) => {
-      const ann = state.annotations[id]
-      if (!ann) return state
-      return { annotations: { ...state.annotations, [id]: { ...ann, bold } } }
-    })
-  },
-
-  resizeAnnotation(id, size) {
-    set((state) => {
-      const ann = state.annotations[id]
-      if (!ann) return state
-      const w = Math.max(60, size.width)
-      const h = Math.max(28, size.height)
-      return {
-        annotations: {
-          ...state.annotations,
-          [id]: { ...ann, size: { width: w, height: h }, autoSize: false },
-        },
-      }
-    })
-  },
-
-  setDrawMode(active) {
-    set({ drawMode: active })
-  },
-
-  addDrawing(points, opts) {
-    if (points.length < 2) return ''
-    get().pushHistory()
-    const id = generateId()
-    const drawing: CanvasDrawing = {
-      id,
-      points,
-      color: opts?.color ?? 'rgba(255,90,90,0.95)',
-      strokeWidth: opts?.strokeWidth ?? 3,
-    }
-    set((state) => ({ drawings: { ...state.drawings, [id]: drawing } }))
-    return id
-  },
-
-  removeDrawing(id) {
-    if (!get().drawings[id]) return
-    get().pushHistory()
-    set((state) => {
-      const { [id]: _, ...rest } = state.drawings
-      const selectedDrawingId = state.selectedDrawingId === id ? null : state.selectedDrawingId
-      return { drawings: rest, selectedDrawingId }
-    })
-  },
-
-  selectDrawing(id) {
-    set({ selectedDrawingId: id })
-  },
-
-  moveDrawing(id, delta) {
-    if (!get().drawings[id]) return
-    if (delta.x === 0 && delta.y === 0) return
-    get().pushHistory()
-    set((state) => {
-      const d = state.drawings[id]
-      if (!d) return state
-      const points = d.points.map((p) => ({ x: p.x + delta.x, y: p.y + delta.y }))
-      return { drawings: { ...state.drawings, [id]: { ...d, points } } }
-    })
-  },
-
-  setDrawingColor(id, color) {
-    if (!get().drawings[id]) return
-    get().pushHistory()
-    set((state) => {
-      const d = state.drawings[id]
-      if (!d) return state
-      return { drawings: { ...state.drawings, [id]: { ...d, color } } }
-    })
-  },
-
   setNodeDockLayout(nodeId, layout) {
     set((state) => {
       const node = state.nodes[nodeId]
@@ -1584,7 +1281,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     })
   },
 
-  loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions, annotations, connections) {
+  loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions) {
     // Compute next counters from loaded data
     const nodeList = Object.values(nodes)
     const maxZOrder = nodeList.reduce((max, n) => Math.max(max, n.zOrder), -1)
@@ -1596,18 +1293,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       idleNodes[id] = { ...node, animationState: 'idle' }
     }
 
-    // Drop any persisted connection whose endpoint node no longer exists.
-    const surviving: Record<string, CanvasConnection> = {}
-    for (const c of Object.values(connections ?? {})) {
-      if (idleNodes[c.from] && idleNodes[c.to]) surviving[c.id] = c
-    }
-
     set({
       nodes: idleNodes,
       regions: regions ?? {},
-      annotations: annotations ?? {},
-      connections: surviving,
-      inFlightConnectionIds: new Set<string>(),
       viewportOffset,
       zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
       focusedNodeId,
@@ -1629,47 +1317,49 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 export const useCanvasStore = createCanvasStore()
 
 // -----------------------------------------------------------------------------
-// Per-panel store registry — gives each CanvasPanel a stable, unique store
-// keyed by panelId. Persists across remounts so dock layout reshuffles don't
-// destroy a canvas's state. The first canvas to register aliases the legacy
-// singleton store so existing canvasOps/session restore code keeps working.
+// Per-panel store registry — registration is delegated to the DragSession's
+// canvasStores map. The session is the single source of truth for both
+// panelId → store and nodeId → store lookups (the latter via a reverse index
+// maintained by a store subscription). The local map below is kept for the
+// returned `UseBoundStore` reference identity — the session stores a
+// `StoreApi`, but consumers of this module hold `UseBoundStore` (`store(...)`).
 // -----------------------------------------------------------------------------
 
-const canvasStoresByPanelId = new Map<string, UseBoundStore<StoreApi<CanvasStore>>>()
-let defaultStoreOwnerPanelId: string | null = null
+import { getDefaultSession } from '../drag/session'
+
+const canvasBoundStoresByPanelId = new Map<string, UseBoundStore<StoreApi<CanvasStore>>>()
 
 export function getOrCreateCanvasStoreForPanel(
   panelId: string,
 ): UseBoundStore<StoreApi<CanvasStore>> {
-  const existing = canvasStoresByPanelId.get(panelId)
+  const existing = canvasBoundStoresByPanelId.get(panelId)
   if (existing) return existing
-  if (defaultStoreOwnerPanelId === null) {
-    defaultStoreOwnerPanelId = panelId
-    canvasStoresByPanelId.set(panelId, useCanvasStore)
-    return useCanvasStore
+  // First panel to register inherits the legacy singleton — keeps session-
+  // restore and sidebar code paths that read `useCanvasStore` working.
+  const session = getDefaultSession()
+  let store: UseBoundStore<StoreApi<CanvasStore>>
+  if (session.getAllCanvasStores().length === 0) {
+    store = useCanvasStore
+  } else {
+    store = createCanvasStore()
   }
-  const store = createCanvasStore()
-  canvasStoresByPanelId.set(panelId, store)
+  canvasBoundStoresByPanelId.set(panelId, store)
+  session.registerCanvasStore(panelId, store)
   return store
 }
 
 export function releaseCanvasStoreForPanel(panelId: string): void {
-  canvasStoresByPanelId.delete(panelId)
-  if (defaultStoreOwnerPanelId === panelId) defaultStoreOwnerPanelId = null
+  const store = canvasBoundStoresByPanelId.get(panelId)
+  canvasBoundStoresByPanelId.delete(panelId)
+  if (store) {
+    getDefaultSession().releaseCanvasStore(panelId, store)
+  }
 }
 
 /** Iterate every live CanvasStore (one per canvas panel currently mounted).
  *  Used by drag handlers to find the source canvas of a given node id. */
 export function getAllCanvasStores(): UseBoundStore<StoreApi<CanvasStore>>[] {
-  return Array.from(canvasStoresByPanelId.values())
-}
-
-/** Find the canvas store that currently owns the given node id, if any. */
-export function findCanvasStoreForNode(nodeId: string): UseBoundStore<StoreApi<CanvasStore>> | null {
-  for (const store of canvasStoresByPanelId.values()) {
-    if (store.getState().nodes[nodeId]) return store
-  }
-  return null
+  return Array.from(canvasBoundStoresByPanelId.values())
 }
 
 /** @deprecated Use store.getState().cancelZoomAnimation() instead */

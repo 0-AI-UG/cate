@@ -40,13 +40,10 @@ export interface CanvasOperations {
     zoomLevel: number,
     focusedNodeId: CanvasNodeId | null,
     regions?: Record<string, CanvasRegion>,
-    annotations?: Record<string, import('../../shared/types').CanvasAnnotation>,
-    connections?: Record<string, import('../../shared/types').CanvasConnection>,
   ) => void
   syncCanvasSnapshot: () => {
     nodes: Record<CanvasNodeId, CanvasNodeState>
     regions: Record<string, CanvasRegion>
-    annotations: Record<string, import('../../shared/types').CanvasAnnotation>
     viewportOffset: Point
     zoomLevel: number
     focusedNodeId: CanvasNodeId | null
@@ -125,7 +122,6 @@ function createDefaultWorkspace(name?: string, rootPath?: string): WorkspaceStat
     panels: {},
     canvasNodes: {},
     regions: {},
-    annotations: {},
     zoomLevel: ZOOM_DEFAULT,
     viewportOffset: { x: 0, y: 0 },
     focusedNodeId: null,
@@ -374,8 +370,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ws.zoomLevel,
         ws.focusedNodeId,
         ws.regions,
-        ws.annotations,
-        ws.connections,
       )
     }
     // Sync to main process
@@ -426,7 +420,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ws.zoomLevel,
           ws.focusedNodeId,
           ws.regions,
-          ws.annotations,
         )
       } catch (error) {
         log.error('Failed to load canvas for workspace:', error)
@@ -576,8 +569,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
           newWs.zoomLevel,
           newWs.focusedNodeId,
           newWs.regions,
-          newWs.annotations,
-          newWs.connections,
         )
         if (newWs.dockState) {
           useDockStore.getState().restoreSnapshot(newWs.dockState)
@@ -1062,8 +1053,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
               ...ws,
               canvasNodes: { ...canvasState.nodes },
               regions: { ...canvasState.regions },
-              annotations: { ...canvasState.annotations },
-              connections: { ...((canvasState as any).connections ?? {}) },
               viewportOffset: { ...canvasState.viewportOffset },
               zoomLevel: canvasState.zoomLevel,
               focusedNodeId: canvasState.focusedNodeId,
@@ -1150,7 +1139,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       panels: {},
       canvasNodes: {},
       regions: {},
-      annotations: {},
       zoomLevel: ZOOM_DEFAULT,
       viewportOffset: { x: 0, y: 0 },
       focusedNodeId: null,
@@ -1267,7 +1255,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
             panels: {},
             canvasNodes: {},
             regions: {},
-            annotations: {},
             zoomLevel: ZOOM_DEFAULT,
             viewportOffset: { x: 0, y: 0 },
             focusedNodeId: null,

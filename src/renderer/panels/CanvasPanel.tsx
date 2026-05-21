@@ -10,48 +10,28 @@ import { CanvasStoreProvider, useCanvasStoreContext, useCanvasStoreApi } from '.
 import Canvas from '../canvas/Canvas'
 import CanvasNode from '../canvas/CanvasNode'
 import CanvasToolbar from '../canvas/CanvasToolbar'
-import CanvasDropZone from '../docking/CanvasDropZone'
 import { ShortcutHintOverlay } from '../ui/ShortcutHintOverlay'
 import WelcomePage from '../ui/WelcomePage'
 import type { PanelType, Point, DockLayoutNode, PanelLocation, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, setActiveCanvasPanelId } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { useUIStore } from '../stores/uiStore'
 import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import { createCanvasOps } from '../lib/canvasBridge'
 import { createDockStore, type DockStore } from '../stores/dockStore'
+import {
+  registerNodeDockStore,
+  unregisterNodeDockStore,
+  getNodeDockStore,
+  findNodeDockStore,
+  findNodeIdForDockStore,
+} from './nodeDockRegistry'
 
-// ---------------------------------------------------------------------------
-// Module-level map: `${canvasPanelId}:${nodeId}` → per-node DockStore
-// ---------------------------------------------------------------------------
-const nodeStoreMap = new Map<string, StoreApi<DockStore>>()
-
-/** Find the per-node DockStore that owns a canvas node (by canvas-node id).
- *  Iterates the map because drag handlers don't know the owning canvasPanelId
- *  at the time of lookup — there's at most a handful of canvases, so the scan
- *  is cheap. */
-export function findNodeDockStore(nodeId: string): StoreApi<DockStore> | null {
-  for (const [key, store] of nodeStoreMap.entries()) {
-    if (key.endsWith(`:${nodeId}`)) return store
-  }
-  return null
-}
-
-/** Reverse lookup — given a DockStore, return the canvas-node id it backs
- *  (or null if the store isn't a per-canvas-node mini-dock). Lets drop handlers
- *  recognise drags that originated inside a canvas node and treat them as a
- *  node move instead of an undock + add. */
-export function findNodeIdForDockStore(store: StoreApi<DockStore>): string | null {
-  for (const [key, s] of nodeStoreMap.entries()) {
-    if (s === store) {
-      const idx = key.indexOf(':')
-      return idx >= 0 ? key.slice(idx + 1) : null
-    }
-  }
-  return null
-}
+// Re-export the lookup helpers so existing callers (drag dispatcher, drop
+// resolver) keep working through the same import path. New code should import
+// directly from './nodeDockRegistry' to skip the heavy CanvasPanel module.
+export { findNodeDockStore, findNodeIdForDockStore }
 
 // ---------------------------------------------------------------------------
 // Helper — walk a DockLayoutNode tree and collect panel locations
@@ -107,7 +87,7 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, render
   // ------------------------------------------------------------------
   const storeKey = `${canvasPanelId}:${nodeId}`
   const dockStoreApi = useMemo<StoreApi<DockStore>>(() => {
-    const existing = nodeStoreMap.get(storeKey)
+    const existing = getNodeDockStore(canvasPanelId, nodeId)
     if (existing) return existing
 
     const dockLayout = node?.dockLayout ?? null
@@ -121,7 +101,7 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, render
       locations: collectLocationsFromLayout(dockLayout, 'center'),
     }
     const store = createDockStore(initial)
-    nodeStoreMap.set(storeKey, store)
+    registerNodeDockStore(canvasPanelId, nodeId, store)
     return store
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeKey]) // intentionally omit node.dockLayout — seed only on first creation
@@ -150,8 +130,9 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, render
   // ------------------------------------------------------------------
   useEffect(() => {
     return () => {
-      nodeStoreMap.delete(storeKey)
+      unregisterNodeDockStore(canvasPanelId, nodeId)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeKey])
 
   // ------------------------------------------------------------------
@@ -325,28 +306,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
     store.getState().addRegion('Region', getViewCenter(), { width: 400, height: 300 })
   }, [store, getViewCenter])
 
-  const onNewStickyNote = useCallback(() => {
-    store.getState().addAnnotation('stickyNote', getViewCenter())
-  }, [store, getViewCenter])
-
-  const onNewTextLabel = useCallback(() => {
-    // Enter placement mode: the next left-click on the canvas drops the label
-    // at the click point in edit mode. Click-to-place beats auto-centering
-    // because the center is usually occupied by panels.
-    useUIStore.getState().setPlacementMode('textLabel')
-  }, [])
-
-  const onAddImage = useCallback(async (point?: { x: number; y: number }) => {
-    const paths = await window.electronAPI.openImageDialog()
-    if (!paths || paths.length === 0) return
-    const origin = point ?? getViewCenter()
-    let offset = 0
-    for (const p of paths) {
-      store.getState().addImageAnnotation({ x: origin.x + offset, y: origin.y + offset }, p)
-      offset += 32
-    }
-  }, [store, getViewCenter])
-
   const onAutoLayout = useCallback(() => {
     store.getState().autoLayout()
   }, [store])
@@ -361,7 +320,7 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
           <WelcomePage workspaceId={workspaceId} />
         )}
 
-        <Canvas onCreateAtPoint={onCreateAtPoint}>
+        <Canvas onCreateAtPoint={onCreateAtPoint} panelId={panelId}>
           {visibleNodeIds.map((nId) => (
             <CanvasNodeWrapper
               key={nId}
@@ -373,8 +332,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
           ))}
         </Canvas>
 
-        <CanvasDropZone canvasStoreApi={store} />
-
         <CanvasToolbar
           zoom={zoomLevel}
           onNewTerminal={onNewTerminal}
@@ -382,9 +339,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
           onNewEditor={onNewEditor}
           onNewCanvas={onNewCanvas}
           onNewRegion={onNewRegion}
-          onNewStickyNote={onNewStickyNote}
-          onNewTextLabel={onNewTextLabel}
-          onAddImage={() => onAddImage()}
           onAutoLayout={onAutoLayout}
           onZoomToFit={onZoomToFit}
           onZoomIn={onZoomIn}

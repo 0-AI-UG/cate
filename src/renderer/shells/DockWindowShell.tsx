@@ -10,11 +10,12 @@ import type { DockWindowInitPayload, PanelState, PanelTransferSnapshot } from '.
 import { createDockStore } from '../stores/dockStore'
 import { DockStoreProvider } from '../stores/DockStoreContext'
 import DockZone from '../docking/DockZone'
-import DragGhost from '../docking/DragGhost'
-import { setupCrossWindowDragListeners } from '../hooks/useDockDrag'
+import { DragOverlay, setupCrossWindowDragListeners } from '../drag'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { terminalRestoreData } from '../lib/session'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
+import { isDockEmpty } from './dockEmpty'
+import { shouldCloseDockWindow } from './shouldCloseDockWindow'
 
 const TerminalPanel = React.lazy(() => import('../panels/TerminalPanel'))
 const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
@@ -34,6 +35,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   const [ready, setReady] = useState(false)
   const dockStore = useMemo(() => createDockStore(), [])
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const hadPanelsRef = useRef(false)
 
   // Listen for DOCK_WINDOW_INIT from main process
   useEffect(() => {
@@ -79,17 +81,34 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // Set up cross-window drag listeners
   useEffect(() => {
     return setupCrossWindowDragListeners((snapshot, target) => {
-      // Deposit transfer data BEFORE updating state (which triggers TerminalPanel mount)
+      // PTY transfer MUST be deposited before any state set that mounts TerminalPanel.
       if (snapshot.terminalPtyId) {
         terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
       }
 
-      // A panel was dropped into this dock window from another window
       setPanels((prev) => ({
         ...prev,
         [snapshot.panel.id]: snapshot.panel,
       }))
-      dockStore.getState().dockPanel(snapshot.panel.id, target.type === 'zone' ? target.zone : 'center', target)
+
+      if (target.kind === 'dock') {
+        const dockTarget = target.target
+        target.dockStoreApi.getState().dockPanel(
+          snapshot.panel.id,
+          dockTarget.type === 'zone' ? dockTarget.zone : 'center',
+          dockTarget,
+        )
+      } else {
+        const canvasState = target.canvasStoreApi.getState()
+        const newNodeId = canvasState.addNode(
+          snapshot.panel.id,
+          snapshot.panel.type,
+          target.origin,
+          target.size,
+        )
+        target.canvasStoreApi.getState().resizeNode(newNodeId, target.size)
+        target.canvasStoreApi.getState().focusNode(newNodeId)
+      }
     })
   }, [dockStore])
 
@@ -228,23 +247,18 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     async (panelId: string) => {
       const ok = await confirmCloseDirtyPanels([panels[panelId]])
       if (!ok) return
-      // Undock from this window's dock store
       dockStore.getState().undockPanel(panelId)
       setPanels((prev) => {
         const { [panelId]: _removed, ...rest } = prev
         return rest
       })
 
-      // Kill terminal PTY if applicable
       const panel = panels[panelId]
       if (panel?.type === 'terminal') {
         window.electronAPI.terminalKill(panelId).catch((err) => log.warn('[dock-window] Terminal kill failed:', err))
       }
 
-      // Close window if no panels left
-      const remaining = dockStore.getState().zones
-      const hasContent = Object.values(remaining).some((z) => z.layout !== null)
-      if (!hasContent) {
+      if (isDockEmpty(dockStore.getState())) {
         window.close()
       }
     },
@@ -253,14 +267,34 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
   const handlePanelRemoved = useCallback(
     (_panelId: string) => {
-      const remaining = dockStore.getState().zones
-      const hasContent = Object.values(remaining).some((z) => z.layout !== null)
-      if (!hasContent) {
+      if (isDockEmpty(dockStore.getState())) {
         window.close()
       }
     },
     [dockStore],
   )
+
+  // Close the window when a programmatic undock (e.g. cross-window drag drop)
+  // empties the dock store. handleClosePanel / handlePanelRemoved only fire
+  // from UI paths; commit.ts bypasses them entirely.
+  useEffect(() => {
+    if (!ready) return
+    const check = () => {
+      const state = dockStore.getState()
+      if (!hadPanelsRef.current) {
+        if (!isDockEmpty(state) || Object.keys(panels).length > 0) {
+          hadPanelsRef.current = true
+        }
+        return
+      }
+      if (shouldCloseDockWindow({ isDockEmpty: isDockEmpty(state), hasEverHadPanels: hadPanelsRef.current })) {
+        window.close()
+      }
+    }
+    check()
+    const unsubscribe = dockStore.subscribe(check)
+    return unsubscribe
+  }, [dockStore, panels, ready])
 
   if (!ready) {
     return (
@@ -295,7 +329,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
             onPanelRemoved={handlePanelRemoved}
           />
         </div>
-        <DragGhost />
+        <DragOverlay />
       </div>
     </DockStoreProvider>
   )
@@ -304,6 +338,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 // =============================================================================
 // Helpers
 // =============================================================================
+
 
 /** Rebuild panel locations in the dock store from the dock state */
 function rebuildLocations(

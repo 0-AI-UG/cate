@@ -11,17 +11,13 @@ import {
   Minus,
   Plus,
   Square,
-  Note,
-  TextT,
   ArrowsOutSimple,
   DotsThree,
   SquaresFour,
   MapTrifold,
-  PencilSimple,
-  Image as ImageIcon,
 } from '@phosphor-icons/react'
 import Minimap from './Minimap'
-import { useCanvasStoreApi, useCanvasStoreContext } from '../stores/CanvasStoreContext'
+import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useSettingsStore } from '../stores/settingsStore'
 import { UpdateButton } from './UpdateButton'
 
@@ -32,9 +28,6 @@ interface CanvasToolbarProps {
   onNewEditor: () => void
   onNewCanvas: () => void
   onNewRegion: () => void
-  onNewStickyNote: () => void
-  onNewTextLabel: () => void
-  onAddImage: () => void
   onAutoLayout: () => void
   onZoomToFit: () => void
   onZoomIn: () => void
@@ -86,16 +79,12 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onNewEditor,
   onNewCanvas,
   onNewRegion,
-  onNewStickyNote,
-  onNewTextLabel,
-  onAddImage,
   onAutoLayout,
   onZoomToFit,
   onZoomIn,
   onZoomOut,
 }) => {
   const canvasApi = useCanvasStoreApi()
-  const drawMode = useCanvasStoreContext((s) => s.drawMode)
   const showMinimap = useSettingsStore((s) => s.showMinimap)
   const saveSetting = useSettingsStore((s) => s.saveSetting)
   const zoomText = `${Math.round(zoom * 100)}%`
@@ -148,21 +137,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
               icon={<Square size={16} />}
               label="New Region"
             />
-            <MenuItem
-              onClick={pick(onNewStickyNote)}
-              icon={<Note size={16} />}
-              label="New Sticky Note"
-            />
-            <MenuItem
-              onClick={pick(onNewTextLabel)}
-              icon={<TextT size={16} />}
-              label="New Text Label"
-            />
-            <MenuItem
-              onClick={pick(onAddImage)}
-              icon={<ImageIcon size={16} />}
-              label="Add Image…"
-            />
             <div className="h-px bg-surface-5 my-1" />
             <MenuItem
               onClick={pick(onAutoLayout)}
@@ -202,19 +176,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             >
               <DotsThree size={14} />
             </ToolbarButton>
-
-            {/* Draw tool toggle — freehand pen strokes on the canvas */}
-            <ToolbarButton
-              onClick={() => canvasApi.getState().setDrawMode(!drawMode)}
-              title={drawMode ? 'Draw: On (click to disable)' : 'Draw on canvas'}
-              size="panel"
-              active={drawMode}
-            >
-              <PencilSimple size={14} weight={drawMode ? 'fill' : 'regular'} />
-            </ToolbarButton>
-
-            {/* Divider */}
-            <div className="w-px h-4 bg-surface-5 mx-0.5" />
 
             {/* Zoom controls */}
             <ToolbarButton onClick={onZoomOut} title="Zoom Out" size="zoom">

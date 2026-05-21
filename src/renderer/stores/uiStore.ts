@@ -69,8 +69,6 @@ interface UIStoreState {
   activeRightSidebarView: SidebarView | null
   /** The view currently being dragged between/within sidebars, null when idle */
   draggingView: SidebarView | null
-  /** When set, the next left-click on empty canvas creates an item of this type at the click point. */
-  placementMode: 'textLabel' | null
 }
 
 interface UIStoreActions {
@@ -89,7 +87,6 @@ interface UIStoreActions {
   setActiveRightSidebarView: (view: SidebarView | null) => void
   moveSidebarView: (view: SidebarView, targetSide: SidebarSide, targetIndex: number) => void
   setDraggingView: (view: SidebarView | null) => void
-  setPlacementMode: (mode: 'textLabel' | null) => void
 }
 
 export type UIStore = UIStoreState & UIStoreActions
@@ -114,7 +111,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   activeLeftSidebarView: 'workspaces',
   activeRightSidebarView: null,
   draggingView: null,
-  placementMode: null,
 
   // --- Actions ---
 
@@ -218,10 +214,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setDraggingView(view) {
     set({ draggingView: view })
-  },
-
-  setPlacementMode(mode) {
-    set({ placementMode: mode })
   },
 
 }))

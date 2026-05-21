@@ -48,6 +48,7 @@ import {
   SHELL_ACTIVITY_UPDATE,
   SHELL_PORTS_UPDATE,
   SHELL_CWD_UPDATE,
+  SHELL_AGENT_SCREEN_STATE,
   SETTINGS_GET,
   SETTINGS_SET,
   SETTINGS_GET_ALL,
@@ -62,8 +63,6 @@ import {
   MENU_TRIGGER_ACTION,
   MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
-  DIALOG_OPEN_IMAGE,
-  FS_READ_IMAGE,
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_CANVAS,
   DIALOG_CONFIRM_DELETE_REGION,
@@ -133,6 +132,7 @@ function fullscreenLiveCheck(): boolean {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  isE2E: process.env.CATE_E2E === '1',
   // ---------------------------------------------------------------------------
   // Terminal
   // ---------------------------------------------------------------------------
@@ -342,7 +342,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   onShellActivityUpdate(
-    callback: (terminalId: string, activity: unknown, agentState: unknown, agentName: unknown) => void,
+    callback: (
+      terminalId: string,
+      activity: unknown,
+      agentState: unknown,
+      agentName: unknown,
+      subprocessActive: unknown,
+    ) => void,
   ): () => void {
     const listener = (
       _event: Electron.IpcRendererEvent,
@@ -350,8 +356,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       activity: unknown,
       agentState: unknown,
       agentName: unknown,
+      subprocessActive: unknown,
     ): void => {
-      callback(terminalId, activity, agentState, agentName)
+      callback(terminalId, activity, agentState, agentName, subprocessActive)
     }
     ipcRenderer.on(SHELL_ACTIVITY_UPDATE, listener)
     return () => {
@@ -370,6 +377,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(SHELL_PORTS_UPDATE, listener)
     return () => {
       ipcRenderer.removeListener(SHELL_PORTS_UPDATE, listener)
+    }
+  },
+
+  shellReportAgentScreenState(terminalId: string, state: string): void {
+    ipcRenderer.send(SHELL_AGENT_SCREEN_STATE, terminalId, state)
+  },
+
+  onAgentScreenStateUpdate(
+    callback: (terminalId: string, state: string) => void,
+  ): () => void {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      terminalId: string,
+      state: string,
+    ): void => {
+      callback(terminalId, state)
+    }
+    ipcRenderer.on(SHELL_AGENT_SCREEN_STATE, listener)
+    return () => {
+      ipcRenderer.removeListener(SHELL_AGENT_SCREEN_STATE, listener)
     }
   },
 
@@ -478,14 +505,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openFolderDialog(): Promise<string | null> {
     return ipcRenderer.invoke(DIALOG_OPEN_FOLDER)
-  },
-
-  openImageDialog(): Promise<string[] | null> {
-    return ipcRenderer.invoke(DIALOG_OPEN_IMAGE)
-  },
-
-  readImageAsDataUrl(filePath: string): Promise<{ mime: string; dataUrl: string } | null> {
-    return ipcRenderer.invoke(FS_READ_IMAGE, filePath)
   },
 
   confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean }): Promise<'save' | 'discard' | 'cancel'> {

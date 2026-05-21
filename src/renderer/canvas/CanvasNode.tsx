@@ -7,17 +7,18 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import type { NodeActivityState, DockLayoutNode, PanelType } from '../../shared/types'
 import { isMaximized as checkMaximized } from '../../shared/types'
-import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
+import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
-import { useNodeDrag } from '../hooks/useNodeDrag'
-import { useNodeResize, detectEdge, getCursorForEdge } from '../hooks/useNodeResize'
+import { useDragStore, useDragSourceVisibility } from '../drag'
+import { useNodeResize } from '../hooks/useNodeResize'
+import { useCanvasNodeStyle } from './useCanvasNodeStyle'
+import { useCanvasNodeDrag, countPanels } from './useCanvasNodeDrag'
+import { useNodeResizeCursor } from './useNodeResizeCursor'
 import type { DockStore } from '../stores/dockStore'
 import { DockStoreProvider } from '../stores/DockStoreContext'
-import { useDockDragStore } from '../hooks/useDockDrag'
 import DockTabStack from '../docking/DockTabStack'
 import DockSplitContainer from '../docking/DockSplitContainer'
 import { saveEditor } from '../lib/editorSaveRegistry'
@@ -47,38 +48,9 @@ export interface CanvasNodeProps {
 // -----------------------------------------------------------------------------
 
 const GRAB_STRIP_HEIGHT = 22
-const CORNER_RADIUS = 8
 /** Canvas-inside-canvas isn't supported — tab + split menus and drag-and-drop
  *  for canvas-node mini-docks all reject this type. */
 const CANVAS_EXCLUDED_TYPES: PanelType[] = ['canvas']
-
-// -----------------------------------------------------------------------------
-// Styles
-// -----------------------------------------------------------------------------
-
-const SHADOW_UNFOCUSED = `0 20px 60px -12px rgba(0,0,0,0.35), 0 6px 16px -4px rgba(0,0,0,0.2)`
-const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 0 32px rgba(255,255,255,0.03)`
-// The colored focus glow is rendered as a separate sibling layer behind all
-// nodes (see `glowStyle` below) so it can't overlay neighbouring nodes when
-// the focused node sits on top in z-order.
-const FOCUS_GLOW = `0 0 100px 8px rgba(74,158,255,0.09), 0 0 40px rgba(74,158,255,0.07)`
-
-function boxShadow(hovered: boolean): string {
-  if (hovered) return SHADOW_HOVERED
-  return SHADOW_UNFOCUSED
-}
-
-function activityOutline(activity: NodeActivityState | undefined): string {
-  if (!activity) return 'none'
-  switch (activity.type) {
-    case 'commandFinished':
-      return '2px solid var(--activity-green)'
-    case 'agentWaitingForInput':
-      return '2px solid var(--activity-orange)'
-    default:
-      return 'none'
-  }
-}
 
 // -----------------------------------------------------------------------------
 // Pulse animation keyframes (injected once)
@@ -115,9 +87,6 @@ function ensureKeyframes() {
 // Grab strip button — tiny icon button with hover state via inline handlers
 // -----------------------------------------------------------------------------
 
-/** Icon button used in the canvas-node tab bar trailing controls. Sized to
- *  match the existing +/split buttons in DockTabStack's compact mode so the
- *  whole row of icons (+ split lock maximize close) is visually consistent. */
 function GrabButton({
   title,
   onClick,
@@ -143,7 +112,6 @@ function GrabButton({
   )
 }
 
-/** Standard icon size + stroke for all canvas-node tab-bar icons. */
 const TAB_ICON_SIZE = 12
 
 // -----------------------------------------------------------------------------
@@ -157,7 +125,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   zoomLevel,
   dockStoreApi,
   renderPanel,
-  title = 'Panel',
+  title: _title = 'Panel',
 }) => {
   ensureKeyframes()
 
@@ -187,153 +155,45 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const removeNode = useCanvasStoreContext((s) => s.removeNode)
   const toggleMaximize = useCanvasStoreContext((s) => s.toggleMaximize)
   const isSelected = useCanvasStoreContext((s) => s.selectedNodeIds.has(nodeId))
-  // When a dock-aware drag is active, hide the unfocused dim overlay so the
-  // mini-dock's drop-preview indicator (rendered inside the dock layout at a
-  // lower stacking-context z-index) is visible. Without this, dropping a tab
-  // onto an unfocused canvas panel shows no visual feedback.
-  const isDockDragging = useDockDragStore((s) => s.isDragging)
-  // True while this canvas node is the source of an active dock-drag — i.e.
-  // the user has grabbed its (only) tab and is moving it as a dock ghost.
-  // The node is faded out so it doesn't sit duplicated next to the ghost
-  // during the drag; on drop it either reappears at the new location
-  // (canvas reposition) or is removed (docked elsewhere).
-  const isDockDragSource = useDockDragStore((s) => {
-    if (!s.isDragging || s.dragSource?.type !== 'dock') return false
-    return s.sourceDockStoreApi === dockStoreApi
-  })
+  const isDockDragging = useDragStore((s) => s.isDragging)
+  const { hidden: isWholeNodeDragSource } = useDragSourceVisibility(nodeId)
 
-  const { handleDragStart, wasDragged } = useNodeDrag(nodeId, zoomLevel, canvasApi)
+  // Drag dispatch (whole-node + single-tab detach) + primaryPanel derivation.
+  const {
+    handleDragStart,
+    handleTabDetachStart,
+    primaryPanel,
+    primaryPanelType,
+    layout,
+    wasDragged,
+  } = useCanvasNodeDrag(nodeId, dockStoreApi, canvasApi)
 
-  // Alt-drag from a node's tab bar starts a "connect drag": the user is wiring
-  // this node to another. We render a ghost dotted line that follows the cursor
-  // and, on mouseup over another node, create a CanvasConnection between them.
-  const handleConnectDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const startNodeId = nodeId
-
-    // Ghost path uses a single full-screen SVG overlay appended to body.
-    const overlay = document.createElement('div')
-    overlay.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:100000;'
-    overlay.innerHTML = `<svg width="100%" height="100%" style="position:absolute;inset:0"><path id="cate-connect-ghost" d="" stroke="#4a9eff" stroke-width="2" stroke-dasharray="6 6" fill="none"/></svg>`
-    document.body.appendChild(overlay)
-    const ghost = overlay.querySelector<SVGPathElement>('#cate-connect-ghost')!
-
-    // Compute the start point in screen coords from the source node's center.
-    const startNode = canvasApi.getState().nodes[startNodeId]
-    const getStartScreen = () => {
-      const n = canvasApi.getState().nodes[startNodeId]
-      if (!n) return { x: e.clientX, y: e.clientY }
-      const cx = n.origin.x + n.size.width / 2
-      const cy = n.origin.y + n.size.height / 2
-      return canvasApi.getState().canvasToView({ x: cx, y: cy })
-    }
-
-    const findNodeAt = (clientX: number, clientY: number): string | null => {
-      // Hit-test against canvasStore nodes AND annotations (sticky notes are
-      // first-class connection endpoints — Maestri parity). The caller's
-      // addConnection accepts either kind by id.
-      const view = { x: clientX, y: clientY }
-      const cs = canvasApi.getState().viewToCanvas(view)
-      const state = canvasApi.getState()
-      for (const n of Object.values(state.nodes)) {
-        if (n.id === startNodeId) continue
-        if (cs.x >= n.origin.x && cs.x <= n.origin.x + n.size.width &&
-            cs.y >= n.origin.y && cs.y <= n.origin.y + n.size.height) {
-          return n.id
-        }
+  // Wrap node-drag with the tab-vs-window routing. The tab bar uses this for
+  // both empty-area mousedown (panelId undefined → whole node drag) and
+  // individual tab mousedown (panelId set → detach that tab when the mini-dock
+  // has multiple panels, else whole-node drag).
+  const handleHeaderMouseDown = useCallback((e: React.MouseEvent, panelId?: string) => {
+    if (panelId) {
+      const total = countPanels(dockStoreApi.getState().zones.center.layout)
+      if (total > 1) {
+        handleTabDetachStart(e, panelId)
+        return
       }
-      for (const a of Object.values(state.annotations)) {
-        if (a.id === startNodeId) continue
-        if (cs.x >= a.origin.x && cs.x <= a.origin.x + a.size.width &&
-            cs.y >= a.origin.y && cs.y <= a.origin.y + a.size.height) {
-          return a.id
-        }
-      }
-      return null
-    }
-
-    let hoverTargetId: string | null = null
-
-    const onMove = (ev: MouseEvent) => {
-      const sp = getStartScreen()
-      ghost.setAttribute('d', `M ${sp.x} ${sp.y} L ${ev.clientX} ${ev.clientY}`)
-      hoverTargetId = findNodeAt(ev.clientX, ev.clientY)
-      ghost.setAttribute('stroke', hoverTargetId ? '#4a9eff' : '#7c8aa1')
-    }
-
-    const onUp = (ev: MouseEvent) => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      window.removeEventListener('keydown', onKey)
-      overlay.remove()
-      const target = hoverTargetId ?? findNodeAt(ev.clientX, ev.clientY)
-      if (target) canvasApi.getState().addConnection(startNodeId, target)
-    }
-
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') {
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        window.removeEventListener('keydown', onKey)
-        overlay.remove()
-      }
-    }
-
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    window.addEventListener('keydown', onKey)
-    // Seed the ghost on the start node center.
-    const sp = getStartScreen()
-    ghost.setAttribute('d', `M ${sp.x} ${sp.y} L ${e.clientX} ${e.clientY}`)
-    void startNode // suppress unused if branch above no-ops
-  }, [nodeId, canvasApi])
-
-  // Wrap node-drag with the alt-key check. The tab bar uses this — alt-down
-  // routes to connect, plain click routes to the normal node-move drag.
-  const handleHeaderMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.altKey) {
-      handleConnectDragStart(e)
-      return
     }
     handleDragStart(e)
-  }, [handleConnectDragStart, handleDragStart])
+  }, [handleDragStart, handleTabDetachStart, dockStoreApi])
 
   const maximized = node ? checkMaximized(node) : false
 
-  // Read the dock layout from the per-node store reactively
-  const layout = useStore(dockStoreApi, (s) => s.zones.center.layout)
-
-  const currentWorkspace = useSelectedWorkspace()
-
-  // Derive the primary panel for minimum-size constraints and chrome tinting
-  // (uses the layout's first leaf panel).
-  const primaryPanel = useMemo(() => {
-    function firstPanelId(n: DockLayoutNode | null): string | null {
-      if (!n) return null
-      if (n.type === 'tabs') return n.panelIds[0] ?? null
-      for (const child of n.children) {
-        const found = firstPanelId(child)
-        if (found) return found
-      }
-      return null
-    }
-    const pid = firstPanelId(layout)
-    if (!pid) return null
-    return currentWorkspace?.panels[pid] ?? null
-  }, [layout, currentWorkspace])
-  const primaryPanelType: PanelType = primaryPanel?.type ?? 'editor'
-
   const { handleResizeStart } = useNodeResize(nodeId, primaryPanelType, zoomLevel, canvasApi)
+  const { handleMouseDown, handleMouseMove } = useNodeResizeCursor(nodeRef, node, zoomLevel, handleResizeStart)
   const wsId = useAppStore((s) => s.selectedWorkspaceId)
+  const currentWorkspace = useSelectedWorkspace()
 
   // Subscribe to custom themes and the default-theme setting so chrome tint
   // re-renders when either changes.
   const customThemes = useSettingsStore((s) => s.terminalCustomThemes)
   const defaultTerminalTheme = useSettingsStore((s) => s.defaultTerminalTheme)
-  /** When the primary panel is a terminal with a preset (or the global
-   *  default-theme setting points at one), derive the chrome background +
-   *  accent so the whole node reflects the terminal's palette. */
   const chromeTint = useMemo(() => {
     if (primaryPanel?.type !== 'terminal') return null
     const preset = resolveTerminalPreset(primaryPanel.themePreset)
@@ -371,9 +231,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   // --- Dock layout renderer --------------------------------------------------
 
-  // Both lookups fall back to a fresh appStore read so a brief gap in the
-  // selected-workspace subscription (e.g. mid-switch) doesn't make every tab
-  // collapse to a generic "Panel" / editor-icon label.
   const resolvePanel = useCallback(
     (panelId: string) => {
       const p = currentWorkspace?.panels[panelId]
@@ -389,9 +246,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     (panelId: string) => {
       const p = resolvePanel(panelId)
       if (p?.title) return p.title
-      // Panel exists but its title was cleared (e.g. browser nav to a blank
-      // page). Use the type label so the tab still reads as "Terminal" /
-      // "Browser" instead of a meaningless "Panel".
       if (p?.type) {
         const labels: Record<PanelType, string> = {
           terminal: 'Terminal', browser: 'Browser', editor: 'Editor',
@@ -406,7 +260,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   const getPanel = useCallback((panelId: string) => resolvePanel(panelId), [resolvePanel])
 
-  // Collect all panel ids contained in a dock layout subtree.
   const collectPanelIds = useCallback((n: DockLayoutNode | null): string[] => {
     if (!n) return []
     if (n.type === 'tabs') return [...n.panelIds]
@@ -415,8 +268,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     return out
   }, [])
 
-  // Prompt the user via a native dialog if any of the given panels are dirty
-  // editors. Returns true if the close should proceed.
   const confirmCloseForPanels = useCallback(
     async (panelIds: string[]): Promise<boolean> => {
       const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
@@ -470,10 +321,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   // Spring-load: when ANY dock drag is active AND this node is maximized
   // (covering the canvas), un-maximize after a short delay so the user can
-  // see the canvas underneath and target a drop point. Subscribes directly
-  // to the drag store (not via React selectors) so the timer is scheduled
-  // off React render cycles — re-renders of CanvasNode would otherwise tear
-  // down the effect and reset the timer before it fires.
+  // see the canvas underneath and target a drop point.
   const toggleMaximizeRef = useRef(handleToggleMaximize)
   toggleMaximizeRef.current = handleToggleMaximize
   const maximizedRef = useRef(maximized)
@@ -481,8 +329,8 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   useEffect(() => {
     let timerId: number | null = null
     const tryArm = () => {
-      const s = useDockDragStore.getState()
-      if (!s.isDragging || s.draggedPanelType === 'canvas') return
+      const s = useDragStore.getState()
+      if (!s.isDragging || s.panel?.type === 'canvas') return
       if (!maximizedRef.current) return
       if (timerId !== null) return
       timerId = window.setTimeout(() => {
@@ -494,7 +342,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       if (timerId !== null) { window.clearTimeout(timerId); timerId = null }
     }
     tryArm()
-    const unsub = useDockDragStore.subscribe((s, prev) => {
+    const unsub = useDragStore.subscribe((s, prev) => {
       if (s.isDragging && !prev.isDragging) tryArm()
       else if (!s.isDragging && prev.isDragging) cancel()
     })
@@ -505,9 +353,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     canvasApi.getState().togglePin(nodeId)
   }, [nodeId])
 
-  // Lock / maximize / close — the same buttons whether they live on the
-  // standalone grab strip (when the layout is split) or injected into the
-  // leaf tab bar (when the root layout is a single stack).
   const nodeControlButtons = (
     <>
       <GrabButton
@@ -536,15 +381,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     </>
   )
 
-  // Renderer for the per-node dock layout. Uses a ref so the recursive call
-  // inside DockSplitContainer always sees the latest closure (avoids stale
-  // captures in useCallback).
-  // The `isRoot` flag controls which leaf gets the node-level trailing
-  // controls (lock / maximize / close) and the empty-tab-bar drag handler.
-  // - If the root layout is a single tab stack, that stack hosts the controls
-  //   and there's no separate top grab strip — one bar to rule them all.
-  // - If the root layout is a split, controls live on a tiny grab strip above
-  //   the layout (rendered separately), and no leaf gets trailingControls.
   const rootIsTabs = layout?.type === 'tabs'
 
   const renderLayoutNodeRef = useRef<(node: DockLayoutNode, isRoot: boolean) => React.ReactNode>(null!)
@@ -564,6 +400,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           compact
           onTabBarMouseDown={isHeaderHost ? handleHeaderMouseDown : undefined}
           trailingControls={isHeaderHost ? nodeControlButtons : undefined}
+          dropDisabled={isWholeNodeDragSource}
         />
       )
     }
@@ -596,43 +433,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       }
     },
     [isFocused, focusNode, nodeId, wasDragged],
-  )
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.button === 2) {
-        e.stopPropagation()
-        return
-      }
-      if (e.button !== 0) return
-      if (!nodeRef.current || !node) return
-
-      const rect = nodeRef.current.getBoundingClientRect()
-      const localX = e.clientX - rect.left
-      const localY = e.clientY - rect.top
-
-      const edge = detectEdge(localX, localY, rect.width, rect.height, zoomLevel)
-      if (edge) {
-        handleResizeStart(e, edge)
-      }
-    },
-    [node, zoomLevel, handleResizeStart],
-  )
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!nodeRef.current) return
-      if (document.body.classList.contains('canvas-interacting')) return
-      const rect = nodeRef.current.getBoundingClientRect()
-      const localX = e.clientX - rect.left
-      const localY = e.clientY - rect.top
-      const edge = detectEdge(localX, localY, rect.width, rect.height, zoomLevel)
-      const cursor = getCursorForEdge(edge)
-      if (nodeRef.current.style.cursor !== cursor) {
-        nodeRef.current.style.cursor = cursor
-      }
-    },
-    [zoomLevel],
   )
 
   // Grab strip: double-click toggles maximize, drag moves node
@@ -678,91 +478,17 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   // --- Computed styles -------------------------------------------------------
 
-  const containerStyle = useMemo<React.CSSProperties>(() => {
-    if (!node) return { display: 'none' }
-
-    const isPulsing = activityState?.type === 'agentWaitingForInput'
-    const isEntering = node.animationState === 'entering'
-    const isExiting = node.animationState === 'exiting'
-
-    const baseTransition =
-      'border-color 150ms ease, box-shadow 200ms ease, outline-color 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out'
-    // Skip layout transitions while this node is the dock-drag source.
-    // Spring-load un-maximize sets isAnimatingLayout=true and the resulting
-    // left/top/width/height CSS transition makes the dimmed source visibly
-    // "scale" alongside the dock ghost — confusing the user. Snapping
-    // instantly to the un-maximized size keeps the source still while only
-    // the ghost moves.
-    const layoutTransition = isAnimatingLayout && !isDockDragSource
-      ? ', left 250ms cubic-bezier(0.16, 1, 0.3, 1), top 250ms cubic-bezier(0.16, 1, 0.3, 1), width 250ms cubic-bezier(0.16, 1, 0.3, 1), height 250ms cubic-bezier(0.16, 1, 0.3, 1)'
-      : ''
-
-    return {
-      position: 'absolute',
-      left: node.origin.x,
-      top: node.origin.y,
-      width: node.size.width,
-      height: node.size.height,
-      zIndex: 1000 + node.zOrder,
-      borderRadius: CORNER_RADIUS,
-      overflow: 'hidden',
-      border: `1.5px solid var(--border-subtle)`,
-      boxShadow: boxShadow(isHovered),
-      outline: activityOutline(activityState),
-      outlineOffset: -1,
-      animation: isPulsing ? 'pulseActivity 1s ease-in-out infinite alternate' : undefined,
-      // When the primary panel is a themed terminal, paint the entire node
-      // chrome with the terminal's background colour. The `--node-chrome-bg`
-      // var is consumed by DockTabStack so the tab bar + tabs tint too.
-      backgroundColor: chromeTint?.background ?? 'var(--node-bg-active)',
-      ['--node-chrome-bg' as any]: chromeTint?.background ?? 'var(--surface-1)',
-      // Active-tab background is a slightly lifted version of the chrome so
-      // there's still visual separation from the bar around it.
-      ['--node-chrome-active-bg' as any]: chromeTint
-        ? `color-mix(in srgb, ${chromeTint.background} 86%, white 14%)`
-        : 'var(--surface-3)',
-      ['--node-chrome-accent' as any]: chromeTint?.accent ?? 'var(--focus-blue)',
-      transition: baseTransition + layoutTransition,
-      transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
-      // Hide the source entirely during a dock-drag. Showing it at 0.25
-      // opacity left a visible outline that overlapped the ghost, and any
-      // background re-render that touched the node's size/transform read as
-      // it "scaling with movement" since the ghost moved with the cursor.
-      // The ghost itself is the only thing the user should track during a
-      // dock-drag; the source reappears either at the new location (canvas
-      // reposition) or is removed (docked elsewhere).
-      opacity: isEntering ? 0 : isExiting ? 0 : isDockDragSource ? 0 : 1,
-      pointerEvents: isExiting || isDockDragSource ? 'none' : undefined,
-      userSelect: 'none',
-    }
-  }, [node, isFocused, isSelected, activityState, zoomLevel, isAnimatingLayout, isHovered, chromeTint, isDockDragSource])
-
-  // Colored focus/selection glow rendered as a sibling at a fixed low z-index
-  // so it sits behind every node — its halo can't bleed over neighbouring
-  // nodes the way a box-shadow on the focused node itself would.
-  const glowStyle = useMemo<React.CSSProperties | null>(() => {
-    if (!node) return null
-    if (!(isFocused || isSelected)) return null
-    const isEntering = node.animationState === 'entering'
-    const isExiting = node.animationState === 'exiting'
-    const layoutTransition = isAnimatingLayout && !isDockDragSource
-      ? 'left 250ms cubic-bezier(0.16, 1, 0.3, 1), top 250ms cubic-bezier(0.16, 1, 0.3, 1), width 250ms cubic-bezier(0.16, 1, 0.3, 1), height 250ms cubic-bezier(0.16, 1, 0.3, 1), '
-      : ''
-    return {
-      position: 'absolute',
-      left: node.origin.x,
-      top: node.origin.y,
-      width: node.size.width,
-      height: node.size.height,
-      zIndex: 999,
-      borderRadius: CORNER_RADIUS,
-      boxShadow: FOCUS_GLOW,
-      pointerEvents: 'none',
-      transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
-      opacity: isEntering || isExiting || isDockDragSource ? 0 : 1,
-      transition: `${layoutTransition}transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out`,
-    }
-  }, [node, isFocused, isSelected, isAnimatingLayout, isDockDragSource])
+  const { containerStyle, glowStyle } = useCanvasNodeStyle({
+    node,
+    isFocused,
+    isSelected,
+    activityState,
+    zoomLevel,
+    isAnimatingLayout,
+    isHovered,
+    chromeTint,
+    isWholeNodeDragSource,
+  })
 
   if (!node) return null
 
@@ -780,10 +506,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Standalone grab strip — only when the layout is split (or empty).
-          When the root layout is a single tab stack, controls live inside the
-          tab bar via DockTabStack's trailingControls and there is no separate
-          strip. */}
+      {/* Standalone grab strip — only when the layout is split (or empty). */}
       {!rootIsTabs && (
         <div
           style={{
@@ -835,8 +558,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           overflow: 'hidden',
         }}
       >
-        {/* Unfocused dim overlay — intercepts pointer events until node is focused.
-            Dragging on this overlay moves the whole node (not the panel content). */}
+        {/* Unfocused dim overlay — intercepts pointer events until node is focused. */}
         <div
           data-unfocused-overlay
           onMouseDown={(e) => {
@@ -865,11 +587,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           }}
           style={{
             position: 'absolute',
-            // When this node uses its dock tab bar as the header (isHeaderHost),
-            // leave the tab strip uncovered so a mousedown on a tab can start
-            // a dock-drag in a single gesture instead of requiring a prior
-            // click-to-focus. Tab strip height matches DockTabStack's compact
-            // mode (min-h-[26px]).
             top: rootIsTabs ? 26 : 0,
             left: 0,
             right: 0,
@@ -887,10 +604,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         <DockStoreProvider store={dockStoreApi}>
           <div
             style={{ position: 'relative', zIndex: 0, width: '100%', height: '100%' }}
-            // Capture-phase: any mousedown inside the (now uncovered) dock tab
-            // bar should focus this canvas node before the tab handler runs, so
-            // a single click+hold on a tab both focuses the node and starts the
-            // dock drag in one gesture.
             onMouseDownCapture={(e) => {
               if (e.button !== 0 || isFocused) return
               focusNode(nodeId)

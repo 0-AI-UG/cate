@@ -256,6 +256,15 @@ export interface RegistryEntry {
   themePreset?: string
   /** Owning workspace — used to route auto-detected URLs to the right browser panel. */
   workspaceId: string
+  /**
+   * Set during reconnectTerminal when scrollback + panelTransferAck must be
+   * deferred until attach() has opened the fresh xterm into its real
+   * container. Without this, the scrollback would be written and PTY data
+   * flushed into an unopened 80×24-default xterm, baking wrap artifacts and
+   * desynced alt-screen state into the buffer before the real container
+   * dimensions are known. Cleared once finalized.
+   */
+  pendingReconnect?: { ptyId: string; scrollback?: string }
 }
 
 interface CreateOpts {
@@ -318,7 +327,10 @@ useSettingsStore.subscribe((state) => {
  */
 async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryEntry> {
   const existing = registry.get(panelId)
-  if (existing) return existing
+  if (existing) {
+    pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
+    return existing
+  }
   // A retry starts here — clear any prior failure so observers re-render
   // back into the live terminal view.
   if (failures.delete(panelId)) notifyFailure(panelId)
@@ -576,12 +588,13 @@ async function reconnectTerminal(
     workspaceId: opts.workspaceId,
   }
 
-  registry.set(panelId, entry)
+  // Defer scrollback write + panelTransferAck until attach() opens the fresh
+  // xterm into its real container. Until then, the xterm is at xterm's default
+  // 80×24 dimensions; writing wider scrollback or letting main flush buffered
+  // PTY output here would wrap content and desync TUI alt-screen state.
+  entry.pendingReconnect = { ptyId, scrollback }
 
-  // 2. Write scrollback to give visual continuity (plain text, no ANSI colors)
-  if (scrollback) {
-    terminal.write(scrollback + '\r\n')
-  }
+  registry.set(panelId, entry)
 
   // 3. Wire up listeners to the EXISTING PTY
   const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
@@ -635,10 +648,30 @@ async function reconnectTerminal(
   electronAPI.shellRegisterTerminal(ptyId).catch((err) => log.warn('[terminal] Shell register failed:', err))
   useStatusStore.getState().registerTerminal(ptyId, opts.workspaceId)
 
-  // 4. ACK the transfer AFTER listeners are wired — flushes buffered PTY data
-  electronAPI.panelTransferAck(ptyId).catch((err) => log.warn('[terminal] Transfer ack failed:', err))
-
+  // panelTransferAck is deferred to attach() — finalizeReconnect() below.
   return entry
+}
+
+/**
+ * Apply the deferred parts of a cross-window reconnect once attach() has
+ * opened+fitted the xterm to its real container: write the captured
+ * scrollback at the correct dimensions, then ACK the transfer so main flushes
+ * buffered PTY output into a now-correctly-sized buffer.
+ */
+function finalizeReconnect(panelId: string): void {
+  const entry = registry.get(panelId)
+  if (!entry?.pendingReconnect) return
+
+  const { ptyId, scrollback } = entry.pendingReconnect
+  entry.pendingReconnect = undefined
+
+  if (scrollback) {
+    entry.terminal.write(scrollback + '\r\n')
+  }
+  const { electronAPI } = window
+  electronAPI
+    .panelTransferAck(ptyId)
+    .catch((err) => log.warn('[terminal] Transfer ack failed:', err))
 }
 
 /**
@@ -660,6 +693,7 @@ function release(panelId: string): void {
   if (!entry) return
 
   registry.delete(panelId)
+  pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
   clearTerminalUrlBuffer(panelId)
 
   const { terminal, fitAddon, webglAddon, cleanupListeners } = entry
@@ -856,6 +890,12 @@ function attach(panelId: string, container: HTMLDivElement): void {
         terminal.scrollToBottom()
       }
     } catch { /* ignore */ }
+
+    // Now that the xterm is sized to its real container, replay captured
+    // scrollback and release the main-side PTY buffer. Order matters:
+    // scrollback first (so visual continuity appears above any flushed
+    // PTY output), ack second.
+    try { finalizeReconnect(panelId) } catch { /* ignore */ }
   }
 }
 
@@ -922,6 +962,7 @@ function dispose(panelId: string): void {
 
   // Remove from registry first so re-entrant calls are no-ops
   registry.delete(panelId)
+  pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
   clearTerminalUrlBuffer(panelId)
 
   const { terminal, fitAddon, webglAddon, ptyId, cleanupListeners } = entry
@@ -981,6 +1022,14 @@ function has(panelId: string): boolean {
   return registry.has(panelId)
 }
 
+/**
+ * Iterate over every registered terminal. Used by the agent-screen detector
+ * to poll each xterm buffer for prompt markers.
+ */
+function entries(): Array<[string, RegistryEntry]> {
+  return Array.from(registry.entries())
+}
+
 /** Reverse lookup: find panelId by ptyId. */
 function panelIdForPty(ptyId: string): string | null {
   for (const [panelId, entry] of registry) {
@@ -1036,6 +1085,7 @@ export const terminalRegistry = {
   getFailure,
   subscribeFailure,
   panelIdForPty,
+  entries,
   findNext,
   findPrevious,
   clearSearch,

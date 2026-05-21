@@ -9,8 +9,12 @@ import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext
 import type { DockZonePosition } from '../../shared/types'
 import DockZone from '../docking/DockZone'
 import DockResizeHandle from '../docking/DockResizeHandle'
-import { useDockDragStore, registerDropZone } from '../hooks/useDockDrag'
-import { DockZoneDropIndicator } from '../docking/DropZoneOverlay'
+import {
+  registerDropZone,
+  useDragStore,
+  DockZoneDropIndicator,
+  DragOverlay,
+} from '../drag'
 
 interface MainWindowShellProps {
   renderPanel: (panelId: string) => React.ReactNode
@@ -31,8 +35,8 @@ export default function MainWindowShell({
   const bottomVisible = useDockStoreContext((s) => s.zones.bottom.visible)
   const setZoneSize = useDockStoreContext((s) => s.setZoneSize)
   const dockStoreApi = useDockStoreApi()
-  const isDragging = useDockDragStore((s) => s.isDragging)
-  const activeDropTarget = useDockDragStore((s) => s.activeDropTarget)
+  const isDragging = useDragStore((s) => s.isDragging)
+  const activeDropTarget = useDragStore((s) => s.target)
 
   // Ref for the shell container — used to compute edge drop zone rects
   const shellRef = useRef<HTMLDivElement>(null)
@@ -101,15 +105,15 @@ export default function MainWindowShell({
   // Determine if each zone edge is the active drop target
   const isLeftEdgeActive =
     isDragging &&
-    activeDropTarget?.type === 'zone' &&
+    activeDropTarget?.kind === 'dock-zone' &&
     activeDropTarget.zone === 'left'
   const isRightEdgeActive =
     isDragging &&
-    activeDropTarget?.type === 'zone' &&
+    activeDropTarget?.kind === 'dock-zone' &&
     activeDropTarget.zone === 'right'
   const isBottomEdgeActive =
     isDragging &&
-    activeDropTarget?.type === 'zone' &&
+    activeDropTarget?.kind === 'dock-zone' &&
     activeDropTarget.zone === 'bottom'
 
   return (
@@ -221,6 +225,7 @@ export default function MainWindowShell({
           <DockZoneDropIndicator position="bottom" isActive={isBottomEdgeActive} />
         </div>
       )}
+      <DragOverlay />
     </div>
   )
 }

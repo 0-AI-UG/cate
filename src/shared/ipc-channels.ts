@@ -61,6 +61,9 @@ export const SHELL_UNREGISTER_TERMINAL = 'shell:unregisterTerminal'
 export const SHELL_ACTIVITY_UPDATE = 'shell:activityUpdate' // main -> renderer
 export const SHELL_PORTS_UPDATE = 'shell:ports-update'       // main -> renderer
 export const SHELL_CWD_UPDATE = 'shell:cwd-update'           // main -> renderer
+// Renderer (where the xterm buffer lives) reports the agent's screen-derived
+// state up to main; main re-broadcasts so every window's sidebar agrees.
+export const SHELL_AGENT_SCREEN_STATE = 'shell:agentScreenState'
 
 // Settings
 export const SETTINGS_GET = 'settings:get'
@@ -104,8 +107,6 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
-export const DIALOG_OPEN_IMAGE = 'dialog:openImage'
-export const FS_READ_IMAGE = 'fs:readImage'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
 export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'

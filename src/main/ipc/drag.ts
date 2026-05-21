@@ -47,7 +47,7 @@ export function cleanupDragTempFile(): void {
 
 /**
  * Create a minimal drag ghost NativeImage.
- * The actual visual ghost is rendered by the renderer's DragGhost component.
+ * The actual visual ghost is rendered by the renderer's drag overlay.
  */
 export function createDragGhostImage(): Electron.NativeImage {
   return nativeImage.createFromBuffer(

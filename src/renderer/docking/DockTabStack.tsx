@@ -4,21 +4,16 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext'
-import { useDockDragStore, registerDropZone, hitTestDropTarget, hitTestDropTargetWithStore } from '../hooks/useDockDrag'
-import { executeDrop } from './dropExecution'
-import { createTransferSnapshot } from '../lib/panelTransfer'
-import { terminalRegistry, TERMINAL_PRESETS, getAllTerminalThemes } from '../lib/terminalRegistry'
-import { useUIStore } from '../stores/uiStore'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useDockStoreApi } from '../stores/DockStoreContext'
+import { registerDropZone, useDragStore } from '../drag'
 import type { DockTabStack as DockTabStackType, PanelState, PanelType } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
-import { X, Columns, Plus, Terminal as TerminalIcon, Globe, FileText, GitBranch, TreeStructure, SquaresFour, List } from '@phosphor-icons/react'
-import DropZoneOverlay from './DropZoneOverlay'
-import { canvasDropZoneHovered } from './CanvasDropZone'
-import { findNodeIdForDockStore } from '../panels/CanvasPanel'
-import { findCanvasStoreForNode } from '../stores/canvasStore'
+import { Columns, Plus } from '@phosphor-icons/react'
+import { DockTabBar } from './DockTabBar'
+import { DockTabContextMenu, SPLIT_MENU_ITEMS } from './DockTabContextMenu'
+import type { SplitMenuItem } from './DockTabContextMenu'
+import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
+import { useDockTabDrag } from './useDockTabDrag'
 
 // Human-readable labels for each panel type, used in tooltips and the split menu.
 const PANEL_TYPE_LABELS: Record<PanelType, string> = {
@@ -31,42 +26,6 @@ const PANEL_TYPE_LABELS: Record<PanelType, string> = {
   canvas: 'Canvas',
 }
 
-// Type → icon/tint mirrors the Spotlight overlay so tabs, search results, and
-// the command palette speak the same visual language.
-const PANEL_TYPE_TINT: Record<PanelType, string> = {
-  terminal: 'text-emerald-400',
-  browser: 'text-sky-400',
-  editor: 'text-orange-400',
-  git: 'text-red-400',
-  fileExplorer: 'text-cyan-400',
-  projectList: 'text-yellow-400',
-  canvas: 'text-violet-400',
-}
-
-function TabIcon({ type, size }: { type: PanelType; size: number }) {
-  switch (type) {
-    case 'terminal':     return <TerminalIcon size={size} />
-    case 'browser':      return <Globe size={size} />
-    case 'editor':       return <FileText size={size} />
-    case 'git':          return <GitBranch size={size} />
-    case 'fileExplorer': return <TreeStructure size={size} />
-    case 'projectList':  return <List size={size} />
-    case 'canvas':       return <SquaresFour size={size} />
-  }
-}
-
-// Items shown in the long-press split menu (order = display order).
-type SplitMenuItem = { type: PanelType; label: string; Icon: React.ComponentType<any> }
-const SPLIT_MENU_ITEMS: SplitMenuItem[] = [
-  { type: 'editor', label: 'Editor', Icon: FileText },
-  { type: 'terminal', label: 'Terminal', Icon: TerminalIcon },
-  { type: 'browser', label: 'Browser', Icon: Globe },
-  { type: 'fileExplorer', label: 'File Explorer', Icon: TreeStructure },
-  { type: 'git', label: 'Git', Icon: GitBranch },
-  { type: 'canvas', label: 'Canvas', Icon: SquaresFour },
-  { type: 'projectList', label: 'Projects', Icon: List },
-]
-
 interface DockTabStackProps {
   stack: DockTabStackType
   zone: 'left' | 'right' | 'bottom' | 'center'
@@ -77,499 +36,102 @@ interface DockTabStackProps {
   workspaceId?: string
   onPanelRemoved?: (panelId: string) => void
   /** Panel types this stack will refuse from new-tab / split menus and from
-   *  drag-and-drop. Used by canvas-node mini-docks to keep canvas panels out
-   *  (a canvas inside a canvas isn't supported). */
+   *  drag-and-drop. */
   excludePanelTypes?: PanelType[]
-  /** Extra controls rendered to the right of the +/split buttons. Canvas
-   *  nodes inject lock/maximize/close here so the node has only one bar. */
+  /** Extra controls rendered to the right of the +/split buttons. */
   trailingControls?: React.ReactNode
-  /** Mouse-down handler for empty area of the tab bar — lets the host
-   *  intercept clicks to start node-level drag (canvas nodes use this to
-   *  drag the whole node from the empty tab-bar area). */
-  onTabBarMouseDown?: (e: React.MouseEvent) => void
-  /** When true, new panels created via "+" / split menus skip global dock
-   *  placement and are added straight to the local store. Used by canvas-node
-   *  mini-docks to keep the panel out of the main dock zones. */
+  /** Mouse-down handler for the tab bar — fired both for the empty header
+   *  area (no panelId) and for individual tab clicks (panelId set). */
+  onTabBarMouseDown?: (e: React.MouseEvent, panelId?: string) => void
+  /** When true, new panels skip global dock placement. */
   localOnly?: boolean
   /** When true, render a slimmer tab bar (used by canvas-node mini-docks). */
   compact?: boolean
-  /** True when this stack's left edge sits on the viewport's left edge.
-   *  Center-zone stacks at the left edge inset their tab bar by the left
-   *  sidebar width so tabs stay visible next to the overlay sidebar. */
   leftEdge?: boolean
-  /** Same as leftEdge but for the right viewport edge / right sidebar. */
   rightEdge?: boolean
+  /** When true, this stack's drop-zone returns a null rect so it can't be
+   *  hit-tested as a target. */
+  dropDisabled?: boolean
 }
 
-export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact, leftEdge, rightEdge }: DockTabStackProps) {
-  const setActiveTab = useDockStoreContext((s) => s.setActiveTab)
+export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact, leftEdge, rightEdge, dropDisabled }: DockTabStackProps) {
   const dockStoreApi = useDockStoreApi()
   const stackRef = useRef<HTMLDivElement>(null)
-  const dragAbortRef = useRef<AbortController | null>(null)
 
-  // Inline rename state — terminals can be renamed by double-clicking their tab.
-  // The new name is what `cate list` / `cate ask` use to address the panel.
-  const [renameId, setRenameId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const renameInputRef = useRef<HTMLInputElement | null>(null)
-  useEffect(() => {
-    if (renameId && renameInputRef.current) {
-      renameInputRef.current.focus()
-      renameInputRef.current.select()
-    }
-  }, [renameId])
-  const commitRename = (panelId: string) => {
-    const trimmed = renameValue.trim()
-    if (trimmed) {
-      const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
-      if (wsId) useAppStore.getState().updatePanelTitle(wsId, panelId, trimmed)
-    }
-    setRenameId(null)
-  }
-
-  useEffect(() => {
-    return () => { dragAbortRef.current?.abort() }
-  }, [])
-
-  const isDragging = useDockDragStore((s) => s.isDragging)
-  const activeDropTarget = useDockDragStore((s) => s.activeDropTarget)
-  const dragSource = useDockDragStore((s) => s.dragSource)
+  const isDragging = useDragStore((s) => s.isDragging)
+  const target = useDragStore((s) => s.target)
+  const dragSource = useDragStore((s) => s.source)
 
   // Memoise the accept predicate so the registered entry is stable across
   // renders (the registry compares by entry identity).
-  const excludeKey = (excludePanelTypes ?? []).join(',')
-  const acceptsPanelType = useMemo(() => {
-    if (!excludePanelTypes || excludePanelTypes.length === 0) return undefined
-    const set = new Set<PanelType>(excludePanelTypes)
-    return (type: PanelType) => !set.has(type)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [excludeKey])
+  const acceptsPanelType = useAcceptsPanelType(excludePanelTypes)
 
-  // Register this tab stack as a drop zone, attaching the owning DockStore so
-  // cross-store drag-and-drop (e.g. between two canvas-node mini-docks) can
-  // route the drop to the correct store.
+  // Register this tab stack as a drop zone.
+  const dropDisabledRef = useRef(false)
+  dropDisabledRef.current = !!dropDisabled
   useEffect(() => {
     return registerDropZone({
       id: `stack-${stack.id}`,
       zone: zoneProp,
       stackId: stack.id,
-      getRect: () => stackRef.current?.getBoundingClientRect() ?? null,
+      getRect: () =>
+        dropDisabledRef.current ? null : stackRef.current?.getBoundingClientRect() ?? null,
       dockStoreApi,
       acceptsPanelType,
     })
   }, [stack.id, zoneProp, dockStoreApi, acceptsPanelType])
 
-  // ---------------------------------------------------------------------------
-  // Native context menus (tab + tab bar)
-  // ---------------------------------------------------------------------------
+  const activePanelId = stack.panelIds[stack.activeIndex]
 
-  const getPanelLocal = useCallback(
+  const resolvePanel = useCallback(
     (panelId: string): PanelState | undefined => {
       if (getPanelProp) return getPanelProp(panelId)
-      const wsId = useAppStore.getState().selectedWorkspaceId
+      const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
       const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
       return ws?.panels[panelId]
     },
-    [getPanelProp],
+    [getPanelProp, workspaceIdProp],
   )
 
-  const moveTabToNewWindow = useCallback(
-    async (panelId: string) => {
-      const panel = getPanelLocal(panelId)
-      if (!panel) return
-      const snapshot = createTransferSnapshot(
-        panel,
-        { type: 'dock', zone: zoneProp, stackId: stack.id },
-        { origin: { x: 100, y: 100 }, size: { width: 800, height: 600 } },
-      )
-      dockStoreApi.getState().undockPanel(panelId)
-      if (panel.type === 'terminal') terminalRegistry.release(panelId)
-      onPanelRemoved?.(panelId)
-      const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
-      await window.electronAPI.dragDetach(snapshot, wsId)
-    },
-    [getPanelLocal, zoneProp, stack.id, dockStoreApi, onPanelRemoved, workspaceIdProp],
-  )
+  const activePanel = activePanelId ? resolvePanel(activePanelId) : undefined
 
-  const handleTabContextMenu = useCallback(
-    async (e: React.MouseEvent, panelId: string) => {
-      e.preventDefault()
-      e.stopPropagation()
-      if (!window.electronAPI) return
-      const idx = stack.panelIds.indexOf(panelId)
-      const hasOthers = stack.panelIds.length > 1
-      const hasRight = idx >= 0 && idx < stack.panelIds.length - 1
-      const panel = getPanelLocal(panelId)
-      const isTerminal = panel?.type === 'terminal'
-      const currentPreset = panel?.themePreset
-      const allThemes = getAllTerminalThemes()
-      const customCount = allThemes.length - TERMINAL_PRESETS.length
-      // Surface what "Default" actually resolves to so users know what they
-      // get when they pick it.
-      const defaultThemeId = useSettingsStore.getState().defaultTerminalTheme
-      const defaultLabel = (() => {
-        if (!defaultThemeId) return 'Default (Follow App Theme)'
-        const p = allThemes.find((t) => t.id === defaultThemeId)
-        return p ? `Default (${p.label})` : 'Default'
-      })()
-      const themeSubmenu = isTerminal
-        ? [
-            { id: 'theme:__default__', label: !currentPreset ? `${defaultLabel} ✓` : defaultLabel },
-            { type: 'separator' as const },
-            ...TERMINAL_PRESETS.map((p) => ({
-              id: `theme:${p.id}`,
-              label: currentPreset === p.id ? `${p.label} ✓` : p.label,
-            })),
-            ...(customCount > 0
-              ? [
-                  { type: 'separator' as const },
-                  ...allThemes.slice(TERMINAL_PRESETS.length).map((p) => ({
-                    id: `theme:${p.id}`,
-                    label: currentPreset === p.id ? `${p.label} ✓` : p.label,
-                  })),
-                ]
-              : []),
-            { type: 'separator' as const },
-            { id: 'theme:__import__', label: 'Import Theme…' },
-          ]
-        : []
-      const id = await window.electronAPI.showContextMenu([
-        { id: 'close', label: 'Close', accelerator: 'Cmd+W' },
-        { id: 'close-others', label: 'Close Others', enabled: hasOthers },
-        { id: 'close-right', label: 'Close to the Right', enabled: hasRight },
-        { id: 'close-all', label: 'Close All', accelerator: 'Cmd+K Cmd+W' },
-        { type: 'separator' as const },
-        { id: 'split-right', label: 'Split Right' },
-        { id: 'move-window', label: 'Move into New Window' },
-        ...(isTerminal
-          ? ([{ type: 'separator' as const }, { label: 'Theme', submenu: themeSubmenu }] as any[])
-          : []),
-      ])
-      if (id?.startsWith('theme:')) {
-        const presetId = id.slice('theme:'.length)
-        if (presetId === '__import__') {
-          // Route the user to the Terminal section of settings so they can
-          // import a theme file. The submenu closes; settings opens scrolled
-          // to the right place.
-          useUIStore.getState().openSettings('terminal')
-          return
-        }
-        const next = presetId === '__default__' ? undefined : presetId
-        const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
-        if (wsId) useAppStore.getState().setPanelThemePreset(wsId, panelId, next)
-        return
-      }
-      switch (id) {
-        case 'close':
-          onClosePanel?.(panelId)
-          break
-        case 'close-others': {
-          const others = stack.panelIds.filter((p) => p !== panelId)
-          others.forEach((p) => onClosePanel?.(p))
-          break
-        }
-        case 'close-right': {
-          const toClose = stack.panelIds.slice(idx + 1)
-          toClose.forEach((p) => onClosePanel?.(p))
-          break
-        }
-        case 'close-all':
-          stack.panelIds.slice().forEach((p) => onClosePanel?.(p))
-          break
-        case 'split-right': {
-          if (panel) splitWithType(panel.type)
-          break
-        }
-        case 'move-window':
-          moveTabToNewWindow(panelId)
-          break
-      }
-    },
-    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, workspaceIdProp],
-  )
+  // Tab interaction actions (rename, click, context menus, add/split helpers).
+  const actions = useDockTabActions({
+    stack,
+    zone: zoneProp,
+    dockStoreApi,
+    workspaceId: workspaceIdProp,
+    getPanelProp,
+    onClosePanel,
+    onPanelRemoved,
+    excludePanelTypes,
+    localOnly,
+    activePanel,
+  })
 
+  // Main-dock tab drag (canvas-node mini-docks route through onTabBarMouseDown).
+  const { handleTabMouseDown } = useDockTabDrag({
+    stackId: stack.id,
+    zone: zoneProp,
+    dockStoreApi,
+    getPanel: getPanelProp,
+  })
+
+  const excludeKey = (excludePanelTypes ?? []).join(',')
   const visibleSplitItems = useMemo<SplitMenuItem[]>(
     () => SPLIT_MENU_ITEMS.filter((m) => !excludePanelTypes?.includes(m.type)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [excludeKey],
   )
 
-  const handleTabBarContextMenu = useCallback(
-    async (e: React.MouseEvent) => {
-      // Only fire on the empty area of the tab bar, not on tabs themselves.
-      if (e.target !== e.currentTarget) return
-      e.preventDefault()
-      if (!window.electronAPI) return
-      const id = await window.electronAPI.showContextMenu([
-        {
-          label: 'New Tab',
-          submenu: visibleSplitItems.map((m) => ({ id: `new:${m.type}`, label: m.label })),
-        },
-        { type: 'separator' },
-        {
-          label: 'Split With',
-          submenu: visibleSplitItems.map((m) => ({ id: `split:${m.type}`, label: m.label })),
-        },
-        { type: 'separator' },
-        { id: 'close-all', label: 'Close All', enabled: stack.panelIds.length > 0 },
-      ])
-      if (!id) return
-      if (id === 'close-all') {
-        stack.panelIds.slice().forEach((p) => onClosePanel?.(p))
-        return
-      }
-      const [kind, type] = id.split(':') as [string, PanelType]
-      if (kind === 'new') addTabOfType(type)
-      else if (kind === 'split') splitWithType(type)
+  const onEmptyContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      void actions.handleTabBarContextMenu(e, visibleSplitItems)
     },
-    // splitWithType / addTabOfType are defined later but referenced via closure;
-    // they're stable callbacks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stack.panelIds, onClosePanel],
+    [actions, visibleSplitItems],
   )
 
-  const handleTabClick = useCallback(
-    (index: number) => {
-      setActiveTab(stack.id, index)
-    },
-    [stack.id, setActiveTab],
-  )
-
-  // Drag initiation from tab
-  const handleTabMouseDown = useCallback(
-    (e: React.MouseEvent, panelId: string) => {
-      if (e.button !== 0) return
-      const startX = e.clientX
-      const startY = e.clientY
-      let dragStarted = false
-      let cwDragSnapshot: import('../../shared/types').PanelTransferSnapshot | null = null
-
-      let panel: PanelState | undefined
-      if (getPanelProp) {
-        panel = getPanelProp(panelId)
-      } else {
-        const wsId = useAppStore.getState().selectedWorkspaceId
-        const ws = useAppStore.getState().workspaces.find(w => w.id === wsId)
-        panel = ws?.panels[panelId]
-      }
-      if (!panel) return
-
-      const sourceZone = zoneProp
-
-      const handleMove = (ev: MouseEvent) => {
-        if (!dragStarted) {
-          if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return
-          dragStarted = true
-          document.body.classList.add('canvas-interacting')
-          const stackRect = stackRef.current?.getBoundingClientRect() ?? null
-          const grabOffset = stackRect
-            ? { x: startX - stackRect.left, y: startY - stackRect.top }
-            : null
-          const sourceSize = stackRect
-            ? { width: stackRect.width, height: stackRect.height }
-            : null
-          // If this dock is a canvas-node mini-dock, capture the node's own
-          // canvas-space size so CanvasDropZone can preview + place at 1:1
-          // with the existing node instead of falling back to a default.
-          let sourceNodeSize: { width: number; height: number } | null = null
-          const ownedNodeId = findNodeIdForDockStore(dockStoreApi)
-          if (ownedNodeId) {
-            const cs = findCanvasStoreForNode(ownedNodeId)
-            const n = cs?.getState().nodes[ownedNodeId]
-            if (n) {
-              // If the node is maximized at drag-start, spring-load will
-              // un-maximize it shortly after, restoring node.size to its
-              // pre-maximize size. Use preMaximizeSize as the ghost size so
-              // the preview matches the final dropped/moved node, not the
-              // huge maximized rect that's about to shrink away.
-              const usePre = n.preMaximizeSize != null
-              const w = usePre ? n.preMaximizeSize!.width : n.size.width
-              const h = usePre ? n.preMaximizeSize!.height : n.size.height
-              sourceNodeSize = { width: w, height: h }
-            }
-          }
-          useDockDragStore.getState().startDrag(
-            panelId,
-            panel.type,
-            panel.title,
-            { type: 'dock', zone: sourceZone, stackId: stack.id },
-            dockStoreApi,
-            grabOffset,
-            sourceSize,
-            sourceNodeSize,
-          )
-        }
-
-        const dockDrag = useDockDragStore.getState()
-        dockDrag.updateCursor({ x: ev.clientX, y: ev.clientY })
-
-        // Check if cursor is outside the window BEFORE hit testing — otherwise
-        // the cursor can pass through a sibling panel's drop zone on the way out,
-        // causing a local drop instead of a detach.
-        // In fullscreen, treat the cursor as always inside so the drag never
-        // transitions to cross-window detach mode (which would open a new
-        // BrowserWindow in a separate Space and appear as a black page).
-        const fullscreenLocked = window.electronAPI?.isMainWindowFullscreen?.() ?? false
-        const outsideWindow = fullscreenLocked
-          ? false
-          : ev.clientX <= 0 || ev.clientY <= 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight
-        if (!outsideWindow) {
-          // Skip hit-testing when the CanvasDropZone overlay is hovered —
-          // it handles the drop itself via onPointerUp.
-          if (!canvasDropZoneHovered) {
-            const target = hitTestDropTarget(ev.clientX, ev.clientY)
-            dockDrag.setDropTarget(target)
-          }
-        } else {
-          dockDrag.setDropTarget(null)
-        }
-        if (outsideWindow && !cwDragSnapshot) {
-          const snapshot = createTransferSnapshot(
-            panel,
-            { type: 'dock', zone: sourceZone, stackId: stack.id },
-            { origin: { x: ev.screenX, y: ev.screenY }, size: { width: 700, height: 500 } },
-          )
-          cwDragSnapshot = snapshot
-          window.electronAPI.crossWindowDragStart(snapshot, { x: ev.screenX, y: ev.screenY })
-        } else if (!outsideWindow && cwDragSnapshot) {
-          // Cursor re-entered this window — cancel cross-window drag
-          cwDragSnapshot = null
-          window.electronAPI.crossWindowDragCancel()
-        }
-      }
-
-      const cleanup = () => {
-        dragAbortRef.current?.abort()
-        dragAbortRef.current = null
-        document.body.classList.remove('canvas-interacting')
-      }
-
-      const handleUp = (ev: MouseEvent) => {
-        cleanup()
-
-        if (dragStarted) {
-          const dockDrag = useDockDragStore.getState()
-          // CanvasDropZone already handled this drop — skip our own logic.
-          if (dockDrag.canvasDropConsumed) {
-            useDockDragStore.getState().endDrag()
-            return
-          }
-          // Always re-hit-test at release. `activeDropTarget` reflects the
-          // last pointermove and may be stale (e.g. cursor was briefly over
-          // a tab bar earlier in the drag, then moved onto empty canvas
-          // before release — using the stale target would dock the panel
-          // into the tab bar instead of letting the canvas drop take over).
-          // If the cursor is currently over the canvas drop overlay, treat
-          // the drop as no-target so the canvas handler claims it.
-          const hit = canvasDropZoneHovered
-            ? null
-            : hitTestDropTargetWithStore(ev.clientX, ev.clientY)
-
-          if (hit && dockDrag.draggedPanelId) {
-            // Drop within this window — cancel any cross-window drag
-            if (cwDragSnapshot) {
-              cwDragSnapshot = null
-              window.electronAPI.crossWindowDragCancel()
-            }
-            const targetStore = hit.dockStoreApi ?? dockStoreApi
-            executeDrop(
-              dockDrag.draggedPanelId,
-              { type: 'dock', zone: sourceZone, stackId: stack.id },
-              hit.target,
-              undefined,
-              targetStore,
-              dockStoreApi,
-            )
-          } else if (
-            dockDrag.draggedPanelId &&
-            !(window.electronAPI?.isMainWindowFullscreen?.() ?? false) &&
-            (ev.clientX <= 0 || ev.clientY <= 0 || ev.clientX >= window.innerWidth || ev.clientY >= window.innerHeight)
-          ) {
-            // Cursor outside window — try cross-window drop, fall back to detach
-            const draggedId = dockDrag.draggedPanelId
-            const cwSnapshot = cwDragSnapshot
-            cwDragSnapshot = null
-
-            if (cwSnapshot) {
-              window.electronAPI.crossWindowDragResolve().then(async ({ claimed }) => {
-                if (claimed) {
-                  // Target window accepted — remove panel from this dock
-                  dockStoreApi.getState().undockPanel(draggedId)
-                  if (panel?.type === 'terminal') terminalRegistry.release(draggedId)
-                  onPanelRemoved?.(draggedId)
-                } else {
-                  // No target — try to detach into a new dock window. Only
-                  // undock from this store if the main process accepted
-                  // (it returns null when the parent is fullscreen).
-                  const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
-                  const winId = await window.electronAPI.dragDetach(cwSnapshot, wsId)
-                  if (winId != null) {
-                    dockStoreApi.getState().undockPanel(draggedId)
-                    if (panel?.type === 'terminal') terminalRegistry.release(draggedId)
-                    onPanelRemoved?.(draggedId)
-                  }
-                }
-              })
-            } else if (panel) {
-              // No cross-window drag was active — direct detach
-              const snapshot = createTransferSnapshot(
-                panel,
-                { type: 'dock', zone: sourceZone, stackId: stack.id },
-                { origin: { x: ev.screenX, y: ev.screenY }, size: { width: 700, height: 500 } },
-              )
-              const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
-              window.electronAPI.dragDetach(snapshot, wsId).then((winId) => {
-                if (winId != null) {
-                  dockStoreApi.getState().undockPanel(draggedId)
-                  if (panel.type === 'terminal') terminalRegistry.release(draggedId)
-                  onPanelRemoved?.(draggedId)
-                }
-              })
-            }
-          }
-          useDockDragStore.getState().endDrag()
-        }
-      }
-
-      // Cancel drag on window blur — OS won't deliver mouseup
-      const handleBlur = () => {
-        if (dragStarted) {
-          cleanup()
-          if (cwDragSnapshot) {
-            cwDragSnapshot = null
-            window.electronAPI.crossWindowDragCancel()
-          }
-          useDockDragStore.getState().endDrag()
-        }
-      }
-
-      dragAbortRef.current?.abort()
-      const controller = new AbortController()
-      dragAbortRef.current = controller
-      const { signal } = controller
-      window.addEventListener('mousemove', handleMove, { signal })
-      window.addEventListener('mouseup', handleUp, { signal })
-      window.addEventListener('blur', handleBlur, { signal })
-    },
-    [stack.id, zoneProp, getPanelProp, workspaceIdProp, onPanelRemoved, dockStoreApi],
-  )
-
-  const activePanelId = stack.panelIds[stack.activeIndex]
-
-  // Resolve active panel for the split-editor button. Only editors with a
-  // filePath can be "split" (we open a second editor for the same file in a
-  // new stack to the right). Other panel types and Untitled buffers don't
-  // have a sensible duplication semantic, so the button stays hidden.
-  const activePanel = activePanelId
-    ? (getPanelProp
-        ? getPanelProp(activePanelId)
-        : (() => {
-            const wsId = useAppStore.getState().selectedWorkspaceId
-            const ws = useAppStore.getState().workspaces.find(w => w.id === wsId)
-            return ws?.panels[activePanelId]
-          })())
-    : undefined
-  // Long-press menu state for the split button.
+  // --- Split button (with long-press menu) ---------------------------------
   const [splitMenuOpen, setSplitMenuOpen] = useState(false)
   const [splitMenuPos, setSplitMenuPos] = useState<{ top: number; right: number } | null>(null)
   const splitButtonRef = useRef<HTMLButtonElement>(null)
@@ -577,7 +139,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
   const longPressFired = useRef(false)
   const springLoadTimer = useRef<number | null>(null)
 
-  // Cancel spring-load timer when the drag ends so it doesn't fire late.
   useEffect(() => {
     return () => {
       if (springLoadTimer.current) {
@@ -587,81 +148,14 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     }
   }, [])
 
-  // Create a new panel of the given type into this zone (will be placed in the
-  // zone's first stack by appStore; caller relocates it as needed). Returns the
-  // new panel id, or null on failure.
-  // When `localOnly` is set, skip global dock placement entirely so the new
-  // panel exists in workspace.panels but is owned by the local DockStore only.
-  const createPanelOfType = useCallback(
-    (type: PanelType): string | null => {
-      const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
-      const placement: import('../stores/appStore').PanelPlacement = localOnly
-        ? { target: 'none' }
-        : { target: 'dock', zone: zoneProp }
-      const app = useAppStore.getState()
-      switch (type) {
-        case 'editor': {
-          // Duplicate the active editor's file when possible, otherwise untitled.
-          const filePath =
-            activePanel?.type === 'editor' && !activePanel.diffMode ? activePanel.filePath : undefined
-          return app.createEditor(wsId, filePath, undefined, placement) || null
-        }
-        case 'terminal':
-          return app.createTerminal(wsId, undefined, undefined, placement) || null
-        case 'browser':
-          return app.createBrowser(wsId, undefined, undefined, placement) || null
-        case 'git':
-          return app.createGit(wsId, undefined, placement) || null
-        case 'fileExplorer':
-          return app.createFileExplorer(wsId, undefined, placement) || null
-        case 'projectList':
-          return app.createProjectList(wsId, undefined, placement) || null
-        case 'canvas':
-          return app.createCanvas(wsId, undefined, placement) || null
-        default:
-          return null
-      }
-    },
-    [activePanel, workspaceIdProp, zoneProp, localOnly],
-  )
-
-  // Add a new tab of the given type into THIS stack (used by the "+" button).
-  const addTabOfType = useCallback(
-    (type: PanelType) => {
-      const newId = createPanelOfType(type)
-      if (!newId) return
-      // createX placed it in this zone's first stack — move into our stack.
-      dockStoreApi.getState().dockPanel(newId, zoneProp, {
-        type: 'tab',
-        stackId: stack.id,
-      })
-    },
-    [createPanelOfType, dockStoreApi, zoneProp, stack.id],
-  )
-
-  // Split this stack to the right with a new panel of the given type.
-  const splitWithType = useCallback(
-    (type: PanelType) => {
-      const newId = createPanelOfType(type)
-      if (!newId) return
-      dockStoreApi.getState().dockPanel(newId, zoneProp, {
-        type: 'split',
-        stackId: stack.id,
-        edge: 'right',
-      })
-    },
-    [createPanelOfType, dockStoreApi, zoneProp, stack.id],
-  )
-
   const handleSplitClick = useCallback(() => {
     if (longPressFired.current) {
-      // The long-press already opened the menu; ignore the click that follows.
       longPressFired.current = false
       return
     }
     if (!activePanel) return
-    splitWithType(activePanel.type)
-  }, [activePanel, splitWithType])
+    actions.splitWithType(activePanel.type)
+  }, [activePanel, actions])
 
   const handleSplitMouseDown = useCallback(() => {
     longPressFired.current = false
@@ -683,7 +177,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     }
   }, [])
 
-  // Close the split menu on outside click.
   useEffect(() => {
     if (!splitMenuOpen) return
     const onDown = () => setSplitMenuOpen(false)
@@ -691,22 +184,26 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     return () => window.removeEventListener('mousedown', onDown)
   }, [splitMenuOpen])
 
-  // Check if this stack is the active drop target, but suppress indicators
-  // when dragging a panel over the stack it originated from (self-drop is a no-op)
-  const isSelfDrop =
-    dragSource?.type === 'dock' && dragSource.stackId === stack.id
-  const isOver =
+  // Inline "new tab" placeholder when a dock-tab drop targets this stack.
+  // The resolver already vetoes invalid self-drops (single-tab same-stack);
+  // anything that arrives here as a dock-tab target is a real reorder/redock,
+  // so we show the placeholder regardless of source identity.
+  const showTabPlaceholder =
     isDragging &&
-    !isSelfDrop &&
-    activeDropTarget != null &&
-    (activeDropTarget.type === 'tab' || activeDropTarget.type === 'split') &&
-    'stackId' in activeDropTarget &&
-    activeDropTarget.stackId === stack.id
-  // Show an inline "new tab" placeholder at the end of the existing tabs
-  // when a tab drop is active for this stack — gives the user a precise
-  // visual anchor for where the dropped panel will land, in place of the
-  // floating chip portal which can never quite sit beside the real tabs.
-  const showTabPlaceholder = isOver && activeDropTarget?.type === 'tab'
+    target?.kind === 'dock-tab' &&
+    target.stackId === stack.id
+
+  // When the dragged tab originates from THIS stack, hide it from the strip
+  // and slot the placeholder at its original index (clamped so a leading
+  // drag still leaves the next tab in front of the placeholder).
+  const selfTabDrag = useMemo(() => {
+    if (!showTabPlaceholder) return null
+    if (!dragSource || dragSource.origin.kind !== 'dock-tab') return null
+    if (dragSource.origin.stackId !== stack.id) return null
+    const idx = stack.panelIds.indexOf(dragSource.panelId)
+    if (idx < 0) return null
+    return { draggedPanelId: dragSource.panelId, originalIndex: idx }
+  }, [showTabPlaceholder, dragSource, stack.id, stack.panelIds])
 
   return (
     <div ref={stackRef} className="flex flex-col h-full min-h-0 relative">
@@ -716,10 +213,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         className={`dock-tab-bar flex items-stretch overflow-hidden ${compact ? 'min-h-[26px]' : 'min-h-[36px]'}`}
         style={{
           backgroundColor: 'var(--node-chrome-bg, var(--surface-1))',
-          // Use margin (not padding) so the tab bar's background ends at the
-          // inner edge of the sidebar — otherwise the surface-1 background
-          // would extend under the translucent sidebar and show up as a
-          // blurred strip there.
           ...(zoneProp === 'center' && leftEdge
             ? { marginLeft: 'var(--cate-left-sidebar-width, 0px)' }
             : null),
@@ -727,169 +220,60 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             ? { marginRight: 'var(--cate-right-sidebar-width, 0px)' }
             : null),
         }}
-        onContextMenu={handleTabBarContextMenu}
+        onContextMenu={onEmptyContextMenu}
         onMouseDown={(e) => {
-          // Empty area of the tab bar — host (e.g. canvas node) may want to
-          // start a node-level drag here. Tabs/buttons stop propagation themselves.
           if (e.target !== e.currentTarget) return
           onTabBarMouseDown?.(e)
         }}
       >
-        <div
-          className="flex items-stretch flex-1 min-w-0"
-          onContextMenu={handleTabBarContextMenu}
-          onMouseDown={(e) => {
-            if (e.target !== e.currentTarget) return
-            onTabBarMouseDown?.(e)
-          }}
-        >
-          {stack.panelIds.map((panelId, i) => {
-            const isActive = i === stack.activeIndex
-            const panel = getPanelProp?.(panelId)
-              ?? useAppStore.getState().workspaces.find((w) => w.id === (workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId))?.panels[panelId]
-            const panelType = (panel?.type ?? 'editor') as PanelType
-            return (
-              <div
-                key={panelId}
-                className={`
-                  group relative flex items-center gap-1.5 whitespace-nowrap
-                  cursor-grab select-none min-w-0 flex-1 max-w-[200px]
-                  border-r border-white/5
-                  ${compact ? 'pl-2 pr-1.5 text-[11px]' : 'pl-3 pr-2 text-xs'}
-                  ${isActive ? 'text-primary font-medium' : 'text-secondary hover:text-primary'}
-                `}
-                onClick={() => handleTabClick(i)}
-                onMouseDown={(e) => handleTabMouseDown(e, panelId)}
-                onContextMenu={(e) => handleTabContextMenu(e, panelId)}
-                onPointerEnter={() => {
-                  if (isActive) return
-                  if (!useDockDragStore.getState().isDragging) return
-                  if (springLoadTimer.current) window.clearTimeout(springLoadTimer.current)
-                  // Canvas tabs spring-load faster (250ms) — the user is
-                  // explicitly trying to reveal the canvas to drop a tab on
-                  // it, and a 600ms wait felt unresponsive. Non-canvas tabs
-                  // keep the normal 600ms to avoid accidental activation
-                  // when the cursor merely traverses the tab strip.
-                  const delay = panelType === 'canvas' ? 250 : 600
-                  springLoadTimer.current = window.setTimeout(() => {
-                    setActiveTab(stack.id, i)
-                  }, delay)
-                }}
-                onPointerLeave={() => {
-                  if (springLoadTimer.current) {
-                    window.clearTimeout(springLoadTimer.current)
-                    springLoadTimer.current = null
-                  }
-                }}
-                style={{
-                  backgroundColor: isActive
-                    ? 'var(--node-chrome-active-bg, var(--surface-3))'
-                    : 'var(--node-chrome-bg, var(--surface-1))',
-                  WebkitAppRegion: 'no-drag',
-                } as React.CSSProperties}
-                title={getPanelTitle(panelId)}
-              >
-                {/* Top accent bar on the active tab — VS Code convention, but
-                    brighter so it reads against the dark surface. */}
-                {isActive && (
-                  <span
-                    className="absolute left-0 right-0 top-0 h-[2px]"
-                    style={{ backgroundColor: 'var(--node-chrome-accent, #3b82f6)' }}
-                  />
-                )}
-                <span className={`shrink-0 ${isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}>
-                  <TabIcon type={panelType} size={compact ? 11 : 13} />
-                </span>
-                {renameId === panelId ? (
-                  <input
-                    ref={renameInputRef}
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onBlur={() => commitRename(panelId)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); commitRename(panelId) }
-                      else if (e.key === 'Escape') { e.preventDefault(); setRenameId(null) }
-                      e.stopPropagation()
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                    className="truncate flex-1 min-w-0 bg-transparent outline-none border-b border-blue-500/60 text-primary px-0"
-                    style={{ font: 'inherit' }}
-                  />
-                ) : (
-                  <span
-                    className="truncate flex-1 min-w-0"
-                    onDoubleClick={(e) => {
-                      // Only terminal panels are addressable via cate CLI, so
-                      // limit inline rename to those (other panel types have
-                      // their title driven by content, e.g. filename).
-                      if (panel?.type !== 'terminal') return
-                      e.stopPropagation()
-                      setRenameValue(panel.title)
-                      setRenameId(panelId)
-                    }}
-                  >{getPanelTitle(panelId)}</span>
-                )}
-                {onClosePanel && (
-                  <span
-                    className={`shrink-0 p-0.5 rounded-sm hover:bg-hover ${
-                      isActive ? 'opacity-80' : 'opacity-0 group-hover:opacity-70'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onClosePanel(panelId)
-                    }}
-                  >
-                    <X size={compact ? 12 : 11} />
-                  </span>
-                )}
-              </div>
-            )
-          })}
-          {showTabPlaceholder && (
-            <div
-              aria-hidden
-              className={`flex items-center justify-center whitespace-nowrap select-none border-r border-white/5 ${compact ? 'px-2 text-[11px]' : 'px-3 text-xs'}`}
-              style={{
-                minWidth: 100,
-                color: 'var(--focus-blue, #3b82f6)',
-                backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
-                border: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
-                borderRadius: 4,
-              }}
-            >
-              + new tab
-            </div>
-          )}
-          {/* Draggable spacer that fills the rest of the row. In a detached
-              dock window this is the macOS title-bar drag region. In a
-              canvas-node mini-dock (onTabBarMouseDown set) it's instead a
-              mouse-event handle that initiates a node drag. */}
-          <div
-            className="flex-1 min-w-[20px] self-stretch"
-            style={
-              onTabBarMouseDown
-                ? undefined
-                : ({ WebkitAppRegion: 'drag' } as React.CSSProperties)
+        <DockTabBar
+          stack={stack}
+          compact={compact}
+          getPanel={resolvePanel}
+          getPanelTitle={getPanelTitle}
+          onClosePanel={onClosePanel}
+          onTabClick={actions.handleTabClick}
+          onTabMouseDown={(e, panelId) => {
+            // In a canvas-node mini-dock (onTabBarMouseDown supplied by the
+            // host) route tab mousedown through the SAME handler the empty
+            // tab-bar uses, passing the panelId so the host can choose:
+            // drag the whole node (single-tab) vs detach just this tab
+            // (multi-tab).
+            if (onTabBarMouseDown) {
+              onTabBarMouseDown(e, panelId)
+              return
             }
-            onMouseDown={onTabBarMouseDown}
-            onContextMenu={handleTabBarContextMenu}
-          />
-        </div>
+            handleTabMouseDown(e, panelId)
+          }}
+          onTabContextMenu={actions.handleTabContextMenu}
+          renameId={actions.renameId}
+          renameValue={actions.renameValue}
+          renameInputRef={actions.renameInputRef}
+          setRenameValue={actions.setRenameValue}
+          setRenameId={actions.setRenameId}
+          commitRename={actions.commitRename}
+          beginRename={actions.beginRename}
+          springLoadTimer={springLoadTimer}
+          setActiveTab={actions.setActiveTab}
+          onEmptyMouseDown={(e) => onTabBarMouseDown?.(e)}
+          onEmptyContextMenu={onEmptyContextMenu}
+          showTabPlaceholder={showTabPlaceholder}
+          selfTabDrag={selfTabDrag}
+          onTabBarMouseDown={onTabBarMouseDown}
+        />
 
         {/* "+" tab — adds a new tab of the active panel's type into this stack. */}
         {activePanel && (
           <button
             className={`flex items-center justify-center self-center rounded text-secondary hover:text-primary hover:bg-hover ${compact ? 'mx-0.5 my-0.5 w-[18px] h-[18px]' : 'mx-1 my-1 w-[22px] h-[22px]'}`}
             title={`New ${PANEL_TYPE_LABELS[activePanel.type] ?? 'Tab'}`}
-            onClick={() => addTabOfType(activePanel.type)}
+            onClick={() => actions.addTabOfType(activePanel.type)}
           >
             <Plus size={compact ? 12 : 13} />
           </button>
         )}
 
-        {/* Right-side action bar — split button. Click splits the current
-            tab (same type). Click-and-hold opens a type picker. */}
+        {/* Split button. Click splits; click-and-hold opens a type picker. */}
         {activePanelId && (
           <div className={`relative flex items-center self-center ${compact ? 'px-0.5' : 'px-1'}`}>
             <button
@@ -903,28 +287,13 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             >
               <Columns size={compact ? 12 : 14} />
             </button>
-            {splitMenuOpen && splitMenuPos && createPortal(
-              <div
-                className="fixed z-[1000] min-w-[170px] rounded-md border border-subtle bg-surface-3 shadow-xl py-1 text-xs"
-                style={{ top: splitMenuPos.top, right: splitMenuPos.right }}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                {visibleSplitItems.map(({ type, label, Icon }) => (
-                  <button
-                    key={type}
-                    className="flex items-center gap-2 w-full px-3 py-1.5 text-secondary hover:bg-surface-4 hover:text-primary"
-                    onClick={() => {
-                      setSplitMenuOpen(false)
-                      splitWithType(type)
-                    }}
-                  >
-                    <Icon size={13} className="text-muted" />
-                    <span>Split with {label}</span>
-                  </button>
-                ))}
-              </div>,
-              document.body,
-            )}
+            <DockTabContextMenu
+              open={splitMenuOpen}
+              position={splitMenuPos}
+              items={visibleSplitItems}
+              onPick={actions.splitWithType}
+              onClose={() => setSplitMenuOpen(false)}
+            />
           </div>
         )}
 
@@ -939,10 +308,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         )}
       </div>
 
-      {/* Active panel content — inset away from translucent sidebars so the
-          panel body (editor / browser / etc.) doesn't bleed behind them. The
-          canvas panel is intentionally allowed to extend under the sidebars
-          so its infinite surface reads as the backdrop. */}
+      {/* Active panel content */}
       <div
         className="flex-1 min-h-0 overflow-hidden"
         style={{
@@ -961,9 +327,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         )}
       </div>
 
-      {/* Drop zone overlay */}
-      <DropZoneOverlay activeTarget={activeDropTarget} isOver={isOver} />
     </div>
   )
 }
-

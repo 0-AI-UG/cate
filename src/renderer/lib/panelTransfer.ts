@@ -54,6 +54,15 @@ export function createTransferSnapshot(
     }
   }
 
+  // Editor-specific: capture unsaved content
+  if (panel.type === 'editor') {
+    snapshot.editorState = {
+      cursorPosition: { line: 1, column: 1 },
+      scrollTop: 0,
+      unsavedContent: panel.unsavedContent,
+    }
+  }
+
   // Browser-specific: capture URL
   if (panel.type === 'browser' && panel.url) {
     snapshot.browserState = {

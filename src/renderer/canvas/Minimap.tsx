@@ -133,50 +133,34 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
     window.addEventListener('mouseup', handleUp)
   }, [containerSize.width, containerSize.height])
 
-  // Handle click/drag to navigate (must be before any early returns)
-  const navigateToPoint = useCallback((clientX: number, clientY: number) => {
-    if (!minimapRef.current) return
-    const state = canvasApi.getState()
-    const nl = Object.values(state.nodes)
-    if (nl.length === 0) return
-
-    const bMinX = Math.min(...nl.map(n => n.origin.x))
-    const bMinY = Math.min(...nl.map(n => n.origin.y))
-    const bMaxX = Math.max(...nl.map(n => n.origin.x + n.size.width))
-    const bMaxY = Math.max(...nl.map(n => n.origin.y + n.size.height))
-    const vL = -state.viewportOffset.x / state.zoomLevel
-    const vT = -state.viewportOffset.y / state.zoomLevel
-    const vR = vL + state.containerSize.width / state.zoomLevel
-    const vB = vT + state.containerSize.height / state.zoomLevel
-    const wMinX = Math.min(bMinX, vL) - 100
-    const wMinY = Math.min(bMinY, vT) - 100
-    const wMaxX = Math.max(bMaxX, vR) + 100
-    const wMaxY = Math.max(bMaxY, vB) + 100
-    const iW = MINIMAP_WIDTH - MINIMAP_PADDING * 2
-    const iH = MINIMAP_HEIGHT - MINIMAP_PADDING * 2
-    const sc = Math.min(iW / (wMaxX - wMinX), iH / (wMaxY - wMinY))
-
-    const rect = minimapRef.current.getBoundingClientRect()
-    const canvasX = (clientX - rect.left - MINIMAP_PADDING) / sc + wMinX
-    const canvasY = (clientY - rect.top - MINIMAP_PADDING) / sc + wMinY
-    state.setViewportOffset({
-      x: state.containerSize.width / 2 - canvasX * state.zoomLevel,
-      y: state.containerSize.height / 2 - canvasY * state.zoomLevel,
-    })
-  }, [])
-
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    navigateToPoint(e.clientX, e.clientY)
+    if (!minimapRef.current) return
+    // Capture world bounds + scale ONCE at drag start so the mapping stays linear
+    // for the whole drag — otherwise each mousemove re-derives bounds that include
+    // the current viewport, which shifts the scale and makes motion accelerate.
+    const { worldMinX, worldMinY, scale } = layoutRef.current
+    const rect = minimapRef.current.getBoundingClientRect()
 
-    const handleMove = (ev: MouseEvent) => navigateToPoint(ev.clientX, ev.clientY)
+    const navigate = (clientX: number, clientY: number) => {
+      const state = canvasApi.getState()
+      const canvasX = (clientX - rect.left - MINIMAP_PADDING) / scale + worldMinX
+      const canvasY = (clientY - rect.top - MINIMAP_PADDING) / scale + worldMinY
+      state.setViewportOffset({
+        x: state.containerSize.width / 2 - canvasX * state.zoomLevel,
+        y: state.containerSize.height / 2 - canvasY * state.zoomLevel,
+      })
+    }
+
+    navigate(e.clientX, e.clientY)
+    const handleMove = (ev: MouseEvent) => navigate(ev.clientX, ev.clientY)
     const handleUp = () => {
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
-  }, [navigateToPoint])
+  }, [canvasApi])
 
   // Imperatively update the viewport rect on pan — no React re-render needed.
   useEffect(() => {

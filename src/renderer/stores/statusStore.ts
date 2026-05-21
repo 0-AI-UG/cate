@@ -21,6 +21,8 @@ interface WorkspaceStatusState {
   terminalActivity: Record<string, TerminalActivity>
   agentState: Record<string, AgentState>
   agentName: Record<string, string | null>
+  /** terminalId → whether main saw a non-helper subprocess in the agent's tree. */
+  subprocessActive: Record<string, boolean>
   nodeActivity: Record<CanvasNodeId, NodeActivityState>
   terminalTitles: Record<string, string>
   listeningPorts: Record<string, number[]>      // terminalId → ports
@@ -44,6 +46,7 @@ interface StatusStoreActions {
   // Mutations
   setTerminalActivity: (workspaceId: string, terminalId: string, activity: TerminalActivity) => void
   setAgentState: (workspaceId: string, terminalId: string, state: AgentState, name: string | null) => void
+  setSubprocessActive: (workspaceId: string, terminalId: string, active: boolean) => void
   setNodeActivity: (nodeId: CanvasNodeId, state: NodeActivityState) => void
   clearNodeActivity: (nodeId: CanvasNodeId) => void
   setTerminalTitle: (terminalId: string, title: string) => void
@@ -81,6 +84,7 @@ function emptyWorkspaceStatus(): WorkspaceStatusState {
     terminalActivity: {},
     agentState: {},
     agentName: {},
+    subprocessActive: {},
     nodeActivity: {},
     terminalTitles: {},
     listeningPorts: {},
@@ -159,6 +163,25 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
             ...ws,
             agentState: { ...ws.agentState, [terminalId]: agentState },
             agentName: { ...ws.agentName, [terminalId]: agentName },
+          },
+        },
+      }
+    })
+  },
+
+  setSubprocessActive(workspaceId, terminalId, active) {
+    get().ensureWorkspace(workspaceId)
+    set((state) => {
+      const ws = state.workspaces[workspaceId] ?? emptyWorkspaceStatus()
+      // Avoid a fresh object identity (and the downstream re-render) when the
+      // value hasn't actually changed — main polls every second.
+      if (ws.subprocessActive[terminalId] === active) return state
+      return {
+        workspaces: {
+          ...state.workspaces,
+          [workspaceId]: {
+            ...ws,
+            subprocessActive: { ...ws.subprocessActive, [terminalId]: active },
           },
         },
       }
@@ -344,6 +367,7 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
         const { [terminalId]: _a, ...remainingActivity } = ws.terminalActivity
         const { [terminalId]: _s, ...remainingAgent } = ws.agentState
         const { [terminalId]: _an, ...remainingAgentName } = ws.agentName
+        const { [terminalId]: _sa, ...remainingSubprocess } = ws.subprocessActive
         const { [terminalId]: _t, ...remainingTitles } = ws.terminalTitles
         updatedWorkspaces[workspaceId] = {
           ...ws,
@@ -352,6 +376,7 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
           terminalActivity: remainingActivity,
           agentState: remainingAgent,
           agentName: remainingAgentName,
+          subprocessActive: remainingSubprocess,
           terminalTitles: remainingTitles,
         }
       }

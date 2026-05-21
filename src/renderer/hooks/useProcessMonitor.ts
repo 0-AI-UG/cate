@@ -42,10 +42,17 @@ export function useProcessMonitor(workspaceId: string): void {
     const pendingUpdates = new Map<string, ReturnType<typeof setTimeout>>()
 
     const unsubscribe = api.onShellActivityUpdate(
-      (terminalId: string, activityRaw: unknown, agentStateRaw: unknown, agentNameRaw: unknown) => {
+      (
+        terminalId: string,
+        activityRaw: unknown,
+        agentStateRaw: unknown,
+        agentNameRaw: unknown,
+        subprocessActiveRaw: unknown,
+      ) => {
         const terminalActivity = activityRaw as TerminalActivity
         const agentState = (agentStateRaw as AgentState) ?? 'notRunning'
         const agentName = (agentNameRaw as string | null) ?? null
+        const subprocessActive = subprocessActiveRaw === true
 
         // Resolve the terminal's actual workspace — the hook's workspaceId is
         // always the *selected* workspace, but this event fires for ALL terminals.
@@ -58,6 +65,11 @@ export function useProcessMonitor(workspaceId: string): void {
           agentState: 'notRunning' as AgentState,
           agentName: null,
         }
+
+        // subprocessActive is the immediate "definitely running" signal; the
+        // detector ORs it with screen activity, so push it ahead of any
+        // debouncing.
+        store().setSubprocessActive(actualWorkspaceId, terminalId, subprocessActive)
 
         // --- Update status store (debounced for activity, immediate for state transitions) ---
         const isTransition = agentState !== prev.agentState

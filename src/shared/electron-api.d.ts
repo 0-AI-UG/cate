@@ -14,6 +14,10 @@ export interface NativeContextMenuItem {
 }
 
 export interface ElectronAPI {
+  /** True when launched with CATE_E2E=1 (Playwright). Renderer uses this to
+   *  install the test harness on window.__cateE2E. */
+  isE2E: boolean
+
   // ---------------------------------------------------------------------------
   // Terminal
   // ---------------------------------------------------------------------------
@@ -184,7 +188,13 @@ export interface ElectronAPI {
 
   /** Subscribe to shell activity updates (main -> renderer). */
   onShellActivityUpdate(
-    callback: (terminalId: string, activity: TerminalActivity, agentState: AgentState, agentName: string | null) => void,
+    callback: (
+      terminalId: string,
+      activity: TerminalActivity,
+      agentState: AgentState,
+      agentName: string | null,
+      subprocessActive: boolean,
+    ) => void,
   ): () => void
 
   /** Subscribe to port scan updates (main -> renderer). */
@@ -192,6 +202,18 @@ export interface ElectronAPI {
 
   /** Subscribe to CWD updates (main -> renderer). */
   onShellCwdUpdate(callback: (terminalId: string, cwd: string) => void): () => void
+
+  /**
+   * Report an agent's screen-derived state up to main. The renderer that owns
+   * the xterm instance reads its buffer to detect prompt vs. working, and
+   * pushes the result here so other windows' sidebars can mirror it.
+   */
+  shellReportAgentScreenState(terminalId: string, state: AgentState): void
+
+  /** Subscribe to screen-state broadcasts from main (originating in any window). */
+  onAgentScreenStateUpdate(
+    callback: (terminalId: string, state: AgentState) => void,
+  ): () => void
 
   /** Subscribe to git branch updates (main -> renderer). */
   onGitBranchUpdate(
@@ -251,13 +273,6 @@ export interface ElectronAPI {
 
   /** Open a native folder picker. Returns the selected path or null if canceled. */
   openFolderDialog(): Promise<string | null>
-
-  /** Open a native image file picker (multi-select). Returns selected paths or null if canceled. */
-  openImageDialog(): Promise<string[] | null>
-
-  /** Read a file and return a base64 data URL if its bytes sniff as an image
-   *  (PNG/JPEG/GIF/WebP/BMP/SVG). Returns null for non-image or oversized files. */
-  readImageAsDataUrl(filePath: string): Promise<{ mime: string; dataUrl: string } | null>
 
   /** Native unsaved-changes confirmation. Returns 'save' | 'discard' | 'cancel'. */
   confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean }): Promise<'save' | 'discard' | 'cancel'>
@@ -447,24 +462,6 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
   // Orchestrator (cate CLI graph sync)
   // ---------------------------------------------------------------------------
-
-  /** Push a full snapshot of this window's terminals + canvas connections to
-   *  the main-process orchestrator. Called on every relevant store change. */
-  orchSyncRegistry(snapshot: {
-    terminals: Array<{ ptyId: string | null; panelId: string; nodeId: string | null; name: string }>
-    portals?: Array<{ panelId: string; nodeId: string | null; name: string }>
-    connections: Array<{ from: string; to: string }>
-  }): Promise<void>
-
-  /** Subscribe to "ask in flight" events emitted by the orchestrator so the
-   *  canvas can animate the connection line during a `cate ask`. Returns an
-   *  unsubscribe function. */
-  onOrchInflight(callback: (payload: { fromNodeId: string; toNodeId: string; active: boolean }) => void): () => void
-
-  /** Subscribe to orchestrator-driven UI commands (recruit/dismiss/connect/note/portal).
-   *  The handler is awaited; its return value is sent back to main as the response.
-   *  Throw to signal failure. Returns an unsubscribe function. */
-  onOrchCommand(handler: (req: { id: number; verb: string; args?: any }) => Promise<any>): () => void
 
   /** Push a (panelId, webContentsId, alive) tuple to main so it can build a
    *  webContents → portal-panel reverse map for popup parent resolution. */

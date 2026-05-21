@@ -15,6 +15,12 @@ import { useUIStore } from './stores/uiStore'
 import { useUpdateStore, type UpdateStatus } from './stores/updateStore'
 import { useShortcuts } from './hooks/useShortcuts'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
+import {
+  startAgentScreenDetector,
+  stopAgentScreenDetector,
+  applyRemoteAgentScreenState,
+} from './lib/agentScreenDetector'
+import type { AgentState } from '../shared/types'
 import { Sidebar, RightSidebar } from './sidebar/Sidebar'
 // Kick off the dynamic imports immediately so the panel chunks download in
 // parallel with settings/session load, instead of waiting for first render.
@@ -44,9 +50,8 @@ import { useDockStore } from './stores/dockStore'
 import MainWindowShell from './shells/MainWindowShell'
 import PanelWindowShell from './shells/PanelWindowShell'
 import DockWindowShell from './shells/DockWindowShell'
-import DragGhost from './docking/DragGhost'
 import { WindowTypeContext } from './stores/WindowTypeContext'
-import { setupCrossWindowDragListeners } from './hooks/useDockDrag'
+import { setupCrossWindowDragListeners } from './drag'
 import { terminalRegistry } from './lib/terminalRegistry'
 import { applyTheme } from './lib/themeManager'
 import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
@@ -132,9 +137,33 @@ function MainApp() {
     applyTheme(appearanceMode)
   }, [appearanceMode])
 
+  // E2E test harness — exposes window.__cateE2E only when launched by Playwright.
+  useEffect(() => {
+    if (window.electronAPI?.isE2E) {
+      import('./lib/e2eHarness').then((m) => m.installE2EHarness())
+    }
+  }, [])
+
   // Global hooks
   useShortcuts()
   useProcessMonitor(selectedWorkspaceId)
+
+  // The agent-screen detector inspects each terminal's xterm buffer for prompt
+  // markers and reports the result via IPC. The unsubscribe handler also
+  // applies state broadcast from other windows, so detached panel windows keep
+  // the main-window sidebar in sync.
+  useEffect(() => {
+    startAgentScreenDetector()
+    const off = window.electronAPI?.onAgentScreenStateUpdate?.(
+      (terminalId: string, state: AgentState) => {
+        applyRemoteAgentScreenState(terminalId, state)
+      },
+    )
+    return () => {
+      stopAgentScreenDetector()
+      off?.()
+    }
+  }, [])
 
   // Sync the OS window title to the active workspace name. On macOS this is
   // what each native tab in the title bar displays, so the user can tell
@@ -299,19 +328,32 @@ function MainApp() {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     return setupCrossWindowDragListeners((snapshot, target) => {
-      // Deposit transfer data BEFORE updating state (which triggers TerminalPanel mount)
+      // PTY transfer MUST be deposited before any state set that mounts TerminalPanel.
       if (snapshot.terminalPtyId) {
         terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
       }
 
-      // A panel was dropped into the main window from another window
       const wsId = useAppStore.getState().selectedWorkspaceId
       useAppStore.getState().addPanel(wsId, snapshot.panel)
-      useDockStore.getState().dockPanel(
-        snapshot.panel.id,
-        target.type === 'zone' ? target.zone : 'center',
-        target,
-      )
+
+      if (target.kind === 'dock') {
+        const dockTarget = target.target
+        target.dockStoreApi.getState().dockPanel(
+          snapshot.panel.id,
+          dockTarget.type === 'zone' ? dockTarget.zone : 'center',
+          dockTarget,
+        )
+      } else {
+        const canvasState = target.canvasStoreApi.getState()
+        const newNodeId = canvasState.addNode(
+          snapshot.panel.id,
+          snapshot.panel.type,
+          target.origin,
+          target.size,
+        )
+        target.canvasStoreApi.getState().resizeNode(newNodeId, target.size)
+        target.canvasStoreApi.getState().focusNode(newNodeId)
+      }
     })
   }, [])
 
@@ -471,8 +513,6 @@ function MainApp() {
         <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
       )}
       <SavedLayoutsDialog />
-
-      <DragGhost />
 
       {initializing && (
         <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-4 select-none pointer-events-none">

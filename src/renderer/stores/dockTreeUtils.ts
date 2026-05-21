@@ -1,6 +1,6 @@
 // =============================================================================
 // Dock Tree Utilities — pure tree-traversal functions for dock layout trees.
-// Shared between dockStore and useNodeDrag to avoid duplication.
+// Shared between dockStore and drag resolution to avoid duplication.
 // =============================================================================
 
 import type {

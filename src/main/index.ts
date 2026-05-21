@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_OPEN_IMAGE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, FS_READ_IMAGE, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -31,46 +31,29 @@ import { initShellEnv } from './shellEnv'
 import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
 import { initSentry } from './sentry'
 import { saveCrashReport, checkPendingCrashReport } from './crashReporter'
-import { beginTerminalTransfer, acknowledgeTerminalTransfer } from './ipc/terminal'
+import { beginTerminalTransfer, acknowledgeTerminalTransfer, handleCrossWindowDropTerminalTransfer } from './ipc/terminal'
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
 import { disableRendererSandbox, disableTrustScoping } from './featureFlags'
 import { installWebContentsSecurity } from './webSecurity'
+import {
+  startCrossWindowDrag,
+  updateCrossWindowCursor,
+  cancelCrossWindowDrag,
+  claimCrossWindowDrop,
+  resolveCrossWindowDrag,
+  decideDetach,
+  clampGhostSize,
+  ghostPosition,
+  isCursorInsideAnyAppWindow,
+  CROSS_WINDOW_POLL_MS,
+  CROSS_WINDOW_CLAIM_WAIT_MS,
+  type CrossWindowDragState,
+  type GhostHostWindow,
+} from './dragLogic'
 
 /** True when any existing Cate BrowserWindow is in macOS native fullscreen.
  *  Used to reject window-creation IPCs so the app can never "escape" into a
  *  separate Space while the user is in fullscreen mode. */
-/** Identify common image formats by their magic bytes. Returns null when the
- *  buffer does not match a supported format — used to safely render images
- *  that may lack a file extension (macOS screenshot floating thumbnails). */
-function sniffImageMime(buf: Buffer): string | null {
-  if (buf.length >= 8 &&
-      buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
-      buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a) {
-    return 'image/png'
-  }
-  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
-    return 'image/jpeg'
-  }
-  if (buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38 &&
-      (buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61) {
-    return 'image/gif'
-  }
-  if (buf.length >= 12 &&
-      buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
-      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) {
-    return 'image/webp'
-  }
-  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) {
-    return 'image/bmp'
-  }
-  // SVG — text-based, look for "<svg" or "<?xml" with svg later in the head.
-  const head = buf.slice(0, Math.min(buf.length, 256)).toString('utf8').trimStart().toLowerCase()
-  if (head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'))) {
-    return 'image/svg+xml'
-  }
-  return null
-}
-
 function anyWindowFullscreen(): boolean {
   for (const w of BrowserWindow.getAllWindows()) {
     if (w.isDestroyed()) continue
@@ -285,14 +268,22 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
 
 let dragGhostWin: BrowserWindow | null = null
 
-function createDragGhostWindow(panelType: string, panelTitle: string): void {
+function createDragGhostWindow(
+  panelType: string,
+  panelTitle: string,
+  ghostWidth: number,
+  ghostHeight: number,
+): void {
   if (dragGhostWin && !dragGhostWin.isDestroyed()) {
     dragGhostWin.destroy()
   }
 
+  // Clamp ghost size to sane bounds so we don't spawn a massive native window.
+  const { width: w, height: h } = clampGhostSize(ghostWidth, ghostHeight)
+
   dragGhostWin = new BrowserWindow({
-    width: 200,
-    height: 32,
+    width: w,
+    height: h,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -309,10 +300,13 @@ function createDragGhostWindow(panelType: string, panelTitle: string): void {
     },
   })
 
+  // Tag this window so the cursor-poll loop can exclude it when deciding
+  // whether the cursor is over a Cate window.
+  ;(dragGhostWin as unknown as { __isDragGhost: boolean }).__isDragGhost = true
+
   // Ignore mouse events so the ghost doesn't interfere with drop targets
   dragGhostWin.setIgnoreMouseEvents(true)
 
-  // Render a simple HTML pill as the ghost
   const iconMap: Record<string, string> = {
     terminal: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(77,217,100)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
     browser: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(74,158,255)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
@@ -324,18 +318,24 @@ function createDragGhostWindow(panelType: string, panelTitle: string): void {
   }
   const escapeHtml = (s: string) => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!))
   const icon = iconMap[panelType] || iconMap['editor']
-  const safeTitle = escapeHtml(panelTitle.slice(0, 30))
+  const safeTitle = escapeHtml(panelTitle.slice(0, 40))
   const html = `data:text/html;charset=utf-8,<!DOCTYPE html>
 <html><head><style>
-  * { margin: 0; padding: 0; }
-  body { background: transparent; overflow: hidden; -webkit-app-region: no-drag; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
-    background: rgba(42,42,58,0.95); border: 1px solid rgba(74,158,255,0.4);
-    border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    font: 12px -apple-system, sans-serif; color: rgba(255,255,255,0.8);
-    white-space: nowrap; }
-  .pill svg { flex-shrink: 0; }
-</style></head><body><div class="pill"><span>${icon}</span><span>${safeTitle}</span></div></body></html>`
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:transparent;overflow:hidden;font:11px -apple-system,sans-serif}
+.ghost{width:100vw;height:100vh;display:flex;flex-direction:column;
+ border:1.5px solid rgba(74,158,255,0.7);background:rgba(74,158,255,0.08);
+ border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.5);overflow:hidden}
+.tbar{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:6px;
+ padding:0 10px;background:rgba(42,42,58,0.95);
+ border-bottom:1px solid rgba(255,255,255,0.08);
+ color:rgba(255,255,255,0.85);font-weight:500;white-space:nowrap;overflow:hidden}
+.tbar svg{flex-shrink:0}
+.tbar .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:16px}
+.body .big{opacity:0.9}
+.body .lbl{color:rgba(74,158,255,0.85);font-size:11px;font-weight:500}
+</style></head><body><div class="ghost"><div class="tbar">${icon}<span class="t">${safeTitle}</span></div><div class="body"><div class="big"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(74,158,255,0.85)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg></div><div class="lbl">Drop to place here</div></div></div></body></html>`
 
   dragGhostWin.loadURL(html)
   dragGhostWin.webContents.once('did-finish-load', () => {
@@ -345,9 +345,18 @@ function createDragGhostWindow(panelType: string, panelTitle: string): void {
   })
 }
 
-function moveDragGhostWindow(screenX: number, screenY: number): void {
+function moveDragGhostWindow(
+  screenX: number,
+  screenY: number,
+  grabOffsetX?: number,
+  grabOffsetY?: number,
+): void {
   if (dragGhostWin && !dragGhostWin.isDestroyed()) {
-    dragGhostWin.setPosition(screenX + 12, screenY + 12, false)
+    const grab = grabOffsetX != null || grabOffsetY != null
+      ? { x: grabOffsetX ?? 12, y: grabOffsetY ?? 12 }
+      : null
+    const pos = ghostPosition({ x: screenX, y: screenY }, grab)
+    dragGhostWin.setPosition(pos.x, pos.y, false)
   }
 }
 
@@ -422,37 +431,6 @@ function registerWindowAndDialogHandlers(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
-  })
-
-  // Read a file from disk and return a base64 data URL if its content sniffs
-  // as a supported image format. Used so the renderer can display images
-  // without depending on the `file://` CSP allowance, and so files that lack
-  // an extension (macOS screenshots dragged from the floating thumbnail) can
-  // still be detected and rendered. Returns null for non-image content.
-  ipcMain.handle(FS_READ_IMAGE, async (_event, filePath: string) => {
-    try {
-      // Cap at 25 MB — plenty for screenshots, prevents accidental DoS via huge files.
-      const stat = await fs.promises.stat(filePath)
-      if (!stat.isFile() || stat.size > 25 * 1024 * 1024) return null
-      const buf = await fs.promises.readFile(filePath)
-      const mime = sniffImageMime(buf)
-      if (!mime) return null
-      return { mime, dataUrl: `data:${mime};base64,${buf.toString('base64')}` }
-    } catch {
-      return null
-    }
-  })
-
-  ipcMain.handle(DIALOG_OPEN_IMAGE, async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openFile', 'multiSelections'],
-      title: 'Add Image to Canvas',
-      filters: [
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
-      ],
-    })
-    if (result.canceled || result.filePaths.length === 0) return null
-    return result.filePaths
   })
 
   // Native unsaved-changes confirmation. Returns 'save' | 'discard' | 'cancel'.
@@ -697,12 +675,23 @@ function registerWindowAndDialogHandlers(): void {
 
   ipcMain.handle(DRAG_DETACH, async (_event, snapshot: PanelTransferSnapshot, workspaceId?: string) => {
     const cursor = screen.getCursorScreenPoint()
+    const display = screen.getDisplayNearestPoint(cursor)
 
-    // Refuse to create a new window while any Cate window is in macOS
-    // native fullscreen — the new window would land in a different Space
-    // (black screen). Caller treats a null return as "detach rejected —
-    // put the panel back where it came from".
-    if (anyWindowFullscreen()) return null
+    // Decide whether to detach and where to place the new window. `decideDetach`
+    // refuses when any Cate window is in macOS native fullscreen (the new window
+    // would land in a separate Space and appear black). Caller treats a null
+    // return as "detach rejected — put the panel back where it came from".
+    const decision = decideDetach({
+      anyWindowFullscreen: anyWindowFullscreen(),
+      cursor,
+      grabOffset: { x: 12, y: 12 },
+      size: {
+        width: snapshot.geometry?.size?.width ?? 700,
+        height: snapshot.geometry?.size?.height ?? 500,
+      },
+      displayBounds: display.workArea,
+    })
+    if (decision.kind === 'refuse') return null
 
     // Begin terminal buffering if applicable
     if (snapshot.terminalPtyId) {
@@ -721,13 +710,11 @@ function registerWindowAndDialogHandlers(): void {
       beginTerminalTransfer(snapshot.terminalPtyId, newWin.id)
     }
 
-    // Position at cursor
-    const display = screen.getDisplayNearestPoint(cursor)
     newWin.setBounds({
-      x: cursor.x - display.bounds.x,
-      y: cursor.y - display.bounds.y,
-      width: snapshot.geometry?.size?.width ?? 700,
-      height: snapshot.geometry?.size?.height ?? 500,
+      x: decision.position.x,
+      y: decision.position.y,
+      width: decision.size.width,
+      height: decision.size.height,
     })
 
     // Build initial dock state: single center zone with one tab stack
@@ -781,16 +768,22 @@ function registerWindowAndDialogHandlers(): void {
     return listDockWindows()
   })
 
-  // Cross-window drag coordination
-  let crossWindowDragState: {
-    snapshot: PanelTransferSnapshot
-    sourceWindowId: number
-    pollTimer: ReturnType<typeof setInterval> | null
-  } | null = null
+  // Cross-window drag coordination — `crossWindowDragState` is the pure state
+  // (managed via dragLogic functions); `pollTimer` is the Electron-effect that
+  // shadows it. They're cleared together.
+  let crossWindowDragState: CrossWindowDragState | null = null
+  let pollTimer: ReturnType<typeof setInterval> | null = null
 
-  // Used by CROSS_WINDOW_DRAG_RESOLVE to detect if a target window claimed the drop
-  let crossWindowDropClaimed = false
+  // Used by CROSS_WINDOW_DRAG_RESOLVE to detect if a target window claimed the
+  // drop before the claim-wait timer fires.
   let crossWindowDropClaimedResolve: (() => void) | null = null
+
+  const stopPollTimer = (): void => {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
 
   ipcMain.handle(CROSS_WINDOW_DRAG_START, async (event, snapshot: PanelTransferSnapshot, _screenPos: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -801,96 +794,125 @@ function registerWindowAndDialogHandlers(): void {
     // (black window). Lock the drag to the source window entirely.
     if (anyWindowFullscreen()) return
 
-    crossWindowDragState = {
-      snapshot,
+    const cursor = screen.getCursorScreenPoint()
+    crossWindowDragState = startCrossWindowDrag({
       sourceWindowId: win.id,
-      pollTimer: null,
-    }
+      snapshot,
+      cursor,
+    })
 
-    // Create the native drag ghost window
-    createDragGhostWindow(snapshot.panel.type, snapshot.panel.title)
+    // Create the native drag ghost window — size to match the source panel
+    // (canvas-space size; clamped inside createDragGhostWindow).
+    createDragGhostWindow(
+      snapshot.panel.type,
+      snapshot.panel.title,
+      snapshot.geometry?.size?.width ?? 320,
+      snapshot.geometry?.size?.height ?? 200,
+    )
 
     // Poll cursor position: move ghost, broadcast to all windows EXCEPT source
-    crossWindowDragState.pollTimer = setInterval(() => {
+    pollTimer = setInterval(() => {
       if (!crossWindowDragState) return
       const pos = screen.getCursorScreenPoint()
+      crossWindowDragState = updateCrossWindowCursor(crossWindowDragState, pos)
       moveDragGhostWindow(pos.x, pos.y)
+
+      // Hide the native ghost when the cursor is over any Cate window — the
+      // in-renderer DragOverlay handles the visual there. Show it again when
+      // the cursor leaves all Cate windows (e.g. on the desktop between
+      // windows) so the user still has a drag affordance.
+      if (dragGhostWin && !dragGhostWin.isDestroyed()) {
+        const overCateWindow = isCursorInsideAnyAppWindow(
+          pos,
+          BrowserWindow.getAllWindows() as unknown as GhostHostWindow[],
+        )
+        if (overCateWindow) {
+          if (dragGhostWin.isVisible()) dragGhostWin.hide()
+        } else {
+          if (!dragGhostWin.isVisible()) dragGhostWin.showInactive()
+        }
+      }
+
       broadcastToAllExcept(crossWindowDragState.sourceWindowId, CROSS_WINDOW_DRAG_UPDATE, pos, crossWindowDragState.snapshot)
-    }, 33) // ~30fps
+    }, CROSS_WINDOW_POLL_MS)
   })
 
   ipcMain.handle(CROSS_WINDOW_DRAG_DROP, async (event, _panelId: string) => {
     if (crossWindowDragState) {
-      if (crossWindowDragState.pollTimer) {
-        clearInterval(crossWindowDragState.pollTimer)
+      stopPollTimer()
+      // Mark the state as claimed (pure transition). The resolver below reads
+      // `claimed` to decide whether to tell the source to remove its node.
+      crossWindowDragState = claimCrossWindowDrop(crossWindowDragState, Date.now())
+      // Arm terminal-ownership transfer to the target (receiver) window — the
+      // receiver's reconnectTerminal will panelTransferAck after wiring its
+      // listeners, and ack is a no-op without a prior begin.
+      const targetWin = BrowserWindow.fromWebContents(event.sender)
+      if (targetWin && crossWindowDragState!.snapshot.terminalPtyId) {
+        handleCrossWindowDropTerminalTransfer(
+          crossWindowDragState!.snapshot.terminalPtyId,
+          targetWin.id,
+        )
       }
       // Notify source window to remove the panel
-      sendToWindow(crossWindowDragState.sourceWindowId, DRAG_END)
-      crossWindowDragState = null
+      sendToWindow(crossWindowDragState!.sourceWindowId, DRAG_END)
     }
     destroyDragGhostWindow()
 
-    // Signal the resolve handler that a target window claimed the drop
+    // Fire the pending resolver (if any). It will read `claimed=true` from
+    // the state above and resolve `{ claimed: true }` to the source window.
+    // The resolver is also responsible for nullifying `crossWindowDragState`.
     if (crossWindowDropClaimedResolve) {
       crossWindowDropClaimedResolve()
     } else {
-      crossWindowDropClaimed = true
+      // No resolve in flight — clear state directly so a future resolve
+      // (which would arrive after the source mouseup) returns unclaimed.
+      crossWindowDragState = cancelCrossWindowDrag(crossWindowDragState)
     }
   })
 
   ipcMain.handle(CROSS_WINDOW_DRAG_CANCEL, async () => {
     if (!crossWindowDragState) return
-    if (crossWindowDragState.pollTimer) {
-      clearInterval(crossWindowDragState.pollTimer)
-    }
-    crossWindowDragState = null
+    stopPollTimer()
+    crossWindowDragState = cancelCrossWindowDrag(crossWindowDragState)
     destroyDragGhostWindow()
     broadcastToAll(DRAG_END)
   })
 
   // Resolve cross-window drag on mouseup from source window.
-  // Broadcasts DRAG_END, waits briefly for a target window to claim via crossWindowDragDrop,
-  // then returns whether the drop was claimed. If not, source falls back to dragDetach.
+  // Broadcasts DRAG_END, waits briefly for a target window to claim via
+  // CROSS_WINDOW_DRAG_DROP, then returns whether the drop was claimed. If not,
+  // source falls back to DRAG_DETACH.
   ipcMain.handle(CROSS_WINDOW_DRAG_RESOLVE, async () => {
     if (!crossWindowDragState) return { claimed: false }
 
     const sourceId = crossWindowDragState.sourceWindowId
 
-    // Stop polling
-    if (crossWindowDragState.pollTimer) {
-      clearInterval(crossWindowDragState.pollTimer)
-      crossWindowDragState.pollTimer = null
-    }
+    // Stop polling but keep the state alive so DROP can still claim it within
+    // the short wait window below.
+    stopPollTimer()
+    const stateAtResolve = { ...crossWindowDragState, resolvedAt: Date.now() }
+    crossWindowDragState = stateAtResolve
 
-    // Mark as resolving — crossWindowDragDrop will set claimed flag
-    crossWindowDragState = null
     destroyDragGhostWindow()
 
     // Broadcast DRAG_END to non-source windows so target windows check their drop targets
     broadcastToAllExcept(sourceId, DRAG_END)
 
-    // Wait briefly for a target window to call crossWindowDragDrop
+    // Wait briefly for a target window to call CROSS_WINDOW_DRAG_DROP.
     return new Promise<{ claimed: boolean }>((resolve) => {
-      // Check if already claimed (race condition guard)
-      if (crossWindowDropClaimed) {
-        crossWindowDropClaimed = false
-        resolve({ claimed: true })
-        return
+      const finish = (now: number): void => {
+        crossWindowDropClaimedResolve = null
+        void now
+        const decision = resolveCrossWindowDrag(crossWindowDragState)
+        crossWindowDragState = cancelCrossWindowDrag(crossWindowDragState)
+        resolve({ claimed: decision.claimed })
       }
 
-      // Set up a short timeout — if no window claims within 80ms, report unclaimed
-      const timeout = setTimeout(() => {
-        crossWindowDropClaimedResolve = null
-        crossWindowDropClaimed = false
-        resolve({ claimed: false })
-      }, 80)
+      const timeout = setTimeout(() => finish(Date.now()), CROSS_WINDOW_CLAIM_WAIT_MS)
 
-      // Store resolver so crossWindowDragDrop can trigger it
       crossWindowDropClaimedResolve = () => {
         clearTimeout(timeout)
-        crossWindowDropClaimedResolve = null
-        crossWindowDropClaimed = false
-        resolve({ claimed: true })
+        finish(Date.now())
       }
     })
   })
@@ -931,6 +953,15 @@ app.setName('Cate')
 // In dev mode, use a separate userData directory so dev and production don't collide
 if (!app.isPackaged) {
   app.setPath('userData', path.join(app.getPath('userData'), 'Dev'))
+}
+
+// In E2E mode, use a fresh tmpdir per launch so Playwright runs are isolated
+// from each other and from local dev state. The harness sets CATE_E2E=1.
+if (process.env.CATE_E2E === '1') {
+  const fs = require('fs') as typeof import('fs')
+  const os = require('os') as typeof import('os')
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))
+  app.setPath('userData', tmp)
 }
 
 // ---------------------------------------------------------------------------

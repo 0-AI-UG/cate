@@ -101,7 +101,6 @@ export function buildApplicationMenu(): void {
         { label: 'New Browser', accelerator: 'CmdOrCtrl+Shift+B', click: dispatch('newBrowser') },
         { type: 'separator' },
         { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },
-        { label: 'Add Image to Canvas...', click: dispatch('addImageToCanvas') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: dispatch('saveFile') },
         { type: 'separator' },

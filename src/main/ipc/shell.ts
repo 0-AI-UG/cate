@@ -12,9 +12,10 @@ import {
   SHELL_ACTIVITY_UPDATE,
   SHELL_PORTS_UPDATE,
   SHELL_CWD_UPDATE,
+  SHELL_AGENT_SCREEN_STATE,
 } from '../../shared/ipc-channels'
 import { terminalPids } from './terminal'
-import { sendToWindow, windowFromEvent } from '../windowRegistry'
+import { sendToWindow, windowFromEvent, broadcastToAll } from '../windowRegistry'
 import { getShellEnv } from '../shellEnv'
 import type { TerminalActivity, AgentState } from '../../shared/types'
 
@@ -36,6 +37,8 @@ interface ScanResult {
   agentState: AgentState
   agentName: string | null
   previouslyHadAgent: boolean
+  /** True if the agent has a non-helper subprocess actively running. */
+  subprocessActive: boolean
 }
 
 // Concurrency limiter — caps simultaneous execFile calls across all terminals
@@ -171,6 +174,37 @@ function isShellProcess(name: string): boolean {
   return shells.includes(name.toLowerCase())
 }
 
+/**
+ * Agent helpers that linger between turns and must not be treated as work.
+ * Claude Code keeps `caffeinate` and a persistent tool shell alive after the
+ * first turn; counting them as "active" would pin the indicator to "running"
+ * forever.
+ */
+const IDLE_AGENT_HELPERS = new Set(['caffeinate', 'pmset'])
+
+/**
+ * True if the agent has a child process that's *actually doing something* —
+ * a non-helper, non-idle-shell descendant. Used as a "definitely running"
+ * signal that overrides the renderer's buffer-stability reading.
+ */
+async function agentIsActive(agentPid: number): Promise<boolean> {
+  const children = await getChildPids(agentPid)
+  for (const childPid of children) {
+    const name = await getProcessName(childPid)
+    if (!name) continue
+    const lower = name.toLowerCase()
+    if (IDLE_AGENT_HELPERS.has(lower)) continue
+    if (isShellProcess(lower)) {
+      const subchildren = await getChildPids(childPid)
+      if (subchildren.length > 0) return true
+      continue
+    }
+    return true
+  }
+  return false
+}
+
+
 async function getAllDescendantPids(pid: number): Promise<number[]> {
   const children = await getChildPids(pid)
   const allDescendants = [...children]
@@ -273,7 +307,7 @@ async function scanTerminal(terminalId: string, info: TerminalRegistration): Pro
   const childrenToScan = await getChildPids(info.shellPid)
 
   let foundAgentName: string | null = null
-  let agentHasActiveChildren = false
+  let foundAgentPid: number | null = null
   let firstChildName: string | null = null
 
   for (const childPid of childrenToScan) {
@@ -286,14 +320,15 @@ async function scanTerminal(terminalId: string, info: TerminalRegistration): Pro
         const agentMatch = matchAgentProcess(name)
         if (agentMatch) {
           foundAgentName = agentMatch
-          const agentChildren = await getChildPids(childPid)
-          if (agentChildren.length > 0) {
-            agentHasActiveChildren = true
-          }
+          foundAgentPid = childPid
         }
       }
     }
   }
+
+  // Probe for an actively-working subprocess only when we have an agent, so
+  // we don't pay the extra ps/pgrep round-trips for plain shells.
+  const subprocessActive = foundAgentPid != null ? await agentIsActive(foundAgentPid) : false
 
   // Determine terminal activity
   const terminalActivity: TerminalActivity =
@@ -307,10 +342,20 @@ async function scanTerminal(terminalId: string, info: TerminalRegistration): Pro
   let previouslyHadAgent = prev.previouslyHadAgent
 
   if (foundAgentName) {
-    if (agentHasActiveChildren) {
+    // Two-tier detection:
+    //   1. If the agent has an active non-helper subprocess (a tool command
+    //      really executing), it's unambiguously running — emit that and
+    //      override whatever screen-state was previously reported.
+    //   2. Otherwise, defer to whatever the renderer's screen detector last
+    //      reported (it writes into previousStates via the screen-state IPC).
+    //      Default to 'running' on the very first scan, before any report
+    //      has arrived.
+    if (subprocessActive) {
       agentState = 'running'
     } else {
-      agentState = 'waitingForInput'
+      agentState = prev.agentState === 'notRunning' || prev.agentState === 'finished'
+        ? 'running'
+        : prev.agentState
     }
     previouslyHadAgent = true
   } else if (previouslyHadAgent) {
@@ -318,7 +363,7 @@ async function scanTerminal(terminalId: string, info: TerminalRegistration): Pro
     previouslyHadAgent = false
   }
 
-  return { terminalActivity, agentState, agentName, previouslyHadAgent }
+  return { terminalActivity, agentState, agentName, previouslyHadAgent, subprocessActive }
 }
 
 /**
@@ -384,6 +429,7 @@ function startPolling(): void {
           result.terminalActivity,
           result.agentState,
           result.agentName,
+          result.subprocessActive,
         )
       }
 
@@ -425,7 +471,7 @@ function startPolling(): void {
     } finally {
       pollBusy = false
     }
-  }, 2000)
+  }, 1000)
 }
 
 function stopPolling(): void {
@@ -482,6 +528,19 @@ export function registerHandlers(): void {
       startPolling()
     },
   )
+
+  // Renderer reports screen-derived agent state; rebroadcast so every
+  // window's sidebar gets it (the sidebar in the main window won't otherwise
+  // see state for terminals that live in a detached panel window). Also
+  // record it in previousStates so the next process-tree scan doesn't clobber
+  // the renderer's reading by re-emitting 'running'.
+  ipcMain.on(SHELL_AGENT_SCREEN_STATE, (_event, terminalId: string, state: string) => {
+    const prev = previousStates.get(terminalId)
+    if (prev) {
+      previousStates.set(terminalId, { ...prev, agentState: state as AgentState })
+    }
+    broadcastToAll(SHELL_AGENT_SCREEN_STATE, terminalId, state)
+  })
 
   ipcMain.handle(SHELL_UNREGISTER_TERMINAL, async (_event, terminalId: string) => {
     registeredTerminals.delete(terminalId)
