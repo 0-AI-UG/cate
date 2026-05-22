@@ -46,7 +46,18 @@ import {
   AGENT_LIST_SESSIONS,
   AGENT_LOAD_SESSION_MESSAGES,
   AGENT_DELETE_SESSION,
+  AGENT_MARKETPLACE_LIST,
+  AGENT_MARKETPLACE_LIST_INSTALLED,
+  AGENT_MARKETPLACE_INSTALL,
+  AGENT_MARKETPLACE_UNINSTALL,
 } from '../../shared/ipc-channels'
+import {
+  fetchMarketplacePage,
+  installExtension,
+  listInstalled,
+  uninstallExtension,
+  type MarketplaceSort,
+} from './marketplace'
 import { deleteSession, listSessions, loadSessionTranscript } from './sessionFiles'
 import log from '../../main/logger'
 import type {
@@ -355,6 +366,39 @@ export function registerAgentHandlers(_authManager: AuthManager, agentManager: A
       return target
     },
   )
+
+  // ---------------------------------------------------------------------------
+  // Marketplace
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(
+    AGENT_MARKETPLACE_LIST,
+    async (_event, params?: { page?: number; query?: string; sort?: MarketplaceSort }) => {
+      try {
+        return await fetchMarketplacePage(params ?? {})
+      } catch (err) {
+        log.warn('[ipc.agent] marketplaceList failed: %O', err)
+        return { entries: [], totalPages: 1, page: 1, fallback: true }
+      }
+    },
+  )
+
+  ipcMain.handle(AGENT_MARKETPLACE_LIST_INSTALLED, async () => {
+    try {
+      return await listInstalled()
+    } catch (err) {
+      log.warn('[ipc.agent] marketplaceListInstalled failed: %O', err)
+      return []
+    }
+  })
+
+  ipcMain.handle(AGENT_MARKETPLACE_INSTALL, async (_event, name: string) => {
+    return installExtension(name)
+  })
+
+  ipcMain.handle(AGENT_MARKETPLACE_UNINSTALL, async (_event, name: string) => {
+    return uninstallExtension(name)
+  })
 
   ipcMain.handle(
     AGENT_TOOL_DECISION,

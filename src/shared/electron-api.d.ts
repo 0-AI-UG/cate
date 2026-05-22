@@ -625,6 +625,42 @@ export interface ElectronAPI {
   /** List user files under ~/.pi/agent/{agents|prompts}. */
   agentListSkillFiles(kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>>
 
+  /** Browse-able marketplace catalog backed by a live scrape of pi.dev/packages
+   *  (~2.9k entries, paginated). Falls back to a small bundled selection when
+   *  pi.dev is unreachable — the `fallback` flag signals that path. */
+  agentMarketplaceList(params?: {
+    page?: number
+    query?: string
+    sort?: 'downloads' | 'recent' | 'name'
+  }): Promise<{
+    entries: Array<{
+      name: string
+      description: string
+      author: string
+      downloads: number
+      type: string
+      repoUrl: string
+      requiresTerminal: boolean
+    }>
+    totalPages: number
+    page: number
+    fallback?: boolean
+  }>
+
+  /** List extensions currently present in ~/.pi/agent/extensions/. */
+  agentMarketplaceListInstalled(): Promise<Array<{
+    name: string
+    description?: string
+    requiresTerminal: boolean
+    path: string
+  }>>
+
+  /** Install an extension via `pi install npm:<name>`. Streams output to the log. */
+  agentMarketplaceInstall(name: string): Promise<{ ok: boolean; error?: string }>
+
+  /** Uninstall an extension via `pi remove npm:<name>`. */
+  agentMarketplaceUninstall(name: string): Promise<{ ok: boolean; error?: string }>
+
   /** Stream of agent events forwarded from the main process. */
   onAgentEvent(callback: (envelope: AgentEventEnvelope) => void): () => void
 

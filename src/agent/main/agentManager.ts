@@ -37,6 +37,7 @@ import type {
 } from '../../shared/types'
 import { AGENT_EVENT } from '../../shared/ipc-channels'
 import { installSubagentExtension } from './installSubagents'
+import { installPlanModeExtension } from './installPlanMode'
 import type { AuthManager } from './authManager'
 
 // `RpcClient` spawns `node <cliPath> --mode rpc`. Pi's package only exports
@@ -113,6 +114,7 @@ export class AgentManager {
       // One-shot: drop pi's official subagent extension into ~/.pi/agent/ so it
       // is auto-discovered the first time pi spins up.
       await installSubagentExtension()
+      await installPlanModeExtension()
 
       const extraArgs: string[] = []
       if (opts.sessionFile) extraArgs.push('--session', opts.sessionFile)

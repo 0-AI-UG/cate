@@ -34,6 +34,19 @@ export interface DiffInfo {
   after?: string
   oldString?: string
   newString?: string
+  /** Multi-edit shape — one entry per find/replace block in the same file. */
+  edits?: Array<{ oldString: string; newString: string }>
+}
+
+/** Tool names whose argument shape we know how to render as a diff. */
+const EDIT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'edit', 'write', 'multi_edit', 'multiedit', 'multiEdit', 'MultiEdit',
+  'str_replace', 'str_replace_based_edit_tool', 'str_replace_editor',
+  'apply_patch', 'edit_file', 'editFile',
+])
+
+export function isEditToolName(name: string): boolean {
+  return EDIT_TOOL_NAMES.has(name)
 }
 
 export type ToolStatus = 'pending' | 'running' | 'success' | 'error' | 'denied'
@@ -599,6 +612,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
       })),
     )
   },
+
 }))
 
 // -----------------------------------------------------------------------------
@@ -717,20 +731,47 @@ function extractSubagentDetails(v: unknown): SubagentDetails | undefined {
   return { mode, results }
 }
 
-function deriveDiff(name: string, args: unknown, result?: string): DiffInfo | undefined {
-  if (name !== 'edit' && name !== 'write' && name !== 'str_replace' && name !== 'str_replace_based_edit_tool') {
-    return undefined
+/** Best-effort parse of a tool's args — pi normally hands us objects but the
+ *  occasional code path passes a JSON-encoded string. */
+function coerceArgs(args: unknown): Record<string, unknown> {
+  if (args == null) return {}
+  if (typeof args === 'string') {
+    try { return JSON.parse(args) as Record<string, unknown> } catch { return {} }
   }
-  const a = (args ?? {}) as Record<string, unknown>
+  if (typeof args === 'object') return args as Record<string, unknown>
+  return {}
+}
+
+export function deriveDiff(name: string, args: unknown, result?: string): DiffInfo | undefined {
+  if (!isEditToolName(name)) return undefined
+  const a = coerceArgs(args)
   const path = asString(a.path) ?? asString(a.file_path) ?? asString(a.file) ?? '(unknown)'
   if (name === 'write') {
     return { path, after: asString(a.content) ?? asString(a.text) ?? result ?? '' }
   }
-  return {
-    path,
-    oldString: asString(a.old_string) ?? asString(a.oldString) ?? asString(a.search),
-    newString: asString(a.new_string) ?? asString(a.newString) ?? asString(a.replace),
+  // Multi-edit shape: { edits: [{ oldText/old_string, newText/new_string }, …] }
+  if (Array.isArray(a.edits)) {
+    const edits: Array<{ oldString: string; newString: string }> = []
+    for (const e of a.edits) {
+      if (!e || typeof e !== 'object') continue
+      const r = e as Record<string, unknown>
+      const oldString =
+        asString(r.oldText) ?? asString(r.old_string) ?? asString(r.oldString) ?? asString(r.search) ?? ''
+      const newString =
+        asString(r.newText) ?? asString(r.new_string) ?? asString(r.newString) ?? asString(r.replace) ?? ''
+      if (oldString || newString) edits.push({ oldString, newString })
+    }
+    if (edits.length > 0) return { path, edits }
   }
+  // Single-edit shape
+  const oldString =
+    asString(a.old_string) ?? asString(a.oldString) ?? asString(a.oldText) ?? asString(a.search)
+  const newString =
+    asString(a.new_string) ?? asString(a.newString) ?? asString(a.newText) ?? asString(a.replace)
+  if (oldString != null || newString != null) {
+    return { path, oldString, newString }
+  }
+  return undefined
 }
 
 function handleEvent(panelId: string, event: { type: string; [key: string]: unknown }): void {

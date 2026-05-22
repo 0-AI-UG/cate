@@ -12,11 +12,13 @@ interface Props {
 }
 
 export function TerminalUrlPrompt({ panelId }: Props) {
-  const prompt = useUrlPromptStore((s) => s.promptsByPanel[panelId])
+  const queue = useUrlPromptStore((s) => s.promptsByPanel[panelId])
   const accept = useUrlPromptStore((s) => s.accept)
   const dismiss = useUrlPromptStore((s) => s.dismiss)
 
-  if (!prompt) return null
+  if (!queue || queue.length === 0) return null
+  const prompt = queue[0]
+  const remaining = queue.length - 1
 
   return (
     <div className="flex items-center gap-2 px-2.5 py-1.5 bg-surface-3 border-t border-subtle shrink-0 text-[12px]">
@@ -27,6 +29,9 @@ export function TerminalUrlPrompt({ panelId }: Props) {
       >
         {prompt.url}
       </span>
+      {remaining > 0 && (
+        <span className="shrink-0 text-secondary tabular-nums">+{remaining}</span>
+      )}
       <button
         onClick={() => accept(panelId)}
         className="px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-500 transition-colors"

@@ -1,0 +1,8 @@
+{
+  "name": "cate-plan-mode",
+  "description": "Plan mode for the Cate agent panel. Toggle with /plan: the agent investigates read-only (dispatching scout subagents in parallel) and proposes a structured plan via the plan_complete tool. /apply-plan re-enables writes.",
+  "private": true,
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

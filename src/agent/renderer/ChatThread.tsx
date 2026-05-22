@@ -26,6 +26,7 @@ import {
   Copy,
   PencilSimpleLine,
   Sparkle,
+  ClipboardText,
 } from '@phosphor-icons/react'
 import type {
   AgentMessage,
@@ -34,6 +35,7 @@ import type {
   SubagentToolCall,
   ToolMessage,
 } from './agentStore'
+import { deriveDiff } from './agentStore'
 
 interface ChatThreadProps {
   messages: AgentMessage[]
@@ -47,17 +49,29 @@ interface ChatThreadProps {
   onFork?: (entryId: string) => void
   /** Prefill the composer with a user message's text (no history mutation). */
   onEditResend?: (text: string) => void
+  /** Plan Ready card actions — see cate-plan-mode extension. */
+  onImplementPlan?: () => void
+  onRefinePlan?: (text: string) => void
+  onClearAndImplement?: () => void
 }
 
-export function ChatThread({ messages, pendingApprovals, onApproval, running, forkMap, onFork, onEditResend }: ChatThreadProps) {
+export function ChatThread({ messages, pendingApprovals, onApproval, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Show the thinking indicator only when the agent is busy AND there is no
-  // already-streaming assistant message tailing the list — once tokens start
-  // arriving, the streaming caret on the message itself is enough.
+  // Show the thinking indicator whenever the agent is busy and the tail of
+  // the list has no visible activity of its own. A streaming assistant
+  // message with text shows a cursor blink; a streaming reasoning block has
+  // its own spinner; a tool row has a header spinner — but a freshly-opened
+  // assistant message with no text and no thinking yet (common when the
+  // model jumps straight to a tool call — pi's toolcall_* deltas don't
+  // surface in the renderer) leaves a blank gap. Dots fill it.
   const last = messages[messages.length - 1]
-  const showThinking =
-    running && (!last || last.type !== 'assistant' || !last.streaming)
+  const showThinking = running && (() => {
+    if (!last) return true
+    if (last.type !== 'assistant') return true
+    if (!last.streaming) return true
+    return !last.text && !last.thinking
+  })()
 
   // Auto-scroll on new content unless the user has scrolled away from the
   // bottom — feels less like fighting the scroll position during long output.
@@ -73,13 +87,17 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
       ref={scrollRef}
       className="flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0"
     >
-      {messages.map((m) => (
+      {messages.map((m, idx) => (
         <MessageRow
           key={m.id}
           msg={m}
           forkEntryId={m.type === 'user' ? (m.entryId ?? forkMap?.[m.id]) : undefined}
           onFork={onFork}
           onEditResend={onEditResend}
+          onImplementPlan={onImplementPlan}
+          onRefinePlan={onRefinePlan}
+          onClearAndImplement={onClearAndImplement}
+          isLast={idx === messages.length - 1}
         />
       ))}
       {pendingApprovals.map((req) => (
@@ -113,11 +131,19 @@ function MessageRow({
   forkEntryId,
   onFork,
   onEditResend,
+  onImplementPlan,
+  onRefinePlan,
+  onClearAndImplement,
+  isLast,
 }: {
   msg: AgentMessage
   forkEntryId?: string
   onFork?: (entryId: string) => void
   onEditResend?: (text: string) => void
+  onImplementPlan?: () => void
+  onRefinePlan?: (text: string) => void
+  onClearAndImplement?: () => void
+  isLast?: boolean
 }) {
   if (msg.type === 'user') {
     return (
@@ -188,6 +214,17 @@ function MessageRow({
   if (msg.type === 'tool' && msg.name === 'subagent') {
     return <SubagentCard msg={msg} />
   }
+  if (msg.type === 'tool' && msg.name === 'plan_complete') {
+    return (
+      <PlanReadyCard
+        msg={msg}
+        onImplement={onImplementPlan}
+        onRefine={onRefinePlan}
+        onClearAndImplement={onClearAndImplement}
+        stale={!isLast}
+      />
+    )
+  }
   return <ToolCard msg={msg} />
 }
 
@@ -202,20 +239,20 @@ function formatTime(ms: number): string {
 function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
   const [expanded, setExpanded] = useState(false)
   return (
-    <div className="rounded-md border border-white/10 bg-white/[0.02] text-[12px]">
+    <div className="text-[12px]">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-2 py-1 hover:bg-white/[0.04] text-left"
+        className="flex items-center gap-1.5 text-left text-muted hover:text-primary"
       >
         {expanded
-          ? <CaretDown size={9} className="text-muted shrink-0" />
-          : <CaretRight size={9} className="text-muted shrink-0" />}
+          ? <CaretDown size={9} className="shrink-0" />
+          : <CaretRight size={9} className="shrink-0" />}
         <Brain size={11} className="text-violet-300/80 shrink-0" />
-        <span className="text-muted">Reasoning</span>
+        <span>Reasoning</span>
         {streaming && <Spinner size={10} className="text-violet-300 animate-spin" />}
       </button>
       {expanded && (
-        <pre className="px-3 py-2 border-t border-white/5 text-[11px] text-primary/75 whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[260px] overflow-auto">
+        <pre className="mt-1 pl-5 text-[11px] text-primary/70 whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[260px] overflow-auto">
           {text}
         </pre>
       )}
@@ -303,9 +340,15 @@ function CursorBlink() {
 // Tool card (collapsed by default)
 // -----------------------------------------------------------------------------
 
+const EDIT_NAMES = new Set([
+  'edit', 'write', 'multi_edit', 'multiedit', 'multiEdit', 'MultiEdit',
+  'str_replace', 'str_replace_based_edit_tool', 'str_replace_editor',
+  'apply_patch', 'edit_file', 'editFile',
+])
+
 function toolIcon(name: string) {
   if (name === 'bash' || name === 'shell') return TerminalIcon
-  if (['edit', 'write', 'str_replace', 'str_replace_based_edit_tool'].includes(name)) return PencilSimple
+  if (EDIT_NAMES.has(name)) return PencilSimple
   if (name === 'read' || name === 'view') return FileText
   if (name === 'grep' || name === 'search') return MagnifyingGlass
   return Wrench
@@ -313,7 +356,7 @@ function toolIcon(name: string) {
 
 function toolSummary(msg: ToolMessage): string {
   const a = (msg.args ?? {}) as Record<string, unknown>
-  if (['edit', 'write', 'str_replace', 'str_replace_based_edit_tool'].includes(msg.name)) {
+  if (EDIT_NAMES.has(msg.name)) {
     const path = (a.path as string) ?? (a.file_path as string) ?? (a.file as string) ?? ''
     return path || msg.name
   }
@@ -323,22 +366,63 @@ function toolSummary(msg: ToolMessage): string {
   }
   if (msg.name === 'read' || msg.name === 'view') {
     const path = (a.path as string) ?? (a.file_path as string) ?? ''
+    const offset = typeof a.offset === 'number' ? (a.offset as number) : undefined
+    const limit = typeof a.limit === 'number' ? (a.limit as number) : undefined
+    if (path && offset != null && limit != null) return `${path}:${offset}-${offset + limit}`
+    if (path && offset != null) return `${path}:${offset}`
     return path || msg.name
   }
   return msg.name
 }
 
+// `read` tool results often come back in `cat -n` form: `   123\tcontent`.
+// Strip that prefix so our own gutter doesn't double up.
+function stripCatN(text: string): string {
+  return text
+    .split('\n')
+    .map((l) => {
+      const m = l.match(/^\s*\d+\t(.*)$/)
+      return m ? m[1] : l
+    })
+    .join('\n')
+}
+
+function CodePreview({
+  text,
+  startLine = 1,
+  maxLines = 200,
+}: {
+  text: string
+  startLine?: number
+  maxLines?: number
+}) {
+  const lines = text.split('\n')
+  const truncated = lines.length > maxLines
+  const shown = truncated ? lines.slice(0, maxLines) : lines
+  return (
+    <div className="font-mono text-[11px] leading-snug max-h-[320px] overflow-auto">
+      {shown.map((l, i) => (
+        <div key={i} className="flex gap-2">
+          <span className="text-muted/40 select-none w-8 text-right shrink-0">{startLine + i}</span>
+          <span className="whitespace-pre-wrap break-words text-primary/85 flex-1">{l || ' '}</span>
+        </div>
+      ))}
+      {truncated && (
+        <div className="text-muted text-[10.5px] mt-1 pl-10">
+          … {lines.length - maxLines} more line{lines.length - maxLines === 1 ? '' : 's'}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function toolVerb(msg: ToolMessage): string {
+  if (msg.name === 'write') return 'Wrote'
+  if (EDIT_NAMES.has(msg.name)) return 'Edited'
   switch (msg.name) {
     case 'bash':
     case 'shell':
       return 'Ran'
-    case 'edit':
-    case 'str_replace':
-    case 'str_replace_based_edit_tool':
-      return 'Edited'
-    case 'write':
-      return 'Wrote'
     case 'read':
     case 'view':
       return 'Read'
@@ -351,50 +435,84 @@ function toolVerb(msg: ToolMessage): string {
 }
 
 function ToolCard({ msg }: { msg: ToolMessage }) {
-  // Always collapsed by default — even while running. Users can pop it open if
-  // they want live output; otherwise the line stays small.
+  // Borderless, inline-on-chat row. For edit/write tools the diff renders
+  // inline by default (it's the whole point); expanding reveals raw args or
+  // tool output. For everything else, expand toggles args + result.
+  //
+  // Tool messages restored from a saved transcript don't carry a precomputed
+  // `msg.diff` (it's only set on tool_execution_end), so we re-derive on the
+  // fly from name + args.
+  const isRead = msg.name === 'read' || msg.name === 'view'
+  const isWrite = msg.name === 'write'
+  const diff = useMemo(
+    () => (isWrite ? undefined : msg.diff ?? deriveDiff(msg.name, msg.args, msg.result)),
+    [isWrite, msg.diff, msg.name, msg.args, msg.result],
+  )
+  const isEditish = !!diff
   const [expanded, setExpanded] = useState(false)
   const liveOutput = msg.status === 'running' ? msg.partialText : undefined
   const Icon = toolIcon(msg.name)
   const verb = toolVerb(msg)
   const summary = toolSummary(msg)
 
+  // Pull the relevant pieces for read / write custom views.
+  const a = (msg.args ?? {}) as Record<string, unknown>
+  const writeContent = isWrite
+    ? ((a.content as string) ?? (a.text as string) ?? '')
+    : ''
+  const readBody = isRead && msg.result ? stripCatN(msg.result) : ''
+  const readStartLine =
+    isRead && typeof a.offset === 'number' ? (a.offset as number) : 1
+
+  const hasExtras =
+    isEditish ||
+    (isWrite && writeContent.length > 0) ||
+    (isRead && readBody.length > 0) ||
+    !!msg.result || !!liveOutput || !!msg.error || msg.args != null
+
   return (
-    <div className="rounded-md bg-white/[0.02] overflow-hidden text-[12px]">
+    <div className="text-[12px]">
       <button
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-2 py-1 hover:bg-white/[0.04] text-left"
+        onClick={() => hasExtras && setExpanded((v) => !v)}
+        className={`w-full flex items-center gap-1.5 text-left ${hasExtras ? 'hover:text-primary' : 'cursor-default'}`}
       >
-        {expanded
-          ? <CaretDown size={9} className="text-muted shrink-0" />
-          : <CaretRight size={9} className="text-muted shrink-0" />}
+        {hasExtras
+          ? expanded
+            ? <CaretDown size={9} className="text-muted shrink-0" />
+            : <CaretRight size={9} className="text-muted shrink-0" />
+          : <span className="w-[9px] shrink-0" />}
         <Icon size={11} className="text-muted shrink-0" />
         <span className="text-muted shrink-0">{verb}</span>
         <span className="truncate text-primary/90 font-mono flex-1">{summary}</span>
         <StatusIcon status={msg.status} />
       </button>
-      {expanded && (
-        <div className="px-3 py-2 border-t border-white/5 space-y-2">
-          {msg.diff ? (
-            <DiffView diff={msg.diff} />
-          ) : (
+      {expanded && hasExtras && (
+        <div className="mt-1 pl-5 space-y-1.5">
+          {isEditish && diff && <DiffView diff={diff} />}
+          {isWrite && writeContent && (
+            <CodePreview text={writeContent} />
+          )}
+          {isRead && readBody && (
+            <CodePreview text={readBody} startLine={readStartLine} />
+          )}
+          {!isEditish && !isWrite && !isRead && (
             <pre className="text-[11px] text-muted whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[180px] overflow-auto">
               {prettyArgs(msg.args)}
             </pre>
           )}
           {liveOutput && (
-            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[240px] overflow-auto bg-black/30 rounded p-2">
+            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[240px] overflow-auto">
               {liveOutput}
               <span className="inline-block w-[2px] h-[1em] align-middle bg-primary/80 ml-0.5 animate-pulse" />
             </pre>
           )}
-          {msg.result && (
-            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[240px] overflow-auto bg-black/30 rounded p-2">
+          {!isRead && msg.result && (
+            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[240px] overflow-auto">
               {msg.result}
             </pre>
           )}
           {msg.error && (
-            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-relaxed bg-white/5 rounded p-2">
+            <pre className="text-[11px] text-rose-300/90 whitespace-pre-wrap break-words font-mono leading-relaxed">
               {msg.error}
             </pre>
           )}
@@ -638,6 +756,166 @@ function SubagentToolCallRow({ call }: { call: SubagentToolCall }) {
   )
 }
 
+// -----------------------------------------------------------------------------
+// Plan Ready card — rendered for `plan_complete` tool calls emitted by the
+// cate-plan-mode pi extension. Shows summary + ordered steps + three actions:
+// Implement, Refine plan, Clear context & implement. Locks after any action
+// so historical cards can't re-trigger.
+// -----------------------------------------------------------------------------
+
+interface PlanStep {
+  title: string
+  detail?: string
+}
+
+interface PlanArgs {
+  summary?: string
+  steps?: PlanStep[]
+}
+
+function parsePlanArgs(raw: unknown): PlanArgs {
+  let obj: unknown = raw
+  if (typeof obj === 'string') {
+    try { obj = JSON.parse(obj) } catch { /* fall through */ }
+  }
+  if (!obj || typeof obj !== 'object') return {}
+  const o = obj as Record<string, unknown>
+  const summary = typeof o.summary === 'string' ? o.summary : undefined
+  const steps: PlanStep[] = []
+  if (Array.isArray(o.steps)) {
+    for (const s of o.steps) {
+      if (s && typeof s === 'object') {
+        const r = s as Record<string, unknown>
+        const title = typeof r.title === 'string' ? r.title : undefined
+        const detail = typeof r.detail === 'string' ? r.detail : undefined
+        if (title) steps.push({ title, detail })
+      }
+    }
+  }
+  return { summary, steps }
+}
+
+function PlanReadyCard({
+  msg,
+  onImplement,
+  onRefine,
+  onClearAndImplement,
+  stale,
+}: {
+  msg: ToolMessage
+  onImplement?: () => void
+  onRefine?: (text: string) => void
+  onClearAndImplement?: () => void
+  /** True when this plan is no longer the latest message in the thread — i.e.
+   *  the user already acted on it (or moved on) in a prior session that has
+   *  since been reloaded. Card renders read-only. */
+  stale?: boolean
+}) {
+  const { summary, steps } = useMemo(() => parsePlanArgs(msg.args), [msg.args])
+  const [refineText, setRefineText] = useState('')
+  const [locked, setLocked] = useState<null | 'implement' | 'refine' | 'clear'>(null)
+  const effectiveLocked = locked ?? (stale ? 'implement' : null)
+
+  const handleImplement = () => {
+    if (effectiveLocked) return
+    setLocked('implement')
+    onImplement?.()
+  }
+  const handleRefine = () => {
+    if (effectiveLocked) return
+    const text = refineText.trim()
+    if (!text) return
+    setLocked('refine')
+    onRefine?.(text)
+  }
+  const handleClear = () => {
+    if (effectiveLocked) return
+    setLocked('clear')
+    onClearAndImplement?.()
+  }
+
+  const lockLabel = (base: string, kind: 'implement' | 'refine' | 'clear'): string => {
+    // Only re-label when this session triggered the action — a stale reload
+    // shows the original labels (we don't know which action was taken).
+    if (!locked) return base
+    if (locked === kind) {
+      if (kind === 'implement') return 'Implemented'
+      if (kind === 'refine') return 'Refined'
+      return 'Cleared and implemented'
+    }
+    return base
+  }
+
+  return (
+    <div className={`rounded-lg border border-violet-500/40 bg-violet-500/10 overflow-hidden text-[12px] ${effectiveLocked ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-violet-500/20">
+        <ClipboardText size={13} weight="duotone" className="text-violet-300 shrink-0" />
+        <span className="text-primary font-medium">Plan ready</span>
+      </div>
+      <div className="px-3 py-3 space-y-3">
+        {summary && (
+          <div className="text-[12.5px] text-primary/90 leading-relaxed whitespace-pre-wrap break-words">
+            {summary}
+          </div>
+        )}
+        {steps && steps.length > 0 && (
+          <ol className="space-y-2">
+            {steps.map((s, i) => (
+              <li key={i} className="flex gap-2.5">
+                <span className="shrink-0 text-violet-300 font-mono text-[12px] mt-[1px]">
+                  {i + 1}.
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] text-primary font-medium leading-snug">
+                    {s.title}
+                  </div>
+                  {s.detail && (
+                    <div className="text-[11.5px] text-primary/75 leading-relaxed mt-0.5 whitespace-pre-wrap break-words">
+                      {s.detail}
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+        <textarea
+          value={refineText}
+          onChange={(e) => setRefineText(e.target.value)}
+          disabled={!!effectiveLocked}
+          rows={2}
+          placeholder="Refine: type the changes you want…"
+          className="w-full rounded-md bg-black/20 border border-violet-500/20 focus:border-violet-400/60 outline-none px-2.5 py-2 text-[12px] text-primary placeholder:text-muted resize-none disabled:opacity-50"
+        />
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleRefine}
+            disabled={!!effectiveLocked || refineText.trim().length === 0}
+            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-violet-500/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white/5"
+          >
+            {lockLabel('Refine plan', 'refine')}
+          </button>
+          <button
+            onClick={handleClear}
+            disabled={!!effectiveLocked}
+            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-violet-500/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white/5"
+          >
+            {lockLabel('Clear context & implement', 'clear')}
+          </button>
+          <div className="flex-1" />
+          <button
+            onClick={handleImplement}
+            disabled={!!effectiveLocked}
+            className="px-3 py-1 rounded-md bg-violet-500 hover:bg-violet-400 text-white text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-violet-500"
+          >
+            {lockLabel('Implement', 'implement')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function StatusIcon({ status }: { status: ToolMessage['status'] }) {
   switch (status) {
     case 'pending':
@@ -669,6 +947,15 @@ interface DiffLine {
 }
 
 function buildDiffLines(diff: DiffInfo): DiffLine[] {
+  if (diff.edits && diff.edits.length > 0) {
+    const out: DiffLine[] = []
+    diff.edits.forEach((e, i) => {
+      if (i > 0) out.push({ kind: 'context', text: '' })
+      for (const l of e.oldString.split('\n')) out.push({ kind: 'del', text: l })
+      for (const l of e.newString.split('\n')) out.push({ kind: 'add', text: l })
+    })
+    return out
+  }
   if (diff.oldString != null || diff.newString != null) {
     const oldLines = (diff.oldString ?? '').split('\n')
     const newLines = (diff.newString ?? '').split('\n')
@@ -718,29 +1005,24 @@ function lineDiff(before: string, after: string): DiffLine[] {
 function DiffView({ diff }: { diff: DiffInfo }) {
   const lines = useMemo(() => buildDiffLines(diff), [diff])
   return (
-    <div className="rounded border border-white/10 bg-black/30 overflow-hidden">
-      <div className="px-2 py-1 text-[11px] text-muted bg-black/30 font-mono border-b border-white/10 truncate">
-        {diff.path}
-      </div>
-      <div className="max-h-[280px] overflow-auto font-mono text-[11px] leading-snug">
-        {lines.map((l, i) => (
-          <div
-            key={i}
-            className={
-              l.kind === 'add'
-                ? 'bg-violet-500/10 text-violet-200'
-                : l.kind === 'del'
-                ? 'bg-white/5 text-primary/70 line-through decoration-white/20'
-                : 'text-muted'
-            }
-          >
-            <span className="inline-block w-3 text-center select-none opacity-60">
-              {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}
-            </span>
-            <span className="whitespace-pre-wrap break-words">{l.text || ' '}</span>
-          </div>
-        ))}
-      </div>
+    <div className="max-h-[280px] overflow-auto font-mono text-[11px] leading-snug">
+      {lines.map((l, i) => (
+        <div
+          key={i}
+          className={
+            l.kind === 'add'
+              ? 'text-violet-200'
+              : l.kind === 'del'
+              ? 'text-rose-300/80 line-through decoration-rose-400/30'
+              : 'text-muted'
+          }
+        >
+          <span className="inline-block w-3 text-center select-none opacity-60">
+            {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}
+          </span>
+          <span className="whitespace-pre-wrap break-words">{l.text || ' '}</span>
+        </div>
+      ))}
     </div>
   )
 }

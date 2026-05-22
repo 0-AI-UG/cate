@@ -2,6 +2,15 @@ appId: com.cate.app
 productName: Cate
 directories:
   output: release
+extraResources:
+  # Ship bundled pi extensions (e.g. cate-plan-mode) into the packaged app so
+  # installPlanModeExtension can copy them into ~/.pi/agent/extensions/ on
+  # first use. The src/ tree itself isn't packaged, so we mirror the files
+  # under resources/cate-extensions/.
+  - from: src/agent/extensions
+    to: cate-extensions
+    filter:
+      - "**/*"
 publish:
   provider: github
   owner: 0-AI-UG

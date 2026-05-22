@@ -223,6 +223,12 @@ export const AGENT_LIST_SESSIONS = 'agent:listSessions'         // renderer -> m
 export const AGENT_LOAD_SESSION_MESSAGES = 'agent:loadSessionMessages' // renderer -> main
 export const AGENT_DELETE_SESSION = 'agent:deleteSession'       // renderer -> main
 
+// Pi extension marketplace
+export const AGENT_MARKETPLACE_LIST = 'agent:marketplaceList'             // renderer -> main
+export const AGENT_MARKETPLACE_LIST_INSTALLED = 'agent:marketplaceListInstalled' // renderer -> main
+export const AGENT_MARKETPLACE_INSTALL = 'agent:marketplaceInstall'       // renderer -> main
+export const AGENT_MARKETPLACE_UNINSTALL = 'agent:marketplaceUninstall'   // renderer -> main
+
 // Pi auth / providers
 export const AUTH_LIST_PROVIDERS = 'auth:listProviders'
 export const AUTH_STATUS = 'auth:status'

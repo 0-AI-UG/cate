@@ -155,6 +155,10 @@ import {
   AGENT_LIST_SESSIONS,
   AGENT_LOAD_SESSION_MESSAGES,
   AGENT_DELETE_SESSION,
+  AGENT_MARKETPLACE_LIST,
+  AGENT_MARKETPLACE_LIST_INSTALLED,
+  AGENT_MARKETPLACE_INSTALL,
+  AGENT_MARKETPLACE_UNINSTALL,
   AUTH_LIST_PROVIDERS,
   AUTH_STATUS,
   AUTH_OAUTH_START,
@@ -1035,6 +1039,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   agentListSkillFiles(kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>> {
     return ipcRenderer.invoke(AGENT_LIST_SKILL_FILES, kind)
+  },
+
+  agentMarketplaceList(
+    params?: { page?: number; query?: string; sort?: 'downloads' | 'recent' | 'name' },
+  ): Promise<unknown> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_LIST, params)
+  },
+
+  agentMarketplaceListInstalled(): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_LIST_INSTALLED)
+  },
+
+  agentMarketplaceInstall(name: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_INSTALL, name)
+  },
+
+  agentMarketplaceUninstall(name: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_UNINSTALL, name)
   },
 
   onAgentEvent(callback: (envelope: unknown) => void): () => void {

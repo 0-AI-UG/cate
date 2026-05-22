@@ -9,13 +9,14 @@
 </p>
 
 <p align="center">
-  <strong>Current source version:</strong> v0.3.3
+  <strong>Current source version:</strong> v0.4.5
 </p>
 
 <p align="center">
   <a href="https://github.com/0-AI-UG/cate/releases"><img src="https://img.shields.io/github/v/release/0-AI-UG/cate?style=flat-square" alt="Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/0-AI-UG/cate?style=flat-square" alt="MIT License" /></a>
   <a href="https://github.com/0-AI-UG/cate/actions"><img src="https://img.shields.io/github/actions/workflow/status/0-AI-UG/cate/ci.yml?style=flat-square" alt="CI" /></a>
+  <a href="https://github.com/0-AI-UG/cate/releases"><img src="https://img.shields.io/github/downloads/0-AI-UG/cate/total?style=flat-square" alt="Downloads" /></a>
 </p>
 
 ---
@@ -24,7 +25,13 @@
   <img src="assets/demo.gif" alt="Cate demo" width="900" />
 </p>
 
-Cate is an Electron desktop app for arranging development tools in freeform space. You can mix floating canvas panels with docked tabs and splits, detach panels into separate windows, and keep multiple workspaces synced across sessions.
+Cate is an Electron desktop app for arranging development tools in freeform space. Mix floating canvas panels with docked tabs and splits, detach panels into standalone windows, and keep multiple workspaces synced across sessions.
+
+## Getting Started
+
+Open any folder to create a workspace — Cate restores your canvas layout, panel positions, and open terminals every time you come back. Right-click the canvas to add panels, press `Cmd+K` for the command palette, or drag panels onto the dock to create tabs and splits.
+
+No configuration files, no project setup — just point Cate at a directory and start working.
 
 ## Why Cate?
 
@@ -36,21 +43,48 @@ Cate replaces that pile of windows with **one persistent canvas per project**. T
 
 ## Features
 
-- **Infinite canvas + docking** — arrange panels spatially, or dock them into tabs and splits
-- **Multi-workspace sessions** — keep several projects open and restore them on restart
-- **Detached windows** — pull panels or full dock layouts into separate windows
-- **Code editing** — Monaco-powered editor panels with diff support
-- **Native terminals** — xterm.js + `node-pty`, rooted in the active workspace
-- **Browser panels** — embedded web previews with hardened webview settings
-- **Explorer + search** — git-aware file tree, live filesystem watching, and project search
-- **Source control** — stage/unstage, branch management, worktrees, commit history, and diff views
-- **Agent setup** — bootstrap Claude Code, OpenAI Codex, Gemini, Cursor, and OpenCode configs, plus manage MCP servers
-- **Layouts and commands** — command palette, saved layouts, workspace export/import, global search, and keyboard shortcuts
-- **Desktop polish** — auto-save/session restore, optional native macOS window tabs, and update checks
+### 🎨 Canvas & Layout
+
+- **Infinite canvas** — zoom, pan, and arrange panels anywhere in freeform space. Pan with two-finger drag or right-click drag; zoom with `Cmd+scroll` or the canvas controls.
+- **Dock system** — drag floating panels onto the dock to create tabs and splits. Each dock zone (center, left, right, bottom) can hold multiple tabs with type-colored icons.
+- **Detached windows** — pull panels or full dock layouts into separate OS windows.
+- **Saved layouts** — name, save, load, and delete canvas arrangements (nodes, regions, zoom, viewport) from an in-app modal (`Cmd+K → "Saved Layouts…"`).
+- **Multi-workspace sessions** — keep several projects open and restore them on restart. Switch between workspaces from the sidebar.
+
+### 💻 Code & Terminals
+
+- **Monaco Editor panels** — full VS Code-grade editing with syntax highlighting, multi-cursor, find/replace, and diff support. Scratch editors persist unsaved content across sessions.
+- **Path breadcrumbs** — thin strip above each editor showing the workspace-relative path (`folder › folder › file.ts`). Absolute path in the tooltip.
+- **Native terminals** — xterm.js with WebGL rendering, backed by `node-pty` PTYs rooted in the active workspace. Shell auto-detection with graceful fallback if the configured shell is unavailable.
+- **Browser panels** — embedded webview panels for previewing documentation, dev servers, or any URL. Context-isolated with hardened security settings.
+
+### 🔧 Git & Source Control
+
+- **Git-aware file explorer** — file tree with live filesystem watching and git status indicators. Copy/paste files and folders with collision-safe renaming.
+- **Source control sidebar** — stage/unstage, branch management, worktrees, commit history, and inline diff views. Git monitor polls and surfaces changes automatically.
+- **Project-wide search** — full-text search across workspace files with instant results.
+
+### 🤖 Agent & MCP
+
+- **Agent setup** — bootstrap Claude Code, OpenAI Codex, Gemini, Cursor, and OpenCode configs from the sidebar.
+- **MCP server editor** — add and edit `.mcp.json` entries with environment variables, parsed-args preview, and an inline **Validate** button that probes the server and shows its capabilities before writing anything to disk.
+
+### 🔍 Search & Navigation
+
+- **Canvas-wide search** (`Cmd+Shift+F`) — Spotlight-style overlay that searches workspace files, live terminal scrollback, and open panel titles/paths in one place. Recent-focus ranked results with colored type-tile icons.
+- **Panel switcher** (`Cmd+E`) — masonry grid showing all open panels with live previews. Includes dock-zone panels (File Explorer, Git, Project List, Canvas host).
+- **Command palette** (`Cmd+K`) — quick access to every action in the app. Unified Spotlight-style chrome across all overlays.
+
+### 🖥️ Desktop Polish
+
+- **Auto-save & session restore** — all panel state, positions, and open files persist automatically.
+- **Optional macOS native window tabs** — group Cate windows in the system tab bar.
+- **Auto-update checks** — checks GitHub releases and notifies when a new version is available.
+- **Crash resilience** — smart crash-report filtering (no noise from React teardown or resource-load failures), shell fallback banners in the PTY, and atomic crash-report archiving to prevent dialog loops.
 
 ## Install
 
-If you just want to use Cate, download a prebuilt release — don't build from source. This repository currently targets **v0.3.3**.
+If you just want to use Cate, download a prebuilt release — don't build from source. This repository currently targets **v0.4.5**.
 
 | Platform | Formats | Link |
 |----------|---------|------|
@@ -58,7 +92,7 @@ If you just want to use Cate, download a prebuilt release — don't build from s
 | Windows | NSIS installer, ZIP (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
 | Linux | AppImage, DEB, `tar.gz` (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
 
-> **macOS note:** release builds are configured for hardened runtime and notarization. Unsigned local or test builds may still require:
+> **macOS note:** release builds are notarized and configured for hardened runtime. Unsigned local or test builds may require:
 > ```bash
 > xattr -cr /Applications/Cate.app
 > ```
@@ -100,7 +134,8 @@ This starts the Electron app with hot reload via electron-vite.
 
 ```bash
 npm run typecheck
-npm test
+npm test            # unit tests (vitest)
+npm run test:e2e    # Playwright integration tests
 ```
 
 For the Electron smoke test harness:
@@ -129,34 +164,66 @@ Packaged binaries will be in the `release/` directory.
 
 ## Security & Packaging
 
-Cate uses a context-isolated preload bridge, workspace-scoped filesystem access, hardened browser panels, and a safer update fallback that opens the GitHub release page when a verified installer path is unavailable.
+Cate uses a context-isolated preload bridge for all IPC communication. Filesystem access is scoped to registered workspace roots, browser panels use hardened webview settings with disabled node integration, and the updater falls back to opening the GitHub release page when a verified installer path is unavailable. Workspace-scoped `allowedRoots` validation prevents terminals from spawning outside approved directories.
 
 ## Architecture
 
 ```text
 src/
-├── main/           # Electron main process — IPC, security, updater, workspace lifecycle
-├── preload/        # Context-isolated bridge exposed to the renderer
-├── renderer/       # React app
-│   ├── canvas/     # Infinite canvas rendering and state
-│   ├── docking/    # Tabs, splits, detached dock windows, drag/drop
-│   ├── panels/     # Editor, terminal, browser, git, explorer, project panels
-│   ├── sidebar/    # Workspaces, explorer, source control, agent setup, usage
-│   ├── settings/   # App settings UI
-│   ├── shells/     # Main, panel, and dock window shells
-│   └── stores/     # Zustand state management
-└── shared/         # IPC channel definitions and shared types
+├── main/               # Electron main process
+│   ├── ipc/            # IPC handlers (filesystem, git, terminal, workspace)
+│   ├── shellResolver   # Shell path resolution with fallback chain
+│   ├── workspaceManager# Workspace lifecycle and session persistence
+│   ├── workspaceRoots  # Allowed-roots registration and validation
+│   ├── windowRegistry  # Window management (main, dock, detached)
+│   ├── webSecurity     # Webview hardening and CSP
+│   ├── auto-updater    # Update checks and release fetch
+│   ├── crashReporter   # Crash report capture and filtering
+│   ├── sentry          # Sentry integration
+│   ├── store           # electron-store persistence
+│   ├── menu            # Application menu
+│   └── sessionTrust    # Session restore validation
+├── preload/            # Context-isolated bridge exposed to the renderer
+├── renderer/           # React 18 application
+│   ├── canvas/         # Infinite canvas rendering, drag, resize, placement
+│   ├── docking/        # Tabs, splits, detached dock windows, drag/drop
+│   ├── panels/         # EditorPanel, TerminalPanel, BrowserPanel,
+│   │                   # FileExplorerPanel, GitPanel, ProjectListPanel,
+│   │                   # CanvasPanel
+│   ├── sidebar/        # WorkspaceTab, FileExplorer, SourceControlView,
+│   │                   # ProjectList, fileClipboard
+│   ├── dialogs/        # SavedLayoutsDialog, MCP editor dialog
+│   ├── ui/             # CommandPalette, GlobalSearch, PanelSwitcher,
+│   │                   # NodeSwitcher, WelcomePage, ShortcutHintOverlay
+│   ├── shells/         # Main, panel, and dock window shells
+│   ├── stores/         # Zustand stores (canvas, app, settings, shortcut,
+│   │                   # status, ui)
+│   ├── hooks/          # Custom React hooks (useShortcuts, useNodeDrag, etc.)
+│   ├── drag/           # Drag-and-drop logic and state
+│   └── lib/            # Utilities (coordinates, git, filesystem helpers)
+└── shared/             # IPC channel definitions and shared TypeScript types
 ```
 
-- **Electron 41** for the desktop shell
-- **React 18** for the UI
-- **Zustand** for state management
-- **Monaco Editor** for code editing
-- **xterm.js + node-pty** for terminals
-- **simple-git** for source control operations
-- **electron-updater** for release checks
-- **Tailwind CSS** for styling
-- **electron-vite** for bundling
+### Tech Stack
+
+- **Electron 41** — desktop shell (Chromium + Node.js)
+- **React 18** — UI framework with functional components and hooks
+- **Zustand 5** — lightweight state management (no Redux/Context)
+- **Monaco Editor 0.52** — code editing (VS Code's editor component)
+- **xterm.js 5.5 + node-pty 1.0** — terminal emulator with WebGL renderer
+- **simple-git 3.27** — git operations
+- **chokidar 4.0** — filesystem watching
+- **Tailwind CSS 3.4** — styling
+- **electron-vite 5.0** — bundling with HMR
+- **electron-builder 26** — packaging and distribution
+- **electron-updater 6.8** — update checks
+- **Sentry** — crash reporting and diagnostics
+- **Playwright** — end-to-end integration tests
+- **Vitest** — unit test runner
+
+## Roadmap
+
+Cate is under active development. For a detailed history of what changed in each release and a sense of where things are headed, see the [CHANGELOG](CHANGELOG.md).
 
 ## Star History
 

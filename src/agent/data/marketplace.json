@@ -1,0 +1,110 @@
+[
+  {
+    "name": "pi-mcp-adapter",
+    "description": "MCP (Model Context Protocol) adapter — connect Pi to MCP servers as tools.",
+    "author": "earendil-works",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/pi-mcp-adapter",
+    "requiresTerminal": false
+  },
+  {
+    "name": "pi-web-access",
+    "description": "Web access tools: web search, fetch URL content, and PDF extraction.",
+    "author": "earendil-works",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/pi-web-access",
+    "requiresTerminal": false
+  },
+  {
+    "name": "@ollama/pi-web-search",
+    "description": "Web search powered by Ollama's hosted web search API.",
+    "author": "ollama",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/@ollama/pi-web-search",
+    "requiresTerminal": false
+  },
+  {
+    "name": "pi-simplify",
+    "description": "Code-review subagent that pushes back on unnecessary complexity.",
+    "author": "earendil-works",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/pi-simplify",
+    "requiresTerminal": false
+  },
+  {
+    "name": "pi-lens",
+    "description": "LSP + linter feedback surfaced inline to the agent after edits.",
+    "author": "earendil-works",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/pi-lens",
+    "requiresTerminal": false
+  },
+  {
+    "name": "pi-powerline-footer",
+    "description": "Powerline-style status bar footer for the Pi terminal UI.",
+    "author": "earendil-works",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/pi-powerline-footer",
+    "requiresTerminal": true
+  },
+  {
+    "name": "@juicesharp/rpiv-ask-user-question",
+    "description": "Structured ask-user-question tool with multiple-choice prompts.",
+    "author": "juicesharp",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question",
+    "requiresTerminal": false
+  },
+  {
+    "name": "@juicesharp/rpiv-todo",
+    "description": "Persistent todo list tool the agent can read, append, and check off.",
+    "author": "juicesharp",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/@juicesharp/rpiv-todo",
+    "requiresTerminal": true
+  },
+  {
+    "name": "@juicesharp/rpiv-advisor",
+    "description": "Advisor subagent that reviews plans before the worker commits to them.",
+    "author": "juicesharp",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/@juicesharp/rpiv-advisor",
+    "requiresTerminal": false
+  },
+  {
+    "name": "@juicesharp/rpiv-web-tools",
+    "description": "Web tools bundle: search, fetch, and screenshot helpers.",
+    "author": "juicesharp",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/@juicesharp/rpiv-web-tools",
+    "requiresTerminal": false
+  },
+  {
+    "name": "pi-plan-mode",
+    "description": "Plan-first workflow: gather context and draft a plan before edits.",
+    "author": "earendil-works",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/pi-plan-mode",
+    "requiresTerminal": true
+  },
+  {
+    "name": "pi-git-tools",
+    "description": "Higher-level git helpers (branch summaries, PR drafting, conflict triage).",
+    "author": "community",
+    "downloads": 0,
+    "type": "extension",
+    "repoUrl": "https://www.npmjs.com/package/pi-git-tools",
+    "requiresTerminal": false
+  }
+]

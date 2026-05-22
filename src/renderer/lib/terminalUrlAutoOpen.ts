@@ -163,9 +163,10 @@ export function scanTerminalChunkForUrls(
   const eligible = matches.filter((x) =>
     hasUi ? x.kind === 'ui' : x.kind === 'unknown',
   )
-  // Cap to one open per batch to avoid the second URL clobbering the first
-  // in the shared browser panel.
-  const toOpen = eligible.slice(0, 1)
+  // In auto mode, cap to one open per batch to avoid the second URL clobbering
+  // the first in the shared browser panel. In prompt mode, queue every
+  // eligible URL so the user can decide per-URL.
+  const toOpen = mode === 'auto' ? eligible.slice(0, 1) : eligible
   // Mark every matched URL as seen — including ones we deliberately skip —
   // so future chunks don't re-trigger them.
   for (const { url } of matches) {

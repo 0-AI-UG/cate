@@ -223,10 +223,13 @@ export function QueueBadges({
 // -----------------------------------------------------------------------------
 
 export function ExtensionStatusBar({ entries }: { entries: ExtensionStatusEntry[] }) {
-  if (entries.length === 0) return null
+  // `plan-mode` drives the toggle-button highlight in ChatInput — surfacing it
+  // here too would be redundant chrome, so we hide it from the footer.
+  const visible = entries.filter((e) => e.key !== 'plan-mode')
+  if (visible.length === 0) return null
   return (
     <div className="flex flex-wrap gap-2 px-3 py-1 border-t border-white/5 bg-black/15 text-[11px] text-muted">
-      {entries.map((e) => (
+      {visible.map((e) => (
         <span key={e.key} className="px-1.5 py-0.5 rounded bg-white/5 font-mono">
           {e.text}
         </span>

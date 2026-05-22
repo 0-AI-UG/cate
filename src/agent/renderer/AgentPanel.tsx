@@ -34,6 +34,9 @@ import {
   MagnifyingGlass,
   FolderOpen,
   Stack,
+  ClipboardText,
+  Spinner,
+  ArrowsClockwise,
 } from '@phosphor-icons/react'
 import log from '../../renderer/lib/logger'
 import type { PanelProps } from '../../renderer/panels/types'
@@ -42,7 +45,6 @@ import { useAgentStore } from './agentStore'
 import { ProvidersView } from './ProvidersView'
 import { ChatThread } from './ChatThread'
 import {
-  CompactionBanner,
   ExtensionDialog,
   ExtensionStatusBar,
   ExtensionWidget,
@@ -706,6 +708,61 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   }, [activeAgentKey, forkMap, refreshStatsAndState])
 
   // ---------------------------------------------------------------------------
+  // Plan mode (cate-plan-mode extension)
+  // ---------------------------------------------------------------------------
+
+  const planModeActive = useMemo(
+    () => extensionStatuses.some((s) => s.key === 'plan-mode'),
+    [extensionStatuses],
+  )
+
+  const handleTogglePlanMode = useCallback(async () => {
+    if (!activeAgentKey) return
+    try { await window.electronAPI.agentPrompt(activeAgentKey, '/plan') }
+    catch (err) { log.warn('[AgentPanel] toggle plan mode failed', err) }
+  }, [activeAgentKey])
+
+  const handleImplementPlan = useCallback(async () => {
+    if (!activeAgentKey) return
+    const key = activeAgentKey
+    try {
+      await window.electronAPI.agentPrompt(key, '/apply-plan')
+      await window.electronAPI.agentPrompt(key, 'Now execute the plan above.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      useAgentStore.getState().appendSystem(key, `Implement failed: ${msg}`, 'error')
+    }
+  }, [activeAgentKey])
+
+  const handleRefinePlan = useCallback(async (text: string) => {
+    if (!activeAgentKey) return
+    const key = activeAgentKey
+    try { await window.electronAPI.agentPrompt(key, text) }
+    catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      useAgentStore.getState().appendSystem(key, `Refine failed: ${msg}`, 'error')
+    }
+  }, [activeAgentKey])
+
+  const handleClearAndImplement = useCallback(async () => {
+    if (!activeAgentKey) return
+    const key = activeAgentKey
+    try {
+      useAgentStore.getState().setCompaction(key, { active: true, reason: 'manual' })
+      await window.electronAPI.agentCompact(key)
+      useAgentStore.getState().setCompaction(key, { active: false })
+      await window.electronAPI.agentPrompt(key, '/apply-plan')
+      await window.electronAPI.agentPrompt(key, 'Now execute the plan above.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      useAgentStore.getState().appendSystem(key, `Clear & implement failed: ${msg}`, 'error')
+      useAgentStore.getState().setCompaction(key, { active: false, lastErrorMessage: msg })
+    } finally {
+      void refreshStatsAndState()
+    }
+  }, [activeAgentKey, refreshStatsAndState])
+
+  // ---------------------------------------------------------------------------
   // Image drop / paste
   // ---------------------------------------------------------------------------
 
@@ -850,23 +907,67 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
               </div>
             )}
 
-            <CompactionBanner state={compaction} />
             <RetryBanner state={retry} onAbort={handleAbortRetry} />
             <ExtensionWidget widgets={extensionWidgets} placement="aboveEditor" />
             <QueueBadges steering={steeringQueue} followUp={followUpQueue} />
 
             {messages.length === 0 ? (
-              <WelcomeView
-                onSubmit={(t) => { setDraft(''); void submitPrompt(t) }}
-                draft={draft}
-                onDraftChange={setDraft}
-                disabled={!!selectedModel && !selectedProviderConnected}
-                placeholder={
-                  !selectedModel ? 'Pick a model to start…'
-                    : !selectedProviderConnected ? `Connect ${selectedModel.provider} to start…`
-                    : 'Ask the agent anything about this workspace…'
-                }
-              />
+              <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-8 min-h-0">
+                <div className="w-full max-w-[520px] flex flex-col items-center">
+                  <div className="w-12 h-12 rounded-2xl bg-violet-500/15 flex items-center justify-center mb-4">
+                    <Sparkle size={22} weight="fill" className="text-violet-400" />
+                  </div>
+                  <div className="text-[16px] font-medium text-primary mb-3 text-center">
+                    What should we work on?
+                  </div>
+                  <div className="w-full -mx-3">
+                    <ChatInput
+                      draft={draft}
+                      onChange={setDraft}
+                      onSubmit={handleSend}
+                      onStop={handleInterrupt}
+                      disabled={!!selectedModel && !selectedProviderConnected}
+                      running={running}
+                      textareaRef={textareaRef}
+                      commands={commands}
+                      images={draftImages}
+                      onAddImage={handleAddImage}
+                      onRemoveImage={handleRemoveImage}
+                      onPaste={handlePaste}
+                      onDrop={handleDrop}
+                      stats={stats}
+                      thinkingLevel={thinkingLevel}
+                      onPickThinkingLevel={handlePickThinkingLevel}
+                      autoCompactionEnabled={autoCompactionEnabled}
+                      onManualCompact={handleManualCompact}
+                      onToggleAutoCompaction={handleToggleAutoCompaction}
+                      compactionActive={compaction.active}
+                      planModeActive={planModeActive}
+                      onTogglePlanMode={handleTogglePlanMode}
+                      placeholder={
+                        !selectedModel ? 'Pick a model to start…'
+                          : !selectedProviderConnected ? `Connect ${selectedModel.provider} to start…`
+                          : 'Ask the agent anything about this workspace…'
+                      }
+                    />
+                  </div>
+                  <div className="w-full mt-2 grid grid-cols-2 gap-2 px-3">
+                    {SUGGESTIONS.map((s) => (
+                      <button
+                        key={s.label}
+                        onClick={() => {
+                          if (s.prompt.endsWith(' ')) setDraft(s.prompt)
+                          else { setDraft(''); void submitPrompt(s.prompt) }
+                        }}
+                        disabled={!!selectedModel && !selectedProviderConnected}
+                        className="text-left px-3 py-2 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/10 text-[12px] text-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             ) : (
               <>
                 <ChatThread
@@ -880,6 +981,9 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                     setDraft(text)
                     textareaRef.current?.focus()
                   }}
+                  onImplementPlan={handleImplementPlan}
+                  onRefinePlan={handleRefinePlan}
+                  onClearAndImplement={handleClearAndImplement}
                 />
                 <ExtensionWidget widgets={extensionWidgets} placement="belowEditor" />
                 {currentUiRequest && (
@@ -908,6 +1012,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                   onManualCompact={handleManualCompact}
                   onToggleAutoCompaction={handleToggleAutoCompaction}
                   compactionActive={compaction.active}
+                  planModeActive={planModeActive}
+                  onTogglePlanMode={handleTogglePlanMode}
                 />
               </>
             )}
@@ -1117,90 +1223,6 @@ function groupChats(
 }
 
 // -----------------------------------------------------------------------------
-// Welcome state
-// -----------------------------------------------------------------------------
-
-function WelcomeView({
-  onSubmit,
-  draft,
-  onDraftChange,
-  disabled,
-  placeholder,
-}: {
-  onSubmit: (text: string) => void
-  draft: string
-  onDraftChange: (s: string) => void
-  disabled: boolean
-  placeholder: string
-}) {
-  const taRef = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => {
-    const ta = taRef.current
-    if (!ta) return
-    ta.style.height = 'auto'
-    ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'
-  }, [draft])
-
-  return (
-    <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-8 min-h-0">
-      <div className="w-full max-w-[520px] flex flex-col items-center">
-        <div className="w-12 h-12 rounded-2xl bg-violet-500/15 flex items-center justify-center mb-4">
-          <Sparkle size={22} weight="fill" className="text-violet-400" />
-        </div>
-        <div className="text-[16px] font-medium text-primary mb-5 text-center">
-          What should we work on?
-        </div>
-
-        <div className="w-full rounded-2xl border border-white/10 bg-surface-3 focus-within:border-violet-500/50 transition-colors">
-          <textarea
-            ref={taRef}
-            value={draft}
-            onChange={(e) => onDraftChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                if (!disabled && draft.trim()) onSubmit(draft.trim())
-              }
-            }}
-            placeholder={placeholder}
-            rows={1}
-            disabled={disabled}
-            className="w-full bg-transparent px-4 py-3 text-[13px] text-primary outline-none resize-none placeholder:text-muted disabled:opacity-50"
-            style={{ maxHeight: 200 }}
-          />
-          <div className="flex items-center justify-end px-2 pb-2">
-            <button
-              onClick={() => { if (!disabled && draft.trim()) onSubmit(draft.trim()) }}
-              disabled={disabled || !draft.trim()}
-              className="p-2 rounded-full bg-violet-500 hover:bg-violet-400 disabled:bg-white/10 disabled:text-muted text-white"
-              title="Send"
-            >
-              <PaperPlaneRight size={12} weight="fill" />
-            </button>
-          </div>
-        </div>
-
-        <div className="w-full mt-4 grid grid-cols-2 gap-2">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s.label}
-              onClick={() => {
-                if (s.prompt.endsWith(' ')) onDraftChange(s.prompt)
-                else onSubmit(s.prompt)
-              }}
-              disabled={disabled}
-              className="text-left px-3 py-2 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/10 text-[12px] text-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// -----------------------------------------------------------------------------
 // Chat input (bottom-of-thread)
 // -----------------------------------------------------------------------------
 
@@ -1225,6 +1247,9 @@ function ChatInput({
   onManualCompact,
   onToggleAutoCompaction,
   compactionActive,
+  planModeActive,
+  onTogglePlanMode,
+  placeholder: placeholderOverride,
 }: {
   draft: string
   onChange: (s: string) => void
@@ -1246,6 +1271,9 @@ function ChatInput({
   onManualCompact: () => void
   onToggleAutoCompaction: () => void
   compactionActive: boolean
+  planModeActive: boolean
+  onTogglePlanMode: () => void
+  placeholder?: string
 }) {
   useEffect(() => {
     const ta = textareaRef.current
@@ -1369,11 +1397,14 @@ function ChatInput({
               if (canSend) onSubmit()
             }
           }}
-          disabled={disabled}
+          disabled={disabled || compactionActive}
           placeholder={
-            running
-              ? 'Steer the agent…  (queues a course-correct mid-turn)'
-              : 'Message the agent…  (type / for skills, paste/drop images)'
+            compactionActive
+              ? 'Compacting context…'
+              : placeholderOverride ??
+                (running
+                  ? 'Steer the agent…  (queues a course-correct mid-turn)'
+                  : 'Message the agent…  (type / for skills, paste/drop images)')
           }
           rows={1}
           className="w-full bg-transparent px-3 py-2 text-[13px] text-primary outline-none resize-none placeholder:text-muted disabled:opacity-50"
@@ -1382,6 +1413,17 @@ function ChatInput({
         <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
           <ImageAttachButton onPick={onAddImage} />
           <ThinkingLevelPicker level={thinkingLevel} onChange={onPickThinkingLevel} />
+          <button
+            onClick={onTogglePlanMode}
+            className={`p-1.5 rounded-md ${
+              planModeActive
+                ? 'bg-violet-500/25 text-violet-100'
+                : 'text-primary/80 hover:bg-white/5'
+            }`}
+            title="Plan mode — agent investigates with parallel scouts, proposes a plan, then waits for your approval."
+          >
+            <ClipboardText size={12} weight={planModeActive ? 'fill' : 'regular'} />
+          </button>
           <button
             onClick={onManualCompact}
             onContextMenu={(e) => { e.preventDefault(); onToggleAutoCompaction() }}
@@ -1398,7 +1440,14 @@ function ChatInput({
           </button>
           <StatsChip stats={stats} />
           <div className="flex-1" />
-          {running ? (
+          {compactionActive ? (
+            <div
+              className="p-1.5 rounded-full bg-violet-500/40 text-white"
+              title="Compacting context…"
+            >
+              <Spinner size={12} weight="bold" className="animate-spin" />
+            </div>
+          ) : running ? (
             canSend ? (
               <button
                 onClick={onSubmit}
@@ -1616,7 +1665,7 @@ function SettingsView({
   onBack: () => void
   onRefresh: () => void
 }) {
-  type SettingsTab = 'providers' | 'agents' | 'prompts' | 'skills'
+  type SettingsTab = 'providers' | 'agents' | 'prompts' | 'skills' | 'extensions'
   const [tab, setTab] = useState<SettingsTab>('providers')
   useEffect(() => { if (scopedProviderId) setTab('providers') }, [scopedProviderId])
   const [creating, setCreating] = useState(false)
@@ -1625,7 +1674,7 @@ function SettingsView({
   const [files, setFiles] = useState<Array<{ name: string; description?: string; path: string }>>([])
 
   const refreshFiles = useCallback(async () => {
-    if (tab === 'providers') return
+    if (tab === 'providers' || tab === 'extensions') return
     try {
       const list = await window.electronAPI.agentListSkillFiles(tab)
       setFiles(list)
@@ -1641,10 +1690,11 @@ function SettingsView({
     [commands],
   )
 
-  const createKind = tab === 'providers' ? 'agents' : tab
+  const createKind: 'agents' | 'prompts' | 'skills' =
+    tab === 'agents' || tab === 'prompts' || tab === 'skills' ? tab : 'agents'
 
   const handleCreate = async (): Promise<void> => {
-    if (tab === 'providers') return
+    if (tab === 'providers' || tab === 'extensions') return
     setError(null)
     try {
       const created = await window.electronAPI.agentCreateSkill(createKind, newName)
@@ -1678,7 +1728,14 @@ function SettingsView({
     window.electronAPI.agentOpenSkillsFolder(createKind).catch(() => { /* */ })
   }
 
-  const isSkillTab = tab !== 'providers'
+  const isSkillTab = tab === 'agents' || tab === 'prompts' || tab === 'skills'
+  const isExtensionsTab = tab === 'extensions'
+  const [refreshNonce, setRefreshNonce] = useState(0)
+  const showRefresh = isSkillTab || isExtensionsTab
+  const handleTopRefresh = (): void => {
+    if (isSkillTab) onRefresh()
+    if (isExtensionsTab) setRefreshNonce((n) => n + 1)
+  }
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 text-primary">
@@ -1687,15 +1744,20 @@ function SettingsView({
           <button onClick={onBack} className="text-[11px] text-muted hover:text-primary">
             ← Back to chat
           </button>
-          {isSkillTab && (
-            <button onClick={onRefresh} className="text-[11px] text-muted hover:text-primary">
-              Refresh
+          {showRefresh && (
+            <button
+              onClick={handleTopRefresh}
+              className="p-1 rounded-md text-muted hover:text-primary hover:bg-white/5"
+              title="Refresh"
+              aria-label="Refresh"
+            >
+              <ArrowsClockwise size={12} />
             </button>
           )}
         </div>
 
         <div className="flex items-center gap-1 p-1 rounded-lg bg-black/20 w-fit">
-          {(['providers', 'agents', 'prompts', 'skills'] as const).map((t) => (
+          {(['providers', 'agents', 'prompts', 'skills', 'extensions'] as const).map((t) => (
             <button
               key={t}
               onClick={() => { setTab(t); setCreating(false); setError(null) }}
@@ -1762,6 +1824,8 @@ function SettingsView({
           <div className="-mx-4">
             <ProvidersView embedded scopedProviderId={scopedProviderId} />
           </div>
+        ) : isExtensionsTab ? (
+          <ExtensionsTab refreshNonce={refreshNonce} />
         ) : (
           <div className="rounded-lg bg-white/[0.02] overflow-hidden">
             {files.length === 0 && (tab !== 'skills' || packageSkills.length === 0) ? (
@@ -1775,8 +1839,8 @@ function SettingsView({
                     key={f.path}
                     name={f.name}
                     description={f.description}
-                    badge={TAB_BADGE[tab]}
-                    badgeClass={TAB_BADGE_COLOR[tab]}
+                    badge={TAB_BADGE[tab as 'agents' | 'prompts' | 'skills']}
+                    badgeClass={TAB_BADGE_COLOR[tab as 'agents' | 'prompts' | 'skills']}
                     filePath={f.path}
                     deletable={true}
                     onOpen={() => handleOpen(f.path)}
@@ -1801,6 +1865,350 @@ function SettingsView({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Extensions tab — Pi extension marketplace (install/uninstall pi packages)
+// -----------------------------------------------------------------------------
+
+interface MarketplaceCatalogEntry {
+  name: string
+  description: string
+  author: string
+  downloads: number
+  type: string
+  repoUrl: string
+  requiresTerminal: boolean
+}
+
+interface InstalledExtensionEntry {
+  name: string
+  description?: string
+  requiresTerminal: boolean
+  path: string
+}
+
+const TERMINAL_TOOLTIP =
+  'Some features in this extension require a terminal and are not supported in Cate yet.'
+
+type MarketplaceSortValue = 'downloads' | 'recent' | 'name'
+
+function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
+  const [catalog, setCatalog] = useState<MarketplaceCatalogEntry[]>([])
+  const [installed, setInstalled] = useState<InstalledExtensionEntry[]>([])
+  const [queryInput, setQueryInput] = useState('')
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<MarketplaceSortValue>('downloads')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [usingFallback, setUsingFallback] = useState(false)
+  const [pending, setPending] = useState<Record<string, 'install' | 'uninstall' | undefined>>({})
+  const [error, setError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [browseLoading, setBrowseLoading] = useState(false)
+
+  const refreshInstalled = useCallback(async () => {
+    try {
+      const list = await window.electronAPI.agentMarketplaceListInstalled()
+      setInstalled(list)
+    } catch (err) {
+      log.warn('[ExtensionsTab] listInstalled failed', err)
+    }
+  }, [])
+
+  // Debounce the search input: typing waits 300ms before triggering a fetch.
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setQuery(queryInput.trim())
+      setPage(1)
+    }, 300)
+    return () => { window.clearTimeout(handle) }
+  }, [queryInput])
+
+  // Initial installed list — independent of marketplace fetch. Re-runs when
+  // the parent bumps `refreshNonce` (top-bar Refresh button).
+  useEffect(() => { void refreshInstalled() }, [refreshInstalled, refreshNonce])
+
+  // Marketplace fetch — re-runs on page/query/sort change, and on parent
+  // refresh-nonce bumps from the top-bar Refresh button.
+  useEffect(() => {
+    let cancelled = false
+    setBrowseLoading(true)
+    void (async () => {
+      try {
+        const res = await window.electronAPI.agentMarketplaceList({ page, query, sort })
+        if (cancelled) return
+        setCatalog(res.entries)
+        setTotalPages(res.totalPages)
+        setUsingFallback(Boolean(res.fallback))
+      } catch (err) {
+        if (!cancelled) {
+          log.warn('[ExtensionsTab] marketplaceList failed', err)
+          setUsingFallback(true)
+        }
+      } finally {
+        if (!cancelled) {
+          setBrowseLoading(false)
+          setLoaded(true)
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [page, query, sort, refreshNonce])
+
+  const installedNames = useMemo(
+    () => new Set(installed.map((e) => e.name)),
+    [installed],
+  )
+
+  // Backend handles search/sort. We still filter on the fallback branch so
+  // the bundled list responds to the query input.
+  const filtered = useMemo(() => {
+    if (!usingFallback) return catalog
+    const q = query.trim().toLowerCase()
+    if (!q) return catalog
+    return catalog.filter((e) =>
+      e.name.toLowerCase().includes(q)
+      || (e.description ?? '').toLowerCase().includes(q)
+      || (e.author ?? '').toLowerCase().includes(q),
+    )
+  }, [catalog, query, usingFallback])
+
+  const setRowPending = (name: string, kind: 'install' | 'uninstall' | undefined): void => {
+    setPending((prev) => {
+      const next = { ...prev }
+      if (kind) next[name] = kind
+      else delete next[name]
+      return next
+    })
+  }
+
+  const handleInstall = async (name: string): Promise<void> => {
+    setError(null)
+    setRowPending(name, 'install')
+    try {
+      const res = await window.electronAPI.agentMarketplaceInstall(name)
+      if (!res.ok) {
+        setError(res.error ?? `Failed to install ${name}`)
+      }
+      await refreshInstalled()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRowPending(name, undefined)
+    }
+  }
+
+  const handleUninstall = async (name: string): Promise<void> => {
+    if (!window.confirm(`Uninstall ${name}?`)) return
+    setError(null)
+    setRowPending(name, 'uninstall')
+    try {
+      const res = await window.electronAPI.agentMarketplaceUninstall(name)
+      if (!res.ok) {
+        setError(res.error ?? `Failed to uninstall ${name}`)
+      }
+      await refreshInstalled()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRowPending(name, undefined)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="rounded-md border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100 whitespace-pre-wrap break-words">
+          {error}
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[11px] uppercase tracking-wider text-muted">Installed</div>
+        </div>
+        <div className="rounded-lg bg-white/[0.02] overflow-hidden">
+          {installed.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[12px] text-muted">
+              No extensions installed.
+            </div>
+          ) : (
+            installed.map((e) => (
+              <ExtensionRow
+                key={e.path}
+                name={e.name}
+                description={e.description}
+                requiresTerminal={e.requiresTerminal}
+                actionLabel="Uninstall"
+                actionTone="danger"
+                disabled={pending[e.name] !== undefined}
+                busy={pending[e.name] === 'uninstall'}
+                onAction={() => { void handleUninstall(e.name) }}
+              />
+            ))
+          )}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted">
+            <span>Browse marketplace</span>
+            {browseLoading && (
+              <span
+                aria-label="Loading"
+                className="inline-block h-2.5 w-2.5 rounded-full border border-violet-400/40 border-t-violet-300 animate-spin"
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value as MarketplaceSortValue)
+                setPage(1)
+              }}
+              className="bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-violet-500/60"
+            >
+              <option value="downloads">Most downloads</option>
+              <option value="recent">Recently published</option>
+              <option value="name">A-Z</option>
+            </select>
+            <input
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.target.value)}
+              placeholder="Search..."
+              className="bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-violet-500/60 w-[180px]"
+            />
+          </div>
+        </div>
+        {usingFallback && loaded && (
+          <div className="text-[10.5px] text-muted/80 mb-1.5">
+            Couldn't reach pi.dev — showing bundled selection.
+          </div>
+        )}
+        <div className="rounded-lg bg-white/[0.02] overflow-hidden">
+          {!loaded ? (
+            <div className="px-3 py-6 text-center text-[12px] text-muted">Loading…</div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[12px] text-muted">
+              {catalog.length === 0 ? 'Catalog unavailable.' : 'No matching extensions.'}
+            </div>
+          ) : (
+            filtered.map((e) => {
+              const isInstalled = installedNames.has(e.name)
+              const busy = pending[e.name] === 'install'
+              return (
+                <ExtensionRow
+                  key={e.name}
+                  name={e.name}
+                  description={e.description}
+                  author={e.author}
+                  downloads={e.downloads}
+                  requiresTerminal={e.requiresTerminal}
+                  actionLabel={isInstalled ? 'Installed' : 'Install'}
+                  actionTone={isInstalled ? 'muted' : 'primary'}
+                  disabled={isInstalled || pending[e.name] !== undefined}
+                  busy={busy}
+                  onAction={() => { if (!isInstalled) void handleInstall(e.name) }}
+                />
+              )
+            })
+          )}
+        </div>
+        {totalPages > 1 && !usingFallback && (
+          <div className="mt-2 flex items-center justify-center gap-3 text-[11px] text-muted">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={browseLoading || page <= 1}
+              className="px-2 py-1 rounded-md bg-white/5 hover:bg-violet-500/20 hover:text-violet-100 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-white/5 disabled:hover:text-muted"
+            >
+              « Prev
+            </button>
+            <span>
+              Page <span className="text-primary">{page}</span> of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={browseLoading || page >= totalPages}
+              className="px-2 py-1 rounded-md bg-white/5 hover:bg-violet-500/20 hover:text-violet-100 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-white/5 disabled:hover:text-muted"
+            >
+              Next »
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ExtensionRow({
+  name,
+  description,
+  author,
+  downloads,
+  requiresTerminal,
+  actionLabel,
+  actionTone,
+  disabled,
+  busy,
+  onAction,
+}: {
+  name: string
+  description?: string
+  author?: string
+  downloads?: number
+  requiresTerminal: boolean
+  actionLabel: string
+  actionTone: 'primary' | 'danger' | 'muted'
+  disabled: boolean
+  busy: boolean
+  onAction: () => void
+}) {
+  const toneClass =
+    actionTone === 'primary'
+      ? 'bg-violet-500 hover:bg-violet-400 text-white'
+      : actionTone === 'danger'
+      ? 'bg-white/5 hover:bg-rose-500/30 text-rose-100'
+      : 'bg-white/5 text-muted'
+  return (
+    <div className="flex items-start gap-2 px-3 py-2 border-b border-white/5 last:border-0 hover:bg-white/[0.04]">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[12.5px] text-primary font-mono truncate">{name}</span>
+          {requiresTerminal && (
+            <span
+              title={TERMINAL_TOOLTIP}
+              className="shrink-0 px-1.5 py-[1px] rounded text-[9px] uppercase tracking-wider font-semibold text-violet-200 bg-violet-500/15"
+            >
+              Terminal required
+            </span>
+          )}
+        </div>
+        {description && (
+          <div className="text-[11px] text-muted truncate">{description}</div>
+        )}
+        {(author || (typeof downloads === 'number' && downloads > 0)) && (
+          <div className="text-[10.5px] text-muted/80 mt-0.5">
+            {author && <span>{author}</span>}
+            {author && typeof downloads === 'number' && downloads > 0 ? <span> · </span> : null}
+            {typeof downloads === 'number' && downloads > 0 ? <span>{downloads.toLocaleString()} downloads/mo</span> : null}
+          </div>
+        )}
+      </div>
+      <button
+        onClick={onAction}
+        disabled={disabled}
+        className={`shrink-0 px-2.5 py-1 rounded-md text-[11px] disabled:opacity-50 disabled:cursor-default flex items-center gap-1.5 ${toneClass}`}
+      >
+        {busy && (
+          <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+        )}
+        {busy ? (actionLabel === 'Uninstall' ? 'Removing…' : 'Installing…') : actionLabel}
+      </button>
     </div>
   )
 }
