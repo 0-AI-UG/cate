@@ -66,28 +66,7 @@ import type {
   AuthProviderStatus,
 } from '../../shared/types'
 import type { AgentMessage as StoreMessage } from './agentStore'
-
-// -----------------------------------------------------------------------------
-// LocalStorage-backed persistence for last-selected model (per-app)
-// -----------------------------------------------------------------------------
-
-const LAST_MODEL_KEY = 'cate.agent.lastModel.v1'
-
-function loadLastModel(): AgentModelRef | null {
-  try {
-    const raw = localStorage.getItem(LAST_MODEL_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed.provider === 'string' && typeof parsed.model === 'string') {
-      return parsed as AgentModelRef
-    }
-  } catch { /* */ }
-  return null
-}
-
-function saveLastModel(model: AgentModelRef): void {
-  try { localStorage.setItem(LAST_MODEL_KEY, JSON.stringify(model)) } catch { /* */ }
-}
+import { loadDefaultModel, loadLastModel, saveLastModel } from './agentModelPrefs'
 
 const SUGGESTIONS: { label: string; prompt: string }[] = [
   { label: 'Explain this codebase', prompt: 'Give me a high-level tour of this codebase. Where are the main entry points and how do the pieces fit together?' },
@@ -326,8 +305,13 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       if (cancelled || myGen !== openGenRef.current) return
       const key = newAgentKey()
       useAgentStore.getState().init(key)
-      const persisted = loadLastModel()
-      if (persisted) useAgentStore.getState().setModel(key, persisted)
+      // Resume: prefer the chat's last-used model recorded in the session.
+      // Fresh chat: prefer the user-configured default, else fall through to
+      // the availableModels effect below.
+      const initialModel: AgentModelRef | null = resume?.lastModel
+        ? { provider: resume.lastModel.provider, model: resume.lastModel.model }
+        : loadDefaultModel()
+      if (initialModel) useAgentStore.getState().setModel(key, initialModel)
 
       if (resume) {
         try {
@@ -341,7 +325,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       // see this key in openChatsRef and dispose its pi process.
       setOpenChats([{ agentKey: key, sessionFile: resume?.path ?? null }])
       setActiveAgentKey(key)
-      await createAgent(key, persisted, resume?.path)
+      await createAgent(key, initialModel, resume?.path)
     })()
 
     return () => {
@@ -355,16 +339,20 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelId])
 
-  // Default-pick first available model once auth resolves — applies to the
-  // active chat only. Other open chats keep whichever model they were created
-  // with; the user can swap each independently.
+  // Default-pick once auth resolves — applies to the active chat only. Other
+  // open chats keep whichever model they were created with; the user can swap
+  // each independently. Prefers the configured default; otherwise falls back
+  // to the first available model.
   useEffect(() => {
     if (!activeAgentKey) return
     if (selectedModel) return
     if (availableModels.length === 0) return
-    const first = { provider: availableModels[0].provider, model: availableModels[0].model }
-    useAgentStore.getState().setModel(activeAgentKey, first)
-    saveLastModel(first)
+    const def = loadDefaultModel()
+    const pick = def && availableModels.some((m) => m.provider === def.provider && m.model === def.model)
+      ? def
+      : { provider: availableModels[0].provider, model: availableModels[0].model }
+    useAgentStore.getState().setModel(activeAgentKey, pick)
+    saveLastModel(pick)
   }, [availableModels, selectedModel, activeAgentKey])
 
   // Pi writes session entries to disk automatically; no renderer-side persist
@@ -418,7 +406,9 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     const myGen = ++openGenRef.current
     const key = newAgentKey()
     useAgentStore.getState().init(key)
-    const model = selectedModel ?? loadLastModel()
+    // New chats always start with the user-configured default. If no default
+    // is set, fall through to the default-pick effect (first available).
+    const model = loadDefaultModel()
     if (model) useAgentStore.getState().setModel(key, model)
     setOpenChats((prev) => [...prev, { agentKey: key, sessionFile: null }])
     setActiveAgentKey(key)
@@ -427,7 +417,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     await createAgent(key, model)
     if (myGen !== openGenRef.current) return
     void refreshChats()
-  }, [selectedModel, createAgent, refreshChats, newAgentKey])
+  }, [createAgent, refreshChats, newAgentKey])
 
   const handleOpenChat = useCallback(async (sessionFile: string) => {
     // Already open in this panel? Switch to it — its pi keeps running, state
@@ -438,11 +428,17 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       setView('chat')
       return
     }
-    // Otherwise spawn a new chat session bound to that on-disk file.
+    // Otherwise spawn a new chat session bound to that on-disk file. Prefer
+    // the model recorded in this session's most recent model_change; if none
+    // is present, fall back to the configured default (and finally to the
+    // default-pick effect once auth resolves).
     const myGen = ++openGenRef.current
     const key = newAgentKey()
     useAgentStore.getState().init(key)
-    const model = selectedModel ?? loadLastModel()
+    const entry = chats.find((c) => c.path === sessionFile)
+    const model: AgentModelRef | null = entry?.lastModel
+      ? { provider: entry.lastModel.provider, model: entry.lastModel.model }
+      : loadDefaultModel()
     if (model) useAgentStore.getState().setModel(key, model)
     setView('chat')
     try {
@@ -456,7 +452,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     setOpenChats((prev) => [...prev, { agentKey: key, sessionFile }])
     setActiveAgentKey(key)
     await createAgent(key, model, sessionFile)
-  }, [openChats, selectedModel, createAgent, newAgentKey])
+  }, [openChats, chats, createAgent, newAgentKey])
 
   const handleCloseChat = useCallback((key: string) => {
     // Dispose pi for this chat without deleting its on-disk session file.

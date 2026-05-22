@@ -986,6 +986,9 @@ export interface AgentSessionListEntry {
   updatedAt: string
   /** Best-effort count of pi `message` entries. */
   messageCount: number
+  /** Last `model_change` entry recorded in the session, if any. Used to
+   *  restore the chat's prior model selection on resume. */
+  lastModel?: { provider: string; model: string }
 }
 
 /** OAuth UI events forwarded to renderer during a login flow. */

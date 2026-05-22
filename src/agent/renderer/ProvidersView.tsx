@@ -24,10 +24,12 @@ import {
 } from '@phosphor-icons/react'
 import log from '../../renderer/lib/logger'
 import type {
+  AgentModelRef,
   AuthProviderDescriptor,
   AuthProviderStatus,
   OAuthFlowEvent,
 } from '../../shared/types'
+import { loadDefaultModel, saveDefaultModel } from './agentModelPrefs'
 
 interface ProvidersViewProps {
   /** Called when the user pops past the list (returns to chat). Ignored when embedded. */
@@ -108,6 +110,7 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false }: Pr
       <div className="flex-1 overflow-y-auto min-h-0">
         {!selectedProvider ? (
           <div className="px-3 py-3 space-y-4">
+            <DefaultModelSection statuses={statuses} />
             <Section label="Sign in">
               {grouped.oauth.map((p) => (
                 <ProviderListRow
@@ -541,4 +544,90 @@ function ApiKeyForm({
       </div>
     </div>
   )
+}
+
+// -----------------------------------------------------------------------------
+// Default model section — pins the model used for every new chat. Lives here
+// because providers/auth gate which models can be picked, so the lists move
+// together.
+// -----------------------------------------------------------------------------
+
+function DefaultModelSection({ statuses }: { statuses: AuthProviderStatus[] }) {
+  const [models, setModels] = useState<Array<{ provider: string; model: string; label?: string }>>([])
+  const [current, setCurrent] = useState<AgentModelRef | null>(() => loadDefaultModel())
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const list = await window.electronAPI.authListModels()
+        if (!cancelled) setModels(list)
+      } catch (err) {
+        log.warn('[DefaultModelSection] listModels failed', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [statuses])
+
+  const handleChange = useCallback((value: string) => {
+    if (!value) {
+      saveDefaultModel(null)
+      setCurrent(null)
+      return
+    }
+    const [provider, ...rest] = value.split('::')
+    const model = rest.join('::')
+    if (!provider || !model) return
+    const next: AgentModelRef = { provider, model }
+    saveDefaultModel(next)
+    setCurrent(next)
+  }, [])
+
+  const selectedKey = current ? `${current.provider}::${current.model}` : ''
+  const currentMissing = !!current && !models.some(
+    (m) => m.provider === current.provider && m.model === current.model,
+  )
+
+  return (
+    <Section label="Default model">
+      <div className="px-2.5 py-2.5 space-y-1.5">
+        <select
+          value={selectedKey}
+          onChange={(e) => handleChange(e.target.value)}
+          className="w-full bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5 text-[12.5px] text-primary focus:outline-none focus:border-violet-400/50"
+        >
+          <option value="">No default — first available</option>
+          {currentMissing && current && (
+            <option value={selectedKey}>
+              {current.model} ({current.provider} — disconnected)
+            </option>
+          )}
+          {groupByProvider(models).map(([provider, items]) => (
+            <optgroup key={provider} label={provider}>
+              {items.map((m) => (
+                <option key={`${m.provider}::${m.model}`} value={`${m.provider}::${m.model}`}>
+                  {m.label ?? m.model}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <div className="text-[10.5px] text-muted/70">
+          Applied to every new chat. Existing chats keep the model they were last using.
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+function groupByProvider(
+  models: Array<{ provider: string; model: string; label?: string }>,
+): Array<[string, Array<{ provider: string; model: string; label?: string }>]> {
+  const map = new Map<string, Array<{ provider: string; model: string; label?: string }>>()
+  for (const m of models) {
+    const bucket = map.get(m.provider) ?? []
+    bucket.push(m)
+    map.set(m.provider, bucket)
+  }
+  return Array.from(map.entries())
 }

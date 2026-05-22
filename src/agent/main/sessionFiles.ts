@@ -60,6 +60,7 @@ async function summarizeFile(filePath: string): Promise<AgentSessionListEntry | 
   let firstUserText: string | null = null
   let sessionName: string | null = null
   let messageCount = 0
+  let lastModel: { provider: string; model: string } | undefined
 
   for (const line of lines) {
     if (!line) continue
@@ -80,6 +81,14 @@ async function summarizeFile(filePath: string): Promise<AgentSessionListEntry | 
       // the last one we see, equivalent for a sequential read.
       const name = entry.sessionName
       if (typeof name === 'string') sessionName = name
+      continue
+    }
+    if (type === 'model_change') {
+      const provider = entry.provider
+      const modelId = entry.modelId
+      if (typeof provider === 'string' && typeof modelId === 'string') {
+        lastModel = { provider, model: modelId }
+      }
       continue
     }
     if (type === 'message') {
@@ -108,6 +117,7 @@ async function summarizeFile(filePath: string): Promise<AgentSessionListEntry | 
     createdAt: header.timestamp,
     updatedAt: stat?.mtime?.toISOString() ?? header.timestamp,
     messageCount,
+    ...(lastModel ? { lastModel } : {}),
   }
 }
 
