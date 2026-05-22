@@ -1,14 +1,15 @@
 // =============================================================================
 // Pi extension marketplace — list catalog, list installed, install, uninstall.
 //
-// Catalog source (v1): a bundled JSON file at src/agent/data/marketplace.json.
-// There is no public JSON API at pi.dev; pi.dev/packages is server-rendered
-// HTML. We swap to a live source later by replacing `loadCatalog()` below.
+// Catalog source: a live scrape of https://pi.dev/packages (server-rendered
+// HTML). There is no public JSON API. When the scrape fails we surface an
+// empty catalog so the UI can show "Catalog unavailable" rather than a stale
+// bundled list.
 //
-// Install/uninstall shells out to the pi CLI at
-// node_modules/.bin/pi (anchored on app.getAppPath() so it works both in dev
-// and once packaged via electron-builder). Pi installs to
-// ~/.pi/agent/extensions/<name>/ which is also where it auto-discovers them.
+// Install/uninstall shells out to the pi CLI at node_modules/.bin/pi (anchored
+// on app.getAppPath() so it works both in dev and once packaged via
+// electron-builder). Pi installs to ~/.pi/agent/extensions/<name>/ which is
+// also where it auto-discovers them.
 // =============================================================================
 
 import fs from 'fs'
@@ -18,7 +19,6 @@ import path from 'path'
 import { spawn } from 'child_process'
 import { app } from 'electron'
 import log from '../../main/logger'
-import catalogJson from '../data/marketplace.json'
 
 export interface MarketplaceEntry {
   name: string
@@ -103,10 +103,6 @@ async function readDescription(extDir: string): Promise<string | undefined> {
   return undefined
 }
 
-export function loadCatalog(): MarketplaceEntry[] {
-  return (catalogJson as MarketplaceEntry[]).slice()
-}
-
 // ---------------------------------------------------------------------------
 // Live scraper for https://pi.dev/packages (server-rendered HTML).
 //
@@ -134,8 +130,6 @@ export interface MarketplacePagePayload {
   entries: MarketplaceEntry[]
   totalPages: number
   page: number
-  /** True when the bundled fallback was used because the live fetch failed. */
-  fallback?: boolean
 }
 
 interface FetchMarketplacePageOptions {
@@ -266,8 +260,8 @@ async function fetchWithTimeout(url: string, ms: number): Promise<string> {
   }
 }
 
-function fallbackPayload(): MarketplacePagePayload {
-  return { entries: loadCatalog(), totalPages: 1, page: 1, fallback: true }
+function emptyPayload(page: number): MarketplacePagePayload {
+  return { entries: [], totalPages: 1, page }
 }
 
 export async function fetchMarketplacePage(
@@ -286,21 +280,13 @@ export async function fetchMarketplacePage(
   try {
     const html = await fetchWithTimeout(url, FETCH_TIMEOUT_MS)
     const entries = parseEntries(html)
-    if (entries.length === 0) {
-      // Searches that yield zero hits are legitimate; we only treat the
-      // fully-empty unfiltered case as a parse failure worth falling back on.
-      if (!query && page === 1) {
-        log.warn('[marketplace] scraper found 0 entries on page 1 — falling back to bundled catalog')
-        return fallbackPayload()
-      }
-    }
     const totalPages = parseTotalPages(html)
     const payload: MarketplacePagePayload = { entries, totalPages, page }
     pageCache.set(url, { fetchedAt: Date.now(), payload })
     return payload
   } catch (err) {
     log.warn('[marketplace] fetch failed for %s: %O', url, err)
-    return fallbackPayload()
+    return emptyPayload(page)
   }
 }
 

@@ -1899,7 +1899,6 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
   const [sort, setSort] = useState<MarketplaceSortValue>('downloads')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [usingFallback, setUsingFallback] = useState(false)
   const [pending, setPending] = useState<Record<string, 'install' | 'uninstall' | undefined>>({})
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -1938,11 +1937,10 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
         if (cancelled) return
         setCatalog(res.entries)
         setTotalPages(res.totalPages)
-        setUsingFallback(Boolean(res.fallback))
       } catch (err) {
         if (!cancelled) {
           log.warn('[ExtensionsTab] marketplaceList failed', err)
-          setUsingFallback(true)
+          setCatalog([])
         }
       } finally {
         if (!cancelled) {
@@ -1959,18 +1957,8 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
     [installed],
   )
 
-  // Backend handles search/sort. We still filter on the fallback branch so
-  // the bundled list responds to the query input.
-  const filtered = useMemo(() => {
-    if (!usingFallback) return catalog
-    const q = query.trim().toLowerCase()
-    if (!q) return catalog
-    return catalog.filter((e) =>
-      e.name.toLowerCase().includes(q)
-      || (e.description ?? '').toLowerCase().includes(q)
-      || (e.author ?? '').toLowerCase().includes(q),
-    )
-  }, [catalog, query, usingFallback])
+  // Backend handles search/sort/pagination — the renderer just renders.
+  const filtered = catalog
 
   const setRowPending = (name: string, kind: 'install' | 'uninstall' | undefined): void => {
     setPending((prev) => {
@@ -2081,11 +2069,6 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
             />
           </div>
         </div>
-        {usingFallback && loaded && (
-          <div className="text-[10.5px] text-muted/80 mb-1.5">
-            Couldn't reach pi.dev — showing bundled selection.
-          </div>
-        )}
         <div className="rounded-lg bg-white/[0.02] overflow-hidden">
           {!loaded ? (
             <div className="px-3 py-6 text-center text-[12px] text-muted">Loading…</div>
@@ -2115,7 +2098,7 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
             })
           )}
         </div>
-        {totalPages > 1 && !usingFallback && (
+        {totalPages > 1 && (
           <div className="mt-2 flex items-center justify-center gap-3 text-[11px] text-muted">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}

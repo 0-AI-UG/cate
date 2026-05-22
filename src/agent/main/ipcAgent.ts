@@ -378,7 +378,7 @@ export function registerAgentHandlers(_authManager: AuthManager, agentManager: A
         return await fetchMarketplacePage(params ?? {})
       } catch (err) {
         log.warn('[ipc.agent] marketplaceList failed: %O', err)
-        return { entries: [], totalPages: 1, page: 1, fallback: true }
+        return { entries: [], totalPages: 1, page: 1 }
       }
     },
   )

@@ -626,8 +626,8 @@ export interface ElectronAPI {
   agentListSkillFiles(kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>>
 
   /** Browse-able marketplace catalog backed by a live scrape of pi.dev/packages
-   *  (~2.9k entries, paginated). Falls back to a small bundled selection when
-   *  pi.dev is unreachable — the `fallback` flag signals that path. */
+   *  (~2.9k entries, paginated). Returns an empty list when pi.dev is
+   *  unreachable so the UI can render a "Catalog unavailable" state. */
   agentMarketplaceList(params?: {
     page?: number
     query?: string
@@ -644,7 +644,6 @@ export interface ElectronAPI {
     }>
     totalPages: number
     page: number
-    fallback?: boolean
   }>
 
   /** List extensions currently present in ~/.pi/agent/extensions/. */
