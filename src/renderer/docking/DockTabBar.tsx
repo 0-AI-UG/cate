@@ -7,31 +7,19 @@
 
 import React from 'react'
 import type { PanelState, PanelType, DockTabStack as DockTabStackType } from '../../shared/types'
-import { X, Terminal as TerminalIcon, Globe, FileText, GitBranch, TreeStructure, SquaresFour, List } from '@phosphor-icons/react'
+import { X } from '@phosphor-icons/react'
 import { useDragStore, useTabSourceVisibility } from '../drag'
+import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 
 // Type → icon/tint mirrors the Spotlight overlay so tabs, search results, and
 // the command palette speak the same visual language.
-export const PANEL_TYPE_TINT: Record<PanelType, string> = {
-  terminal: 'text-emerald-400',
-  browser: 'text-sky-400',
-  editor: 'text-orange-400',
-  git: 'text-red-400',
-  fileExplorer: 'text-cyan-400',
-  projectList: 'text-yellow-400',
-  canvas: 'text-violet-400',
-}
+export const PANEL_TYPE_TINT: Record<PanelType, string> = Object.fromEntries(
+  (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].tintClass]),
+) as Record<PanelType, string>
 
 export function TabIcon({ type, size }: { type: PanelType; size: number }) {
-  switch (type) {
-    case 'terminal':     return <TerminalIcon size={size} />
-    case 'browser':      return <Globe size={size} />
-    case 'editor':       return <FileText size={size} />
-    case 'git':          return <GitBranch size={size} />
-    case 'fileExplorer': return <TreeStructure size={size} />
-    case 'projectList':  return <List size={size} />
-    case 'canvas':       return <SquaresFour size={size} />
-  }
+  const Icon = getPanelDef(type).icon
+  return <Icon size={size} />
 }
 
 /** Thin wrapper around the tab-pill DOM that calls useTabSourceVisibility(panelId)

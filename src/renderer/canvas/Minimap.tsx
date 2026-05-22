@@ -6,6 +6,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useWorkspacePanels } from '../stores/appStore'
 import { panelColor as brandPanelColor } from '../panels/types'
+import { PANEL_REGISTRY } from '../panels/registry'
+import type { PanelType } from '../../shared/types'
 
 const MINIMAP_DEFAULT_WIDTH = 200
 const MINIMAP_DEFAULT_HEIGHT = 150
@@ -35,12 +37,8 @@ const loadSize = (): { w: number; h: number } => {
 }
 
 function mutedPanelColor(panelType: string): string {
-  switch (panelType) {
-    case 'terminal': return '#4a9960'
-    case 'editor': return '#b07440'
-    case 'browser': return '#4a7ab0'
-    default: return '#888'
-  }
+  const def = PANEL_REGISTRY[panelType as PanelType]
+  return def?.mutedColor ?? '#888'
 }
 
 interface MinimapProps {

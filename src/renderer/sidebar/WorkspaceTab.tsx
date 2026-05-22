@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
-import { CaretRight, Terminal as TerminalIcon, Globe, FileCode, GitBranch, Folder, FolderPlus, SquaresFour, List, DotsThree } from '@phosphor-icons/react'
+import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
 import type { WorkspaceState, PanelType, PanelLocation, DockLayoutNode } from '../../shared/types'
 import { ALL_ZONES } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
@@ -11,6 +11,7 @@ import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { PANEL_REGISTRY } from '../panels/registry'
 
 // -----------------------------------------------------------------------------
 // Panel jump helper — focus a panel inside a workspace, switching workspace
@@ -161,15 +162,9 @@ const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agen
   )
 }
 
-const PANEL_ICONS: Record<PanelType, typeof TerminalIcon> = {
-  terminal: TerminalIcon,
-  browser: Globe,
-  editor: FileCode,
-  git: GitBranch,
-  fileExplorer: Folder,
-  projectList: List,
-  canvas: SquaresFour,
-}
+const PANEL_ICONS: Record<PanelType, PhosphorIcon> = Object.fromEntries(
+  (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].icon]),
+) as Record<PanelType, PhosphorIcon>
 
 const COLOR_NAMES: Record<string, string> = {
   '#6b8fb0': 'Slate Blue',

@@ -25,6 +25,7 @@ import { saveEditor } from '../lib/editorSaveRegistry'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
 import { resolveTerminalPreset } from '../lib/terminalRegistry'
 import { useSettingsStore } from '../stores/settingsStore'
+import { PANEL_DEFINITIONS } from '../../shared/panels'
 
 // -----------------------------------------------------------------------------
 // Props
@@ -246,13 +247,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     (panelId: string) => {
       const p = resolvePanel(panelId)
       if (p?.title) return p.title
-      if (p?.type) {
-        const labels: Record<PanelType, string> = {
-          terminal: 'Terminal', browser: 'Browser', editor: 'Editor',
-          git: 'Git', fileExplorer: 'File Explorer', projectList: 'Projects', canvas: 'Canvas',
-        }
-        return labels[p.type] ?? 'Panel'
-      }
+      if (p?.type) return PANEL_DEFINITIONS[p.type]?.label ?? 'Panel'
       return 'Panel'
     },
     [resolvePanel],

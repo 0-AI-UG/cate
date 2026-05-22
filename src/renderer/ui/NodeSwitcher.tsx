@@ -4,10 +4,10 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Terminal, Globe, FileText } from '@phosphor-icons/react'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore } from '../stores/appStore'
+import { getPanelDef } from '../panels/registry'
 import type { PanelType, CanvasNodeId } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -15,15 +15,9 @@ import type { PanelType, CanvasNodeId } from '../../shared/types'
 // -----------------------------------------------------------------------------
 
 function PanelIcon({ type }: { type: PanelType }) {
-  const size = 20
-  switch (type) {
-    case 'terminal':
-      return <Terminal size={size} color="#34C759" />
-    case 'browser':
-      return <Globe size={size} color="#007AFF" />
-    case 'editor':
-      return <FileText size={size} color="#FF9500" />
-  }
+  const def = getPanelDef(type)
+  const Icon = def.icon
+  return <Icon size={20} color={def.switcherColor} />
 }
 
 // -----------------------------------------------------------------------------

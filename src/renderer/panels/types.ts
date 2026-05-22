@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { PanelType } from '../../shared/types'
+import { PANEL_DEFINITIONS } from '../../shared/panels'
 
 // -----------------------------------------------------------------------------
 // Base panel props
@@ -35,42 +36,7 @@ export interface BrowserPanelProps extends PanelProps {
 // Panel display helpers
 // -----------------------------------------------------------------------------
 
-/** Returns a Lucide icon name for the given panel type. */
-export function panelIcon(type: PanelType): string {
-  switch (type) {
-    case 'terminal':
-      return 'Terminal'
-    case 'browser':
-      return 'Globe'
-    case 'editor':
-      return 'FileText'
-    case 'git':
-      return 'GitBranch'
-    case 'fileExplorer':
-      return 'FolderOpen'
-    case 'projectList':
-      return 'Layers'
-    case 'canvas':
-      return 'Layout'
-  }
-}
-
 /** Returns a brand color hex string for the given panel type. */
 export function panelColor(type: PanelType): string {
-  switch (type) {
-    case 'terminal':
-      return '#4DD964' // green
-    case 'browser':
-      return '#4A9EFF' // blue
-    case 'editor':
-      return '#FF9F0A' // orange
-    case 'git':
-      return '#FF3B30' // red
-    case 'fileExplorer':
-      return '#5AC8FA' // teal
-    case 'projectList':
-      return '#FFD60A' // yellow
-    case 'canvas':
-      return '#BF5AF2' // purple
-  }
+  return PANEL_DEFINITIONS[type].brandColor
 }

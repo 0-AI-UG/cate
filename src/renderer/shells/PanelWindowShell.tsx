@@ -4,18 +4,12 @@
 // =============================================================================
 
 import React, { useEffect, useState, useCallback, Suspense } from 'react'
-import { X, Terminal, FileText, Globe, Square } from '@phosphor-icons/react'
+import { X } from '@phosphor-icons/react'
 import type { PanelState, PanelTransferSnapshot } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { terminalRestoreData } from '../lib/session'
 import { DragOverlay, setupCrossWindowDragListeners, useDragOp } from '../drag'
-
-const TerminalPanel = React.lazy(() => import('../panels/TerminalPanel'))
-const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
-const BrowserPanel = React.lazy(() => import('../panels/BrowserPanel'))
-const GitPanel = React.lazy(() => import('../panels/GitPanel'))
-const FileExplorerPanel = React.lazy(() => import('../panels/FileExplorerPanel'))
-const ProjectListPanel = React.lazy(() => import('../panels/ProjectListPanel'))
+import { renderPanelComponent, getPanelDef } from '../panels/registry'
 
 interface PanelWindowShellProps {
   panelType?: string
@@ -184,22 +178,9 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
 // -----------------------------------------------------------------------------
 
 function PanelContent({ panel, workspaceId }: { panel: PanelState; workspaceId: string }) {
-  switch (panel.type) {
-    case 'terminal':
-      return <TerminalPanel panelId={panel.id} workspaceId={workspaceId} nodeId="" />
-    case 'editor':
-      return <EditorPanel panelId={panel.id} workspaceId={workspaceId} nodeId="" filePath={panel.filePath} />
-    case 'browser':
-      return <BrowserPanel panelId={panel.id} workspaceId={workspaceId} nodeId="" url={panel.url} zoomLevel={1} />
-    case 'git':
-      return <GitPanel panelId={panel.id} workspaceId={workspaceId} nodeId="" />
-    case 'fileExplorer':
-      return <FileExplorerPanel panelId={panel.id} workspaceId={workspaceId} nodeId="" />
-    case 'projectList':
-      return <ProjectListPanel panelId={panel.id} workspaceId={workspaceId} nodeId="" />
-    default:
-      return <div className="w-full h-full flex items-center justify-center text-muted">Unknown panel type</div>
-  }
+  const content = renderPanelComponent(panel, { workspaceId, nodeId: '' })
+  if (!content) return <div className="w-full h-full flex items-center justify-center text-muted">Unknown panel type</div>
+  return content
 }
 
 // -----------------------------------------------------------------------------
@@ -207,16 +188,6 @@ function PanelContent({ panel, workspaceId }: { panel: PanelState; workspaceId: 
 // -----------------------------------------------------------------------------
 
 function PanelTypeIcon({ type }: { type: string }) {
-  const iconClass = "text-muted"
-  const props = { size: 14, className: iconClass }
-  switch (type) {
-    case 'terminal':
-      return <Terminal {...props} />
-    case 'editor':
-      return <FileText {...props} />
-    case 'browser':
-      return <Globe {...props} />
-    default:
-      return <Square {...props} />
-  }
+  const Icon = getPanelDef(type).icon
+  return <Icon size={14} className="text-muted" />
 }

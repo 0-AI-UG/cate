@@ -13,6 +13,7 @@ import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import type { DockStore } from '../stores/dockStore'
+import { getPanelDef } from '../panels/registry'
 
 export interface DockTabActionsParams {
   stack: DockTabStackType
@@ -96,28 +97,9 @@ export function useDockTabActions(params: DockTabActionsParams) {
       const placement: import('../stores/appStore').PanelPlacement = localOnly
         ? { target: 'none' }
         : { target: 'dock', zone }
-      const app = useAppStore.getState()
-      switch (type) {
-        case 'editor': {
-          const filePath =
-            activePanel?.type === 'editor' && !activePanel.diffMode ? activePanel.filePath : undefined
-          return app.createEditor(wsId, filePath, undefined, placement) || null
-        }
-        case 'terminal':
-          return app.createTerminal(wsId, undefined, undefined, placement) || null
-        case 'browser':
-          return app.createBrowser(wsId, undefined, undefined, placement) || null
-        case 'git':
-          return app.createGit(wsId, undefined, placement) || null
-        case 'fileExplorer':
-          return app.createFileExplorer(wsId, undefined, placement) || null
-        case 'projectList':
-          return app.createProjectList(wsId, undefined, placement) || null
-        case 'canvas':
-          return app.createCanvas(wsId, undefined, placement) || null
-        default:
-          return null
-      }
+      const filePath =
+        activePanel?.type === 'editor' && !activePanel.diffMode ? activePanel.filePath : undefined
+      return getPanelDef(type).create({ workspaceId: wsId, placement, filePath })
     },
     [activePanel, workspaceId, zone, localOnly],
   )

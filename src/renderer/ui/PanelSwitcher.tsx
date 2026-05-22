@@ -1,36 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Terminal, Globe, FileText, GitBranch, TreeStructure, SquaresFour, List } from '@phosphor-icons/react'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useSelectedWorkspace } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
 import { findTabStack } from '../stores/dockTreeUtils'
+import { getPanelDef } from '../panels/registry'
 import type { PanelType } from '../../shared/types'
-
-function panelColor(type: PanelType): string {
-  switch (type) {
-    case 'terminal': return '#34C759'
-    case 'browser': return '#007AFF'
-    case 'editor': return '#FF9500'
-    case 'git': return '#FF3B30'
-    case 'fileExplorer': return '#5AC8FA'
-    case 'projectList': return '#FFD60A'
-    case 'canvas': return '#BF5AF2'
-  }
-}
-
-function PlaceholderIcon({ type, color }: { type: PanelType; color: string }) {
-  const size = 44
-  switch (type) {
-    case 'terminal':     return <Terminal size={size} color={color} weight="light" />
-    case 'browser':      return <Globe size={size} color={color} weight="light" />
-    case 'editor':       return <FileText size={size} color={color} weight="light" />
-    case 'git':          return <GitBranch size={size} color={color} weight="light" />
-    case 'fileExplorer': return <TreeStructure size={size} color={color} weight="light" />
-    case 'projectList':  return <List size={size} color={color} weight="light" />
-    case 'canvas':       return <SquaresFour size={size} color={color} weight="light" />
-  }
-}
 
 /**
  * Crop panel regions from a pre-captured page screenshot.
@@ -274,7 +249,7 @@ export function PanelSwitcher() {
             const type = item.type
             const title = item.title
             const isSelected = i === selectedIndex
-            const color = panelColor(type)
+            const color = getPanelDef(type).switcherColor
             const thumb = item.kind === 'canvas' ? thumbnails[item.nodeId] : undefined
 
             // Canvas items use the node's real aspect; dock items get a
@@ -328,9 +303,12 @@ export function PanelSwitcher() {
                         background: `linear-gradient(135deg, ${color}12 0%, transparent 70%)`,
                       }}
                     >
-                      <PlaceholderIcon type={type} color={color} />
+                      {(() => {
+                        const Icon = getPanelDef(type).icon
+                        return <Icon size={44} color={color} weight="light" />
+                      })()}
                       <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'capitalize' }}>
-                        {type === 'fileExplorer' ? 'File Explorer' : type === 'projectList' ? 'Projects' : type}
+                        {getPanelDef(type).label}
                       </span>
                     </div>
                   )}

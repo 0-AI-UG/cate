@@ -22,22 +22,8 @@ import {
 } from './lib/agentScreenDetector'
 import type { AgentState } from '../shared/types'
 import { Sidebar, RightSidebar } from './sidebar/Sidebar'
-// Kick off the dynamic imports immediately so the panel chunks download in
-// parallel with settings/session load, instead of waiting for first render.
-const terminalPanelImport = import('./panels/TerminalPanel')
-const editorPanelImport = import('./panels/EditorPanel')
-const browserPanelImport = import('./panels/BrowserPanel')
-const gitPanelImport = import('./panels/GitPanel')
-const fileExplorerPanelImport = import('./panels/FileExplorerPanel')
-const projectListPanelImport = import('./panels/ProjectListPanel')
-const canvasPanelImport = import('./panels/CanvasPanel')
-const TerminalPanel = React.lazy(() => terminalPanelImport)
-const EditorPanel = React.lazy(() => editorPanelImport)
-const BrowserPanel = React.lazy(() => browserPanelImport)
-const GitPanel = React.lazy(() => gitPanelImport)
-const FileExplorerPanel = React.lazy(() => fileExplorerPanelImport)
-const ProjectListPanel = React.lazy(() => projectListPanelImport)
-const CanvasPanel = React.lazy(() => canvasPanelImport)
+import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
+const CanvasPanel = PANEL_REGISTRY.canvas.Component
 import { NodeSwitcher } from './ui/NodeSwitcher'
 import { PanelSwitcher } from './ui/PanelSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
@@ -416,32 +402,11 @@ function MainApp() {
       const panel = currentWorkspace.panels[panelId]
       if (!panel) return null
 
-      let content: React.ReactNode = null
-      switch (panel.type) {
-        case 'terminal':
-          content = <TerminalPanel panelId={panelId} workspaceId={selectedWorkspaceId} nodeId={nodeId} />
-          break
-        case 'editor':
-          content = <EditorPanel panelId={panelId} workspaceId={selectedWorkspaceId} nodeId={nodeId} filePath={panel.filePath} />
-          break
-        case 'browser':
-          content = <BrowserPanel panelId={panelId} workspaceId={selectedWorkspaceId} nodeId={nodeId} url={panel.url} zoomLevel={zoom} />
-          break
-        case 'git':
-          content = <GitPanel panelId={panelId} workspaceId={selectedWorkspaceId} nodeId={nodeId} />
-          break
-        case 'fileExplorer':
-          content = <FileExplorerPanel panelId={panelId} workspaceId={selectedWorkspaceId} nodeId={nodeId} />
-          break
-        case 'projectList':
-          content = <ProjectListPanel panelId={panelId} workspaceId={selectedWorkspaceId} nodeId={nodeId} />
-          break
-        case 'canvas':
-          // Canvas panels should not be nested on another canvas — they only live in dock zones
-          return null
-        default:
-          return null
-      }
+      // Canvas panels should not be nested on another canvas — they only live in dock zones
+      if (panel.type === 'canvas') return null
+
+      const content = renderPanelComponent(panel, { workspaceId: selectedWorkspaceId, nodeId, zoomLevel: zoom })
+      if (!content) return null
 
       return (
         <Suspense fallback={<div className="w-full h-full bg-surface-4 flex items-center justify-center text-muted text-sm">Loading...</div>}>

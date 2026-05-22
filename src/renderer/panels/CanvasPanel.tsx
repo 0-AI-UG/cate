@@ -27,6 +27,7 @@ import {
   findNodeDockStore,
   findNodeIdForDockStore,
 } from './nodeDockRegistry'
+import { getPanelDef } from '../panels/registry'
 
 // Re-export the lookup helpers so existing callers (drag dispatcher, drop
 // resolver) keep working through the same import path. New code should import
@@ -224,32 +225,7 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
 
   const onCreateAtPoint = useCallback(
     (type: PanelType, canvasPoint: Point) => {
-      if (type === 'canvas') {
-        // Canvas panels don't go on canvases — create via appStore which routes to center zone
-        useAppStore.getState().createCanvas(workspaceId)
-        return
-      }
-      const appStore = useAppStore.getState()
-      switch (type) {
-        case 'terminal':
-          appStore.createTerminal(workspaceId, undefined, canvasPoint)
-          break
-        case 'browser':
-          appStore.createBrowser(workspaceId, undefined, canvasPoint)
-          break
-        case 'editor':
-          appStore.createEditor(workspaceId, undefined, canvasPoint)
-          break
-        case 'git':
-          appStore.createGit(workspaceId, canvasPoint)
-          break
-        case 'fileExplorer':
-          appStore.createFileExplorer(workspaceId, canvasPoint)
-          break
-        case 'projectList':
-          appStore.createProjectList(workspaceId, canvasPoint)
-          break
-      }
+      getPanelDef(type).create({ workspaceId, canvasPoint })
     },
     [workspaceId],
   )

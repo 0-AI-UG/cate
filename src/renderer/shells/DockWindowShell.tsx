@@ -17,13 +17,8 @@ import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { isDockEmpty } from './dockEmpty'
 import { shouldCloseDockWindow } from './shouldCloseDockWindow'
 
-const TerminalPanel = React.lazy(() => import('../panels/TerminalPanel'))
-const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
-const BrowserPanel = React.lazy(() => import('../panels/BrowserPanel'))
-const GitPanel = React.lazy(() => import('../panels/GitPanel'))
-const FileExplorerPanel = React.lazy(() => import('../panels/FileExplorerPanel'))
-const ProjectListPanel = React.lazy(() => import('../panels/ProjectListPanel'))
-const CanvasPanel = React.lazy(() => import('../panels/CanvasPanel'))
+import { renderPanelComponent, PANEL_REGISTRY } from '../panels/registry'
+const CanvasPanel = PANEL_REGISTRY.canvas.Component
 
 interface DockWindowShellProps {
   workspaceId?: string
@@ -179,29 +174,8 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       const panel = panels[panelId]
       if (!panel) return null
 
-      let content: React.ReactNode = null
-      switch (panel.type) {
-        case 'terminal':
-          content = <TerminalPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} />
-          break
-        case 'editor':
-          content = <EditorPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} filePath={panel.filePath} />
-          break
-        case 'browser':
-          content = <BrowserPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} url={panel.url} zoomLevel={zoom} />
-          break
-        case 'git':
-          content = <GitPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} />
-          break
-        case 'fileExplorer':
-          content = <FileExplorerPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} />
-          break
-        case 'projectList':
-          content = <ProjectListPanel panelId={panelId} workspaceId={wsId} nodeId={nodeId} />
-          break
-        default:
-          return null
-      }
+      const content = renderPanelComponent(panel, { workspaceId: wsId, nodeId, zoomLevel: zoom })
+      if (!content) return null
 
       return (
         <Suspense fallback={<div className="w-full h-full bg-surface-4 flex items-center justify-center text-muted text-sm">Loading...</div>}>

@@ -14,17 +14,12 @@ import { DockTabContextMenu, SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
 import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
 import { useDockTabDrag } from './useDockTabDrag'
+import { PANEL_DEFINITIONS } from '../../shared/panels'
 
 // Human-readable labels for each panel type, used in tooltips and the split menu.
-const PANEL_TYPE_LABELS: Record<PanelType, string> = {
-  editor: 'Editor',
-  terminal: 'Terminal',
-  browser: 'Browser',
-  git: 'Git',
-  fileExplorer: 'File Explorer',
-  projectList: 'Projects',
-  canvas: 'Canvas',
-}
+const PANEL_TYPE_LABELS: Record<PanelType, string> = Object.fromEntries(
+  (Object.keys(PANEL_DEFINITIONS) as PanelType[]).map((t) => [t, PANEL_DEFINITIONS[t].label]),
+) as Record<PanelType, string>
 
 interface DockTabStackProps {
   stack: DockTabStackType
