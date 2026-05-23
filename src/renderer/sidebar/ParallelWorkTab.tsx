@@ -319,6 +319,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
         list.map(async (g) => {
           try {
             const s = await window.electronAPI.gitWorktreeStatus(g.path)
+            if (!s) return null
             return [g.path, s] as const
           } catch {
             return null
@@ -442,7 +443,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       if (!target && primary?.path) {
         try {
           const s = await window.electronAPI.gitWorktreeStatus(primary.path)
-          target = s.branch
+          if (s) target = s.branch
         } catch { /* ignore */ }
       }
       if (!wt.branch || !target) {

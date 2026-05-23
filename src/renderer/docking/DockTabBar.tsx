@@ -6,10 +6,32 @@
 // =============================================================================
 
 import React from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import type { PanelState, PanelType, DockTabStack as DockTabStackType } from '../../shared/types'
 import { X } from '@phosphor-icons/react'
 import { useDragStore, useTabSourceVisibility } from '../drag'
 import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
+import { useAppStore } from '../stores/appStore'
+
+// Lookup: panelId → worktree color. Only returns a color when the panel's
+// workspace has 2+ worktrees (matches WorktreePill's visibility rule, so the
+// tab tint and the title-bar pill appear together or not at all).
+function useWorktreeColorByPanel(): Record<string, string> {
+  return useAppStore(useShallow((s) => {
+    const out: Record<string, string> = {}
+    for (const ws of s.workspaces) {
+      const worktrees = ws.worktrees ?? []
+      if (worktrees.length < 2) continue
+      const primary = worktrees.find((w) => w.isPrimary)
+      for (const panel of Object.values(ws.panels)) {
+        if (panel.type !== 'terminal' && panel.type !== 'agent') continue
+        const wt = worktrees.find((w) => w.id === panel.worktreeId) ?? primary
+        if (wt?.color) out[panel.id] = wt.color
+      }
+    }
+    return out
+  }))
+}
 
 // Type → icon/tint mirrors the Spotlight overlay so tabs, search results, and
 // the command palette speak the same visual language.
@@ -80,6 +102,8 @@ export function DockTabBar(props: DockTabBarProps) {
     onEmptyMouseDown, onEmptyContextMenu,
     showTabPlaceholder, selfTabDrag, onTabBarMouseDown,
   } = props
+
+  const worktreeColorByPanel = useWorktreeColorByPanel()
 
   // Build the visible tab list (skip the in-flight tab when source === this
   // stack) and choose where to slot the placeholder. Clamp to >=1 so a
@@ -168,7 +192,10 @@ export function DockTabBar(props: DockTabBarProps) {
                 style={{ backgroundColor: 'var(--node-chrome-accent, #3b82f6)' }}
               />
             )}
-            <span className={`shrink-0 ${isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}>
+            <span
+              className={`shrink-0 ${worktreeColorByPanel[panelId] ? '' : isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}
+              style={worktreeColorByPanel[panelId] ? { color: worktreeColorByPanel[panelId] } : undefined}
+            >
               <TabIcon type={panelType} size={compact ? 11 : 13} />
             </span>
             {renameId === panelId ? (

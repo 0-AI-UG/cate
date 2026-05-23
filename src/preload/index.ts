@@ -372,7 +372,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     staged: number
     unstaged: number
     untracked: number
-  }> {
+  } | null> {
     return ipcRenderer.invoke(GIT_WORKTREE_STATUS, worktreePath)
   },
 

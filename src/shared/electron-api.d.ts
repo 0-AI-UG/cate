@@ -152,7 +152,7 @@ export interface ElectronAPI {
     staged: number
     unstaged: number
     untracked: number
-  }>
+  } | null>
 
   /** Fetch + checkout `toBranch` + merge `fromBranch` into it. Returns
    *  `{ ok: false, conflict }` on merge failure so the renderer can show a

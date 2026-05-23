@@ -447,7 +447,18 @@ export function registerHandlers(): void {
 
   ipcMain.handle(GIT_WORKTREE_STATUS, async (_event, worktreePath: string) => {
     try {
+      // After a worktree is removed (or its directory deleted out-of-band),
+      // a stale status request may still arrive before the renderer refreshes
+      // its list. Treat "path missing" / "not a repo" as a soft no-op so we
+      // don't spam the log with confusing GitErrors.
+      try {
+        const stat = await fs.stat(worktreePath)
+        if (!stat.isDirectory()) return null
+      } catch {
+        return null
+      }
       const git = simpleGit(validateCwd(worktreePath))
+      if (!(await git.checkIsRepo())) return null
       const status = await git.status()
       let ahead = 0
       let behind = 0

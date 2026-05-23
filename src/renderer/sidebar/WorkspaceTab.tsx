@@ -126,12 +126,13 @@ export interface TerminalPanelRowProps {
   indent: boolean
   agentState: AgentState | undefined
   hasPorts: boolean
+  worktreeColor?: string
   onClick: (e: React.MouseEvent) => void
 }
 
 const AWAIT_COLOR = '#c08a5a'
 
-export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, hasPorts, onClick }) => {
+export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, hasPorts, worktreeColor, onClick }) => {
   const Icon = PANEL_ICONS[panel.type] ?? TerminalIcon
   const label = panel.title || panel.filePath?.split('/').pop() || panel.url || panel.type
 
@@ -146,7 +147,11 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
       onClick={onClick}
       title={panel.filePath || panel.url || label}
     >
-      <Icon size={11} className="flex-shrink-0 opacity-60" />
+      <Icon
+        size={11}
+        className="flex-shrink-0"
+        style={worktreeColor ? { color: worktreeColor, opacity: 0.95 } : { opacity: 0.6 }}
+      />
       <span className={`truncate min-w-0 flex-1 ${isRunning ? 'cate-notif-pulse' : ''}`}>
         {label}
       </span>
@@ -207,6 +212,14 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const panels = useAppStore(useShallow((s) => {
     const ws = s.workspaces.find((w) => w.id === workspace.id)
     return ws?.panels ?? workspace.panels
+  }))
+
+  // worktrees ignored by useWorkspaceList's equality fn → workspace.worktrees
+  // is stale. Subscribe directly so the per-row accent updates as worktrees
+  // are added/recolored.
+  const worktrees = useAppStore(useShallow((s) => {
+    const ws = s.workspaces.find((w) => w.id === workspace.id)
+    return ws?.worktrees ?? workspace.worktrees ?? []
   }))
 
   // Set of panel ids living on this workspace's canvases. Union of:
@@ -434,6 +447,17 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     }
   }
 
+  // Worktree color resolver: only meaningful when the workspace has 2+
+  // worktrees (matches WorktreePill's visibility rule — single-branch
+  // workspaces would just get noisy with monochrome dots).
+  const showWorktreeAccent = worktrees.length >= 2
+  const worktreeColorFor = (panelId: string): string | undefined => {
+    if (!showWorktreeAccent) return undefined
+    const wtId = panels[panelId]?.worktreeId
+    const wt = worktrees.find((w) => w.id === wtId) ?? worktrees.find((w) => w.isPrimary)
+    return wt?.color
+  }
+
   const renderPanelRow = (p: typeof panelList[number], indent = false) => {
     if (p.type === 'terminal' || p.type === 'agent') {
       const resolvedState = agentStateByPanel[p.id]
@@ -447,6 +471,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           indent={indent}
           agentState={resolvedState}
           hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
+          worktreeColor={worktreeColorFor(p.id)}
           onClick={(e) => handlePanelClick(e, p.id)}
         />
       )
