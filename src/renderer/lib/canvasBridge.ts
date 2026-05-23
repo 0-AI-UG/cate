@@ -7,7 +7,14 @@
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import type { CanvasOperations } from '../stores/appStore'
-import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion } from '../../shared/types'
+import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, DockLayoutNode } from '../../shared/types'
+
+function countLayoutPanels(node: DockLayoutNode): number {
+  if (node.type === 'tabs') return node.panelIds.length
+  let total = 0
+  for (const child of node.children) total += countLayoutPanels(child)
+  return total
+}
 
 export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperations {
   return {
@@ -21,9 +28,12 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
     removeNodeForPanel(panelId: string) {
       const state = storeApi.getState()
       const nodeId = state.nodeForPanel(panelId)
-      if (nodeId) {
-        state.removeNode(nodeId)
-      }
+      if (!nodeId) return
+      const node = state.nodes[nodeId]
+      if (!node) return
+      const layout = node.dockLayout
+      if (layout && countLayoutPanels(layout) > 0) return
+      state.removeNode(nodeId)
     },
 
     loadWorkspaceCanvas(

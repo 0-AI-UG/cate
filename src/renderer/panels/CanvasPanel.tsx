@@ -117,7 +117,6 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, render
       if (layout === prevLayout) return
 
       if (layout === null) {
-        // Node is empty — remove it from the canvas
         canvasStoreApi.getState().removeNode(nodeId)
       } else {
         canvasStoreApi.getState().setNodeDockLayout(nodeId, layout)

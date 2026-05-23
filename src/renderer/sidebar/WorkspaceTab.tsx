@@ -121,7 +121,7 @@ function collectPanelIdsFromDockLayout(
   for (const child of layout.children) collectPanelIdsFromDockLayout(child, out)
 }
 
-interface TerminalPanelRowProps {
+export interface TerminalPanelRowProps {
   panel: { id: string; type: PanelType; title?: string; filePath?: string; url?: string }
   indent: boolean
   agentState: AgentState | undefined
@@ -131,8 +131,8 @@ interface TerminalPanelRowProps {
 
 const AWAIT_COLOR = '#c08a5a'
 
-const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, hasPorts, onClick }) => {
-  const Icon = TerminalIcon
+export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, hasPorts, onClick }) => {
+  const Icon = PANEL_ICONS[panel.type] ?? TerminalIcon
   const label = panel.title || panel.filePath?.split('/').pop() || panel.url || panel.type
 
   const isRunning = agentState === 'running'
@@ -234,9 +234,15 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const portsByPty = wsStatus?.listeningPorts ?? {}
   const agentStateByPanel = useMemo(() => {
     const out: Record<string, AgentState> = {}
-    for (const [ptyId, state] of Object.entries(agentStateByPty)) {
-      const pid = terminalRegistry.panelIdForPty(ptyId)
-      if (pid) out[pid] = state
+    for (const [key, state] of Object.entries(agentStateByPty)) {
+      const pid = terminalRegistry.panelIdForPty(key)
+      if (pid) {
+        out[pid] = state
+      } else {
+        // Key may already be a panelId (e.g. agent panels register state
+        // directly by panelId instead of ptyId).
+        out[key] = state
+      }
     }
     return out
   }, [agentStateByPty])
@@ -429,13 +435,17 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }
 
   const renderPanelRow = (p: typeof panelList[number], indent = false) => {
-    if (p.type === 'terminal') {
+    if (p.type === 'terminal' || p.type === 'agent') {
+      const resolvedState = agentStateByPanel[p.id]
+      if (resolvedState) {
+        console.log('[WorkspaceTab] panel=%s type=%s agentState=%s keys=%s', p.id, p.type, resolvedState, JSON.stringify(Object.keys(agentStateByPty)))
+      }
       return (
         <TerminalPanelRow
           key={p.id}
           panel={p}
           indent={indent}
-          agentState={agentStateByPanel[p.id]}
+          agentState={resolvedState}
           hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
           onClick={(e) => handlePanelClick(e, p.id)}
         />

@@ -17,7 +17,7 @@ import {
 import { terminalPids } from './terminal'
 import { sendToWindow, windowFromEvent, broadcastToAll } from '../windowRegistry'
 import { getShellEnv } from '../shellEnv'
-import type { TerminalActivity, AgentState } from '../../shared/types'
+import type { TerminalActivity } from '../../shared/types'
 
 interface TerminalRegistration {
   shellPid: number
@@ -27,18 +27,16 @@ interface TerminalRegistration {
 }
 
 interface PreviousState {
-  agentState: AgentState
   previousAgentName: string | null
   previouslyHadAgent: boolean
 }
 
 interface ScanResult {
   terminalActivity: TerminalActivity
-  agentState: AgentState
   agentName: string | null
-  previouslyHadAgent: boolean
-  /** True if the agent has a non-helper subprocess actively running. */
   subprocessActive: boolean
+  agentPresent: boolean
+  previouslyHadAgent: boolean
 }
 
 // Concurrency limiter — caps simultaneous execFile calls across all terminals
@@ -298,12 +296,10 @@ function getProcessCwd(pid: number): Promise<string | null> {
  */
 async function scanTerminal(terminalId: string, info: TerminalRegistration): Promise<ScanResult> {
   const prev = previousStates.get(terminalId) || {
-    agentState: 'notRunning' as AgentState,
     previousAgentName: null,
     previouslyHadAgent: false,
   }
 
-  // Get children of the shell PID
   const childrenToScan = await getChildPids(info.shellPid)
 
   let foundAgentName: string | null = null
@@ -326,44 +322,29 @@ async function scanTerminal(terminalId: string, info: TerminalRegistration): Pro
     }
   }
 
-  // Probe for an actively-working subprocess only when we have an agent, so
-  // we don't pay the extra ps/pgrep round-trips for plain shells.
   const subprocessActive = foundAgentPid != null ? await agentIsActive(foundAgentPid) : false
+  const agentPresent = foundAgentName != null
 
-  // Determine terminal activity
   const terminalActivity: TerminalActivity =
     firstChildName != null
       ? { type: 'running', processName: firstChildName }
       : { type: 'idle' }
 
-  // Determine agent state
-  let agentState: AgentState = prev.agentState
-  let agentName: string | null = foundAgentName ?? prev.previousAgentName
+  const agentName = foundAgentName ?? prev.previousAgentName
   let previouslyHadAgent = prev.previouslyHadAgent
-
-  if (foundAgentName) {
-    // Two-tier detection:
-    //   1. If the agent has an active non-helper subprocess (a tool command
-    //      really executing), it's unambiguously running — emit that and
-    //      override whatever screen-state was previously reported.
-    //   2. Otherwise, defer to whatever the renderer's screen detector last
-    //      reported (it writes into previousStates via the screen-state IPC).
-    //      Default to 'running' on the very first scan, before any report
-    //      has arrived.
-    if (subprocessActive) {
-      agentState = 'running'
-    } else {
-      agentState = prev.agentState === 'notRunning' || prev.agentState === 'finished'
-        ? 'running'
-        : prev.agentState
-    }
+  if (agentPresent) {
     previouslyHadAgent = true
   } else if (previouslyHadAgent) {
-    agentState = 'finished'
     previouslyHadAgent = false
   }
 
-  return { terminalActivity, agentState, agentName, previouslyHadAgent, subprocessActive }
+  return {
+    terminalActivity,
+    agentName,
+    subprocessActive,
+    agentPresent,
+    previouslyHadAgent,
+  }
 }
 
 /**
@@ -400,36 +381,19 @@ function startPolling(): void {
       for (const entry of scanResults) {
         if (!entry) continue
         const { terminalId, info, result } = entry
-        // Update previous state
         previousStates.set(terminalId, {
-          agentState: result.agentState,
           previousAgentName: result.agentName,
           previouslyHadAgent: result.previouslyHadAgent,
         })
 
-        // Auto-clear finished state after detecting it
-        if (result.agentState === 'finished') {
-          setTimeout(() => {
-            const current = previousStates.get(terminalId)
-            if (current && current.agentState === 'finished') {
-              previousStates.set(terminalId, {
-                agentState: 'notRunning',
-                previousAgentName: null,
-                previouslyHadAgent: false,
-              })
-            }
-          }, 5000)
-        }
-
-        // Send activity update to the owning window
         sendToWindow(
           info.ownerWindowId,
           SHELL_ACTIVITY_UPDATE,
           terminalId,
           result.terminalActivity,
-          result.agentState,
           result.agentName,
           result.subprocessActive,
+          result.agentPresent,
         )
       }
 
@@ -519,7 +483,6 @@ export function registerHandlers(): void {
       })
 
       previousStates.set(terminalId, {
-        agentState: 'notRunning',
         previousAgentName: null,
         previouslyHadAgent: false,
       })
@@ -535,10 +498,6 @@ export function registerHandlers(): void {
   // record it in previousStates so the next process-tree scan doesn't clobber
   // the renderer's reading by re-emitting 'running'.
   ipcMain.on(SHELL_AGENT_SCREEN_STATE, (_event, terminalId: string, state: string) => {
-    const prev = previousStates.get(terminalId)
-    if (prev) {
-      previousStates.set(terminalId, { ...prev, agentState: state as AgentState })
-    }
     broadcastToAll(SHELL_AGENT_SCREEN_STATE, terminalId, state)
   })
 

@@ -1,108 +1,48 @@
-// =============================================================================
-// Agent screen-state detector
-//
-// Combines three signals to decide whether an agent is currently working or
-// waiting for the user:
-//
-//   1. Subprocess active (from main's process tree scan). When the agent has
-//      spawned a tool command this is unambiguous — it's definitely running.
-//      Helpers like `caffeinate` and idle persistent shells are filtered out
-//      in main so they don't pin this signal permanently.
-//
-//   2. Recent buffer changes (from xterm's visible buffer). While the agent
-//      streams tokens or animates its "Synthesizing… 3s" timer, the visible
-//      buffer text mutates. When it sits idle at the prompt the buffer is
-//      static — the cursor blink doesn't change the characters.
-//
-//   3. Recent user keystrokes (from xterm.onData). A user typing into the
-//      prompt also mutates the buffer (the input box re-renders), so naive
-//      buffer-stability detection misclassifies typing as "agent running".
-//      We discount buffer changes that align with recent user input.
-//
-// Decision:   running  iff  subprocessActive  OR  (bufferRecent  AND  !userInputRecent)
-//             waiting  otherwise
-// =============================================================================
-
 import { terminalRegistry } from './terminalRegistry'
 import { useStatusStore } from '../stores/statusStore'
-import type { Terminal, IDisposable } from '@xterm/xterm'
+import { sendOsNotification } from './osNotifications'
+import { decideNotification } from '../hooks/notificationTransitions'
+import { createNotificationDebouncer } from '../hooks/notificationDebouncer'
+import {
+  computeRawState,
+  applyHysteresis,
+  POLL_MS,
+  type HysteresisState,
+} from './agentScreenDetectorLogic'
 import type { AgentState } from '../../shared/types'
 
-const POLL_MS = 250
-// How long after a buffer change the agent is still considered "active". Long
-// enough to absorb token-throttle pauses in Claude's streaming.
-const BUFFER_ACTIVE_WINDOW_MS = 1200
-// How long after a keystroke that change is attributed to the user. Covers the
-// echo + a small typing cadence so consecutive keystrokes stay classified as
-// typing, not agent output.
-const USER_INPUT_WINDOW_MS = 600
-
-// -----------------------------------------------------------------------------
-// Per-terminal tracking
-// -----------------------------------------------------------------------------
+const WAITING_FOR_INPUT_DEBOUNCE_MS = 3500
 
 interface Tracker {
-  lastSnapshot: string
-  lastBufferChangeAt: number
-  lastUserInputAt: number
   lastReported: AgentState | null
-  inputDisposable: IDisposable | null
+  pendingWaitingSince: number | null
+  wasAgentPresent: boolean
 }
 
 const trackers = new Map<string, Tracker>()
 
-function attachInputListener(terminal: Terminal, t: Tracker): void {
-  // xterm.onData fires for user keystrokes (anything that would be sent to the
-  // PTY). We don't care what was typed — only that the user touched the
-  // keyboard, so a buffer change at the same moment is attributable to them.
-  t.inputDisposable = terminal.onData(() => {
-    t.lastUserInputAt = Date.now()
-  })
-}
+let waitingDebouncer: ReturnType<typeof createNotificationDebouncer<{
+  title: string
+  body: string
+  action: { type: 'focusTerminal'; workspaceId: string; terminalId: string }
+}>> | null = null
 
-function trackerFor(ptyId: string, terminal: Terminal, now: number): Tracker {
+function trackerFor(ptyId: string): Tracker {
   let t = trackers.get(ptyId)
   if (!t) {
     t = {
-      lastSnapshot: '',
-      lastBufferChangeAt: now,
-      lastUserInputAt: 0,
       lastReported: null,
-      inputDisposable: null,
+      pendingWaitingSince: null,
+      wasAgentPresent: false,
     }
     trackers.set(ptyId, t)
-    attachInputListener(terminal, t)
   }
   return t
 }
 
 function disposeTracker(ptyId: string): void {
-  const t = trackers.get(ptyId)
-  if (!t) return
-  t.inputDisposable?.dispose()
   trackers.delete(ptyId)
 }
-
-// -----------------------------------------------------------------------------
-// Buffer snapshot
-// -----------------------------------------------------------------------------
-
-function snapshotVisible(terminal: Terminal): string {
-  const buf = terminal.buffer.active
-  const top = buf.viewportY
-  const bottom = top + terminal.rows - 1
-  let out = ''
-  for (let y = top; y <= bottom; y++) {
-    const line = buf.getLine(y)
-    if (!line) continue
-    out += line.translateToString(true) + '\n'
-  }
-  return out
-}
-
-// -----------------------------------------------------------------------------
-// Polling loop
-// -----------------------------------------------------------------------------
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null
 
@@ -110,8 +50,6 @@ function tick(): void {
   const now = Date.now()
   const status = useStatusStore.getState()
   const api = window.electronAPI
-
-  // Garbage-collect trackers whose terminal vanished (panel closed, etc.).
   const alivePtyIds = new Set<string>()
 
   for (const [, entry] of terminalRegistry.entries()) {
@@ -123,37 +61,59 @@ function tick(): void {
     if (!workspaceId) continue
     const ws = status.workspaces[workspaceId]
     if (!ws) continue
+
+    const agentPresent = ws.agentPresent[ptyId] === true
     const agentName = ws.agentName[ptyId] ?? null
-    if (!agentName) {
-      // No agent in this terminal — drop the tracker so a static idle shell
-      // doesn't get classified as an agent waiting for input.
-      disposeTracker(ptyId)
-      continue
-    }
+
+    if (!agentPresent && !trackers.has(ptyId)) continue
+
+    const t = trackerFor(ptyId)
 
     const subprocessActive = ws.subprocessActive[ptyId] === true
-    const t = trackerFor(ptyId, entry.terminal, now)
+    const rawState = computeRawState({
+      agentPresent,
+      wasAgentPresent: t.wasAgentPresent,
+      subprocessActive,
+    })
 
-    const snap = snapshotVisible(entry.terminal)
-    if (snap !== t.lastSnapshot) {
-      t.lastSnapshot = snap
-      t.lastBufferChangeAt = now
-    }
+    t.wasAgentPresent = agentPresent
 
-    const bufferRecent = now - t.lastBufferChangeAt < BUFFER_ACTIVE_WINDOW_MS
-    const userInputRecent = now - t.lastUserInputAt < USER_INPUT_WINDOW_MS
-    const agentOutputting = bufferRecent && !userInputRecent
-
-    const state: AgentState =
-      subprocessActive || agentOutputting ? 'running' : 'waitingForInput'
+    const hstate: HysteresisState = t
+    const state = applyHysteresis(rawState, hstate, now)
 
     if (t.lastReported === state) continue
+
+    const prevState = t.lastReported ?? 'notRunning'
     t.lastReported = state
     status.setAgentState(workspaceId, ptyId, state, agentName)
     api?.shellReportAgentScreenState?.(ptyId, state)
+
+    const displayName = agentName ?? 'Agent'
+    const action = { type: 'focusTerminal' as const, workspaceId, terminalId: ptyId }
+    const kind = decideNotification(prevState, state)
+
+    if (kind === 'waitingForInput') {
+      waitingDebouncer?.request(ptyId, {
+        title: `${displayName} needs input`,
+        body: `${displayName} is waiting for your response.`,
+        action,
+      })
+    } else if (kind === 'finished') {
+      waitingDebouncer?.cancel(ptyId)
+      sendOsNotification({
+        title: 'Task complete',
+        body: `${displayName} has finished running.`,
+        action,
+      })
+    } else if (state !== 'waitingForInput' && prevState === 'waitingForInput') {
+      waitingDebouncer?.cancel(ptyId)
+    }
+
+    if (state === 'finished' || state === 'notRunning') {
+      disposeTracker(ptyId)
+    }
   }
 
-  // Sweep any trackers whose terminal is gone.
   for (const ptyId of trackers.keys()) {
     if (!alivePtyIds.has(ptyId)) disposeTracker(ptyId)
   }
@@ -161,6 +121,10 @@ function tick(): void {
 
 export function startAgentScreenDetector(): void {
   if (intervalHandle) return
+  waitingDebouncer = createNotificationDebouncer(
+    WAITING_FOR_INPUT_DEBOUNCE_MS,
+    (payload) => sendOsNotification(payload),
+  )
   intervalHandle = setInterval(tick, POLL_MS)
 }
 
@@ -169,10 +133,11 @@ export function stopAgentScreenDetector(): void {
     clearInterval(intervalHandle)
     intervalHandle = null
   }
+  waitingDebouncer?.dispose()
+  waitingDebouncer = null
   for (const ptyId of Array.from(trackers.keys())) disposeTracker(ptyId)
 }
 
-/** Apply a screen-state update broadcast from main (originating in another window). */
 export function applyRemoteAgentScreenState(ptyId: string, state: AgentState): void {
   const status = useStatusStore.getState()
   const workspaceId = status.terminalWorkspaceMap[ptyId]

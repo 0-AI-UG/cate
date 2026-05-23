@@ -23,6 +23,8 @@ interface WorkspaceStatusState {
   agentName: Record<string, string | null>
   /** terminalId → whether main saw a non-helper subprocess in the agent's tree. */
   subprocessActive: Record<string, boolean>
+  /** terminalId → whether main's process-tree scan found a known agent CLI. */
+  agentPresent: Record<string, boolean>
   nodeActivity: Record<CanvasNodeId, NodeActivityState>
   terminalTitles: Record<string, string>
   listeningPorts: Record<string, number[]>      // terminalId → ports
@@ -46,7 +48,9 @@ interface StatusStoreActions {
   // Mutations
   setTerminalActivity: (workspaceId: string, terminalId: string, activity: TerminalActivity) => void
   setAgentState: (workspaceId: string, terminalId: string, state: AgentState, name: string | null) => void
+  setAgentName: (workspaceId: string, terminalId: string, name: string | null) => void
   setSubprocessActive: (workspaceId: string, terminalId: string, active: boolean) => void
+  setAgentPresent: (workspaceId: string, terminalId: string, present: boolean) => void
   setNodeActivity: (nodeId: CanvasNodeId, state: NodeActivityState) => void
   clearNodeActivity: (nodeId: CanvasNodeId) => void
   setTerminalTitle: (terminalId: string, title: string) => void
@@ -85,6 +89,7 @@ function emptyWorkspaceStatus(): WorkspaceStatusState {
     agentState: {},
     agentName: {},
     subprocessActive: {},
+    agentPresent: {},
     nodeActivity: {},
     terminalTitles: {},
     listeningPorts: {},
@@ -169,6 +174,23 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
     })
   },
 
+  setAgentName(workspaceId, terminalId, name) {
+    get().ensureWorkspace(workspaceId)
+    set((state) => {
+      const ws = state.workspaces[workspaceId] ?? emptyWorkspaceStatus()
+      if (ws.agentName[terminalId] === name) return state
+      return {
+        workspaces: {
+          ...state.workspaces,
+          [workspaceId]: {
+            ...ws,
+            agentName: { ...ws.agentName, [terminalId]: name },
+          },
+        },
+      }
+    })
+  },
+
   setSubprocessActive(workspaceId, terminalId, active) {
     get().ensureWorkspace(workspaceId)
     set((state) => {
@@ -182,6 +204,23 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
           [workspaceId]: {
             ...ws,
             subprocessActive: { ...ws.subprocessActive, [terminalId]: active },
+          },
+        },
+      }
+    })
+  },
+
+  setAgentPresent(workspaceId, terminalId, present) {
+    get().ensureWorkspace(workspaceId)
+    set((state) => {
+      const ws = state.workspaces[workspaceId] ?? emptyWorkspaceStatus()
+      if (ws.agentPresent[terminalId] === present) return state
+      return {
+        workspaces: {
+          ...state.workspaces,
+          [workspaceId]: {
+            ...ws,
+            agentPresent: { ...ws.agentPresent, [terminalId]: present },
           },
         },
       }
@@ -368,6 +407,7 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
         const { [terminalId]: _s, ...remainingAgent } = ws.agentState
         const { [terminalId]: _an, ...remainingAgentName } = ws.agentName
         const { [terminalId]: _sa, ...remainingSubprocess } = ws.subprocessActive
+        const { [terminalId]: _ap, ...remainingAgentPresent } = ws.agentPresent
         const { [terminalId]: _t, ...remainingTitles } = ws.terminalTitles
         updatedWorkspaces[workspaceId] = {
           ...ws,
@@ -377,6 +417,7 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
           agentState: remainingAgent,
           agentName: remainingAgentName,
           subprocessActive: remainingSubprocess,
+          agentPresent: remainingAgentPresent,
           terminalTitles: remainingTitles,
         }
       }
