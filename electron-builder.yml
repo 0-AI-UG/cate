@@ -2,8 +2,7 @@ appId: com.cate.app
 productName: Cate
 directories:
   output: release
-asarUnpack:
-  - "node_modules/**"
+asar: false
 extraResources:
   # Ship bundled pi extensions (e.g. cate-plan-mode) into the packaged app so
   # installPlanModeExtension can copy them into ~/.pi/agent/extensions/ on

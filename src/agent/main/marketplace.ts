@@ -19,7 +19,6 @@ import path from 'path'
 import { spawn } from 'child_process'
 import { app } from 'electron'
 import log from '../../main/logger'
-import { unpackedAppPath } from './paths'
 
 export interface MarketplaceEntry {
   name: string
@@ -57,7 +56,7 @@ function settingsPath(): string {
 
 function piBinaryPath(): string {
   const binName = process.platform === 'win32' ? 'pi.cmd' : 'pi'
-  return path.join(unpackedAppPath(), 'node_modules', '.bin', binName)
+  return path.join(app.getAppPath(), 'node_modules', '.bin', binName)
 }
 
 /** Heuristic: pi extensions that call ctx.ui.custom(...) need a real terminal

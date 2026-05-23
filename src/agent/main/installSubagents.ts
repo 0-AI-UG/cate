@@ -20,14 +20,13 @@ import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
 import { addAllowedRoot } from '../../main/ipc/pathValidation'
-import { unpackedAppPath } from './paths'
 
 function agentDir(): string {
   return path.join(os.homedir(), '.pi', 'agent')
 }
 
 function piPackageDir(): string {
-  return path.join(unpackedAppPath(), 'node_modules', '@earendil-works', 'pi-coding-agent')
+  return path.join(app.getAppPath(), 'node_modules', '@earendil-works', 'pi-coding-agent')
 }
 
 async function copyIfMissing(src: string, dest: string): Promise<void> {

@@ -41,11 +41,10 @@ import { AGENT_EVENT } from '../../shared/ipc-channels'
 import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
 import type { AuthManager } from './authManager'
-import { unpackedAppPath } from './paths'
 
 function resolvePiCliPath(): string {
   return path.join(
-    unpackedAppPath(),
+    app.getAppPath(),
     'node_modules',
     '@earendil-works',
     'pi-coding-agent',
