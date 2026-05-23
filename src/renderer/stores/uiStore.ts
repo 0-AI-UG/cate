@@ -8,7 +8,7 @@ import { create } from 'zustand'
 // Store interface
 // -----------------------------------------------------------------------------
 
-export type SidebarView = 'workspaces' | 'explorer' | 'git'
+export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'parallelWork'
 export type SidebarSide = 'left' | 'right'
 
 export interface SidebarLayout {
@@ -17,10 +17,10 @@ export interface SidebarLayout {
 }
 
 const LAYOUT_STORAGE_KEY = 'cate.sidebarLayout.v3'
-const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git']
+const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git', 'parallelWork']
 const DEFAULT_LAYOUT: SidebarLayout = {
   left: ['workspaces', 'explorer'],
-  right: ['git'],
+  right: ['git', 'parallelWork'],
 }
 
 function loadLayout(): SidebarLayout {

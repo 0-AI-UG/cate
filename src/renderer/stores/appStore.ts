@@ -17,6 +17,7 @@ import type {
   Point,
   Size,
   DockZonePosition,
+  WorktreeMeta,
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types'
 import type { CanvasNodeId, CanvasNodeState, CanvasRegion } from '../../shared/types'
@@ -243,6 +244,31 @@ export type PanelPlacement =
   | { target: 'none' }
 
 // -----------------------------------------------------------------------------
+// Worktree colors — fixed palette assigned round-robin to new worktrees.
+// Picked to be visually distinct in both light and dark themes.
+// -----------------------------------------------------------------------------
+
+export const WORKTREE_COLOR_PALETTE: string[] = [
+  '#3b82f6', // blue
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#ec4899', // pink
+  '#8b5cf6', // violet
+  '#14b8a6', // teal
+  '#ef4444', // red
+  '#84cc16', // lime
+  '#06b6d4', // cyan
+  '#f97316', // orange
+]
+
+export function pickWorktreeColor(existing: { color: string }[]): string {
+  const used = new Set(existing.map((w) => w.color))
+  for (const c of WORKTREE_COLOR_PALETTE) if (!used.has(c)) return c
+  // Wrap around if more worktrees than palette entries.
+  return WORKTREE_COLOR_PALETTE[existing.length % WORKTREE_COLOR_PALETTE.length]
+}
+
+// -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
 
@@ -298,6 +324,13 @@ interface AppStoreActions {
   reorderWorkspaces: (fromIndex: number, toIndex: number) => void
   addAdditionalRoot: (wsId: string, rootPath: string) => void
   removeAdditionalRoot: (wsId: string, rootPath: string) => void
+
+  // Parallel Work (git worktrees) — see ParallelWorkTab.tsx
+  ensurePrimaryWorktree: (wsId: string) => void
+  upsertWorktree: (wsId: string, wt: WorktreeMeta) => void
+  removeWorktree: (wsId: string, worktreeId: string) => void
+  setWorktreeColor: (wsId: string, worktreeId: string, color: string) => void
+  setPanelWorktreeId: (wsId: string, panelId: string, worktreeId: string | undefined) => void
 
   // Cross-window sync: merge metadata from main-process broadcast
   mergeWorkspaceInfos: (infos: WorkspaceInfo[]) => void
@@ -1209,6 +1242,84 @@ export const useAppStore = create<AppStore>((set, get) => ({
         if (ws.id !== wsId) return ws
         const current = ws.additionalRoots ?? []
         return { ...ws, additionalRoots: current.filter((p) => p !== rootPath) }
+      }),
+    }))
+  },
+
+  // --- Parallel Work (git worktrees) ---
+
+  ensurePrimaryWorktree(wsId) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        const list = ws.worktrees ?? []
+        if (list.some((w) => w.isPrimary)) return ws
+        if (!ws.rootPath) return ws
+        const primary: WorktreeMeta = {
+          id: `wt-primary-${ws.id}`,
+          path: ws.rootPath,
+          branch: '',
+          color: pickWorktreeColor(list),
+          isPrimary: true,
+        }
+        return { ...ws, worktrees: [primary, ...list] }
+      }),
+    }))
+  },
+
+  upsertWorktree(wsId, wt) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        const list = ws.worktrees ?? []
+        const idx = list.findIndex((w) => w.id === wt.id)
+        const next = idx >= 0
+          ? list.map((w) => (w.id === wt.id ? { ...w, ...wt } : w))
+          : [...list, wt]
+        return { ...ws, worktrees: next }
+      }),
+    }))
+  },
+
+  removeWorktree(wsId, worktreeId) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        const list = (ws.worktrees ?? []).filter((w) => w.id !== worktreeId)
+        // Strip the worktreeId from any panel tagged with it.
+        const panels = Object.fromEntries(
+          Object.entries(ws.panels).map(([id, p]) => [
+            id,
+            p.worktreeId === worktreeId ? { ...p, worktreeId: undefined } : p,
+          ]),
+        )
+        return { ...ws, worktrees: list, panels }
+      }),
+    }))
+  },
+
+  setWorktreeColor(wsId, worktreeId, color) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        const list = (ws.worktrees ?? []).map((w) =>
+          w.id === worktreeId ? { ...w, color } : w,
+        )
+        return { ...ws, worktrees: list }
+      }),
+    }))
+  },
+
+  setPanelWorktreeId(wsId, panelId, worktreeId) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        const panel = ws.panels[panelId]
+        if (!panel) return ws
+        return {
+          ...ws,
+          panels: { ...ws.panels, [panelId]: { ...panel, worktreeId } },
+        }
       }),
     }))
   },
