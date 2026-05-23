@@ -19,6 +19,7 @@ import {
   Check,
 } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
+import { useUIStore } from '../stores/uiStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 
 // ---------------------------------------------------------------------------
@@ -392,10 +393,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const createDiffEditor = useAppStore((s) => s.createDiffEditor)
-  const setWorkspaceRootPath = useAppStore((s) => s.setWorkspaceRootPath)
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
-  const createTerminal = useAppStore((s) => s.createTerminal)
-  const addAdditionalRoot = useAppStore((s) => s.addAdditionalRoot)
 
   // -------------------------------------------------------------------------
   // Data fetching
@@ -797,40 +795,32 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           ))}
         </Section>
 
-        {/* Worktrees */}
-        <Section title="Worktrees" count={worktrees.length} defaultOpen={false}>
+        {/* Worktrees — read-only mirror; manage in Parallel Work tab. */}
+        <Section
+          title="Worktrees"
+          count={worktrees.length}
+          defaultOpen={false}
+          actions={
+            <button
+              className="text-[10px] text-muted hover:text-primary px-1 py-0.5 rounded hover:bg-hover"
+              onClick={(e) => {
+                e.stopPropagation()
+                useUIStore.getState().setActiveLeftSidebarView('parallelWork')
+                useUIStore.getState().setActiveRightSidebarView('parallelWork')
+              }}
+              title="Open Parallel Work tab"
+            >
+              Manage →
+            </button>
+          }
+        >
           {worktrees.map((wt) => (
             <div
               key={wt.path}
-              className={`group flex items-center gap-1.5 px-3 py-[3px] cursor-pointer hover:bg-hover ${
+              className={`flex items-center gap-1.5 px-3 py-[3px] ${
                 wt.isCurrent ? 'text-primary' : 'text-secondary'
               }`}
-              onContextMenu={async (e) => {
-                e.preventDefault()
-                if (!window.electronAPI || !selectedWorkspaceId) return
-                const id = await window.electronAPI.showContextMenu([
-                  { id: 'switch', label: 'Switch Workspace To This Worktree' },
-                  { id: 'add-root', label: 'Add To Workspace As Folder' },
-                  { id: 'terminal', label: 'Open Terminal Here' },
-                ])
-                switch (id) {
-                  case 'switch':
-                    setWorkspaceRootPath(selectedWorkspaceId, wt.path)
-                    break
-                  case 'add-root':
-                    addAdditionalRoot(selectedWorkspaceId, wt.path)
-                    break
-                  case 'terminal':
-                    createTerminal(selectedWorkspaceId, undefined, undefined, undefined, wt.path)
-                    break
-                }
-              }}
-              onClick={() => {
-                if (selectedWorkspaceId) {
-                  setWorkspaceRootPath(selectedWorkspaceId, wt.path)
-                }
-              }}
-              title="Click to switch · right-click for more"
+              title={wt.path}
             >
               <GitBranch size={12} className="flex-shrink-0" />
               <span className="truncate flex-1">{wt.branch || '(detached)'}</span>

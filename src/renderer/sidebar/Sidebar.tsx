@@ -2,12 +2,14 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SourceControlView } from './SourceControlView'
+import { ParallelWorkTab } from './ParallelWorkTab'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
 import {
   FolderOpen,
   GitBranch,
+  ArrowsSplit,
   Stack,
   Gear,
   MagnifyingGlass,
@@ -23,6 +25,7 @@ const VIEW_META: Record<SidebarView, { icon: PhosphorIcon; title: string }> = {
   workspaces: { icon: Stack, title: 'Workspaces' },
   explorer: { icon: FolderOpen, title: 'Explorer' },
   git: { icon: GitBranch, title: 'Source Control' },
+  parallelWork: { icon: ArrowsSplit, title: 'Parallel Work' },
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +64,8 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
       )
     case 'git':
       return <SourceControlView rootPath={rootPath} />
+    case 'parallelWork':
+      return <ParallelWorkTab rootPath={rootPath} />
     default:
       return null
   }
