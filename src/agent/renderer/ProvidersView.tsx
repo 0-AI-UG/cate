@@ -103,7 +103,10 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false }: Pr
           >
             <ArrowLeft size={14} />
           </button>
-          <div className="text-[12px] font-medium text-primary truncate">{headerTitle}</div>
+          <div className="text-[12px] font-medium text-primary truncate flex-1 min-w-0">{headerTitle}</div>
+          {selectedProvider && (
+            <StatusPill status={statusFor(selectedProvider.id)} />
+          )}
         </div>
       )}
 
@@ -241,6 +244,10 @@ function OAuthForm({
   onRefresh: () => Promise<void>
 }) {
   const [phase, setPhase] = useState<OAuthFlowEvent | { type: 'idle' }>({ type: 'idle' })
+  // pi-ai's anthropic/openai-codex flows emit `auth` and `manualCode` back-to-back.
+  // We persist the auth URL separately so it stays visible (with Open/Copy buttons)
+  // even after the phase advances to manualCode.
+  const [authInfo, setAuthInfo] = useState<{ url: string; instructions?: string } | null>(null)
   const [promptValue, setPromptValue] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const phaseRef = useRef(phase)
@@ -251,13 +258,16 @@ function OAuthForm({
     const unsub = window.electronAPI.onAuthOAuthEvent((providerId, event) => {
       if (providerId !== provider.id) return
       setPhase(event)
+      if (event.type === 'auth') setAuthInfo({ url: event.url, instructions: event.instructions })
       if (event.type === 'prompt' || event.type === 'manualCode') setPromptValue('')
+      if (event.type === 'done' || event.type === 'error') setAuthInfo(null)
       if (event.type === 'done') onRefresh()
     })
     return unsub
   }, [provider.id, onRefresh])
 
   const handleStart = useCallback(async () => {
+    setAuthInfo(null)
     setPhase({ type: 'progress', message: 'Opening browser…' })
     try {
       const res = await window.electronAPI.authOAuthStart(provider.id)
@@ -297,11 +307,6 @@ function OAuthForm({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[13px] font-medium text-primary truncate min-w-0">{provider.name}</div>
-        <StatusPill status={status} />
-      </div>
-
       {phase.type === 'idle' && (
         <div className="space-y-3">
           <button
@@ -321,33 +326,36 @@ function OAuthForm({
         </div>
       )}
 
-      {phase.type === 'auth' && (
+      {authInfo && phase.type !== 'done' && phase.type !== 'error' && (
+        <AuthUrlCard url={authInfo.url} instructions={authInfo.instructions} />
+      )}
+
+      {phase.type === 'deviceCode' && (
         <div className="space-y-3 rounded-lg border border-white/10 bg-black/10 p-3">
-          <div className="flex items-center gap-2 text-[12px] text-primary">
-            <CloudArrowUp size={14} className="text-violet-300" />
-            Opening browser to sign in…
-          </div>
-          {phase.instructions && (
-            <div className="text-[12px] text-muted whitespace-pre-wrap leading-relaxed">
-              {phase.instructions}
-            </div>
-          )}
-          <div className="flex items-center gap-2 flex-wrap">
-            <a
-              href={phase.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary"
-            >
-              <ArrowSquareOut size={12} /> Open URL
+          <div className="text-[12px] text-primary">
+            Enter this code in your browser at{' '}
+            <a href={phase.verificationUri} target="_blank" rel="noreferrer" className="underline text-violet-300">
+              {phase.verificationUri}
             </a>
+            :
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-center font-mono text-[18px] tracking-[0.3em] py-2 rounded-md bg-black/30 text-primary">
+              {phase.userCode}
+            </code>
             <button
-              onClick={() => { try { navigator.clipboard.writeText(phase.url) } catch { /* */ } }}
-              className="inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary"
+              onClick={() => { try { navigator.clipboard.writeText(phase.userCode) } catch { /* */ } }}
+              className="p-2 rounded-md bg-white/5 hover:bg-white/10 text-primary"
+              title="Copy code"
             >
-              <Copy size={12} /> Copy URL
+              <Copy size={12} />
             </button>
           </div>
+          {phase.expiresInSeconds != null && (
+            <div className="text-[11px] text-muted">
+              Code expires in ~{Math.round(phase.expiresInSeconds / 60)} min.
+            </div>
+          )}
         </div>
       )}
 
@@ -401,7 +409,10 @@ function OAuthForm({
 
       {phase.type === 'manualCode' && (
         <div className="space-y-2 rounded-lg border border-white/10 bg-black/10 p-3">
-          <div className="text-[12px] text-primary">Paste the code from the browser:</div>
+          <div className="text-[12px] text-primary">
+            Sign in completes automatically when the browser callback fires.
+            If it doesn't, paste the code (or full redirect URL) here:
+          </div>
           <input
             type="text"
             autoFocus
@@ -439,6 +450,38 @@ function OAuthForm({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function AuthUrlCard({ url, instructions }: { url: string; instructions?: string }) {
+  return (
+    <div className="space-y-3 rounded-lg border border-white/10 bg-black/10 p-3">
+      <div className="flex items-center gap-2 text-[12px] text-primary">
+        <CloudArrowUp size={14} className="text-violet-300" />
+        Browser opened for sign in.
+      </div>
+      {instructions && (
+        <div className="text-[12px] text-muted whitespace-pre-wrap leading-relaxed">
+          {instructions}
+        </div>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary"
+        >
+          <ArrowSquareOut size={12} /> Open URL again
+        </a>
+        <button
+          onClick={() => { try { navigator.clipboard.writeText(url) } catch { /* */ } }}
+          className="inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary"
+        >
+          <Copy size={12} /> Copy URL
+        </button>
+      </div>
     </div>
   )
 }
@@ -490,11 +533,6 @@ function ApiKeyForm({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[13px] font-medium text-primary truncate min-w-0">{provider.name}</div>
-        <StatusPill status={status} />
-      </div>
-
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <input

@@ -10,7 +10,7 @@
 // this for us — if it can't, the import line below is the place to look.
 // =============================================================================
 
-import { type WebContents } from 'electron'
+import { shell, type WebContents } from 'electron'
 import fsp from 'fs/promises'
 import os from 'os'
 import path from 'path'
@@ -184,11 +184,32 @@ export class AuthManager {
   // OAuth flow
   // -------------------------------------------------------------------------
 
+  /** Cancel any in-flight OAuth flow for this provider — rejects pending
+   *  prompts so pi-ai's awaiter unblocks and the local callback server closes
+   *  via the `finally` in startOAuth. */
+  cancelOAuth(providerId: string): void {
+    for (const [pid, p] of this.pendingPrompts) {
+      if (pid.startsWith(`oauth-${providerId}-`)) {
+        p.reject(new Error('OAuth flow cancelled'))
+        this.pendingPrompts.delete(pid)
+      }
+    }
+    this.activeFlows.delete(providerId)
+  }
+
   async startOAuth(providerId: string, sender: WebContents): Promise<void> {
     const provider = getOAuthProvider(providerId)
     if (!provider) throw new Error(`Unknown OAuth provider: ${providerId}`)
+    // If a previous flow is still pending (e.g. user navigated away without
+    // completing it), cancel it first so the user can retry without hitting
+    // "already in progress". The previous flow's pi-ai promise will reject
+    // through the rejected prompt, and the `finally` block will free port 1455
+    // and the activeFlows entry.
     if (this.activeFlows.has(providerId)) {
-      throw new Error(`OAuth flow already in progress for ${providerId}`)
+      this.cancelOAuth(providerId)
+      // Give the previous flow's `finally` a tick to close the HTTP server
+      // bound to port 1455 before we try to bind it again.
+      await new Promise((resolve) => setTimeout(resolve, 50))
     }
     this.activeFlows.add(providerId)
 
@@ -211,9 +232,19 @@ export class AuthManager {
     const callbacks: OAuthLoginCallbacks = {
       onAuth: ({ url, instructions }: { url: string; instructions?: string }) => {
         send({ type: 'auth', url, instructions })
+        // pi-ai hands us the URL but never opens a browser — that's our job.
+        // Without this the user just sees an empty "Paste the code" form,
+        // because the auth event is immediately followed by onManualCodeInput
+        // in anthropic/openai-codex flows.
+        shell.openExternal(url).catch((err) => {
+          log.warn('[authManager] shell.openExternal failed for %s: %O', providerId, err)
+        })
       },
       onDeviceCode: ({ userCode, verificationUri, intervalSeconds, expiresInSeconds }) => {
         send({ type: 'deviceCode', userCode, verificationUri, intervalSeconds, expiresInSeconds })
+        shell.openExternal(verificationUri).catch((err) => {
+          log.warn('[authManager] shell.openExternal failed for %s: %O', providerId, err)
+        })
       },
       onProgress: (message: string) => {
         send({ type: 'progress', message })
