@@ -537,6 +537,8 @@ export interface ElectronAPI {
   submitFeedback(payload: { rating: number; comment?: string }): Promise<{ ok: boolean; buffered?: boolean }>
   /** Mark the feedback prompt as dismissed without submitting. */
   dismissFeedback(): void
+  /** Pull-based check for pending feedback (renderer calls on mount). */
+  getPendingFeedback(): Promise<{ fromVersion: string; toVersion: string } | null>
 
   // ---------------------------------------------------------------------------
   // Pi agent

@@ -18,15 +18,29 @@ export function PostUpdateFeedbackDialog() {
   const [resultMessage, setResultMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    const unsubscribe = window.electronAPI.onFeedbackPrompt((p) => {
+    let dismissed = false
+    const show = (p: Payload): void => {
+      if (dismissed) return
       setPayload(p)
       setRating(0)
       setHover(0)
       setComment('')
       setSending(false)
       setResultMessage(null)
-    })
-    return unsubscribe
+    }
+    const unsubscribe = window.electronAPI.onFeedbackPrompt(show)
+    const pull = (): void => {
+      window.electronAPI.getPendingFeedback().then((p) => { if (p) show(p) }).catch(() => {})
+    }
+    pull()
+    const t1 = setTimeout(pull, 4000)
+    const t2 = setTimeout(pull, 8000)
+    return () => {
+      dismissed = true
+      unsubscribe()
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
   }, [])
 
   const close = useCallback(() => {

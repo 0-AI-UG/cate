@@ -119,6 +119,17 @@ export function captureMainException(err: unknown): void {
   }
 }
 
+/** Flush buffered Sentry events before exiting. Returns a promise that
+ *  resolves once flushed or after a 2-second timeout. */
+export async function flushSentry(): Promise<void> {
+  if (!initialized) return
+  try {
+    await Sentry.flush(2000)
+  } catch {
+    /* best-effort */
+  }
+}
+
 /** Strip the user's home directory from any string field that might carry it. */
 function scrubPath(s: string): string {
   const home = app.getPath('home')

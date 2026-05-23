@@ -25,7 +25,7 @@ import log from './logger'
 import { getSettingSync } from './store'
 import { getCommonContext } from './appContext'
 import { readJsonFile, writeJsonFile, readTextFile, writeTextFile, appendLine, removeFile } from './jsonFileStore'
-import { ANALYTICS_FEEDBACK_PROMPT, ANALYTICS_FEEDBACK_SUBMIT, ANALYTICS_FEEDBACK_DISMISS } from '../shared/ipc-channels'
+import { ANALYTICS_FEEDBACK_PROMPT, ANALYTICS_FEEDBACK_SUBMIT, ANALYTICS_FEEDBACK_DISMISS, ANALYTICS_FEEDBACK_GET_PENDING } from '../shared/ipc-channels'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -241,6 +241,17 @@ export function initAnalytics(): void {
       from_version: state.pendingFeedbackFromVersion ?? null,
     })
     updateState({ pendingFeedbackForVersion: undefined, pendingFeedbackFromVersion: undefined })
+  })
+
+  ipcMain.handle(ANALYTICS_FEEDBACK_GET_PENDING, (): { fromVersion: string; toVersion: string } | null => {
+    const state = readState()
+    if (state.pendingFeedbackForVersion) {
+      return {
+        fromVersion: state.pendingFeedbackFromVersion ?? '',
+        toVersion: state.pendingFeedbackForVersion,
+      }
+    }
+    return null
   })
 
   // Best-effort flush of anything left from a previous session.

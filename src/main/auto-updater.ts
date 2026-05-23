@@ -34,7 +34,7 @@ const GITHUB_REPO = 'cate'
 const API_LATEST_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
 
 autoUpdater.autoDownload = false
-autoUpdater.autoInstallOnAppQuit = true
+autoUpdater.autoInstallOnAppQuit = false
 
 /** True after the user clicked "Update & Restart". The will-quit handler in
  *  src/main/index.ts reads this to skip its `process.reallyExit(0)` fallback —
@@ -297,7 +297,7 @@ export function initAutoUpdater(): void {
     })
   }, 5000)
 
-  // Check every hour
+  // Check every 15 minutes
   setInterval(
     () => {
       autoUpdater.checkForUpdates().catch((err) => {
@@ -305,7 +305,7 @@ export function initAutoUpdater(): void {
         fallbackCheckForUpdate(false)
       })
     },
-    60 * 60 * 1000,
+    15 * 60 * 1000,
   )
 }
 

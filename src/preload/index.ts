@@ -119,6 +119,7 @@ import {
   ANALYTICS_FEEDBACK_PROMPT,
   ANALYTICS_FEEDBACK_SUBMIT,
   ANALYTICS_FEEDBACK_DISMISS,
+  ANALYTICS_FEEDBACK_GET_PENDING,
   AGENT_CREATE,
   AGENT_PROMPT,
   AGENT_INTERRUPT,
@@ -921,6 +922,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   dismissFeedback(): void {
     ipcRenderer.send(ANALYTICS_FEEDBACK_DISMISS)
+  },
+
+  getPendingFeedback(): Promise<{ fromVersion: string; toVersion: string } | null> {
+    return ipcRenderer.invoke(ANALYTICS_FEEDBACK_GET_PENDING)
   },
 
   // ---------------------------------------------------------------------------

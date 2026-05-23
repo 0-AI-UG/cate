@@ -108,6 +108,8 @@ export const ANALYTICS_FEEDBACK_PROMPT = 'analytics:feedbackPrompt'
 export const ANALYTICS_FEEDBACK_SUBMIT = 'analytics:feedbackSubmit'
 // Renderer -> main: user dismissed the modal without submitting.
 export const ANALYTICS_FEEDBACK_DISMISS = 'analytics:feedbackDismiss'
+// Renderer -> main: pull-based check for pending feedback (returns payload or null).
+export const ANALYTICS_FEEDBACK_GET_PENDING = 'analytics:feedbackGetPending'
 
 
 // Menu actions (main -> renderer)

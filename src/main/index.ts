@@ -36,7 +36,7 @@ import { addAllowedRoot, clearScopedWriteAllowancesForWindow, validatePath } fro
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
 import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
-import { initSentry, captureMainException } from './sentry'
+import { initSentry, captureMainException, flushSentry } from './sentry'
 import { initAnalytics, trackAppStart, checkAndReportUpdate } from './analytics'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer, handleCrossWindowDropTerminalTransfer } from './ipc/terminal'
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
@@ -1052,10 +1052,11 @@ process.on('uncaughtException', (err) => {
   log.error('uncaughtException: %O', err)
   captureMainException(err)
   emergencyKillPTYs()
-  process.exit(1)
+  flushSentry().finally(() => process.exit(1))
 })
 process.on('unhandledRejection', (reason) => {
   log.error('unhandledRejection: %O', reason)
+  captureMainException(reason)
 })
 
 process.on('SIGTERM', () => {

@@ -12,10 +12,12 @@
 // =============================================================================
 
 import os from 'os'
+import fs from 'fs'
 import path from 'path'
 import { app, type WebContents } from 'electron'
 import { RpcClient } from '@earendil-works/pi-coding-agent'
 import log from '../../main/logger'
+import { getShellEnv } from '../../main/shellEnv'
 
 // Structural alias for pi-ai's ImageContent — pi-ai doesn't expose a `.` export
 // so we duplicate the minimal shape here. Pi reads `{type, data, mimeType}`.
@@ -53,6 +55,52 @@ function resolvePiCliPath(): string {
     'dist',
     'cli.js',
   )
+}
+
+// RpcClient hardcodes `spawn("node", ...)`, so `node` must be on PATH.
+// When launched from Finder/Dock the inherited PATH is minimal and may not
+// include node. Even with the resolved shell env, the user may not have a
+// standalone node install (e.g. only Electron is present). In that case we
+// create a `node` symlink to process.execPath + ELECTRON_RUN_AS_NODE=1.
+let fallbackNodeDir: string | null = null
+
+function nodeExistsOnPath(env: Record<string, string>): boolean {
+  const pathVar = env.PATH || env.Path || ''
+  if (!pathVar) return false
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const name = process.platform === 'win32' ? 'node.exe' : 'node'
+  for (const dir of pathVar.split(sep)) {
+    if (!dir) continue
+    try {
+      fs.accessSync(path.join(dir, name), fs.constants.X_OK)
+      return true
+    } catch { /* not here */ }
+  }
+  return false
+}
+
+function ensureFallbackNode(): string {
+  if (fallbackNodeDir) return fallbackNodeDir
+  const dir = path.join(app.getPath('temp'), 'cate-node-shim')
+  fs.mkdirSync(dir, { recursive: true })
+  const linkPath = path.join(dir, 'node')
+  try { fs.unlinkSync(linkPath) } catch { /* didn't exist */ }
+  fs.symlinkSync(process.execPath, linkPath)
+  fallbackNodeDir = dir
+  log.info('[agentManager] created node shim at %s -> %s', linkPath, process.execPath)
+  return dir
+}
+
+function buildAgentEnv(): Record<string, string> {
+  const env = { ...getShellEnv() }
+  if (!nodeExistsOnPath(env)) {
+    const shimDir = ensureFallbackNode()
+    const sep = process.platform === 'win32' ? ';' : ':'
+    env.PATH = shimDir + sep + (env.PATH || '')
+    env.ELECTRON_RUN_AS_NODE = '1'
+    log.info('[agentManager] node not found on PATH, using Electron shim')
+  }
+  return env
 }
 
 interface AgentSession {
@@ -125,6 +173,7 @@ export class AgentManager {
         provider: opts.model?.provider,
         model: opts.model?.model,
         args: extraArgs.length > 0 ? extraArgs : undefined,
+        env: buildAgentEnv(),
       })
 
       try {
