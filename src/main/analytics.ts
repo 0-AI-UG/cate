@@ -3,10 +3,14 @@
 // /api/app-events endpoint. Strictly opt-in via `usageAnalyticsEnabled`.
 //
 // What we send:
-//   - app_start       : version, platform, arch, locale, electron version
-//   - app_install     : first launch of this install
-//   - app_updated     : from_version → to_version (detected via lastSeenVersion)
-//   - feedback_submitted : 1-5 rating + optional free-text comment, post-update
+//   - app_start                : version, platform, arch, locale, electron version
+//   - app_install              : first launch of this install
+//   - app_updated              : from_version → to_version (detected via lastSeenVersion)
+//   - update_download_clicked  : user clicked "Download" on the update button
+//   - update_install_clicked   : user clicked "Restart" to install
+//   - update_manual_open_clicked : user clicked through to GitHub release page
+//   - feedback_submitted       : 1-5 rating + optional free-text comment, post-update
+//   - feedback_dismissed       : user skipped/closed the post-update feedback dialog
 //
 // What we deliberately do NOT send: file paths, project names, workspace
 // contents, hostname, IP-derived identifiers, user account info.
@@ -210,6 +214,8 @@ export function sanitizeFeedbackPayload(payload: unknown): { rating: number; com
 // Public API
 // ---------------------------------------------------------------------------
 
+export { sendEvent }
+
 export function initAnalytics(): void {
   // Renderer submits feedback. Returns an ack so the modal can show success /
   // failure rather than blindly claiming success.
@@ -229,6 +235,11 @@ export function initAnalytics(): void {
   })
 
   ipcMain.on(ANALYTICS_FEEDBACK_DISMISS, () => {
+    const state = readState()
+    void sendEvent('feedback_dismissed', {
+      to_version: state.pendingFeedbackForVersion ?? null,
+      from_version: state.pendingFeedbackFromVersion ?? null,
+    })
     updateState({ pendingFeedbackForVersion: undefined, pendingFeedbackFromVersion: undefined })
   })
 

@@ -23,6 +23,7 @@ import {
   UPDATE_OPEN_RELEASE,
 } from '../shared/ipc-channels'
 import { getWindowType } from './windowRegistry'
+import { sendEvent } from './analytics'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -197,6 +198,8 @@ export function initAutoUpdater(): void {
   ipcMain.on(UPDATE_DOWNLOAD, () => {
     if (!app.isPackaged) return
     log.info('[auto-updater] Renderer requested download')
+    const version = currentStatus.state === 'available' ? currentStatus.version : undefined
+    void sendEvent('update_download_clicked', { version: version ?? null })
     autoUpdater.downloadUpdate().catch((err) => {
       log.error('[auto-updater] downloadUpdate failed:', err)
       broadcastStatus({ state: 'error', message: err?.message || 'Download failed' })
@@ -206,6 +209,8 @@ export function initAutoUpdater(): void {
   ipcMain.on(UPDATE_INSTALL, async () => {
     if (!app.isPackaged) return
     log.info('[auto-updater] Renderer requested install')
+    const version = currentStatus.state === 'downloaded' ? currentStatus.version : undefined
+    void sendEvent('update_install_clicked', { version: version ?? null })
     updateInstalling = true
     await flushSessionBeforeUpdate()
     // (isSilent=false, isForceRunAfter=true) — force relaunch after install
@@ -216,7 +221,11 @@ export function initAutoUpdater(): void {
 
   ipcMain.on(UPDATE_OPEN_RELEASE, (_e, url?: string) => {
     const target = url || latestReleaseUrl
-    if (target) shell.openExternal(target)
+    if (target) {
+      const version = currentStatus.state === 'manual' ? currentStatus.version : undefined
+      void sendEvent('update_manual_open_clicked', { version: version ?? null })
+      shell.openExternal(target)
+    }
   })
 
   ipcMain.handle('update:getStatus', () => currentStatus)
