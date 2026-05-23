@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/shallow'
 import {
   Terminal,
   Globe,
@@ -202,6 +203,16 @@ export const CommandPalette: React.FC = () => {
     ],
   )
 
+  // Open panels in the current workspace (for recommended items)
+  const openPanels = useAppStore(useShallow((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
+    if (!ws) return []
+    return Object.values(ws.panels)
+  }))
+
+  // Recently-used / recommended files (show top 5 from git when no search)
+  const recommendedFiles = useMemo(() => files.slice(0, 5), [files])
+
   // Filter by search text
   const filteredCommands = useMemo(() => {
     if (!searchText.trim()) return allCommands
@@ -221,7 +232,16 @@ export const CommandPalette: React.FC = () => {
       .slice(0, 10)
   }, [files, searchText])
 
-  const totalItems = filteredCommands.length + matchingFiles.length
+  // When no search text, show open panels and recommended files
+  const showRecommended = !searchText.trim()
+  const recommendedPanels = useMemo(() => {
+    if (!showRecommended) return []
+    return openPanels.filter((p) => p.type === 'terminal' || p.type === 'editor' || p.type === 'browser' || p.type === 'agent')
+  }, [openPanels, showRecommended])
+
+  const totalItems = showRecommended
+    ? recommendedPanels.length + recommendedFiles.length + filteredCommands.length
+    : filteredCommands.length + matchingFiles.length
 
   // Clamp selection when filtered list changes
   useEffect(() => {
@@ -270,18 +290,42 @@ export const CommandPalette: React.FC = () => {
           break
         case 'Enter':
           e.preventDefault()
-          if (selectedIndex < filteredCommands.length) {
-            if (filteredCommands[selectedIndex]) {
-              executeCommand(filteredCommands[selectedIndex])
+          if (showRecommended) {
+            // Order: panels → files → commands
+            if (selectedIndex < recommendedPanels.length) {
+              const panel = recommendedPanels[selectedIndex]
+              if (panel) {
+                const cs = canvasApi.getState()
+                const nodeEntry = Object.values(cs.nodes).find((n) => n.panelId === panel.id)
+                if (nodeEntry) cs.focusNode(nodeEntry.id)
+                close()
+              }
+            } else if (selectedIndex < recommendedPanels.length + recommendedFiles.length) {
+              const file = recommendedFiles[selectedIndex - recommendedPanels.length]
+              if (file) {
+                const wsId = useAppStore.getState().selectedWorkspaceId
+                const fullPath = rootPath ? `${rootPath}/${file}` : file
+                useAppStore.getState().createEditor(wsId, fullPath, undefined, dockCenter)
+                close()
+              }
+            } else {
+              const cmdIndex = selectedIndex - recommendedPanels.length - recommendedFiles.length
+              const cmd = filteredCommands[cmdIndex]
+              if (cmd) executeCommand(cmd)
             }
           } else {
-            const fileIndex = selectedIndex - filteredCommands.length
-            const file = matchingFiles[fileIndex]
-            if (file) {
-              const wsId = useAppStore.getState().selectedWorkspaceId
-              const fullPath = rootPath ? `${rootPath}/${file}` : file
-              useAppStore.getState().createEditor(wsId, fullPath, undefined, dockCenter)
-              close()
+            // Order: commands → files
+            if (selectedIndex < filteredCommands.length) {
+              const cmd = filteredCommands[selectedIndex]
+              if (cmd) executeCommand(cmd)
+            } else {
+              const file = matchingFiles[selectedIndex - filteredCommands.length]
+              if (file) {
+                const wsId = useAppStore.getState().selectedWorkspaceId
+                const fullPath = rootPath ? `${rootPath}/${file}` : file
+                useAppStore.getState().createEditor(wsId, fullPath, undefined, dockCenter)
+                close()
+              }
             }
           }
           break
@@ -295,21 +339,21 @@ export const CommandPalette: React.FC = () => {
     document.addEventListener('keydown', handleKey, { capture: true })
     return () =>
       document.removeEventListener('keydown', handleKey, { capture: true })
-  }, [showCommandPalette, filteredCommands, matchingFiles, selectedIndex, totalItems, rootPath, executeCommand, close])
+  }, [showCommandPalette, filteredCommands, matchingFiles, recommendedPanels, recommendedFiles, showRecommended, selectedIndex, totalItems, rootPath, executeCommand, close, canvasApi])
 
   if (!showCommandPalette) return null
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex items-start justify-center pt-40 z-50"
+      className="fixed inset-0 bg-black/40 flex justify-center z-50"
       onClick={close}
     >
       <div
-        className="w-[640px] max-h-[560px] rounded-3xl overflow-hidden flex flex-col bg-surface-4/85 backdrop-blur-2xl border border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.5)]"
+        className="w-[640px] max-w-[640px] max-h-[560px] mt-[160px] rounded-3xl overflow-hidden flex flex-col self-start bg-surface-4/85 backdrop-blur-2xl border border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.5)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input — matches the Spotlight-style bar used by Cmd+Shift+F */}
-        <div className="flex items-center gap-3 px-5 h-14">
+        <div className="flex items-center gap-3 px-5 py-4 shrink-0">
           <MagnifyingGlass size={20} className="text-muted shrink-0" weight="bold" />
           <input
             ref={inputRef}
@@ -319,19 +363,119 @@ export const CommandPalette: React.FC = () => {
               setSearchText(e.target.value)
               setSelectedIndex(0)
             }}
-            placeholder="Type a command…"
+            placeholder="Search everything — files, terminals, commands…"
             className="flex-1 bg-transparent text-primary text-base font-medium outline-none placeholder:text-muted placeholder:font-normal"
           />
         </div>
 
-        {/* Commands + files list */}
+        {/* Results list */}
         <div className="flex-1 overflow-y-auto pb-2">
-          {filteredCommands.length === 0 && matchingFiles.length === 0 ? (
+          {totalItems === 0 ? (
             <div className="text-muted text-sm text-center py-6">
-              No matching commands
+              No matching results
             </div>
+          ) : showRecommended ? (
+            <>
+              {/* Open panels first */}
+              {recommendedPanels.length > 0 && (
+                <>
+                  <div className="px-5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Open Panels</div>
+                  {recommendedPanels.map((panel, i) => {
+                    const isSelected = i === selectedIndex
+                    const iconForType = panel.type === 'terminal' ? <TerminalIcon /> : panel.type === 'browser' ? <GlobeIcon /> : panel.type === 'agent' ? <AgentIcon /> : <FileTextIcon />
+                    const colorForType = panel.type === 'terminal' ? 'bg-green-500/15 text-green-400' : panel.type === 'browser' ? 'bg-cyan-500/15 text-cyan-400' : panel.type === 'agent' ? 'bg-purple-500/15 text-purple-400' : 'bg-amber-500/15 text-amber-400'
+                    return (
+                      <div
+                        key={panel.id}
+                        className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
+                          isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
+                        }`}
+                        onClick={() => {
+                          const cs = canvasApi.getState()
+                          const nodeEntry = Object.values(cs.nodes).find((n) => n.panelId === panel.id)
+                          if (nodeEntry) cs.focusNode(nodeEntry.id)
+                          close()
+                        }}
+                        onMouseEnter={() => setSelectedIndex(i)}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${colorForType}`}>
+                          {iconForType}
+                        </div>
+                        <span className="text-sm text-primary font-medium flex-1 truncate">{panel.title}</span>
+                        <span className="text-[10px] text-muted capitalize">{panel.type}</span>
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+
+              {/* Recommended files */}
+              {recommendedFiles.length > 0 && (
+                <>
+                  {recommendedPanels.length > 0 && <div className="mx-5 my-1 border-t border-white/10" />}
+                  <div className="px-5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Files</div>
+                  {recommendedFiles.map((file, i) => {
+                    const itemIndex = recommendedPanels.length + i
+                    const isSelected = itemIndex === selectedIndex
+                    return (
+                      <div
+                        key={file}
+                        className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
+                          isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
+                        }`}
+                        onClick={() => {
+                          const wsId = useAppStore.getState().selectedWorkspaceId
+                          const fullPath = rootPath ? `${rootPath}/${file}` : file
+                          useAppStore.getState().createEditor(wsId, fullPath, undefined, dockCenter)
+                          close()
+                        }}
+                        onMouseEnter={() => setSelectedIndex(itemIndex)}
+                      >
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-500/15 text-amber-400">
+                          <FileTextIcon />
+                        </div>
+                        <span className="text-sm text-primary font-medium flex-1 truncate">{file}</span>
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+
+              {/* Commands at bottom */}
+              {filteredCommands.length > 0 && (
+                <>
+                  {(recommendedPanels.length > 0 || recommendedFiles.length > 0) && <div className="mx-5 my-1 border-t border-white/10" />}
+                  <div className="px-5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Commands</div>
+                  {filteredCommands.map((cmd, i) => {
+                    const itemIndex = recommendedPanels.length + recommendedFiles.length + i
+                    const isSelected = itemIndex === selectedIndex
+                    return (
+                      <div
+                        key={cmd.id}
+                        className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
+                          isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
+                        }`}
+                        onClick={() => executeCommand(cmd)}
+                        onMouseEnter={() => setSelectedIndex(itemIndex)}
+                      >
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-blue-500/15 text-blue-400">
+                          {cmd.icon}
+                        </div>
+                        <span className="text-sm text-primary font-medium flex-1 truncate">{cmd.title}</span>
+                        {cmd.shortcutText && (
+                          <span className="text-[11px] text-muted flex-shrink-0 font-mono">
+                            {cmd.shortcutText}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+            </>
           ) : (
             <>
+              {/* Search results: commands */}
               {filteredCommands.map((cmd, index) => {
                 const isSelected = index === selectedIndex
                 return (
@@ -355,6 +499,8 @@ export const CommandPalette: React.FC = () => {
                   </div>
                 )
               })}
+
+              {/* Search results: matching files */}
               {matchingFiles.length > 0 && (
                 <>
                   {filteredCommands.length > 0 && <div className="mx-5 my-1 border-t border-white/10" />}

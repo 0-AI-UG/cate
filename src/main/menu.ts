@@ -152,7 +152,6 @@ export function buildApplicationMenu(): void {
     {
       label: 'Go',
       submenu: [
-        { label: 'Panel Switcher', accelerator: 'CmdOrCtrl+E', click: dispatch('panelSwitcher') },
         { label: 'Node Switcher', accelerator: 'Ctrl+Space', click: dispatch('nodeSwitcher') },
         { type: 'separator' },
         { label: 'Next Panel', accelerator: 'Ctrl+Tab', click: dispatch('focusNext') },

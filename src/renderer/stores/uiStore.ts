@@ -50,7 +50,6 @@ function saveLayout(layout: SidebarLayout) {
 interface UIStoreState {
   showNodeSwitcher: boolean
   showCommandPalette: boolean
-  showPanelSwitcher: boolean
   showGlobalSearch: boolean
   showLayoutsDialog: boolean
   /** Whether the minimap is currently expanded. */
@@ -59,8 +58,6 @@ interface UIStoreState {
   /** Optional initial settings tab to open when showSettings flips to true. */
   settingsInitialTab: string | null
   fileExplorerVisible: boolean
-  /** Pre-captured page screenshot for panel switcher previews. */
-  panelSwitcherScreenshot: string | null
   /** Active marquee selection rectangle in canvas-space coordinates, or null when idle. */
   marquee: { startX: number; startY: number; currentX: number; currentY: number } | null
   /** Layout: which views live on which side and in what order */
@@ -76,7 +73,6 @@ interface UIStoreState {
 interface UIStoreActions {
   setShowNodeSwitcher: (show: boolean) => void
   setShowCommandPalette: (show: boolean) => void
-  setShowPanelSwitcher: (show: boolean) => void
   setShowGlobalSearch: (show: boolean) => void
   setShowLayoutsDialog: (show: boolean) => void
   setMinimapOpen: (open: boolean) => void
@@ -103,8 +99,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   // --- State ---
   showNodeSwitcher: false,
   showCommandPalette: false,
-  showPanelSwitcher: false,
-  panelSwitcherScreenshot: null,
   showGlobalSearch: false,
   showLayoutsDialog: false,
   minimapOpen: false,
@@ -125,10 +119,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setShowCommandPalette(show) {
     set({ showCommandPalette: show })
-  },
-
-  setShowPanelSwitcher(show) {
-    set({ showPanelSwitcher: show })
   },
 
   setShowGlobalSearch(show) {

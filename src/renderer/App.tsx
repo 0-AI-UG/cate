@@ -25,7 +25,6 @@ import { Sidebar, RightSidebar } from './sidebar/Sidebar'
 import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
 const CanvasPanel = PANEL_REGISTRY.canvas.Component
 import { NodeSwitcher } from './ui/NodeSwitcher'
-import { PanelSwitcher } from './ui/PanelSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
 import { GlobalSearch } from './ui/GlobalSearch'
 import { SettingsWindow } from './settings/SettingsWindow'
@@ -116,7 +115,6 @@ function MainApp() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
-  const showPanelSwitcher = useUIStore((s) => s.showPanelSwitcher)
   const showGlobalSearch = useUIStore((s) => s.showGlobalSearch)
 
   // Theme — apply on mount and re-apply whenever appearanceMode changes
@@ -487,7 +485,6 @@ function MainApp() {
 
       {/* Modal overlays */}
       {showNodeSwitcher && <NodeSwitcher />}
-      {showPanelSwitcher && <PanelSwitcher />}
       {showCommandPalette && <CommandPalette />}
       {showGlobalSearch && <GlobalSearch />}
       {showSettings && (

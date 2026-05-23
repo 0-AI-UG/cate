@@ -104,22 +104,6 @@ export function useShortcuts(): void {
         case 'nodeSwitcher':
           useUIStore.getState().setShowNodeSwitcher(true)
           break
-        case 'panelSwitcher': {
-          const uiState = useUIStore.getState()
-          if (uiState.showPanelSwitcher) {
-            window.dispatchEvent(new CustomEvent('panel-switcher-next'))
-          } else {
-            try {
-              const dataUrl = await window.electronAPI.capturePage()
-              const ui = useUIStore.getState()
-              ui.setShowPanelSwitcher(true)
-              if (dataUrl) useUIStore.setState({ panelSwitcherScreenshot: dataUrl })
-            } catch {
-              useUIStore.getState().setShowPanelSwitcher(true)
-            }
-          }
-          break
-        }
         case 'commandPalette':
           useUIStore.getState().setShowCommandPalette(true)
           break
@@ -239,7 +223,7 @@ export function useShortcuts(): void {
       if (e.key === 'Escape') {
         if (terminalHasFocus) return
         const ui = useUIStore.getState()
-        if (!ui.showCommandPalette && !ui.showNodeSwitcher && !ui.showPanelSwitcher && !ui.showGlobalSearch) {
+        if (!ui.showCommandPalette && !ui.showNodeSwitcher && !ui.showGlobalSearch) {
           canvasStore().clearSelection()
           // Don't prevent default — Escape might also close other things
           return
@@ -285,8 +269,6 @@ export function useShortcuts(): void {
 
       // When panel switcher is open, only handle the toggle shortcut
       const ui = useUIStore.getState()
-      if (ui.showPanelSwitcher && action !== 'panelSwitcher') return
-
       // Context-aware guard: when a text surface (input, textarea, Monaco,
       // xterm helper textarea, contenteditable) has focus, let clipboard and
       // undo/redo fall through to it natively instead of the canvas.

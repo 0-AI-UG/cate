@@ -67,7 +67,7 @@ export const UpdateButton: React.FC = () => {
       disabled={isDownloading}
       title={title}
       style={{ WebkitTapHighlightColor: 'transparent' }}
-      className="group relative overflow-hidden flex items-center gap-1 h-[28px] pl-2 pr-2.5 rounded-full bg-[var(--focus-blue,#3b82f6)] text-white text-[11px] font-medium shadow-[0_0_24px_-2px_rgba(59,130,246,0.7),0_8px_24px_-6px_rgba(59,130,246,0.55)] hover:brightness-110 active:scale-[0.97] disabled:active:scale-100 focus:outline-none transition-all"
+      className="group relative overflow-hidden flex items-center justify-center gap-1 h-[28px] w-[76px] rounded-full bg-[var(--focus-blue,#3b82f6)] text-white text-[11px] font-medium shadow-[0_0_24px_-2px_rgba(59,130,246,0.7),0_8px_24px_-6px_rgba(59,130,246,0.55)] hover:brightness-110 active:scale-[0.97] disabled:active:scale-100 focus:outline-none transition-all"
     >
       {/* Progress fill — lighter blue overlay that grows left-to-right while downloading. */}
       {showFill && (

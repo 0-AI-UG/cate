@@ -413,7 +413,6 @@ export type ShortcutAction =
   | 'toggleFileExplorer'
   | 'toggleMinimap'
   | 'nodeSwitcher'
-  | 'panelSwitcher'
   | 'commandPalette'
   | 'zoomIn'
   | 'zoomOut'
@@ -442,7 +441,6 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'toggleFileExplorer',
   'toggleMinimap',
   'nodeSwitcher',
-  'panelSwitcher',
   'commandPalette',
   'zoomIn',
   'zoomOut',
@@ -467,7 +465,6 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   toggleFileExplorer: 'Toggle File Explorer',
   toggleMinimap: 'Toggle Minimap',
   nodeSwitcher: 'Panel Switcher',
-  panelSwitcher: 'Panel Switcher',
   commandPalette: 'Command Palette',
   zoomIn: 'Zoom In',
   zoomOut: 'Zoom Out',
@@ -494,7 +491,6 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   toggleFileExplorer: storedShortcut('x', { command: true, shift: true }),
   toggleMinimap: storedShortcut('m', { command: true, shift: true }),
   nodeSwitcher: storedShortcut(' ', { control: true }),
-  panelSwitcher: storedShortcut('e', { command: true }),
   commandPalette: storedShortcut('k', { command: true }),
   zoomIn: storedShortcut('=', { command: true }),
   zoomOut: storedShortcut('-', { command: true }),
