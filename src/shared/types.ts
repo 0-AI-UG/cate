@@ -995,6 +995,7 @@ export interface AgentSessionListEntry {
 /** OAuth UI events forwarded to renderer during a login flow. */
 export type OAuthFlowEvent =
   | { type: 'auth'; url: string; instructions?: string }
+  | { type: 'deviceCode'; userCode: string; verificationUri: string; intervalSeconds?: number; expiresInSeconds?: number }
   | { type: 'progress'; message: string }
   | { type: 'prompt'; promptId: string; message: string; placeholder?: string; allowEmpty?: boolean }
   | { type: 'select'; promptId: string; message: string; options: Array<{ id: string; label: string }> }

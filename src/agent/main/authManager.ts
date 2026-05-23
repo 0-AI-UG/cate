@@ -212,6 +212,9 @@ export class AuthManager {
       onAuth: ({ url, instructions }: { url: string; instructions?: string }) => {
         send({ type: 'auth', url, instructions })
       },
+      onDeviceCode: ({ userCode, verificationUri, intervalSeconds, expiresInSeconds }) => {
+        send({ type: 'deviceCode', userCode, verificationUri, intervalSeconds, expiresInSeconds })
+      },
       onProgress: (message: string) => {
         send({ type: 'progress', message })
       },

@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.75.4",
-    "@earendil-works/pi-ai": "^0.75.4",
+    "@earendil-works/pi-ai": "^0.75.5",
     "@earendil-works/pi-coding-agent": "^0.75.4",
     "@phosphor-icons/react": "^2.1.10",
     "@sentry/electron": "^5.11.0",
