@@ -589,34 +589,32 @@ function DefaultModelSection({ statuses }: { statuses: AuthProviderStatus[] }) {
   )
 
   return (
-    <Section label="Default model">
-      <div className="px-2.5 py-2.5 space-y-1.5">
-        <select
-          value={selectedKey}
-          onChange={(e) => handleChange(e.target.value)}
-          className="w-full bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5 text-[12.5px] text-primary focus:outline-none focus:border-violet-400/50"
-        >
-          <option value="">No default — first available</option>
-          {currentMissing && current && (
-            <option value={selectedKey}>
-              {current.model} ({current.provider} — disconnected)
-            </option>
-          )}
-          {groupByProvider(models).map(([provider, items]) => (
-            <optgroup key={provider} label={provider}>
-              {items.map((m) => (
-                <option key={`${m.provider}::${m.model}`} value={`${m.provider}::${m.model}`}>
-                  {m.label ?? m.model}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <div className="text-[10.5px] text-muted/70">
-          Applied to every new chat. Existing chats keep the model they were last using.
-        </div>
+    <div className="space-y-1.5">
+      <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold px-0.5">
+        Default model
       </div>
-    </Section>
+      <select
+        value={selectedKey}
+        onChange={(e) => handleChange(e.target.value)}
+        className="w-full bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5 text-[12.5px] text-primary focus:outline-none focus:border-violet-400/50"
+      >
+      <option value="">No default — first available</option>
+      {currentMissing && current && (
+        <option value={selectedKey}>
+          {current.model} ({current.provider} — disconnected)
+        </option>
+      )}
+      {groupByProvider(models).map(([provider, items]) => (
+        <optgroup key={provider} label={provider}>
+          {items.map((m) => (
+            <option key={`${m.provider}::${m.model}`} value={`${m.provider}::${m.model}`}>
+              {m.label ?? m.model}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+      </select>
+    </div>
   )
 }
 

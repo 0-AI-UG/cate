@@ -171,6 +171,8 @@ export async function deleteSession(filePath: string): Promise<void> {
 export interface RendererUserMessage { type: 'user'; id: string; text: string; entryId?: string; createdAt?: number }
 export interface RendererAssistantMessage {
   type: 'assistant'; id: string; text: string; thinking?: string; streaming: false
+  model?: string
+  createdAt?: number
   usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; total?: number }
   stopReason?: 'stop' | 'length' | 'toolUse' | 'error' | 'aborted'
 }
@@ -199,6 +201,9 @@ export async function loadSessionTranscript(filePath: string): Promise<RendererM
   const out: RendererMessage[] = []
   // Map of toolCallId → index in `out` so toolResult can update in place.
   const toolIndex = new Map<string, number>()
+  // Pi records the active model as separate `model_change` entries — track it
+  // so we can stamp each assistant message with the model that produced it.
+  let currentModel: string | undefined
 
   for (const line of raw.split('\n')) {
     if (!line) continue
@@ -208,6 +213,11 @@ export async function loadSessionTranscript(filePath: string): Promise<RendererM
     const type = entry.type
     if (type === 'compaction') {
       out.push({ type: 'system', id: nid(), text: 'Context compacted.', kind: 'info' })
+      continue
+    }
+    if (type === 'model_change') {
+      const modelId = entry.modelId
+      if (typeof modelId === 'string') currentModel = modelId
       continue
     }
     if (type !== 'message') continue
@@ -259,6 +269,7 @@ export async function loadSessionTranscript(filePath: string): Promise<RendererM
           : undefined
       const text = textParts.join('')
       const thinking = thinkingParts.length > 0 ? thinkingParts.join('') : undefined
+      const model = typeof msg.model === 'string' ? msg.model : currentModel
       if (text || thinking) {
         out.push({
           type: 'assistant',
@@ -266,6 +277,8 @@ export async function loadSessionTranscript(filePath: string): Promise<RendererM
           text,
           ...(thinking ? { thinking } : {}),
           streaming: false,
+          ...(model ? { model } : {}),
+          ...(createdAt ? { createdAt } : {}),
           ...(usage ? { usage } : {}),
           ...(stopReason ? { stopReason } : {}),
         })

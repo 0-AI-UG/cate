@@ -22,9 +22,7 @@ import {
   FileText,
   MagnifyingGlass,
   Brain,
-  GitFork,
   Copy,
-  PencilSimpleLine,
   Sparkle,
   ClipboardText,
 } from '@phosphor-icons/react'
@@ -152,15 +150,6 @@ function MessageRow({
           {msg.text}
         </div>
         <div className="flex items-center gap-0.5 text-muted">
-          {onEditResend && (
-            <button
-              onClick={() => onEditResend(msg.text)}
-              title="Edit & resend"
-              className="p-1 rounded-md hover:text-primary hover:bg-white/10"
-            >
-              <PencilSimpleLine size={11} />
-            </button>
-          )}
           <button
             onClick={() => { void navigator.clipboard.writeText(msg.text) }}
             title="Copy message"
@@ -168,15 +157,6 @@ function MessageRow({
           >
             <Copy size={11} />
           </button>
-          {forkEntryId && onFork && (
-            <button
-              onClick={() => onFork(forkEntryId)}
-              title="Branch off from this message"
-              className="p-1 rounded-md hover:text-primary hover:bg-white/10"
-            >
-              <GitFork size={11} />
-            </button>
-          )}
           {msg.createdAt && (
             <span className="text-[10.5px] text-muted/70 ml-1">{formatTime(msg.createdAt)}</span>
           )}
@@ -192,11 +172,22 @@ function MessageRow({
           <Markdown text={msg.text} />
           {msg.streaming && !msg.text && msg.thinking ? null : msg.streaming && <CursorBlink />}
         </div>
-        {!msg.streaming && (msg.model || msg.createdAt) && (
-          <div className="text-[10.5px] text-zinc-500">
-            {msg.model}
-            {msg.model && msg.createdAt ? ' · ' : ''}
-            {msg.createdAt ? formatTime(msg.createdAt) : ''}
+        {!msg.streaming && (
+          <div className="flex items-center gap-0.5 text-muted">
+            <button
+              onClick={() => { void navigator.clipboard.writeText(msg.text) }}
+              title="Copy message"
+              className="p-1 rounded-md hover:text-primary hover:bg-white/10"
+            >
+              <Copy size={11} />
+            </button>
+            {(msg.model || msg.createdAt) && (
+              <span className="text-[10.5px] text-zinc-500 ml-1">
+                {msg.model}
+                {msg.model && msg.createdAt ? ' · ' : ''}
+                {msg.createdAt ? formatTime(msg.createdAt) : ''}
+              </span>
+            )}
           </div>
         )}
       </div>
