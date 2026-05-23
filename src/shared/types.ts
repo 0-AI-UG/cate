@@ -195,11 +195,16 @@ export interface PanelTransferSnapshot {
   // Canvas-specific — child nodes/regions/viewport for nested canvas panels.
   // Without this, detaching a canvas panel to a new window would land with an
   // empty store (fresh per-process), losing every panel inside it.
+  //
+  // `childPanels` carries the PanelState records for every panel referenced
+  // by the canvas's nodes. Without these the receiving window can't resolve
+  // child panel types/titles and falls back to a generic "Panel" stub.
   canvasState?: {
     nodes: Record<CanvasNodeId, CanvasNodeState>
     regions: Record<string, CanvasRegion>
     viewportOffset: Point
     zoomLevel: number
+    childPanels: Record<string, PanelState>
   }
 }
 

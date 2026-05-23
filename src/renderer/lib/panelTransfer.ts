@@ -18,6 +18,7 @@ export function createTransferSnapshot(
   panel: PanelState,
   sourceLocation: PanelLocation,
   geometry: { origin: Point; size: Size },
+  options: { resolveChildPanel?: (panelId: string) => PanelState | undefined } = {},
 ): PanelTransferSnapshot {
   const snapshot: PanelTransferSnapshot = {
     panel: { ...panel },
@@ -73,17 +74,25 @@ export function createTransferSnapshot(
     }
   }
 
-  // Canvas-specific: capture child nodes + regions + viewport so the receiving
-  // window can hydrate. Without this, the new window's per-panel canvas store
-  // is constructed empty.
+  // Canvas-specific: capture child nodes + regions + viewport AND the PanelState
+  // record for each child panel. Without the PanelStates the receiving window
+  // can't resolve child panel types/titles and renders generic "Panel" stubs.
   if (panel.type === 'canvas') {
     const store = getOrCreateCanvasStoreForPanel(panel.id)
     const state = store.getState()
+    const childPanels: Record<string, PanelState> = {}
+    if (options.resolveChildPanel) {
+      for (const node of Object.values(state.nodes)) {
+        const childPanel = options.resolveChildPanel(node.panelId)
+        if (childPanel) childPanels[node.panelId] = { ...childPanel }
+      }
+    }
     snapshot.canvasState = {
       nodes: { ...state.nodes },
       regions: { ...state.regions },
       viewportOffset: { ...state.viewportOffset },
       zoomLevel: state.zoomLevel,
+      childPanels,
     }
   }
 
@@ -99,3 +108,4 @@ export async function acknowledgeTransfer(snapshot: PanelTransferSnapshot): Prom
     await window.electronAPI.panelTransferAck(snapshot.terminalPtyId)
   }
 }
+

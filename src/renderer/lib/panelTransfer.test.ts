@@ -55,10 +55,17 @@ describe('createTransferSnapshot — canvas children survival', () => {
     const nodeId = store.getState().addNode('child-panel-1', 'terminal', { x: 100, y: 80 }, { width: 320, height: 240 })
     store.setState({ zoomLevel: 1.5, viewportOffset: { x: 12, y: 34 } })
 
+    const childPanel: PanelState = {
+      id: 'child-panel-1',
+      type: 'terminal',
+      title: 'zsh',
+      isDirty: false,
+    }
     const snapshot = createTransferSnapshot(
       panel,
       { type: 'canvas', canvasId: 'c-root', canvasNodeId: 'n-root' },
       { origin: { x: 0, y: 0 }, size: { width: 800, height: 600 } },
+      { resolveChildPanel: (id) => (id === childPanel.id ? childPanel : undefined) },
     )
 
     expect(snapshot.canvasState).toBeDefined()
@@ -66,6 +73,7 @@ describe('createTransferSnapshot — canvas children survival', () => {
     expect(snapshot.canvasState?.viewportOffset).toEqual({ x: 12, y: 34 })
     expect(snapshot.canvasState?.nodes[nodeId]).toBeDefined()
     expect(snapshot.canvasState?.nodes[nodeId].panelId).toBe('child-panel-1')
+    expect(snapshot.canvasState?.childPanels['child-panel-1']).toEqual(childPanel)
   })
 
   it('omits canvasState for non-canvas panels', () => {

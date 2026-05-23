@@ -14,6 +14,7 @@ import { DragOverlay, setupCrossWindowDragListeners } from '../drag'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { terminalRestoreData } from '../lib/session'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
+import { applyCanvasChildPanels } from '../lib/applyCanvasChildPanels'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { isDockEmpty } from './dockEmpty'
 import { shouldCloseDockWindow } from './shouldCloseDockWindow'
@@ -81,11 +82,17 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // Canvas panel: hydrate the per-panel canvas store BEFORE rendering, so
       // child nodes/regions are present on first paint. Without this the new
       // window mounts an empty canvas and writes that empty state back to
-      // session persistence on the next sync.
+      // session persistence on the next sync. Also seed both local `panels`
+      // and useAppStore with the child PanelState records so the canvas's
+      // child nodes resolve to their real types/titles instead of "Panel".
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, regions, viewportOffset, zoomLevel } = snapshot.canvasState
+        const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
         store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
+        applyCanvasChildPanels(wsId, childPanels ?? {})
+        if (childPanels) {
+          setPanels((prev) => ({ ...prev, ...childPanels }))
+        }
       }
 
       setPanels((prev) => ({
@@ -95,7 +102,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     })
 
     return cleanup
-  }, [])
+  }, [wsId])
 
   // Set up cross-window drag listeners
   useEffect(() => {
@@ -112,8 +119,12 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // Canvas panel: hydrate before mount so children are visible immediately.
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, regions, viewportOffset, zoomLevel } = snapshot.canvasState
+        const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
         store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
+        applyCanvasChildPanels(wsId, childPanels ?? {})
+        if (childPanels) {
+          setPanels((prev) => ({ ...prev, ...childPanels }))
+        }
       }
 
       setPanels((prev) => ({

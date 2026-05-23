@@ -245,6 +245,14 @@ function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null 
   // dock window.
   const panel = spec.panel
 
+  // For canvas-type panels, the snapshot needs each child's PanelState so the
+  // receiving window can render real child panels instead of "Panel" stubs.
+  const resolveChildPanel = (childId: string) => {
+    const app = useAppStore.getState()
+    const ws = app.workspaces.find((w) => w.id === app.selectedWorkspaceId)
+    return ws?.panels[childId]
+  }
+
   if (spec.kind === 'canvas-node') {
     const node = spec.canvasStoreApi.getState().nodes[spec.nodeId]
     if (!node) return null
@@ -252,6 +260,7 @@ function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null 
       panel,
       { type: 'canvas', canvasId: '', canvasNodeId: spec.nodeId },
       { origin: node.origin, size: node.size },
+      { resolveChildPanel },
     )
   }
 
@@ -264,6 +273,7 @@ function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null 
       panel,
       { type: 'detached', windowId: 0 },
       { origin: { x: 0, y: 0 }, size },
+      { resolveChildPanel },
     )
   }
 
@@ -273,6 +283,7 @@ function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null 
     panel,
     { type: 'dock', zone: spec.zone, stackId: spec.stackId },
     { origin: { x: 0, y: 0 }, size },
+    { resolveChildPanel },
   )
 }
 
@@ -320,6 +331,22 @@ function runEffects(prevActive: ActiveDispatch, next: RuntimeState) {
           workspaceId: useAppStore.getState().selectedWorkspaceId,
           onRemovedFromCanvas: (panelId, panelType) => {
             if (panelType === 'terminal') terminalRegistry.release(panelId)
+            // If the user just detached the workspace's only canvas, spawn a
+            // fresh empty one so they don't end up staring at an empty dock.
+            // The detached window keeps the contents that were carried via
+            // PanelTransferSnapshot.canvasState.
+            if (panelType === 'canvas') {
+              const app = useAppStore.getState()
+              const ws = app.workspaces.find((w) => w.id === app.selectedWorkspaceId)
+              if (ws) {
+                const remainingCanvases = Object.values(ws.panels).filter(
+                  (p) => p.type === 'canvas' && p.id !== panelId,
+                )
+                if (remainingCanvases.length === 0) {
+                  app.createCanvas(app.selectedWorkspaceId)
+                }
+              }
+            }
           },
           prepareLocalRemount: (panelId, panelType) => {
             prepareTerminalRemount(panelId, panelType, terminalRegistry)

@@ -13,6 +13,7 @@ import { renderPanelComponent, getPanelDef } from '../panels/registry'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { applyTheme } from '../lib/themeManager'
+import { applyCanvasChildPanels } from '../lib/applyCanvasChildPanels'
 
 interface PanelWindowShellProps {
   panelType?: string
@@ -47,11 +48,12 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
         terminalRestoreData.set(snapshot.panel.id, { replayFromId: snapshot.terminalReplayPtyId })
       }
 
-      // Canvas panel: hydrate the per-panel canvas store before mount.
+      // Canvas panel: hydrate the per-panel canvas store + child PanelStates.
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, regions, viewportOffset, zoomLevel } = snapshot.canvasState
+        const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
         store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
+        applyCanvasChildPanels(workspaceId ?? '', childPanels ?? {})
       }
 
       setPanel(snapshot.panel)

@@ -40,6 +40,7 @@ import DockWindowShell from './shells/DockWindowShell'
 import { WindowTypeContext } from './stores/WindowTypeContext'
 import { setupCrossWindowDragListeners } from './drag'
 import { terminalRegistry } from './lib/terminalRegistry'
+import { applyCanvasChildPanels } from './lib/applyCanvasChildPanels'
 import { applyTheme } from './lib/themeManager'
 import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
 import { confirmCloseCanvas } from './lib/confirmCloseCanvas'
@@ -324,15 +325,17 @@ function MainApp() {
         terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
       }
 
+      const wsId = useAppStore.getState().selectedWorkspaceId
+
       // Canvas panel: hydrate the per-panel canvas store with the snapshot's
-      // children before the panel mounts.
+      // children + child PanelState records before the panel mounts.
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, regions, viewportOffset, zoomLevel } = snapshot.canvasState
+        const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
         store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
+        applyCanvasChildPanels(wsId, childPanels ?? {})
       }
 
-      const wsId = useAppStore.getState().selectedWorkspaceId
       useAppStore.getState().addPanel(wsId, snapshot.panel)
 
       if (target.kind === 'dock') {
