@@ -32,6 +32,11 @@ import {
   GIT_UNSTAGE,
   GIT_COMMIT,
   GIT_WORKTREE_LIST,
+  GIT_WORKTREE_ADD,
+  GIT_WORKTREE_REMOVE,
+  GIT_WORKTREE_PRUNE,
+  GIT_WORKTREE_STATUS,
+  GIT_WORKTREE_MERGE_TO,
   GIT_PUSH,
   GIT_PULL,
   GIT_FETCH,
@@ -342,6 +347,43 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(GIT_WORKTREE_LIST, cwd)
   },
 
+  gitWorktreeAdd(
+    repoCwd: string,
+    branch: string,
+    targetPath: string,
+    options?: { createBranch?: boolean; baseRef?: string },
+  ): Promise<{ path: string; branch: string }> {
+    return ipcRenderer.invoke(GIT_WORKTREE_ADD, repoCwd, branch, targetPath, options)
+  },
+
+  gitWorktreeRemove(repoCwd: string, worktreePath: string, options?: { force?: boolean }): Promise<void> {
+    return ipcRenderer.invoke(GIT_WORKTREE_REMOVE, repoCwd, worktreePath, options)
+  },
+
+  gitWorktreePrune(repoCwd: string): Promise<{ output: string }> {
+    return ipcRenderer.invoke(GIT_WORKTREE_PRUNE, repoCwd)
+  },
+
+  gitWorktreeStatus(worktreePath: string): Promise<{
+    branch: string
+    dirty: boolean
+    ahead: number
+    behind: number
+    staged: number
+    unstaged: number
+    untracked: number
+  }> {
+    return ipcRenderer.invoke(GIT_WORKTREE_STATUS, worktreePath)
+  },
+
+  gitWorktreeMergeTo(
+    repoCwd: string,
+    fromBranch: string,
+    toBranch: string,
+  ): Promise<{ ok: true; result: unknown } | { ok: false; conflict: boolean; message: string }> {
+    return ipcRenderer.invoke(GIT_WORKTREE_MERGE_TO, repoCwd, fromBranch, toBranch)
+  },
+
   gitPush(cwd: string, remote?: string, branch?: string): Promise<void> {
     return ipcRenderer.invoke(GIT_PUSH, cwd, remote, branch)
   },
@@ -406,20 +448,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     callback: (
       terminalId: string,
       activity: unknown,
-      agentState: unknown,
       agentName: unknown,
       subprocessActive: unknown,
+      agentPresent: unknown,
     ) => void,
   ): () => void {
     const listener = (
       _event: Electron.IpcRendererEvent,
       terminalId: string,
       activity: unknown,
-      agentState: unknown,
       agentName: unknown,
       subprocessActive: unknown,
+      agentPresent: unknown,
     ): void => {
-      callback(terminalId, activity, agentState, agentName, subprocessActive)
+      callback(terminalId, activity, agentName, subprocessActive, agentPresent)
     }
     ipcRenderer.on(SHELL_ACTIVITY_UPDATE, listener)
     return () => {

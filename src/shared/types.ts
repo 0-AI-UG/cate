@@ -107,6 +107,31 @@ export interface PanelState {
    *  the terminal uses the workspace's `rootPath`. Set when the terminal was
    *  created from a dropped folder or worktree to scope it to that path. */
   cwd?: string
+  /** Id of the WorktreeMeta in the parent workspace that this panel is
+   *  associated with. Drives the per-panel color accent and the title-bar
+   *  "switch worktree" pill. Applies to terminal + agent panels. */
+  worktreeId?: string
+}
+
+// -----------------------------------------------------------------------------
+// Worktree metadata — per-workspace registry of git worktrees that Cate is
+// actively managing. The workspace's own rootPath is materialized as the
+// `isPrimary: true` entry on load so the UI can treat them uniformly.
+// -----------------------------------------------------------------------------
+
+export interface WorktreeMeta {
+  /** Stable client id (uuid). */
+  id: string
+  /** Absolute filesystem path to the worktree checkout. */
+  path: string
+  /** Branch name checked out in the worktree. */
+  branch: string
+  /** Hex color used for the title-bar pill + panel accent border. */
+  color: string
+  /** Optional friendly label shown in the sidebar in place of the branch. */
+  label?: string
+  /** True for the workspace's original rootPath. */
+  isPrimary: boolean
 }
 
 // -----------------------------------------------------------------------------
@@ -274,6 +299,9 @@ export interface WorkspaceState {
   /** Additional project roots opened alongside the primary `rootPath`.
    *  Used to keep multiple repos in one canvas. Order is user-controlled. */
   additionalRoots?: string[]
+  /** Worktrees managed for this workspace. Includes the primary rootPath as
+   *  an `isPrimary: true` entry once it has been materialized on first load. */
+  worktrees?: WorktreeMeta[]
   rootPathError?: string | null
   isRootPathPending?: boolean
   panels: Record<string, PanelState>

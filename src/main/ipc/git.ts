@@ -7,7 +7,7 @@ import { ipcMain } from 'electron'
 import log from '../logger'
 import fs from 'fs/promises'
 import path from 'path'
-import { validateCwd } from './pathValidation'
+import { validateCwd, addAllowedRoot, removeAllowedRoot } from './pathValidation'
 import {
   GIT_IS_REPO,
   GIT_LS_FILES,
@@ -17,6 +17,11 @@ import {
   GIT_UNSTAGE,
   GIT_COMMIT,
   GIT_WORKTREE_LIST,
+  GIT_WORKTREE_ADD,
+  GIT_WORKTREE_REMOVE,
+  GIT_WORKTREE_PRUNE,
+  GIT_WORKTREE_STATUS,
+  GIT_WORKTREE_MERGE_TO,
   GIT_PUSH,
   GIT_PULL,
   GIT_FETCH,
@@ -363,6 +368,9 @@ export function registerHandlers(): void {
             isBare,
             isCurrent: path.resolve(wtPath) === path.resolve(cwd),
           })
+          // Allowlist the worktree path so post-restart terminal/agent spawns
+          // succeed without the user needing to open the Parallel Work tab.
+          if (!isBare) addAllowedRoot(wtPath)
         }
       }
       return worktrees
@@ -370,4 +378,120 @@ export function registerHandlers(): void {
       return []
     }
   })
+
+  // ---------------------------------------------------------------------------
+  // Worktree mutation handlers — used by the Parallel Work sidebar tab.
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(
+    GIT_WORKTREE_ADD,
+    async (
+      _event,
+      repoCwd: string,
+      branch: string,
+      targetPath: string,
+      options?: { createBranch?: boolean; baseRef?: string },
+    ) => {
+      try {
+        const validRepo = validateCwd(repoCwd)
+        const git = simpleGit(validRepo)
+        await fs.mkdir(path.dirname(targetPath), { recursive: true })
+        const args = ['worktree', 'add']
+        if (options?.createBranch) {
+          args.push('-b', branch, targetPath, options.baseRef ?? 'HEAD')
+        } else {
+          args.push(targetPath, branch)
+        }
+        await git.raw(args)
+        // Worktree dirs sit at <repo>/../<repo>.worktrees/<branch>, outside
+        // the workspace's primary rootPath. Whitelist them so terminals/agents
+        // can spawn with the worktree as cwd without tripping validateCwd.
+        addAllowedRoot(targetPath)
+        return { path: targetPath, branch }
+      } catch (error) {
+        log.error(`[${GIT_WORKTREE_ADD}]`, error)
+        throw error instanceof Error ? error : new Error(String(error))
+      }
+    },
+  )
+
+  ipcMain.handle(
+    GIT_WORKTREE_REMOVE,
+    async (_event, repoCwd: string, worktreePath: string, options?: { force?: boolean }) => {
+      try {
+        const validRepo = validateCwd(repoCwd)
+        const git = simpleGit(validRepo)
+        const args = ['worktree', 'remove']
+        if (options?.force) args.push('--force')
+        args.push(worktreePath)
+        await git.raw(args)
+        await fs.rm(worktreePath, { recursive: true, force: true }).catch(() => {})
+        removeAllowedRoot(worktreePath)
+      } catch (error) {
+        log.error(`[${GIT_WORKTREE_REMOVE}]`, error)
+        throw error instanceof Error ? error : new Error(String(error))
+      }
+    },
+  )
+
+  ipcMain.handle(GIT_WORKTREE_PRUNE, async (_event, repoCwd: string) => {
+    try {
+      const git = simpleGit(validateCwd(repoCwd))
+      const output = await git.raw(['worktree', 'prune', '-v'])
+      return { output }
+    } catch (error) {
+      log.error(`[${GIT_WORKTREE_PRUNE}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+  })
+
+  ipcMain.handle(GIT_WORKTREE_STATUS, async (_event, worktreePath: string) => {
+    try {
+      const git = simpleGit(validateCwd(worktreePath))
+      const status = await git.status()
+      let ahead = 0
+      let behind = 0
+      if (status.tracking) {
+        try {
+          const counts = await git.raw(['rev-list', '--left-right', '--count', `${status.tracking}...HEAD`])
+          const [b, a] = counts.trim().split(/\s+/).map((n) => parseInt(n, 10) || 0)
+          behind = b ?? 0
+          ahead = a ?? 0
+        } catch {
+          // tracking ref may not exist locally; leave 0/0
+        }
+      }
+      return {
+        branch: status.current ?? '',
+        dirty: status.files.length > 0,
+        ahead,
+        behind,
+        staged: status.staged.length,
+        unstaged: status.modified.length + status.deleted.length,
+        untracked: status.not_added.length,
+      }
+    } catch (error) {
+      log.error(`[${GIT_WORKTREE_STATUS}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+  })
+
+  ipcMain.handle(
+    GIT_WORKTREE_MERGE_TO,
+    async (_event, repoCwd: string, fromBranch: string, toBranch: string) => {
+      try {
+        const git = simpleGit(validateCwd(repoCwd))
+        await git.fetch()
+        await git.checkout(toBranch)
+        const result = await git.merge([fromBranch, '--no-edit'])
+        return { ok: true, result }
+      } catch (error) {
+        log.error(`[${GIT_WORKTREE_MERGE_TO}]`, error)
+        const msg = error instanceof Error ? error.message : String(error)
+        // Surface conflict as structured error so the renderer can react.
+        const isConflict = /CONFLICT|conflict/.test(msg)
+        return { ok: false, conflict: isConflict, message: msg }
+      }
+    },
+  )
 }

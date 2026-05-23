@@ -127,6 +127,42 @@ export interface ElectronAPI {
     isCurrent: boolean
   }>>
 
+  /** Create a new git worktree at `targetPath` checked out on `branch`. When
+   *  `options.createBranch` is true, the branch is created from `baseRef`
+   *  (defaults to HEAD). */
+  gitWorktreeAdd(
+    repoCwd: string,
+    branch: string,
+    targetPath: string,
+    options?: { createBranch?: boolean; baseRef?: string },
+  ): Promise<{ path: string; branch: string }>
+
+  /** Remove a git worktree registration and delete its directory from disk. */
+  gitWorktreeRemove(repoCwd: string, worktreePath: string, options?: { force?: boolean }): Promise<void>
+
+  /** Prune git worktree metadata for directories that no longer exist. */
+  gitWorktreePrune(repoCwd: string): Promise<{ output: string }>
+
+  /** Cheap status snapshot for a worktree — used for sidebar badges. */
+  gitWorktreeStatus(worktreePath: string): Promise<{
+    branch: string
+    dirty: boolean
+    ahead: number
+    behind: number
+    staged: number
+    unstaged: number
+    untracked: number
+  }>
+
+  /** Fetch + checkout `toBranch` + merge `fromBranch` into it. Returns
+   *  `{ ok: false, conflict }` on merge failure so the renderer can show a
+   *  conflict prompt instead of throwing. */
+  gitWorktreeMergeTo(
+    repoCwd: string,
+    fromBranch: string,
+    toBranch: string,
+  ): Promise<{ ok: true; result: unknown } | { ok: false; conflict: boolean; message: string }>
+
   /** Push to remote. */
   gitPush(cwd: string, remote?: string, branch?: string): Promise<void>
 
@@ -195,9 +231,9 @@ export interface ElectronAPI {
     callback: (
       terminalId: string,
       activity: TerminalActivity,
-      agentState: AgentState,
       agentName: string | null,
       subprocessActive: boolean,
+      agentPresent: boolean,
     ) => void,
   ): () => void
 
