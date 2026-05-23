@@ -791,6 +791,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   fileExplorer: { width: 280, height: 440 },
   projectList: { width: 280, height: 360 },
   canvas: { width: 640, height: 480 },
+  agent: { width: 520, height: 440 },
 }
 
 // -----------------------------------------------------------------------------
