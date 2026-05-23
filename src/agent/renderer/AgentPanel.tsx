@@ -42,6 +42,7 @@ import {
 import log from '../../renderer/lib/logger'
 import type { PanelProps } from '../../renderer/panels/types'
 import { useAppStore } from '../../renderer/stores/appStore'
+import { useStatusStore } from '../../renderer/stores/statusStore'
 import { useAgentStore } from './agentStore'
 import { ProvidersView } from './ProvidersView'
 import { ChatThread } from './ChatThread'
@@ -92,7 +93,13 @@ interface OpenChat {
 
 export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const workspace = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId))
-  const cwd = workspace?.rootPath ?? ''
+  // If this panel is tagged with a worktree, prefer its path so pi spawns
+  // inside that parallel checkout instead of the workspace's primary root.
+  const panelState = workspace?.panels[panelId]
+  const taggedWorktree = panelState?.worktreeId
+    ? workspace?.worktrees?.find((w) => w.id === panelState.worktreeId)
+    : undefined
+  const cwd = taggedWorktree?.path ?? workspace?.rootPath ?? ''
 
   // ---------------------------------------------------------------------------
   // Multi-chat session bookkeeping.
@@ -240,6 +247,18 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     void refreshChats()
   }, [running, refreshChats])
 
+  // Sync agent running state → statusStore so the workspace overview shows
+  // shimmer (running) and await indicator (waitingForInput) for this panel.
+  useEffect(() => {
+    const state: import('../../shared/types').AgentState = running
+      ? 'running'
+      : 'waitingForInput'
+    useStatusStore.getState().setAgentState(workspaceId, panelId, state, 'Pi')
+    return () => {
+      useStatusStore.getState().setAgentState(workspaceId, panelId, 'notRunning', null)
+    }
+  }, [running, workspaceId, panelId])
+
   // ---------------------------------------------------------------------------
   // Create / dispose the underlying pi agent. Re-runs when chat or model
   // changes so the main-process session matches the visible chat.
@@ -368,9 +387,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     const text = draft.trim()
     const images = draftImages.slice()
     if (!text && images.length === 0) return
-    // Allow sending even while running — pi accepts a `steer` mid-stream and
-    // a regular `prompt` when idle. We branch here so the textarea is never
-    // disabled while the agent is working.
     const isSteering = running
     useAgentStore.getState().appendUser(activeAgentKey, isSteering ? `(steer) ${text}` : text)
     setDraft('')

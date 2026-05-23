@@ -26,6 +26,7 @@ import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-ic
 import { resolveTerminalPreset } from '../lib/terminalRegistry'
 import { useSettingsStore } from '../stores/settingsStore'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
+import { WorktreePill } from './WorktreePill'
 
 // -----------------------------------------------------------------------------
 // Props
@@ -348,8 +349,28 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     canvasApi.getState().togglePin(nodeId)
   }, [nodeId])
 
+  // Walk the layout to the currently active leaf panel so the worktree pill
+  // reflects the visible tab when this node hosts multiple panels.
+  const activePanel = useMemo(() => {
+    function activeLeafId(n: DockLayoutNode | null): string | null {
+      if (!n) return null
+      if (n.type === 'tabs') return n.panelIds[n.activeIndex] ?? n.panelIds[0] ?? null
+      for (const child of n.children) {
+        const found = activeLeafId(child)
+        if (found) return found
+      }
+      return null
+    }
+    const id = activeLeafId(layout)
+    if (!id) return primaryPanel
+    return currentWorkspace?.panels[id] ?? primaryPanel
+  }, [layout, currentWorkspace, primaryPanel])
+
   const nodeControlButtons = (
     <>
+      {activePanel && wsId && (
+        <WorktreePill panel={activePanel} workspaceId={wsId} />
+      )}
       <GrabButton
         title={node?.isPinned ? 'Unlock' : 'Lock'}
         onClick={(e) => { e.stopPropagation(); handleTogglePin() }}
