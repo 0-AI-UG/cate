@@ -327,17 +327,18 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   return (
     <DockStoreProvider store={dockStore}>
       <div className="dock-window-root h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
-        {/* Make the top tab bar act as the macOS titlebar drag region, with
-            left padding reserved for the traffic lights. Children remain
-            interactive via no-drag. The `:not(...)` scope is critical so
-            nested mini-dock tab bars inside canvas-nodes don't also get the
-            78px indent (regression seen when a canvas panel is detached). */}
+        {/* Reserve 78px on the left of the top tab bar for the macOS traffic
+            lights and make it the window drag region. Override inside any
+            canvas-node ([data-node-id]) so nested mini-dock tab bars don't
+            inherit the indent or become drag handles. */}
         <style>{`
-          .dock-window-root .dock-tab-bar:not(.dock-tab-bar .dock-tab-bar) {
+          .dock-window-root .dock-tab-bar {
             padding-left: 78px;
             -webkit-app-region: drag;
           }
-          .dock-window-root .dock-tab-bar:not(.dock-tab-bar .dock-tab-bar) > * {
+          .dock-window-root .dock-tab-bar > * { -webkit-app-region: no-drag; }
+          .dock-window-root [data-node-id] .dock-tab-bar {
+            padding-left: 0;
             -webkit-app-region: no-drag;
           }
         `}</style>
