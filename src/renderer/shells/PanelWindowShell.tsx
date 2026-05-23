@@ -10,6 +10,7 @@ import { terminalRegistry } from '../lib/terminalRegistry'
 import { terminalRestoreData } from '../lib/session'
 import { DragOverlay, setupCrossWindowDragListeners, useDragOp } from '../drag'
 import { renderPanelComponent, getPanelDef } from '../panels/registry'
+import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 
 interface PanelWindowShellProps {
   panelType?: string
@@ -32,6 +33,13 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
         // log under this ptyId. Seed terminalRestoreData so getOrCreate runs
         // replayTerminalLog after spawning a fresh PTY.
         terminalRestoreData.set(snapshot.panel.id, { replayFromId: snapshot.terminalReplayPtyId })
+      }
+
+      // Canvas panel: hydrate the per-panel canvas store before mount.
+      if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
+        const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
+        const { nodes, regions, viewportOffset, zoomLevel } = snapshot.canvasState
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
       }
 
       setPanel(snapshot.panel)

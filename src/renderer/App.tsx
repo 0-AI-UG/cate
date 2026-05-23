@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import log from './lib/logger'
 import { useAppStore, useSelectedWorkspace, setupWorkspaceSync } from './stores/appStore'
-import { useCanvasStore } from './stores/canvasStore'
+import { useCanvasStore, getOrCreateCanvasStoreForPanel } from './stores/canvasStore'
 import { CanvasStoreProvider } from './stores/CanvasStoreContext'
 import { setCanvasOperations } from './stores/appStore'
 import { createCanvasOps } from './lib/canvasBridge'
@@ -318,6 +318,14 @@ function MainApp() {
       // PTY transfer MUST be deposited before any state set that mounts TerminalPanel.
       if (snapshot.terminalPtyId) {
         terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
+      }
+
+      // Canvas panel: hydrate the per-panel canvas store with the snapshot's
+      // children before the panel mounts.
+      if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
+        const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
+        const { nodes, regions, viewportOffset, zoomLevel } = snapshot.canvasState
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
       }
 
       const wsId = useAppStore.getState().selectedWorkspaceId

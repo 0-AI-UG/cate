@@ -191,6 +191,16 @@ export interface PanelTransferSnapshot {
     canGoBack: boolean
     canGoForward: boolean
   }
+
+  // Canvas-specific — child nodes/regions/viewport for nested canvas panels.
+  // Without this, detaching a canvas panel to a new window would land with an
+  // empty store (fresh per-process), losing every panel inside it.
+  canvasState?: {
+    nodes: Record<CanvasNodeId, CanvasNodeState>
+    regions: Record<string, CanvasRegion>
+    viewportOffset: Point
+    zoomLevel: number
+  }
 }
 
 // -----------------------------------------------------------------------------

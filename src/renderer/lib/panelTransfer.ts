@@ -5,6 +5,7 @@
 
 import type { PanelState, PanelTransferSnapshot, PanelLocation, Point, Size } from '../../shared/types'
 import { terminalRegistry } from './terminalRegistry'
+import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 
 /**
  * Create a PanelTransferSnapshot from a panel's current state.
@@ -69,6 +70,20 @@ export function createTransferSnapshot(
       url: panel.url,
       canGoBack: false,
       canGoForward: false,
+    }
+  }
+
+  // Canvas-specific: capture child nodes + regions + viewport so the receiving
+  // window can hydrate. Without this, the new window's per-panel canvas store
+  // is constructed empty.
+  if (panel.type === 'canvas') {
+    const store = getOrCreateCanvasStoreForPanel(panel.id)
+    const state = store.getState()
+    snapshot.canvasState = {
+      nodes: { ...state.nodes },
+      regions: { ...state.regions },
+      viewportOffset: { ...state.viewportOffset },
+      zoomLevel: state.zoomLevel,
     }
   }
 

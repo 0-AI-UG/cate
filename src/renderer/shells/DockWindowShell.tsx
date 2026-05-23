@@ -13,6 +13,7 @@ import DockZone from '../docking/DockZone'
 import { DragOverlay, setupCrossWindowDragListeners } from '../drag'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { terminalRestoreData } from '../lib/session'
+import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { isDockEmpty } from './dockEmpty'
 import { shouldCloseDockWindow } from './shouldCloseDockWindow'
@@ -64,6 +65,16 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
         terminalRestoreData.set(snapshot.panel.id, { replayFromId: snapshot.terminalReplayPtyId })
       }
 
+      // Canvas panel: hydrate the per-panel canvas store BEFORE rendering, so
+      // child nodes/regions are present on first paint. Without this the new
+      // window mounts an empty canvas and writes that empty state back to
+      // session persistence on the next sync.
+      if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
+        const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
+        const { nodes, regions, viewportOffset, zoomLevel } = snapshot.canvasState
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
+      }
+
       setPanels((prev) => ({
         ...prev,
         [snapshot.panel.id]: snapshot.panel,
@@ -79,6 +90,13 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // PTY transfer MUST be deposited before any state set that mounts TerminalPanel.
       if (snapshot.terminalPtyId) {
         terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
+      }
+
+      // Canvas panel: hydrate before mount so children are visible immediately.
+      if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
+        const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
+        const { nodes, regions, viewportOffset, zoomLevel } = snapshot.canvasState
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
       }
 
       setPanels((prev) => ({

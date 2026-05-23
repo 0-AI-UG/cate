@@ -22,6 +22,7 @@ import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types
 import type { CanvasNodeId, CanvasNodeState, CanvasRegion } from '../../shared/types'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from './canvasStore'
+import { shouldPreserveExistingCanvas } from './canvasSyncGuard'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useDockStore } from './dockStore'
 import { createCanvasOps } from '../lib/canvasBridge'
@@ -1081,19 +1082,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const dockSnapshot = useDockStore.getState().getSnapshot()
 
     set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? {
-              ...ws,
-              canvasNodes: { ...canvasState.nodes },
-              regions: { ...canvasState.regions },
-              viewportOffset: { ...canvasState.viewportOffset },
-              zoomLevel: canvasState.zoomLevel,
-              focusedNodeId: canvasState.focusedNodeId,
-              dockState: dockSnapshot,
-            }
-          : ws,
-      ),
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        if (shouldPreserveExistingCanvas(
+          Object.keys(canvasState.nodes).length,
+          Object.keys(ws.canvasNodes ?? {}).length,
+        )) {
+          // Keep nodes/regions/viewport intact; only refresh dock state.
+          return { ...ws, dockState: dockSnapshot }
+        }
+        return {
+          ...ws,
+          canvasNodes: { ...canvasState.nodes },
+          regions: { ...canvasState.regions },
+          viewportOffset: { ...canvasState.viewportOffset },
+          zoomLevel: canvasState.zoomLevel,
+          focusedNodeId: canvasState.focusedNodeId,
+          dockState: dockSnapshot,
+        }
+      }),
     }))
   },
 
