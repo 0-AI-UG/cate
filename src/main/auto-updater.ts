@@ -162,12 +162,13 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
       return
     }
 
-    // Native fallback intentionally avoids installing downloaded binaries until
-    // a verified installer path exists. Surface via in-app affordance.
     latestReleaseUrl = data.html_url
+    // Try native auto-update download first — the initial check may have
+    // errored (e.g. provider mismatch) but downloadUpdate can still succeed.
     broadcastStatus({
-      state: 'manual',
+      state: 'available',
       version: latestVersion.replace(/^v/, ''),
+      canAutoInstall: true,
       releaseUrl: data.html_url,
     })
   } catch (err: any) {
@@ -199,10 +200,15 @@ export function initAutoUpdater(): void {
     if (!app.isPackaged) return
     log.info('[auto-updater] Renderer requested download')
     const version = currentStatus.state === 'available' ? currentStatus.version : undefined
+    const releaseUrl = currentStatus.state === 'available' ? currentStatus.releaseUrl : latestReleaseUrl
     void sendEvent('update_download_clicked', { version: version ?? null })
     autoUpdater.downloadUpdate().catch((err) => {
-      log.error('[auto-updater] downloadUpdate failed:', err)
-      broadcastStatus({ state: 'error', message: err?.message || 'Download failed' })
+      log.error('[auto-updater] downloadUpdate failed, falling back to manual:', err)
+      if (releaseUrl && version) {
+        broadcastStatus({ state: 'manual', version, releaseUrl })
+      } else {
+        broadcastStatus({ state: 'error', message: err?.message || 'Download failed' })
+      }
     })
   })
 
