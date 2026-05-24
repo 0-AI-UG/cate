@@ -18,6 +18,7 @@ import { app, type WebContents } from 'electron'
 import { RpcClient } from '@earendil-works/pi-coding-agent'
 import log from '../../main/logger'
 import { getShellEnv } from '../../main/shellEnv'
+import { createNodeShim } from './nodeShim'
 
 // Structural alias for pi-ai's ImageContent — pi-ai doesn't expose a `.` export
 // so we duplicate the minimal shape here. Pi reads `{type, data, mimeType}`.
@@ -79,22 +80,8 @@ function nodeExistsOnPath(env: Record<string, string>): boolean {
 function ensureElectronNodeShim(): string {
   if (fallbackNodeDir) return fallbackNodeDir
   const dir = path.join(app.getPath('temp'), 'cate-node-shim')
-  fs.mkdirSync(dir, { recursive: true })
-
-  if (process.platform === 'win32') {
-    // Windows: symlinks require Developer Mode or admin privileges (EPERM).
-    // Use a cmd wrapper that launches the Electron exe with ELECTRON_RUN_AS_NODE=1.
-    const cmdPath = path.join(dir, 'node.cmd')
-    const script = `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${process.execPath}" %*\r\n`
-    fs.writeFileSync(cmdPath, script)
-    log.info('[agentManager] created node.cmd shim at %s', cmdPath)
-  } else {
-    const linkPath = path.join(dir, 'node')
-    try { fs.unlinkSync(linkPath) } catch { /* didn't exist */ }
-    fs.symlinkSync(process.execPath, linkPath)
-    log.info('[agentManager] created node symlink at %s -> %s', linkPath, process.execPath)
-  }
-
+  createNodeShim(dir, process.execPath)
+  log.info('[agentManager] created node shim in %s (platform=%s)', dir, process.platform)
   fallbackNodeDir = dir
   return dir
 }
