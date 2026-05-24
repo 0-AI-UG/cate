@@ -113,9 +113,9 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
 function ThinkingDots() {
   return (
     <div className="flex items-center gap-1 py-1" aria-label="Agent is thinking">
-      <span className="w-1.5 h-1.5 rounded-full bg-violet-300/80 animate-thinking-dot [animation-delay:0ms]" />
-      <span className="w-1.5 h-1.5 rounded-full bg-violet-300/80 animate-thinking-dot [animation-delay:160ms]" />
-      <span className="w-1.5 h-1.5 rounded-full bg-violet-300/80 animate-thinking-dot [animation-delay:320ms]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-agent-light/80 animate-thinking-dot [animation-delay:0ms]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-agent-light/80 animate-thinking-dot [animation-delay:160ms]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-agent-light/80 animate-thinking-dot [animation-delay:320ms]" />
     </div>
   )
 }
@@ -146,7 +146,7 @@ function MessageRow({
   if (msg.type === 'user') {
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="max-w-[85%] px-3.5 py-2 rounded-2xl rounded-br-md bg-violet-500/85 text-white text-[13px] whitespace-pre-wrap break-words shadow-sm">
+        <div className="max-w-[85%] px-3.5 py-2 rounded-2xl rounded-br-md bg-agent/85 text-white text-[13px] whitespace-pre-wrap break-words shadow-sm">
           {msg.text}
         </div>
         <div className="flex items-center gap-0.5 text-muted">
@@ -238,9 +238,9 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
         {expanded
           ? <CaretDown size={9} className="shrink-0" />
           : <CaretRight size={9} className="shrink-0" />}
-        <Brain size={11} className="text-violet-300/80 shrink-0" />
+        <Brain size={11} className="text-agent-light/80 shrink-0" />
         <span>Reasoning</span>
-        {streaming && <Spinner size={10} className="text-violet-300 animate-spin" />}
+        {streaming && <Spinner size={10} className="text-agent-light animate-spin" />}
       </button>
       {expanded && (
         <pre className="mt-1 pl-5 text-[11px] text-primary/70 whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[260px] overflow-auto">
@@ -270,12 +270,12 @@ function Markdown({ text }: { text: string }) {
           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noreferrer"
-               className="text-violet-300 underline decoration-violet-400/30 hover:decoration-violet-300">
+               className="text-agent-light underline decoration-agent-light/30 hover:decoration-agent-light">
               {children}
             </a>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-violet-400/40 pl-3 text-primary/80 italic">
+            <blockquote className="border-l-2 border-agent-light/40 pl-3 text-primary/80 italic">
               {children}
             </blockquote>
           ),
@@ -292,7 +292,7 @@ function Markdown({ text }: { text: string }) {
               )
             }
             return (
-              <code className="font-mono text-[11.5px] px-1 py-[1px] rounded bg-black/30 text-violet-200" {...props}>
+              <code className="font-mono text-[11.5px] px-1 py-[1px] rounded bg-black/30 text-agent-light" {...props}>
                 {children}
               </code>
             )
@@ -576,25 +576,25 @@ function SubagentCard({ msg }: { msg: ToolMessage }) {
   })()
 
   return (
-    <div className="rounded-lg border border-violet-500/20 bg-violet-500/[0.04] overflow-hidden text-[12px]">
+    <div className="rounded-lg border border-agent/20 bg-agent/[0.04] overflow-hidden text-[12px]">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-violet-500/[0.08] text-left"
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-agent/[0.08] text-left"
       >
         {expanded
           ? <CaretDown size={10} className="text-muted shrink-0" />
           : <CaretRight size={10} className="text-muted shrink-0" />}
-        <Sparkle size={13} weight="duotone" className="text-violet-300 shrink-0" />
+        <Sparkle size={13} weight="duotone" className="text-agent-light shrink-0" />
         <span className="text-primary/90 font-medium shrink-0">Subagent</span>
         <span className="flex-1 text-muted text-[11px] truncate text-right">{headerStatus}</span>
         {running
-          ? <Spinner size={11} className="text-violet-300 animate-spin shrink-0" />
+          ? <Spinner size={11} className="text-agent-light animate-spin shrink-0" />
           : msg.status === 'error'
           ? <XCircle size={12} weight="fill" className="text-rose-400 shrink-0" />
-          : <CheckCircle size={12} weight="fill" className="text-violet-300 shrink-0" />}
+          : <CheckCircle size={12} weight="fill" className="text-agent-light shrink-0" />}
       </button>
       {expanded && (
-        <div className="border-t border-violet-500/15 px-2 py-2 space-y-1.5">
+        <div className="border-t border-agent/15 px-2 py-2 space-y-1.5">
           {results.length === 0 ? (
             <div className="text-[11px] text-muted italic px-1 py-1">Waiting for subagent to start…</div>
           ) : (
@@ -646,16 +646,16 @@ function SubagentResultRow({
       >
         <div className="shrink-0 mt-[2px]">
           {isRunning
-            ? <Spinner size={11} className="text-violet-300 animate-spin" />
+            ? <Spinner size={11} className="text-agent-light animate-spin" />
             : isError
             ? <XCircle size={11} weight="fill" className="text-rose-400" />
             : result.exitCode === 0
-            ? <CheckCircle size={11} weight="fill" className="text-violet-300" />
+            ? <CheckCircle size={11} weight="fill" className="text-agent-light" />
             : <Spinner size={11} className="text-muted" />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-mono text-[11.5px] text-violet-200 shrink-0">{result.agent}</span>
+            <span className="font-mono text-[11.5px] text-agent-light shrink-0">{result.agent}</span>
             {result.step != null && (
               <span className="text-[10px] text-muted shrink-0">#{result.step}</span>
             )}
@@ -838,9 +838,9 @@ function PlanReadyCard({
   }
 
   return (
-    <div className={`rounded-lg border border-violet-500/40 bg-violet-500/10 overflow-hidden text-[12px] ${effectiveLocked ? 'opacity-60' : ''}`}>
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-violet-500/20">
-        <ClipboardText size={13} weight="duotone" className="text-violet-300 shrink-0" />
+    <div className={`rounded-lg border border-agent/40 bg-agent/10 overflow-hidden text-[12px] ${effectiveLocked ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-agent/20">
+        <ClipboardText size={13} weight="duotone" className="text-agent-light shrink-0" />
         <span className="text-primary font-medium">Plan ready</span>
       </div>
       <div className="px-3 py-3 space-y-3">
@@ -853,7 +853,7 @@ function PlanReadyCard({
           <ol className="space-y-2">
             {steps.map((s, i) => (
               <li key={i} className="flex gap-2.5">
-                <span className="shrink-0 text-violet-300 font-mono text-[12px] mt-[1px]">
+                <span className="shrink-0 text-agent-light font-mono text-[12px] mt-[1px]">
                   {i + 1}.
                 </span>
                 <div className="flex-1 min-w-0">
@@ -876,20 +876,20 @@ function PlanReadyCard({
           disabled={!!effectiveLocked}
           rows={2}
           placeholder="Refine: type the changes you want…"
-          className="w-full rounded-md bg-black/20 border border-violet-500/20 focus:border-violet-400/60 outline-none px-2.5 py-2 text-[12px] text-primary placeholder:text-muted resize-none disabled:opacity-50"
+          className="w-full rounded-md bg-black/20 border border-agent/20 focus:border-agent-light/60 outline-none px-2.5 py-2 text-[12px] text-primary placeholder:text-muted resize-none disabled:opacity-50"
         />
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleRefine}
             disabled={!!effectiveLocked || refineText.trim().length === 0}
-            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-violet-500/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white/5"
+            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-agent/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white/5"
           >
             {lockLabel('Refine plan', 'refine')}
           </button>
           <button
             onClick={handleClear}
             disabled={!!effectiveLocked}
-            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-violet-500/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white/5"
+            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-agent/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white/5"
           >
             {lockLabel('Clear context & implement', 'clear')}
           </button>
@@ -897,7 +897,7 @@ function PlanReadyCard({
           <button
             onClick={handleImplement}
             disabled={!!effectiveLocked}
-            className="px-3 py-1 rounded-md bg-violet-500 hover:bg-violet-400 text-white text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-violet-500"
+            className="px-3 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-agent"
           >
             {lockLabel('Implement', 'implement')}
           </button>
@@ -911,9 +911,9 @@ function StatusIcon({ status }: { status: ToolMessage['status'] }) {
   switch (status) {
     case 'pending':
     case 'running':
-      return <Spinner size={11} className="text-violet-300 animate-spin shrink-0" />
+      return <Spinner size={11} className="text-agent-light animate-spin shrink-0" />
     case 'success':
-      return <CheckCircle size={11} weight="fill" className="text-violet-300 shrink-0" />
+      return <CheckCircle size={11} weight="fill" className="text-agent-light shrink-0" />
     case 'error':
     case 'denied':
       return <XCircle size={11} weight="fill" className="text-muted shrink-0" />
@@ -1002,7 +1002,7 @@ function DiffView({ diff }: { diff: DiffInfo }) {
           key={i}
           className={
             l.kind === 'add'
-              ? 'text-violet-200'
+              ? 'text-agent-light'
               : l.kind === 'del'
               ? 'text-rose-300/80 line-through decoration-rose-400/30'
               : 'text-muted'
@@ -1030,9 +1030,9 @@ function ApprovalCard({
   onDecide: (decision: 'allow' | 'deny') => void
 }) {
   return (
-    <div className="rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-2 space-y-2">
+    <div className="rounded-lg border border-agent/40 bg-agent/10 px-3 py-2 space-y-2">
       <div className="flex items-center gap-2 text-[12px] text-primary">
-        <Wrench size={12} className="text-violet-300" />
+        <Wrench size={12} className="text-agent-light" />
         <span>
           Allow <strong className="font-mono">{req.toolName}</strong>?
         </span>
@@ -1043,7 +1043,7 @@ function ApprovalCard({
       <div className="flex items-center gap-2">
         <button
           onClick={() => onDecide('allow')}
-          className="px-2.5 py-1 rounded-md bg-violet-500 hover:bg-violet-400 text-white text-[11px] font-medium"
+          className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium"
         >
           Allow
         </button>

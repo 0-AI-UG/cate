@@ -27,6 +27,8 @@ export default {
         'surface-5': 'var(--surface-5)',
         'surface-6': 'var(--surface-6)',
         'surface-border': 'var(--border-subtle)',
+        'agent': 'rgb(var(--agent-rgb) / <alpha-value>)',
+        'agent-light': 'rgb(var(--agent-light-rgb) / <alpha-value>)',
       },
       animation: {
         'pulse-activity': 'pulseActivity 1s ease-in-out infinite alternate',

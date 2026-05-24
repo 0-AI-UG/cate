@@ -363,7 +363,7 @@ export const CommandPalette: React.FC = () => {
               setSearchText(e.target.value)
               setSelectedIndex(0)
             }}
-            placeholder="Search everything — files, terminals, commands…"
+            placeholder="Search across files, terminals, commands and more..."
             className="flex-1 bg-transparent text-primary text-base font-medium outline-none placeholder:text-muted placeholder:font-normal"
           />
         </div>
@@ -383,7 +383,7 @@ export const CommandPalette: React.FC = () => {
                   {recommendedPanels.map((panel, i) => {
                     const isSelected = i === selectedIndex
                     const iconForType = panel.type === 'terminal' ? <TerminalIcon /> : panel.type === 'browser' ? <GlobeIcon /> : panel.type === 'agent' ? <AgentIcon /> : <FileTextIcon />
-                    const colorForType = panel.type === 'terminal' ? 'bg-green-500/15 text-green-400' : panel.type === 'browser' ? 'bg-cyan-500/15 text-cyan-400' : panel.type === 'agent' ? 'bg-purple-500/15 text-purple-400' : 'bg-amber-500/15 text-amber-400'
+                    const colorForType = panel.type === 'terminal' ? 'bg-green-500/15 text-green-400' : panel.type === 'browser' ? 'bg-cyan-500/15 text-cyan-400' : panel.type === 'agent' ? 'bg-blue-500/15 text-blue-400' : 'bg-amber-500/15 text-amber-400'
                     return (
                       <div
                         key={panel.id}

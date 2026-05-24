@@ -183,7 +183,7 @@ function ProviderListRow({
     >
       <span className="flex-1 truncate text-[12.5px] text-primary">{name}</span>
       {connected ? (
-        <span className="inline-flex items-center gap-1 text-[10px] text-violet-300/90">
+        <span className="inline-flex items-center gap-1 text-[10px] text-agent-light/90">
           <CheckCircle size={10} weight="fill" /> Connected
         </span>
       ) : (
@@ -197,7 +197,7 @@ function ProviderListRow({
 function StatusPill({ status }: { status?: AuthProviderStatus }) {
   if (status?.connected) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300">
+      <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-agent/15 text-agent-light">
         <CheckCircle size={10} weight="fill" />
         Connected
       </span>
@@ -311,7 +311,7 @@ function OAuthForm({
         <div className="space-y-3">
           <button
             onClick={handleStart}
-            className="w-full px-3 py-2.5 rounded-lg bg-violet-500 hover:bg-violet-400 text-white text-[13px] font-medium"
+            className="w-full px-3 py-2.5 rounded-lg bg-agent hover:bg-agent-light text-white text-[13px] font-medium"
           >
             Sign in with {provider.name}
           </button>
@@ -334,7 +334,7 @@ function OAuthForm({
         <div className="space-y-3 rounded-lg border border-white/10 bg-black/10 p-3">
           <div className="text-[12px] text-primary">
             Enter this code in your browser at{' '}
-            <a href={phase.verificationUri} target="_blank" rel="noreferrer" className="underline text-violet-300">
+            <a href={phase.verificationUri} target="_blank" rel="noreferrer" className="underline text-agent-light">
               {phase.verificationUri}
             </a>
             :
@@ -376,13 +376,13 @@ function OAuthForm({
             onChange={(e) => setPromptValue(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handlePromptSubmit(phase.promptId, promptValue) }}
             placeholder={phase.placeholder ?? ''}
-            className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-violet-500/60"
+            className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60"
           />
           <div className="flex justify-end">
             <button
               disabled={submitting || (!phase.allowEmpty && !promptValue.trim())}
               onClick={() => handlePromptSubmit(phase.promptId, promptValue)}
-              className="px-3 py-1.5 rounded-md bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-[12px] font-medium"
+              className="px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
             >
               Submit
             </button>
@@ -419,13 +419,13 @@ function OAuthForm({
             value={promptValue}
             onChange={(e) => setPromptValue(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handlePromptSubmit(phase.promptId, promptValue) }}
-            className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-violet-500/60"
+            className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60"
           />
           <div className="flex justify-end">
             <button
               disabled={submitting || !promptValue.trim()}
               onClick={() => handlePromptSubmit(phase.promptId, promptValue)}
-              className="px-3 py-1.5 rounded-md bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-[12px] font-medium"
+              className="px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
             >
               Submit
             </button>
@@ -434,7 +434,7 @@ function OAuthForm({
       )}
 
       {phase.type === 'done' && (
-        <div className="flex items-center gap-2 text-[12px] text-violet-300">
+        <div className="flex items-center gap-2 text-[12px] text-agent-light">
           <CheckCircle size={14} weight="fill" /> Connected.
         </div>
       )}
@@ -458,7 +458,7 @@ function AuthUrlCard({ url, instructions }: { url: string; instructions?: string
   return (
     <div className="space-y-3 rounded-lg border border-white/10 bg-black/10 p-3">
       <div className="flex items-center gap-2 text-[12px] text-primary">
-        <CloudArrowUp size={14} className="text-violet-300" />
+        <CloudArrowUp size={14} className="text-agent-light" />
         Browser opened for sign in.
       </div>
       {instructions && (
@@ -543,7 +543,7 @@ function ApiKeyForm({
             autoComplete="off"
             spellCheck={false}
             placeholder={status?.connected ? '••••••••••••' : `Paste your ${provider.name} key`}
-            className="flex-1 min-w-0 bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-violet-500/60 font-mono"
+            className="flex-1 min-w-0 bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono"
           />
           <button
             type="button"
@@ -558,7 +558,7 @@ function ApiKeyForm({
 
       {error && <div className="text-[12px] text-primary">{error}</div>}
       {savedAt && !error && (
-        <div className="text-[12px] text-violet-300 flex items-center gap-1">
+        <div className="text-[12px] text-agent-light flex items-center gap-1">
           <CheckCircle size={12} weight="fill" /> Saved.
         </div>
       )}
@@ -567,7 +567,7 @@ function ApiKeyForm({
         <button
           disabled={saving || !value.trim()}
           onClick={handleSave}
-          className="px-3 py-1.5 rounded-md bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-[12px] font-medium"
+          className="px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -634,7 +634,7 @@ function DefaultModelSection({ statuses }: { statuses: AuthProviderStatus[] }) {
       <select
         value={selectedKey}
         onChange={(e) => handleChange(e.target.value)}
-        className="w-full bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5 text-[12.5px] text-primary focus:outline-none focus:border-violet-400/50"
+        className="w-full bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5 text-[12.5px] text-primary focus:outline-none focus:border-agent-light/50"
       >
       <option value="">No default — first available</option>
       {currentMissing && current && (

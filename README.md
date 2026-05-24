@@ -1,4 +1,8 @@
 <p align="center">
+  <a href="https://www.producthunt.com/products/cate?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-cate" target="_blank" rel="noopener noreferrer"><img alt="CATE - Figma like open canvas for development | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1150094&theme=neutral&t=1779630669260"></a>
+</p>
+
+<p align="center">
   <img src="assets/cate-logo.svg" alt="Cate" width="240" />
 </p>
 

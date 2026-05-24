@@ -871,7 +871,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                 onClick={() => setModelPickerOpen((v) => !v)}
                 className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] text-primary hover:bg-white/5"
               >
-                <Sparkle size={12} weight="fill" className="text-violet-400" />
+                <Sparkle size={12} weight="fill" className="text-agent-light" />
                 <span className="truncate max-w-[220px]">
                   {selectedModel ? selectedModel.model : 'Pick a model'}
                 </span>
@@ -907,13 +907,13 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
         ) : (
           <div className="relative flex-1 flex flex-col min-h-0">
             {selectedModel && !selectedProviderConnected && (
-              <div className="px-3 py-2 bg-violet-500/10 border-b border-violet-500/30 flex items-center gap-2 text-[12px] text-primary">
+              <div className="px-3 py-2 bg-agent/10 border-b border-agent/30 flex items-center gap-2 text-[12px] text-primary">
                 <span className="flex-1 truncate">
                   Connect <strong>{selectedModel.provider}</strong> to start.
                 </span>
                 <button
                   onClick={() => openSettings(selectedModel.provider)}
-                  className="px-2 py-1 rounded-md bg-violet-500 hover:bg-violet-400 text-white text-[11px] font-medium shrink-0"
+                  className="px-2 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium shrink-0"
                 >
                   Connect
                 </button>
@@ -927,8 +927,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
             {messages.length === 0 ? (
               <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-8 min-h-0">
                 <div className="w-full max-w-[520px] flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-2xl bg-violet-500/15 flex items-center justify-center mb-4">
-                    <Sparkle size={22} weight="fill" className="text-violet-400" />
+                  <div className="w-12 h-12 rounded-2xl bg-agent/15 flex items-center justify-center mb-4">
+                    <Sparkle size={22} weight="fill" className="text-agent-light" />
                   </div>
                   <div className="text-[16px] font-medium text-primary mb-3 text-center">
                     What should we work on?
@@ -1089,7 +1089,7 @@ function AgentSidebar({
         <div className="flex-1" />
         <button
           onClick={onNewChat}
-          className="p-1.5 rounded-md text-violet-300 hover:text-violet-100 hover:bg-violet-500/20"
+          className="p-1.5 rounded-md text-agent-light hover:text-primary hover:bg-agent/20"
           title="New chat"
         >
           <Plus size={14} />
@@ -1182,11 +1182,11 @@ function ChatRow({
         className="flex-1 min-w-0 flex items-center gap-1.5 px-1 py-1 text-left"
         title={`${chat.title}\n${chat.messageCount} messages · ${new Date(chat.updatedAt).toLocaleString()}${open ? '\nRunning in background' : ''}`}
       >
-        <ChatCircleDots size={11} className={chat.named ? 'text-violet-300 shrink-0' : 'text-muted shrink-0'} />
+        <ChatCircleDots size={11} className={chat.named ? 'text-agent-light shrink-0' : 'text-muted shrink-0'} />
         <span className="truncate text-[11.5px] text-primary">{chat.title}</span>
         {open && !active && (
           <span
-            className="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0"
+            className="w-1.5 h-1.5 rounded-full bg-agent-light shrink-0"
             aria-label="Open in background"
           />
         )}
@@ -1364,8 +1364,8 @@ function ChatInput({
         }}
         className={`relative rounded-2xl border bg-surface-3 transition-colors ${
           dragOver
-            ? 'border-violet-400 ring-2 ring-violet-400/40'
-            : 'border-white/10 focus-within:border-violet-500/50'
+            ? 'border-agent-light ring-2 ring-agent-light/40'
+            : 'border-white/10 focus-within:border-agent/50'
         }`}
       >
         {popupOpen && (
@@ -1430,7 +1430,7 @@ function ChatInput({
             onClick={onTogglePlanMode}
             className={`p-1.5 rounded-md ${
               planModeActive
-                ? 'bg-violet-500/25 text-violet-100'
+                ? 'bg-agent/25 text-primary'
                 : 'text-primary/80 hover:bg-white/5'
             }`}
             title="Plan mode — agent investigates with parallel scouts, proposes a plan, then waits for your approval."
@@ -1455,7 +1455,7 @@ function ChatInput({
           <div className="flex-1" />
           {compactionActive ? (
             <div
-              className="p-1.5 rounded-full bg-violet-500/40 text-white"
+              className="p-1.5 rounded-full bg-agent/40 text-white"
               title="Compacting context…"
             >
               <Spinner size={12} weight="bold" className="animate-spin" />
@@ -1464,7 +1464,7 @@ function ChatInput({
             canSend ? (
               <button
                 onClick={onSubmit}
-                className="p-1.5 rounded-full bg-violet-500 hover:bg-violet-400 text-white"
+                className="p-1.5 rounded-full bg-agent hover:bg-agent-light text-white"
                 title="Steer"
               >
                 <PaperPlaneRight size={12} weight="fill" />
@@ -1472,7 +1472,7 @@ function ChatInput({
             ) : (
               <button
                 onClick={onStop}
-                className="p-1.5 rounded-full bg-violet-500 hover:bg-violet-400 text-white"
+                className="p-1.5 rounded-full bg-agent hover:bg-agent-light text-white"
                 title="Stop"
               >
                 <Stop size={12} weight="fill" />
@@ -1482,7 +1482,7 @@ function ChatInput({
             <button
               onClick={onSubmit}
               disabled={!canSend}
-              className="p-1.5 rounded-full bg-violet-500 hover:bg-violet-400 disabled:bg-white/10 disabled:text-muted text-white"
+              className="p-1.5 rounded-full bg-agent hover:bg-agent-light disabled:bg-white/10 disabled:text-muted text-white"
               title="Send"
             >
               <PaperPlaneRight size={12} weight="fill" />
@@ -1604,7 +1604,7 @@ const SOURCE_LABEL: Record<AgentSlashCommand['source'], string> = {
 }
 
 const SOURCE_COLOR: Record<AgentSlashCommand['source'], string> = {
-  skill: 'text-violet-300 bg-violet-500/10',
+  skill: 'text-agent-light bg-agent/10',
   prompt: 'text-muted bg-white/5',
   extension: 'text-muted bg-white/5',
 }
@@ -1618,7 +1618,7 @@ const TAB_BADGE: Record<'agents' | 'prompts' | 'skills', string> = {
 const TAB_BADGE_COLOR: Record<'agents' | 'prompts' | 'skills', string> = {
   agents: 'text-muted bg-white/5',
   prompts: 'text-muted bg-white/5',
-  skills: 'text-violet-300 bg-violet-500/10',
+  skills: 'text-agent-light bg-agent/10',
 }
 
 function SlashPopup({
@@ -1788,7 +1788,7 @@ function SettingsView({
           {!creating && (
             <button
               onClick={() => { setCreating(true); setError(null) }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-violet-500/20 hover:bg-violet-500/30 text-violet-100 text-[12px]"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-agent/20 hover:bg-agent/30 text-primary text-[12px]"
             >
               <Plus size={11} /> New {tab.slice(0, -1)}
             </button>
@@ -1813,12 +1813,12 @@ function SettingsView({
                 if (e.key === 'Escape') { setCreating(false); setNewName(''); setError(null) }
               }}
               placeholder={`${tab.slice(0, -1)} name`}
-              className="flex-1 bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-violet-500/60 font-mono"
+              className="flex-1 bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60 font-mono"
             />
             <button
               onClick={handleCreate}
               disabled={!newName.trim()}
-              className="px-2.5 py-1 rounded-md bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-[12px]"
+              className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px]"
             >
               Create
             </button>
@@ -2061,7 +2061,7 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
             {browseLoading && (
               <span
                 aria-label="Loading"
-                className="inline-block h-2.5 w-2.5 rounded-full border border-violet-400/40 border-t-violet-300 animate-spin"
+                className="inline-block h-2.5 w-2.5 rounded-full border border-agent-light/40 border-t-agent-light animate-spin"
               />
             )}
           </div>
@@ -2072,7 +2072,7 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
                 setSort(e.target.value as MarketplaceSortValue)
                 setPage(1)
               }}
-              className="bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-violet-500/60"
+              className="bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60"
             >
               <option value="downloads">Most downloads</option>
               <option value="recent">Recently published</option>
@@ -2082,7 +2082,7 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
               value={queryInput}
               onChange={(e) => setQueryInput(e.target.value)}
               placeholder="Search..."
-              className="bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-violet-500/60 w-[180px]"
+              className="bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60 w-[180px]"
             />
           </div>
         </div>
@@ -2120,7 +2120,7 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={browseLoading || page <= 1}
-              className="px-2 py-1 rounded-md bg-white/5 hover:bg-violet-500/20 hover:text-violet-100 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-white/5 disabled:hover:text-muted"
+              className="px-2 py-1 rounded-md bg-white/5 hover:bg-agent/20 hover:text-primary disabled:opacity-40 disabled:cursor-default disabled:hover:bg-white/5 disabled:hover:text-muted"
             >
               « Prev
             </button>
@@ -2130,7 +2130,7 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={browseLoading || page >= totalPages}
-              className="px-2 py-1 rounded-md bg-white/5 hover:bg-violet-500/20 hover:text-violet-100 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-white/5 disabled:hover:text-muted"
+              className="px-2 py-1 rounded-md bg-white/5 hover:bg-agent/20 hover:text-primary disabled:opacity-40 disabled:cursor-default disabled:hover:bg-white/5 disabled:hover:text-muted"
             >
               Next »
             </button>
@@ -2166,7 +2166,7 @@ function ExtensionRow({
 }) {
   const toneClass =
     actionTone === 'primary'
-      ? 'bg-violet-500 hover:bg-violet-400 text-white'
+      ? 'bg-agent hover:bg-agent-light text-white'
       : actionTone === 'danger'
       ? 'bg-white/5 hover:bg-rose-500/30 text-rose-100'
       : 'bg-white/5 text-muted'
@@ -2178,7 +2178,7 @@ function ExtensionRow({
           {requiresTerminal && (
             <span
               title={TERMINAL_TOOLTIP}
-              className="shrink-0 px-1.5 py-[1px] rounded text-[9px] uppercase tracking-wider font-semibold text-violet-200 bg-violet-500/15"
+              className="shrink-0 px-1.5 py-[1px] rounded text-[9px] uppercase tracking-wider font-semibold text-agent-light bg-agent/15"
             >
               Terminal required
             </span>
@@ -2383,7 +2383,7 @@ function ModelPicker({
                     }`}
                   >
                     <span className="truncate flex-1">{m.label ?? m.model}</span>
-                    {isSelected && <CheckCircle size={10} weight="fill" className="text-violet-300" />}
+                    {isSelected && <CheckCircle size={10} weight="fill" className="text-agent-light" />}
                   </button>
                 )
               })}
@@ -2395,7 +2395,7 @@ function ModelPicker({
       <div className="border-t border-white/10 shrink-0">
         <button
           onClick={onManage}
-          className="w-full text-left px-3 py-1.5 text-[12px] text-violet-300 hover:bg-white/5"
+          className="w-full text-left px-3 py-1.5 text-[12px] text-agent-light hover:bg-white/5"
         >
           Manage providers…
         </button>

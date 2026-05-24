@@ -93,7 +93,7 @@ export function CompactionBanner({ state }: { state: CompactionState }) {
         : 'Auto-compacting context…'
     return (
       <BannerRow tone="info">
-        <Spinner size={11} className="text-violet-300 animate-spin shrink-0" />
+        <Spinner size={11} className="text-agent-light animate-spin shrink-0" />
         <span>{label}</span>
       </BannerRow>
     )
@@ -169,7 +169,7 @@ function BannerRow({
 }) {
   const toneClass =
     tone === 'info'
-      ? 'bg-violet-500/10 text-violet-100 border-violet-500/30'
+      ? 'bg-agent/10 text-primary border-agent/30'
       : tone === 'warning'
       ? 'bg-amber-500/10 text-amber-100 border-amber-500/30'
       : tone === 'error'
@@ -200,7 +200,7 @@ export function QueueBadges({
         <span
           key={`s${i}`}
           title={s}
-          className="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-200 max-w-[200px] truncate"
+          className="px-1.5 py-0.5 rounded bg-agent/15 text-agent-light max-w-[200px] truncate"
         >
           steer: {s}
         </span>
@@ -349,7 +349,7 @@ export function ExtensionDialog({
             <button
               key={opt}
               onClick={() => onRespond({ id: request.id, value: opt })}
-              className="w-full text-left px-3 py-1.5 rounded-md bg-white/5 hover:bg-violet-500/30 text-primary text-[12px]"
+              className="w-full text-left px-3 py-1.5 rounded-md bg-white/5 hover:bg-agent/30 text-primary text-[12px]"
             >
               {opt}
             </button>
@@ -371,7 +371,7 @@ export function ExtensionDialog({
           </button>
           <button
             onClick={() => onRespond({ id: request.id, confirmed: true })}
-            className="px-2.5 py-1 rounded-md bg-violet-500 hover:bg-violet-400 text-white text-[12px] font-medium"
+            className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[12px] font-medium"
           >
             Yes
           </button>
@@ -395,7 +395,7 @@ export function ExtensionDialog({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={String(request.placeholder ?? '')}
-            className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-violet-500/60"
+            className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60"
           />
           <div className="flex items-center gap-2 justify-end">
             <button
@@ -407,7 +407,7 @@ export function ExtensionDialog({
             </button>
             <button
               type="submit"
-              className="px-2.5 py-1 rounded-md bg-violet-500 hover:bg-violet-400 text-white text-[12px] font-medium"
+              className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[12px] font-medium"
             >
               Submit
             </button>
@@ -425,7 +425,7 @@ export function ExtensionDialog({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           rows={8}
-          className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-2 text-[12px] text-primary outline-none focus:border-violet-500/60 font-mono resize-y"
+          className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-2 text-[12px] text-primary outline-none focus:border-agent/60 font-mono resize-y"
         />
         <div className="flex items-center gap-2 justify-end mt-2">
           <button
@@ -436,7 +436,7 @@ export function ExtensionDialog({
           </button>
           <button
             onClick={() => onRespond({ id: request.id, value })}
-            className="px-2.5 py-1 rounded-md bg-violet-500 hover:bg-violet-400 text-white text-[12px] font-medium"
+            className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[12px] font-medium"
           >
             Save
           </button>
@@ -460,7 +460,7 @@ function DialogShell({
   onCancel: () => void
 }) {
   return (
-    <div className="rounded-lg border border-violet-500/30 bg-surface-3/90 backdrop-blur px-3 py-3 space-y-2">
+    <div className="rounded-lg border border-agent/30 bg-surface-3/90 backdrop-blur px-3 py-3 space-y-2">
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           {title && <div className="text-[12.5px] text-primary font-medium">{title}</div>}
@@ -496,7 +496,7 @@ export function ImageChips({
       {images.map((img, i) => (
         <div
           key={i}
-          className="flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-100 text-[10px]"
+          className="flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-md bg-agent/15 text-primary text-[10px]"
         >
           <img
             src={`data:${img.mimeType};base64,${img.data}`}
