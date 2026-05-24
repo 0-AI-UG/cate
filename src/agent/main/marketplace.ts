@@ -55,9 +55,11 @@ function settingsPath(): string {
 }
 
 function piBinaryPath(): string {
-  const binName = process.platform === 'win32' ? 'pi.cmd' : 'pi'
   const base = app.getAppPath()
   const root = base.includes('app.asar') ? base.replace('app.asar', 'app.asar.unpacked') : base
+  const directPath = path.join(root, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js')
+  if (fs.existsSync(directPath)) return directPath
+  const binName = process.platform === 'win32' ? 'pi.cmd' : 'pi'
   return path.join(root, 'node_modules', '.bin', binName)
 }
 
@@ -371,9 +373,10 @@ function runPi(args: string[]): Promise<{ ok: true } | { ok: false; error: strin
       resolve({ ok: false, error: `pi binary not found at ${bin}` })
       return
     }
-    const child = spawn(bin, args, {
-      // Inherit a clean env — pi reads ~/.pi/agent/auth.json directly for creds.
-      env: { ...process.env, PI_OFFLINE: process.env.PI_OFFLINE ?? '0' },
+    const spawnBin = bin.endsWith('.js') ? process.execPath : bin
+    const spawnArgs = bin.endsWith('.js') ? [bin, ...args] : args
+    const child = spawn(spawnBin, spawnArgs, {
+      env: { ...process.env, PI_OFFLINE: process.env.PI_OFFLINE ?? '0', ELECTRON_RUN_AS_NODE: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
