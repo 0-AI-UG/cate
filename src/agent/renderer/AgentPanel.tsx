@@ -1433,7 +1433,7 @@ function ChatInput({
                 ? 'bg-agent/25 text-primary'
                 : 'text-primary/80 hover:bg-white/5'
             }`}
-            title="Plan mode — agent investigates with parallel scouts, proposes a plan, then waits for your approval."
+            title="Plan mode: agent investigates with parallel scouts, proposes a plan, then waits for your approval."
           >
             <ClipboardText size={12} weight={planModeActive ? 'fill' : 'regular'} />
           </button>
@@ -1530,7 +1530,7 @@ function StatsChip({
       ? (ctxTokens! / ctxWindow!) * 100
       : null
   const pctRounded = pctRaw != null ? Math.round(pctRaw) : null
-  const label = pctRounded != null ? `${pctRounded}%` : '—'
+  const label = pctRounded != null ? `${pctRounded}%` : '-'
   const tone =
     pctRounded == null
       ? 'text-muted/70'
@@ -1556,7 +1556,7 @@ function StatsChip({
           <div className="flex justify-between gap-3">
             <span className="text-muted">Context</span>
             <span>
-              {ctxTokens != null ? formatTokensShort(ctxTokens) : '—'}
+              {ctxTokens != null ? formatTokensShort(ctxTokens) : '-'}
               {ctxWindow ? ` / ${formatTokensShort(ctxWindow)}` : ''}
               {pctRounded != null ? ` · ${pctRounded}%` : ''}
             </span>

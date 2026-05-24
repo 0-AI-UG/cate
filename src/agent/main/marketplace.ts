@@ -140,7 +140,7 @@ interface FetchMarketplacePageOptions {
 }
 
 const PI_PACKAGES_URL = 'https://pi.dev/packages'
-const FETCH_TIMEOUT_MS = 5000
+const FETCH_TIMEOUT_MS = 8000
 const CACHE_TTL_MS = 10 * 60 * 1000
 
 const pageCache = new Map<string, { fetchedAt: number; payload: MarketplacePagePayload }>()
@@ -278,17 +278,24 @@ export async function fetchMarketplacePage(
     return cached.payload
   }
 
-  try {
-    const html = await fetchWithTimeout(url, FETCH_TIMEOUT_MS)
-    const entries = parseEntries(html)
-    const totalPages = parseTotalPages(html)
-    const payload: MarketplacePagePayload = { entries, totalPages, page }
-    pageCache.set(url, { fetchedAt: Date.now(), payload })
-    return payload
-  } catch (err) {
-    log.warn('[marketplace] fetch failed for %s: %O', url, err)
-    return emptyPayload(page)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const html = await fetchWithTimeout(url, FETCH_TIMEOUT_MS)
+      const entries = parseEntries(html)
+      const totalPages = parseTotalPages(html)
+      const payload: MarketplacePagePayload = { entries, totalPages, page }
+      pageCache.set(url, { fetchedAt: Date.now(), payload })
+      return payload
+    } catch (err) {
+      if (attempt === 0) {
+        log.warn('[marketplace] fetch attempt 1 failed for %s, retrying…', url)
+      } else {
+        log.warn('[marketplace] fetch failed for %s: %O', url, err)
+        return emptyPayload(page)
+      }
+    }
   }
+  return emptyPayload(page)
 }
 
 async function buildEntry(name: string, dirPath: string): Promise<InstalledExtension> {

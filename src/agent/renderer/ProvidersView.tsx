@@ -21,6 +21,9 @@ import {
   Spinner,
   CloudArrowUp,
   CaretRight,
+  CaretDown,
+  MagnifyingGlass,
+  Sparkle,
 } from '@phosphor-icons/react'
 import log from '../../renderer/lib/logger'
 import type {
@@ -593,6 +596,7 @@ function ApiKeyForm({
 function DefaultModelSection({ statuses }: { statuses: AuthProviderStatus[] }) {
   const [models, setModels] = useState<Array<{ provider: string; model: string; label?: string }>>([])
   const [current, setCurrent] = useState<AgentModelRef | null>(() => loadDefaultModel())
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -607,63 +611,179 @@ function DefaultModelSection({ statuses }: { statuses: AuthProviderStatus[] }) {
     return () => { cancelled = true }
   }, [statuses])
 
-  const handleChange = useCallback((value: string) => {
-    if (!value) {
+  const handlePick = useCallback((m: { provider: string; model: string } | null) => {
+    if (!m) {
       saveDefaultModel(null)
       setCurrent(null)
-      return
+    } else {
+      const next: AgentModelRef = { provider: m.provider, model: m.model }
+      saveDefaultModel(next)
+      setCurrent(next)
     }
-    const [provider, ...rest] = value.split('::')
-    const model = rest.join('::')
-    if (!provider || !model) return
-    const next: AgentModelRef = { provider, model }
-    saveDefaultModel(next)
-    setCurrent(next)
+    setOpen(false)
   }, [])
-
-  const selectedKey = current ? `${current.provider}::${current.model}` : ''
-  const currentMissing = !!current && !models.some(
-    (m) => m.provider === current.provider && m.model === current.model,
-  )
 
   return (
     <div className="space-y-1.5">
       <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold px-0.5">
         Default model
       </div>
-      <select
-        value={selectedKey}
-        onChange={(e) => handleChange(e.target.value)}
-        className="w-full bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5 text-[12.5px] text-primary focus:outline-none focus:border-agent-light/50"
-      >
-      <option value="">No default — first available</option>
-      {currentMissing && current && (
-        <option value={selectedKey}>
-          {current.model} ({current.provider} — disconnected)
-        </option>
-      )}
-      {groupByProvider(models).map(([provider, items]) => (
-        <optgroup key={provider} label={provider}>
-          {items.map((m) => (
-            <option key={`${m.provider}::${m.model}`} value={`${m.provider}::${m.model}`}>
-              {m.label ?? m.model}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-      </select>
+      <div className="relative">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-white/[0.04] border border-white/10 text-[12.5px] text-primary hover:bg-white/[0.06] focus:outline-none focus:border-agent-light/50"
+        >
+          <Sparkle size={12} weight="fill" className="text-agent-light shrink-0" />
+          <span className="truncate flex-1 text-left">
+            {current
+              ? (models.find((m) => m.provider === current.provider && m.model === current.model)?.label ?? current.model)
+              : 'First available'}
+          </span>
+          <CaretDown size={10} className="text-muted shrink-0" />
+        </button>
+        {open && (
+          <DefaultModelPicker
+            models={models}
+            selected={current}
+            onPick={handlePick}
+            onClose={() => setOpen(false)}
+          />
+        )}
+      </div>
     </div>
   )
 }
 
-function groupByProvider(
-  models: Array<{ provider: string; model: string; label?: string }>,
-): Array<[string, Array<{ provider: string; model: string; label?: string }>]> {
-  const map = new Map<string, Array<{ provider: string; model: string; label?: string }>>()
-  for (const m of models) {
-    const bucket = map.get(m.provider) ?? []
-    bucket.push(m)
-    map.set(m.provider, bucket)
+function DefaultModelPicker({
+  models,
+  selected,
+  onPick,
+  onClose,
+}: {
+  models: Array<{ provider: string; model: string; label?: string }>
+  selected: AgentModelRef | null
+  onPick: (m: { provider: string; model: string } | null) => void
+  onClose: () => void
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!wrapRef.current) return
+      if (!wrapRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  const [search, setSearch] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { searchRef.current?.focus() }, [])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return models
+    return models.filter((m) =>
+      m.provider.toLowerCase().includes(q) ||
+      m.model.toLowerCase().includes(q) ||
+      (m.label?.toLowerCase().includes(q) ?? false),
+    )
+  }, [models, search])
+
+  const grouped = useMemo(() => {
+    const out = new Map<string, typeof models>()
+    for (const m of filtered) {
+      const arr = out.get(m.provider) ?? []
+      arr.push(m)
+      out.set(m.provider, arr)
+    }
+    return Array.from(out.entries())
+  }, [filtered])
+
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    const all = new Set<string>()
+    for (const m of models) all.add(m.provider)
+    if (selected) all.delete(selected.provider)
+    return all
+  })
+  const toggleProvider = (provider: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(provider)) next.delete(provider)
+      else next.add(provider)
+      return next
+    })
   }
-  return Array.from(map.entries())
+  const searching = search.trim().length > 0
+
+  return (
+    <div
+      ref={wrapRef}
+      className="absolute top-full left-0 mt-1 w-full max-h-[320px] flex flex-col rounded-lg border border-white/10 bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_rgba(0,0,0,0.45)] z-20"
+    >
+      <div className="px-2 py-2 border-b border-white/10 shrink-0">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/20 border border-white/5">
+          <MagnifyingGlass size={11} className="text-muted shrink-0" />
+          <input
+            ref={searchRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search models"
+            className="flex-1 bg-transparent text-[11px] text-primary placeholder:text-muted outline-none min-w-0"
+          />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <button
+          onClick={() => onPick(null)}
+          className={`w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2 ${
+            !selected ? 'bg-white/10 text-primary' : 'text-muted hover:bg-white/5'
+          }`}
+        >
+          <span className="truncate flex-1">First available</span>
+          {!selected && <CheckCircle size={10} weight="fill" className="text-agent-light" />}
+        </button>
+        {grouped.length === 0 ? (
+          <div className="px-3 py-4 text-[12px] text-muted text-center">
+            {models.length === 0 ? 'No models connected yet.' : 'No matches.'}
+          </div>
+        ) : (
+          grouped.map(([provider, items]) => {
+            const isCollapsed = !searching && collapsed.has(provider)
+            return (
+              <div key={provider}>
+                <button
+                  type="button"
+                  onClick={() => toggleProvider(provider)}
+                  className="w-full flex items-center gap-1 px-3 py-1 text-[10px] uppercase tracking-wider text-muted/70 font-semibold sticky top-0 bg-surface-4/98 hover:text-primary"
+                >
+                  {isCollapsed
+                    ? <CaretRight size={9} className="shrink-0" />
+                    : <CaretDown size={9} className="shrink-0" />}
+                  <span className="flex-1 text-left">{provider}</span>
+                  <span className="text-muted/50 normal-case tracking-normal">{items.length}</span>
+                </button>
+                {!isCollapsed && items.map((m) => {
+                  const isSelected =
+                    selected?.provider === m.provider && selected?.model === m.model
+                  return (
+                    <button
+                      key={`${m.provider}:${m.model}`}
+                      onClick={() => onPick(m)}
+                      className={`w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2 ${
+                        isSelected ? 'bg-white/10 text-primary' : 'text-primary hover:bg-white/5'
+                      }`}
+                    >
+                      <span className="truncate flex-1">{m.label ?? m.model}</span>
+                      {isSelected && <CheckCircle size={10} weight="fill" className="text-agent-light" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
 }
+
