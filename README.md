@@ -116,7 +116,7 @@ If you just want to use Cate, download a prebuilt release — don't build from s
   - Debian/Ubuntu: `sudo apt install build-essential python3`
   - Fedora/RHEL: `sudo dnf install @development-tools gcc-c++ make python3`
   - Arch: `sudo pacman -S base-devel python`
-  - Windows: [windows-build-tools](https://github.com/nicedoc/windows-build-tools)
+  - Windows: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (select the "Desktop development with C++" workload)
 
 ### Setup
 
