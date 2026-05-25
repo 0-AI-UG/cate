@@ -104,15 +104,27 @@ describe('decideUpdateAction', () => {
     expect(action.nextState.pendingFeedbackForVersion).toBe('2.0.0')
   })
 
-  test('version update always triggers the dialog prompt', () => {
+  test('major/minor version update triggers the dialog prompt', () => {
     const action = decideUpdateAction('2.0.0', { lastSeenVersion: '1.5.0' })
     expect(action.kind).toBe('version_changed')
     if (action.kind !== 'version_changed') return
     expect(action.prompt).toBeDefined()
-    expect(action.prompt.from).toBe('1.5.0')
-    expect(action.prompt.to).toBe('2.0.0')
+    expect(action.prompt!.from).toBe('1.5.0')
+    expect(action.prompt!.to).toBe('2.0.0')
     expect(action.nextState.pendingFeedbackForVersion).toBe('2.0.0')
     expect(action.nextState.pendingFeedbackFromVersion).toBe('1.5.0')
+  })
+
+  test('patch-only update does NOT trigger the dialog prompt', () => {
+    const action = decideUpdateAction('1.0.1', { lastSeenVersion: '1.0.0' })
+    expect(action.kind).toBe('version_changed')
+    if (action.kind !== 'version_changed') return
+    expect(action.emit).toBe('app_updated')
+    expect(action.from).toBe('1.0.0')
+    expect(action.to).toBe('1.0.1')
+    expect(action.prompt).toBeUndefined()
+    expect(action.nextState.pendingFeedbackForVersion).toBeUndefined()
+    expect(action.nextState.pendingFeedbackFromVersion).toBeUndefined()
   })
 
   test('normal launch (same version, no pending) does NOT trigger dialog', () => {

@@ -202,13 +202,26 @@ export function initAutoUpdater(): void {
     const version = currentStatus.state === 'available' ? currentStatus.version : undefined
     const releaseUrl = currentStatus.state === 'available' ? currentStatus.releaseUrl : latestReleaseUrl
     void sendEvent('update_download_clicked', { version: version ?? null })
+    broadcastStatus({ state: 'downloading', version: version ?? '' })
     autoUpdater.downloadUpdate().catch((err) => {
-      log.error('[auto-updater] downloadUpdate failed, falling back to manual:', err)
-      if (releaseUrl && version) {
-        broadcastStatus({ state: 'manual', version, releaseUrl })
-      } else {
-        broadcastStatus({ state: 'error', message: err?.message || 'Download failed' })
-      }
+      log.warn('[auto-updater] downloadUpdate failed, retrying with fresh check:', err)
+      // The native updater may not have update info cached (e.g. initial check
+      // failed and the update was found via the GitHub API fallback). Re-run the
+      // check with autoDownload so the download starts once the update is found.
+      autoUpdater.autoDownload = true
+      autoUpdater.checkForUpdates()
+        .catch((err2: any) => {
+          log.error('[auto-updater] Retry check also failed, falling back to manual:', err2)
+          autoUpdater.autoDownload = false
+          if (releaseUrl && version) {
+            broadcastStatus({ state: 'manual', version, releaseUrl })
+          } else {
+            broadcastStatus({ state: 'error', message: err2?.message || 'Download failed' })
+          }
+        })
+        .finally(() => {
+          autoUpdater.autoDownload = false
+        })
     })
   })
 
@@ -243,6 +256,7 @@ export function initAutoUpdater(): void {
 
   autoUpdater.on('update-available', (info) => {
     log.info('Update available: v%s', info.version)
+    if (currentStatus.state === 'downloading') return
     broadcastStatus({
       state: 'available',
       version: String(info.version),
@@ -252,6 +266,7 @@ export function initAutoUpdater(): void {
 
   autoUpdater.on('update-not-available', () => {
     log.info('No updates available')
+    if (currentStatus.state === 'downloading') return
     if (isManualCheck) {
       isManualCheck = false
       const win = BrowserWindow.getFocusedWindow()
@@ -289,6 +304,7 @@ export function initAutoUpdater(): void {
 
   autoUpdater.on('error', (err) => {
     log.error('Auto-updater error:', err)
+    if (currentStatus.state === 'downloading') return
     // Native auto-update failed (e.g. no code signing) — try fallback
     const wasManual = isManualCheck
     isManualCheck = false
