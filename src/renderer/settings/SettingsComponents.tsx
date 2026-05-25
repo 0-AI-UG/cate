@@ -11,15 +11,18 @@ import type { ReactNode } from 'react'
 interface SettingRowProps {
   label: string
   description?: string
+  /** Optional node rendered below the description, still above the row border. */
+  hint?: ReactNode
   children: ReactNode
 }
 
-export function SettingRow({ label, description, children }: SettingRowProps) {
+export function SettingRow({ label, description, hint, children }: SettingRowProps) {
   return (
     <div className="flex items-center justify-between py-2.5 border-b border-subtle">
-      <div className="flex flex-col">
+      <div className="flex flex-col min-w-0">
         <span className="text-sm text-primary">{label}</span>
         {description && <span className="text-xs text-muted mt-0.5">{description}</span>}
+        {hint && <div className="mt-1">{hint}</div>}
       </div>
       <div className="flex-shrink-0 ml-4">{children}</div>
     </div>

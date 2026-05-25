@@ -103,6 +103,12 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   const snapGeom = bootSnap?.geometry
   const snapBg = bootSnap?.backgroundColor
 
+  // Snapshot native-tabs state at window creation. The renderer reads this via
+  // the URL query so that the React TitlebarStrip matches the actual
+  // titleBarStyle — toggling the setting at runtime only takes effect on the
+  // next launch.
+  const nativeTabsActive = process.platform === 'darwin' && windowType === 'main' && getSettingSync('nativeTabs')
+
   const win = new BrowserWindow({
     width: snapGeom?.width ?? (isDock ? 700 : isPanel ? 700 : 1200),
     height: snapGeom?.height ?? (isDock ? 500 : isPanel ? 500 : 800),
@@ -116,20 +122,21 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     // suppresses the tab bar entirely. When native tabs are enabled for main
     // windows we fall back to the default title bar so the tab strip (app
     // name tab + "+" button) can render.
-    titleBarStyle: isPanel
-      ? 'hidden'
-      : (process.platform === 'darwin' && windowType === 'main' && getSettingSync('nativeTabs'))
-        ? 'default'
-        : 'hiddenInset',
-    trafficLightPosition: isDock ? { x: 12, y: 11 } : undefined,
+    titleBarStyle: isPanel ? 'hidden' : nativeTabsActive ? 'default' : 'hiddenInset',
+    // Align traffic lights with our 28px themed TitlebarStrip on macOS. Apple's
+    // standard NSWindow title bar is ~28pt with lights at y≈7; matching that
+    // here makes the themed bar visually identical to a native title bar.
+    trafficLightPosition: isDock
+      ? { x: 12, y: 11 }
+      : (process.platform === 'darwin' && windowType === 'main' && !nativeTabsActive)
+        ? { x: 10, y: 6 }
+        : undefined,
     frame: !(isPanel || isDock),
     // macOS native window tabs — only on main windows. Setting tabbingIdentifier
     // makes new windows in this group join as native tabs in the title bar
     // (subject to System Settings → Desktop & Dock → "Prefer tabs"). Panel and
     // dock windows are excluded so they stay free-floating.
-    ...(process.platform === 'darwin' && windowType === 'main' && getSettingSync('nativeTabs')
-      ? { tabbingIdentifier: 'cate-main' }
-      : {}),
+    ...(nativeTabsActive ? { tabbingIdentifier: 'cate-main' } : {}),
     backgroundColor: snapBg ?? '#1f1e1c',
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
@@ -252,6 +259,7 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   // Build query string from params
   const queryParts: string[] = []
   queryParts.push(`type=${encodeURIComponent(windowType)}`)
+  if (nativeTabsActive) queryParts.push('nativeTabsBoot=1')
   if (params?.panelType) queryParts.push(`panelType=${encodeURIComponent(params.panelType)}`)
   if (params?.panelId) queryParts.push(`panelId=${encodeURIComponent(params.panelId)}`)
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)

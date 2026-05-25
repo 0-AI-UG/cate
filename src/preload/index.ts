@@ -789,6 +789,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => { ipcRenderer.removeListener(DRAG_END, listener) }
   },
 
+  /** Subscribe to native-fullscreen state changes. Fires with the new boolean
+   *  whenever any Cate window enters or leaves macOS native fullscreen. */
+  onFullscreenChange(callback: (isFullscreen: boolean) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: boolean): void => {
+      callback(Boolean(value))
+    }
+    ipcRenderer.on(WINDOW_FULLSCREEN_STATE, listener)
+    return () => { ipcRenderer.removeListener(WINDOW_FULLSCREEN_STATE, listener) }
+  },
+
   // ---------------------------------------------------------------------------
   // Dock window management
   // ---------------------------------------------------------------------------

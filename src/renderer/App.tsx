@@ -36,6 +36,7 @@ import { useDockStore } from './stores/dockStore'
 import MainWindowShell from './shells/MainWindowShell'
 import PanelWindowShell from './shells/PanelWindowShell'
 import DockWindowShell from './shells/DockWindowShell'
+import TitlebarStrip from './shells/TitlebarStrip'
 import { WindowTypeContext } from './stores/WindowTypeContext'
 import { setupCrossWindowDragListeners } from './drag'
 import { terminalRegistry } from './lib/terminalRegistry'
@@ -461,10 +462,12 @@ function MainApp() {
   return (
     <CanvasStoreProvider store={useCanvasStore}>
     <div
-      className="h-screen w-screen relative bg-canvas-bg"
+      className="h-screen w-screen flex flex-col bg-canvas-bg"
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
+      <TitlebarStrip />
+      <div className="relative flex-1 min-h-0 min-w-0">
       {/* Main window shell fills the viewport so the canvas extends edge to
           edge under the translucent sidebars. The top-level dock tab bar
           insets itself via CSS vars (--cate-left/right-sidebar-width) so the
@@ -504,6 +507,7 @@ function MainApp() {
           <div className="mt-3 text-[11px] text-muted tracking-wide">v{pkg.version}</div>
         </div>
       )}
+      </div>
     </div>
     </CanvasStoreProvider>
   )
