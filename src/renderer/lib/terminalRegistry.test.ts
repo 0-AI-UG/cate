@@ -119,6 +119,35 @@ beforeEach(() => {
   })
 })
 
+describe('isTerminalPasteChord', () => {
+  const kd = (init: KeyboardEventInit) => new KeyboardEvent('keydown', init)
+
+  it('matches Ctrl+V and Ctrl+Shift+V on non-mac', async () => {
+    const { isTerminalPasteChord } = await import('./terminalRegistry')
+    expect(isTerminalPasteChord(kd({ ctrlKey: true, key: 'v' }), false)).toBe(true)
+    expect(isTerminalPasteChord(kd({ ctrlKey: true, shiftKey: true, key: 'V' }), false)).toBe(true)
+  })
+
+  it('ignores Ctrl+V on macOS (it is the terminal "literal next" key there)', async () => {
+    const { isTerminalPasteChord } = await import('./terminalRegistry')
+    expect(isTerminalPasteChord(kd({ ctrlKey: true, key: 'v' }), true)).toBe(false)
+  })
+
+  it('does not match when alt or meta is also held, or without ctrl', async () => {
+    const { isTerminalPasteChord } = await import('./terminalRegistry')
+    expect(isTerminalPasteChord(kd({ ctrlKey: true, altKey: true, key: 'v' }), false)).toBe(false)
+    expect(isTerminalPasteChord(kd({ metaKey: true, key: 'v' }), false)).toBe(false)
+    expect(isTerminalPasteChord(kd({ key: 'v' }), false)).toBe(false)
+    expect(isTerminalPasteChord(kd({ ctrlKey: true, key: 'c' }), false)).toBe(false)
+  })
+
+  it('only matches keydown, not keyup', async () => {
+    const { isTerminalPasteChord } = await import('./terminalRegistry')
+    const up = new KeyboardEvent('keyup', { ctrlKey: true, key: 'v' })
+    expect(isTerminalPasteChord(up, false)).toBe(false)
+  })
+})
+
 describe('terminalRegistry pending-transfer cleanup invariant', () => {
   // Establish a baseline: a fresh getOrCreate with a pending transfer reconnects.
   // The panelTransferAck is deferred to attach() now — see the

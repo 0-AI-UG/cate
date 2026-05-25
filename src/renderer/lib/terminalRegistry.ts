@@ -37,8 +37,8 @@ const isMacPlatform =
  * (honouring bracketed-paste mode). macOS keeps Ctrl+V as the terminal "literal
  * next" key and pastes with Cmd+V instead.
  */
-function isTerminalPasteChord(event: KeyboardEvent): boolean {
-  if (isMacPlatform) return false
+export function isTerminalPasteChord(event: KeyboardEvent, isMac = isMacPlatform): boolean {
+  if (isMac) return false
   if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return false
   return event.key === 'v' || event.key === 'V'
 }
