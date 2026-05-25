@@ -77,6 +77,27 @@ describe('createNodeShim', () => {
     expect(fs.existsSync(path.join(nested, 'node.cmd'))).toBe(true)
   })
 
+  test('shim is resolvable by shell-less spawn', async () => {
+    const dir = makeTmpDir()
+    dirs.push(dir)
+
+    createNodeShim(dir, process.execPath)
+
+    const { spawn } = require('child_process')
+    const result = await new Promise<string>((resolve, reject) => {
+      const child = spawn('node', ['-e', 'process.stdout.write("ok")'], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PATH: dir },
+        shell: false,
+      })
+      let out = ''
+      child.stdout.on('data', (d: Buffer) => { out += d })
+      child.on('close', (code: number) => code === 0 ? resolve(out) : reject(new Error(`exit ${code}`)))
+      child.on('error', reject)
+    })
+
+    expect(result).toBe('ok')
+  })
+
   test('overwrites existing shim without error', () => {
     const dir = makeTmpDir()
     dirs.push(dir)
