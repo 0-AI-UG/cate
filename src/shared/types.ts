@@ -766,7 +766,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // where it commonly isn't installed.
   defaultShellPath: '',
   warnBeforeQuit: false,
-  nativeTabs: true,
+  nativeTabs: false,
 
   // Appearance
   appearanceMode: 'system',

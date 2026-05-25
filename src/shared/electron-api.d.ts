@@ -434,6 +434,10 @@ export interface ElectronAPI {
   /** Subscribe to drag end events (main -> renderer). */
   onDragEnd(callback: () => void): () => void
 
+  /** Subscribe to native-fullscreen state changes. Fires with the new boolean
+   *  whenever any Cate window enters or leaves macOS native fullscreen. */
+  onFullscreenChange(callback: (isFullscreen: boolean) => void): () => void
+
   // ---------------------------------------------------------------------------
   // Dock window management
   // ---------------------------------------------------------------------------

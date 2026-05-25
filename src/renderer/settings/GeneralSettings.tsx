@@ -1,8 +1,12 @@
+import { InfoIcon, WarningIcon } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, Toggle, TextInput } from './SettingsComponents'
 
+const NATIVE_TABS_BOOT = new URLSearchParams(window.location.search).get('nativeTabsBoot') === '1'
+
 export function GeneralSettings() {
   const store = useSettingsStore()
+  const nativeTabsPending = store.nativeTabs !== NATIVE_TABS_BOOT
 
   return (
     <div className="flex flex-col gap-1">
@@ -15,7 +19,23 @@ export function GeneralSettings() {
       {navigator.userAgent.includes('Mac') && (
         <SettingRow
           label="Native macOS window tabs"
-          description="Group main windows as native tabs in the title bar. Restart required."
+          description="Group main windows as native tabs in the title bar."
+          hint={(NATIVE_TABS_BOOT || nativeTabsPending) ? (
+            <>
+              {NATIVE_TABS_BOOT && (
+                <p className="flex items-center gap-1 text-xs text-muted">
+                  <InfoIcon size={12} />
+                  Title bar follows macOS appearance and ignores the app theme while tabs are enabled.
+                </p>
+              )}
+              {nativeTabsPending && (
+                <p className="flex items-center gap-1 text-xs text-amber-500 mt-1">
+                  <WarningIcon size={12} />
+                  Restart required for this change to take effect.
+                </p>
+              )}
+            </>
+          ) : undefined}
         >
           <Toggle checked={store.nativeTabs} onChange={(v) => store.setSetting('nativeTabs', v)} />
         </SettingRow>
