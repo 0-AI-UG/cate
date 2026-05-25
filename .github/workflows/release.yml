@@ -62,6 +62,8 @@ jobs:
 
       - name: Build app
         run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Package (macOS)
         if: matrix.platform == 'mac'
