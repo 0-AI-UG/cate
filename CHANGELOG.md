@@ -4,6 +4,27 @@ All notable changes to Cate will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-05-26
+
+Patch release with agent panel UI polish and minimap improvements.
+
+### Added
+
+- **Minimap click-to-focus** — clicking a node in the minimap now focuses and centers it on the canvas.
+- **Browser panel local file support** — `file://` URLs and absolute local paths are now supported in browser panels.
+
+### Changed
+
+- **Agent chat thread redesign** — tool cards use a cleaner inline layout: bash commands show as compact single-line entries, diffs render with line numbers and colored add/remove backgrounds, and running tools pulse instead of showing spinner icons.
+- **Inline retry indicator** — connection retry status moved from a banner above the editor into the chat thread with attempt count, delay, and an abort button.
+- **Simplified chat sidebar** — removed background-session open/close controls from chat rows for a cleaner list.
+- **Popover focus fix** — popovers inside canvas nodes (thinking level, model picker, stats) now lazily resolve their portal target instead of caching a stale DOM ref, fixing cases where popovers opened but couldn't receive clicks.
+
+### Fixed
+
+- **Auto-update download retry** — failed downloads now retry automatically and skip the dialog for patch updates.
+- **README** — updated feature descriptions to cover agent panel, document panels, and current feature set; resolved leftover merge conflict markers.
+
 ## [1.0.1] - 2026-05-25
 
 Patch release with new panel types, cross-platform fixes, and UI polish.
