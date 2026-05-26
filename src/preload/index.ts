@@ -70,6 +70,7 @@ import {
   MENU_TRIGGER_ACTION,
   MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
+  DIALOG_SAVE_FILE,
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_CANVAS,
   DIALOG_CONFIRM_DELETE_REGION,
@@ -94,6 +95,7 @@ import {
   PANEL_WINDOWS_LIST,
   PANEL_WINDOW_DOCK_BACK,
   PANEL_WINDOW_SYNC_PTY,
+  PANEL_WINDOW_SYNC_META,
   DRAG_START,
   DRAG_DETACH,
   WINDOW_FULLSCREEN_STATE,
@@ -618,7 +620,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DIALOG_OPEN_FOLDER)
   },
 
-  confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean }): Promise<'save' | 'discard' | 'cancel'> {
+  saveFileDialog(payload?: { defaultName?: string; defaultPath?: string }): Promise<string | null> {
+    return ipcRenderer.invoke(DIALOG_SAVE_FILE, payload ?? {})
+  },
+
+  confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean; filePath?: string }): Promise<'save' | 'discard' | 'cancel'> {
     return ipcRenderer.invoke(DIALOG_CONFIRM_UNSAVED, payload)
   },
 
@@ -748,6 +754,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   panelWindowSyncPty(ptyId: string): Promise<void> {
     return ipcRenderer.invoke(PANEL_WINDOW_SYNC_PTY, ptyId)
+  },
+
+  panelWindowSyncMeta(payload: { panel: unknown; workspaceId?: string }): Promise<void> {
+    return ipcRenderer.invoke(PANEL_WINDOW_SYNC_META, payload)
   },
 
   panelWindowDockBack(): Promise<void> {

@@ -2,11 +2,11 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
-  PANEL_WINDOWS_LIST, PANEL_WINDOW_DOCK_BACK, PANEL_WINDOW_SYNC_PTY,
+  PANEL_WINDOWS_LIST, PANEL_WINDOW_DOCK_BACK, PANEL_WINDOW_SYNC_PTY, PANEL_WINDOW_SYNC_META,
   DRAG_START, DRAG_DETACH, DRAG_END,
   WINDOW_FULLSCREEN_STATE,
   DOCK_WINDOW_INIT, DOCK_WINDOW_SYNC_STATE, DOCK_WINDOWS_LIST,
@@ -32,7 +32,8 @@ const agentManager = new AgentManager(authManager)
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
 import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
-import { addAllowedRoot, clearScopedWriteAllowancesForWindow, validatePath } from './ipc/pathValidation'
+import { addAllowedRoot, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow, grantFileAccess, validatePath } from './ipc/pathValidation'
+import { listPersistentGrants, recordPersistentGrant } from './grantedPathStore'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
 import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
@@ -178,6 +179,33 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   const windowId = win.id
   log.info('Creating window type=%s id=%d', windowType, windowId)
 
+  // Re-arm grants for every persisted Save-As path so editors restored in
+  // this window (any window type — main, panel, dock) can read+save their
+  // out-of-workspace files. We check the file still exists; missing entries
+  // are pruned so the store doesn't grow unbounded with stale paths. The
+  // returned promise gates loadURL below so the renderer's session-restore
+  // pass cannot mount an out-of-workspace editor before its grant lands.
+  const grantsReady = (async () => {
+    try {
+      const paths = await listPersistentGrants()
+      for (const filePath of paths) {
+        // Note: we do NOT prune missing files here. If the user deletes or
+        // moves the file off-disk between sessions, the grant must survive
+        // so that the editor restored with `filePath = …/missing.txt` can
+        // still receive a Cmd+S that recreates the file at the previously
+        // approved location. The grant only writes/reads to/from that
+        // exact path; it does not widen access elsewhere.
+        try {
+          await grantFileAccess(windowId, filePath)
+        } catch (err) {
+          log.warn('[grants] Failed to grant %s to window %d: %s', filePath, windowId, err)
+        }
+      }
+    } catch (err) {
+      log.warn('[grants] Failed to apply persisted grants:', err)
+    }
+  })()
+
   // When the main window is closed, also close any detached panel/dock
   // windows so the app actually quits (otherwise they keep the process
   // alive and `window-all-closed` never fires).
@@ -204,6 +232,7 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     unregisterTerminalsForWindow(windowId)
     stopMonitorsForWindow(windowId)
     clearScopedWriteAllowancesForWindow(windowId)
+    clearFileGrantsForWindow(windowId)
     // Rebuild menu to update panel/dock window list
     if (isPanel || isDock) rebuildApplicationMenu()
     // Trigger immediate session save from main window when a child window closes
@@ -265,13 +294,21 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)
   const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : ''
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    win.loadURL(`${process.env.ELECTRON_RENDERER_URL}${query}`)
-  } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'), {
-      search: query ? query.slice(1) : undefined,
-    })
-  }
+  // Defer loadURL until persisted grants are applied. Without this, the
+  // renderer can begin session restore and mount an editor pointing at an
+  // out-of-workspace path before grantFileAccess has populated the window's
+  // grant set, causing fsReadFile to be rejected and the editor to mount
+  // empty for a file we should have been able to read.
+  void grantsReady.finally(() => {
+    if (win.isDestroyed()) return
+    if (process.env.ELECTRON_RENDERER_URL) {
+      win.loadURL(`${process.env.ELECTRON_RENDERER_URL}${query}`)
+    } else {
+      win.loadFile(path.join(__dirname, '../renderer/index.html'), {
+        search: query ? query.slice(1) : undefined,
+      })
+    }
+  })
 
   return win
 }
@@ -442,24 +479,88 @@ function registerWindowAndDialogHandlers(): void {
     return result.filePaths[0]
   })
 
-  // Native unsaved-changes confirmation. Returns 'save' | 'discard' | 'cancel'.
-  ipcMain.handle(DIALOG_CONFIRM_UNSAVED, async (event, payload: { fileName?: string; multiple?: boolean }) => {
+  // Native Save-As dialog for untitled editor buffers.
+  ipcMain.handle(DIALOG_SAVE_FILE, async (event, payload: { defaultName?: string; defaultPath?: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
-    const name = payload?.fileName ?? 'this file'
-    const message = payload?.multiple
-      ? `Do you want to save the changes you made to ${payload?.fileName ?? 'these files'}?`
-      : `Do you want to save the changes you made to ${name}?`
-    const result = await dialog.showMessageBox(win!, {
-      type: 'warning',
-      message,
-      detail: "Your changes will be lost if you don't save them.",
-      buttons: ['Save', "Don't Save", 'Cancel'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
+    const result = await dialog.showSaveDialog(win!, {
+      title: 'Save File',
+      defaultPath: payload?.defaultPath || payload?.defaultName || 'Untitled.txt',
     })
-    return result.response === 0 ? 'save' : result.response === 1 ? 'discard' : 'cancel'
+    if (result.canceled || !result.filePath) return null
+    // The picked location is almost always outside the workspace allowed
+    // roots (Desktop, Documents, …). Grant the calling window persistent
+    // read+write access to the exact file so the initial fsWriteFile AND
+    // every subsequent reload / Cmd+S on this editor succeed for the
+    // lifetime of the window. The grant is dropped on window close.
+    // Return the canonical safe path (realpath-of-parent + basename) so the
+    // renderer stores the same string the grant set keys on — otherwise a
+    // symlinked parent would yield a stored alias that later fails the
+    // lexical validatePath check before realpath has a chance to run.
+    if (win) {
+      try {
+        const safePath = await grantFileAccess(win.id, result.filePath)
+        // Persist the approval so future windows (and future app launches)
+        // can read+write this file via createWindow's grantsReady pass.
+        // Critically there is NO renderer-facing IPC to add paths here —
+        // only paths the user just confirmed in a native dialog land in
+        // the store.
+        try {
+          await recordPersistentGrant(safePath)
+        } catch (err) {
+          log.warn('[DIALOG_SAVE_FILE] Failed to persist grant:', err)
+        }
+        // Grant the path to every currently-open window too. Without this,
+        // a panel transferred to a window that existed BEFORE the Save-As
+        // would lose access (createWindow's grantsReady only runs at the
+        // owning window's creation — older sibling windows never see the
+        // newly approved path otherwise).
+        for (const other of BrowserWindow.getAllWindows()) {
+          if (other.id === win.id || other.isDestroyed()) continue
+          try {
+            await grantFileAccess(other.id, safePath)
+          } catch (err) {
+            log.warn('[DIALOG_SAVE_FILE] Failed to grant to window %d: %s', other.id, err)
+          }
+        }
+        return safePath
+      } catch (err) {
+        log.warn('[DIALOG_SAVE_FILE] Failed to grant file access:', err)
+      }
+    }
+    return result.filePath
   })
+
+  // Native unsaved-changes confirmation. Returns 'save' | 'discard' | 'cancel'.
+  ipcMain.handle(
+    DIALOG_CONFIRM_UNSAVED,
+    async (event, payload: { fileName?: string; multiple?: boolean; filePath?: string }) => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+      const name = payload?.fileName ?? 'this file'
+      const message = payload?.multiple
+        ? `Do you want to save the changes you made to ${payload?.fileName ?? 'these files'}?`
+        : `Do you want to save the changes you made to ${name}?`
+      // For a single dirty file, show the on-disk location so the user knows
+      // exactly which file the "Save" button is going to overwrite. Untitled
+      // buffers (no filePath) fall back to a hint that a Save-As picker will
+      // appear after confirming.
+      const baseDetail = "Your changes will be lost if you don't save them."
+      const detail = payload?.multiple
+        ? baseDetail
+        : payload?.filePath
+          ? `${payload.filePath}\n\n${baseDetail}`
+          : `This file has not been saved yet. Save will prompt for a location.\n\n${baseDetail}`
+      const result = await dialog.showMessageBox(win!, {
+        type: 'warning',
+        message,
+        detail,
+        buttons: ['Save', "Don't Save", 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      })
+      return result.response === 0 ? 'save' : result.response === 1 ? 'discard' : 'cancel'
+    },
+  )
 
   // Confirm close of a canvas panel. When the workspace has other canvases and
   // the closing canvas contains panels, the user is offered three choices:
@@ -656,6 +757,16 @@ function registerWindowAndDialogHandlers(): void {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
     setPanelWindowTerminalPtyId(win.id, ptyId)
+  })
+
+  // Renderer pushes an updated PanelState — used after Save-As inside a
+  // detached panel window so the windowRegistry meta (the source for
+  // session persistence + the panel-window list) reflects the new
+  // filePath/title/clean state instead of the at-transfer-time snapshot.
+  ipcMain.handle(PANEL_WINDOW_SYNC_META, async (event, payload: { panel: PanelState; workspaceId?: string }) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || !payload?.panel) return
+    setPanelWindowMeta(win.id, payload.panel, payload.workspaceId)
   })
 
   // Double-click panel window title bar → close the panel window and signal main window to dock

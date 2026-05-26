@@ -478,18 +478,20 @@ export function stopWatchersForWindow(windowId: number): void {
 }
 
 export function registerHandlers(): void {
-  ipcMain.handle(FS_READ_FILE, async (_event, filePath: string) => {
+  ipcMain.handle(FS_READ_FILE, async (event, filePath: string) => {
     try {
-      return await readFile(await validatePathStrict(filePath))
+      const win = windowFromEvent(event)
+      return await readFile(await validatePathStrict(filePath, win?.id))
     } catch (error) {
       log.error(`[${FS_READ_FILE}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
-  ipcMain.handle(FS_READ_BINARY, async (_event, filePath: string) => {
+  ipcMain.handle(FS_READ_BINARY, async (event, filePath: string) => {
     try {
-      const safePath = await validatePathStrict(filePath)
+      const win = windowFromEvent(event)
+      const safePath = await validatePathStrict(filePath, win?.id)
       return await fs.readFile(safePath)
     } catch (error) {
       log.error(`[${FS_READ_BINARY}]`, error)

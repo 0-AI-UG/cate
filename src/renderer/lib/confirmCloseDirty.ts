@@ -21,14 +21,24 @@ export async function confirmCloseDirtyPanels(
       ? dirty[0].title.replace(/\s•\s*$/, '').trim()
       : `${dirty.length} files`
 
+  const filePath = dirty.length === 1 ? dirty[0].filePath : undefined
+
   const choice = await window.electronAPI.confirmUnsavedChanges({
     fileName,
     multiple: dirty.length > 1,
+    filePath,
   })
   if (choice === 'cancel') return false
   if (choice === 'save') {
     for (const p of dirty) {
-      try { await saveEditor(p.id) } catch { /* swallow — user can retry */ }
+      let result: Awaited<ReturnType<typeof saveEditor>> = 'no-handler'
+      try { result = await saveEditor(p.id) } catch { /* treat as no-handler */ }
+      // Only an explicit Save-As cancellation aborts the close. `no-handler`
+      // means the panel isn't currently mounted (e.g. an inactive tab in a
+      // dock stack) — we can't save it from here, but aborting would leave
+      // the user with no way to proceed. Pre-existing limitation: that
+      // tab's content is lost if the user picks "Save".
+      if (result === 'cancelled') return false
     }
   }
   return true

@@ -63,6 +63,29 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
     return cleanup
   }, [])
 
+  // Editor Save-As inside this detached panel window updates appStore in the
+  // renderer, but our local `panel` state — and the main-process window
+  // registry meta the session snapshot reads from — are both independent.
+  // Mirror filePath/title/isDirty here AND push the snapshot to main so the
+  // saved scratch buffer is treated as a real file on restart.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ panelId: string; filePath: string; title: string }>
+      const detail = ce.detail
+      if (!detail?.panelId) return
+      setPanel((prev) => {
+        if (!prev || prev.id !== detail.panelId) return prev
+        const next = { ...prev, filePath: detail.filePath, title: detail.title, isDirty: false }
+        // Fire-and-forget — failure here only delays the meta update to
+        // the next transfer, not data loss (the file itself is on disk).
+        window.electronAPI.panelWindowSyncMeta?.({ panel: next, workspaceId }).catch(() => {})
+        return next
+      })
+    }
+    window.addEventListener('editor:panel-saved-as', handler)
+    return () => window.removeEventListener('editor:panel-saved-as', handler)
+  }, [workspaceId])
+
   // For terminal panel windows: report ptyId to main + periodically save
   // scrollback so it can be replayed on next launch.
   useEffect(() => {

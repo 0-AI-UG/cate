@@ -277,14 +277,23 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         dirty.length === 1
           ? dirty[0].title.replace(/\s•\s*$/, '').trim()
           : `${dirty.length} files`
+      const filePath = dirty.length === 1 ? dirty[0].filePath : undefined
       const choice = await window.electronAPI.confirmUnsavedChanges({
         fileName,
         multiple: dirty.length > 1,
+        filePath,
       })
       if (choice === 'cancel') return false
       if (choice === 'save') {
         for (const p of dirty) {
-          try { await saveEditor(p.id) } catch { /* swallow — user can retry */ }
+          let result: Awaited<ReturnType<typeof saveEditor>> = 'no-handler'
+          try { result = await saveEditor(p.id) } catch { /* treat as no-handler */ }
+          // Only an explicit Save-As cancellation aborts the close. A
+          // `no-handler` result means this panel isn't mounted (typically an
+          // inactive tab in a dock stack); aborting would leave the user
+          // unable to close. Pre-existing limitation: that tab's unsaved
+          // content is lost.
+          if (result === 'cancelled') return false
         }
       }
       return true

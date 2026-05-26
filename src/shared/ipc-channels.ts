@@ -131,9 +131,16 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
+export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
 export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'
+
+// Panel window: renderer pushes an updated PanelState snapshot to main so
+// the windowRegistry's panel meta (used by session persistence and the
+// panel-window list) stays current — needed after Save-As turns an
+// untitled buffer into a real file inside a detached panel window.
+export const PANEL_WINDOW_SYNC_META = 'panel:windowSyncMeta'
 
 // Recent Projects
 export const RECENT_PROJECTS_GET = 'recent-projects:get'

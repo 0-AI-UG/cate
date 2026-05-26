@@ -30,11 +30,22 @@ interface DockWindowShellProps {
 
 export default function DockWindowShell({ workspaceId: initialWorkspaceId }: DockWindowShellProps) {
   const [panels, setPanels] = useState<Record<string, PanelState>>({})
+  // panelsRef shadows `panels` synchronously so callers that need to push
+  // metadata to main immediately (e.g. an editor:panel-saved-as handler)
+  // can read the freshly-computed map BEFORE React commits the state and
+  // re-runs the periodic-sync effect that would otherwise refresh
+  // syncNowRef's closure.
+  const panelsRef = useRef<Record<string, PanelState>>({})
   const [wsId, setWsId] = useState(initialWorkspaceId ?? '')
   const [ready, setReady] = useState(false)
   const dockStore = useMemo(() => createDockStore(), [])
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hadPanelsRef = useRef(false)
+
+  // Keep panelsRef in lock-step with the React state for the common path —
+  // any synchronous updater that needs to ship its own new map updates the
+  // ref inside its callback so the next syncNow can see it.
+  panelsRef.current = panels
 
   // Hydrate settings + apply theme so the detached window mirrors the main
   // app's appearance (theme, minimap, canvas grid, etc.). Without this the
@@ -66,6 +77,38 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
     return cleanup
   }, [dockStore])
+
+  // Editor Save-As inside this window updates the global appStore in the
+  // detached renderer, but this shell maintains its own local `panels`
+  // map (the source of truth for periodic session sync and close prompts).
+  // Mirror the change so a saved scratch buffer becomes a real file in the
+  // session record instead of being restored as Untitled on next launch.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ panelId: string; filePath: string; title: string }>
+      const { panelId, filePath, title } = ce.detail || ({} as never)
+      if (!panelId) return
+      // Mutate panelsRef synchronously alongside the React state update so
+      // syncNow reads the post-Save-As snapshot regardless of whether the
+      // periodic-sync effect has re-run yet. Without this, a setTimeout-
+      // driven sync could still ship the pre-save map because React's
+      // commit-then-effect cycle had not yet refreshed syncNowRef.
+      setPanels((prev) => {
+        const p = prev[panelId]
+        if (!p) return prev
+        const updated = { ...p, filePath, title, isDirty: false }
+        const next = { ...prev, [panelId]: updated }
+        panelsRef.current = next
+        return next
+      })
+      // Now ship the new state to main. Without this, a quit before the
+      // next 5s tick would persist the panel as untitled and a restart
+      // would restore a stale scratch buffer instead of the saved file.
+      syncNowRef.current()
+    }
+    window.addEventListener('editor:panel-saved-as', handler)
+    return () => window.removeEventListener('editor:panel-saved-as', handler)
+  }, [])
 
   // Listen for incoming panel transfers (drag from other windows)
   useEffect(() => {
@@ -154,12 +197,18 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   }, [dockStore])
 
   // Periodic state sync to main process for session persistence
+  const syncNowRef = useRef<() => void>(() => {})
   useEffect(() => {
     const syncNow = () => {
+      // Read panels from the ref, not the closure: callers that mutate the
+      // map (e.g. the Save-As handler) update panelsRef synchronously and
+      // then invoke syncNow, expecting the freshly-written entries.
+      const currentPanels = panelsRef.current
+
       // Capture per-terminal ptyIds + persist their scrollback so the next
       // launch can replay it into a freshly spawned PTY.
       const terminalPtyIds: Record<string, string> = {}
-      for (const panel of Object.values(panels)) {
+      for (const panel of Object.values(currentPanels)) {
         if (panel.type !== 'terminal') continue
         const entry = terminalRegistry.getEntry(panel.id)
         if (!entry?.ptyId) continue
@@ -182,10 +231,14 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       const snapshot = dockStore.getState().getSnapshot()
       window.electronAPI.dockWindowSyncState({
         ...snapshot,
-        panels,
+        panels: currentPanels,
         terminalPtyIds,
       })
     }
+    // Expose the latest syncNow via a ref so callers outside this effect
+    // (the editor:panel-saved-as handler) can trigger an immediate sync
+    // without waiting for the next 5-second interval / focus tick.
+    syncNowRef.current = syncNow
 
     // Initial sync ~1s after panels are populated so main learns ptyIds quickly
     const initialSync = setTimeout(syncNow, 1000)

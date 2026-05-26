@@ -11,7 +11,13 @@ import remarkGfm from 'remark-gfm'
 import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { registerEditorSave, unregisterEditorSave } from '../lib/editorSaveRegistry'
+import {
+  registerEditorSave,
+  unregisterEditorSave,
+  markEditorActive,
+  clearEditorActive,
+  getActiveEditorPanelId,
+} from '../lib/editorSaveRegistry'
 import { getResolvedTheme, subscribeTheme } from '../lib/themeManager'
 
 // -----------------------------------------------------------------------------
@@ -351,7 +357,13 @@ export default function EditorPanel({
   const isDirtyRef = useRef(false)
   const filePathRef = useRef(filePath)
 
-  filePathRef.current = filePath
+  // Only overwrite the ref from the prop when the prop is itself defined.
+  // In detached/dock windows the shell keeps its own local `panels` state
+  // and doesn't observe the global appStore update we issue after a
+  // Save-As, so the `filePath` prop stays undefined for the lifetime of
+  // this mount. Without this guard, every re-render would wipe out the
+  // path we just learned and the next Cmd+S would re-open Save-As.
+  if (filePath !== undefined) filePathRef.current = filePath
 
   const [markdownPreview, setMarkdownPreview] = useState(false)
   const [markdownContent, setMarkdownContent] = useState('')
@@ -366,25 +378,75 @@ export default function EditorPanel({
   // Save handler (regular editor only)
   // ---------------------------------------------------------------------------
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (): Promise<boolean> => {
     const editor = editorRef.current
-    if (!editor || !filePathRef.current || diffMode) return
+    if (!editor || diffMode) return false
 
     const content = editor.getValue()
 
+    // Untitled buffer (no filePath): prompt the user for a destination via the
+    // native Save-As dialog. Once a path is chosen, persist it on the panel
+    // state so future saves (Cmd+S, close-confirm) write to the same file.
+    let targetPath = filePathRef.current
+    let isInitialSave = false
+    if (!targetPath) {
+      const currentPanel = useAppStore
+        .getState()
+        .workspaces.find((w) => w.id === workspaceId)?.panels[panelId]
+      const cleanTitle = currentPanel?.title?.replace(/\s•\s*$/, '').trim()
+      const defaultName = cleanTitle && cleanTitle !== 'Untitled' ? cleanTitle : 'Untitled.txt'
+      // Pick the separator that matches the workspace root so the prefilled
+      // path looks native on the user's platform (Electron's Save dialog
+      // accepts either on Windows but mixed slashes look sloppy).
+      const sep = rootPath?.includes('\\') ? '\\' : '/'
+      const defaultPath = rootPath ? `${rootPath}${sep}${defaultName}` : defaultName
+      const chosen = await window.electronAPI.saveFileDialog({ defaultName, defaultPath })
+      if (!chosen) return false
+      targetPath = chosen
+      isInitialSave = true
+    }
+
     try {
-      await window.electronAPI.fsWriteFile(filePathRef.current, content)
+      await window.electronAPI.fsWriteFile(targetPath, content)
     } catch (err) {
       log.error('[EditorPanel] Failed to save file:', err)
-      return
+      return false
     }
 
     isDirtyRef.current = false
     useAppStore.getState().setPanelDirty(workspaceId, panelId, false)
 
-    const fileName = filePathRef.current.split('/').pop() ?? 'Untitled'
+    // Use both separators so the basename is correct on Windows (`\\`) as
+    // well as POSIX (`/`).
+    const fileName = targetPath.split(/[\\/]/).pop() || 'Untitled'
     useAppStore.getState().updatePanelTitle(workspaceId, panelId, fileName)
-  }, [workspaceId, panelId, diffMode])
+
+    if (isInitialSave) {
+      // Persist the new filePath in the global appStore (the source of
+      // truth for the main window's panels). In detached/dock windows the
+      // shell maintains its own local panels state instead, so we ALSO
+      // update filePathRef directly: that makes the next Cmd+S in this
+      // exact mount write to the chosen file instead of reopening Save-As,
+      // regardless of whether the prop ever updates.
+      filePathRef.current = targetPath
+      useAppStore.getState().updatePanelFilePath(workspaceId, panelId, targetPath)
+      // Clear the unsaved-content cache so the remount-from-disk path is
+      // the single source of truth for the editor model when the prop
+      // does flip (main window).
+      useAppStore.getState().setPanelUnsavedContent(workspaceId, panelId, undefined)
+      // Notify the surrounding shell (DockWindowShell / PanelWindowShell)
+      // so its local `panels` state — which feeds session sync and close
+      // prompts in detached windows — picks up the new filePath, title,
+      // and clean dirty flag. The main window ignores this event because
+      // it reads from appStore directly.
+      window.dispatchEvent(
+        new CustomEvent('editor:panel-saved-as', {
+          detail: { panelId, filePath: targetPath, title: fileName },
+        }),
+      )
+    }
+    return true
+  }, [workspaceId, panelId, diffMode, rootPath])
 
   // ---------------------------------------------------------------------------
   // Mount: create regular editor OR diff editor
@@ -558,6 +620,13 @@ export default function EditorPanel({
       }
     }
 
+    // Track which editor most recently held text focus so the window-level
+    // Cmd+S handler can route to the correct panel even after focus moves
+    // off the textarea (e.g. clicking the markdown preview toggle).
+    const focusDisposable = editor.onDidFocusEditorText(() => {
+      markEditorActive(panelId)
+    })
+
     let unsavedSaveTimer: ReturnType<typeof setTimeout> | null = null
     const changeDisposable = editor.onDidChangeModelContent(() => {
       if (!isDirtyRef.current) {
@@ -587,6 +656,8 @@ export default function EditorPanel({
       cancelled = true
       layoutObserver.disconnect()
       changeDisposable.dispose()
+      focusDisposable.dispose()
+      clearEditorActive(panelId)
       if (unsavedSaveTimer) {
         clearTimeout(unsavedSaveTimer)
         unsavedSaveTimer = null
@@ -611,7 +682,16 @@ export default function EditorPanel({
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    const handler = () => { save() }
+    // Cmd+S / Ctrl+S broadcasts a window-wide `save-file` event. Without a
+    // gate every mounted EditorPanel would react — and for an untitled
+    // buffer that would open a Save-As picker for each scratch editor on
+    // the canvas. We route the event to whichever editor most recently held
+    // Monaco text focus (tracked in editorSaveRegistry). This survives the
+    // user clicking off the textarea onto e.g. the markdown preview toggle,
+    // which would defeat a raw `hasTextFocus()` check.
+    const handler = () => {
+      if (getActiveEditorPanelId() === panelId) save()
+    }
     window.addEventListener('save-file', handler)
     registerEditorSave(panelId, save)
     return () => {

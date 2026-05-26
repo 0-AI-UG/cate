@@ -11,6 +11,17 @@ const allowedRoots = new Set<string>()
 const scopedWriteAllowances = new Map<number, Map<string, ReturnType<typeof setTimeout>>>()
 const DEFAULT_WRITE_ALLOWANCE_TTL_MS = 60_000
 
+// Persistent per-window grants for files the user explicitly chose outside
+// the workspace roots (e.g. via the native Save-As dialog). Unlike scoped
+// write allowances, these:
+//   - cover both read AND write
+//   - have no TTL (live until the window closes)
+//   - are not consumed on use
+// They are stored by the resolved real-path-of-parent + basename so that a
+// symlink shenanigan inside an allowed root can't laundry a sensitive
+// location into the grant set.
+const persistentFileGrants = new Map<number, Set<string>>()
+
 export function addAllowedRoot(root: string): void {
   allowedRoots.add(path.resolve(root))
 }
@@ -99,16 +110,44 @@ export function clearScopedWriteAllowancesForWindow(windowId: number): void {
 }
 
 /**
- * Validates that a file path is within an allowed root directory.
- * Returns the normalized absolute path if valid, throws if not.
+ * Persistently grant a window read+write access to a single file path. Used
+ * by the Save-As / Open-File dialogs so the file the user explicitly picked
+ * stays accessible for the rest of the window's lifetime even when it sits
+ * outside any workspace root. Returns the resolved safe path (realpath of
+ * parent + basename).
  */
-export function validatePath(filePath: string): string {
+export async function grantFileAccess(windowId: number, filePath: string): Promise<string> {
+  const safePath = await normalizeCreationTarget(filePath)
+  const set = persistentFileGrants.get(windowId) ?? new Set<string>()
+  set.add(safePath)
+  persistentFileGrants.set(windowId, set)
+  return safePath
+}
+
+function hasGrantedFile(windowId: number | undefined, normalized: string): boolean {
+  if (windowId == null) return false
+  return persistentFileGrants.get(windowId)?.has(normalized) ?? false
+}
+
+export function clearFileGrantsForWindow(windowId: number): void {
+  persistentFileGrants.delete(windowId)
+}
+
+/**
+ * Validates that a file path is within an allowed root directory or
+ * persistently granted to the calling window. Returns the normalized
+ * absolute path if valid, throws if not.
+ */
+export function validatePath(filePath: string, ownerWindowId?: number): string {
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Access denied: invalid path')
   }
 
   const normalized = path.resolve(filePath)
   if (isWithinAllowedRoots(normalized)) {
+    return normalized
+  }
+  if (hasGrantedFile(ownerWindowId, normalized)) {
     return normalized
   }
 
@@ -119,13 +158,14 @@ export function validatePath(filePath: string): string {
  * Validates that a file path is within an allowed root directory AND that its
  * fully-resolved (symlink-free) real path is also within an allowed root.
  * This prevents TOCTOU attacks where a symlink inside a workspace root points
- * to a sensitive path outside it (e.g. /etc/passwd).
+ * to a sensitive path outside it (e.g. /etc/passwd). A persistent per-window
+ * grant on either the lexical or the realpath form also satisfies the check.
  *
  * Returns the real absolute path if valid, throws if not.
  */
-export async function validatePathStrict(filePath: string): Promise<string> {
+export async function validatePathStrict(filePath: string, ownerWindowId?: number): Promise<string> {
   // First do the cheap lexical check so we fail fast on obviously bad input.
-  validatePath(filePath)
+  validatePath(filePath, ownerWindowId)
 
   let real: string
   try {
@@ -135,6 +175,9 @@ export async function validatePathStrict(filePath: string): Promise<string> {
   }
 
   if (isWithinAllowedRoots(real)) {
+    return real
+  }
+  if (hasGrantedFile(ownerWindowId, real)) {
     return real
   }
 
@@ -155,6 +198,9 @@ export async function validatePathForCreation(filePath: string, ownerWindowId?: 
   if (isWithinAllowedRoots(normalized) || isWithinAllowedRoots(safeTarget)) {
     return safeTarget
   }
+  if (hasGrantedFile(ownerWindowId, safeTarget)) {
+    return safeTarget
+  }
   if (hasScopedWriteAllowance(ownerWindowId, safeTarget)) {
     return safeTarget
   }
@@ -165,6 +211,6 @@ export async function validatePathForCreation(filePath: string, ownerWindowId?: 
  * Validates a directory path for git/shell operations.
  * Same as validatePath but specifically for cwd parameters.
  */
-export function validateCwd(cwd: string): string {
-  return validatePath(cwd)
+export function validateCwd(cwd: string, ownerWindowId?: number): string {
+  return validatePath(cwd, ownerWindowId)
 }
