@@ -4,6 +4,27 @@ All notable changes to Cate will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] - 2026-05-26
+
+Patch release with Save-As for untitled editors, agent panel visual polish, and session persistence fixes.
+
+### Added
+
+- **Save-As for untitled editor buffers** — `Cmd+S` on a scratch editor opens a native Save-As dialog; subsequent saves reuse the chosen path. The close-confirm dialog's "Save" button also triggers Save-As for untitled buffers, and cancelling the picker keeps the panel open.
+- **Per-window file grants** — files saved via Save-As outside the workspace are granted persistent read/write access scoped per window, surviving app restarts without widening the sandbox.
+
+### Changed
+
+- **Agent chat thread polish** — loading states with shimmer animation, smooth auto-scroll, and fade-in transitions for new messages.
+- **Agent user message styling** — softer bubble background and text contrast for user messages; removed hover color override on thinking blocks.
+
+### Fixed
+
+- **Agent node session persistence** — agent panels now persist and restore correctly across app restarts.
+- **Close-confirm dialog detail** — shows the on-disk path for a single dirty file, or a "Save will prompt for a location" hint for untitled buffers.
+- **Save routing** — `Cmd+S` routes to the editor that most recently held Monaco text focus, not whichever editor passes `hasTextFocus()` at the key event.
+- **Detached window Save-As sync** — Save-As in dock or panel windows syncs the new file path back to main for session persistence.
+
 ## [1.0.2] - 2026-05-26
 
 Patch release with agent panel UI polish and minimap improvements.

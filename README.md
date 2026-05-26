@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>Current source version:</strong> v1.0.2
+  <strong>Current source version:</strong> v1.0.3
 </p>
 
 <p align="center">
@@ -90,7 +90,7 @@ Cate replaces that pile of windows with **one persistent canvas per project**. T
 
 ## Install
 
-If you just want to use Cate, download a prebuilt release — don't build from source. This repository currently targets **v1.0.2**.
+If you just want to use Cate, download a prebuilt release — don't build from source. This repository currently targets **v1.0.3**.
 
 | Platform | Formats | Link |
 |----------|---------|------|
