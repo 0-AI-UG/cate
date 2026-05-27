@@ -180,14 +180,20 @@ function MainApp() {
       // Detached panel/dock windows are recreated afterwards so the main
       // window can paint without waiting on their IPC round-trips.
       let restoredSession: MultiWorkspaceSession | null = null
+      let restored = false
       const session = await loadSession()
       if (session) {
         if ((session as MultiWorkspaceSession).version === 2) {
           restoredSession = session as MultiWorkspaceSession
           await restoreMultiWorkspaceSession(restoredSession, useCanvasStore)
+          restored = true
         } else {
           await restoreSession(session as any, useCanvasStore)
+          restored = true
         }
+      }
+
+      if (restored) {
         log.info('Session restored (%d workspaces)', useAppStore.getState().workspaces.length)
       }
 
