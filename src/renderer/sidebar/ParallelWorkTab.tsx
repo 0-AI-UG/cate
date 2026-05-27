@@ -139,9 +139,13 @@ const CreateForm: React.FC<{
 
   const displayBase = baseRef || defaultBaseBranch || 'HEAD'
 
-  const filteredBranches = useMemo(() => {
+  const { localBranches, remoteBranches } = useMemo(() => {
     const q = filter.toLowerCase()
-    return q ? branches.filter((b) => b.name.toLowerCase().includes(q)) : branches
+    const filtered = q ? branches.filter((b) => b.name.toLowerCase().includes(q)) : branches
+    return {
+      localBranches: filtered.filter((b) => !b.isRemote),
+      remoteBranches: filtered.filter((b) => b.isRemote),
+    }
   }, [branches, filter])
 
   const submit = useCallback(async () => {
@@ -213,18 +217,39 @@ const CreateForm: React.FC<{
               />
             </div>
             <div className="overflow-y-auto">
-              {filteredBranches.map((b) => (
-                <button
-                  key={b.name}
-                  onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
-                  className={`w-full text-left px-2 py-1 text-[12px] truncate hover:bg-hover transition-colors ${
-                    b.name === (baseRef || defaultBaseBranch) ? 'text-primary bg-hover' : 'text-secondary'
-                  } ${b.isRemote ? 'opacity-70' : ''}`}
-                >
-                  {b.name}
-                </button>
-              ))}
-              {filteredBranches.length === 0 && (
+              {localBranches.length > 0 && (
+                <div>
+                  <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none">Local</div>
+                  {localBranches.map((b) => (
+                    <button
+                      key={b.name}
+                      onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
+                      className={`w-full text-left px-2 py-1 text-[12px] truncate hover:bg-hover transition-colors ${
+                        b.name === (baseRef || defaultBaseBranch) ? 'text-primary bg-hover' : 'text-secondary'
+                      }`}
+                    >
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {remoteBranches.length > 0 && (
+                <div>
+                  <div className={`px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none ${localBranches.length > 0 ? 'border-t border-subtle mt-1' : ''}`}>Remote</div>
+                  {remoteBranches.map((b) => (
+                    <button
+                      key={b.name}
+                      onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
+                      className={`w-full text-left px-2 py-1 text-[12px] truncate hover:bg-hover transition-colors opacity-70 ${
+                        b.name === (baseRef || defaultBaseBranch) ? 'text-primary bg-hover' : 'text-secondary'
+                      }`}
+                    >
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {localBranches.length === 0 && remoteBranches.length === 0 && (
                 <div className="px-2 py-2 text-[11px] text-muted text-center">No matching branches</div>
               )}
             </div>
