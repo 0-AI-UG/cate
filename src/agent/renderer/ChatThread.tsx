@@ -102,6 +102,15 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
     }
   }
 
+  // When the trailing visible messages are consecutive tool calls (parallel
+  // group), all of them should shimmer — not just the very last one.
+  let shimmerGroupStart = lastVisibleIdx
+  if (lastVisibleIdx >= 0 && messages[lastVisibleIdx].type === 'tool') {
+    while (shimmerGroupStart > 0 && messages[shimmerGroupStart - 1].type === 'tool') {
+      shimmerGroupStart--
+    }
+  }
+
   return (
     <div
       ref={scrollRef}
@@ -123,11 +132,12 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
           }
         }
         const isLast = idx === lastVisibleIdx
+        const inShimmerGroup = shimmerLast && idx >= shimmerGroupStart && idx <= lastVisibleIdx
         return (
           <MessageRow
             key={m.id}
             msg={m}
-            shimmer={isLast && shimmerLast}
+            shimmer={inShimmerGroup}
             forkEntryId={m.type === 'user' ? (m.entryId ?? forkMap?.[m.id]) : undefined}
             onFork={onFork}
             onEditResend={onEditResend}
