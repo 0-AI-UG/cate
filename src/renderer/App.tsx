@@ -26,12 +26,10 @@ import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
 const CanvasPanel = PANEL_REGISTRY.canvas.Component
 import { NodeSwitcher } from './ui/NodeSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
-import { GlobalSearch } from './ui/GlobalSearch'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
-import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
-import type { MultiWorkspaceSession } from '../shared/types'
+import { loadSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
 import { useDockStore } from './stores/dockStore'
 import MainWindowShell from './shells/MainWindowShell'
 import PanelWindowShell from './shells/PanelWindowShell'
@@ -116,7 +114,6 @@ function MainApp() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
-  const showGlobalSearch = useUIStore((s) => s.showGlobalSearch)
 
   // Theme — apply on mount and re-apply whenever appearanceMode changes
   const appearanceMode = useSettingsStore((s) => s.appearanceMode)
@@ -181,21 +178,9 @@ function MainApp() {
       // Try to restore previous session — only the core (active workspace).
       // Detached panel/dock windows are recreated afterwards so the main
       // window can paint without waiting on their IPC round-trips.
-      let restoredSession: MultiWorkspaceSession | null = null
-      let restored = false
-      const session = await loadSession()
-      if (session) {
-        if ((session as MultiWorkspaceSession).version === 2) {
-          restoredSession = session as MultiWorkspaceSession
-          await restoreMultiWorkspaceSession(restoredSession, useCanvasStore)
-          restored = true
-        } else {
-          await restoreSession(session as any, useCanvasStore)
-          restored = true
-        }
-      }
-
-      if (restored) {
+      let restoredSession = await loadSession()
+      if (restoredSession) {
+        await restoreMultiWorkspaceSession(restoredSession, useCanvasStore)
         log.info('Session restored (%d workspaces)', useAppStore.getState().workspaces.length)
       }
 
@@ -489,7 +474,6 @@ function MainApp() {
       {/* Modal overlays */}
       {showNodeSwitcher && <NodeSwitcher />}
       {showCommandPalette && <CommandPalette />}
-      {showGlobalSearch && <GlobalSearch />}
       {showSettings && (
         <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
       )}

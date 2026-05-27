@@ -122,7 +122,7 @@ export function buildApplicationMenu(): void {
         { role: 'delete' },
         { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Find in Files...', accelerator: 'CmdOrCtrl+Shift+H', click: dispatch('globalSearch') },
+        { label: 'Find in Files...', accelerator: 'CmdOrCtrl+Shift+H', click: dispatch('commandPalette') },
       ],
     },
     // View menu

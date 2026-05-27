@@ -50,7 +50,6 @@ function saveLayout(layout: SidebarLayout) {
 interface UIStoreState {
   showNodeSwitcher: boolean
   showCommandPalette: boolean
-  showGlobalSearch: boolean
   showLayoutsDialog: boolean
   /** Whether the minimap is currently expanded. */
   minimapOpen: boolean
@@ -73,7 +72,6 @@ interface UIStoreState {
 interface UIStoreActions {
   setShowNodeSwitcher: (show: boolean) => void
   setShowCommandPalette: (show: boolean) => void
-  setShowGlobalSearch: (show: boolean) => void
   setShowLayoutsDialog: (show: boolean) => void
   setMinimapOpen: (open: boolean) => void
   toggleMinimapOpen: () => void
@@ -99,7 +97,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   // --- State ---
   showNodeSwitcher: false,
   showCommandPalette: false,
-  showGlobalSearch: false,
   showLayoutsDialog: false,
   minimapOpen: false,
   showSettings: false,
@@ -119,10 +116,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setShowCommandPalette(show) {
     set({ showCommandPalette: show })
-  },
-
-  setShowGlobalSearch(show) {
-    set({ showGlobalSearch: show })
   },
 
   setShowLayoutsDialog(show) {
