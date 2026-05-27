@@ -21,7 +21,7 @@ import type { DockStore } from '../stores/dockStore'
 import { DockStoreProvider } from '../stores/DockStoreContext'
 import DockTabStack from '../docking/DockTabStack'
 import DockSplitContainer from '../docking/DockSplitContainer'
-import { saveEditor } from '../lib/editorSaveRegistry'
+import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
 import { resolveTerminalPreset } from '../lib/terminalRegistry'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -268,35 +268,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     async (panelIds: string[]): Promise<boolean> => {
       const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
       if (!ws) return true
-      const dirty = panelIds
-        .map((id) => ws.panels[id])
-        .filter((p): p is NonNullable<typeof p> => !!p && p.type === 'editor' && !!p.isDirty)
-      if (dirty.length === 0) return true
-      if (!window.electronAPI?.confirmUnsavedChanges) return true
-      const fileName =
-        dirty.length === 1
-          ? dirty[0].title.replace(/\s•\s*$/, '').trim()
-          : `${dirty.length} files`
-      const filePath = dirty.length === 1 ? dirty[0].filePath : undefined
-      const choice = await window.electronAPI.confirmUnsavedChanges({
-        fileName,
-        multiple: dirty.length > 1,
-        filePath,
-      })
-      if (choice === 'cancel') return false
-      if (choice === 'save') {
-        for (const p of dirty) {
-          let result: Awaited<ReturnType<typeof saveEditor>> = 'no-handler'
-          try { result = await saveEditor(p.id) } catch { /* treat as no-handler */ }
-          // Only an explicit Save-As cancellation aborts the close. A
-          // `no-handler` result means this panel isn't mounted (typically an
-          // inactive tab in a dock stack); aborting would leave the user
-          // unable to close. Pre-existing limitation: that tab's unsaved
-          // content is lost.
-          if (result === 'cancelled') return false
-        }
-      }
-      return true
+      return confirmCloseDirtyPanels(panelIds.map((id) => ws.panels[id]))
     },
     [wsId],
   )

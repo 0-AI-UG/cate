@@ -39,7 +39,11 @@ function attachListeners() {
   if (session.listenersAttached) return
   window.addEventListener('mousemove', onMouseMove, true)
   window.addEventListener('mouseup', onMouseUp, true)
-  window.addEventListener('blur', onBlur, true)
+  // Bubble phase (not capture): we only want the window's own blur event.
+  // Capture-phase would also fire for element-level blur events bubbling up,
+  // and xterm's textarea.focus() — triggered by the focus-on-focus effect on
+  // terminal panels — would otherwise cancel an in-flight drag.
+  window.addEventListener('blur', onBlur, false)
   session.listenersAttached = true
   // Body marker so resize-cursor / resize-start can guard against starting an
   // edge-resize on top of an in-flight drag. Mirrors `canvas-interacting`
@@ -52,7 +56,7 @@ function detachListeners() {
   if (!session.listenersAttached) return
   window.removeEventListener('mousemove', onMouseMove, true)
   window.removeEventListener('mouseup', onMouseUp, true)
-  window.removeEventListener('blur', onBlur, true)
+  window.removeEventListener('blur', onBlur, false)
   session.listenersAttached = false
   document.body.classList.remove('canvas-dragging')
 }

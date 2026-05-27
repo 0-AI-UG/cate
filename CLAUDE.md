@@ -14,9 +14,10 @@ The Electron app lives at the project root. Uses **electron-vite** for bundling.
 npm install        # install dependencies
 npm run dev        # start dev server with hot reload
 npm run build      # production build
+npm test           # run vitest suite
 ```
 
-There are no tests currently.
+Tests use **Vitest** and live alongside the code they cover (`*.test.ts` / `*.test.tsx`). A few git-touching tests assume a clean working repo and may fail when the dev tree has a branch named `main` or local modifications — those failures are environmental, not regressions.
 
 ## Dependencies
 
@@ -29,8 +30,9 @@ Managed via npm (`package.json`):
 - **zustand** — lightweight state management
 - **chokidar** — filesystem watching
 - **simple-git** — git operations
-- **lucide-react** — icons
+- **@phosphor-icons/react** — icons
 - **electron-store** — persistent settings
+- **electron-updater** — auto-update (GitHub Releases)
 
 ## Architecture
 
@@ -52,22 +54,31 @@ The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions 
 
 ### Panel System
 
-Three panel types in `src/renderer/panels/`:
+Panel definitions are centralised in `src/shared/panels.ts`. Renderer components live in `src/renderer/panels/`:
 - **EditorPanel** — Monaco Editor with syntax highlighting
 - **TerminalPanel** — xterm.js terminal with WebGL renderer, backed by node-pty
-- **BrowserPanel** — embedded webview
+- **BrowserPanel** — embedded webview (file:// allowed for local HTML)
+- **CanvasPanel** — nested canvas
+- **GitPanel** — staged/unstaged diff + commit UI
+- **FileExplorerPanel** — git-aware file tree
+- **ProjectListPanel** — recent projects switcher
+- **DocumentPanel** — PDF / docx preview
+- **AgentPanel** — Claude-Code agent thread (sidebar + dock)
 
-Each panel is wrapped in a `CanvasNode` component (`src/renderer/canvas/CanvasNode.tsx`) providing title bar, drag, resize, and close behavior.
+Each panel can be wrapped in a `CanvasNode` (`src/renderer/canvas/CanvasNode.tsx`) — title bar, drag, resize, close — or live inside a dock zone via `DockTabStack` (`src/renderer/docking/`). Detached panel/dock windows have their own shells (`src/renderer/shells/PanelWindowShell.tsx`, `DockWindowShell.tsx`) with local panels state synced back to main for session persistence.
 
 ### State Management
 
 Zustand stores in `src/renderer/stores/`:
-- **canvasStore** — nodes, zoom, viewport offset, focus state, layout
-- **appStore** — workspaces, sidebar, project paths
+- **canvasStore** — nodes, regions, zoom, viewport offset, focus state, history; per-canvas instances created via `CanvasStoreContext`. A `focusEpoch` counter lets panels re-run focus side effects when the same node is re-focused.
+- **appStore** — workspaces, panels, selected workspace, sidebar
+- **dockStore** — dock-zone layout (per window)
 - **settingsStore** — user preferences
 - **shortcutStore** — keyboard shortcut bindings
 - **statusStore** — status bar state
 - **uiStore** — transient UI state (command palette, etc.)
+- **updateStore** — auto-updater status pushed from main
+- **urlPromptStore** — pending URL-open confirmations from terminals
 
 Session persistence saves/restores workspace state as JSON via electron-store.
 

@@ -208,6 +208,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         className={`dock-tab-bar flex items-stretch overflow-hidden ${compact ? 'min-h-[26px]' : 'min-h-[36px]'}`}
         style={{
           backgroundColor: 'var(--node-chrome-bg, var(--surface-1))',
+          ...(onTabBarMouseDown ? { cursor: 'grab' } : null),
           ...(zoneProp === 'center' && leftEdge
             ? { marginLeft: 'var(--cate-left-sidebar-width, 0px)' }
             : null),
@@ -260,7 +261,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         {/* "+" tab — adds a new tab of the active panel's type into this stack. */}
         {activePanel && (
           <button
-            className={`flex items-center justify-center self-center rounded text-secondary hover:text-primary hover:bg-hover ${compact ? 'mx-0.5 my-0.5 w-[18px] h-[18px]' : 'mx-1 my-1 w-[22px] h-[22px]'}`}
+            className={`flex items-center justify-center self-center rounded text-secondary hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'mx-0.5 my-0.5 w-[18px] h-[18px]' : 'mx-1 my-1 w-[22px] h-[22px]'}`}
             title={`New ${PANEL_TYPE_LABELS[activePanel.type] ?? 'Tab'}`}
             onClick={() => actions.addTabOfType(activePanel.type)}
           >
@@ -273,7 +274,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           <div className={`relative flex items-center self-center ${compact ? 'px-0.5' : 'px-1'}`}>
             <button
               ref={splitButtonRef}
-              className={`flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-hover ${compact ? 'w-[18px] h-[18px]' : 'w-[22px] h-[22px]'}`}
+              className={`flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[18px] h-[18px]' : 'w-[22px] h-[22px]'}`}
               title="Split (hold to choose type)"
               onClick={handleSplitClick}
               onMouseDown={handleSplitMouseDown}

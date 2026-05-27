@@ -136,6 +136,7 @@ export function DockTabBar(props: DockTabBarProps) {
   return (
     <div
       className="flex items-stretch flex-1 min-w-0"
+      style={onEmptyMouseDown ? { cursor: 'grab' } : undefined}
       onContextMenu={onEmptyContextMenu}
       onMouseDown={(e) => {
         if (e.target !== e.currentTarget) return
@@ -216,7 +217,7 @@ export function DockTabBar(props: DockTabBarProps) {
               />
             ) : (
               <span
-                className="truncate flex-1 min-w-0"
+                className={`truncate flex-1 min-w-0 ${panel?.type === 'terminal' ? 'cursor-text' : ''}`}
                 onDoubleClick={(e) => {
                   if (panel?.type !== 'terminal') return
                   e.stopPropagation()
@@ -226,7 +227,7 @@ export function DockTabBar(props: DockTabBarProps) {
             )}
             {onClosePanel && (
               <span
-                className={`shrink-0 p-0.5 rounded-sm hover:bg-hover ${
+                className={`shrink-0 p-0.5 rounded-sm hover:bg-hover cursor-pointer ${
                   isActive ? 'opacity-80' : 'opacity-0 group-hover:opacity-70'
                 }`}
                 onClick={(e) => {
@@ -253,7 +254,7 @@ export function DockTabBar(props: DockTabBarProps) {
         className="flex-1 min-w-[20px] self-stretch"
         style={
           onTabBarMouseDown
-            ? undefined
+            ? { cursor: 'grab' }
             : ({ WebkitAppRegion: 'drag' } as React.CSSProperties)
         }
         onMouseDown={onTabBarMouseDown}

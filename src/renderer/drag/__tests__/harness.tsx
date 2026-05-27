@@ -4,8 +4,8 @@
 //   - `mousedown` on the rendered `[data-node-id]` element bubbles to React's
 //     synthetic-event listener, which invokes the `onMouseDown` prop calling
 //     `handleDragStart`. The dispatcher is not invoked by any back-channel.
-//   - `mousemove`/`mouseup`/`blur` are real window events caught by the
-//     capture-phase listeners installed by `useDragOp`.
+//   - `mousemove`/`mouseup` are real window events caught by the capture-phase
+//     listeners installed by `useDragOp`; `blur` is caught in bubble phase.
 //   - `document.elementFromPoint` is replaced by a real top-down scan over the
 //     rendered `[data-canvas-container]` / `[data-node-id]` nodes (using their
 //     stubbed `getBoundingClientRect`), so `resolveDrop`'s DOM-coupling path
