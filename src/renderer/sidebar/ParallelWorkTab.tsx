@@ -18,6 +18,7 @@ import {
   GitMerge,
   Trash,
   CaretRight,
+  CaretDown,
 } from '@phosphor-icons/react'
 import { useAppStore, pickWorktreeColor } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
@@ -93,16 +94,61 @@ const StatusBadge: React.FC<{ status?: WorktreeStatus }> = ({ status }) => {
 // ---------------------------------------------------------------------------
 
 const CreateForm: React.FC<{
-  onSubmit: (branch: string, createNew: boolean) => Promise<void>
+  onSubmit: (branch: string, createNew: boolean, baseRef?: string) => Promise<void>
   onCancel: () => void
   defaultBaseBranch: string
-}> = ({ onSubmit, onCancel, defaultBaseBranch }) => {
+  rootPath: string
+}> = ({ onSubmit, onCancel, defaultBaseBranch, rootPath }) => {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [baseRef, setBaseRef] = useState<string>('')
+  const [branches, setBranches] = useState<Array<{ name: string; isRemote: boolean }>>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [localExpanded, setLocalExpanded] = useState(true)
+  const [remoteExpanded, setRemoteExpanded] = useState(false)
+  const [filter, setFilter] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const filterRef = useRef<HTMLInputElement>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI.gitBranchList(rootPath).then((result) => {
+      if (cancelled) return
+      setBranches(
+        result.branches
+          .filter((b) => !b.name.includes('/HEAD'))
+          .map((b) => ({ name: b.name, isRemote: b.isRemote })),
+      )
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [rootPath])
+
+  useEffect(() => {
+    if (!pickerOpen) return
+    filterRef.current?.focus()
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [pickerOpen])
+
+  const displayBase = baseRef || defaultBaseBranch || 'HEAD'
+
+  const { localBranches, remoteBranches } = useMemo(() => {
+    const q = filter.toLowerCase()
+    const filtered = q ? branches.filter((b) => b.name.toLowerCase().includes(q)) : branches
+    return {
+      localBranches: filtered.filter((b) => !b.isRemote),
+      remoteBranches: filtered.filter((b) => b.isRemote),
+    }
+  }, [branches, filter])
 
   const submit = useCallback(async () => {
     const branch = name.trim()
@@ -110,13 +156,13 @@ const CreateForm: React.FC<{
     setBusy(true)
     setError(null)
     try {
-      await onSubmit(branch, true)
+      await onSubmit(branch, true, baseRef || undefined)
     } catch (err: any) {
       setError(err?.message || 'Failed to create')
     } finally {
       setBusy(false)
     }
-  }, [name, busy, onSubmit])
+  }, [name, busy, onSubmit, baseRef])
 
   return (
     <div className="px-1 pt-1">
@@ -150,8 +196,81 @@ const CreateForm: React.FC<{
           <X size={14} weight="bold" />
         </button>
       </div>
-      <div className="px-2 pt-1 pb-1 text-[11px] text-muted truncate">
-        from <span className="text-secondary">{defaultBaseBranch || 'current branch'}</span>
+      <div className="relative px-2 pt-1 pb-1" ref={pickerRef}>
+        <button
+          onClick={() => { setPickerOpen((v) => !v); setFilter('') }}
+          className="flex items-center gap-0.5 text-[11px] text-muted hover:text-secondary transition-colors"
+        >
+          from <span className="text-secondary ml-0.5 truncate max-w-[140px] inline-block align-bottom">{displayBase}</span>
+          <CaretDown size={10} className="flex-shrink-0 opacity-60" />
+        </button>
+        {pickerOpen && (
+          <div className="absolute left-0 right-0 top-full z-50 mt-0.5 mx-1 rounded-md border border-subtle bg-surface-2 shadow-lg max-h-[200px] flex flex-col overflow-hidden">
+            <div className="px-2 py-1 border-b border-subtle">
+              <input
+                ref={filterRef}
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setPickerOpen(false)
+                }}
+                placeholder="Filter branches…"
+                className="w-full text-[12px] bg-transparent outline-none text-primary placeholder:text-muted"
+              />
+            </div>
+            <div className="overflow-y-auto">
+              {localBranches.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setLocalExpanded((v) => !v)}
+                    className="w-full flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none hover:text-secondary transition-colors"
+                  >
+                    <CaretRight size={8} className={`flex-shrink-0 transition-transform ${localExpanded ? 'rotate-90' : ''}`} />
+                    Local
+                    <span className="text-muted/60 normal-case tracking-normal">({localBranches.length})</span>
+                  </button>
+                  {localExpanded && localBranches.map((b) => (
+                    <button
+                      key={b.name}
+                      onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
+                      className={`w-full text-left px-2 py-1 text-[12px] truncate hover:bg-hover transition-colors ${
+                        b.name === (baseRef || defaultBaseBranch) ? 'text-primary bg-hover' : 'text-secondary'
+                      }`}
+                    >
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {remoteBranches.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setRemoteExpanded((v) => !v)}
+                    className={`w-full flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none hover:text-secondary transition-colors ${localBranches.length > 0 ? 'border-t border-subtle mt-1' : ''}`}
+                  >
+                    <CaretRight size={8} className={`flex-shrink-0 transition-transform ${remoteExpanded ? 'rotate-90' : ''}`} />
+                    Remote
+                    <span className="text-muted/60 normal-case tracking-normal">({remoteBranches.length})</span>
+                  </button>
+                  {remoteExpanded && remoteBranches.map((b) => (
+                    <button
+                      key={b.name}
+                      onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
+                      className={`w-full text-left px-2 py-1 text-[12px] truncate hover:bg-hover transition-colors opacity-70 ${
+                        b.name === (baseRef || defaultBaseBranch) ? 'text-primary bg-hover' : 'text-secondary'
+                      }`}
+                    >
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {localBranches.length === 0 && remoteBranches.length === 0 && (
+                <div className="px-2 py-2 text-[11px] text-muted text-center">No matching branches</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       {error && (
         <div className="px-2 pb-1 text-[11px] text-red-400/80">{error}</div>
@@ -358,11 +477,12 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   // ---------------------------------------------------------------------------
 
   const handleCreate = useCallback(
-    async (branch: string, createNew: boolean) => {
+    async (branch: string, createNew: boolean, baseRef?: string) => {
       if (!rootPath || !selectedWorkspaceId) return
       const targetPath = worktreePathFor(rootPath, branch)
       await window.electronAPI.gitWorktreeAdd(rootPath, branch, targetPath, {
         createBranch: createNew,
+        baseRef,
       })
 
       const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
@@ -535,6 +655,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       {creating && (
         <CreateForm
           defaultBaseBranch={primaryBranch}
+          rootPath={rootPath}
           onSubmit={handleCreate}
           onCancel={() => setCreating(false)}
         />
