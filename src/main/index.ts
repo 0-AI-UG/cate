@@ -19,7 +19,8 @@ import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow }
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers, getLastSavedSession, saveSessionSync, loadSettingsSyncFromDisk, getSettingSync, readBootSnapshot, writeBootSnapshot } from './store'
+import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, getSettingSync, readBootSnapshot, writeBootSnapshot } from './store'
+import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
 import { registerAgentHandlers } from '../agent/main/ipcAgent'
@@ -427,6 +428,7 @@ function destroyDragGhostWindow(): void {
  */
 function registerCriticalHandlers(): void {
   registerStoreHandlers()
+  registerProjectStateHandlers()
   registerWorkspaceHandlers()
   registerFilesystemHandlers()
   registerTerminalHandlers()
@@ -1230,6 +1232,8 @@ app.whenReady().then(async () => {
   registerCriticalHandlers()
   log.info('Critical IPC handlers registered')
 
+  await runLegacyMigrationIfNeeded()
+
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)
 
@@ -1343,8 +1347,8 @@ app.on('will-quit', () => {
   // Last-resort synchronous save from cached session data.
   // The renderer flush above should have completed, but this ensures
   // we write something if it didn't.
-  log.info('will-quit: sync session save fallback')
-  saveSessionSync(getLastSavedSession())
+  log.info('will-quit: sync project state save fallback')
+  saveProjectStateSync()
   // Kill all PTYs now — AFTER session save so the renderer had access to live
   // PTY data (CWD, scrollback) during the flush triggered in before-quit.
   // Must happen while the JS environment is still alive. If we let them die

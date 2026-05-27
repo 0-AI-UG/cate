@@ -60,10 +60,10 @@ import {
   SETTINGS_SET,
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
-  SESSION_SAVE,
-  SESSION_LOAD,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
+  PROJECT_STATE_SAVE,
+  PROJECT_STATE_LOAD,
   BOOT_SNAPSHOT_WRITE,
   APP_OPEN_PATH,
   MENU_OPEN_SETTINGS,
@@ -576,13 +576,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Session
   // ---------------------------------------------------------------------------
 
-  sessionSave(snapshot: unknown): Promise<void> {
-    return ipcRenderer.invoke(SESSION_SAVE, snapshot)
-  },
-
-  sessionLoad(): Promise<unknown> {
-    return ipcRenderer.invoke(SESSION_LOAD)
-  },
 
   onSessionFlushSave(callback: () => void): () => void {
     const handler = () => callback()
@@ -593,6 +586,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sessionFlushSaveDone(): void {
     ipcRenderer.send(SESSION_FLUSH_SAVE_DONE)
   },
+
+  projectStateSave(rootPath: string, workspace: unknown, session: unknown): Promise<void> {
+    return ipcRenderer.invoke(PROJECT_STATE_SAVE, rootPath, workspace, session)
+  },
+
+  projectStateLoad(rootPath: string): Promise<unknown> {
+    return ipcRenderer.invoke(PROJECT_STATE_LOAD, rootPath)
+  },
+
 
   /** Push a partial boot snapshot to main (geometry, theme, etc.). Main
    *  debounces and writes `<userData>/boot.json` for the next cold launch. */
