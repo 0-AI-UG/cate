@@ -739,7 +739,7 @@ function SubagentResultRow({
             onClick={(e) => e.stopPropagation()}
           >
             <Info size={11} className="text-muted hover:text-primary/70 cursor-help" />
-            <span className="absolute bottom-full right-0 mb-1 hidden group-hover/info:block whitespace-nowrap text-[10px] text-primary/90 font-mono bg-surface border border-white/10 rounded px-1.5 py-1 shadow-lg z-10">
+            <span className="absolute bottom-full right-0 mb-1 hidden group-hover/info:block whitespace-nowrap text-[10px] text-primary/90 font-mono bg-surface-2 border border-white/10 rounded px-1.5 py-1 shadow-lg z-10">
               {usageBits.join(' · ')}{result.model ? ` · ${result.model}` : ''}
             </span>
           </span>
