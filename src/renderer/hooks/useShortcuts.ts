@@ -135,9 +135,6 @@ export function useShortcuts(): void {
         case 'autoLayout':
           canvasStore().autoLayout()
           break
-        case 'globalSearch':
-          useUIStore.getState().setShowGlobalSearch(true)
-          break
         case 'undo':
           canvasStore().undo()
           break
@@ -223,7 +220,7 @@ export function useShortcuts(): void {
       if (e.key === 'Escape') {
         if (terminalHasFocus) return
         const ui = useUIStore.getState()
-        if (!ui.showCommandPalette && !ui.showNodeSwitcher && !ui.showGlobalSearch) {
+        if (!ui.showCommandPalette && !ui.showNodeSwitcher) {
           canvasStore().clearSelection()
           // Don't prevent default — Escape might also close other things
           return

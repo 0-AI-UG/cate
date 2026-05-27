@@ -424,7 +424,6 @@ export type ShortcutAction =
   | 'saveFile'
   | 'zoomToFit'
   | 'autoLayout'
-  | 'globalSearch'
   | 'undo'
   | 'redo'
   | 'deleteNode'
@@ -452,7 +451,6 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'saveFile',
   'zoomToFit',
   'autoLayout',
-  'globalSearch',
   'undo',
   'redo',
   'deleteNode',
@@ -476,7 +474,6 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   saveFile: 'Save File',
   zoomToFit: 'Zoom to Fit',
   autoLayout: 'Auto Layout Canvas',
-  globalSearch: 'Global Search',
   undo: 'Undo',
   redo: 'Redo',
   deleteNode: 'Delete Focused Panel',
@@ -488,8 +485,6 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   newEditor: storedShortcut('e', { command: true, shift: true }),
   closePanel: storedShortcut('w', { command: true }),
   toggleSidebar: storedShortcut('\\', { command: true }),
-  // Moved from Cmd+Shift+F so `globalSearch` can take the find-in-files
-  // standard binding without a collision.
   toggleFileExplorer: storedShortcut('x', { command: true, shift: true }),
   toggleMinimap: storedShortcut('m', { command: true, shift: true }),
   nodeSwitcher: storedShortcut(' ', { control: true }),
@@ -502,7 +497,6 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   saveFile: storedShortcut('s', { command: true }),
   zoomToFit: storedShortcut('1', { command: true }),
   autoLayout: storedShortcut('l', { command: true, shift: true }),
-  globalSearch: storedShortcut('f', { command: true, shift: true }),
   undo: storedShortcut('z', { command: true }),
   redo: storedShortcut('z', { command: true, shift: true }),
   deleteNode: storedShortcut('Backspace', { command: true }),
