@@ -708,17 +708,9 @@ function SubagentResultRow({
     result.stopReason === 'length' || result.stopReason === 'aborted'
   const isRunning = parentRunning && !terminalStop
   const isError = !isRunning && result.exitCode > 0
-  const [expanded, setExpanded] = useState(isRunning)
-  // Auto-open while running, auto-close on completion (only if user hasn't toggled).
-  const userToggled = useRef(false)
-  useEffect(() => {
-    if (!userToggled.current) setExpanded(isRunning)
-  }, [isRunning])
+  const [expanded, setExpanded] = useState(false)
 
-  const toggle = () => {
-    userToggled.current = true
-    setExpanded((v) => !v)
-  }
+  const toggle = () => setExpanded((v) => !v)
 
   const usageBits: string[] = []
   if (result.usage?.turns) usageBits.push(`${result.usage.turns} turn${result.usage.turns > 1 ? 's' : ''}`)
