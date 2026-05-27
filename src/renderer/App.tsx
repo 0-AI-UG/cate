@@ -29,7 +29,8 @@ import { CommandPalette } from './ui/CommandPalette'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
-import { loadSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
+import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
+import type { MultiWorkspaceSession } from '../shared/types'
 import { useDockStore } from './stores/dockStore'
 import MainWindowShell from './shells/MainWindowShell'
 import PanelWindowShell from './shells/PanelWindowShell'
@@ -178,9 +179,15 @@ function MainApp() {
       // Try to restore previous session — only the core (active workspace).
       // Detached panel/dock windows are recreated afterwards so the main
       // window can paint without waiting on their IPC round-trips.
-      let restoredSession = await loadSession()
-      if (restoredSession) {
-        await restoreMultiWorkspaceSession(restoredSession, useCanvasStore)
+      let restoredSession: MultiWorkspaceSession | null = null
+      const session = await loadSession()
+      if (session) {
+        if ((session as MultiWorkspaceSession).version === 2) {
+          restoredSession = session as MultiWorkspaceSession
+          await restoreMultiWorkspaceSession(restoredSession, useCanvasStore)
+        } else {
+          await restoreSession(session as any, useCanvasStore)
+        }
         log.info('Session restored (%d workspaces)', useAppStore.getState().workspaces.length)
       }
 
