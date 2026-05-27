@@ -43,6 +43,17 @@ export function isTerminalPasteChord(event: KeyboardEvent, isMac = isMacPlatform
   return event.key === 'v' || event.key === 'V'
 }
 
+export function isTerminalCopyChord(
+  event: KeyboardEvent,
+  terminal: { hasSelection(): boolean },
+  isMac = isMacPlatform,
+): boolean {
+  if (isMac) return false
+  if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return false
+  if (event.key !== 'c' && event.key !== 'C') return false
+  return terminal.hasSelection()
+}
+
 // ---------------------------------------------------------------------------
 // Themes — three palettes for dark-warm, light-subtle, dark-cold
 // ---------------------------------------------------------------------------
@@ -487,6 +498,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
       // xterm's textarea and xterm performs the paste once. Do NOT preventDefault
       // here — that would also cancel the paste event and nothing would paste.
       if (isTerminalPasteChord(event)) return false
+      if (isTerminalCopyChord(event, terminal)) return false
 
       const keyCode = CSI_U_KEYS[event.key]
       if (keyCode === undefined) return true // let xterm handle all other keys
@@ -645,6 +657,7 @@ async function reconnectTerminal(
   terminal.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true
     if (isTerminalPasteChord(event)) return false
+    if (isTerminalCopyChord(event, terminal)) return false
     const keyCode = CSI_U_KEYS[event.key]
     if (keyCode === undefined) return true
     let mod = 1

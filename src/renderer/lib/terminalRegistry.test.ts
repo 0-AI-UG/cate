@@ -38,6 +38,7 @@ vi.mock('@xterm/xterm', () => {
     }
     onData(): { dispose: () => void } { return { dispose: () => {} } }
     onResize(): { dispose: () => void } { return { dispose: () => {} } }
+    hasSelection(): boolean { return false }
     attachCustomKeyEventHandler(): void { /* no-op */ }
     refresh(): void { /* no-op */ }
     scrollToBottom(): void { /* no-op */ }
@@ -145,6 +146,41 @@ describe('isTerminalPasteChord', () => {
     const { isTerminalPasteChord } = await import('./terminalRegistry')
     const up = new KeyboardEvent('keyup', { ctrlKey: true, key: 'v' })
     expect(isTerminalPasteChord(up, false)).toBe(false)
+  })
+})
+
+describe('isTerminalCopyChord', () => {
+  const kd = (init: KeyboardEventInit) => new KeyboardEvent('keydown', init)
+  const withSelection = { hasSelection: () => true }
+  const noSelection = { hasSelection: () => false }
+
+  it('matches Ctrl+C on non-mac when terminal has a selection', async () => {
+    const { isTerminalCopyChord } = await import('./terminalRegistry')
+    expect(isTerminalCopyChord(kd({ ctrlKey: true, key: 'c' }), withSelection, false)).toBe(true)
+    expect(isTerminalCopyChord(kd({ ctrlKey: true, shiftKey: true, key: 'C' }), withSelection, false)).toBe(true)
+  })
+
+  it('does not match when there is no selection (SIGINT should go through)', async () => {
+    const { isTerminalCopyChord } = await import('./terminalRegistry')
+    expect(isTerminalCopyChord(kd({ ctrlKey: true, key: 'c' }), noSelection, false)).toBe(false)
+  })
+
+  it('ignores Ctrl+C on macOS (Cmd+C handles copy; Ctrl+C is SIGINT)', async () => {
+    const { isTerminalCopyChord } = await import('./terminalRegistry')
+    expect(isTerminalCopyChord(kd({ ctrlKey: true, key: 'c' }), withSelection, true)).toBe(false)
+  })
+
+  it('does not match when alt or meta is also held, or without ctrl', async () => {
+    const { isTerminalCopyChord } = await import('./terminalRegistry')
+    expect(isTerminalCopyChord(kd({ ctrlKey: true, altKey: true, key: 'c' }), withSelection, false)).toBe(false)
+    expect(isTerminalCopyChord(kd({ metaKey: true, key: 'c' }), withSelection, false)).toBe(false)
+    expect(isTerminalCopyChord(kd({ key: 'c' }), withSelection, false)).toBe(false)
+  })
+
+  it('only matches keydown, not keyup', async () => {
+    const { isTerminalCopyChord } = await import('./terminalRegistry')
+    const up = new KeyboardEvent('keyup', { ctrlKey: true, key: 'c' })
+    expect(isTerminalCopyChord(up, withSelection, false)).toBe(false)
   })
 })
 
