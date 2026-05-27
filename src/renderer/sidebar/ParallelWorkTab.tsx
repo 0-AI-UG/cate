@@ -105,6 +105,8 @@ const CreateForm: React.FC<{
   const [baseRef, setBaseRef] = useState<string>('')
   const [branches, setBranches] = useState<Array<{ name: string; isRemote: boolean }>>([])
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [localExpanded, setLocalExpanded] = useState(true)
+  const [remoteExpanded, setRemoteExpanded] = useState(false)
   const [filter, setFilter] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const filterRef = useRef<HTMLInputElement>(null)
@@ -219,8 +221,15 @@ const CreateForm: React.FC<{
             <div className="overflow-y-auto">
               {localBranches.length > 0 && (
                 <div>
-                  <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none">Local</div>
-                  {localBranches.map((b) => (
+                  <button
+                    onClick={() => setLocalExpanded((v) => !v)}
+                    className="w-full flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none hover:text-secondary transition-colors"
+                  >
+                    <CaretRight size={8} className={`flex-shrink-0 transition-transform ${localExpanded ? 'rotate-90' : ''}`} />
+                    Local
+                    <span className="text-muted/60 normal-case tracking-normal">({localBranches.length})</span>
+                  </button>
+                  {localExpanded && localBranches.map((b) => (
                     <button
                       key={b.name}
                       onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
@@ -235,8 +244,15 @@ const CreateForm: React.FC<{
               )}
               {remoteBranches.length > 0 && (
                 <div>
-                  <div className={`px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none ${localBranches.length > 0 ? 'border-t border-subtle mt-1' : ''}`}>Remote</div>
-                  {remoteBranches.map((b) => (
+                  <button
+                    onClick={() => setRemoteExpanded((v) => !v)}
+                    className={`w-full flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none hover:text-secondary transition-colors ${localBranches.length > 0 ? 'border-t border-subtle mt-1' : ''}`}
+                  >
+                    <CaretRight size={8} className={`flex-shrink-0 transition-transform ${remoteExpanded ? 'rotate-90' : ''}`} />
+                    Remote
+                    <span className="text-muted/60 normal-case tracking-normal">({remoteBranches.length})</span>
+                  </button>
+                  {remoteExpanded && remoteBranches.map((b) => (
                     <button
                       key={b.name}
                       onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
