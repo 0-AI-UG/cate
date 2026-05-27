@@ -4,12 +4,14 @@ import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreC
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { useAppStore, getCanvasOpsById } from '../stores/appStore'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
-import { ACCENT_COLORS, ACCENT_COLOR_NAMES, REGION_FILL_COLORS } from '../../shared/colors'
+import { ACCENT_COLORS, ACCENT_COLOR_NAMES, ACCENT_PALETTE, REGION_FILL_ALPHA, REGION_FILL_COLORS } from '../../shared/colors'
 
-// Parse rgba(...) string → { r, g, b, a }
+// Parse rgba(...) string → { r, g, b, a }. Falls back to the first slot of the
+// shared accent palette so unparseable values stay in sync with the palette.
+const [FALLBACK_R, FALLBACK_G, FALLBACK_B] = ACCENT_PALETTE[0].vividRgb
 function parseRgba(str: string): { r: number; g: number; b: number; a: number } {
   const m = str.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/)
-  if (!m) return { r: 74, g: 158, b: 255, a: 0.08 }
+  if (!m) return { r: FALLBACK_R, g: FALLBACK_G, b: FALLBACK_B, a: REGION_FILL_ALPHA }
   return { r: +m[1], g: +m[2], b: +m[3], a: m[4] ? +m[4] : 1 }
 }
 
