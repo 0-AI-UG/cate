@@ -4,18 +4,7 @@ import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreC
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { useAppStore, getCanvasOpsById } from '../stores/appStore'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
-
-// Preset region colors
-const REGION_COLORS = [
-  'rgba(0, 128, 255, 0.08)',    // blue (default)
-  'rgba(0, 255, 0, 0.08)',      // green
-  'rgba(255, 128, 0, 0.08)',    // orange
-  'rgba(255, 0, 0, 0.08)',      // red
-  'rgba(170, 0, 255, 0.08)',    // purple
-  'rgba(255, 255, 0, 0.08)',    // yellow
-  'rgba(0, 255, 255, 0.08)',    // teal
-  'rgba(255, 0, 128, 0.08)',    // pink
-]
+import { ACCENT_COLORS, ACCENT_COLOR_NAMES, REGION_FILL_COLORS } from '../../shared/colors'
 
 // Parse rgba(...) string → { r, g, b, a }
 function parseRgba(str: string): { r: number; g: number; b: number; a: number } {
@@ -237,16 +226,17 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
     requestAnimationFrame(tryTransfer)
   }, [region.id, canvasApi])
 
-  const REGION_COLOR_LABELS = ['Blue', 'Green', 'Orange', 'Red', 'Purple', 'Yellow', 'Teal', 'Pink']
-
   const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (!window.electronAPI) return
-    const colorSubmenu: NativeContextMenuItem[] = REGION_COLORS.map((color, i) => ({
-      id: `color:${i}`,
-      label: region.color === color ? `${REGION_COLOR_LABELS[i]} ✓` : REGION_COLOR_LABELS[i],
-    }))
+    const colorSubmenu: NativeContextMenuItem[] = REGION_FILL_COLORS.map((color, i) => {
+      const label = ACCENT_COLOR_NAMES[ACCENT_COLORS[i]] ?? ACCENT_COLORS[i]
+      return {
+        id: `color:${i}`,
+        label: region.color === color ? `${label} ✓` : label,
+      }
+    })
     const cwdLabel = region.defaultCwd
       ? `Default Folder: …/${region.defaultCwd.split('/').filter(Boolean).slice(-2).join('/')}`
       : 'Set Default Folder…'
@@ -269,7 +259,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
     }
     if (id.startsWith('color:')) {
       const idx = parseInt(id.slice(6), 10)
-      canvasApi.getState().updateRegionColor(region.id, REGION_COLORS[idx])
+      canvasApi.getState().updateRegionColor(region.id, REGION_FILL_COLORS[idx])
       return
     }
     if (id === 'set-cwd') {
@@ -462,7 +452,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
                 top: region.origin.y + (handle.includes('top') || handle === 'topLeft' || handle === 'topRight' ? -handleSize / 2 : region.size.height - handleSize / 2),
                 width: handleSize,
                 height: handleSize,
-                backgroundColor: 'rgba(74, 158, 255, 0.9)',
+                backgroundColor: `rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.9)`,
                 borderRadius: 2,
                 cursor: HANDLE_CURSORS[handle],
                 zIndex: 1,
@@ -482,7 +472,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
                   top: region.origin.y + (handle === 'top' ? -handleSize / 2 : handle === 'bottom' ? region.size.height - handleSize / 2 : region.size.height / 2 - handleSize / 2),
                   width: isHoriz ? handleSize : handleSize,
                   height: isHoriz ? handleSize : handleSize,
-                  backgroundColor: 'rgba(74, 158, 255, 0.7)',
+                  backgroundColor: `rgba(${parseRgba(region.color).r}, ${parseRgba(region.color).g}, ${parseRgba(region.color).b}, 0.7)`,
                   borderRadius: 2,
                   cursor: HANDLE_CURSORS[handle],
                   zIndex: 1,

@@ -190,7 +190,7 @@ export function DockTabBar(props: DockTabBarProps) {
             {isActive && (
               <span
                 className="absolute left-0 right-0 top-0 h-[2px]"
-                style={{ backgroundColor: 'var(--node-chrome-accent, #3b82f6)' }}
+                style={{ backgroundColor: 'var(--workspace-accent, var(--node-chrome-accent, #3b82f6))' }}
               />
             )}
             <span

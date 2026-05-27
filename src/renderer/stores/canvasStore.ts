@@ -26,6 +26,7 @@ import {
   autoLayoutAll as computeAutoLayoutAll,
 } from '../canvas/layoutEngine'
 import { viewToCanvas as viewToCanvasCoords } from '../lib/coordinates'
+import { REGION_FILL_COLORS } from '../../shared/colors'
 
 // -----------------------------------------------------------------------------
 // Store interface
@@ -1014,7 +1015,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       origin,
       size,
       label,
-      color: color || 'rgba(74, 158, 255, 0.08)',
+      color: color || REGION_FILL_COLORS[0],
       zOrder: -1000,
     }
     set((state) => ({

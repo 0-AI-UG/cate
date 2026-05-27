@@ -20,6 +20,7 @@ import type {
   WorktreeMeta,
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types'
+import { ACCENT_COLORS } from '../../shared/colors'
 import type { CanvasNodeId, CanvasNodeState, CanvasRegion } from '../../shared/types'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from './canvasStore'
@@ -103,15 +104,8 @@ function generateId(): string {
   return crypto.randomUUID()
 }
 
-/** Workspace accent colors — muted palette, user-selectable. */
-export const WORKSPACE_COLORS = [
-  '#6b8fb0', // slate blue
-  '#c08a5a', // warm tan
-  '#7aa074', // sage
-  '#9d7fb5', // muted violet
-  '#c07070', // dusty red
-  '#6aa5a5', // muted teal
-]
+/** Workspace accent colors — re-exported from the shared accent palette. */
+export const WORKSPACE_COLORS = ACCENT_COLORS
 
 function createDefaultWorkspace(name?: string, rootPath?: string): WorkspaceState {
   return {

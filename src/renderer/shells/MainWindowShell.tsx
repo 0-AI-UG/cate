@@ -6,6 +6,7 @@
 
 import React, { useCallback, useEffect, useRef } from 'react'
 import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext'
+import { useSelectedWorkspace } from '../stores/appStore'
 import type { DockZonePosition } from '../../shared/types'
 import DockZone from '../docking/DockZone'
 import DockResizeHandle from '../docking/DockResizeHandle'
@@ -116,8 +117,14 @@ export default function MainWindowShell({
     activeDropTarget?.kind === 'dock-zone' &&
     activeDropTarget.zone === 'bottom'
 
+  const workspaceAccent = useSelectedWorkspace()?.color || undefined
+
   return (
-    <div ref={shellRef} className="flex flex-col h-full w-full min-h-0 min-w-0 relative">
+    <div
+      ref={shellRef}
+      className="flex flex-col h-full w-full min-h-0 min-w-0 relative"
+      style={workspaceAccent ? ({ ['--workspace-accent' as string]: workspaceAccent } as React.CSSProperties) : undefined}
+    >
       {/* Top row: left dock | center dock | right dock */}
       <div className="flex flex-1 min-h-0 min-w-0">
         {/* Left dock zone */}
