@@ -70,6 +70,7 @@ import {
   MENU_TRIGGER_ACTION,
   MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
+  DIALOG_OPEN_FILE,
   DIALOG_SAVE_FILE,
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_CANVAS,
@@ -114,6 +115,13 @@ import {
   WORKSPACE_CHANGED,
   WEBVIEW_SCREENSHOT,
   NATIVE_FILE_DRAG,
+  NATIVE_APP_LIST_WINDOWS,
+  NATIVE_APP_LAUNCH,
+  NATIVE_APP_BIND,
+  NATIVE_APP_UNBIND,
+  NATIVE_APP_SET_BOUNDS,
+  NATIVE_APP_SET_VISIBLE,
+  NATIVE_APP_GET_BINDING,
   CAPTURE_PAGE,
   UPDATE_STATUS,
   UPDATE_INSTALL,
@@ -620,6 +628,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DIALOG_OPEN_FOLDER)
   },
 
+  openFileDialog(options?: { title?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> {
+    return ipcRenderer.invoke(DIALOG_OPEN_FILE, options ?? {})
+  },
+
   saveFileDialog(payload?: { defaultName?: string; defaultPath?: string }): Promise<string | null> {
     return ipcRenderer.invoke(DIALOG_SAVE_FILE, payload ?? {})
   },
@@ -678,6 +690,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   nativeFileDrag(filePath: string): Promise<void> {
     return ipcRenderer.invoke(NATIVE_FILE_DRAG, filePath)
+  },
+
+  nativeAppListWindows(): Promise<unknown> {
+    return ipcRenderer.invoke(NATIVE_APP_LIST_WINDOWS)
+  },
+
+  nativeAppLaunch(request: unknown): Promise<unknown> {
+    return ipcRenderer.invoke(NATIVE_APP_LAUNCH, request)
+  },
+
+  nativeAppBind(request: unknown): Promise<unknown> {
+    return ipcRenderer.invoke(NATIVE_APP_BIND, request)
+  },
+
+  nativeAppUnbind(panelId: string): Promise<void> {
+    return ipcRenderer.invoke(NATIVE_APP_UNBIND, panelId)
+  },
+
+  nativeAppSetBounds(panelId: string, bounds: unknown): Promise<void> {
+    return ipcRenderer.invoke(NATIVE_APP_SET_BOUNDS, panelId, bounds)
+  },
+
+  nativeAppSetVisible(panelId: string, visible: boolean): Promise<void> {
+    return ipcRenderer.invoke(NATIVE_APP_SET_VISIBLE, panelId, visible)
+  },
+
+  nativeAppGetBinding(panelId: string): Promise<unknown> {
+    return ipcRenderer.invoke(NATIVE_APP_GET_BINDING, panelId)
   },
 
   // ---------------------------------------------------------------------------

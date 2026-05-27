@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_OPEN_FILE, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -13,6 +13,13 @@ import {
   CROSS_WINDOW_DRAG_START, CROSS_WINDOW_DRAG_UPDATE, CROSS_WINDOW_DRAG_DROP, CROSS_WINDOW_DRAG_CANCEL, CROSS_WINDOW_DRAG_RESOLVE,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
+  NATIVE_APP_LIST_WINDOWS,
+  NATIVE_APP_LAUNCH,
+  NATIVE_APP_BIND,
+  NATIVE_APP_UNBIND,
+  NATIVE_APP_SET_BOUNDS,
+  NATIVE_APP_SET_VISIBLE,
+  NATIVE_APP_GET_BINDING,
 } from '../shared/ipc-channels'
 import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals, terminalPids } from './ipc/terminal'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
@@ -40,7 +47,7 @@ import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
 import { initSentry, captureMainException, flushSentry } from './sentry'
 import { initAnalytics, trackAppStart, checkAndReportUpdate } from './analytics'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer, handleCrossWindowDropTerminalTransfer } from './ipc/terminal'
-import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
+import type { CateWindowParams, DockWindowInitPayload, NativeAppBindRequest, NativeAppBounds, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
 import { disableRendererSandbox, disableTrustScoping } from './featureFlags'
 import { getSharedPanelDef } from '../shared/panels'
 import { installWebContentsSecurity } from './webSecurity'
@@ -59,6 +66,7 @@ import {
   type CrossWindowDragState,
   type GhostHostWindow,
 } from './dragLogic'
+import { nativeWindowHost } from './nativeWindowHost'
 
 /** True when any existing Cate BrowserWindow is in macOS native fullscreen.
  *  Used to reject window-creation IPCs so the app can never "escape" into a
@@ -231,6 +239,7 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     stopWatchersForWindow(windowId)
     unregisterTerminalsForWindow(windowId)
     stopMonitorsForWindow(windowId)
+    nativeWindowHost.unbindForHostWindow(windowId)
     clearScopedWriteAllowancesForWindow(windowId)
     clearFileGrantsForWindow(windowId)
     // Rebuild menu to update panel/dock window list
@@ -479,6 +488,21 @@ function registerWindowAndDialogHandlers(): void {
     return result.filePaths[0]
   })
 
+  ipcMain.handle(DIALOG_OPEN_FILE, async (event, options?: { title?: string; filters?: Electron.FileFilter[] }) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const result = await dialog.showOpenDialog(win!, {
+      title: options?.title,
+      filters: options?.filters,
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const selectedPath = result.filePaths[0]
+    if (win) {
+      try { await grantFileAccess(win.id, selectedPath) } catch { /* picker path may not need renderer FS access */ }
+    }
+    return selectedPath
+  })
+
   // Native Save-As dialog for untitled editor buffers.
   ipcMain.handle(DIALOG_SAVE_FILE, async (event, payload: { defaultName?: string; defaultPath?: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
@@ -676,6 +700,37 @@ function registerWindowAndDialogHandlers(): void {
       log.error('[NATIVE_FILE_DRAG]', error)
       throw error instanceof Error ? error : new Error(String(error))
     }
+  })
+
+  ipcMain.handle(NATIVE_APP_LIST_WINDOWS, async () => {
+    return nativeWindowHost.listWindows()
+  })
+
+  ipcMain.handle(NATIVE_APP_LAUNCH, async (event, request: NativeAppBindRequest) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return nativeWindowHost.launch(request, win?.id ?? -1)
+  })
+
+  ipcMain.handle(NATIVE_APP_BIND, async (event, request: NativeAppBindRequest) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return nativeWindowHost.bind(request, win?.id ?? -1)
+  })
+
+  ipcMain.handle(NATIVE_APP_UNBIND, async (_event, panelId: string) => {
+    nativeWindowHost.unbind(panelId)
+  })
+
+  ipcMain.handle(NATIVE_APP_SET_BOUNDS, async (event, panelId: string, bounds: NativeAppBounds) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    nativeWindowHost.setBounds(panelId, bounds, win?.id ?? -1)
+  })
+
+  ipcMain.handle(NATIVE_APP_SET_VISIBLE, async (_event, panelId: string, visible: boolean) => {
+    nativeWindowHost.setVisible(panelId, visible)
+  })
+
+  ipcMain.handle(NATIVE_APP_GET_BINDING, async (_event, panelId: string) => {
+    return nativeWindowHost.getBinding(panelId)
   })
 
   // Renderer-driven title sync — used so each native macOS tab shows the

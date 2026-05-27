@@ -17,12 +17,14 @@ import {
   ArrowsOutSimple,
   Square,
   FloppyDisk,
+  Monitor,
 } from '@phosphor-icons/react'
 import { CateLogo } from './CateLogo'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { openFileAsPanel } from '../lib/fileRouting'
+import { NATIVE_APP_PRESETS } from '../../shared/nativeAppPresets'
 
 // -----------------------------------------------------------------------------
 // Command definitions
@@ -50,6 +52,7 @@ const ZoomToFitIcon = () => <ArrowsOutSimple size={ICON_SIZE} />
 const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
 const AgentIcon = () => <CateLogo size={ICON_SIZE} />
+const NativeAppIcon = () => <Monitor size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
 // Component
@@ -65,6 +68,7 @@ export const CommandPalette: React.FC = () => {
   const createEditor = useAppStore((s) => s.createEditor)
   const createCanvas = useAppStore((s) => s.createCanvas)
   const createAgent = useAppStore((s) => s.createAgent)
+  const createNativeApp = useAppStore((s) => s.createNativeApp)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const setActiveRightSidebarView = useUIStore((s) => s.setActiveRightSidebarView)
   const canvasApi = useCanvasStoreApi()
@@ -94,6 +98,7 @@ export const CommandPalette: React.FC = () => {
   }, [setShowCommandPalette])
 
   const dockCenter = { target: 'dock', zone: 'center' } as const
+  const canCreateNativeApps = navigator.userAgent.includes('Windows')
 
   // Build command items
   const allCommands: CommandItem[] = useMemo(
@@ -133,6 +138,27 @@ export const CommandPalette: React.FC = () => {
         icon: <LayoutIcon />,
         action: () => createCanvas(selectedWorkspaceId),
       },
+      ...(canCreateNativeApps ? [
+        {
+          id: 'newNativeApp',
+          title: 'Add Native App...',
+          shortcutText: '',
+          icon: <NativeAppIcon />,
+          action: () => createNativeApp(selectedWorkspaceId),
+        },
+        ...NATIVE_APP_PRESETS.map((preset) => ({
+          id: `newNativeApp-${preset.id}`,
+          title: `Add ${preset.label}`,
+          shortcutText: '',
+          icon: <NativeAppIcon />,
+          action: () => createNativeApp(selectedWorkspaceId, {
+            bindingMode: 'launch' as const,
+            presetId: preset.id,
+            windowTitlePattern: preset.titlePattern,
+            launchArgs: preset.launchArgs,
+          }),
+        })),
+      ] : []),
       {
         id: 'toggleSidebar',
         title: 'Toggle Sidebar',
@@ -197,6 +223,8 @@ export const CommandPalette: React.FC = () => {
       createEditor,
       createCanvas,
       createAgent,
+      createNativeApp,
+      canCreateNativeApps,
       toggleSidebar,
       setActiveRightSidebarView,
       setShowNodeSwitcher,

@@ -14,6 +14,7 @@ import type {
   WorkspaceMutationResult,
   PanelState,
   PanelType,
+  NativeAppConfig,
   Point,
   Size,
   DockZonePosition,
@@ -295,6 +296,7 @@ interface AppStoreActions {
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
+  createNativeApp: (workspaceId: string, config?: NativeAppConfig, position?: Point, placement?: PanelPlacement) => string
 
   // Ensure the center dock zone contains a canvas panel for the given workspace.
   // Covers session-restore and new-workspace paths where the center layout may
@@ -306,6 +308,7 @@ interface AppStoreActions {
   updatePanelTitle: (workspaceId: string, panelId: string, title: string) => void
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
+  updatePanelNativeApp: (workspaceId: string, panelId: string, nativeApp: NativeAppConfig, title?: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
   setPanelThemePreset: (workspaceId: string, panelId: string, themePreset: string | undefined) => void
@@ -1005,6 +1008,41 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return panelId
   },
 
+  createNativeApp(workspaceId, config?, position?, placement?) {
+    const panelId = generateId()
+    const title = config?.windowTitlePattern || config?.presetId || 'Native App'
+    const panel: PanelState = {
+      id: panelId,
+      type: 'nativeApp',
+      title,
+      isDirty: false,
+      nativeApp: config ?? { bindingMode: 'attach' },
+    }
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === workspaceId
+          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
+          : ws,
+      ),
+    }))
+    try {
+      placePanel(panelId, 'nativeApp', placement, position, workspaceId === get().selectedWorkspaceId)
+    } catch (error) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) =>
+          ws.id === workspaceId
+            ? { ...ws, panels: Object.fromEntries(
+                Object.entries(ws.panels).filter(([id]) => id !== panelId)
+              )}
+            : ws,
+        ),
+      }))
+      log.error('Failed to place native app panel:', error)
+      return null as unknown as string
+    }
+    return panelId
+  },
+
   // --- Panel management ---
 
   closePanel(workspaceId, panelId) {
@@ -1016,6 +1054,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
     if (panel?.type === 'canvas') {
       releaseCanvasStoreForPanel(panelId)
+    }
+    if (panel?.type === 'nativeApp') {
+      window.electronAPI.nativeAppUnbind(panelId).catch((error) => {
+        log.warn('[nativeApp] unbind failed during close:', error)
+      })
     }
 
     // Remove from dock/canvas first (less critical — log errors but continue)
@@ -1094,6 +1137,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return {
           ...ws,
           panels: { ...ws.panels, [panelId]: { ...panel, filePath } },
+        }
+      }),
+    }))
+  },
+
+  updatePanelNativeApp(workspaceId, panelId, nativeApp, title) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        const panel = ws.panels[panelId]
+        if (!panel) return ws
+        return {
+          ...ws,
+          panels: { ...ws.panels, [panelId]: { ...panel, nativeApp, title: title ?? panel.title } },
         }
       }),
     }))

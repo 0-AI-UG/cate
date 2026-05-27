@@ -131,6 +131,7 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
+export const DIALOG_OPEN_FILE = 'dialog:openFile'
 export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
@@ -194,6 +195,15 @@ export const CROSS_WINDOW_DRAG_RESOLVE = 'crossDrag:resolve'   // renderer -> ma
 // Webview
 export const WEBVIEW_SCREENSHOT = 'webview:screenshot'
 export const NATIVE_FILE_DRAG = 'native:fileDrag'
+
+// Native Windows app panels
+export const NATIVE_APP_LIST_WINDOWS = 'nativeApp:listWindows'
+export const NATIVE_APP_LAUNCH = 'nativeApp:launch'
+export const NATIVE_APP_BIND = 'nativeApp:bind'
+export const NATIVE_APP_UNBIND = 'nativeApp:unbind'
+export const NATIVE_APP_SET_BOUNDS = 'nativeApp:setBounds'
+export const NATIVE_APP_SET_VISIBLE = 'nativeApp:setVisible'
+export const NATIVE_APP_GET_BINDING = 'nativeApp:getBinding'
 
 // Page capture
 export const CAPTURE_PAGE = 'capture-page'

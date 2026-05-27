@@ -74,6 +74,10 @@ export function createTransferSnapshot(
     }
   }
 
+  if (panel.type === 'nativeApp' && panel.nativeApp) {
+    snapshot.nativeAppState = { ...panel.nativeApp }
+  }
+
   // Canvas-specific: capture child nodes + regions + viewport AND the PanelState
   // record for each child panel. Without the PanelStates the receiving window
   // can't resolve child panel types/titles and renders generic "Panel" stubs.

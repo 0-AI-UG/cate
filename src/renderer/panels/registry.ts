@@ -22,10 +22,11 @@ import {
   SquaresFour,
   List,
   FileDoc,
+  Monitor,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import { CateLogo } from '../ui/CateLogo'
-import type { PanelType, Point } from '../../shared/types'
+import type { NativeAppConfig, PanelType, Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { PANEL_DEFINITIONS, type SharedPanelDefinition } from '../../shared/panels'
@@ -46,6 +47,7 @@ const ProjectListPanel = React.lazy(() => import('./ProjectListPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('../../agent/renderer/AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
+const NativeAppPanel = React.lazy(() => import('./NativeAppPanel'))
 
 // -----------------------------------------------------------------------------
 // Renderer definition
@@ -65,6 +67,8 @@ export interface PanelCreateArgs {
   initialInput?: string
   /** Document only. */
   documentType?: 'pdf' | 'docx' | 'image'
+  /** Native app only. */
+  nativeApp?: NativeAppConfig
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
@@ -146,6 +150,13 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: DocumentPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath, documentType }) =>
       useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null,
+  },
+  nativeApp: {
+    ...PANEL_DEFINITIONS.nativeApp,
+    icon: Monitor,
+    Component: NativeAppPanel,
+    create: ({ workspaceId, canvasPoint, placement, nativeApp }) =>
+      useAppStore.getState().createNativeApp(workspaceId, nativeApp, canvasPoint, placement) || null,
   },
 }
 

@@ -26,7 +26,47 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'git' | 'fileExplorer' | 'projectList' | 'canvas' | 'agent' | 'document'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'git' | 'fileExplorer' | 'projectList' | 'canvas' | 'agent' | 'document' | 'nativeApp'
+
+export type NativeAppBindingMode = 'launch' | 'attach'
+
+export interface NativeAppConfig {
+  presetId?: string
+  exePath?: string
+  launchArgs?: string[]
+  windowTitlePattern?: string
+  bindingMode: NativeAppBindingMode
+}
+
+export interface NativeAppWindowInfo {
+  hwnd: string
+  title: string
+  processId: number
+  exePath?: string
+  isBound: boolean
+}
+
+export interface NativeAppBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface NativeAppBindRequest {
+  panelId: string
+  config: NativeAppConfig
+  hwnd?: string
+}
+
+export interface NativeAppBindingStatus {
+  panelId: string
+  hwnd?: string
+  title?: string
+  visible: boolean
+  alive: boolean
+  error?: string
+}
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -109,6 +149,9 @@ export interface PanelState {
   cwd?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
+  /** Native app panels only: persisted launch/attach configuration. HWNDs are
+   *  runtime-only because window handles are invalid after restart/transfer. */
+  nativeApp?: NativeAppConfig
   /** Id of the WorktreeMeta in the parent workspace that this panel is
    *  associated with. Drives the per-panel color accent and the title-bar
    *  "switch worktree" pill. Applies to terminal + agent panels. */
@@ -218,6 +261,9 @@ export interface PanelTransferSnapshot {
     canGoBack: boolean
     canGoForward: boolean
   }
+
+  // Native app-specific — persisted config only, never runtime HWND.
+  nativeAppState?: NativeAppConfig
 
   // Canvas-specific — child nodes/regions/viewport for nested canvas panels.
   // Without this, detaching a canvas panel to a new window would land with an
@@ -836,6 +882,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   canvas: { width: 640, height: 480 },
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
+  nativeApp: { width: 720, height: 500 },
 }
 
 // -----------------------------------------------------------------------------
