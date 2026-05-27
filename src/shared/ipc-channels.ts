@@ -79,10 +79,12 @@ export const SETTINGS_GET_ALL = 'settings:getAll'
 export const SETTINGS_RESET = 'settings:reset'
 
 // Session
-export const SESSION_SAVE = 'session:save'
-export const SESSION_LOAD = 'session:load'
 export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer
 export const SESSION_FLUSH_SAVE_DONE = 'session:flushSaveDone' // renderer -> main
+
+// Project-local workspace persistence (.cate/)
+export const PROJECT_STATE_SAVE = 'project:stateSave'     // renderer -> main
+export const PROJECT_STATE_LOAD = 'project:stateLoad'     // renderer -> main
 
 // Boot snapshot — a tiny JSON file (geometry, theme, last workspace id, native
 // tabs flag) written by the renderer whenever the relevant settings change.

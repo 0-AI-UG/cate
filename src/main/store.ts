@@ -13,8 +13,6 @@ import {
   SETTINGS_SET,
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
-  SESSION_SAVE,
-  SESSION_LOAD,
   BOOT_SNAPSHOT_WRITE,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
@@ -24,10 +22,7 @@ import {
   LAYOUT_DELETE,
 } from '../shared/ipc-channels'
 import { DEFAULT_SETTINGS } from '../shared/types'
-import type { AppSettings, SessionSnapshot, MultiWorkspaceSession } from '../shared/types'
-import { addAllowedRoot } from './ipc/pathValidation'
-import { hydrateSessionTrust } from './sessionTrust'
-import { resolveTrustedWorkspaceRoot } from './workspaceRoots'
+import type { AppSettings } from '../shared/types'
 
 // ---------------------------------------------------------------------------
 // Settings schema: expected key → expected typeof value (or 'array')
@@ -187,114 +182,6 @@ export function writeBootSnapshot(partial: Partial<BootSnapshot>): void {
   bootSnapshotTimer = setTimeout(() => { void flushBootSnapshot() }, BOOT_SNAPSHOT_DEBOUNCE_MS)
 }
 
-function getSessionPath(): string {
-  return path.join(app.getPath('userData'), 'Sessions', 'session.json')
-}
-
-// ---------------------------------------------------------------------------
-// Write serialization — ensures only one session write runs at a time
-// ---------------------------------------------------------------------------
-let writeQueue: Promise<void> = Promise.resolve()
-function serialized(fn: () => Promise<void>): Promise<void> {
-  writeQueue = writeQueue.then(fn, fn)
-  return writeQueue
-}
-
-// ---------------------------------------------------------------------------
-// Last-saved session cache (for sync fallback on quit)
-// ---------------------------------------------------------------------------
-let lastSavedSessionJson: string | null = null
-
-export function getLastSavedSession(): string | null {
-  return lastSavedSessionJson
-}
-
-// ---------------------------------------------------------------------------
-// Atomic write: write to .tmp, rotate .bak, rename .tmp → target
-// ---------------------------------------------------------------------------
-async function atomicWriteSession(sessionPath: string, json: string): Promise<void> {
-  const dir = path.dirname(sessionPath)
-  const tmpPath = sessionPath + '.tmp'
-  const bakPath = sessionPath + '.bak'
-
-  await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(tmpPath, json, 'utf-8')
-  // Guard against silent write failures clobbering a good session.
-  const tmpStat = await fs.stat(tmpPath)
-  if (tmpStat.size === 0) {
-    await fs.unlink(tmpPath).catch(() => {})
-    throw new Error('tmp session file is empty after write')
-  }
-  await fs.rename(sessionPath, bakPath).catch(() => {}) // OK if no previous file
-  await fs.rename(tmpPath, sessionPath)
-}
-
-/** Synchronous variant — only used as last-resort in will-quit */
-export function saveSessionSync(json: string | null): void {
-  if (!json) return
-  const sessionPath = getSessionPath()
-  const dir = path.dirname(sessionPath)
-  const tmpPath = sessionPath + '.tmp'
-  const bakPath = sessionPath + '.bak'
-
-  try {
-    fsSync.mkdirSync(dir, { recursive: true })
-    fsSync.writeFileSync(tmpPath, json, 'utf-8')
-    // Verify the tmp file was actually written before clobbering the previous
-    // session — a zero-byte tmp from a silent write failure must not destroy
-    // the existing good session.
-    const tmpStat = fsSync.statSync(tmpPath)
-    if (tmpStat.size === 0) {
-      throw new Error('tmp session file is empty after write')
-    }
-    try { fsSync.renameSync(sessionPath, bakPath) } catch { /* OK */ }
-    fsSync.renameSync(tmpPath, sessionPath)
-  } catch (err) {
-    log.warn('Sync session save failed: %O', err)
-    try { fsSync.unlinkSync(tmpPath) } catch { /* noop */ }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Session validation
-// ---------------------------------------------------------------------------
-function isValidSession(data: unknown): boolean {
-  if (!data || typeof data !== 'object') return false
-  const obj = data as Record<string, unknown>
-  if (obj.version === 2 && Array.isArray(obj.workspaces)) return true
-  return false
-}
-
-// ---------------------------------------------------------------------------
-// Session pruning — removes stale dockPanels entries to bound session size
-// ---------------------------------------------------------------------------
-function pruneSession(session: MultiWorkspaceSession): MultiWorkspaceSession {
-  return {
-    ...session,
-    workspaces: session.workspaces.map((ws) => {
-      if (!ws.dockPanels || !ws.dockState?.locations) return ws
-      const knownKeys = new Set(Object.keys(ws.dockState.locations))
-      const prunedPanels: typeof ws.dockPanels = {}
-      for (const [k, v] of Object.entries(ws.dockPanels)) {
-        if (knownKeys.has(k)) prunedPanels[k] = v
-      }
-      return { ...ws, dockPanels: prunedPanels }
-    }),
-  }
-}
-
-/** Try to read and parse a session file, returning null on any failure */
-async function tryLoadSession(filePath: string): Promise<unknown | null> {
-  try {
-    const data = await fs.readFile(filePath, 'utf-8')
-    const parsed = JSON.parse(data)
-    if (isValidSession(parsed)) return parsed
-    log.warn('Session file failed validation: %s', filePath)
-    return null
-  } catch {
-    return null
-  }
-}
 
 export function registerHandlers(): void {
   // Settings
@@ -336,58 +223,12 @@ export function registerHandlers(): void {
     }
   })
 
-  // Session persistence (atomic writes with backup rotation)
-  ipcMain.handle(SESSION_SAVE, async (_event, snapshot: MultiWorkspaceSession) => {
-    // Prune stale dockPanels entries before serialising to bound session size
-    const pruned = isValidSession(snapshot) ? pruneSession(snapshot) : snapshot
-    const json = JSON.stringify(pruned, null, 2)
-    lastSavedSessionJson = json
-    await serialized(async () => {
-      const sessionPath = getSessionPath()
-      await atomicWriteSession(sessionPath, json)
-      log.debug('Session saved to %s', sessionPath)
-    })
-  })
-
   // Boot snapshot — renderer pushes geometry/theme/etc. updates here. The
   // write is debounced internally; this handler returns immediately.
   ipcMain.handle(BOOT_SNAPSHOT_WRITE, async (_event, partial: Partial<BootSnapshot>) => {
     if (partial && typeof partial === 'object') {
       writeBootSnapshot(partial)
     }
-  })
-
-  ipcMain.handle(SESSION_LOAD, async (): Promise<SessionSnapshot | null> => {
-    const sessionPath = getSessionPath()
-    const tmpPath = sessionPath + '.tmp'
-    const bakPath = sessionPath + '.bak'
-
-    // Fallback chain: session.json → .tmp (crash mid-rename) → .bak (last known good)
-    const candidates = [
-      { path: sessionPath, label: 'session.json' },
-      { path: tmpPath, label: 'session.json.tmp' },
-      { path: bakPath, label: 'session.json.bak' },
-    ]
-
-    for (const candidate of candidates) {
-      const result = await tryLoadSession(candidate.path)
-      if (result) {
-        const { sanitizedSession, acceptedRoots } = await hydrateSessionTrust(
-          result as SessionSnapshot | MultiWorkspaceSession,
-          resolveTrustedWorkspaceRoot,
-        )
-        for (const root of acceptedRoots) addAllowedRoot(root)
-        if (candidate.path !== sessionPath) {
-          log.warn('Recovered session from %s', candidate.label)
-        } else {
-          log.debug('Session loaded from %s', sessionPath)
-        }
-        return sanitizedSession as SessionSnapshot
-      }
-    }
-
-    log.debug('No valid session file found')
-    return null
   })
 
   // Recent Projects

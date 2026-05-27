@@ -20,7 +20,14 @@ import type {
   PanelWindowSnapshot,
   DetachedDockWindowSnapshot,
   PanelType,
+  ProjectWorkspaceFile,
+  ProjectSessionFile,
+  ProjectCanvasNode,
+  ProjectCanvasRegion,
+  ProjectPanelRef,
+  ProjectSessionNode,
 } from '../../shared/types'
+import { toRelativePath } from '../../shared/pathUtils'
 import { useDockStore } from '../stores/dockStore'
 import { terminalRegistry } from './terminalRegistry'
 import { mark } from './perfMarks'
@@ -59,38 +66,21 @@ export const deferredSnapshots = new Map<string, SessionSnapshot>()
 // actually changed. saveSession() itself mutates the store via
 // syncCanvasToWorkspace, which re-fires the auto-save subscriptions; without
 // this guard those phantom changes produce a save loop every ~1s.
-let lastSerializedSession: string | null = null
+const lastSerializedByRoot = new Map<string, string>()
 
 function restoreDockPanelsForWorkspace(workspaceId: string, snapshot: SessionSnapshot): number {
   const appStore = useAppStore.getState()
   let restoredCount = 0
 
-  if (snapshot.dockPanels) {
-    for (const panel of Object.values(snapshot.dockPanels)) {
-      const existing = appStore.getWorkspace(workspaceId)?.panels[panel.id]
-      if (!existing) {
-        appStore.addPanel(workspaceId, panel)
-        restoredCount += 1
-      }
-    }
-    return restoredCount
-  }
+  if (!snapshot.dockPanels) return 0
 
-  if (!snapshot.dockState) return 0
-
-  // Migration: sessions saved before dockPanels was introduced.
-  // Any panel IDs in the dock state that don't exist in the workspace are
-  // almost certainly canvas panels (the only dock-only panel type).
-  const dockPanelIds = collectPanelIdsFromDockState(snapshot.dockState.zones)
-  for (const panelId of dockPanelIds) {
-    const existing = appStore.getWorkspace(workspaceId)?.panels[panelId]
+  for (const panel of Object.values(snapshot.dockPanels)) {
+    const existing = appStore.getWorkspace(workspaceId)?.panels[panel.id]
     if (!existing) {
-      appStore.addPanel(workspaceId, { id: panelId, type: 'canvas', title: 'Canvas', isDirty: false })
+      appStore.addPanel(workspaceId, panel)
       restoredCount += 1
-      log.debug(`[session] migration: created missing dock panel ${panelId} as canvas`)
     }
   }
-
   return restoredCount
 }
 
@@ -114,6 +104,86 @@ function resolveSnapshotCanvasPanelId(snapshot: SessionSnapshot): string | null 
 
   const canvasPanel = Object.values(snapshot.dockPanels ?? {}).find((panel) => panel.type === 'canvas')
   return canvasPanel?.id ?? null
+}
+
+// -----------------------------------------------------------------------------
+// Project-local state builders (.cate/workspace.json + .cate/session.json)
+// -----------------------------------------------------------------------------
+
+function buildWorkspaceFile(
+  snapshot: SessionSnapshot,
+  rootPath: string,
+  color?: string,
+): ProjectWorkspaceFile {
+  const nodes: ProjectCanvasNode[] = snapshot.nodes.map((n) => ({
+    panelId: n.panelId,
+    panelType: n.panelType,
+    title: n.title,
+    origin: n.origin,
+    size: n.size,
+    filePath: n.filePath ? toRelativePath(n.filePath, rootPath) : undefined,
+    url: n.url ?? undefined,
+    regionId: n.regionId,
+    documentType: n.documentType,
+  }))
+
+  const regions: ProjectCanvasRegion[] = snapshot.regions
+    ? Object.values(snapshot.regions).map((r) => ({
+        id: r.id,
+        origin: r.origin,
+        size: r.size,
+        label: r.label,
+        color: r.color,
+        zOrder: r.zOrder,
+      }))
+    : []
+
+  let dockPanels: Record<string, ProjectPanelRef> | undefined
+  if (snapshot.dockPanels) {
+    dockPanels = {}
+    for (const [id, p] of Object.entries(snapshot.dockPanels)) {
+      dockPanels[id] = {
+        type: p.type,
+        title: p.title,
+        filePath: p.filePath ? toRelativePath(p.filePath, rootPath) : undefined,
+        url: p.url ?? undefined,
+      }
+    }
+  }
+
+  return {
+    version: 1,
+    name: snapshot.workspaceName,
+    color: color ?? '',
+    canvas: { nodes, regions, zoomLevel: snapshot.zoomLevel, viewportOffset: snapshot.viewportOffset },
+    dockState: snapshot.dockState,
+    dockPanels,
+  }
+}
+
+function buildSessionFile(
+  snapshot: SessionSnapshot,
+  panelWindows?: PanelWindowSnapshot[],
+  dockWindows?: DetachedDockWindowSnapshot[],
+): ProjectSessionFile {
+  const nodes: Record<string, ProjectSessionNode> = {}
+  snapshot.nodes.forEach((n, i) => {
+    nodes[n.panelId] = {
+      panelId: n.panelId,
+      zOrder: i,
+      creationIndex: i,
+      ptyId: n.ptyId,
+      workingDirectory: n.workingDirectory ?? undefined,
+      unsavedContent: n.unsavedContent,
+    }
+  })
+  return {
+    version: 1,
+    focusedNodeId: null,
+    nodes,
+    panelWindows: panelWindows?.length ? panelWindows : undefined,
+    dockWindows: dockWindows?.length ? dockWindows : undefined,
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -256,9 +326,7 @@ export async function saveSession(): Promise<void> {
     })
   }
 
-  const selectedIndex = persistableWorkspaces.findIndex((w) => w.id === appState.selectedWorkspaceId)
-
-  // Capture panel window snapshots from main process
+  // Capture detached window snapshots for inclusion in .cate/session.json
   let panelWindows: PanelWindowSnapshot[] | undefined
   try {
     const pwList = await window.electronAPI.panelWindowsList()
@@ -274,7 +342,6 @@ export async function saveSession(): Promise<void> {
     log.warn('[session] Panel window listing failed:', err)
   }
 
-  // Capture dock window snapshots from main process
   let dockWindows: DetachedDockWindowSnapshot[] | undefined
   try {
     const dwList = await window.electronAPI.dockWindowsList()
@@ -285,25 +352,30 @@ export async function saveSession(): Promise<void> {
     log.warn('[session] Dock window listing failed:', err)
   }
 
-  const session: MultiWorkspaceSession = {
-    version: 2,
-    selectedWorkspaceIndex: selectedIndex >= 0 ? selectedIndex : null,
-    workspaces: snapshots,
-    panelWindows,
-    dockWindows,
-  }
+  // Save to .cate/workspace.json + .cate/session.json per workspace
+  const workspacesByRoot = new Map(
+    persistableWorkspaces.filter((w) => w.rootPath).map((w) => [w.rootPath, w]),
+  )
+  for (const snapshot of snapshots) {
+    if (!snapshot.rootPath) continue
 
-  // Dedup: only hit IPC + disk when the serialized payload differs from the
-  // last successfully-saved one. Without this, syncCanvasToWorkspace above
-  // re-triggers the auto-save subscriptions and produces a save loop.
-  const serialized = JSON.stringify(session)
-  if (serialized === lastSerializedSession) return
+    const ws = workspacesByRoot.get(snapshot.rootPath)
+    const wsFile = buildWorkspaceFile(snapshot, snapshot.rootPath, ws?.color)
 
-  try {
-    await window.electronAPI.sessionSave(session as any) // session save accepts any JSON
-    lastSerializedSession = serialized
-  } catch (err) {
-    log.warn('[session] Save failed:', err)
+    // Filter detached windows belonging to this workspace
+    const wsPanelWindows = panelWindows?.filter((pw) => pw.workspaceId === ws?.id)
+    const wsDockWindows = dockWindows?.filter((dw) => (dw as any).workspaceId === ws?.id)
+    const sessFile = buildSessionFile(snapshot, wsPanelWindows, wsDockWindows)
+
+    // Dedup: skip IPC when the payload hasn't changed
+    const serialized = JSON.stringify({ ws: wsFile, sess: sessFile })
+    if (lastSerializedByRoot.get(snapshot.rootPath) === serialized) continue
+
+    window.electronAPI.projectStateSave(snapshot.rootPath, wsFile, sessFile)
+      .then(() => { lastSerializedByRoot.set(snapshot.rootPath!, serialized) })
+      .catch((err) => {
+        log.warn('[session] Project state save failed for %s: %s', snapshot.rootPath, err)
+      })
   }
 }
 
@@ -311,19 +383,107 @@ export async function saveSession(): Promise<void> {
 // Load
 // -----------------------------------------------------------------------------
 
-export async function loadSession(): Promise<MultiWorkspaceSession | SessionSnapshot | null> {
+export async function loadSession(): Promise<MultiWorkspaceSession | null> {
+  return loadFromProjectFiles()
+}
+
+async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
+  const { toAbsolutePath } = await import('../../shared/pathUtils')
+
+  let recentProjects: string[] = []
   try {
-    const data = await window.electronAPI.sessionLoad()
-    if (!data) return null
-    // Check if it's the new multi-workspace format
-    if ((data as any).version === 2 || Array.isArray((data as any).workspaces)) {
-      return data as unknown as MultiWorkspaceSession
-    }
-    // Legacy single-workspace format
-    return data as SessionSnapshot
-  } catch (err) {
-    log.warn('[session] Load failed:', err)
+    recentProjects = (await window.electronAPI.recentProjectsGet()) ?? []
+  } catch {
     return null
+  }
+  if (recentProjects.length === 0) return null
+
+  const snapshots: SessionSnapshot[] = []
+  let panelWindows: PanelWindowSnapshot[] = []
+  let dockWindows: DetachedDockWindowSnapshot[] = []
+
+  for (const rootPath of recentProjects) {
+    try {
+      const projectState = await window.electronAPI.projectStateLoad(rootPath) as {
+        workspace: import('../../shared/types').ProjectWorkspaceFile
+        session: import('../../shared/types').ProjectSessionFile | null
+      } | null
+      if (!projectState?.workspace) continue
+
+      const ws = projectState.workspace
+      const sess = projectState.session
+
+      const nodes: NodeSnapshot[] = ws.canvas.nodes.map((pn) => {
+        const ephemeral = sess?.nodes?.[pn.panelId]
+        return {
+          panelId: pn.panelId,
+          panelType: pn.panelType,
+          title: pn.title,
+          origin: pn.origin,
+          size: pn.size,
+          filePath: pn.filePath ? toAbsolutePath(pn.filePath, rootPath) : undefined,
+          url: pn.url,
+          regionId: pn.regionId,
+          documentType: pn.documentType,
+          ptyId: ephemeral?.ptyId,
+          workingDirectory: ephemeral?.workingDirectory,
+          unsavedContent: ephemeral?.unsavedContent,
+        }
+      })
+
+      const regions: Record<string, import('../../shared/types').CanvasRegion> = {}
+      for (const r of ws.canvas.regions) {
+        regions[r.id] = {
+          id: r.id,
+          origin: r.origin,
+          size: r.size,
+          label: r.label,
+          color: r.color,
+          zOrder: r.zOrder,
+        }
+      }
+
+      let snapshotDockPanels: Record<string, import('../../shared/types').PanelState> | undefined
+      if (ws.dockPanels) {
+        snapshotDockPanels = {}
+        for (const [id, ref] of Object.entries(ws.dockPanels)) {
+          snapshotDockPanels[id] = {
+            id,
+            type: ref.type as PanelType,
+            title: ref.title,
+            isDirty: false,
+            filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
+            url: ref.url,
+          }
+        }
+      }
+
+      snapshots.push({
+        workspaceName: ws.name,
+        rootPath,
+        zoomLevel: ws.canvas.zoomLevel,
+        viewportOffset: ws.canvas.viewportOffset,
+        nodes,
+        regions: Object.keys(regions).length > 0 ? regions : undefined,
+        dockState: ws.dockState,
+        dockPanels: snapshotDockPanels,
+      })
+
+      if (sess?.panelWindows) panelWindows.push(...sess.panelWindows)
+      if (sess?.dockWindows) dockWindows.push(...sess.dockWindows)
+    } catch (err) {
+      log.warn('[session] Failed to load project state for %s: %s', rootPath, err)
+    }
+  }
+
+  if (snapshots.length === 0) return null
+
+  return {
+    version: 2,
+    selectedWorkspaceIndex: 0,
+    workspaces: snapshots,
+    panelWindows: panelWindows.length > 0 ? panelWindows : undefined,
+    dockWindows: dockWindows.length > 0 ? dockWindows : undefined,
   }
 }
 
@@ -482,24 +642,6 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
   if (canvasState) {
     canvasState.setZoom(snapshot.zoomLevel)
     canvasState.setViewportOffset(snapshot.viewportOffset)
-
-    // Auto-assign regionId for migrated workspaces (nodes without regionId)
-    const finalState = getCanvasState()!
-    const allRegions = Object.values(finalState.regions)
-    for (const node of Object.values(finalState.nodes)) {
-      if (!node.regionId && allRegions.length > 0) {
-        for (const region of allRegions) {
-          const overlapX = Math.max(0, Math.min(node.origin.x + node.size.width, region.origin.x + region.size.width) - Math.max(node.origin.x, region.origin.x))
-          const overlapY = Math.max(0, Math.min(node.origin.y + node.size.height, region.origin.y + region.size.height) - Math.max(node.origin.y, region.origin.y))
-          const overlapArea = overlapX * overlapY
-          const nodeArea = node.size.width * node.size.height
-          if (nodeArea > 0 && overlapArea / nodeArea > 0.5) {
-            canvasState.setNodeRegion(node.id, region.id)
-            break
-          }
-        }
-      }
-    }
   }
 
   // Restore dock state if present

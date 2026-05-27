@@ -289,17 +289,25 @@ export interface ElectronAPI {
   // Session
   // ---------------------------------------------------------------------------
 
-  /** Save a session snapshot. */
-  sessionSave(snapshot: SessionSnapshot): Promise<void>
-
-  /** Load the last saved session snapshot. Returns null if none exists. */
-  sessionLoad(): Promise<SessionSnapshot | null>
 
   /** Register a callback for flush-save requests from the main process. Returns unsubscribe. */
   onSessionFlushSave(callback: () => void): () => void
 
   /** Notify the main process that the flush save completed. */
   sessionFlushSaveDone(): void
+
+  /** Save project-local workspace + session state to .cate/ directory. */
+  projectStateSave(
+    rootPath: string,
+    workspace: import('./types').ProjectWorkspaceFile,
+    session: import('./types').ProjectSessionFile,
+  ): Promise<void>
+
+  /** Load project-local state from .cate/ directory. Returns null if not found. */
+  projectStateLoad(rootPath: string): Promise<{
+    workspace: import('./types').ProjectWorkspaceFile
+    session: import('./types').ProjectSessionFile | null
+  } | null>
 
   // ---------------------------------------------------------------------------
   // App

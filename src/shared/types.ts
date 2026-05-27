@@ -617,6 +617,76 @@ export interface MultiWorkspaceSession {
 }
 
 // -----------------------------------------------------------------------------
+// Project-local workspace file (.cate/workspace.json) — VCS-friendly, shareable
+// -----------------------------------------------------------------------------
+
+export interface ProjectWorkspaceFile {
+  version: 1
+  name: string
+  color: string
+  canvas: {
+    nodes: ProjectCanvasNode[]
+    regions: ProjectCanvasRegion[]
+    zoomLevel: number
+    viewportOffset: Point
+  }
+  dockState?: DockStateSnapshot
+  dockPanels?: Record<string, ProjectPanelRef>
+}
+
+export interface ProjectCanvasNode {
+  panelId: string
+  panelType: string
+  title: string
+  origin: Point
+  size: Size
+  filePath?: string
+  url?: string
+  regionId?: string
+  documentType?: 'pdf' | 'docx' | 'image'
+  dockLayout?: DockLayoutNode | null
+}
+
+export interface ProjectCanvasRegion {
+  id: string
+  origin: Point
+  size: Size
+  label: string
+  color: string
+  zOrder: number
+}
+
+export interface ProjectPanelRef {
+  type: string
+  title: string
+  filePath?: string
+  url?: string
+}
+
+// -----------------------------------------------------------------------------
+// Project-local session file (.cate/session.json) — ephemeral, gitignored
+// -----------------------------------------------------------------------------
+
+export interface ProjectSessionFile {
+  version: 1
+  focusedNodeId: string | null
+  nodes: Record<string, ProjectSessionNode>
+  /** Detached panel windows (machine-local, not committed). */
+  panelWindows?: PanelWindowSnapshot[]
+  /** Detached dock windows (machine-local, not committed). */
+  dockWindows?: DetachedDockWindowSnapshot[]
+}
+
+export interface ProjectSessionNode {
+  panelId: string
+  zOrder: number
+  creationIndex: number
+  ptyId?: string
+  workingDirectory?: string
+  unsavedContent?: string
+}
+
+// -----------------------------------------------------------------------------
 // Layout snapshot (saved canvas arrangements)
 // -----------------------------------------------------------------------------
 
