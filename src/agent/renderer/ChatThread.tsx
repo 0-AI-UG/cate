@@ -102,6 +102,15 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
     }
   }
 
+  // When the trailing visible messages are consecutive tool calls (parallel
+  // group), all of them should shimmer — not just the very last one.
+  let shimmerGroupStart = lastVisibleIdx
+  if (lastVisibleIdx >= 0 && messages[lastVisibleIdx].type === 'tool') {
+    while (shimmerGroupStart > 0 && messages[shimmerGroupStart - 1].type === 'tool') {
+      shimmerGroupStart--
+    }
+  }
+
   return (
     <div
       ref={scrollRef}
@@ -123,11 +132,12 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
           }
         }
         const isLast = idx === lastVisibleIdx
+        const inShimmerGroup = shimmerLast && idx >= shimmerGroupStart && idx <= lastVisibleIdx
         return (
           <MessageRow
             key={m.id}
             msg={m}
-            shimmer={isLast && shimmerLast}
+            shimmer={inShimmerGroup}
             forkEntryId={m.type === 'user' ? (m.entryId ?? forkMap?.[m.id]) : undefined}
             onFork={onFork}
             onEditResend={onEditResend}
@@ -698,17 +708,9 @@ function SubagentResultRow({
     result.stopReason === 'length' || result.stopReason === 'aborted'
   const isRunning = parentRunning && !terminalStop
   const isError = !isRunning && result.exitCode > 0
-  const [expanded, setExpanded] = useState(isRunning)
-  // Auto-open while running, auto-close on completion (only if user hasn't toggled).
-  const userToggled = useRef(false)
-  useEffect(() => {
-    if (!userToggled.current) setExpanded(isRunning)
-  }, [isRunning])
+  const [expanded, setExpanded] = useState(false)
 
-  const toggle = () => {
-    userToggled.current = true
-    setExpanded((v) => !v)
-  }
+  const toggle = () => setExpanded((v) => !v)
 
   const usageBits: string[] = []
   if (result.usage?.turns) usageBits.push(`${result.usage.turns} turn${result.usage.turns > 1 ? 's' : ''}`)
@@ -737,7 +739,7 @@ function SubagentResultRow({
             onClick={(e) => e.stopPropagation()}
           >
             <Info size={11} className="text-muted hover:text-primary/70 cursor-help" />
-            <span className="absolute bottom-full right-0 mb-1 hidden group-hover/info:block whitespace-nowrap text-[10px] text-primary/90 font-mono bg-surface border border-white/10 rounded px-1.5 py-1 shadow-lg z-10">
+            <span className="absolute bottom-full right-0 mb-1 hidden group-hover/info:block whitespace-nowrap text-[10px] text-primary/90 font-mono bg-surface-2 border border-white/10 rounded px-1.5 py-1 shadow-lg z-10">
               {usageBits.join(' · ')}{result.model ? ` · ${result.model}` : ''}
             </span>
           </span>

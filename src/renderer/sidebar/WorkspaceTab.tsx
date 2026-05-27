@@ -5,6 +5,7 @@ import type { WorkspaceState, PanelType, PanelLocation, DockLayoutNode } from '.
 import { ALL_ZONES } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS, getCanvasOperations, getWorkspaceCanvasPanelId, ensureCanvasOpsForPanel } from '../stores/appStore'
+import { ACCENT_COLOR_NAMES } from '../../shared/colors'
 import { useDockStore } from '../stores/dockStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
@@ -171,14 +172,6 @@ const PANEL_ICONS: Record<PanelType, PhosphorIcon> = Object.fromEntries(
   (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].icon]),
 ) as Record<PanelType, PhosphorIcon>
 
-const COLOR_NAMES: Record<string, string> = {
-  '#6b8fb0': 'Slate Blue',
-  '#c08a5a': 'Tan',
-  '#7aa074': 'Sage',
-  '#9d7fb5': 'Violet',
-  '#c07070': 'Dusty Red',
-  '#6aa5a5': 'Teal',
-}
 
 interface WorkspaceTabProps {
   workspace: WorkspaceState
@@ -295,7 +288,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       },
       ...WORKSPACE_COLORS.map((color) => ({
         id: `color:${color}`,
-        label: (COLOR_NAMES[color] || color) + (color === workspace.color ? ' ✓' : ''),
+        label: (ACCENT_COLOR_NAMES[color] || color) + (color === workspace.color ? ' ✓' : ''),
         enabled: color !== workspace.color,
       })),
     ]
