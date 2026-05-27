@@ -135,9 +135,6 @@ export function useShortcuts(): void {
         case 'autoLayout':
           canvasStore().autoLayout()
           break
-        case 'globalSearch':
-          useUIStore.getState().setShowCommandPalette(true)
-          break
         case 'undo':
           canvasStore().undo()
           break
