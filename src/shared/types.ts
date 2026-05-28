@@ -757,6 +757,25 @@ export interface TerminalThemeData {
   }
 }
 
+// -----------------------------------------------------------------------------
+// File exclusions — folder/file names hidden in the file explorer by default.
+// Serves as the default for the user-editable AppSettings.fileExclusions list.
+// -----------------------------------------------------------------------------
+
+export const FILE_EXCLUSIONS: string[] = [
+  '.git',
+  '.DS_Store',
+  '.Trash',
+  'node_modules',
+  '__pycache__',
+  '.npm',
+  '.cache',
+  '.build',
+  '.swiftpm',
+  'DerivedData',
+  'Pods',
+]
+
 export interface AppSettings {
   // General
   defaultShellPath: string
@@ -811,6 +830,10 @@ export interface AppSettings {
   sidebarTintOpacity: number
   showFileExplorerOnLaunch: boolean
 
+  // File Explorer
+  /** Folder/file names hidden in the file explorer, file search, and watcher. */
+  fileExclusions: string[]
+
   // Notifications (OS-level only)
   notificationsEnabled: boolean
   notifyOnlyWhenUnfocused: boolean
@@ -861,6 +884,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarTintOpacity: 1.0,
   showFileExplorerOnLaunch: false,
 
+  // File Explorer
+  fileExclusions: [...FILE_EXCLUSIONS],
+
   // Notifications (OS-level only)
   notificationsEnabled: true,
   notifyOnlyWhenUnfocused: true,
@@ -909,26 +935,6 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
 export const ZOOM_MIN = 0.3
 export const ZOOM_MAX = 3.0
 export const ZOOM_DEFAULT = 1.0
-
-// -----------------------------------------------------------------------------
-// File exclusions — from FileTreeModel.swift defaultExclusions
-// -----------------------------------------------------------------------------
-
-export const FILE_EXCLUSIONS: string[] = [
-  '.git',
-  'node_modules',
-  '.build',
-  'DerivedData',
-  '.DS_Store',
-  '__pycache__',
-  '.swiftpm',
-  'Pods',
-  '.Trash',
-  '.cache',
-  '.npm',
-  'dist',
-  'build',
-]
 
 // =============================================================================
 // Pi agent + auth shared types

@@ -4,6 +4,16 @@ All notable changes to Cate will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Configurable file exclusions** — a new **File Explorer** settings section lets you edit the list of folder/file names hidden from the file explorer, file search, and change watching. The list persists across sessions, applies to every project, and updates open explorers live without a relaunch. Includes a "Restore defaults" action.
+
+### Changed
+
+- **Trimmed default file exclusions** — `dist` and `build` are no longer hidden by default. They are common names for hand-written source and config, and the previous exact-name match could silently hide files you wanted to see. The remaining defaults are unchanged: `.git`, `.DS_Store`, `.Trash`, `node_modules`, `__pycache__`, `.npm`, `.cache`, `.build`, `.swiftpm`, `DerivedData`, `Pods`.
+
 ## [1.0.3] - 2026-05-26
 
 Patch release with Save-As for untitled editors, agent panel visual polish, and session persistence fixes.

@@ -60,6 +60,7 @@ import {
   SETTINGS_SET,
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
+  SETTINGS_CHANGED,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
@@ -570,6 +571,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   settingsReset(key?: string): Promise<void> {
     return ipcRenderer.invoke(SETTINGS_RESET, key)
+  },
+
+  onSettingsChanged(callback: (key: string, value: unknown) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, key: string, value: unknown): void => {
+      callback(key, value)
+    }
+    ipcRenderer.on(SETTINGS_CHANGED, listener)
+    return () => {
+      ipcRenderer.removeListener(SETTINGS_CHANGED, listener)
+    }
   },
 
   // ---------------------------------------------------------------------------

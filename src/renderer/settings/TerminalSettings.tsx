@@ -119,7 +119,7 @@ export function TerminalSettings() {
       </SettingRow>
 
       {/* Themes ---------------------------------------------------------- */}
-      <div className="mt-5 pt-4 border-t border-subtle/40">
+      <div className="mt-5">
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-xs font-medium text-primary">Themes</h4>
           <button

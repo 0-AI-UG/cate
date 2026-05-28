@@ -77,6 +77,7 @@ export const SETTINGS_GET = 'settings:get'
 export const SETTINGS_SET = 'settings:set'
 export const SETTINGS_GET_ALL = 'settings:getAll'
 export const SETTINGS_RESET = 'settings:reset'
+export const SETTINGS_CHANGED = 'settings:changed' // main -> renderer (broadcast)
 
 // Session
 export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer

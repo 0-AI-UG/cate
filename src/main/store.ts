@@ -13,6 +13,7 @@ import {
   SETTINGS_SET,
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
+  SETTINGS_CHANGED,
   BOOT_SNAPSHOT_WRITE,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
@@ -23,6 +24,7 @@ import {
 } from '../shared/ipc-channels'
 import { DEFAULT_SETTINGS } from '../shared/types'
 import type { AppSettings } from '../shared/types'
+import { broadcastToAll } from './windowRegistry'
 
 // ---------------------------------------------------------------------------
 // Settings schema: expected key → expected typeof value (or 'array')
@@ -50,6 +52,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   autoOpenUrlsFromTerminal: 'string',
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',
+  fileExclusions: 'array',
   notificationsEnabled: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',
   crashReportingEnabled: 'boolean',
@@ -196,6 +199,19 @@ export function registerHandlers(): void {
       const store = await getStore()
       store.set(key, value as never)
       ;(settingsCache as Record<string, unknown>)[key as string] = value
+      // Notify all windows so live-reactive settings (e.g. file exclusions)
+      // can update without a relaunch.
+      broadcastToAll(SETTINGS_CHANGED, key, value)
+      // Rebuild active fs watchers so their ignore globs match the new
+      // exclusions (dynamic import avoids a static store<->filesystem cycle).
+      if (key === 'fileExclusions') {
+        try {
+          const { refreshWatcherIgnores } = await import('./ipc/filesystem')
+          refreshWatcherIgnores()
+        } catch (err) {
+          log.warn('Watcher ignore refresh failed: %O', err)
+        }
+      }
       // Live-toggle Sentry when the user flips the crash-reporting setting,
       // so they don't need to relaunch for the change to take effect.
       if (key === 'crashReportingEnabled') {
