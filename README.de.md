@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <strong>Aktuelle Quellversion:</strong> v1.0.3
+  <strong>Aktuelle Quellversion:</strong> v1.0.4
 </p>
 
 <p align="center">
@@ -96,7 +96,7 @@ Cate ersetzt diesen Fensterstapel durch **eine persistente Leinwand pro Projekt*
 
 ## Installation
 
-Wenn Sie Cate einfach nur verwenden möchten, laden Sie ein vorgefertigtes Release herunter — kompilieren Sie nicht aus dem Quellcode. Dieses Repository zielt derzeit auf **v1.0.3** ab.
+Wenn Sie Cate einfach nur verwenden möchten, laden Sie ein vorgefertigtes Release herunter — kompilieren Sie nicht aus dem Quellcode. Dieses Repository zielt derzeit auf **v1.0.4** ab.
 
 | Plattform | Formate | Link |
 |-----------|---------|------|
