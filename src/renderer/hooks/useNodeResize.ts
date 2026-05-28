@@ -58,7 +58,11 @@ interface UseNodeResizeReturn {
 // Edge detection (exported for use by CanvasNode)
 // -----------------------------------------------------------------------------
 
-const RESIZE_THRESHOLD = 6
+// Edge / corner detection band. Wider than the original 6px to give a more
+// comfortable hit target — especially important for the browser panel where the
+// <webview> captures pointer events and the usable resize strip is the band
+// between the node's outer edge and the webview's edge. See issue #147.
+const RESIZE_THRESHOLD = 10
 
 /**
  * Detect if a mouse position (relative to the node's top-left) is near an

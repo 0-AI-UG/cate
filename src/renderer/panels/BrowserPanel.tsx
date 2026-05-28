@@ -5,14 +5,25 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass } from '@phosphor-icons/react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, Devices, Check } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
-import { SEARCH_ENGINE_URLS } from '../../shared/types'
+import { SEARCH_ENGINE_URLS, PANEL_MINIMUM_SIZES } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
 import { portalRegistry } from '../lib/portalRegistry'
 import { isUrl, normalizeUrl } from './browserUrl'
+
+// Common device viewport presets. Width × height in CSS pixels; reasonable
+// defaults for previewing responsive sites. "Custom" sits at the bottom.
+const SIZE_PRESETS: ReadonlyArray<{ label: string; width: number; height: number; hint?: string }> = [
+  { label: 'Mobile', width: 375, height: 667, hint: 'iPhone SE' },
+  { label: 'Mobile L', width: 414, height: 896, hint: 'iPhone 11 Pro Max' },
+  { label: 'Tablet', width: 768, height: 1024, hint: 'iPad' },
+  { label: 'Tablet L', width: 1024, height: 1366, hint: 'iPad Pro' },
+  { label: 'Laptop', width: 1280, height: 800 },
+  { label: 'Desktop', width: 1920, height: 1080 },
+]
 
 // -----------------------------------------------------------------------------
 // Type declarations for Electron's <webview> element
@@ -51,6 +62,10 @@ export default function BrowserPanel({
   const updatePanelUrl = useAppStore((s) => s.updatePanelUrl)
 
   const isFocused = useCanvasStoreContext((s) => s.focusedNodeId === nodeId)
+  const resizeNode = useCanvasStoreContext((s) => s.resizeNode)
+  const currentSize = useCanvasStoreContext((s) =>
+    nodeId ? s.nodes[nodeId]?.size : undefined,
+  )
 
   const rawInitialUrl = url || browserHomepage || 'https://www.google.com'
   const initialUrl = rawInitialUrl.startsWith('about:') ? rawInitialUrl : normalizeUrl(rawInitialUrl)
@@ -68,6 +83,8 @@ export default function BrowserPanel({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isSizeMenuOpen, setIsSizeMenuOpen] = useState(false)
+  const sizeMenuRef = useRef<HTMLDivElement>(null)
 
   // -------------------------------------------------------------------------
   // Navigation helpers
@@ -155,6 +172,40 @@ export default function BrowserPanel({
     if (screenshotTimerRef.current) clearTimeout(screenshotTimerRef.current)
     setScreenshot(null)
   }, [])
+
+  // -------------------------------------------------------------------------
+  // Device size presets
+  // -------------------------------------------------------------------------
+
+  const applyPresetSize = useCallback((width: number, height: number) => {
+    if (!nodeId) return
+    // The size we apply is the *node* size, which includes the URL bar.
+    // Add the chrome height so the visible viewport matches the preset.
+    const URL_BAR_HEIGHT = 40
+    const minSize = PANEL_MINIMUM_SIZES.browser
+    const finalWidth = Math.max(width, minSize.width)
+    const finalHeight = Math.max(height + URL_BAR_HEIGHT, minSize.height)
+    resizeNode(nodeId, { width: finalWidth, height: finalHeight })
+    setIsSizeMenuOpen(false)
+  }, [nodeId, resizeNode])
+
+  // Close the menu when clicking outside.
+  useEffect(() => {
+    if (!isSizeMenuOpen) return
+    const onClickOutside = (e: MouseEvent) => {
+      if (sizeMenuRef.current && !sizeMenuRef.current.contains(e.target as Node)) {
+        setIsSizeMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [isSizeMenuOpen])
+
+  // Match a preset to the current viewport (chrome subtracted) for the checkmark.
+  const URL_BAR_HEIGHT = 40
+  const matchedPreset = currentSize ? SIZE_PRESETS.find(
+    (p) => p.width === currentSize.width && p.height + URL_BAR_HEIGHT === currentSize.height,
+  ) : undefined
 
   const handleUrlBarKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -335,6 +386,43 @@ export default function BrowserPanel({
           />
         </div>
 
+        {/* Size presets */}
+        <div ref={sizeMenuRef} className="relative">
+          <button
+            onClick={() => setIsSizeMenuOpen((v) => !v)}
+            className="w-7 h-7 flex items-center justify-center rounded-full border border-subtle bg-surface-5 hover:bg-hover text-primary transition-colors"
+            title={matchedPreset ? `Size: ${matchedPreset.label} (${matchedPreset.width}×${matchedPreset.height})` : 'Resize to device preset'}
+          >
+            <Devices size={13} />
+          </button>
+          {isSizeMenuOpen && (
+            <div
+              className="absolute right-0 top-9 z-30 min-w-[200px] rounded-lg border border-subtle bg-surface-5 shadow-xl py-1"
+              role="menu"
+            >
+              {SIZE_PRESETS.map((p) => {
+                const active = matchedPreset?.label === p.label
+                return (
+                  <button
+                    key={p.label}
+                    onClick={() => applyPresetSize(p.width, p.height)}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-hover text-primary transition-colors"
+                    role="menuitem"
+                  >
+                    <span className="w-3 shrink-0 flex items-center justify-center">
+                      {active && <Check size={11} />}
+                    </span>
+                    <span className="flex-1">{p.label}</span>
+                    <span className="text-muted tabular-nums">
+                      {p.width}×{p.height}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Screenshot tool */}
         <button
           onClick={handleScreenshot}
@@ -369,6 +457,21 @@ export default function BrowserPanel({
           className={`w-full h-full ${loadError ? 'hidden' : ''}`}
           partition={`persist:browser-${panelId}`}
         />
+
+        {/* Resize edge guards — invisible strips that sit on top of the
+            webview's outer pixels so mouse events reach CanvasNode's resize
+            handler instead of being captured by the <webview>. Match the
+            RESIZE_THRESHOLD (10px) of useNodeResize so the visible cursor
+            change aligns with the clickable area. Corners use diagonal
+            cursors; pointer-events propagate up to the canvas node. */}
+        <div aria-hidden="true" className="absolute left-3 right-3 top-0 h-[10px] cursor-ns-resize z-10" />
+        <div aria-hidden="true" className="absolute left-3 right-3 bottom-0 h-[10px] cursor-ns-resize z-10" />
+        <div aria-hidden="true" className="absolute top-3 bottom-3 left-0 w-[10px] cursor-ew-resize z-10" />
+        <div aria-hidden="true" className="absolute top-3 bottom-3 right-0 w-[10px] cursor-ew-resize z-10" />
+        <div aria-hidden="true" className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize z-10" />
+        <div aria-hidden="true" className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize z-10" />
+        <div aria-hidden="true" className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize z-10" />
+        <div aria-hidden="true" className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-10" />
 
         {/* Screenshot thumbnail */}
         {screenshot && (
