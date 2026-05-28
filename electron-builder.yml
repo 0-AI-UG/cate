@@ -2,10 +2,17 @@ appId: com.cate.app
 productName: Cate
 directories:
   output: release
+# The pi coding agent (@earendil-works/pi-coding-agent) is loaded as ESM
+# directly from the unpacked location, so Node resolves all of its transitive
+# dependencies against the real filesystem rather than reading them from the
+# asar. Its dependency closure is large (~130 packages) and npm's hoisting
+# layout varies between installs, so an explicit allowlist silently breaks
+# whenever a dependency moves between nested and hoisted positions (issue #150:
+# cross-spawn was hoisted to node_modules/cross-spawn in CI and left inside the
+# asar). Unpack the whole node_modules tree so every dependency pi needs is
+# present on disk regardless of hoisting.
 asarUnpack:
-  - "node_modules/@earendil-works/**"
-  - "node_modules/.bin/pi"
-  - "node_modules/.bin/pi.cmd"
+  - "node_modules/**"
 extraResources:
   # Ship bundled pi extensions (e.g. cate-plan-mode) into the packaged app so
   # installPlanModeExtension can copy them into ~/.pi/agent/extensions/ on
