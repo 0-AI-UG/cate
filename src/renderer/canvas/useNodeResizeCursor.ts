@@ -8,6 +8,7 @@ import React, { useCallback } from 'react'
 import { detectEdge, getCursorForEdge } from '../hooks/useNodeResize'
 import type { ResizeEdge } from '../hooks/useNodeResize'
 import type { CanvasNodeState } from '../../shared/types'
+import { isOverScrollbar } from './scrollbar'
 
 export function useNodeResizeCursor(
   nodeRef: React.RefObject<HTMLDivElement | null>,
@@ -34,6 +35,9 @@ export function useNodeResizeCursor(
 
       const edge = detectEdge(localX, localY, rect.width, rect.height, zoomLevel)
       if (edge) {
+        // Let the content's scrollbar win the edge — don't start a resize on a
+        // mousedown that's actually grabbing the scrollbar thumb.
+        if (isOverScrollbar(nodeRef.current, e.clientX, e.clientY)) return
         handleResizeStart(e, edge)
       }
     },
@@ -47,7 +51,12 @@ export function useNodeResizeCursor(
       const rect = nodeRef.current.getBoundingClientRect()
       const localX = e.clientX - rect.left
       const localY = e.clientY - rect.top
-      const edge = detectEdge(localX, localY, rect.width, rect.height, zoomLevel)
+      let edge = detectEdge(localX, localY, rect.width, rect.height, zoomLevel)
+      // Near an edge but over the content's scrollbar: show the default cursor,
+      // not a resize cursor, so the scrollbar reads as draggable.
+      if (edge && isOverScrollbar(nodeRef.current, e.clientX, e.clientY)) {
+        edge = null
+      }
       const cursor = getCursorForEdge(edge)
       if (nodeRef.current.style.cursor !== cursor) {
         nodeRef.current.style.cursor = cursor
