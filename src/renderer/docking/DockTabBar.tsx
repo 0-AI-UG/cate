@@ -12,6 +12,9 @@ import { X } from '@phosphor-icons/react'
 import { useDragStore, useTabSourceVisibility } from '../drag'
 import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 import { useAppStore } from '../stores/appStore'
+import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
+
+const AWAIT_COLOR = '#c08a5a'
 
 // Lookup: panelId → worktree color. Only returns a color when the panel's
 // workspace has 2+ worktrees (matches WorktreePill's visibility rule, so the
@@ -39,7 +42,27 @@ export const PANEL_TYPE_TINT: Record<PanelType, string> = Object.fromEntries(
   (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].tintClass]),
 ) as Record<PanelType, string>
 
-export function TabIcon({ type, size }: { type: PanelType; size: number }) {
+export function TabIcon({ type, size, logo, agentName }: { type: PanelType; size: number; logo?: string | null; agentName?: string | null }) {
+  // Terminal panels with a detected agent CLI swap the generic Terminal
+  // icon for the agent's logo. Fallback path stays Phosphor.
+  const useLogo = type === 'terminal' ? logo : null
+  const [imgFailed, setImgFailed] = React.useState(false)
+  // Reset error flag when the logo source actually changes so a once-failed
+  // image can recover after an HMR or agent swap.
+  React.useEffect(() => { setImgFailed(false) }, [useLogo])
+  if (useLogo && !imgFailed) {
+    return (
+      <img
+        src={useLogo}
+        alt={agentName ?? ''}
+        width={size}
+        height={size}
+        style={{ width: size, height: size, objectFit: 'contain', display: 'block' }}
+        draggable={false}
+        onError={() => setImgFailed(true)}
+      />
+    )
+  }
   const Icon = getPanelDef(type).icon
   return <Icon size={size} />
 }
@@ -64,6 +87,8 @@ export const TabPill = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTM
 export interface DockTabBarProps {
   stack: DockTabStackType
   compact?: boolean
+  /** Workspace the tabs belong to — scopes the agent-status lookup. */
+  workspaceId?: string
   getPanel: (panelId: string) => PanelState | undefined
   getPanelTitle: (panelId: string) => string
   onClosePanel?: (panelId: string) => void
@@ -95,7 +120,7 @@ export interface DockTabBarProps {
 
 export function DockTabBar(props: DockTabBarProps) {
   const {
-    stack, compact, getPanel, getPanelTitle, onClosePanel,
+    stack, compact, workspaceId, getPanel, getPanelTitle, onClosePanel,
     onTabClick, onTabMouseDown, onTabContextMenu,
     renameId, renameValue, renameInputRef, setRenameValue, setRenameId, commitRename, beginRename,
     springLoadTimer, setActiveTab,
@@ -104,6 +129,7 @@ export function DockTabBar(props: DockTabBarProps) {
   } = props
 
   const worktreeColorByPanel = useWorktreeColorByPanel()
+  const agentInfoByPanel = useAgentInfoByPanel(workspaceId)
 
   // Build the visible tab list (skip the in-flight tab when source === this
   // stack) and choose where to slot the placeholder. Clamp to >=1 so a
@@ -197,7 +223,12 @@ export function DockTabBar(props: DockTabBarProps) {
               className={`shrink-0 ${worktreeColorByPanel[panelId] ? '' : isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}
               style={worktreeColorByPanel[panelId] ? { color: worktreeColorByPanel[panelId] } : undefined}
             >
-              <TabIcon type={panelType} size={compact ? 11 : 13} />
+              <TabIcon
+                type={panelType}
+                size={compact ? 11 : 13}
+                logo={agentInfoByPanel[panelId]?.logo}
+                agentName={agentInfoByPanel[panelId]?.name}
+              />
             </span>
             {renameId === panelId ? (
               <input
@@ -219,6 +250,12 @@ export function DockTabBar(props: DockTabBarProps) {
               <span
                 className="truncate flex-1 min-w-0"
               >{getPanelTitle(panelId)}</span>
+            )}
+            {agentInfoByPanel[panelId]?.state === 'waitingForInput' && (
+              <span className="cate-await-indicator shrink-0" aria-label="awaiting input">
+                <span className="cate-await-ring" style={{ borderColor: AWAIT_COLOR }} />
+                <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
+              </span>
             )}
             {onClosePanel && (
               <span

@@ -3,7 +3,6 @@
 // No in-app state: settings-gated dispatch + a global handler for click actions.
 // =============================================================================
 
-import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore, getCanvasOperations, getWorkspaceCanvasPanelId, ensureCanvasOpsForPanel } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
 import { terminalRegistry } from './terminalRegistry'
@@ -12,18 +11,7 @@ import { ALL_ZONES } from '../../shared/types'
 import type { NotificationAction, PanelLocation } from '../../shared/types'
 
 export { shouldSendNotification } from './notificationGating'
-import { shouldSendNotification } from './notificationGating'
-
-export function sendOsNotification(payload: {
-  title: string
-  body: string
-  action?: NotificationAction
-}): void {
-  const settings = useSettingsStore.getState()
-  const focused = typeof document !== 'undefined' && document.hasFocus()
-  if (!shouldSendNotification(settings, focused)) return
-  window.electronAPI?.notifyOS(payload)
-}
+export { sendOsNotification } from './osNotificationSend'
 
 type DockStoreState = ReturnType<typeof useDockStore.getState>
 

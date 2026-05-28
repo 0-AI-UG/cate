@@ -48,12 +48,14 @@ const terminalOwners: Map<string, number> = new Map()
 // =============================================================================
 
 interface TerminalIdleState {
+  /** Idle-suspend timer. Reset on resume — not a pure PTY-output timestamp. */
   lastOutputAt: number
   visible: boolean
   suspended: boolean
 }
 
 const idleState: Map<string, TerminalIdleState> = new Map()
+
 const IDLE_SUSPEND_MS = 2 * 60_000
 const IDLE_CHECK_INTERVAL_MS = 20_000
 let idleScanner: ReturnType<typeof setInterval> | null = null
@@ -265,7 +267,9 @@ function createTerminal(
   ptyProcess.onData((data: string) => {
     if (shuttingDown) return
     const state = idleState.get(id)
-    if (state) state.lastOutputAt = Date.now()
+    if (state) {
+      state.lastOutputAt = Date.now()
+    }
     // Log to disk for session restore
     const logger = getOrCreateLogger(id)
     logger.append(data)

@@ -38,6 +38,7 @@ vi.mock('@xterm/xterm', () => {
     }
     onData(): { dispose: () => void } { return { dispose: () => {} } }
     onResize(): { dispose: () => void } { return { dispose: () => {} } }
+    onTitleChange(): { dispose: () => void } { return { dispose: () => {} } }
     hasSelection(): boolean { return false }
     attachCustomKeyEventHandler(): void { /* no-op */ }
     refresh(): void { /* no-op */ }

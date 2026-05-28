@@ -13,6 +13,7 @@ import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { PANEL_REGISTRY } from '../panels/registry'
+import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 
 // -----------------------------------------------------------------------------
 // Panel jump helper — focus a panel inside a workspace, switching workspace
@@ -126,6 +127,7 @@ export interface TerminalPanelRowProps {
   panel: { id: string; type: PanelType; title?: string; filePath?: string; url?: string }
   indent: boolean
   agentState: AgentState | undefined
+  agentLogo?: string | null
   hasPorts: boolean
   worktreeColor?: string
   onClick: (e: React.MouseEvent) => void
@@ -133,12 +135,13 @@ export interface TerminalPanelRowProps {
 
 const AWAIT_COLOR = '#c08a5a'
 
-export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, hasPorts, worktreeColor, onClick }) => {
+export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts, worktreeColor, onClick }) => {
   const Icon = PANEL_ICONS[panel.type] ?? TerminalIcon
   const label = panel.title || panel.filePath?.split('/').pop() || panel.url || panel.type
 
   const isRunning = agentState === 'running'
   const isAwaiting = agentState === 'waitingForInput'
+  const agentLogo = panel.type === 'terminal' ? agentLogoProp : null
 
   return (
     <button
@@ -148,11 +151,23 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
       onClick={onClick}
       title={panel.filePath || panel.url || label}
     >
-      <Icon
-        size={11}
-        className="flex-shrink-0"
-        style={worktreeColor ? { color: worktreeColor, opacity: 0.95 } : { opacity: 0.6 }}
-      />
+      {agentLogo ? (
+        <img
+          src={agentLogo}
+          alt=""
+          width={11}
+          height={11}
+          draggable={false}
+          className="flex-shrink-0"
+          style={{ width: 11, height: 11, objectFit: 'contain', display: 'block', opacity: 0.95 }}
+        />
+      ) : (
+        <Icon
+          size={11}
+          className="flex-shrink-0"
+          style={worktreeColor ? { color: worktreeColor, opacity: 0.95 } : { opacity: 0.6 }}
+        />
+      )}
       <span className={`truncate min-w-0 flex-1 ${isRunning ? 'cate-notif-pulse' : ''}`}>
         {label}
       </span>
@@ -196,9 +211,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     if (!ws) return null
     return {
       listeningPorts: ws.listeningPorts,
-      agentState: ws.agentState,
     }
   }))
+  const agentInfoByPanel = useAgentInfoByPanel(workspace.id)
 
   const liveLocations = useDockStore((s) => s.panelLocations)
   const panelLocations = isSelected ? liveLocations : workspace.dockState?.locations
@@ -237,25 +252,11 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return ids
   }, [liveCanvasPanelIds, workspace.canvasNodes])
 
-  // Agent state in the status store is keyed by ptyId, but panel rows are
-  // keyed by panelId. Translate via terminalRegistry so the awaiting/running
-  // indicators on the workspace overview actually light up.
-  const agentStateByPty = wsStatus?.agentState ?? {}
+  // Ports in the status store are keyed by ptyId, but panel rows are keyed by
+  // panelId. Translate via terminalRegistry so the indicators on the workspace
+  // overview line up. (Agent state/name/logo come pre-mapped from
+  // useAgentInfoByPanel.)
   const portsByPty = wsStatus?.listeningPorts ?? {}
-  const agentStateByPanel = useMemo(() => {
-    const out: Record<string, AgentState> = {}
-    for (const [key, state] of Object.entries(agentStateByPty)) {
-      const pid = terminalRegistry.panelIdForPty(key)
-      if (pid) {
-        out[pid] = state
-      } else {
-        // Key may already be a panelId (e.g. agent panels register state
-        // directly by panelId instead of ptyId).
-        out[key] = state
-      }
-    }
-    return out
-  }, [agentStateByPty])
   const portsByPanel = useMemo(() => {
     const out: Record<string, number[]> = {}
     for (const [ptyId, ports] of Object.entries(portsByPty)) {
@@ -461,16 +462,14 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
 
   const renderPanelRow = (p: typeof panelList[number], indent = false) => {
     if (p.type === 'terminal' || p.type === 'agent') {
-      const resolvedState = agentStateByPanel[p.id]
-      if (resolvedState) {
-        console.log('[WorkspaceTab] panel=%s type=%s agentState=%s keys=%s', p.id, p.type, resolvedState, JSON.stringify(Object.keys(agentStateByPty)))
-      }
+      const info = agentInfoByPanel[p.id]
       return (
         <TerminalPanelRow
           key={p.id}
           panel={p}
           indent={indent}
-          agentState={resolvedState}
+          agentState={info?.state}
+          agentLogo={info?.logo}
           hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
           worktreeColor={worktreeColorFor(p.id)}
           onClick={(e) => handlePanelClick(e, p.id)}

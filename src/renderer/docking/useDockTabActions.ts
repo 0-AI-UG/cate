@@ -53,7 +53,10 @@ export function useDockTabActions(params: DockTabActionsParams) {
     const trimmed = renameValue.trim()
     if (trimmed) {
       const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
-      if (wsId) useAppStore.getState().updatePanelTitle(wsId, panelId, trimmed)
+      // renamePanelByUser sets titleUserOverridden so the agent-name tab title
+      // (terminalRegistry) won't clobber a manual rename; onPanelRenamed keeps
+      // detached dock windows in sync (main's rename feature).
+      if (wsId) useAppStore.getState().renamePanelByUser(wsId, panelId, trimmed)
       onPanelRenamed?.(panelId, trimmed)
     }
     setRenameId(null)

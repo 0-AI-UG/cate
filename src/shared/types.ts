@@ -113,6 +113,10 @@ export interface PanelState {
    *  associated with. Drives the per-panel color accent and the title-bar
    *  "switch worktree" pill. Applies to terminal + agent panels. */
   worktreeId?: string
+  /** Terminal panels only. Set to true the first time the user renames the
+   *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
+   *  no longer overwrite the chosen name. */
+  titleUserOverridden?: boolean
 }
 
 // -----------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 // =============================================================================
 // Shell / Process Monitor IPC handlers
-// Walks process tree to detect agent CLIs (Claude, Aider, Codex, Gemini, etc.)
+// Walks process tree to detect agent CLIs (Claude, Codex, etc.)
 // =============================================================================
 
 import { execFile } from 'child_process'
@@ -27,16 +27,15 @@ interface TerminalRegistration {
 }
 
 interface PreviousState {
+  /** Last agent name seen — carried across transient scan misses so the tab
+   *  name doesn't flicker when a single `ps` cycle fails to spot the agent. */
   previousAgentName: string | null
-  previouslyHadAgent: boolean
 }
 
 interface ScanResult {
   terminalActivity: TerminalActivity
   agentName: string | null
-  subprocessActive: boolean
   agentPresent: boolean
-  previouslyHadAgent: boolean
 }
 
 // Concurrency limiter — caps simultaneous execFile calls across all terminals
@@ -134,8 +133,11 @@ const AGENT_DEFINITIONS: { displayName: string; match: (name: string) => boolean
     match: (n) => n === 'codex',
   },
   {
-    displayName: 'Gemini CLI',
-    match: (n) => n === 'gemini',
+    // Antigravity's interactive terminal CLI installs as the `agy` binary —
+    // `antigravity` is the GUI IDE (runs as an Electron process), never a
+    // terminal child, so it would never match here.
+    displayName: 'Antigravity',
+    match: (n) => n === 'agy',
   },
   {
     displayName: 'Cursor',
@@ -146,7 +148,8 @@ const AGENT_DEFINITIONS: { displayName: string; match: (name: string) => boolean
     match: (n) => n === 'opencode',
   },
   {
-    // @mariozechner/pi-coding-agent — installs as the `pi` binary.
+    // @earendil-works/pi-coding-agent — runs as the `pi` binary (sets its own
+    // process title to `pi`).
     displayName: 'PI Agent',
     match: (n) => n === 'pi',
   },
@@ -171,37 +174,6 @@ function isShellProcess(name: string): boolean {
   const shells = ['zsh', 'bash', 'fish', 'sh', 'tcsh', 'ksh', 'dash']
   return shells.includes(name.toLowerCase())
 }
-
-/**
- * Agent helpers that linger between turns and must not be treated as work.
- * Claude Code keeps `caffeinate` and a persistent tool shell alive after the
- * first turn; counting them as "active" would pin the indicator to "running"
- * forever.
- */
-const IDLE_AGENT_HELPERS = new Set(['caffeinate', 'pmset'])
-
-/**
- * True if the agent has a child process that's *actually doing something* —
- * a non-helper, non-idle-shell descendant. Used as a "definitely running"
- * signal that overrides the renderer's buffer-stability reading.
- */
-async function agentIsActive(agentPid: number): Promise<boolean> {
-  const children = await getChildPids(agentPid)
-  for (const childPid of children) {
-    const name = await getProcessName(childPid)
-    if (!name) continue
-    const lower = name.toLowerCase()
-    if (IDLE_AGENT_HELPERS.has(lower)) continue
-    if (isShellProcess(lower)) {
-      const subchildren = await getChildPids(childPid)
-      if (subchildren.length > 0) return true
-      continue
-    }
-    return true
-  }
-  return false
-}
-
 
 async function getAllDescendantPids(pid: number): Promise<number[]> {
   const children = await getChildPids(pid)
@@ -294,16 +266,15 @@ function getProcessCwd(pid: number): Promise<string | null> {
  * Scan a single terminal's process tree to detect activity and Claude state.
  * Ported from ProcessMonitor.scanProcesses(for:) in Swift.
  */
-async function scanTerminal(terminalId: string, info: TerminalRegistration): Promise<ScanResult> {
-  const prev = previousStates.get(terminalId) || {
-    previousAgentName: null,
-    previouslyHadAgent: false,
-  }
+async function scanTerminal(
+  terminalId: string,
+  info: TerminalRegistration,
+): Promise<ScanResult> {
+  const prev = previousStates.get(terminalId) || { previousAgentName: null }
 
   const childrenToScan = await getChildPids(info.shellPid)
 
   let foundAgentName: string | null = null
-  let foundAgentPid: number | null = null
   let firstChildName: string | null = null
 
   for (const childPid of childrenToScan) {
@@ -314,15 +285,11 @@ async function scanTerminal(terminalId: string, info: TerminalRegistration): Pro
       }
       if (!foundAgentName) {
         const agentMatch = matchAgentProcess(name)
-        if (agentMatch) {
-          foundAgentName = agentMatch
-          foundAgentPid = childPid
-        }
+        if (agentMatch) foundAgentName = agentMatch
       }
     }
   }
 
-  const subprocessActive = foundAgentPid != null ? await agentIsActive(foundAgentPid) : false
   const agentPresent = foundAgentName != null
 
   const terminalActivity: TerminalActivity =
@@ -331,24 +298,16 @@ async function scanTerminal(terminalId: string, info: TerminalRegistration): Pro
       : { type: 'idle' }
 
   const agentName = foundAgentName ?? prev.previousAgentName
-  let previouslyHadAgent = prev.previouslyHadAgent
-  if (agentPresent) {
-    previouslyHadAgent = true
-  } else if (previouslyHadAgent) {
-    previouslyHadAgent = false
-  }
 
   return {
     terminalActivity,
     agentName,
-    subprocessActive,
     agentPresent,
-    previouslyHadAgent,
   }
 }
 
 /**
- * Start polling all registered terminals every 2 seconds.
+ * Start polling all registered terminals every 1 second.
  * Emits SHELL_ACTIVITY_UPDATE IPC events to the owning window.
  */
 function startPolling(): void {
@@ -381,10 +340,7 @@ function startPolling(): void {
       for (const entry of scanResults) {
         if (!entry) continue
         const { terminalId, info, result } = entry
-        previousStates.set(terminalId, {
-          previousAgentName: result.agentName,
-          previouslyHadAgent: result.previouslyHadAgent,
-        })
+        previousStates.set(terminalId, { previousAgentName: result.agentName })
 
         sendToWindow(
           info.ownerWindowId,
@@ -392,7 +348,6 @@ function startPolling(): void {
           terminalId,
           result.terminalActivity,
           result.agentName,
-          result.subprocessActive,
           result.agentPresent,
         )
       }
@@ -482,10 +437,7 @@ export function registerHandlers(): void {
         ownerWindowId,
       })
 
-      previousStates.set(terminalId, {
-        previousAgentName: null,
-        previouslyHadAgent: false,
-      })
+      previousStates.set(terminalId, { previousAgentName: null })
 
       // Start polling on first registration
       startPolling()

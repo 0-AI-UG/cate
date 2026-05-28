@@ -79,6 +79,12 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
 
   const activePanelId = stack.panelIds[stack.activeIndex]
 
+  // Effective workspace for status lookups: explicit prop, else the selected
+  // workspace (matches resolvePanel's fallback). Subscribed so a workspace
+  // switch re-scopes the tab agent indicators.
+  const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
+  const effectiveWorkspaceId = workspaceIdProp ?? selectedWorkspaceId
+
   const resolvePanel = useCallback(
     (panelId: string): PanelState | undefined => {
       if (getPanelProp) return getPanelProp(panelId)
@@ -227,6 +233,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         <DockTabBar
           stack={stack}
           compact={compact}
+          workspaceId={effectiveWorkspaceId}
           getPanel={resolvePanel}
           getPanelTitle={getPanelTitle}
           onClosePanel={onClosePanel}

@@ -298,6 +298,12 @@ interface AppStoreActions {
   // Panel management
   closePanel: (workspaceId: string, panelId: string) => void
   updatePanelTitle: (workspaceId: string, panelId: string, title: string) => void
+  /** Apply a title that came from the running process (xterm OSC 0/1/2). Skips
+   *  the update if the user has manually renamed the tab. */
+  updatePanelTitleFromAgent: (workspaceId: string, panelId: string, title: string) => void
+  /** User-initiated rename. Marks the panel as user-overridden so OSC updates
+   *  no longer fight the chosen name. */
+  renamePanelByUser: (workspaceId: string, panelId: string, title: string) => void
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
@@ -1060,6 +1066,36 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return {
           ...ws,
           panels: { ...ws.panels, [panelId]: { ...panel, title } },
+        }
+      }),
+    }))
+  },
+
+  updatePanelTitleFromAgent(workspaceId, panelId, title) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        const panel = ws.panels[panelId]
+        if (!panel) return ws
+        if (panel.titleUserOverridden) return ws
+        if (panel.title === title) return ws
+        return {
+          ...ws,
+          panels: { ...ws.panels, [panelId]: { ...panel, title } },
+        }
+      }),
+    }))
+  },
+
+  renamePanelByUser(workspaceId, panelId, title) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        const panel = ws.panels[panelId]
+        if (!panel) return ws
+        return {
+          ...ws,
+          panels: { ...ws.panels, [panelId]: { ...panel, title, titleUserOverridden: true } },
         }
       }),
     }))

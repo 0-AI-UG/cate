@@ -12,3 +12,6 @@ test-results/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local logo scratch dir
+_logos/
