@@ -9,6 +9,10 @@
 <h1 align="center">Cate</h1>
 
 <p align="center">
+  <a href="README.md">English</a> | <a href="README.fr.md">Français</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.de.md">Deutsch</a>
+</p>
+
+<p align="center">
   A spatial desktop IDE with an infinite canvas for code, terminals, browsers, documents, AI agents, and git.
 </p>
 

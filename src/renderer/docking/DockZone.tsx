@@ -19,9 +19,10 @@ interface DockZoneProps {
   getPanel?: (panelId: string) => PanelState | undefined
   workspaceId?: string
   onPanelRemoved?: (panelId: string) => void
+  onPanelRenamed?: (panelId: string, title: string) => void
 }
 
-export default function DockZone({ position, renderPanel, getPanelTitle, onClosePanel, getPanel, workspaceId, onPanelRemoved }: DockZoneProps) {
+export default function DockZone({ position, renderPanel, getPanelTitle, onClosePanel, getPanel, workspaceId, onPanelRemoved, onPanelRenamed }: DockZoneProps) {
   const zone = useDockStoreContext((s) => s.zones[position])
   const zoneRef = useRef<HTMLDivElement>(null)
 
@@ -50,6 +51,7 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
             getPanel={getPanel}
             workspaceId={workspaceId}
             onPanelRemoved={onPanelRemoved}
+            onPanelRenamed={onPanelRenamed}
           />
         )
       }

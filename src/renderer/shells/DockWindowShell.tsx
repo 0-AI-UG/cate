@@ -338,6 +338,20 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     [dockStore, panels],
   )
 
+  const handlePanelRenamed = useCallback(
+    (panelId: string, title: string) => {
+      setPanels((prev) => {
+        const p = prev[panelId]
+        if (!p) return prev
+        const next = { ...prev, [panelId]: { ...p, title } }
+        panelsRef.current = next
+        return next
+      })
+      syncNowRef.current()
+    },
+    [],
+  )
+
   const handlePanelRemoved = useCallback(
     (_panelId: string) => {
       if (isDockEmpty(dockStore.getState())) {
@@ -405,6 +419,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
             getPanel={(id) => panels[id]}
             workspaceId={wsId}
             onPanelRemoved={handlePanelRemoved}
+            onPanelRenamed={handlePanelRenamed}
           />
         </div>
         <DragOverlay />

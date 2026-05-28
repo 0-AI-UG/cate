@@ -30,6 +30,7 @@ interface DockTabStackProps {
   getPanel?: (panelId: string) => PanelState | undefined
   workspaceId?: string
   onPanelRemoved?: (panelId: string) => void
+  onPanelRenamed?: (panelId: string, title: string) => void
   /** Panel types this stack will refuse from new-tab / split menus and from
    *  drag-and-drop. */
   excludePanelTypes?: PanelType[]
@@ -49,7 +50,7 @@ interface DockTabStackProps {
   dropDisabled?: boolean
 }
 
-export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact, leftEdge, rightEdge, dropDisabled }: DockTabStackProps) {
+export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact, leftEdge, rightEdge, dropDisabled }: DockTabStackProps) {
   const dockStoreApi = useDockStoreApi()
   const stackRef = useRef<HTMLDivElement>(null)
 
@@ -99,6 +100,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     getPanelProp,
     onClosePanel,
     onPanelRemoved,
+    onPanelRenamed,
     excludePanelTypes,
     localOnly,
     activePanel,

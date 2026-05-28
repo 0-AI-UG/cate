@@ -103,7 +103,12 @@ function findBrowserPanelId(workspaceId: string): string | null {
 }
 
 export function openTerminalUrl(workspaceId: string, url: string): void {
+  OPENED.add(url)
   openInBrowser(workspaceId, url)
+}
+
+export function markUrlHandled(url: string): void {
+  OPENED.add(url)
 }
 
 function openInBrowser(workspaceId: string, url: string): void {
@@ -168,11 +173,14 @@ export function scanTerminalChunkForUrls(
   // eligible URL so the user can decide per-URL.
   const toOpen = mode === 'auto' ? eligible.slice(0, 1) : eligible
   // Mark every matched URL as seen — including ones we deliberately skip —
-  // so future chunks don't re-trigger them.
+  // so future chunks don't re-trigger them. Track which are newly seen so
+  // the request loop below skips URLs already handled in a previous scan.
+  const newlySeen = new Set<string>()
   for (const { url } of matches) {
     const canonical = canonicalize(url)
     if (OPENED.has(canonical)) continue
     OPENED.add(canonical)
+    newlySeen.add(canonical)
     if (OPENED.size > MAX_OPENED) {
       const first = OPENED.values().next().value as string | undefined
       if (first !== undefined) OPENED.delete(first)
@@ -180,6 +188,7 @@ export function scanTerminalChunkForUrls(
   }
   for (const { url } of toOpen) {
     const canonical = canonicalize(url)
+    if (!newlySeen.has(canonical)) continue
     if (mode === 'auto') {
       openInBrowser(workspaceId, canonical)
     } else {
