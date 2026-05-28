@@ -1,0 +1,174 @@
+name: Nightly
+
+# Builds the `nightly` branch and publishes prerelease artifacts under the
+# `nightly` electron-updater channel. App users who opt into nightly builds
+# via Settings receive these as auto-updates; everyone else stays on the
+# `latest` channel (driven by tag-based `release.yml`).
+#
+# Branching model: `nightly` is the active development branch — PRs land
+# here. Maintainers cherry-pick / merge stable changes from `nightly` into
+# `main`, then tag a stable release on `main` which triggers `release.yml`.
+# Nightly users therefore see changes earlier; stable users wait for the
+# next merge into `main` + tag.
+#
+# Trigger model:
+#   - push to `nightly`        → build + publish
+#   - manual workflow_dispatch → ad-hoc rebuild
+
+on:
+  push:
+    branches:
+      - nightly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute nightly version
+        id: bump
+        run: |
+          base=$(node -p "require('./package.json').version")
+          # Drop any existing -nightly suffix from main so we don't end up with
+          # "0.5.0-nightly.X-nightly.Y" when bumping a nightly branch.
+          base_clean=${base%%-*}
+          short_sha=$(git rev-parse --short HEAD)
+          date=$(date -u +%Y%m%d)
+          version="${base_clean}-nightly.${date}-${short_sha}"
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Nightly version: ${version}"
+
+      - name: Create draft prerelease (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping creation"
+          else
+            gh release create "$TAG" \
+              --repo "${{ github.repository }}" \
+              --title "$TAG" \
+              --draft \
+              --prerelease \
+              --generate-notes
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: win
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install setuptools (needed by node-gyp)
+        run: pip install setuptools
+
+      - name: Delete lockfile
+        run: node -e "try{require('fs').unlinkSync('package-lock.json')}catch{}"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate icons
+        run: npm run icons
+
+      - name: Pin nightly version in package.json
+        shell: bash
+        env:
+          NIGHTLY_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version=process.env.NIGHTLY_VERSION; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')"
+          echo "Pinned package.json version to ${NIGHTLY_VERSION}"
+
+      - name: Build app
+        run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Package (macOS)
+        if: matrix.platform == 'mac'
+        run: npx electron-builder --mac --config.publish.channel=nightly --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux --config.publish.channel=nightly --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package (Windows)
+        if: matrix.platform == 'win'
+        run: npx electron-builder --win --config.publish.channel=nightly --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find release -maxdepth 1 -type f \
+            ! -name 'builder-debug.yml' \
+            ! -name 'builder-effective-config.yaml' \
+            -print0)
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No top-level release artifacts found in $(pwd)/release"
+            exit 1
+          fi
+
+          gh release upload "$TAG" "${files[@]}" \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish prerelease (remove draft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --prerelease

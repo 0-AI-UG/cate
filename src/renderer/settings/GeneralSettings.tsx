@@ -52,6 +52,12 @@ export function GeneralSettings() {
       >
         <Toggle checked={store.usageAnalyticsEnabled} onChange={(v) => store.setSetting('usageAnalyticsEnabled', v)} />
       </SettingRow>
+      <SettingRow
+        label="Receive nightly builds"
+        description="Auto-update from the curated `nightly` release channel instead of stable. Nightlies can be broken — opt in only if you want to test upcoming changes early."
+      >
+        <Toggle checked={store.useNightlyBuilds} onChange={(v) => store.setSetting('useNightlyBuilds', v)} />
+      </SettingRow>
     </div>
   )
 }

@@ -59,6 +59,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   notifyOnlyWhenUnfocused: 'boolean',
   crashReportingEnabled: 'boolean',
   usageAnalyticsEnabled: 'boolean',
+  useNightlyBuilds: 'boolean',
 }
 
 /** Safely merge only known, type-correct keys from a parsed object into the settings cache. */
@@ -317,6 +318,16 @@ export function registerHandlers(): void {
           setCrashReportingEnabled(value !== false)
         } catch (err) {
           log.warn('Sentry live-toggle failed: %O', err)
+        }
+      }
+      // Live-switch the auto-updater channel so the user doesn't have to
+      // relaunch after opting in/out of nightly builds.
+      if (key === 'useNightlyBuilds') {
+        try {
+          const { applyChannelFromSettingsAndRecheck } = await import('./auto-updater')
+          applyChannelFromSettingsAndRecheck()
+        } catch (err) {
+          log.warn('Auto-updater channel live-switch failed: %O', err)
         }
       }
     },

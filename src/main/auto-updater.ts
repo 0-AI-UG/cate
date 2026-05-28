@@ -24,6 +24,7 @@ import {
 } from '../shared/ipc-channels'
 import { getWindowType } from './windowRegistry'
 import { sendEvent } from './analytics'
+import { getSettingSync } from './store'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -35,6 +36,26 @@ const API_LATEST_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_RE
 
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
+
+/** Sync electron-updater's channel + prerelease flag with the current setting.
+ *  Called at init and again whenever the renderer toggles `useNightlyBuilds`. */
+function applyChannelFromSettings(): void {
+  const nightly = getSettingSync('useNightlyBuilds') === true
+  autoUpdater.channel = nightly ? 'nightly' : 'latest'
+  autoUpdater.allowPrerelease = nightly
+}
+applyChannelFromSettings()
+
+/** Reapply the channel and trigger a fresh update check. Exported so the
+ *  settings IPC handler can flip channels without an app relaunch. */
+export function applyChannelFromSettingsAndRecheck(): void {
+  applyChannelFromSettings()
+  if (!app.isPackaged) return
+  log.info('[auto-updater] Channel switched to %s', autoUpdater.channel)
+  autoUpdater.checkForUpdates().catch((err) => {
+    log.warn('[auto-updater] post-channel-switch check failed:', err)
+  })
+}
 
 /** True after the user clicked "Update & Restart". The will-quit handler in
  *  src/main/index.ts reads this to skip its `process.reallyExit(0)` fallback —

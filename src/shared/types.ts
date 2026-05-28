@@ -757,6 +757,11 @@ export interface AppSettings {
   /** Send anonymous usage data (app starts, version upgrades, feedback) to the
    *  cero-analytics endpoint. No personal data, no file paths, no project info. */
   usageAnalyticsEnabled: boolean
+
+  // Updates
+  /** When true, the auto-updater follows the `nightly` release channel and
+   *  accepts prereleases. Off by default so regular users stay on stable. */
+  useNightlyBuilds: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -804,6 +809,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Privacy
   crashReportingEnabled: true,
   usageAnalyticsEnabled: true,
+
+  // Updates
+  useNightlyBuilds: false,
 }
 
 // -----------------------------------------------------------------------------
