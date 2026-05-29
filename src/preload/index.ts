@@ -23,6 +23,7 @@ import {
   FS_WATCH_EVENT,
   FS_STAT,
   GIT_IS_REPO,
+  GIT_INIT,
   GIT_LS_FILES,
   GIT_BRANCH_UPDATE,
   GIT_MONITOR_START,
@@ -38,6 +39,11 @@ import {
   GIT_WORKTREE_PRUNE,
   GIT_WORKTREE_STATUS,
   GIT_WORKTREE_MERGE_TO,
+  GIT_WORKTREE_ADD_FROM_PR,
+  GIT_WORKTREE_UPDATE_FROM,
+  GIT_CREATE_PR,
+  GIT_PR_STATUS,
+  GIT_PR_LIST,
   GIT_PUSH,
   GIT_PULL,
   GIT_FETCH,
@@ -60,6 +66,7 @@ import {
   SETTINGS_SET,
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
+  SETTINGS_CHANGED,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
@@ -78,6 +85,7 @@ import {
   DIALOG_CONFIRM_RELOAD_WORKSPACE,
   DIALOG_CONFIRM_DELETE_REGION,
   DIALOG_CONFIRM_IMPORT,
+  DIALOG_TERMINAL_LINK_OPEN,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   LAYOUT_SAVE,
@@ -185,6 +193,7 @@ import {
   AUTH_DELETE,
   PERF_GET,
 } from '../shared/ipc-channels'
+import type { AppSettings } from '../shared/types'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
 // check it without an IPC round-trip on every mousemove. Main BROADCASTS
@@ -341,6 +350,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(GIT_IS_REPO, dirPath)
   },
 
+  gitInit(dirPath: string): Promise<void> {
+    return ipcRenderer.invoke(GIT_INIT, dirPath)
+  },
+
   gitLsFiles(dirPath: string): Promise<string[]> {
     return ipcRenderer.invoke(GIT_LS_FILES, dirPath)
   },
@@ -404,6 +417,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
     toBranch: string,
   ): Promise<{ ok: true; result: unknown } | { ok: false; conflict: boolean; message: string }> {
     return ipcRenderer.invoke(GIT_WORKTREE_MERGE_TO, repoCwd, fromBranch, toBranch)
+  },
+
+  gitWorktreeUpdateFrom(
+    worktreePath: string,
+    fromBranch: string,
+  ): Promise<{ ok: true; result: unknown } | { ok: false; conflict: boolean; message: string }> {
+    return ipcRenderer.invoke(GIT_WORKTREE_UPDATE_FROM, worktreePath, fromBranch)
+  },
+
+  gitWorktreeAddFromPr(
+    repoCwd: string,
+    prNumber: number,
+    targetPath: string,
+  ): Promise<{ path: string; branch: string }> {
+    return ipcRenderer.invoke(GIT_WORKTREE_ADD_FROM_PR, repoCwd, prNumber, targetPath)
+  },
+
+  gitPrList(
+    repoCwd: string,
+  ): Promise<Array<{ number: number; title: string; headRefName: string; author: string; isFork: boolean }>> {
+    return ipcRenderer.invoke(GIT_PR_LIST, repoCwd)
+  },
+
+  gitCreatePR(
+    worktreePath: string,
+    branch: string,
+  ): Promise<
+    | { ok: true; created: boolean; url: string; fallback?: boolean }
+    | { ok: false; message: string }
+  > {
+    return ipcRenderer.invoke(GIT_CREATE_PR, worktreePath, branch)
+  },
+
+  gitPrStatus(
+    worktreePath: string,
+    branch: string,
+  ): Promise<{ number: number; state: string; url: string; isDraft: boolean } | null> {
+    return ipcRenderer.invoke(GIT_PR_STATUS, worktreePath, branch)
   },
 
   gitPush(cwd: string, remote?: string, branch?: string): Promise<void> {
@@ -582,6 +633,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(SETTINGS_RESET, key)
   },
 
+  onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, key: keyof AppSettings, value: unknown): void => {
+      callback(key, value)
+    }
+    ipcRenderer.on(SETTINGS_CHANGED, listener)
+    return () => {
+      ipcRenderer.removeListener(SETTINGS_CHANGED, listener)
+    }
+  },
+
   // ---------------------------------------------------------------------------
   // Session
   // ---------------------------------------------------------------------------
@@ -654,6 +715,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   confirmImportEntries(payload: { count: number; destName: string }): Promise<'copy' | 'move' | 'cancel'> {
     return ipcRenderer.invoke(DIALOG_CONFIRM_IMPORT, payload)
+  },
+
+  promptTerminalLinkOpen(url: string): Promise<'canvas' | 'external' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_TERMINAL_LINK_OPEN, { url })
   },
 
   // ---------------------------------------------------------------------------

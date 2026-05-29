@@ -79,9 +79,18 @@ function workspaceEditedExternallySync(rootPath: string): boolean {
   }
 }
 
+// Per-write unique temp suffix. A shared `<file>.tmp` name is unsafe when two
+// saves for the same path overlap: one consumes the tmp, the other's rename
+// fails with ENOENT. Uniquify so each write owns its own tmp file.
+let tmpSeq = 0
+function uniqueTmpPath(filePath: string): string {
+  tmpSeq = (tmpSeq + 1) & 0x7fffffff
+  return `${filePath}.${process.pid}.${tmpSeq}.tmp`
+}
+
 async function atomicWrite(filePath: string, json: string): Promise<void> {
   const dir = path.dirname(filePath)
-  const tmpPath = filePath + '.tmp'
+  const tmpPath = uniqueTmpPath(filePath)
   const bakPath = filePath + '.bak'
 
   await fs.mkdir(dir, { recursive: true })
@@ -91,13 +100,16 @@ async function atomicWrite(filePath: string, json: string): Promise<void> {
     await fs.unlink(tmpPath).catch(() => {})
     throw new Error('tmp file is empty after write')
   }
-  await fs.rename(filePath, bakPath).catch(() => {})
+  // Back up by *copying* (not renaming) the current file so it never vanishes
+  // if this rename races a concurrent writer. The rename below is atomic and
+  // overwrites the target in place.
+  await fs.copyFile(filePath, bakPath).catch(() => {})
   await fs.rename(tmpPath, filePath)
 }
 
 function atomicWriteSync(filePath: string, json: string): void {
   const dir = path.dirname(filePath)
-  const tmpPath = filePath + '.tmp'
+  const tmpPath = uniqueTmpPath(filePath)
   const bakPath = filePath + '.bak'
 
   fsSync.mkdirSync(dir, { recursive: true })
@@ -106,7 +118,7 @@ function atomicWriteSync(filePath: string, json: string): void {
   if (stat.size === 0) {
     throw new Error('tmp file is empty after write')
   }
-  try { fsSync.renameSync(filePath, bakPath) } catch { /* OK */ }
+  try { fsSync.copyFileSync(filePath, bakPath) } catch { /* OK */ }
   fsSync.renameSync(tmpPath, filePath)
 }
 
@@ -372,6 +384,23 @@ async function seedSkillFile(rootPath: string): Promise<void> {
   }
 }
 
+// Serialize saves per root. Overlapping saves for the same project would race
+// on disk and, worse, desync the remembered-hash guard (one write finishes
+// last on disk while another finishes last in memory), spuriously flagging
+// workspace.json as edited-externally. A per-root promise chain keeps them
+// strictly ordered.
+const saveQueues = new Map<string, Promise<unknown>>()
+
+function enqueueSave(rootPath: string, task: () => Promise<void>): Promise<void> {
+  const prev = saveQueues.get(rootPath) ?? Promise.resolve()
+  const next = prev.catch(() => {}).then(task)
+  saveQueues.set(rootPath, next)
+  next.finally(() => {
+    if (saveQueues.get(rootPath) === next) saveQueues.delete(rootPath)
+  })
+  return next
+}
+
 export function registerProjectStateHandlers(): void {
   ipcMain.handle(
     PROJECT_STATE_SAVE,
@@ -379,19 +408,21 @@ export function registerProjectStateHandlers(): void {
       const wsJson = JSON.stringify(workspace, null, 2)
       const sessJson = JSON.stringify(session, null, 2)
       lastSavedProjectStates.set(rootPath, { workspace: wsJson, session: sessJson })
-      // session.json is machine-local and never hand-edited, so always write it.
-      const writes: Promise<void>[] = [atomicWrite(sessionPath(rootPath), sessJson)]
-      if (await workspaceEditedExternallyAsync(rootPath)) {
-        // Hold the overwrite and ask the renderer to prompt for a reload. The
-        // file stays steady until the user reloads or dismisses the prompt.
-        log.info('Skipping workspace.json overwrite for %s — edited externally; prompting reload', cateDir(rootPath))
-        broadcastToAll(WORKSPACE_EXTERNAL_EDIT, { rootPath })
-      } else {
-        writes.push(atomicWrite(workspacePath(rootPath), wsJson).then(() => rememberWorkspaceContent(rootPath, wsJson)))
-      }
-      await Promise.all(writes)
-      seedSkillFile(rootPath).catch(() => {})
-      log.debug('Project state saved to %s', cateDir(rootPath))
+      await enqueueSave(rootPath, async () => {
+        // session.json is machine-local and never hand-edited, so always write it.
+        const writes: Promise<void>[] = [atomicWrite(sessionPath(rootPath), sessJson)]
+        if (await workspaceEditedExternallyAsync(rootPath)) {
+          // Hold the overwrite and ask the renderer to prompt for a reload. The
+          // file stays steady until the user reloads or dismisses the prompt.
+          log.info('Skipping workspace.json overwrite for %s — edited externally; prompting reload', cateDir(rootPath))
+          broadcastToAll(WORKSPACE_EXTERNAL_EDIT, { rootPath })
+        } else {
+          writes.push(atomicWrite(workspacePath(rootPath), wsJson).then(() => rememberWorkspaceContent(rootPath, wsJson)))
+        }
+        await Promise.all(writes)
+        seedSkillFile(rootPath).catch(() => {})
+        log.debug('Project state saved to %s', cateDir(rootPath))
+      })
     },
   )
 

@@ -17,6 +17,7 @@ import type {
   Point,
   Size,
   DockZonePosition,
+  DockStateSnapshot,
   WorktreeMeta,
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types'
@@ -263,6 +264,21 @@ export function pickWorktreeColor(existing: { color: string }[]): string {
   return WORKTREE_COLOR_PALETTE[existing.length % WORKTREE_COLOR_PALETTE.length]
 }
 
+/** A fully-reset dock layout: all side zones hidden, an empty visible center.
+ *  Used whenever we need to clear a workspace's dock so panels from a previous
+ *  workspace can't bleed through (workspace switch, removal, closeAllPanels). */
+function createCleanDockSnapshot(): DockStateSnapshot {
+  return {
+    zones: {
+      left: { position: 'left', visible: false, size: 260, layout: null },
+      right: { position: 'right', visible: false, size: 260, layout: null },
+      bottom: { position: 'bottom', visible: false, size: 240, layout: null },
+      center: { position: 'center', visible: true, size: 0, layout: null },
+    },
+    locations: {},
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
@@ -307,6 +323,7 @@ interface AppStoreActions {
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
+  setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
 
@@ -332,6 +349,7 @@ interface AppStoreActions {
   upsertWorktree: (wsId: string, wt: WorktreeMeta) => void
   removeWorktree: (wsId: string, worktreeId: string) => void
   setWorktreeColor: (wsId: string, worktreeId: string, color: string) => void
+  setWorktreeLabel: (wsId: string, worktreeId: string, label: string | undefined) => void
   setPanelWorktreeId: (wsId: string, panelId: string, worktreeId: string | undefined) => void
 
   // Cross-window sync: merge metadata from main-process broadcast
@@ -369,6 +387,67 @@ function placePanel(
     const ops = getActiveCanvasOps()
     ops?.addNodeAndFocus(panelId, panelType, canvasPosition)
   }
+}
+
+type AppSet = StoreApi<AppStore>['setState']
+type AppGet = StoreApi<AppStore>['getState']
+
+/** Add a freshly-built panel to a workspace, then route it to its canvas/dock
+ *  location. On placement failure the panel is rolled back out of the workspace
+ *  so no orphaned entry lingers. Shared by every create* action. */
+function addAndPlacePanel(
+  set: AppSet,
+  get: AppGet,
+  workspaceId: string,
+  panel: PanelState,
+  placement: PanelPlacement | undefined,
+  position: Point | undefined,
+): string {
+  set((state) => ({
+    workspaces: state.workspaces.map((ws) =>
+      ws.id === workspaceId
+        ? { ...ws, panels: { ...ws.panels, [panel.id]: panel } }
+        : ws,
+    ),
+  }))
+  try {
+    placePanel(panel.id, panel.type, placement, position, workspaceId === get().selectedWorkspaceId)
+  } catch (error) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === workspaceId
+          ? { ...ws, panels: Object.fromEntries(
+              Object.entries(ws.panels).filter(([id]) => id !== panel.id)
+            )}
+          : ws,
+      ),
+    }))
+    log.error(`Failed to place ${panel.type} panel:`, error)
+    return null as unknown as string
+  }
+  return panel.id
+}
+
+/** Apply an update to a single panel within a workspace. No-ops if the
+ *  workspace or panel is missing, or if `update` returns the same panel
+ *  reference (lets callers bail out without mutating). Shared by every
+ *  panel-field setter. */
+function setPanelField(
+  set: AppSet,
+  workspaceId: string,
+  panelId: string,
+  update: (panel: PanelState) => PanelState,
+): void {
+  set((state) => ({
+    workspaces: state.workspaces.map((ws) => {
+      if (ws.id !== workspaceId) return ws
+      const panel = ws.panels[panelId]
+      if (!panel) return ws
+      const next = update(panel)
+      if (next === panel) return ws
+      return { ...ws, panels: { ...ws.panels, [panelId]: next } }
+    }),
+  }))
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -479,15 +558,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           // Brand new workspace — fully reset dock so leftover splits/panels
           // from the previously selected workspace don't bleed through. The
           // safety net below will create a fresh canvas panel for the center.
-          useDockStore.getState().restoreSnapshot({
-            zones: {
-              left: { position: 'left', visible: false, size: 260, layout: null },
-              right: { position: 'right', visible: false, size: 260, layout: null },
-              bottom: { position: 'bottom', visible: false, size: 240, layout: null },
-              center: { position: 'center', visible: true, size: 0, layout: null },
-            },
-            locations: {},
-          })
+          useDockStore.getState().restoreSnapshot(createCleanDockSnapshot())
         }
       } catch (error) {
         log.error('Failed to restore dock state for workspace:', error)
@@ -646,15 +717,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           // workspace is closed) has no dock state — reset to a clean dock so
           // panel IDs from the removed workspace don't leave an empty pane
           // behind, then mint a fresh canvas panel for the center zone.
-          useDockStore.getState().restoreSnapshot({
-            zones: {
-              left: { position: 'left', visible: false, size: 260, layout: null },
-              right: { position: 'right', visible: false, size: 260, layout: null },
-              bottom: { position: 'bottom', visible: false, size: 240, layout: null },
-              center: { position: 'center', visible: true, size: 0, layout: null },
-            },
-            locations: {},
-          })
+          useDockStore.getState().restoreSnapshot(createCleanDockSnapshot())
           get().createCanvas(newWs.id)
         }
       }
@@ -690,32 +753,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       isDirty: false,
       ...(cwd ? { cwd } : {}),
     }
-
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-
-    try {
-      placePanel(panelId, 'terminal', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place terminal panel:', error)
-      return null as unknown as string
-    }
-
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createBrowser(workspaceId, url?, position?, placement?) {
@@ -727,32 +765,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       isDirty: false,
       url: url ?? 'about:blank',
     }
-
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-
-    try {
-      placePanel(panelId, 'browser', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place browser panel:', error)
-      return null as unknown as string
-    }
-
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createEditor(workspaceId, filePath?, position?, placement?) {
@@ -765,32 +778,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       isDirty: false,
       filePath,
     }
-
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-
-    try {
-      placePanel(panelId, 'editor', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place editor panel:', error)
-      return null as unknown as string
-    }
-
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createDocument(workspaceId, filePath?, documentType?, position?, placement?) {
@@ -804,32 +792,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       filePath,
       documentType,
     }
-
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-
-    try {
-      placePanel(panelId, 'document', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place document panel:', error)
-      return null as unknown as string
-    }
-
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createDiffEditor(workspaceId, filePath, diffMode, position?, placement?) {
@@ -844,197 +807,57 @@ export const useAppStore = create<AppStore>((set, get) => ({
       filePath,
       diffMode,
     }
-
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-
-    try {
-      placePanel(panelId, 'editor', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place diff editor panel:', error)
-      return null as unknown as string
-    }
-
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createGit(workspaceId, position?, placement?) {
-    const panelId = generateId()
     const panel: PanelState = {
-      id: panelId,
+      id: generateId(),
       type: 'git',
       title: 'Git',
       isDirty: false,
     }
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-    try {
-      placePanel(panelId, 'git', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place git panel:', error)
-      return null as unknown as string
-    }
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createFileExplorer(workspaceId, position?, placement?) {
-    const panelId = generateId()
     const panel: PanelState = {
-      id: panelId,
+      id: generateId(),
       type: 'fileExplorer',
       title: 'File Explorer',
       isDirty: false,
     }
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-    try {
-      placePanel(panelId, 'fileExplorer', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place file explorer panel:', error)
-      return null as unknown as string
-    }
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createProjectList(workspaceId, position?, placement?) {
-    const panelId = generateId()
     const panel: PanelState = {
-      id: panelId,
+      id: generateId(),
       type: 'projectList',
       title: 'Projects',
       isDirty: false,
     }
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-    try {
-      placePanel(panelId, 'projectList', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place project list panel:', error)
-      return null as unknown as string
-    }
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createCanvas(workspaceId, position?, placement?) {
-    const panelId = generateId()
     const panel: PanelState = {
-      id: panelId,
+      id: generateId(),
       type: 'canvas',
       title: 'Canvas',
       isDirty: false,
     }
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-    try {
-      placePanel(panelId, 'canvas', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place canvas panel:', error)
-      return null as unknown as string
-    }
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   createAgent(workspaceId, position?, placement?) {
-    const panelId = generateId()
     const panel: PanelState = {
-      id: panelId,
+      id: generateId(),
       type: 'agent',
       title: 'Agent',
       isDirty: false,
     }
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) =>
-        ws.id === workspaceId
-          ? { ...ws, panels: { ...ws.panels, [panelId]: panel } }
-          : ws,
-      ),
-    }))
-    try {
-      placePanel(panelId, 'agent', placement, position, workspaceId === get().selectedWorkspaceId)
-    } catch (error) {
-      set((state) => ({
-        workspaces: state.workspaces.map((ws) =>
-          ws.id === workspaceId
-            ? { ...ws, panels: Object.fromEntries(
-                Object.entries(ws.panels).filter(([id]) => id !== panelId)
-              )}
-            : ws,
-        ),
-      }))
-      log.error('Failed to place agent panel:', error)
-      return null as unknown as string
-    }
-    return panelId
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
   // --- Panel management ---
@@ -1090,78 +913,34 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updatePanelTitle(workspaceId, panelId, title) {
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel) return ws
-        return {
-          ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, title } },
-        }
-      }),
-    }))
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, title }))
   },
 
   updatePanelTitleFromAgent(workspaceId, panelId, title) {
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel) return ws
-        if (panel.titleUserOverridden) return ws
-        if (panel.title === title) return ws
-        return {
-          ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, title } },
-        }
-      }),
-    }))
+    setPanelField(set, workspaceId, panelId, (panel) => (
+      panel.titleUserOverridden || panel.title === title
+        ? panel
+        : { ...panel, title }
+    ))
   },
 
   renamePanelByUser(workspaceId, panelId, title) {
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel) return ws
-        return {
-          ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, title, titleUserOverridden: true } },
-        }
-      }),
-    }))
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, title, titleUserOverridden: true }))
   },
 
   updatePanelUrl(workspaceId, panelId, url) {
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel) return ws
-        return {
-          ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, url } },
-        }
-      }),
-    }))
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, url }))
   },
 
   updatePanelFilePath(workspaceId, panelId, filePath) {
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel) return ws
-        return {
-          ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, filePath } },
-        }
-      }),
-    }))
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, filePath }))
   },
 
   setPanelDirty(workspaceId, panelId, dirty) {
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, isDirty: dirty }))
+  },
+
+  setPanelMarkdownPreview(workspaceId, panelId, preview) {
     set((state) => ({
       workspaces: state.workspaces.map((ws) => {
         if (ws.id !== workspaceId) return ws
@@ -1169,24 +948,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
         if (!panel) return ws
         return {
           ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, isDirty: dirty } },
+          panels: { ...ws.panels, [panelId]: { ...panel, markdownPreview: preview } },
         }
       }),
     }))
   },
 
   setPanelUnsavedContent(workspaceId, panelId, content) {
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel) return ws
-        return {
-          ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, unsavedContent: content } },
-        }
-      }),
-    }))
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, unsavedContent: content }))
   },
 
   addPanel(workspaceId, panel) {
@@ -1427,18 +1196,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }))
   },
 
-  setPanelWorktreeId(wsId, panelId, worktreeId) {
+  setWorktreeLabel(wsId, worktreeId, label) {
+    const trimmed = label?.trim()
     set((state) => ({
       workspaces: state.workspaces.map((ws) => {
         if (ws.id !== wsId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel) return ws
-        return {
-          ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, worktreeId } },
-        }
+        const list = (ws.worktrees ?? []).map((w) =>
+          w.id === worktreeId ? { ...w, label: trimmed || undefined } : w,
+        )
+        return { ...ws, worktrees: list }
       }),
     }))
+  },
+
+  setPanelWorktreeId(wsId, panelId, worktreeId) {
+    setPanelField(set, wsId, panelId, (panel) => ({ ...panel, worktreeId }))
   },
 
   closeAllPanels(wsId) {
@@ -1465,15 +1237,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // Reset the dock to a clean state so the just-cleared panel IDs don't
       // linger in dock zones as orphan tabs (which render as a generic
       // "Panel" tab with an editor icon).
-      useDockStore.getState().restoreSnapshot({
-        zones: {
-          left:   { position: 'left',   visible: false, size: 260, layout: null },
-          right:  { position: 'right',  visible: false, size: 260, layout: null },
-          bottom: { position: 'bottom', visible: false, size: 240, layout: null },
-          center: { position: 'center', visible: true,  size: 0,   layout: null },
-        },
-        locations: {},
-      })
+      useDockStore.getState().restoreSnapshot(createCleanDockSnapshot())
       get().ensureCenterCanvas(wsId)
     }
   },

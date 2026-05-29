@@ -35,6 +35,7 @@ export const SHELL_SHOW_IN_FOLDER = 'shell:showInFolder'
 
 // Git
 export const GIT_IS_REPO = 'git:isRepo'
+export const GIT_INIT = 'git:init'
 export const GIT_LS_FILES = 'git:lsFiles'
 export const GIT_BRANCH_UPDATE = 'git:branch-update'         // main -> renderer
 export const GIT_MONITOR_START = 'git:monitor-start'
@@ -50,6 +51,11 @@ export const GIT_WORKTREE_REMOVE = 'git:worktreeRemove'
 export const GIT_WORKTREE_PRUNE = 'git:worktreePrune'
 export const GIT_WORKTREE_STATUS = 'git:worktreeStatus'
 export const GIT_WORKTREE_MERGE_TO = 'git:worktreeMergeTo'
+export const GIT_WORKTREE_ADD_FROM_PR = 'git:worktreeAddFromPr'
+export const GIT_WORKTREE_UPDATE_FROM = 'git:worktreeUpdateFrom'
+export const GIT_CREATE_PR = 'git:createPR'
+export const GIT_PR_STATUS = 'git:prStatus'
+export const GIT_PR_LIST = 'git:prList'
 export const GIT_PUSH = 'git:push'
 export const GIT_PULL = 'git:pull'
 export const GIT_FETCH = 'git:fetch'
@@ -78,6 +84,7 @@ export const SETTINGS_GET = 'settings:get'
 export const SETTINGS_SET = 'settings:set'
 export const SETTINGS_GET_ALL = 'settings:getAll'
 export const SETTINGS_RESET = 'settings:reset'
+export const SETTINGS_CHANGED = 'settings:changed' // main -> renderer (broadcast)
 
 // Session
 export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer
@@ -146,6 +153,7 @@ export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
 export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'
 export const DIALOG_CONFIRM_IMPORT = 'dialog:confirmImport'
 export const DIALOG_CONFIRM_RELOAD_WORKSPACE = 'dialog:confirmReloadWorkspace'
+export const DIALOG_TERMINAL_LINK_OPEN = 'dialog:terminalLinkOpen'
 
 // Panel window: renderer pushes an updated PanelState snapshot to main so
 // the windowRegistry's panel meta (used by session persistence and the

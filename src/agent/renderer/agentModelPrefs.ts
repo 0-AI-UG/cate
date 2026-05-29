@@ -1,23 +1,12 @@
 // =============================================================================
 // agentModelPrefs — localStorage-backed model selection prefs for the agent
-// panel. Two slots:
-//   - lastModel: the most recently chosen model in any chat (used as a
-//     fallback when filling the picker before auth has resolved)
+// panel. One slot:
 //   - defaultModel: the user-pinned default, applied to every brand-new chat
 // =============================================================================
 
 import type { AgentModelRef } from '../../shared/types'
 
-const LAST_MODEL_KEY = 'cate.agent.lastModel.v1'
 const DEFAULT_MODEL_KEY = 'cate.agent.defaultModel.v1'
-
-export function loadLastModel(): AgentModelRef | null {
-  return readModelRef(LAST_MODEL_KEY)
-}
-
-export function saveLastModel(model: AgentModelRef): void {
-  try { localStorage.setItem(LAST_MODEL_KEY, JSON.stringify(model)) } catch { /* */ }
-}
 
 export function loadDefaultModel(): AgentModelRef | null {
   return readModelRef(DEFAULT_MODEL_KEY)

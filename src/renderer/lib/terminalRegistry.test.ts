@@ -41,6 +41,7 @@ vi.mock('@xterm/xterm', () => {
     onTitleChange(): { dispose: () => void } { return { dispose: () => {} } }
     hasSelection(): boolean { return false }
     attachCustomKeyEventHandler(): void { /* no-op */ }
+    registerLinkProvider(): { dispose: () => void } { return { dispose: () => {} } }
     refresh(): void { /* no-op */ }
     scrollToBottom(): void { /* no-op */ }
     resize(c: number, r: number): void { this.cols = c; this.rows = r }
@@ -74,14 +75,14 @@ vi.mock('../stores/settingsStore', () => ({
 }))
 vi.mock('../stores/appStore', () => ({
   awaitWorkspaceSync: async () => {},
+  useAppStore: { getState: () => ({ workspaces: [] }) },
 }))
 vi.mock('./session', () => ({
   terminalRestoreData: new Map(),
   replayTerminalLog: async () => {},
 }))
-vi.mock('./terminalUrlAutoOpen', () => ({
-  scanTerminalChunkForUrls: () => {},
-  clearTerminalUrlBuffer: () => {},
+vi.mock('./terminalUrlOpen', () => ({
+  openTerminalUrl: () => {},
 }))
 vi.mock('./themeManager', () => ({
   getActiveTheme: () => ({ terminal: {} }),

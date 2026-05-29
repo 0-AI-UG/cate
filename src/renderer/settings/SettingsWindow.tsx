@@ -10,6 +10,7 @@ import { CanvasSettings } from './CanvasSettings'
 import { TerminalSettings } from './TerminalSettings'
 import { BrowserSettings } from './BrowserSettings'
 import { SidebarSettings } from './SidebarSettings'
+import { FileExplorerSettings } from './FileExplorerSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 
@@ -20,6 +21,7 @@ const SECTIONS = [
   { title: 'Terminal', component: TerminalSettings },
   { title: 'Browser', component: BrowserSettings },
   { title: 'Sidebar', component: SidebarSettings },
+  { title: 'File Explorer', component: FileExplorerSettings },
   { title: 'Notifications', component: NotificationSettings },
   { title: 'Shortcuts', component: ShortcutSettings },
 ] as const

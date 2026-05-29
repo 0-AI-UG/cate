@@ -100,6 +100,10 @@ export interface PanelState {
   url?: string
   /** When set, EditorPanel renders as a Monaco diff editor. */
   diffMode?: 'staged' | 'working'
+  /** Editor panels with a markdown file only: render the rendered preview
+   *  instead of the source. Kept per-panel (not local component state) because
+   *  a single EditorPanel mount is reused across dock tabs. */
+  markdownPreview?: boolean
   /** Unsaved buffer content for scratch (no-filePath) editors. Persisted so
    *  content survives canvas switches and app restarts. */
   unsavedContent?: string
@@ -746,7 +750,7 @@ export interface LayoutSnapshot {
 // Notification types
 // -----------------------------------------------------------------------------
 
-export type TerminalUrlAutoOpenMode = 'off' | 'auto' | 'prompt'
+export type TerminalLinkOpenTarget = 'ask' | 'canvas' | 'external'
 
 export type CanvasGridStyle = 'dots' | 'lines' | 'none'
 
@@ -762,6 +766,25 @@ export type NotificationAction =
 // this shape. `theme` mirrors xterm.js's ITheme.
 // -----------------------------------------------------------------------------
 
+
+// -----------------------------------------------------------------------------
+// File exclusions — folder/file names hidden in the file explorer by default.
+// Serves as the default for the user-editable AppSettings.fileExclusions list.
+// -----------------------------------------------------------------------------
+
+export const FILE_EXCLUSIONS: string[] = [
+  '.git',
+  '.DS_Store',
+  '.Trash',
+  'node_modules',
+  '__pycache__',
+  '.npm',
+  '.cache',
+  '.build',
+  '.swiftpm',
+  'DerivedData',
+  'Pods',
+]
 
 export interface AppSettings {
   // General
@@ -813,16 +836,20 @@ export interface AppSettings {
   // Browser
   browserHomepage: string
   browserSearchEngine: BrowserSearchEngine
-  /** How to handle URLs printed in terminal output (localhost dev servers, etc.).
-   *  - 'off': ignore them.
-   *  - 'auto': open in an existing browser panel (or create one) automatically.
-   *  - 'prompt': surface an in-app prompt asking before opening.
-   *  Either way, each URL is acted on at most once per session. */
-  autoOpenUrlsFromTerminal: TerminalUrlAutoOpenMode
+  /** Where a Cmd/Ctrl+clicked terminal link opens.
+   *  - 'ask': prompt once, with an option to remember the choice.
+   *  - 'canvas': reuse/create an in-app browser panel.
+   *  - 'external': open in the system default browser.
+   *  (Cmd/Ctrl+Shift+click always forces 'external' regardless of this.) */
+  terminalLinkOpenTarget: TerminalLinkOpenTarget
 
   // Sidebar
   sidebarTintOpacity: number
   showFileExplorerOnLaunch: boolean
+
+  // File Explorer
+  /** Folder/file names hidden in the file explorer, file search, and watcher. */
+  fileExclusions: string[]
 
   // Notifications (OS-level only)
   notificationsEnabled: boolean
@@ -871,11 +898,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Browser
   browserHomepage: 'about:blank',
   browserSearchEngine: 'google',
-  autoOpenUrlsFromTerminal: 'prompt',
+  terminalLinkOpenTarget: 'ask',
 
   // Sidebar
   sidebarTintOpacity: 1.0,
   showFileExplorerOnLaunch: false,
+
+  // File Explorer
+  fileExclusions: [...FILE_EXCLUSIONS],
 
   // Notifications (OS-level only)
   notificationsEnabled: true,
@@ -925,26 +955,6 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
 export const ZOOM_MIN = 0.3
 export const ZOOM_MAX = 3.0
 export const ZOOM_DEFAULT = 1.0
-
-// -----------------------------------------------------------------------------
-// File exclusions — from FileTreeModel.swift defaultExclusions
-// -----------------------------------------------------------------------------
-
-export const FILE_EXCLUSIONS: string[] = [
-  '.git',
-  'node_modules',
-  '.build',
-  'DerivedData',
-  '.DS_Store',
-  '__pycache__',
-  '.swiftpm',
-  'Pods',
-  '.Trash',
-  '.cache',
-  '.npm',
-  'dist',
-  'build',
-]
 
 // =============================================================================
 // Pi agent + auth shared types

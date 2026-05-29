@@ -155,8 +155,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       }
     })
 
+    // Reload when the exclusions list changes so hidden/shown folders update
+    // without a relaunch.
+    const unsubscribeSettings = window.electronAPI.onSettingsChanged((key) => {
+      if (key === 'fileExclusions' && rootPathRef.current === rootPath) {
+        loadTree(rootPath)
+      }
+    })
+
     cleanupRef.current = () => {
       unsubscribe()
+      unsubscribeSettings()
       window.electronAPI?.fsWatchStop(rootPath).catch((err) => log.warn('[file-explorer] Watch stop failed:', err))
     }
 
