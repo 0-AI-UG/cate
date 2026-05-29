@@ -59,6 +59,11 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   usageAnalyticsEnabled: 'boolean',
 }
 
+// Settings that open windows react to live (via onSettingsChanged). The
+// SETTINGS_CHANGED broadcast is scoped to these so routine edits — font size,
+// zoom speed, etc. — don't wake every window/explorer on each change.
+const LIVE_REACTIVE_SETTINGS = new Set<keyof AppSettings>(['fileExclusions'])
+
 /** Safely merge only known, type-correct keys from a parsed object into the settings cache. */
 function mergeValidatedSettings(target: Partial<AppSettings>, source: Record<string, unknown>): void {
   for (const key of Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>) {
@@ -200,8 +205,11 @@ export function registerHandlers(): void {
       store.set(key, value as never)
       ;(settingsCache as Record<string, unknown>)[key as string] = value
       // Notify all windows so live-reactive settings (e.g. file exclusions)
-      // can update without a relaunch.
-      broadcastToAll(SETTINGS_CHANGED, key, value)
+      // can update without a relaunch. Scoped to keys that actually have live
+      // listeners so routine setting changes don't churn every window.
+      if (LIVE_REACTIVE_SETTINGS.has(key)) {
+        broadcastToAll(SETTINGS_CHANGED, key, value)
+      }
       // Rebuild active fs watchers so their ignore globs match the new
       // exclusions (dynamic import avoids a static store<->filesystem cycle).
       if (key === 'fileExclusions') {

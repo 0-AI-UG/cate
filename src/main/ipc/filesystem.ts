@@ -284,11 +284,19 @@ async function searchFiles(
   return results
 }
 
-/** Chokidar ignore list: always-hidden dotfiles plus the user's exclusions. */
+// Chokidar ignore list: always-hidden dotfiles plus the user's exclusions.
+//
+// Each exclusion emits two globs so the watcher's notion of "excluded" matches
+// readDir/searchFiles, which drop any entry whose basename is in the set — a
+// folder, the files inside it, or a same-named file. The first glob (`**/<name>`)
+// matches the entry itself at any depth (picomatch lets a leading `**/` match
+// zero dirs); the second (`**/<name>/**`) matches everything beneath an excluded
+// folder. Glob metacharacters in `name` are rejected at the settings input, so
+// these patterns only ever match a literal path segment.
 function buildIgnoreList(): Array<RegExp | string> {
   return [
     /(^|[/\\])\../, // hidden files
-    ...getSettingSync('fileExclusions').map((name) => `**/${name}/**`),
+    ...getSettingSync('fileExclusions').flatMap((name) => [`**/${name}`, `**/${name}/**`]),
   ]
 }
 
@@ -416,7 +424,21 @@ function watchStop(dirPath: string, ownerWindowId: number): void {
 export function refreshWatcherIgnores(): void {
   for (const [dirPath, shared] of sharedWatchers) {
     const old = shared.watcher
-    shared.watcher = createWatcher(dirPath, shared.subscribers)
+    let next: FSWatcher
+    try {
+      next = createWatcher(dirPath, shared.subscribers)
+    } catch (err) {
+      // If the rebuild fails (e.g. invalid path / watcher init error), keep the
+      // existing watcher live rather than dropping file events for this root.
+      log.warn('[fs-watch] ignore refresh failed for %s; keeping old watcher: %O', dirPath, err)
+      continue
+    }
+    shared.watcher = next
+    // Detach the old watcher's listeners before closing it. close() is async,
+    // so without this both watchers are briefly live and share the subscribers
+    // map — an event landing in that window would fan out twice. IPC consumers
+    // dedupe by path, but in-process subscribers (the git monitor) don't.
+    old.removeAllListeners()
     old.close().catch((err) => log.warn('[fs-watch] old watcher close failed:', err))
   }
 }

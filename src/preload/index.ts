@@ -180,6 +180,7 @@ import {
   AUTH_SAVE_API_KEY,
   AUTH_DELETE,
 } from '../shared/ipc-channels'
+import type { AppSettings } from '../shared/types'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
 // check it without an IPC round-trip on every mousemove. Main BROADCASTS
@@ -571,8 +572,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(SETTINGS_RESET, key)
   },
 
-  onSettingsChanged(callback: (key: string, value: unknown) => void): () => void {
-    const listener = (_event: Electron.IpcRendererEvent, key: string, value: unknown): void => {
+  onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, key: keyof AppSettings, value: unknown): void => {
       callback(key, value)
     }
     ipcRenderer.on(SETTINGS_CHANGED, listener)

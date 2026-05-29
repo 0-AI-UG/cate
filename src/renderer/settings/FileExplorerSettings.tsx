@@ -23,6 +23,12 @@ export function FileExplorerSettings() {
       setError('Enter a single folder or file name, not a path.')
       return
     }
+    // Names are matched literally by the explorer/search and turned into globs
+    // for the watcher; reject glob metacharacters so all three surfaces agree.
+    if (/[*?[\]{}()!]/.test(name)) {
+      setError('Names cannot contain wildcard characters like * ? [ ] { } ( ) !.')
+      return
+    }
     if (folders.includes(name)) {
       setError(`"${name}" is already excluded.`)
       return
