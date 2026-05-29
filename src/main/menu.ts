@@ -101,6 +101,7 @@ export function buildApplicationMenu(): void {
         { label: 'New Browser', accelerator: 'CmdOrCtrl+Shift+B', click: dispatch('newBrowser') },
         { type: 'separator' },
         { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },
+        { label: 'Reload Workspace from Disk', click: dispatch('reloadWorkspace') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: dispatch('saveFile') },
         { type: 'separator' },

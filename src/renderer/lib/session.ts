@@ -26,8 +26,10 @@ import type {
   ProjectCanvasRegion,
   ProjectPanelRef,
   ProjectSessionNode,
+  CanvasRegion,
+  PanelState,
 } from '../../shared/types'
-import { toRelativePath } from '../../shared/pathUtils'
+import { toRelativePath, toAbsolutePath } from '../../shared/pathUtils'
 import { useDockStore } from '../stores/dockStore'
 import { terminalRegistry } from './terminalRegistry'
 import { mark } from './perfMarks'
@@ -387,9 +389,74 @@ export async function loadSession(): Promise<MultiWorkspaceSession | null> {
   return loadFromProjectFiles()
 }
 
-async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
-  const { toAbsolutePath } = await import('../../shared/pathUtils')
+/**
+ * Convert an on-disk workspace.json (+ optional session.json) into the in-memory
+ * SessionSnapshot used to rebuild a workspace. Shared by initial load and the
+ * "Reload Workspace from Disk" command so the two paths can't drift.
+ */
+export function projectFilesToSnapshot(
+  ws: ProjectWorkspaceFile,
+  sess: ProjectSessionFile | null,
+  rootPath: string,
+): SessionSnapshot {
+  const nodes: NodeSnapshot[] = ws.canvas.nodes.map((pn) => {
+    const ephemeral = sess?.nodes?.[pn.panelId]
+    return {
+      panelId: pn.panelId,
+      panelType: pn.panelType,
+      title: pn.title,
+      origin: pn.origin,
+      size: pn.size,
+      filePath: pn.filePath ? toAbsolutePath(pn.filePath, rootPath) : undefined,
+      url: pn.url,
+      regionId: pn.regionId,
+      documentType: pn.documentType,
+      ptyId: ephemeral?.ptyId,
+      workingDirectory: ephemeral?.workingDirectory,
+      unsavedContent: ephemeral?.unsavedContent,
+    }
+  })
 
+  const regions: Record<string, CanvasRegion> = {}
+  for (const r of ws.canvas.regions) {
+    regions[r.id] = {
+      id: r.id,
+      origin: r.origin,
+      size: r.size,
+      label: r.label,
+      color: r.color,
+      zOrder: r.zOrder,
+    }
+  }
+
+  let snapshotDockPanels: Record<string, PanelState> | undefined
+  if (ws.dockPanels) {
+    snapshotDockPanels = {}
+    for (const [id, ref] of Object.entries(ws.dockPanels)) {
+      snapshotDockPanels[id] = {
+        id,
+        type: ref.type as PanelType,
+        title: ref.title,
+        isDirty: false,
+        filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
+        url: ref.url,
+      }
+    }
+  }
+
+  return {
+    workspaceName: ws.name,
+    rootPath,
+    zoomLevel: ws.canvas.zoomLevel,
+    viewportOffset: ws.canvas.viewportOffset,
+    nodes,
+    regions: Object.keys(regions).length > 0 ? regions : undefined,
+    dockState: ws.dockState,
+    dockPanels: snapshotDockPanels,
+  }
+}
+
+async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
   let recentProjects: string[] = []
   try {
     recentProjects = (await window.electronAPI.recentProjectsGet()) ?? []
@@ -405,69 +472,15 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
   for (const rootPath of recentProjects) {
     try {
       const projectState = await window.electronAPI.projectStateLoad(rootPath) as {
-        workspace: import('../../shared/types').ProjectWorkspaceFile
-        session: import('../../shared/types').ProjectSessionFile | null
+        workspace: ProjectWorkspaceFile
+        session: ProjectSessionFile | null
       } | null
       if (!projectState?.workspace) continue
 
       const ws = projectState.workspace
       const sess = projectState.session
 
-      const nodes: NodeSnapshot[] = ws.canvas.nodes.map((pn) => {
-        const ephemeral = sess?.nodes?.[pn.panelId]
-        return {
-          panelId: pn.panelId,
-          panelType: pn.panelType,
-          title: pn.title,
-          origin: pn.origin,
-          size: pn.size,
-          filePath: pn.filePath ? toAbsolutePath(pn.filePath, rootPath) : undefined,
-          url: pn.url,
-          regionId: pn.regionId,
-          documentType: pn.documentType,
-          ptyId: ephemeral?.ptyId,
-          workingDirectory: ephemeral?.workingDirectory,
-          unsavedContent: ephemeral?.unsavedContent,
-        }
-      })
-
-      const regions: Record<string, import('../../shared/types').CanvasRegion> = {}
-      for (const r of ws.canvas.regions) {
-        regions[r.id] = {
-          id: r.id,
-          origin: r.origin,
-          size: r.size,
-          label: r.label,
-          color: r.color,
-          zOrder: r.zOrder,
-        }
-      }
-
-      let snapshotDockPanels: Record<string, import('../../shared/types').PanelState> | undefined
-      if (ws.dockPanels) {
-        snapshotDockPanels = {}
-        for (const [id, ref] of Object.entries(ws.dockPanels)) {
-          snapshotDockPanels[id] = {
-            id,
-            type: ref.type as PanelType,
-            title: ref.title,
-            isDirty: false,
-            filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
-            url: ref.url,
-          }
-        }
-      }
-
-      snapshots.push({
-        workspaceName: ws.name,
-        rootPath,
-        zoomLevel: ws.canvas.zoomLevel,
-        viewportOffset: ws.canvas.viewportOffset,
-        nodes,
-        regions: Object.keys(regions).length > 0 ? regions : undefined,
-        dockState: ws.dockState,
-        dockPanels: snapshotDockPanels,
-      })
+      snapshots.push(projectFilesToSnapshot(ws, sess, rootPath))
 
       if (sess?.panelWindows) panelWindows.push(...sess.panelWindows)
       if (sess?.dockWindows) dockWindows.push(...sess.dockWindows)
@@ -485,6 +498,42 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
     panelWindows: panelWindows.length > 0 ? panelWindows : undefined,
     dockWindows: dockWindows.length > 0 ? dockWindows : undefined,
   }
+}
+
+/**
+ * Re-read the active workspace's .cate/workspace.json from disk and rebuild the
+ * canvas from it, discarding the current in-memory layout. This is how an
+ * external edit (e.g. an agent following the .cate skill) is applied without
+ * quitting the app — the autosave guard in main keeps the edit from being
+ * clobbered until this runs.
+ *
+ * Tears down current panels (disposing terminals) then replays the on-disk
+ * snapshot through the same restore path used at launch.
+ */
+export async function reloadActiveWorkspaceFromDisk(): Promise<void> {
+  const appStore = useAppStore.getState()
+  const wsId = appStore.selectedWorkspaceId
+  const ws = appStore.workspaces.find((w) => w.id === wsId)
+  if (!ws?.rootPath) return
+
+  const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
+    workspace: ProjectWorkspaceFile
+    session: ProjectSessionFile | null
+  } | null
+  if (!projectState?.workspace) return
+
+  const snapshot = projectFilesToSnapshot(projectState.workspace, projectState.session, ws.rootPath)
+
+  // Keep the workspace's display name/color in sync with the file.
+  if (projectState.workspace.name) appStore.renameWorkspace(wsId, projectState.workspace.name)
+  if (typeof projectState.workspace.color === 'string') {
+    appStore.setWorkspaceColor(wsId, projectState.workspace.color)
+  }
+
+  // Discard the live layout, then rebuild from the file via the launch path.
+  appStore.closeAllPanels(wsId)
+  await restoreSession(snapshot)
+  log.info('[session] reloaded workspace %s from disk (%d nodes)', wsId, snapshot.nodes.length)
 }
 
 // -----------------------------------------------------------------------------

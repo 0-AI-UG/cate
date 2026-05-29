@@ -435,7 +435,7 @@ export type ShortcutAction =
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
  *  binding. */
-export type MenuActionId = ShortcutAction | 'openFolder'
+export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
 
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
