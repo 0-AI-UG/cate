@@ -330,6 +330,9 @@ export interface ElectronAPI {
   /** Reset all settings to defaults. */
   settingsReset(): Promise<void>
 
+  /** Subscribe to setting-change broadcasts from main (key + new value). Returns unsubscribe. */
+  onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void
+
   // ---------------------------------------------------------------------------
   // Session
   // ---------------------------------------------------------------------------

@@ -66,6 +66,7 @@ import {
   SETTINGS_SET,
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
+  SETTINGS_CHANGED,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
@@ -192,6 +193,7 @@ import {
   AUTH_DELETE,
   PERF_GET,
 } from '../shared/ipc-channels'
+import type { AppSettings } from '../shared/types'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
 // check it without an IPC round-trip on every mousemove. Main BROADCASTS
@@ -629,6 +631,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   settingsReset(key?: string): Promise<void> {
     return ipcRenderer.invoke(SETTINGS_RESET, key)
+  },
+
+  onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, key: keyof AppSettings, value: unknown): void => {
+      callback(key, value)
+    }
+    ipcRenderer.on(SETTINGS_CHANGED, listener)
+    return () => {
+      ipcRenderer.removeListener(SETTINGS_CHANGED, listener)
+    }
   },
 
   // ---------------------------------------------------------------------------

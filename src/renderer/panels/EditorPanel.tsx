@@ -21,6 +21,7 @@ import {
 } from '../lib/editorSaveRegistry'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import type { Theme } from '../../shared/types'
+import { takePendingReveal } from '../lib/editorReveal'
 
 // -----------------------------------------------------------------------------
 // Monaco worker setup for Electron (Vite bundler)
@@ -518,6 +519,18 @@ export default function EditorPanel({
 
     editorRef.current = editor
 
+    // Jump to a line/column requested by a terminal file-link click (one-shot).
+    // Runs after the model is set so the reveal targets real content.
+    const applyPendingReveal = () => {
+      const reveal = takePendingReveal(panelId)
+      if (!reveal) return
+      try {
+        editor.revealLineInCenter(reveal.line)
+        editor.setPosition({ lineNumber: reveal.line, column: reveal.column ?? 1 })
+        editor.focus()
+      } catch { /* ignore reveal failures (e.g. line beyond EOF) */ }
+    }
+
     let cancelled = false
     let createdModel: monaco.editor.ITextModel | null = null
     let modelRetained = false
@@ -540,6 +553,7 @@ export default function EditorPanel({
         retainModel(filePath)
         modelRetained = true
         editor.setModel(cached)
+        applyPendingReveal()
       } else {
         const language = detectLanguage(filePath)
         window.electronAPI
@@ -554,6 +568,7 @@ export default function EditorPanel({
             retainModel(filePath)
             modelRetained = true
             editor.setModel(model)
+            applyPendingReveal()
           })
           .catch((err) => {
             if (cancelled) return
