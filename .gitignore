@@ -15,3 +15,6 @@ test-results/
 
 # Local logo scratch dir
 _logos/
+
+# Cate local session state
+.cate/

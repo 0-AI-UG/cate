@@ -173,7 +173,6 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
       </span>
       {isAwaiting ? (
         <span className="cate-await-indicator flex-shrink-0" aria-label="awaiting input">
-          <span className="cate-await-ring" style={{ borderColor: AWAIT_COLOR }} />
           <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
         </span>
       ) : !isRunning && hasPorts ? (

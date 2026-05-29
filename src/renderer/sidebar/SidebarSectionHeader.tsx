@@ -46,6 +46,6 @@ export const SidebarHeaderButton: React.FC<
     {...rest}
     className={`flex items-center justify-center w-[22px] h-[22px] my-1 rounded text-secondary hover:text-primary hover:bg-hover transition-colors disabled:opacity-30 ${className}`}
   >
-    <span className={spinning ? 'inline-flex animate-spin' : 'inline-flex'}>{children}</span>
+    <span className={spinning ? 'inline-flex opacity-60' : 'inline-flex'}>{children}</span>
   </button>
 )
