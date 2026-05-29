@@ -13,6 +13,9 @@ test-results/
 # Claude Code local settings
 .claude/settings.local.json
 
+# Cate workspace
+.cate/
+
 # Local logo scratch dir
 _logos/
 
