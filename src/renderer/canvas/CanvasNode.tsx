@@ -189,7 +189,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const maximized = node ? checkMaximized(node) : false
 
   const { handleResizeStart } = useNodeResize(nodeId, primaryPanelType, zoomLevel, canvasApi)
-  const { handleMouseDown, handleMouseMove } = useNodeResizeCursor(nodeRef, node, zoomLevel, handleResizeStart)
+  const { handleMouseDown } = useNodeResizeCursor()
   const wsId = useAppStore((s) => s.selectedWorkspaceId)
   const currentWorkspace = useSelectedWorkspace()
 
@@ -504,7 +504,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       style={containerStyle}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -619,15 +618,30 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           </div>
         </DockStoreProvider>
       </div>
-
-      {/* Resize hotspots — invisible overlays so `<webview>` and other
-          OOP children don't swallow the mousedown at the panel border. */}
-      <NodeResizeOverlay
-        onResizeStart={handleResizeStart}
-        topInset={rootIsTabs ? 26 : GRAB_STRIP_HEIGHT}
-      />
-
     </div>
+
+    {/* Resize band — sits just OUTSIDE the panel border, in the canvas gutter,
+        so it never overlaps the panel interior or its content scrollbar.
+        Mounted as a sibling (not inside the node's overflow:hidden box) so the
+        strips can overhang the edge; positioned to the node's bounds and
+        stacked with it. */}
+    {!isWholeNodeDragSource && (
+      <div
+        aria-hidden
+        data-resize-frame-for={nodeId}
+        style={{
+          position: 'absolute',
+          left: node.origin.x,
+          top: node.origin.y,
+          width: node.size.width,
+          height: node.size.height,
+          zIndex: 1000 + node.zOrder,
+          pointerEvents: 'none',
+        }}
+      >
+        <NodeResizeOverlay onResizeStart={handleResizeStart} />
+      </div>
+    )}
     </>
   )
 }

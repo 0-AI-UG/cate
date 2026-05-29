@@ -209,21 +209,6 @@ export function useCanvasInteraction(
         if (canScroll) return
       }
 
-      // Resize-overlay strips sit above the panel content (outside
-      // [data-panel-content]) to catch the resize mousedown. A wheel over a
-      // strip would otherwise pan the canvas instead of scrolling the panel
-      // beneath it — e.g. an xterm scrollbar sits under the right strip.
-      // Defer to the strip's own onWheel forwarder when its node is focused.
-      const resizeStrip = target.closest?.('[data-resize-overlay]')
-      if (resizeStrip) {
-        const nodeEl = resizeStrip.closest('[data-node-id]')
-        const nodeId = nodeEl?.getAttribute('data-node-id')
-        const { focusedNodeId } = canvasStoreApi.getState()
-        if (nodeId && nodeId === focusedNodeId) {
-          return // NodeResizeOverlay.forwardWheel scrolls the content beneath
-        }
-      }
-
       const panelContent = target.closest?.('[data-panel-content]')
       if (panelContent) {
         const nodeEl = panelContent.closest('[data-node-id]')
