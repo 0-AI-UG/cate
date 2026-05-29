@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { execFile } from 'child_process'
-import { ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import log from '../logger'
 import {
   SHELL_REGISTER_TERMINAL,
@@ -59,11 +59,43 @@ const previousStates: Map<string, PreviousState> = new Map()
 // Backoff: terminals that failed last cycle are skipped once
 const skipNextScan: Set<string> = new Set()
 
-// Polling interval handle
+// Fast poll (1s): process-tree scan for agent detection — drives the activity
+// indicators and the agent "needs input" / "finished" notifications, so it
+// must stay responsive.
+const ACTIVITY_POLL_MS = 1000
 let pollInterval: ReturnType<typeof setInterval> | null = null
-
-// Busy flag to prevent overlapping poll cycles
 let pollBusy = false
+
+// Slow poll (5s): the heavier lsof scans (listening ports + cwd). These don't
+// need 1s freshness — ports/cwd rarely change second-to-second — so they ride a
+// slower timer to cut the sustained process-spawn load.
+const SLOW_POLL_MS = 5000
+let slowPollInterval: ReturnType<typeof setInterval> | null = null
+let slowPollBusy = false
+
+// True iff at least one app window is currently focused. The cwd scan (purely
+// cosmetic — only consumed on demand by "Copy Working Directory") is skipped
+// entirely while the app is unfocused.
+let anyWindowFocused = true
+let focusHooksInstalled = false
+
+function refreshFocusState(): boolean {
+  anyWindowFocused = BrowserWindow.getAllWindows().some(
+    (w) => !w.isDestroyed() && w.isFocused(),
+  )
+  return anyWindowFocused
+}
+
+function installFocusHooks(): void {
+  if (focusHooksInstalled) return
+  focusHooksInstalled = true
+  refreshFocusState()
+  app.on('browser-window-focus', () => { anyWindowFocused = true })
+  // browser-window-blur fires before focus transfers between this app's own
+  // windows, so re-derive truth from the window list rather than trusting the
+  // single event.
+  app.on('browser-window-blur', () => { refreshFocusState() })
+}
 
 /**
  * Get direct child PIDs of a given process.
@@ -203,12 +235,21 @@ async function scanListeningPorts(): Promise<Map<string, number[]>> {
   }
   await Promise.all(pidPromises)
 
+  const pids = Array.from(pidToTerminal.keys())
+  if (pids.length === 0) return new Map()
+
   return limit(() => new Promise((resolve) => {
-    execFile('lsof', ['-iTCP', '-sTCP:LISTEN', '-P', '-n', '-F', 'pn'], {
+    // `-a` ANDs the network filter with `-p <pids>`, so lsof inspects ONLY the
+    // terminals' process trees instead of enumerating every socket on the
+    // system. Without `-a`, lsof ORs the filters and scans all processes.
+    execFile('lsof', ['-iTCP', '-sTCP:LISTEN', '-P', '-n', '-a', '-p', pids.join(','), '-F', 'pn'], {
       timeout: 5000,
     }, (err, stdout) => {
       const result = new Map<string, number[]>()
-      if (err || !stdout) {
+      // Parse whatever lsof produced regardless of exit status: when some of
+      // the requested pids have no listening sockets, lsof exits 1 but still
+      // emits valid records for the pids that do. Only bail if there's no output.
+      if (!stdout) {
         resolve(result)
         return
       }
@@ -243,7 +284,10 @@ async function scanListeningPorts(): Promise<Map<string, number[]>> {
 function getProcessCwd(pid: number): Promise<string | null> {
   if (!pid || pid <= 0) return Promise.resolve(null)
   return limit(() => new Promise((resolve) => {
-    execFile('lsof', ['-p', `${pid}`, '-d', 'cwd', '-Fn'], {
+    // `-a` ANDs the filters; without it lsof ORs `-p <pid>` with `-d cwd` and
+    // scans every process on the system (then we'd parse the first match, which
+    // is invariably some low-pid daemon sitting at "/").
+    execFile('lsof', ['-a', '-p', `${pid}`, '-d', 'cwd', '-Fn'], {
       encoding: 'utf-8',
       timeout: 2000,
     }, (err, stdout) => {
@@ -307,60 +351,71 @@ async function scanTerminal(
 }
 
 /**
- * Start polling all registered terminals every 1 second.
- * Emits SHELL_ACTIVITY_UPDATE IPC events to the owning window.
+ * Fast scan (every ACTIVITY_POLL_MS): walk each terminal's process tree to
+ * detect agent activity. Emits SHELL_ACTIVITY_UPDATE to the owning window.
  */
-function startPolling(): void {
-  if (pollInterval) return
+async function runActivityScan(): Promise<void> {
+  if (pollBusy) return
+  pollBusy = true
+  try {
+    const entries = Array.from(registeredTerminals.entries())
+    if (entries.length === 0) return
+    const scanResults = await Promise.all(
+      entries.map(async ([terminalId, info]) => {
+        if (skipNextScan.has(terminalId)) {
+          skipNextScan.delete(terminalId)
+          return null
+        }
+        try {
+          const result = await scanTerminal(terminalId, info)
+          return { terminalId, info, result }
+        } catch (e) {
+          skipNextScan.add(terminalId)
+          return null
+        }
+      })
+    )
 
-  pollInterval = setInterval(async () => {
-    if (pollBusy) return
-    pollBusy = true
+    for (const entry of scanResults) {
+      if (!entry) continue
+      const { terminalId, info, result } = entry
+      previousStates.set(terminalId, { previousAgentName: result.agentName })
 
-    try {
-      // Scan all terminals concurrently
-      const entries = Array.from(registeredTerminals.entries())
-      if (entries.length === 0) return
-      const scanResults = await Promise.all(
-        entries.map(async ([terminalId, info]) => {
-          if (skipNextScan.has(terminalId)) {
-            skipNextScan.delete(terminalId)
-            return null
-          }
-          try {
-            const result = await scanTerminal(terminalId, info)
-            return { terminalId, info, result }
-          } catch (e) {
-            skipNextScan.add(terminalId)
-            return null
-          }
-        })
+      sendToWindow(
+        info.ownerWindowId,
+        SHELL_ACTIVITY_UPDATE,
+        terminalId,
+        result.terminalActivity,
+        result.agentName,
+        result.agentPresent,
       )
+    }
+  } finally {
+    pollBusy = false
+  }
+}
 
-      for (const entry of scanResults) {
-        if (!entry) continue
-        const { terminalId, info, result } = entry
-        previousStates.set(terminalId, { previousAgentName: result.agentName })
+/**
+ * Slow scan (every SLOW_POLL_MS): the heavier lsof work. Listening ports and
+ * cwd change rarely, so they don't belong on the 1s loop. The cwd scan is
+ * skipped entirely while the app is unfocused (it only backs an on-demand
+ * "Copy Working Directory" action).
+ */
+async function runSlowScan(): Promise<void> {
+  if (slowPollBusy) return
+  slowPollBusy = true
+  try {
+    const entries = Array.from(registeredTerminals.entries())
+    if (entries.length === 0) return
 
-        sendToWindow(
-          info.ownerWindowId,
-          SHELL_ACTIVITY_UPDATE,
-          terminalId,
-          result.terminalActivity,
-          result.agentName,
-          result.agentPresent,
-        )
-      }
-
-      // --- CWD updates (concurrent) ---
+    // --- CWD updates (concurrent) — focus-gated ---
+    if (anyWindowFocused) {
       const cwdResults = await Promise.all(
         entries.map(async ([terminalId, info]) => {
-          if (skipNextScan.has(terminalId)) return null
           try {
             const cwd = await getProcessCwd(info.shellPid)
             return { terminalId, info, cwd }
           } catch {
-            skipNextScan.add(terminalId)
             return null
           }
         })
@@ -373,30 +428,43 @@ function startPolling(): void {
           sendToWindow(info.ownerWindowId, SHELL_CWD_UPDATE, terminalId, cwd)
         }
       }
-
-      // --- Port scan (async, non-blocking) ---
-      const portMap = await scanListeningPorts()
-      for (const [terminalId, ports] of portMap) {
-        const info = registeredTerminals.get(terminalId)
-        if (info) {
-          sendToWindow(info.ownerWindowId, SHELL_PORTS_UPDATE, terminalId, ports.sort((a, b) => a - b))
-        }
-      }
-      for (const [terminalId, info] of registeredTerminals) {
-        if (!portMap.has(terminalId)) {
-          sendToWindow(info.ownerWindowId, SHELL_PORTS_UPDATE, terminalId, [])
-        }
-      }
-    } finally {
-      pollBusy = false
     }
-  }, 1000)
+
+    // --- Port scan (scoped to terminal pids; see scanListeningPorts). Not
+    //     focus-gated: it's cheap now and still surfaces ports for dev servers
+    //     that come up while the app is backgrounded. ---
+    const portMap = await scanListeningPorts()
+    for (const [terminalId, ports] of portMap) {
+      const info = registeredTerminals.get(terminalId)
+      if (info) {
+        sendToWindow(info.ownerWindowId, SHELL_PORTS_UPDATE, terminalId, ports.sort((a, b) => a - b))
+      }
+    }
+    for (const [terminalId, info] of registeredTerminals) {
+      if (!portMap.has(terminalId)) {
+        sendToWindow(info.ownerWindowId, SHELL_PORTS_UPDATE, terminalId, [])
+      }
+    }
+  } finally {
+    slowPollBusy = false
+  }
+}
+
+/** Start both poll timers (called on first terminal registration). */
+function startPolling(): void {
+  if (pollInterval) return
+  pollInterval = setInterval(() => { void runActivityScan() }, ACTIVITY_POLL_MS)
+  slowPollInterval = setInterval(() => { void runSlowScan() }, SLOW_POLL_MS)
 }
 
 function stopPolling(): void {
   if (pollInterval) {
     clearInterval(pollInterval)
     pollInterval = null
+  }
+  if (slowPollInterval) {
+    clearInterval(slowPollInterval)
+    slowPollInterval = null
   }
 }
 
@@ -417,6 +485,8 @@ export function unregisterTerminalsForWindow(windowId: number): void {
 }
 
 export function registerHandlers(): void {
+  installFocusHooks()
+
   ipcMain.handle(
     SHELL_REGISTER_TERMINAL,
     async (event, terminalId: string, pid?: number) => {

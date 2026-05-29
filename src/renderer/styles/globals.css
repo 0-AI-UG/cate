@@ -280,23 +280,12 @@
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-@keyframes cate-notif-sweep {
-  0%   { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
+/* "Active/running" text emphasis. Static (no sweep): the moving gradient
+   repainted the text every frame — a continuous cost wherever it appeared
+   (sidebar tabs + agent chat) — for a subtle cue. A steady bright color reads
+   as "active" without animating. */
 .cate-notif-pulse {
-  background: linear-gradient(
-    90deg,
-    var(--text-muted, #8a8479) 40%,
-    var(--text-primary, #e8e6e1) 50%,
-    var(--text-muted, #8a8479) 60%
-  );
-  background-size: 300% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  animation: cate-notif-sweep 2s ease-in-out infinite;
+  color: var(--text-primary, #e8e6e1);
 }
 
 @keyframes cate-fade-in {
@@ -307,32 +296,19 @@
   animation: cate-fade-in 0.35s ease-out both;
 }
 
-/* Awaiting-input indicator — pulsing dot with expanding ring.
-   Used for terminals whose agent has stopped and is waiting for the user. */
-@keyframes cate-await-ring {
-  0%   { transform: scale(0.6); opacity: 0.7; }
-  100% { transform: scale(2.2); opacity: 0; }
-}
-@keyframes cate-await-dot {
-  0%, 100% { transform: scale(1);   opacity: 1; }
-  50%      { transform: scale(1.15); opacity: 0.85; }
-}
+/* Awaiting-input indicator — static dot. Used for terminals whose agent has
+   stopped and is waiting for the user. Intentionally not animated: a perpetual
+   transform/opacity animation here is composited every frame and (when layered
+   over a backdrop-filter) forces a per-frame blur recompute — a large, sustained
+   WindowServer/GPU cost for a tiny indicator. */
 .cate-await-indicator {
   position: relative;
   display: inline-block;
   width: 8px;
   height: 8px;
 }
-.cate-await-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  border: 1px solid;
-  animation: cate-await-ring 1.6s ease-out infinite;
-}
 .cate-await-dot {
   position: absolute;
-  inset: 2px;
+  inset: 1px;
   border-radius: 9999px;
-  animation: cate-await-dot 1.6s ease-in-out infinite;
 }

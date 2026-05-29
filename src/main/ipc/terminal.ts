@@ -424,7 +424,9 @@ export function registerHandlers(): void {
     const pid = terminalPids.get(ptyId)
     if (!pid) return null
     return new Promise((resolve) => {
-      execFile('lsof', ['-d', 'cwd', '-p', `${pid}`, '-Fn'], {
+      // `-a` ANDs the filters; without it lsof ORs `-d cwd` with `-p <pid>` and
+      // returns the cwd of every process on the system (we'd parse the wrong one).
+      execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pid}`, '-Fn'], {
         encoding: 'utf-8',
         timeout: 2000,
       }, (err, stdout) => {

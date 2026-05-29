@@ -253,7 +253,6 @@ export function DockTabBar(props: DockTabBarProps) {
             )}
             {agentInfoByPanel[panelId]?.state === 'waitingForInput' && (
               <span className="cate-await-indicator shrink-0" aria-label="awaiting input">
-                <span className="cate-await-ring" style={{ borderColor: AWAIT_COLOR }} />
                 <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
               </span>
             )}

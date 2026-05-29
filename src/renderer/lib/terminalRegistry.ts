@@ -46,6 +46,22 @@ function getScrollback(): number {
   return Math.max(100, Math.min(raw, 10000))
 }
 
+function getCursorBlink(): boolean {
+  return useSettingsStore.getState().terminalCursorBlink === true
+}
+
+// Track OS-window focus so we can pause cursor blinking while this window is
+// not frontmost. A blinking cursor forces a GPU draw + WindowServer composite
+// on every blink; xterm keeps blinking the focused terminal even when the app
+// is backgrounded-but-visible, so we gate on the window 'blur'/'focus' events
+// (not visibilitychange — a backgrounded window is still "visible" and painting).
+let windowFocused = typeof document !== 'undefined' ? document.hasFocus() : true
+
+/** Effective blink state = user setting AND this window is frontmost. */
+function effectiveCursorBlink(): boolean {
+  return getCursorBlink() && windowFocused
+}
+
 const isMacPlatform =
   typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent)
 
@@ -286,6 +302,17 @@ function repaintAllTerminals(): void {
   }
 }
 
+/** Apply a cursor-blink state to every live terminal. */
+function applyCursorBlinkToAll(blink: boolean): void {
+  for (const entry of registry.values()) {
+    try {
+      entry.terminal.options.cursorBlink = blink
+    } catch {
+      /* terminal mid-dispose — ignore */
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -353,9 +380,11 @@ subscribeTheme(() => {
 })
 
 // When the user changes the default-theme setting (or imports/deletes a
-// custom palette), repaint any terminal without an explicit override.
+// custom palette), repaint any terminal without an explicit override. Also
+// live-apply the cursor-blink toggle so the change is visible without a reload.
 let lastDefault = useSettingsStore.getState().defaultTerminalTheme
 let lastCustomCount = useSettingsStore.getState().terminalCustomThemes?.length ?? 0
+let lastCursorBlink = getCursorBlink()
 useSettingsStore.subscribe((state) => {
   const customCount = state.terminalCustomThemes?.length ?? 0
   if (state.defaultTerminalTheme !== lastDefault || customCount !== lastCustomCount) {
@@ -363,7 +392,24 @@ useSettingsStore.subscribe((state) => {
     lastCustomCount = customCount
     repaintAllTerminals()
   }
+  const cursorBlink = state.terminalCursorBlink === true
+  if (cursorBlink !== lastCursorBlink) {
+    lastCursorBlink = cursorBlink
+    applyCursorBlinkToAll(cursorBlink && windowFocused)
+  }
 })
+
+// Pause cursor blinking while this window is not frontmost, resume on return.
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => {
+    windowFocused = true
+    applyCursorBlinkToAll(getCursorBlink())
+  })
+  window.addEventListener('blur', () => {
+    windowFocused = false
+    applyCursorBlinkToAll(false)
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -400,7 +446,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     theme: resolveTerminalTheme(opts.themePreset),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     fontSize: 13,
-    cursorBlink: true,
+    cursorBlink: effectiveCursorBlink(),
     allowProposedApi: true,
     scrollback: getScrollback(),
     macOptionIsMeta: true,
@@ -632,7 +678,7 @@ async function reconnectTerminal(
     theme: resolveTerminalTheme(opts.themePreset),
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     fontSize: 13,
-    cursorBlink: true,
+    cursorBlink: effectiveCursorBlink(),
     allowProposedApi: true,
     scrollback: getScrollback(),
     macOptionIsMeta: true,
