@@ -332,6 +332,7 @@ interface AppStoreActions {
   upsertWorktree: (wsId: string, wt: WorktreeMeta) => void
   removeWorktree: (wsId: string, worktreeId: string) => void
   setWorktreeColor: (wsId: string, worktreeId: string, color: string) => void
+  setWorktreeLabel: (wsId: string, worktreeId: string, label: string | undefined) => void
   setPanelWorktreeId: (wsId: string, panelId: string, worktreeId: string | undefined) => void
 
   // Cross-window sync: merge metadata from main-process broadcast
@@ -1421,6 +1422,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
         if (ws.id !== wsId) return ws
         const list = (ws.worktrees ?? []).map((w) =>
           w.id === worktreeId ? { ...w, color } : w,
+        )
+        return { ...ws, worktrees: list }
+      }),
+    }))
+  },
+
+  setWorktreeLabel(wsId, worktreeId, label) {
+    const trimmed = label?.trim()
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        const list = (ws.worktrees ?? []).map((w) =>
+          w.id === worktreeId ? { ...w, label: trimmed || undefined } : w,
         )
         return { ...ws, worktrees: list }
       }),

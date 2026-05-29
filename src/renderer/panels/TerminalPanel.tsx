@@ -18,7 +18,6 @@ import type { TerminalPanelProps } from './types'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
-import { TerminalUrlPrompt } from './TerminalUrlPrompt'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -736,7 +735,6 @@ export default function TerminalPanel({
           </div>
         )}
       </div>
-      <TerminalUrlPrompt panelId={panelId} />
     </div>
   )
 }

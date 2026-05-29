@@ -38,6 +38,16 @@ export default defineConfig({
   renderer: {
     root: '.',
     define: sentryDefine,
+    // Don't let the dev server watch .cate/ — it holds Cate's own project state
+    // and, now, git worktrees (full repo checkouts under .cate/worktrees). When
+    // developing Cate-on-Cate, creating a worktree there would otherwise drop a
+    // duplicate index.html/tsconfig.json into the watched tree and force a full
+    // HMR reload. (Merged with Vite's built-in .git/node_modules ignores.)
+    server: {
+      watch: {
+        ignored: ['**/.cate/**'],
+      },
+    },
     build: {
       outDir: 'dist/renderer',
       // Emit source maps in production so crash-report stacks point at real

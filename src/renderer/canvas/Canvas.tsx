@@ -197,6 +197,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     // Accept internal drag (file explorer) and OS-level file/folder drops.
     if (
       e.dataTransfer.types.includes('application/cate-file') ||
+      e.dataTransfer.types.includes('application/cate-spawn') ||
       e.dataTransfer.types.includes('Files')
     ) {
       e.preventDefault()
@@ -205,6 +206,31 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
   }, [])
 
   const handleFileDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+    // Spawn drop from the Parallel Work tab — drop a terminal/agent for a
+    // worktree at the exact cursor position, tagged with the worktree id.
+    const spawnData = e.dataTransfer.getData('application/cate-spawn')
+    if (spawnData) {
+      e.preventDefault()
+      let spec: { panelType?: 'terminal' | 'agent'; cwd?: string; worktreeId?: string } = {}
+      try { spec = JSON.parse(spawnData) } catch { return }
+      if (spec.panelType !== 'terminal' && spec.panelType !== 'agent') return
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const viewPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      const { zoomLevel, viewportOffset } = canvasApi.getState()
+      const pos = viewToCanvas(viewPoint, zoomLevel, viewportOffset)
+      const wsId = useAppStore.getState().selectedWorkspaceId
+      const store = useAppStore.getState()
+      const panelId =
+        spec.panelType === 'terminal'
+          ? store.createTerminal(wsId, undefined, pos, undefined, spec.cwd)
+          : store.createAgent(wsId, pos)
+      if (panelId && spec.worktreeId) {
+        store.setPanelWorktreeId(wsId, panelId, spec.worktreeId)
+      }
+      return
+    }
+
     // Support internal multi-file drops…
     const multiData = e.dataTransfer.getData('application/cate-files')
     const singlePath = e.dataTransfer.getData('application/cate-file')
