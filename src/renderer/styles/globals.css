@@ -149,9 +149,9 @@
 .cate-notif-pulse {
   background: linear-gradient(
     90deg,
-    var(--shimmer-dim, var(--text-muted, #8a8479)) 40%,
-    var(--shimmer-bright, var(--text-primary, #e8e6e1)) 50%,
-    var(--shimmer-dim, var(--text-muted, #8a8479)) 60%
+    var(--shimmer-dim, var(--text-muted, #6b6762)) 40%,
+    var(--shimmer-bright, var(--text-secondary, #a8a49e)) 50%,
+    var(--shimmer-dim, var(--text-muted, #6b6762)) 60%
   );
   background-size: 300% 100%;
   background-clip: text;

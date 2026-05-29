@@ -188,7 +188,7 @@ export function DockTabBar(props: DockTabBarProps) {
               group relative flex items-center gap-1.5 whitespace-nowrap
               cursor-grab select-none min-w-0 flex-1 max-w-[200px]
               ${compact ? 'pl-2 pr-1.5 text-[11px]' : 'pl-3 pr-2 text-xs'}
-              ${isActive ? 'text-primary font-medium' : 'text-secondary hover:text-primary'}
+              ${isActive ? 'text-secondary font-medium' : 'text-muted hover:text-secondary'}
             `}
             onClick={() => onTabClick(i)}
             onMouseDown={(e) => onTabMouseDown(e, panelId)}

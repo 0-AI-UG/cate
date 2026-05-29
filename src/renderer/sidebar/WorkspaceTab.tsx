@@ -146,7 +146,7 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
 
   return (
     <button
-      className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
+      className={`group/panel flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
         indent ? 'pl-10' : 'pl-7'
       } ${isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
       onClick={onClick}
@@ -485,7 +485,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return (
       <button
         key={p.id}
-        className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
+        className={`group/panel flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
           indent ? 'pl-10' : 'pl-7'
         }`}
         onClick={(e) => handlePanelClick(e, p.id)}

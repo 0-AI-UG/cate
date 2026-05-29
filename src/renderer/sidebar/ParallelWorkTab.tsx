@@ -291,7 +291,7 @@ const ChildAction: React.FC<{
 }> = ({ icon, label, onClick, destructive }) => (
   <button
     onClick={onClick}
-    className={`group/action flex items-center gap-1.5 h-7 pl-7 pr-2 rounded text-[13px] text-secondary hover:bg-hover hover:text-primary text-left min-w-0 focus:outline-none transition-colors ${
+    className={`group/action flex items-center gap-1.5 h-7 pl-7 pr-2 text-[13px] text-secondary hover:bg-hover hover:text-primary text-left min-w-0 focus:outline-none transition-colors ${
       destructive ? 'hover:text-red-400' : ''
     }`}
   >
