@@ -22,7 +22,10 @@ describe('createBranch', () => {
     await fs.writeFile(path.join(repoDir, 'README.md'), 'base\n', 'utf8')
     await git.add('README.md')
     await git.commit('initial')
-    await git.checkoutLocalBranch('main')
+    // Force-rename the initial branch to `main` rather than creating it: a fresh
+    // `git init` may already be on `main` (git's modern default / init.defaultBranch),
+    // and `checkout -b main` would then fatal with "already exists".
+    await git.branch(['-M', 'main'])
   })
 
   afterEach(async () => {

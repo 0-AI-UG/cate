@@ -12,6 +12,7 @@ import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 
@@ -165,15 +166,17 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
         <Icon
           size={11}
           className="flex-shrink-0"
-          style={worktreeColor ? { color: worktreeColor, opacity: 0.95 } : { opacity: 0.6 }}
+          style={{ opacity: 0.6 }}
         />
       )}
-      <span className={`truncate min-w-0 flex-1 ${isRunning ? 'cate-notif-pulse' : ''}`}>
+      <span
+        className={`truncate min-w-0 flex-1 ${isRunning ? 'cate-notif-pulse' : ''}`}
+        style={worktreeTitleStyle(worktreeColor, isRunning)}
+      >
         {label}
       </span>
       {isAwaiting ? (
         <span className="cate-await-indicator flex-shrink-0" aria-label="awaiting input">
-          <span className="cate-await-ring" style={{ borderColor: AWAIT_COLOR }} />
           <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
         </span>
       ) : !isRunning && hasPorts ? (

@@ -109,6 +109,15 @@ export function TerminalSettings() {
         />
       </SettingRow>
       <SettingRow
+        label="Blink cursor"
+        description="Off by default. A blinking cursor forces a GPU/compositor redraw on every blink, keeping the compositor awake even when the terminal is otherwise idle. A steady cursor stays fully visible."
+      >
+        <Toggle
+          checked={store.terminalCursorBlink}
+          onChange={(v) => store.setSetting('terminalCursorBlink', v)}
+        />
+      </SettingRow>
+      <SettingRow
         label="Auto-suspend idle background terminals"
         description="Pause (SIGSTOP) terminals that have been offscreen and silent for 2 minutes so macOS can reclaim their memory. Resumes instantly on focus — no state loss. POSIX-only."
       >

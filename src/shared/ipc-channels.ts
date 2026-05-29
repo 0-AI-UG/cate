@@ -26,6 +26,7 @@ export const FS_DELETE = 'fs:delete'
 export const FS_RENAME = 'fs:rename'
 export const FS_MKDIR = 'fs:mkdir'
 export const FS_COPY = 'fs:copy'
+export const FS_IMPORT_ENTRIES = 'fs:import-entries'
 export const FS_SEARCH = 'fs:search'
 export const FS_READ_BINARY = 'fs:readBinary'
 
@@ -86,6 +87,12 @@ export const SESSION_FLUSH_SAVE_DONE = 'session:flushSaveDone' // renderer -> ma
 // Project-local workspace persistence (.cate/)
 export const PROJECT_STATE_SAVE = 'project:stateSave'     // renderer -> main
 export const PROJECT_STATE_LOAD = 'project:stateLoad'     // renderer -> main
+// Fired when a project's workspace.json is found to differ on disk from what
+// Cate last wrote (edited externally) — or back in sync after a reload.
+export const WORKSPACE_EXTERNAL_EDIT = 'project:externalEdit' // main -> renderer
+// Renderer tells main the user declined the reload prompt — resume saving so
+// the current in-app layout overwrites the external edit.
+export const WORKSPACE_EXTERNAL_EDIT_DISMISS = 'project:externalEditDismiss' // renderer -> main
 
 // Boot snapshot — a tiny JSON file (geometry, theme, last workspace id, native
 // tabs flag) written by the renderer whenever the relevant settings change.
@@ -138,6 +145,8 @@ export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
 export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'
+export const DIALOG_CONFIRM_IMPORT = 'dialog:confirmImport'
+export const DIALOG_CONFIRM_RELOAD_WORKSPACE = 'dialog:confirmReloadWorkspace'
 
 // Panel window: renderer pushes an updated PanelState snapshot to main so
 // the windowRegistry's panel meta (used by session persistence and the

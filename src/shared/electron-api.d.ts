@@ -345,10 +345,18 @@ export interface ElectronAPI {
    *  Otherwise returns 'close' | 'cancel'. */
   confirmCloseCanvas(payload: { panelCount: number; isLast: boolean }): Promise<'move' | 'delete' | 'close' | 'cancel'>
 
+  /** Confirm reloading the canvas after workspace.json changed on disk. */
+  confirmReloadWorkspace(payload: { name?: string }): Promise<'reload' | 'cancel'>
+
   /** Native confirmation shown when deleting a region that has panels inside.
    *  Returns 'with-contents' (delete region + contents), 'region-only' (keep
    *  contents, just remove the region around them), or 'cancel'. */
   confirmDeleteRegion(payload: { panelCount: number }): Promise<'with-contents' | 'region-only' | 'cancel'>
+
+  /** Native confirmation shown when external files/folders are dropped onto the
+   *  file explorer. Returns 'copy' (duplicate into the directory), 'move'
+   *  (relocate into the directory, removing the originals), or 'cancel'. */
+  confirmImportEntries(payload: { count: number; destName: string }): Promise<'copy' | 'move' | 'cancel'>
 
   // ---------------------------------------------------------------------------
   // Recent Projects
@@ -393,6 +401,10 @@ export interface ElectronAPI {
   fsRename(oldPath: string, newPath: string): Promise<void>
   fsMkdir(dirPath: string): Promise<void>
   fsCopy(srcPath: string, destDir: string): Promise<string>
+  /** Import external files/folders (dragged in from the OS) into `destDir`,
+   *  which must resolve inside a workspace root. `mode` is 'copy' or 'move'.
+   *  Returns the created destination paths and a count of entries that failed. */
+  fsImportEntries(sources: string[], destDir: string, mode: 'copy' | 'move'): Promise<{ created: string[]; failed: number }>
   shellShowInFolder(filePath: string): Promise<void>
 
   // ---------------------------------------------------------------------------
@@ -462,6 +474,15 @@ export interface ElectronAPI {
   /** Subscribe to native-fullscreen state changes. Fires with the new boolean
    *  whenever any Cate window enters or leaves macOS native fullscreen. */
   onFullscreenChange(callback: (isFullscreen: boolean) => void): () => void
+
+  /** Subscribe to external edits of a project's workspace.json. Fires when the
+   *  on-disk file is found to differ from what Cate last wrote (i.e. a reload
+   *  should be offered). */
+  onWorkspaceExternalEdit(callback: (payload: { rootPath: string }) => void): () => void
+
+  /** Tell main the user declined the reload prompt — resume normal saving so
+   *  the current in-app layout overwrites the external edit. */
+  dismissWorkspaceExternalEdit(rootPath: string): Promise<void>
 
   // ---------------------------------------------------------------------------
   // Dock window management
@@ -686,20 +707,20 @@ export interface ElectronAPI {
   /** Approve or deny a pending tool call. */
   agentToolDecision(panelId: string, toolCallId: string, decision: 'allow' | 'deny', reason?: string): Promise<void>
 
-  /** Open ~/.pi/agent/{agents|prompts} in the OS file manager. */
-  agentOpenSkillsFolder(kind: 'agents' | 'prompts' | 'skills'): Promise<void>
+  /** Open <cwd>/.cate/pi-agent/{agents|prompts} in the OS file manager. */
+  agentOpenSkillsFolder(cwd: string, kind: 'agents' | 'prompts' | 'skills'): Promise<void>
 
   /** Open a single skill/prompt/agent file in the OS default editor. */
   agentOpenSkillFile(filePath: string): Promise<void>
 
-  /** Delete a skill/prompt/agent file. Only allowed under ~/.pi/agent. */
-  agentDeleteSkillFile(filePath: string): Promise<void>
+  /** Delete a skill/prompt/agent file. Only allowed under the workspace's pi-agent dir. */
+  agentDeleteSkillFile(cwd: string, filePath: string): Promise<void>
 
   /** Create a new skill/prompt file from a template, then open it. */
-  agentCreateSkill(kind: 'agents' | 'prompts' | 'skills', name: string): Promise<string>
+  agentCreateSkill(cwd: string, kind: 'agents' | 'prompts' | 'skills', name: string): Promise<string>
 
-  /** List user files under ~/.pi/agent/{agents|prompts}. */
-  agentListSkillFiles(kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>>
+  /** List user files under <cwd>/.cate/pi-agent/{agents|prompts}. */
+  agentListSkillFiles(cwd: string, kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>>
 
   /** Browse-able marketplace catalog backed by a live scrape of pi.dev/packages
    *  (~2.9k entries, paginated). Returns an empty list when pi.dev is
@@ -722,8 +743,8 @@ export interface ElectronAPI {
     page: number
   }>
 
-  /** List extensions currently present in ~/.pi/agent/extensions/. */
-  agentMarketplaceListInstalled(): Promise<Array<{
+  /** List extensions currently present in <cwd>/.cate/pi-agent/extensions/. */
+  agentMarketplaceListInstalled(cwd: string): Promise<Array<{
     name: string
     description?: string
     requiresTerminal: boolean
@@ -731,10 +752,10 @@ export interface ElectronAPI {
   }>>
 
   /** Install an extension via `pi install npm:<name>`. Streams output to the log. */
-  agentMarketplaceInstall(name: string): Promise<{ ok: boolean; error?: string }>
+  agentMarketplaceInstall(cwd: string, name: string): Promise<{ ok: boolean; error?: string }>
 
   /** Uninstall an extension via `pi remove npm:<name>`. */
-  agentMarketplaceUninstall(name: string): Promise<{ ok: boolean; error?: string }>
+  agentMarketplaceUninstall(cwd: string, name: string): Promise<{ ok: boolean; error?: string }>
 
   /** Stream of agent events forwarded from the main process. */
   onAgentEvent(callback: (envelope: AgentEventEnvelope) => void): () => void

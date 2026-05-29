@@ -374,15 +374,15 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
             : isExpanded
               ? BAR_WIDTH + width
               : BAR_WIDTH,
+        // Static translucent fill — no backdrop-filter. A live blur forces the
+        // compositor to re-sample everything behind the sidebar on every frame
+        // that anything underneath changes (a major sustained WindowServer cost
+        // given the canvas/terminals behind it). A near-opaque tint reads as the
+        // same frosted surface without the per-frame compositing.
         backgroundColor:
           side === 'right'
-            ? 'color-mix(in srgb, var(--surface-0) 88%, transparent)'
-            : 'color-mix(in srgb, var(--surface-1) 88%, transparent)',
-        // Smaller blur radius avoids chromatic smearing from blue/purple
-        // borders behind the sidebar; saturate(0.6) tones any residual color
-        // cast down toward the neutral surface tint.
-        backdropFilter: 'blur(6px) saturate(0.6)',
-        WebkitBackdropFilter: 'blur(6px) saturate(0.6)',
+            ? 'color-mix(in srgb, var(--surface-0) 96%, transparent)'
+            : 'color-mix(in srgb, var(--surface-1) 96%, transparent)',
       }}
     >
       {/* Opaque top strip — matches the dock tab bar height (36px) so the

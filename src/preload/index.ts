@@ -65,6 +65,8 @@ import {
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
   PROJECT_STATE_LOAD,
+  WORKSPACE_EXTERNAL_EDIT,
+  WORKSPACE_EXTERNAL_EDIT_DISMISS,
   BOOT_SNAPSHOT_WRITE,
   APP_OPEN_PATH,
   MENU_OPEN_SETTINGS,
@@ -74,7 +76,9 @@ import {
   DIALOG_SAVE_FILE,
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_CANVAS,
+  DIALOG_CONFIRM_RELOAD_WORKSPACE,
   DIALOG_CONFIRM_DELETE_REGION,
+  DIALOG_CONFIRM_IMPORT,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   LAYOUT_SAVE,
@@ -85,6 +89,7 @@ import {
   FS_RENAME,
   FS_MKDIR,
   FS_COPY,
+  FS_IMPORT_ENTRIES,
   FS_SEARCH,
   SHELL_SHOW_IN_FOLDER,
   NOTIFY_OS,
@@ -644,8 +649,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DIALOG_CONFIRM_CLOSE_CANVAS, payload)
   },
 
+  confirmReloadWorkspace(payload: { name?: string }): Promise<'reload' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_CONFIRM_RELOAD_WORKSPACE, payload)
+  },
+
   confirmDeleteRegion(payload: { panelCount: number }): Promise<'with-contents' | 'region-only' | 'cancel'> {
     return ipcRenderer.invoke(DIALOG_CONFIRM_DELETE_REGION, payload)
+  },
+
+  confirmImportEntries(payload: { count: number; destName: string }): Promise<'copy' | 'move' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_CONFIRM_IMPORT, payload)
   },
 
   // ---------------------------------------------------------------------------
@@ -710,6 +723,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   fsCopy(srcPath: string, destDir: string): Promise<string> {
     return ipcRenderer.invoke(FS_COPY, srcPath, destDir)
+  },
+
+  fsImportEntries(
+    sources: string[],
+    destDir: string,
+    mode: 'copy' | 'move',
+  ): Promise<{ created: string[]; failed: number }> {
+    return ipcRenderer.invoke(FS_IMPORT_ENTRIES, sources, destDir, mode)
   },
 
   shellShowInFolder(filePath: string): Promise<void> {
@@ -818,6 +839,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     ipcRenderer.on(WINDOW_FULLSCREEN_STATE, listener)
     return () => { ipcRenderer.removeListener(WINDOW_FULLSCREEN_STATE, listener) }
+  },
+
+  /** Subscribe to workspace.json external-edit state. Fires whenever a project's
+   *  on-disk workspace file diverges from what Cate last wrote (edited
+   *  externally) or comes back in sync after a reload. */
+  onWorkspaceExternalEdit(callback: (payload: { rootPath: string }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { rootPath: string }): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(WORKSPACE_EXTERNAL_EDIT, listener)
+    return () => { ipcRenderer.removeListener(WORKSPACE_EXTERNAL_EDIT, listener) }
+  },
+
+  /** Tell main the user declined the reload prompt — resume saving so the
+   *  current in-app layout overwrites the external edit. */
+  dismissWorkspaceExternalEdit(rootPath: string): Promise<void> {
+    return ipcRenderer.invoke(WORKSPACE_EXTERNAL_EDIT_DISMISS, rootPath)
   },
 
   // ---------------------------------------------------------------------------
@@ -1119,24 +1157,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(AGENT_TOOL_DECISION, panelId, toolCallId, decision, reason)
   },
 
-  agentOpenSkillsFolder(kind: 'agents' | 'prompts' | 'skills'): Promise<void> {
-    return ipcRenderer.invoke(AGENT_OPEN_SKILLS_FOLDER, kind)
+  agentOpenSkillsFolder(cwd: string, kind: 'agents' | 'prompts' | 'skills'): Promise<void> {
+    return ipcRenderer.invoke(AGENT_OPEN_SKILLS_FOLDER, cwd, kind)
   },
 
   agentOpenSkillFile(filePath: string): Promise<void> {
     return ipcRenderer.invoke(AGENT_OPEN_SKILL_FILE, filePath)
   },
 
-  agentDeleteSkillFile(filePath: string): Promise<void> {
-    return ipcRenderer.invoke(AGENT_DELETE_SKILL_FILE, filePath)
+  agentDeleteSkillFile(cwd: string, filePath: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_DELETE_SKILL_FILE, cwd, filePath)
   },
 
-  agentCreateSkill(kind: 'agents' | 'prompts' | 'skills', name: string): Promise<string> {
-    return ipcRenderer.invoke(AGENT_CREATE_SKILL, kind, name)
+  agentCreateSkill(cwd: string, kind: 'agents' | 'prompts' | 'skills', name: string): Promise<string> {
+    return ipcRenderer.invoke(AGENT_CREATE_SKILL, cwd, kind, name)
   },
 
-  agentListSkillFiles(kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>> {
-    return ipcRenderer.invoke(AGENT_LIST_SKILL_FILES, kind)
+  agentListSkillFiles(cwd: string, kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>> {
+    return ipcRenderer.invoke(AGENT_LIST_SKILL_FILES, cwd, kind)
   },
 
   agentMarketplaceList(
@@ -1145,16 +1183,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(AGENT_MARKETPLACE_LIST, params)
   },
 
-  agentMarketplaceListInstalled(): Promise<unknown[]> {
-    return ipcRenderer.invoke(AGENT_MARKETPLACE_LIST_INSTALLED)
+  agentMarketplaceListInstalled(cwd: string): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_LIST_INSTALLED, cwd)
   },
 
-  agentMarketplaceInstall(name: string): Promise<{ ok: boolean; error?: string }> {
-    return ipcRenderer.invoke(AGENT_MARKETPLACE_INSTALL, name)
+  agentMarketplaceInstall(cwd: string, name: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_INSTALL, cwd, name)
   },
 
-  agentMarketplaceUninstall(name: string): Promise<{ ok: boolean; error?: string }> {
-    return ipcRenderer.invoke(AGENT_MARKETPLACE_UNINSTALL, name)
+  agentMarketplaceUninstall(cwd: string, name: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_UNINSTALL, cwd, name)
   },
 
   onAgentEvent(callback: (envelope: unknown) => void): () => void {

@@ -1,6 +1,6 @@
 // =============================================================================
-// installPlanMode — copy the bundled cate-plan-mode extension into
-// ~/.pi/agent/extensions/ on first use, where pi auto-discovers it.
+// installPlanMode — copy the bundled cate-plan-mode extension into a
+// workspace's pi-agent extensions dir on first use, where pi auto-discovers it.
 //
 // Source lives in our own tree at src/agent/extensions/cate-plan-mode/. Pi
 // loads .ts directly via jiti, so we just ship the raw .ts and .json files.
@@ -15,14 +15,10 @@
 
 import fs from 'fs'
 import fsp from 'fs/promises'
-import os from 'os'
 import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
-
-function agentDir(): string {
-  return path.join(os.homedir(), '.pi', 'agent')
-}
+import { agentDirFor } from './agentDir'
 
 /** Source dir of the bundled extension. Tries dev path first (src/ on disk),
  *  then production extraResources copy. */
@@ -47,19 +43,20 @@ async function copyIfMissing(src: string, dest: string): Promise<void> {
   log.info('[installPlanMode] installed %s', dest)
 }
 
-let installed = false
+const installed = new Set<string>()
 
 /** Idempotent — safe to call from AgentManager.create() on every session. */
-export async function installPlanModeExtension(): Promise<void> {
-  if (installed) return
-  installed = true
+export async function installPlanModeExtension(cwd: string): Promise<void> {
+  const home = agentDirFor(cwd)
+  if (installed.has(home)) return
+  installed.add(home)
   try {
     const src = sourceDir()
     if (!src) {
       log.warn('[installPlanMode] source dir not found — plan mode extension not installed')
       return
     }
-    const destDir = path.join(agentDir(), 'extensions', 'cate-plan-mode')
+    const destDir = path.join(home, 'extensions', 'cate-plan-mode')
     await copyIfMissing(path.join(src, 'index.ts'), path.join(destDir, 'index.ts'))
     await copyIfMissing(path.join(src, 'package.json'), path.join(destDir, 'package.json'))
   } catch (err) {

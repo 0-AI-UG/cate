@@ -67,7 +67,11 @@ jobs:
 
       - name: Package (macOS)
         if: matrix.platform == 'mac'
-        run: npx electron-builder --mac --publish never
+        # Raise the file-descriptor limit: codesign walks every unpacked file
+        # under app.asar.unpacked, and the macOS runner's default soft limit
+        # (256) is exhausted now that the full node_modules tree is unpacked,
+        # surfacing as `EMFILE: too many open files` during signing.
+        run: ulimit -n 65536 && npx electron-builder --mac --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTS }}

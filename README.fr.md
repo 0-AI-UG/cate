@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <strong>Version source actuelle :</strong> v1.0.3
+  <strong>Version source actuelle :</strong> v1.0.4
 </p>
 
 <p align="center">
@@ -96,7 +96,7 @@ Cate remplace cette pile de fenêtres par **un canevas persistant par projet**. 
 
 ## Installation
 
-Si vous souhaitez simplement utiliser Cate, téléchargez une version précompilée — ne compilez pas depuis les sources. Ce dépôt cible actuellement la **v1.0.3**.
+Si vous souhaitez simplement utiliser Cate, téléchargez une version précompilée — ne compilez pas depuis les sources. Ce dépôt cible actuellement la **v1.0.4**.
 
 | Plateforme | Formats | Lien |
 |------------|---------|------|
