@@ -107,9 +107,9 @@ function generateId(): string {
 /** Workspace accent colors — re-exported from the shared accent palette. */
 export const WORKSPACE_COLORS = ACCENT_COLORS
 
-function createDefaultWorkspace(name?: string, rootPath?: string): WorkspaceState {
+function createDefaultWorkspace(name?: string, rootPath?: string, id?: string): WorkspaceState {
   return {
-    id: generateId(),
+    id: id ?? generateId(),
     name: name ?? 'Workspace',
     color: '',
     rootPath: rootPath ?? '',
@@ -274,7 +274,7 @@ interface AppStoreState {
 
 interface AppStoreActions {
   // Workspace management
-  addWorkspace: (name?: string, rootPath?: string) => string
+  addWorkspace: (name?: string, rootPath?: string, id?: string) => string
   selectWorkspace: (id: string) => Promise<void>
   removeWorkspace: (id: string) => void
 
@@ -308,7 +308,6 @@ interface AppStoreActions {
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
-  setPanelThemePreset: (workspaceId: string, panelId: string, themePreset: string | undefined) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
 
   // Helpers
@@ -380,13 +379,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   // --- Workspace management ---
 
-  addWorkspace(name?, rootPath?) {
+  addWorkspace(name?, rootPath?, id?) {
+    // Reusing a stable id (session restore) must not be blocked by the cap and
+    // must never create a second entry for an id that already exists — both
+    // would resurrect the "duplicate workspaces on reload" bug.
+    if (id) {
+      const existing = get().workspaces.find((w) => w.id === id)
+      if (existing) return existing.id
+    }
     const existingCount = get().workspaces.length
-    if (existingCount >= 10) {
+    if (!id && existingCount >= 10) {
       // Cap at 10 workspaces — no-op, return current selection
       return get().selectedWorkspaceId || get().workspaces[0]?.id || ''
     }
-    const ws = createDefaultWorkspace(name, rootPath)
+    const ws = createDefaultWorkspace(name, rootPath, id)
     const isFirst = existingCount === 0
 
     // Note: the new workspace starts with an empty panels map. selectWorkspace
@@ -1178,20 +1184,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return {
           ...ws,
           panels: { ...ws.panels, [panelId]: { ...panel, unsavedContent: content } },
-        }
-      }),
-    }))
-  },
-
-  setPanelThemePreset(workspaceId, panelId, themePreset) {
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel) return ws
-        return {
-          ...ws,
-          panels: { ...ws.panels, [panelId]: { ...panel, themePreset } },
         }
       }),
     }))

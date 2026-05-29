@@ -404,9 +404,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     }
     return (
       <div
-        className={`group flex items-center gap-2 h-8 px-2 rounded-md cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
+        className={`group flex items-center gap-2 h-8 px-2 rounded-sm cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
           isContextActive ? 'ring-1 ring-strong' : ''
-        } ${isSelected ? 'bg-surface-3' : ''}`}
+        } ${isSelected ? 'bg-surface-6' : ''}`}
         onClick={handlePickFolder}
         onContextMenu={handleContextMenu}
         title={workspace.rootPathError || 'Click to choose a project folder'}
@@ -504,13 +504,13 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     <div onContextMenu={handleContextMenu}>
       {/* Project row */}
       <div
-        className={`group flex items-center gap-1 h-8 px-1.5 rounded-md cursor-pointer transition-colors outline-none ${
+        className={`group flex items-center gap-1 h-8 px-1.5 rounded-sm cursor-pointer transition-colors outline-none ${
           isContextActive ? 'ring-1 ring-strong' : ''
         } ${
           isMultiSelected
-            ? 'bg-surface-3 text-primary ring-1 ring-strong'
+            ? 'bg-surface-6 text-primary ring-1 ring-strong'
             : isSelected
-            ? 'bg-surface-3 text-primary'
+            ? 'bg-surface-6 text-primary'
             : 'text-secondary hover:text-primary hover:bg-hover'
         }`}
         style={hasColor ? {

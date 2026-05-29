@@ -144,3 +144,78 @@ describe('canvasStore — focusEpoch bumps on focus actions', () => {
     expect(store.getState().focusEpoch).toBe(before + 1)
   })
 })
+
+// =============================================================================
+// navigateDirection — arrow-key spatial navigation between nodes.
+// =============================================================================
+
+describe('canvasStore.navigateDirection', () => {
+  function setup() {
+    const store = createCanvasStore()
+    store.getState().setContainerSize({ width: 1000, height: 800 })
+    // Five nodes around a center node, each ~500px away on one axis.
+    const c = store.getState().addNode('c', 'editor', { x: -50, y: -40 }, { width: 100, height: 80 })
+    const r = store.getState().addNode('r', 'editor', { x: 450, y: -40 }, { width: 100, height: 80 })
+    const l = store.getState().addNode('l', 'editor', { x: -550, y: -40 }, { width: 100, height: 80 })
+    const u = store.getState().addNode('u', 'editor', { x: -50, y: -540 }, { width: 100, height: 80 })
+    const d = store.getState().addNode('d', 'editor', { x: -50, y: 460 }, { width: 100, height: 80 })
+    return { store, c, r, l, u, d }
+  }
+
+  it('moves focus to the nearest node in each direction', () => {
+    const { store, c, r, l, u, d } = setup()
+    const nav = (dir: 'up' | 'down' | 'left' | 'right') => {
+      store.getState().focusNode(c)
+      store.getState().navigateDirection(dir)
+      return store.getState().focusedNodeId
+    }
+    expect(nav('right')).toBe(r)
+    expect(nav('left')).toBe(l)
+    expect(nav('up')).toBe(u)
+    expect(nav('down')).toBe(d)
+  })
+
+  it('is a no-op when no node lies in the requested direction', () => {
+    const { store, r } = setup()
+    store.getState().focusNode(r) // rightmost node
+    store.getState().navigateDirection('right')
+    expect(store.getState().focusedNodeId).toBe(r)
+  })
+})
+
+// =============================================================================
+// zoomToSelection — fit and center the current selection.
+// =============================================================================
+
+describe('canvasStore.zoomToSelection', () => {
+  it('centers the selected node in the viewport', () => {
+    const store = createCanvasStore()
+    store.getState().setContainerSize({ width: 1000, height: 800 })
+    const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    store.getState().addNode('b', 'editor', { x: 2000, y: 2000 }, { width: 100, height: 100 })
+    store.getState().selectNodes([a], false)
+
+    store.getState().zoomToSelection()
+
+    // The selected node's center (50,50) should map to the container center.
+    const view = store.getState().canvasToView({ x: 50, y: 50 })
+    expect(view.x).toBeCloseTo(500, 0)
+    expect(view.y).toBeCloseTo(400, 0)
+    expect(store.getState().zoomLevel).toBeGreaterThan(0)
+  })
+
+  it('falls back to fitting all nodes when nothing is selected or focused', () => {
+    const store = createCanvasStore()
+    store.getState().setContainerSize({ width: 1000, height: 800 })
+    store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    store.getState().addNode('b', 'editor', { x: 900, y: 0 }, { width: 100, height: 100 })
+
+    store.getState().zoomToSelection()
+
+    // Both nodes land within the visible viewport (zoomToFit behavior).
+    const va = store.getState().canvasToView({ x: 0, y: 0 })
+    const vb = store.getState().canvasToView({ x: 1000, y: 100 })
+    expect(va.x).toBeGreaterThanOrEqual(0)
+    expect(vb.x).toBeLessThanOrEqual(1000)
+  })
+})

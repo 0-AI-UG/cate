@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { IconContext } from '@phosphor-icons/react'
 import log from './lib/logger'
 import { mark } from './lib/perfMarks'
 import { initRendererSentry } from './lib/sentry'
@@ -61,8 +62,12 @@ class ErrorBoundary extends React.Component<
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
+    {/* Give every icon a touch more weight by default. Icons that set an
+        explicit `weight` prop (bold/fill/duotone) override this. */}
+    <IconContext.Provider value={{ weight: 'bold' }}>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </IconContext.Provider>
   </React.StrictMode>
 )

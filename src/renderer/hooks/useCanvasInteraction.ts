@@ -7,14 +7,21 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { useUIStore } from '../stores/uiStore'
+import { useUIStore, effectiveCanvasTool } from '../stores/uiStore'
 import { useDragStore } from '../drag'
 import { viewToCanvas } from '../lib/coordinates'
+import { isMouseWheel, type WheelLike } from '../lib/wheelIntent'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
 import type { Point } from '../../shared/types'
 
 // How many pixels the mouse must move before a right-click becomes a drag
 const RIGHT_CLICK_DRAG_THRESHOLD = 4
+
+// Fraction of the current zoom that one physical mouse-wheel notch changes it
+// by (before the zoom-speed multiplier). Proportional so a notch feels the same
+// at any zoom level; a discrete notch can't use the delta-proportional path the
+// trackpad pinch uses.
+const MOUSE_WHEEL_ZOOM_FACTOR = 0.15
 
 // AABB overlap test for marquee selection
 function rectsIntersect(
@@ -22,6 +29,11 @@ function rectsIntersect(
   bx: number, by: number, bw: number, bh: number,
 ): boolean {
   return !(ax + aw <= bx || bx + bw <= ax || ay + ah <= by || by + bh <= ay)
+}
+
+// CSS cursor for the canvas when idle (not actively panning), per active tool.
+function idleCursorForTool(): string {
+  return effectiveCanvasTool(useUIStore.getState()) === 'hand' ? 'grab' : ''
 }
 
 export interface CanvasContextMenuState {
@@ -166,7 +178,54 @@ export function useCanvasInteraction(
   }, [])
 
   // ---------------------------------------------------------------------------
-  // Wheel: Cmd+scroll = zoom around cursor, otherwise pan
+  // Wheel zoom — anchored at the cursor. Called for explicit zoom intent
+  // (Cmd/Ctrl+scroll, trackpad pinch) and for plain physical mouse-wheel notches
+  // over empty canvas / unfocused panels.
+  // ---------------------------------------------------------------------------
+
+  const applyWheelZoom = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>, mouse: boolean) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Cancel any inertia / toolbar zoom animation when a zoom starts
+      if (cancelInertia.current) {
+        cancelInertia.current()
+        cancelInertia.current = null
+      }
+      canvasStoreApi.getState().cancelZoomAnimation()
+
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (!rect) return
+
+      // Anchor the zoom at the cursor
+      cursorViewPoint.current = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      }
+
+      const { zoomLevel } = canvasStoreApi.getState()
+      const { zoomSpeed } = useSettingsStore.getState()
+      // Accumulate from the in-flight target (or live zoom if idle) so rapid
+      // input keeps building toward a single smooth destination.
+      const base = targetZoom.current ?? zoomLevel
+      const next = mouse
+        // Discrete notch: proportional step so it feels consistent at any zoom.
+        ? base * (1 + Math.sign(-e.deltaY) * MOUSE_WHEEL_ZOOM_FACTOR * zoomSpeed)
+        // Continuous gesture (pinch / Cmd+trackpad-scroll): delta-proportional.
+        : base + -e.deltaY * 0.01 * zoomSpeed
+
+      targetZoom.current = Math.min(Math.max(next, ZOOM_MIN), ZOOM_MAX)
+
+      if (!zoomRafId.current) {
+        zoomRafId.current = requestAnimationFrame(smoothZoomTick)
+      }
+    },
+    [canvasRef, smoothZoomTick],
+  )
+
+  // ---------------------------------------------------------------------------
+  // Wheel: zoom (Cmd/Ctrl, pinch, or mouse-wheel) vs pan (trackpad two-finger).
   // ---------------------------------------------------------------------------
 
   const handleWheel = useCallback(
@@ -179,15 +238,29 @@ export function useCanvasInteraction(
         e.preventDefault()
         return
       }
-      // If the scroll originated inside a focused panel's content area,
-      // let the panel handle it — but only if the panel can scroll in that direction.
-      // Horizontal swipes should pan the canvas when the panel has no horizontal scroll.
       const target = e.target as HTMLElement
+      // `handleWheel` is wired via a native `wheel` listener in Canvas.tsx (cast
+      // to React's type), so `e` carries Chromium's `wheelDeltaY` at runtime.
+      const mouse = isMouseWheel(e as unknown as WheelLike)
 
-      // Webview elements (browser panels) handle their own scrolling via
-      // Electron's cross-process input routing. The passive:false capture
-      // listener interferes with that routing, so bail out immediately for
-      // any wheel event targeting a webview inside a focused panel.
+      // --- Explicit zoom intent: trackpad pinch (ctrlKey) or Cmd+scroll ---
+      // Handled FIRST so it zooms the canvas no matter what's under the cursor —
+      // a focused editor, terminal, or browser panel included. macOS delivers a
+      // trackpad pinch as a wheel event with ctrlKey set, so this one rule covers
+      // both the pinch gesture and the explicit Cmd/Ctrl+scroll.
+      if (e.metaKey || e.ctrlKey) {
+        applyWheelZoom(e, mouse)
+        return
+      }
+
+      // --- Plain scroll over a FOCUSED panel: let it scroll its own content ---
+      // This takes priority over mouse-wheel zoom so a mouse user can still
+      // scroll code in an editor or scrollback in a terminal. Zooming over a
+      // focused panel needs the explicit Cmd/Ctrl modifier handled above.
+
+      // Browser panels (webview) route their own wheel via Electron's
+      // cross-process input; the passive:false capture listener interferes with
+      // that routing, so bail out for any plain wheel over a focused webview.
       if (target.tagName === 'WEBVIEW') {
         const nodeEl = target.closest('[data-node-id]')
         const nodeId = nodeEl?.getAttribute('data-node-id')
@@ -197,9 +270,8 @@ export function useCanvasInteraction(
         }
       }
 
-      // Sticky-note content area — let the browser scroll the note natively
-      // when it can scroll in the wheel's primary direction. Matches the
-      // focused-panel-content behavior, but annotations aren't canvas nodes.
+      // Sticky-note content scrolls natively when it can scroll in the wheel's
+      // primary direction (annotations aren't canvas nodes).
       const annotationContent = target.closest?.('[data-annotation-content]') as HTMLElement | null
       if (annotationContent) {
         const isHorizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
@@ -227,84 +299,46 @@ export function useCanvasInteraction(
             }
             el = el.parentElement
           }
-          // No horizontal scrollability — fall through to canvas pan
+          // No horizontal scrollability — fall through to canvas pan/zoom
         }
       }
 
+      // --- Physical mouse wheel over empty canvas / unfocused panel: zoom ---
+      if (mouse) {
+        applyWheelZoom(e, true)
+        return
+      }
+
+      // --- Otherwise: trackpad two-finger scroll pans the canvas ---
+      // Apply canvas-interacting class so iframes/webviews/monaco/xterm don't
+      // eat hit-testing while panning. Remove it ~150ms after the wheel goes quiet.
       e.stopPropagation()
+      if (!wheelPanActive.current) {
+        wheelPanActive.current = true
+        document.body.classList.add('canvas-interacting')
+      }
+      if (wheelPanEndTimer.current) clearTimeout(wheelPanEndTimer.current)
+      wheelPanEndTimer.current = setTimeout(() => {
+        wheelPanEndTimer.current = null
+        wheelPanActive.current = false
+        document.body.classList.remove('canvas-interacting')
+      }, 150)
 
-      const { zoomLevel, viewportOffset, setViewportOffset } =
-        canvasStoreApi.getState()
-      const { zoomSpeed } = useSettingsStore.getState()
-
-      if (e.metaKey || e.ctrlKey) {
-        e.preventDefault() // Only prevent default for zoom, not pan
-
-        // Cancel any inertia when a zoom starts
-        if (cancelInertia.current) {
-          cancelInertia.current()
-          cancelInertia.current = null
-        }
-
-        // Cancel any toolbar animateZoomTo animation
-        canvasStoreApi.getState().cancelZoomAnimation()
-
-        const rect = canvasRef.current?.getBoundingClientRect()
-        if (!rect) return
-
-        // Update cursor position for the animation
-        cursorViewPoint.current = {
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        }
-
-        const scrollDelta = -e.deltaY
-        const zoomDelta = scrollDelta * 0.01 * zoomSpeed
-
-        // Accumulate target zoom from current target (or live zoom if idle)
-        targetZoom.current = Math.min(
-          Math.max(
-            (targetZoom.current ?? zoomLevel) + zoomDelta,
-            ZOOM_MIN,
-          ),
-          ZOOM_MAX,
-        )
-
-        // Start animation loop if not already running
-        if (!zoomRafId.current) {
-          zoomRafId.current = requestAnimationFrame(smoothZoomTick)
-        }
-      } else {
-        // Two-finger scroll = pan — accumulate deltas and apply once per frame.
-        // Apply canvas-interacting class so iframes/webviews/monaco/xterm don't
-        // eat hit-testing while panning. Remove it ~150ms after the wheel goes quiet.
-        if (!wheelPanActive.current) {
-          wheelPanActive.current = true
-          document.body.classList.add('canvas-interacting')
-        }
-        if (wheelPanEndTimer.current) clearTimeout(wheelPanEndTimer.current)
-        wheelPanEndTimer.current = setTimeout(() => {
-          wheelPanEndTimer.current = null
-          wheelPanActive.current = false
-          document.body.classList.remove('canvas-interacting')
-        }, 150)
-
-        pendingPanDelta.current.x += e.deltaX
-        pendingPanDelta.current.y += e.deltaY
-        if (!panRafId.current) {
-          panRafId.current = requestAnimationFrame(() => {
-            panRafId.current = 0
-            const dx = pendingPanDelta.current.x
-            const dy = pendingPanDelta.current.y
-            pendingPanDelta.current.x = 0
-            pendingPanDelta.current.y = 0
-            const { viewportOffset: vo, setViewportOffset: setVO } = canvasStoreApi.getState()
-            setVO({ x: vo.x - dx, y: vo.y - dy })
-          })
-        }
+      pendingPanDelta.current.x += e.deltaX
+      pendingPanDelta.current.y += e.deltaY
+      if (!panRafId.current) {
+        panRafId.current = requestAnimationFrame(() => {
+          panRafId.current = 0
+          const dx = pendingPanDelta.current.x
+          const dy = pendingPanDelta.current.y
+          pendingPanDelta.current.x = 0
+          pendingPanDelta.current.y = 0
+          const { viewportOffset: vo, setViewportOffset: setVO } = canvasStoreApi.getState()
+          setVO({ x: vo.x - dx, y: vo.y - dy })
+        })
       }
     },
-    [canvasRef, smoothZoomTick],
+    [canvasRef, applyWheelZoom],
   )
 
   // ---------------------------------------------------------------------------
@@ -335,6 +369,25 @@ export function useCanvasInteraction(
         document.body.classList.add('canvas-interacting')
         e.preventDefault()
       } else if (e.button === 0) {
+        // Hand tool (or Space-hold): left-drag pans the canvas, even when the
+        // press lands on a node (nodes let the event bubble here under Hand).
+        // No context menu, no inertia, no marquee — just a straight pan.
+        if (effectiveCanvasTool(useUIStore.getState()) === 'hand') {
+          if (cancelInertia.current) {
+            cancelInertia.current()
+            cancelInertia.current = null
+          }
+          isPanning.current = true
+          panButton.current = 0
+          lastPanPos.current = { x: e.clientX, y: e.clientY }
+          if (canvasRef.current) {
+            canvasRef.current.style.cursor = 'grabbing'
+          }
+          document.body.classList.add('canvas-interacting')
+          e.preventDefault()
+          return
+        }
+
         // Left-click on canvas background (not on a node/region) => marquee selection or clear
         const target = e.target as HTMLElement
         const isOnNode = target.closest('[data-node-id]') !== null
@@ -501,7 +554,9 @@ export function useCanvasInteraction(
         lastPanPos.current = null
         rightClickStart.current = null
         if (canvasRef.current) {
-          canvasRef.current.style.cursor = ''
+          // Hand back to React's idle cursor for the now-effective tool (Space
+          // may have been released mid-pan, reverting to the underlying tool).
+          canvasRef.current.style.cursor = idleCursorForTool()
         }
         document.body.classList.remove('canvas-interacting')
       }

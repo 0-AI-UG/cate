@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cate.app/schemas/theme.schema.json",
+  "title": "Cate Unified Theme",
+  "description": "One theme styling the whole Cate IDE: app chrome, terminal palette, and Monaco editor.",
+  "type": "object",
+  "required": ["id", "name", "type", "terminal", "editor"],
+  "additionalProperties": false,
+  "definitions": {
+    "cssColor": {
+      "type": "string",
+      "description": "Hex (#rgb/#rrggbb/#rrggbbaa), rgb()/rgba(), or space-separated RGB channels.",
+      "pattern": "^(#[0-9a-fA-F]{3,8}|rgba?\\([0-9.,%/ ]+\\)|\\d{1,3} \\d{1,3} \\d{1,3})$"
+    },
+    "monacoHex": {
+      "type": "string",
+      "description": "Hex WITHOUT a leading # (Monaco convention), 6 or 8 digits.",
+      "pattern": "^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+    },
+    "hashHex": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{3,8}$"
+    }
+  },
+  "properties": {
+    "version": { "type": "number" },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64 },
+    "name": { "type": "string", "maxLength": 64 },
+    "type": { "enum": ["dark", "light"] },
+    "author": { "type": "string", "maxLength": 80 },
+    "description": { "type": "string", "maxLength": 200 },
+    "bootBackground": { "$ref": "#/definitions/cssColor" },
+    "builtIn": { "type": "boolean" },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "surface-0": { "$ref": "#/definitions/cssColor" },
+        "surface-1": { "$ref": "#/definitions/cssColor" },
+        "surface-2": { "$ref": "#/definitions/cssColor" },
+        "surface-3": { "$ref": "#/definitions/cssColor" },
+        "surface-4": { "$ref": "#/definitions/cssColor" },
+        "surface-5": { "$ref": "#/definitions/cssColor" },
+        "surface-6": { "$ref": "#/definitions/cssColor" },
+        "titlebar-bg": { "$ref": "#/definitions/cssColor" },
+        "canvas-bg": { "$ref": "#/definitions/cssColor" },
+        "canvas-bg-alt": { "$ref": "#/definitions/cssColor" },
+        "grid-dot": { "$ref": "#/definitions/cssColor" },
+        "grid-line": { "$ref": "#/definitions/cssColor" },
+        "border-subtle": { "$ref": "#/definitions/cssColor" },
+        "border-strong": { "$ref": "#/definitions/cssColor" },
+        "border-focus": { "$ref": "#/definitions/cssColor" },
+        "text-primary": { "$ref": "#/definitions/cssColor" },
+        "text-secondary": { "$ref": "#/definitions/cssColor" },
+        "text-muted": { "$ref": "#/definitions/cssColor" },
+        "text-inverse": { "$ref": "#/definitions/cssColor" },
+        "focus-blue": { "$ref": "#/definitions/cssColor" },
+        "activity-green": { "$ref": "#/definitions/cssColor" },
+        "activity-orange": { "$ref": "#/definitions/cssColor" },
+        "shadow-node": { "$ref": "#/definitions/cssColor" },
+        "shadow-node-focused": { "$ref": "#/definitions/cssColor" },
+        "node-bg-active": { "$ref": "#/definitions/cssColor" },
+        "node-dim-overlay": { "$ref": "#/definitions/cssColor" },
+        "scrollbar-thumb": { "$ref": "#/definitions/cssColor" },
+        "scrollbar-thumb-hover": { "$ref": "#/definitions/cssColor" },
+        "surface-hover": { "$ref": "#/definitions/cssColor" },
+        "surface-hover-strong": { "$ref": "#/definitions/cssColor" },
+        "git-added": { "$ref": "#/definitions/cssColor" },
+        "git-modified": { "$ref": "#/definitions/cssColor" },
+        "git-deleted": { "$ref": "#/definitions/cssColor" },
+        "git-untracked": { "$ref": "#/definitions/cssColor" },
+        "git-renamed": { "$ref": "#/definitions/cssColor" },
+        "panel-terminal": { "$ref": "#/definitions/cssColor" },
+        "panel-browser": { "$ref": "#/definitions/cssColor" },
+        "panel-editor": { "$ref": "#/definitions/cssColor" },
+        "panel-git": { "$ref": "#/definitions/cssColor" },
+        "panel-fileExplorer": { "$ref": "#/definitions/cssColor" },
+        "panel-projectList": { "$ref": "#/definitions/cssColor" },
+        "panel-canvas": { "$ref": "#/definitions/cssColor" },
+        "agent-rgb": { "$ref": "#/definitions/cssColor" },
+        "agent-light-rgb": { "$ref": "#/definitions/cssColor" }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "required": [
+        "background", "foreground",
+        "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+        "brightBlack", "brightRed", "brightGreen", "brightYellow",
+        "brightBlue", "brightMagenta", "brightCyan", "brightWhite"
+      ],
+      "properties": {
+        "background": { "$ref": "#/definitions/cssColor" },
+        "foreground": { "$ref": "#/definitions/cssColor" },
+        "cursor": { "$ref": "#/definitions/cssColor" },
+        "cursorAccent": { "$ref": "#/definitions/cssColor" },
+        "selectionBackground": { "$ref": "#/definitions/cssColor" },
+        "selectionForeground": { "$ref": "#/definitions/cssColor" },
+        "black": { "$ref": "#/definitions/cssColor" },
+        "red": { "$ref": "#/definitions/cssColor" },
+        "green": { "$ref": "#/definitions/cssColor" },
+        "yellow": { "$ref": "#/definitions/cssColor" },
+        "blue": { "$ref": "#/definitions/cssColor" },
+        "magenta": { "$ref": "#/definitions/cssColor" },
+        "cyan": { "$ref": "#/definitions/cssColor" },
+        "white": { "$ref": "#/definitions/cssColor" },
+        "brightBlack": { "$ref": "#/definitions/cssColor" },
+        "brightRed": { "$ref": "#/definitions/cssColor" },
+        "brightGreen": { "$ref": "#/definitions/cssColor" },
+        "brightYellow": { "$ref": "#/definitions/cssColor" },
+        "brightBlue": { "$ref": "#/definitions/cssColor" },
+        "brightMagenta": { "$ref": "#/definitions/cssColor" },
+        "brightCyan": { "$ref": "#/definitions/cssColor" },
+        "brightWhite": { "$ref": "#/definitions/cssColor" }
+      }
+    },
+    "editor": {
+      "type": "object",
+      "required": ["base", "tokens"],
+      "properties": {
+        "base": { "enum": ["vs", "vs-dark"] },
+        "colors": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/hashHex" }
+        },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["token"],
+            "properties": {
+              "token": { "type": "string" },
+              "foreground": { "$ref": "#/definitions/monacoHex" },
+              "background": { "$ref": "#/definitions/monacoHex" },
+              "fontStyle": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

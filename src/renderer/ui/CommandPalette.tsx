@@ -526,33 +526,35 @@ export const CommandPalette: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex justify-center z-50"
+      className="fixed inset-0 bg-black/30 flex justify-center z-50"
       onClick={close}
     >
       <div
-        className="w-[640px] max-w-[640px] max-h-[560px] mt-[160px] rounded-3xl overflow-hidden flex flex-col self-start bg-surface-4/85 backdrop-blur-2xl border border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.5)]"
+        className="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] rounded-xl overflow-hidden flex flex-col self-start bg-surface-2/95 backdrop-blur-xl border border-strong shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
-        <div className="flex items-center gap-3 px-5 py-4 shrink-0">
-          <MagnifyingGlass size={20} className="text-muted shrink-0" weight="bold" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={searchText}
-            onChange={(e) => {
-              setSearchText(e.target.value)
-              setSelectedIndex(0)
-            }}
-            placeholder="Search files, terminals, commands and more…"
-            className="flex-1 bg-transparent text-primary text-base font-medium outline-none placeholder:text-muted placeholder:font-normal"
-          />
+        <div className="p-2 shrink-0">
+          <div className="flex items-center gap-2 px-2.5 h-8 rounded-md bg-surface-0/60 border border-strong focus-within:border-[rgba(255,255,255,0.18)] transition-colors">
+            <MagnifyingGlass size={15} className="text-muted shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchText}
+              onChange={(e) => {
+                setSearchText(e.target.value)
+                setSelectedIndex(0)
+              }}
+              placeholder="Search files, panels, terminals and more by name"
+              className="flex-1 bg-transparent text-primary text-[13px] outline-none placeholder:text-muted"
+            />
+          </div>
         </div>
 
         {/* Results list */}
-        <div className="flex-1 overflow-y-auto pb-2">
+        <div className="flex-1 overflow-y-auto pb-1.5">
           {totalItems === 0 && !searching ? (
-            <div className="text-muted text-sm text-center py-6">
+            <div className="text-muted text-[13px] text-center py-5">
               {searchText.length >= 2 ? 'No results' : 'No matching results'}
             </div>
           ) : showRecommended ? (
@@ -560,29 +562,22 @@ export const CommandPalette: React.FC = () => {
               {/* Open panels */}
               {recommendedPanels.length > 0 && (
                 <>
-                  <div className="px-5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Open Panels</div>
+                  <SectionHeader>Open Panels</SectionHeader>
                   {recommendedPanels.map((panel, i) => {
                     const isSelected = i === selectedIndex
                     const iconForType = panel.type === 'terminal' ? <TerminalIcon /> : panel.type === 'browser' ? <GlobeIcon /> : panel.type === 'agent' ? <AgentIcon /> : <FileTextIcon />
-                    const colorForType = panel.type === 'terminal' ? 'bg-green-500/15 text-green-400' : panel.type === 'browser' ? 'bg-cyan-500/15 text-cyan-400' : panel.type === 'agent' ? 'bg-blue-500/15 text-blue-400' : 'bg-amber-500/15 text-amber-400'
+                    const colorForType = panel.type === 'terminal' ? 'text-emerald-400' : panel.type === 'browser' ? 'text-sky-400' : panel.type === 'agent' ? 'text-[rgb(var(--agent-rgb))]' : 'text-amber-400'
                     return (
-                      <div
+                      <Row
                         key={panel.id}
-                        className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
-                          isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
-                        }`}
-                        onClick={() => {
-                          focusPanelById(panel.id)
-                          close()
-                        }}
+                        selected={isSelected}
+                        onClick={() => { focusPanelById(panel.id); close() }}
                         onMouseEnter={() => setSelectedIndex(i)}
                       >
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${colorForType}`}>
-                          {iconForType}
-                        </div>
-                        <span className="text-sm text-primary font-medium flex-1 truncate">{panel.title}</span>
-                        <span className="text-[10px] text-muted capitalize">{panel.type}</span>
-                      </div>
+                        <span className={`shrink-0 ${colorForType}`}>{iconForType}</span>
+                        <span className="text-[13px] text-primary flex-1 truncate">{panel.title}</span>
+                        <span className="text-[11px] text-muted capitalize">{panel.type}</span>
+                      </Row>
                     )
                   })}
                 </>
@@ -591,30 +586,22 @@ export const CommandPalette: React.FC = () => {
               {/* Commands */}
               {filteredCommands.length > 0 && (
                 <>
-                  {recommendedPanels.length > 0 && <div className="mx-5 my-1 border-t border-white/10" />}
-                  <div className="px-5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Commands</div>
+                  {recommendedPanels.length > 0 && <Separator />}
+                  <SectionHeader>Commands</SectionHeader>
                   {filteredCommands.map((cmd, i) => {
                     const itemIndex = recommendedPanels.length + i
                     const isSelected = itemIndex === selectedIndex
                     return (
-                      <div
+                      <Row
                         key={cmd.id}
-                        className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
-                          isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
-                        }`}
+                        selected={isSelected}
                         onClick={() => executeCommand(cmd)}
                         onMouseEnter={() => setSelectedIndex(itemIndex)}
                       >
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-blue-500/15 text-blue-400">
-                          {cmd.icon}
-                        </div>
-                        <span className="text-sm text-primary font-medium flex-1 truncate">{cmd.title}</span>
-                        {cmd.shortcutText && (
-                          <span className="text-[11px] text-muted flex-shrink-0 font-mono">
-                            {cmd.shortcutText}
-                          </span>
-                        )}
-                      </div>
+                        <span className="shrink-0 text-secondary">{cmd.icon}</span>
+                        <span className="text-[13px] text-primary flex-1 truncate">{cmd.title}</span>
+                        <Shortcut text={cmd.shortcutText} />
+                      </Row>
                     )
                   })}
                 </>
@@ -625,28 +612,20 @@ export const CommandPalette: React.FC = () => {
               {/* Matching commands */}
               {filteredCommands.length > 0 && (
                 <>
-                  <div className="px-5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Commands</div>
+                  <SectionHeader>Commands</SectionHeader>
                   {filteredCommands.map((cmd, index) => {
                     const isSelected = index === selectedIndex
                     return (
-                      <div
+                      <Row
                         key={cmd.id}
-                        className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
-                          isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
-                        }`}
+                        selected={isSelected}
                         onClick={() => executeCommand(cmd)}
                         onMouseEnter={() => setSelectedIndex(index)}
                       >
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-blue-500/15 text-blue-400">
-                          {cmd.icon}
-                        </div>
-                        <span className="text-sm text-primary font-medium flex-1 truncate">{cmd.title}</span>
-                        {cmd.shortcutText && (
-                          <span className="text-[11px] text-muted flex-shrink-0 font-mono">
-                            {cmd.shortcutText}
-                          </span>
-                        )}
-                      </div>
+                        <span className="shrink-0 text-secondary">{cmd.icon}</span>
+                        <span className="text-[13px] text-primary flex-1 truncate">{cmd.title}</span>
+                        <Shortcut text={cmd.shortcutText} />
+                      </Row>
                     )
                   })}
                 </>
@@ -657,26 +636,24 @@ export const CommandPalette: React.FC = () => {
                 const showSeparator = si > 0 || filteredCommands.length > 0
                 return (
                   <div key={section.kind}>
-                    {showSeparator && <div className="mx-5 my-1 border-t border-white/10" />}
-                    <div className="px-5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">{sectionLabel(section.kind)}</div>
+                    {showSeparator && <Separator />}
+                    <SectionHeader>{sectionLabel(section.kind)}</SectionHeader>
                     {section.items.map((r) => {
                       const thisIndex = flatSearchIndex++
                       const isSelected = thisIndex === selectedIndex
                       return (
-                        <div
+                        <Row
                           key={r.key}
-                          className={`flex items-center gap-3 mx-2 px-3 py-2 cursor-pointer rounded-lg ${
-                            isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
-                          }`}
+                          selected={isSelected}
                           onClick={() => selectSearchResult(r)}
                           onMouseEnter={() => setSelectedIndex(thisIndex)}
                         >
                           <SearchResultIcon result={r} />
                           <div className="flex-1 min-w-0">
-                            <div className="text-primary text-sm font-medium truncate">{r.primary}</div>
-                            <div className="text-muted text-xs truncate mt-0.5">{r.secondary}</div>
+                            <div className="text-primary text-[13px] truncate">{r.primary}</div>
+                            <div className="text-muted text-[11px] truncate">{r.secondary}</div>
                           </div>
-                        </div>
+                        </Row>
                       )
                     })}
                   </div>
@@ -691,23 +668,73 @@ export const CommandPalette: React.FC = () => {
 }
 
 // -----------------------------------------------------------------------------
-// Search result icon — type-aware glyph in a tinted circle
+// Layout primitives — slim rows, section headers, separators, keycap shortcuts
+// -----------------------------------------------------------------------------
+
+const Row: React.FC<{
+  selected: boolean
+  onClick: () => void
+  onMouseEnter: () => void
+  children: React.ReactNode
+}> = ({ selected, onClick, onMouseEnter, children }) => (
+  <div
+    className={`flex items-center gap-2.5 mx-1.5 px-2.5 py-1.5 cursor-pointer rounded-md ${
+      selected ? 'bg-[rgb(var(--agent-rgb))]/22' : 'hover:bg-hover'
+    }`}
+    onClick={onClick}
+    onMouseEnter={onMouseEnter}
+  >
+    {children}
+  </div>
+)
+
+const SectionHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="px-3.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+    {children}
+  </div>
+)
+
+const Separator: React.FC = () => <div className="mx-3.5 my-1 border-t border-subtle" />
+
+// Render a shortcut string (e.g. "⌘⇧B", "⌃Space") as individual keycaps.
+const Shortcut: React.FC<{ text: string }> = ({ text }) => {
+  if (!text) return null
+  const mods = new Set(['⌘', '⌥', '⌃', '⇧'])
+  const keys: string[] = []
+  let rest = ''
+  for (const ch of text) {
+    if (mods.has(ch)) keys.push(ch)
+    else rest += ch
+  }
+  if (rest) keys.push(rest)
+  return (
+    <span className="flex items-center gap-1 shrink-0">
+      {keys.map((k, i) => (
+        <kbd
+          key={i}
+          className="min-w-[18px] h-[18px] px-1 rounded border border-strong bg-surface-4 text-secondary text-[10px] leading-none flex items-center justify-center"
+        >
+          {k}
+        </kbd>
+      ))}
+    </span>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Search result icon — bare type-aware glyph
 // -----------------------------------------------------------------------------
 
 function SearchResultIcon({ result }: { result: SearchResult }) {
-  const tile = 'w-8 h-8 rounded-full flex items-center justify-center shrink-0'
-  if (result.kind === 'file') {
-    return <div className={`${tile} bg-amber-500/15 text-amber-400`}><FileText size={16} weight="bold" /></div>
-  }
-  if (result.kind === 'terminal') {
-    return <div className={`${tile} bg-emerald-500/15 text-emerald-400`}><Terminal size={16} weight="bold" /></div>
-  }
+  const cls = 'shrink-0'
+  if (result.kind === 'file') return <span className={`${cls} text-amber-400`}><FileText size={ICON_SIZE} /></span>
+  if (result.kind === 'terminal') return <span className={`${cls} text-emerald-400`}><Terminal size={ICON_SIZE} /></span>
   const { panelType } = result
-  if (panelType === 'terminal') return <div className={`${tile} bg-emerald-500/15 text-emerald-400`}><Terminal size={16} weight="bold" /></div>
-  if (panelType === 'browser')  return <div className={`${tile} bg-sky-500/15 text-sky-400`}><Globe size={16} weight="bold" /></div>
-  if (panelType === 'editor')   return <div className={`${tile} bg-orange-500/15 text-orange-400`}><FileText size={16} weight="bold" /></div>
-  if (panelType === 'git')      return <div className={`${tile} bg-red-500/15 text-red-400`}><GitBranch size={16} weight="bold" /></div>
-  if (panelType === 'fileExplorer') return <div className={`${tile} bg-cyan-500/15 text-cyan-400`}><FolderOpen size={16} weight="bold" /></div>
-  if (panelType === 'projectList')  return <div className={`${tile} bg-yellow-500/15 text-yellow-400`}><Stack size={16} weight="bold" /></div>
-  return <div className={`${tile} bg-violet-500/15 text-violet-400`}><Square size={16} weight="bold" /></div>
+  if (panelType === 'terminal') return <span className={`${cls} text-emerald-400`}><Terminal size={ICON_SIZE} /></span>
+  if (panelType === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
+  if (panelType === 'editor')   return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
+  if (panelType === 'git')      return <span className={`${cls} text-red-400`}><GitBranch size={ICON_SIZE} /></span>
+  if (panelType === 'fileExplorer') return <span className={`${cls} text-cyan-400`}><FolderOpen size={ICON_SIZE} /></span>
+  if (panelType === 'projectList')  return <span className={`${cls} text-yellow-400`}><Stack size={ICON_SIZE} /></span>
+  return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }

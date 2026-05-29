@@ -11,6 +11,9 @@ import { create } from 'zustand'
 export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'parallelWork'
 export type SidebarSide = 'left' | 'right'
 
+/** Active canvas interaction tool (Figma-style). */
+export type CanvasTool = 'select' | 'hand'
+
 export interface SidebarLayout {
   left: SidebarView[]
   right: SidebarView[]
@@ -59,6 +62,10 @@ interface UIStoreState {
   fileExplorerVisible: boolean
   /** Active marquee selection rectangle in canvas-space coordinates, or null when idle. */
   marquee: { startX: number; startY: number; currentX: number; currentY: number } | null
+  /** Active canvas tool. Sticky: changed via toolbar or V/H shortcuts. */
+  activeTool: CanvasTool
+  /** True while Spacebar is held — temporarily overrides `activeTool` with Hand. */
+  spacePanActive: boolean
   /** Layout: which views live on which side and in what order */
   sidebarLayout: SidebarLayout
   /** Active view on the left sidebar, null = collapsed */
@@ -81,6 +88,8 @@ interface UIStoreActions {
   toggleFileExplorer: () => void
   setFileExplorerVisible: (visible: boolean) => void
   setMarquee: (marquee: { startX: number; startY: number; currentX: number; currentY: number } | null) => void
+  setActiveTool: (tool: CanvasTool) => void
+  setSpacePanActive: (active: boolean) => void
   setActiveLeftSidebarView: (view: SidebarView | null) => void
   setActiveRightSidebarView: (view: SidebarView | null) => void
   moveSidebarView: (view: SidebarView, targetSide: SidebarSide, targetIndex: number) => void
@@ -103,6 +112,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
   settingsInitialTab: null,
   fileExplorerVisible: false,
   marquee: null,
+  activeTool: 'select',
+  spacePanActive: false,
   sidebarLayout: loadLayout(),
   activeLeftSidebarView: 'workspaces',
   activeRightSidebarView: null,
@@ -161,6 +172,14 @@ export const useUIStore = create<UIStore>((set, get) => ({
     set({ marquee })
   },
 
+  setActiveTool(tool) {
+    set({ activeTool: tool })
+  },
+
+  setSpacePanActive(active) {
+    set({ spacePanActive: active })
+  },
+
   setActiveLeftSidebarView(view) {
     set({ activeLeftSidebarView: view })
   },
@@ -213,3 +232,13 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
 
 }))
+
+/**
+ * Resolve the tool currently in effect. Space-hold temporarily forces Hand
+ * without disturbing the sticky `activeTool`, so releasing Space reverts cleanly.
+ */
+export function effectiveCanvasTool(
+  s: Pick<UIStoreState, 'activeTool' | 'spacePanActive'>,
+): CanvasTool {
+  return s.spacePanActive ? 'hand' : s.activeTool
+}

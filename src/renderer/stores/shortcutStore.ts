@@ -1,6 +1,6 @@
 // =============================================================================
-// Shortcut Store — Zustand state for keyboard shortcuts and hint overlay.
-// Ported from KeyboardShortcuts.swift + ShortcutHintState.swift
+// Shortcut Store — Zustand state for keyboard shortcut bindings and matching.
+// Ported from KeyboardShortcuts.swift
 // =============================================================================
 
 import { create } from 'zustand'
@@ -18,24 +18,12 @@ interface ModifierState {
   control: boolean
 }
 
-const NO_MODIFIERS: ModifierState = {
-  command: false,
-  shift: false,
-  option: false,
-  control: false,
-}
-
 // -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
 
 interface ShortcutStoreState {
   shortcuts: Record<ShortcutAction, StoredShortcut>
-  isShowingHints: boolean
-  activeModifiers: ModifierState
-  hintHoldTimer: ReturnType<typeof setTimeout> | null
-  /** Tracks whether the hold was cancelled by a keydown during the timer. */
-  _holdCancelled: boolean
 }
 
 interface ShortcutStoreActions {
@@ -43,20 +31,9 @@ interface ShortcutStoreActions {
   resetShortcut: (action: ShortcutAction) => void
   resetAll: () => void
   matchEvent: (e: KeyboardEvent) => ShortcutAction | null
-  startHintHold: () => void
-  cancelHintHold: () => void
-  setShowingHints: (show: boolean) => void
-  updateModifiers: (modifiers: ModifierState) => void
 }
 
 export type ShortcutStore = ShortcutStoreState & ShortcutStoreActions
-
-// -----------------------------------------------------------------------------
-// Constants
-// -----------------------------------------------------------------------------
-
-/** How long CMD must be held (ms) before hint badges appear. */
-const HINT_HOLD_THRESHOLD_MS = 750
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -98,10 +75,6 @@ function normaliseKey(e: KeyboardEvent): string {
 export const useShortcutStore = create<ShortcutStore>((set, get) => ({
   // --- State ---
   shortcuts: { ...DEFAULT_SHORTCUTS },
-  isShowingHints: false,
-  activeModifiers: { ...NO_MODIFIERS },
-  hintHoldTimer: null,
-  _holdCancelled: false,
 
   // --- Actions ---
 
@@ -145,70 +118,5 @@ export const useShortcutStore = create<ShortcutStore>((set, get) => ({
     }
 
     return null
-  },
-
-  startHintHold() {
-    const state = get()
-
-    // Clear any existing timer
-    if (state.hintHoldTimer) {
-      clearTimeout(state.hintHoldTimer)
-    }
-
-    const timer = setTimeout(() => {
-      const current = get()
-      // Only show hints if hold wasn't cancelled and CMD is still reflected
-      if (!current._holdCancelled && current.activeModifiers.command) {
-        set({ isShowingHints: true, hintHoldTimer: null })
-      }
-    }, HINT_HOLD_THRESHOLD_MS)
-
-    set({ hintHoldTimer: timer, _holdCancelled: false })
-  },
-
-  cancelHintHold() {
-    const state = get()
-    if (state.hintHoldTimer) {
-      clearTimeout(state.hintHoldTimer)
-    }
-    set({
-      hintHoldTimer: null,
-      isShowingHints: false,
-      _holdCancelled: true,
-    })
-  },
-
-  setShowingHints(show) {
-    set({ isShowingHints: show })
-  },
-
-  updateModifiers(modifiers) {
-    const prev = get().activeModifiers
-
-    // CMD just pressed
-    if (modifiers.command && !prev.command) {
-      set({ activeModifiers: modifiers, _holdCancelled: false })
-      get().startHintHold()
-      return
-    }
-
-    // CMD released
-    if (!modifiers.command && prev.command) {
-      const state = get()
-      if (state.hintHoldTimer) {
-        clearTimeout(state.hintHoldTimer)
-      }
-      set({
-        activeModifiers: { ...NO_MODIFIERS },
-        hintHoldTimer: null,
-        isShowingHints: false,
-      })
-      return
-    }
-
-    // CMD still held, other modifiers changed
-    if (modifiers.command) {
-      set({ activeModifiers: modifiers })
-    }
   },
 }))

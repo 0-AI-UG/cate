@@ -93,8 +93,6 @@ export const ProjectList: React.FC = () => {
   const [insertIndex, setInsertIndex] = useState<number | null>(null)
 
   const displayWorkspaces = workspaces
-  const INDICATOR = '2px solid rgba(74, 158, 255, 0.6)'
-  const RESERVED = '2px solid transparent'
 
   return (
     <div
@@ -113,13 +111,14 @@ export const ProjectList: React.FC = () => {
       />
 
       {/* Scrollable workspace list */}
-      <div className="flex-1 overflow-y-auto px-1 py-1">
+      <div className="flex-1 overflow-y-auto py-1">
         <div className="flex flex-col">
           {displayWorkspaces.map((ws, index) => {
             const isLast = index === displayWorkspaces.length - 1
             return (
               <div
                 key={ws.id}
+                className="relative"
                 draggable={multiSelected.size === 0}
                 onDragStart={(e) => {
                   e.dataTransfer.setData('text/plain', String(index))
@@ -147,14 +146,15 @@ export const ProjectList: React.FC = () => {
                   }
                 }}
                 onDragEnd={() => setInsertIndex(null)}
-                style={{
-                  borderTop: insertIndex === index ? INDICATOR : RESERVED,
-                  // Only the last row reserves a bottom border, so it can show
-                  // the "drop at the end" indicator without shifting other rows.
-                  borderBottom: isLast ? (insertIndex === index + 1 ? INDICATOR : RESERVED) : undefined,
-                  transition: 'border-color 0.15s',
-                }}
               >
+                {/* Drop indicators overlay the row edges so cards stay flush
+                    (no reserved border space → no inter-card gap). */}
+                {insertIndex === index && (
+                  <div className="absolute left-0 right-0 top-0 h-0.5 bg-blue-400/60 z-10 pointer-events-none" />
+                )}
+                {isLast && insertIndex === index + 1 && (
+                  <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-blue-400/60 z-10 pointer-events-none" />
+                )}
                 <WorkspaceTab
                   workspace={ws}
                   isSelected={ws.id === selectedWorkspaceId}

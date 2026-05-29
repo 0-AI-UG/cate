@@ -1,39 +1,108 @@
-import type { AppearanceMode } from '../../shared/types'
+// =============================================================================
+// themeManager — applies a unified Theme to the document.
+//
+// One Theme drives the whole IDE. applyTheme():
+//   1. merges the theme's partial `app` map over BASE_DARK/BASE_LIGHT and writes
+//      every CSS custom property as an inline style on <html> (an override layer
+//      over the `:root` fallback in globals.css — works per-document, so each
+//      detached window paints independently and any built-in OR imported theme
+//      is supported without static CSS).
+//   2. sets documentElement.dataset.theme = theme.type ('dark' | 'light') as a
+//      hook for prefers-* style selectors (it no longer carries colors).
+//   3. notifies subscribers with the full Theme object (terminals repaint, the
+//      Monaco editor re-themes).
+//   4. persists the theme id + an exact background to the boot snapshot so the
+//      next cold launch constructs the BrowserWindow with the right color before
+//      any JS runs (no white flash).
+// =============================================================================
 
-export type ResolvedTheme = 'dark-warm' | 'light-subtle' | 'dark-cold'
+import type { Theme, ThemeSelection } from '../../shared/types'
+import { useSettingsStore } from '../stores/settingsStore'
+import {
+  BASE_DARK,
+  BASE_LIGHT,
+  BUILT_IN_THEMES,
+  DEFAULT_DARK_THEME_ID,
+  DEFAULT_LIGHT_THEME_ID,
+  BUILT_IN_BY_ID,
+} from '../../shared/themes'
 
-let currentResolved: ResolvedTheme = 'dark-warm'
-let currentMode: AppearanceMode = 'system'
-const subscribers = new Set<(t: ResolvedTheme) => void>()
+let currentTheme: Theme = BUILT_IN_BY_ID[DEFAULT_DARK_THEME_ID]
+let currentSelection: ThemeSelection = 'system'
+const subscribers = new Set<(t: Theme) => void>()
 
 let mediaQuery: MediaQueryList | null = null
 let mediaListener: ((e: MediaQueryListEvent) => void) | null = null
 
-function resolveSystemTheme(): ResolvedTheme {
-  if (typeof window === 'undefined') return 'dark-warm'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark-warm' : 'light-subtle'
+// ---------------------------------------------------------------------------
+// Theme lookup
+// ---------------------------------------------------------------------------
+
+/** All selectable themes: user customs first (so they can shadow a built-in by
+ *  id), then built-ins. */
+export function getAllThemes(): Theme[] {
+  const custom = useSettingsStore.getState().customThemes ?? []
+  return [...custom, ...BUILT_IN_THEMES]
 }
 
-function notify(theme: ResolvedTheme) {
-  for (const cb of subscribers) {
-    cb(theme)
+function themeById(id: string): Theme | undefined {
+  const custom = useSettingsStore.getState().customThemes ?? []
+  return custom.find((t) => t.id === id) ?? BUILT_IN_BY_ID[id]
+}
+
+function prefersDark(): boolean {
+  if (typeof window === 'undefined') return true
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+/** Resolve a selection ('system' or a theme id) to a concrete Theme. Unknown
+ *  ids fall back to the matching default so a deleted/renamed theme never breaks. */
+export function resolveTheme(selection: ThemeSelection): Theme {
+  if (selection === 'system') {
+    const s = useSettingsStore.getState()
+    const id = prefersDark()
+      ? (s.systemDarkThemeId || DEFAULT_DARK_THEME_ID)
+      : (s.systemLightThemeId || DEFAULT_LIGHT_THEME_ID)
+    return themeById(id) ?? BUILT_IN_BY_ID[prefersDark() ? DEFAULT_DARK_THEME_ID : DEFAULT_LIGHT_THEME_ID]
   }
+  return themeById(selection) ?? BUILT_IN_BY_ID[DEFAULT_DARK_THEME_ID]
 }
 
-function attachMediaListener() {
+// ---------------------------------------------------------------------------
+// Apply
+// ---------------------------------------------------------------------------
+
+function notify(theme: Theme): void {
+  for (const cb of subscribers) cb(theme)
+}
+
+/** Compute the full merged app-var map for a theme. */
+function mergedAppVars(theme: Theme): Record<string, string> {
+  const base = theme.type === 'light' ? BASE_LIGHT : BASE_DARK
+  return { ...base, ...theme.app }
+}
+
+function injectAppVars(theme: Theme): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  const merged = mergedAppVars(theme)
+  for (const [key, value] of Object.entries(merged)) {
+    root.style.setProperty('--' + key, value)
+  }
+  root.dataset.theme = theme.type
+}
+
+function attachMediaListener(): void {
   if (typeof window === 'undefined') return
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-  mediaListener = (e: MediaQueryListEvent) => {
-    if (currentMode !== 'system') return
-    const next: ResolvedTheme = e.matches ? 'dark-warm' : 'light-subtle'
-    currentResolved = next
-    document.documentElement.dataset.theme = next
-    notify(next)
+  mediaListener = () => {
+    if (currentSelection !== 'system') return
+    applyResolved(resolveTheme('system'))
   }
   mediaQuery.addEventListener('change', mediaListener)
 }
 
-function detachMediaListener() {
+function detachMediaListener(): void {
   if (mediaQuery && mediaListener) {
     mediaQuery.removeEventListener('change', mediaListener)
     mediaQuery = null
@@ -41,48 +110,46 @@ function detachMediaListener() {
   }
 }
 
-// Background colors per theme — kept in sync with the CSS variables in
-// src/renderer/styles.css. Used to seed the BrowserWindow backgroundColor
-// via the boot snapshot so cold launches have no white flash.
-const THEME_BG: Record<ResolvedTheme, string> = {
-  'dark-warm': '#1f1e1c',
-  'dark-cold': '#1a1d22',
-  'light-subtle': '#f4f3f0',
+function applyResolved(theme: Theme): void {
+  currentTheme = theme
+  injectAppVars(theme)
+  notify(theme)
+
+  // Persist resolved theme id + exact background to the boot snapshot so the
+  // next cold launch constructs the BrowserWindow with the right color.
+  try {
+    const bg = theme.bootBackground ?? mergedAppVars(theme)['surface-0']
+    const api = (window as unknown as {
+      electronAPI?: { bootSnapshotWrite?: (p: Record<string, unknown>) => Promise<void> }
+    }).electronAPI
+    api?.bootSnapshotWrite?.({ theme: theme.id, backgroundColor: bg }).catch(() => { /* noop */ })
+  } catch { /* noop */ }
 }
 
-export function applyTheme(mode: AppearanceMode): void {
-  currentMode = mode
-
-  let resolved: ResolvedTheme
-  if (mode === 'system') {
-    resolved = resolveSystemTheme()
+/** Apply a theme selection ('system' or a theme id). */
+export function applyTheme(selection: ThemeSelection): void {
+  currentSelection = selection
+  if (selection === 'system') {
     detachMediaListener()
     attachMediaListener()
   } else {
     detachMediaListener()
-    resolved = mode as ResolvedTheme
   }
-
-  currentResolved = resolved
-  document.documentElement.dataset.theme = resolved
-  notify(resolved)
-
-  // Persist resolved theme + matching background to boot snapshot so the
-  // next cold launch can construct the BrowserWindow with the right color
-  // before any JS runs.
-  try {
-    const api = (window as unknown as {
-      electronAPI?: { bootSnapshotWrite?: (p: Record<string, unknown>) => Promise<void> }
-    }).electronAPI
-    api?.bootSnapshotWrite?.({ theme: resolved, backgroundColor: THEME_BG[resolved] }).catch(() => { /* noop */ })
-  } catch { /* noop */ }
+  applyResolved(resolveTheme(selection))
 }
 
-export function getResolvedTheme(): ResolvedTheme {
-  return currentResolved
+/** Re-apply the current selection — call after customThemes / systemLight/Dark
+ *  ids change so an edited or newly-imported active theme repaints live. */
+export function reapplyTheme(): void {
+  applyResolved(resolveTheme(currentSelection))
 }
 
-export function subscribeTheme(cb: (t: ResolvedTheme) => void): () => void {
+export function getActiveTheme(): Theme {
+  return currentTheme
+}
+
+/** Subscribe to the active Theme. Fires on every applyTheme/reapply. */
+export function subscribeTheme(cb: (t: Theme) => void): () => void {
   subscribers.add(cb)
   return () => {
     subscribers.delete(cb)

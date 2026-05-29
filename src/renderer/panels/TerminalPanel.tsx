@@ -91,9 +91,6 @@ export default function TerminalPanel({
   }, [])
 
   const workspaces = useAppStore((state) => state.workspaces)
-  const themePreset = useAppStore(
-    (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.themePreset,
-  )
   const panelCwd = useAppStore(
     (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.cwd,
   )
@@ -296,7 +293,6 @@ export default function TerminalPanel({
         workspaceId,
         cwd: rootPathRef.current || undefined,
         initialInput,
-        themePreset,
       })
       .then((entry) => {
         if (cancelled) return
@@ -343,12 +339,6 @@ export default function TerminalPanel({
       detachAndDisconnect()
     }
   }, [panelId, workspaceId, nodeId, initialInput, retryKey])
-
-  // Hot-apply theme preset changes without recreating the terminal.
-  useEffect(() => {
-    if (!terminalRegistry.has(panelId)) return
-    terminalRegistry.setThemePreset(panelId, themePreset)
-  }, [panelId, themePreset])
 
   // -------------------------------------------------------------------------
   // Focus xterm when this node becomes the focused node
@@ -476,6 +466,48 @@ export default function TerminalPanel({
       // Ignore — fit can throw on zero-size frames during layout transitions.
     }
   }, [renderScale, panelId])
+
+  // -------------------------------------------------------------------------
+  // Repaint after the zoom settles
+  //
+  // The world div carries `will-change: transform`, so it (and every terminal's
+  // WebGL <canvas>) lives on a GPU compositing layer. The WebGL renderer draws
+  // with preserveDrawingBuffer:false and only repaints dirty rows, so when the
+  // compositor re-rasterizes the layer at a new scale a static terminal's
+  // drawing buffer comes up blank until xterm draws another frame.
+  //
+  // Zoom-IN happens to recover on its own because crossing a render-scale step
+  // runs the fontSize/fit/refresh effect above. Zoom-OUT clamps renderScale to
+  // 1.0 (snapRenderScale), so that effect early-returns and nothing ever
+  // repaints — leaving the terminal blank until the next PTY output or a
+  // zoom-in. Force a full refresh once the gesture settles to cover both
+  // directions. Two idle frames debounce a continuous pinch to a single repaint.
+  // -------------------------------------------------------------------------
+
+  const repaintRafRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (repaintRafRef.current !== null) cancelAnimationFrame(repaintRafRef.current)
+    repaintRafRef.current = requestAnimationFrame(() => {
+      repaintRafRef.current = requestAnimationFrame(() => {
+        repaintRafRef.current = null
+        const renderBox = renderBoxRef.current
+        if (!renderBox || renderBox.offsetParent === null) return
+        const entry = terminalRegistry.getEntry(panelId)
+        if (!entry) return
+        try {
+          entry.terminal.refresh(0, entry.terminal.rows - 1)
+        } catch {
+          // Ignore — refresh can throw mid-layout / mid-dispose.
+        }
+      })
+    })
+    return () => {
+      if (repaintRafRef.current !== null) {
+        cancelAnimationFrame(repaintRafRef.current)
+        repaintRafRef.current = null
+      }
+    }
+  }, [zoomLevel, panelId])
 
   // -------------------------------------------------------------------------
   // Fix mouse coordinates for CSS-scaled canvas

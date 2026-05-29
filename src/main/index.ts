@@ -47,6 +47,7 @@ import { getSharedPanelDef } from '../shared/panels'
 import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
 import { PERF_GET } from '../shared/ipc-channels'
 import { installWebContentsSecurity } from './webSecurity'
+import { installThemeSkill } from './installThemeSkill'
 import {
   startCrossWindowDrag,
   updateCrossWindowCursor,
@@ -1271,6 +1272,9 @@ app.whenReady().then(async () => {
   installWebContentsSecurity()
   registerCriticalHandlers()
   log.info('Critical IPC handlers registered')
+
+  // Install the cate-theme authoring skill into ~/.claude/skills (copy-if-missing).
+  void installThemeSkill()
 
   await runLegacyMigrationIfNeeded()
 
