@@ -53,7 +53,7 @@ import type {
   AuthProviderStatus,
 } from '../../shared/types'
 import type { AgentMessage as StoreMessage } from './agentStore'
-import { loadDefaultModel, saveLastModel } from './agentModelPrefs'
+import { loadDefaultModel } from './agentModelPrefs'
 
 // -----------------------------------------------------------------------------
 // Component
@@ -358,7 +358,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       ? def
       : { provider: availableModels[0].provider, model: availableModels[0].model }
     useAgentStore.getState().setModel(activeAgentKey, pick)
-    saveLastModel(pick)
   }, [availableModels, selectedModel, activeAgentKey])
 
   // Pi writes session entries to disk automatically; no renderer-side persist
@@ -400,7 +399,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     if (!activeAgentKey) return
     const ref: AgentModelRef = { provider: m.provider, model: m.model }
     useAgentStore.getState().setModel(activeAgentKey, ref)
-    saveLastModel(ref)
     try { await window.electronAPI.agentSetModel(activeAgentKey, ref) }
     catch (err) { log.warn('[AgentPanel] setModel failed', err) }
   }, [activeAgentKey])
