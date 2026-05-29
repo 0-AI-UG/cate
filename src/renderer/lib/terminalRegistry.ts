@@ -23,6 +23,7 @@ import { openTerminalUrl } from './terminalUrlOpen'
 import { resolveTerminalKeySequence } from './terminalKeymap'
 import { getActiveTheme, subscribeTheme } from './themeManager'
 import type { Theme } from '../../shared/types'
+import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvider'
 import { resolveTerminalLinkTarget } from './terminalLinks'
 
 /** Agent terminals show the clean detected agent name (e.g. "Codex", "Claude
@@ -359,6 +360,17 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
   //     (see createTerminalLinkHandler). Disposed with the terminal.
   terminal.loadAddon(new WebLinksAddon(createTerminalLinkHandler(opts.workspaceId)))
 
+  // 2d. File-path links — Cmd/Ctrl+Click opens the file in an editor at the
+  //     parsed line. (http/https URLs are handled by WebLinksAddon above.)
+  const fileLinkDisposable = terminal.registerLinkProvider(
+    createFileLinkProvider({
+      terminal,
+      workspaceId: opts.workspaceId,
+      rootPath: resolveLinkRoot(opts.workspaceId, opts.cwd),
+    }),
+  )
+  cleanupListeners.push(() => fileLinkDisposable.dispose())
+
   // 3. Do NOT call terminal.open() here. attach() opens the terminal directly
   //    into its real container the first time it runs. Opening into a temp div
   //    and then reparenting the xterm element worked on Electron 33 but breaks
@@ -545,6 +557,16 @@ async function reconnectTerminal(
 
   // WebLinksAddon — same as getOrCreate (shared click handler).
   terminal.loadAddon(new WebLinksAddon(createTerminalLinkHandler(opts.workspaceId)))
+
+  // File-path links — same as getOrCreate.
+  const fileLinkDisposable = terminal.registerLinkProvider(
+    createFileLinkProvider({
+      terminal,
+      workspaceId: opts.workspaceId,
+      rootPath: resolveLinkRoot(opts.workspaceId, opts.cwd),
+    }),
+  )
+  cleanupListeners.push(() => fileLinkDisposable.dispose())
 
   // attach() will call terminal.open() directly into the real container —
   // see getOrCreate() for the rationale.
