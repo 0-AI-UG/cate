@@ -51,6 +51,18 @@ function getScrollback(): number {
   return Math.max(100, Math.min(raw, 10000))
 }
 
+/** Clamp a raw terminalScrollSpeed multiplier (xterm `scrollSensitivity`) to the
+ *  slider range. Invalid / non-positive values fall back to the xterm default. */
+export function clampScrollSensitivity(raw: number): number {
+  if (!Number.isFinite(raw) || raw <= 0) return 1.0
+  return Math.max(0.25, Math.min(raw, 3.0))
+}
+
+/** Read the configured terminal scroll-speed multiplier (xterm `scrollSensitivity`). */
+function getScrollSensitivity(): number {
+  return clampScrollSensitivity(useSettingsStore.getState().terminalScrollSpeed)
+}
+
 function getCursorBlink(): boolean {
   return useSettingsStore.getState().terminalCursorBlink === true
 }
@@ -220,6 +232,17 @@ function applyCursorBlinkToAll(blink: boolean): void {
   }
 }
 
+/** Apply a scroll-speed multiplier (xterm `scrollSensitivity`) to every live terminal. */
+function applyScrollSensitivityToAll(value: number): void {
+  for (const entry of registry.values()) {
+    try {
+      entry.terminal.options.scrollSensitivity = value
+    } catch {
+      /* terminal mid-dispose — ignore */
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -283,13 +306,20 @@ subscribeTheme((theme) => {
   repaintAllTerminals(theme)
 })
 
-// Live-apply the cursor-blink toggle so the change is visible without a reload.
+// Live-apply terminal settings (cursor-blink toggle, scroll speed) so changes
+// are visible without a reload.
 let lastCursorBlink = getCursorBlink()
+let lastScrollSensitivity = getScrollSensitivity()
 useSettingsStore.subscribe((state) => {
   const cursorBlink = state.terminalCursorBlink === true
   if (cursorBlink !== lastCursorBlink) {
     lastCursorBlink = cursorBlink
     applyCursorBlinkToAll(cursorBlink && windowFocused)
+  }
+  const scrollSensitivity = clampScrollSensitivity(state.terminalScrollSpeed)
+  if (scrollSensitivity !== lastScrollSensitivity) {
+    lastScrollSensitivity = scrollSensitivity
+    applyScrollSensitivityToAll(scrollSensitivity)
   }
 })
 
@@ -343,6 +373,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     cursorBlink: effectiveCursorBlink(),
     allowProposedApi: true,
     scrollback: getScrollback(),
+    scrollSensitivity: getScrollSensitivity(),
     macOptionIsMeta: true,
     altClickMovesCursor: true,
     minimumContrastRatio: 1,
@@ -544,6 +575,7 @@ async function reconnectTerminal(
     cursorBlink: effectiveCursorBlink(),
     allowProposedApi: true,
     scrollback: getScrollback(),
+    scrollSensitivity: getScrollSensitivity(),
     macOptionIsMeta: true,
     altClickMovesCursor: true,
     minimumContrastRatio: 1,

@@ -1,5 +1,5 @@
 import { useSettingsStore } from '../stores/settingsStore'
-import { SettingRow, TextInput, NumberInput, Toggle } from './SettingsComponents'
+import { SettingRow, TextInput, NumberInput, Toggle, Slider } from './SettingsComponents'
 
 export function TerminalSettings() {
   const store = useSettingsStore()
@@ -24,6 +24,15 @@ export function TerminalSettings() {
           min={0}
           max={32}
           step={1}
+        />
+      </SettingRow>
+      <SettingRow label="Scroll speed" description={`${store.terminalScrollSpeed.toFixed(2)}x`}>
+        <Slider
+          value={store.terminalScrollSpeed}
+          onChange={(v) => store.setSetting('terminalScrollSpeed', v)}
+          min={0.25}
+          max={3.0}
+          step={0.25}
         />
       </SettingRow>
       <SettingRow
