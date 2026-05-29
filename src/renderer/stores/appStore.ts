@@ -1308,13 +1308,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   reorderWorkspaces(fromIndex, toIndex) {
+    // `toIndex` is an insertion slot in [0, length]: 0 = before the first row,
+    // length = after the last. Dropping at the item's own slot or the one just
+    // after it leaves the order unchanged.
     set((state) => {
-      if (fromIndex === toIndex) return state
+      if (toIndex === fromIndex || toIndex === fromIndex + 1) return state
       const workspaces = [...state.workspaces]
       const [moved] = workspaces.splice(fromIndex, 1)
-      // The drop indicator is a top border on the target row ("insert before this
-      // row"). Removing the dragged item first shifts every later index down by one,
-      // so for downward drags we must compensate to land before the target row.
+      // Removing the dragged item first shifts every later slot down by one, so
+      // for downward moves the insertion slot is one less than requested.
       const insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex
       workspaces.splice(insertAt, 0, moved)
       return { workspaces }
