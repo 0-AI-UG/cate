@@ -11,6 +11,7 @@ import log from './logger'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useStatusStore } from '../stores/statusStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { terminalRestoreData, replayTerminalLog } from './session'
@@ -18,10 +19,11 @@ import { awaitWorkspaceSync, useAppStore } from '../stores/appStore'
 import { extractAgentTitleSegment } from './agentTitleParser'
 import { titleIndicatesRunning, outputShowsBodySpinner } from './agentSpinner'
 import { noteAgentTitle, noteAgentSpinnerByte } from './agentScreenDetector'
-import { scanTerminalChunkForUrls, clearTerminalUrlBuffer } from './terminalUrlAutoOpen'
+import { scanTerminalChunkForUrls, clearTerminalUrlBuffer, openTerminalUrl } from './terminalUrlAutoOpen'
 import { resolveTerminalKeySequence } from './terminalKeymap'
 import { getActiveTheme, subscribeTheme } from './themeManager'
 import type { Theme } from '../../shared/types'
+import { resolveTerminalLinkTarget } from './terminalLinks'
 
 /** Agent terminals show the clean detected agent name (e.g. "Codex", "Claude
  *  Code") as their tab title — set by useProcessMonitor — not the agent's raw
@@ -91,6 +93,29 @@ export function isTerminalCopyChord(
   if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return false
   if (event.key !== 'c' && event.key !== 'C') return false
   return terminal.hasSelection()
+}
+
+/**
+ * WebLinksAddon click handler shared by the fresh-spawn and reconnect paths.
+ * Mirrors VS Code: Cmd/Ctrl+Click opens the URL in an in-app BrowserPanel
+ * (reusing the existing auto-open routing + dedupe), +Shift opens it in the
+ * external system browser, and a plain click is ignored.
+ */
+function createTerminalLinkHandler(
+  workspaceId: string,
+): (event: MouseEvent, uri: string) => void {
+  return (event: MouseEvent, uri: string): void => {
+    switch (resolveTerminalLinkTarget(event, isMacPlatform)) {
+      case 'panel':
+        openTerminalUrl(workspaceId, uri)
+        break
+      case 'external':
+        window.electronAPI.openExternalUrl(uri)
+        break
+      case 'ignore':
+        break
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +336,10 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
   const searchAddon = new SearchAddon()
   terminal.loadAddon(searchAddon)
 
+  // 2c. WebLinksAddon — underline URLs on hover; Cmd/Ctrl+Click opens them
+  //     (see createTerminalLinkHandler). Disposed with the terminal.
+  terminal.loadAddon(new WebLinksAddon(createTerminalLinkHandler(opts.workspaceId)))
+
   // 3. Do NOT call terminal.open() here. attach() opens the terminal directly
   //    into its real container the first time it runs. Opening into a temp div
   //    and then reparenting the xterm element worked on Electron 33 but breaks
@@ -495,6 +524,9 @@ async function reconnectTerminal(
 
   const searchAddon = new SearchAddon()
   terminal.loadAddon(searchAddon)
+
+  // WebLinksAddon — same as getOrCreate (shared click handler).
+  terminal.loadAddon(new WebLinksAddon(createTerminalLinkHandler(opts.workspaceId)))
 
   // attach() will call terminal.open() directly into the real container —
   // see getOrCreate() for the rationale.
