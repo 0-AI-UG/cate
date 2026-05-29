@@ -1107,24 +1107,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(AGENT_TOOL_DECISION, panelId, toolCallId, decision, reason)
   },
 
-  agentOpenSkillsFolder(kind: 'agents' | 'prompts' | 'skills'): Promise<void> {
-    return ipcRenderer.invoke(AGENT_OPEN_SKILLS_FOLDER, kind)
+  agentOpenSkillsFolder(cwd: string, kind: 'agents' | 'prompts' | 'skills'): Promise<void> {
+    return ipcRenderer.invoke(AGENT_OPEN_SKILLS_FOLDER, cwd, kind)
   },
 
   agentOpenSkillFile(filePath: string): Promise<void> {
     return ipcRenderer.invoke(AGENT_OPEN_SKILL_FILE, filePath)
   },
 
-  agentDeleteSkillFile(filePath: string): Promise<void> {
-    return ipcRenderer.invoke(AGENT_DELETE_SKILL_FILE, filePath)
+  agentDeleteSkillFile(cwd: string, filePath: string): Promise<void> {
+    return ipcRenderer.invoke(AGENT_DELETE_SKILL_FILE, cwd, filePath)
   },
 
-  agentCreateSkill(kind: 'agents' | 'prompts' | 'skills', name: string): Promise<string> {
-    return ipcRenderer.invoke(AGENT_CREATE_SKILL, kind, name)
+  agentCreateSkill(cwd: string, kind: 'agents' | 'prompts' | 'skills', name: string): Promise<string> {
+    return ipcRenderer.invoke(AGENT_CREATE_SKILL, cwd, kind, name)
   },
 
-  agentListSkillFiles(kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>> {
-    return ipcRenderer.invoke(AGENT_LIST_SKILL_FILES, kind)
+  agentListSkillFiles(cwd: string, kind: 'agents' | 'prompts' | 'skills'): Promise<Array<{ name: string; description?: string; path: string }>> {
+    return ipcRenderer.invoke(AGENT_LIST_SKILL_FILES, cwd, kind)
   },
 
   agentMarketplaceList(
@@ -1133,16 +1133,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(AGENT_MARKETPLACE_LIST, params)
   },
 
-  agentMarketplaceListInstalled(): Promise<unknown[]> {
-    return ipcRenderer.invoke(AGENT_MARKETPLACE_LIST_INSTALLED)
+  agentMarketplaceListInstalled(cwd: string): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_LIST_INSTALLED, cwd)
   },
 
-  agentMarketplaceInstall(name: string): Promise<{ ok: boolean; error?: string }> {
-    return ipcRenderer.invoke(AGENT_MARKETPLACE_INSTALL, name)
+  agentMarketplaceInstall(cwd: string, name: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_INSTALL, cwd, name)
   },
 
-  agentMarketplaceUninstall(name: string): Promise<{ ok: boolean; error?: string }> {
-    return ipcRenderer.invoke(AGENT_MARKETPLACE_UNINSTALL, name)
+  agentMarketplaceUninstall(cwd: string, name: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(AGENT_MARKETPLACE_UNINSTALL, cwd, name)
   },
 
   onAgentEvent(callback: (envelope: unknown) => void): () => void {

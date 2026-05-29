@@ -1,8 +1,8 @@
 // =============================================================================
 // sessionFiles — read-only access to pi's on-disk session store. Pi writes
-// every conversation to:
+// every conversation to (PI_CODING_AGENT_DIR points at <cwd>/.cate/pi-agent):
 //
-//   ~/.pi/agent/sessions/--<cwd-with-/-as-dashes>--/<timestamp>_<uuid>.jsonl
+//   <cwd>/.cate/pi-agent/sessions/--<cwd-with-/-as-dashes>--/<timestamp>_<uuid>.jsonl
 //
 // Each line is a JSON entry. The first line is the session header; subsequent
 // lines are either `message`, `session_info` (name), `model_change`,
@@ -15,9 +15,9 @@
 // =============================================================================
 
 import fs from 'fs/promises'
-import os from 'os'
 import path from 'path'
 import log from '../../main/logger'
+import { agentDirFor } from './agentDir'
 import type { AgentSessionListEntry } from '../../shared/types'
 
 /** Encode a cwd to pi's directory naming. Pi maps `/Users/anton/Dev/cate` to
@@ -28,13 +28,14 @@ function encodeCwd(cwd: string): string {
   return `-${dashed}--`
 }
 
-function sessionsRoot(): string {
-  return path.join(os.homedir(), '.pi', 'agent', 'sessions')
+function sessionsDirFor(cwd: string): string {
+  return path.join(agentDirFor(cwd), 'sessions', encodeCwd(cwd))
 }
 
-function sessionsDirFor(cwd: string): string {
-  return path.join(sessionsRoot(), encodeCwd(cwd))
-}
+// Pi nests sessions under <agentDir>/sessions/<encoded-cwd>/. The agent dir is
+// now per-workspace, so we validate file ops by this path segment rather than a
+// single global root.
+const SESSIONS_SEGMENT = `${path.sep}${path.join('.cate', 'pi-agent', 'sessions')}${path.sep}`
 
 interface ParsedHeader {
   id: string
@@ -143,16 +144,15 @@ export async function listSessions(cwd: string): Promise<AgentSessionListEntry[]
   return entries
 }
 
-/** Refuse to touch anything outside the pi sessions root — guards delete. */
-function isInsideSessionsRoot(filePath: string): boolean {
-  const root = sessionsRoot() + path.sep
+/** Refuse to touch anything that isn't a pi session file — guards delete/read. */
+function isSessionFile(filePath: string): boolean {
   const resolved = path.resolve(filePath)
-  return resolved.startsWith(root)
+  return resolved.includes(SESSIONS_SEGMENT) && resolved.endsWith('.jsonl')
 }
 
 export async function deleteSession(filePath: string): Promise<void> {
-  if (!isInsideSessionsRoot(filePath)) {
-    throw new Error(`Refusing to delete ${filePath} — not inside pi sessions root`)
+  if (!isSessionFile(filePath)) {
+    throw new Error(`Refusing to delete ${filePath} — not a pi session file`)
   }
   await fs.unlink(filePath)
 }
@@ -194,8 +194,8 @@ let counter = 0
 const nid = (): string => { counter += 1; return `s${counter}` }
 
 export async function loadSessionTranscript(filePath: string): Promise<RendererMessage[]> {
-  if (!isInsideSessionsRoot(filePath)) {
-    throw new Error(`Refusing to read ${filePath} — not inside pi sessions root`)
+  if (!isSessionFile(filePath)) {
+    throw new Error(`Refusing to read ${filePath} — not a pi session file`)
   }
   const raw = await fs.readFile(filePath, 'utf-8')
   const out: RendererMessage[] = []

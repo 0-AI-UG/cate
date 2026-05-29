@@ -1,10 +1,14 @@
 // =============================================================================
 // AuthManager — provider auth for the embedded pi coding agent.
 //
-// Two provider kinds, both persisted to ~/.pi/agent/auth.json (the same file
-// pi reads from), so credentials work seamlessly in the spawned pi RPC process:
+// Two provider kinds, both persisted to the shared auth.json (the same file
+// each workspace's pi RPC process reads, mirrored in by agentDir):
 //   - OAuth (anthropic, openai-codex, github-copilot) — { type: 'oauth', ... }
 //   - API-key (openai, google, groq, etc.) — { type: 'api_key', key }
+//
+// Provider logins are not project-specific, so this file is global: one shared
+// auth.json under cate's userData (see agentDir.sharedAuthPath). After any write
+// we fire `onChange` so AgentManager can push the update into open workspaces.
 //
 // NOTE: This module imports from pi-ai (pure ESM). electron-vite should handle
 // this for us — if it can't, the import line below is the place to look.
@@ -12,7 +16,6 @@
 
 import { shell, type WebContents } from 'electron'
 import fsp from 'fs/promises'
-import os from 'os'
 import path from 'path'
 import {
   findEnvKeys,
@@ -20,6 +23,7 @@ import {
   type OAuthLoginCallbacks,
 } from '@earendil-works/pi-ai'
 import { getOAuthProvider, getOAuthProviders } from '@earendil-works/pi-ai/oauth'
+import { sharedAuthPath } from './agentDir'
 import log from '../../main/logger'
 import type {
   AuthProviderDescriptor,
@@ -38,9 +42,10 @@ type AuthCredentialOnDisk =
 
 type AuthStorageData = Record<string, AuthCredentialOnDisk>
 
-/** Shared with the pi coding-agent CLI we spawn over RPC. */
+/** Shared with the pi coding-agent CLI we spawn over RPC (mirrored into each
+ *  workspace's pi-agent dir by agentDir). */
 function authJsonPath(): string {
-  return path.join(os.homedir(), '.pi', 'agent', 'auth.json')
+  return sharedAuthPath()
 }
 
 async function readAuthJson(): Promise<AuthStorageData> {
@@ -64,6 +69,10 @@ function serializeWrite(fn: () => Promise<void>): Promise<void> {
   return writeQueue
 }
 
+// Fired after every successful write so AgentManager can mirror the shared
+// auth.json into open workspaces' pi-agent dirs.
+let onAuthChange: (() => void) | null = null
+
 async function writeAuthJson(data: AuthStorageData): Promise<void> {
   await serializeWrite(async () => {
     const p = authJsonPath()
@@ -73,6 +82,7 @@ async function writeAuthJson(data: AuthStorageData): Promise<void> {
     try { await fsp.chmod(tmp, 0o600) } catch { /* noop on platforms without modes */ }
     await fsp.rename(tmp, p)
   })
+  try { onAuthChange?.() } catch (err) { log.warn('[authManager] onChange hook failed: %O', err) }
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +133,12 @@ export class AuthManager {
   private activeFlows = new Set<string>()
   /** Per-providerId connectedAt timestamps (iso). */
   private connectedAt = new Map<string, string>()
+
+  /** Register a callback fired after any credential write — used by
+   *  AgentManager to push the shared auth.json into open workspaces. */
+  setOnChange(fn: () => void): void {
+    onAuthChange = fn
+  }
 
   async listProviders(): Promise<AuthProviderDescriptor[]> {
     const oauth: AuthProviderDescriptor[] = []

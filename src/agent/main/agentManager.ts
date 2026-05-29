@@ -11,7 +11,6 @@
 // agent-shaped that wants changing belongs upstream in pi.
 // =============================================================================
 
-import os from 'os'
 import fs from 'fs'
 import path from 'path'
 import { app, type WebContents } from 'electron'
@@ -41,6 +40,7 @@ import type {
 import { AGENT_EVENT } from '../../shared/ipc-channels'
 import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
+import { agentDirFor, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace } from './agentDir'
 import type { AuthManager } from './authManager'
 
 function resolvePiCliPath(): string {
@@ -86,8 +86,11 @@ function ensureElectronNodeShim(): string {
   return dir
 }
 
-function buildAgentEnv(): Record<string, string> {
+function buildAgentEnv(cwd: string): Record<string, string> {
   const env = { ...getShellEnv() }
+  // Scope pi's entire config (extensions, sessions, settings, auth) to this
+  // workspace instead of the user's global ~/.pi/agent.
+  env.PI_CODING_AGENT_DIR = agentDirFor(cwd)
   const needsShim = app.isPackaged || !nodeExistsOnPath(env)
   if (needsShim) {
     const shimDir = ensureElectronNodeShim()
@@ -101,9 +104,11 @@ function buildAgentEnv(): Record<string, string> {
 
 interface AgentSession {
   panelId: string
+  cwd: string
   client: RpcClient
   sender: WebContents
   unsubscribeEvents: () => void
+  disposeAuthWatcher: () => void
   modelRef: AgentModelRef | null
 }
 
@@ -139,6 +144,18 @@ export class AgentManager {
 
   constructor(authManager: AuthManager) {
     this.authManager = authManager
+    // When the user changes credentials in cate's UI, mirror the shared
+    // auth.json into every open workspace so their pi processes see it.
+    authManager.setOnChange(() => this.syncAuthToOpenSessions())
+  }
+
+  /** Push the shared auth.json into every live session's workspace dir. */
+  private syncAuthToOpenSessions(): void {
+    for (const session of this.sessions.values()) {
+      void pushSharedToWorkspace(session.cwd).catch((err) => {
+        log.warn('[agentManager] auth sync failed for %s: %O', session.panelId, err)
+      })
+    }
   }
 
   private withLock<T>(panelId: string, fn: () => Promise<T>): Promise<T> {
@@ -155,10 +172,12 @@ export class AgentManager {
         await this.disposeInternal(opts.panelId)
       }
 
-      // One-shot: drop pi's official subagent extension into ~/.pi/agent/ so it
-      // is auto-discovered the first time pi spins up.
-      await installSubagentExtension()
-      await installPlanModeExtension()
+      // Create <cwd>/.cate/pi-agent, seed its auth.json from the shared file,
+      // and drop pi's official subagent + plan-mode extensions in so they are
+      // auto-discovered the first time pi spins up in this workspace.
+      await prepareAgentDir(opts.cwd)
+      await installSubagentExtension(opts.cwd)
+      await installPlanModeExtension(opts.cwd)
 
       const extraArgs: string[] = []
       if (opts.sessionFile) extraArgs.push('--session', opts.sessionFile)
@@ -169,7 +188,7 @@ export class AgentManager {
         provider: opts.model?.provider,
         model: opts.model?.model,
         args: extraArgs.length > 0 ? extraArgs : undefined,
-        env: buildAgentEnv(),
+        env: buildAgentEnv(opts.cwd),
       })
 
       try {
@@ -194,11 +213,17 @@ export class AgentManager {
         }
       })
 
+      // Watch this workspace's auth.json so OAuth token refreshes written by pi
+      // propagate back to the shared file.
+      const disposeAuthWatcher = watchWorkspaceAuth(opts.cwd)
+
       this.sessions.set(opts.panelId, {
         panelId: opts.panelId,
+        cwd: opts.cwd,
         client,
         sender,
         unsubscribeEvents,
+        disposeAuthWatcher,
         modelRef: opts.model ?? null,
       })
       log.info(
@@ -278,6 +303,7 @@ export class AgentManager {
     const session = this.sessions.get(panelId)
     if (!session) return
     try { session.unsubscribeEvents() } catch { /* noop */ }
+    try { session.disposeAuthWatcher() } catch { /* noop */ }
     // RpcClient.pendingRequests is a Map<string, { resolve, reject }>. When we
     // kill the child, those promises will never resolve — so reject them now.
     const pending = (session.client as unknown as {
@@ -480,7 +506,7 @@ export class AgentManager {
     if (!session) return []
     try {
       const commands = await session.client.getCommands()
-      const homeAgent = path.join(os.homedir(), '.pi', 'agent') + path.sep
+      const homeAgent = agentDirFor(session.cwd) + path.sep
       return commands.map((c) => {
         const filePath = (c as { sourceInfo?: { path?: string; scope?: 'user' | 'project' | 'temporary' } }).sourceInfo?.path
         const scope = (c as { sourceInfo?: { scope?: 'user' | 'project' | 'temporary' } }).sourceInfo?.scope
