@@ -500,6 +500,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // a brand new workspace was created before any canvas panel existed yet,
       // or where a restored dock layout references no canvas-type panel.
       get().ensureCenterCanvas(id)
+
+      // ensureCenterCanvas may have just minted a brand-new canvas panel (empty
+      // or freshly created workspace). Its store can momentarily alias the
+      // legacy singleton, which still holds the previous workspace's nodes — so
+      // the freshly mounted CanvasPanel briefly renders a stale node before it
+      // settles, visible as an empty note blinking in then vanishing. Re-resolve
+      // the now-authoritative canvas store and load this workspace's state into
+      // it to clear any leftover nodes immediately.
+      const finalCanvasPanelId = getWorkspaceCanvasPanelId(id)
+      if (finalCanvasPanelId && finalCanvasPanelId !== canvasPanelId) {
+        setActiveCanvasPanelId(finalCanvasPanelId)
+        const wsFinal = get().workspaces.find((w) => w.id === id)
+        if (wsFinal) {
+          try {
+            getWorkspaceCanvasStore(id)?.getState().loadWorkspaceCanvas(
+              wsFinal.canvasNodes,
+              wsFinal.viewportOffset,
+              wsFinal.zoomLevel,
+              wsFinal.focusedNodeId,
+              wsFinal.regions,
+            )
+          } catch (error) {
+            log.error('Failed to load canvas for workspace:', error)
+          }
+        }
+      }
     }
   },
 
