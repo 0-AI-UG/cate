@@ -10,9 +10,10 @@ import type { CanvasNodeState, NodeActivityState } from '../../shared/types'
 
 const CORNER_RADIUS = 8
 
-const SHADOW_UNFOCUSED = `0 20px 60px -12px rgba(0,0,0,0.35), 0 6px 16px -4px rgba(0,0,0,0.2)`
-const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 0 32px rgba(255,255,255,0.03)`
-const FOCUS_GLOW = `0 0 100px 8px rgba(74,158,255,0.09), 0 0 40px rgba(74,158,255,0.07)`
+const SHADOW_UNFOCUSED = `0 12px 36px -14px rgba(0,0,0,0.28), 0 4px 10px -5px rgba(0,0,0,0.16)`
+const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 0 18px rgba(255,255,255,0.015)`
+// Active/focused pane: a very faint bright (white) halo — no blue tint.
+const FOCUS_GLOW = `0 0 20px 1px rgba(255,255,255,0.025), 0 0 8px rgba(255,255,255,0.02)`
 
 function boxShadow(hovered: boolean): string {
   if (hovered) return SHADOW_HOVERED
