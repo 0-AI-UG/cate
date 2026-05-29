@@ -78,9 +78,8 @@ vi.mock('./session', () => ({
   terminalRestoreData: new Map(),
   replayTerminalLog: async () => {},
 }))
-vi.mock('./terminalUrlAutoOpen', () => ({
-  scanTerminalChunkForUrls: () => {},
-  clearTerminalUrlBuffer: () => {},
+vi.mock('./terminalUrlOpen', () => ({
+  openTerminalUrl: () => {},
 }))
 vi.mock('./themeManager', () => ({
   getActiveTheme: () => ({ terminal: {} }),

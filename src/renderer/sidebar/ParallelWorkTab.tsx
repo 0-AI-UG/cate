@@ -1,7 +1,12 @@
 // =============================================================================
 // ParallelWorkTab — first-class sidebar tab that promotes git worktrees from
 // a hidden, advanced primitive to a user-friendly "parallel branch" concept.
-// Hides the word "worktree" from the primary UI.
+//
+// Design goal: let people work on several things at once without ever needing
+// to know what a worktree is. The UI speaks plain language ("2 to publish",
+// "in sync", "Discard this work"), launches terminals/agents by click *or* by
+// dragging a chip onto the canvas, and folds publish / pull-request / merge
+// into a single overflow menu per card.
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -15,29 +20,38 @@ import {
   X,
   Warning,
   Terminal as TerminalIcon,
-  GitMerge,
-  Trash,
   CaretRight,
   CaretDown,
+  DotsThree,
+  GitPullRequest,
 } from '@phosphor-icons/react'
-import { useAppStore, pickWorktreeColor } from '../stores/appStore'
-import { useUIStore } from '../stores/uiStore'
+import { useAppStore, pickWorktreeColor, WORKTREE_COLOR_PALETTE } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { WorktreeMeta } from '../../shared/types'
+import type { NativeContextMenuItem } from '../../shared/electron-api'
 import log from '../lib/logger'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Sibling folder convention: <repo>/../<repo-name>.worktrees/<branch-slug>. */
+/** Worktrees live inside the project at <repo>/.cate/worktrees/<branch-slug>.
+ *  The worktree-add handler drops a `*` .gitignore in that folder so the
+ *  checkouts never show up as untracked noise in the parent repo. */
 function worktreePathFor(repoRoot: string, branch: string): string {
   const trimmed = repoRoot.replace(/\/+$/, '')
-  const parts = trimmed.split('/')
-  const repoName = parts.pop() || 'repo'
-  const parentDir = parts.join('/') || '/'
   const slug = branch.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'wt'
-  return `${parentDir}/${repoName}.worktrees/${slug}`
+  return `${trimmed}/.cate/worktrees/${slug}`
+}
+
+/** Turn free-text ("fix the login bug") into a valid branch name
+ *  ("fix-the-login-bug") while leaving deliberate branch paths ("feat/x") be. */
+function toBranchName(input: string): string {
+  return input
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w./-]+/g, '')
+    .replace(/^-+|-+$/g, '')
 }
 
 interface GitWorktree {
@@ -57,56 +71,92 @@ interface WorktreeStatus {
   untracked: number
 }
 
-// ---------------------------------------------------------------------------
-// Status badge
-// ---------------------------------------------------------------------------
+interface PrStatus {
+  number: number
+  state: string
+  url: string
+  isDraft: boolean
+}
 
-const StatusBadge: React.FC<{ status?: WorktreeStatus }> = ({ status }) => {
-  if (!status) return null
-  const parts: React.ReactNode[] = []
-  if (status.dirty) {
-    parts.push(
-      <span key="dirty" className="text-yellow-400/80" title="Uncommitted changes">●</span>,
-    )
-  }
-  if (status.ahead > 0) {
-    parts.push(
-      <span key="ahead" className="text-green-400/70 tabular-nums" title={`${status.ahead} ahead`}>
-        ↑{status.ahead}
-      </span>,
-    )
-  }
-  if (status.behind > 0) {
-    parts.push(
-      <span key="behind" className="text-blue-400/70 tabular-nums" title={`${status.behind} behind`}>
-        ↓{status.behind}
-      </span>,
-    )
-  }
-  if (parts.length === 0) {
-    return <span className="text-muted text-[10px]" title="Clean">clean</span>
-  }
-  return <span className="flex items-center gap-1 text-[10px]">{parts}</span>
+interface PrListItem {
+  number: number
+  title: string
+  headRefName: string
+  author: string
+  isFork: boolean
 }
 
 // ---------------------------------------------------------------------------
-// Create form
+// Plain-language status
+// ---------------------------------------------------------------------------
+
+function humanStatus(
+  status: WorktreeStatus | undefined,
+  primaryLabel: string,
+): { text: string; tone: string } | null {
+  if (!status) return null
+  const fileCount = status.staged + status.unstaged + status.untracked
+  if (status.dirty) {
+    const text = fileCount > 0
+      ? `${fileCount} unsaved ${fileCount === 1 ? 'change' : 'changes'}`
+      : 'unsaved changes'
+    return { text, tone: 'text-yellow-400/80' }
+  }
+  if (status.ahead > 0 && status.behind > 0) {
+    return { text: `${status.ahead} to publish · ${status.behind} behind`, tone: 'text-blue-400/70' }
+  }
+  if (status.ahead > 0) {
+    return { text: `${status.ahead} to publish`, tone: 'text-green-400/70' }
+  }
+  if (status.behind > 0) {
+    return { text: `${status.behind} behind ${primaryLabel}`, tone: 'text-blue-400/70' }
+  }
+  return { text: 'in sync', tone: 'text-muted' }
+}
+
+const PrPill: React.FC<{ pr: PrStatus; onClick: () => void }> = ({ pr, onClick }) => {
+  const label = pr.isDraft ? 'draft' : pr.state.toLowerCase()
+  const tone =
+    pr.state === 'MERGED'
+      ? 'text-violet-400/80'
+      : pr.state === 'CLOSED'
+        ? 'text-red-400/70'
+        : 'text-green-400/80'
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      title="Open pull request on GitHub"
+      className={`inline-flex items-center gap-1 text-[10px] leading-none ${tone} hover:underline`}
+    >
+      <GitPullRequest size={11} weight="bold" />
+      <span className="tabular-nums">#{pr.number}</span>
+      <span>{label}</span>
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Create form — "what are you working on?"
 // ---------------------------------------------------------------------------
 
 const CreateForm: React.FC<{
-  onSubmit: (branch: string, createNew: boolean, baseRef?: string) => Promise<void>
+  onSubmit: (name: string, baseRef?: string) => Promise<void>
+  onCheckoutPr: (pr: PrListItem) => Promise<void>
   onCancel: () => void
   defaultBaseBranch: string
   rootPath: string
-}> = ({ onSubmit, onCancel, defaultBaseBranch, rootPath }) => {
+}> = ({ onSubmit, onCheckoutPr, onCancel, defaultBaseBranch, rootPath }) => {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [baseRef, setBaseRef] = useState<string>('')
   const [branches, setBranches] = useState<Array<{ name: string; isRemote: boolean }>>([])
+  const [prs, setPrs] = useState<PrListItem[]>([])
+  const [selectedPr, setSelectedPr] = useState<PrListItem | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [localExpanded, setLocalExpanded] = useState(true)
   const [remoteExpanded, setRemoteExpanded] = useState(false)
+  const [prsExpanded, setPrsExpanded] = useState(true)
   const [filter, setFilter] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const filterRef = useRef<HTMLInputElement>(null)
@@ -116,6 +166,9 @@ const CreateForm: React.FC<{
 
   useEffect(() => {
     let cancelled = false
+    window.electronAPI.gitPrList(rootPath).then((list) => {
+      if (!cancelled) setPrs(list)
+    }).catch(() => {})
     window.electronAPI.gitBranchList(rootPath).then((result) => {
       if (cancelled) return
       setBranches(
@@ -150,41 +203,65 @@ const CreateForm: React.FC<{
     }
   }, [branches, filter])
 
+  const filteredPrs = useMemo(() => {
+    const q = filter.toLowerCase()
+    if (!q) return prs
+    return prs.filter((p) =>
+      `#${p.number} ${p.title} ${p.headRefName} ${p.author}`.toLowerCase().includes(q),
+    )
+  }, [prs, filter])
+
+  const canSubmit = selectedPr ? true : !!name.trim()
+
   const submit = useCallback(async () => {
-    const branch = name.trim()
-    if (!branch || busy) return
+    if (busy || !canSubmit) return
     setBusy(true)
     setError(null)
     try {
-      await onSubmit(branch, true, baseRef || undefined)
+      if (selectedPr) {
+        await onCheckoutPr(selectedPr)
+      } else {
+        await onSubmit(name.trim(), baseRef || undefined)
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to create')
     } finally {
       setBusy(false)
     }
-  }, [name, busy, onSubmit, baseRef])
+  }, [busy, canSubmit, selectedPr, name, baseRef, onSubmit, onCheckoutPr])
 
   return (
     <div className="px-1 pt-1">
       <div className="flex items-center gap-1 h-8 px-1.5 rounded-md bg-surface-3 text-secondary focus-within:bg-surface-4 transition-colors">
-        <GitBranch size={14} weight="bold" className="flex-shrink-0 opacity-60 ml-1" />
-        <input
-          ref={inputRef}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') submit()
-            if (e.key === 'Escape') onCancel()
-          }}
-          placeholder="new-branch-name"
-          disabled={busy}
-          className="flex-1 min-w-0 text-[14px] bg-transparent outline-none text-primary placeholder:text-muted"
-        />
+        {selectedPr ? (
+          <GitPullRequest size={14} weight="bold" className="flex-shrink-0 opacity-60 ml-1" />
+        ) : (
+          <GitBranch size={14} weight="bold" className="flex-shrink-0 opacity-60 ml-1" />
+        )}
+        {selectedPr ? (
+          <div className="flex-1 min-w-0 flex items-center gap-1.5 text-[14px] text-primary">
+            <span className="text-muted tabular-nums flex-shrink-0">#{selectedPr.number}</span>
+            <span className="truncate">{selectedPr.title}</span>
+          </div>
+        ) : (
+          <input
+            ref={inputRef}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit()
+              if (e.key === 'Escape') onCancel()
+            }}
+            placeholder="What are you working on?"
+            disabled={busy}
+            className="flex-1 min-w-0 text-[14px] bg-transparent outline-none text-primary placeholder:text-muted"
+          />
+        )}
         <button
           onClick={submit}
-          disabled={!name.trim() || busy}
+          disabled={!canSubmit || busy}
           className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-          title="Create"
+          title={selectedPr ? 'Check out pull request' : 'Start'}
         >
           <Check size={14} weight="bold" />
         </button>
@@ -201,7 +278,10 @@ const CreateForm: React.FC<{
           onClick={() => { setPickerOpen((v) => !v); setFilter('') }}
           className="flex items-center gap-0.5 text-[11px] text-muted hover:text-secondary transition-colors"
         >
-          from <span className="text-secondary ml-0.5 truncate max-w-[140px] inline-block align-bottom">{displayBase}</span>
+          {selectedPr ? 'reviewing' : 'based on'}
+          <span className="text-secondary ml-0.5 truncate max-w-[160px] inline-block align-bottom">
+            {selectedPr ? `#${selectedPr.number} ${selectedPr.headRefName}` : displayBase}
+          </span>
           <CaretDown size={10} className="flex-shrink-0 opacity-60" />
         </button>
         {pickerOpen && (
@@ -214,7 +294,7 @@ const CreateForm: React.FC<{
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setPickerOpen(false)
                 }}
-                placeholder="Filter branches…"
+                placeholder="Filter branches & PRs…"
                 className="w-full text-[12px] bg-transparent outline-none text-primary placeholder:text-muted"
               />
             </div>
@@ -232,7 +312,7 @@ const CreateForm: React.FC<{
                   {localExpanded && localBranches.map((b) => (
                     <button
                       key={b.name}
-                      onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
+                      onClick={() => { setBaseRef(b.name); setSelectedPr(null); setPickerOpen(false) }}
                       className={`w-full text-left px-2 py-1 text-[12px] truncate hover:bg-hover transition-colors ${
                         b.name === (baseRef || defaultBaseBranch) ? 'text-primary bg-hover' : 'text-secondary'
                       }`}
@@ -255,7 +335,7 @@ const CreateForm: React.FC<{
                   {remoteExpanded && remoteBranches.map((b) => (
                     <button
                       key={b.name}
-                      onClick={() => { setBaseRef(b.name); setPickerOpen(false) }}
+                      onClick={() => { setBaseRef(b.name); setSelectedPr(null); setPickerOpen(false) }}
                       className={`w-full text-left px-2 py-1 text-[12px] truncate hover:bg-hover transition-colors opacity-70 ${
                         b.name === (baseRef || defaultBaseBranch) ? 'text-primary bg-hover' : 'text-secondary'
                       }`}
@@ -265,8 +345,37 @@ const CreateForm: React.FC<{
                   ))}
                 </div>
               )}
-              {localBranches.length === 0 && remoteBranches.length === 0 && (
-                <div className="px-2 py-2 text-[11px] text-muted text-center">No matching branches</div>
+              {filteredPrs.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setPrsExpanded((v) => !v)}
+                    className={`w-full flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted select-none hover:text-secondary transition-colors ${localBranches.length > 0 || remoteBranches.length > 0 ? 'border-t border-subtle mt-1' : ''}`}
+                  >
+                    <CaretRight size={8} className={`flex-shrink-0 transition-transform ${prsExpanded ? 'rotate-90' : ''}`} />
+                    Pull requests
+                    <span className="text-muted/60 normal-case tracking-normal">({filteredPrs.length})</span>
+                  </button>
+                  {prsExpanded && filteredPrs.map((p) => (
+                    <button
+                      key={p.number}
+                      onClick={() => { setSelectedPr(p); setPickerOpen(false) }}
+                      title={p.isFork ? `${p.headRefName} — fork by ${p.author}` : p.headRefName}
+                      className={`w-full flex items-center gap-1.5 px-2 py-1 text-[12px] hover:bg-hover transition-colors ${
+                        selectedPr?.number === p.number ? 'bg-hover' : ''
+                      }`}
+                    >
+                      <GitPullRequest size={11} weight="bold" className="flex-shrink-0 opacity-50" />
+                      <span className="text-muted tabular-nums flex-shrink-0">#{p.number}</span>
+                      <span className="truncate flex-1 text-left text-secondary">{p.title}</span>
+                      {p.isFork && (
+                        <span className="flex-shrink-0 text-[9px] text-muted truncate max-w-[80px]">{p.author}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {localBranches.length === 0 && remoteBranches.length === 0 && filteredPrs.length === 0 && (
+                <div className="px-2 py-2 text-[11px] text-muted text-center">No matches</div>
               )}
             </div>
           </div>
@@ -280,91 +389,198 @@ const CreateForm: React.FC<{
 }
 
 // ---------------------------------------------------------------------------
-// Row
+// Spawn action — a compact row icon. Click to open here, or drag onto the
+// canvas to drop a terminal/agent exactly where you want it.
 // ---------------------------------------------------------------------------
 
-const ChildAction: React.FC<{
+const SpawnAction: React.FC<{
   icon: React.ReactNode
-  label: string
-  onClick: () => void
-  destructive?: boolean
-}> = ({ icon, label, onClick, destructive }) => (
-  <button
-    onClick={onClick}
-    className={`group/action flex items-center gap-1.5 h-7 pl-7 pr-2 text-[13px] text-secondary hover:bg-hover hover:text-primary text-left min-w-0 focus:outline-none transition-colors ${
-      destructive ? 'hover:text-red-400' : ''
-    }`}
+  title: string
+  panelType: 'terminal' | 'agent'
+  cwd: string
+  worktreeId: string
+  onLaunch: () => void
+}> = ({ icon, title, panelType, cwd, worktreeId, onLaunch }) => (
+  <div
+    role="button"
+    draggable
+    onDragStart={(e) => {
+      e.dataTransfer.effectAllowed = 'copy'
+      e.dataTransfer.setData(
+        'application/cate-spawn',
+        JSON.stringify({ panelType, cwd, worktreeId }),
+      )
+    }}
+    onClick={(e) => { e.stopPropagation(); onLaunch() }}
+    title={`${title} — click to open here, or drag onto the canvas`}
+    className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-surface-4 cursor-grab active:cursor-grabbing transition-colors"
   >
-    <span className="flex-shrink-0 opacity-60 group-hover/action:opacity-100">{icon}</span>
-    <span className="truncate">{label}</span>
-  </button>
+    {icon}
+  </div>
 )
+
+// ---------------------------------------------------------------------------
+// Worktree card
+// ---------------------------------------------------------------------------
+
+interface CardCallbacks {
+  onLaunch: (type: 'terminal' | 'agent') => void
+  onPublish: () => void
+  onCreatePR: () => void
+  onUpdateFromMain: () => void
+  onMerge: () => void
+  onDelete: () => void
+  onReveal: () => void
+  onRename: (label: string | undefined) => void
+  onRecolor: (color: string) => void
+  onOpenPr: (url: string) => void
+}
 
 const WorktreeCard: React.FC<{
   worktree: WorktreeMeta
   status?: WorktreeStatus
-  defaultExpanded?: boolean
-  onOpenTerminal: () => void
-  onOpenAgent: () => void
-  onMerge?: () => void
-  onDelete?: () => void
-}> = ({ worktree, status, defaultExpanded, onOpenTerminal, onOpenAgent, onMerge, onDelete }) => {
-  const [expanded, setExpanded] = useState(!!defaultExpanded)
-  const label = worktree.label || worktree.branch || (worktree.isPrimary ? 'main' : '(detached)')
+  pr?: PrStatus
+  primaryLabel: string
+  cb: CardCallbacks
+}> = ({ worktree, status, pr, primaryLabel, cb }) => {
+  const isPrimary = !!worktree.isPrimary
+  const label = worktree.label || worktree.branch || (isPrimary ? 'main' : '(detached)')
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(label)
+  const [recoloring, setRecoloring] = useState(false)
+  const st = humanStatus(status, primaryLabel)
+
+  const commitRename = useCallback(() => {
+    setRenaming(false)
+    const next = renameValue.trim()
+    if (next !== label) cb.onRename(next || undefined)
+  }, [renameValue, label, cb])
+
+  const handleMenu = useCallback(async () => {
+    const items: NativeContextMenuItem[] = [
+      { id: 'publish', label: 'Publish branch' },
+      { id: 'pr', label: pr ? 'Open pull request' : 'Create pull request' },
+    ]
+    if (!isPrimary) {
+      items.push({ id: 'update', label: `Update from ${primaryLabel}` })
+      items.push({ id: 'merge', label: `Merge into ${primaryLabel}` })
+    }
+    items.push({ type: 'separator' })
+    items.push({ id: 'rename', label: 'Rename…' })
+    items.push({ id: 'color', label: 'Change color…' })
+    items.push({ id: 'reveal', label: 'Reveal in Finder' })
+    if (!isPrimary) {
+      items.push({ type: 'separator' })
+      items.push({ id: 'delete', label: 'Discard this work…' })
+    }
+    const choice = await window.electronAPI.showContextMenu(items)
+    switch (choice) {
+      case 'publish': cb.onPublish(); break
+      case 'pr': if (pr) cb.onOpenPr(pr.url); else cb.onCreatePR(); break
+      case 'update': cb.onUpdateFromMain(); break
+      case 'merge': cb.onMerge(); break
+      case 'reveal': cb.onReveal(); break
+      case 'rename': setRenameValue(label); setRenaming(true); break
+      case 'color': setRecoloring((v) => !v); break
+      case 'delete': cb.onDelete(); break
+    }
+  }, [pr, isPrimary, primaryLabel, label, cb])
 
   return (
-    <div>
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-1 h-8 px-1.5 text-secondary hover:text-primary hover:bg-hover transition-colors outline-none"
-        title={worktree.path}
+    <div className="group/row" title={worktree.path}>
+      <div
+        className="flex items-center gap-1.5 h-8 px-2 hover:bg-hover transition-colors"
+        onContextMenu={(e) => { e.preventDefault(); void handleMenu() }}
       >
-        <CaretRight
-          size={10}
-          className={`flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
-        />
-        <GitBranch
-          size={14}
-          weight="bold"
-          className="flex-shrink-0 opacity-90"
-          style={{ color: worktree.color }}
-        />
-        <span className="flex-1 min-w-0 text-[14px] truncate text-left">{label}</span>
-        {worktree.isPrimary && (
-          <span className="flex-shrink-0 text-[9px] uppercase tracking-wide text-muted">primary</span>
-        )}
-        <span className="flex-shrink-0">
-          <StatusBadge status={status} />
-        </span>
-      </button>
+        <button
+          onClick={() => setRecoloring((v) => !v)}
+          title="Change color"
+          className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-full hover:bg-surface-4"
+        >
+          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: worktree.color }} />
+        </button>
 
-      {expanded && (
-        <div className="flex flex-col pb-1">
-          <ChildAction
-            icon={<TerminalIcon size={12} />}
-            label="Open terminal here"
-            onClick={onOpenTerminal}
+        {renaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') setRenaming(false)
+            }}
+            onBlur={commitRename}
+            className="flex-1 min-w-0 text-sm bg-surface-5 rounded px-1 border border-blue-500/50 outline-none text-primary"
           />
-          <ChildAction
-            icon={<CateLogo size={12} />}
-            label="Open agent here"
-            onClick={onOpenAgent}
-          />
-          {onMerge && (
-            <ChildAction
-              icon={<GitMerge size={12} />}
-              label="Merge into primary"
-              onClick={onMerge}
+        ) : (
+          <span
+            className="flex-1 min-w-0 text-sm leading-none truncate text-secondary"
+            onDoubleClick={() => { setRenameValue(label); setRenaming(true) }}
+          >
+            {label}
+          </span>
+        )}
+
+        {isPrimary && (
+          <span className="flex-shrink-0 text-[9px] leading-none uppercase tracking-wide text-muted">base</span>
+        )}
+
+        {/* Status / PR — yields to the action icons on hover. */}
+        {!renaming && (pr || st) && (
+          <span className="flex-shrink-0 flex items-center group-hover/row:hidden">
+            {pr ? (
+              <PrPill pr={pr} onClick={() => cb.onOpenPr(pr.url)} />
+            ) : st ? (
+              <span className={`text-[10px] leading-none ${st.tone}`}>{st.text}</span>
+            ) : null}
+          </span>
+        )}
+
+        {/* Inline actions — revealed on hover, like the file explorer. */}
+        {!renaming && (
+          <div className="hidden group-hover/row:flex items-center gap-0.5 flex-shrink-0">
+            <SpawnAction
+              icon={<TerminalIcon size={14} weight="bold" />}
+              title="Terminal"
+              panelType="terminal"
+              cwd={worktree.path}
+              worktreeId={worktree.id}
+              onLaunch={() => cb.onLaunch('terminal')}
             />
-          )}
-          {onDelete && (
-            <ChildAction
-              icon={<Trash size={12} />}
-              label="Delete worktree"
-              onClick={onDelete}
-              destructive
+            <SpawnAction
+              icon={<CateLogo size={14} />}
+              title="Agent"
+              panelType="agent"
+              cwd={worktree.path}
+              worktreeId={worktree.id}
+              onLaunch={() => cb.onLaunch('agent')}
             />
-          )}
+            <button
+              onClick={handleMenu}
+              title="More actions"
+              className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-surface-4 transition-colors"
+            >
+              <DotsThree size={16} weight="bold" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {recoloring && (
+        <div className="flex items-center gap-1.5 flex-wrap pl-8 pr-2 pb-1.5 pt-0.5">
+          {WORKTREE_COLOR_PALETTE.map((c) => (
+            <button
+              key={c}
+              onClick={() => { cb.onRecolor(c); setRecoloring(false) }}
+              className="w-4 h-4 rounded-full transition-transform hover:scale-110"
+              style={{
+                backgroundColor: c,
+                outline: c === worktree.color ? '2px solid var(--text-primary)' : 'none',
+                outlineOffset: 1,
+              }}
+              title={c}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -385,16 +601,22 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   const ensurePrimaryWorktree = useAppStore((s) => s.ensurePrimaryWorktree)
   const upsertWorktree = useAppStore((s) => s.upsertWorktree)
   const removeWorktree = useAppStore((s) => s.removeWorktree)
+  const setWorktreeColor = useAppStore((s) => s.setWorktreeColor)
+  const setWorktreeLabel = useAppStore((s) => s.setWorktreeLabel)
   const createTerminal = useAppStore((s) => s.createTerminal)
   const createAgent = useAppStore((s) => s.createAgent)
   const addAdditionalRoot = useAppStore((s) => s.addAdditionalRoot)
 
   const [gitWorktrees, setGitWorktrees] = useState<GitWorktree[]>([])
   const [statusByPath, setStatusByPath] = useState<Record<string, WorktreeStatus>>({})
+  const [prByPath, setPrByPath] = useState<Record<string, PrStatus>>({})
+  const [prNonce, setPrNonce] = useState(0)
   const [creating, setCreating] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [primaryBranch, setPrimaryBranch] = useState<string>('')
+  const [isRepo, setIsRepo] = useState<boolean | null>(null)
 
   // ---------------------------------------------------------------------------
   // Load + sync
@@ -405,14 +627,17 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
     setRefreshing(true)
     setError(null)
     try {
+      // Parallel branches need a git repo — gate everything on that so we never
+      // fire branch/worktree commands (and log noisy errors) in a plain folder.
+      const repo = await window.electronAPI.gitIsRepo(rootPath).catch(() => false)
+      setIsRepo(repo)
+      if (!repo) return
+
       const list = await window.electronAPI.gitWorktreeList(rootPath)
       setGitWorktrees(list)
 
-      // Materialize the primary worktree in workspace state if missing.
       ensurePrimaryWorktree(selectedWorkspaceId)
 
-      // For each git-known worktree not already tracked, register it with a
-      // freshly assigned color so the canvas can color-code its panels.
       const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
       if (ws) {
         const existing = ws.worktrees ?? []
@@ -433,7 +658,6 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
         }
       }
 
-      // Fetch status for each worktree (best effort, in parallel).
       const statusEntries = await Promise.all(
         list.map(async (g) => {
           try {
@@ -453,7 +677,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       if (currentEntry) setPrimaryBranch(currentEntry.branch)
     } catch (err: any) {
       log.warn('[parallel-work] reconcile failed', err)
-      setError(err?.message || 'Failed to load worktrees')
+      setError(err?.message || 'Failed to load parallel branches')
     } finally {
       setRefreshing(false)
     }
@@ -473,15 +697,61 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   }, [reconcile])
 
   // ---------------------------------------------------------------------------
+  // Derived view state
+  // ---------------------------------------------------------------------------
+
+  const worktrees = workspace?.worktrees ?? []
+  const gitPaths = useMemo(() => new Set(gitWorktrees.map((g) => g.path)), [gitWorktrees])
+  const orphans = worktrees.filter((w) => !w.isPrimary && !gitPaths.has(w.path))
+  const live = worktrees.filter((w) => w.isPrimary || gitPaths.has(w.path))
+
+  const primaryLabel = useMemo(() => {
+    const primary = worktrees.find((w) => w.isPrimary)
+    return primaryBranch || primary?.branch || 'main'
+  }, [worktrees, primaryBranch])
+
+  // PR status — fetched only when the branch set changes (or after a PR action),
+  // not on every window focus, since each lookup shells out to `gh`.
+  const prKey = useMemo(
+    () => live.filter((w) => !w.isPrimary && w.branch).map((w) => `${w.path}:${w.branch}`).join('|'),
+    [live],
+  )
+  useEffect(() => {
+    let cancelled = false
+    const targets = live.filter((w) => !w.isPrimary && w.branch)
+    if (targets.length === 0) { setPrByPath({}); return }
+    void (async () => {
+      const entries = await Promise.all(
+        targets.map(async (w) => {
+          try {
+            const pr = await window.electronAPI.gitPrStatus(w.path, w.branch)
+            return pr ? ([w.path, pr] as const) : null
+          } catch {
+            return null
+          }
+        }),
+      )
+      if (cancelled) return
+      const next: Record<string, PrStatus> = {}
+      for (const e of entries) if (e) next[e[0]] = e[1]
+      setPrByPath(next)
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prKey, prNonce])
+
+  // ---------------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------------
 
   const handleCreate = useCallback(
-    async (branch: string, createNew: boolean, baseRef?: string) => {
+    async (rawName: string, baseRef?: string) => {
       if (!rootPath || !selectedWorkspaceId) return
+      const branch = toBranchName(rawName)
+      if (!branch) throw new Error('Please enter a name')
       const targetPath = worktreePathFor(rootPath, branch)
       await window.electronAPI.gitWorktreeAdd(rootPath, branch, targetPath, {
-        createBranch: createNew,
+        createBranch: true,
         baseRef,
       })
 
@@ -490,22 +760,56 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
         id: `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         path: targetPath,
         branch,
+        // Keep the friendly name when it differs from the slugged branch.
+        label: rawName.trim() !== branch ? rawName.trim() : undefined,
         color: pickWorktreeColor(ws?.worktrees ?? []),
         isPrimary: false,
       }
       upsertWorktree(selectedWorkspaceId, meta)
       addAdditionalRoot(selectedWorkspaceId, targetPath)
 
-      // Spawn a terminal cwd'd to the new worktree so the user can start
-      // working immediately. The terminal is tagged with the worktree id so
-      // its title-bar pill picks up the right color.
-      const panelId = createTerminal(selectedWorkspaceId, undefined, undefined, undefined, targetPath)
-      useAppStore.getState().setPanelWorktreeId(selectedWorkspaceId, panelId, meta.id)
+      setCreating(false)
+      void reconcile()
+    },
+    [rootPath, selectedWorkspaceId, upsertWorktree, addAdditionalRoot, reconcile],
+  )
+
+  const handleCheckoutPr = useCallback(
+    async (pr: PrListItem) => {
+      if (!rootPath || !selectedWorkspaceId) return
+      // Slug includes the PR number so contributors' identically-named branches
+      // never collide on disk.
+      const targetPath = worktreePathFor(rootPath, `pr-${pr.number}-${pr.headRefName}`)
+      const res = await window.electronAPI.gitWorktreeAddFromPr(rootPath, pr.number, targetPath)
+
+      const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
+      const meta: WorktreeMeta = {
+        id: `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        path: res.path,
+        branch: res.branch,
+        label: `#${pr.number} ${pr.headRefName}`,
+        color: pickWorktreeColor(ws?.worktrees ?? []),
+        isPrimary: false,
+      }
+      upsertWorktree(selectedWorkspaceId, meta)
+      addAdditionalRoot(selectedWorkspaceId, res.path)
 
       setCreating(false)
       void reconcile()
     },
-    [rootPath, selectedWorkspaceId, upsertWorktree, addAdditionalRoot, createTerminal, reconcile],
+    [rootPath, selectedWorkspaceId, upsertWorktree, addAdditionalRoot, reconcile],
+  )
+
+  const handleLaunch = useCallback(
+    (wt: WorktreeMeta, type: 'terminal' | 'agent') => {
+      if (!selectedWorkspaceId) return
+      const panelId =
+        type === 'terminal'
+          ? createTerminal(selectedWorkspaceId, undefined, undefined, undefined, wt.path)
+          : createAgent(selectedWorkspaceId)
+      if (panelId) useAppStore.getState().setPanelWorktreeId(selectedWorkspaceId, panelId, wt.id)
+    },
+    [selectedWorkspaceId, createTerminal, createAgent],
   )
 
   const handleDelete = useCallback(
@@ -516,67 +820,39 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       const dirty = !!status?.dirty
       const branchAhead = (status?.ahead ?? 0) > 0
       const ok = window.confirm(
-        `Delete parallel branch “${label}”?\n\n` +
-          `This removes:\n` +
-          `  • the worktree at ${wt.path}\n` +
-          (wt.branch ? `  • the branch ${wt.branch}\n` : '') +
-          `\n` +
-          (dirty
-            ? 'WARNING: uncommitted changes in this worktree will be lost.\n'
-            : '') +
-          (branchAhead
-            ? `WARNING: this branch has ${status?.ahead} unmerged commit(s).\n`
-            : ''),
+        `Discard “${label}”?\n\n` +
+          `This deletes the parallel branch and everything in it.\n` +
+          (dirty ? '\nWARNING: unsaved changes here will be lost.' : '') +
+          (branchAhead ? `\nWARNING: ${status?.ahead} unpublished commit(s) will be lost.` : ''),
       )
       if (!ok) return
       try {
         await window.electronAPI.gitWorktreeRemove(rootPath, wt.path, { force: dirty })
-        // Best-effort branch cleanup. Force-delete because the user already
-        // confirmed; preserves the cleanup-in-one-step UX even when the
-        // branch isn't merged into upstream.
         if (wt.branch) {
           try {
             await window.electronAPI.gitBranchDelete(rootPath, wt.branch, true)
           } catch (err: any) {
-            // Surface as warning but don't roll back — the worktree is gone.
-            setError(`Worktree removed, but branch ${wt.branch} could not be deleted: ${err?.message || err}`)
+            setError(`Removed, but branch ${wt.branch} could not be deleted: ${err?.message || err}`)
           }
         }
         removeWorktree(selectedWorkspaceId, wt.id)
         void reconcile()
       } catch (err: any) {
-        setError(err?.message || 'Delete failed')
+        setError(err?.message || 'Discard failed')
       }
     },
     [rootPath, selectedWorkspaceId, removeWorktree, reconcile, statusByPath],
   )
 
-  const handleMergeBack = useCallback(
+  const handleMerge = useCallback(
     async (wt: WorktreeMeta) => {
-      if (!rootPath) return
-      // Resolve the primary branch lazily — `primaryBranch` may be empty if the
-      // current cwd doesn't match any worktree row. Fall back to the workspace's
-      // primary WorktreeMeta, then to a fresh status read.
-      const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
-      const primary = ws?.worktrees?.find((w) => w.isPrimary)
-      let target = primaryBranch || primary?.branch || ''
-      if (!target && primary?.path) {
-        try {
-          const s = await window.electronAPI.gitWorktreeStatus(primary.path)
-          if (s) target = s.branch
-        } catch { /* ignore */ }
-      }
+      if (!rootPath || wt.isPrimary) return
+      const target = primaryLabel
       if (!wt.branch || !target) {
-        setError(
-          !wt.branch
-            ? 'No branch on this worktree to merge.'
-            : 'Could not resolve the primary branch — open Source Control once to refresh.',
-        )
+        setError('Could not resolve the base branch — open Source Control once to refresh.')
         return
       }
-      const ok = window.confirm(
-        `Merge ${wt.branch} → ${target}?\n\nThis will fetch, check out ${target}, and merge ${wt.branch} into it.`,
-      )
+      const ok = window.confirm(`Merge ${wt.branch} into ${target}?`)
       if (!ok) return
       try {
         const result = await window.electronAPI.gitWorktreeMergeTo(rootPath, wt.branch, target)
@@ -584,14 +860,90 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
           setError(`Merge ${wt.branch} → ${target}: ${result.message}`)
         } else {
           setError(null)
+          setNotice(`Merged ${wt.branch} into ${target}`)
           void reconcile()
         }
       } catch (err: any) {
         setError(err?.message || 'Merge failed')
       }
     },
-    [rootPath, primaryBranch, selectedWorkspaceId, reconcile],
+    [rootPath, primaryLabel, reconcile],
   )
+
+  const handleUpdateFromMain = useCallback(
+    async (wt: WorktreeMeta) => {
+      if (wt.isPrimary || !wt.branch) return
+      const target = primaryLabel
+      try {
+        const result = await window.electronAPI.gitWorktreeUpdateFrom(wt.path, target)
+        if (!result.ok) {
+          setError(
+            result.conflict
+              ? `Conflicts updating from ${target} — open a terminal here to resolve them.`
+              : `Update from ${target}: ${result.message}`,
+          )
+        } else {
+          setError(null)
+          setNotice(`Updated ${wt.branch} from ${target}`)
+          void reconcile()
+        }
+      } catch (err: any) {
+        setError(err?.message || 'Update failed')
+      }
+    },
+    [primaryLabel, reconcile],
+  )
+
+  const handlePublish = useCallback(async (wt: WorktreeMeta) => {
+    if (!wt.branch) return
+    setError(null)
+    setNotice(`Publishing ${wt.branch}…`)
+    try {
+      await window.electronAPI.gitPush(wt.path, 'origin', wt.branch)
+      setNotice(`Published ${wt.branch}`)
+      void reconcile()
+    } catch (err: any) {
+      setNotice(null)
+      setError(`Publish failed: ${err?.message || err}`)
+    }
+  }, [reconcile])
+
+  const handleCreatePR = useCallback(async (wt: WorktreeMeta) => {
+    if (!wt.branch) return
+    setError(null)
+    setNotice(`Opening a pull request for ${wt.branch}…`)
+    try {
+      const res = await window.electronAPI.gitCreatePR(wt.path, wt.branch)
+      if (res.ok) {
+        window.electronAPI.openExternalUrl(res.url)
+        setNotice(
+          res.created
+            ? `Opened a pull request for ${wt.branch}`
+            : res.fallback
+              ? 'Opened GitHub to finish the pull request'
+              : `Pull request for ${wt.branch} already exists`,
+        )
+        setPrNonce((n) => n + 1)
+      } else {
+        setNotice(null)
+        setError(res.message)
+      }
+    } catch (err: any) {
+      setNotice(null)
+      setError(`Could not create pull request: ${err?.message || err}`)
+    }
+  }, [])
+
+  const handleInit = useCallback(async () => {
+    if (!rootPath) return
+    setError(null)
+    try {
+      await window.electronAPI.gitInit(rootPath)
+      await reconcile()
+    } catch (err: any) {
+      setError(`Could not initialize git: ${err?.message || err}`)
+    }
+  }, [rootPath, reconcile])
 
   const handlePrune = useCallback(async () => {
     if (!rootPath) return
@@ -599,19 +951,28 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       await window.electronAPI.gitWorktreePrune(rootPath)
       void reconcile()
     } catch (err: any) {
-      setError(err?.message || 'Prune failed')
+      setError(err?.message || 'Cleanup failed')
     }
   }, [rootPath, reconcile])
 
-  // ---------------------------------------------------------------------------
-  // Derived view state
-  // ---------------------------------------------------------------------------
-
-  const worktrees = workspace?.worktrees ?? []
-  const gitPaths = useMemo(() => new Set(gitWorktrees.map((g) => g.path)), [gitWorktrees])
-  // Orphans: tracked in workspace state but no longer registered with git.
-  const orphans = worktrees.filter((w) => !w.isPrimary && !gitPaths.has(w.path))
-  const live = worktrees.filter((w) => w.isPrimary || gitPaths.has(w.path))
+  const makeCallbacks = useCallback(
+    (wt: WorktreeMeta): CardCallbacks => ({
+      onLaunch: (type) => handleLaunch(wt, type),
+      onPublish: () => handlePublish(wt),
+      onCreatePR: () => handleCreatePR(wt),
+      onUpdateFromMain: () => handleUpdateFromMain(wt),
+      onMerge: () => handleMerge(wt),
+      onDelete: () => handleDelete(wt),
+      onReveal: () => window.electronAPI.shellShowInFolder(wt.path),
+      onRename: (label) => selectedWorkspaceId && setWorktreeLabel(selectedWorkspaceId, wt.id, label),
+      onRecolor: (color) => selectedWorkspaceId && setWorktreeColor(selectedWorkspaceId, wt.id, color),
+      onOpenPr: (url) => window.electronAPI.openExternalUrl(url),
+    }),
+    [
+      handleLaunch, handlePublish, handleCreatePR, handleUpdateFromMain, handleMerge,
+      handleDelete, selectedWorkspaceId, setWorktreeLabel, setWorktreeColor,
+    ],
+  )
 
   // ---------------------------------------------------------------------------
   // Render
@@ -623,7 +984,30 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
         <SidebarSectionHeader title="Parallel Work" />
         <div className="flex flex-col items-center justify-center flex-1 text-muted text-xs gap-2 p-4">
           <ArrowsSplit size={20} className="opacity-40" />
-          <span>Open a folder to use parallel branches.</span>
+          <span>Open a folder to work in parallel.</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (isRepo === false) {
+    return (
+      <div className="flex flex-col h-full">
+        <SidebarSectionHeader title="Parallel Work" />
+        <div className="flex flex-col items-center justify-center flex-1 text-muted text-[11px] gap-3 p-6 text-center">
+          <ArrowsSplit size={20} className="opacity-40" />
+          <span className="opacity-80">
+            Parallel branches need a git repository.
+            <br />
+            This folder isn’t one yet.
+          </span>
+          <button
+            onClick={handleInit}
+            className="px-3 py-1.5 rounded-md bg-surface-3 hover:bg-surface-4 text-secondary hover:text-primary text-[12px] transition-colors"
+          >
+            Initialize git repository
+          </button>
+          {error && <span className="text-red-400/80 px-2">{error}</span>}
         </div>
       </div>
     )
@@ -637,7 +1021,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
           <>
             <SidebarHeaderButton
               onClick={() => setCreating(true)}
-              title="New parallel branch"
+              title="Start something new"
             >
               <Plus size={14} />
             </SidebarHeaderButton>
@@ -657,13 +1041,21 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
           defaultBaseBranch={primaryBranch}
           rootPath={rootPath}
           onSubmit={handleCreate}
+          onCheckoutPr={handleCheckoutPr}
           onCancel={() => setCreating(false)}
         />
       )}
 
       {error && (
-        <div className="px-3 py-1.5 text-[10px] text-red-400/80 bg-red-500/[0.08] border-b border-subtle">
-          {error}
+        <div className="px-3 py-1.5 text-[10px] text-red-400/80 bg-red-500/[0.08] border-b border-subtle flex items-start gap-1.5">
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100"><X size={11} /></button>
+        </div>
+      )}
+      {notice && !error && (
+        <div className="px-3 py-1.5 text-[10px] text-green-400/80 bg-green-500/[0.07] border-b border-subtle flex items-start gap-1.5">
+          <span className="flex-1">{notice}</span>
+          <button onClick={() => setNotice(null)} className="opacity-60 hover:opacity-100"><X size={11} /></button>
         </div>
       )}
 
@@ -673,7 +1065,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
             <ArrowsSplit size={20} className="opacity-40" />
             <span>No parallel branches yet.</span>
             <span className="opacity-60">
-              Spin one up to work on a separate branch without losing your current state.
+              Start something new to work on a separate branch without losing your current state.
             </span>
           </div>
         )}
@@ -683,44 +1075,36 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
             key={wt.id}
             worktree={wt}
             status={statusByPath[wt.path]}
-            onOpenTerminal={() => {
-              if (!selectedWorkspaceId) return
-              const panelId = createTerminal(selectedWorkspaceId, undefined, undefined, undefined, wt.path)
-              useAppStore.getState().setPanelWorktreeId(selectedWorkspaceId, panelId, wt.id)
-            }}
-            onOpenAgent={() => {
-              if (!selectedWorkspaceId) return
-              const panelId = createAgent(selectedWorkspaceId)
-              useAppStore.getState().setPanelWorktreeId(selectedWorkspaceId, panelId, wt.id)
-            }}
-            onMerge={wt.isPrimary ? undefined : () => handleMergeBack(wt)}
-            onDelete={wt.isPrimary ? undefined : () => handleDelete(wt)}
+            pr={prByPath[wt.path]}
+            primaryLabel={primaryLabel}
+            cb={makeCallbacks(wt)}
           />
         ))}
 
         {orphans.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-subtle flex flex-col gap-1.5">
-            <div className="flex items-center gap-1.5 px-1 text-[10px] text-muted">
+          <div className="mt-2 pt-2 border-t border-subtle flex flex-col gap-1">
+            <div className="flex items-center gap-1.5 px-2 text-[10px] text-muted">
               <Warning size={11} />
-              <span className="flex-1">Orphaned ({orphans.length})</span>
+              <span className="flex-1">Couldn’t find {orphans.length} {orphans.length === 1 ? 'branch' : 'branches'}</span>
               <button
                 onClick={handlePrune}
                 className="px-1.5 py-0.5 rounded hover:bg-hover text-secondary hover:text-primary"
-                title="Prune missing worktrees"
+                title="Remove the missing entries"
               >
-                Prune
+                Clean up
               </button>
             </div>
             {orphans.map((wt) => (
-              <WorktreeCard
-                key={wt.id}
-                worktree={wt}
-                onOpenTerminal={() => {}}
-                onOpenAgent={() => {}}
-                onDelete={() => {
-                  if (selectedWorkspaceId) removeWorktree(selectedWorkspaceId, wt.id)
-                }}
-              />
+              <div key={wt.id} className="flex items-center gap-1.5 h-7 px-2 text-secondary opacity-60">
+                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: wt.color }} />
+                <span className="flex-1 min-w-0 text-[13px] truncate">{wt.label || wt.branch}</span>
+                <button
+                  onClick={() => selectedWorkspaceId && removeWorktree(selectedWorkspaceId, wt.id)}
+                  className="text-[11px] text-muted hover:text-red-400"
+                >
+                  Remove
+                </button>
+              </div>
             ))}
           </div>
         )}
