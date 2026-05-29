@@ -8,6 +8,7 @@
 // =============================================================================
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRenderCount } from '../../renderer/lib/perf/perfClient'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -54,6 +55,7 @@ interface ChatThreadProps {
 }
 
 export function ChatThread({ messages, pendingApprovals, onApproval, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry }: ChatThreadProps) {
+  useRenderCount('ChatThread')
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const last = messages[messages.length - 1]
@@ -232,6 +234,7 @@ function MessageRow({
   isCurrentTurn?: boolean
   agentRunning?: boolean
 }) {
+  useRenderCount('MessageRow')
   if (msg.type === 'user') {
     return (
       <div className="flex flex-col items-end gap-1">

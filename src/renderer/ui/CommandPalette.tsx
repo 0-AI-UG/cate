@@ -19,6 +19,7 @@ import {
   Square,
   FloppyDisk,
   GitBranch,
+  ArrowsClockwise,
 } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
 import { CateLogo } from './CateLogo'
@@ -55,6 +56,7 @@ const ZoomResetIcon = () => <MagnifyingGlass size={ICON_SIZE} />
 const ZoomToFitIcon = () => <ArrowsOutSimple size={ICON_SIZE} />
 const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
+const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const AgentIcon = () => <CateLogo size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
@@ -208,6 +210,15 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '',
         icon: <SaveIcon />,
         action: () => useUIStore.getState().setShowLayoutsDialog(true),
+      },
+      {
+        id: 'reloadWorkspace',
+        title: 'Reload Workspace from Disk',
+        shortcutText: '',
+        icon: <ReloadIcon />,
+        action: () => {
+          void import('../lib/session').then((m) => m.reloadActiveWorkspaceFromDisk())
+        },
       },
     ],
     [

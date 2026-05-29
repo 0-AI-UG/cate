@@ -2,7 +2,6 @@
 // IPC handlers for AGENT_* channels — thin wrappers around AgentManager.
 // =============================================================================
 
-import os from 'os'
 import path from 'path'
 import fs from 'fs/promises'
 import { ipcMain, shell } from 'electron'
@@ -59,6 +58,7 @@ import {
   type MarketplaceSort,
 } from './marketplace'
 import { deleteSession, listSessions, loadSessionTranscript } from './sessionFiles'
+import { agentDirFor } from './agentDir'
 import log from '../../main/logger'
 import type {
   AgentCreateOptions,
@@ -250,7 +250,8 @@ export function registerAgentHandlers(_authManager: AuthManager, agentManager: A
     agentManager.uiResponse(panelId, response)
   })
 
-  // Disk-backed pi session index — read straight from ~/.pi/agent/sessions/.
+  // Disk-backed pi session index — read straight from the workspace's
+  // .cate/pi-agent/sessions/ dir.
   ipcMain.handle(AGENT_LIST_SESSIONS, async (_event, cwd: string) => {
     if (!cwd) return []
     return listSessions(cwd)
@@ -287,21 +288,19 @@ export function registerAgentHandlers(_authManager: AuthManager, agentManager: A
     }
   })
 
-  const agentRoot = (): string => path.join(os.homedir(), '.pi', 'agent')
-
-  const isUserAgentPath = (target: string): boolean => {
-    const root = agentRoot() + path.sep
+  const isUserAgentPath = (cwd: string, target: string): boolean => {
+    const root = agentDirFor(cwd) + path.sep
     return path.resolve(target).startsWith(root)
   }
 
-  ipcMain.handle(AGENT_OPEN_SKILLS_FOLDER, async (_event, kind: 'agents' | 'prompts' | 'skills') => {
-    const dir = path.join(agentRoot(), kind)
+  ipcMain.handle(AGENT_OPEN_SKILLS_FOLDER, async (_event, cwd: string, kind: 'agents' | 'prompts' | 'skills') => {
+    const dir = path.join(agentDirFor(cwd), kind)
     try { await fs.mkdir(dir, { recursive: true }) } catch { /* */ }
     await shell.openPath(dir)
   })
 
-  ipcMain.handle(AGENT_LIST_SKILL_FILES, async (_event, kind: 'agents' | 'prompts' | 'skills') => {
-    const dir = path.join(agentRoot(), kind)
+  ipcMain.handle(AGENT_LIST_SKILL_FILES, async (_event, cwd: string, kind: 'agents' | 'prompts' | 'skills') => {
+    const dir = path.join(agentDirFor(cwd), kind)
     try { await fs.mkdir(dir, { recursive: true }) } catch { /* */ }
     let entries: import('fs').Dirent[]
     try { entries = await fs.readdir(dir, { withFileTypes: true }) }
@@ -338,19 +337,19 @@ export function registerAgentHandlers(_authManager: AuthManager, agentManager: A
     await shell.openPath(filePath)
   })
 
-  ipcMain.handle(AGENT_DELETE_SKILL_FILE, async (_event, filePath: string) => {
-    if (!filePath || !isUserAgentPath(filePath)) {
-      throw new Error('Refusing to delete file outside ~/.pi/agent')
+  ipcMain.handle(AGENT_DELETE_SKILL_FILE, async (_event, cwd: string, filePath: string) => {
+    if (!filePath || !isUserAgentPath(cwd, filePath)) {
+      throw new Error("Refusing to delete file outside the workspace's pi-agent dir")
     }
     await fs.unlink(filePath)
   })
 
   ipcMain.handle(
     AGENT_CREATE_SKILL,
-    async (_event, kind: 'agents' | 'prompts' | 'skills', name: string) => {
+    async (_event, cwd: string, kind: 'agents' | 'prompts' | 'skills', name: string) => {
       const safe = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
       if (!safe) throw new Error('Invalid name')
-      const dir = path.join(agentRoot(), kind)
+      const dir = path.join(agentDirFor(cwd), kind)
       await fs.mkdir(dir, { recursive: true })
       const target = path.join(dir, `${safe}.md`)
       try { await fs.access(target); throw new Error(`${safe}.md already exists`) }
@@ -383,21 +382,21 @@ export function registerAgentHandlers(_authManager: AuthManager, agentManager: A
     },
   )
 
-  ipcMain.handle(AGENT_MARKETPLACE_LIST_INSTALLED, async () => {
+  ipcMain.handle(AGENT_MARKETPLACE_LIST_INSTALLED, async (_event, cwd: string) => {
     try {
-      return await listInstalled()
+      return await listInstalled(cwd)
     } catch (err) {
       log.warn('[ipc.agent] marketplaceListInstalled failed: %O', err)
       return []
     }
   })
 
-  ipcMain.handle(AGENT_MARKETPLACE_INSTALL, async (_event, name: string) => {
-    return installExtension(name)
+  ipcMain.handle(AGENT_MARKETPLACE_INSTALL, async (_event, cwd: string, name: string) => {
+    return installExtension(cwd, name)
   })
 
-  ipcMain.handle(AGENT_MARKETPLACE_UNINSTALL, async (_event, name: string) => {
-    return uninstallExtension(name)
+  ipcMain.handle(AGENT_MARKETPLACE_UNINSTALL, async (_event, cwd: string, name: string) => {
+    return uninstallExtension(cwd, name)
   })
 
   ipcMain.handle(

@@ -445,7 +445,7 @@ export type ShortcutAction =
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
  *  binding. */
-export type MenuActionId = ShortcutAction | 'openFolder'
+export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
 
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
@@ -1122,3 +1122,28 @@ export type OAuthFlowEvent =
   | { type: 'manualCode'; promptId: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
+
+// -----------------------------------------------------------------------------
+// Performance profiler (CATE_PERF=1) — shared between main sampler and the
+// renderer HUD.
+// -----------------------------------------------------------------------------
+
+export interface PerfProcSample {
+  type: string
+  pid: number
+  /** percentCPUUsage since last sample (relative to one core; may exceed 100). */
+  cpu: number
+  /** working-set memory in MB. */
+  memMB: number
+}
+
+export interface PerfSnapshot {
+  /** Sampling window in ms; all rates below are per-second. */
+  windowMs: number
+  focused: boolean
+  totalCpu: number
+  procs: PerfProcSample[]
+  spawnsPerSec: Record<string, number>
+  ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
+  terminal: { kbPerSec: number; chunksPerSec: number }
+}

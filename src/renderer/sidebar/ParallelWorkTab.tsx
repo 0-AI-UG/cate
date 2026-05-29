@@ -316,7 +316,7 @@ const WorktreeCard: React.FC<{
     <div>
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-1 h-8 px-1.5 rounded-md text-secondary hover:text-primary hover:bg-hover transition-colors outline-none"
+        className="w-full flex items-center gap-1 h-8 px-1.5 rounded-sm text-secondary hover:text-primary hover:bg-hover transition-colors outline-none"
         title={worktree.path}
       >
         <CaretRight
@@ -667,7 +667,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-1 py-1 flex flex-col gap-0.5">
+      <div className="flex-1 overflow-y-auto py-1 flex flex-col">
         {live.length === 0 && !creating && (
           <div className="flex flex-col items-center justify-center py-8 px-4 text-muted text-[11px] gap-2 text-center">
             <ArrowsSplit size={20} className="opacity-40" />

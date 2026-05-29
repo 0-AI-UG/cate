@@ -36,7 +36,6 @@ interface StyleArgs {
   isFocused: boolean
   isSelected: boolean
   activityState: NodeActivityState | undefined
-  zoomLevel: number
   isAnimatingLayout: boolean
   isHovered: boolean
   chromeTint: { background: string; accent: string } | null
@@ -49,7 +48,6 @@ export function useCanvasNodeStyle(args: StyleArgs) {
     isFocused,
     isSelected,
     activityState,
-    zoomLevel,
     isAnimatingLayout,
     isHovered,
     chromeTint,
@@ -95,7 +93,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       pointerEvents: isExiting || isWholeNodeDragSource ? 'none' : undefined,
       userSelect: 'none',
     }
-  }, [node, isFocused, isSelected, activityState, zoomLevel, isAnimatingLayout, isHovered, chromeTint, isWholeNodeDragSource])
+  }, [node, isFocused, isSelected, activityState, isAnimatingLayout, isHovered, chromeTint, isWholeNodeDragSource])
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
     if (!node) return null

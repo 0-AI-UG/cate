@@ -1,9 +1,9 @@
 // =============================================================================
 // ProvidersView — in-panel UI for managing pi agent provider authentication.
 //
-// Single-column push navigation: list → detail → back to list, then back to
-// chat. The back arrow is the only way out: from the detail it pops to the
-// list, and from the list it returns to the chat.
+// Accordion: the full provider list is always visible; clicking a row expands
+// its sign-in / API-key form inline beneath it (at most one open at a time).
+// When embedded in Settings the parent owns the surrounding chrome.
 //
 // Only pi's built-in providers are supported. Custom OpenAI-compatible
 // endpoints would belong in pi's models.json — out of scope here.
@@ -48,8 +48,9 @@ interface ProvidersViewProps {
 export function ProvidersView({ onBack, scopedProviderId, embedded = false, availableModels }: ProvidersViewProps) {
   const [providers, setProviders] = useState<AuthProviderDescriptor[]>([])
   const [statuses, setStatuses] = useState<AuthProviderStatus[]>([])
-  const [detailId, setDetailId] = useState<string | null>(null)
-  const [detailKind, setDetailKind] = useState<'oauth' | 'apiKey' | null>(null)
+  // Accordion: at most one provider expanded at a time. Keyed by `${kind}-${id}`
+  // because the same provider id can appear as both an OAuth and an API-key entry.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -67,8 +68,13 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false, avai
   useEffect(() => { refresh() }, [refresh])
 
   useEffect(() => {
-    if (scopedProviderId) setDetailId(scopedProviderId)
-  }, [scopedProviderId])
+    if (!scopedProviderId) return
+    // Prefer the OAuth entry when a provider id exists in both groups.
+    const match =
+      providers.find((p) => p.kind === 'oauth' && p.id === scopedProviderId) ??
+      providers.find((p) => p.id === scopedProviderId)
+    if (match) setExpandedKey(`${match.kind}-${match.id}`)
+  }, [scopedProviderId, providers])
 
   const statusFor = useCallback(
     (id: string): AuthProviderStatus | undefined => statuses.find((s) => s.id === id),
@@ -85,71 +91,59 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false, avai
     return { oauth, apiKey }
   }, [providers])
 
-  const selectedProvider = useMemo(
-    () => (detailId ? providers.find((p) => p.id === detailId && (!detailKind || p.kind === detailKind)) ?? null : null),
-    [providers, detailId, detailKind],
-  )
-
-  const headerTitle = selectedProvider?.name ?? 'Providers'
-
-  const handleBack = useCallback(() => {
-    if (detailId) { setDetailId(null); setDetailKind(null) }
-    else onBack?.()
-  }, [detailId, onBack])
+  const toggle = useCallback((key: string) => {
+    setExpandedKey((prev) => (prev === key ? null : key))
+  }, [])
 
   return (
-    <div className="flex-1 flex flex-col bg-surface-4 text-primary min-h-0">
-      {(!embedded || detailId) && (
+    <div className="flex-1 flex flex-col text-primary min-h-0">
+      {!embedded && (
         <div className="flex items-center gap-2 px-3 h-9 border-b border-subtle shrink-0">
           <button
-            onClick={handleBack}
+            onClick={() => onBack?.()}
             className="p-1 -ml-1 rounded-md text-muted hover:text-primary hover:bg-white/5"
-            title={detailId ? 'Back to providers' : 'Back to chat'}
-            disabled={embedded && !detailId}
+            title="Back to chat"
           >
             <ArrowLeft size={14} />
           </button>
-          <div className="text-[12px] font-medium text-primary truncate flex-1 min-w-0">{headerTitle}</div>
-          {selectedProvider && (
-            <StatusPill status={statusFor(selectedProvider.id)} />
-          )}
+          <div className="text-[12px] font-medium text-primary truncate flex-1 min-w-0">Providers</div>
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto min-h-0">
-        {!selectedProvider ? (
-          <div className="px-3 py-3 space-y-4">
-            <DefaultModelSection models={availableModels ?? []} />
-            <Section label="Sign in">
-              {grouped.oauth.map((p) => (
-                <ProviderListRow
-                  key={`oauth-${p.id}`}
-                  name={p.name}
+        <div className="px-3 py-3 space-y-4">
+          <DefaultModelSection models={availableModels ?? []} />
+          <Section label="Sign in">
+            {grouped.oauth.map((p) => {
+              const key = `oauth-${p.id}`
+              return (
+                <ProviderAccordionRow
+                  key={key}
+                  provider={p}
                   status={statusFor(p.id)}
-                  onClick={() => { setDetailId(p.id); setDetailKind('oauth') }}
+                  expanded={expandedKey === key}
+                  onToggle={() => toggle(key)}
+                  onRefresh={refresh}
                 />
-              ))}
-            </Section>
-            <Section label="API key">
-              {grouped.apiKey.map((p) => (
-                <ProviderListRow
-                  key={`apiKey-${p.id}`}
-                  name={p.name}
+              )
+            })}
+          </Section>
+          <Section label="API key">
+            {grouped.apiKey.map((p) => {
+              const key = `apiKey-${p.id}`
+              return (
+                <ProviderAccordionRow
+                  key={key}
+                  provider={p}
                   status={statusFor(p.id)}
-                  onClick={() => { setDetailId(p.id); setDetailKind('apiKey') }}
+                  expanded={expandedKey === key}
+                  onToggle={() => toggle(key)}
+                  onRefresh={refresh}
                 />
-              ))}
-            </Section>
-          </div>
-        ) : (
-          <div className="px-4 py-4">
-            <ProviderDetail
-              provider={selectedProvider}
-              status={statusFor(selectedProvider.id)}
-              onRefresh={refresh}
-            />
-          </div>
-        )}
+              )
+            })}
+          </Section>
+        </div>
       </div>
     </div>
   )
@@ -172,48 +166,45 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function ProviderListRow({
-  name,
+function ProviderAccordionRow({
+  provider,
   status,
-  onClick,
+  expanded,
+  onToggle,
+  onRefresh,
 }: {
-  name: string
+  provider: AuthProviderDescriptor
   status?: AuthProviderStatus
-  onClick: () => void
+  expanded: boolean
+  onToggle: () => void
+  onRefresh: () => Promise<void>
 }) {
   const connected = !!status?.connected
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-2 px-2.5 py-2 text-left border-b border-white/5 last:border-0 hover:bg-white/[0.04]"
-    >
-      <span className="flex-1 truncate text-[12.5px] text-primary">{name}</span>
-      {connected ? (
-        <span className="inline-flex items-center gap-1 text-[10px] text-agent-light/90">
-          <CheckCircle size={10} weight="fill" /> Connected
-        </span>
-      ) : (
-        <CircleDashed size={11} className="text-muted/60" />
+    <div className="border-b border-white/5 last:border-0">
+      <button
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-2 px-2.5 py-2 text-left hover:bg-white/[0.04]"
+      >
+        <span className="flex-1 truncate text-[12.5px] text-primary">{provider.name}</span>
+        {connected ? (
+          <span className="inline-flex items-center gap-1 text-[10px] text-agent-light/90">
+            <CheckCircle size={10} weight="fill" /> Connected
+          </span>
+        ) : (
+          <CircleDashed size={11} className="text-muted/60" />
+        )}
+        {expanded
+          ? <CaretDown size={10} className="text-muted/60" />
+          : <CaretRight size={10} className="text-muted/60" />}
+      </button>
+      {expanded && (
+        <div className="p-2.5 border-t border-white/5 bg-black/10">
+          <ProviderDetail provider={provider} status={status} onRefresh={onRefresh} />
+        </div>
       )}
-      <CaretRight size={10} className="text-muted/60" />
-    </button>
-  )
-}
-
-function StatusPill({ status }: { status?: AuthProviderStatus }) {
-  if (status?.connected) {
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-agent/15 text-agent-light">
-        <CheckCircle size={10} weight="fill" />
-        Connected
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-muted">
-      <CircleDashed size={10} />
-      Not connected
-    </span>
+    </div>
   )
 }
 
@@ -312,17 +303,17 @@ function OAuthForm({
   }, [provider.id, onRefresh])
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {phase.type === 'idle' && !status?.connected && (
         <button
           onClick={handleStart}
-          className="w-full px-3 py-2.5 rounded-lg bg-agent hover:bg-agent-light text-white text-[13px] font-medium"
+          className="w-full px-3 py-2 rounded-md bg-agent hover:bg-agent-light text-white text-[12px] font-medium"
         >
           Sign in with {provider.name}
         </button>
       )}
       {phase.type === 'idle' && status?.connected && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={handleStart}
             className="flex-1 px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[12px]"
@@ -331,7 +322,7 @@ function OAuthForm({
           </button>
           <button
             onClick={handleDisconnect}
-            className="px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 text-[12px] text-rose-300 hover:text-rose-200"
+            className="shrink-0 px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 text-[12px] text-rose-300 hover:text-rose-200"
           >
             Disconnect
           </button>
@@ -343,7 +334,7 @@ function OAuthForm({
       )}
 
       {phase.type === 'deviceCode' && (
-        <div className="space-y-3 rounded-lg border border-white/10 bg-black/10 p-3">
+        <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-2.5">
           <div className="text-[12px] text-primary">
             Enter this code in your browser at{' '}
             <a href={phase.verificationUri} target="_blank" rel="noreferrer" className="underline text-agent-light">
@@ -379,7 +370,7 @@ function OAuthForm({
       )}
 
       {phase.type === 'prompt' && (
-        <div className="space-y-2 rounded-lg border border-white/10 bg-black/10 p-3">
+        <div className="space-y-2 rounded-md border border-white/10 bg-white/[0.03] p-2.5">
           <div className="text-[12px] text-primary">{phase.message}</div>
           <input
             type="text"
@@ -403,7 +394,7 @@ function OAuthForm({
       )}
 
       {phase.type === 'select' && (
-        <div className="space-y-2 rounded-lg border border-white/10 bg-black/10 p-3">
+        <div className="space-y-2 rounded-md border border-white/10 bg-white/[0.03] p-2.5">
           <div className="text-[12px] text-primary">{phase.message}</div>
           <div className="flex flex-col gap-1">
             {phase.options.map((opt) => (
@@ -420,7 +411,7 @@ function OAuthForm({
       )}
 
       {phase.type === 'manualCode' && (
-        <div className="space-y-2 rounded-lg border border-white/10 bg-black/10 p-3">
+        <div className="space-y-2 rounded-md border border-white/10 bg-white/[0.03] p-2.5">
           <div className="text-[12px] text-primary">
             Sign in completes automatically when the browser callback fires.
             If it doesn't, paste the code (or full redirect URL) here:
@@ -452,7 +443,7 @@ function OAuthForm({
       )}
 
       {phase.type === 'error' && (
-        <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-3">
+        <div className="space-y-2 rounded-md border border-white/10 bg-white/5 p-2.5">
           <div className="text-[12px] text-primary">{phase.message}</div>
           <button
             onClick={handleStart}
@@ -468,7 +459,7 @@ function OAuthForm({
 
 function AuthUrlCard({ url, instructions }: { url: string; instructions?: string }) {
   return (
-    <div className="space-y-3 rounded-lg border border-white/10 bg-black/10 p-3">
+    <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-2.5">
       <div className="flex items-center gap-2 text-[12px] text-primary">
         <CloudArrowUp size={14} className="text-agent-light" />
         Browser opened for sign in.
@@ -544,9 +535,9 @@ function ApiKeyForm({
   }, [provider.id, onRefresh])
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 min-w-0">
           <input
             type={reveal ? 'text' : 'password'}
             value={value}
@@ -555,43 +546,40 @@ function ApiKeyForm({
             autoComplete="off"
             spellCheck={false}
             placeholder={status?.connected ? '••••••••••••' : `Paste your ${provider.name} key`}
-            className="flex-1 min-w-0 bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono"
+            className="w-full bg-surface-3 border border-white/10 rounded-md pl-2 pr-8 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono"
           />
           <button
             type="button"
             onClick={() => setReveal((r) => !r)}
-            className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-white/5"
+            className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-muted hover:text-primary"
             title={reveal ? 'Hide' : 'Show'}
           >
             {reveal ? <EyeSlash size={14} /> : <Eye size={14} />}
           </button>
         </div>
-      </div>
-
-      {error && <div className="text-[12px] text-primary">{error}</div>}
-      {savedAt && !error && (
-        <div className="text-[12px] text-agent-light flex items-center gap-1">
-          <CheckCircle size={12} weight="fill" /> Saved.
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 pt-2">
         <button
           disabled={saving || !value.trim()}
           onClick={handleSave}
-          className="px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
+          className="shrink-0 px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
-        {status?.connected && (
-          <button
-            onClick={handleDisconnect}
-            className="px-3 py-1.5 rounded-md text-muted hover:text-primary hover:bg-white/5 text-[12px]"
-          >
-            Disconnect
-          </button>
-        )}
       </div>
+
+      {error && <div className="text-[11px] text-rose-300">{error}</div>}
+      {savedAt && !error && (
+        <div className="flex items-center gap-1 text-[11px] text-agent-light">
+          <CheckCircle size={12} weight="fill" /> Saved.
+        </div>
+      )}
+      {status?.connected && (
+        <button
+          onClick={handleDisconnect}
+          className="text-[11px] text-muted hover:text-rose-200"
+        >
+          Disconnect
+        </button>
+      )}
     </div>
   )
 }

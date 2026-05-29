@@ -4,6 +4,18 @@
 
 import { BrowserWindow } from 'electron'
 import type { CateWindowType, DockStateSnapshot, PanelState } from '../shared/types'
+import { PERF_ENABLED, countIpc } from './perf/perfMonitor'
+
+/** Cheap approximate byte size of IPC args — only computed under CATE_PERF=1. */
+function ipcPayloadBytes(args: unknown[]): number {
+  let n = 0
+  for (const a of args) {
+    if (typeof a === 'string') n += a.length
+    else if (a == null) continue
+    else { try { n += JSON.stringify(a).length } catch { /* circular/unserialisable */ } }
+  }
+  return n
+}
 
 /** All tracked windows keyed by their Electron window ID. */
 const windows = new Map<number, BrowserWindow>()
@@ -89,6 +101,7 @@ export function getAllWindows(): BrowserWindow[] {
 export function sendToWindow(windowId: number, channel: string, ...args: unknown[]): void {
   const win = windows.get(windowId)
   if (win && !win.isDestroyed()) {
+    if (PERF_ENABLED) countIpc(channel, ipcPayloadBytes(args))
     win.webContents.send(channel, ...args)
   }
 }
@@ -97,6 +110,7 @@ export function sendToWindow(windowId: number, channel: string, ...args: unknown
  * Broadcast an IPC message to ALL tracked windows.
  */
 export function broadcastToAll(channel: string, ...args: unknown[]): void {
+  if (PERF_ENABLED) countIpc(channel, ipcPayloadBytes(args))
   for (const win of windows.values()) {
     if (!win.isDestroyed()) {
       win.webContents.send(channel, ...args)

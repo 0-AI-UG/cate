@@ -63,7 +63,6 @@ function isCardinalEdge(edge: ResizeEdge): edge is 'top' | 'bottom' | 'left' | '
 export function useNodeResize(
   nodeId: string,
   panelType: PanelType,
-  zoomLevel: number,
   canvasStoreApi: StoreApi<CanvasStore>,
 ): UseNodeResizeReturn {
   const resizeStateRef = useRef<ResizeState | null>(null)
@@ -150,19 +149,17 @@ export function useNodeResize(
 
         // Track the cursor 1:1 during the drag — the moving edge stays glued
         // to the pointer.
-        {
-          const movesRightEdge =
-            rs.edge === 'right' || rs.edge === 'topRight' || rs.edge === 'bottomRight'
-          const movesLeftEdge =
-            rs.edge === 'left' || rs.edge === 'topLeft' || rs.edge === 'bottomLeft'
-          const movesBottomEdge =
-            rs.edge === 'bottom' || rs.edge === 'bottomLeft' || rs.edge === 'bottomRight'
-          const movesTopEdge =
-            rs.edge === 'top' || rs.edge === 'topLeft' || rs.edge === 'topRight'
+        const movesRightEdge =
+          rs.edge === 'right' || rs.edge === 'topRight' || rs.edge === 'bottomRight'
+        const movesLeftEdge =
+          rs.edge === 'left' || rs.edge === 'topLeft' || rs.edge === 'bottomLeft'
+        const movesBottomEdge =
+          rs.edge === 'bottom' || rs.edge === 'bottomLeft' || rs.edge === 'bottomRight'
+        const movesTopEdge =
+          rs.edge === 'top' || rs.edge === 'topLeft' || rs.edge === 'topRight'
 
-          if (!movesRightEdge && !movesLeftEdge) deltaX = 0
-          if (!movesBottomEdge && !movesTopEdge) deltaY = 0
-        }
+        if (!movesRightEdge && !movesLeftEdge) deltaX = 0
+        if (!movesBottomEdge && !movesTopEdge) deltaY = 0
 
         let newOriginX = rs.startOrigin.x
         let newOriginY = rs.startOrigin.y
@@ -317,6 +314,34 @@ export function useNodeResize(
           }
         }
 
+        // Re-anchor the grab point to the size we actually applied. When the
+        // delta was clamped — by this node's own min size or by a shared-border
+        // neighbor's min size — the cursor runs past where the edge can go.
+        // Without this, reversing direction dead-zones until the cursor travels
+        // all the way back to the stuck edge, which reads as the edge "jumping"
+        // (drag right into a neighbor, then left, and nothing moves until the
+        // cursor catches up). Re-anchoring keeps the edge tracking the cursor
+        // immediately on reversal. It's a no-op when nothing was clamped, since
+        // then the applied delta equals the raw delta.
+        const appliedDeltaX = movesRightEdge
+          ? newWidth - rs.startSize.width
+          : movesLeftEdge
+            ? newOriginX - rs.startOrigin.x
+            : 0
+        const appliedDeltaY = movesBottomEdge
+          ? newHeight - rs.startSize.height
+          : movesTopEdge
+            ? newOriginY - rs.startOrigin.y
+            : 0
+        // Only the grab point moves; startSize/startOrigin stay at their
+        // originals so the math below remains "size = startSize + delta".
+        if (movesRightEdge || movesLeftEdge) {
+          rs.startClientX = ev.clientX - appliedDeltaX * zoom
+        }
+        if (movesBottomEdge || movesTopEdge) {
+          rs.startClientY = ev.clientY - appliedDeltaY * zoom
+        }
+
         // Accumulate geometry — don't update store directly
         pendingResize.current = {
           origin: { x: newOriginX, y: newOriginY },
@@ -380,7 +405,7 @@ export function useNodeResize(
       window.addEventListener('mousemove', handleMouseMove)
       window.addEventListener('mouseup', handleMouseUp)
     },
-    [nodeId, panelType, zoomLevel, minSize.width, minSize.height],
+    [nodeId, panelType, minSize.width, minSize.height],
   )
 
   const getCursor = useCallback(

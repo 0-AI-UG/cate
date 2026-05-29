@@ -1,29 +1,25 @@
 // =============================================================================
 // installSubagents — one-shot install of pi's official subagent extension into
-// ~/.pi/agent/ on first use. Pi auto-discovers extensions from this directory
-// when its RPC process starts; no further wiring is needed on our side.
+// a workspace's pi-agent dir on first use. Pi auto-discovers extensions from
+// this directory when its RPC process starts; no further wiring is needed.
 //
 // The extension itself lives inside the @earendil-works/pi-coding-agent npm
-// package (examples/extensions/subagent). We copy three things:
-//   - extensions/subagent/{index.ts,agents.ts}  → ~/.pi/agent/extensions/subagent/
+// package (examples/extensions/subagent). We copy three things (relative to
+// <cwd>/.cate/pi-agent/):
+//   - extensions/subagent/{index.ts,agents.ts}
 //   - agents/*.md (scout, planner, reviewer, worker, plus our additions)
-//                                               → ~/.pi/agent/agents/
-//   - prompts/*.md (implement, scout-and-plan, ...) → ~/.pi/agent/prompts/
+//   - prompts/*.md (implement, scout-and-plan, ...)
 //
 // All copies are skip-if-exists so the user's own modifications survive.
 // =============================================================================
 
 import fs from 'fs'
 import fsp from 'fs/promises'
-import os from 'os'
 import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
 import { addAllowedRoot } from '../../main/ipc/pathValidation'
-
-function agentDir(): string {
-  return path.join(os.homedir(), '.pi', 'agent')
-}
+import { agentDirFor } from './agentDir'
 
 function piPackageDir(): string {
   const base = app.getAppPath()
@@ -83,22 +79,22 @@ async function stripPinnedModels(agentsDir: string): Promise<void> {
   }
 }
 
-let installed = false
+const installed = new Set<string>()
 
 /** Idempotent — safe to call from AgentManager.create() on every session. */
-export async function installSubagentExtension(): Promise<void> {
-  // Whitelist ~/.pi/agent on every call so EditorPanel can read skill/agent
-  // .md files via fs:readFile, even on app restarts.
-  try { addAllowedRoot(agentDir()) } catch { /* */ }
-  if (installed) return
-  installed = true
+export async function installSubagentExtension(cwd: string): Promise<void> {
+  const home = agentDirFor(cwd)
+  // Whitelist the workspace's pi-agent dir on every call so EditorPanel can
+  // read skill/agent .md files via fs:readFile, even on app restarts.
+  try { addAllowedRoot(home) } catch { /* */ }
+  if (installed.has(home)) return
+  installed.add(home)
   try {
     const examples = path.join(piPackageDir(), 'examples', 'extensions', 'subagent')
     if (!fs.existsSync(examples)) {
       log.warn('[installSubagents] subagent extension examples not found at %s — skipping', examples)
       return
     }
-    const home = agentDir()
     await copyIfMissing(
       path.join(examples, 'index.ts'),
       path.join(home, 'extensions', 'subagent', 'index.ts'),

@@ -8,17 +8,17 @@
 //
 // Install/uninstall shells out to the pi CLI at node_modules/.bin/pi (anchored
 // on app.getAppPath() so it works both in dev and once packaged via
-// electron-builder). Pi installs to ~/.pi/agent/extensions/<name>/ which is
-// also where it auto-discovers them.
+// electron-builder), with PI_CODING_AGENT_DIR pointed at the workspace's
+// pi-agent dir so installs are scoped per workspace.
 // =============================================================================
 
 import fs from 'fs'
 import fsp from 'fs/promises'
-import os from 'os'
 import path from 'path'
 import { spawn } from 'child_process'
 import { app } from 'electron'
 import log from '../../main/logger'
+import { agentDirFor } from './agentDir'
 
 export interface MarketplaceEntry {
   name: string
@@ -37,21 +37,17 @@ export interface InstalledExtension {
   path: string
 }
 
-function piAgentRoot(): string {
-  return path.join(os.homedir(), '.pi', 'agent')
+function extensionsDir(cwd: string): string {
+  return path.join(agentDirFor(cwd), 'extensions')
 }
 
-function extensionsDir(): string {
-  return path.join(piAgentRoot(), 'extensions')
+function npmModulesDir(cwd: string): string {
+  // Pi 0.x installs packages into <agentDir>/npm/node_modules/<name>/
+  return path.join(agentDirFor(cwd), 'npm', 'node_modules')
 }
 
-function npmModulesDir(): string {
-  // Pi 0.x installs packages into ~/.pi/agent/npm/node_modules/<name>/
-  return path.join(piAgentRoot(), 'npm', 'node_modules')
-}
-
-function settingsPath(): string {
-  return path.join(piAgentRoot(), 'settings.json')
+function settingsPath(cwd: string): string {
+  return path.join(agentDirFor(cwd), 'settings.json')
 }
 
 function piBinaryPath(): string {
@@ -307,8 +303,8 @@ async function buildEntry(name: string, dirPath: string): Promise<InstalledExten
   }
 }
 
-async function scanExtensionsDir(): Promise<InstalledExtension[]> {
-  const dir = extensionsDir()
+async function scanExtensionsDir(cwd: string): Promise<InstalledExtension[]> {
+  const dir = extensionsDir(cwd)
   if (!fs.existsSync(dir)) return []
   const out: InstalledExtension[] = []
   const entries = await fsp.readdir(dir, { withFileTypes: true })
@@ -333,20 +329,20 @@ async function scanExtensionsDir(): Promise<InstalledExtension[]> {
   return out
 }
 
-async function scanInstalledPackages(): Promise<InstalledExtension[]> {
+async function scanInstalledPackages(cwd: string): Promise<InstalledExtension[]> {
   // Pi 0.x records `pi install`-ed packages in settings.json -> packages[],
-  // and unpacks them into ~/.pi/agent/npm/node_modules/<name>/. The two
-  // locations (~/.pi/agent/extensions and ~/.pi/agent/npm/node_modules) are
+  // and unpacks them into <agentDir>/npm/node_modules/<name>/. The two
+  // locations (<agentDir>/extensions and <agentDir>/npm/node_modules) are
   // disjoint — the first is for hand-placed extensions like our bundled
   // subagent, the second is for everything `pi install` puts on disk.
   let raw: string
-  try { raw = await fsp.readFile(settingsPath(), 'utf-8') }
+  try { raw = await fsp.readFile(settingsPath(cwd), 'utf-8') }
   catch { return [] }
   let parsed: { packages?: string[] } = {}
   try { parsed = JSON.parse(raw) }
   catch { return [] }
   const refs = parsed.packages ?? []
-  const modulesRoot = npmModulesDir()
+  const modulesRoot = npmModulesDir(cwd)
   const out: InstalledExtension[] = []
   for (const ref of refs) {
     // Refs look like "npm:<name>" or "git:<url>" or "https://..." — we only
@@ -361,8 +357,8 @@ async function scanInstalledPackages(): Promise<InstalledExtension[]> {
   return out
 }
 
-export async function listInstalled(): Promise<InstalledExtension[]> {
-  const [a, b] = await Promise.all([scanExtensionsDir(), scanInstalledPackages()])
+export async function listInstalled(cwd: string): Promise<InstalledExtension[]> {
+  const [a, b] = await Promise.all([scanExtensionsDir(cwd), scanInstalledPackages(cwd)])
   const seen = new Set<string>()
   const out: InstalledExtension[] = []
   for (const e of [...a, ...b]) {
@@ -373,7 +369,7 @@ export async function listInstalled(): Promise<InstalledExtension[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-function runPi(args: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+function runPi(cwd: string, args: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
   return new Promise((resolve) => {
     const bin = piBinaryPath()
     if (!fs.existsSync(bin)) {
@@ -383,7 +379,12 @@ function runPi(args: string[]): Promise<{ ok: true } | { ok: false; error: strin
     const spawnBin = bin.endsWith('.js') ? process.execPath : bin
     const spawnArgs = bin.endsWith('.js') ? [bin, ...args] : args
     const child = spawn(spawnBin, spawnArgs, {
-      env: { ...process.env, PI_OFFLINE: process.env.PI_OFFLINE ?? '0', ELECTRON_RUN_AS_NODE: '1' },
+      env: {
+        ...process.env,
+        PI_OFFLINE: process.env.PI_OFFLINE ?? '0',
+        ELECTRON_RUN_AS_NODE: '1',
+        PI_CODING_AGENT_DIR: agentDirFor(cwd),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -413,17 +414,17 @@ function runPi(args: string[]): Promise<{ ok: true } | { ok: false; error: strin
   })
 }
 
-export async function installExtension(name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function installExtension(cwd: string, name: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!name || /[\s;|&`$<>]/.test(name)) {
     return { ok: false, error: 'Invalid package name' }
   }
-  return runPi(['install', `npm:${name}`])
+  return runPi(cwd, ['install', `npm:${name}`])
 }
 
-export async function uninstallExtension(name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function uninstallExtension(cwd: string, name: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!name || /[\s;|&`$<>]/.test(name)) {
     return { ok: false, error: 'Invalid package name' }
   }
   // `pi remove` is documented; `uninstall` is an alias.
-  return runPi(['remove', `npm:${name}`])
+  return runPi(cwd, ['remove', `npm:${name}`])
 }

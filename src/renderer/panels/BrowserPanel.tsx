@@ -43,7 +43,6 @@ export default function BrowserPanel({
   workspaceId,
   nodeId,
   url,
-  zoomLevel = 1,
 }: BrowserPanelProps) {
   const browserHomepage = useSettingsStore((s) => s.browserHomepage)
   const browserSearchEngine = useSettingsStore((s) => s.browserSearchEngine)
