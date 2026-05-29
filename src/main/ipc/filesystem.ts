@@ -20,6 +20,7 @@ import {
   FS_RENAME,
   FS_MKDIR,
   FS_COPY,
+  FS_IMPORT_ENTRIES,
   FS_SEARCH,
   FS_READ_BINARY,
 } from '../../shared/ipc-channels'
@@ -477,6 +478,34 @@ export function stopWatchersForWindow(windowId: number): void {
   }
 }
 
+/**
+ * Find a non-colliding entry name for `baseName` inside `destDir`. When the item
+ * is landing in the directory it already lives in (`intoSameDir`), the first
+ * candidate gets a " copy" suffix so it doesn't clobber the original; otherwise
+ * the original name is kept. Further collisions add an incrementing counter.
+ */
+async function nextAvailableName(
+  destDir: string,
+  baseName: string,
+  intoSameDir: boolean,
+): Promise<string> {
+  const ext = path.extname(baseName)
+  const stem = ext ? baseName.slice(0, -ext.length) : baseName
+  let candidate = intoSameDir ? `${stem} copy${ext}` : baseName
+  let n = 2
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      await fs.lstat(path.join(destDir, candidate))
+    } catch {
+      // ENOENT — safe to use
+      return candidate
+    }
+    candidate = intoSameDir ? `${stem} copy ${n}${ext}` : `${stem} (${n})${ext}`
+    n++
+  }
+}
+
 export function registerHandlers(): void {
   ipcMain.handle(FS_READ_FILE, async (event, filePath: string) => {
     try {
@@ -595,32 +624,8 @@ export function registerHandlers(): void {
       const safeSrc = await validatePathStrict(srcPath)
       const safeDestDir = await validatePathStrict(destDir)
 
-      // If copying into the same parent, append "copy" suffix so we don't
-      // collide with the original. Otherwise keep the source name.
-      const srcParent = path.dirname(safeSrc)
-      const baseName = path.basename(safeSrc)
-      const ext = path.extname(baseName)
-      const stem = ext ? baseName.slice(0, -ext.length) : baseName
-
-      const intoSameDir = srcParent === safeDestDir
-      let candidate = intoSameDir ? `${stem} copy${ext}` : baseName
-      let n = 2
-      // Find a non-existing destination name in destDir.
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const target = path.join(safeDestDir, candidate)
-        try {
-          await fs.lstat(target)
-        } catch {
-          // ENOENT — safe to use
-          break
-        }
-        candidate = intoSameDir
-          ? `${stem} copy ${n}${ext}`
-          : `${stem} (${n})${ext}`
-        n++
-      }
-
+      const intoSameDir = path.dirname(safeSrc) === safeDestDir
+      const candidate = await nextAvailableName(safeDestDir, path.basename(safeSrc), intoSameDir)
       const finalDest = await validatePathForCreation(path.join(safeDestDir, candidate))
 
       // Refuse to copy a directory into itself or one of its descendants.
@@ -635,6 +640,62 @@ export function registerHandlers(): void {
       throw error instanceof Error ? error : new Error(String(error))
     }
   })
+
+  // Import external files/folders (dragged in from the OS file manager) into a
+  // workspace directory. The security boundary is the DESTINATION: `destDir`
+  // must resolve inside an allowed workspace root. The SOURCE paths originate
+  // from a user-initiated OS drag (webUtils.getPathForFile) and may live
+  // anywhere — they are only read server-side to copy/move into `destDir`, and
+  // their contents are never returned to the renderer. This mirrors the
+  // explicit per-window grant model used by the native Open/Save dialogs.
+  ipcMain.handle(
+    FS_IMPORT_ENTRIES,
+    async (event, sources: string[], destDir: string, mode: 'copy' | 'move') => {
+      const win = windowFromEvent(event)
+      const safeDestDir = await validatePathStrict(destDir, win?.id)
+      const created: string[] = []
+      let failed = 0
+
+      for (const src of Array.isArray(sources) ? sources : []) {
+        try {
+          // Resolve the real source (also proves it exists). Deliberately not
+          // restricted to allowed roots — this is an explicit user drag.
+          const realSrc = await fs.realpath(src)
+
+          // Never import a folder into itself or one of its own descendants.
+          if (safeDestDir === realSrc || safeDestDir.startsWith(realSrc + path.sep)) {
+            throw new Error('Cannot import a folder into itself')
+          }
+
+          const intoSameDir = path.dirname(realSrc) === safeDestDir
+          const candidate = await nextAvailableName(safeDestDir, path.basename(realSrc), intoSameDir)
+          const finalDest = await validatePathForCreation(path.join(safeDestDir, candidate), win?.id)
+
+          if (mode === 'move') {
+            try {
+              await fs.rename(realSrc, finalDest)
+            } catch (err) {
+              // rename can't cross filesystems/volumes — fall back to copy+delete.
+              if ((err as NodeJS.ErrnoException)?.code === 'EXDEV') {
+                await fs.cp(realSrc, finalDest, { recursive: true, errorOnExist: true, force: false })
+                await fs.rm(realSrc, { recursive: true, force: true })
+              } else {
+                throw err
+              }
+            }
+          } else {
+            await fs.cp(realSrc, finalDest, { recursive: true, errorOnExist: true, force: false })
+          }
+          created.push(finalDest)
+        } catch (error) {
+          failed++
+          log.error(`[${FS_IMPORT_ENTRIES}]`, src, error)
+        }
+      }
+
+      return { created, failed }
+    },
+  )
 
   ipcMain.handle(FS_MKDIR, async (_event, dirPath: string) => {
     try {

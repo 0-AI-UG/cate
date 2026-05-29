@@ -199,6 +199,18 @@ export default function TerminalPanel({
       const runFit = () => {
         fitTimerRef.current = null
         if (!renderBox) return
+        // Defer fitting while a canvas gesture (panel resize / pan / zoom) is in
+        // flight. Fitting mid-gesture calls terminal.resize() every tick, which
+        // re-sizes the WebGL canvas and makes the panel edge appear to "jump"
+        // (terminals only — editors don't resize a GPU canvas). useNodeResize
+        // and the wheel-pan both hold `canvas-interacting` for the gesture's
+        // duration, so re-check on the same cadence and fit once it settles.
+        if (document.body.classList.contains('canvas-interacting')) {
+          fitTimerRef.current = setTimeout(() => {
+            fitRafRef.current = requestAnimationFrame(runFit)
+          }, DEBOUNCE_MS)
+          return
+        }
         const w = renderBox.clientWidth
         const h = renderBox.clientHeight
         if (w === 0 || h === 0) return
@@ -487,6 +499,17 @@ export default function TerminalPanel({
     // xterm computes hit-testing against its own DOM-space cell metrics, so we
     // must convert the incoming screen-space offset back into DOM space.
     const adjustCoords = (e: MouseEvent) => {
+      // Don't touch coordinates while a canvas gesture (panel resize / pan) is
+      // in flight. This handler runs in the capture phase and rewrites
+      // e.clientX/Y; the node-resize listener is on window (bubble phase) and
+      // would otherwise read the rewritten value, computing its delta from a
+      // moving target (screenEl's rect shifts as the panel resizes). On a
+      // zoomed canvas that feeds back every frame and the dragged edge runs
+      // away from the cursor — the terminal-only "right edge jumps right while
+      // dragging left" bug. xterm only needs adjusted coords for its own
+      // selection, which isn't happening during a resize/pan anyway.
+      if (document.body.classList.contains('canvas-interacting')) return
+
       const effective = zoomLevel / renderScale
       if (Math.abs(effective - 1.0) < 0.001) return
 
