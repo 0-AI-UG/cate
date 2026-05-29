@@ -53,7 +53,7 @@ import type {
   AuthProviderStatus,
 } from '../../shared/types'
 import type { AgentMessage as StoreMessage } from './agentStore'
-import { loadDefaultModel, loadLastModel, saveLastModel } from './agentModelPrefs'
+import { loadDefaultModel, saveLastModel } from './agentModelPrefs'
 
 // -----------------------------------------------------------------------------
 // Component
