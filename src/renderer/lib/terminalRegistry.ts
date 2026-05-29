@@ -22,6 +22,7 @@ import { scanTerminalChunkForUrls, clearTerminalUrlBuffer } from './terminalUrlA
 import { resolveTerminalKeySequence } from './terminalKeymap'
 import { getActiveTheme, subscribeTheme } from './themeManager'
 import type { Theme } from '../../shared/types'
+import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvider'
 
 /** Agent terminals show the clean detected agent name (e.g. "Codex", "Claude
  *  Code") as their tab title — set by useProcessMonitor — not the agent's raw
@@ -311,6 +312,17 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
   const searchAddon = new SearchAddon()
   terminal.loadAddon(searchAddon)
 
+  // 2c. File-path links — Cmd/Ctrl+Click opens the file in an editor at the
+  //     parsed line. (http/https URLs are a separate concern.)
+  const fileLinkDisposable = terminal.registerLinkProvider(
+    createFileLinkProvider({
+      terminal,
+      workspaceId: opts.workspaceId,
+      rootPath: resolveLinkRoot(opts.workspaceId, opts.cwd),
+    }),
+  )
+  cleanupListeners.push(() => fileLinkDisposable.dispose())
+
   // 3. Do NOT call terminal.open() here. attach() opens the terminal directly
   //    into its real container the first time it runs. Opening into a temp div
   //    and then reparenting the xterm element worked on Electron 33 but breaks
@@ -495,6 +507,16 @@ async function reconnectTerminal(
 
   const searchAddon = new SearchAddon()
   terminal.loadAddon(searchAddon)
+
+  // File-path links — same as getOrCreate.
+  const fileLinkDisposable = terminal.registerLinkProvider(
+    createFileLinkProvider({
+      terminal,
+      workspaceId: opts.workspaceId,
+      rootPath: resolveLinkRoot(opts.workspaceId, opts.cwd),
+    }),
+  )
+  cleanupListeners.push(() => fileLinkDisposable.dispose())
 
   // attach() will call terminal.open() directly into the real container —
   // see getOrCreate() for the rationale.
