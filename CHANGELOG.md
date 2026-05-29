@@ -20,6 +20,7 @@ Feature release: unified theming, a redesigned parallel-work flow, clickable ter
 - **Close tab on middle-click**: middle-clicking a tab closes it. (#176)
 - **Reload workspace from disk**: the `.cate` skill can configure the IDE, with a reload-from-disk action. (#170)
 - **Per-workspace pi agent config**: pi agent configuration is scoped per workspace, with accordion provider settings. (#168)
+- **Terminal scroll-speed setting**: a new setting controls xterm scroll sensitivity. (#185)
 
 ### Changed
 
