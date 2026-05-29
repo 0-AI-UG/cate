@@ -43,6 +43,7 @@ import { applyCanvasChildPanels } from './lib/applyCanvasChildPanels'
 import { applyTheme } from './lib/themeManager'
 import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
 import { confirmCloseCanvas } from './lib/confirmCloseCanvas'
+import { isExternalFileDrag } from './lib/importExternalEntries'
 import pkg from '../../package.json'
 
 // -----------------------------------------------------------------------------
@@ -357,24 +358,26 @@ function MainApp() {
   }, [])
 
   // ---------------------------------------------------------------------------
-  // Drag-and-drop folder from Finder
+  // Swallow stray EXTERNAL (OS) file drops on the app background so Chromium
+  // doesn't navigate to the file:// URL. The file explorer handles its own
+  // external drops (copy/move into a directory) and stops propagation, so those
+  // never reach here. We deliberately do NOT re-root the workspace on drop.
+  //
+  // Crucially, this only engages for external file drags. Internal drags
+  // (workspace reorder, file-tree moves, sidebar/panel drags) bubble up to this
+  // root element too — touching their dropEffect here would override the inner
+  // handler's effect and make the browser reject the drop (onDrop never fires).
   // ---------------------------------------------------------------------------
   const handleFileDragOver = useCallback((e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
+    e.dataTransfer.dropEffect = 'none'
   }, [])
 
-  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return
     e.preventDefault()
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length === 0) return
-    for (const file of files) {
-      const filePath = window.electronAPI.getPathForFile(file)
-      if (!filePath) continue
-      useAppStore.getState().setWorkspaceRootPath(selectedWorkspaceId, filePath)
-      break
-    }
-  }, [selectedWorkspaceId])
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Dock zone panel helpers

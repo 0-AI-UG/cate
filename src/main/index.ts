@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -616,6 +616,24 @@ function registerWindowAndDialogHandlers(): void {
       noLink: true,
     })
     return result.response === 0 ? 'with-contents' : result.response === 1 ? 'region-only' : 'cancel'
+  })
+
+  // Ask whether to copy or move external files/folders dropped onto the file
+  // explorer into a workspace directory.
+  ipcMain.handle(DIALOG_CONFIRM_IMPORT, async (event, payload: { count: number; destName: string }) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const count = payload?.count ?? 0
+    const destName = payload?.destName ?? 'this folder'
+    const result = await dialog.showMessageBox(win!, {
+      type: 'question',
+      message: `Add ${count} ${count === 1 ? 'item' : 'items'} to "${destName}"?`,
+      detail: 'Copy keeps the originals where they are. Move removes them from their current location.',
+      buttons: ['Copy', 'Move', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    })
+    return result.response === 0 ? 'copy' : result.response === 1 ? 'move' : 'cancel'
   })
 
   // Capture page screenshot for panel previews

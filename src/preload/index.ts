@@ -74,6 +74,7 @@ import {
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_CANVAS,
   DIALOG_CONFIRM_DELETE_REGION,
+  DIALOG_CONFIRM_IMPORT,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   LAYOUT_SAVE,
@@ -84,6 +85,7 @@ import {
   FS_RENAME,
   FS_MKDIR,
   FS_COPY,
+  FS_IMPORT_ENTRIES,
   FS_SEARCH,
   SHELL_SHOW_IN_FOLDER,
   NOTIFY_OS,
@@ -636,6 +638,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DIALOG_CONFIRM_DELETE_REGION, payload)
   },
 
+  confirmImportEntries(payload: { count: number; destName: string }): Promise<'copy' | 'move' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_CONFIRM_IMPORT, payload)
+  },
+
   // ---------------------------------------------------------------------------
   // Recent Projects
   // ---------------------------------------------------------------------------
@@ -698,6 +704,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   fsCopy(srcPath: string, destDir: string): Promise<string> {
     return ipcRenderer.invoke(FS_COPY, srcPath, destDir)
+  },
+
+  fsImportEntries(
+    sources: string[],
+    destDir: string,
+    mode: 'copy' | 'move',
+  ): Promise<{ created: string[]; failed: number }> {
+    return ipcRenderer.invoke(FS_IMPORT_ENTRIES, sources, destDir, mode)
   },
 
   shellShowInFolder(filePath: string): Promise<void> {

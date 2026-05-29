@@ -347,6 +347,11 @@ export interface ElectronAPI {
    *  contents, just remove the region around them), or 'cancel'. */
   confirmDeleteRegion(payload: { panelCount: number }): Promise<'with-contents' | 'region-only' | 'cancel'>
 
+  /** Native confirmation shown when external files/folders are dropped onto the
+   *  file explorer. Returns 'copy' (duplicate into the directory), 'move'
+   *  (relocate into the directory, removing the originals), or 'cancel'. */
+  confirmImportEntries(payload: { count: number; destName: string }): Promise<'copy' | 'move' | 'cancel'>
+
   // ---------------------------------------------------------------------------
   // Recent Projects
   // ---------------------------------------------------------------------------
@@ -390,6 +395,10 @@ export interface ElectronAPI {
   fsRename(oldPath: string, newPath: string): Promise<void>
   fsMkdir(dirPath: string): Promise<void>
   fsCopy(srcPath: string, destDir: string): Promise<string>
+  /** Import external files/folders (dragged in from the OS) into `destDir`,
+   *  which must resolve inside a workspace root. `mode` is 'copy' or 'move'.
+   *  Returns the created destination paths and a count of entries that failed. */
+  fsImportEntries(sources: string[], destDir: string, mode: 'copy' | 'move'): Promise<{ created: string[]; failed: number }>
   shellShowInFolder(filePath: string): Promise<void>
 
   // ---------------------------------------------------------------------------

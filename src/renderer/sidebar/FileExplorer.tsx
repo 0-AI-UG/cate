@@ -12,6 +12,7 @@ import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
 import { openFileAsPanel } from '../lib/fileRouting'
+import { isExternalFileDrag, importDroppedEntries } from '../lib/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { DockLayoutNode } from '../../shared/types'
 
@@ -366,7 +367,30 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className="flex flex-col h-full"
+      // External (OS) file/folder drops anywhere in the panel import into the
+      // workspace root. stopPropagation keeps the drop from bubbling to the
+      // app-root handler (which would otherwise re-root the workspace).
+      onDragOver={(e) => {
+        if (!isExternalFileDrag(e)) return
+        e.preventDefault()
+        // Stop the bubble to the app-root dragover handler, which forces
+        // dropEffect='none' (to swallow stray canvas drops) and would otherwise
+        // override our 'copy' and make the browser reject the drop.
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={(e) => {
+        if (!isExternalFileDrag(e)) return
+        e.preventDefault()
+        e.stopPropagation()
+        const files = e.dataTransfer.files
+        void importDroppedEntries(files, rootPath, folderName).then((ok) => {
+          if (ok) handleReload()
+        })
+      }}
+    >
       <SidebarSectionHeader
         title="Explorer"
         subtitle={folderName}

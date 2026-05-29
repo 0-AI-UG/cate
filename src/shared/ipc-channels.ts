@@ -26,6 +26,7 @@ export const FS_DELETE = 'fs:delete'
 export const FS_RENAME = 'fs:rename'
 export const FS_MKDIR = 'fs:mkdir'
 export const FS_COPY = 'fs:copy'
+export const FS_IMPORT_ENTRIES = 'fs:import-entries'
 export const FS_SEARCH = 'fs:search'
 export const FS_READ_BINARY = 'fs:readBinary'
 
@@ -137,6 +138,7 @@ export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
 export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'
+export const DIALOG_CONFIRM_IMPORT = 'dialog:confirmImport'
 
 // Panel window: renderer pushes an updated PanelState snapshot to main so
 // the windowRegistry's panel meta (used by session persistence and the
