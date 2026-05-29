@@ -43,6 +43,7 @@ import { applyCanvasChildPanels } from './lib/applyCanvasChildPanels'
 import { applyTheme } from './lib/themeManager'
 import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
 import { confirmCloseCanvas } from './lib/confirmCloseCanvas'
+import { isExternalFileDrag } from './lib/importExternalEntries'
 import pkg from '../../package.json'
 
 // -----------------------------------------------------------------------------
@@ -357,17 +358,24 @@ function MainApp() {
   }, [])
 
   // ---------------------------------------------------------------------------
-  // Swallow stray external file drops on the app background. Dropping files onto
-  // the file explorer is handled there (copy/move into a directory); anywhere
-  // else we only preventDefault so Chromium doesn't navigate to the file:// URL.
-  // We deliberately do NOT re-root the workspace on drop.
+  // Swallow stray EXTERNAL (OS) file drops on the app background so Chromium
+  // doesn't navigate to the file:// URL. The file explorer handles its own
+  // external drops (copy/move into a directory) and stops propagation, so those
+  // never reach here. We deliberately do NOT re-root the workspace on drop.
+  //
+  // Crucially, this only engages for external file drags. Internal drags
+  // (workspace reorder, file-tree moves, sidebar/panel drags) bubble up to this
+  // root element too — touching their dropEffect here would override the inner
+  // handler's effect and make the browser reject the drop (onDrop never fires).
   // ---------------------------------------------------------------------------
   const handleFileDragOver = useCallback((e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'none'
   }, [])
 
   const handleFileDrop = useCallback((e: React.DragEvent) => {
+    if (!isExternalFileDrag(e)) return
     e.preventDefault()
   }, [])
 
