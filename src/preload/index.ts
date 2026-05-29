@@ -78,6 +78,7 @@ import {
   DIALOG_CONFIRM_RELOAD_WORKSPACE,
   DIALOG_CONFIRM_DELETE_REGION,
   DIALOG_CONFIRM_IMPORT,
+  DIALOG_TERMINAL_LINK_OPEN,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   LAYOUT_SAVE,
@@ -654,6 +655,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   confirmImportEntries(payload: { count: number; destName: string }): Promise<'copy' | 'move' | 'cancel'> {
     return ipcRenderer.invoke(DIALOG_CONFIRM_IMPORT, payload)
+  },
+
+  promptTerminalLinkOpen(url: string): Promise<'canvas' | 'external' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_TERMINAL_LINK_OPEN, { url })
   },
 
   // ---------------------------------------------------------------------------

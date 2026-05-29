@@ -19,7 +19,7 @@ import { awaitWorkspaceSync, useAppStore } from '../stores/appStore'
 import { extractAgentTitleSegment } from './agentTitleParser'
 import { titleIndicatesRunning, outputShowsBodySpinner } from './agentSpinner'
 import { noteAgentTitle, noteAgentSpinnerByte } from './agentScreenDetector'
-import { scanTerminalChunkForUrls, clearTerminalUrlBuffer, openTerminalUrl } from './terminalUrlAutoOpen'
+import { openTerminalUrl } from './terminalUrlOpen'
 import { resolveTerminalKeySequence } from './terminalKeymap'
 import { getActiveTheme, subscribeTheme } from './themeManager'
 import type { Theme } from '../../shared/types'
@@ -96,10 +96,29 @@ export function isTerminalCopyChord(
 }
 
 /**
+ * Open a primary (non-Shift) clicked terminal link per the
+ * `terminalLinkOpenTarget` setting: 'canvas' opens an in-app BrowserPanel,
+ * 'external' opens the system browser, and 'ask' shows a native dialog the
+ * first time — the choice is then remembered (written to the setting) and can
+ * be changed later in Settings → Browser.
+ */
+async function openPrimaryTerminalLink(workspaceId: string, uri: string): Promise<void> {
+  let target = useSettingsStore.getState().terminalLinkOpenTarget
+  if (target === 'ask') {
+    const choice = await window.electronAPI.promptTerminalLinkOpen(uri)
+    if (choice === 'cancel') return
+    useSettingsStore.getState().setSetting('terminalLinkOpenTarget', choice)
+    target = choice
+  }
+  if (target === 'canvas') openTerminalUrl(workspaceId, uri)
+  else window.electronAPI.openExternalUrl(uri)
+}
+
+/**
  * WebLinksAddon click handler shared by the fresh-spawn and reconnect paths.
- * Mirrors VS Code: Cmd/Ctrl+Click opens the URL in an in-app BrowserPanel
- * (reusing the existing auto-open routing + dedupe), +Shift opens it in the
- * external system browser, and a plain click is ignored.
+ * Mirrors VS Code: Cmd/Ctrl+Click opens the URL (destination per the
+ * `terminalLinkOpenTarget` setting), +Shift always opens it in the external
+ * system browser, and a plain click is ignored.
  */
 function createTerminalLinkHandler(
   workspaceId: string,
@@ -107,7 +126,7 @@ function createTerminalLinkHandler(
   return (event: MouseEvent, uri: string): void => {
     switch (resolveTerminalLinkTarget(event, isMacPlatform)) {
       case 'panel':
-        openTerminalUrl(workspaceId, uri)
+        void openPrimaryTerminalLink(workspaceId, uri)
         break
       case 'external':
         window.electronAPI.openExternalUrl(uri)
@@ -407,7 +426,6 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
       if (id === ptyId) {
         terminal.write(data)
-        try { scanTerminalChunkForUrls(panelId, opts.workspaceId, data) } catch { /* ignore */ }
         if (outputShowsBodySpinner(data)) noteAgentSpinnerByte(ptyId)
       }
     })
@@ -556,7 +574,6 @@ async function reconnectTerminal(
   const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
     if (id === ptyId) {
       terminal.write(data)
-      try { scanTerminalChunkForUrls(panelId, opts.workspaceId, data) } catch { /* ignore */ }
       if (outputShowsBodySpinner(data)) noteAgentSpinnerByte(ptyId)
     }
   })
@@ -646,7 +663,6 @@ function release(panelId: string): void {
 
   registry.delete(panelId)
   pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
-  clearTerminalUrlBuffer(panelId)
 
   const { terminal, fitAddon, webglAddon, cleanupListeners } = entry
 
@@ -915,7 +931,6 @@ function dispose(panelId: string): void {
   // Remove from registry first so re-entrant calls are no-ops
   registry.delete(panelId)
   pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
-  clearTerminalUrlBuffer(panelId)
 
   const { terminal, fitAddon, webglAddon, ptyId, cleanupListeners } = entry
   const { electronAPI } = window

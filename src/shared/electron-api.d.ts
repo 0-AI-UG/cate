@@ -361,6 +361,12 @@ export interface ElectronAPI {
    *  (relocate into the directory, removing the originals), or 'cancel'. */
   confirmImportEntries(payload: { count: number; destName: string }): Promise<'copy' | 'move' | 'cancel'>
 
+  /** Native dialog asking where a Cmd/Ctrl+clicked terminal link should open,
+   *  shown the first time while the terminalLinkOpenTarget setting is 'ask'.
+   *  Returns 'canvas' (in-app browser panel), 'external' (system browser), or
+   *  'cancel'. The renderer remembers the choice by writing the setting. */
+  promptTerminalLinkOpen(url: string): Promise<'canvas' | 'external' | 'cancel'>
+
   // ---------------------------------------------------------------------------
   // Recent Projects
   // ---------------------------------------------------------------------------
