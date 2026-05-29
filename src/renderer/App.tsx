@@ -357,24 +357,19 @@ function MainApp() {
   }, [])
 
   // ---------------------------------------------------------------------------
-  // Drag-and-drop folder from Finder
+  // Swallow stray external file drops on the app background. Dropping files onto
+  // the file explorer is handled there (copy/move into a directory); anywhere
+  // else we only preventDefault so Chromium doesn't navigate to the file:// URL.
+  // We deliberately do NOT re-root the workspace on drop.
   // ---------------------------------------------------------------------------
   const handleFileDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
+    e.dataTransfer.dropEffect = 'none'
   }, [])
 
-  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length === 0) return
-    for (const file of files) {
-      const filePath = window.electronAPI.getPathForFile(file)
-      if (!filePath) continue
-      useAppStore.getState().setWorkspaceRootPath(selectedWorkspaceId, filePath)
-      break
-    }
-  }, [selectedWorkspaceId])
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Dock zone panel helpers

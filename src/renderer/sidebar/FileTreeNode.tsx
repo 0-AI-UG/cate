@@ -18,6 +18,7 @@ import {
   Image as ImageIcon,
 } from '@phosphor-icons/react'
 import log from '../lib/logger'
+import { isExternalFileDrag, importDroppedEntries } from '../lib/importExternalEntries'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
 
@@ -392,13 +393,21 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   const dropTargetDir = node.isDirectory ? node.path : parentDir
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (isExternalFileDrag(e)) {
+      e.preventDefault()
+      // Stop the bubble to the app-root handler (which forces dropEffect='none')
+      // so the browser keeps our 'copy' and allows the drop.
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'copy'
+      return
+    }
     if (!e.dataTransfer.types.includes('application/cate-file')) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
   }, [])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('application/cate-file')) return
+    if (!isExternalFileDrag(e) && !e.dataTransfer.types.includes('application/cate-file')) return
     e.preventDefault()
     dragCounterRef.current++
     setIsDragOver(true)
@@ -413,6 +422,19 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   }, [])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
+    // External (OS) file/folder drop onto a folder → import into that folder.
+    // stopPropagation keeps it from also triggering the panel-root import.
+    if (isExternalFileDrag(e)) {
+      e.preventDefault()
+      e.stopPropagation()
+      dragCounterRef.current = 0
+      setIsDragOver(false)
+      const files = e.dataTransfer.files
+      const ok = await importDroppedEntries(files, dropTargetDir, node.name)
+      if (ok) onTreeChanged?.()
+      return
+    }
+
     e.preventDefault()
     e.stopPropagation()
     dragCounterRef.current = 0
@@ -437,7 +459,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       }
     }
     onTreeChanged?.()
-  }, [dropTargetDir, node.isDirectory, onTreeChanged])
+  }, [dropTargetDir, node.isDirectory, node.name, onTreeChanged])
 
   // ---------------------------------------------------------------------------
   // Render
