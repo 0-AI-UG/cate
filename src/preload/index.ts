@@ -64,6 +64,8 @@ import {
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
   PROJECT_STATE_LOAD,
+  WORKSPACE_EXTERNAL_EDIT,
+  WORKSPACE_EXTERNAL_EDIT_DISMISS,
   BOOT_SNAPSHOT_WRITE,
   APP_OPEN_PATH,
   MENU_OPEN_SETTINGS,
@@ -73,6 +75,7 @@ import {
   DIALOG_SAVE_FILE,
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_CANVAS,
+  DIALOG_CONFIRM_RELOAD_WORKSPACE,
   DIALOG_CONFIRM_DELETE_REGION,
   DIALOG_CONFIRM_IMPORT,
   RECENT_PROJECTS_GET,
@@ -634,6 +637,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DIALOG_CONFIRM_CLOSE_CANVAS, payload)
   },
 
+  confirmReloadWorkspace(payload: { name?: string }): Promise<'reload' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_CONFIRM_RELOAD_WORKSPACE, payload)
+  },
+
   confirmDeleteRegion(payload: { panelCount: number }): Promise<'with-contents' | 'region-only' | 'cancel'> {
     return ipcRenderer.invoke(DIALOG_CONFIRM_DELETE_REGION, payload)
   },
@@ -820,6 +827,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     ipcRenderer.on(WINDOW_FULLSCREEN_STATE, listener)
     return () => { ipcRenderer.removeListener(WINDOW_FULLSCREEN_STATE, listener) }
+  },
+
+  /** Subscribe to workspace.json external-edit state. Fires whenever a project's
+   *  on-disk workspace file diverges from what Cate last wrote (edited
+   *  externally) or comes back in sync after a reload. */
+  onWorkspaceExternalEdit(callback: (payload: { rootPath: string }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { rootPath: string }): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(WORKSPACE_EXTERNAL_EDIT, listener)
+    return () => { ipcRenderer.removeListener(WORKSPACE_EXTERNAL_EDIT, listener) }
+  },
+
+  /** Tell main the user declined the reload prompt — resume saving so the
+   *  current in-app layout overwrites the external edit. */
+  dismissWorkspaceExternalEdit(rootPath: string): Promise<void> {
+    return ipcRenderer.invoke(WORKSPACE_EXTERNAL_EDIT_DISMISS, rootPath)
   },
 
   // ---------------------------------------------------------------------------
