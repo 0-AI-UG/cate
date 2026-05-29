@@ -746,7 +746,7 @@ export interface LayoutSnapshot {
 // Notification types
 // -----------------------------------------------------------------------------
 
-export type TerminalUrlAutoOpenMode = 'off' | 'auto' | 'prompt'
+export type TerminalLinkOpenTarget = 'ask' | 'canvas' | 'external'
 
 export type CanvasGridStyle = 'dots' | 'lines' | 'none'
 
@@ -810,12 +810,12 @@ export interface AppSettings {
   // Browser
   browserHomepage: string
   browserSearchEngine: BrowserSearchEngine
-  /** How to handle URLs printed in terminal output (localhost dev servers, etc.).
-   *  - 'off': ignore them.
-   *  - 'auto': open in an existing browser panel (or create one) automatically.
-   *  - 'prompt': surface an in-app prompt asking before opening.
-   *  Either way, each URL is acted on at most once per session. */
-  autoOpenUrlsFromTerminal: TerminalUrlAutoOpenMode
+  /** Where a Cmd/Ctrl+clicked terminal link opens.
+   *  - 'ask': prompt once, with an option to remember the choice.
+   *  - 'canvas': reuse/create an in-app browser panel.
+   *  - 'external': open in the system default browser.
+   *  (Cmd/Ctrl+Shift+click always forces 'external' regardless of this.) */
+  terminalLinkOpenTarget: TerminalLinkOpenTarget
 
   // Sidebar
   sidebarTintOpacity: number
@@ -867,7 +867,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Browser
   browserHomepage: 'about:blank',
   browserSearchEngine: 'google',
-  autoOpenUrlsFromTerminal: 'prompt',
+  terminalLinkOpenTarget: 'ask',
 
   // Sidebar
   sidebarTintOpacity: 1.0,

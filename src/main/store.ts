@@ -49,7 +49,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   autoSuspendIdleTerminals: 'boolean',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
-  autoOpenUrlsFromTerminal: 'string',
+  terminalLinkOpenTarget: 'string',
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',
   notificationsEnabled: 'boolean',
@@ -62,13 +62,8 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
 function mergeValidatedSettings(target: Partial<AppSettings>, source: Record<string, unknown>): void {
   for (const key of Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>) {
     if (!(key in source)) continue
-    let val = source[key]
+    const val = source[key]
     const expected = SETTINGS_SCHEMA[key]
-    // Migration: autoOpenUrlsFromTerminal was a boolean prior to v0.4.5.
-    // Translate legacy values so users keep their previous behavior.
-    if (key === 'autoOpenUrlsFromTerminal' && typeof val === 'boolean') {
-      val = val ? 'auto' : 'off'
-    }
     if (expected === 'array') {
       if (!Array.isArray(val)) { log.warn('Settings schema mismatch: %s expected array, got %s', key, typeof val); continue }
     } else {

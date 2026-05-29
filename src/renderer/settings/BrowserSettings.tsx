@@ -1,5 +1,5 @@
 import { useSettingsStore } from '../stores/settingsStore'
-import type { BrowserSearchEngine, TerminalUrlAutoOpenMode } from '../../shared/types'
+import type { BrowserSearchEngine, TerminalLinkOpenTarget } from '../../shared/types'
 import { SettingRow, TextInput, Select } from './SettingsComponents'
 
 export function BrowserSettings() {
@@ -27,16 +27,16 @@ export function BrowserSettings() {
         />
       </SettingRow>
       <SettingRow
-        label="URLs from terminal"
-        description="What to do when a localhost or http(s) URL appears in terminal output. Off ignores them. Automatic opens each URL once in an existing browser panel (or a new one). Ask shows an inline prompt at the bottom of the terminal."
+        label="Open terminal links"
+        description="Where a Cmd/Ctrl+click on a terminal link opens. Ask prompts the first time (with an option to remember). On canvas reuses or creates a browser panel. In system browser opens your default browser. Cmd/Ctrl+Shift+click always uses the system browser."
       >
         <Select
-          value={store.autoOpenUrlsFromTerminal}
-          onChange={(v) => store.setSetting('autoOpenUrlsFromTerminal', v as TerminalUrlAutoOpenMode)}
+          value={store.terminalLinkOpenTarget}
+          onChange={(v) => store.setSetting('terminalLinkOpenTarget', v as TerminalLinkOpenTarget)}
           options={[
-            { value: 'off', label: 'Off' },
-            { value: 'auto', label: 'Automatic' },
-            { value: 'prompt', label: 'Ask before opening' },
+            { value: 'ask', label: 'Ask each time' },
+            { value: 'canvas', label: 'On canvas' },
+            { value: 'external', label: 'In system browser' },
           ]}
         />
       </SettingRow>
