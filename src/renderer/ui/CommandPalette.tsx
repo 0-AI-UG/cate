@@ -382,6 +382,34 @@ export const CommandPalette: React.FC = () => {
     [close],
   )
 
+  // Focus an open panel by id: pan/center the canvas node if it lives on the
+  // canvas, otherwise reveal it in its dock zone. Shared by the "Open Panels"
+  // click + Enter handlers and the panel search results.
+  const focusPanelById = useCallback(
+    (panelId: string) => {
+      const cs = canvasApi.getState()
+      const node = Object.values(cs.nodes).find((n) => n.panelId === panelId)
+      if (node) {
+        cs.focusAndCenter(node.id)
+        return
+      }
+      const dock = useDockStore.getState()
+      const loc = dock.getPanelLocation(panelId)
+      if (loc && loc.type === 'dock') {
+        const zone = dock.zones[loc.zone]
+        if (!zone.visible) dock.toggleZone(loc.zone)
+        if (zone.layout) {
+          const stack = findTabStack(zone.layout, loc.stackId)
+          if (stack) {
+            const idx = stack.panelIds.indexOf(panelId)
+            if (idx >= 0) dock.setActiveTab(loc.stackId, idx)
+          }
+        }
+      }
+    },
+    [canvasApi],
+  )
+
   const selectSearchResult = useCallback(
     async (result: SearchResult) => {
       const appStore = useAppStore.getState()
@@ -405,24 +433,12 @@ export const CommandPalette: React.FC = () => {
         if (result.nodeId) {
           canvasApi.getState().focusAndCenter(result.nodeId)
         } else if (result.panelId) {
-          const dock = useDockStore.getState()
-          const loc = dock.getPanelLocation(result.panelId)
-          if (loc && loc.type === 'dock') {
-            const zone = dock.zones[loc.zone]
-            if (!zone.visible) dock.toggleZone(loc.zone)
-            if (zone.layout) {
-              const stack = findTabStack(zone.layout, loc.stackId)
-              if (stack) {
-                const idx = stack.panelIds.indexOf(result.panelId)
-                if (idx >= 0) dock.setActiveTab(loc.stackId, idx)
-              }
-            }
-          }
+          focusPanelById(result.panelId)
         }
       }
       close()
     },
-    [canvasApi, close],
+    [canvasApi, close, focusPanelById],
   )
 
   // Keyboard navigation
@@ -449,9 +465,7 @@ export const CommandPalette: React.FC = () => {
             if (selectedIndex < recommendedPanels.length) {
               const panel = recommendedPanels[selectedIndex]
               if (panel) {
-                const cs = canvasApi.getState()
-                const nodeEntry = Object.values(cs.nodes).find((n) => n.panelId === panel.id)
-                if (nodeEntry) cs.focusNode(nodeEntry.id)
+                focusPanelById(panel.id)
                 close()
               }
             } else {
@@ -479,7 +493,7 @@ export const CommandPalette: React.FC = () => {
     document.addEventListener('keydown', handleKey, { capture: true })
     return () =>
       document.removeEventListener('keydown', handleKey, { capture: true })
-  }, [showCommandPalette, filteredCommands, searchResults, recommendedPanels, showRecommended, selectedIndex, totalItems, executeCommand, selectSearchResult, close, canvasApi])
+  }, [showCommandPalette, filteredCommands, searchResults, recommendedPanels, showRecommended, selectedIndex, totalItems, executeCommand, selectSearchResult, close, canvasApi, focusPanelById])
 
   if (!showCommandPalette) return null
 
@@ -547,9 +561,7 @@ export const CommandPalette: React.FC = () => {
                           isSelected ? 'bg-blue-600/30' : 'hover:bg-white/5'
                         }`}
                         onClick={() => {
-                          const cs = canvasApi.getState()
-                          const nodeEntry = Object.values(cs.nodes).find((n) => n.panelId === panel.id)
-                          if (nodeEntry) cs.focusNode(nodeEntry.id)
+                          focusPanelById(panel.id)
                           close()
                         }}
                         onMouseEnter={() => setSelectedIndex(i)}
