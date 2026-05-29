@@ -404,7 +404,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     }
     return (
       <div
-        className={`group flex items-center gap-2 h-8 px-2 rounded-sm cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
+        className={`group flex items-center gap-2 h-8 px-2 cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
           isContextActive ? 'ring-1 ring-strong' : ''
         } ${isSelected ? 'bg-surface-6' : ''}`}
         onClick={handlePickFolder}
@@ -504,7 +504,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     <div onContextMenu={handleContextMenu}>
       {/* Project row */}
       <div
-        className={`group flex items-center gap-1 h-8 px-1.5 rounded-sm cursor-pointer transition-colors outline-none ${
+        className={`group flex items-center gap-1 h-8 px-1.5 cursor-pointer transition-colors outline-none ${
           isContextActive ? 'ring-1 ring-strong' : ''
         } ${
           isMultiSelected

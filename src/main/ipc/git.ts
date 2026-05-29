@@ -4,12 +4,15 @@
 
 import { simpleGit } from 'simple-git'
 import { ipcMain } from 'electron'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import log from '../logger'
 import fs from 'fs/promises'
 import path from 'path'
 import { validateCwd, addAllowedRoot, removeAllowedRoot } from './pathValidation'
 import {
   GIT_IS_REPO,
+  GIT_INIT,
   GIT_LS_FILES,
   GIT_STATUS,
   GIT_DIFF,
@@ -22,6 +25,11 @@ import {
   GIT_WORKTREE_PRUNE,
   GIT_WORKTREE_STATUS,
   GIT_WORKTREE_MERGE_TO,
+  GIT_WORKTREE_ADD_FROM_PR,
+  GIT_WORKTREE_UPDATE_FROM,
+  GIT_CREATE_PR,
+  GIT_PR_STATUS,
+  GIT_PR_LIST,
   GIT_PUSH,
   GIT_PULL,
   GIT_FETCH,
@@ -83,6 +91,46 @@ async function lsFiles(dirPath: string): Promise<string[]> {
   }
 }
 
+const execFileP = promisify(execFile)
+
+/** Whether the GitHub CLI is installed and runnable from `cwd`. */
+async function ghAvailable(cwd: string): Promise<boolean> {
+  try {
+    await execFileP('gh', ['--version'], { cwd, timeout: 5000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Create a worktree's containing dir and drop a self-ignoring `*` .gitignore
+ *  so the checkouts under .cate/worktrees never show as untracked in the parent
+ *  repo. Best-effort; the .gitignore is written only when absent. */
+async function ensureContainingDir(targetPath: string): Promise<void> {
+  const containingDir = path.dirname(targetPath)
+  await fs.mkdir(containingDir, { recursive: true })
+  const ignorePath = path.join(containingDir, '.gitignore')
+  try {
+    await fs.access(ignorePath)
+  } catch {
+    await fs.writeFile(ignorePath, '*\n').catch(() => {})
+  }
+}
+
+/** Build a github.com compare URL from the repo's `origin` remote so a PR can
+ *  be opened in the browser even when the `gh` CLI isn't installed. */
+async function compareUrlFor(git: ReturnType<typeof simpleGit>, branch: string): Promise<string | null> {
+  try {
+    const remote = (await git.raw(['remote', 'get-url', 'origin'])).trim()
+    // git@github.com:owner/repo.git  or  https://github.com/owner/repo(.git)
+    const m = remote.match(/github\.com[:/](.+?)(?:\.git)?$/)
+    if (!m) return null
+    return `https://github.com/${m[1]}/compare/${encodeURIComponent(branch)}?expand=1`
+  } catch {
+    return null
+  }
+}
+
 export async function createBranch(cwd: string, branchName: string, startPoint?: string): Promise<void> {
   const git = simpleGit(validateCwd(cwd))
   if (startPoint) {
@@ -95,6 +143,16 @@ export async function createBranch(cwd: string, branchName: string, startPoint?:
 export function registerHandlers(): void {
   ipcMain.handle(GIT_IS_REPO, async (_event, dirPath: string) => {
     return isGitRepo(validateCwd(dirPath))
+  })
+
+  ipcMain.handle(GIT_INIT, async (_event, dirPath: string) => {
+    try {
+      const git = simpleGit(validateCwd(dirPath))
+      await git.init()
+    } catch (error) {
+      log.error(`[${GIT_INIT}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
   })
 
   ipcMain.handle(GIT_LS_FILES, async (_event, dirPath: string) => {
@@ -395,7 +453,7 @@ export function registerHandlers(): void {
       try {
         const validRepo = validateCwd(repoCwd)
         const git = simpleGit(validRepo)
-        await fs.mkdir(path.dirname(targetPath), { recursive: true })
+        await ensureContainingDir(targetPath)
         const args = ['worktree', 'add']
         if (options?.createBranch) {
           args.push('-b', branch, targetPath, options.baseRef ?? 'HEAD')
@@ -403,8 +461,8 @@ export function registerHandlers(): void {
           args.push(targetPath, branch)
         }
         await git.raw(args)
-        // Worktree dirs sit at <repo>/../<repo>.worktrees/<branch>, outside
-        // the workspace's primary rootPath. Whitelist them so terminals/agents
+        // The worktree dir sits under .cate/, which isn't a tracked path the
+        // workspace validator knows about — whitelist it so terminals/agents
         // can spawn with the worktree as cwd without tripping validateCwd.
         addAllowedRoot(targetPath)
         return { path: targetPath, branch }
@@ -412,6 +470,39 @@ export function registerHandlers(): void {
         log.error(`[${GIT_WORKTREE_ADD}]`, error)
         throw error instanceof Error ? error : new Error(String(error))
       }
+    },
+  )
+
+  // Check out an open pull request (including contributors' fork branches) into
+  // its own worktree. We create a detached worktree, then let `gh pr checkout`
+  // adopt the PR branch inside it — gh wires up the fork remote + upstream so
+  // commits can be pushed back to update the PR.
+  ipcMain.handle(
+    GIT_WORKTREE_ADD_FROM_PR,
+    async (_event, repoCwd: string, prNumber: number, targetPath: string) => {
+      const validRepo = validateCwd(repoCwd)
+      const git = simpleGit(validRepo)
+      if (!(await ghAvailable(validRepo))) {
+        throw new Error('GitHub CLI (gh) is required to check out pull requests.')
+      }
+      await ensureContainingDir(targetPath)
+      await git.raw(['worktree', 'add', '--detach', targetPath])
+      addAllowedRoot(targetPath)
+      try {
+        await execFileP('gh', ['pr', 'checkout', String(prNumber)], {
+          cwd: targetPath,
+          timeout: 120000,
+        })
+      } catch (error) {
+        // Roll back the half-created worktree so we never leave an orphan.
+        await git.raw(['worktree', 'remove', '--force', targetPath]).catch(() => {})
+        await fs.rm(targetPath, { recursive: true, force: true }).catch(() => {})
+        removeAllowedRoot(targetPath)
+        const msg = error instanceof Error ? error.message : String(error)
+        throw new Error(`Could not check out PR #${prNumber}: ${msg}`)
+      }
+      const branch = (await simpleGit(targetPath).raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+      return { path: targetPath, branch }
     },
   )
 
@@ -505,4 +596,118 @@ export function registerHandlers(): void {
       }
     },
   )
+
+  // Pull the latest primary branch into a worktree's own branch, run inside the
+  // worktree so the primary checkout is never disturbed. Offline-friendly: a
+  // missing remote just skips the fetch and merges the local primary branch.
+  ipcMain.handle(
+    GIT_WORKTREE_UPDATE_FROM,
+    async (_event, worktreePath: string, fromBranch: string) => {
+      try {
+        const git = simpleGit(validateCwd(worktreePath))
+        await git.fetch().catch(() => {})
+        const result = await git.merge([fromBranch, '--no-edit'])
+        return { ok: true, result }
+      } catch (error) {
+        log.error(`[${GIT_WORKTREE_UPDATE_FROM}]`, error)
+        const msg = error instanceof Error ? error.message : String(error)
+        const isConflict = /CONFLICT|conflict/.test(msg)
+        return { ok: false, conflict: isConflict, message: msg }
+      }
+    },
+  )
+
+  // Open (or locate) a GitHub pull request for a worktree's branch. Pushes the
+  // branch with upstream first, then prefers `gh pr create`; without `gh`, falls
+  // back to a github.com compare URL the renderer can open in the browser.
+  ipcMain.handle(GIT_CREATE_PR, async (_event, worktreePath: string, branch: string) => {
+    const cwd = validateCwd(worktreePath)
+    const git = simpleGit(cwd)
+    try {
+      await git.push(['-u', 'origin', branch])
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      return { ok: false, message: `Push failed: ${msg}` }
+    }
+    if (await ghAvailable(cwd)) {
+      try {
+        const { stdout } = await execFileP('gh', ['pr', 'create', '--fill', '--head', branch], {
+          cwd,
+          timeout: 60000,
+        })
+        const url = stdout.trim().split('\n').filter(Boolean).pop() ?? ''
+        return { ok: true, created: true, url }
+      } catch {
+        // A PR may already exist for this branch — return its URL instead.
+        try {
+          const { stdout } = await execFileP(
+            'gh',
+            ['pr', 'view', branch, '--json', 'url', '--jq', '.url'],
+            { cwd, timeout: 10000 },
+          )
+          const url = stdout.trim()
+          if (url) return { ok: true, created: false, url }
+        } catch {
+          /* fall through to the compare URL */
+        }
+      }
+    }
+    const url = await compareUrlFor(git, branch)
+    if (url) return { ok: true, created: false, url, fallback: true }
+    return { ok: false, message: 'Pushed, but could not determine the GitHub URL (no origin remote?).' }
+  })
+
+  // Cheap PR-status lookup for the sidebar pill. Returns null when `gh` is
+  // absent or the branch has no PR — both are normal, so failures stay quiet.
+  ipcMain.handle(GIT_PR_STATUS, async (_event, worktreePath: string, branch: string) => {
+    try {
+      const cwd = validateCwd(worktreePath)
+      if (!(await ghAvailable(cwd))) return null
+      const { stdout } = await execFileP(
+        'gh',
+        ['pr', 'view', branch, '--json', 'number,state,url,isDraft'],
+        { cwd, timeout: 10000 },
+      )
+      const data = JSON.parse(stdout) as {
+        number: number
+        state: string
+        url: string
+        isDraft: boolean
+      }
+      return { number: data.number, state: data.state, url: data.url, isDraft: data.isDraft }
+    } catch {
+      return null
+    }
+  })
+
+  // List open pull requests for the branch picker. Returns [] when `gh` is
+  // absent or the repo has no GitHub remote, so the picker just omits the
+  // section rather than erroring.
+  ipcMain.handle(GIT_PR_LIST, async (_event, repoCwd: string) => {
+    try {
+      const cwd = validateCwd(repoCwd)
+      if (!(await ghAvailable(cwd))) return []
+      const { stdout } = await execFileP(
+        'gh',
+        ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,headRefName,author,isCrossRepository'],
+        { cwd, timeout: 15000 },
+      )
+      const arr = JSON.parse(stdout) as Array<{
+        number: number
+        title: string
+        headRefName: string
+        author?: { login?: string }
+        isCrossRepository?: boolean
+      }>
+      return arr.map((p) => ({
+        number: p.number,
+        title: p.title,
+        headRefName: p.headRefName,
+        author: p.author?.login ?? '',
+        isFork: !!p.isCrossRepository,
+      }))
+    } catch {
+      return []
+    }
+  })
 }
