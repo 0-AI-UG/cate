@@ -62,6 +62,32 @@ describe('parseTerminalFileMatches', () => {
   it('ignores plain prose', () => {
     expect(parseTerminalFileMatches('hello world, nothing here')).toEqual([])
   })
+
+  it('parses a Windows backslash relative path', () => {
+    const [m] = parseTerminalFileMatches('error src\\foo.ts:12:5')
+    expect(m.path).toBe('src\\foo.ts')
+    expect(m.line).toBe(12)
+    expect(m.column).toBe(5)
+  })
+
+  it('parses a Windows drive-letter absolute path (backslash)', () => {
+    const [m] = parseTerminalFileMatches('at C:\\Users\\x\\foo.tsx:10:2')
+    expect(m.path).toBe('C:\\Users\\x\\foo.tsx')
+    expect(m.line).toBe(10)
+    expect(m.column).toBe(2)
+  })
+
+  it('parses a Windows drive-letter absolute path (forward slash)', () => {
+    const [m] = parseTerminalFileMatches('C:/Users/x/file.ts:3')
+    expect(m.path).toBe('C:/Users/x/file.ts')
+    expect(m.line).toBe(3)
+  })
+
+  it('parses a .\\ backslash relative path', () => {
+    const [m] = parseTerminalFileMatches('open .\\lib\\b.js now')
+    expect(m.path).toBe('.\\lib\\b.js')
+    expect(m.line).toBeUndefined()
+  })
 })
 
 describe('resolveCandidatePath', () => {
@@ -79,6 +105,19 @@ describe('resolveCandidatePath', () => {
 
   it('keeps ../ for the fs layer to resolve', () => {
     expect(resolveCandidatePath('../x.ts', '/root/sub')).toBe('/root/sub/../x.ts')
+  })
+
+  it('returns a Windows drive-letter absolute path unchanged', () => {
+    expect(resolveCandidatePath('C:\\Users\\x\\foo.ts', 'C:\\root')).toBe('C:\\Users\\x\\foo.ts')
+    expect(resolveCandidatePath('C:/Users/x/foo.ts', 'C:\\root')).toBe('C:/Users/x/foo.ts')
+  })
+
+  it('joins a Windows backslash relative path onto the root', () => {
+    expect(resolveCandidatePath('src\\x.ts', 'C:\\root')).toBe('C:\\root/src\\x.ts')
+  })
+
+  it('strips a leading .\\ when joining', () => {
+    expect(resolveCandidatePath('.\\src\\x.ts', 'C:\\root')).toBe('C:\\root/src\\x.ts')
   })
 })
 

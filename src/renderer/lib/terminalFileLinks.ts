@@ -8,6 +8,12 @@
 // modifier. The provider (terminalFileLinkProvider) adds fs validation + xterm.
 // =============================================================================
 
+/** Absolute paths: POSIX `/x`, Windows drive `C:\x` / `C:/x`, or UNC `\\host`. */
+const ABSOLUTE_PATH_RE = /^(?:\/|\\|[A-Za-z]:[\\/])/
+
+/** A leading `./` or `.\` (single-dot) prefix to strip when joining. */
+const DOT_SLASH_PREFIX_RE = /^\.[\\/]/
+
 export interface FileMatch {
   /** The matched path as it appeared (absolute, or relative incl. ./ or ../). */
   path: string
@@ -21,12 +27,15 @@ export interface FileMatch {
   end: number
 }
 
-// A path token: an optional ./ or ../ prefix (or a leading /), one or more
-// `segment/` parts (so a bare filename without a slash is NOT matched), then a
-// `name.ext` filename. An optional `:line(:col)?` suffix follows. Requiring a
-// slash + extension keeps false positives low; fs validation is the final gate.
+// A path token: an optional prefix — a Windows drive (`C:\` / `C:/`), a leading
+// separator (POSIX `/abs` or UNC `\`), or a `./` / `../` dot prefix — then one
+// or more `segment<sep>` parts (so a bare filename without a separator is NOT
+// matched), then a `name.ext` filename. `<sep>` is `/` or `\`, so Windows
+// backslash paths match too. An optional `:line(:col)?` suffix follows.
+// Requiring a separator + extension keeps false positives low; fs validation is
+// the final gate.
 const FILE_LINK_RE =
-  /((?:\.{0,2}\/)?(?:[\w.@+-]+\/)+[\w.@+-]+\.[A-Za-z][\w]*)(?::(\d+)(?::(\d+))?)?/g
+  /((?:[A-Za-z]:[\\/]|[\\/]|\.{1,2}[\\/])?(?:[\w.@+-]+[\\/])+[\w.@+-]+\.[A-Za-z][\w]*)(?::(\d+)(?::(\d+))?)?/g
 
 /** Find every path-shaped token (with optional :line:col) in a line of text. */
 export function parseTerminalFileMatches(lineText: string): FileMatch[] {
@@ -46,13 +55,15 @@ export function parseTerminalFileMatches(lineText: string): FileMatch[] {
 }
 
 /**
- * Resolve a matched path to an absolute path. Absolute paths are returned
- * unchanged; relative paths are joined onto the workspace root (a leading `./`
- * is dropped; `../` is kept for the fs layer to resolve).
+ * Resolve a matched path to an absolute path. Absolute paths (POSIX, Windows
+ * drive, or UNC) are returned unchanged; relative paths are joined onto the
+ * workspace root (a leading `./` or `.\` is dropped; `../` / `..\` is kept for
+ * the fs layer to resolve). Joins with `/` — Node accepts forward slashes on
+ * Windows, so a mixed-separator result still stats correctly.
  */
 export function resolveCandidatePath(path: string, rootPath: string): string {
-  if (path.startsWith('/')) return path
-  const rel = path.startsWith('./') ? path.slice(2) : path
+  if (ABSOLUTE_PATH_RE.test(path)) return path
+  const rel = DOT_SLASH_PREFIX_RE.test(path) ? path.slice(2) : path
   return `${rootPath}/${rel}`
 }
 
