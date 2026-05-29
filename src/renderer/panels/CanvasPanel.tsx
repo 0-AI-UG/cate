@@ -5,6 +5,7 @@
 // =============================================================================
 
 import React, { useMemo, useCallback, useEffect } from 'react'
+import { useRenderCount } from '../lib/perf/perfClient'
 import { getOrCreateCanvasStoreForPanel, useNodeIds, useVisibleNodeIds } from '../stores/canvasStore'
 import { CanvasStoreProvider, useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import Canvas from '../canvas/Canvas'
@@ -72,12 +73,12 @@ interface CanvasPanelProps {
 // CanvasNodeWrapper — reads its own node slice so re-renders stay local
 // ---------------------------------------------------------------------------
 
-const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, renderPanelContent }: {
+const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelContent }: {
   nodeId: string
   canvasPanelId: string
-  zoomLevel: number
   renderPanelContent?: (panelId: string, nodeId: string, zoomLevel: number) => React.ReactNode
 }) => {
+  useRenderCount('CanvasNodeWrapper')
   const node = useCanvasStoreContext((s) => s.nodes[nodeId])
   const isFocused = useCanvasStoreContext((s) => s.focusedNodeId === nodeId)
   const currentWorkspace = useSelectedWorkspace()
@@ -163,9 +164,14 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, render
     }
   }, [workspacePanels, dockStoreApi])
 
+  // Read the live zoom lazily so this callback identity stays STABLE across
+  // zoom frames — re-rendering it on every frame would re-render CanvasNode.
+  // Only TerminalPanel actually consumes zoom, and it reads it reactively from
+  // the canvas store context itself, so the value passed here is incidental.
   const renderPanel = useCallback(
-    (panelId: string) => renderPanelContent?.(panelId, nodeId, zoomLevel) ?? null,
-    [renderPanelContent, nodeId, zoomLevel],
+    (panelId: string) =>
+      renderPanelContent?.(panelId, nodeId, canvasStoreApi.getState().zoomLevel) ?? null,
+    [renderPanelContent, nodeId, canvasStoreApi],
   )
 
   if (!node) return null
@@ -177,7 +183,6 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, render
     <CanvasNode
       nodeId={node.id}
       isFocused={isFocused}
-      zoomLevel={zoomLevel}
       dockStoreApi={dockStoreApi}
       renderPanel={renderPanel}
       title={firstPanel?.title}
@@ -190,6 +195,7 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, zoomLevel, render
 // ---------------------------------------------------------------------------
 
 export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelContent }: CanvasPanelProps) {
+  useRenderCount('CanvasPanel')
   // Each canvas panel gets a stable, unique store keyed by panelId. The first
   // canvas to register aliases the legacy singleton store for backward compat.
   const store = useMemo(() => getOrCreateCanvasStoreForPanel(panelId), [panelId])
@@ -306,7 +312,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
               key={nId}
               nodeId={nId}
               canvasPanelId={panelId}
-              zoomLevel={zoomLevel}
               renderPanelContent={renderPanelContent}
             />
           ))}

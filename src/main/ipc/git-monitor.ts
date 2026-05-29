@@ -13,6 +13,7 @@ import {
 } from '../../shared/ipc-channels'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
 import { subscribeFsChanges } from './filesystem'
+import { countSpawn } from '../perf/perfMonitor'
 
 // Adaptive polling: start fast right after a detected change, back off
 // exponentially while nothing changes, cap at 30s. Reset to MIN on any
@@ -79,6 +80,7 @@ async function tick(entry: MonitorEntry): Promise<void> {
 
 function runGit(rootPath: string, args: string[], signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
+    countSpawn('git')
     execFile(
       'git',
       ['-C', rootPath, ...args],

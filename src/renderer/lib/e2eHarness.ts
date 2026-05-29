@@ -8,6 +8,7 @@
 import { useAppStore } from '../stores/appStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useDragStore } from '../drag/store'
+import { terminalRegistry } from './terminalRegistry'
 import type { Point } from '../../shared/types'
 
 declare global {
@@ -21,6 +22,10 @@ declare global {
       zoom(): number
       setZoom(z: number): void
       resetViewport(): void
+      /** Resolve the PTY id backing a terminal node (null until the PTY spawns). */
+      terminalPtyId(nodeId: string): string | null
+      /** Write raw data to a terminal node's PTY (e.g. a flooding command). */
+      writeTerminal(nodeId: string, data: string): boolean
       dragSnapshot(): {
         isDragging: boolean
         sourceKind: string | null
@@ -87,6 +92,21 @@ export function installE2EHarness(): void {
     activeCanvasStore()?.setState({ viewportOffset: { x: 0, y: 0 } })
   }
 
+  const terminalPtyId = (nodeId: string): string | null => {
+    const cs = activeCanvasStore()
+    if (!cs) return null
+    const node = cs.getState().nodes[nodeId]
+    const panelId = node?.panelId ?? nodeId
+    return terminalRegistry.getEntry(panelId)?.ptyId || null
+  }
+
+  const writeTerminal = (nodeId: string, data: string): boolean => {
+    const ptyId = terminalPtyId(nodeId)
+    if (!ptyId) return false
+    void window.electronAPI?.terminalWrite(ptyId, data)
+    return true
+  }
+
   const dragSnapshot = () => {
     const s = useDragStore.getState()
     return {
@@ -107,6 +127,8 @@ export function installE2EHarness(): void {
     zoom,
     setZoom,
     resetViewport,
+    terminalPtyId,
+    writeTerminal,
     dragSnapshot,
   }
 }

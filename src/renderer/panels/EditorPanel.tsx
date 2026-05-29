@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react'
+import { useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
 import ReactMarkdown from 'react-markdown'
@@ -351,6 +352,7 @@ export default function EditorPanel({
   nodeId,
   filePath,
 }: EditorPanelProps) {
+  useRenderCount('EditorPanel')
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)

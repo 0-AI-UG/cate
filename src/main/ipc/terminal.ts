@@ -26,6 +26,7 @@ import { sendToWindow, windowFromEvent } from '../windowRegistry'
 import { getShellEnv } from '../shellEnv'
 import { resolveShell, type ResolvedShell } from '../shellResolver'
 import { getSettingSync } from '../store'
+import { countTerminalData } from '../perf/perfMonitor'
 import log from '../logger'
 // Active terminal PTY instances keyed by terminal ID
 const terminals: Map<string, IPty> = new Map()
@@ -266,6 +267,7 @@ function createTerminal(
 
   ptyProcess.onData((data: string) => {
     if (shuttingDown) return
+    countTerminalData(data.length)
     const state = idleState.get(id)
     if (state) {
       state.lastOutputAt = Date.now()

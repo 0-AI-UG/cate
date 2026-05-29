@@ -7,6 +7,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRenderCount } from '../lib/perf/perfClient'
 import type { StoreApi } from 'zustand'
 import type { NodeActivityState, DockLayoutNode, PanelType } from '../../shared/types'
 import { isMaximized as checkMaximized } from '../../shared/types'
@@ -37,7 +38,6 @@ export interface CanvasNodeProps {
   nodeId: string
   isFocused: boolean
   activityState?: NodeActivityState
-  zoomLevel: number
   /** Per-node DockStore that owns the layout for this node. Created in CanvasPanel. */
   dockStoreApi: StoreApi<DockStore>
   /** Render the panel content for a given panelId. */
@@ -125,12 +125,12 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   nodeId,
   isFocused,
   activityState,
-  zoomLevel,
   dockStoreApi,
   renderPanel,
   title: _title = 'Panel',
 }) => {
   ensureKeyframes()
+  useRenderCount('CanvasNode')
 
   const canvasApi = useCanvasStoreApi()
   const nodeRef = useRef<HTMLDivElement>(null)
@@ -188,7 +188,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   const maximized = node ? checkMaximized(node) : false
 
-  const { handleResizeStart } = useNodeResize(nodeId, primaryPanelType, zoomLevel, canvasApi)
+  const { handleResizeStart } = useNodeResize(nodeId, primaryPanelType, canvasApi)
   const { handleMouseDown } = useNodeResizeCursor()
   const wsId = useAppStore((s) => s.selectedWorkspaceId)
   const currentWorkspace = useSelectedWorkspace()
@@ -485,7 +485,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     isFocused,
     isSelected,
     activityState,
-    zoomLevel,
     isAnimatingLayout,
     isHovered,
     chromeTint,
@@ -650,7 +649,6 @@ export default React.memo(CanvasNode, (prev, next) => {
   return (
     prev.nodeId === next.nodeId &&
     prev.isFocused === next.isFocused &&
-    prev.zoomLevel === next.zoomLevel &&
     prev.activityState === next.activityState &&
     prev.dockStoreApi === next.dockStoreApi &&
     prev.renderPanel === next.renderPanel &&

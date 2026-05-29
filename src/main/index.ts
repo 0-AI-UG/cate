@@ -44,6 +44,8 @@ import { beginTerminalTransfer, acknowledgeTerminalTransfer, handleCrossWindowDr
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
 import { disableRendererSandbox, disableTrustScoping } from './featureFlags'
 import { getSharedPanelDef } from '../shared/panels'
+import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
+import { PERF_GET } from '../shared/ipc-channels'
 import { installWebContentsSecurity } from './webSecurity'
 import {
   startCrossWindowDrag,
@@ -435,6 +437,9 @@ function registerCriticalHandlers(): void {
   registerShellHandlers()
   registerMenuHandlers()
   registerWindowAndDialogHandlers()
+  // Resource profiler — no-op unless CATE_PERF=1.
+  startPerfMonitor()
+  ipcMain.handle(PERF_GET, () => getLatestSnapshot())
 }
 
 /**

@@ -141,6 +141,21 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
     get().ensureWorkspace(workspaceId)
     set((state) => {
       const ws = state.workspaces[workspaceId] ?? emptyWorkspaceStatus()
+      // Bail on a structurally-identical update. The main-process activity poll
+      // re-sends a fresh `{ type: 'idle' }` (or unchanged running state) every
+      // second per terminal; without this guard each tick replaced the whole
+      // store root and re-rendered every status subscriber for nothing. Mirrors
+      // the dedup already done by setAgentName / setAgentPresent.
+      const prev = ws.terminalActivity[terminalId]
+      if (
+        prev &&
+        prev.type === activity.type &&
+        (activity.type !== 'running' ||
+          prev.type !== 'running' ||
+          prev.processName === activity.processName)
+      ) {
+        return state
+      }
       return {
         workspaces: {
           ...state.workspaces,

@@ -270,3 +270,6 @@ export const WORKSPACE_UPDATE = 'workspace:update'
 export const WORKSPACE_REMOVE = 'workspace:remove'
 export const WORKSPACE_CHANGED = 'workspace:changed' // main -> renderer (broadcast)
 
+
+// Performance profiler (only active under CATE_PERF=1)
+export const PERF_GET = 'perf:get' // renderer -> main (pull latest resource snapshot)

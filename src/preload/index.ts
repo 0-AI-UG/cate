@@ -180,6 +180,7 @@ import {
   AUTH_OAUTH_EVENT,
   AUTH_SAVE_API_KEY,
   AUTH_DELETE,
+  PERF_GET,
 } from '../shared/ipc-channels'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
@@ -203,6 +204,12 @@ function fullscreenLiveCheck(): boolean {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isE2E: process.env.CATE_E2E === '1',
+  isPerf: process.env.CATE_PERF === '1',
+
+  /** Pull the latest main-process resource snapshot (null until first sample). */
+  perfGetSnapshot(): Promise<unknown> {
+    return ipcRenderer.invoke(PERF_GET)
+  },
   // ---------------------------------------------------------------------------
   // Terminal
   // ---------------------------------------------------------------------------
