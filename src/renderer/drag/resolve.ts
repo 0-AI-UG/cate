@@ -11,7 +11,7 @@
 import type { StoreApi } from 'zustand'
 import type { PanelType, Point, Size } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
-import type { DragSource, DropTarget } from './types'
+import type { DragSource, DropTarget, ScreenRect } from './types'
 import {
   getDropZoneEntries,
   resolveDropEdge,
@@ -71,17 +71,24 @@ export const defaultDropEnvironment: DropEnvironment = {
   },
 }
 
-/** Resolve cursor + source into a typed DropTarget. When `snap` is true, canvas
- *  drops are snapped to the canvas grid (and carry a snapped ghost rect). */
+/** Optional resolution context. `env` injects DOM/store lookups (defaults to the
+ *  real DOM); `snap` requests canvas-grid snapping for canvas drops. */
+export interface ResolveOptions {
+  env?: DropEnvironment
+  snap?: boolean
+}
+
+/** Resolve cursor + source into a typed DropTarget. When `opts.snap` is true,
+ *  canvas drops are snapped to the canvas grid (and carry a snapped ghost rect). */
 export function resolveDrop(
   cursor: { client: Point; screen: Point; insideWindow: boolean },
   source: DragSource,
   grab: Point,
   ghostSize: Size,
   panelType: PanelType,
-  env: DropEnvironment = defaultDropEnvironment,
-  snap = false,
+  opts: ResolveOptions = {},
 ): DropTarget | null {
+  const { env = defaultDropEnvironment, snap = false } = opts
   if (!cursor.insideWindow) {
     return { kind: 'detach', screen: cursor.screen }
   }
@@ -203,7 +210,7 @@ function resolveCanvasHit(
   // When snapping, precompute the screen-px ghost rect from the snapped origin
   // so the preview lands exactly where the drop will commit (the Overlay
   // free-tracks the cursor otherwise).
-  let ghostScreen: { left: number; top: number; width: number; height: number } | undefined
+  let ghostScreen: ScreenRect | undefined
   if (snap) {
     const viewOrigin = canvasToView(origin, state.zoomLevel, state.viewportOffset)
     ghostScreen = {

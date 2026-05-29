@@ -185,8 +185,7 @@ export function setupCrossWindowDragListeners(
               drag.grab,
               drag.ghostSize,
               drag.panel.type,
-              undefined,
-              useSettingsStore.getState().snapToGrid,
+              { snap: useSettingsStore.getState().snapToGrid },
             )
           : null
       if (activeRemote) step(activeRemote, { type: 'TARGET', target })

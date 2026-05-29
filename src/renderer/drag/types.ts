@@ -20,6 +20,14 @@ import type { DockStore } from '../stores/dockStore'
 // Source / target unions
 // -----------------------------------------------------------------------------
 
+/** A rectangle in screen (client) pixels. */
+export interface ScreenRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 /** Runtime-shared shape for an in-flight drag. Collapsed to a single record:
  *  `panelId` is always available, and the kind-specific data lives in
  *  `origin`. The dispatcher input (DragOpSourceSpec, below) keeps its richer
@@ -72,7 +80,7 @@ export type DropTarget =
       /** When set (snap-to-grid active), the screen-px rect the ghost should
        *  render at so the preview snaps with the committed origin instead of
        *  free-tracking the cursor. */
-      ghostScreen?: { left: number; top: number; width: number; height: number }
+      ghostScreen?: ScreenRect
     }
   | {
       kind: 'canvas-add'
@@ -80,7 +88,7 @@ export type DropTarget =
       origin: Point
       size: Size
       /** See canvas-reposition.ghostScreen. */
-      ghostScreen?: { left: number; top: number; width: number; height: number }
+      ghostScreen?: ScreenRect
     }
   | {
       kind: 'dock-split'

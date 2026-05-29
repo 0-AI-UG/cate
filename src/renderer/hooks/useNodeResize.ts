@@ -166,7 +166,9 @@ export function useNodeResize(
         // Snap-to-grid: pull the moving edge onto the nearest grid line (Alt
         // bypasses). Done on the delta so the shared-border neighbor math below,
         // which derives from this delta, stays consistent with the primary node.
-        if (useSettingsStore.getState().snapToGrid && !ev.altKey) {
+        // Read the setting once here rather than in the hot path's condition.
+        const snapEnabled = useSettingsStore.getState().snapToGrid
+        if (snapEnabled && !ev.altKey) {
           const snapped = snapResizeDelta(
             { left: movesLeftEdge, right: movesRightEdge, top: movesTopEdge, bottom: movesBottomEdge },
             rs.startOrigin,

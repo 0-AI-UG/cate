@@ -426,8 +426,7 @@ function onMouseMove(ev: MouseEvent) {
       drag.grab,
       drag.ghostSize,
       drag.panel.type,
-      undefined,
-      snap,
+      { snap },
     )
     active.runtime = step(active, { type: 'TARGET', target })
   }

@@ -784,7 +784,9 @@ export interface AppSettings {
   /** Background pattern drawn on the canvas. */
   canvasGridStyle: CanvasGridStyle
   /** Snap panels to the canvas grid while dragging and resizing, so windows
-   *  align to a uniform lattice. Hold Alt during a drag/resize to bypass it. */
+   *  align to a uniform lattice. Hold Alt during a same-window drag/resize to
+   *  bypass it (the Alt bypass can't apply to drags between windows, since the
+   *  modifier state isn't carried across the cross-window IPC). */
   snapToGrid: boolean
 
   // Terminal

@@ -21,7 +21,7 @@ export function CanvasSettings() {
       </SettingRow>
       <SettingRow
         label="Snap to grid"
-        description="Align panels to the canvas grid while dragging and resizing. Hold Alt to bypass it temporarily."
+        description="Align panels to the canvas grid while dragging and resizing. Hold Alt to bypass it temporarily (except when dragging between windows)."
       >
         <Toggle
           checked={store.snapToGrid}
