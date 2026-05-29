@@ -100,6 +100,10 @@ export interface PanelState {
   url?: string
   /** When set, EditorPanel renders as a Monaco diff editor. */
   diffMode?: 'staged' | 'working'
+  /** Editor panels with a markdown file only: render the rendered preview
+   *  instead of the source. Kept per-panel (not local component state) because
+   *  a single EditorPanel mount is reused across dock tabs. */
+  markdownPreview?: boolean
   /** Unsaved buffer content for scratch (no-filePath) editors. Persisted so
    *  content survives canvas switches and app restarts. */
   unsavedContent?: string
