@@ -10,7 +10,6 @@ import { CanvasStoreProvider, useCanvasStoreContext, useCanvasStoreApi } from '.
 import Canvas from '../canvas/Canvas'
 import CanvasNode from '../canvas/CanvasNode'
 import CanvasToolbar from '../canvas/CanvasToolbar'
-import { ShortcutHintOverlay } from '../ui/ShortcutHintOverlay'
 import WelcomePage from '../ui/WelcomePage'
 import type { PanelType, Point, DockLayoutNode, PanelLocation, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, setActiveCanvasPanelId } from '../stores/appStore'
@@ -292,7 +291,12 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
 
   return (
     <CanvasStoreProvider store={store}>
-      <div className="relative w-full h-full" onPointerDown={handlePointerDown}>
+      {/* `isolate` keeps the toolbar/minimap's z-50 contained within this panel
+          so it can never paint over the z-20 sidebar overlays. Without it the
+          z-50 escapes to the root stacking context and renders on top of the
+          sidebars — visible when the toolbar overflows its inset box on small
+          or split-view screens. Behind-the-sidebar is the intended layering. */}
+      <div className="relative w-full h-full isolate" onPointerDown={handlePointerDown}>
         {/* Welcome page only on a fresh, uninitialized workspace (no panels
             yet AND no rootPath). Once a folder is picked, the canvas stays
             blank when emptied — the start page does not return. */}
@@ -327,8 +331,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
             onZoomOut={onZoomOut}
           />
         )}
-
-        <ShortcutHintOverlay />
       </div>
     </CanvasStoreProvider>
   )

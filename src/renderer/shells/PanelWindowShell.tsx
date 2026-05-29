@@ -30,10 +30,13 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
   useEffect(() => {
     useSettingsStore.getState().loadSettings()
   }, [])
-  const appearanceMode = useSettingsStore((s) => s.appearanceMode)
+  const activeThemeId = useSettingsStore((s) => s.activeThemeId)
+  const customThemes = useSettingsStore((s) => s.customThemes)
+  const systemLightThemeId = useSettingsStore((s) => s.systemLightThemeId)
+  const systemDarkThemeId = useSettingsStore((s) => s.systemDarkThemeId)
   useEffect(() => {
-    applyTheme(appearanceMode)
-  }, [appearanceMode])
+    applyTheme(activeThemeId)
+  }, [activeThemeId, customThemes, systemLightThemeId, systemDarkThemeId])
 
   // Listen for incoming panel transfers from the main process
   useEffect(() => {

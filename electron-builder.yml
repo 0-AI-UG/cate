@@ -152,6 +152,12 @@ extraResources:
     to: cate-extensions
     filter:
       - "**/*"
+  # Ship the cate-theme authoring skill so installThemeSkill can copy it into
+  # ~/.claude/skills/cate-theme/ on first launch.
+  - from: skills
+    to: skills
+    filter:
+      - "**/*"
 publish:
   provider: github
   owner: 0-AI-UG

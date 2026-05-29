@@ -9,6 +9,13 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      // Any bare `border` — or an invalid `border-*/NN` opacity modifier on a
+      // custom utility class like `border-subtle` — falls back to this via
+      // Preflight, instead of Tailwind's default bright gray-200. Keeps stray
+      // borders theme-subtle on every theme.
+      borderColor: {
+        DEFAULT: 'var(--border-subtle)',
+      },
       colors: {
         'canvas-bg': 'var(--canvas-bg)',
         'canvas-bg-light': 'var(--canvas-bg-alt)',

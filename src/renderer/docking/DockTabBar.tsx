@@ -183,7 +183,6 @@ export function DockTabBar(props: DockTabBarProps) {
             className={`
               group relative flex items-center gap-1.5 whitespace-nowrap
               cursor-grab select-none min-w-0 flex-1 max-w-[200px]
-              border-r border-white/5
               ${compact ? 'pl-2 pr-1.5 text-[11px]' : 'pl-3 pr-2 text-xs'}
               ${isActive ? 'text-primary font-medium' : 'text-secondary hover:text-primary'}
             `}
@@ -213,12 +212,6 @@ export function DockTabBar(props: DockTabBarProps) {
             } as React.CSSProperties}
             title={getPanelTitle(panelId)}
           >
-            {isActive && (
-              <span
-                className="absolute left-0 right-0 top-0 h-[2px]"
-                style={{ backgroundColor: 'var(--workspace-accent, var(--node-chrome-accent, #3b82f6))' }}
-              />
-            )}
             <span
               className={`shrink-0 ${worktreeColorByPanel[panelId] ? '' : isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}
               style={worktreeColorByPanel[panelId] ? { color: worktreeColorByPanel[panelId] } : undefined}

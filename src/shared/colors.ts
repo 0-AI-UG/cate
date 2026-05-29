@@ -56,7 +56,22 @@ export function withAlpha(hex: string, alpha: number): string {
  *  RGB out of this string. */
 export const REGION_FILL_ALPHA = 0.15
 
-/** Region fill colors derived from the vivid RGB slots in `ACCENT_PALETTE`. */
+/** Mix each channel toward its grayscale luminance by `amount` (0 = unchanged,
+ *  1 = fully gray), then return as `rgba(...)` at `alpha`. */
+function desaturateHex(hex: string, amount: number, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return withAlpha(hex, alpha)
+  const n = parseInt(m[1], 16)
+  const r = (n >> 16) & 0xff
+  const g = (n >> 8) & 0xff
+  const b = n & 0xff
+  const gray = 0.299 * r + 0.587 * g + 0.114 * b
+  const mix = (c: number) => Math.round(c + (gray - c) * amount)
+  return `rgba(${mix(r)}, ${mix(g)}, ${mix(b)}, ${alpha})`
+}
+
+/** Region fill colors derived from the muted `workspace` hex in `ACCENT_PALETTE`,
+ *  further desaturated toward gray so fills read as a soft tint of each hue. */
 export const REGION_FILL_COLORS = ACCENT_PALETTE.map(
-  (p) => `rgba(${p.vividRgb[0]}, ${p.vividRgb[1]}, ${p.vividRgb[2]}, ${REGION_FILL_ALPHA})`,
+  (p) => desaturateHex(p.workspace, 0.55, REGION_FILL_ALPHA),
 )

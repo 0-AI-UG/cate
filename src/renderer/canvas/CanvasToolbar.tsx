@@ -15,13 +15,31 @@ import {
   DotsThree,
   SquaresFour,
   MapTrifold,
+  Cursor,
+  Hand,
   X,
 } from '@phosphor-icons/react'
 import { CateLogo } from '../ui/CateLogo'
 import Minimap from './Minimap'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
+import { useShortcutStore } from '../stores/shortcutStore'
+import { displayString } from '../../shared/types'
 import { UpdateButton } from './UpdateButton'
+
+// The minimap pill can be docked in any of the four canvas corners. The choice
+// persists across sessions in localStorage.
+type MinimapCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+const MINIMAP_CORNER_KEY = 'cate.minimapButton.corner'
+const loadMinimapCorner = (): MinimapCorner => {
+  try {
+    const v = localStorage.getItem(MINIMAP_CORNER_KEY)
+    if (v === 'bottom-right' || v === 'bottom-left' || v === 'top-right' || v === 'top-left') {
+      return v
+    }
+  } catch {}
+  return 'bottom-right'
+}
 
 interface CanvasToolbarProps {
   zoom: number
@@ -44,7 +62,7 @@ const ToolbarButton: React.FC<{
   active?: boolean
   children: React.ReactNode
 }> = ({ onClick, title, size = 'panel', active = false, children }) => {
-  const sizeClass = size === 'panel' ? 'w-7 h-7' : 'w-6 h-6'
+  const sizeClass = size === 'panel' ? 'w-9 h-9' : 'w-8 h-8'
   const activeClass = active ? 'bg-hover-strong' : 'bg-transparent'
   return (
     <button
@@ -52,9 +70,37 @@ const ToolbarButton: React.FC<{
       onClick={onClick}
       title={title}
       style={{ WebkitTapHighlightColor: 'transparent' }}
-      className={`${sizeClass} ${activeClass} flex items-center justify-center rounded-full text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
+      className={`${sizeClass} ${activeClass} flex items-center justify-center rounded-full text-secondary hover:text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
     >
       {children}
+    </button>
+  )
+}
+
+// A tool-mode button with an always-on corner key badge that fills when active.
+const ModeButton: React.FC<{
+  onClick: () => void
+  title: string
+  active: boolean
+  badge: string
+  children: React.ReactNode
+}> = ({ onClick, title, active, badge, children }) => {
+  const activeClass = active ? 'bg-hover-strong' : 'bg-transparent'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      style={{ WebkitTapHighlightColor: 'transparent' }}
+      className={`group relative w-9 h-9 ${activeClass} flex items-center justify-center rounded-full ${active ? 'text-primary' : 'text-secondary'} hover:text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
+    >
+      {children}
+      <span
+        className="absolute bottom-0 right-0.5 font-mono leading-none pointer-events-none select-none opacity-0 group-hover:opacity-100 transition-opacity duration-100"
+        style={{ fontSize: 7, color: 'var(--text-muted)' }}
+      >
+        {badge}
+      </span>
     </button>
   )
 }
@@ -91,10 +137,59 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const canvasApi = useCanvasStoreApi()
   const minimapOpen = useUIStore((s) => s.minimapOpen)
   const toggleMinimapOpen = useUIStore((s) => s.toggleMinimapOpen)
+  const activeTool = useUIStore((s) => s.activeTool)
+  const setActiveTool = useUIStore((s) => s.setActiveTool)
+  const selectKey = useShortcutStore((s) => displayString(s.shortcuts.toolSelect))
+  const handKey = useShortcutStore((s) => displayString(s.shortcuts.toolHand))
   const zoomText = `${Math.round(zoom * 100)}%`
 
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+
+  // Minimap pill docking corner + drag-to-dock handling. The toggle button
+  // doubles as a drag handle: a click toggles the map, a drag past a small
+  // threshold re-docks the pill to whichever corner the cursor ends up in.
+  const [minimapCorner, setMinimapCorner] = useState<MinimapCorner>(loadMinimapCorner)
+  const minimapDidDragRef = useRef(false)
+  const mmBottom = minimapCorner.startsWith('bottom')
+  const mmRight = minimapCorner.endsWith('right')
+
+  const handleMinimapHandleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const startX = e.clientX
+    const startY = e.clientY
+    minimapDidDragRef.current = false
+    let nextCorner = minimapCorner
+    const onMove = (ev: MouseEvent) => {
+      if (!minimapDidDragRef.current && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) {
+        return
+      }
+      minimapDidDragRef.current = true
+      const right = ev.clientX > window.innerWidth / 2
+      const bottom = ev.clientY > window.innerHeight / 2
+      nextCorner = `${bottom ? 'bottom' : 'top'}-${right ? 'right' : 'left'}` as MinimapCorner
+      setMinimapCorner((prev) => (prev === nextCorner ? prev : nextCorner))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      if (minimapDidDragRef.current) {
+        try { localStorage.setItem(MINIMAP_CORNER_KEY, nextCorner) } catch {}
+      }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const handleMinimapToggleClick = () => {
+    // Suppress the click that fires at the end of a drag gesture.
+    if (minimapDidDragRef.current) {
+      minimapDidDragRef.current = false
+      return
+    }
+    toggleMinimapOpen()
+  }
 
   // Close drop-up on outside click / Escape
   useEffect(() => {
@@ -155,24 +250,45 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           </div>
         )}
 
-        <div className="rounded-full border border-strong bg-surface-6 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
-          <div className="flex items-center gap-1 px-3 py-1.5">
+        <div className="rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
+          <div className="flex items-center gap-0.5 px-1 py-1">
+            {/* Interaction tools (Select / Hand) */}
+            <ModeButton
+              onClick={() => setActiveTool('select')}
+              title={`Select tool (${selectKey})`}
+              active={activeTool === 'select'}
+              badge={selectKey}
+            >
+              <Cursor size={18} />
+            </ModeButton>
+            <ModeButton
+              onClick={() => setActiveTool('hand')}
+              title={`Hand tool — pan (${handKey})`}
+              active={activeTool === 'hand'}
+              badge={handKey}
+            >
+              <Hand size={18} />
+            </ModeButton>
+
+            {/* Divider */}
+            <div className="w-px h-5 bg-surface-5 mx-1" />
+
             {/* Basic panel buttons */}
             <ToolbarButton onClick={onNewTerminal} title="Terminal" size="panel">
-              <Terminal size={14} />
+              <Terminal size={18} />
             </ToolbarButton>
             <ToolbarButton onClick={onNewBrowser} title="Browser" size="panel">
-              <Globe size={14} />
+              <Globe size={18} />
             </ToolbarButton>
             <ToolbarButton onClick={onNewEditor} title="Editor" size="panel">
-              <FileText size={14} />
+              <FileText size={18} />
             </ToolbarButton>
             <ToolbarButton onClick={onNewAgent} title="Pi Agent" size="panel">
-              <CateLogo size={14} />
+              <CateLogo size={18} />
             </ToolbarButton>
 
             {/* Divider */}
-            <div className="w-px h-4 bg-surface-5 mx-0.5" />
+            <div className="w-px h-5 bg-surface-5 mx-1" />
 
             {/* More — opens drop-up with extra creators */}
             <ToolbarButton
@@ -181,24 +297,24 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
               size="panel"
               active={menuOpen}
             >
-              <DotsThree size={14} />
+              <DotsThree size={18} />
             </ToolbarButton>
 
             {/* Zoom controls */}
             <ToolbarButton onClick={onZoomOut} title="Zoom Out" size="zoom">
-              <Minus size={12} />
+              <Minus size={16} />
             </ToolbarButton>
             <button
               type="button"
               onClick={() => canvasApi.getState().animateZoomTo(1.0)}
               title="Reset zoom to 100%"
               style={{ WebkitTapHighlightColor: 'transparent' }}
-              className="text-[10px] font-mono text-primary min-w-[38px] text-center select-none rounded-full bg-transparent hover:bg-hover-strong active:bg-hover-strong cursor-pointer px-1 py-0.5 focus:outline-none focus-visible:outline-none transition-all duration-100"
+              className="text-[11px] font-mono text-secondary hover:text-primary min-w-[40px] text-center select-none rounded-full bg-transparent hover:bg-hover-strong active:bg-hover-strong cursor-pointer px-1.5 py-1 focus:outline-none focus-visible:outline-none transition-all duration-100"
             >
               {zoomText}
             </button>
             <ToolbarButton onClick={onZoomIn} title="Zoom In" size="zoom">
-              <Plus size={12} />
+              <Plus size={16} />
             </ToolbarButton>
           </div>
         </div>
@@ -206,25 +322,34 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 
     </div>
 
-    {/* Minimap — pill button anchored to bottom-right that grows upward-left
-        to reveal the map. The button stays at the bottom-right corner so open
-        and close feel like the same gesture. */}
+    {/* Minimap — pill button docked to any corner. The pill grows toward the
+        canvas centre to reveal the map, while the toggle button stays pinned to
+        the docked corner so open and close feel like the same gesture. Drag the
+        button to re-dock the pill to a different corner. */}
     <div
-      className="absolute bottom-4 z-50 flex items-end gap-2"
-      style={{ right: 'calc(1rem + var(--cate-right-sidebar-width, 0px))' }}
+      className="absolute z-50 flex gap-2"
+      style={{
+        ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
+        ...(mmRight
+          ? { right: 'calc(1rem + var(--cate-right-sidebar-width, 0px))' }
+          : { left: 'calc(1rem + var(--cate-left-sidebar-width, 0px))' }),
+        // Keep the pill hard against the docked corner; the UpdateButton sits inboard.
+        flexDirection: mmRight ? 'row' : 'row-reverse',
+        alignItems: mmBottom ? 'flex-end' : 'flex-start',
+      }}
     >
       <UpdateButton />
       <div
         data-testid="minimap-toggle"
-        className="relative overflow-hidden border border-strong shadow-[0_8px_24px_-6px_var(--shadow-node)]"
+        className="relative overflow-hidden border border-subtle shadow-[0_8px_24px_-6px_var(--shadow-node)]"
         style={{
-          borderRadius: 20,
+          borderRadius: 22,
           transition: 'width 300ms cubic-bezier(0.16,1,0.3,1), height 300ms cubic-bezier(0.16,1,0.3,1), background 200ms ease, backdrop-filter 200ms ease',
-          width: minimapOpen ? 220 : 36,
-          height: minimapOpen ? 160 : 36,
+          width: minimapOpen ? 220 : 44,
+          height: minimapOpen ? 160 : 44,
           background: minimapOpen
             ? 'color-mix(in srgb, var(--surface-2) 45%, transparent)'
-            : 'var(--surface-6)',
+            : 'var(--surface-0)',
           backdropFilter: minimapOpen ? 'blur(24px) saturate(1.5)' : 'none',
           WebkitBackdropFilter: minimapOpen ? 'blur(24px) saturate(1.5)' : 'none',
         }}
@@ -236,12 +361,19 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         )}
         <button
           type="button"
-          onClick={toggleMinimapOpen}
-          title={minimapOpen ? 'Hide minimap' : 'Show minimap'}
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-          className="absolute -bottom-[1px] -right-[1px] w-[36px] h-[36px] flex items-center justify-center text-primary hover:text-primary/80 active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100 z-10"
+          onMouseDown={handleMinimapHandleMouseDown}
+          onClick={handleMinimapToggleClick}
+          title={minimapOpen ? 'Hide minimap (drag to move)' : 'Show minimap (drag to move)'}
+          style={{
+            WebkitTapHighlightColor: 'transparent',
+            position: 'absolute',
+            cursor: 'grab',
+            ...(mmBottom ? { bottom: -1 } : { top: -1 }),
+            ...(mmRight ? { right: -1 } : { left: -1 }),
+          }}
+          className="w-[44px] h-[44px] flex items-center justify-center text-secondary hover:text-primary active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100 z-10"
         >
-          {minimapOpen ? <X size={12} weight="bold" /> : <MapTrifold size={14} />}
+          {minimapOpen ? <X size={14} weight="bold" /> : <MapTrifold size={18} />}
         </button>
       </div>
     </div>

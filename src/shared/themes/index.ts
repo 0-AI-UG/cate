@@ -1,0 +1,34 @@
+// =============================================================================
+// Built-in theme registry. The catalog shown in Appearance settings is these
+// themes plus the user's imported custom themes (settings.customThemes).
+// =============================================================================
+
+import type { Theme } from '../theme'
+import { darkWarm } from './darkWarm'
+import { darkCold } from './darkCold'
+import { lightSubtle } from './lightSubtle'
+import { dracula } from './dracula'
+import { nord } from './nord'
+import { solarizedDark } from './solarizedDark'
+import { tokyoNight } from './tokyoNight'
+
+export { BASE_DARK, BASE_LIGHT } from './base'
+
+/** Shipped themes, in catalog order. */
+export const BUILT_IN_THEMES: Theme[] = [
+  darkWarm,
+  lightSubtle,
+  darkCold,
+  dracula,
+  nord,
+  solarizedDark,
+  tokyoNight,
+]
+
+export const BUILT_IN_BY_ID: Record<string, Theme> = Object.fromEntries(
+  BUILT_IN_THEMES.map((t) => [t.id, t]),
+)
+
+/** Default dark / light themes used for `system` mode and as fallbacks. */
+export const DEFAULT_DARK_THEME_ID = 'dark-warm'
+export const DEFAULT_LIGHT_THEME_ID = 'light-subtle'

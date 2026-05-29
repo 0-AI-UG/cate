@@ -179,6 +179,7 @@ function buildSessionFile(
   })
   return {
     version: 1,
+    workspaceId: snapshot.workspaceId,
     focusedNodeId: null,
     nodes,
     panelWindows: panelWindows?.length ? panelWindows : undefined,
@@ -459,6 +460,7 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
       }
 
       snapshots.push({
+        workspaceId: sess?.workspaceId,
         workspaceName: ws.name,
         rootPath,
         zoomLevel: ws.canvas.zoomLevel,
@@ -730,7 +732,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
   for (let i = 0; i < session.workspaces.length; i++) {
     const snapshot = session.workspaces[i]
     log.debug(`[session] workspace ${i + 1}/${session.workspaces.length}: "${snapshot.workspaceName}" (${snapshot.nodes.length} nodes)`)
-    const wsId = appStore.addWorkspace(snapshot.workspaceName, snapshot.rootPath ?? undefined)
+    const wsId = appStore.addWorkspace(snapshot.workspaceName, snapshot.rootPath ?? undefined, snapshot.workspaceId)
     wsIds.push(wsId)
 
     if (i === selectedIdx) {

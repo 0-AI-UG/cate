@@ -117,11 +117,15 @@ function MainApp() {
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
 
-  // Theme — apply on mount and re-apply whenever appearanceMode changes
-  const appearanceMode = useSettingsStore((s) => s.appearanceMode)
+  // Theme — apply on mount and re-apply whenever the selection, the custom-theme
+  // list, or the system light/dark mapping changes (so imports/edits go live).
+  const activeThemeId = useSettingsStore((s) => s.activeThemeId)
+  const customThemes = useSettingsStore((s) => s.customThemes)
+  const systemLightThemeId = useSettingsStore((s) => s.systemLightThemeId)
+  const systemDarkThemeId = useSettingsStore((s) => s.systemDarkThemeId)
   useEffect(() => {
-    applyTheme(appearanceMode)
-  }, [appearanceMode])
+    applyTheme(activeThemeId)
+  }, [activeThemeId, customThemes, systemLightThemeId, systemDarkThemeId])
 
   // E2E test harness — exposes window.__cateE2E only when launched by Playwright.
   useEffect(() => {

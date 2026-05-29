@@ -8,10 +8,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { StoreApi } from 'zustand'
 import type { DockTabStack as DockTabStackType, PanelState, PanelType } from '../../shared/types'
 import { createTransferSnapshot } from '../lib/panelTransfer'
-import { terminalRegistry, TERMINAL_PRESETS, getAllTerminalThemes } from '../lib/terminalRegistry'
+import { terminalRegistry } from '../lib/terminalRegistry'
 import { useAppStore } from '../stores/appStore'
-import { useSettingsStore } from '../stores/settingsStore'
-import { useUIStore } from '../stores/uiStore'
 import type { DockStore } from '../stores/dockStore'
 import { getPanelDef } from '../panels/registry'
 
@@ -144,37 +142,6 @@ export function useDockTabActions(params: DockTabActionsParams) {
       const hasOthers = stack.panelIds.length > 1
       const hasRight = idx >= 0 && idx < stack.panelIds.length - 1
       const panel = getPanelLocal(panelId)
-      const isTerminal = panel?.type === 'terminal'
-      const currentPreset = panel?.themePreset
-      const allThemes = getAllTerminalThemes()
-      const customCount = allThemes.length - TERMINAL_PRESETS.length
-      const defaultThemeId = useSettingsStore.getState().defaultTerminalTheme
-      const defaultLabel = (() => {
-        if (!defaultThemeId) return 'Default (Follow App Theme)'
-        const p = allThemes.find((t) => t.id === defaultThemeId)
-        return p ? `Default (${p.label})` : 'Default'
-      })()
-      const themeSubmenu = isTerminal
-        ? [
-            { id: 'theme:__default__', label: !currentPreset ? `${defaultLabel} ✓` : defaultLabel },
-            { type: 'separator' as const },
-            ...TERMINAL_PRESETS.map((p) => ({
-              id: `theme:${p.id}`,
-              label: currentPreset === p.id ? `${p.label} ✓` : p.label,
-            })),
-            ...(customCount > 0
-              ? [
-                  { type: 'separator' as const },
-                  ...allThemes.slice(TERMINAL_PRESETS.length).map((p) => ({
-                    id: `theme:${p.id}`,
-                    label: currentPreset === p.id ? `${p.label} ✓` : p.label,
-                  })),
-                ]
-              : []),
-            { type: 'separator' as const },
-            { id: 'theme:__import__', label: 'Import Theme…' },
-          ]
-        : []
       const id = await window.electronAPI.showContextMenu([
         { id: 'rename', label: 'Rename' },
         { type: 'separator' as const },
@@ -185,21 +152,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
         { type: 'separator' as const },
         { id: 'split-right', label: 'Split Right' },
         { id: 'move-window', label: 'Move into New Window' },
-        ...(isTerminal
-          ? ([{ type: 'separator' as const }, { label: 'Theme', submenu: themeSubmenu }] as any[])
-          : []),
       ])
-      if (id?.startsWith('theme:')) {
-        const presetId = id.slice('theme:'.length)
-        if (presetId === '__import__') {
-          useUIStore.getState().openSettings('terminal')
-          return
-        }
-        const next = presetId === '__default__' ? undefined : presetId
-        const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
-        if (wsId) useAppStore.getState().setPanelThemePreset(wsId, panelId, next)
-        return
-      }
       switch (id) {
         case 'rename':
           if (panel) beginRename(panelId, panel.title)

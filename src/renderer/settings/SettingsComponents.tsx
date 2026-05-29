@@ -2,6 +2,7 @@
 // Reusable settings form components. Ported from SettingsComponents.swift
 // =============================================================================
 
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 // -----------------------------------------------------------------------------
@@ -90,16 +91,40 @@ interface NumberInputProps {
 }
 
 export function NumberInput({ value, onChange, min, max, step = 1 }: NumberInputProps) {
+  // Keep a local draft string so the user can freely clear the field and type
+  // intermediate values. We only parse + clamp on commit (blur / Enter), never
+  // on every keystroke — otherwise empty input snaps to 0 and partial values
+  // get clamped mid-type. Sync the draft from the prop whenever it changes
+  // externally (and while not actively editing).
+  const [draft, setDraft] = useState(String(value))
+  const [editing, setEditing] = useState(false)
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value))
+  }, [value, editing])
+
+  const commit = () => {
+    setEditing(false)
+    const v = Number(draft)
+    if (draft.trim() === '' || isNaN(v)) {
+      // Revert to the last valid value.
+      setDraft(String(value))
+      return
+    }
+    const clamped = Math.min(Math.max(v, min ?? -Infinity), max ?? Infinity)
+    setDraft(String(clamped))
+    if (clamped !== value) onChange(clamped)
+  }
+
   return (
     <input
       type="number"
-      value={value}
-      onChange={(e) => {
-        const v = Number(e.target.value)
-        if (!isNaN(v)) {
-          const clamped = Math.min(Math.max(v, min ?? -Infinity), max ?? Infinity)
-          onChange(clamped)
-        }
+      value={draft}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
       }}
       min={min}
       max={max}
