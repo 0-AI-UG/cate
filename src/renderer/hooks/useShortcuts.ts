@@ -315,14 +315,20 @@ export function useShortcuts(): void {
         const navOnly = action !== 'toolSelect' && action !== 'toolHand'
         if (navOnly && (ui.showNodeSwitcher || ui.showCommandPalette)) return
       }
-      // Context-aware guard: when a text surface (input, textarea, Monaco,
-      // xterm helper textarea, contenteditable) has focus, let clipboard and
-      // undo/redo fall through to it natively instead of the canvas.
-      // Terminals don't consume Cmd+Z/Y/Backspace, so let canvas handle them
-      // even when a terminal panel is focused. Only real text editors
-      // (Monaco, inputs, contenteditables) should swallow them.
-      if (action === 'undo' || action === 'redo' || action === 'deleteNode') {
+      // Context-aware guard: when a real text editor (Monaco, input, textarea,
+      // contenteditable) has focus, let Cmd+Z/Y fall through to it natively.
+      // Terminals don't consume Cmd+Z/Y, so the canvas still owns undo/redo when
+      // a terminal panel is focused.
+      if (action === 'undo' || action === 'redo') {
         if (!terminalHasFocus && isTextSurfaceFocused()) return
+      }
+      // Cmd+Backspace (deleteNode): a focused terminal must keep the chord so the
+      // shell can delete-to-line-start (translated to Ctrl+U in terminalRegistry),
+      // and a focused text editor must keep it to delete text. Panels stay
+      // closable via Cmd+W. Without this, the canvas would close the panel and
+      // the keystroke would never reach the shell (issue #172).
+      if (action === 'deleteNode') {
+        if (terminalHasFocus || isTextSurfaceFocused()) return
       }
 
       // Keyboard-only passthrough: when a browser panel is focused, let
