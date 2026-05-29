@@ -326,12 +326,22 @@ export default function EditorPanel({
   // path we just learned and the next Cmd+S would re-open Save-As.
   if (filePath !== undefined) filePathRef.current = filePath
 
-  const [markdownPreview, setMarkdownPreview] = useState(false)
   const [markdownContent, setMarkdownContent] = useState('')
 
   const workspaces = useAppStore((s) => s.workspaces)
   const ws = workspaces.find((w) => w.id === workspaceId)
   const diffMode = ws?.panels[panelId]?.diffMode
+  // Preview mode is kept per-panel in the store rather than as local state: a
+  // single EditorPanel mount is reused across dock tabs (renderPanelComponent
+  // creates the element without a key), so local state would leak the toggle
+  // from one markdown file to the next. Keying it by panelId also keeps each
+  // tab's choice independent across canvas switches.
+  const markdownPreview = !!ws?.panels[panelId]?.markdownPreview
+  const setMarkdownPreview = useCallback(
+    (next: boolean) =>
+      useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, next),
+    [workspaceId, panelId],
+  )
   const rootPath = ws?.rootPath
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
 
@@ -732,7 +742,7 @@ export default function EditorPanel({
     <div className="w-full h-full relative">
       {isMarkdown && !diffMode && (
         <button
-          onClick={() => setMarkdownPreview((v) => !v)}
+          onClick={() => setMarkdownPreview(!markdownPreview)}
           className={`absolute top-2 right-5 z-10 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
             markdownPreview
               ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'

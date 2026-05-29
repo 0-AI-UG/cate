@@ -323,6 +323,7 @@ interface AppStoreActions {
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
+  setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
 
@@ -937,6 +938,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setPanelDirty(workspaceId, panelId, dirty) {
     setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, isDirty: dirty }))
+  },
+
+  setPanelMarkdownPreview(workspaceId, panelId, preview) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        const panel = ws.panels[panelId]
+        if (!panel) return ws
+        return {
+          ...ws,
+          panels: { ...ws.panels, [panelId]: { ...panel, markdownPreview: preview } },
+        }
+      }),
+    }))
   },
 
   setPanelUnsavedContent(workspaceId, panelId, content) {
