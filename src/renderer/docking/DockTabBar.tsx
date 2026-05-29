@@ -14,6 +14,7 @@ import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 import { useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
+import { isMiddleClick } from '../lib/mouse'
 
 const AWAIT_COLOR = '#c08a5a'
 
@@ -191,7 +192,22 @@ export function DockTabBar(props: DockTabBarProps) {
               ${isActive ? 'text-secondary font-medium' : 'text-muted hover:text-secondary'}
             `}
             onClick={() => onTabClick(i)}
-            onMouseDown={(e) => onTabMouseDown(e, panelId)}
+            onMouseDown={(e) => {
+              // Middle button closes the tab on auxclick (below). Suppress the
+              // native middle-click autoscroll and don't start a tab drag.
+              if (isMiddleClick(e)) { e.preventDefault(); return }
+              onTabMouseDown(e, panelId)
+            }}
+            onAuxClick={(e) => {
+              // Middle-click closes the tab — works for both the top dock and
+              // canvas-node mini-docks (both render TabPills with onClosePanel).
+              // Guarded to the middle button so right-click still opens the menu.
+              if (isMiddleClick(e) && onClosePanel) {
+                e.preventDefault()
+                e.stopPropagation()
+                onClosePanel(panelId)
+              }
+            }}
             onContextMenu={(e) => onTabContextMenu(e, panelId)}
             onPointerEnter={() => {
               if (isActive) return
