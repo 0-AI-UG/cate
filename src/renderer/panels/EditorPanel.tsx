@@ -694,6 +694,19 @@ export default function EditorPanel({
   }, [])
 
   // ---------------------------------------------------------------------------
+  // Reset preview when the file changes
+  // ---------------------------------------------------------------------------
+
+  // A single EditorPanel instance is reused across dock tabs — renderPanelComponent
+  // creates the element without a `key`, so switching tabs swaps the `filePath`
+  // prop on the same mount rather than remounting. Without resetting here the
+  // markdown preview toggle would leak from one file to the next (turning preview
+  // on for one tab would show every other markdown tab in preview too).
+  useEffect(() => {
+    setMarkdownPreview(false)
+  }, [filePath])
+
+  // ---------------------------------------------------------------------------
   // Sync markdown content when preview is toggled on
   // ---------------------------------------------------------------------------
 
