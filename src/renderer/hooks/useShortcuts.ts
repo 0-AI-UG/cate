@@ -269,11 +269,19 @@ export function useShortcuts(): void {
       // Context-aware guard: when a text surface (input, textarea, Monaco,
       // xterm helper textarea, contenteditable) has focus, let clipboard and
       // undo/redo fall through to it natively instead of the canvas.
-      // Terminals don't consume Cmd+Z/Y/Backspace, so let canvas handle them
-      // even when a terminal panel is focused. Only real text editors
-      // (Monaco, inputs, contenteditables) should swallow them.
-      if (action === 'undo' || action === 'redo' || action === 'deleteNode') {
+      // Terminals don't consume Cmd+Z/Y, so the canvas handles undo/redo even
+      // when a terminal is focused — only real editors/inputs swallow them.
+      if (action === 'undo' || action === 'redo') {
         if (!terminalHasFocus && isTextSurfaceFocused()) return
+      }
+      // Cmd+Backspace (deleteNode): a focused terminal now owns it for line
+      // editing (kill-to-line-start, sent to the shell by the terminal's key
+      // handler), so never delete a focused terminal/editor/input panel with
+      // it. The xterm helper textarea counts as a text surface, so this covers
+      // canvas, docked, and detached-window terminals alike. Close a focused
+      // terminal panel with Cmd+W instead.
+      if (action === 'deleteNode') {
+        if (isTextSurfaceFocused()) return
       }
 
       // Keyboard-only passthrough: when a browser panel is focused, let

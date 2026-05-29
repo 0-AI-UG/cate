@@ -20,6 +20,7 @@ import { titleIndicatesRunning, outputShowsBodySpinner } from './agentSpinner'
 import { noteAgentTitle, noteAgentSpinnerByte } from './agentScreenDetector'
 import { scanTerminalChunkForUrls, clearTerminalUrlBuffer } from './terminalUrlAutoOpen'
 import { getResolvedTheme, subscribeTheme, type ResolvedTheme } from './themeManager'
+import { resolveTerminalKeySequence } from './terminalKeymap'
 
 /** Agent terminals show the clean detected agent name (e.g. "Codex", "Claude
  *  Code") as their tab title — set by useProcessMonitor — not the agent's raw
@@ -89,6 +90,77 @@ export function isTerminalCopyChord(
   if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return false
   if (event.key !== 'c' && event.key !== 'C') return false
   return terminal.hasSelection()
+}
+
+// Modified special keys that xterm.js doesn't translate to distinct escape
+// sequences (e.g. Ctrl+Enter, Shift+Enter). We send CSI u (fixterms/kitty)
+// encoded sequences directly to the PTY so shells and TUI programs can
+// distinguish these key combos.
+const CSI_U_KEYS: Record<string, number> = {
+  Enter: 13,
+  Tab: 9,
+  Backspace: 127,
+  Escape: 27,
+  Space: 32,
+}
+
+/**
+ * Build the xterm customKeyEventHandler shared by the fresh-spawn and
+ * cross-window-reconnect paths (identical logic — kept here so they can't drift
+ * apart). Returns true to let xterm handle the key normally, false to suppress
+ * xterm's own handling.
+ */
+function createTerminalKeyEventHandler(
+  terminal: Terminal,
+  ptyId: string,
+): (event: KeyboardEvent) => boolean {
+  const { electronAPI } = window
+  return (event: KeyboardEvent): boolean => {
+    if (event.type !== 'keydown') return true
+
+    // Returning false makes xterm skip this key (no literal ^V) without calling
+    // preventDefault, so the browser still fires its paste event into xterm's
+    // textarea and xterm performs the paste once. Do NOT preventDefault here —
+    // that would also cancel the paste event and nothing would paste.
+    if (isTerminalPasteChord(event)) return false
+    if (isTerminalCopyChord(event, terminal)) return false
+
+    // macOS line-editing chords (Cmd/Option + Backspace/Delete/Arrows) →
+    // readline control sequences, matching VS Code's integrated terminal.
+    // Must run before the metaKey passthrough below, otherwise Cmd combos
+    // would fall through to xterm's default (a plain delete) or be ignored.
+    const macSeq = resolveTerminalKeySequence(event, isMacPlatform)
+    if (macSeq !== null) {
+      electronAPI.terminalWrite(ptyId, macSeq)
+      event.preventDefault()
+      return false
+    }
+
+    const keyCode = CSI_U_KEYS[event.key]
+    if (keyCode === undefined) return true // let xterm handle all other keys
+
+    // Build modifier param: 1 + (shift=1, alt=2, ctrl=4, meta=8)
+    let mod = 1
+    if (event.shiftKey) mod += 1
+    if (event.altKey) mod += 2
+    if (event.ctrlKey) mod += 4
+    if (event.metaKey) mod += 8
+
+    // No modifier — let xterm handle normally
+    if (mod === 1) return true
+
+    // Shift+Tab already handled by xterm as reverse-tab (\x1b[Z)
+    if (event.key === 'Tab' && mod === 2) return true
+
+    // Remaining Cmd combos are app shortcuts — let them propagate to the
+    // shortcut handler (line-editing Cmd chords were handled above).
+    if (event.metaKey) return true
+
+    // Send CSI u sequence: ESC [ keycode ; modifier u
+    electronAPI.terminalWrite(ptyId, `\x1b[${keyCode};${mod}u`)
+    event.preventDefault()
+    return false
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -563,53 +635,9 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     })
     cleanupListeners.push(() => titleDisposable.dispose())
 
-    // 8. Handle modified special keys that xterm.js doesn't translate to
-    //    distinct escape sequences (e.g. Ctrl+Enter, Shift+Enter, etc.).
-    //    We send CSI u (fixterms/kitty) encoded sequences directly to the PTY
-    //    so shells and TUI programs can distinguish these key combos.
-    const CSI_U_KEYS: Record<string, number> = {
-      Enter: 13,
-      Tab: 9,
-      Backspace: 127,
-      Escape: 27,
-      Space: 32,
-    }
-
-    terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== 'keydown') return true
-
-      // Returning false makes xterm skip this key (no literal ^V) without
-      // calling preventDefault, so the browser still fires its paste event into
-      // xterm's textarea and xterm performs the paste once. Do NOT preventDefault
-      // here — that would also cancel the paste event and nothing would paste.
-      if (isTerminalPasteChord(event)) return false
-      if (isTerminalCopyChord(event, terminal)) return false
-
-      const keyCode = CSI_U_KEYS[event.key]
-      if (keyCode === undefined) return true // let xterm handle all other keys
-
-      // Build modifier param: 1 + (shift=1, alt=2, ctrl=4, meta=8)
-      let mod = 1
-      if (event.shiftKey) mod += 1
-      if (event.altKey) mod += 2
-      if (event.ctrlKey) mod += 4
-      if (event.metaKey) mod += 8
-
-      // No modifier — let xterm handle normally
-      if (mod === 1) return true
-
-      // Shift+Tab already handled by xterm as reverse-tab (\x1b[Z)
-      if (event.key === 'Tab' && mod === 2) return true
-
-      // Ctrl+Shift+C/V overlap — but those aren't special keys, so won't match.
-      // Cmd+key combos are app shortcuts — let them propagate to the shortcut handler.
-      if (event.metaKey) return true
-
-      // Send CSI u sequence: ESC [ keycode ; modifier u
-      electronAPI.terminalWrite(ptyId, `\x1b[${keyCode};${mod}u`)
-      event.preventDefault()
-      return false
-    })
+    // 8. Custom key handling: macOS line-editing chords + CSI u for modified
+    //    special keys. See createTerminalKeyEventHandler.
+    terminal.attachCustomKeyEventHandler(createTerminalKeyEventHandler(terminal, ptyId))
 
     // 8b. xterm -> PTY: keystrokes (standard path for all other input)
     const dataDisposable = terminal.onData((data) => {
@@ -749,28 +777,8 @@ async function reconnectTerminal(
   })
   cleanupListeners.push(() => titleDisposable.dispose())
 
-  // CSI u key handler (same as getOrCreate)
-  const CSI_U_KEYS: Record<string, number> = {
-    Enter: 13, Tab: 9, Backspace: 127, Escape: 27, Space: 32,
-  }
-  terminal.attachCustomKeyEventHandler((event) => {
-    if (event.type !== 'keydown') return true
-    if (isTerminalPasteChord(event)) return false
-    if (isTerminalCopyChord(event, terminal)) return false
-    const keyCode = CSI_U_KEYS[event.key]
-    if (keyCode === undefined) return true
-    let mod = 1
-    if (event.shiftKey) mod += 1
-    if (event.altKey) mod += 2
-    if (event.ctrlKey) mod += 4
-    if (event.metaKey) mod += 8
-    if (mod === 1) return true
-    if (event.key === 'Tab' && mod === 2) return true
-    if (event.metaKey) return true
-    electronAPI.terminalWrite(ptyId, `\x1b[${keyCode};${mod}u`)
-    event.preventDefault()
-    return false
-  })
+  // Custom key handler — same logic as getOrCreate (shared factory).
+  terminal.attachCustomKeyEventHandler(createTerminalKeyEventHandler(terminal, ptyId))
 
   const dataDisposable = terminal.onData((data) => {
     electronAPI.terminalWrite(ptyId, data)
