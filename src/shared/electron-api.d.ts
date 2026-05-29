@@ -98,6 +98,9 @@ export interface ElectronAPI {
   /** Check if a path is inside a git repository. */
   gitIsRepo(dirPath: string): Promise<boolean>
 
+  /** Initialize a new git repository at the given directory. */
+  gitInit(dirPath: string): Promise<void>
+
   /** List tracked + untracked files (git ls-files --cached --others --exclude-standard). */
   gitLsFiles(dirPath: string): Promise<string[]>
 
@@ -165,6 +168,43 @@ export interface ElectronAPI {
     fromBranch: string,
     toBranch: string,
   ): Promise<{ ok: true; result: unknown } | { ok: false; conflict: boolean; message: string }>
+
+  /** Fetch + merge `fromBranch` (the primary branch) into a worktree's own
+   *  branch, run inside the worktree so the primary checkout is untouched. */
+  gitWorktreeUpdateFrom(
+    worktreePath: string,
+    fromBranch: string,
+  ): Promise<{ ok: true; result: unknown } | { ok: false; conflict: boolean; message: string }>
+
+  /** Check out an open pull request (including fork branches) into its own
+   *  worktree via `gh pr checkout`. Requires the `gh` CLI. */
+  gitWorktreeAddFromPr(
+    repoCwd: string,
+    prNumber: number,
+    targetPath: string,
+  ): Promise<{ path: string; branch: string }>
+
+  /** List open pull requests for the branch picker. Returns [] without `gh`. */
+  gitPrList(
+    repoCwd: string,
+  ): Promise<Array<{ number: number; title: string; headRefName: string; author: string; isFork: boolean }>>
+
+  /** Push the branch (with upstream) and open a GitHub PR via the `gh` CLI,
+   *  falling back to a github.com compare URL when `gh` is unavailable. */
+  gitCreatePR(
+    worktreePath: string,
+    branch: string,
+  ): Promise<
+    | { ok: true; created: boolean; url: string; fallback?: boolean }
+    | { ok: false; message: string }
+  >
+
+  /** Look up the PR for a branch via `gh`. Returns null when `gh` is missing
+   *  or the branch has no PR. */
+  gitPrStatus(
+    worktreePath: string,
+    branch: string,
+  ): Promise<{ number: number; state: string; url: string; isDraft: boolean } | null>
 
   /** Push to remote. */
   gitPush(cwd: string, remote?: string, branch?: string): Promise<void>
