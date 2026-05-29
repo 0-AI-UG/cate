@@ -789,6 +789,10 @@ export interface AppSettings {
   terminalFontSize: number
   /** xterm.js scrollback buffer size, in lines. Lower = less memory per terminal. */
   terminalScrollback: number
+  /** Blink the terminal cursor. Off by default: each blink forces a GPU draw +
+   *  compositor update, so a focused terminal keeps the compositor awake even
+   *  when otherwise idle. A steady cursor is still fully visible. */
+  terminalCursorBlink: boolean
   /** Auto-suspend (SIGSTOP) idle background terminals to reduce memory use.
    *  A terminal is suspended after it has been offscreen AND produced no PTY
    *  output for 2 minutes. SIGCONT is sent on focus/interaction. POSIX-only;
@@ -852,6 +856,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontFamily: '',
   terminalFontSize: 0,
   terminalScrollback: 2000,
+  terminalCursorBlink: false,
   autoSuspendIdleTerminals: true,
   terminalCustomThemes: [],
   // defaultTerminalTheme is optional — unset means "follow app theme"
