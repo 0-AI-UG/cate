@@ -316,7 +316,7 @@ const WorktreeCard: React.FC<{
     <div>
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-1 h-8 px-1.5 rounded-sm text-secondary hover:text-primary hover:bg-hover transition-colors outline-none"
+        className="w-full flex items-center gap-1 h-8 px-1.5 text-secondary hover:text-primary hover:bg-hover transition-colors outline-none"
         title={worktree.path}
       >
         <CaretRight
