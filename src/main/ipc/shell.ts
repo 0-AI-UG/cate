@@ -17,6 +17,7 @@ import {
 import { terminalPids } from './terminal'
 import { sendToWindow, windowFromEvent, broadcastToAll } from '../windowRegistry'
 import { getShellEnv } from '../shellEnv'
+import { countSpawn } from '../perf/perfMonitor'
 import type { TerminalActivity } from '../../shared/types'
 
 interface TerminalRegistration {
@@ -104,6 +105,7 @@ function installFocusHooks(): void {
 function getChildPids(pid: number): Promise<number[]> {
   if (!pid || pid <= 0) return Promise.resolve([])
   return limit(() => new Promise((resolve) => {
+    countSpawn('pgrep')
     execFile('pgrep', ['-P', `${pid}`], {
       encoding: 'utf-8',
       timeout: 2000,
@@ -131,6 +133,7 @@ function getChildPids(pid: number): Promise<number[]> {
 function getProcessName(pid: number): Promise<string | null> {
   if (!pid || pid <= 0) return Promise.resolve(null)
   return limit(() => new Promise((resolve) => {
+    countSpawn('ps')
     execFile('ps', ['-o', 'comm=', '-p', `${pid}`], {
       encoding: 'utf-8',
       timeout: 2000,
@@ -242,6 +245,7 @@ async function scanListeningPorts(): Promise<Map<string, number[]>> {
     // `-a` ANDs the network filter with `-p <pids>`, so lsof inspects ONLY the
     // terminals' process trees instead of enumerating every socket on the
     // system. Without `-a`, lsof ORs the filters and scans all processes.
+    countSpawn('lsof:ports')
     execFile('lsof', ['-iTCP', '-sTCP:LISTEN', '-P', '-n', '-a', '-p', pids.join(','), '-F', 'pn'], {
       timeout: 5000,
     }, (err, stdout) => {
@@ -287,6 +291,7 @@ function getProcessCwd(pid: number): Promise<string | null> {
     // `-a` ANDs the filters; without it lsof ORs `-p <pid>` with `-d cwd` and
     // scans every process on the system (then we'd parse the first match, which
     // is invariably some low-pid daemon sitting at "/").
+    countSpawn('lsof:cwd')
     execFile('lsof', ['-a', '-p', `${pid}`, '-d', 'cwd', '-Fn'], {
       encoding: 'utf-8',
       timeout: 2000,

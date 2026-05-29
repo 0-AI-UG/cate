@@ -7,8 +7,12 @@
 }
 
 /* =============================================================================
-   Theme tokens — defined per [data-theme] attribute on <html>.
-   :root provides a safe fallback (dark-warm values) for any un-themed render.
+   Theme tokens.
+   The active theme is applied at runtime by themeManager.applyTheme(), which
+   writes every --var as an inline style on <html> (see src/shared/themes/).
+   This :root block is only the cold-launch / un-themed fallback — it mirrors
+   the dark-warm palette and MUST stay in sync with BASE_DARK in
+   src/shared/themes/base.ts.
    ============================================================================= */
 
 :root {
@@ -59,155 +63,6 @@
   /* Agent accent — RGB channels for Tailwind alpha modifier support. */
   --agent-rgb: 74 158 255;
   --agent-light-rgb: 147 197 255;
-}
-
-[data-theme="dark-warm"] {
-  --surface-0: #1d1c1a;
-  --surface-1: #232220;
-  --surface-2: #282724;
-  --surface-3: #2c2b28;
-  --surface-4: #322f2c;
-  --surface-5: #3a3733;
-  --surface-6: #423f3a;
-  --titlebar-bg: #232220;
-  --canvas-bg: #161513;
-  --canvas-bg-alt: #1c1b19;
-  --grid-dot: rgba(255, 255, 255, 0.077);
-  --grid-line: rgba(255, 255, 255, 0.03);
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-strong: rgba(255, 255, 255, 0.10);
-  --border-focus: #4a9eff;
-  --text-primary: #e8e6e3;
-  --text-secondary: #a8a49e;
-  --text-muted: #6b6762;
-  --text-inverse: #141311;
-  --focus-blue: #4a9eff;
-  --activity-green: #4dd964;
-  --activity-orange: #ff9f0a;
-  --shadow-node: rgba(0, 0, 0, 0.45);
-  --shadow-node-focused: rgba(74, 158, 255, 0.35);
-  --node-bg-active: #1a1917;
-  --node-dim-overlay: rgba(0, 0, 0, 0.18);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
-  --surface-hover: rgba(255, 255, 255, 0.06);
-  --surface-hover-strong: rgba(255, 255, 255, 0.12);
-  --git-added: #4dd964;
-  --git-modified: #ff9f0a;
-  --git-deleted: #ff453a;
-  --git-untracked: #4a9eff;
-  --git-renamed: #bf5af2;
-  /* Minimap panel rects — warm-tinted muted variants. */
-  --panel-terminal: #4a9960;
-  --panel-browser: #4a7ab0;
-  --panel-editor: #b07440;
-  --panel-git: #b04438;
-  --panel-fileExplorer: #4a8fb0;
-  --panel-projectList: #b09640;
-  --panel-canvas: #8857b0;
-  --agent-rgb: 74 158 255;
-  --agent-light-rgb: 147 197 255;
-}
-
-[data-theme="light-subtle"] {
-  /* Bone / Khaki Beige / Taupe / Azure Blue / Blue Slate palette.
-     Warm neutral surfaces layered from Khaki → Bone, Taupe for text,
-     Azure Blue accents, Blue Slate for secondary emphasis. */
-  --surface-0: #b1a696;
-  --surface-1: #bdb3a3;
-  --surface-2: #c8bfb0;
-  --surface-3: #c3b9a9;
-  --surface-4: #beb4a4;
-  --surface-5: #b8ae9e;
-  --surface-6: #b2a898;
-  --titlebar-bg: #b1a696;
-  --canvas-bg: #c8bfb0;
-  --canvas-bg-alt: #d2cabc;
-  --grid-dot: rgba(56, 50, 43, 0.13);
-  --grid-line: rgba(56, 50, 43, 0.06);
-  --border-subtle: rgba(56, 50, 43, 0.14);
-  --border-strong: rgba(56, 50, 43, 0.28);
-  --border-focus: #3c7ef0;
-  --text-primary: #1a1612;
-  --text-secondary: #38322b;
-  --text-muted: #5e574c;
-  --text-inverse: #ddd5ca;
-  --focus-blue: #3c7ef0;
-  --activity-green: #4a8f3a;
-  --activity-orange: #cb4b16;
-  --shadow-node: rgba(56, 50, 43, 0.18);
-  --shadow-node-focused: rgba(60, 126, 240, 0.35);
-  /* Active node is slightly darker than surface-3 so the contrast against the
-     (dimmed) inactive nodes is softened — "make the active one less bright". */
-  --node-bg-active: #c8bfb0;
-  --node-dim-overlay: rgba(56, 50, 43, 0.10);
-  --scrollbar-thumb: rgba(56, 50, 43, 0.24);
-  --scrollbar-thumb-hover: rgba(56, 50, 43, 0.40);
-  --surface-hover: rgba(56, 50, 43, 0.08);
-  --surface-hover-strong: rgba(56, 50, 43, 0.16);
-  --git-added: #4a8f3a;
-  --git-modified: #b58900;
-  --git-deleted: #dc322f;
-  --git-untracked: #3c7ef0;
-  --git-renamed: #5e747f;
-  --panel-terminal: #2f8f3f;
-  --panel-browser: #2b5fbf;
-  --panel-editor: #c46900;
-  --panel-git: #c0382e;
-  --panel-fileExplorer: #2e8fbf;
-  --panel-projectList: #a07a00;
-  --panel-canvas: #7d3ab8;
-  --agent-rgb: 60 126 240;
-  --agent-light-rgb: 30 80 180;
-}
-
-[data-theme="dark-cold"] {
-  /* Neutral iOS-native dark greys. No blue tint. */
-  --surface-0: #18181a;
-  --surface-1: #1f1f22;
-  --surface-2: #24242a;
-  --surface-3: #2a2a30;
-  --surface-4: #2f2f35;
-  --surface-5: #35353c;
-  --surface-6: #3c3c44;
-  --titlebar-bg: #1f1f22;
-  --canvas-bg: #0e0e10;
-  --canvas-bg-alt: #141416;
-  --grid-dot: rgba(235, 235, 245, 0.07);
-  --grid-line: rgba(235, 235, 245, 0.025);
-  --border-subtle: rgba(235, 235, 245, 0.06);
-  --border-strong: rgba(235, 235, 245, 0.12);
-  --border-focus: #0a84ff;
-  --text-primary: #f2f2f7;
-  --text-secondary: #8e8e93;
-  --text-muted: #636366;
-  --text-inverse: #0a0a0b;
-  --focus-blue: #0a84ff;
-  --activity-green: #30d158;
-  --activity-orange: #ff9f0a;
-  --shadow-node: rgba(0, 0, 0, 0.60);
-  --shadow-node-focused: rgba(10, 132, 255, 0.32);
-  --node-bg-active: #1c1c1e;
-  --node-dim-overlay: rgba(0, 0, 0, 0.22);
-  --scrollbar-thumb: rgba(235, 235, 245, 0.12);
-  --scrollbar-thumb-hover: rgba(235, 235, 245, 0.22);
-  --surface-hover: rgba(235, 235, 245, 0.06);
-  --surface-hover-strong: rgba(235, 235, 245, 0.12);
-  --git-added: #30d158;
-  --git-modified: #ff9f0a;
-  --git-deleted: #ff453a;
-  --git-untracked: #0a84ff;
-  --git-renamed: #bf5af2;
-  /* Minimap panel rects — cool/neutral muted variants, no warm undertone. */
-  --panel-terminal: #3a8a6e;
-  --panel-browser: #4a7ec7;
-  --panel-editor: #a86838;
-  --panel-git: #a83c34;
-  --panel-fileExplorer: #4aa0c7;
-  --panel-projectList: #a08840;
-  --panel-canvas: #7a5cc7;
-  --agent-rgb: 10 132 255;
-  --agent-light-rgb: 120 180 255;
 }
 
 /* Semantic utility classes. Declared directly (not via Tailwind colors) so
@@ -294,9 +149,9 @@
 .cate-notif-pulse {
   background: linear-gradient(
     90deg,
-    var(--shimmer-dim, var(--text-muted, #8a8479)) 40%,
-    var(--shimmer-bright, var(--text-primary, #e8e6e1)) 50%,
-    var(--shimmer-dim, var(--text-muted, #8a8479)) 60%
+    var(--shimmer-dim, var(--text-muted, #6b6762)) 40%,
+    var(--shimmer-bright, var(--text-secondary, #a8a49e)) 50%,
+    var(--shimmer-dim, var(--text-muted, #6b6762)) 60%
   );
   background-size: 300% 100%;
   background-clip: text;

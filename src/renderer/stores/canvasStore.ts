@@ -104,7 +104,11 @@ export interface CanvasStoreActions {
   // Focus and center viewport on a node
   focusAndCenter: (nodeId: CanvasNodeId) => void
 
+  // Move focus to the spatially-nearest node in a direction, centering it
+  navigateDirection: (dir: 'up' | 'down' | 'left' | 'right') => void
+
   zoomToFit: () => void
+  zoomToSelection: () => void
 
   // Z-order management
   moveToFront: (nodeId: CanvasNodeId) => void
@@ -756,6 +760,53 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     set(newState)
   },
 
+  navigateDirection(dir) {
+    const state = get()
+    const nodeList = Object.values(state.nodes)
+    if (nodeList.length === 0) return
+
+    // Reference center: focused node's center, else the viewport center.
+    const current = state.focusedNodeId ? state.nodes[state.focusedNodeId] : null
+    let refX: number
+    let refY: number
+    if (current) {
+      refX = current.origin.x + current.size.width / 2
+      refY = current.origin.y + current.size.height / 2
+    } else {
+      const cs = state.containerSize
+      const center = get().viewToCanvas({ x: cs.width / 2, y: cs.height / 2 })
+      refX = center.x
+      refY = center.y
+    }
+
+    let best: CanvasNodeState | null = null
+    let bestScore = Infinity
+    for (const n of nodeList) {
+      if (current && n.id === current.id) continue
+      const dx = n.origin.x + n.size.width / 2 - refX
+      const dy = n.origin.y + n.size.height / 2 - refY
+      const adx = Math.abs(dx)
+      const ady = Math.abs(dy)
+
+      // Directional cone: the candidate must lie in the half-plane AND the move
+      // axis must dominate, so we don't jump to a node that's mostly sideways.
+      let inCone: boolean
+      let score: number
+      if (dir === 'left') { inCone = dx < 0 && adx >= ady; score = adx + 2 * ady }
+      else if (dir === 'right') { inCone = dx > 0 && adx >= ady; score = adx + 2 * ady }
+      else if (dir === 'up') { inCone = dy < 0 && ady >= adx; score = ady + 2 * adx }
+      else { inCone = dy > 0 && ady >= adx; score = ady + 2 * adx }
+      if (!inCone) continue
+
+      if (score < bestScore) {
+        bestScore = score
+        best = n
+      }
+    }
+
+    if (best) get().focusAndCenter(best.id)
+  },
+
   zoomToFit() {
     const state = get()
     const nodeList = Object.values(state.nodes)
@@ -772,6 +823,44 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const contentW = maxX - minX + padding * 2
     const contentH = maxY - minY + padding * 2
     const zoom = Math.min(Math.max(Math.min(cs.width / contentW, cs.height / contentH), ZOOM_MIN), ZOOM_MAX)
+
+    set({
+      zoomLevel: zoom,
+      viewportOffset: {
+        x: (cs.width - contentW * zoom) / 2 - (minX - padding) * zoom,
+        y: (cs.height - contentH * zoom) / 2 - (minY - padding) * zoom,
+      },
+    })
+  },
+
+  zoomToSelection() {
+    const state = get()
+    const cs = state.containerSize
+    if (cs.width === 0 || cs.height === 0) return
+
+    // Target the selection, else the focused node, else fall back to fit-all.
+    let target = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+    if (target.length === 0) {
+      const focused = state.focusedNodeId ? state.nodes[state.focusedNodeId] : null
+      if (focused) target = [focused]
+    }
+    if (target.length === 0) {
+      get().zoomToFit()
+      return
+    }
+
+    const minX = Math.min(...target.map(n => n.origin.x))
+    const minY = Math.min(...target.map(n => n.origin.y))
+    const maxX = Math.max(...target.map(n => n.origin.x + n.size.width))
+    const maxY = Math.max(...target.map(n => n.origin.y + n.size.height))
+
+    const padding = 60
+    const contentW = maxX - minX + padding * 2
+    const contentH = maxY - minY + padding * 2
+    // Cap a single-node target so we don't over-zoom a small panel.
+    const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
+    const maxZoom = target.length === 1 ? Math.min(ZOOM_MAX, 1.5) : ZOOM_MAX
+    const zoom = Math.min(Math.max(fitZoom, ZOOM_MIN), maxZoom)
 
     set({
       zoomLevel: zoom,

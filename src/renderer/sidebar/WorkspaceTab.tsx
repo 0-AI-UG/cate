@@ -146,7 +146,7 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
 
   return (
     <button
-      className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
+      className={`group/panel flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
         indent ? 'pl-10' : 'pl-7'
       } ${isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
       onClick={onClick}
@@ -404,9 +404,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     }
     return (
       <div
-        className={`group flex items-center gap-2 h-8 px-2 rounded-md cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
+        className={`group flex items-center gap-2 h-8 px-2 cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
           isContextActive ? 'ring-1 ring-strong' : ''
-        } ${isSelected ? 'bg-surface-3' : ''}`}
+        } ${isSelected ? 'bg-surface-6' : ''}`}
         onClick={handlePickFolder}
         onContextMenu={handleContextMenu}
         title={workspace.rootPathError || 'Click to choose a project folder'}
@@ -485,7 +485,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return (
       <button
         key={p.id}
-        className={`group/panel flex items-center gap-1.5 h-7 pr-2 rounded text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
+        className={`group/panel flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
           indent ? 'pl-10' : 'pl-7'
         }`}
         onClick={(e) => handlePanelClick(e, p.id)}
@@ -504,13 +504,13 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     <div onContextMenu={handleContextMenu}>
       {/* Project row */}
       <div
-        className={`group flex items-center gap-1 h-8 px-1.5 rounded-md cursor-pointer transition-colors outline-none ${
+        className={`group flex items-center gap-1 h-8 px-1.5 cursor-pointer transition-colors outline-none ${
           isContextActive ? 'ring-1 ring-strong' : ''
         } ${
           isMultiSelected
-            ? 'bg-surface-3 text-primary ring-1 ring-strong'
+            ? 'bg-surface-6 text-primary ring-1 ring-strong'
             : isSelected
-            ? 'bg-surface-3 text-primary'
+            ? 'bg-surface-6 text-primary'
             : 'text-secondary hover:text-primary hover:bg-hover'
         }`}
         style={hasColor ? {

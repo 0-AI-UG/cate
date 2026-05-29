@@ -29,6 +29,8 @@ import { CommandPalette } from './ui/CommandPalette'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
+import PerfHud from './ui/PerfHud'
+import { initPerfClient } from './lib/perf/perfClient'
 import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
 import type { MultiWorkspaceSession } from '../shared/types'
 import { useDockStore } from './stores/dockStore'
@@ -119,17 +121,26 @@ function MainApp() {
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
 
-  // Theme — apply on mount and re-apply whenever appearanceMode changes
-  const appearanceMode = useSettingsStore((s) => s.appearanceMode)
+  // Theme — apply on mount and re-apply whenever the selection, the custom-theme
+  // list, or the system light/dark mapping changes (so imports/edits go live).
+  const activeThemeId = useSettingsStore((s) => s.activeThemeId)
+  const customThemes = useSettingsStore((s) => s.customThemes)
+  const systemLightThemeId = useSettingsStore((s) => s.systemLightThemeId)
+  const systemDarkThemeId = useSettingsStore((s) => s.systemDarkThemeId)
   useEffect(() => {
-    applyTheme(appearanceMode)
-  }, [appearanceMode])
+    applyTheme(activeThemeId)
+  }, [activeThemeId, customThemes, systemLightThemeId, systemDarkThemeId])
 
   // E2E test harness — exposes window.__cateE2E only when launched by Playwright.
   useEffect(() => {
     if (window.electronAPI?.isE2E) {
       import('./lib/e2eHarness').then((m) => m.installE2EHarness())
     }
+  }, [])
+
+  // Resource profiler — wires up FPS/long-task observers only under CATE_PERF=1.
+  useEffect(() => {
+    initPerfClient()
   }, [])
 
   // Global hooks
@@ -526,6 +537,7 @@ function MainApp() {
       )}
       <SavedLayoutsDialog />
       <PostUpdateFeedbackDialog />
+      <PerfHud />
 
       {initializing && (
         <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-4 select-none pointer-events-none">

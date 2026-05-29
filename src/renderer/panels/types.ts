@@ -29,7 +29,6 @@ export interface EditorPanelProps extends PanelProps {
 
 export interface BrowserPanelProps extends PanelProps {
   url?: string
-  zoomLevel?: number
 }
 
 // -----------------------------------------------------------------------------

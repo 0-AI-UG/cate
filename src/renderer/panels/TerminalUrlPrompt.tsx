@@ -34,13 +34,13 @@ export function TerminalUrlPrompt({ panelId }: Props) {
       )}
       <button
         onClick={() => accept(panelId)}
-        className="px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+        className="px-3 py-1 rounded-full leading-none bg-focus-blue text-inverse font-medium hover:opacity-90 transition-opacity"
       >
         Open
       </button>
       <button
         onClick={() => dismiss(panelId)}
-        className="px-2 py-0.5 rounded text-secondary hover:text-primary hover:bg-hover transition-colors"
+        className="px-3 py-1 rounded-full leading-none text-secondary hover:text-primary hover:bg-hover transition-colors"
       >
         Dismiss
       </button>

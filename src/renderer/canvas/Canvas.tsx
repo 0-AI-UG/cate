@@ -8,10 +8,9 @@ import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/Can
 import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
 import { useAutoFocusLargestVisible } from '../hooks/useAutoFocusLargestVisible'
-import { useUIStore } from '../stores/uiStore'
+import { useUIStore, effectiveCanvasTool } from '../stores/uiStore'
 import { canvasToView, viewToCanvas } from '../lib/coordinates'
 import CanvasGrid from './CanvasGrid'
-import BulkActionChip from './BulkActionChip'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import type { Point, PanelType } from '../../shared/types'
@@ -35,6 +34,17 @@ function injectCanvasInteractingStyle(): void {
     .canvas-interacting .xterm,
     .canvas-interacting .xterm * {
       cursor: grabbing !important;
+    }
+    /* Hand tool active (idle): let left-presses on interactive panel content
+       fall through to the canvas pan handler instead of being swallowed. */
+    .canvas-tool-hand iframe,
+    .canvas-tool-hand webview,
+    .canvas-tool-hand .monaco-editor,
+    .canvas-tool-hand .xterm,
+    .canvas-tool-hand .xterm-screen,
+    .canvas-tool-hand .xterm-helper-textarea {
+      pointer-events: none !important;
+      cursor: grab !important;
     }
   `
   document.head.appendChild(style)
@@ -70,12 +80,18 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
 
   const marquee = useUIStore((s) => s.marquee)
+  // Idle cursor reflects the active tool (React owns idle; useCanvasInteraction
+  // overrides to 'grabbing' during an active pan and hands control back on release).
+  const handToolActive = useUIStore((s) => effectiveCanvasTool(s) === 'hand')
+  const idleCursor = handToolActive ? 'grab' : 'default'
 
-  // Bulk-action chip subscriptions — re-render when the multi-selection or
-  // viewport changes (chip position is derived from node origin + zoom).
-  const selectedNodeCount = useCanvasStoreContext((s) => s.selectedNodeIds.size)
-  const zoomForChip = useCanvasStoreContext((s) => s.zoomLevel)
-  const viewportForChip = useCanvasStoreContext((s) => s.viewportOffset)
+  // While the Hand tool is active, neutralize interactive panel content so a
+  // left-press anywhere pans the canvas (see the .canvas-tool-hand CSS rules).
+  useEffect(() => {
+    document.body.classList.toggle('canvas-tool-hand', handToolActive)
+    return () => document.body.classList.remove('canvas-tool-hand')
+  }, [handToolActive])
+
 
   const {
     handleWheel,
@@ -368,6 +384,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       data-canvas-container
       data-canvas-panel-id={panelId}
       className="relative w-full h-full overflow-hidden bg-canvas-bg"
+      style={{ cursor: idleCursor }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -416,31 +433,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         )}
         {children}
       </div>
-
-      {selectedNodeCount >= 2 && (() => {
-        // Compute selection AABB in canvas space, then convert to view space.
-        const state = canvasApi.getState()
-        const selected = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
-        if (selected.length < 2) return null
-        const minX = Math.min(...selected.map((n) => n.origin.x))
-        const minY = Math.min(...selected.map((n) => n.origin.y))
-        const maxX = Math.max(...selected.map((n) => n.origin.x + n.size.width))
-        const maxY = Math.max(...selected.map((n) => n.origin.y + n.size.height))
-        const rect = canvasRef.current?.getBoundingClientRect()
-        const tl = canvasToView({ x: minX, y: minY }, zoomForChip, viewportForChip)
-        const br = canvasToView({ x: maxX, y: maxY }, zoomForChip, viewportForChip)
-        return (
-          <BulkActionChip
-            view={{
-              x: (rect?.left ?? 0) + tl.x,
-              y: (rect?.top ?? 0) + tl.y,
-              w: br.x - tl.x,
-              h: br.y - tl.y,
-            }}
-            count={selected.length}
-          />
-        )
-      })()}
 
     </div>
   )

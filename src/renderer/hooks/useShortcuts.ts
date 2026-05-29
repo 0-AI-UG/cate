@@ -11,6 +11,12 @@ import { useUIStore } from '../stores/uiStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 
+// Single-key (no-modifier) actions that must be suppressed while typing.
+const TOOL_AND_NAV_ACTIONS = new Set<ShortcutAction>([
+  'toolSelect', 'toolHand',
+  'navigateUp', 'navigateDown', 'navigateLeft', 'navigateRight',
+])
+
 /**
  * Ensures the workspace has a rootPath before proceeding.
  * If no rootPath is set, opens the folder dialog first.
@@ -137,6 +143,27 @@ export function useShortcuts(): void {
         case 'zoomToFit':
           canvasStore().zoomToFit()
           break
+        case 'zoomToSelection':
+          canvasStore().zoomToSelection()
+          break
+        case 'toolSelect':
+          useUIStore.getState().setActiveTool('select')
+          break
+        case 'toolHand':
+          useUIStore.getState().setActiveTool('hand')
+          break
+        case 'navigateUp':
+          canvasStore().navigateDirection('up')
+          break
+        case 'navigateDown':
+          canvasStore().navigateDirection('down')
+          break
+        case 'navigateLeft':
+          canvasStore().navigateDirection('left')
+          break
+        case 'navigateRight':
+          canvasStore().navigateDirection('right')
+          break
         case 'autoLayout':
           canvasStore().autoLayout()
           break
@@ -164,14 +191,6 @@ export function useShortcuts(): void {
     })
 
     function handleKeyDown(e: KeyboardEvent) {
-      // --- Modifier tracking (for hint overlay) ---
-      updateModifierState(e)
-
-      // Cancel hint hold on any keydown that isn't just a modifier
-      if (!isModifierOnly(e)) {
-        shortcutStore().cancelHintHold()
-      }
-
       // --- Detect whether a terminal panel is focused ---
       // When a terminal has focus, most keyboard events must pass through to
       // xterm.js. Only app-level shortcuts (Cmd+<key>, Ctrl+Tab, etc.) should
@@ -183,6 +202,21 @@ export function useShortcuts(): void {
         ? appStore().workspaces.find(w => w.id === selectedWorkspaceId)?.panels[focusedNode.panelId]
         : null
       const terminalHasFocus = focusedPanel?.type === 'terminal'
+
+      // --- Spacebar-hold = temporary Hand tool (pan) ---
+      // Hardcoded (a hold, not a tap). Ignored while typing or in a terminal so
+      // Space still types a space. e.repeat guards against key-repeat spam.
+      if (
+        e.code === 'Space' &&
+        !e.metaKey && !e.ctrlKey && !e.altKey &&
+        !terminalHasFocus && !isTextSurfaceFocused()
+      ) {
+        if (!e.repeat) {
+          e.preventDefault()
+          useUIStore.getState().setSpacePanActive(true)
+        }
+        return
+      }
 
       // --- Selection & region shortcuts (hardcoded) ---
 
@@ -221,12 +255,14 @@ export function useShortcuts(): void {
         return
       }
 
-      // Escape — clear selection (when no overlay is open)
+      // Escape — clear selection and revert to the Select tool (when no overlay
+      // is open) so the user is never stuck in the Hand tool.
       if (e.key === 'Escape') {
         if (terminalHasFocus) return
         const ui = useUIStore.getState()
         if (!ui.showCommandPalette && !ui.showNodeSwitcher) {
           canvasStore().clearSelection()
+          if (ui.activeTool !== 'select') ui.setActiveTool('select')
           // Don't prevent default — Escape might also close other things
           return
         }
@@ -271,14 +307,28 @@ export function useShortcuts(): void {
 
       // When panel switcher is open, only handle the toggle shortcut
       const ui = useUIStore.getState()
-      // Context-aware guard: when a text surface (input, textarea, Monaco,
-      // xterm helper textarea, contenteditable) has focus, let clipboard and
-      // undo/redo fall through to it natively instead of the canvas.
-      // Terminals don't consume Cmd+Z/Y/Backspace, so let canvas handle them
-      // even when a terminal panel is focused. Only real text editors
-      // (Monaco, inputs, contenteditables) should swallow them.
-      if (action === 'undo' || action === 'redo' || action === 'deleteNode') {
+
+      // Single-key tool/navigation shortcuts (V, H, arrows) must not fire while
+      // typing in a terminal/editor, or steal arrows from the open overlays.
+      if (TOOL_AND_NAV_ACTIONS.has(action)) {
+        if (terminalHasFocus || isTextSurfaceFocused()) return
+        const navOnly = action !== 'toolSelect' && action !== 'toolHand'
+        if (navOnly && (ui.showNodeSwitcher || ui.showCommandPalette)) return
+      }
+      // Context-aware guard: when a real text editor (Monaco, input, textarea,
+      // contenteditable) has focus, let Cmd+Z/Y fall through to it natively.
+      // Terminals don't consume Cmd+Z/Y, so the canvas still owns undo/redo when
+      // a terminal panel is focused.
+      if (action === 'undo' || action === 'redo') {
         if (!terminalHasFocus && isTextSurfaceFocused()) return
+      }
+      // Cmd+Backspace (deleteNode): a focused terminal must keep the chord so the
+      // shell can delete-to-line-start (translated to Ctrl+U in terminalRegistry),
+      // and a focused text editor must keep it to delete text. Panels stay
+      // closable via Cmd+W. Without this, the canvas would close the panel and
+      // the keystroke would never reach the shell (issue #172).
+      if (action === 'deleteNode') {
+        if (terminalHasFocus || isTextSurfaceFocused()) return
       }
 
       // Keyboard-only passthrough: when a browser panel is focused, let
@@ -299,22 +349,10 @@ export function useShortcuts(): void {
     }
 
     function handleKeyUp(e: KeyboardEvent) {
-      updateModifierState(e)
-    }
-
-    /**
-     * Push the current modifier state into the shortcut store.
-     * The store handles hint hold start/stop logic internally.
-     */
-    function updateModifierState(e: KeyboardEvent) {
-      const prev = shortcutStore().activeModifiers
-      const command = e.metaKey
-      const shift = e.shiftKey
-      const option = e.altKey
-      const control = e.ctrlKey
-      // Skip store update if nothing changed
-      if (prev.command === command && prev.shift === shift && prev.option === option && prev.control === control) return
-      shortcutStore().updateModifiers({ command, shift, option, control })
+      // Release the temporary Hand tool when Space is let go.
+      if (e.code === 'Space') {
+        useUIStore.getState().setSpacePanActive(false)
+      }
     }
 
     /**
@@ -333,29 +371,13 @@ export function useShortcuts(): void {
       return false
     }
 
-    /**
-     * Returns true if the event is ONLY a modifier key (no printable key).
-     */
-    function isModifierOnly(e: KeyboardEvent): boolean {
-      return (
-        e.key === 'Meta' ||
-        e.key === 'Shift' ||
-        e.key === 'Control' ||
-        e.key === 'Alt'
-      )
-    }
-
     document.addEventListener('keydown', handleKeyDown, { capture: true })
     document.addEventListener('keyup', handleKeyUp, { capture: true })
 
-    // Handle window blur — reset modifiers so hints don't get stuck
+    // Handle window blur — clear the temporary Hand tool so a held Space can't
+    // stick on Cmd-Tab.
     function handleBlur() {
-      shortcutStore().updateModifiers({
-        command: false,
-        shift: false,
-        option: false,
-        control: false,
-      })
+      useUIStore.getState().setSpacePanActive(false)
     }
 
     window.addEventListener('blur', handleBlur)

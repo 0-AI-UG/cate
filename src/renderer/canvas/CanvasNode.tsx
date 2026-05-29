@@ -7,11 +7,13 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRenderCount } from '../lib/perf/perfClient'
 import type { StoreApi } from 'zustand'
 import type { NodeActivityState, DockLayoutNode, PanelType } from '../../shared/types'
 import { isMaximized as checkMaximized } from '../../shared/types'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
+import { useUIStore, effectiveCanvasTool } from '../stores/uiStore'
 import { useDragStore, useDragSourceVisibility } from '../drag'
 import { useNodeResize } from '../hooks/useNodeResize'
 import { useCanvasNodeStyle } from './useCanvasNodeStyle'
@@ -24,10 +26,17 @@ import DockTabStack from '../docking/DockTabStack'
 import DockSplitContainer from '../docking/DockSplitContainer'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
-import { resolveTerminalPreset } from '../lib/terminalRegistry'
-import { useSettingsStore } from '../stores/settingsStore'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { WorktreePill } from './WorktreePill'
+
+// When the Hand tool (or Space-hold) is active, a left-press on a node must pan
+// the canvas instead of dragging/resizing the node. These handlers bail out
+// (without stopping propagation) so the event bubbles to the canvas container's
+// pan handler. Focused interactive content (terminal/monaco/webview) is handled
+// separately by the `canvas-tool-hand` body class (see Canvas.tsx).
+function handToolPanShouldWin(e: React.MouseEvent): boolean {
+  return e.button === 0 && effectiveCanvasTool(useUIStore.getState()) === 'hand'
+}
 
 // -----------------------------------------------------------------------------
 // Props
@@ -37,7 +46,6 @@ export interface CanvasNodeProps {
   nodeId: string
   isFocused: boolean
   activityState?: NodeActivityState
-  zoomLevel: number
   /** Per-node DockStore that owns the layout for this node. Created in CanvasPanel. */
   dockStoreApi: StoreApi<DockStore>
   /** Render the panel content for a given panelId. */
@@ -125,12 +133,12 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   nodeId,
   isFocused,
   activityState,
-  zoomLevel,
   dockStoreApi,
   renderPanel,
   title: _title = 'Panel',
 }) => {
   ensureKeyframes()
+  useRenderCount('CanvasNode')
 
   const canvasApi = useCanvasStoreApi()
   const nodeRef = useRef<HTMLDivElement>(null)
@@ -176,6 +184,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   // individual tab mousedown (panelId set → detach that tab when the mini-dock
   // has multiple panels, else whole-node drag).
   const handleHeaderMouseDown = useCallback((e: React.MouseEvent, panelId?: string) => {
+    if (handToolPanShouldWin(e)) return
     if (panelId) {
       const total = countPanels(dockStoreApi.getState().zones.center.layout)
       if (total > 1) {
@@ -188,22 +197,22 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   const maximized = node ? checkMaximized(node) : false
 
-  const { handleResizeStart } = useNodeResize(nodeId, primaryPanelType, zoomLevel, canvasApi)
+  const { handleResizeStart } = useNodeResize(nodeId, primaryPanelType, canvasApi)
+  // Under the Hand tool, edge presses pan instead of resizing.
+  const handleResizeStartGuarded = useCallback(
+    (e: React.MouseEvent, edge: Parameters<typeof handleResizeStart>[1]) => {
+      if (handToolPanShouldWin(e)) return
+      handleResizeStart(e, edge)
+    },
+    [handleResizeStart],
+  )
   const { handleMouseDown } = useNodeResizeCursor()
   const wsId = useAppStore((s) => s.selectedWorkspaceId)
   const currentWorkspace = useSelectedWorkspace()
 
-  // Subscribe to custom themes and the default-theme setting so chrome tint
-  // re-renders when either changes.
-  const customThemes = useSettingsStore((s) => s.terminalCustomThemes)
-  const defaultTerminalTheme = useSettingsStore((s) => s.defaultTerminalTheme)
-  const chromeTint = useMemo(() => {
-    if (primaryPanel?.type !== 'terminal') return null
-    const preset = resolveTerminalPreset(primaryPanel.themePreset)
-    if (!preset) return null
-    return { background: preset.theme.background, accent: preset.accent }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [primaryPanel, customThemes, defaultTerminalTheme])
+  // Terminals follow the single unified theme, so node chrome is never tinted
+  // per-panel any more.
+  const chromeTint = null
 
   // --- Animation lifecycle ---------------------------------------------------
 
@@ -441,6 +450,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const handleGrabStripMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (e.button !== 0) return
+      if (handToolPanShouldWin(e)) return
       const target = e.target as HTMLElement
       if (target.closest('[data-grab-button]')) return
       e.stopPropagation()
@@ -485,7 +495,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     isFocused,
     isSelected,
     activityState,
-    zoomLevel,
     isAnimatingLayout,
     isHovered,
     chromeTint,
@@ -564,6 +573,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           data-unfocused-overlay
           onMouseDown={(e) => {
             if (isFocused || e.button !== 0) return
+            if (handToolPanShouldWin(e)) return
             e.stopPropagation()
             handleDragStart(e)
           }}
@@ -639,7 +649,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           pointerEvents: 'none',
         }}
       >
-        <NodeResizeOverlay onResizeStart={handleResizeStart} />
+        <NodeResizeOverlay onResizeStart={handleResizeStartGuarded} />
       </div>
     )}
     </>
@@ -650,7 +660,6 @@ export default React.memo(CanvasNode, (prev, next) => {
   return (
     prev.nodeId === next.nodeId &&
     prev.isFocused === next.isFocused &&
-    prev.zoomLevel === next.zoomLevel &&
     prev.activityState === next.activityState &&
     prev.dockStoreApi === next.dockStoreApi &&
     prev.renderPanel === next.renderPanel &&

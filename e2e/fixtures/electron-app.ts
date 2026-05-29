@@ -14,7 +14,7 @@ export interface LaunchResult {
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..')
 
-export async function launchApp(): Promise<LaunchResult> {
+export async function launchApp(opts: { perf?: boolean } = {}): Promise<LaunchResult> {
   const electronApp = await electron.launch({
     args: ['.'],
     cwd: REPO_ROOT,
@@ -22,6 +22,10 @@ export async function launchApp(): Promise<LaunchResult> {
       ...process.env,
       CATE_E2E: '1',
       NODE_ENV: 'production',
+      // Activate the resource profiler (main getAppMetrics sampler + counters,
+      // renderer FPS/long-task/render counters, window.__catePerf) for the
+      // perf-stress spec. Harmless no-op for other specs that don't set it.
+      ...(opts.perf ? { CATE_PERF: '1' } : {}),
     },
   })
   const mainWindow = await electronApp.firstWindow()

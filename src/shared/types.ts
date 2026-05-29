@@ -3,6 +3,9 @@
 // Ported from Swift source files to maintain exact parity.
 // =============================================================================
 
+import type { Theme } from './theme'
+export type { Theme } from './theme'
+
 // -----------------------------------------------------------------------------
 // Geometry primitives
 // -----------------------------------------------------------------------------
@@ -100,9 +103,6 @@ export interface PanelState {
   /** Unsaved buffer content for scratch (no-filePath) editors. Persisted so
    *  content survives canvas switches and app restarts. */
   unsavedContent?: string
-  /** Terminal panels only: id of a preset color palette. Unset = follow the
-   *  global app theme. See terminalRegistry.TERMINAL_PRESETS. */
-  themePreset?: string
   /** Terminal panels only: explicit working directory override. When unset
    *  the terminal uses the workspace's `rootPath`. Set when the terminal was
    *  created from a dropped folder or worktree to scope it to that path. */
@@ -340,10 +340,12 @@ export interface WorkspaceState {
 }
 
 // -----------------------------------------------------------------------------
-// Appearance mode
+// Theme selection
 // -----------------------------------------------------------------------------
 
-export type AppearanceMode = 'system' | 'dark-warm' | 'light-subtle' | 'dark-cold'
+/** Active theme selection: the literal 'system' (auto light/dark) or a theme id
+ *  (built-in or custom). */
+export type ThemeSelection = 'system' | string
 
 // -----------------------------------------------------------------------------
 // Browser search engine
@@ -409,7 +411,8 @@ export function displayString(s: StoredShortcut): string {
   return parts.join('')
 }
 
-// All 17 shortcut actions — matches Swift ShortcutAction enum exactly.
+// All shortcut actions. Keep ShortcutAction, SHORTCUT_ACTIONS,
+// SHORTCUT_DISPLAY_NAMES, and DEFAULT_SHORTCUTS in sync.
 export type ShortcutAction =
   | 'newTerminal'
   | 'newBrowser'
@@ -427,10 +430,17 @@ export type ShortcutAction =
   | 'focusPrevious'
   | 'saveFile'
   | 'zoomToFit'
+  | 'zoomToSelection'
   | 'autoLayout'
   | 'undo'
   | 'redo'
   | 'deleteNode'
+  | 'toolSelect'
+  | 'toolHand'
+  | 'navigateUp'
+  | 'navigateDown'
+  | 'navigateLeft'
+  | 'navigateRight'
 
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
@@ -454,10 +464,17 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'focusPrevious',
   'saveFile',
   'zoomToFit',
+  'zoomToSelection',
   'autoLayout',
   'undo',
   'redo',
   'deleteNode',
+  'toolSelect',
+  'toolHand',
+  'navigateUp',
+  'navigateDown',
+  'navigateLeft',
+  'navigateRight',
 ]
 
 export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
@@ -477,10 +494,17 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   focusPrevious: 'Focus Previous Panel',
   saveFile: 'Save File',
   zoomToFit: 'Zoom to Fit',
+  zoomToSelection: 'Zoom to Selection',
   autoLayout: 'Auto Layout Canvas',
   undo: 'Undo',
   redo: 'Redo',
   deleteNode: 'Delete Focused Panel',
+  toolSelect: 'Select Tool',
+  toolHand: 'Hand Tool',
+  navigateUp: 'Navigate Up',
+  navigateDown: 'Navigate Down',
+  navigateLeft: 'Navigate Left',
+  navigateRight: 'Navigate Right',
 }
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
@@ -500,10 +524,17 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   focusPrevious: storedShortcut('\t', { shift: true, control: true }),
   saveFile: storedShortcut('s', { command: true }),
   zoomToFit: storedShortcut('1', { command: true }),
+  zoomToSelection: storedShortcut('2', { command: true }),
   autoLayout: storedShortcut('l', { command: true, shift: true }),
   undo: storedShortcut('z', { command: true }),
   redo: storedShortcut('z', { command: true, shift: true }),
   deleteNode: storedShortcut('Backspace', { command: true }),
+  toolSelect: storedShortcut('v'),
+  toolHand: storedShortcut('h'),
+  navigateUp: storedShortcut('↑'),
+  navigateDown: storedShortcut('↓'),
+  navigateLeft: storedShortcut('←'),
+  navigateRight: storedShortcut('→'),
 }
 
 // -----------------------------------------------------------------------------
@@ -673,6 +704,9 @@ export interface ProjectPanelRef {
 
 export interface ProjectSessionFile {
   version: 1
+  /** Stable machine-local workspace id, reused across restores so the
+   *  main-process workspace list isn't duplicated on renderer reload. */
+  workspaceId?: string
   focusedNodeId: string | null
   nodes: Record<string, ProjectSessionNode>
   /** Detached panel windows (machine-local, not committed). */
@@ -728,38 +762,6 @@ export type NotificationAction =
 // this shape. `theme` mirrors xterm.js's ITheme.
 // -----------------------------------------------------------------------------
 
-export interface TerminalThemeData {
-  /** Stable identifier — used as the panel's `themePreset` field. */
-  id: string
-  /** Display name shown in the Theme submenu. */
-  label: string
-  /** Hex color used for the tab-accent tint. */
-  accent: string
-  theme: {
-    background: string
-    foreground: string
-    cursor?: string
-    cursorAccent?: string
-    selectionBackground?: string
-    selectionForeground?: string
-    black?: string
-    red?: string
-    green?: string
-    yellow?: string
-    blue?: string
-    magenta?: string
-    cyan?: string
-    white?: string
-    brightBlack?: string
-    brightRed?: string
-    brightGreen?: string
-    brightYellow?: string
-    brightBlue?: string
-    brightMagenta?: string
-    brightCyan?: string
-    brightWhite?: string
-  }
-}
 
 export interface AppSettings {
   // General
@@ -770,7 +772,13 @@ export interface AppSettings {
   nativeTabs: boolean
 
   // Appearance
-  appearanceMode: AppearanceMode
+  /** Active unified theme: 'system' (auto light/dark) or a theme id. */
+  activeThemeId: ThemeSelection
+  /** Theme ids used by 'system' mode for OS light / dark. */
+  systemLightThemeId: string
+  systemDarkThemeId: string
+  /** User-imported / agent-authored unified themes. */
+  customThemes: Theme[]
   editorFontSize: number
 
   // Canvas
@@ -798,12 +806,6 @@ export interface AppSettings {
    *  output for 2 minutes. SIGCONT is sent on focus/interaction. POSIX-only;
    *  no effect on Windows. */
   autoSuspendIdleTerminals: boolean
-  /** User-imported terminal color palettes. Appended to the built-in presets
-   *  in the terminal-tab Theme submenu. */
-  terminalCustomThemes: TerminalThemeData[]
-  /** Preset id used by terminals that have no per-panel override. When unset
-   *  (default), terminals follow the global app theme. */
-  defaultTerminalTheme?: string
 
   // Browser
   browserHomepage: string
@@ -841,7 +843,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   nativeTabs: false,
 
   // Appearance
-  appearanceMode: 'system',
+  activeThemeId: 'system',
+  systemLightThemeId: 'light-subtle',
+  systemDarkThemeId: 'dark-warm',
+  customThemes: [],
   editorFontSize: 12,
 
   // Canvas
@@ -858,8 +863,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalScrollback: 2000,
   terminalCursorBlink: false,
   autoSuspendIdleTerminals: true,
-  terminalCustomThemes: [],
-  // defaultTerminalTheme is optional — unset means "follow app theme"
 
   // Browser
   browserHomepage: 'about:blank',
@@ -1119,3 +1122,28 @@ export type OAuthFlowEvent =
   | { type: 'manualCode'; promptId: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
+
+// -----------------------------------------------------------------------------
+// Performance profiler (CATE_PERF=1) — shared between main sampler and the
+// renderer HUD.
+// -----------------------------------------------------------------------------
+
+export interface PerfProcSample {
+  type: string
+  pid: number
+  /** percentCPUUsage since last sample (relative to one core; may exceed 100). */
+  cpu: number
+  /** working-set memory in MB. */
+  memMB: number
+}
+
+export interface PerfSnapshot {
+  /** Sampling window in ms; all rates below are per-second. */
+  windowMs: number
+  focused: boolean
+  totalCpu: number
+  procs: PerfProcSample[]
+  spawnsPerSec: Record<string, number>
+  ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
+  terminal: { kbPerSec: number; chunksPerSec: number }
+}

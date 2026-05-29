@@ -103,9 +103,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           ;(merged as Record<string, unknown>)[key] = stored[key]
         }
       }
-      // Migrate legacy appearanceMode values
-      if ((merged.appearanceMode as string) === 'dark') merged.appearanceMode = 'dark-warm'
-      if ((merged.appearanceMode as string) === 'light') merged.appearanceMode = 'light-subtle'
+      // Migrate the legacy appearanceMode setting → activeThemeId. The old
+      // values map directly to built-in theme ids (with two legacy aliases).
+      // terminalCustomThemes / defaultTerminalTheme are intentionally dropped:
+      // the unified theme has no separate per-terminal palette.
+      if (!('activeThemeId' in stored) && 'appearanceMode' in (stored as Record<string, unknown>)) {
+        const legacy = String((stored as Record<string, unknown>).appearanceMode ?? 'system')
+        const map: Record<string, string> = {
+          dark: 'dark-warm',
+          light: 'light-subtle',
+        }
+        merged.activeThemeId = map[legacy] ?? legacy
+        log.info('[settings] Migrated appearanceMode "%s" → activeThemeId "%s"', legacy, merged.activeThemeId)
+      }
       set({ ...merged, _loaded: true })
     } catch {
       // Fall back to defaults on error
