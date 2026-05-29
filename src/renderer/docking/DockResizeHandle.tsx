@@ -14,9 +14,22 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
   const dragging = useRef(false)
   const lastPos = useRef(0)
   const dragAbortRef = useRef<AbortController | null>(null)
+  const cursorStyleRef = useRef<HTMLStyleElement | null>(null)
 
+  // If the handle unmounts mid-drag (e.g. the split collapses), tear down the
+  // gesture state we'd otherwise leak onto <body>/<head>.
   useEffect(() => {
-    return () => { dragAbortRef.current?.abort() }
+    return () => {
+      dragAbortRef.current?.abort()
+      cursorStyleRef.current?.remove()
+      cursorStyleRef.current = null
+      if (dragging.current) {
+        dragging.current = false
+        document.body.classList.remove('canvas-interacting')
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
   }, [])
 
   const handleMouseDown = useCallback(
@@ -24,6 +37,22 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
       e.preventDefault()
       dragging.current = true
       lastPos.current = direction === 'horizontal' ? e.clientX : e.clientY
+      const resizeCursor = direction === 'horizontal' ? 'col-resize' : 'row-resize'
+
+      // Hold `canvas-interacting` for the whole drag, exactly as useNodeResize
+      // does for a panel-edge resize. A split child can be a terminal, and the
+      // TerminalPanel guards on this class to (a) defer xterm fit() so the
+      // WebGL canvas doesn't re-size every tick and flash the divider wider,
+      // and (b) skip adjustCoords so this handler's clientX isn't rewritten in
+      // the capture phase — otherwise the divider reads a moving target and
+      // runs away from the cursor on a zoomed canvas. The class also force-pins
+      // xterm to `grabbing`, so inject a high-specificity cursor override (same
+      // trick as useNodeResize) to keep the resize cursor. Cleaned up on mouseup.
+      document.body.classList.add('canvas-interacting')
+      const cursorStyleEl = document.createElement('style')
+      cursorStyleEl.textContent = `*, *::before, *::after { cursor: ${resizeCursor} !important; }`
+      document.head.appendChild(cursorStyleEl)
+      cursorStyleRef.current = cursorStyleEl
 
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragging.current) return
@@ -39,6 +68,9 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
         dragging.current = false
         dragAbortRef.current?.abort()
         dragAbortRef.current = null
+        document.body.classList.remove('canvas-interacting')
+        cursorStyleEl.remove()
+        cursorStyleRef.current = null
         document.body.style.cursor = ''
         document.body.style.userSelect = ''
       }
@@ -49,7 +81,7 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
       const { signal } = controller
       document.addEventListener('mousemove', onMouseMove, { signal })
       document.addEventListener('mouseup', onMouseUp, { signal })
-      document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize'
+      document.body.style.cursor = resizeCursor
       document.body.style.userSelect = 'none'
     },
     [direction, onResize],
