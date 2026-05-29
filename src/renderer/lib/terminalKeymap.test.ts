@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveTerminalKeySequence, type TerminalKeyEvent } from './terminalKeymap'
+import { resolveTerminalKeySequence, MAC_TERMINAL_KEYMAP, type TerminalKeyEvent } from './terminalKeymap'
 
 function ev(partial: Partial<TerminalKeyEvent> & { key: string }): TerminalKeyEvent {
   return { metaKey: false, altKey: false, ctrlKey: false, shiftKey: false, ...partial }
@@ -44,5 +44,15 @@ describe('resolveTerminalKeySequence (macOS line-editing chords)', () => {
 
   it('leaves forward Delete with Cmd alone (only Option+Delete is mapped)', () => {
     expect(resolveTerminalKeySequence(ev({ key: 'Delete', metaKey: true }), true)).toBeNull()
+  })
+})
+
+describe('MAC_TERMINAL_KEYMAP table', () => {
+  it('has the 7 VS Code-parity chords, each with a non-empty send + label', () => {
+    expect(MAC_TERMINAL_KEYMAP).toHaveLength(7)
+    for (const entry of MAC_TERMINAL_KEYMAP) {
+      expect(entry.send.length).toBeGreaterThan(0)
+      expect(entry.label.length).toBeGreaterThan(0)
+    }
   })
 })
