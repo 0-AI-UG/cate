@@ -109,6 +109,8 @@ function MainApp() {
   const closeSettings = useUIStore((s) => s.closeSettings)
   const [initializing, setInitializing] = useState(true)
   const initializedRef = useRef(false)
+  // Guards against stacking reload-confirm dialogs when the detector re-fires.
+  const reloadPromptOpenRef = useRef(false)
 
 
   // Store state
@@ -160,6 +162,35 @@ function MainApp() {
     const api = (window as unknown as { electronAPI?: { windowSetTitle?: (t: string) => Promise<void> } }).electronAPI
     api?.windowSetTitle?.(title).catch(() => { /* noop */ })
   }, [currentWorkspace?.name])
+
+  // When the active workspace's workspace.json is detected to have changed on
+  // disk (edited externally, e.g. by an agent following the .cate skill), prompt
+  // to reload the canvas. The detector (main's autosave guard) fires once per
+  // change via WORKSPACE_EXTERNAL_EDIT.
+  useEffect(() => {
+    return window.electronAPI.onWorkspaceExternalEdit?.(async ({ rootPath }) => {
+      if (reloadPromptOpenRef.current) return
+      const app = useAppStore.getState()
+      const active = app.workspaces.find((w) => w.id === app.selectedWorkspaceId)
+      // Only prompt for the workspace whose canvas is currently shown.
+      if (!active?.rootPath || active.rootPath !== rootPath) return
+
+      reloadPromptOpenRef.current = true
+      try {
+        const choice = await window.electronAPI.confirmReloadWorkspace?.({ name: active.name })
+        if (choice === 'reload') {
+          const { reloadActiveWorkspaceFromDisk } = await import('./lib/session')
+          await reloadActiveWorkspaceFromDisk()
+        } else {
+          // Declined — resume normal saving so the current canvas overwrites the
+          // external edit (the file was held steady only while the prompt was up).
+          await window.electronAPI.dismissWorkspaceExternalEdit?.(rootPath)
+        }
+      } finally {
+        reloadPromptOpenRef.current = false
+      }
+    })
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Initialization — load settings, create first terminal

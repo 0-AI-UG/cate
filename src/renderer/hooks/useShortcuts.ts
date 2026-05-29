@@ -60,6 +60,11 @@ export function useShortcuts(): void {
         }
         return
       }
+      if (action === 'reloadWorkspace') {
+        const { reloadActiveWorkspaceFromDisk } = await import('../lib/session')
+        await reloadActiveWorkspaceFromDisk()
+        return
+      }
 
       switch (action as ShortcutAction) {
         case 'newTerminal': {

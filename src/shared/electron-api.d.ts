@@ -342,6 +342,9 @@ export interface ElectronAPI {
    *  Otherwise returns 'close' | 'cancel'. */
   confirmCloseCanvas(payload: { panelCount: number; isLast: boolean }): Promise<'move' | 'delete' | 'close' | 'cancel'>
 
+  /** Confirm reloading the canvas after workspace.json changed on disk. */
+  confirmReloadWorkspace(payload: { name?: string }): Promise<'reload' | 'cancel'>
+
   /** Native confirmation shown when deleting a region that has panels inside.
    *  Returns 'with-contents' (delete region + contents), 'region-only' (keep
    *  contents, just remove the region around them), or 'cancel'. */
@@ -468,6 +471,15 @@ export interface ElectronAPI {
   /** Subscribe to native-fullscreen state changes. Fires with the new boolean
    *  whenever any Cate window enters or leaves macOS native fullscreen. */
   onFullscreenChange(callback: (isFullscreen: boolean) => void): () => void
+
+  /** Subscribe to external edits of a project's workspace.json. Fires when the
+   *  on-disk file is found to differ from what Cate last wrote (i.e. a reload
+   *  should be offered). */
+  onWorkspaceExternalEdit(callback: (payload: { rootPath: string }) => void): () => void
+
+  /** Tell main the user declined the reload prompt — resume normal saving so
+   *  the current in-app layout overwrites the external edit. */
+  dismissWorkspaceExternalEdit(rootPath: string): Promise<void>
 
   // ---------------------------------------------------------------------------
   // Dock window management
