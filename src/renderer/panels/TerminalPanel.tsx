@@ -199,6 +199,18 @@ export default function TerminalPanel({
       const runFit = () => {
         fitTimerRef.current = null
         if (!renderBox) return
+        // Defer fitting while a canvas gesture (panel resize / pan / zoom) is in
+        // flight. Fitting mid-gesture calls terminal.resize() every tick, which
+        // re-sizes the WebGL canvas and makes the panel edge appear to "jump"
+        // (terminals only — editors don't resize a GPU canvas). useNodeResize
+        // and the wheel-pan both hold `canvas-interacting` for the gesture's
+        // duration, so re-check on the same cadence and fit once it settles.
+        if (document.body.classList.contains('canvas-interacting')) {
+          fitTimerRef.current = setTimeout(() => {
+            fitRafRef.current = requestAnimationFrame(runFit)
+          }, DEBOUNCE_MS)
+          return
+        }
         const w = renderBox.clientWidth
         const h = renderBox.clientHeight
         if (w === 0 || h === 0) return
