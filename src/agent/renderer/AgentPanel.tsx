@@ -13,7 +13,7 @@
 // replaces the main column; the only way out is its back arrow — no double
 // close paths.
 //
-// Chats are pi's own session files on disk (~/.pi/agent/sessions/<cwd>/*.jsonl).
+// Chats are pi's own session files on disk (<cwd>/.cate/pi-agent/sessions/<cwd>/*.jsonl).
 // The sidebar reads them via AGENT_LIST_SESSIONS; opening a row resumes that
 // session by spawning pi with `--session <path>`. New chat = dispose + create
 // without a session file, then pick up pi's freshly-written file from getState.
@@ -907,6 +907,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
           <SettingsView
             commands={commands}
             workspaceId={workspaceId}
+            cwd={cwd}
             scopedProviderId={settingsScopedTo}
             availableModels={availableModels}
             onBack={() => setView('chat')}
@@ -1742,6 +1743,7 @@ function SlashPopup({
 function SettingsView({
   commands,
   workspaceId,
+  cwd,
   scopedProviderId,
   availableModels,
   onBack,
@@ -1749,6 +1751,7 @@ function SettingsView({
 }: {
   commands: AgentSlashCommand[]
   workspaceId: string
+  cwd: string
   scopedProviderId?: string
   availableModels: Array<{ provider: string; model: string; label?: string }>
   onBack: () => void
@@ -1797,13 +1800,13 @@ function SettingsView({
   const refreshAllFiles = useCallback(async () => {
     try {
       const [a, p, s] = await Promise.all([
-        window.electronAPI.agentListSkillFiles('agents'),
-        window.electronAPI.agentListSkillFiles('prompts'),
-        window.electronAPI.agentListSkillFiles('skills'),
+        window.electronAPI.agentListSkillFiles(cwd, 'agents'),
+        window.electronAPI.agentListSkillFiles(cwd, 'prompts'),
+        window.electronAPI.agentListSkillFiles(cwd, 'skills'),
       ])
       setAgentFiles(a); setPromptFiles(p); setSkillFiles(s)
     } catch (err) { log.warn('[SettingsView] list failed', err) }
-  }, [])
+  }, [cwd])
 
   useEffect(() => { void refreshAllFiles() }, [refreshAllFiles])
 
@@ -1815,7 +1818,7 @@ function SettingsView({
   const handleCreate = async (kind: 'agents' | 'prompts' | 'skills'): Promise<void> => {
     setError(null)
     try {
-      const created = await window.electronAPI.agentCreateSkill(kind, newName)
+      const created = await window.electronAPI.agentCreateSkill(cwd, kind, newName)
       setNewName(''); setCreating(null)
       await refreshAllFiles()
       onRefresh()
@@ -1834,7 +1837,7 @@ function SettingsView({
     if (!filePath) return
     if (!window.confirm(`Delete this ${kind.slice(0, -1)}?`)) return
     try {
-      await window.electronAPI.agentDeleteSkillFile(filePath)
+      await window.electronAPI.agentDeleteSkillFile(cwd, filePath)
       await refreshAllFiles()
       onRefresh()
     } catch (err) {
@@ -1861,7 +1864,7 @@ function SettingsView({
           </button>
         )}
         <button
-          onClick={() => window.electronAPI.agentOpenSkillsFolder(kind).catch(() => {})}
+          onClick={() => window.electronAPI.agentOpenSkillsFolder(cwd, kind).catch(() => {})}
           className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[12px]"
         >
           <FolderOpen size={11} /> Open folder
@@ -1991,7 +1994,7 @@ function SettingsView({
               <ArrowsClockwise size={12} />
             </button>
           </div>
-          <ExtensionsTab refreshNonce={refreshNonce} />
+          <ExtensionsTab cwd={cwd} refreshNonce={refreshNonce} />
         </div>
       </div>
     </div>
@@ -2024,7 +2027,7 @@ const TERMINAL_TOOLTIP =
 
 type MarketplaceSortValue = 'downloads' | 'recent' | 'name'
 
-function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
+function ExtensionsTab({ cwd, refreshNonce = 0 }: { cwd: string; refreshNonce?: number }) {
   const [catalog, setCatalog] = useState<MarketplaceCatalogEntry[]>([])
   const [installed, setInstalled] = useState<InstalledExtensionEntry[]>([])
   const [queryInput, setQueryInput] = useState('')
@@ -2039,12 +2042,12 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
 
   const refreshInstalled = useCallback(async () => {
     try {
-      const list = await window.electronAPI.agentMarketplaceListInstalled()
+      const list = await window.electronAPI.agentMarketplaceListInstalled(cwd)
       setInstalled(list)
     } catch (err) {
       log.warn('[ExtensionsTab] listInstalled failed', err)
     }
-  }, [])
+  }, [cwd])
 
   // Debounce the search input: typing waits 300ms before triggering a fetch.
   useEffect(() => {
@@ -2106,7 +2109,7 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
     setError(null)
     setRowPending(name, 'install')
     try {
-      const res = await window.electronAPI.agentMarketplaceInstall(name)
+      const res = await window.electronAPI.agentMarketplaceInstall(cwd, name)
       if (!res.ok) {
         setError(res.error ?? `Failed to install ${name}`)
       }
@@ -2123,7 +2126,7 @@ function ExtensionsTab({ refreshNonce = 0 }: { refreshNonce?: number }) {
     setError(null)
     setRowPending(name, 'uninstall')
     try {
-      const res = await window.electronAPI.agentMarketplaceUninstall(name)
+      const res = await window.electronAPI.agentMarketplaceUninstall(cwd, name)
       if (!res.ok) {
         setError(res.error ?? `Failed to uninstall ${name}`)
       }
