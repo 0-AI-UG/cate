@@ -797,6 +797,9 @@ export interface AppSettings {
   terminalFontSize: number
   /** xterm.js scrollback buffer size, in lines. Lower = less memory per terminal. */
   terminalScrollback: number
+  /** Vertical wheel-scroll speed multiplier for terminals (xterm scrollSensitivity).
+   *  1.0 = xterm default; lower = slower. Range 0.25–3.0. */
+  terminalScrollSpeed: number
   /** Blink the terminal cursor. Off by default: each blink forces a GPU draw +
    *  compositor update, so a focused terminal keeps the compositor awake even
    *  when otherwise idle. A steady cursor is still fully visible. */
@@ -861,6 +864,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontFamily: '',
   terminalFontSize: 0,
   terminalScrollback: 2000,
+  terminalScrollSpeed: 1.0,
   terminalCursorBlink: false,
   autoSuspendIdleTerminals: true,
 
