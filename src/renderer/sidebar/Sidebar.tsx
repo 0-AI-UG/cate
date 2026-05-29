@@ -13,6 +13,7 @@ import {
   Stack,
   Gear,
   MagnifyingGlass,
+  SquaresFour,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import pkg from '../../../package.json'
@@ -309,6 +310,18 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
         })}
         {isDragActive && views.length === 0 && dropIndicator !== null && (
           <div className="w-7 h-[2px] my-0.5 bg-blue-400 rounded-full pointer-events-none" />
+        )}
+        {side === 'left' && (
+          <div className="relative w-full flex items-center justify-center">
+            <button
+              type="button"
+              className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+              onClick={() => useUIStore.getState().setShowOverview(true)}
+              title="Übersicht — alle Workspaces"
+            >
+              <SquaresFour size={16} className="pointer-events-none" />
+            </button>
+          </div>
         )}
       </div>
       {side === 'left' && (

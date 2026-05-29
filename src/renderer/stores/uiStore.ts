@@ -51,6 +51,8 @@ interface UIStoreState {
   showNodeSwitcher: boolean
   showCommandPalette: boolean
   showLayoutsDialog: boolean
+  /** Whether the global Overview overlay (all workspaces) is open. */
+  showOverview: boolean
   /** Whether the minimap is currently expanded. */
   minimapOpen: boolean
   showSettings: boolean
@@ -73,6 +75,7 @@ interface UIStoreActions {
   setShowNodeSwitcher: (show: boolean) => void
   setShowCommandPalette: (show: boolean) => void
   setShowLayoutsDialog: (show: boolean) => void
+  setShowOverview: (show: boolean) => void
   setMinimapOpen: (open: boolean) => void
   toggleMinimapOpen: () => void
   openSettings: (initialTab?: string) => void
@@ -98,6 +101,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showNodeSwitcher: false,
   showCommandPalette: false,
   showLayoutsDialog: false,
+  showOverview: false,
   minimapOpen: false,
   showSettings: false,
   settingsInitialTab: null,
@@ -120,6 +124,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setShowLayoutsDialog(show) {
     set({ showLayoutsDialog: show })
+  },
+
+  setShowOverview(show) {
+    set({ showOverview: show })
   },
 
   setMinimapOpen(open) {

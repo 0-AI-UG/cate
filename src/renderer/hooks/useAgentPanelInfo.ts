@@ -24,7 +24,7 @@ function resolvePanelId(key: string): string {
   return terminalRegistry.panelIdForPty(key) ?? key
 }
 
-function selectAgentInfoByPanel(
+export function selectAgentInfoByPanel(
   s: StatusStore,
   workspaceId: string | undefined,
 ): Record<string, AgentPanelInfo> {

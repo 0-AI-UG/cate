@@ -26,6 +26,7 @@ import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
 const CanvasPanel = PANEL_REGISTRY.canvas.Component
 import { NodeSwitcher } from './ui/NodeSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
+import OverviewMode from './overview/OverviewMode'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
@@ -115,6 +116,7 @@ function MainApp() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const showNodeSwitcher = useUIStore((s) => s.showNodeSwitcher)
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
+  const showOverview = useUIStore((s) => s.showOverview)
 
   // Theme — apply on mount and re-apply whenever appearanceMode changes
   const appearanceMode = useSettingsStore((s) => s.appearanceMode)
@@ -487,6 +489,7 @@ function MainApp() {
       {/* Modal overlays */}
       {showNodeSwitcher && <NodeSwitcher />}
       {showCommandPalette && <CommandPalette />}
+      {showOverview && <OverviewMode />}
       {showSettings && (
         <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
       )}
