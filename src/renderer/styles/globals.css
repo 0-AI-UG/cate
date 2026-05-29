@@ -280,12 +280,30 @@
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* "Active/running" text emphasis. Static (no sweep): the moving gradient
-   repainted the text every frame — a continuous cost wherever it appeared
-   (sidebar tabs + agent chat) — for a subtle cue. A steady bright color reads
-   as "active" without animating. */
+@keyframes cate-notif-sweep {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+/* "Active/running" text shimmer — a slow gradient sweep that reads as "working".
+   Used by the agent chat (ChatThread) and by panel tab/row titles whose agent
+   is running. Callers gate it to running/streaming state only, so the per-frame
+   paint is transient, not perpetual (the concern #161 raised when it removed the
+   always-on variants). The two stops are themeable via --shimmer-dim/
+   --shimmer-bright, letting a parallel-work title shimmer in its worktree color;
+   unset, they fall back to muted->primary. */
 .cate-notif-pulse {
-  color: var(--text-primary, #e8e6e1);
+  background: linear-gradient(
+    90deg,
+    var(--shimmer-dim, var(--text-muted, #8a8479)) 40%,
+    var(--shimmer-bright, var(--text-primary, #e8e6e1)) 50%,
+    var(--shimmer-dim, var(--text-muted, #8a8479)) 60%
+  );
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: cate-notif-sweep 2s ease-in-out infinite;
 }
 
 @keyframes cate-fade-in {

@@ -13,12 +13,16 @@ import { useDragStore, useTabSourceVisibility } from '../drag'
 import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 import { useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
+import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 
 const AWAIT_COLOR = '#c08a5a'
 
 // Lookup: panelId → worktree color. Only returns a color when the panel's
 // workspace has 2+ worktrees (matches WorktreePill's visibility rule, so the
-// tab tint and the title-bar pill appear together or not at all).
+// tab title tint and the title-bar pill appear together or not at all). The
+// color is applied to the tab's title text, not its icon — the icon may be an
+// agent logo (an <img>, which ignores `color`), and tinting it would clash
+// with the per-agent icon swap.
 function useWorktreeColorByPanel(): Record<string, string> {
   return useAppStore(useShallow((s) => {
     const out: Record<string, string> = {}
@@ -220,8 +224,7 @@ export function DockTabBar(props: DockTabBarProps) {
               />
             )}
             <span
-              className={`shrink-0 ${worktreeColorByPanel[panelId] ? '' : isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}
-              style={worktreeColorByPanel[panelId] ? { color: worktreeColorByPanel[panelId] } : undefined}
+              className={`shrink-0 ${isActive ? PANEL_TYPE_TINT[panelType] : 'text-muted'}`}
             >
               <TabIcon
                 type={panelType}
@@ -248,7 +251,8 @@ export function DockTabBar(props: DockTabBarProps) {
               />
             ) : (
               <span
-                className="truncate flex-1 min-w-0"
+                className={`truncate flex-1 min-w-0 ${agentInfoByPanel[panelId]?.state === 'running' ? 'cate-notif-pulse' : ''}`}
+                style={worktreeTitleStyle(worktreeColorByPanel[panelId], agentInfoByPanel[panelId]?.state === 'running')}
               >{getPanelTitle(panelId)}</span>
             )}
             {agentInfoByPanel[panelId]?.state === 'waitingForInput' && (
