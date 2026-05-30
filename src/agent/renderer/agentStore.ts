@@ -208,6 +208,9 @@ export interface PanelAgentState {
   /** Optional session display name (mirrors pi's `set_session_name`). */
   sessionName?: string
   sessionFile?: string
+  /** Renderer-side control mode for the cate-control feature. Defaults to
+   *  'guarded' (side-effects need approval); 'auto' executes immediately. */
+  cateControlMode?: 'guarded' | 'auto'
 }
 
 interface AgentStoreState {
@@ -243,6 +246,8 @@ interface AgentStoreActions {
   setRetry: (panelId: string, next: Partial<RetryState>) => void
   setQueues: (panelId: string, steering: string[], followUp: string[]) => void
   setExtensionStatus: (panelId: string, key: string, text?: string) => void
+  setCateControlMode: (panelId: string, mode: 'guarded' | 'auto') => void
+  getCateControlMode: (panelId: string) => 'guarded' | 'auto'
   setExtensionWidget: (
     panelId: string,
     key: string,
@@ -302,7 +307,7 @@ function withPanel(
 // Store
 // -----------------------------------------------------------------------------
 
-export const useAgentStore = create<AgentStore>((set) => ({
+export const useAgentStore = create<AgentStore>((set, get) => ({
   panels: {},
 
   init(panelId) {
@@ -554,6 +559,17 @@ export const useAgentStore = create<AgentStore>((set) => ({
         return { ...p, extensionStatuses: [...filtered, { key, text }] }
       }),
     )
+  },
+
+  setCateControlMode(panelId, mode) {
+    set((state) => {
+      const current = state.panels[panelId] ?? emptyPanel()
+      return { panels: { ...state.panels, [panelId]: { ...current, cateControlMode: mode } } }
+    })
+  },
+
+  getCateControlMode(panelId) {
+    return get().panels[panelId]?.cateControlMode ?? 'guarded'
   },
 
   setExtensionWidget(panelId, key, lines, placement) {
