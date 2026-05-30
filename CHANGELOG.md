@@ -6,13 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-29
+
+Feature release: unified theming, a redesigned parallel-work flow, clickable terminal links, and configurable file exclusions.
+
 ### Added
 
-- **Configurable file exclusions** — a new **File Explorer** settings section lets you edit the list of folder/file names hidden from the file explorer, file search, and change watching. The list persists across sessions, applies to every project, and updates open explorers live without a relaunch. Includes a "Restore defaults" action.
+- **Unified theming**: a single data-driven theme system covering app chrome, the terminal ANSI palette, and Monaco editor syntax tokens, alongside canvas tools, spatial navigation, and command palette polish. (#174)
+- **Configurable file exclusions**: a new **File Explorer** settings section lets you edit the list of folder/file names hidden from the file explorer, file search, and change watching. The list persists across sessions, applies to every project, and updates open explorers live without a relaunch. Includes a "Restore defaults" action. (#155)
+- **Redesigned parallel work**: a reworked tab, drag-to-canvas, PR support, and worktrees stored in `.cate`. (#182)
+- **Open file paths from the terminal**: Cmd+Click a file path in the terminal to open it in the editor. (#180)
+- **Clickable terminal links**: links in the terminal are now clickable, with a dialog to choose where to open them. (#178)
+- **Close tab on middle-click**: middle-clicking a tab closes it. (#176)
+- **Reload workspace from disk**: the `.cate` skill can configure the IDE, with a reload-from-disk action. (#170)
+- **Per-workspace pi agent config**: pi agent configuration is scoped per workspace, with accordion provider settings. (#168)
+- **Terminal scroll-speed setting**: a new setting controls xterm scroll sensitivity. (#185)
 
 ### Changed
 
-- **Trimmed default file exclusions** — `dist` and `build` are no longer hidden by default. They are common names for hand-written source and config, and the previous exact-name match could silently hide files you wanted to see. The remaining defaults are unchanged: `.git`, `.DS_Store`, `.Trash`, `node_modules`, `__pycache__`, `.npm`, `.cache`, `.build`, `.swiftpm`, `DerivedData`, `Pods`.
+- **Trimmed default file exclusions**: `dist` and `build` are no longer hidden by default. They are common names for hand-written source and config, and the previous exact-name match could silently hide files you wanted to see. The remaining defaults are unchanged: `.git`, `.DS_Store`, `.Trash`, `node_modules`, `__pycache__`, `.npm`, `.cache`, `.build`, `.swiftpm`, `DerivedData`, `Pods`. (#155)
+- **UI polish**: squared top-level and nested cards, de-blued and softened pane glow, and calmer active-tab and terminal highlights. (#181, #179)
+- **Performance tooling**: added a profiler and stress harness, and fixed zoom re-renders and terminal log I/O. (#173)
+
+### Fixed
+
+- **Markdown preview reset**: switching files now resets the markdown preview. (#186)
+- **macOS line-editing chords**: line-editing chords are now delivered to the shell. (#177)
+- **Split-terminal divider**: the divider no longer jumps on resize. (#171)
+- **Terminal scroll under resize strips**: terminal scroll and scrollbar keep working under resize strips. (#160)
+- **Drag and drop**: fixed canvas/workspace drag and drop and the empty-workspace note blink. (#166)
+- **Terminal CPU usage**: cut sustained CPU and WindowServer usage from terminals. (#161)
+- **Parallel-work title tint**: tint the title text rather than the icon. (#169)
 
 ## [1.0.4] - 2026-05-28
 
