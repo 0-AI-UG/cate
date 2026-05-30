@@ -218,21 +218,31 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
 // Inline edit input for a panel-row rename. Mirrors the workspace rename input
 // UX: Enter / blur commits, Escape cancels. Click is swallowed so it doesn't
 // trigger the row's focus-panel handler.
-const PanelRenameInput: React.FC<{ rename: PanelRenameProps }> = ({ rename }) => (
-  <input
-    ref={(el) => { if (el) { el.focus(); el.select() } }}
-    className="flex-1 min-w-0 text-[13px] bg-surface-3 border border-subtle rounded px-1 py-0 outline-none text-primary"
-    value={rename.renameValue ?? ''}
-    onChange={(e) => rename.onRenameChange(e.target.value)}
-    onBlur={rename.onRenameSubmit}
-    onKeyDown={(e) => {
-      if (e.key === 'Enter') rename.onRenameSubmit()
-      if (e.key === 'Escape') rename.onRenameCancel()
-    }}
-    onClick={(e) => e.stopPropagation()}
-    onDoubleClick={(e) => e.stopPropagation()}
-  />
-)
+const PanelRenameInput: React.FC<{ rename: PanelRenameProps }> = ({ rename }) => {
+  // Focus + select ONCE on mount. A callback ref running focus/select would
+  // re-run on every render (new fn identity each render) and re-select all text
+  // after each keystroke — making it impossible to type more than one character.
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const el = inputRef.current
+    if (el) { el.focus(); el.select() }
+  }, [])
+  return (
+    <input
+      ref={inputRef}
+      className="flex-1 min-w-0 text-[13px] bg-surface-3 border border-subtle rounded px-1 py-0 outline-none text-primary"
+      value={rename.renameValue ?? ''}
+      onChange={(e) => rename.onRenameChange(e.target.value)}
+      onBlur={rename.onRenameSubmit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') rename.onRenameSubmit()
+        if (e.key === 'Escape') rename.onRenameCancel()
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    />
+  )
+}
 
 const PANEL_ICONS: Record<PanelType, PhosphorIcon> = Object.fromEntries(
   (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].icon]),
