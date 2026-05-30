@@ -115,6 +115,16 @@ function setTerminalVisibility(id: string, visible: boolean): void {
   }
 }
 
+/**
+ * True if a terminal's PTY is currently SIGSTOP-suspended (offscreen + silent
+ * past IDLE_SUSPEND_MS). The shell process-monitor uses this to skip scanning
+ * a frozen process tree — it cannot change state until resumed, and resume
+ * (on focus/visibility) forces a fresh scan anyway.
+ */
+export function isTerminalSuspended(id: string): boolean {
+  return idleState.get(id)?.suspended === true
+}
+
 // =============================================================================
 // Terminal transfer buffering — holds PTY output during cross-window migration
 // =============================================================================

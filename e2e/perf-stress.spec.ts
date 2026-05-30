@@ -442,3 +442,146 @@ test('big canvas pan with 9 nodes visible', async () => {
   expect(s.fps).toBeGreaterThan(20)
   expect(s.longTasks.maxMs).toBeLessThan(2000)
 })
+
+// =============================================================================
+// Battery scenarios — the cost the app pays just for being open. These guard
+// the "lightweight, not battery-draining" goal: idle/background CPU is the
+// number a laptop user actually feels. The dominant lever is subprocess spawns
+// (pgrep/ps/lsof) from the terminal process-monitor, so these assert on the
+// spawn rate the main profiler counts.
+// =============================================================================
+
+test('idle spawn budget — 9 terminals, app focused', async () => {
+  await seedToTotal(9)
+  await page.evaluate(() => { window.__cateE2E!.setZoom(0.5); window.__cateE2E!.resetViewport() })
+  await page.waitForTimeout(800)
+  const mounted = await mountedNodeCount()
+  // Sit idle and watch what the monitor spawns. With the 1s activity scan +
+  // 5s lsof scan, the steady state for plain shells is a handful of pgrep/ps
+  // per terminal per second; nothing should runaway.
+  const s = await measurePeak(4000)
+  reportPeak('9 terminals · idle spawn budget', mounted, s)
+  // With the batched single-`ps`-snapshot scan, idle steady state is ~1 ps/s
+  // (activity) plus the 5s lsof cycle (ports + per-terminal cwd). The peak in
+  // any 2s sampler window is well under 15; the old per-PID fan-out sat at
+  // ~18/s for 9 terminals, so this ceiling guards against regressing to it.
+  expect(s.peakSpawnsTotal).toBeLessThan(15)
+})
+
+test('backgrounded battery — spawns collapse when the app is unfocused', async () => {
+  await seedToTotal(9)
+  await page.evaluate(() => { window.__cateE2E!.setZoom(0.5); window.__cateE2E!.resetViewport() })
+  await page.waitForTimeout(800)
+  const mounted = await mountedNodeCount()
+
+  // Baseline: focused. The 1s activity scan forks pgrep (and ps for children)
+  // per terminal, so a populated canvas spawns steadily here.
+  const focused = await measurePeak(3000)
+
+  // Blur every app window — mirrors minimizing / switching to another app.
+  // app.evaluate runs in the MAIN process where the shell monitor lives, so
+  // this drives the very focus state (anyWindowFocused) the cadence keys off.
+  await app.evaluate(({ BrowserWindow }) => {
+    for (const w of BrowserWindow.getAllWindows()) w.blur()
+  })
+  // Let the focused-cadence timer that was already armed drain, then sample the
+  // backed-off cadence (activity 1s→5s, lsof 5s→15s).
+  await page.waitForTimeout(1500)
+  const unfocused = await measurePeak(6000)
+
+  // Restore focus so later state (and a human watching) isn't left blurred.
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0]
+    if (w) w.focus()
+  })
+
+  // eslint-disable-next-line no-console
+  console.log(`\n──────── PERF: background battery (${mounted} terminals) ────────`)
+  // eslint-disable-next-line no-console
+  console.log(`  focused spawns: ${focused.peakSpawnsTotal}/s    unfocused spawns: ${unfocused.peakSpawnsTotal}/s`)
+  // eslint-disable-next-line no-console
+  console.log('────────────────────────────────────────────')
+
+  // The focused baseline must have actually been spawning (proves the path is
+  // live and the assertion is meaningful)…
+  expect(focused.peakSpawnsTotal).toBeGreaterThan(0)
+  // …and backgrounding must cut the spawn rate. The 5× cadence back-off means
+  // unfocused should sit well below focused; assert a conservative ≤60%.
+  expect(unfocused.peakSpawnsTotal).toBeLessThan(Math.max(2, focused.peakSpawnsTotal * 0.6))
+})
+
+// =============================================================================
+// Editor typing — there was no Monaco perf coverage. Typing should never block
+// the main thread: every keystroke runs Monaco's tokenizer + a debounced store
+// write, and a long task here is felt directly as input lag.
+// =============================================================================
+
+test('editor typing stays smooth (no long tasks)', async () => {
+  const nodeId = await page.evaluate(() => window.__cateE2E!.createEditor({ x: 120, y: 120 }))
+  await page.waitForSelector(`[data-node-id="${nodeId}"]`, { timeout: 5000 })
+  // Monaco mounts asynchronously — wait for its input textarea before typing.
+  const textarea = await page.waitForSelector(
+    `[data-node-id="${nodeId}"] .monaco-editor textarea`,
+    { timeout: 10_000 },
+  )
+  // Focus the Monaco input directly — a .click() lands on Monaco's own overlay
+  // (.view-lines / data-mode-id div), which intercepts the pointer event and
+  // never reaches the hidden textarea. Focusing the textarea makes it the
+  // activeElement so page.keyboard.type() is delivered to the editor.
+  await textarea.evaluate((el) => (el as HTMLTextAreaElement).focus())
+  await page.waitForTimeout(200)
+
+  const m = await measure('editor typing (~280 chars)', async () => {
+    await page.keyboard.type(
+      'The quick brown fox jumps over the lazy dog. '.repeat(6),
+      { delay: 8 },
+    )
+  })
+  report(m)
+  // Typing must not stall the main thread. A keystroke that blocks for ~½s
+  // would be a visible freeze; the steady state is sub-frame.
+  expect(m.longTasks.maxMs).toBeLessThan(500)
+})
+
+// =============================================================================
+// Viewport-cull cost — useVisibleNodeIds runs on EVERY store update, including
+// every pan/zoom frame (only the viewport changed, nodes are unchanged). The
+// expensive part is Object.values(nodes).sort(); it's memoized by nodes-object
+// identity, so a pure pan must hit the cache, not re-sort 60×/s. Instrumented
+// via perfCount: canvasCullEval (every selector run) vs canvasCullSort (the
+// real sort). This locks in the memoization fix.
+// =============================================================================
+
+test('cull selector reuses the cached node sort across viewport changes', async () => {
+  await seedToTotal(9)
+  await page.evaluate(() => { window.__cateE2E!.setZoom(1); window.__cateE2E!.resetViewport() })
+  await page.waitForTimeout(300)
+
+  // Drive zoomLevel at rAF cadence from inside the page — deterministic (no
+  // mouse hit-testing, which gets flaky once nodes accumulate across tests) and
+  // faithful: zoomLevel is one of useVisibleNodeIds' inputs, so every frame
+  // re-runs the cull selector. The node SET is unchanged across the sweep, so
+  // the WeakMap sort-cache must serve every eval — this is the memoization fix.
+  const m = await measure('cull eval under viewport sweep (90 frames)', async () => {
+    await page.evaluate(async () => {
+      const h = window.__cateE2E!
+      const raf = () => new Promise((r) => requestAnimationFrame(() => r(null)))
+      for (let i = 0; i < 90; i++) {
+        h.setZoom(1 + 0.4 * Math.sin(i / 7))
+        await raf()
+      }
+    })
+  })
+  report(m)
+  await page.evaluate(() => { window.__cateE2E!.setZoom(1); window.__cateE2E!.resetViewport() })
+
+  const evals = m.renders['canvasCullEval'] ?? 0
+  const sorts = m.renders['canvasCullSort'] ?? 0
+  // eslint-disable-next-line no-console
+  console.log(`  cull: ${evals} evals/s, ${sorts} sorts/s`)
+  // The sweep must drive the cull selector (zoomLevel changes each frame)…
+  expect(evals).toBeGreaterThan(10)
+  // …but the node set is unchanged, so the sort cache should serve nearly every
+  // eval. A per-frame re-sort would push this up toward `evals`.
+  expect(sorts).toBeLessThanOrEqual(3)
+})

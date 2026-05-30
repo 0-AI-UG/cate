@@ -20,6 +20,7 @@ import {
 import log from '../lib/logger'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/importExternalEntries'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
+import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
 
 // -----------------------------------------------------------------------------
@@ -100,7 +101,8 @@ interface CreateRequest {
 interface FileTreeNodeProps {
   node: FileTreeNodeType
   depth: number
-  gitFiles?: Set<string>
+  /** Git decorations for the whole tree (undefined outside a git repo). */
+  git?: GitTree
   selectedPaths: Set<string>
   onSelect: (path: string, meta: { shift?: boolean; cmd?: boolean }) => void
   onFileOpen: (paths: string[], mode?: 'dock' | 'canvas') => void
@@ -120,7 +122,7 @@ interface FileTreeNodeProps {
 export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   node,
   depth,
-  gitFiles,
+  git,
   selectedPaths,
   onSelect,
   onFileOpen,
@@ -144,8 +146,15 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   const createInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
 
-  // Determine if this node should be dimmed (not in git tracked files)
-  const isDimmed = gitFiles != null && !node.isDirectory && !gitFiles.has(node.path)
+  // Git decorations (VS Code-style). Files get a colored name + status badge;
+  // folders that contain changes get a name tint; git-ignored files are dimmed.
+  // Path lookups are posix-normalized inside lookupNodeDecoration (Windows).
+  const { decoration, folderKind, isIgnored } = lookupNodeDecoration(git, node.path, node.isDirectory)
+  const nameColorClass = decoration
+    ? decoration.colorClass
+    : folderKind
+      ? folderColorClass(folderKind)
+      : ''
 
   const isSelected = selectedPaths.has(node.path)
   const effectiveExpanded = isExpanded || isSearching
@@ -473,7 +482,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       <div
         className={`h-7 flex items-center gap-1.5 px-2 text-sm text-primary cursor-pointer rounded-sm ${
           isSelected ? 'bg-surface-6 text-primary' : 'hover:bg-hover'
-        } ${isDimmed ? 'opacity-40' : ''} ${isDragOver && node.isDirectory ? 'ring-1 ring-blue-500/60 bg-blue-500/10' : ''}`}
+        } ${isIgnored ? 'opacity-40' : ''} ${isDragOver && node.isDirectory ? 'ring-1 ring-blue-500/60 bg-blue-500/10' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
@@ -528,7 +537,19 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="truncate">{node.name}</span>
+          <span className={`truncate min-w-0 ${nameColorClass} ${decoration?.strike ? 'line-through' : ''}`}>
+            {node.name}
+          </span>
+        )}
+
+        {/* Git status badge (changed/untracked files) — VS Code style */}
+        {decoration && !isRenaming && (
+          <span
+            className={`ml-auto flex-shrink-0 w-4 text-center font-mono text-[11px] ${decoration.colorClass}`}
+            title={`Git: ${decoration.title}`}
+          >
+            {decoration.letter}
+          </span>
         )}
 
         {/* Loading indicator for lazy-loaded directories */}
@@ -576,7 +597,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
               key={child.path}
               node={child}
               depth={depth + 1}
-              gitFiles={gitFiles}
+              git={git}
               selectedPaths={selectedPaths}
               onSelect={onSelect}
               onFileOpen={onFileOpen}

@@ -49,6 +49,8 @@ import {
   AGENT_MARKETPLACE_LIST_INSTALLED,
   AGENT_MARKETPLACE_INSTALL,
   AGENT_MARKETPLACE_UNINSTALL,
+  AGENT_CUSTOM_MODELS_GET,
+  AGENT_CUSTOM_MODELS_SAVE,
 } from '../../shared/ipc-channels'
 import {
   fetchMarketplacePage,
@@ -59,6 +61,7 @@ import {
 } from './marketplace'
 import { deleteSession, listSessions, loadSessionTranscript } from './sessionFiles'
 import { agentDirFor } from './agentDir'
+import { readCustomOpenAI, saveCustomOpenAI } from './customModels'
 import log from '../../main/logger'
 import type {
   AgentCreateOptions,
@@ -66,6 +69,7 @@ import type {
   AgentImageAttachment,
   AgentModelRef,
   AgentThinkingLevel,
+  CustomOpenAIProvider,
 } from '../../shared/types'
 import type { AuthManager } from './authManager'
 import type { AgentManager } from './agentManager'
@@ -397,6 +401,24 @@ export function registerAgentHandlers(_authManager: AuthManager, agentManager: A
 
   ipcMain.handle(AGENT_MARKETPLACE_UNINSTALL, async (_event, cwd: string, name: string) => {
     return uninstallExtension(cwd, name)
+  })
+
+  // ---------------------------------------------------------------------------
+  // Custom OpenAI-compatible provider (pi models.json)
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle(AGENT_CUSTOM_MODELS_GET, async () => {
+    try {
+      return await readCustomOpenAI()
+    } catch (err) {
+      log.warn('[ipc.agent] customModelsGet failed: %O', err)
+      return null
+    }
+  })
+
+  ipcMain.handle(AGENT_CUSTOM_MODELS_SAVE, async (_event, cfg: CustomOpenAIProvider | null) => {
+    await saveCustomOpenAI(cfg)
+    agentManager.syncCustomModelsToOpenSessions()
   })
 
   ipcMain.handle(
