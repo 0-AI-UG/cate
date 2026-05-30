@@ -422,11 +422,23 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     e.preventDefault()
     e.stopPropagation()
     if (!window.electronAPI) return
+    // Mirror the dock tab menu, limited to actions that apply to a flat sidebar
+    // list (Split / Close-Others / Close-to-the-Right / Move-to-Window are
+    // dock-stack-relative and have no meaning here).
     const id = await window.electronAPI.showContextMenu([
       { id: 'rename', label: 'Rename' },
+      { type: 'separator' },
+      { id: 'close', label: 'Close' },
     ])
-    if (id === 'rename') beginPanelRename(panelId, currentTitle)
-  }, [beginPanelRename])
+    switch (id) {
+      case 'rename':
+        beginPanelRename(panelId, currentTitle)
+        break
+      case 'close':
+        useAppStore.getState().closePanel(workspace.id, panelId)
+        break
+    }
+  }, [beginPanelRename, workspace.id])
 
   const panelCount = Object.keys(panels).length
 
