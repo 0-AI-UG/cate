@@ -139,6 +139,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const followUpQueue = slice?.followUpQueue ?? []
   const extensionStatuses = slice?.extensionStatuses ?? []
   const extensionWidgets = slice?.extensionWidgets ?? []
+  const cateControlMode = slice?.cateControlMode ?? 'guarded'
 
   const uiRequests = slice?.uiRequests ?? []
   const currentUiRequest = uiRequests[0]
@@ -737,6 +738,12 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     catch (err) { log.warn('[AgentPanel] toggle plan mode failed', err) }
   }, [activeAgentKey])
 
+  const handleToggleCateControlMode = useCallback(() => {
+    if (!activeAgentKey) return
+    const next = useAgentStore.getState().getCateControlMode(activeAgentKey) === 'auto' ? 'guarded' : 'auto'
+    useAgentStore.getState().setCateControlMode(activeAgentKey, next)
+  }, [activeAgentKey])
+
   const handleImplementPlan = useCallback(async () => {
     if (!activeAgentKey) return
     const key = activeAgentKey
@@ -962,6 +969,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                       compactionActive={compaction.active}
                       planModeActive={planModeActive}
                       onTogglePlanMode={handleTogglePlanMode}
+                      cateControlMode={cateControlMode}
+                      onToggleCateControlMode={handleToggleCateControlMode}
                       placeholder={
                         !selectedModel ? 'Pick a model to start…'
                           : !selectedProviderConnected ? `Connect ${selectedModel.provider} to start…`
@@ -1019,6 +1028,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                   compactionActive={compaction.active}
                   planModeActive={planModeActive}
                   onTogglePlanMode={handleTogglePlanMode}
+                  cateControlMode={cateControlMode}
+                  onToggleCateControlMode={handleToggleCateControlMode}
                 />
               </>
             )}

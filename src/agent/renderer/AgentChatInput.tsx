@@ -13,6 +13,7 @@ import {
   ClipboardText,
   Spinner,
   ArrowsClockwise,
+  SquaresFour,
 } from '@phosphor-icons/react'
 import {
   ImageAttachButton,
@@ -68,6 +69,8 @@ export function ChatInput({
   compactionActive,
   planModeActive,
   onTogglePlanMode,
+  cateControlMode,
+  onToggleCateControlMode,
   placeholder: placeholderOverride,
 }: {
   draft: string
@@ -92,6 +95,8 @@ export function ChatInput({
   compactionActive: boolean
   planModeActive: boolean
   onTogglePlanMode: () => void
+  cateControlMode?: 'guarded' | 'auto'
+  onToggleCateControlMode?: () => void
   placeholder?: string
 }) {
   useEffect(() => {
@@ -242,6 +247,17 @@ export function ChatInput({
             title="Plan mode: agent investigates with parallel scouts, proposes a plan, then waits for your approval."
           >
             <ClipboardText size={12} weight={planModeActive ? 'fill' : 'regular'} />
+          </button>
+          <button
+            onClick={onToggleCateControlMode}
+            className={`p-1.5 rounded-md ${
+              cateControlMode === 'auto'
+                ? 'bg-agent/25 text-primary'
+                : 'text-primary/80 hover:bg-white/5'
+            }`}
+            title={`Cate control: ${cateControlMode === 'auto' ? 'Auto (no prompts)' : 'Guarded (side-effects ask first)'}. Click to toggle.`}
+          >
+            <SquaresFour size={12} weight={cateControlMode === 'auto' ? 'fill' : 'regular'} />
           </button>
           <CompactButton
             onManualCompact={onManualCompact}
