@@ -67,6 +67,7 @@ import {
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
   SETTINGS_CHANGED,
+  PLANTUML_RENDER,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
@@ -633,6 +634,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   settingsReset(key?: string): Promise<void> {
     return ipcRenderer.invoke(SETTINGS_RESET, key)
+  },
+
+  plantumlRender(source: string, jarPath: string): Promise<{ svg?: string; error?: string }> {
+    return ipcRenderer.invoke(PLANTUML_RENDER, source, jarPath)
   },
 
   onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void {
