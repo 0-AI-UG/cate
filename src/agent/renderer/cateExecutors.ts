@@ -66,6 +66,9 @@ export const execOpenPanel: CateExecutor = async (params, ctx) => {
   const wsId = ctx.workspaceId
 
   let panelId: string
+  // A terminal `command` is run after the panel mounts (see below) — NOT passed
+  // as createTerminal's `initialInput`, which the store drops.
+  let pendingTerminalCommand: string | undefined
   switch (type) {
     case 'editor': {
       const path = typeof target.path === 'string' ? target.path : undefined
@@ -76,7 +79,8 @@ export const execOpenPanel: CateExecutor = async (params, ctx) => {
       break
     }
     case 'terminal':
-      panelId = app.createTerminal(wsId, typeof target.command === 'string' ? `${target.command}\r` : undefined, undefined, undefined, typeof target.cwd === 'string' ? target.cwd : undefined)
+      panelId = app.createTerminal(wsId, undefined, undefined, undefined, typeof target.cwd === 'string' ? target.cwd : undefined)
+      pendingTerminalCommand = typeof target.command === 'string' && target.command.trim() ? target.command : undefined
       break
     case 'browser':
       panelId = app.createBrowser(wsId, typeof target.url === 'string' ? target.url : undefined)
@@ -114,6 +118,11 @@ export const execOpenPanel: CateExecutor = async (params, ctx) => {
     }
   }
 
+  // Run the requested command once the freshly-created terminal's PTY is live.
+  if (pendingTerminalCommand) {
+    await writeToTerminalWhenReady(panelId, pendingTerminalCommand)
+  }
+
   const node = ctx.canvasStore.getState().nodeForPanel(panelId)
   const frame = node ? ctx.canvasStore.getState().nodes[node] : undefined
   return ok({ panelId, x: frame?.origin.x, y: frame?.origin.y, width: frame?.size.width, height: frame?.size.height })
@@ -141,6 +150,23 @@ const SIZE_PRESETS: Record<string, { width: number; height: number }> = {
 
 function requireNode(ctx: CateControlContext, panelId: string): string | null {
   return ctx.canvasStore.getState().nodeForPanel(panelId)
+}
+
+/** Send `command` to a terminal panel's PTY, waiting for the PTY to spawn.
+ *  A freshly-created terminal needs panel mount + async node-pty spawn before
+ *  terminalRegistry has its ptyId, so a single fixed delay is unreliable — poll
+ *  until ready (or time out). Returns true once the command was written.
+ *  (`appStore.createTerminal`'s `initialInput` arg is intentionally not persisted
+ *  to PanelState — it would re-run on session restore — so it can't be used here.) */
+async function writeToTerminalWhenReady(panelId: string, command: string, timeoutMs = 6000): Promise<boolean> {
+  const data = command.endsWith('\r') || command.endsWith('\n') ? command : command + '\r'
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const ptyId = terminalRegistry.getEntry(panelId)?.ptyId
+    if (ptyId) { window.electronAPI.terminalWrite(ptyId, data); return true }
+    if (Date.now() >= deadline) return false
+    await new Promise((r) => setTimeout(r, 100))
+  }
 }
 
 export const execFocusPanel: CateExecutor = async (params, ctx) => {
@@ -214,16 +240,8 @@ export const execRunInTerminal: CateExecutor = async (params, ctx) => {
   if (!panelId || params.newPanel) {
     panelId = app.createTerminal(ctx.workspaceId)
   }
-  // Send the command to the PTY. The terminal may need a tick to register.
-  const send = () => {
-    const entry = terminalRegistry.getEntry(panelId)
-    if (entry?.ptyId) { window.electronAPI.terminalWrite(entry.ptyId, command + '\r'); return true }
-    return false
-  }
-  if (!send()) {
-    await new Promise((r) => setTimeout(r, 250))
-    if (!send()) return fail(`Terminal ${panelId} is not ready to receive input.`)
-  }
+  const sent = await writeToTerminalWhenReady(panelId, command)
+  if (!sent) return fail(`Terminal ${panelId} did not become ready to receive input (timed out).`)
   return ok({ panelId, command })
 }
 
@@ -244,9 +262,29 @@ export const execRevealInEditor: CateExecutor = async (params, ctx) => {
   if (typeof params.line === 'number') {
     setPendingReveal(panelId, { line: params.line as number, column: typeof params.column === 'number' ? (params.column as number) : undefined })
   }
+  // Convenience: open straight into rendered markdown preview (markdown files only).
+  if (params.preview === true) {
+    useAppStore.getState().setPanelMarkdownPreview(ctx.workspaceId, panelId, true)
+  }
   const node = ctx.canvasStore.getState().nodeForPanel(panelId)
   if (node) ctx.canvasStore.getState().focusAndCenter(node)
   return ok({ panelId, path })
+}
+
+/** Toggle the rendered markdown preview for an open editor panel. The app gates
+ *  the actual render to .md files (EditorPanel), so this is a no-op visually for
+ *  non-markdown editors but still records the flag. */
+export const execSetMarkdownPreview: CateExecutor = async (params, ctx) => {
+  const panelId = String(params.panelId ?? '')
+  if (!panelId) return fail('set_markdown_preview requires a panelId.')
+  const app = useAppStore.getState()
+  const ws = app.workspaces.find((w: any) => w.id === ctx.workspaceId)
+  const panel = ws?.panels?.[panelId]
+  if (!panel) return fail(`Panel not found: ${panelId}`)
+  if (panel.type !== 'editor') return fail(`Panel ${panelId} is a ${panel.type}; markdown preview applies to editor panels.`)
+  const preview = params.preview !== false
+  app.setPanelMarkdownPreview(ctx.workspaceId, panelId, preview)
+  return ok({ panelId, preview })
 }
 
 export const execPanTo: CateExecutor = async (params, ctx) => {
@@ -278,6 +316,7 @@ setCateExecutors({
   run_in_terminal: execRunInTerminal,
   open_url: execOpenUrl,
   reveal_in_editor: execRevealInEditor,
+  set_markdown_preview: execSetMarkdownPreview,
   pan_to: execPanTo,
   zoom: execZoom,
 })

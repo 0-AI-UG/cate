@@ -36,6 +36,7 @@ vi.mock('../../renderer/stores/appStore', () => {
         createFileExplorer: (...a: any[]) => { created.push(['fileExplorer', ...a]); return 'panel-fe' },
         closePanel: (...a: any[]) => { closed.push(a) },
         updatePanelUrl: (...a: any[]) => { created.push(['url', ...a]) },
+        setPanelMarkdownPreview: (...a: any[]) => { created.push(['mdpreview', ...a]) },
         workspaces: [{ id: 'w1', panels: { 'panel-ed': { id: 'panel-ed', type: 'editor', title: 'a.ts', filePath: 'a.ts' } } }],
         selectedWorkspaceId: 'w1',
       }),
@@ -176,5 +177,72 @@ describe('content executors', () => {
   it('pan_to errors on an unknown panel', async () => {
     const res = await execPanTo({ panelId: 'nope' }, ctxWith(), 'k1')
     expect(res.ok).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Regression fixes from live testing (2026-05-31)
+// ---------------------------------------------------------------------------
+import { terminalRegistry } from '../../renderer/lib/terminalRegistry'
+import { execSetMarkdownPreview } from './cateExecutors'
+
+describe('terminal command reliability (Issue 1 fix)', () => {
+  beforeEach(async () => {
+    ;(window.electronAPI as any).terminalWrite = vi.fn()
+    vi.mocked(terminalRegistry.getEntry).mockReturnValue({ ptyId: 'pty-1' } as any)
+    const mod: any = await import('../../renderer/stores/appStore')
+    mod.__created.length = 0
+  })
+
+  it('run_in_terminal polls until the PTY registers, then writes the command', async () => {
+    // Not ready for the first two polls (no entry, then entry with empty ptyId),
+    // then the PTY spawns — proves condition-based waiting, not a fixed delay.
+    let calls = 0
+    vi.mocked(terminalRegistry.getEntry).mockImplementation(() => {
+      calls += 1
+      if (calls === 1) return undefined as any
+      if (calls === 2) return { ptyId: '' } as any
+      return { ptyId: 'pty-9' } as any
+    })
+    const res = await execRunInTerminal({ command: 'npm test', newPanel: true }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect(calls).toBeGreaterThanOrEqual(3)
+    expect((window.electronAPI as any).terminalWrite).toHaveBeenCalledWith('pty-9', 'npm test\r')
+  })
+
+  it('open_panel(terminal, command) runs the command via the PTY, not the dropped initialInput path', async () => {
+    const res = await execOpenPanel({ type: 'terminal', target: { command: 'npm test' } }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect((window.electronAPI as any).terminalWrite).toHaveBeenCalledWith('pty-1', 'npm test\r')
+    // createTerminal must NOT receive the command as initialInput (that arg is a no-op via the store).
+    const mod: any = await import('../../renderer/stores/appStore')
+    const termCreate = mod.__created.find((c: any[]) => c[0] === 'terminal')
+    expect(termCreate?.[2]).toBeUndefined()
+  })
+})
+
+describe('markdown preview (Issue 2 fix)', () => {
+  beforeEach(async () => {
+    const mod: any = await import('../../renderer/stores/appStore')
+    mod.__created.length = 0
+  })
+
+  it('set_markdown_preview toggles preview on an editor panel', async () => {
+    const res = await execSetMarkdownPreview({ panelId: 'panel-ed', preview: true }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    const mod: any = await import('../../renderer/stores/appStore')
+    expect(mod.__created.find((c: any[]) => c[0] === 'mdpreview')).toEqual(['mdpreview', 'w1', 'panel-ed', true])
+  })
+
+  it('set_markdown_preview errors when the panel is missing', async () => {
+    const res = await execSetMarkdownPreview({ panelId: 'nope', preview: true }, ctxWith(), 'k1')
+    expect(res.ok).toBe(false)
+  })
+
+  it('reveal_in_editor with preview:true turns on markdown preview', async () => {
+    const res = await execRevealInEditor({ path: 'README.md', preview: true }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    const mod: any = await import('../../renderer/stores/appStore')
+    expect(mod.__created.find((c: any[]) => c[0] === 'mdpreview')).toEqual(['mdpreview', 'w1', 'panel-ed', true])
   })
 })

@@ -19,6 +19,7 @@ export type CateControlAction =
   | 'run_in_terminal'
   | 'open_url'
   | 'reveal_in_editor'
+  | 'set_markdown_preview'
   | 'pan_to'
   | 'zoom'
 

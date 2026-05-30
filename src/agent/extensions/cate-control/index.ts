@@ -62,8 +62,10 @@ export default function (pi: ExtensionAPI) {
     Type.Object({ panelId: Type.Optional(Type.String()), command: Type.String(), newPanel: Type.Optional(Type.Boolean()) }), "run_in_terminal")
   tool("cate_open_url", "Open a URL", "Open or navigate a browser panel to a URL.",
     Type.Object({ panelId: Type.Optional(Type.String()), url: Type.String() }), "open_url")
-  tool("cate_reveal_in_editor", "Reveal in editor", "Open a file in the editor at a line and focus it.",
-    Type.Object({ path: Type.String(), line: Type.Optional(Type.Number()), column: Type.Optional(Type.Number()) }), "reveal_in_editor")
+  tool("cate_reveal_in_editor", "Reveal in editor", "Open a file in the editor at a line and focus it. Set preview:true to open a markdown file straight into rendered preview.",
+    Type.Object({ path: Type.String(), line: Type.Optional(Type.Number()), column: Type.Optional(Type.Number()), preview: Type.Optional(Type.Boolean()) }), "reveal_in_editor")
+  tool("cate_set_markdown_preview", "Toggle markdown preview", "Show (preview:true) or hide (preview:false) the rendered markdown preview for an open editor panel. Markdown files only.",
+    Type.Object({ panelId: Type.String(), preview: Type.Optional(Type.Boolean()) }), "set_markdown_preview")
   tool("cate_pan_to", "Pan to a panel", "Center the viewport on a panel.", Type.Object({ panelId: Type.String() }), "pan_to")
   tool("cate_zoom", "Zoom", "Set zoom level (number) or 'fit'.", Type.Object({ level: Type.Union([Type.Number(), Type.Literal("fit")]) }), "zoom")
 }
