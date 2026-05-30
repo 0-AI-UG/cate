@@ -3,6 +3,7 @@ import type { CanvasRegion } from '../../shared/types'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { useAppStore, getCanvasOpsById } from '../stores/appStore'
+import { useUIStore, effectiveCanvasTool } from '../stores/uiStore'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 import { ACCENT_COLORS, ACCENT_COLOR_NAMES, ACCENT_PALETTE, REGION_FILL_ALPHA, REGION_FILL_COLORS } from '../../shared/colors'
 
@@ -65,6 +66,12 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
       return
     }
     if (e.button !== 0) return
+
+    // Hand tool (or Space-hold): a left-press must pan the canvas, never select
+    // or drag the region. Bail without stopping propagation so the event bubbles
+    // to the canvas container's pan handler.
+    if (effectiveCanvasTool(useUIStore.getState()) === 'hand') return
+
     e.stopPropagation()
 
     // Shift-click: toggle selection
@@ -295,6 +302,8 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
 
   // Resize handle mouse down
   const handleResizeStart = useCallback((e: React.MouseEvent, handle: ResizeHandle) => {
+    // Hand tool (or Space-hold): let the press bubble to the canvas pan handler.
+    if (effectiveCanvasTool(useUIStore.getState()) === 'hand') return
     e.preventDefault()
     e.stopPropagation()
 
@@ -399,7 +408,6 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
               textShadow: '0 1px 3px rgba(0, 0, 0, 0.7)',
               background: 'transparent',
               border: 'none',
-              borderBottom: '1px solid var(--text-primary)',
               borderRadius: 0,
               padding: 0,
               outline: 'none',
@@ -450,6 +458,7 @@ const CanvasRegionComponent: React.FC<Props> = ({ region, zoomLevel }) => {
         return (
           <div
             key={handle}
+            data-region-resize-handle={handle}
             style={{
               position: 'absolute',
               left: region.origin.x + (isLeft ? 0 : region.size.width - bracketLen),
