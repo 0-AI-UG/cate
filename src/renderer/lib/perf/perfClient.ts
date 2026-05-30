@@ -16,7 +16,8 @@
 import { useEffect } from 'react'
 
 export const PERF_ENABLED = Boolean(
-  (window as unknown as { electronAPI?: { isPerf?: boolean } }).electronAPI?.isPerf,
+  typeof window !== 'undefined' &&
+    (window as unknown as { electronAPI?: { isPerf?: boolean } }).electronAPI?.isPerf,
 )
 
 // --- Render counts -----------------------------------------------------------
@@ -30,6 +31,18 @@ function bumpRender(name: string): void {
 
 export function getRenderCounts(): Map<string, number> {
   return renderCounts
+}
+
+/**
+ * Bump a named counter from a NON-component hot path (a store selector, an
+ * event handler) that can't use the useRenderCount hook. Feeds the same map
+ * the HUD and __catePerf.renderCounts() read, so instrumented paths show up
+ * as "<name>/s" alongside component render rates. A no-op (single bool check)
+ * when CATE_PERF is off, so it's safe to leave on a per-frame path.
+ */
+export function perfCount(name: string, n = 1): void {
+  if (!PERF_ENABLED) return
+  renderCounts.set(name, (renderCounts.get(name) ?? 0) + n)
 }
 
 /**

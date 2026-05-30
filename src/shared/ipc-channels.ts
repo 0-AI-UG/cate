@@ -270,6 +270,10 @@ export const AGENT_MARKETPLACE_LIST_INSTALLED = 'agent:marketplaceListInstalled'
 export const AGENT_MARKETPLACE_INSTALL = 'agent:marketplaceInstall'       // renderer -> main
 export const AGENT_MARKETPLACE_UNINSTALL = 'agent:marketplaceUninstall'   // renderer -> main
 
+// Custom OpenAI-compatible provider (pi models.json)
+export const AGENT_CUSTOM_MODELS_GET = 'agent:customModelsGet'   // renderer -> main
+export const AGENT_CUSTOM_MODELS_SAVE = 'agent:customModelsSave' // renderer -> main
+
 // Pi auth / providers
 export const AUTH_LIST_PROVIDERS = 'auth:listProviders'
 export const AUTH_STATUS = 'auth:status'
