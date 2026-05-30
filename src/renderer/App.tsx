@@ -175,9 +175,9 @@ function MainApp() {
   }, [currentWorkspace?.name])
 
   // When the active workspace's workspace.json is detected to have changed on
-  // disk (edited externally, e.g. by an agent following the .cate skill), prompt
-  // to reload the canvas. The detector (main's autosave guard) fires once per
-  // change via WORKSPACE_EXTERNAL_EDIT.
+  // disk (edited externally while Cate was running), prompt to reload the
+  // canvas. The detector (main's autosave guard) fires once per change via
+  // WORKSPACE_EXTERNAL_EDIT.
   useEffect(() => {
     return window.electronAPI.onWorkspaceExternalEdit?.(async ({ rootPath }) => {
       if (reloadPromptOpenRef.current) return

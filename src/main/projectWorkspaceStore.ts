@@ -33,12 +33,11 @@ function sessionPath(rootPath: string): string {
 // ---------------------------------------------------------------------------
 // External-edit guard for workspace.json
 //
-// workspace.json is committable and meant to be hand- or agent-edited (e.g. via
-// the .cate skill) to reconfigure the canvas. But the renderer also autosaves
-// the live layout back over it (~30s + on quit), which would clobber any edit
-// made while the app is running. To prevent that, we remember the hash of the
-// content we last wrote/read per project; before any autosave overwrite we
-// compare it against what's on disk. A mismatch means the file was edited
+// workspace.json is committable and may be edited on disk (by hand or another
+// tool) while Cate is running. But the renderer also autosaves the live layout
+// back over it (~30s + on quit), which would clobber any such edit. To prevent
+// that, we remember the hash of the content we last wrote/read per project;
+// before any autosave overwrite we compare it against what's on disk. A mismatch means the file was edited
 // behind our back, so we skip the overwrite and preserve the edit until the
 // user reloads the workspace from disk.
 // ---------------------------------------------------------------------------
@@ -364,26 +363,6 @@ function snapshotToSessionFile(snapshot: SessionSnapshot): ProjectSessionFile {
   }
 }
 
-const SKILL_FILE = 'skill.md'
-const seededSkillRoots = new Set<string>()
-
-async function seedSkillFile(rootPath: string): Promise<void> {
-  if (seededSkillRoots.has(rootPath)) return
-  seededSkillRoots.add(rootPath)
-  const skillPath = path.join(rootPath, CATE_DIR, SKILL_FILE)
-  try {
-    await fs.access(skillPath)
-  } catch {
-    try {
-      const { SKILL_TEMPLATE } = await import('./templates/skillTemplate')
-      await fs.writeFile(skillPath, SKILL_TEMPLATE, 'utf-8')
-      log.debug('Seeded skill.md in %s', cateDir(rootPath))
-    } catch (err) {
-      log.warn('Failed to seed skill.md: %O', err)
-    }
-  }
-}
-
 // Serialize saves per root. Overlapping saves for the same project would race
 // on disk and, worse, desync the remembered-hash guard (one write finishes
 // last on disk while another finishes last in memory), spuriously flagging
@@ -420,7 +399,6 @@ export function registerProjectStateHandlers(): void {
           writes.push(atomicWrite(workspacePath(rootPath), wsJson).then(() => rememberWorkspaceContent(rootPath, wsJson)))
         }
         await Promise.all(writes)
-        seedSkillFile(rootPath).catch(() => {})
         log.debug('Project state saved to %s', cateDir(rootPath))
       })
     },
