@@ -3,7 +3,7 @@
 // electron-store v10 is ESM-only, so we use dynamic import()
 // =============================================================================
 
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, BrowserWindow } from 'electron'
 import log from './logger'
 import fs from 'fs/promises'
 import fsSync from 'fs'
@@ -247,9 +247,21 @@ export function registerHandlers(): void {
 
   // Boot snapshot — renderer pushes geometry/theme/etc. updates here. The
   // write is debounced internally; this handler returns immediately.
-  ipcMain.handle(BOOT_SNAPSHOT_WRITE, async (_event, partial: Partial<BootSnapshot>) => {
-    if (partial && typeof partial === 'object') {
-      writeBootSnapshot(partial)
+  ipcMain.handle(BOOT_SNAPSHOT_WRITE, async (event, partial: Partial<BootSnapshot>) => {
+    if (!partial || typeof partial !== 'object') return
+    writeBootSnapshot(partial)
+    // The boot snapshot only colors the *next* cold launch. Apply the same
+    // background to the live window now so the OS-drawn chrome (native title
+    // bar / traffic-light region, and the backdrop shown mid-resize) tracks
+    // theme changes immediately — for built-in, new, and user-generated themes
+    // alike — instead of lagging until the next relaunch. Scoped to the sender
+    // so each window (main + detached panel/dock) updates its own chrome.
+    if (typeof partial.backgroundColor === 'string') {
+      try {
+        BrowserWindow.fromWebContents(event.sender)?.setBackgroundColor(partial.backgroundColor)
+      } catch (err) {
+        log.warn('Live window background update failed: %O', err)
+      }
     }
   })
 
