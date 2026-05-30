@@ -62,6 +62,9 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   notifyOnlyWhenUnfocused: 'boolean',
   crashReportingEnabled: 'boolean',
   usageAnalyticsEnabled: 'boolean',
+  plantumlRender: 'string',
+  plantumlServerUrl: 'string',
+  plantumlJarPath: 'string',
 }
 
 // Settings that open windows react to live (via onSettingsChanged). The
