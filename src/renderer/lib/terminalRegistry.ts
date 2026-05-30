@@ -63,6 +63,19 @@ function getScrollSensitivity(): number {
   return clampScrollSensitivity(useSettingsStore.getState().terminalScrollSpeed)
 }
 
+/** Clamp a raw terminalContrast value to xterm's valid `minimumContrastRatio`
+ *  range (1 = off … 21). Invalid / non-positive values fall back to the WCAG-AA
+ *  default. xterm re-clamps internally; this keeps our own reads sane too. */
+export function clampContrastRatio(raw: number): number {
+  if (!Number.isFinite(raw) || raw <= 0) return 4.5
+  return Math.max(1, Math.min(raw, 21))
+}
+
+/** Read the configured minimum text-contrast ratio (xterm `minimumContrastRatio`). */
+function getContrastRatio(): number {
+  return clampContrastRatio(useSettingsStore.getState().terminalContrast)
+}
+
 function getCursorBlink(): boolean {
   return useSettingsStore.getState().terminalCursorBlink === true
 }
@@ -243,6 +256,19 @@ function applyScrollSensitivityToAll(value: number): void {
   }
 }
 
+/** Apply a minimum text-contrast ratio (xterm `minimumContrastRatio`) to every
+ *  live terminal. xterm clears its contrast cache and does a full refresh on
+ *  this option change, so already-rendered text is recoloured immediately. */
+function applyContrastRatioToAll(value: number): void {
+  for (const entry of registry.values()) {
+    try {
+      entry.terminal.options.minimumContrastRatio = value
+    } catch {
+      /* terminal mid-dispose — ignore */
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -310,6 +336,7 @@ subscribeTheme((theme) => {
 // are visible without a reload.
 let lastCursorBlink = getCursorBlink()
 let lastScrollSensitivity = getScrollSensitivity()
+let lastContrastRatio = getContrastRatio()
 useSettingsStore.subscribe((state) => {
   const cursorBlink = state.terminalCursorBlink === true
   if (cursorBlink !== lastCursorBlink) {
@@ -320,6 +347,11 @@ useSettingsStore.subscribe((state) => {
   if (scrollSensitivity !== lastScrollSensitivity) {
     lastScrollSensitivity = scrollSensitivity
     applyScrollSensitivityToAll(scrollSensitivity)
+  }
+  const contrastRatio = clampContrastRatio(state.terminalContrast)
+  if (contrastRatio !== lastContrastRatio) {
+    lastContrastRatio = contrastRatio
+    applyContrastRatioToAll(contrastRatio)
   }
 })
 
@@ -376,7 +408,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     scrollSensitivity: getScrollSensitivity(),
     macOptionIsMeta: true,
     altClickMovesCursor: true,
-    minimumContrastRatio: 1,
+    minimumContrastRatio: getContrastRatio(),
   })
 
   // 2. FitAddon — load before opening so fit() is available immediately
@@ -578,7 +610,7 @@ async function reconnectTerminal(
     scrollSensitivity: getScrollSensitivity(),
     macOptionIsMeta: true,
     altClickMovesCursor: true,
-    minimumContrastRatio: 1,
+    minimumContrastRatio: getContrastRatio(),
   })
 
   const fitAddon = new FitAddon()
