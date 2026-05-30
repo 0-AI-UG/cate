@@ -60,6 +60,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   notifyOnlyWhenUnfocused: 'boolean',
   crashReportingEnabled: 'boolean',
   usageAnalyticsEnabled: 'boolean',
+  cateControlEnabled: 'boolean',
 }
 
 // Settings that open windows react to live (via onSettingsChanged). The
