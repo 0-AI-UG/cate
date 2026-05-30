@@ -5,7 +5,7 @@
 // the only local state is transient UI (popover open, drag-over, slash index).
 // =============================================================================
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Stop,
@@ -18,32 +18,13 @@ import {
   ImageAttachButton,
   ImageChips,
   ThinkingLevelPicker,
+  useNodePortalTarget,
 } from './AgentPanelChrome'
 import type {
   AgentImageAttachment,
   AgentSlashCommand,
   AgentThinkingLevel,
 } from '../../shared/types'
-
-// Resolve the canvas-node element this popover lives inside, so portalled
-// content can be positioned relative to it (the node, not the viewport,
-// is the scroll/zoom frame of reference).
-function useNodePortalTarget(ref: React.RefObject<Element | null>) {
-  const getTarget = useCallback(
-    () => ref.current?.closest('[data-node-id]') as HTMLElement | null,
-    [ref],
-  )
-  const toLocal = useCallback(
-    (viewport: { top: number; left: number }) => {
-      const target = getTarget()
-      if (!target) return viewport
-      const tr = target.getBoundingClientRect()
-      return { top: viewport.top - tr.top, left: viewport.left - tr.left }
-    },
-    [getTarget],
-  )
-  return { getTarget, toLocal }
-}
 
 export function ChatInput({
   draft,
