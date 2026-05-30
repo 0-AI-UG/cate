@@ -1,5 +1,5 @@
 import log from './logger'
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session, nativeTheme } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, APP_OPEN_PATH } from '../shared/ipc-channels'
@@ -107,6 +107,14 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   const bootSnap = windowType === 'main' ? readBootSnapshot() : null
   const snapGeom = bootSnap?.geometry
   const snapBg = bootSnap?.backgroundColor
+
+  // Apply the active theme's native appearance before the window exists so the
+  // macOS native title bar (native-tabs mode) paints with the right dark/light
+  // material on the first frame. themeSource is app-wide, so we only need it
+  // once from the main window's snapshot; the renderer keeps it in sync after.
+  if (windowType === 'main' && bootSnap?.appearance) {
+    try { nativeTheme.themeSource = bootSnap.appearance } catch { /* noop */ }
+  }
 
   // Snapshot native-tabs state at window creation. The renderer reads this via
   // the URL query so that the React TitlebarStrip matches the actual

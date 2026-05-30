@@ -116,13 +116,23 @@ function applyResolved(theme: Theme): void {
   notify(theme)
 
   // Persist resolved theme id + exact background to the boot snapshot so the
-  // next cold launch constructs the BrowserWindow with the right color.
+  // next cold launch constructs the BrowserWindow with the right color, and
+  // (on macOS) drive the native window appearance.
   try {
     const bg = theme.bootBackground ?? mergedAppVars(theme)['surface-0']
+    // macOS draws the native title bar itself when native tabs are on
+    // (titleBarStyle 'default') — it can't take an arbitrary color, only a
+    // dark/light system material. Send the desired appearance so the native bar
+    // tracks the theme's dark/light (for built-in AND user-generated themes)
+    // instead of blindly following the OS. While the selection is 'system' we
+    // keep it on 'system' so `prefers-color-scheme` — and thus the system-theme
+    // resolution above — stays bound to the real OS appearance.
+    const appearance: 'dark' | 'light' | 'system' =
+      currentSelection === 'system' ? 'system' : theme.type
     const api = (window as unknown as {
       electronAPI?: { bootSnapshotWrite?: (p: Record<string, unknown>) => Promise<void> }
     }).electronAPI
-    api?.bootSnapshotWrite?.({ theme: theme.id, backgroundColor: bg }).catch(() => { /* noop */ })
+    api?.bootSnapshotWrite?.({ theme: theme.id, backgroundColor: bg, appearance }).catch(() => { /* noop */ })
   } catch { /* noop */ }
 }
 
