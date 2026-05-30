@@ -49,6 +49,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   terminalScrollback: 'number',
   terminalScrollSpeed: 'number',
   terminalCursorBlink: 'boolean',
+  terminalOptionIsMeta: 'boolean',
   autoSuspendIdleTerminals: 'boolean',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
