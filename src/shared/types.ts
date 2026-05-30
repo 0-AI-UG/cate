@@ -855,6 +855,10 @@ export interface AppSettings {
   notificationsEnabled: boolean
   notifyOnlyWhenUnfocused: boolean
 
+  // Agent
+  /** Master switch for the cate-control feature (agent panel orchestration). */
+  cateControlEnabled: boolean
+
   // Privacy
   /** Send automatic error/crash reports to Sentry. Takes effect on next launch. */
   crashReportingEnabled: boolean
@@ -910,6 +914,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Notifications (OS-level only)
   notificationsEnabled: true,
   notifyOnlyWhenUnfocused: true,
+
+  // Agent
+  cateControlEnabled: true,
 
   // Privacy
   crashReportingEnabled: true,
