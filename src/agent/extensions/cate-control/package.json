@@ -1,0 +1,6 @@
+{
+  "name": "cate-control",
+  "description": "Control Cate panels: open, arrange, focus, manage layout.",
+  "private": true,
+  "pi": { "extensions": ["./index.ts"] }
+}
