@@ -7,6 +7,15 @@
 
 import { vi } from 'vitest'
 
+// Some renderer modules (e.g. terminalRegistry → @xterm/addon-fit) reference the
+// browser `self` global in their UMD wrappers at module-eval time. The node test
+// env has no `self`; alias it to globalThis so node-env (.test.ts) suites that
+// transitively import these modules can load. Harmless in jsdom, where `self`
+// already exists.
+if (typeof (globalThis as { self?: unknown }).self === 'undefined') {
+  ;(globalThis as { self?: unknown }).self = globalThis
+}
+
 // jsdom doesn't implement getBoundingClientRect layout. The harness assigns
 // rects manually via setBoundingClientRectFor() in harness.tsx, but elements
 // that don't have an explicit rect should at least return a zeroed object.

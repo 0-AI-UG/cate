@@ -40,15 +40,26 @@ export function unregisterCateContext(agentKey: string): void {
   registry.delete(agentKey)
 }
 
-// Executor map is assembled in Tasks 6–7; overridable in tests.
-let executors: Partial<Record<CateControlAction, CateExecutor>> | null = null
+// Executor map is assembled in Tasks 6–7; overridable in tests. Held inside a
+// hoisted-function holder (not a top-level `let`) so cateExecutors' import-time
+// `setCateExecutors(...)` call is safe even when this module is mid-evaluation
+// in the import cycle (cateControl → agentStore → cateExecutors → cateControl).
+// A top-level `let`/`const` would be in its temporal dead zone at that point.
+function executorHolder(): { map: Partial<Record<CateControlAction, CateExecutor>> | null } {
+  const g = executorHolder as unknown as {
+    _store?: { map: Partial<Record<CateControlAction, CateExecutor>> | null }
+  }
+  if (!g._store) g._store = { map: null }
+  return g._store
+}
 export function __setExecutorsForTest(map: Partial<Record<CateControlAction, CateExecutor>> | null): void {
-  executors = map
+  executorHolder().map = map
 }
 /** Real registration entry point (Task 7). */
 export function setCateExecutors(map: Partial<Record<CateControlAction, CateExecutor>>): void {
-  if (!executors) executors = {}
-  Object.assign(executors, map)
+  const holder = executorHolder()
+  if (!holder.map) holder.map = {}
+  Object.assign(holder.map, map)
 }
 
 export async function dispatchCateRequest(
@@ -74,7 +85,7 @@ export async function dispatchCateRequest(
       }
     }
 
-    const exec = executors?.[req.action]
+    const exec = executorHolder().map?.[req.action]
     if (!exec) return { ok: false, error: `Unknown or unimplemented action: ${req.action}` }
     return await exec(req.params, ctx, agentKey)
   } catch (err) {

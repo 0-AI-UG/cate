@@ -30,7 +30,9 @@ import log from '../../renderer/lib/logger'
 import type { PanelProps } from '../../renderer/panels/types'
 import { useAppStore } from '../../renderer/stores/appStore'
 import { useStatusStore } from '../../renderer/stores/statusStore'
+import { useCanvasStoreApi } from '../../renderer/stores/CanvasStoreContext'
 import { useAgentStore } from './agentStore'
+import { registerCateContext, unregisterCateContext } from './cateControl'
 import { ChatThread } from './ChatThread'
 import { AgentSidebar } from './AgentSidebar'
 import { ChatInput } from './AgentChatInput'
@@ -78,6 +80,13 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     ? workspace?.worktrees?.find((w) => w.id === panelState.worktreeId)
     : undefined
   const cwd = taggedWorktree?.path ?? workspace?.rootPath ?? ''
+
+  // Canvas store for this workspace — used to register a cate-control context so
+  // the agent can orchestrate panels on the canvas it lives in. In the main
+  // window AgentPanel mounts under the top-level CanvasStoreProvider whose store
+  // is the primary `useCanvasStore` (the active workspace's canvas), so this
+  // resolves to the right store; see the registration effect below.
+  const canvasStoreApi = useCanvasStoreApi()
 
   // ---------------------------------------------------------------------------
   // Multi-chat session bookkeeping.
@@ -490,6 +499,12 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const handleApproval = useCallback(
     async (toolCallId: string, decision: 'allow' | 'deny') => {
       if (!activeAgentKey) return
+      // cate-control approvals resolve a local Promise in the dispatcher — there
+      // is no pi tool call awaiting them, so don't hit the pi IPC channel.
+      if (toolCallId.startsWith('cate:')) {
+        useAgentStore.getState().resolveCateApproval(activeAgentKey, toolCallId, decision === 'allow')
+        return
+      }
       useAgentStore.getState().resolveApproval(activeAgentKey, toolCallId)
       try {
         await window.electronAPI.agentToolDecision(activeAgentKey, toolCallId, decision)
@@ -502,6 +517,22 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     },
     [activeAgentKey],
   )
+
+  // Register this chat's cate-control context so the dispatcher can resolve its
+  // workspace/canvas and route guarded-mode approvals through the panel's
+  // approval card. Re-registers whenever the active chat or workspace changes.
+  useEffect(() => {
+    if (!activeAgentKey) return
+    const key = activeAgentKey
+    registerCateContext(key, {
+      workspaceId,
+      hostPanelId: panelId,
+      canvasStore: canvasStoreApi,
+      requestApproval: (action, params) =>
+        useAgentStore.getState().requestCateApproval(key, action, params),
+    })
+    return () => unregisterCateContext(key)
+  }, [activeAgentKey, workspaceId, panelId, canvasStoreApi])
 
   // ---------------------------------------------------------------------------
   // Derived state

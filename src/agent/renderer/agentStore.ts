@@ -23,6 +23,9 @@ import type {
   AgentThinkingLevel,
   AgentToolApprovalRequest,
 } from '../../shared/types'
+import { CATE_SENTINEL, type CateControlRequest } from '../../shared/cateControl'
+import { dispatchCateRequest } from './cateControl'
+import './cateExecutors' // side-effect import: registers the executor map (setCateExecutors)
 
 // -----------------------------------------------------------------------------
 // Message types — local to the renderer
@@ -234,6 +237,8 @@ interface AgentStoreActions {
   setModel: (panelId: string, model: AgentModelRef | null) => void
   addApproval: (panelId: string, req: AgentToolApprovalRequest) => void
   resolveApproval: (panelId: string, toolCallId: string) => void
+  requestCateApproval: (panelId: string, action: string, params: Record<string, unknown>) => Promise<boolean>
+  resolveCateApproval: (panelId: string, toolCallId: string, allow: boolean) => void
   appendSystem: (panelId: string, text: string, kind?: SystemMessage['kind']) => void
   loadMessages: (panelId: string, messages: AgentMessage[]) => void
   clearMessages: (panelId: string) => void
@@ -302,6 +307,11 @@ function withPanel(
   if (next === current) return state
   return { panels: { ...state.panels, [panelId]: next } }
 }
+
+// In-flight cate-control approvals, keyed by a synthetic toolCallId. The
+// dispatcher awaits these Promises; the AgentPanel approval card resolves them.
+const pendingCateApprovals = new Map<string, (allow: boolean) => void>()
+let cateApprovalSeq = 0
 
 // -----------------------------------------------------------------------------
 // Store
@@ -495,6 +505,23 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         pendingApprovals: p.pendingApprovals.filter((r) => r.toolCallId !== toolCallId),
       })),
     )
+  },
+
+  requestCateApproval(panelId, action, params) {
+    const toolCallId = `cate:${action}:${cateApprovalSeq++}`
+    return new Promise<boolean>((resolve) => {
+      pendingCateApprovals.set(toolCallId, resolve)
+      get().addApproval(panelId, { panelId, toolCallId, toolName: `cate:${action}`, args: params })
+    })
+  },
+
+  resolveCateApproval(panelId, toolCallId, allow) {
+    const resolver = pendingCateApprovals.get(toolCallId)
+    if (resolver) {
+      pendingCateApprovals.delete(toolCallId)
+      resolver(allow)
+    }
+    get().resolveApproval(panelId, toolCallId)
   },
 
   setStats(panelId, stats) {
@@ -984,6 +1011,28 @@ function handleEvent(panelId: string, event: { type: string; [key: string]: unkn
           // (set_editor_text is consumed via the AgentPanel's draft-set side
           // channel — see AgentPanel.)
           return
+        }
+        // cate-control round-trip: intercept input() calls whose title carries
+        // our sentinel and route them to the dispatcher instead of showing a
+        // dialog. The reply resolves the awaiting ctx.ui.input() in the pi tool.
+        if (method === 'input') {
+          const title = asString(event.title) ?? ''
+          if (title.startsWith(CATE_SENTINEL)) {
+            let request: CateControlRequest
+            try {
+              request = JSON.parse(title.slice(CATE_SENTINEL.length))
+            } catch {
+              window.electronAPI.agentUiResponse(panelId, {
+                id,
+                value: JSON.stringify({ ok: false, error: 'malformed request' }),
+              })
+              return
+            }
+            void dispatchCateRequest(panelId, request).then((response) => {
+              window.electronAPI.agentUiResponse(panelId, { id, value: JSON.stringify(response) })
+            })
+            return
+          }
         }
         // Dialog methods (select / confirm / input / editor) — enqueue for the
         // panel renderer to handle inline.
