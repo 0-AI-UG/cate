@@ -986,6 +986,17 @@ export interface AuthProviderStatus {
   source?: 'oauth' | 'safeStorage' | 'env'
 }
 
+/** A user-defined OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, a
+ *  proxy, ...). Surfaced as one extra provider in the agent provider list and
+ *  written to pi's models.json. */
+export interface CustomOpenAIProvider {
+  baseUrl: string
+  /** Empty for local servers that ignore auth; pi gets a placeholder. */
+  apiKey: string
+  /** Model ids exposed by the endpoint, e.g. ['llama3.1:8b']. */
+  models: string[]
+}
+
 export interface AgentModelRef {
   provider: string
   model: string
