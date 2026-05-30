@@ -67,6 +67,12 @@ function getCursorBlink(): boolean {
   return useSettingsStore.getState().terminalCursorBlink === true
 }
 
+/** Read whether ⌥ Option acts as Meta in the terminal (xterm macOptionIsMeta).
+ *  Defaults to true (preserve historical behavior) when unset. */
+function getOptionIsMeta(): boolean {
+  return useSettingsStore.getState().terminalOptionIsMeta !== false
+}
+
 // Track OS-window focus so we can pause cursor blinking while this window is
 // not frontmost. A blinking cursor forces a GPU draw + WindowServer composite
 // on every blink; xterm keeps blinking the focused terminal even when the app
@@ -243,6 +249,17 @@ function applyScrollSensitivityToAll(value: number): void {
   }
 }
 
+/** Apply the ⌥ Option-as-Meta setting (xterm `macOptionIsMeta`) to every live terminal. */
+function applyOptionIsMetaToAll(value: boolean): void {
+  for (const entry of registry.values()) {
+    try {
+      entry.terminal.options.macOptionIsMeta = value
+    } catch {
+      /* terminal mid-dispose — ignore */
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -306,10 +323,11 @@ subscribeTheme((theme) => {
   repaintAllTerminals(theme)
 })
 
-// Live-apply terminal settings (cursor-blink toggle, scroll speed) so changes
-// are visible without a reload.
+// Live-apply terminal settings (cursor-blink toggle, scroll speed, Option-as-Meta)
+// so changes are visible without a reload.
 let lastCursorBlink = getCursorBlink()
 let lastScrollSensitivity = getScrollSensitivity()
+let lastOptionIsMeta = getOptionIsMeta()
 useSettingsStore.subscribe((state) => {
   const cursorBlink = state.terminalCursorBlink === true
   if (cursorBlink !== lastCursorBlink) {
@@ -320,6 +338,11 @@ useSettingsStore.subscribe((state) => {
   if (scrollSensitivity !== lastScrollSensitivity) {
     lastScrollSensitivity = scrollSensitivity
     applyScrollSensitivityToAll(scrollSensitivity)
+  }
+  const optionIsMeta = state.terminalOptionIsMeta !== false
+  if (optionIsMeta !== lastOptionIsMeta) {
+    lastOptionIsMeta = optionIsMeta
+    applyOptionIsMetaToAll(optionIsMeta)
   }
 })
 
@@ -374,7 +397,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     allowProposedApi: true,
     scrollback: getScrollback(),
     scrollSensitivity: getScrollSensitivity(),
-    macOptionIsMeta: true,
+    macOptionIsMeta: getOptionIsMeta(),
     altClickMovesCursor: true,
     minimumContrastRatio: 1,
   })
@@ -576,7 +599,7 @@ async function reconnectTerminal(
     allowProposedApi: true,
     scrollback: getScrollback(),
     scrollSensitivity: getScrollSensitivity(),
-    macOptionIsMeta: true,
+    macOptionIsMeta: getOptionIsMeta(),
     altClickMovesCursor: true,
     minimumContrastRatio: 1,
   })
