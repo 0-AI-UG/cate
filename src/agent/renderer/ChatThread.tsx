@@ -238,7 +238,7 @@ function MessageRow({
   if (msg.type === 'user') {
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="max-w-[85%] px-3.5 py-2 rounded-2xl rounded-br-md bg-white/[0.08] text-primary text-[13px] whitespace-pre-wrap break-words">
+        <div className="max-w-[85%] px-3.5 py-2 rounded-2xl rounded-br-md bg-white/[0.08] text-primary text-[13px] whitespace-pre-wrap break-words select-text cursor-text">
           {msg.text}
         </div>
         <div className="flex items-center gap-0.5 text-muted">
@@ -330,7 +330,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
         <span className={streaming ? 'cate-notif-pulse' : ''}>Thinking</span>
       </button>
       {expanded && (
-        <pre className="mt-1 pl-4 text-[11px] text-primary/70 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
+        <pre className="mt-1 pl-4 text-[11px] text-primary/70 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto select-text cursor-text">
           {text}
         </pre>
       )}
@@ -344,7 +344,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
 
 function Markdown({ text }: { text: string }) {
   return (
-    <div className="agent-markdown space-y-2 break-words">
+    <div className="agent-markdown space-y-2 break-words select-text cursor-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -486,7 +486,7 @@ function CodePreview({
   const truncated = lines.length > maxLines
   const shown = truncated ? lines.slice(0, maxLines) : lines
   return (
-    <div className="font-mono text-[11px] leading-snug max-h-[280px] overflow-auto">
+    <div className="font-mono text-[11px] leading-snug max-h-[280px] overflow-auto select-text cursor-text">
       {shown.map((l, i) => (
         <div key={i} className="flex">
           <span className="text-muted/40 select-none w-5 text-right pr-1.5 shrink-0">{startLine + i}</span>
@@ -564,7 +564,7 @@ function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
           <span className="truncate text-primary/90 font-mono flex-1">{cmd}</span>
         </button>
         {expanded && hasOutput && (
-          <div className="mt-1 pl-4 max-h-[280px] overflow-auto font-mono text-[11px] leading-snug">
+          <div className="mt-1 pl-4 max-h-[280px] overflow-auto font-mono text-[11px] leading-snug select-text cursor-text">
             <pre className="text-primary/80 whitespace-pre-wrap break-words">
               {output}
               {isRunning && <span className="inline-block w-[2px] h-[1em] align-middle bg-primary/80 ml-0.5 animate-pulse" />}
@@ -590,7 +590,7 @@ function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
         <span className="truncate text-primary/90 font-mono flex-1">{summary}</span>
       </button>
       {expanded && hasExtras && (
-        <div className="mt-1 pl-4 space-y-1.5">
+        <div className="mt-1 pl-4 space-y-1.5 select-text cursor-text">
           {isEditish && diff && <DiffView diff={diff} />}
           {isWrite && writeContent && (
             <CodePreview text={writeContent} />
@@ -749,7 +749,7 @@ function SubagentResultRow({
         )}
       </button>
       {expanded && hasExtras && (
-        <div className="mt-1 pl-4 space-y-1">
+        <div className="mt-1 pl-4 space-y-1 select-text cursor-text">
           {result.parts.length === 0 && !result.errorMessage && !result.stderr && (
             <div className="text-[11px] text-muted italic font-mono leading-snug">
               {isRunning ? 'Working…' : '(no output)'}
@@ -915,7 +915,7 @@ function PlanReadyCard({
         <ClipboardText size={13} weight="duotone" className="text-agent-light shrink-0" />
         <span className="text-primary font-medium">Plan ready</span>
       </div>
-      <div className="px-3 py-3 space-y-3">
+      <div className="px-3 py-3 space-y-3 select-text">
         {summary && (
           <div className="text-[12.5px] text-primary/90 leading-relaxed whitespace-pre-wrap break-words">
             {summary}
@@ -1058,7 +1058,7 @@ function DiffView({ diff }: { diff: DiffInfo }) {
   let oldLine = 1
   let newLine = 1
   return (
-    <div className="max-h-[280px] overflow-auto font-mono text-[11px] leading-[1.45]">
+    <div className="max-h-[280px] overflow-auto font-mono text-[11px] leading-[1.45] select-text cursor-text">
       {lines.map((l, i) => {
         let ln: string
         if (l.kind === 'del') { ln = String(oldLine++); }
@@ -1114,7 +1114,7 @@ function ApprovalCard({
           Allow <strong className="font-mono">{req.toolName}</strong>?
         </span>
       </div>
-      <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono max-h-[160px] overflow-auto bg-black/20 rounded p-2">
+      <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono max-h-[160px] overflow-auto bg-black/20 rounded p-2 select-text cursor-text">
         {prettyArgs(req.args)}
       </pre>
       <div className="flex items-center gap-2">
