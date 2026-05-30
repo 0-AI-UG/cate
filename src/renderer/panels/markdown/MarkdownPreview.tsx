@@ -1,7 +1,6 @@
-import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { parseDiagramLang, nodeToText } from './diagramBlock'
+import { extractFencedDiagram } from './diagramBlock'
 import { MermaidDiagram } from './MermaidDiagram'
 import { PlantUmlDiagram } from './PlantUmlDiagram'
 
@@ -52,13 +51,10 @@ export function MarkdownPreview({ content }: { content: string }) {
             pre: ({ children }) => {
               // react-markdown renders fenced blocks as <pre><code class="language-x">.
               // Intercept diagram languages before the normal code-card wrapper.
-              const child = Array.isArray(children) ? children[0] : children
-              const codeProps = (child as { props?: { className?: string; children?: ReactNode } } | undefined)?.props
-              const lang = parseDiagramLang(codeProps?.className)
-              if (lang) {
-                const source = nodeToText(codeProps?.children).replace(/\n$/, '')
-                if (lang === 'mermaid') return <MermaidDiagram code={source} />
-                return <PlantUmlDiagram code={source} />
+              const diagram = extractFencedDiagram(children)
+              if (diagram) {
+                if (diagram.lang === 'mermaid') return <MermaidDiagram code={diagram.code} />
+                return <PlantUmlDiagram code={diagram.code} />
               }
               return (
                 <pre className="rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 px-4 py-3 overflow-x-auto text-[12px] leading-snug my-3">

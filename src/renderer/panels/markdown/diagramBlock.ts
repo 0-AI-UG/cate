@@ -26,3 +26,16 @@ export function nodeToText(node: ReactNode): string {
   if (props && 'children' in props) return nodeToText(props.children)
   return ''
 }
+
+/** Given the `children` of a react-markdown `<pre>` override (a single `<code>`
+ *  element), return the diagram kind + source if it is a diagram fence, else
+ *  null. Strips the trailing newline(s) react-markdown leaves on fenced text
+ *  (handles CR, LF, or CRLF line endings). */
+export function extractFencedDiagram(children: ReactNode): { lang: DiagramLang; code: string } | null {
+  const child = Array.isArray(children) ? children[0] : children
+  const props = (child as { props?: { className?: string; children?: ReactNode } } | undefined)?.props
+  const lang = parseDiagramLang(props?.className)
+  if (!lang) return null
+  const code = nodeToText(props?.children).replace(/[\r\n]+$/, '')
+  return { lang, code }
+}

@@ -24,6 +24,8 @@ export function PlantUmlDiagram({ code }: { code: string }) {
     } else {
       if (!serverUrl.trim()) {
         setError('No PlantUML server URL. Set one in Settings → Diagrams.')
+      } else if (!/^https?:\/\//i.test(serverUrl.trim())) {
+        setError('PlantUML server URL must start with http:// or https://.')
       } else {
         setSrc(buildPlantumlServerUrl(serverUrl, code))
       }

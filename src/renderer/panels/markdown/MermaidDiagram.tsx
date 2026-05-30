@@ -9,6 +9,7 @@ let renderSeq = 0
 export function MermaidDiagram({ code }: { code: string }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const [themeType, setThemeType] = useState(() => getActiveTheme().type)
 
   useEffect(() => subscribeTheme((t) => setThemeType(t.type)), [])
@@ -16,6 +17,7 @@ export function MermaidDiagram({ code }: { code: string }) {
   useEffect(() => {
     let cancelled = false
     setError(null)
+    setLoading(true)
     ;(async () => {
       try {
         const mermaid = (await import('mermaid')).default
@@ -28,8 +30,12 @@ export function MermaidDiagram({ code }: { code: string }) {
         const { svg } = await mermaid.render(id, code)
         if (cancelled) return
         if (hostRef.current) hostRef.current.innerHTML = svg
+        setLoading(false)
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to render diagram')
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Failed to render diagram')
+          setLoading(false)
+        }
       }
     })()
     return () => { cancelled = true }
@@ -45,5 +51,12 @@ export function MermaidDiagram({ code }: { code: string }) {
       </div>
     )
   }
-  return <div ref={hostRef} className="my-3 flex justify-center [&_svg]:max-w-full" />
+  // The host div is always mounted so the ref is available when the async
+  // render resolves; the loading line sits above it until the SVG is injected.
+  return (
+    <div className="my-3">
+      {loading && <div className="text-[11px] text-muted">Rendering diagram…</div>}
+      <div ref={hostRef} className="flex justify-center [&_svg]:max-w-full" />
+    </div>
+  )
 }

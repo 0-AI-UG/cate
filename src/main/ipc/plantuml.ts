@@ -14,7 +14,7 @@ export interface PlantumlRenderResult {
   error?: string
 }
 
-function renderLocal(source: string, jarPath: string): Promise<PlantumlRenderResult> {
+export function renderLocal(source: string, jarPath: string): Promise<PlantumlRenderResult> {
   return new Promise((resolve) => {
     if (!jarPath.trim()) {
       resolve({ error: 'No PlantUML jar configured. Set one in Settings → Diagrams.' })
@@ -55,8 +55,9 @@ function renderLocal(source: string, jarPath: string): Promise<PlantumlRenderRes
       }
     })
 
-    child.stdin.write(source)
-    child.stdin.end()
+    // end(source) writes + closes atomically, avoiding the backpressure edge of
+    // a separate write() that might not flush before the stream closes.
+    child.stdin.end(source)
   })
 }
 

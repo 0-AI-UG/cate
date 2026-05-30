@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDiagramLang, nodeToText } from './diagramBlock'
+import { parseDiagramLang, nodeToText, extractFencedDiagram } from './diagramBlock'
 
 describe('parseDiagramLang', () => {
   it('detects mermaid', () => {
@@ -28,5 +28,32 @@ describe('nodeToText', () => {
     expect(nodeToText({ props: { children: 'nested' } } as never)).toBe('nested')
     expect(nodeToText(null)).toBe('')
     expect(nodeToText(undefined)).toBe('')
+  })
+})
+
+describe('extractFencedDiagram', () => {
+  // react-markdown passes the <pre>'s children: a single <code> element (often
+  // wrapped in a one-element array) with a `language-*` className.
+  const codeEl = (className: string, children: unknown) => ({ props: { className, children } })
+
+  it('extracts a mermaid fence and strips the trailing newline', () => {
+    const el = codeEl('language-mermaid', 'flowchart TD\nA-->B\n')
+    expect(extractFencedDiagram(el as never)).toEqual({ lang: 'mermaid', code: 'flowchart TD\nA-->B' })
+  })
+  it('handles a single-element array (react-markdown shape) and plantuml aliases', () => {
+    const el = [codeEl('language-puml', '@startuml\nA->B\n')]
+    expect(extractFencedDiagram(el as never)).toEqual({ lang: 'plantuml', code: '@startuml\nA->B' })
+  })
+  it('strips CRLF / CR trailing line endings (Windows sources)', () => {
+    const el = codeEl('language-mermaid', 'a\r\nb\r\n')
+    expect(extractFencedDiagram(el as never)).toEqual({ lang: 'mermaid', code: 'a\r\nb' })
+  })
+  it('returns null for non-diagram code fences', () => {
+    expect(extractFencedDiagram(codeEl('language-python', 'print(1)\n') as never)).toBeNull()
+  })
+  it('returns null when there is no className or no element', () => {
+    expect(extractFencedDiagram(codeEl('', 'x') as never)).toBeNull()
+    expect(extractFencedDiagram('plain string' as never)).toBeNull()
+    expect(extractFencedDiagram(undefined as never)).toBeNull()
   })
 })
