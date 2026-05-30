@@ -13,6 +13,7 @@ import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
+import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 
@@ -142,12 +143,14 @@ export interface TerminalPanelRowProps {
   hasPorts: boolean
   worktreeColor?: string
   onClick: (e: React.MouseEvent) => void
+  /** Middle-click closes the row (mirrors the dock tab behavior). */
+  onClose?: () => void
   rename?: PanelRenameProps
 }
 
 const AWAIT_COLOR = '#c08a5a'
 
-export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts, worktreeColor, onClick, rename }) => {
+export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts, worktreeColor, onClick, onClose, rename }) => {
   const Icon = PANEL_ICONS[panel.type] ?? TerminalIcon
   const label = panel.title || panel.filePath?.split('/').pop() || panel.url || panel.type
 
@@ -163,6 +166,14 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
       } ${isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
       onClick={onClick}
       onContextMenu={rename?.onContextMenu}
+      onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
+      onAuxClick={(e) => {
+        if (isMiddleClick(e) && onClose) {
+          e.preventDefault()
+          e.stopPropagation()
+          onClose()
+        }
+      }}
       title={panel.filePath || panel.url || label}
     >
       {agentLogo ? (
@@ -416,6 +427,10 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     setRenamingPanelId(null)
   }, [panelRenameValue, workspace.id])
 
+  const handleClosePanel = useCallback((panelId: string) => {
+    useAppStore.getState().closePanel(workspace.id, panelId)
+  }, [workspace.id])
+
   const handlePanelContextMenu = useCallback(async (e: React.MouseEvent, panelId: string, currentTitle: string) => {
     // Stop the event from bubbling to the workspace-level handler — otherwise a
     // right-click on a panel row would open the workspace context menu.
@@ -435,10 +450,10 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         beginPanelRename(panelId, currentTitle)
         break
       case 'close':
-        useAppStore.getState().closePanel(workspace.id, panelId)
+        handleClosePanel(panelId)
         break
     }
-  }, [beginPanelRename, workspace.id])
+  }, [beginPanelRename, handleClosePanel])
 
   const panelCount = Object.keys(panels).length
 
@@ -565,6 +580,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
           worktreeColor={worktreeColorFor(p.id)}
           onClick={(e) => handlePanelClick(e, p.id)}
+          onClose={() => handleClosePanel(p.id)}
           rename={rename}
         />
       )
@@ -579,6 +595,14 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         }`}
         onClick={(e) => handlePanelClick(e, p.id)}
         onContextMenu={rename.onContextMenu}
+        onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
+        onAuxClick={(e) => {
+          if (isMiddleClick(e)) {
+            e.preventDefault()
+            e.stopPropagation()
+            handleClosePanel(p.id)
+          }
+        }}
         title={p.filePath || p.url || label}
       >
         <Icon size={11} className="flex-shrink-0 opacity-60" />

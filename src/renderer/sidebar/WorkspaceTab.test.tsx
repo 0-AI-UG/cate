@@ -170,6 +170,45 @@ describe('panel-row rename wiring', () => {
   })
 })
 
+// Middle-click closes the specific panel (mirrors the dock tab behavior),
+// while other buttons must NOT close it (right-click opens the context menu).
+describe('panel-row middle-click close', () => {
+  function renderCloseRow(onClose: () => void) {
+    act(() => {
+      root.render(
+        <TerminalPanelRow
+          panel={{ id: 'p1', type: 'terminal', title: 'Terminal 1' }}
+          indent={false}
+          agentState={undefined}
+          hasPorts={false}
+          onClick={() => {}}
+          onClose={onClose}
+          rename={makeRename()}
+        />,
+      )
+    })
+    return host
+  }
+
+  it('middle-click (auxclick button 1) closes the row', () => {
+    const onClose = vi.fn()
+    const button = renderCloseRow(onClose).querySelector('button') as HTMLElement
+    act(() => {
+      button.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('right-click (auxclick button 2) does NOT close the row', () => {
+    const onClose = vi.fn()
+    const button = renderCloseRow(onClose).querySelector('button') as HTMLElement
+    act(() => {
+      button.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 2 }))
+    })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
 describe('state transitions render correctly', () => {
   it('full lifecycle: each re-render shows the right indicator', () => {
     const sequence: Array<{ state: AgentState | undefined; expectShimmer: boolean; expectAwait: boolean }> = [
