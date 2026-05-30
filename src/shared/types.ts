@@ -875,7 +875,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Appearance
   activeThemeId: 'system',
   systemLightThemeId: 'light-subtle',
-  systemDarkThemeId: 'dark-warm',
+  systemDarkThemeId: 'dark-cold',
   customThemes: [],
   editorFontSize: 12,
 
