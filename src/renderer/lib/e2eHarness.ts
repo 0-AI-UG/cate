@@ -26,6 +26,14 @@ declare global {
       terminalPtyId(nodeId: string): string | null
       /** Write raw data to a terminal node's PTY (e.g. a flooding command). */
       writeTerminal(nodeId: string, data: string): boolean
+      /** Read the rendered text of a terminal panel's xterm buffer (by panelId). */
+      terminalText(panelId: string): string
+      /** Dispatch a cate-control action through the real renderer dispatcher,
+       *  exactly as an agent tool call would. Side-effects are auto-approved. */
+      cateControl(
+        action: string,
+        params: Record<string, unknown>,
+      ): Promise<{ ok: boolean; result?: unknown; error?: string; denied?: boolean }>
       dragSnapshot(): {
         isDragging: boolean
         sourceKind: string | null
@@ -107,6 +115,35 @@ export function installE2EHarness(): void {
     return true
   }
 
+  const terminalText = (panelId: string): string => {
+    const term = terminalRegistry.getEntry(panelId)?.terminal as
+      | { buffer?: { active?: { length: number; getLine(i: number): { translateToString(trim?: boolean): string } | undefined } } }
+      | undefined
+    const buf = term?.buffer?.active
+    if (!buf) return ''
+    let out = ''
+    for (let i = 0; i < buf.length; i++) out += (buf.getLine(i)?.translateToString(true) ?? '') + '\n'
+    return out
+  }
+
+  const cateControl = async (action: string, params: Record<string, unknown>) => {
+    // Lazy-load the agent dispatcher + executors so this stays out of the main
+    // bundle. Importing cateExecutors runs its setCateExecutors() registration.
+    const [{ registerCateContext, dispatchCateRequest }] = await Promise.all([
+      import('../../agent/renderer/cateControl'),
+      import('../../agent/renderer/cateExecutors'),
+    ])
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    const cs = activeCanvasStore()
+    registerCateContext('e2e-agent', {
+      workspaceId: wsId,
+      hostPanelId: 'e2e-host',
+      canvasStore: cs!,
+      requestApproval: async () => true,
+    })
+    return dispatchCateRequest('e2e-agent', { action: action as never, params })
+  }
+
   const dragSnapshot = () => {
     const s = useDragStore.getState()
     return {
@@ -129,6 +166,8 @@ export function installE2EHarness(): void {
     resetViewport,
     terminalPtyId,
     writeTerminal,
+    terminalText,
+    cateControl,
     dragSnapshot,
   }
 }
