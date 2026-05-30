@@ -262,6 +262,13 @@ export function DockTabBar(props: DockTabBarProps) {
               <span
                 className={`truncate flex-1 min-w-0 ${agentInfoByPanel[panelId]?.state === 'running' ? 'cate-notif-pulse' : ''}`}
                 style={worktreeTitleStyle(worktreeColorByPanel[panelId], agentInfoByPanel[panelId]?.state === 'running')}
+                onDoubleClick={(e) => {
+                  // Double-click the title to inline-rename — same flow as the
+                  // right-click menu's "Rename". Stop propagation so it doesn't
+                  // bubble to the tab's drag/parent handlers.
+                  e.stopPropagation()
+                  beginRename(panelId, getPanelTitle(panelId))
+                }}
               >{getPanelTitle(panelId)}</span>
             )}
             {agentInfoByPanel[panelId]?.state === 'waitingForInput' && (
