@@ -3,7 +3,7 @@
 // electron-store v10 is ESM-only, so we use dynamic import()
 // =============================================================================
 
-import { ipcMain, app, BrowserWindow } from 'electron'
+import { ipcMain, app, BrowserWindow, nativeTheme } from 'electron'
 import log from './logger'
 import fs from 'fs/promises'
 import fsSync from 'fs'
@@ -134,6 +134,10 @@ export interface BootSnapshot {
   geometry?: { x: number; y: number; width: number; height: number }
   theme?: string
   backgroundColor?: string
+  // Desired native window appearance for the active theme. Drives
+  // nativeTheme.themeSource so the macOS native title bar (native-tabs mode)
+  // matches the theme's dark/light instead of the OS. 'system' tracks the OS.
+  appearance?: 'dark' | 'light' | 'system'
   nativeTabs?: boolean
   lastWorkspaceId?: string
 }
@@ -261,6 +265,16 @@ export function registerHandlers(): void {
         BrowserWindow.fromWebContents(event.sender)?.setBackgroundColor(partial.backgroundColor)
       } catch (err) {
         log.warn('Live window background update failed: %O', err)
+      }
+    }
+    // Drive the app-wide native appearance from the active theme so the macOS
+    // native title bar (native-tabs mode) follows the theme's dark/light. It's
+    // global (NSApplication.appearance), so one assignment covers every window.
+    if (partial.appearance === 'dark' || partial.appearance === 'light' || partial.appearance === 'system') {
+      try {
+        nativeTheme.themeSource = partial.appearance
+      } catch (err) {
+        log.warn('Native appearance update failed: %O', err)
       }
     }
   })

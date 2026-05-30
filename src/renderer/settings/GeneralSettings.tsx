@@ -25,7 +25,7 @@ export function GeneralSettings() {
               {NATIVE_TABS_BOOT && (
                 <p className="flex items-center gap-1 text-xs text-muted">
                   <InfoIcon size={12} />
-                  Title bar follows macOS appearance and ignores the app theme while tabs are enabled.
+                  Title bar matches your theme's dark/light, but macOS can't tint it the exact theme color while tabs are enabled.
                 </p>
               )}
               {nativeTabsPending && (
