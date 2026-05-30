@@ -5,8 +5,10 @@
 // its sign-in / API-key form inline beneath it (at most one open at a time).
 // When embedded in Settings the parent owns the surrounding chrome.
 //
-// Only pi's built-in providers are supported. Custom OpenAI-compatible
-// endpoints would belong in pi's models.json — out of scope here.
+// Built-in providers sign in / store an API key. A final "Custom OpenAI
+// endpoint" section lets the user point the agent at any OpenAI-compatible
+// server (Ollama, LM Studio, vLLM, a proxy); it is persisted to pi's
+// models.json via agentCustomModels* IPC.
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -30,6 +32,7 @@ import type {
   AgentModelRef,
   AuthProviderDescriptor,
   AuthProviderStatus,
+  CustomOpenAIProvider,
   OAuthFlowEvent,
 } from '../../shared/types'
 import { loadDefaultModel, saveDefaultModel } from './agentModelPrefs'
@@ -143,8 +146,182 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false, avai
               )
             })}
           </Section>
+          <Section label="Custom">
+            <CustomOpenAIRow
+              expanded={expandedKey === 'custom-openai'}
+              onToggle={() => toggle('custom-openai')}
+            />
+          </Section>
         </div>
       </div>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Custom OpenAI-compatible endpoint — one user-defined provider written to pi's
+// models.json. Connects the agent to Ollama, LM Studio, vLLM, a proxy, etc.
+// -----------------------------------------------------------------------------
+
+function CustomOpenAIRow({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const [cfg, setCfg] = useState<CustomOpenAIProvider | null>(null)
+
+  useEffect(() => {
+    window.electronAPI.agentCustomModelsGet()
+      .then((c) => setCfg(c))
+      .catch((err) => log.warn('[CustomOpenAIRow] load failed', err))
+  }, [])
+
+  const configured = !!cfg && !!cfg.baseUrl && cfg.models.length > 0
+  return (
+    <div className="border-b border-white/5 last:border-0">
+      <button
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-2 px-2.5 py-2 text-left hover:bg-white/[0.04]"
+      >
+        <span className="flex-1 truncate text-[12.5px] text-primary">Custom OpenAI endpoint</span>
+        {configured ? (
+          <span className="inline-flex items-center gap-1 text-[10px] text-agent-light/90">
+            <CheckCircle size={10} weight="fill" /> Configured
+          </span>
+        ) : (
+          <CircleDashed size={11} className="text-muted/60" />
+        )}
+        {expanded
+          ? <CaretDown size={10} className="text-muted/60" />
+          : <CaretRight size={10} className="text-muted/60" />}
+      </button>
+      {expanded && (
+        <div className="p-2.5 border-t border-white/5 bg-black/10">
+          <CustomOpenAIForm cfg={cfg} onSaved={setCfg} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CustomOpenAIForm({
+  cfg,
+  onSaved,
+}: {
+  cfg: CustomOpenAIProvider | null
+  onSaved: (cfg: CustomOpenAIProvider | null) => void
+}) {
+  const [baseUrl, setBaseUrl] = useState(cfg?.baseUrl ?? '')
+  const [apiKey, setApiKey] = useState(cfg?.apiKey ?? '')
+  const [models, setModels] = useState((cfg?.models ?? []).join(', '))
+  const [reveal, setReveal] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+
+  const handleSave = useCallback(async () => {
+    const url = baseUrl.trim()
+    const modelIds = models.split(',').map((m) => m.trim()).filter(Boolean)
+    if (!url) { setError('Base URL is required'); return }
+    if (modelIds.length === 0) { setError('Add at least one model id'); return }
+    setSaving(true); setError(null)
+    const next: CustomOpenAIProvider = { baseUrl: url, apiKey: apiKey.trim(), models: modelIds }
+    try {
+      await window.electronAPI.agentCustomModelsSave(next)
+      onSaved(next)
+      setSavedAt(Date.now())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }, [baseUrl, apiKey, models, onSaved])
+
+  const handleRemove = useCallback(async () => {
+    setSaving(true); setError(null)
+    try {
+      await window.electronAPI.agentCustomModelsSave(null)
+      onSaved(null)
+      setBaseUrl(''); setApiKey(''); setModels(''); setSavedAt(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }, [onSaved])
+
+  const configured = !!cfg && !!cfg.baseUrl && cfg.models.length > 0
+  return (
+    <div className="space-y-2">
+      <input
+        type="text"
+        value={baseUrl}
+        onChange={(e) => setBaseUrl(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="Base URL (e.g. http://localhost:11434/v1)"
+        className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono"
+      />
+      <div className="relative">
+        <input
+          type={reveal ? 'text' : 'password'}
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="API key (optional for local servers)"
+          className="w-full bg-surface-3 border border-white/10 rounded-md pl-2 pr-8 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono"
+        />
+        <button
+          type="button"
+          onClick={() => setReveal((r) => !r)}
+          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-muted hover:text-primary"
+          title={reveal ? 'Hide' : 'Show'}
+        >
+          {reveal ? <EyeSlash size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
+      <input
+        type="text"
+        value={models}
+        onChange={(e) => setModels(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="Model ids, comma-separated (e.g. llama3.1:8b)"
+        className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono"
+      />
+      <div className="text-[11px] text-muted leading-relaxed">
+        Any OpenAI-compatible server.
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          disabled={saving}
+          onClick={handleSave}
+          className="shrink-0 px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {configured && (
+          <button
+            disabled={saving}
+            onClick={handleRemove}
+            className="text-[11px] text-muted hover:text-rose-200"
+          >
+            Remove
+          </button>
+        )}
+      </div>
+
+      {error && <div className="text-[11px] text-rose-300">{error}</div>}
+      {savedAt && !error && (
+        <div className="flex items-center gap-1 text-[11px] text-agent-light">
+          <CheckCircle size={12} weight="fill" /> Saved.
+        </div>
+      )}
     </div>
   )
 }

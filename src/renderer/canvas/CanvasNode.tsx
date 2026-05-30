@@ -434,6 +434,8 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       if (wasDragged.current) return
+      // Hand tool (or Space-hold): clicks pan/move only — never select.
+      if (effectiveCanvasTool(useUIStore.getState()) === 'hand') return
       if (e.shiftKey) {
         canvasApi.getState().toggleNodeSelection(nodeId)
         return

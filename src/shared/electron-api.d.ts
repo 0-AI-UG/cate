@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult } from './types'
 
 export interface NativeContextMenuItem {
   id?: string
@@ -685,6 +685,12 @@ export interface ElectronAPI {
 
   /** Get token + cost + context-usage stats for the current session. */
   agentGetSessionStats(panelId: string): Promise<AgentSessionStats>
+
+  /** Read the user-defined custom OpenAI-compatible provider config. */
+  agentCustomModelsGet(): Promise<CustomOpenAIProvider | null>
+
+  /** Save (or clear, with null) the custom OpenAI-compatible provider config. */
+  agentCustomModelsSave(cfg: CustomOpenAIProvider | null): Promise<void>
 
   /** Get pi's RPC session state snapshot. */
   agentGetState(panelId: string): Promise<AgentRpcState>

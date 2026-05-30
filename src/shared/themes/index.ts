@@ -11,6 +11,13 @@ import { dracula } from './dracula'
 import { nord } from './nord'
 import { solarizedDark } from './solarizedDark'
 import { tokyoNight } from './tokyoNight'
+import { visualStudioLight } from './visualStudioLight'
+import { visualStudioDark } from './visualStudioDark'
+import { oneDarkPro } from './oneDarkPro'
+import { oneDarkProDarker } from './oneDarkProDarker'
+import { oneDarkProFlat } from './oneDarkProFlat'
+import { oneDarkProVivid } from './oneDarkProVivid'
+import { oneLight } from './oneLight'
 
 export { BASE_DARK, BASE_LIGHT } from './base'
 
@@ -23,6 +30,13 @@ export const BUILT_IN_THEMES: Theme[] = [
   nord,
   solarizedDark,
   tokyoNight,
+  visualStudioDark,
+  visualStudioLight,
+  oneDarkPro,
+  oneDarkProDarker,
+  oneDarkProFlat,
+  oneDarkProVivid,
+  oneLight,
 ]
 
 export const BUILT_IN_BY_ID: Record<string, Theme> = Object.fromEntries(

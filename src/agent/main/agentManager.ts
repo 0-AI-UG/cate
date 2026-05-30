@@ -41,6 +41,7 @@ import { AGENT_EVENT } from '../../shared/ipc-channels'
 import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
 import { agentDirFor, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace } from './agentDir'
+import { mirrorModelsToWorkspace } from './customModels'
 import type { AuthManager } from './authManager'
 
 function resolvePiCliPath(): string {
@@ -158,6 +159,17 @@ export class AgentManager {
     }
   }
 
+  /** Re-mirror the shared models.json into every open workspace, so the custom
+   *  OpenAI provider edited in cate's UI reaches live pi processes (picked up
+   *  on their next model-list fetch). */
+  syncCustomModelsToOpenSessions(): void {
+    for (const session of this.sessions.values()) {
+      void mirrorModelsToWorkspace(session.cwd).catch((err) => {
+        log.warn('[agentManager] models sync failed for %s: %O', session.panelId, err)
+      })
+    }
+  }
+
   private withLock<T>(panelId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.locks.get(panelId) ?? Promise.resolve()
     const next = prev.then(fn, fn)
@@ -176,6 +188,7 @@ export class AgentManager {
       // and drop pi's official subagent + plan-mode extensions in so they are
       // auto-discovered the first time pi spins up in this workspace.
       await prepareAgentDir(opts.cwd)
+      await mirrorModelsToWorkspace(opts.cwd)
       await installSubagentExtension(opts.cwd)
       await installPlanModeExtension(opts.cwd)
 
