@@ -290,12 +290,11 @@ function CustomOpenAIForm({
         onChange={(e) => setModels(e.target.value)}
         autoComplete="off"
         spellCheck={false}
-        placeholder="Model ids, comma-separated (e.g. llama3.1:8b, qwen2.5-coder:7b)"
+        placeholder="Model ids, comma-separated (e.g. llama3.1:8b)"
         className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono"
       />
       <div className="text-[11px] text-muted leading-relaxed">
-        Any OpenAI-compatible server. Models appear in the picker after the next
-        chat starts.
+        Any OpenAI-compatible server.
       </div>
 
       <div className="flex items-center gap-2">
