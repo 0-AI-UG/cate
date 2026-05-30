@@ -124,6 +124,16 @@ function collectPanelIdsFromDockLayout(
   for (const child of layout.children) collectPanelIdsFromDockLayout(child, out)
 }
 
+export interface PanelRenameProps {
+  /** Inline-edit value when this row is being renamed (null = not renaming). */
+  renameValue: string | null
+  onRenameChange: (value: string) => void
+  onRenameSubmit: () => void
+  onRenameCancel: () => void
+  onBeginRename: () => void
+  onContextMenu: (e: React.MouseEvent) => void
+}
+
 export interface TerminalPanelRowProps {
   panel: { id: string; type: PanelType; title?: string; filePath?: string; url?: string }
   indent: boolean
@@ -132,17 +142,19 @@ export interface TerminalPanelRowProps {
   hasPorts: boolean
   worktreeColor?: string
   onClick: (e: React.MouseEvent) => void
+  rename?: PanelRenameProps
 }
 
 const AWAIT_COLOR = '#c08a5a'
 
-export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts, worktreeColor, onClick }) => {
+export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts, worktreeColor, onClick, rename }) => {
   const Icon = PANEL_ICONS[panel.type] ?? TerminalIcon
   const label = panel.title || panel.filePath?.split('/').pop() || panel.url || panel.type
 
   const isRunning = agentState === 'running'
   const isAwaiting = agentState === 'waitingForInput'
   const agentLogo = panel.type === 'terminal' ? agentLogoProp : null
+  const isRenaming = rename?.renameValue != null
 
   return (
     <button
@@ -150,6 +162,7 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
         indent ? 'pl-10' : 'pl-7'
       } ${isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
       onClick={onClick}
+      onContextMenu={rename?.onContextMenu}
       title={panel.filePath || panel.url || label}
     >
       {agentLogo ? (
@@ -169,12 +182,17 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
           style={{ opacity: 0.6 }}
         />
       )}
-      <span
-        className={`truncate min-w-0 flex-1 ${isRunning ? 'cate-notif-pulse' : ''}`}
-        style={worktreeTitleStyle(worktreeColor, isRunning)}
-      >
-        {label}
-      </span>
+      {isRenaming ? (
+        <PanelRenameInput rename={rename!} />
+      ) : (
+        <span
+          className={`truncate min-w-0 flex-1 ${isRunning ? 'cate-notif-pulse' : ''}`}
+          style={worktreeTitleStyle(worktreeColor, isRunning)}
+          onDoubleClick={(e) => { e.stopPropagation(); rename?.onBeginRename() }}
+        >
+          {label}
+        </span>
+      )}
       {isAwaiting ? (
         <span className="cate-await-indicator flex-shrink-0" aria-label="awaiting input">
           <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
@@ -185,6 +203,25 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
     </button>
   )
 }
+
+// Inline edit input for a panel-row rename. Mirrors the workspace rename input
+// UX: Enter / blur commits, Escape cancels. Click is swallowed so it doesn't
+// trigger the row's focus-panel handler.
+const PanelRenameInput: React.FC<{ rename: PanelRenameProps }> = ({ rename }) => (
+  <input
+    ref={(el) => { if (el) { el.focus(); el.select() } }}
+    className="flex-1 min-w-0 text-[13px] bg-surface-3 border border-subtle rounded px-1 py-0 outline-none text-primary"
+    value={rename.renameValue ?? ''}
+    onChange={(e) => rename.onRenameChange(e.target.value)}
+    onBlur={rename.onRenameSubmit}
+    onKeyDown={(e) => {
+      if (e.key === 'Enter') rename.onRenameSubmit()
+      if (e.key === 'Escape') rename.onRenameCancel()
+    }}
+    onClick={(e) => e.stopPropagation()}
+    onDoubleClick={(e) => e.stopPropagation()}
+  />
+)
 
 const PANEL_ICONS: Record<PanelType, PhosphorIcon> = Object.fromEntries(
   (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].icon]),
@@ -275,6 +312,11 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const [isContextActive, setIsContextActive] = useState(false)
   const renameInputRef = useRef<HTMLInputElement>(null)
 
+  // Per-panel rename state (distinct from the workspace rename above). When set,
+  // the matching panel row renders an inline input in place of its label.
+  const [renamingPanelId, setRenamingPanelId] = useState<string | null>(null)
+  const [panelRenameValue, setPanelRenameValue] = useState('')
+
   const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     if (onBulkContextMenu) {
       const handled = await onBulkContextMenu(e)
@@ -360,6 +402,31 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     }
     setIsRenaming(false)
   }, [renameValue, workspace.id, workspace.name])
+
+  const beginPanelRename = useCallback((panelId: string, currentTitle: string) => {
+    setPanelRenameValue(currentTitle)
+    setRenamingPanelId(panelId)
+  }, [])
+
+  const handlePanelRenameSubmit = useCallback((panelId: string) => {
+    const trimmed = panelRenameValue.trim()
+    if (trimmed) {
+      useAppStore.getState().renamePanelByUser(workspace.id, panelId, trimmed)
+    }
+    setRenamingPanelId(null)
+  }, [panelRenameValue, workspace.id])
+
+  const handlePanelContextMenu = useCallback(async (e: React.MouseEvent, panelId: string, currentTitle: string) => {
+    // Stop the event from bubbling to the workspace-level handler — otherwise a
+    // right-click on a panel row would open the workspace context menu.
+    e.preventDefault()
+    e.stopPropagation()
+    if (!window.electronAPI) return
+    const id = await window.electronAPI.showContextMenu([
+      { id: 'rename', label: 'Rename' },
+    ])
+    if (id === 'rename') beginPanelRename(panelId, currentTitle)
+  }, [beginPanelRename])
 
   const panelCount = Object.keys(panels).length
 
@@ -464,6 +531,16 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }
 
   const renderPanelRow = (p: typeof panelList[number], indent = false) => {
+    const label = p.title || p.filePath?.split('/').pop() || p.url || p.type
+    const isRenaming = renamingPanelId === p.id
+    const rename: PanelRenameProps = {
+      renameValue: isRenaming ? panelRenameValue : null,
+      onRenameChange: setPanelRenameValue,
+      onRenameSubmit: () => handlePanelRenameSubmit(p.id),
+      onRenameCancel: () => setRenamingPanelId(null),
+      onBeginRename: () => beginPanelRename(p.id, label),
+      onContextMenu: (e) => handlePanelContextMenu(e, p.id, label),
+    }
     if (p.type === 'terminal' || p.type === 'agent') {
       const info = agentInfoByPanel[p.id]
       return (
@@ -476,11 +553,11 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
           worktreeColor={worktreeColorFor(p.id)}
           onClick={(e) => handlePanelClick(e, p.id)}
+          rename={rename}
         />
       )
     }
     const Icon = PANEL_ICONS[p.type] ?? SquaresFour
-    const label = p.title || p.filePath?.split('/').pop() || p.url || p.type
     const hasPorts = (portsByPanel[p.id]?.length ?? 0) > 0
     return (
       <button
@@ -489,10 +566,20 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           indent ? 'pl-10' : 'pl-7'
         }`}
         onClick={(e) => handlePanelClick(e, p.id)}
+        onContextMenu={rename.onContextMenu}
         title={p.filePath || p.url || label}
       >
         <Icon size={11} className="flex-shrink-0 opacity-60" />
-        <span className="truncate min-w-0 flex-1">{label}</span>
+        {isRenaming ? (
+          <PanelRenameInput rename={rename} />
+        ) : (
+          <span
+            className="truncate min-w-0 flex-1"
+            onDoubleClick={(e) => { e.stopPropagation(); rename.onBeginRename() }}
+          >
+            {label}
+          </span>
+        )}
         {hasPorts && (
           <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
         )}
