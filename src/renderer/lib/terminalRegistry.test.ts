@@ -19,16 +19,25 @@ const events: string[] = []
 beforeEach(() => { events.length = 0 })
 
 vi.mock('@xterm/xterm', () => {
+  // Faithful-enough fake: models the buffer viewportY/baseY scroll indices and
+  // a real `.xterm-viewport` DOM child (so the registry's scroll listener and
+  // line-index save/restore both exercise real code paths). scrollToLine /
+  // scrollToBottom mutate viewportY the way xterm does.
   class FakeTerminal {
     public writes: string[] = []
     public options: { theme?: unknown } = {}
-    public buffer = { active: { baseY: 0, cursorY: 0, getLine: () => undefined } }
+    public buffer = { active: { baseY: 0, cursorY: 0, viewportY: 0, getLine: () => undefined } }
     public element: HTMLElement | undefined
     public cols = 80
     public rows = 24
     loadAddon(): void { /* no-op */ }
     open(container: HTMLElement): void {
       this.element = document.createElement('div')
+      // Real xterm renders a `.xterm-viewport` scrollable child; the registry
+      // reads/writes its scrollTop and queries it on attach/detach.
+      const viewport = document.createElement('div')
+      viewport.className = 'xterm-viewport'
+      this.element.appendChild(viewport)
       container.appendChild(this.element)
       events.push('open')
     }
@@ -43,7 +52,11 @@ vi.mock('@xterm/xterm', () => {
     attachCustomKeyEventHandler(): void { /* no-op */ }
     registerLinkProvider(): { dispose: () => void } { return { dispose: () => {} } }
     refresh(): void { /* no-op */ }
-    scrollToBottom(): void { /* no-op */ }
+    focus(): void { /* no-op */ }
+    scrollToLine(line: number): void {
+      this.buffer.active.viewportY = Math.max(0, Math.min(line, this.buffer.active.baseY))
+    }
+    scrollToBottom(): void { this.buffer.active.viewportY = this.buffer.active.baseY }
     resize(c: number, r: number): void { this.cols = c; this.rows = r }
     dispose(): void { /* no-op */ }
   }
@@ -367,5 +380,113 @@ describe('reconnectTerminal defers scrollback + ack until attach()', () => {
 
     document.body.removeChild(container)
     terminalRegistry.dispose('panel-detach')
+  })
+})
+
+// Regression: switching dock terminal tabs via the tab bar resets the
+// re-opened terminal's scroll to the very TOP.
+//
+// Root cause: DockTabStack only renders the active tab, so switching tabs
+// UNMOUNTS the outgoing TerminalPanel and MOUNTS the incoming one. Mount calls
+// terminalRegistry.attach(), which re-parents the SAME xterm DOM element into
+// the new container via appendChild — and the browser zeroes a scrollable
+// element's scrollTop when it is re-inserted into the DOM. attach()'s
+// fitAndScroll() then measures "was at bottom" from the freshly-zeroed
+// viewport (so it reads false for a scrolled-up terminal) and skips
+// scrollToBottom, leaving the viewport pinned at the top. The focus-based
+// restoreScroll() never compensates because dock panels are never the canvas
+// "focused node" (nodeId === panelId, which canvasStore.focusedNodeId never
+// equals).
+//
+// Contract: detach() must SAVE the buffer viewport line index (robust to the
+// scrollTop reset), and attach() must RESTORE it after fit settles — through
+// the attach/detach path that every tab switch exercises, not only canvas
+// focus.
+describe('scroll position survives a hide/show (dock tab switch) cycle', () => {
+  // xterm's real typings declare viewportY/baseY as readonly; the fake models
+  // them as mutable so tests can drive scroll state. Cast through the buffer
+  // shape to write them without fighting the readonly types.
+  function setBuffer(
+    terminal: { buffer: { active: { baseY: number; viewportY: number } } },
+    baseY: number,
+    viewportY: number,
+  ): void {
+    const active = terminal.buffer.active as { baseY: number; viewportY: number }
+    active.baseY = baseY
+    active.viewportY = viewportY
+  }
+
+  async function mountAndAttach(panelId: string) {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    await terminalRegistry.getOrCreate(panelId, { workspaceId: 'ws-1' })
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'offsetWidth', { value: 800, configurable: true })
+    Object.defineProperty(container, 'offsetHeight', { value: 600, configurable: true })
+    document.body.appendChild(container)
+    terminalRegistry.attach(panelId, container)
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    return { terminalRegistry, container }
+  }
+
+  it('restores a scrolled-up viewport line after detach + re-attach', async () => {
+    const { terminalRegistry, container } = await mountAndAttach('panel-scroll')
+    const entry = terminalRegistry.getEntry('panel-scroll')!
+
+    // Terminal has scrollback (baseY > 0) and the user scrolled UP to line 30
+    // (not at bottom).
+    setBuffer(entry.terminal, 100, 30)
+
+    // Tab switches AWAY: TerminalPanel unmounts → detach(). This must capture
+    // the line index BEFORE the element leaves its container.
+    terminalRegistry.detach('panel-scroll', container)
+
+    // Simulate the browser zeroing scrollTop and the buffer viewport on the
+    // detached element (what really happens on re-insertion / a fresh frame).
+    setBuffer(entry.terminal, 100, 0)
+
+    // Tab switches BACK: TerminalPanel re-mounts → attach() into a new
+    // container. After fit settles, the saved line must be restored.
+    const container2 = document.createElement('div')
+    Object.defineProperty(container2, 'offsetWidth', { value: 800, configurable: true })
+    Object.defineProperty(container2, 'offsetHeight', { value: 600, configurable: true })
+    document.body.appendChild(container2)
+    terminalRegistry.attach('panel-scroll', container2)
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+    expect(entry.terminal.buffer.active.viewportY).toBe(30)
+
+    document.body.removeChild(container)
+    document.body.removeChild(container2)
+    terminalRegistry.dispose('panel-scroll')
+  })
+
+  it('keeps a bottom-pinned terminal stuck to the bottom across a hide/show cycle', async () => {
+    const { terminalRegistry, container } = await mountAndAttach('panel-bottom')
+    const entry = terminalRegistry.getEntry('panel-bottom')!
+
+    // Following output: viewportY === baseY (at bottom).
+    setBuffer(entry.terminal, 100, 100)
+
+    terminalRegistry.detach('panel-bottom', container)
+
+    // More output arrives while hidden — baseY grows; an at-bottom terminal
+    // should snap to the NEW bottom on re-show, not to the old line index.
+    setBuffer(entry.terminal, 140, 0)
+
+    const container2 = document.createElement('div')
+    Object.defineProperty(container2, 'offsetWidth', { value: 800, configurable: true })
+    Object.defineProperty(container2, 'offsetHeight', { value: 600, configurable: true })
+    document.body.appendChild(container2)
+    terminalRegistry.attach('panel-bottom', container2)
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+    expect(entry.terminal.buffer.active.viewportY).toBe(140)
+
+    document.body.removeChild(container)
+    document.body.removeChild(container2)
+    terminalRegistry.dispose('panel-bottom')
   })
 })

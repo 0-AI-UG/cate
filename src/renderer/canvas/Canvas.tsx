@@ -46,6 +46,45 @@ function injectCanvasInteractingStyle(): void {
       pointer-events: none !important;
       cursor: grab !important;
     }
+    /* Hand tool active: the whole node is inert. Only the grab cursor shows
+       (no resize/"scale", text, or button cursors), and every left-press falls
+       through to the node container -> canvas pan handler. Panel content, chrome
+       buttons, and resize strips stop intercepting events, so nothing is
+       clickable in this mode. */
+    .canvas-tool-hand [data-node-id],
+    .canvas-tool-hand [data-node-id] *,
+    .canvas-tool-hand [data-resize-frame-for],
+    .canvas-tool-hand [data-resize-frame-for] * {
+      cursor: grab !important;
+    }
+    .canvas-tool-hand [data-node-id] [data-panel-content],
+    .canvas-tool-hand [data-grab-button],
+    .canvas-tool-hand [data-resize-overlay] {
+      pointer-events: none !important;
+    }
+    /* Regions get the same treatment: grab cursor only, and the label + resize
+       brackets stop intercepting so a press on a region pans the canvas. The
+       region body itself keeps pointer-events so its bail-to-pan handler runs. */
+    .canvas-tool-hand [data-region-id],
+    .canvas-tool-hand [data-region-id] *,
+    .canvas-tool-hand [data-region-resize-handle] {
+      cursor: grab !important;
+    }
+    .canvas-tool-hand [data-region-id] *,
+    .canvas-tool-hand [data-region-resize-handle] {
+      pointer-events: none !important;
+    }
+    /* During an active hand-pan, show the closed-hand (grabbing) cursor over
+       nodes too, matching the canvas background. */
+    .canvas-interacting.canvas-tool-hand [data-node-id],
+    .canvas-interacting.canvas-tool-hand [data-node-id] *,
+    .canvas-interacting.canvas-tool-hand [data-resize-frame-for],
+    .canvas-interacting.canvas-tool-hand [data-resize-frame-for] *,
+    .canvas-interacting.canvas-tool-hand [data-region-id],
+    .canvas-interacting.canvas-tool-hand [data-region-id] *,
+    .canvas-interacting.canvas-tool-hand [data-region-resize-handle] {
+      cursor: grabbing !important;
+    }
   `
   document.head.appendChild(style)
 }

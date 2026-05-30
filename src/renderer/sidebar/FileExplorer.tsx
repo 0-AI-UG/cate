@@ -8,6 +8,7 @@ import log from '../lib/logger'
 import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X, Folder, File } from '@phosphor-icons/react'
 import type { FileTreeNode as FileTreeNodeType, FileSearchResult } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
+import { buildGitTreeDecorations, folderColorClass, lookupNodeDecoration, toPosixPath, type GitTree } from './gitStatusDecoration'
 import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
@@ -50,7 +51,7 @@ interface FileExplorerProps {
 export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [gitFiles, setGitFiles] = useState<Set<string> | undefined>(undefined)
+  const [gitTree, setGitTree] = useState<GitTree | undefined>(undefined)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
   const [rootCreateValue, setRootCreateValue] = useState('')
@@ -64,6 +65,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const rootCreateInputRef = useRef<HTMLInputElement>(null)
   const lastSelectedPath = useRef<string | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rootPathRef = useRef(rootPath)
   const createSeqRef = useRef(0)
 
@@ -107,20 +109,32 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     try {
       const entries = await window.electronAPI.fsReadDir(dirPath)
 
-      // Check git status
+      // Check git status. We fetch both the tracked-file list and the porcelain
+      // status: the status drives per-file decorations (modified/added/deleted/
+      // untracked) + folder tinting, while the tracked set lets us tell an
+      // untracked-new file (decorated green) from a git-ignored one (dimmed).
       const isGit = await window.electronAPI.gitIsRepo(dirPath)
       if (isGit) {
-        const trackedFiles = await window.electronAPI.gitLsFiles(dirPath)
-        // gitLsFiles returns paths relative to repo root; convert to absolute
-        // so they match node.path in the tree.
-        setGitFiles(new Set(trackedFiles.map((p) => `${dirPath}/${p}`)))
+        const [trackedFiles, status] = await Promise.all([
+          window.electronAPI.gitLsFiles(dirPath),
+          window.electronAPI.gitStatus(dirPath),
+        ])
+        // Both gitLsFiles and gitStatus return paths relative to the repo cwd;
+        // convert to absolute (posix) so lookups match node.path cross-platform.
+        const root = toPosixPath(dirPath)
+        setGitTree({
+          tracked: new Set(trackedFiles.map((p) => `${root}/${p}`)),
+          decorations: buildGitTreeDecorations(status.files, dirPath),
+        })
       } else {
-        setGitFiles(undefined)
+        setGitTree(undefined)
       }
 
       setNodes(entries)
-    } catch {
+    } catch (err) {
+      log.warn('[file-explorer] Load tree failed:', err)
       setNodes([])
+      setGitTree(undefined)
     } finally {
       setIsLoading(false)
     }
@@ -147,13 +161,18 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     // Start watcher
     window.electronAPI.fsWatchStart(rootPath).catch((err) => log.warn('[file-explorer] Watch start failed:', err))
 
-    // Listen for events
-    const unsubscribe = window.electronAPI.onFsWatchEvent(() => {
-      // Debounced reload — just reload the whole tree for simplicity
-      if (rootPathRef.current === rootPath) {
-        loadTree(rootPath)
-      }
-    })
+    // Listen for events. Coalesce bursts (e.g. a build writing many files) with
+    // a short trailing debounce so we don't re-read the tree + re-run git status
+    // on every individual fs event.
+    const scheduleReload = () => {
+      if (rootPathRef.current !== rootPath) return
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = setTimeout(() => {
+        reloadTimerRef.current = null
+        if (rootPathRef.current === rootPath) loadTree(rootPath)
+      }, 150)
+    }
+    const unsubscribe = window.electronAPI.onFsWatchEvent(scheduleReload)
 
     // Reload when the exclusions list changes so hidden/shown folders update
     // without a relaunch.
@@ -164,6 +183,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     })
 
     cleanupRef.current = () => {
+      if (reloadTimerRef.current) {
+        clearTimeout(reloadTimerRef.current)
+        reloadTimerRef.current = null
+      }
       unsubscribe()
       unsubscribeSettings()
       window.electronAPI?.fsWatchStop(rootPath).catch((err) => log.warn('[file-explorer] Watch stop failed:', err))
@@ -477,6 +500,12 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
                 ? r.relativePath.substring(0, r.relativePath.lastIndexOf('/'))
                 : ''
               const isSel = selectedPaths.has(r.path)
+              const { decoration, folderKind } = lookupNodeDecoration(gitTree, r.path, r.isDirectory)
+              const nameColor = decoration
+                ? decoration.colorClass
+                : folderKind
+                  ? folderColorClass(folderKind)
+                  : 'text-primary'
               return (
                 <div
                   key={r.path}
@@ -492,7 +521,15 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
                     <span className="flex-shrink-0" style={{ color: r.isDirectory ? '#E2B855' : '#9CA3AF' }}>
                       {r.isDirectory ? <Folder size={13} /> : <File size={13} />}
                     </span>
-                    <span className="truncate text-primary">{r.name}</span>
+                    <span className={`truncate ${nameColor} ${decoration?.strike ? 'line-through' : ''}`}>{r.name}</span>
+                    {decoration && (
+                      <span
+                        className={`flex-shrink-0 w-4 text-center font-mono text-[10px] ${decoration.colorClass}`}
+                        title={`Git: ${decoration.title}`}
+                      >
+                        {decoration.letter}
+                      </span>
+                    )}
                     {parentRel && <span className="truncate text-muted text-[10px]">{parentRel}</span>}
                   </div>
                   {r.contentPreview && (
@@ -556,7 +593,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               key={node.path}
               node={node}
               depth={0}
-              gitFiles={gitFiles}
+              git={gitTree}
               selectedPaths={selectedPaths}
               onSelect={handleSelect}
               onFileOpen={handleFileOpen}

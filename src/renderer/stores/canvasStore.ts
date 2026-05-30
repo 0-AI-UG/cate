@@ -27,6 +27,7 @@ import {
 } from '../canvas/layoutEngine'
 import { viewToCanvas as viewToCanvasCoords } from '../lib/coordinates'
 import { REGION_FILL_COLORS } from '../../shared/colors'
+import { perfCount } from '../lib/perf/perfClient'
 
 // -----------------------------------------------------------------------------
 // Store interface
@@ -1502,16 +1503,34 @@ export function useNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>): string
  * This is the primary lever for reducing memory/CPU when many terminals or
  * editors are open on a canvas — off-screen nodes don't mount at all.
  */
+// z-order-sorted node list, cached by the `nodes` object identity. The cull
+// selector below runs on EVERY store update — including every pan/zoom frame,
+// where only viewportOffset/zoomLevel changed and `nodes` is the same object.
+// Without this cache that path re-allocated Object.values() and re-sorted the
+// whole node set 60×/s during a drag. zustand replaces `nodes` immutably on any
+// real node change, so identity equality is a safe cache key; a WeakMap also
+// keeps it correct across multiple per-panel canvas stores (and never leaks).
+const sortedNodeCache = new WeakMap<object, CanvasNodeState[]>()
+function sortedNodesByZOrder(nodes: Record<CanvasNodeId, CanvasNodeState>): CanvasNodeState[] {
+  const cached = sortedNodeCache.get(nodes)
+  if (cached) return cached
+  perfCount('canvasCullSort')
+  const sorted = Object.values(nodes).sort((a, b) => a.zOrder - b.zOrder)
+  sortedNodeCache.set(nodes, sorted)
+  return sorted
+}
+
 export function useVisibleNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>): string[] {
   return useStoreWithEqualityFn(
     store ?? useCanvasStore,
     (s) => {
+      perfCount('canvasCullEval')
       const { nodes, viewportOffset, zoomLevel, containerSize, focusedNodeId } = s
       const z = zoomLevel
       const cw = containerSize.width
       const ch = containerSize.height
 
-      const sorted = Object.values(nodes).sort((a, b) => a.zOrder - b.zOrder)
+      const sorted = sortedNodesByZOrder(nodes)
 
       // Before the container size is known, render everything — prevents an
       // initial flash where no nodes appear while the ResizeObserver settles.

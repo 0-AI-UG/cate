@@ -10,6 +10,7 @@ import log from '../logger'
 import fs from 'fs/promises'
 import path from 'path'
 import { validateCwd, addAllowedRoot, removeAllowedRoot } from './pathValidation'
+import { getShellEnv } from '../shellEnv'
 import {
   GIT_IS_REPO,
   GIT_INIT,
@@ -96,7 +97,7 @@ const execFileP = promisify(execFile)
 /** Whether the GitHub CLI is installed and runnable from `cwd`. */
 async function ghAvailable(cwd: string): Promise<boolean> {
   try {
-    await execFileP('gh', ['--version'], { cwd, timeout: 5000 })
+    await execFileP('gh', ['--version'], { cwd, timeout: 5000, env: getShellEnv() })
     return true
   } catch {
     return false
@@ -492,6 +493,7 @@ export function registerHandlers(): void {
         await execFileP('gh', ['pr', 'checkout', String(prNumber)], {
           cwd: targetPath,
           timeout: 120000,
+          env: getShellEnv(),
         })
       } catch (error) {
         // Roll back the half-created worktree so we never leave an orphan.
@@ -634,6 +636,7 @@ export function registerHandlers(): void {
         const { stdout } = await execFileP('gh', ['pr', 'create', '--fill', '--head', branch], {
           cwd,
           timeout: 60000,
+          env: getShellEnv(),
         })
         const url = stdout.trim().split('\n').filter(Boolean).pop() ?? ''
         return { ok: true, created: true, url }
@@ -643,7 +646,7 @@ export function registerHandlers(): void {
           const { stdout } = await execFileP(
             'gh',
             ['pr', 'view', branch, '--json', 'url', '--jq', '.url'],
-            { cwd, timeout: 10000 },
+            { cwd, timeout: 10000, env: getShellEnv() },
           )
           const url = stdout.trim()
           if (url) return { ok: true, created: false, url }
@@ -666,7 +669,7 @@ export function registerHandlers(): void {
       const { stdout } = await execFileP(
         'gh',
         ['pr', 'view', branch, '--json', 'number,state,url,isDraft'],
-        { cwd, timeout: 10000 },
+        { cwd, timeout: 10000, env: getShellEnv() },
       )
       const data = JSON.parse(stdout) as {
         number: number
@@ -690,7 +693,7 @@ export function registerHandlers(): void {
       const { stdout } = await execFileP(
         'gh',
         ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,headRefName,author,isCrossRepository'],
-        { cwd, timeout: 15000 },
+        { cwd, timeout: 15000, env: getShellEnv() },
       )
       const arr = JSON.parse(stdout) as Array<{
         number: number

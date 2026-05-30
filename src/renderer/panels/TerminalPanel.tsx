@@ -582,6 +582,10 @@ export default function TerminalPanel({
       e.dataTransfer.types.includes('application/cate-file') ||
       e.dataTransfer.types.includes('Files')
     ) {
+      // Stop here so the app-root background handler doesn't override the drop
+      // effect to 'none' (which would suppress the drop event entirely and stop
+      // file paths from being inserted into the terminal).
+      e.stopPropagation()
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
       setIsDragOver(true)
