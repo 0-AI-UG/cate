@@ -18,6 +18,8 @@ import { oneDarkProDarker } from './oneDarkProDarker'
 import { oneDarkProFlat } from './oneDarkProFlat'
 import { oneDarkProVivid } from './oneDarkProVivid'
 import { oneLight } from './oneLight'
+import { clayLight } from './clayLight'
+import { clayDark } from './clayDark'
 
 export { BASE_DARK, BASE_LIGHT } from './base'
 
@@ -37,6 +39,8 @@ export const BUILT_IN_THEMES: Theme[] = [
   oneDarkProFlat,
   oneDarkProVivid,
   oneLight,
+  clayLight,
+  clayDark,
 ]
 
 export const BUILT_IN_BY_ID: Record<string, Theme> = Object.fromEntries(
