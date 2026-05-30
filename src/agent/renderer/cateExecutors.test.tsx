@@ -4,6 +4,13 @@ import { createCanvasStore } from '../../renderer/stores/canvasStore'
 import { openFileAsPanel } from '../../renderer/lib/fileRouting'
 import type { CateControlContext } from './cateControl'
 
+// The cateExecutors -> cateControl -> agentStore/settingsStore chain pulls in
+// electron-log via lib/logger, whose import-time side effects hang under jsdom.
+// Mirror the drag-harness mock so the module graph loads cleanly.
+vi.mock('../../renderer/lib/logger', () => ({
+  default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), log: vi.fn() },
+}))
+
 // execOpenPanel routes file opens through openFileAsPanel (not createEditor directly).
 vi.mock('../../renderer/lib/fileRouting', () => ({
   openFileAsPanel: vi.fn(() => 'panel-ed'),
@@ -94,5 +101,80 @@ describe('execGetLayout', () => {
     const self = panels.find((p) => p.panelId === 'host')
     expect(self.isSelf).toBe(true)
     expect((res.result as any).viewport).toBeDefined()
+  })
+})
+
+import { execFocusPanel, execResizePanel, execArrange, execZoom } from './cateExecutors'
+import { execRunInTerminal, execOpenUrl, execRevealInEditor, execPanTo } from './cateExecutors'
+
+vi.mock('../../renderer/lib/terminalRegistry', () => ({
+  terminalRegistry: { getEntry: vi.fn(() => ({ ptyId: 'pty-1' })) },
+}))
+
+describe('management executors', () => {
+  it('focus errors on unknown panel', async () => {
+    const res = await execFocusPanel({ panelId: 'nope' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(false)
+  })
+
+  it('focuses a known node', async () => {
+    const store = createCanvasStore()
+    store.getState().addNode('panel-ed', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    const res = await execFocusPanel({ panelId: 'panel-ed' }, ctxWith(store), 'k1')
+    expect(res.ok).toBe(true)
+    expect(store.getState().focusedNodeId).toBe(store.getState().nodeForPanel('panel-ed'))
+  })
+
+  it('resize applies a preset size', async () => {
+    const store = createCanvasStore()
+    store.getState().addNode('panel-ed', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    const res = await execResizePanel({ panelId: 'panel-ed', preset: 'large' }, ctxWith(store), 'k1')
+    expect(res.ok).toBe(true)
+    const node = store.getState().nodeForPanel('panel-ed')!
+    expect(store.getState().nodes[node].size.width).toBeGreaterThan(100)
+  })
+
+  it('zoom fit calls zoomToFit', async () => {
+    const store = createCanvasStore()
+    const spy = vi.spyOn(store.getState(), 'zoomToFit')
+    const res = await execZoom({ level: 'fit' }, ctxWith(store), 'k1')
+    expect(res.ok).toBe(true)
+    expect(spy).toHaveBeenCalled()
+  })
+})
+
+describe('content executors', () => {
+  it('run_in_terminal writes the command to the PTY (newPanel)', async () => {
+    ;(window.electronAPI as any).terminalWrite = vi.fn()
+    const res = await execRunInTerminal({ command: 'ls', newPanel: true }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect((window.electronAPI as any).terminalWrite).toHaveBeenCalledWith('pty-1', 'ls\r')
+  })
+
+  it('run_in_terminal rejects an empty command', async () => {
+    const res = await execRunInTerminal({ command: '   ' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(false)
+  })
+
+  it('open_url creates a browser panel when no panelId given', async () => {
+    const res = await execOpenUrl({ url: 'https://example.com' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect((res.result as any).panelId).toBe('panel-br')
+  })
+
+  it('open_url rejects a non-url', async () => {
+    const res = await execOpenUrl({ url: 'not a url' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(false)
+  })
+
+  it('reveal_in_editor routes through openFileAsPanel', async () => {
+    const res = await execRevealInEditor({ path: 'a.ts', line: 10 }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect(openFileAsPanel).toHaveBeenCalledWith('w1', 'a.ts')
+  })
+
+  it('pan_to errors on an unknown panel', async () => {
+    const res = await execPanTo({ panelId: 'nope' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(false)
   })
 })

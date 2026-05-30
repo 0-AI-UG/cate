@@ -128,3 +128,156 @@ export const execClosePanel: CateExecutor = async (params, ctx) => {
   app.closePanel(ctx.workspaceId, panelId)
   return ok({ closed: panelId })
 }
+
+import { computeArrange } from '../../renderer/lib/cateControlLayout'
+import { terminalRegistry } from '../../renderer/lib/terminalRegistry'
+import { setCateExecutors } from './cateControl'
+
+const SIZE_PRESETS: Record<string, { width: number; height: number }> = {
+  small: { width: 400, height: 300 },
+  medium: { width: 640, height: 480 },
+  large: { width: 960, height: 720 },
+}
+
+function requireNode(ctx: CateControlContext, panelId: string): string | null {
+  return ctx.canvasStore.getState().nodeForPanel(panelId)
+}
+
+export const execFocusPanel: CateExecutor = async (params, ctx) => {
+  const panelId = String(params.panelId ?? '')
+  const node = requireNode(ctx, panelId)
+  if (!node) return fail(`Panel not found on canvas: ${panelId}`)
+  ctx.canvasStore.getState().focusAndCenter(node)
+  return ok({ focused: panelId })
+}
+
+export const execMovePanel: CateExecutor = async (params, ctx) => {
+  const panelId = String(params.panelId ?? '')
+  if (panelId === ctx.hostPanelId && !params.placement) return fail('Refusing to move the host agent panel without an explicit placement.')
+  const node = requireNode(ctx, panelId)
+  if (!node) return fail(`Panel not found on canvas: ${panelId}`)
+  const { occupied, viewportCenter, nodesByPanel } = readCanvasGeometry(ctx)
+  const st = ctx.canvasStore.getState()
+  const size = st.nodes[node].size
+  const placement = (params.placement ?? {}) as Record<string, unknown>
+  const relPanelId = placement.relativeTo === 'self' ? ctx.hostPanelId : (typeof placement.relativeTo === 'string' ? placement.relativeTo : undefined)
+  const relativeTo = relPanelId ? nodesByPanel.get(relPanelId)?.rect : undefined
+  // Exclude the node being moved from its own obstacle set (by identity, not index).
+  const selfRect = nodesByPanel.get(panelId)?.rect
+  const obstacles = selfRect ? occupied.filter((r) => r !== selfRect) : occupied
+  const rect = computePlacement({ size, relativeTo, position: placement.position as any, occupied: obstacles, viewportCenter })
+  st.moveNode(node, { x: rect.x, y: rect.y })
+  return ok({ panelId, x: rect.x, y: rect.y })
+}
+
+export const execResizePanel: CateExecutor = async (params, ctx) => {
+  const panelId = String(params.panelId ?? '')
+  const node = requireNode(ctx, panelId)
+  if (!node) return fail(`Panel not found on canvas: ${panelId}`)
+  let size: { width: number; height: number } | undefined
+  if (typeof params.preset === 'string') size = SIZE_PRESETS[params.preset]
+  else if (params.size && typeof params.size === 'object') {
+    const s = params.size as Record<string, unknown>
+    if (typeof s.width === 'number' && typeof s.height === 'number') size = { width: s.width, height: s.height }
+  }
+  if (!size) return fail('resize requires a valid `preset` (small|medium|large) or `size` {width,height}.')
+  ctx.canvasStore.getState().resizeNode(node, size)
+  return ok({ panelId, ...size })
+}
+
+export const execArrange: CateExecutor = async (params, ctx) => {
+  const layout = String(params.layout ?? 'tile') as 'tile' | 'grid' | 'cascade' | 'focus-one'
+  const st = ctx.canvasStore.getState()
+  const all = Object.values(st.nodes).filter((n: any) => n.panelId !== ctx.hostPanelId) // self-protection
+  const requested = Array.isArray(params.panelIds) ? (params.panelIds as string[]) : null
+  const targets = requested
+    ? all.filter((n: any) => requested.includes(n.panelId))
+    : all
+  if (!targets.length) return ok({ arranged: 0 })
+  // Frame: union viewport of current nodes (canvas-space).
+  const minX = Math.min(...targets.map((n: any) => n.origin.x))
+  const minY = Math.min(...targets.map((n: any) => n.origin.y))
+  const viewport: Rect = { x: minX, y: minY, width: 1200, height: 900 }
+  const rects = computeArrange(layout, targets.length, viewport)
+  targets.forEach((n: any, i) => {
+    st.moveNode(n.id, { x: rects[i].x, y: rects[i].y })
+    st.resizeNode(n.id, { width: rects[i].width, height: rects[i].height })
+  })
+  return ok({ arranged: targets.length, layout })
+}
+
+export const execRunInTerminal: CateExecutor = async (params, ctx) => {
+  const command = String(params.command ?? '')
+  if (!command.trim()) return fail('run_in_terminal requires a non-empty command.')
+  const app = useAppStore.getState()
+  let panelId = typeof params.panelId === 'string' ? params.panelId : ''
+  if (!panelId || params.newPanel) {
+    panelId = app.createTerminal(ctx.workspaceId)
+  }
+  // Send the command to the PTY. The terminal may need a tick to register.
+  const send = () => {
+    const entry = terminalRegistry.getEntry(panelId)
+    if (entry?.ptyId) { window.electronAPI.terminalWrite(entry.ptyId, command + '\r'); return true }
+    return false
+  }
+  if (!send()) {
+    await new Promise((r) => setTimeout(r, 250))
+    if (!send()) return fail(`Terminal ${panelId} is not ready to receive input.`)
+  }
+  return ok({ panelId, command })
+}
+
+export const execOpenUrl: CateExecutor = async (params, ctx) => {
+  const url = String(params.url ?? '')
+  if (!/^(https?|file):\/\//i.test(url)) return fail('open_url requires an http(s) or file URL.')
+  const app = useAppStore.getState()
+  let panelId = typeof params.panelId === 'string' ? params.panelId : ''
+  if (!panelId) { panelId = app.createBrowser(ctx.workspaceId, url); return ok({ panelId, url }) }
+  app.updatePanelUrl(ctx.workspaceId, panelId, url)
+  return ok({ panelId, url })
+}
+
+export const execRevealInEditor: CateExecutor = async (params, ctx) => {
+  const path = String(params.path ?? '')
+  if (!path) return fail('reveal_in_editor requires a path.')
+  const panelId = openFileAsPanel(ctx.workspaceId, path)
+  if (typeof params.line === 'number') {
+    setPendingReveal(panelId, { line: params.line as number, column: typeof params.column === 'number' ? (params.column as number) : undefined })
+  }
+  const node = ctx.canvasStore.getState().nodeForPanel(panelId)
+  if (node) ctx.canvasStore.getState().focusAndCenter(node)
+  return ok({ panelId, path })
+}
+
+export const execPanTo: CateExecutor = async (params, ctx) => {
+  const panelId = String(params.panelId ?? '')
+  const node = requireNode(ctx, panelId)
+  if (!node) return fail(`Panel not found on canvas: ${panelId}`)
+  ctx.canvasStore.getState().focusAndCenter(node)
+  return ok({ panelId })
+}
+
+export const execZoom: CateExecutor = async (params, ctx) => {
+  const st = ctx.canvasStore.getState()
+  if (params.level === 'fit') { st.zoomToFit(); return ok({ zoom: 'fit' }) }
+  const level = Number(params.level)
+  if (!Number.isFinite(level)) return fail('zoom requires a numeric level or "fit".')
+  st.setZoom(level)
+  return ok({ zoom: level })
+}
+
+// Register everything with the dispatcher.
+setCateExecutors({
+  get_layout: execGetLayout,
+  open_panel: execOpenPanel,
+  close_panel: execClosePanel,
+  focus_panel: execFocusPanel,
+  move_panel: execMovePanel,
+  resize_panel: execResizePanel,
+  arrange: execArrange,
+  run_in_terminal: execRunInTerminal,
+  open_url: execOpenUrl,
+  reveal_in_editor: execRevealInEditor,
+  pan_to: execPanTo,
+  zoom: execZoom,
+})
