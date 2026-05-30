@@ -67,6 +67,12 @@ function getCursorBlink(): boolean {
   return useSettingsStore.getState().terminalCursorBlink === true
 }
 
+/** Read whether ⌥ Option acts as Meta in the terminal (xterm macOptionIsMeta).
+ *  Defaults to true (preserve historical behavior) when unset. */
+function getOptionIsMeta(): boolean {
+  return useSettingsStore.getState().terminalOptionIsMeta !== false
+}
+
 // Track OS-window focus so we can pause cursor blinking while this window is
 // not frontmost. A blinking cursor forces a GPU draw + WindowServer composite
 // on every blink; xterm keeps blinking the focused terminal even when the app
@@ -243,6 +249,17 @@ function applyScrollSensitivityToAll(value: number): void {
   }
 }
 
+/** Apply the ⌥ Option-as-Meta setting (xterm `macOptionIsMeta`) to every live terminal. */
+function applyOptionIsMetaToAll(value: boolean): void {
+  for (const entry of registry.values()) {
+    try {
+      entry.terminal.options.macOptionIsMeta = value
+    } catch {
+      /* terminal mid-dispose — ignore */
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -257,6 +274,15 @@ export interface RegistryEntry {
   cleanupListeners: Array<() => void>
   /** Last known viewport scrollTop — continuously tracked for scroll restore on focus. */
   lastScrollTop: number
+  /**
+   * Saved buffer scroll position captured when the panel is hidden/detached, so
+   * it can be restored after the xterm DOM element is re-parented (and the
+   * browser zeroes its scrollTop) on the next attach(). Uses the buffer LINE
+   * index (viewportY) rather than pixel scrollTop because scrollTop is reset by
+   * the reparent and stale after fit() changes the row count. `atBottom` lets a
+   * follow-output terminal snap to the freshest line instead of an old index.
+   */
+  savedViewport?: { line: number; atBottom: boolean }
   /** True once a scroll listener has been attached — prevents duplicates across re-attach cycles. */
   hasScrollListener: boolean
   /** Owning workspace — used to route auto-detected URLs to the right browser panel. */
@@ -306,10 +332,11 @@ subscribeTheme((theme) => {
   repaintAllTerminals(theme)
 })
 
-// Live-apply terminal settings (cursor-blink toggle, scroll speed) so changes
-// are visible without a reload.
+// Live-apply terminal settings (cursor-blink toggle, scroll speed, Option-as-Meta)
+// so changes are visible without a reload.
 let lastCursorBlink = getCursorBlink()
 let lastScrollSensitivity = getScrollSensitivity()
+let lastOptionIsMeta = getOptionIsMeta()
 useSettingsStore.subscribe((state) => {
   const cursorBlink = state.terminalCursorBlink === true
   if (cursorBlink !== lastCursorBlink) {
@@ -320,6 +347,11 @@ useSettingsStore.subscribe((state) => {
   if (scrollSensitivity !== lastScrollSensitivity) {
     lastScrollSensitivity = scrollSensitivity
     applyScrollSensitivityToAll(scrollSensitivity)
+  }
+  const optionIsMeta = state.terminalOptionIsMeta !== false
+  if (optionIsMeta !== lastOptionIsMeta) {
+    lastOptionIsMeta = optionIsMeta
+    applyOptionIsMetaToAll(optionIsMeta)
   }
 })
 
@@ -374,7 +406,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     allowProposedApi: true,
     scrollback: getScrollback(),
     scrollSensitivity: getScrollSensitivity(),
-    macOptionIsMeta: true,
+    macOptionIsMeta: getOptionIsMeta(),
     altClickMovesCursor: true,
     minimumContrastRatio: 1,
   })
@@ -576,7 +608,7 @@ async function reconnectTerminal(
     allowProposedApi: true,
     scrollback: getScrollback(),
     scrollSensitivity: getScrollSensitivity(),
-    macOptionIsMeta: true,
+    macOptionIsMeta: getOptionIsMeta(),
     altClickMovesCursor: true,
     minimumContrastRatio: 1,
   })
@@ -896,10 +928,19 @@ function attach(panelId: string, container: HTMLDivElement): void {
   requestAnimationFrame(tryFit)
 
   function fitAndScroll(): void {
-    if (!registry.has(panelId)) return
+    const liveEntry = registry.get(panelId)
+    if (!liveEntry) return
     try {
+      // If a scroll position was saved when this panel was last hidden (dock
+      // tab switch, IntersectionObserver hide), restore it AFTER fit so the
+      // re-shown terminal returns to where the user left it instead of the top.
+      // The DOM scrollTop is unreliable here: a fresh appendChild zeroes it, so
+      // we restore by buffer line index (captured at detach).
+      const saved = liveEntry.savedViewport
+
       // Use DOM-based scroll check — buffer indices (viewportY/baseY) become
-      // stale after fit() changes the row count.
+      // stale after fit() changes the row count. Only consulted when there is
+      // no saved snapshot (first attach, or a non-detach re-fit).
       const viewport = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null
       const wasAtBottom = viewport
         ? Math.abs(viewport.scrollTop - (viewport.scrollHeight - viewport.clientHeight)) < 5
@@ -908,7 +949,10 @@ function attach(panelId: string, container: HTMLDivElement): void {
       safeFit(terminal, fitAddon, container)
       terminal.refresh(0, terminal.rows - 1)
 
-      if (wasAtBottom) {
+      if (saved) {
+        restoreScroll(panelId)
+        liveEntry.savedViewport = undefined
+      } else if (wasAtBottom) {
         terminal.scrollToBottom()
       }
     } catch { /* ignore */ }
@@ -938,12 +982,54 @@ function fit(panelId: string): void {
 }
 
 /**
- * Restore the viewport scroll position from the last tracked value.
- * Used after focus changes to counteract any scroll resets.
+ * Snapshot the current buffer viewport position so it can be restored after the
+ * xterm element is detached + re-attached (which zeroes the DOM scrollTop) or
+ * after fit() changes the row count. Stored as a buffer LINE index plus an
+ * at-bottom flag (so a follow-output terminal re-pins to the freshest line
+ * rather than a stale index). No-op when there is no scrollback (baseY === 0).
+ */
+function captureViewport(entry: RegistryEntry): void {
+  try {
+    const active = entry.terminal.buffer.active
+    if (active.baseY <= 0) {
+      entry.savedViewport = undefined
+      return
+    }
+    entry.savedViewport = {
+      line: active.viewportY,
+      atBottom: active.viewportY >= active.baseY,
+    }
+  } catch {
+    /* buffer unavailable mid-dispose — ignore */
+  }
+}
+
+/**
+ * Restore the viewport from the saved buffer line index (captured on detach).
+ * Restoring by line index is robust to the scrollTop reset that a DOM reparent
+ * causes and to fit()'s row-count change. A follow-output terminal (atBottom)
+ * snaps to the freshest line via scrollToBottom(). Falls back to the
+ * continuously-tracked pixel scrollTop when no buffer snapshot exists (e.g. a
+ * terminal that never had scrollback).
+ *
+ * Called both from the canvas-focus path (TerminalPanel focus effect) and from
+ * attach()'s fitAndScroll() — the latter covers dock tab switches, which never
+ * mark the panel as the canvas "focused node".
  */
 function restoreScroll(panelId: string): void {
   const entry = registry.get(panelId)
   if (!entry) return
+
+  const saved = entry.savedViewport
+  if (saved) {
+    try {
+      if (saved.atBottom) entry.terminal.scrollToBottom()
+      else entry.terminal.scrollToLine(saved.line)
+      return
+    } catch {
+      /* fall through to the pixel-based path below */
+    }
+  }
 
   const viewport = (entry.terminal as unknown as { element?: HTMLElement }).element
     ?.querySelector('.xterm-viewport') as HTMLElement | null
@@ -969,6 +1055,12 @@ function detach(panelId: string, fromContainer?: HTMLElement): void {
   if (!el?.parentElement) return
 
   if (fromContainer && el.parentElement !== fromContainer) return
+
+  // Save the scroll position BEFORE removing the element. Re-inserting a
+  // scrollable element on the next attach() zeroes its scrollTop, so without
+  // this snapshot a dock tab switch (unmount → remount) loses the position and
+  // the re-shown terminal jumps to the top.
+  captureViewport(entry)
 
   el.parentElement.removeChild(el)
 }

@@ -14,7 +14,7 @@ import {
   SHELL_CWD_UPDATE,
   SHELL_AGENT_SCREEN_STATE,
 } from '../../shared/ipc-channels'
-import { terminalPids } from './terminal'
+import { terminalPids, isTerminalSuspended } from './terminal'
 import { sendToWindow, windowFromEvent, broadcastToAll } from '../windowRegistry'
 import { getShellEnv } from '../shellEnv'
 import { countSpawn } from '../perf/perfMonitor'
@@ -57,22 +57,32 @@ const registeredTerminals: Map<string, TerminalRegistration> = new Map()
 // Track previous state for transition detection
 const previousStates: Map<string, PreviousState> = new Map()
 
-// Backoff: terminals that failed last cycle are skipped once
-const skipNextScan: Set<string> = new Set()
-
-// Fast poll (1s): process-tree scan for agent detection — drives the activity
-// indicators and the agent "needs input" / "finished" notifications, so it
-// must stay responsive.
-const ACTIVITY_POLL_MS = 1000
+// Fast poll: process-tree scan for agent detection — drives the activity
+// indicators and the agent "needs input" / "finished" notifications. It stays
+// at 1s while a window is focused so the UI feels live, but backs off to 5s
+// when the whole app is unfocused: the activity indicators aren't visible then,
+// and agent "needs input" detection is driven by PTY title/spinner events in
+// the renderer (event-based, not this scan), so a few extra seconds of presence
+// latency costs nothing while the spawn rate — the real background-CPU/battery
+// drain — drops ~5×. (Each cycle forks one `ps` snapshot regardless of terminal
+// count; see snapshotProcessTree.)
+const ACTIVITY_POLL_FOCUSED_MS = 1000
+const ACTIVITY_POLL_UNFOCUSED_MS = 5000
 let pollInterval: ReturnType<typeof setInterval> | null = null
 let pollBusy = false
 
-// Slow poll (5s): the heavier lsof scans (listening ports + cwd). These don't
-// need 1s freshness — ports/cwd rarely change second-to-second — so they ride a
-// slower timer to cut the sustained process-spawn load.
-const SLOW_POLL_MS = 5000
+// Slow poll: the heavier lsof scans (listening ports + cwd). Ports/cwd rarely
+// change second-to-second, so this rides a 5s timer while focused and backs off
+// to 15s while unfocused (lsof is the priciest spawn we make).
+const SLOW_POLL_FOCUSED_MS = 5000
+const SLOW_POLL_UNFOCUSED_MS = 15000
 let slowPollInterval: ReturnType<typeof setInterval> | null = null
 let slowPollBusy = false
+
+// Cadence the timers are currently running at, so applyPollCadence() can skip a
+// needless clear/re-arm when focus flips but the resulting cadence is unchanged.
+let activeActivityMs = 0
+let activeSlowMs = 0
 
 // True iff at least one app window is currently focused. The cwd scan (purely
 // cosmetic — only consumed on demand by "Copy Working Directory") is skipped
@@ -91,67 +101,86 @@ function installFocusHooks(): void {
   if (focusHooksInstalled) return
   focusHooksInstalled = true
   refreshFocusState()
-  app.on('browser-window-focus', () => { anyWindowFocused = true })
+  app.on('browser-window-focus', () => {
+    const wasFocused = anyWindowFocused
+    anyWindowFocused = true
+    if (!wasFocused) {
+      // Returning to the app — restore the fast cadence and take an immediate
+      // scan so the activity indicators refresh without waiting out the timer.
+      applyPollCadence()
+      void runActivityScan()
+    }
+  })
   // browser-window-blur fires before focus transfers between this app's own
   // windows, so re-derive truth from the window list rather than trusting the
   // single event.
-  app.on('browser-window-blur', () => { refreshFocusState() })
+  app.on('browser-window-blur', () => {
+    const stillFocused = refreshFocusState()
+    if (!stillFocused) applyPollCadence()
+  })
+}
+
+// One process-table snapshot, indexed for tree walks. Built once per scan
+// cycle and shared across every registered terminal.
+interface ProcTree {
+  /** comm basename, keyed by pid. */
+  nameByPid: Map<number, string>
+  /** direct child pids, keyed by parent pid. */
+  childrenByPid: Map<number, number[]>
 }
 
 /**
- * Get direct child PIDs of a given process.
- * Runs: ps -o pid= -ppid=<pid>
+ * Take ONE `ps` snapshot of the whole process table and index it for tree
+ * walks. This replaces the old per-PID fan-out — one `pgrep -P` per terminal
+ * plus one `ps -o comm=` per child plus recursive `pgrep` for descendants —
+ * with a single spawn per scan cycle, regardless of how many terminals are
+ * open. Same data (child names + descendant trees), O(1) spawns instead of
+ * O(total PIDs), which is the dominant idle-time process-spawn cost.
  */
-function getChildPids(pid: number): Promise<number[]> {
-  if (!pid || pid <= 0) return Promise.resolve([])
+function snapshotProcessTree(): Promise<ProcTree> {
   return limit(() => new Promise((resolve) => {
-    countSpawn('pgrep')
-    execFile('pgrep', ['-P', `${pid}`], {
+    countSpawn('ps:tree')
+    execFile('ps', ['-axo', 'pid=,ppid=,comm='], {
       encoding: 'utf-8',
-      timeout: 2000,
+      timeout: 3000,
+      maxBuffer: 8 * 1024 * 1024,
     }, (err, stdout) => {
       if (err || !stdout) {
-        resolve([])
+        resolve({ nameByPid: new Map(), childrenByPid: new Map() })
         return
       }
-      resolve(
-        stdout
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0)
-          .map((line) => parseInt(line, 10))
-          .filter((n) => !isNaN(n))
-      )
+      const nameByPid = new Map<number, string>()
+      const childrenByPid = new Map<number, number[]>()
+      for (const line of stdout.split('\n')) {
+        // "<pid> <ppid> <comm>" — comm may contain spaces, so keep it as the
+        // remainder. comm can be a full path on macOS; take the basename to
+        // match the old `ps -o comm=` + basename behaviour exactly.
+        const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*\S)\s*$/)
+        if (!m) continue
+        const pid = parseInt(m[1], 10)
+        const ppid = parseInt(m[2], 10)
+        if (isNaN(pid) || isNaN(ppid)) continue
+        nameByPid.set(pid, m[3].split('/').pop() ?? m[3])
+        const siblings = childrenByPid.get(ppid)
+        if (siblings) siblings.push(pid)
+        else childrenByPid.set(ppid, [pid])
+      }
+      resolve({ nameByPid, childrenByPid })
     })
   }))
 }
 
-/**
- * Get the process name (command basename) for a given PID.
- * Runs: ps -o comm= -p <pid>
- */
-function getProcessName(pid: number): Promise<string | null> {
-  if (!pid || pid <= 0) return Promise.resolve(null)
-  return limit(() => new Promise((resolve) => {
-    countSpawn('ps')
-    execFile('ps', ['-o', 'comm=', '-p', `${pid}`], {
-      encoding: 'utf-8',
-      timeout: 2000,
-    }, (err, stdout) => {
-      if (err || !stdout) {
-        resolve(null)
-        return
-      }
-      const name = stdout.trim()
-      if (name.length === 0) {
-        resolve(null)
-        return
-      }
-      // ps -o comm= may return full path; extract basename
-      const parts = name.split('/')
-      resolve(parts[parts.length - 1])
-    })
-  }))
+/** All descendant pids of `pid` (BFS over the snapshot), excluding `pid`. */
+function descendantsOf(pid: number, tree: ProcTree): number[] {
+  const out: number[] = []
+  const stack = [...(tree.childrenByPid.get(pid) ?? [])]
+  while (stack.length > 0) {
+    const p = stack.pop()!
+    out.push(p)
+    const kids = tree.childrenByPid.get(p)
+    if (kids) stack.push(...kids)
+  }
+  return out
 }
 
 /**
@@ -210,33 +239,20 @@ function isShellProcess(name: string): boolean {
   return shells.includes(name.toLowerCase())
 }
 
-async function getAllDescendantPids(pid: number): Promise<number[]> {
-  const children = await getChildPids(pid)
-  const allDescendants = [...children]
-  for (const child of children) {
-    allDescendants.push(...(await getAllDescendantPids(child)))
-  }
-  return allDescendants
-}
-
-async function scanListeningPorts(): Promise<Map<string, number[]>> {
+async function scanListeningPorts(tree: ProcTree): Promise<Map<string, number[]>> {
   if (registeredTerminals.size === 0) {
     return new Map()
   }
 
+  // Map every pid in each terminal's process tree back to its terminal, read
+  // synchronously from the shared snapshot (no per-pid spawns).
   const pidToTerminal = new Map<number, string>()
-  const pidPromises: Promise<void>[] = []
   for (const [terminalId, info] of registeredTerminals) {
-    pidPromises.push(
-      getAllDescendantPids(info.shellPid).then((descendants) => {
-        const allPids = [info.shellPid, ...descendants]
-        for (const pid of allPids) {
-          pidToTerminal.set(pid, terminalId)
-        }
-      })
-    )
+    pidToTerminal.set(info.shellPid, terminalId)
+    for (const pid of descendantsOf(info.shellPid, tree)) {
+      pidToTerminal.set(pid, terminalId)
+    }
   }
-  await Promise.all(pidPromises)
 
   const pids = Array.from(pidToTerminal.keys())
   if (pids.length === 0) return new Map()
@@ -313,21 +329,23 @@ function getProcessCwd(pid: number): Promise<string | null> {
 
 /**
  * Scan a single terminal's process tree to detect activity and Claude state.
+ * Reads from the shared per-cycle process snapshot — no per-PID spawns.
  * Ported from ProcessMonitor.scanProcesses(for:) in Swift.
  */
-async function scanTerminal(
+function scanTerminal(
   terminalId: string,
   info: TerminalRegistration,
-): Promise<ScanResult> {
+  tree: ProcTree,
+): ScanResult {
   const prev = previousStates.get(terminalId) || { previousAgentName: null }
 
-  const childrenToScan = await getChildPids(info.shellPid)
+  const childrenToScan = tree.childrenByPid.get(info.shellPid) ?? []
 
   let foundAgentName: string | null = null
   let firstChildName: string | null = null
 
   for (const childPid of childrenToScan) {
-    const name = await getProcessName(childPid)
+    const name = tree.nameByPid.get(childPid)
     if (name) {
       if (firstChildName === null && !isShellProcess(name)) {
         firstChildName = name
@@ -356,7 +374,7 @@ async function scanTerminal(
 }
 
 /**
- * Fast scan (every ACTIVITY_POLL_MS): walk each terminal's process tree to
+ * Fast scan (1s focused / 5s unfocused): walk each terminal's process tree to
  * detect agent activity. Emits SHELL_ACTIVITY_UPDATE to the owning window.
  */
 async function runActivityScan(): Promise<void> {
@@ -365,25 +383,17 @@ async function runActivityScan(): Promise<void> {
   try {
     const entries = Array.from(registeredTerminals.entries())
     if (entries.length === 0) return
-    const scanResults = await Promise.all(
-      entries.map(async ([terminalId, info]) => {
-        if (skipNextScan.has(terminalId)) {
-          skipNextScan.delete(terminalId)
-          return null
-        }
-        try {
-          const result = await scanTerminal(terminalId, info)
-          return { terminalId, info, result }
-        } catch (e) {
-          skipNextScan.add(terminalId)
-          return null
-        }
-      })
-    )
 
-    for (const entry of scanResults) {
-      if (!entry) continue
-      const { terminalId, info, result } = entry
+    // One snapshot for the whole cycle (see snapshotProcessTree).
+    const tree = await snapshotProcessTree()
+
+    for (const [terminalId, info] of entries) {
+      // A SIGSTOP-suspended terminal's process tree is frozen — it can't change
+      // state until resumed (which forces a fresh scan), so scanning it would
+      // just re-derive the same result. Skip the work.
+      if (isTerminalSuspended(terminalId)) continue
+
+      const result = scanTerminal(terminalId, info, tree)
       previousStates.set(terminalId, { previousAgentName: result.agentName })
 
       sendToWindow(
@@ -401,7 +411,7 @@ async function runActivityScan(): Promise<void> {
 }
 
 /**
- * Slow scan (every SLOW_POLL_MS): the heavier lsof work. Listening ports and
+ * Slow scan (5s focused / 15s unfocused): the heavier lsof work. Listening ports and
  * cwd change rarely, so they don't belong on the 1s loop. The cwd scan is
  * skipped entirely while the app is unfocused (it only backs an on-demand
  * "Copy Working Directory" action).
@@ -437,8 +447,10 @@ async function runSlowScan(): Promise<void> {
 
     // --- Port scan (scoped to terminal pids; see scanListeningPorts). Not
     //     focus-gated: it's cheap now and still surfaces ports for dev servers
-    //     that come up while the app is backgrounded. ---
-    const portMap = await scanListeningPorts()
+    //     that come up while the app is backgrounded. One ps snapshot feeds the
+    //     descendant walk; lsof then inspects only those pids. ---
+    const tree = await snapshotProcessTree()
+    const portMap = await scanListeningPorts(tree)
     for (const [terminalId, ports] of portMap) {
       const info = registeredTerminals.get(terminalId)
       if (info) {
@@ -455,11 +467,25 @@ async function runSlowScan(): Promise<void> {
   }
 }
 
-/** Start both poll timers (called on first terminal registration). */
-function startPolling(): void {
-  if (pollInterval) return
-  pollInterval = setInterval(() => { void runActivityScan() }, ACTIVITY_POLL_MS)
-  slowPollInterval = setInterval(() => { void runSlowScan() }, SLOW_POLL_MS)
+/**
+ * (Re)arm both poll timers at the cadence matching the current focus state.
+ * Called on first terminal registration and whenever app focus flips. No-op
+ * when no terminals are registered, and a no-op when the cadence is already
+ * correct (so a focus flip between this app's own windows doesn't churn timers).
+ */
+function applyPollCadence(): void {
+  if (registeredTerminals.size === 0) return
+  const activityMs = anyWindowFocused ? ACTIVITY_POLL_FOCUSED_MS : ACTIVITY_POLL_UNFOCUSED_MS
+  const slowMs = anyWindowFocused ? SLOW_POLL_FOCUSED_MS : SLOW_POLL_UNFOCUSED_MS
+  if (pollInterval && slowPollInterval && activeActivityMs === activityMs && activeSlowMs === slowMs) {
+    return
+  }
+  if (pollInterval) clearInterval(pollInterval)
+  if (slowPollInterval) clearInterval(slowPollInterval)
+  activeActivityMs = activityMs
+  activeSlowMs = slowMs
+  pollInterval = setInterval(() => { void runActivityScan() }, activityMs)
+  slowPollInterval = setInterval(() => { void runSlowScan() }, slowMs)
 }
 
 function stopPolling(): void {
@@ -471,6 +497,8 @@ function stopPolling(): void {
     clearInterval(slowPollInterval)
     slowPollInterval = null
   }
+  activeActivityMs = 0
+  activeSlowMs = 0
 }
 
 /**
@@ -481,7 +509,6 @@ export function unregisterTerminalsForWindow(windowId: number): void {
     if (info.ownerWindowId === windowId) {
       registeredTerminals.delete(terminalId)
       previousStates.delete(terminalId)
-      skipNextScan.delete(terminalId)
     }
   }
   if (registeredTerminals.size === 0) {
@@ -514,8 +541,9 @@ export function registerHandlers(): void {
 
       previousStates.set(terminalId, { previousAgentName: null })
 
-      // Start polling on first registration
-      startPolling()
+      // Start (or re-confirm) polling on first registration, at the cadence
+      // matching the current focus state.
+      applyPollCadence()
     },
   )
 
@@ -531,7 +559,6 @@ export function registerHandlers(): void {
   ipcMain.handle(SHELL_UNREGISTER_TERMINAL, async (_event, terminalId: string) => {
     registeredTerminals.delete(terminalId)
     previousStates.delete(terminalId)
-    skipNextScan.delete(terminalId)
     if (registeredTerminals.size === 0) {
       stopPolling()
     }

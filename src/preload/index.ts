@@ -184,6 +184,8 @@ import {
   AGENT_MARKETPLACE_LIST_INSTALLED,
   AGENT_MARKETPLACE_INSTALL,
   AGENT_MARKETPLACE_UNINSTALL,
+  AGENT_CUSTOM_MODELS_GET,
+  AGENT_CUSTOM_MODELS_SAVE,
   AUTH_LIST_PROVIDERS,
   AUTH_STATUS,
   AUTH_OAUTH_START,
@@ -1265,6 +1267,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_e: Electron.IpcRendererEvent, req: unknown): void => { callback(req) }
     ipcRenderer.on(AGENT_TOOL_REQUEST, listener)
     return () => { ipcRenderer.removeListener(AGENT_TOOL_REQUEST, listener) }
+  },
+
+  agentCustomModelsGet(): Promise<unknown> {
+    return ipcRenderer.invoke(AGENT_CUSTOM_MODELS_GET)
+  },
+
+  agentCustomModelsSave(cfg: unknown): Promise<void> {
+    return ipcRenderer.invoke(AGENT_CUSTOM_MODELS_SAVE, cfg)
   },
 
   // ---------------------------------------------------------------------------

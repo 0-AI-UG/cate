@@ -827,6 +827,11 @@ export interface AppSettings {
    *  compositor update, so a focused terminal keeps the compositor awake even
    *  when otherwise idle. A steady cursor is still fully visible. */
   terminalCursorBlink: boolean
+  /** Treat the macOS ⌥ Option key as Meta in the terminal (xterm macOptionIsMeta).
+   *  On (default): ⌥+key sends a Meta/ESC sequence (e.g. ⌥F/⌥B word motion in
+   *  readline). Off: ⌥ produces the macOS layout's special characters — e.g.
+   *  ⌥⇧- types an em dash (—) — and Meta is sent via the Esc-prefix instead. */
+  terminalOptionIsMeta: boolean
   /** Auto-suspend (SIGSTOP) idle background terminals to reduce memory use.
    *  A terminal is suspended after it has been offscreen AND produced no PTY
    *  output for 2 minutes. SIGCONT is sent on focus/interaction. POSIX-only;
@@ -893,6 +898,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalScrollback: 2000,
   terminalScrollSpeed: 1.0,
   terminalCursorBlink: false,
+  terminalOptionIsMeta: true,
   autoSuspendIdleTerminals: true,
 
   // Browser
@@ -984,6 +990,17 @@ export interface AuthProviderStatus {
   connectedAt?: string
   /** Where the credential lives. */
   source?: 'oauth' | 'safeStorage' | 'env'
+}
+
+/** A user-defined OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, a
+ *  proxy, ...). Surfaced as one extra provider in the agent provider list and
+ *  written to pi's models.json. */
+export interface CustomOpenAIProvider {
+  baseUrl: string
+  /** Empty for local servers that ignore auth; pi gets a placeholder. */
+  apiKey: string
+  /** Model ids exposed by the endpoint, e.g. ['llama3.1:8b']. */
+  models: string[]
 }
 
 export interface AgentModelRef {
