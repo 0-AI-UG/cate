@@ -44,8 +44,9 @@ closed automatically at the end:
 node .claude/skills/run-cate/driver.mjs launch 'size 1000 1400' 'ss landing' quit
 ```
 
-Then **open the PNG** (default dir `/tmp/cate-shots/`, override with
-`SCREENSHOT_DIR`) and confirm it's the app, not a blank/login/splash frame.
+Then **open the PNG** (default dir `<os-temp>/cate-shots/` — `/tmp/cate-shots` on
+macOS/Linux, `%TEMP%\cate-shots` on Windows; override with `SCREENSHOT_DIR`) and
+confirm it's the app, not a blank/login/splash frame.
 
 Chain whatever you need:
 
@@ -73,6 +74,21 @@ tmux capture-pane -t cate -p | tail -5
 
 On Linux/headless prefix the node command with `xvfb-run -a` and
 `apt-get install -y xvfb libnss3 libgbm1 libasound2t64 libgtk-3-0 libxss1 libxkbcommon0 libatk-bridge2.0-0 libcups2 libdrm2`.
+
+## Platform support
+
+The driver avoids OS-specific paths on purpose: the electron binary is resolved
+by Playwright (no hardcoded path), the screenshot dir defaults to `os.tmpdir()`,
+and the REPL reads `process.stdin` (no `/dev/stdin`). So in principle it runs on
+all three desktop OSes — but coverage differs:
+
+- **macOS** — verified end-to-end (launch, seed, eval, screenshot; one-shot and REPL).
+- **Linux** — should work; add `xvfb-run -a` + the apt deps above when headless. Not yet verified here.
+- **Windows** — should work, but **not yet verified**. Two things to watch:
+  - **Shell quoting.** The single-quoted multi-word args above are POSIX-shell
+    syntax. In **PowerShell** single quotes are fine; in **cmd.exe** use double
+    quotes, e.g. `node .claude\skills\run-cate\driver.mjs launch "size 1000 1400" "ss landing" quit`.
+  - No tmux on Windows — use the one-shot mode (or a terminal multiplexer under WSL).
 
 ### Commands
 

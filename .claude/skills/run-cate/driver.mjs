@@ -23,10 +23,13 @@ import { _electron as electron } from 'playwright'
 import * as readline from 'node:readline'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import * as os from 'node:os'
 
 // driver.mjs lives at <repo>/.claude/skills/run-cate/driver.mjs
 const APP_DIR = path.resolve(import.meta.dirname, '..', '..', '..')
-const SHOT_DIR = process.env.SCREENSHOT_DIR || '/tmp/cate-shots'
+// Default under the OS temp dir so it's valid on macOS/Linux (/tmp/...) and
+// Windows (%TEMP%\...). Override with SCREENSHOT_DIR.
+const SHOT_DIR = process.env.SCREENSHOT_DIR || path.join(os.tmpdir(), 'cate-shots')
 fs.mkdirSync(SHOT_DIR, { recursive: true })
 
 let app = null
@@ -198,17 +201,28 @@ if (argv.length > 0) {
   if (!quit) await COMMANDS.quit()
   process.exit(0)
 } else {
-  // Stop Electron from stealing stdin — read from the raw fd.
-  const stdin = fs.createReadStream(null, { fd: fs.openSync('/dev/stdin', 'r') })
-  const rl = readline.createInterface({ input: stdin, output: process.stdout, prompt: 'driver> ' })
-  // Serialize: pause input while a command runs so async commands don't overlap.
-  rl.on('line', async (line) => {
-    rl.pause()
-    const cmd = await runOne(line)
-    if (cmd === 'quit') { rl.close(); process.exit(0) }
-    rl.resume(); rl.prompt()
-  })
-  rl.on('close', async () => { await COMMANDS.quit(); process.exit(0) })
+  // Playwright launches Electron as a separate process, so it doesn't steal our
+  // stdin — read it directly (works on macOS/Linux/Windows, no /dev/stdin).
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: 'driver> ' })
+  // Serialize through an explicit queue: when lines arrive in a burst (a pipe,
+  // tmux send-keys) readline emits them faster than commands run, so pause/resume
+  // isn't enough — drain one at a time and only re-prompt when idle.
+  const queue = []
+  let draining = false
+  let closed = false
+  async function drain() {
+    if (draining) return
+    draining = true
+    while (queue.length) {
+      const cmd = await runOne(queue.shift())
+      if (cmd === 'quit') process.exit(0)
+    }
+    draining = false
+    if (closed) { await COMMANDS.quit(); process.exit(0) }
+    rl.prompt()
+  }
+  rl.on('line', (line) => { queue.push(line); drain() })
+  rl.on('close', () => { closed = true; drain() })
   console.log('cate driver — "launch" to start, "help" for commands')
   rl.prompt()
 }
