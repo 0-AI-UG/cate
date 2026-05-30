@@ -550,7 +550,10 @@ function ThinkingBars({ count, size = 10 }: { count: number; size?: number }) {
   )
 }
 
-function useNodePortalTarget(ref: React.RefObject<Element | null>) {
+// Resolve the canvas-node element this popover lives inside, so portalled
+// content can be positioned relative to it (the node, not the viewport, is
+// the scroll/zoom frame of reference). Shared by the chat-input popovers too.
+export function useNodePortalTarget(ref: React.RefObject<Element | null>) {
   const getTarget = useCallback(
     () => ref.current?.closest('[data-node-id]') as HTMLElement | null,
     [ref],
@@ -560,7 +563,17 @@ function useNodePortalTarget(ref: React.RefObject<Element | null>) {
       const target = getTarget()
       if (!target) return viewport
       const tr = target.getBoundingClientRect()
-      return { top: viewport.top - tr.top, left: viewport.left - tr.left }
+      // The node lives inside the zoom-scaled canvas world, so a child
+      // positioned with absolute top/left has those values multiplied by the
+      // canvas zoom on screen. getBoundingClientRect is in screen space, so
+      // divide the screen-space delta by the node's effective scale to land
+      // the popover exactly on its anchor at any zoom. (Detached panel/dock
+      // windows aren't scaled, so scale is 1 and this is a no-op there.)
+      const scale = target.offsetWidth > 0 ? tr.width / target.offsetWidth : 1
+      return {
+        top: (viewport.top - tr.top) / scale,
+        left: (viewport.left - tr.left) / scale,
+      }
     },
     [getTarget],
   )

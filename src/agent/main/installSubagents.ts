@@ -3,8 +3,13 @@
 // a workspace's pi-agent dir on first use. Pi auto-discovers extensions from
 // this directory when its RPC process starts; no further wiring is needed.
 //
-// The extension itself lives inside the @earendil-works/pi-coding-agent npm
-// package (examples/extensions/subagent). We copy three things (relative to
+// We vendor pi's subagent extension into our own tree at
+// src/agent/extensions/subagent/ (copied from the pi-coding-agent npm package's
+// examples/extensions/subagent) and ship it via electron-builder.yml
+// `extraResources` into resources/cate-extensions/subagent — the same way
+// cate-plan-mode ships (see installPlanMode). electron-builder's default file
+// filter strips node_modules `examples/` dirs at pack time, so we can't rely on
+// the npm copy in packaged builds. We copy three things (relative to
 // <cwd>/.cate/pi-agent/):
 //   - extensions/subagent/{index.ts,agents.ts}
 //   - agents/*.md (scout, planner, reviewer, worker, plus our additions)
@@ -21,10 +26,18 @@ import log from '../../main/logger'
 import { addAllowedRoot } from '../../main/ipc/pathValidation'
 import { agentDirFor } from './agentDir'
 
-function piPackageDir(): string {
-  const base = app.getAppPath()
-  const root = base.includes('app.asar') ? base.replace('app.asar', 'app.asar.unpacked') : base
-  return path.join(root, 'node_modules', '@earendil-works', 'pi-coding-agent')
+/** Source dir of the vendored subagent extension. Tries the dev path first
+ *  (src/ on disk), then the production extraResources copy. Mirrors
+ *  installPlanMode.sourceDir(). */
+function subagentSourceDir(): string | null {
+  const candidates = [
+    path.join(app.getAppPath(), 'src', 'agent', 'extensions', 'subagent'),
+    path.join(process.resourcesPath ?? '', 'cate-extensions', 'subagent'),
+  ]
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) return c
+  }
+  return null
 }
 
 async function copyIfMissing(src: string, dest: string): Promise<void> {
@@ -90,9 +103,9 @@ export async function installSubagentExtension(cwd: string): Promise<void> {
   if (installed.has(home)) return
   installed.add(home)
   try {
-    const examples = path.join(piPackageDir(), 'examples', 'extensions', 'subagent')
-    if (!fs.existsSync(examples)) {
-      log.warn('[installSubagents] subagent extension examples not found at %s — skipping', examples)
+    const examples = subagentSourceDir()
+    if (!examples) {
+      log.warn('[installSubagents] subagent extension source not found — skipping')
       return
     }
     await copyIfMissing(

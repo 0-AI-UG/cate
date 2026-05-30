@@ -1,6 +1,8 @@
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, TextInput, NumberInput, Toggle, Slider } from './SettingsComponents'
 
+const IS_MAC = navigator.userAgent.includes('Mac')
+
 export function TerminalSettings() {
   const store = useSettingsStore()
 
@@ -44,6 +46,17 @@ export function TerminalSettings() {
           onChange={(v) => store.setSetting('terminalCursorBlink', v)}
         />
       </SettingRow>
+      {IS_MAC && (
+        <SettingRow
+          label="Use ⌥ Option as Meta"
+          description="On: ⌥+key sends a Meta/ESC sequence (e.g. ⌥F / ⌥B word motion in zsh/bash). Off: ⌥ types the macOS layout's special characters — e.g. ⌥⇧- inserts an em dash (—) — and Meta is sent via the Esc prefix (press Esc, then the key)."
+        >
+          <Toggle
+            checked={store.terminalOptionIsMeta}
+            onChange={(v) => store.setSetting('terminalOptionIsMeta', v)}
+          />
+        </SettingRow>
+      )}
       <SettingRow
         label="Auto-suspend idle background terminals"
         description="Pause (SIGSTOP) terminals that have been offscreen and silent for 2 minutes so macOS can reclaim their memory. Resumes instantly on focus — no state loss. POSIX-only."
