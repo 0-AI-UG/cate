@@ -1,5 +1,13 @@
 import type { BrowserWindow } from 'electron'
 
+/** Un-minimize (if needed) and bring a single window to the foreground.
+ *  The shared "make this window the active one" idiom used wherever the app
+ *  surfaces an existing window (second-instance, open-path, notification click). */
+export function focusWindow(win: BrowserWindow): void {
+  if (win.isMinimized()) win.restore()
+  win.focus()
+}
+
 /**
  * Bring the already-running instance's window to the foreground.
  *
@@ -13,6 +21,5 @@ import type { BrowserWindow } from 'electron'
 export function focusRunningInstanceWindow(windows: BrowserWindow[]): void {
   const win = windows.find((w) => !w.isDestroyed())
   if (!win) return
-  if (win.isMinimized()) win.restore()
-  win.focus()
+  focusWindow(win)
 }

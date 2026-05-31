@@ -5,6 +5,7 @@
 import { ipcMain, Notification, app } from 'electron'
 import { NOTIFY_OS, NOTIFY_ACTION } from '../../shared/ipc-channels'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
+import { focusWindow } from '../singleInstance'
 import type { NotificationAction } from '../../shared/types'
 
 export function registerHandlers(): void {
@@ -26,8 +27,7 @@ export function registerHandlers(): void {
         notification.on('click', () => {
           // Focus the owning window
           if (win && !win.isDestroyed()) {
-            if (win.isMinimized()) win.restore()
-            win.focus()
+            focusWindow(win)
           }
 
           // Send the action back to the renderer so it can execute it

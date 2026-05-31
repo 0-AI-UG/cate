@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { BrowserWindow } from 'electron'
-import { focusRunningInstanceWindow } from './singleInstance'
+import { focusRunningInstanceWindow, focusWindow } from './singleInstance'
 
 type FakeWin = {
   isDestroyed: ReturnType<typeof vi.fn>
@@ -57,5 +57,21 @@ describe('focusRunningInstanceWindow', () => {
 
   it('is a no-op for an empty list', () => {
     expect(() => focusRunningInstanceWindow(asWindows([]))).not.toThrow()
+  })
+})
+
+describe('focusWindow', () => {
+  it('focuses the given window', () => {
+    const win = fakeWin()
+    focusWindow(win as unknown as BrowserWindow)
+    expect(win.focus).toHaveBeenCalledTimes(1)
+    expect(win.restore).not.toHaveBeenCalled()
+  })
+
+  it('restores a minimized window before focusing', () => {
+    const win = fakeWin({ minimized: true })
+    focusWindow(win as unknown as BrowserWindow)
+    expect(win.restore).toHaveBeenCalledTimes(1)
+    expect(win.focus).toHaveBeenCalledTimes(1)
   })
 })

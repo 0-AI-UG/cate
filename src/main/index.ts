@@ -49,7 +49,7 @@ import { PERF_GET } from '../shared/ipc-channels'
 import { installWebContentsSecurity } from './webSecurity'
 import { installThemeSkill } from './installThemeSkill'
 import { releaseAllProjectLocks } from './projectLock'
-import { focusRunningInstanceWindow } from './singleInstance'
+import { focusRunningInstanceWindow, focusWindow } from './singleInstance'
 import {
   startCrossWindowDrag,
   updateCrossWindowCursor,
@@ -1184,8 +1184,7 @@ function deliverOpenPath(p: string): void {
     return
   }
   try {
-    if (win.isMinimized()) win.restore()
-    win.focus()
+    focusWindow(win)
   } catch { /* noop */ }
   win.webContents.send(APP_OPEN_PATH, p)
 }
