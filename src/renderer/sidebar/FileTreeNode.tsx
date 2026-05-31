@@ -114,6 +114,9 @@ interface FileTreeNodeProps {
   visiblePaths: string[]
   /** Lowercased search query; when non-empty, filters files and force-expands directories */
   searchQuery?: string
+  /** Reports this node's search visibility to its parent so directories with no
+   *  matching descendant can hide themselves. */
+  onSearchVisibilityChange?: (path: string, visible: boolean) => void
   /** Workspace root path — used to compute relative paths for "Copy Relative Path". */
   rootPath: string
   /** External request to create a file/folder in a specific directory */
@@ -133,12 +136,16 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   refreshSignal,
   visiblePaths,
   searchQuery,
+  onSearchVisibilityChange,
   rootPath,
   createRequest,
   onCreateRequestHandled,
 }) => {
   const isSearching = !!searchQuery
   const [isExpanded, setIsExpanded] = useState(node.isExpanded)
+  // Paths of child nodes currently visible under the active search — drives
+  // hiding directories that have no matching descendant.
+  const [visibleChildren, setVisibleChildren] = useState<Set<string>>(new Set())
   const [children, setChildren] = useState<FileTreeNodeType[]>(node.children)
   const [isLoading, setIsLoading] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
@@ -171,8 +178,35 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     }
   }, [isSearching, node.isDirectory, node.path, children.length])
 
-  // While searching, hide files whose name doesn't match
-  const isHiddenBySearch = isSearching && !node.isDirectory && !node.name.toLowerCase().includes(searchQuery!)
+  // Search filtering. A node is visible when: not searching, OR its own name
+  // matches, OR (directory) it has a visible descendant. Files that don't match
+  // and directories with no matching descendant are hidden (VS Code
+  // filter-on-type). Hidden nodes use display:none (not unmount) so their
+  // children stay mounted and keep reporting visibility upward.
+  const nodeMatches = !isSearching || node.name.toLowerCase().includes(searchQuery!)
+  const selfVisible = nodeMatches || (node.isDirectory && visibleChildren.size > 0)
+  const isHiddenBySearch = isSearching && !selfVisible
+
+  // Report this node's visibility to its parent (so empty folders collapse).
+  useEffect(() => {
+    onSearchVisibilityChange?.(node.path, selfVisible)
+  }, [onSearchVisibilityChange, node.path, selfVisible])
+
+  // Reset accumulated child visibility when the query changes so stale entries
+  // from a previous search don't keep a folder visible.
+  useEffect(() => {
+    setVisibleChildren(new Set())
+  }, [searchQuery])
+
+  const handleChildVisibility = useCallback((childPath: string, visible: boolean) => {
+    setVisibleChildren((prev) => {
+      if (visible === prev.has(childPath)) return prev
+      const next = new Set(prev)
+      if (visible) next.add(childPath)
+      else next.delete(childPath)
+      return next
+    })
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -492,10 +526,10 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   // Render
   // ---------------------------------------------------------------------------
 
-  if (isHiddenBySearch) return null
-
+  // Hidden nodes stay mounted (display:none) so their children keep reporting
+  // visibility upward — a return-null would deadlock the descendant check.
   return (
-    <div>
+    <div style={isHiddenBySearch ? { display: 'none' } : undefined}>
       {/* Node row */}
       <div
         className={`h-7 flex items-center gap-1.5 px-2 text-sm text-primary cursor-pointer rounded-sm ${
@@ -623,6 +657,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
               refreshSignal={refreshSignal}
               visiblePaths={visiblePaths}
               searchQuery={searchQuery}
+              onSearchVisibilityChange={handleChildVisibility}
               rootPath={rootPath}
               createRequest={createRequest}
               onCreateRequestHandled={onCreateRequestHandled}

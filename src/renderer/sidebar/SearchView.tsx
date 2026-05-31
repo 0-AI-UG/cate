@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useRef } from 'react'
 import { MagnifyingGlass, CaretRight, CaretDown, Gear } from '@phosphor-icons/react'
 import { SidebarSectionHeader } from './SidebarSectionHeader'
 import { SearchResultsTree } from './SearchResultsTree'
+import { Tooltip } from './Tooltip'
 import { useSearchStore, lineKey } from '../stores/searchStore'
 import { ensureSearchSubscriptions } from '../stores/searchIpc'
 import log from '../lib/logger'
@@ -29,16 +30,19 @@ interface ToggleBtnProps {
   children: React.ReactNode
 }
 const ToggleBtn: React.FC<ToggleBtnProps> = ({ active, onClick, title, children }) => (
-  <button
-    type="button"
-    title={title}
-    onClick={onClick}
-    className={`flex items-center justify-center w-5 h-5 rounded text-[11px] leading-none transition-colors ${
-      active ? 'bg-blue-500/25 text-blue-300' : 'text-secondary hover:text-primary hover:bg-surface-5'
-    }`}
-  >
-    {children}
-  </button>
+  <Tooltip label={title}>
+    <button
+      type="button"
+      aria-label={title}
+      aria-pressed={active}
+      onClick={onClick}
+      className={`flex items-center justify-center w-5 h-5 rounded text-[11px] leading-none transition-colors ${
+        active ? 'bg-blue-600 text-white' : 'text-secondary hover:text-primary hover:bg-surface-5'
+      }`}
+    >
+      {children}
+    </button>
+  </Tooltip>
 )
 
 export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
@@ -132,13 +136,15 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
       {/* Query input + match-mode toggles */}
       <div className="px-2 py-1.5 border-b border-subtle flex flex-col gap-1.5">
         <div className="flex items-center gap-1">
-          <button
-            className="flex-shrink-0 text-secondary hover:text-primary"
-            title={optionsExpanded ? 'Hide search details' : 'Toggle search details'}
-            onClick={toggleOptionsExpanded}
-          >
-            {optionsExpanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
-          </button>
+          <Tooltip label={optionsExpanded ? 'Hide search details' : 'Toggle search details'}>
+            <button
+              className="flex-shrink-0 text-secondary hover:text-primary"
+              aria-label="Toggle search details"
+              onClick={toggleOptionsExpanded}
+            >
+              {optionsExpanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
+            </button>
+          </Tooltip>
           <div className="flex-1 relative">
             <MagnifyingGlass size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-secondary" />
             <input

@@ -101,7 +101,7 @@ test.describe('content search', () => {
     expect((await snap(page)).totalMatches).toBe(0)
 
     const prior = (await snap(page)).searchId
-    await page.locator('button[title="Use Regular Expression"]').click()
+    await page.locator('button[aria-label="Use Regular Expression"]').click()
     await settle(page, prior)
     const s = await snap(page)
     expect(s.isRegex).toBe(true)
@@ -111,7 +111,7 @@ test.describe('content search', () => {
   test('invalid regex surfaces an inline error', async () => {
     const page = app.mainWindow
     const input = await openSearch(page)
-    await page.locator('button[title="Use Regular Expression"]').click()
+    await page.locator('button[aria-label="Use Regular Expression"]').click()
     await search(page, input, '(unclosed')
     expect((await snap(page)).error).toBeTruthy()
     await expect(page.locator('.text-red-400')).toBeVisible({ timeout: 5_000 })
@@ -125,7 +125,7 @@ test.describe('content search', () => {
     expect(loose).toBeGreaterThan(0)
 
     const prior = (await snap(page)).searchId
-    await page.locator('button[title="Match Whole Word"]').click()
+    await page.locator('button[aria-label="Match Whole Word"]').click()
     await settle(page, prior)
     const s = await snap(page)
     expect(s.wholeWord).toBe(true)
@@ -139,7 +139,7 @@ test.describe('content search', () => {
     const loose = (await snap(page)).totalMatches
 
     const prior = (await snap(page)).searchId
-    await page.locator('button[title="Match Case"]').click()
+    await page.locator('button[aria-label="Match Case"]').click()
     await settle(page, prior)
     const s = await snap(page)
     expect(s.matchCase).toBe(true)
@@ -151,7 +151,7 @@ test.describe('content search', () => {
     const input = await openSearch(page)
     await search(page, input, 'useState')
 
-    await page.locator('button[title$="search details"]').click()
+    await page.locator('button[aria-label="Toggle search details"]').click()
     const prior = (await snap(page)).searchId
     await page.locator('input[placeholder="e.g. src/**, *.ts"]').fill('*.tsx')
     await settle(page, prior)
@@ -166,7 +166,7 @@ test.describe('content search', () => {
     await search(page, input, 'useState')
     expect((await snap(page)).filePaths.some((p) => p.endsWith('.tsx'))).toBe(true)
 
-    await page.locator('button[title$="search details"]').click()
+    await page.locator('button[aria-label="Toggle search details"]').click()
     const prior = (await snap(page)).searchId
     await page.locator('input[placeholder="e.g. *.lock, dist/**"]').fill('*.tsx')
     await settle(page, prior)
@@ -179,9 +179,9 @@ test.describe('content search', () => {
     await search(page, input, 'registerSearchHandlers')
     expect((await snap(page)).respectIgnore).toBe(true)
 
-    await page.locator('button[title$="search details"]').click()
+    await page.locator('button[aria-label="Toggle search details"]').click()
     const prior = (await snap(page)).searchId
-    await page.locator('button[title="Use Exclude Settings and Ignore Files"]').click()
+    await page.locator('button[aria-label="Use Exclude Settings and Ignore Files"]').click()
     await settle(page, prior)
     const s = await snap(page)
     expect(s.respectIgnore).toBe(false)
