@@ -29,7 +29,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'git' | 'fileExplorer' | 'projectList' | 'canvas' | 'agent' | 'document'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -626,8 +626,19 @@ export interface SessionSnapshot {
   regions?: Record<string, CanvasRegion>
   /** Dock zone layout state — added in Phase 5. Missing = empty dock (migration). */
   dockState?: DockStateSnapshot
-  /** Panels that live in dock zones (canvas, git, fileExplorer, etc.) — not on the canvas. */
+  /** Panels that live in dock zones (canvas, etc.) — not on the canvas. */
   dockPanels?: Record<string, PanelState>
+}
+
+/** Persisted sidebar arrangement (electron-store `sidebarSession`). Keyed by
+ *  workspace root paths — workspace IDs are runtime UUIDs and can't be persisted.
+ *  Separate from `recentProjects` (which stays recency-ordered for the Welcome
+ *  page) so manual order and the active workspace survive a restart. */
+export interface SidebarSession {
+  /** Workspace root paths in sidebar order. */
+  order: string[]
+  /** Root path of the active workspace, or '' when none applies. */
+  selected: string
 }
 
 /** Serialized dock zone state for session persistence. */
@@ -814,6 +825,11 @@ export interface AppSettings {
   autoFocusLargestVisibleNode: boolean
   /** Background pattern drawn on the canvas. */
   canvasGridStyle: CanvasGridStyle
+  /** Snap panels to the canvas grid while dragging and resizing, so windows
+   *  align to a uniform lattice. Hold Alt during a same-window drag/resize to
+   *  bypass it (the Alt bypass can't apply to drags between windows, since the
+   *  modifier state isn't carried across the cross-window IPC). */
+  snapToGrid: boolean
 
   // Terminal
   terminalFontFamily: string
@@ -897,6 +913,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   zoomSpeed: 1.0,
   autoFocusLargestVisibleNode: false,
   canvasGridStyle: 'dots',
+  snapToGrid: false,
 
   // Terminal
   terminalFontFamily: '',
@@ -953,9 +970,6 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   terminal: { width: 520, height: 340 },
   browser: { width: 640, height: 440 },
   editor: { width: 540, height: 420 },
-  git: { width: 440, height: 500 },
-  fileExplorer: { width: 280, height: 440 },
-  projectList: { width: 280, height: 360 },
   canvas: { width: 640, height: 480 },
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
