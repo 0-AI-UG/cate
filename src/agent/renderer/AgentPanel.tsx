@@ -970,6 +970,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
             ) : (
               <>
                 <ChatThread
+                  scrollKey={activeAgentKey ?? ''}
                   messages={messages}
                   pendingApprovals={pendingApprovals}
                   onApproval={handleApproval}
