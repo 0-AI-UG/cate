@@ -97,18 +97,17 @@ async function runSmokeAssertions(win: BrowserWindow): Promise<void> {
 }
 
 // Under Playwright (CATE_E2E=1) a normal show() opens the window on the user's
-// active screen and steals focus. We can't just keep it hidden either: a hidden
-// window throttles its rAF loop, so the node enter/leave transitions never
-// settle and the drag specs read the wrong rects. So under e2e we SHOW the
-// window (renderer composites, rAF runs, animations settle) but make it fully
-// transparent and inactive — invisible to the user and never focused, while
-// behaving exactly like a visible window for the renderer. Transparency (vs an
-// off-screen position) sidesteps macOS clamping a far-off-screen window back
-// onto a display. Playwright drives it over CDP regardless of opacity/focus.
+// active screen and steals focus — and on macOS a *shown* window can't be kept
+// off-screen (off-screen coordinates get clamped back onto a display). So under
+// e2e we never show the window at all: it's never mapped to a display, and
+// Playwright drives the renderer over CDP. A hidden window throttles its rAF
+// loop, so the renderer is instead made deterministic without a visible window
+// elsewhere (e2eHarness zeroes CSS animations; canvas nodes are created already
+// idle; node removal is finalized immediately) so the drag specs stay reliable.
 const IS_E2E = process.env.CATE_E2E === '1'
 
-/** Show a window — but under e2e make it transparent + inactive so it never
- *  appears on screen or steals focus (while still compositing for Playwright). */
+/** Show a window — but under e2e keep it hidden (never mapped to a display) so it
+ *  never appears on screen or steals focus. Playwright drives it over CDP. */
 function revealWindow(win: BrowserWindow, opts: { focus?: boolean } = {}): void {
   try {
     if (IS_E2E) return // never map to a display — Playwright drives it over CDP
@@ -183,10 +182,10 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
       sandbox: !disableRendererSandbox(),
       webSecurity: true,
       webviewTag: true,
-      // Under e2e the window is shown transparent + inactive (see revealWindow).
-      // paintWhenInitiallyHidden makes it paint + fire ready-to-show before that
-      // first show; backgroundThrottling:false keeps rAF/timers running so the
-      // animation-timed node/drag specs settle as on a normal window. Harmless
+      // Under e2e the window is never shown (revealWindow is a no-op).
+      // paintWhenInitiallyHidden makes the hidden renderer paint + fire
+      // ready-to-show anyway; backgroundThrottling:false keeps its rAF/timers
+      // running. (CSS animations are also disabled in e2eHarness.) Harmless
       // no-ops outside e2e.
       ...(IS_E2E ? { backgroundThrottling: false, paintWhenInitiallyHidden: true } : {}),
     },
