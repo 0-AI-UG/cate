@@ -4,8 +4,8 @@
 // =============================================================================
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { MagnifyingGlass, DotsThree, Gear } from '@phosphor-icons/react'
-import { SidebarSectionHeader } from './SidebarSectionHeader'
+import { MagnifyingGlass, DotsThree, Gear, Eraser } from '@phosphor-icons/react'
+import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { SearchResultsTree } from './SearchResultsTree'
 import { Tooltip } from './Tooltip'
 import { useGitTree } from './useGitTree'
@@ -87,7 +87,9 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
   }, [focusToken])
 
   // Debounced search trigger. The searchId is set in the store BEFORE invoking
-  // so streamed batches are never dropped as "stale".
+  // so streamed batches are never dropped as "stale". Skips re-running an
+  // identical search (same query + options + root) — e.g. when this view is
+  // remounted after switching sidebar tabs — since results persist in the store.
   useEffect(() => {
     const trimmed = query.trim()
     if (!trimmed || !rootPath) {
@@ -95,9 +97,13 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
       window.electronAPI.searchCancel().catch(() => { /* noop */ })
       return
     }
+    const key = JSON.stringify([
+      trimmed, isRegex, matchCase, wholeWord, includes, excludes, respectIgnore, rootPath,
+    ])
+    if (key === useSearchStore.getState().lastQueryKey) return
     const handle = window.setTimeout(() => {
       const searchId = `search-${++searchSeq}`
-      useSearchStore.getState().beginSearch(searchId)
+      useSearchStore.getState().beginSearch(searchId, key)
       window.electronAPI
         .searchStart(rootPath, searchId, {
           query: trimmed,
@@ -134,9 +140,30 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
 
   const hasQuery = query.trim().length > 0
 
+  // Reset the search: clear the query, results, and any in-flight run.
+  const clearSearch = (): void => {
+    setQuery('')
+    useSearchStore.getState().clearResults()
+    window.electronAPI.searchCancel().catch(() => { /* noop */ })
+    inputRef.current?.focus()
+  }
+
   return (
     <div className="flex flex-col h-full">
-      <SidebarSectionHeader title="Search" />
+      <SidebarSectionHeader
+        title="Search"
+        actions={
+          <Tooltip label="Clear search">
+            <SidebarHeaderButton
+              aria-label="Clear search"
+              onClick={clearSearch}
+              disabled={!hasQuery && files.length === 0}
+            >
+              <Eraser size={15} />
+            </SidebarHeaderButton>
+          </Tooltip>
+        }
+      />
 
       {/* Query input + match-mode toggles */}
       <div className="px-2 py-1.5 border-b border-subtle flex flex-col gap-1.5">

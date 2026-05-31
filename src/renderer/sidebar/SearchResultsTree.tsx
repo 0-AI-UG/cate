@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import { CaretRight, CaretDown, X } from '@phosphor-icons/react'
 import type { SearchFileResult, SearchMatchRange } from '../../shared/types'
 import { getFileIcon } from './FileTreeNode'
-import { trimLeading, trimForDisplay } from './searchDisplay'
+import { trimLeading } from './searchDisplay'
 import { lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { useSearchStore, lineKey } from '../stores/searchStore'
 import { useAppStore } from '../stores/appStore'
@@ -233,7 +233,10 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto overflow-x-hidden outline-none"
+      // mr-1.5 insets the scroll box (and its right-edge scrollbar) 6px inboard
+      // so the scrollbar no longer sits under the 6px sidebar resize handle and
+      // they stop stealing each other's drags.
+      className="flex-1 overflow-y-auto overflow-x-hidden outline-none mr-1.5"
       tabIndex={0}
       data-testid="search-results"
       data-keynav=""
@@ -272,9 +275,7 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
                   data-path={file.path}
                   data-selected={isSel}
                   className={`group flex items-center gap-1.5 pl-2 pr-2 text-xs cursor-pointer min-w-0 ${
-                    isSel
-                      ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40'
-                      : 'bg-black/10 hover:bg-surface-5'
+                    isSel ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40' : 'hover:bg-surface-5'
                   }`}
                   style={{ height: ROW_H }}
                   onClick={() => {
@@ -326,8 +327,10 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
             const { file, lineIdx } = row
             const ln = file.lines[lineIdx]
             const isContext = ln.ranges.length === 0
-            const display = trimForDisplay(ln.text, ln.ranges) // start-trimmed; match stays visible
-            const full = trimLeading(ln.text, ln.ranges)        // full line for the tooltip
+            // Show the line with only leading whitespace trimmed; the row
+            // truncates on the RIGHT (CSS), like VS Code — no left "…" clipping,
+            // so leading context stays readable. Full line still in the tooltip.
+            const full = trimLeading(ln.text, ln.ranges)
             return (
               <div
                 key={`l:${file.path}:${ln.line}:${lineIdx}`}
@@ -360,8 +363,7 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
                   :{ln.line}
                 </span>
                 <span className={`truncate min-w-0 font-mono ${isContext ? 'text-muted' : 'text-primary'}`}>
-                  {display.ellipsis && <span className="text-muted">…</span>}
-                  <Highlighted text={display.text} ranges={display.ranges} />
+                  <Highlighted text={full.text} ranges={full.ranges} />
                 </span>
                 {!isContext && (
                   <button

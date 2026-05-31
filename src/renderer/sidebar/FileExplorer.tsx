@@ -9,6 +9,7 @@ import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X, Folder, File 
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
 import { buildGitTreeDecorations, toPosixPath, type GitTree } from './gitStatusDecoration'
+import { watchFsRoot } from '../lib/fsWatchManager'
 import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
@@ -190,12 +191,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     // Initial load
     loadTree(rootPath)
 
-    // Start watcher
-    window.electronAPI.fsWatchStart(rootPath).catch((err) => log.warn('[file-explorer] Watch start failed:', err))
-
-    // Listen for events. Coalesce bursts (e.g. a build writing many files) with
-    // a short trailing debounce so we don't re-read the tree + re-run git status
-    // on every individual fs event.
+    // Watch via the shared refcounted manager (one underlying watcher per root,
+    // multiplexed) so the Explorer and the Search view's git-tree watcher don't
+    // tear down each other's subscription. Coalesce bursts (e.g. a build writing
+    // many files) with a short trailing debounce.
     const scheduleReload = () => {
       if (rootPathRef.current !== rootPath) return
       if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
@@ -204,7 +203,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         if (rootPathRef.current === rootPath) loadTree(rootPath)
       }, 150)
     }
-    const unsubscribe = window.electronAPI.onFsWatchEvent(scheduleReload)
+    const releaseWatch = watchFsRoot(rootPath, scheduleReload)
 
     // Reload when the exclusions list changes so hidden/shown folders update
     // without a relaunch.
@@ -219,9 +218,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         clearTimeout(reloadTimerRef.current)
         reloadTimerRef.current = null
       }
-      unsubscribe()
+      releaseWatch()
       unsubscribeSettings()
-      window.electronAPI?.fsWatchStop(rootPath).catch((err) => log.warn('[file-explorer] Watch stop failed:', err))
     }
 
     return () => {

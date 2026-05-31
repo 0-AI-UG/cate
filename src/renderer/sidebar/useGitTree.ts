@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { buildGitTreeDecorations, toPosixPath, type GitTree } from './gitStatusDecoration'
+import { watchFsRoot } from '../lib/fsWatchManager'
 
 /** Build a GitTree for `rootPath` from the git IPC, or undefined outside a repo.
  *  Mirrors FileExplorer.loadTree's git fetch: the porcelain status drives the
@@ -28,10 +29,10 @@ export async function loadGitTree(rootPath: string): Promise<GitTree | undefined
   }
 }
 
-/** React hook returning the GitTree for `rootPath`, kept reasonably fresh:
- *  reloaded on root change, on window focus, and on filesystem-watch events
- *  (when the Explorer's watcher is running). We deliberately don't start our
- *  own fs watcher — that would clobber the Explorer's fsWatchStop bookkeeping. */
+/** React hook returning the GitTree for `rootPath`, kept fresh on file changes:
+ *  reloaded on root change, on window focus, and on filesystem-watch events via
+ *  the shared refcounted watch manager (so it stays live even when the Explorer
+ *  — which also watches the root — is unmounted on another sidebar). */
 export function useGitTree(rootPath: string): GitTree | undefined {
   const [gitTree, setGitTree] = useState<GitTree | undefined>(undefined)
 
@@ -52,13 +53,13 @@ export function useGitTree(rootPath: string): GitTree | undefined {
 
     reload()
     window.addEventListener('focus', scheduleReload)
-    const unsubscribe = window.electronAPI?.onFsWatchEvent(scheduleReload)
+    const releaseWatch = watchFsRoot(rootPath, scheduleReload)
 
     return () => {
       cancelled = true
       if (timer) clearTimeout(timer)
       window.removeEventListener('focus', scheduleReload)
-      unsubscribe?.()
+      releaseWatch()
     }
   }, [rootPath])
 

@@ -239,4 +239,17 @@ test.describe('content search', () => {
     const reveal = await page.evaluate(() => window.__cateE2E!.lastEditorReveal())
     expect(reveal?.line).toBe(lineNo)
   })
+
+  test('clear button resets the query and results', async () => {
+    const page = app.mainWindow
+    const input = await openSearch(page)
+    await search(page, input, 'useState')
+    expect((await snap(page)).fileCount).toBeGreaterThan(0)
+
+    await page.locator('button[aria-label="Clear search"]').click()
+    await expect.poll(async () => (await snap(page)).query).toBe('')
+    const s = await snap(page)
+    expect(s.fileCount).toBe(0)
+    expect(s.status).toBe('idle')
+  })
 })

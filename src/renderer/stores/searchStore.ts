@@ -34,6 +34,9 @@ export interface SearchState {
   truncated: boolean
   error: string | null
   currentSearchId: string | null
+  /** Signature of the most recently launched search (query + options + root).
+   *  Lets the view skip re-running an identical search on remount. */
+  lastQueryKey: string | null
 
   // Transient UI
   collapsed: Set<string>
@@ -45,7 +48,7 @@ export interface SearchState {
   setQuery: (q: string) => void
   setOptions: (patch: Partial<SearchOptionFields>) => void
   toggleOptionsExpanded: () => void
-  beginSearch: (searchId: string) => void
+  beginSearch: (searchId: string, queryKey?: string) => void
   addBatch: (searchId: string, files: SearchFileResult[]) => void
   finishSearch: (searchId: string, stats: SearchStats, error?: string) => void
   clearResults: () => void
@@ -100,6 +103,7 @@ export const createSearchStore = () =>
     truncated: false,
     error: null,
     currentSearchId: null,
+    lastQueryKey: null,
 
     collapsed: new Set(),
     dismissedFiles: new Set(),
@@ -112,9 +116,10 @@ export const createSearchStore = () =>
 
     toggleOptionsExpanded: () => set((s) => ({ optionsExpanded: !s.optionsExpanded })),
 
-    beginSearch: (searchId) =>
+    beginSearch: (searchId, queryKey) =>
       set({
         currentSearchId: searchId,
+        lastQueryKey: queryKey ?? null,
         status: 'searching',
         files: [],
         truncated: false,
@@ -141,6 +146,7 @@ export const createSearchStore = () =>
         truncated: false,
         error: null,
         currentSearchId: null,
+        lastQueryKey: null,
         collapsed: new Set(),
         dismissedFiles: new Set(),
         dismissedLines: new Set(),
