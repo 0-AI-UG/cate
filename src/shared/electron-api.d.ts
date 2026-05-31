@@ -420,6 +420,9 @@ export interface ElectronAPI {
   /** Add a project path to the recent projects list. */
   recentProjectsAdd(projectPath: string): Promise<void>
 
+  /** Remove a project path from the recent projects list (issue #220 — forget on close). */
+  recentProjectsRemove(projectPath: string): Promise<void>
+
   /** Get the persisted sidebar arrangement (workspace order + active workspace). */
   sidebarSessionGet(): Promise<SidebarSession | null>
 

@@ -423,7 +423,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       }
       case 'remove-workspace':
         if (window.confirm(`Remove "${folderName}" from your workspaces?`)) {
-          removeWorkspace(selectedWorkspaceId)
+          removeWorkspace(selectedWorkspaceId, true)
         }
         break
       case 'find-in-folder': openSearch(); break

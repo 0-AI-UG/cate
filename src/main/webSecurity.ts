@@ -2,6 +2,17 @@ import { app, session, shell, type Session, type WebContents } from 'electron'
 import log from './logger'
 import { disableWebviewHardening } from './featureFlags'
 
+// Hosts whose OAuth/sign-in flows are forced into the user's real browser via
+// shell.openExternal (see installWebContentsSecurity below) rather than running
+// inside the webview — Electron's webview is flagged by these providers as an
+// "insecure browser" and blocks the flow.
+//
+// Note (issue #220): this is by design and independent of the browser panel's
+// persistent session. Even though all browser panels now share a stable
+// persistent partition so cookies/logins survive restarts (see BROWSER_PARTITION
+// in BrowserPanel.tsx), "Sign in with Google/Microsoft/Apple/GitHub" still
+// completes in the system browser, not in-app. In-webview OAuth for these
+// providers is intentionally not supported.
 const OAUTH_HOSTS = new Set([
   'accounts.google.com',
   'login.microsoftonline.com',
