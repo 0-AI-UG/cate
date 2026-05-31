@@ -49,7 +49,6 @@ import { PERF_GET } from '../shared/ipc-channels'
 import { installWebContentsSecurity } from './webSecurity'
 import { installThemeSkill } from './installThemeSkill'
 import { releaseAllProjectLocks } from './projectLock'
-import { focusRunningInstanceWindow } from './singleInstance'
 import {
   startCrossWindowDrag,
   updateCrossWindowCursor,
@@ -1289,31 +1288,7 @@ process.on('SIGINT', () => {
   process.exit(0)
 })
 
-// Single-instance lock — packaged builds only. A second launch (CLI,
-// double-click) must not spin up a rival process: two Cate processes on the same
-// project both autosave .cate/workspace.json, and each then sees the other's
-// writes as an external edit, firing a spurious "Reload workspace from disk?"
-// prompt on a ~30s loop. Hand off to the already-running instance and focus its
-// window instead.
-//
-// Dev builds are exempt: they run on a separate `Cate/Dev` userData profile (set
-// above), so they never collide with an installed build, and running several
-// `npm run dev` copies side by side (e.g. different branches) stays useful.
-const enforceSingleInstance = app.isPackaged
-const gotSingleInstanceLock = !enforceSingleInstance || app.requestSingleInstanceLock()
-if (!gotSingleInstanceLock) {
-  log.info('Another Cate instance already holds the single-instance lock; quitting this one')
-  app.quit()
-} else if (enforceSingleInstance) {
-  app.on('second-instance', () => {
-    focusRunningInstanceWindow(BrowserWindow.getAllWindows())
-  })
-}
-
 app.whenReady().then(async () => {
-  // The losing instance may still reach 'ready' before app.quit() settles —
-  // never build windows or register handlers in it.
-  if (!gotSingleInstanceLock) return
   // Phase 0 perf marker — log a high-resolution timestamp at app.whenReady
   // so cold-launch traces can be reconstructed from main + renderer logs.
   log.info('[perf] app.whenReady t=%dms', Math.round(performance.now()))
