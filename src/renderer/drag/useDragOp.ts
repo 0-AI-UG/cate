@@ -24,6 +24,7 @@ import { createTransferSnapshot } from '../lib/panelTransfer'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { prepareTerminalRemount } from './terminalRemount'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 
 const DEAD_ZONE_PX = 4
 
@@ -414,15 +415,18 @@ function onMouseMove(ev: MouseEvent) {
     snapshot,
   })
 
-  // Resolve the drop target for visual + commit.
+  // Resolve the drop target for visual + commit. Snap to grid when the user
+  // enabled it and isn't holding Alt (the temporary bypass modifier).
   const drag = useDragStore.getState()
   if (drag.source && drag.grab && drag.ghostSize && drag.panel) {
+    const snap = useSettingsStore.getState().snapToGrid && !ev.altKey
     const target = resolveDrop(
       { client, screen, insideWindow: inside },
       drag.source,
       drag.grab,
       drag.ghostSize,
       drag.panel.type,
+      { snap },
     )
     active.runtime = step(active, { type: 'TARGET', target })
   }

@@ -17,6 +17,7 @@ import type { CanvasStore } from '../stores/canvasStore'
 import type { DockStore } from '../stores/dockStore'
 import { useDragStore } from './store'
 import { resolveDrop } from './resolve'
+import { useSettingsStore } from '../stores/settingsStore'
 import { reduce, initial as runtimeInitial } from './runtime'
 import { remoteDragGrab } from './remoteGrab'
 import type { DragEvent, DragSource, RuntimeState } from './types'
@@ -173,6 +174,9 @@ export function setupCrossWindowDragListeners(
       // Only resolve a target while the cursor is inside this window. When
       // outside, clear the target so a stale highlight from the last
       // inside-update doesn't linger.
+      // Honor this (receiving) window's snap-to-grid setting. Keyboard state
+      // doesn't ride along the cross-window IPC, so the Alt bypass only applies
+      // to same-window drags.
       const target =
         inside && drag.source && drag.grab && drag.ghostSize && drag.panel
           ? resolveDrop(
@@ -181,6 +185,7 @@ export function setupCrossWindowDragListeners(
               drag.grab,
               drag.ghostSize,
               drag.panel.type,
+              { snap: useSettingsStore.getState().snapToGrid },
             )
           : null
       if (activeRemote) step(activeRemote, { type: 'TARGET', target })
