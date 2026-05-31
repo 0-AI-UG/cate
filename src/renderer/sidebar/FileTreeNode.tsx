@@ -107,6 +107,9 @@ interface FileTreeNodeProps {
   onSelect: (path: string, meta: { shift?: boolean; cmd?: boolean }) => void
   onFileOpen: (paths: string[], mode?: 'dock' | 'canvas') => void
   onTreeChanged?: () => void
+  /** Bumped by the explorer on every tree read; signals cached/expanded folders
+   *  to re-read their children from disk so reloads reflect on-disk state. */
+  refreshSignal?: number
   /** Flat ordered list of visible file paths for shift-click range selection */
   visiblePaths: string[]
   /** Lowercased search query; when non-empty, filters files and force-expands directories */
@@ -127,6 +130,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   onSelect,
   onFileOpen,
   onTreeChanged,
+  refreshSignal,
   visiblePaths,
   searchQuery,
   rootPath,
@@ -183,6 +187,20 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       /* ignore */
     }
   }, [node.path, node.isDirectory])
+
+  // Re-read children from disk when the explorer bumps refreshSignal (manual
+  // reload, fs-watch event, or a move/create/delete). Only folders we've already
+  // cached — expanded, or previously loaded then collapsed — need invalidating;
+  // never-opened folders read fresh on first expand. Acting only on an actual
+  // signal change (not on mount) avoids a redundant read right after loading.
+  const prevRefreshRef = useRef(refreshSignal)
+  useEffect(() => {
+    if (prevRefreshRef.current === refreshSignal) return
+    prevRefreshRef.current = refreshSignal
+    if (node.isDirectory && (isExpanded || children.length > 0)) {
+      reloadChildren()
+    }
+  }, [refreshSignal, node.isDirectory, isExpanded, children.length, reloadChildren])
 
   const parentDir = node.isDirectory ? node.path : node.path.substring(0, node.path.lastIndexOf('/'))
 
@@ -602,6 +620,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
               onSelect={onSelect}
               onFileOpen={onFileOpen}
               onTreeChanged={onTreeChanged}
+              refreshSignal={refreshSignal}
               visiblePaths={visiblePaths}
               searchQuery={searchQuery}
               rootPath={rootPath}
