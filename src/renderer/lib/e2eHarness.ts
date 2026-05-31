@@ -9,8 +9,31 @@ import { useAppStore } from '../stores/appStore'
 import { useUIStore, type SidebarView } from '../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useDragStore } from '../drag/store'
+import { useSearchStore } from '../stores/searchStore'
+import { getLastReveal } from './editorReveal'
 import { terminalRegistry } from './terminalRegistry'
 import type { Point } from '../../shared/types'
+
+/** Serializable snapshot of the search store for e2e assertions. */
+export interface SearchSnapshot {
+  query: string
+  isRegex: boolean
+  matchCase: boolean
+  wholeWord: boolean
+  includes: string
+  excludes: string
+  respectIgnore: boolean
+  optionsExpanded: boolean
+  status: string
+  searchId: string | null
+  truncated: boolean
+  error: string | null
+  fileCount: number
+  filePaths: string[]
+  totalMatches: number
+  dismissedFiles: number
+  dismissedLines: number
+}
 
 declare global {
   interface Window {
@@ -35,6 +58,10 @@ declare global {
       openSidebarView(view: SidebarView): void
       /** File paths of currently-open editor panels (for open-at-match asserts). */
       editorPaths(): string[]
+      /** Serializable snapshot of the search store (query, options, results). */
+      getSearchSnapshot(): SearchSnapshot
+      /** The most recent editor reveal request (panelId + line/column), or null. */
+      lastEditorReveal(): { panelId: string; line: number; column?: number } | null
       dragSnapshot(): {
         isDragging: boolean
         sourceKind: string | null
@@ -145,6 +172,31 @@ export function installE2EHarness(): void {
       .map((p) => p.filePath as string)
   }
 
+  const getSearchSnapshot = (): SearchSnapshot => {
+    const s = useSearchStore.getState()
+    return {
+      query: s.query,
+      isRegex: s.isRegex,
+      matchCase: s.matchCase,
+      wholeWord: s.wholeWord,
+      includes: s.includes,
+      excludes: s.excludes,
+      respectIgnore: s.respectIgnore,
+      optionsExpanded: s.optionsExpanded,
+      status: s.status,
+      searchId: s.currentSearchId,
+      truncated: s.truncated,
+      error: s.error,
+      fileCount: s.files.length,
+      filePaths: s.files.map((f) => f.relativePath),
+      totalMatches: s.files.reduce((n, f) => n + f.matchCount, 0),
+      dismissedFiles: s.dismissedFiles.size,
+      dismissedLines: s.dismissedLines.size,
+    }
+  }
+
+  const lastEditorReveal = () => getLastReveal()
+
   const dragSnapshot = () => {
     const s = useDragStore.getState()
     return {
@@ -171,6 +223,8 @@ export function installE2EHarness(): void {
     setWorkspaceRoot,
     openSidebarView,
     editorPaths,
+    getSearchSnapshot,
+    lastEditorReveal,
     dragSnapshot,
   }
 }

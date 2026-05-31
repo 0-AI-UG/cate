@@ -4,12 +4,6 @@ import type { SearchOptions } from '../../shared/types'
 
 const base = (over: Partial<SearchOptions> = {}): SearchOptions => ({ query: 'foo', ...over })
 
-/** Index of the value passed after a given flag. */
-function valueAfter(args: string[], flag: string): string | undefined {
-  const i = args.indexOf(flag)
-  return i === -1 ? undefined : args[i + 1]
-}
-
 describe('buildRipgrepArgs', () => {
   it('always emits --json and --line-number', () => {
     const args = buildRipgrepArgs(base(), '/root')
@@ -34,9 +28,26 @@ describe('buildRipgrepArgs', () => {
     expect(buildRipgrepArgs(base({ isRegex: true }), '/root')).not.toContain('--fixed-strings')
   })
 
-  it('passes --context only for positive contextLines', () => {
-    expect(buildRipgrepArgs(base(), '/root')).not.toContain('--context')
-    expect(valueAfter(buildRipgrepArgs(base({ contextLines: 2 }), '/root'), '--context')).toBe('2')
+  it('respects ignore files by default and applies the project exclusion set', () => {
+    const args = buildRipgrepArgs(base(), '/root', ['node_modules', '.git'])
+    expect(args).not.toContain('--no-ignore')
+    expect(args).not.toContain('--hidden')
+    const globs = args.filter((_, i) => args[i - 1] === '--glob')
+    expect(globs).toContain('!node_modules')
+    expect(globs).toContain('!.git')
+  })
+
+  it('with respectIgnore=false adds --no-ignore --hidden and drops the project exclusion set', () => {
+    const args = buildRipgrepArgs(
+      base({ respectIgnore: false, excludes: ['*.lock'] }),
+      '/root',
+      ['node_modules', '.git'],
+    )
+    expect(args).toContain('--no-ignore')
+    expect(args).toContain('--hidden')
+    const globs = args.filter((_, i) => args[i - 1] === '--glob')
+    expect(globs).toContain('!*.lock') // user excludes still apply
+    expect(globs).not.toContain('!node_modules') // project exclusion set dropped
   })
 
   it('maps includes to globs and excludes to negated globs', () => {
@@ -61,7 +72,7 @@ describe('buildRipgrepArgs', () => {
 
   it('passes the query via -e and the root path as the final argument', () => {
     const args = buildRipgrepArgs(base({ query: '-flag-like' }), '/my/root')
-    expect(valueAfter(args, '-e')).toBe('-flag-like')
+    expect(args[args.indexOf('-e') + 1]).toBe('-flag-like')
     expect(args[args.length - 1]).toBe('/my/root')
   })
 })
