@@ -13,7 +13,7 @@ import { computePlacement, type Rect } from '../../renderer/lib/cateControlLayou
 import { openFileAsPanel } from '../../renderer/lib/fileRouting'
 import { setPendingReveal } from '../../renderer/lib/editorReveal'
 
-const OPENABLE: PanelType[] = ['editor', 'terminal', 'browser', 'git', 'fileExplorer', 'document']
+const OPENABLE: PanelType[] = ['editor', 'terminal', 'browser', 'document']
 
 function fail(error: string): CateControlResponse { return { ok: false, error } }
 function ok(result?: unknown): CateControlResponse { return { ok: true, result } }
@@ -97,12 +97,6 @@ export const execOpenPanel: CateExecutor = async (params, ctx) => {
       break
     case 'browser':
       panelId = app.createBrowser(wsId, typeof target.url === 'string' ? target.url : undefined)
-      break
-    case 'git':
-      panelId = app.createGit(wsId)
-      break
-    case 'fileExplorer':
-      panelId = app.createFileExplorer(wsId)
       break
     case 'document':
       panelId = typeof target.path === 'string' ? openFileAsPanel(wsId, target.path) : app.createEditor(wsId)
