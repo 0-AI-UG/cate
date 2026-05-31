@@ -5,10 +5,13 @@ import type { CSSProperties } from 'react'
 // an agent logo (an <img>, which ignores `color`), and tinting it would clash
 // with the per-agent icon swap.
 //
-// While the agent is running the title shimmers in the worktree hue: the caller
-// adds the `cate-notif-pulse` class and this returns the gradient stops as CSS
-// custom properties (--shimmer-dim/--shimmer-bright). When idle it returns a
-// steady color. Without a worktree color it returns undefined, so a running
+// While the agent is running the title shimmers: the caller adds the
+// `cate-notif-pulse` class and this returns the gradient stops as CSS custom
+// properties (--shimmer-dim/--shimmer-bright). The base sits at the worktree
+// color and a WHITE highlight sweeps across it — keeping the moving band white
+// regardless of hue, since a same-hue sweep (bright color over dim color) is
+// too subtle on darker/saturated worktree colors. When idle it returns a steady
+// color. Without a worktree color it returns undefined, so a running
 // non-worktree title falls back to the class's default muted->primary sweep.
 export function worktreeTitleStyle(
   color: string | undefined,
@@ -17,7 +20,7 @@ export function worktreeTitleStyle(
   if (!color) return undefined
   if (!isRunning) return { color }
   return {
-    '--shimmer-bright': color,
-    '--shimmer-dim': `color-mix(in srgb, ${color} 45%, var(--text-muted, #8a8479))`,
+    '--shimmer-bright': '#ffffff',
+    '--shimmer-dim': color,
   } as CSSProperties
 }
