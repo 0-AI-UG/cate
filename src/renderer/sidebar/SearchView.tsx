@@ -3,11 +3,12 @@
 // modelled on VS Code's Search view. Streams ripgrep results into searchStore.
 // =============================================================================
 
-import React, { useEffect, useMemo, useRef } from 'react'
-import { MagnifyingGlass, CaretRight, CaretDown, Gear } from '@phosphor-icons/react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { MagnifyingGlass, DotsThree, Gear } from '@phosphor-icons/react'
 import { SidebarSectionHeader } from './SidebarSectionHeader'
 import { SearchResultsTree } from './SearchResultsTree'
 import { Tooltip } from './Tooltip'
+import { useGitTree } from './useGitTree'
 import { useSearchStore, lineKey } from '../stores/searchStore'
 import { ensureSearchSubscriptions } from '../stores/searchIpc'
 import log from '../lib/logger'
@@ -68,6 +69,10 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
   const toggleOptionsExpanded = useSearchStore((s) => s.toggleOptionsExpanded)
 
   const inputRef = useRef<HTMLInputElement>(null)
+  // Placeholders show only while a field is focused (hidden at rest).
+  const [focusedField, setFocusedField] = useState<'query' | 'include' | 'exclude' | null>(null)
+  // Git decorations so result file rows tint like the Explorer.
+  const gitTree = useGitTree(rootPath)
 
   // Ensure window-level result subscriptions exist (idempotent; persists across
   // mount/unmount so batches arriving while the view is hidden aren't lost).
@@ -136,26 +141,20 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
       {/* Query input + match-mode toggles */}
       <div className="px-2 py-1.5 border-b border-subtle flex flex-col gap-1.5">
         <div className="flex items-center gap-1">
-          <Tooltip label={optionsExpanded ? 'Hide search details' : 'Toggle search details'}>
-            <button
-              className="flex-shrink-0 text-secondary hover:text-primary"
-              aria-label="Toggle search details"
-              onClick={toggleOptionsExpanded}
-            >
-              {optionsExpanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
-            </button>
-          </Tooltip>
           <div className="flex-1 relative">
             <MagnifyingGlass size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-secondary" />
             <input
               ref={inputRef}
               value={query}
+              aria-label="Search"
               onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => setFocusedField('query')}
+              onBlur={() => setFocusedField(null)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') setQuery('')
                 e.stopPropagation()
               }}
-              placeholder="Search"
+              placeholder={focusedField === 'query' ? 'Search' : ''}
               spellCheck={false}
               className="w-full bg-surface-5 text-primary text-xs pl-7 pr-14 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
             />
@@ -171,18 +170,35 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
               </ToggleBtn>
             </div>
           </div>
+          {/* VS Code-style "..." toggle that reveals the include/exclude details. */}
+          <Tooltip label="Toggle Search Details">
+            <button
+              type="button"
+              aria-label="Toggle search details"
+              aria-pressed={optionsExpanded}
+              onClick={toggleOptionsExpanded}
+              className={`flex-shrink-0 flex items-center justify-center w-6 h-6 rounded transition-colors ${
+                optionsExpanded ? 'bg-accent text-white' : 'text-secondary hover:text-primary hover:bg-surface-5'
+              }`}
+            >
+              <DotsThree size={18} weight="bold" />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Expandable include / exclude (VS Code-style) */}
         {optionsExpanded && (
-          <div className="flex flex-col gap-2 pl-5">
+          <div className="flex flex-col gap-2">
             <div className="flex flex-col gap-0.5">
               <span className="text-[10px] text-muted">files to include</span>
               <input
                 value={includes}
+                aria-label="files to include"
                 onChange={(e) => setOptions({ includes: e.target.value })}
+                onFocus={() => setFocusedField('include')}
+                onBlur={() => setFocusedField(null)}
                 onKeyDown={(e) => e.stopPropagation()}
-                placeholder="e.g. src/**, *.ts"
+                placeholder={focusedField === 'include' ? 'e.g. src/**, *.ts' : ''}
                 spellCheck={false}
                 className="w-full bg-surface-5 text-primary text-[11px] px-2 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
               />
@@ -192,9 +208,12 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
               <div className="relative">
                 <input
                   value={excludes}
+                  aria-label="files to exclude"
                   onChange={(e) => setOptions({ excludes: e.target.value })}
+                  onFocus={() => setFocusedField('exclude')}
+                  onBlur={() => setFocusedField(null)}
                   onKeyDown={(e) => e.stopPropagation()}
-                  placeholder="e.g. *.lock, dist/**"
+                  placeholder={focusedField === 'exclude' ? 'e.g. *.lock, dist/**' : ''}
                   spellCheck={false}
                   className="w-full bg-surface-5 text-primary text-[11px] pl-2 pr-7 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
                 />
@@ -234,7 +253,7 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
 
       {/* Results */}
       {hasQuery && !error && visibleFiles.length > 0 ? (
-        <SearchResultsTree files={visibleFiles} />
+        <SearchResultsTree files={visibleFiles} git={gitTree} />
       ) : !hasQuery ? (
         <div className="flex-1 flex items-center justify-center text-xs text-muted px-4 text-center">
           Search across files in this folder.

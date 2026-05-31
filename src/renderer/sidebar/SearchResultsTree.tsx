@@ -4,16 +4,25 @@
 // navigation, open-at-line, and dismissing a match or a whole file.
 // =============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CaretRight, CaretDown, X } from '@phosphor-icons/react'
 import type { SearchFileResult, SearchMatchRange } from '../../shared/types'
 import { getFileIcon } from './FileTreeNode'
 import { trimLeading, trimForDisplay } from './searchDisplay'
+import { lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { useSearchStore, lineKey } from '../stores/searchStore'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fileRouting'
 import { setPendingReveal } from '../lib/editorReveal'
+
+// Uniform row height (px). Both the file-header and code-line rows are forced to
+// this height so the windowed (virtualized) list can map scrollTop <-> row index
+// with trivial arithmetic — no per-row measurement needed.
+const ROW_H = 22
+// Extra rows rendered above/below the viewport so fast scrolling never flashes
+// blank before the next frame.
+const OVERSCAN = 8
 
 /** Render a line's text with its match ranges highlighted. */
 const Highlighted: React.FC<{ text: string; ranges: SearchMatchRange[] }> = ({ text, ranges }) => {
@@ -66,9 +75,11 @@ type Row =
 interface Props {
   /** Visible files (already filtered for dismissed files by the caller). */
   files: SearchFileResult[]
+  /** Git decorations for the repo, so file rows tint like the Explorer. */
+  git?: GitTree
 }
 
-export const SearchResultsTree: React.FC<Props> = ({ files }) => {
+export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
   const collapsed = useSearchStore((s) => s.collapsed)
   const dismissedLines = useSearchStore((s) => s.dismissedLines)
   const toggleCollapse = useSearchStore((s) => s.toggleCollapse)
@@ -83,6 +94,15 @@ export const SearchResultsTree: React.FC<Props> = ({ files }) => {
     top: number
     left: number
   } | null>(null)
+
+  // --- Virtualization state. Only the rows intersecting the viewport (plus a
+  // small overscan) are mounted, so a query with thousands of matches stays
+  // responsive. Default the viewport to a plausible height so the very first
+  // render is already windowed (avoids momentarily committing every row).
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportH, setViewportH] = useState(600)
+  const rafRef = useRef<number | null>(null)
 
   // Build the flat list of visible rows (file headers + non-dismissed match lines).
   const rows = useMemo<Row[]>(() => {
@@ -116,6 +136,47 @@ export const SearchResultsTree: React.FC<Props> = ({ files }) => {
   useEffect(() => {
     if (selected >= rows.length) setSelected(Math.max(0, rows.length - 1))
   }, [rows.length, selected])
+
+  // Track the scroll viewport height (measured before paint so the first frame
+  // is already windowed) and react to sidebar resizes.
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const measure = (): void => setViewportH(el.clientHeight)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  // Keep the keyboard-selected row visible: since off-screen rows aren't mounted,
+  // we scroll by arithmetic instead of relying on the element's scrollIntoView.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || rows.length === 0) return
+    const top = selected * ROW_H
+    const bottom = top + ROW_H
+    if (top < el.scrollTop) el.scrollTop = top
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight
+  }, [selected, rows.length])
+
+  // rAF-throttle scroll updates to one windowing recompute per frame.
+  const onScroll = (): void => {
+    if (rafRef.current != null) return
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null
+      const el = containerRef.current
+      if (el) setScrollTop(el.scrollTop)
+    })
+  }
+
+  const total = rows.length
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN)
+  const endIdx = Math.min(total, Math.ceil((scrollTop + viewportH) / ROW_H) + OVERSCAN)
+  const visibleRows = rows.slice(startIdx, endIdx)
 
   const openLine = (file: SearchFileResult, lineIdx: number): void => {
     const wsId = useAppStore.getState().selectedWorkspaceId
@@ -171,114 +232,154 @@ export const SearchResultsTree: React.FC<Props> = ({ files }) => {
 
   return (
     <div
-      className="flex-1 overflow-y-auto overflow-x-hidden outline-none py-1"
+      ref={containerRef}
+      className="flex-1 overflow-y-auto overflow-x-hidden outline-none"
       tabIndex={0}
       data-testid="search-results"
       data-keynav=""
+      onScroll={onScroll}
       onKeyDown={onKeyDown}
       onMouseLeave={() => setHover(null)}
     >
-      {rows.map((row, idx) => {
-        const isSel = selected === idx
-        if (row.kind === 'file') {
-          const file = row.file
-          const isCollapsed = collapsed.has(file.path)
-          const dir = dirName(file.relativePath)
-          const count = visibleCount.get(file.path) ?? file.matchCount
-          const fileIcon = getFileIcon(extOf(file.relativePath), false, false)
-          return (
-            <div
-              key={`f:${file.path}`}
-              data-testid="search-file"
-              data-path={file.path}
-              data-selected={isSel}
-              className={`group flex items-center gap-1.5 pl-2 pr-2 py-[3px] text-xs cursor-pointer min-w-0 ${
-                isSel ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40' : 'hover:bg-surface-5'
-              }`}
-              onClick={() => {
-                setSelected(idx)
-                toggleCollapse(file.path)
-              }}
-              title={file.relativePath}
-              draggable
-              onDragStart={(e) => setFileDrag(e, file.path)}
-            >
-              <span className="flex-shrink-0 text-muted">
-                {isCollapsed ? <CaretRight size={12} /> : <CaretDown size={12} />}
-              </span>
-              <span className="flex-shrink-0 flex items-center" style={{ color: fileIcon.color }}>
-                {fileIcon.icon}
-              </span>
-              <span className="text-primary truncate flex-shrink-0 max-w-[60%]">{baseName(file.relativePath)}</span>
-              {dir && <span className="text-secondary text-[10px] truncate min-w-0">{dir}</span>}
-              <span className="ml-auto flex-shrink-0 flex items-center gap-1 pl-1">
-                <span className="text-secondary text-[10px] tabular-nums rounded-full bg-surface-6 px-1.5 leading-4 group-hover:hidden">
-                  {count}
-                </span>
-                <button
-                  className="hidden group-hover:flex text-muted hover:text-primary"
-                  title="Dismiss file"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    dismissFile(file.path)
+      {/* Tall spacer = full scroll height; the windowed slice below is absolutely
+          positioned and translated down to the first visible row. */}
+      <div style={{ height: total * ROW_H, position: 'relative', width: '100%' }}>
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            transform: `translateY(${startIdx * ROW_H}px)`,
+          }}
+        >
+          {visibleRows.map((row, i) => {
+            const idx = startIdx + i
+            const isSel = selected === idx
+            if (row.kind === 'file') {
+              const file = row.file
+              const isCollapsed = collapsed.has(file.path)
+              const dir = dirName(file.relativePath)
+              const count = visibleCount.get(file.path) ?? file.matchCount
+              const fileIcon = getFileIcon(extOf(file.relativePath), false, false)
+              // Tint the file name by git status, exactly like the Explorer.
+              const { decoration } = lookupNodeDecoration(git, file.path, false)
+              const nameColor = decoration ? decoration.colorClass : 'text-primary'
+              return (
+                <div
+                  key={`f:${file.path}`}
+                  data-testid="search-file"
+                  data-path={file.path}
+                  data-selected={isSel}
+                  className={`group flex items-center gap-1.5 pl-2 pr-2 text-xs cursor-pointer min-w-0 ${
+                    isSel
+                      ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40'
+                      : 'bg-black/10 hover:bg-surface-5'
+                  }`}
+                  style={{ height: ROW_H }}
+                  onClick={() => {
+                    setSelected(idx)
+                    toggleCollapse(file.path)
                   }}
+                  onMouseDown={() => setHover(null)}
+                  title={file.relativePath}
+                  draggable
+                  onDragStart={(e) => {
+                    setHover(null)
+                    setFileDrag(e, file.path)
+                  }}
+                  onDragEnd={() => setHover(null)}
                 >
-                  <X size={12} />
-                </button>
-              </span>
-            </div>
-          )
-        }
+                  <span className="flex-shrink-0 text-muted">
+                    {isCollapsed ? <CaretRight size={12} /> : <CaretDown size={12} />}
+                  </span>
+                  <span className="flex-shrink-0 flex items-center" style={{ color: fileIcon.color }}>
+                    {fileIcon.icon}
+                  </span>
+                  <span
+                    className={`truncate flex-shrink-0 max-w-[60%] ${nameColor} ${
+                      decoration?.strike ? 'line-through' : ''
+                    }`}
+                  >
+                    {baseName(file.relativePath)}
+                  </span>
+                  {dir && <span className="text-secondary text-[10px] truncate min-w-0">{dir}</span>}
+                  <span className="ml-auto flex-shrink-0 flex items-center gap-1 pl-1">
+                    <span className="text-secondary text-[10px] tabular-nums rounded-full bg-surface-6 px-1.5 leading-4 group-hover:hidden">
+                      {count}
+                    </span>
+                    <button
+                      className="hidden group-hover:flex text-muted hover:text-primary"
+                      title="Dismiss file"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        dismissFile(file.path)
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                </div>
+              )
+            }
 
-        const { file, lineIdx } = row
-        const ln = file.lines[lineIdx]
-        const isContext = ln.ranges.length === 0
-        const display = trimForDisplay(ln.text, ln.ranges) // start-trimmed; match stays visible
-        const full = trimLeading(ln.text, ln.ranges)        // full line for the tooltip
-        return (
-          <div
-            key={`l:${file.path}:${ln.line}:${lineIdx}`}
-            data-testid="search-line"
-            data-path={file.path}
-            data-line={ln.line}
-            data-selected={isSel}
-            className={`group flex items-center gap-1.5 pr-1 py-[2px] text-xs cursor-pointer ${
-              isSel ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40' : 'hover:bg-surface-5'
-            }`}
-            style={{ paddingLeft: 20 }}
-            onMouseEnter={(e) => {
-              const r = e.currentTarget.getBoundingClientRect()
-              setHover({ text: full.text, ranges: full.ranges, top: r.bottom, left: r.left })
-            }}
-            onClick={() => {
-              setSelected(idx)
-              if (!isContext) openLine(file, lineIdx)
-            }}
-            draggable
-            onDragStart={(e) => setFileDrag(e, file.path, ln.line, (ln.ranges[0]?.start ?? 0) + 1)}
-          >
-            <span className="flex-shrink-0 text-muted text-[10px] tabular-nums text-left select-none min-w-[1.6rem]">
-              :{ln.line}
-            </span>
-            <span className={`truncate min-w-0 font-mono ${isContext ? 'text-muted' : 'text-primary'}`}>
-              {display.ellipsis && <span className="text-muted">…</span>}
-              <Highlighted text={display.text} ranges={display.ranges} />
-            </span>
-            {!isContext && (
-              <button
-                className="ml-auto hidden group-hover:flex flex-shrink-0 text-muted hover:text-primary"
-                title="Dismiss match"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  dismissLine(file.path, ln.line)
+            const { file, lineIdx } = row
+            const ln = file.lines[lineIdx]
+            const isContext = ln.ranges.length === 0
+            const display = trimForDisplay(ln.text, ln.ranges) // start-trimmed; match stays visible
+            const full = trimLeading(ln.text, ln.ranges)        // full line for the tooltip
+            return (
+              <div
+                key={`l:${file.path}:${ln.line}:${lineIdx}`}
+                data-testid="search-line"
+                data-path={file.path}
+                data-line={ln.line}
+                data-selected={isSel}
+                className={`group flex items-center gap-1.5 pr-1 text-xs cursor-pointer ${
+                  isSel ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40' : 'hover:bg-surface-5'
+                }`}
+                style={{ paddingLeft: 20, height: ROW_H }}
+                onMouseEnter={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  setHover({ text: full.text, ranges: full.ranges, top: r.bottom, left: r.left })
                 }}
+                onMouseLeave={() => setHover(null)}
+                onClick={() => {
+                  setSelected(idx)
+                  if (!isContext) openLine(file, lineIdx)
+                }}
+                onMouseDown={() => setHover(null)}
+                draggable
+                onDragStart={(e) => {
+                  setHover(null)
+                  setFileDrag(e, file.path, ln.line, (ln.ranges[0]?.start ?? 0) + 1)
+                }}
+                onDragEnd={() => setHover(null)}
               >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        )
-      })}
+                <span className="flex-shrink-0 text-muted text-[10px] tabular-nums text-left select-none min-w-[1.6rem]">
+                  :{ln.line}
+                </span>
+                <span className={`truncate min-w-0 font-mono ${isContext ? 'text-muted' : 'text-primary'}`}>
+                  {display.ellipsis && <span className="text-muted">…</span>}
+                  <Highlighted text={display.text} ranges={display.ranges} />
+                </span>
+                {!isContext && (
+                  <button
+                    className="ml-auto hidden group-hover:flex flex-shrink-0 text-muted hover:text-primary"
+                    title="Dismiss match"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      dismissLine(file.path, ln.line)
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
       {hover &&
         createPortal(
           <div

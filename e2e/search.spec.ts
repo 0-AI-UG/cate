@@ -33,7 +33,7 @@ const snap = (page: Page): Promise<Snapshot> =>
 async function openSearch(page: Page) {
   await page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), REPO_ROOT)
   await page.evaluate(() => window.__cateE2E!.openSidebarView('search'))
-  const input = page.locator('input[placeholder="Search"]')
+  const input = page.locator('input[aria-label="Search"]')
   await input.waitFor({ state: 'visible', timeout: 10_000 })
   return input
 }
@@ -153,7 +153,7 @@ test.describe('content search', () => {
 
     await page.locator('button[aria-label="Toggle search details"]').click()
     const prior = (await snap(page)).searchId
-    await page.locator('input[placeholder="e.g. src/**, *.ts"]').fill('*.tsx')
+    await page.locator('input[aria-label="files to include"]').fill('*.tsx')
     await settle(page, prior)
     const s = await snap(page)
     expect(s.fileCount).toBeGreaterThan(0)
@@ -168,7 +168,7 @@ test.describe('content search', () => {
 
     await page.locator('button[aria-label="Toggle search details"]').click()
     const prior = (await snap(page)).searchId
-    await page.locator('input[placeholder="e.g. *.lock, dist/**"]').fill('*.tsx')
+    await page.locator('input[aria-label="files to exclude"]').fill('*.tsx')
     await settle(page, prior)
     expect((await snap(page)).filePaths.some((p) => p.endsWith('.tsx'))).toBe(false)
   })

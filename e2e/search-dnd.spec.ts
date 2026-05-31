@@ -13,7 +13,7 @@ const REPO_ROOT = path.resolve(__dirname, '..')
 async function openSearch(page: Page) {
   await page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), REPO_ROOT)
   await page.evaluate(() => window.__cateE2E!.openSidebarView('search'))
-  const input = page.locator('input[placeholder="Search"]')
+  const input = page.locator('input[aria-label="Search"]')
   await input.waitFor({ state: 'visible', timeout: 10_000 })
   await input.fill('registerSearchHandlers')
   await expect.poll(

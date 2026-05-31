@@ -17,7 +17,12 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, children }) => {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const show = (e: React.MouseEvent): void => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    // The wrapper is `display: contents` (no layout box), so its own rect is all
+    // zeros and would pin the chip to the top-left corner. Measure the wrapped
+    // child element instead, which carries the real geometry.
+    const host = e.currentTarget as HTMLElement
+    const el = (host.firstElementChild as HTMLElement | null) ?? host
+    const r = el.getBoundingClientRect()
     const left = r.left + r.width / 2
     const top = r.bottom + 4
     timer.current = setTimeout(() => setPos({ top, left }), 250)
