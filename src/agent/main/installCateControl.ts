@@ -1,6 +1,6 @@
 // =============================================================================
 // installCateControl — copy the bundled cate-control extension into a
-// workspace's pi-agent extensions dir on first use, where pi auto-discovers it.
+// workspace's pi-agent extensions dir, where pi auto-discovers it.
 //
 // Source lives in our own tree at src/agent/extensions/cate-control/. Pi
 // loads .ts directly via jiti, so we just ship the raw .ts and .json files.
@@ -10,7 +10,13 @@
 //       electron-builder.yml `extraResources`, so we resolve from
 //       process.resourcesPath there.
 //
-// Skip-if-exists: never overwrite a user's modified copy.
+// Refresh-on-change (NOT skip-if-exists): the extension's tool/action protocol
+// is tightly coupled to the renderer dispatcher (src/agent/renderer/cateControl
+// + cateExecutors). A stale installed copy makes the agent emit action names the
+// renderer no longer handles ("Unknown or unimplemented action"), so the bundled
+// copy is authoritative and is rewritten whenever its bytes differ from the
+// installed copy. (Previously skip-if-exists, which silently broke the feature
+// after any extension update — dev or app upgrade.)
 // =============================================================================
 
 import fs from 'fs'
@@ -35,14 +41,18 @@ function sourceDir(): string | null {
   return null
 }
 
-async function copyIfMissing(src: string, dest: string): Promise<void> {
+/** Write `src` → `dest` when the destination is missing or its bytes differ.
+ *  Keeps the installed extension in lock-step with the bundled source so the
+ *  agent never emits a stale action the renderer dispatcher can't handle. */
+export async function copyIfChanged(src: string, dest: string): Promise<void> {
+  const srcData = await fsp.readFile(src)
   try {
-    await fsp.access(dest)
-    return // already present
-  } catch { /* fall through */ }
+    const destData = await fsp.readFile(dest)
+    if (destData.equals(srcData)) return // up to date — nothing to do
+  } catch { /* missing — fall through to write */ }
   await fsp.mkdir(path.dirname(dest), { recursive: true })
-  await fsp.copyFile(src, dest)
-  log.info('[installCateControl] installed %s', dest)
+  await fsp.writeFile(dest, srcData)
+  log.info('[installCateControl] installed/updated %s', dest)
 }
 
 /** Idempotent — safe to call from AgentManager.create() on every session. */
@@ -57,8 +67,8 @@ export async function installCateControlExtension(cwd: string): Promise<void> {
       return
     }
     const destDir = path.join(home, 'extensions', 'cate-control')
-    await copyIfMissing(path.join(src, 'index.ts'), path.join(destDir, 'index.ts'))
-    await copyIfMissing(path.join(src, 'package.json'), path.join(destDir, 'package.json'))
+    await copyIfChanged(path.join(src, 'index.ts'), path.join(destDir, 'index.ts'))
+    await copyIfChanged(path.join(src, 'package.json'), path.join(destDir, 'package.json'))
   } catch (err) {
     log.warn('[installCateControl] install failed: %O', err)
   }
