@@ -53,8 +53,8 @@ describe('cateToolDisplay', () => {
   })
 
   it('falls back to the panel type when no target detail is present', () => {
-    const d = cateToolDisplay('panel', { op: 'open', type: 'git' })
-    expect(d.summary).toBe('git')
+    const d = cateToolDisplay('panel', { op: 'open', type: 'document' })
+    expect(d.summary).toBe('document')
   })
 
   it('describes a resize op with its preset', () => {

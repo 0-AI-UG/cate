@@ -12,8 +12,6 @@ import {
   FileCode,
   Terminal,
   Globe,
-  GitBranch,
-  TreeStructure,
   SquaresFour,
   X,
   Crosshair,
@@ -42,8 +40,6 @@ const PANEL_ICONS: Record<string, PhosphorIcon> = {
   editor: FileCode,
   terminal: Terminal,
   browser: Globe,
-  git: GitBranch,
-  fileExplorer: TreeStructure,
   document: FileText,
 }
 

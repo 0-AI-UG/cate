@@ -51,7 +51,7 @@ export default function (pi: ExtensionAPI) {
   tool("cate_panel", "Open or manage a panel",
     [
       "Open or manage a single canvas panel. Choose `op`:",
-      "- 'open': create/open a panel, focus + center it. {type: editor|terminal|browser|git|fileExplorer|document, target?, placement?}. target: {path,line?,column?,preview?} for editor (preview:true = open a markdown file straight into rendered preview); {url} for browser; {cwd?,command?} for terminal.",
+      "- 'open': create/open a panel, focus + center it. {type: editor|terminal|browser|document, target?, placement?}. target: {path,line?,column?,preview?} for editor (preview:true = open a markdown file straight into rendered preview); {url} for browser; {cwd?,command?} for terminal.",
       "- 'focus' | 'close': {panelId}.",
       "- 'move': {panelId, placement:{relativeTo,position}}.",
       "- 'resize': {panelId, preset: small|medium|large} or {panelId, size:{width,height}}.",
