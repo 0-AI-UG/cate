@@ -48,6 +48,7 @@ import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
 import { PERF_GET } from '../shared/ipc-channels'
 import { installWebContentsSecurity } from './webSecurity'
 import { installThemeSkill } from './installThemeSkill'
+import { releaseAllProjectLocks } from './projectLock'
 import {
   startCrossWindowDrag,
   updateCrossWindowCursor,
@@ -1419,6 +1420,9 @@ app.on('will-quit', () => {
   // we write something if it didn't.
   log.info('will-quit: sync project state save fallback')
   saveProjectStateSync()
+  // Drop per-project locks so a co-running instance can take over immediately
+  // (a crash skips this; the next instance reclaims the stale lock by pid).
+  releaseAllProjectLocks()
   // Kill all PTYs now — AFTER session save so the renderer had access to live
   // PTY data (CWD, scrollback) during the flush triggered in before-quit.
   // Must happen while the JS environment is still alive. If we let them die

@@ -18,6 +18,7 @@ import type { WorkspaceInfo, WorkspaceMutationResult } from '../shared/types'
 import { broadcastToAll, windowFromEvent } from './windowRegistry'
 import { addAllowedRoot, removeAllowedRoot } from './ipc/pathValidation'
 import { resolveTrustedWorkspaceRoot } from './workspaceRoots'
+import { acquireProjectLock, releaseProjectLock } from './projectLock'
 
 // In-memory workspace list — authoritative source of truth
 const workspaces: Map<string, WorkspaceInfo> = new Map()
@@ -35,6 +36,26 @@ function isValidWorkspaceId(id: string): boolean {
 
 function generateId(): string {
   return randomUUID()
+}
+
+// -----------------------------------------------------------------------------
+// Per-project lock — claim ownership of a project's .cate/workspace.json when
+// it's opened here, so a second Cate (dev vs installed) won't autosave over us.
+// -----------------------------------------------------------------------------
+
+/** True if any workspace other than `exceptId` is rooted at `rootPath`. */
+function rootInUse(rootPath: string, exceptId?: string): boolean {
+  for (const [id, w] of workspaces) {
+    if (id === exceptId) continue
+    if (w.rootPath === rootPath) return true
+  }
+  return false
+}
+
+/** Drop the project lock once no remaining workspace here uses that root. */
+function dropProjectLock(rootPath: string, exceptId?: string): void {
+  if (!rootPath || rootInUse(rootPath, exceptId)) return
+  releaseProjectLock(rootPath)
 }
 
 // -----------------------------------------------------------------------------
@@ -77,6 +98,7 @@ async function createWorkspace(name?: string, rootPath?: string, id?: string): P
   log.info('Workspace created: %s (%s)', info.id, info.rootPath || 'no root')
   if (info.rootPath) {
     addAllowedRoot(info.rootPath)
+    acquireProjectLock(info.rootPath)
   }
   return { ok: true, workspace: info }
 }
@@ -122,7 +144,8 @@ async function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 
     }
   }
 
-  if (existing.rootPath && existing.rootPath !== nextRootPath) {
+  const rootChanged = existing.rootPath !== nextRootPath
+  if (existing.rootPath && rootChanged) {
     removeAllowedRoot(existing.rootPath)
   }
 
@@ -130,6 +153,12 @@ async function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 
   workspaces.set(id, updated)
   if (updated.rootPath) {
     addAllowedRoot(updated.rootPath)
+  }
+  if (rootChanged) {
+    // Release the lock on the old root (if no sibling workspace still uses it)
+    // and claim the new one.
+    if (existing.rootPath) dropProjectLock(existing.rootPath, id)
+    if (updated.rootPath) acquireProjectLock(updated.rootPath)
   }
   return { ok: true, workspace: updated }
 }
@@ -140,10 +169,12 @@ function removeWorkspace(id: string): boolean {
     return false
   }
   const existing = workspaces.get(id)
+  const removed = workspaces.delete(id)
   if (existing?.rootPath) {
     removeAllowedRoot(existing.rootPath)
+    // Delete first so rootInUse() doesn't count the workspace we just removed.
+    dropProjectLock(existing.rootPath, id)
   }
-  const removed = workspaces.delete(id)
   if (removed) log.info('Workspace removed: %s', id)
   return removed
 }

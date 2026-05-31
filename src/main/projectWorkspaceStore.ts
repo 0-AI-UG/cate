@@ -10,6 +10,7 @@ import {
   WORKSPACE_EXTERNAL_EDIT,
   WORKSPACE_EXTERNAL_EDIT_DISMISS,
 } from '../shared/ipc-channels'
+import { holdsProjectLock, acquireProjectLock } from './projectLock'
 import type { ProjectWorkspaceFile, ProjectSessionFile, MultiWorkspaceSession, SessionSnapshot, DockLayoutNode, WindowDockState } from '../shared/types'
 import { toRelativePath } from '../shared/pathUtils'
 import { broadcastToAll } from './windowRegistry'
@@ -389,6 +390,14 @@ export function registerProjectStateHandlers(): void {
       const wsJson = JSON.stringify(workspace, null, 2)
       const sessJson = JSON.stringify(session, null, 2)
       lastSavedProjectStates.set(rootPath, { workspace: wsJson, session: sessJson })
+      // If another live Cate instance owns this project, don't autosave over
+      // it — that's the two-writers loop. Re-acquire each time so we resume
+      // saving once the owner exits; only skip while it's genuinely held.
+      if (!holdsProjectLock(rootPath) && !acquireProjectLock(rootPath)) {
+        log.debug('Skipping save for %s — another Cate instance owns it', cateDir(rootPath))
+        lastSavedProjectStates.delete(rootPath) // keep the quit-time sync fallback out too
+        return
+      }
       await enqueueSave(rootPath, async () => {
         await ensureCateGitignore(cateDir(rootPath))
         // session.json is machine-local and never hand-edited, so always write it.
