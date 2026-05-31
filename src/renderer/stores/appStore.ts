@@ -292,7 +292,7 @@ interface AppStoreActions {
   // Workspace management
   addWorkspace: (name?: string, rootPath?: string, id?: string) => string
   selectWorkspace: (id: string) => Promise<void>
-  removeWorkspace: (id: string) => void
+  removeWorkspace: (id: string, forgetRecent?: boolean) => void
 
   // Panel creation — each adds a PanelState to the workspace AND places it
   createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement, cwd?: string) => string
@@ -562,9 +562,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
 
       // Check for deferred restore (lazy workspace loading)
+      let didDeferredRestore = false
       try {
         if (deferredSnapshots.has(id)) {
           await restoreDeferredWorkspace(id, canvasOps?.storeApi)
+          didDeferredRestore = true
         }
       } catch (error) {
         log.error('Failed to restore deferred workspace:', error)
@@ -585,18 +587,31 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const finalCanvasPanelId = getWorkspaceCanvasPanelId(id)
       if (finalCanvasPanelId && finalCanvasPanelId !== canvasPanelId) {
         setActiveCanvasPanelId(finalCanvasPanelId)
-        const wsFinal = get().workspaces.find((w) => w.id === id)
-        if (wsFinal) {
-          try {
-            getWorkspaceCanvasStore(id)?.getState().loadWorkspaceCanvas(
-              wsFinal.canvasNodes,
-              wsFinal.viewportOffset,
-              wsFinal.zoomLevel,
-              wsFinal.focusedNodeId,
-              wsFinal.regions,
-            )
-          } catch (error) {
-            log.error('Failed to load canvas for workspace:', error)
+        if (didDeferredRestore) {
+          // A deferred restore just populated the canvas *store* directly (via
+          // createTerminal/createBrowser/... → canvas addNode), but the
+          // workspace's own canvasNodes are still empty — they're only filled by
+          // syncCanvasToWorkspace. Reloading the empty canvasNodes here (the
+          // else branch) would wipe the freshly restored canvas, leaving panels
+          // in the sidebar tree but a blank canvas, and the next autosave would
+          // then persist that empty state (issue #220). Instead, capture the
+          // restored store back into the workspace so appStore and disk stay in
+          // sync with what was just restored.
+          get().syncCanvasToWorkspace(id)
+        } else {
+          const wsFinal = get().workspaces.find((w) => w.id === id)
+          if (wsFinal) {
+            try {
+              getWorkspaceCanvasStore(id)?.getState().loadWorkspaceCanvas(
+                wsFinal.canvasNodes,
+                wsFinal.viewportOffset,
+                wsFinal.zoomLevel,
+                wsFinal.focusedNodeId,
+                wsFinal.regions,
+              )
+            } catch (error) {
+              log.error('Failed to load canvas for workspace:', error)
+            }
           }
         }
       }
@@ -669,7 +684,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  removeWorkspace(id) {
+  removeWorkspace(id, forgetRecent = false) {
+    // When the user explicitly closes a workspace, also forget its project so it
+    // doesn't reappear on next launch (issue #220). Opt-in: the default keeps
+    // recents intact for non-user removals (session-restore teardown, dropping
+    // an uninitialized stray workspace). Capture the rootPath before we mutate.
+    if (forgetRecent) {
+      const closing = get().workspaces.find((w) => w.id === id)
+      if (closing?.rootPath) {
+        window.electronAPI.recentProjectsRemove(closing.rootPath).catch((err) =>
+          log.warn('[workspace] Failed to remove from recent projects:', err),
+        )
+      }
+    }
     // Clean up deferred snapshot if workspace was never switched to
     deferredSnapshots.delete(id)
     // Dispose terminals before removing workspace state

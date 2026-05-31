@@ -49,7 +49,7 @@ export const ProjectList: React.FC = () => {
     setMultiSelected(new Set())
     lastClickedIndexRef.current = null
     for (const id of idsToRemove) {
-      useAppStore.getState().removeWorkspace(id)
+      useAppStore.getState().removeWorkspace(id, true)
     }
   }, [multiSelected])
 
@@ -160,7 +160,7 @@ export const ProjectList: React.FC = () => {
                   isSelected={ws.id === selectedWorkspaceId}
                   isMultiSelected={multiSelected.has(ws.id)}
                   onClick={(e) => handleWorkspaceClick(index, ws.id, e)}
-                  onClose={() => removeWorkspace(ws.id)}
+                  onClose={() => removeWorkspace(ws.id, true)}
                   onBulkContextMenu={(e) => handleBulkContextMenu(e, ws.id)}
                 />
               </div>

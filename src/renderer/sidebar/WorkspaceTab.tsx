@@ -405,7 +405,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       }
       case 'duplicate': app.duplicateWorkspace(workspace.id); break
       case 'close-panels': app.closeAllPanels(workspace.id); break
-      case 'remove': app.removeWorkspace(workspace.id); break
+      case 'remove': app.removeWorkspace(workspace.id, true); break
     }
   }, [workspace.id, workspace.name, workspace.rootPath, workspace.color, workspace.panels, isSelected, onBulkContextMenu])
 
