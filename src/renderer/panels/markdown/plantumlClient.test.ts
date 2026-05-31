@@ -1,8 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import encoder from 'plantuml-encoder'
 import { buildPlantumlServerUrl, renderPlantumlLocalDataUrl } from './plantumlClient'
+import { DEFAULT_SETTINGS } from '../../../shared/types'
 
 const SRC = '@startuml\nBob -> Alice : hello\n@enduml'
+
+describe('PlantUML privacy default', () => {
+  it('defaults to "off" so diagram text is never sent off-machine without consent', () => {
+    // Regression guard: server mode transmits diagram text to a third party, so
+    // it must be opt-in. Do not flip this default back to 'server'.
+    expect(DEFAULT_SETTINGS.plantumlRender).toBe('off')
+  })
+})
 
 describe('buildPlantumlServerUrl', () => {
   it('builds <server>/svg/<encoded> and round-trips the source', () => {

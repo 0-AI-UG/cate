@@ -357,7 +357,7 @@ export type ThemeSelection = 'system' | string
 
 export type BrowserSearchEngine = 'google' | 'duckDuckGo' | 'bing' | 'brave'
 
-export type PlantumlRender = 'server' | 'local'
+export type PlantumlRender = 'off' | 'server' | 'local'
 
 export const SEARCH_ENGINE_URLS: Record<BrowserSearchEngine, string> = {
   google: 'https://www.google.com/search?q=',
@@ -876,8 +876,10 @@ export interface AppSettings {
   usageAnalyticsEnabled: boolean
 
   // Markdown diagrams (PlantUML)
-  /** How PlantUML fenced blocks in the markdown preview are rendered.
-   *  - 'server': encode + fetch an <img> from `plantumlServerUrl`.
+  /** How PlantUML fenced blocks in the markdown preview are rendered. Defaults to
+   *  'off' so previewed markdown is never sent off-machine without explicit consent.
+   *  - 'off':    render the source as a code block; nothing leaves the machine.
+   *  - 'server': encode + fetch an <img> from `plantumlServerUrl` (sends diagram text).
    *  - 'local':  spawn `java -jar <plantumlJarPath> -tsvg -pipe`. */
   plantumlRender: PlantumlRender
   /** PlantUML server base URL (server mode). Diagram text is sent here unless
@@ -941,8 +943,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   crashReportingEnabled: true,
   usageAnalyticsEnabled: true,
 
-  // Markdown diagrams (PlantUML)
-  plantumlRender: 'server',
+  // Markdown diagrams (PlantUML) — default 'off': opt-in to avoid sending
+  // diagram text to a third-party server without explicit consent.
+  plantumlRender: 'off',
   plantumlServerUrl: 'https://www.plantuml.com/plantuml',
   plantumlJarPath: '',
 }

@@ -9,13 +9,14 @@ export function DiagramsSettings() {
     <div className="flex flex-col gap-1">
       <SettingRow
         label="PlantUML rendering"
-        description="Mermaid always renders offline. PlantUML can render via a server or a local plantuml.jar."
+        description="Mermaid always renders offline. PlantUML is off by default — Server mode sends diagram text to a third-party server, so it's opt-in. Use Local (plantuml.jar) to keep everything on-machine."
       >
         <Select
           value={store.plantumlRender}
           onChange={(v) => store.setSetting('plantumlRender', v as PlantumlRender)}
           options={[
-            { value: 'server', label: 'Server' },
+            { value: 'off', label: 'Off' },
+            { value: 'server', label: 'Server (sends diagram text)' },
             { value: 'local', label: 'Local (java + jar)' },
           ]}
         />

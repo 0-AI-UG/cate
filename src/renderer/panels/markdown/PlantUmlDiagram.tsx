@@ -17,6 +17,10 @@ export function PlantUmlDiagram({ code }: { code: string }) {
     let cancelled = false
     setError(null)
     setSrc(null)
+    if (render === 'off') {
+      // Opt-in: nothing is rendered or transmitted until the user enables a mode.
+      return () => { cancelled = true }
+    }
     if (render === 'local') {
       renderPlantumlLocalDataUrl(code, jarPath)
         .then((url) => { if (!cancelled) setSrc(url) })
@@ -33,11 +37,23 @@ export function PlantUmlDiagram({ code }: { code: string }) {
     return () => { cancelled = true }
   }, [code, render, serverUrl, jarPath])
 
+  if (render === 'off') {
+    return (
+      <div className="my-3">
+        <div className="text-[11px] text-muted mb-1">
+          PlantUML rendering is off. Enable Server or Local in Settings → Diagrams to render this diagram.
+        </div>
+        <pre className="rounded-md bg-surface-3 border border-subtle px-4 py-3 overflow-x-auto text-[12px] leading-snug">
+          <code>{code}</code>
+        </pre>
+      </div>
+    )
+  }
   if (error) {
     return (
       <div className="my-3">
         <div className="text-[11px] text-red-500 mb-1">PlantUML error: {error}</div>
-        <pre className="rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 px-4 py-3 overflow-x-auto text-[12px] leading-snug">
+        <pre className="rounded-md bg-surface-3 border border-subtle px-4 py-3 overflow-x-auto text-[12px] leading-snug">
           <code>{code}</code>
         </pre>
       </div>
