@@ -56,9 +56,6 @@
   --panel-terminal: #4a9960;
   --panel-browser: #4a7ab0;
   --panel-editor: #b07440;
-  --panel-git: #b04438;
-  --panel-fileExplorer: #4a8fb0;
-  --panel-projectList: #b09640;
   --panel-canvas: #8857b0;
   /* Agent accent — RGB channels for Tailwind alpha modifier support. */
   --agent-rgb: 74 158 255;

@@ -88,6 +88,8 @@ import {
   DIALOG_TERMINAL_LINK_OPEN,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
+  SIDEBAR_SESSION_GET,
+  SIDEBAR_SESSION_SET,
   LAYOUT_SAVE,
   LAYOUT_LIST,
   LAYOUT_LOAD,
@@ -199,7 +201,7 @@ import {
   AUTH_DELETE,
   PERF_GET,
 } from '../shared/ipc-channels'
-import type { AppSettings, SearchOptions, SearchResultBatch, SearchDoneEvent } from '../shared/types'
+import type { AppSettings, SidebarSession, SearchOptions, SearchResultBatch, SearchDoneEvent } from '../shared/types'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
 // check it without an IPC round-trip on every mousemove. Main BROADCASTS
@@ -769,6 +771,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   recentProjectsAdd(projectPath: string): Promise<void> {
     return ipcRenderer.invoke(RECENT_PROJECTS_ADD, projectPath)
+  },
+
+  sidebarSessionGet(): Promise<SidebarSession | null> {
+    return ipcRenderer.invoke(SIDEBAR_SESSION_GET)
+  },
+
+  sidebarSessionSet(session: SidebarSession): Promise<void> {
+    return ipcRenderer.invoke(SIDEBAR_SESSION_SET, session)
   },
 
   // ---------------------------------------------------------------------------

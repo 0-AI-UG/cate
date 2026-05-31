@@ -13,13 +13,14 @@
 import React, { useRef, useEffect } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useSettingsStore } from '../stores/settingsStore'
+import { CANVAS_GRID_SIZE } from './layoutEngine'
 
 interface CanvasGridProps {
   containerWidth: number
   containerHeight: number
 }
 
-const BASE_SPACING = 20
+const BASE_SPACING = CANVAS_GRID_SIZE
 
 const CanvasGrid: React.FC<CanvasGridProps> = ({
   containerWidth,

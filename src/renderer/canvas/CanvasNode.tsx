@@ -233,9 +233,13 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     }
 
     if (node.animationState === 'exiting') {
+      // Under e2e the window is hidden (throttled compositor) and animations are
+      // disabled — finalize removal immediately so "node is gone" assertions
+      // don't race the 200ms exit delay.
+      const exitDelay = window.electronAPI?.isE2E ? 0 : 200
       const timer = setTimeout(() => {
         canvasApi.getState().finalizeRemoveNode(nodeId)
-      }, 200)
+      }, exitDelay)
       animationTimerRef.current = timer
       return () => clearTimeout(timer)
     }

@@ -13,6 +13,7 @@ vi.mock('../panels/CanvasPanel', () => ({
 
 import type { StoreApi } from 'zustand'
 import { resolveDrop, type DropEnvironment } from './resolve'
+import { snapToGrid } from '../canvas/layoutEngine'
 import type { DragSource } from './types'
 import type { CanvasStore } from '../stores/canvasStore'
 import type { DockStore } from '../stores/dockStore'
@@ -99,6 +100,20 @@ function env(opts: EnvOptions = {}): DropEnvironment {
   }
 }
 
+// Positional adapter so these tests stay readable — resolveDrop itself takes a
+// trailing { env, snap } options object.
+function resolveDropT(
+  cursor: Parameters<typeof resolveDrop>[0],
+  source: DragSource,
+  grab: Point,
+  ghostSize: { width: number; height: number },
+  panelType: PanelType,
+  environment?: DropEnvironment,
+  snap = false,
+) {
+  return resolveDrop(cursor, source, grab, ghostSize, panelType, { env: environment, snap })
+}
+
 const CANVAS_STORE_A = fakeCanvasStore(1, { x: 0, y: 0 })
 const CANVAS_STORE_B = fakeCanvasStore(1, { x: 0, y: 0 })
 const DOCK_STORE = fakeDockStore()
@@ -130,7 +145,7 @@ const grab = { x: 10, y: 5 }
 
 describe('resolveDrop — outside window', () => {
   it('returns detach with cursor.screen when insideWindow=false', () => {
-    const target = resolveDrop(
+    const target = resolveDropT(
       { client: { x: -10, y: 100 }, screen: { x: 999, y: 100 }, insideWindow: false },
       NODE_SOURCE_A,
       grab,
@@ -156,7 +171,7 @@ describe('resolveDrop — dock zones', () => {
   }
 
   function dropAt(client: Point, source: DragSource = NODE_SOURCE_A, type: PanelType = 'editor') {
-    return resolveDrop(
+    return resolveDropT(
       { client, screen: client, insideWindow: true },
       source,
       grab,
@@ -211,7 +226,7 @@ describe('resolveDrop — dock zones', () => {
       dockStoreApi: DOCK_STORE,
       getRect: () => rect(0, 0, 300, 200),
     }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: { x: 150, y: 10 }, screen: { x: 150, y: 10 }, insideWindow: true },
       NODE_SOURCE_A,
       grab,
@@ -235,7 +250,7 @@ describe('resolveDrop — dock zones', () => {
       panelId: 'panel-T',
       origin: { kind: 'dock-tab', dockStoreApi: dock, zone: 'left', stackId: 'stack-1' },
     }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: { x: 250, y: 10 }, screen: { x: 250, y: 10 }, insideWindow: true },
       src,
       grab,
@@ -259,7 +274,7 @@ describe('resolveDrop — dock zones', () => {
       panelId: 'panel-T',
       origin: { kind: 'dock-tab', dockStoreApi: dock, zone: 'left', stackId: 'stack-1' },
     }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: { x: 250, y: 10 }, screen: { x: 250, y: 10 }, insideWindow: true },
       src,
       grab,
@@ -284,7 +299,7 @@ describe('resolveDrop — dock zones', () => {
       origin: { kind: 'dock-tab', dockStoreApi: dock, zone: 'left', stackId: 'stack-1' },
     }
     // Right edge band — well inside the right edge of the 500x400 rect.
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: { x: 490, y: 200 }, screen: { x: 490, y: 200 }, insideWindow: true },
       src,
       grab,
@@ -313,7 +328,7 @@ describe('resolveDrop — dock zones', () => {
       panelId: 'panel-T',
       origin: { kind: 'dock-tab', dockStoreApi: dock, zone: 'left', stackId: 'stack-1' },
     }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: { x: 490, y: 200 }, screen: { x: 490, y: 200 }, insideWindow: true },
       src,
       grab,
@@ -337,7 +352,7 @@ describe('resolveDrop — dock zones', () => {
       panelId: 'panel-T',
       origin: { kind: 'dock-tab', dockStoreApi: dock, zone: 'left', stackId: 'stack-1' },
     }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: { x: 490, y: 200 }, screen: { x: 490, y: 200 }, insideWindow: true },
       src,
       grab,
@@ -362,7 +377,7 @@ describe('resolveDrop — dock zones', () => {
       acceptsPanelType: (t) => t !== 'canvas',
       getRect: () => rect(0, 0, 500, 400),
     }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: { x: 250, y: 10 }, screen: { x: 250, y: 10 }, insideWindow: true },
       NODE_SOURCE_A,
       grab,
@@ -381,7 +396,7 @@ describe('resolveDrop — dock zones', () => {
 describe('resolveDrop — canvas surface', () => {
   it('canvas-node on same canvas → canvas-reposition with origin', () => {
     const cursor = { x: 300, y: 200 }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: cursor, screen: cursor, insideWindow: true },
       NODE_SOURCE_A,
       { x: 50, y: 25 },
@@ -405,7 +420,7 @@ describe('resolveDrop — canvas surface', () => {
 
   it('canvas-node from a different canvas → canvas-add', () => {
     const cursor = { x: 100, y: 100 }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: cursor, screen: cursor, insideWindow: true },
       NODE_SOURCE_A,
       { x: 0, y: 0 },
@@ -429,7 +444,7 @@ describe('resolveDrop — canvas surface', () => {
 
   it('dock-tab from main dock → canvas-add', () => {
     const cursor = { x: 100, y: 100 }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: cursor, screen: cursor, insideWindow: true },
       TAB_SOURCE,
       { x: 0, y: 0 },
@@ -453,7 +468,7 @@ describe('resolveDrop — canvas surface', () => {
     // so any dock-tab spec hitting this path is by definition a multi-tab
     // detach — it should create a new node on the canvas, not move the source.
     const cursor = { x: 300, y: 200 }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: cursor, screen: cursor, insideWindow: true },
       { ...TAB_SOURCE, origin: { ...TAB_SOURCE.origin, sourceNodeId: 'node-A' } as DragSource['origin'] },
       { x: 0, y: 0 },
@@ -478,7 +493,7 @@ describe('resolveDrop — canvas surface', () => {
   it('applies zoom + viewport offset to origin', () => {
     const cursor = { x: 300, y: 200 }
     const zoomed = fakeCanvasStore(2, { x: 30, y: 40 })
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: cursor, screen: cursor, insideWindow: true },
       { ...NODE_SOURCE_A, origin: { kind: 'canvas-node', canvasStoreApi: zoomed, nodeId: 'node-A' } },
       { x: 10, y: 5 },
@@ -500,9 +515,93 @@ describe('resolveDrop — canvas surface', () => {
     })
   })
 
+  it('snap=true rounds the reposition origin to the grid (ghost still free-tracks)', () => {
+    // The committed origin snaps to the grid; the ghost free-tracks the cursor
+    // during the drag (see Overlay), so no snapped preview rect is attached.
+    // Expectations derive from snapToGrid so they stay correct if the grid size
+    // changes. zoom=1, offset=0, container at (0,0) → raw origin is cursor - grab.
+    const cursor = { x: 300, y: 200 }
+    const grabOffset = { x: 50, y: 25 }
+    const rawOrigin = { x: cursor.x - grabOffset.x, y: cursor.y - grabOffset.y }
+    const origin = snapToGrid(rawOrigin)
+    const t = resolveDropT(
+      { client: cursor, screen: cursor, insideWindow: true },
+      NODE_SOURCE_A,
+      grabOffset,
+      ghostSize,
+      'editor',
+      env({
+        canvasAt: () => ({
+          panelId: 'canvas-A',
+          rect: rect(0, 0, 1000, 800),
+          canvasStoreApi: CANVAS_STORE_A,
+        }),
+      }),
+      true,
+    )
+    expect(t).toEqual({
+      kind: 'canvas-reposition',
+      canvasStoreApi: CANVAS_STORE_A,
+      nodeId: 'node-A',
+      origin,
+    })
+  })
+
+  it('snap=true snaps canvas-add origin (no snapped ghost rect attached)', () => {
+    // zoom=2, offset {30,40}, container at {10,20}, grab 0.
+    // cursor → canvas: ((300-10)-30)/2, ((200-20)-40)/2 = (130, 70) before snap.
+    const zoom = 2
+    const offset = { x: 30, y: 40 }
+    const containerRect = rect(10, 20, 1000, 800)
+    const rawCanvas = { x: 130, y: 70 }
+    const origin = snapToGrid(rawCanvas)
+    const cursor = { x: 300, y: 200 }
+    const zoomed = fakeCanvasStore(zoom, offset)
+    const t = resolveDropT(
+      { client: cursor, screen: cursor, insideWindow: true },
+      { ...NODE_SOURCE_A, origin: { kind: 'canvas-node', canvasStoreApi: CANVAS_STORE_B, nodeId: 'node-on-B' } },
+      { x: 0, y: 0 },
+      ghostSize,
+      'editor',
+      env({
+        canvasAt: () => ({
+          panelId: 'canvas-Z',
+          rect: containerRect,
+          canvasStoreApi: zoomed,
+        }),
+      }),
+      true,
+    )
+    expect(t).toEqual({
+      kind: 'canvas-add',
+      canvasStoreApi: zoomed,
+      origin,
+      size: ghostSize,
+    })
+  })
+
+  it('snap defaults to false — raw origin preserved', () => {
+    const cursor = { x: 311, y: 207 }
+    const t = resolveDropT(
+      { client: cursor, screen: cursor, insideWindow: true },
+      NODE_SOURCE_A,
+      { x: 0, y: 0 },
+      ghostSize,
+      'editor',
+      env({
+        canvasAt: () => ({
+          panelId: 'canvas-A',
+          rect: rect(0, 0, 1000, 800),
+          canvasStoreApi: CANVAS_STORE_A,
+        }),
+      }),
+    )
+    expect(t).toMatchObject({ kind: 'canvas-reposition', origin: { x: 311, y: 207 } })
+  })
+
   it('two adjacent canvases — picks the one canvasAtCursor returns', () => {
     const cursor = { x: 50, y: 50 }
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: cursor, screen: cursor, insideWindow: true },
       // Source on canvas B; dropping over canvas A's container.
       { ...NODE_SOURCE_A, origin: { kind: 'canvas-node', canvasStoreApi: CANVAS_STORE_B, nodeId: 'node-on-B' } },
@@ -523,7 +622,7 @@ describe('resolveDrop — canvas surface', () => {
   })
 
   it('returns null when neither dock nor canvas hit', () => {
-    const t = resolveDrop(
+    const t = resolveDropT(
       { client: { x: 10, y: 10 }, screen: { x: 10, y: 10 }, insideWindow: true },
       NODE_SOURCE_A,
       grab,
