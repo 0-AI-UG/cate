@@ -17,11 +17,9 @@ export type CateControlAction =
   | 'resize_panel'
   | 'arrange'
   | 'run_in_terminal'
+  | 'read_terminal'
   | 'open_url'
-  | 'reveal_in_editor'
   | 'set_markdown_preview'
-  | 'pan_to'
-  | 'zoom'
 
 /** Emitted by the extension (inside the input() title, after CATE_SENTINEL). */
 export interface CateControlRequest {

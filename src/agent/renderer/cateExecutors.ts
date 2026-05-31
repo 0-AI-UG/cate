@@ -28,11 +28,20 @@ function readCanvasGeometry(ctx: CateControlContext): { occupied: Rect[]; viewpo
     occupied.push(rect)
     nodesByPanel.set(node.panelId, { nodeId: node.id, rect })
   }
-  // Viewport center in canvas-space ≈ (-offset + screen/2)/zoom; we approximate
-  // with the centroid of existing nodes, falling back to origin.
-  const center = occupied.length
-    ? { x: occupied.reduce((s, r) => s + r.x + r.width / 2, 0) / occupied.length, y: occupied.reduce((s, r) => s + r.y + r.height / 2, 0) / occupied.length }
-    : { x: 0, y: 0 }
+  // Real viewport center in canvas-space: map the center of the canvas container
+  // through the current zoom/offset. This is what the user is actually looking at,
+  // so new panels land in view (the old centroid-of-all-nodes estimate could drop
+  // a panel far off-screen). Fall back to the node centroid only when the canvas
+  // container hasn't been measured yet (headless / pre-mount / tests).
+  const cs = st.containerSize
+  let center: { x: number; y: number }
+  if (cs.width > 0 && cs.height > 0) {
+    center = st.viewToCanvas({ x: cs.width / 2, y: cs.height / 2 })
+  } else if (occupied.length) {
+    center = { x: occupied.reduce((s, r) => s + r.x + r.width / 2, 0) / occupied.length, y: occupied.reduce((s, r) => s + r.y + r.height / 2, 0) / occupied.length }
+  } else {
+    center = { x: 0, y: 0 }
+  }
   return { occupied, viewportCenter: center, nodesByPanel }
 }
 
@@ -75,6 +84,10 @@ export const execOpenPanel: CateExecutor = async (params, ctx) => {
       panelId = path ? openFileAsPanel(wsId, path) : app.createEditor(wsId)
       if (path && (typeof target.line === 'number')) {
         setPendingReveal(panelId, { line: target.line as number, column: typeof target.column === 'number' ? (target.column as number) : undefined })
+      }
+      // Convenience: open straight into rendered markdown preview (markdown files only).
+      if (target.preview === true) {
+        app.setPanelMarkdownPreview(wsId, panelId, true)
       }
       break
     }
@@ -124,6 +137,10 @@ export const execOpenPanel: CateExecutor = async (params, ctx) => {
   }
 
   const node = ctx.canvasStore.getState().nodeForPanel(panelId)
+  // Focus + center the freshly opened panel so it lands in view. Without this the
+  // viewport stayed where it was and a newly-opened panel could appear off-screen
+  // (read as "panned to a random location").
+  if (node) ctx.canvasStore.getState().focusAndCenter(node)
   const frame = node ? ctx.canvasStore.getState().nodes[node] : undefined
   return ok({ panelId, x: frame?.origin.x, y: frame?.origin.y, width: frame?.size.width, height: frame?.size.height })
 }
@@ -255,22 +272,6 @@ export const execOpenUrl: CateExecutor = async (params, ctx) => {
   return ok({ panelId, url })
 }
 
-export const execRevealInEditor: CateExecutor = async (params, ctx) => {
-  const path = String(params.path ?? '')
-  if (!path) return fail('reveal_in_editor requires a path.')
-  const panelId = openFileAsPanel(ctx.workspaceId, path)
-  if (typeof params.line === 'number') {
-    setPendingReveal(panelId, { line: params.line as number, column: typeof params.column === 'number' ? (params.column as number) : undefined })
-  }
-  // Convenience: open straight into rendered markdown preview (markdown files only).
-  if (params.preview === true) {
-    useAppStore.getState().setPanelMarkdownPreview(ctx.workspaceId, panelId, true)
-  }
-  const node = ctx.canvasStore.getState().nodeForPanel(panelId)
-  if (node) ctx.canvasStore.getState().focusAndCenter(node)
-  return ok({ panelId, path })
-}
-
 /** Toggle the rendered markdown preview for an open editor panel. The app gates
  *  the actual render to .md files (EditorPanel), so this is a no-op visually for
  *  non-markdown editors but still records the flag. */
@@ -287,21 +288,29 @@ export const execSetMarkdownPreview: CateExecutor = async (params, ctx) => {
   return ok({ panelId, preview })
 }
 
-export const execPanTo: CateExecutor = async (params, ctx) => {
+/** Read the recent buffer (visible screen + scrollback) of a terminal panel as
+ *  plain text. Lets an agent inspect command output it ran via run_in_terminal —
+ *  the other half of terminal orchestration. Reads straight from the live xterm
+ *  buffer; no PTY round-trip. Safe (read-only). */
+export const execReadTerminal: CateExecutor = async (params) => {
   const panelId = String(params.panelId ?? '')
-  const node = requireNode(ctx, panelId)
-  if (!node) return fail(`Panel not found on canvas: ${panelId}`)
-  ctx.canvasStore.getState().focusAndCenter(node)
-  return ok({ panelId })
-}
+  if (!panelId) return fail('read_terminal requires a panelId.')
+  const entry = terminalRegistry.getEntry(panelId)
+  const buffer = (entry as { terminal?: { buffer?: { active?: any } } } | undefined)?.terminal?.buffer?.active
+  if (!entry || !buffer) return fail(`No live terminal for panel ${panelId}.`)
 
-export const execZoom: CateExecutor = async (params, ctx) => {
-  const st = ctx.canvasStore.getState()
-  if (params.level === 'fit') { st.zoomToFit(); return ok({ zoom: 'fit' }) }
-  const level = Number(params.level)
-  if (!Number.isFinite(level)) return fail('zoom requires a numeric level or "fit".')
-  st.setZoom(level)
-  return ok({ zoom: level })
+  const requested = typeof params.lines === 'number' ? Math.floor(params.lines) : 50
+  const maxLines = Math.max(1, Math.min(requested, 1000))
+  const total: number = buffer.length ?? 0
+  const start = Math.max(0, total - maxLines)
+  const collected: string[] = []
+  for (let i = start; i < total; i++) {
+    const line = buffer.getLine(i)
+    collected.push(line ? line.translateToString(true) : '')
+  }
+  // Drop trailing blank rows (an idle terminal pads the screen with empties).
+  while (collected.length && collected[collected.length - 1] === '') collected.pop()
+  return ok({ panelId, lineCount: collected.length, text: collected.join('\n') })
 }
 
 // Register everything with the dispatcher.
@@ -314,9 +323,7 @@ setCateExecutors({
   resize_panel: execResizePanel,
   arrange: execArrange,
   run_in_terminal: execRunInTerminal,
+  read_terminal: execReadTerminal,
   open_url: execOpenUrl,
-  reveal_in_editor: execRevealInEditor,
   set_markdown_preview: execSetMarkdownPreview,
-  pan_to: execPanTo,
-  zoom: execZoom,
 })

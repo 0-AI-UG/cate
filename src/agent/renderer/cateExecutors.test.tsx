@@ -74,6 +74,16 @@ describe('execOpenPanel', () => {
     expect(res.ok).toBe(false)
     expect(res.error).toMatch(/type/i)
   })
+
+  it('focuses + centers the panel it opens so it lands in view (open-focus fix)', async () => {
+    const store = createCanvasStore()
+    // The app adds a canvas node for the new panel; simulate it for the id the
+    // mocked createBrowser returns so focusAndCenter has a node to act on.
+    store.getState().addNode('panel-br', 'browser', { x: 800, y: 800 }, { width: 100, height: 100 })
+    const res = await execOpenPanel({ type: 'browser', target: { url: 'https://example.com' } }, ctxWith(store), 'k1')
+    expect(res.ok).toBe(true)
+    expect(store.getState().focusedNodeId).toBe(store.getState().nodeForPanel('panel-br'))
+  })
 })
 
 describe('execClosePanel', () => {
@@ -105,8 +115,8 @@ describe('execGetLayout', () => {
   })
 })
 
-import { execFocusPanel, execResizePanel, execArrange, execZoom } from './cateExecutors'
-import { execRunInTerminal, execOpenUrl, execRevealInEditor, execPanTo } from './cateExecutors'
+import { execFocusPanel, execResizePanel, execArrange } from './cateExecutors'
+import { execRunInTerminal, execOpenUrl, execReadTerminal } from './cateExecutors'
 
 vi.mock('../../renderer/lib/terminalRegistry', () => ({
   terminalRegistry: { getEntry: vi.fn(() => ({ ptyId: 'pty-1' })) },
@@ -134,14 +144,6 @@ describe('management executors', () => {
     const node = store.getState().nodeForPanel('panel-ed')!
     expect(store.getState().nodes[node].size.width).toBeGreaterThan(100)
   })
-
-  it('zoom fit calls zoomToFit', async () => {
-    const store = createCanvasStore()
-    const spy = vi.spyOn(store.getState(), 'zoomToFit')
-    const res = await execZoom({ level: 'fit' }, ctxWith(store), 'k1')
-    expect(res.ok).toBe(true)
-    expect(spy).toHaveBeenCalled()
-  })
 })
 
 describe('content executors', () => {
@@ -168,15 +170,27 @@ describe('content executors', () => {
     expect(res.ok).toBe(false)
   })
 
-  it('reveal_in_editor routes through openFileAsPanel', async () => {
-    const res = await execRevealInEditor({ path: 'a.ts', line: 10 }, ctxWith(), 'k1')
+  it('read_terminal returns the trailing buffer lines as text', async () => {
+    const lines = ['$ echo hi', 'hi', '', '']
+    vi.mocked(terminalRegistry.getEntry).mockReturnValue({
+      ptyId: 'pty-1',
+      terminal: { buffer: { active: {
+        length: lines.length,
+        getLine: (i: number) => ({ translateToString: () => lines[i] }),
+      } } },
+    } as any)
+    const res = await execReadTerminal({ panelId: 'panel-tm' }, ctxWith(), 'k1')
     expect(res.ok).toBe(true)
-    expect(openFileAsPanel).toHaveBeenCalledWith('w1', 'a.ts')
+    // Trailing blank rows are trimmed.
+    expect((res.result as any).text).toBe('$ echo hi\nhi')
+    expect((res.result as any).lineCount).toBe(2)
   })
 
-  it('pan_to errors on an unknown panel', async () => {
-    const res = await execPanTo({ panelId: 'nope' }, ctxWith(), 'k1')
+  it('read_terminal errors when the terminal is not live', async () => {
+    vi.mocked(terminalRegistry.getEntry).mockReturnValue(undefined as any)
+    const res = await execReadTerminal({ panelId: 'gone' }, ctxWith(), 'k1')
     expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/no live terminal/i)
   })
 })
 
@@ -239,8 +253,8 @@ describe('markdown preview (Issue 2 fix)', () => {
     expect(res.ok).toBe(false)
   })
 
-  it('reveal_in_editor with preview:true turns on markdown preview', async () => {
-    const res = await execRevealInEditor({ path: 'README.md', preview: true }, ctxWith(), 'k1')
+  it('open_panel editor with target.preview:true turns on markdown preview', async () => {
+    const res = await execOpenPanel({ type: 'editor', target: { path: 'README.md', preview: true } }, ctxWith(), 'k1')
     expect(res.ok).toBe(true)
     const mod: any = await import('../../renderer/stores/appStore')
     expect(mod.__created.find((c: any[]) => c[0] === 'mdpreview')).toEqual(['mdpreview', 'w1', 'panel-ed', true])

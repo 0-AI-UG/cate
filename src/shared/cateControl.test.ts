@@ -8,9 +8,7 @@ describe('classifyCateAction', () => {
     expect(classifyCateAction('move_panel', { panelId: 'p' })).toBe('safe')
     expect(classifyCateAction('resize_panel', { panelId: 'p' })).toBe('safe')
     expect(classifyCateAction('arrange', { layout: 'tile' })).toBe('safe')
-    expect(classifyCateAction('reveal_in_editor', { path: 'a.ts' })).toBe('safe')
-    expect(classifyCateAction('pan_to', { panelId: 'p' })).toBe('safe')
-    expect(classifyCateAction('zoom', { level: 'fit' })).toBe('safe')
+    expect(classifyCateAction('read_terminal', { panelId: 'p' })).toBe('safe')
   })
 
   it('marks destructive and network/content ops as side-effect', () => {

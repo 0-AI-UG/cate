@@ -41,12 +41,13 @@ export default function (pi: ExtensionAPI) {
     Type.Object({}), "get_layout")
 
   tool("cate_open_panel", "Open a panel",
-    "Open a panel on the canvas. type: editor|terminal|browser|git|fileExplorer|document. target: {path,line?} for editor; {url} for browser; {cwd?,command?} for terminal. Optional semantic placement.",
+    "Open (or re-focus) a panel on the canvas, then center the view on it. type: editor|terminal|browser|git|fileExplorer|document. target: {path,line?,preview?} for editor (preview:true opens a markdown file straight into rendered preview); {url} for browser; {cwd?,command?} for terminal. Optional semantic placement.",
     Type.Object({
       type: Type.String(),
       target: Type.Optional(Type.Object({
         path: Type.Optional(Type.String()), line: Type.Optional(Type.Number()), column: Type.Optional(Type.Number()),
         url: Type.Optional(Type.String()), cwd: Type.Optional(Type.String()), command: Type.Optional(Type.String()),
+        preview: Type.Optional(Type.Boolean()),
       })),
       placement: Placement,
     }), "open_panel")
@@ -58,14 +59,13 @@ export default function (pi: ExtensionAPI) {
     Type.Object({ panelId: Type.String(), preset: Type.Optional(Type.String()), size: Type.Optional(Type.Object({ width: Type.Number(), height: Type.Number() })) }), "resize_panel")
   tool("cate_arrange", "Arrange panels", "Arrange panels: tile|grid|cascade|focus-one. Optional panelIds to limit scope.",
     Type.Object({ layout: Type.String(), panelIds: Type.Optional(Type.Array(Type.String())) }), "arrange")
-  tool("cate_run_in_terminal", "Run in terminal", "Run a shell command in a terminal panel (opens one if newPanel).",
+  tool("cate_run_in_terminal", "Run in terminal", "Run a shell command in a terminal panel (opens one if newPanel). Use cate_read_terminal afterwards to read the output.",
     Type.Object({ panelId: Type.Optional(Type.String()), command: Type.String(), newPanel: Type.Optional(Type.Boolean()) }), "run_in_terminal")
+  tool("cate_read_terminal", "Read terminal output",
+    "Read the recent visible + scrollback output of a terminal panel as plain text (for inspecting command results). lines = how many trailing lines to return (default 50, max 1000).",
+    Type.Object({ panelId: Type.String(), lines: Type.Optional(Type.Number()) }), "read_terminal")
   tool("cate_open_url", "Open a URL", "Open or navigate a browser panel to a URL.",
     Type.Object({ panelId: Type.Optional(Type.String()), url: Type.String() }), "open_url")
-  tool("cate_reveal_in_editor", "Reveal in editor", "Open a file in the editor at a line and focus it. Set preview:true to open a markdown file straight into rendered preview.",
-    Type.Object({ path: Type.String(), line: Type.Optional(Type.Number()), column: Type.Optional(Type.Number()), preview: Type.Optional(Type.Boolean()) }), "reveal_in_editor")
   tool("cate_set_markdown_preview", "Toggle markdown preview", "Show (preview:true) or hide (preview:false) the rendered markdown preview for an open editor panel. Markdown files only.",
     Type.Object({ panelId: Type.String(), preview: Type.Optional(Type.Boolean()) }), "set_markdown_preview")
-  tool("cate_pan_to", "Pan to a panel", "Center the viewport on a panel.", Type.Object({ panelId: Type.String() }), "pan_to")
-  tool("cate_zoom", "Zoom", "Set zoom level (number) or 'fit'.", Type.Object({ level: Type.Union([Type.Number(), Type.Literal("fit")]) }), "zoom")
 }
