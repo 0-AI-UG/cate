@@ -651,7 +651,7 @@ function registerWindowAndDialogHandlers(): void {
   })
 
   // Confirm reloading the canvas after the workspace.json file changed on disk
-  // (edited externally, e.g. by an agent following the .cate skill).
+  // (edited externally while Cate was running).
   ipcMain.handle(DIALOG_CONFIRM_RELOAD_WORKSPACE, async (event, payload: { name?: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
     const name = payload?.name?.trim()

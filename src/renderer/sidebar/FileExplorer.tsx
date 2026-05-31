@@ -17,6 +17,14 @@ import { isExternalFileDrag, importDroppedEntries } from '../lib/importExternalE
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { DockLayoutNode } from '../../shared/types'
 
+// Opening a workspace sets its root path optimistically in the renderer, but
+// main only registers that path as an allowed root once the async workspace
+// sync resolves. A read issued before then is rejected (it throws, rather than
+// returning [] like a genuinely empty directory), so retry a few times to ride
+// out that race instead of leaving the tree stuck empty until a manual reload.
+const FS_READ_RETRIES = 5
+const FS_READ_RETRY_DELAY_MS = 120
+
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
@@ -51,6 +59,13 @@ interface FileExplorerProps {
 export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  // Bumped on every successful tree read. Nested folders cache their own
+  // children in local state (keyed by stable path, so they survive a root
+  // re-render); this signal tells each cached/expanded folder to re-read from
+  // disk so a reload — or a move/create/delete — actually reflects on-disk state
+  // instead of showing stale children (e.g. a moved file lingering in its old
+  // folder, which reads as a copy).
+  const [refreshSignal, setRefreshSignal] = useState(0)
   const [gitTree, setGitTree] = useState<GitTree | undefined>(undefined)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
@@ -68,6 +83,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rootPathRef = useRef(rootPath)
   const createSeqRef = useRef(0)
+  const loadRetryTimerRef = useRef<number | null>(null)
 
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
 
@@ -102,7 +118,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   // Load tree
   // ---------------------------------------------------------------------------
 
-  const loadTree = useCallback(async (dirPath: string) => {
+  const loadTree = useCallback(async (dirPath: string, attempt = 0) => {
     if (!window.electronAPI) return
 
     setIsLoading(true)
@@ -131,11 +147,24 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       }
 
       setNodes(entries)
+      // Invalidate cached children in every expanded/loaded nested folder so the
+      // refreshed root read propagates the whole way down the tree.
+      setRefreshSignal((n) => n + 1)
+      setIsLoading(false)
     } catch (err) {
+      // The read was rejected (e.g. the root path isn't registered as an allowed
+      // root in main yet — see FS_READ_RETRIES note). Retry a few times before
+      // giving up, but bail if the root changed underneath us in the meantime.
+      if (attempt < FS_READ_RETRIES && rootPathRef.current === dirPath) {
+        loadRetryTimerRef.current = window.setTimeout(
+          () => loadTree(dirPath, attempt + 1),
+          FS_READ_RETRY_DELAY_MS,
+        )
+        return
+      }
       log.warn('[file-explorer] Load tree failed:', err)
       setNodes([])
       setGitTree(undefined)
-    } finally {
       setIsLoading(false)
     }
   }, [])
@@ -151,6 +180,12 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     if (cleanupRef.current) {
       cleanupRef.current()
       cleanupRef.current = null
+    }
+
+    // Cancel any in-flight load retry from a previous root.
+    if (loadRetryTimerRef.current !== null) {
+      window.clearTimeout(loadRetryTimerRef.current)
+      loadRetryTimerRef.current = null
     }
 
     if (!rootPath || !window.electronAPI) return
@@ -196,6 +231,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       if (cleanupRef.current) {
         cleanupRef.current()
         cleanupRef.current = null
+      }
+      if (loadRetryTimerRef.current !== null) {
+        window.clearTimeout(loadRetryTimerRef.current)
+        loadRetryTimerRef.current = null
       }
     }
   }, [rootPath, loadTree])
@@ -598,6 +637,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               onSelect={handleSelect}
               onFileOpen={handleFileOpen}
               onTreeChanged={handleReload}
+              refreshSignal={refreshSignal}
               visiblePaths={visiblePaths}
               searchQuery=""
               rootPath={rootPath}
