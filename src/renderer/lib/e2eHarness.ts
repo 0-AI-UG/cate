@@ -11,6 +11,7 @@ import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useDragStore } from '../drag/store'
 import { useSearchStore } from '../stores/searchStore'
 import { getLastReveal } from './editorReveal'
+import { applyTheme, getAllThemes } from './themeManager'
 import { terminalRegistry } from './terminalRegistry'
 import type { Point } from '../../shared/types'
 
@@ -62,6 +63,10 @@ declare global {
       getSearchSnapshot(): SearchSnapshot
       /** The most recent editor reveal request (panelId + line/column), or null. */
       lastEditorReveal(): { panelId: string; line: number; column?: number } | null
+      /** Apply a theme by id (for cross-theme visual checks). */
+      setTheme(id: string): void
+      /** All available theme ids + their light/dark type. */
+      themeIds(): { id: string; type: string }[]
       dragSnapshot(): {
         isDragging: boolean
         sourceKind: string | null
@@ -211,6 +216,10 @@ export function installE2EHarness(): void {
 
   const lastEditorReveal = () => getLastReveal()
 
+  const setTheme = (id: string): void => applyTheme(id)
+  const themeIds = (): { id: string; type: string }[] =>
+    getAllThemes().map((t) => ({ id: t.id, type: t.type }))
+
   const dragSnapshot = () => {
     const s = useDragStore.getState()
     return {
@@ -239,6 +248,8 @@ export function installE2EHarness(): void {
     editorPaths,
     getSearchSnapshot,
     lastEditorReveal,
+    setTheme,
+    themeIds,
     dragSnapshot,
   }
 }

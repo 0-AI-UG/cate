@@ -12,6 +12,7 @@ import { setCanvasOperations } from './stores/appStore'
 import { createCanvasOps } from './lib/canvasBridge'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
+import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useUpdateStore, type UpdateStatus } from './stores/updateStore'
 import { useShortcuts } from './hooks/useShortcuts'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
@@ -113,6 +114,10 @@ function MainApp() {
   const initializedRef = useRef(false)
   // Guards against stacking reload-confirm dialogs when the detector re-fires.
   const reloadPromptOpenRef = useRef(false)
+
+  // Track the active file-drag drop target (canvas / dock / agent) for the
+  // single shared drop indicator (<FileDropOverlay/> below).
+  useFileDropTracker()
 
 
   // Store state
@@ -528,6 +533,9 @@ function MainApp() {
       <div className="absolute inset-y-0 right-0 z-20 flex pointer-events-none">
         <div className="pointer-events-auto h-full"><RightSidebar /></div>
       </div>
+
+      {/* Single shared file-drag drop indicator (canvas / dock / agent) */}
+      <FileDropOverlay />
 
       {/* Modal overlays */}
       {showNodeSwitcher && <NodeSwitcher />}

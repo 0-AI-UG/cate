@@ -433,6 +433,8 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       ref={canvasRef}
       data-canvas-container
       data-canvas-panel-id={panelId}
+      data-filedrop="canvas"
+      data-filedrop-id={panelId}
       className="relative w-full h-full overflow-hidden bg-canvas-bg"
       style={{ cursor: idleCursor }}
       onMouseDown={handleMouseDown}

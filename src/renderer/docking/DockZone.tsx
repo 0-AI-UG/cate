@@ -4,7 +4,7 @@
 // Registers as a drop zone for dock-aware drag-and-drop.
 // =============================================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
 import { useDockStoreContext } from '../stores/DockStoreContext'
 import type { DockZonePosition, DockLayoutNode, PanelState } from '../../shared/types'
 import DockTabStack from './DockTabStack'
@@ -39,36 +39,19 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
   }, [position])
 
   // Native file drop (from Search results, the Explorer, or the OS) → open the
-  // file(s) as editor tabs in this zone. The canvas handles its own area and
-  // stops propagation, so canvas drops still open floating nodes.
-  const [fileDragOver, setFileDragOver] = useState(false)
-  const dragDepthRef = useRef(0)
-  const isFileDrag = (e: React.DragEvent): boolean =>
-    e.dataTransfer.types.includes('application/cate-file') || e.dataTransfer.types.includes('Files')
-
+  // file(s) as editor tabs in this zone. The drop indicator itself is rendered
+  // globally by <FileDropOverlay/> (this div is marked data-filedrop="dock").
+  // The canvas handles its own area and stops propagation, so canvas drops
+  // still open floating nodes.
   const handleFileDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (isFileDrag(e)) {
+    if (e.dataTransfer.types.includes('application/cate-file') || e.dataTransfer.types.includes('Files')) {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
     }
   }, [])
 
-  const handleFileDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!isFileDrag(e)) return
-    dragDepthRef.current += 1
-    setFileDragOver(true)
-  }, [])
-
-  const handleFileDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!isFileDrag(e)) return
-    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
-    if (dragDepthRef.current === 0) setFileDragOver(false)
-  }, [])
-
   const handleFileDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
-      dragDepthRef.current = 0
-      setFileDragOver(false)
       const multiData = e.dataTransfer.getData('application/cate-files')
       const singlePath = e.dataTransfer.getData('application/cate-file')
       let paths: string[] = []
@@ -159,23 +142,16 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
     <div
       ref={zoneRef}
       data-dock-zone={position}
+      data-filedrop="dock"
+      data-filedrop-id={position}
       className={`flex flex-col overflow-hidden relative ${isCenter ? 'bg-canvas-bg' : 'bg-surface-4'}`}
       style={style}
-      onDragEnter={handleFileDragEnter}
       onDragOver={handleFileDragOver}
-      onDragLeave={handleFileDragLeave}
       onDrop={handleFileDrop}
     >
       {zone.layout ? renderNode(zone.layout, true, true) : (
         // Empty center zone — show background
         isCenter && <div className="w-full h-full" />
-      )}
-      {fileDragOver && (
-        <div className="absolute inset-0 z-30 pointer-events-none ring-2 ring-inset ring-blue-500/60 bg-blue-500/10 flex items-start justify-center">
-          <span className="mt-3 text-xs text-primary bg-surface-2 px-2 py-1 rounded border border-subtle shadow-lg">
-            Drop to open here
-          </span>
-        </div>
       )}
     </div>
   )

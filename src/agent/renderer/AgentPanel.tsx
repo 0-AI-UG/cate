@@ -773,38 +773,19 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     if (any) e.preventDefault()
   }, [handleAddImage])
 
-  // Whole-panel file drop. The chat input also forwards drops here; handleDrop
-  // stops propagation so a drop never fires twice.
-  const [panelDragOver, setPanelDragOver] = useState(false)
-  const dragDepthRef = useRef(0)
-  const isFileDrag = (e: React.DragEvent): boolean => {
-    const t = e.dataTransfer?.types
-    return (
-      !!t &&
-      (t.includes('application/cate-files') ||
-        t.includes('application/cate-file') ||
-        t.includes('Files'))
-    )
-  }
-  const handlePanelDragEnter = useCallback((e: React.DragEvent) => {
-    if (!isFileDrag(e)) return
-    dragDepthRef.current += 1
-    setPanelDragOver(true)
-  }, [])
+  // Whole-panel file drop. The drop indicator is rendered globally by
+  // <FileDropOverlay/> (the root is marked data-filedrop="agent"); the chat
+  // input also forwards drops here and handleDrop stops propagation so a drop
+  // never fires twice.
   const handlePanelDragOver = useCallback((e: React.DragEvent) => {
-    if (!isFileDrag(e)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }, [])
-  const handlePanelDragLeave = useCallback((e: React.DragEvent) => {
-    if (!isFileDrag(e)) return
-    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
-    if (dragDepthRef.current === 0) setPanelDragOver(false)
+    const t = e.dataTransfer?.types
+    if (t && (t.includes('application/cate-files') || t.includes('application/cate-file') || t.includes('Files'))) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
   }, [])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
-    dragDepthRef.current = 0
-    setPanelDragOver(false)
     // Files dragged from Cate's own Explorer come through as a JSON payload of
     // absolute paths under `application/cate-files`. Insert them into the draft
     // as @-mentions instead of trying to read them as images.
@@ -844,18 +825,10 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   return (
     <div
       className="relative w-full h-full flex bg-surface-4 text-primary min-h-0 overflow-hidden"
-      onDragEnter={handlePanelDragEnter}
+      data-filedrop="agent"
       onDragOver={handlePanelDragOver}
-      onDragLeave={handlePanelDragLeave}
       onDrop={handleDrop}
     >
-      {panelDragOver && (
-        <div className="absolute inset-0 z-30 pointer-events-none ring-2 ring-inset ring-blue-500/60 bg-blue-500/5 flex items-center justify-center">
-          <span className="text-xs text-primary bg-surface-2 px-2 py-1 rounded border border-subtle shadow-lg">
-            Drop file to add to chat
-          </span>
-        </div>
-      )}
       {sidebarOpen && (
         <AgentSidebar
           chats={filteredChats}
