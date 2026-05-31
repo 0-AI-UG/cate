@@ -19,6 +19,7 @@ import path from 'path'
 import { app } from 'electron'
 import { watch, type FSWatcher } from 'chokidar'
 import log from '../../main/logger'
+import { ensureCateGitignore } from '../../main/cateGitignore'
 
 const CATE_DIR = '.cate'
 const PI_AGENT_DIR = 'pi-agent'
@@ -81,9 +82,9 @@ export async function prepareAgentDir(cwd: string): Promise<string> {
   await fsp.mkdir(dir, { recursive: true })
   await ensureSharedAuth()
   await copyAuth(sharedAuthPath(), workspaceAuthPath(cwd))
-  // Sessions, settings, and the auth copy must never be committed.
-  try { await fsp.writeFile(path.join(dir, '.gitignore'), '*\n', { flag: 'wx' }) }
-  catch { /* already exists — leave the user's copy */ }
+  // Sessions, settings, and the auth copy must never be committed — covered by
+  // the single .cate/.gitignore (ignores everything but workspace.json).
+  await ensureCateGitignore(path.join(cwd, CATE_DIR))
   return dir
 }
 

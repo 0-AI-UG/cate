@@ -11,6 +11,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import { validateCwd, addAllowedRoot, removeAllowedRoot } from './pathValidation'
 import { getShellEnv } from '../shellEnv'
+import { ensureCateGitignore } from '../cateGitignore'
 import {
   GIT_IS_REPO,
   GIT_INIT,
@@ -104,18 +105,14 @@ async function ghAvailable(cwd: string): Promise<boolean> {
   }
 }
 
-/** Create a worktree's containing dir and drop a self-ignoring `*` .gitignore
- *  so the checkouts under .cate/worktrees never show as untracked in the parent
- *  repo. Best-effort; the .gitignore is written only when absent. */
+/** Create a worktree's containing dir (.cate/worktrees) and make sure the single
+ *  .cate/.gitignore exists so the checkouts never show as untracked in the
+ *  parent repo. The worktrees dir sits at <root>/.cate/worktrees, so its parent
+ *  is the .cate dir. Best-effort. */
 async function ensureContainingDir(targetPath: string): Promise<void> {
   const containingDir = path.dirname(targetPath)
   await fs.mkdir(containingDir, { recursive: true })
-  const ignorePath = path.join(containingDir, '.gitignore')
-  try {
-    await fs.access(ignorePath)
-  } catch {
-    await fs.writeFile(ignorePath, '*\n').catch(() => {})
-  }
+  await ensureCateGitignore(path.dirname(containingDir))
 }
 
 /** Build a github.com compare URL from the repo's `origin` remote so a PR can
