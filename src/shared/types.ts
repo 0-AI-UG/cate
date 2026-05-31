@@ -630,6 +630,17 @@ export interface SessionSnapshot {
   dockPanels?: Record<string, PanelState>
 }
 
+/** Persisted sidebar arrangement (electron-store `sidebarSession`). Keyed by
+ *  workspace root paths — workspace IDs are runtime UUIDs and can't be persisted.
+ *  Separate from `recentProjects` (which stays recency-ordered for the Welcome
+ *  page) so manual order and the active workspace survive a restart. */
+export interface SidebarSession {
+  /** Workspace root paths in sidebar order. */
+  order: string[]
+  /** Root path of the active workspace, or '' when none applies. */
+  selected: string
+}
+
 /** Serialized dock zone state for session persistence. */
 export interface DockStateSnapshot {
   zones: WindowDockState
