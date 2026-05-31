@@ -312,6 +312,9 @@ function withPanel(
 // dispatcher awaits these Promises; the AgentPanel approval card resolves them.
 const pendingCateApprovals = new Map<string, (allow: boolean) => void>()
 let cateApprovalSeq = 0
+// Monotonic id for the synthetic tool-call messages we add to the thread so the
+// user sees each cate-control action render as a card (not a silent round-trip).
+let cateCallSeq = 0
 
 // -----------------------------------------------------------------------------
 // Store
@@ -1028,7 +1031,25 @@ function handleEvent(panelId: string, event: { type: string; [key: string]: unkn
               })
               return
             }
+            // Surface the action as a tool card in the thread so the user sees
+            // what Cate did (custom-rendered by ChatThread's CateToolCard), then
+            // update it to the final status once the dispatcher resolves.
+            const callId = `cate-call:${request.action}:${cateCallSeq++}`
+            const store = useAgentStore.getState()
+            store.addToolCall(panelId, callId, `cate:${request.action}`, request.params)
+            store.updateToolCall(panelId, callId, { status: 'running' })
             void dispatchCateRequest(panelId, request).then((response) => {
+              const result =
+                response.result === undefined
+                  ? undefined
+                  : typeof response.result === 'string'
+                    ? response.result
+                    : JSON.stringify(response.result, null, 2)
+              useAgentStore.getState().updateToolCall(panelId, callId, {
+                status: response.denied ? 'denied' : response.ok ? 'success' : 'error',
+                result,
+                error: response.error,
+              })
               window.electronAPI.agentUiResponse(panelId, { id, value: JSON.stringify(response) })
             })
             return

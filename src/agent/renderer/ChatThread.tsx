@@ -32,6 +32,7 @@ import type {
   ToolMessage,
 } from './agentStore'
 import { deriveDiff } from './agentStore'
+import { cateToolDisplay, cateActionName } from './cateToolDisplay'
 
 interface ChatThreadProps {
   messages: AgentMessage[]
@@ -294,6 +295,9 @@ function MessageRow({
         : 'text-muted'
     return <div className={`text-center text-[11px] italic ${tone}`}>{msg.text}</div>
   }
+  if (msg.type === 'tool' && msg.name.startsWith('cate:')) {
+    return <CateToolCard msg={msg} shimmer={shimmer} />
+  }
   if (msg.type === 'tool' && msg.name === 'subagent') {
     return <SubagentCard msg={msg} shimmer={shimmer} />
   }
@@ -518,6 +522,67 @@ function toolVerb(msg: ToolMessage): string {
     default:
       return 'Used'
   }
+}
+
+// -----------------------------------------------------------------------------
+// Cate-control card — custom rendering for the agent's canvas actions (open /
+// move / arrange panels, run+read terminals, …). Accent-tinted to read as "Cate
+// touched the workspace", with an expandable params/result body. Mirrors the
+// approval card so the two share one visual language (see cateToolDisplay).
+// -----------------------------------------------------------------------------
+
+function CateToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const action = cateActionName(msg.name)
+  const params = (msg.args ?? {}) as Record<string, unknown>
+  const { Icon, verb, summary } = useMemo(() => cateToolDisplay(action, params), [action, params])
+
+  const isRunning = msg.status === 'running' || msg.status === 'pending'
+  const isError = msg.status === 'error'
+  const isDenied = msg.status === 'denied'
+  const hasExtras = msg.args != null || !!msg.result || !!msg.error
+
+  const accent = isError
+    ? 'border-rose-500/30 bg-rose-500/[0.06]'
+    : isDenied
+      ? 'border-white/10 bg-white/[0.03]'
+      : 'border-agent/25 bg-agent/[0.07]'
+  const iconColor = isError ? 'text-rose-300' : isDenied ? 'text-muted' : 'text-agent-light'
+
+  return (
+    <div className={`rounded-lg border ${accent} px-2.5 py-1.5 cate-fade-in`}>
+      <button
+        onClick={() => hasExtras && setExpanded((v) => !v)}
+        className={`w-full flex items-center gap-2 text-left text-[12px] ${isRunning || shimmer ? 'cate-notif-pulse' : ''} ${hasExtras ? 'hover:opacity-90' : 'cursor-default'}`}
+      >
+        <Icon size={13} weight="duotone" className={`${iconColor} shrink-0`} />
+        <span className="text-muted shrink-0">Cate</span>
+        <span className="text-primary/90 shrink-0">{verb}</span>
+        <span className="truncate text-primary/70 font-mono flex-1">{summary}</span>
+        {isDenied && <span className="text-[10.5px] text-muted shrink-0">denied</span>}
+        {isError && <span className="text-[10.5px] text-rose-300/80 shrink-0">failed</span>}
+      </button>
+      {expanded && hasExtras && (
+        <div className="mt-1.5 pl-[22px] space-y-1.5 select-text cursor-text">
+          {msg.args != null && (
+            <pre className="text-[11px] text-muted whitespace-pre-wrap break-words font-mono leading-snug max-h-[200px] overflow-auto">
+              {prettyArgs(msg.args)}
+            </pre>
+          )}
+          {msg.result && (
+            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
+              {msg.result}
+            </pre>
+          )}
+          {msg.error && (
+            <pre className="text-[11px] text-rose-300/90 whitespace-pre-wrap break-words font-mono leading-snug">
+              {msg.error}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
@@ -1106,6 +1171,45 @@ function ApprovalCard({
   req: { toolCallId: string; toolName: string; args: unknown }
   onDecide: (decision: 'allow' | 'deny') => void
 }) {
+  const isCate = req.toolName.startsWith('cate:')
+  const buttons = (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => onDecide('allow')}
+        className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium"
+      >
+        Allow
+      </button>
+      <button
+        onClick={() => onDecide('deny')}
+        className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[11px] font-medium"
+      >
+        Deny
+      </button>
+    </div>
+  )
+
+  // cate-control: custom rendering matching the in-thread CateToolCard (icon +
+  // human-readable request) instead of a raw `cate:<action>` + JSON dump.
+  if (isCate) {
+    const { Icon, request, summary } = cateToolDisplay(
+      cateActionName(req.toolName),
+      (req.args ?? {}) as Record<string, unknown>,
+    )
+    return (
+      <div className="rounded-lg border border-agent/40 bg-agent/10 px-3 py-2 space-y-2 cate-fade-in">
+        <div className="flex items-start gap-2 text-[12px] text-primary">
+          <Icon size={14} weight="duotone" className="text-agent-light shrink-0 mt-0.5" />
+          <span className="min-w-0">
+            Let Cate <strong>{request}</strong>{' '}
+            <span className="font-mono text-primary/80 break-all">{summary}</span>?
+          </span>
+        </div>
+        {buttons}
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-lg border border-agent/40 bg-agent/10 px-3 py-2 space-y-2">
       <div className="flex items-center gap-2 text-[12px] text-primary">
@@ -1117,20 +1221,7 @@ function ApprovalCard({
       <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono max-h-[160px] overflow-auto bg-black/20 rounded p-2 select-text cursor-text">
         {prettyArgs(req.args)}
       </pre>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => onDecide('allow')}
-          className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium"
-        >
-          Allow
-        </button>
-        <button
-          onClick={() => onDecide('deny')}
-          className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[11px] font-medium"
-        >
-          Deny
-        </button>
-      </div>
+      {buttons}
     </div>
   )
 }
