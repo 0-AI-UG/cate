@@ -18,7 +18,6 @@ import {
   ArrowsOutSimple,
   Square,
   FloppyDisk,
-  GitBranch,
   ArrowsClockwise,
 } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
@@ -733,8 +732,5 @@ function SearchResultIcon({ result }: { result: SearchResult }) {
   if (panelType === 'terminal') return <span className={`${cls} text-emerald-400`}><Terminal size={ICON_SIZE} /></span>
   if (panelType === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
   if (panelType === 'editor')   return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
-  if (panelType === 'git')      return <span className={`${cls} text-red-400`}><GitBranch size={ICON_SIZE} /></span>
-  if (panelType === 'fileExplorer') return <span className={`${cls} text-cyan-400`}><FolderOpen size={ICON_SIZE} /></span>
-  if (panelType === 'projectList')  return <span className={`${cls} text-yellow-400`}><Stack size={ICON_SIZE} /></span>
   return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }

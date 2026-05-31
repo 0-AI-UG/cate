@@ -365,7 +365,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
 
   // Sorted panel list grouped by type
   const panelList = useMemo(() => {
-    const TYPE_ORDER: Record<string, number> = { canvas: 0, terminal: 1, editor: 2, browser: 3, git: 4, fileExplorer: 5, projectList: 6 }
+    const TYPE_ORDER: Record<string, number> = { canvas: 0, terminal: 1, editor: 2, browser: 3 }
     return Object.values(panels).slice().sort((a, b) => {
       const ta = TYPE_ORDER[a.type] ?? 99
       const tb = TYPE_ORDER[b.type] ?? 99
