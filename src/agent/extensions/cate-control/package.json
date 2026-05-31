@@ -1,6 +1,6 @@
 {
   "name": "cate-control",
-  "description": "Control Cate panels: open, arrange, focus, manage layout.",
+  "description": "Control Cate panels by title: read the canvas, open/close/move panels, run/read terminals, navigate browsers.",
   "private": true,
   "pi": { "extensions": ["./index.ts"] }
 }

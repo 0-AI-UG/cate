@@ -41,6 +41,7 @@ import { AGENT_EVENT } from '../../shared/ipc-channels'
 import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
 import { installCateControlExtension } from './installCateControl'
+import { getSettingSync } from '../../main/store'
 import { agentDirFor, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace } from './agentDir'
 import { mirrorModelsToWorkspace } from './customModels'
 import type { AuthManager } from './authManager'
@@ -93,6 +94,10 @@ function buildAgentEnv(cwd: string): Record<string, string> {
   // Scope pi's entire config (extensions, sessions, settings, auth) to this
   // workspace instead of the user's global ~/.pi/agent.
   env.PI_CODING_AGENT_DIR = agentDirFor(cwd)
+  // The cate-control extension reads this at load time and registers its tools
+  // only when enabled, so disabling the feature costs the agent zero tokens
+  // (no tool definitions) without removing the extension from disk.
+  env.CATE_CONTROL_ENABLED = getSettingSync('cateControlEnabled') ? '1' : '0'
   const needsShim = app.isPackaged || !nodeExistsOnPath(env)
   if (needsShim) {
     const shimDir = ensureElectronNodeShim()
@@ -192,6 +197,8 @@ export class AgentManager {
       await mirrorModelsToWorkspace(opts.cwd)
       await installSubagentExtension(opts.cwd)
       await installPlanModeExtension(opts.cwd)
+      // Always installed; whether it registers any tools is gated at load time by
+      // CATE_CONTROL_ENABLED (see buildAgentEnv), so toggling never touches disk.
       await installCateControlExtension(opts.cwd)
 
       const extraArgs: string[] = []

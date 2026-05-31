@@ -23,11 +23,30 @@ function toResult(action: string, res: CateResponse) {
 }
 
 const Placement = Type.Optional(Type.Object({
-  relativeTo: Type.Optional(Type.String({ description: "panelId or 'self'" })),
+  relativeTo: Type.Optional(Type.String({ description: "panel id (e.g. \"p1\") or 'self'" })),
   position: Type.Optional(Type.Union([Type.Literal("right"), Type.Literal("left"), Type.Literal("above"), Type.Literal("below")])),
 }))
 
+const CATE_TOOLS = ["cate_layout", "cate_panel", "cate_browser", "cate_terminal"]
+
 export default function (pi: ExtensionAPI) {
+  // On/off without a reload: the tools are always registered, but we add/remove
+  // them from the session's ACTIVE set, which is what gets advertised to the
+  // model. Inactive => the agent never sees them and spends no tokens on their
+  // definitions. The renderer flips this live by firing /cate-on | /cate-off
+  // (like /plan); the env var seeds the initial state for a fresh session.
+  let desired = process.env.CATE_CONTROL_ENABLED !== "0"
+  const apply = () => {
+    const active = new Set(pi.getActiveTools())
+    for (const t of CATE_TOOLS) { if (desired) active.add(t); else active.delete(t) }
+    pi.setActiveTools([...active])
+  }
+  const setEnabled = (on: boolean) => { desired = on; apply() }
+  // Re-apply on every session start/resume/reload so the live state survives.
+  pi.on("session_start", () => apply())
+  pi.registerCommand("cate-on", { description: "Enable Cate panel control.", handler: async () => setEnabled(true) })
+  pi.registerCommand("cate-off", { description: "Disable Cate panel control.", handler: async () => setEnabled(false) })
+
   const tool = (name: string, label: string, description: string, parameters: any, action: string) =>
     pi.registerTool({
       name, label, description, parameters,
@@ -36,34 +55,21 @@ export default function (pi: ExtensionAPI) {
       },
     })
 
-  tool("cate_layout", "Read or arrange the canvas",
-    [
-      "Inspect or rearrange the whole canvas. Choose `op` (default 'get'):",
-      "- 'get': return the canvas — open panels (id, type, title, position, size, focused, isSelf) and viewport.",
-      "- 'arrange': lay panels out. {style: tile|grid|cascade|focus-one, panelIds? (limit scope)}.",
-    ].join("\n"),
-    Type.Object({
-      op: Type.Optional(Type.Union([Type.Literal("get"), Type.Literal("arrange")])),
-      style: Type.Optional(Type.String()),
-      panelIds: Type.Optional(Type.Array(Type.String())),
-    }), "layout")
+  tool("cate_layout", "Read the canvas",
+    "Return the open panels - {id, title, type, focused, isSelf} for each. Target panels in the other cate tools by their `id` (e.g. \"p1\") - it is stable. `title` is only a display label and changes (a browser's title becomes the page title, etc.).",
+    Type.Object({}), "layout")
 
-  tool("cate_panel", "Open or manage a panel",
+  tool("cate_panel", "Open, close, or move a panel",
     [
-      "Open or manage a single canvas panel. Choose `op`:",
-      "- 'open': create/open a panel, focus + center it. {type: editor|terminal|browser|document, target?, placement?}. target: {path,line?,column?,preview?} for editor (preview:true = open a markdown file straight into rendered preview); {url} for browser; {cwd?,command?} for terminal.",
-      "- 'focus' | 'close': {panelId}.",
-      "- 'move': {panelId, placement:{relativeTo,position}}.",
-      "- 'resize': {panelId, preset: small|medium|large} or {panelId, size:{width,height}}.",
-      "- 'preview': toggle a markdown editor's rendered preview. {panelId, preview?:bool (default true)}.",
-      "(To navigate a browser panel use cate_browser; to lay out many panels use cate_layout op:'arrange'.)",
+      "Open, close, or move a canvas panel. Choose `op`:",
+      "- 'open': create a panel. {type: editor|terminal|browser|document, target?, placement?}. target: {path,line?,column?,preview?} for editor (preview:true opens a markdown file straight into rendered preview); {url} for browser; {cwd?,command?} for terminal. Returns the new panel's {id, title} - keep the id to target it later.",
+      "- 'close': {panel} - the panel id.",
+      "- 'move': {panel, placement:{relativeTo,position}} - reposition relative to another panel.",
+      "`panel` and placement.relativeTo are panel IDs like \"p1\" (from cate_layout or an open result), or 'self' for your own panel. This never pans or zooms the user's view.",
     ].join("\n"),
     Type.Object({
-      op: Type.Union([
-        Type.Literal("open"), Type.Literal("focus"), Type.Literal("move"),
-        Type.Literal("resize"), Type.Literal("close"), Type.Literal("preview"),
-      ]),
-      panelId: Type.Optional(Type.String()),
+      op: Type.Union([Type.Literal("open"), Type.Literal("close"), Type.Literal("move")]),
+      panel: Type.Optional(Type.String({ description: "panel id (for close / move)" })),
       type: Type.Optional(Type.String()),
       target: Type.Optional(Type.Object({
         path: Type.Optional(Type.String()), line: Type.Optional(Type.Number()), column: Type.Optional(Type.Number()),
@@ -71,24 +77,41 @@ export default function (pi: ExtensionAPI) {
         preview: Type.Optional(Type.Boolean()),
       })),
       placement: Placement,
-      preset: Type.Optional(Type.String()),
-      size: Type.Optional(Type.Object({ width: Type.Number(), height: Type.Number() })),
-      preview: Type.Optional(Type.Boolean()),
     }), "panel")
 
-  tool("cate_browser", "Navigate a browser panel",
-    "Point a browser panel at a url (opens a new browser panel if no panelId). {panelId?, url}.",
-    Type.Object({ panelId: Type.Optional(Type.String()), url: Type.String() }), "browser")
+  tool("cate_browser", "Control a browser panel",
+    [
+      "Drive a browser panel. Choose `op`:",
+      "- 'navigate': load a url. {panel, url}.",
+      "- 'back' | 'forward' | 'reload' | 'stop': history / loading control. {panel}.",
+      "- 'info': report the current {url, title, canGoBack, canGoForward}. {panel}.",
+      "- 'read': the page's visible text, or one CSS selector's text. {panel, selector?}.",
+      "- 'eval': run JavaScript in the page and return its result (use this to click, fill, or scroll). {panel, js}.",
+      "- 'screenshot': capture the page to an image file. {panel}.",
+      "`panel` is a panel id (e.g. \"p1\", from cate_layout or the open result).",
+    ].join("\n"),
+    Type.Object({
+      op: Type.Union([
+        Type.Literal("navigate"), Type.Literal("back"), Type.Literal("forward"),
+        Type.Literal("reload"), Type.Literal("stop"), Type.Literal("info"),
+        Type.Literal("read"), Type.Literal("eval"), Type.Literal("screenshot"),
+      ]),
+      panel: Type.String({ description: "panel id, e.g. \"p1\"" }),
+      url: Type.Optional(Type.String()),
+      selector: Type.Optional(Type.String({ description: "CSS selector for read" })),
+      js: Type.Optional(Type.String({ description: "JavaScript to run in the page for eval" })),
+    }), "browser")
 
   tool("cate_terminal", "Run or read a terminal",
     [
       "Drive a terminal panel. Choose `op`:",
-      "- 'run': run a shell command. {command, panelId? (reuse an existing terminal), newPanel?:bool (force a fresh one)}.",
-      "- 'read': read recent output (visible screen + scrollback) as text. {panelId, lines?:number (trailing lines, default 50, max 1000)}.",
+      "- 'run': run a shell command. {command, panel? (reuse an existing terminal by id), newPanel?:bool (force a fresh one)}. Returns the terminal's {id, title}.",
+      "- 'read': read recent output (visible screen + scrollback) as text. {panel, lines?:number (trailing lines, default 50, max 1000)}.",
+      "`panel` is a panel id (e.g. \"p1\").",
     ].join("\n"),
     Type.Object({
       op: Type.Union([Type.Literal("run"), Type.Literal("read")]),
-      panelId: Type.Optional(Type.String()),
+      panel: Type.Optional(Type.String()),
       command: Type.Optional(Type.String()),
       newPanel: Type.Optional(Type.Boolean()),
       lines: Type.Optional(Type.Number()),

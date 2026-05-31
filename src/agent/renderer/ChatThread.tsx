@@ -7,7 +7,7 @@
 // expands what they want to see.
 // =============================================================================
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRenderCount } from '../../renderer/lib/perf/perfClient'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -32,7 +32,7 @@ import type {
   ToolMessage,
 } from './agentStore'
 import { deriveDiff } from './agentStore'
-import { cateToolDisplay, cateActionName } from './cateToolDisplay'
+import { cateToolDisplay, cateActionName, cateToolFields, type CateField } from './cateToolDisplay'
 
 interface ChatThreadProps {
   messages: AgentMessage[]
@@ -525,54 +525,119 @@ function toolVerb(msg: ToolMessage): string {
 }
 
 // -----------------------------------------------------------------------------
-// Cate-control card — custom rendering for the agent's canvas actions (open /
-// move / arrange panels, run+read terminals, …). Accent-tinted to read as "Cate
-// touched the workspace", with an expandable params/result body. Mirrors the
-// approval card so the two share one visual language (see cateToolDisplay).
+// Cate-control card — renders the agent's canvas actions (open / move / arrange
+// panels, run+read terminals, …) using the same borderless verb + summary layout
+// as the standard ToolCard, so Cate's actions read identically to its other tool
+// calls. The cate-specific verb/summary come from cateToolDisplay.
 // -----------------------------------------------------------------------------
+
+// Aligned label/value rows for the expanded cate card (input params + flat
+// result values). Reads like a small field list instead of a JSON blob.
+function CateFieldRows({ fields }: { fields: CateField[] }) {
+  return (
+    <div className="space-y-0.5">
+      {fields.map((f) => (
+        <div key={f.label} className="flex gap-2 text-[11px] font-mono leading-snug">
+          <span className="text-muted shrink-0 w-[68px]">{f.label}</span>
+          <span className="text-primary/85 break-all whitespace-pre-wrap flex-1">{f.value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// `terminal read` output, rendered like a terminal buffer rather than escaped JSON.
+function CateTerminalOutput({ text, lineCount }: { text: string; lineCount?: number }) {
+  return (
+    <div>
+      {typeof lineCount === 'number' && (
+        <div className="text-[10.5px] text-muted mb-0.5">{lineCount} line{lineCount === 1 ? '' : 's'}</div>
+      )}
+      <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto rounded bg-black/20 px-2 py-1">
+        {text || '(no output)'}
+      </pre>
+    </div>
+  )
+}
+
+// `layout get` result: one compact row per open panel — type + title (never the
+// raw panelId), with focused/self tags.
+function CatePanelList({ panels }: { panels: Array<Record<string, unknown>> }) {
+  if (!panels.length) return <div className="text-[11px] text-muted font-mono leading-snug">No open panels.</div>
+  return (
+    <div className="space-y-0.5">
+      {panels.map((p, i) => (
+        <div key={String(p.panelId ?? i)} className="flex items-center gap-2 text-[11px] font-mono leading-snug">
+          <span className="text-muted shrink-0 w-[68px]">{String(p.type ?? 'panel')}</span>
+          <span className="truncate text-primary/85 flex-1">{String(p.title || '(untitled)')}</span>
+          {p.focused === true && <span className="text-[10px] text-agent-light shrink-0">focused</span>}
+          {p.isSelf === true && <span className="text-[10px] text-muted shrink-0">self</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function parseCateResult(result?: string): unknown {
+  if (!result) return undefined
+  try { return JSON.parse(result) } catch { return result }
+}
 
 function CateToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const action = cateActionName(msg.name)
   const params = (msg.args ?? {}) as Record<string, unknown>
-  const { Icon, verb, summary } = useMemo(() => cateToolDisplay(action, params), [action, params])
+  const { verb, summary } = useMemo(() => cateToolDisplay(action, params), [action, params])
+  const fields = useMemo(() => cateToolFields(action, params), [action, params])
+  const result = useMemo(() => parseCateResult(msg.result), [msg.result])
+
+  // The result section is only for genuinely NEW information: terminal output and
+  // the canvas panel list. Everything else a cate op returns is just an echo of
+  // its input (panelId, command, coords) — surfaced already by the input fields —
+  // so we don't render it again. A non-JSON string result falls back to a block.
+  const resultNode: ReactNode = useMemo(() => {
+    const rec = result && typeof result === 'object' && !Array.isArray(result)
+      ? (result as Record<string, unknown>)
+      : undefined
+    if (action === 'terminal' && typeof rec?.text === 'string') {
+      return <CateTerminalOutput text={rec.text} lineCount={typeof rec.lineCount === 'number' ? rec.lineCount : undefined} />
+    }
+    if (action === 'layout' && Array.isArray(rec?.panels)) {
+      return <CatePanelList panels={rec.panels as Array<Record<string, unknown>>} />
+    }
+    if (!rec && typeof result === 'string' && result) {
+      return (
+        <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
+          {result}
+        </pre>
+      )
+    }
+    return null
+  }, [action, result])
 
   const isRunning = msg.status === 'running' || msg.status === 'pending'
-  const isError = msg.status === 'error'
   const isDenied = msg.status === 'denied'
-  const hasExtras = msg.args != null || !!msg.result || !!msg.error
-
-  const accent = isError
-    ? 'border-rose-500/30 bg-rose-500/[0.06]'
-    : isDenied
-      ? 'border-white/10 bg-white/[0.03]'
-      : 'border-agent/25 bg-agent/[0.07]'
-  const iconColor = isError ? 'text-rose-300' : isDenied ? 'text-muted' : 'text-agent-light'
+  const hasExtras = fields.length > 0 || !!resultNode || !!msg.error || isDenied
 
   return (
-    <div className={`rounded-lg border ${accent} px-2.5 py-1.5 cate-fade-in`}>
+    <div className="text-[12px] cate-fade-in">
       <button
         onClick={() => hasExtras && setExpanded((v) => !v)}
-        className={`w-full flex items-center gap-2 text-left text-[12px] ${isRunning || shimmer ? 'cate-notif-pulse' : ''} ${hasExtras ? 'hover:opacity-90' : 'cursor-default'}`}
+        className={`w-full flex items-center gap-1.5 text-left ${isRunning || shimmer ? 'cate-notif-pulse' : ''} ${hasExtras ? 'hover:text-primary' : 'cursor-default'}`}
       >
-        <Icon size={13} weight="duotone" className={`${iconColor} shrink-0`} />
-        <span className="text-muted shrink-0">Cate</span>
-        <span className="text-primary/90 shrink-0">{verb}</span>
-        <span className="truncate text-primary/70 font-mono flex-1">{summary}</span>
-        {isDenied && <span className="text-[10.5px] text-muted shrink-0">denied</span>}
-        {isError && <span className="text-[10.5px] text-rose-300/80 shrink-0">failed</span>}
+        <span className="text-muted shrink-0">{verb}</span>
+        <span className="truncate text-primary/90 font-mono flex-1">{summary}</span>
       </button>
       {expanded && hasExtras && (
-        <div className="mt-1.5 pl-[22px] space-y-1.5 select-text cursor-text">
-          {msg.args != null && (
-            <pre className="text-[11px] text-muted whitespace-pre-wrap break-words font-mono leading-snug max-h-[200px] overflow-auto">
-              {prettyArgs(msg.args)}
-            </pre>
+        <div className="mt-1 pl-4 space-y-1.5 select-text cursor-text">
+          {fields.length > 0 && <CateFieldRows fields={fields} />}
+          {resultNode && (
+            <div className={fields.length > 0 ? 'border-t border-white/5 pt-1.5' : undefined}>
+              {resultNode}
+            </div>
           )}
-          {msg.result && (
-            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
-              {msg.result}
-            </pre>
+          {isDenied && (
+            <div className="text-[11px] text-muted font-mono leading-snug">Denied by user</div>
           )}
           {msg.error && (
             <pre className="text-[11px] text-rose-300/90 whitespace-pre-wrap break-words font-mono leading-snug">
@@ -1171,45 +1236,6 @@ function ApprovalCard({
   req: { toolCallId: string; toolName: string; args: unknown }
   onDecide: (decision: 'allow' | 'deny') => void
 }) {
-  const isCate = req.toolName.startsWith('cate:')
-  const buttons = (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={() => onDecide('allow')}
-        className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium"
-      >
-        Allow
-      </button>
-      <button
-        onClick={() => onDecide('deny')}
-        className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[11px] font-medium"
-      >
-        Deny
-      </button>
-    </div>
-  )
-
-  // cate-control: custom rendering matching the in-thread CateToolCard (icon +
-  // human-readable request) instead of a raw `cate:<action>` + JSON dump.
-  if (isCate) {
-    const { Icon, request, summary } = cateToolDisplay(
-      cateActionName(req.toolName),
-      (req.args ?? {}) as Record<string, unknown>,
-    )
-    return (
-      <div className="rounded-lg border border-agent/40 bg-agent/10 px-3 py-2 space-y-2 cate-fade-in">
-        <div className="flex items-start gap-2 text-[12px] text-primary">
-          <Icon size={14} weight="duotone" className="text-agent-light shrink-0 mt-0.5" />
-          <span className="min-w-0">
-            Let Cate <strong>{request}</strong>{' '}
-            <span className="font-mono text-primary/80 break-all">{summary}</span>?
-          </span>
-        </div>
-        {buttons}
-      </div>
-    )
-  }
-
   return (
     <div className="rounded-lg border border-agent/40 bg-agent/10 px-3 py-2 space-y-2">
       <div className="flex items-center gap-2 text-[12px] text-primary">
@@ -1221,7 +1247,20 @@ function ApprovalCard({
       <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono max-h-[160px] overflow-auto bg-black/20 rounded p-2 select-text cursor-text">
         {prettyArgs(req.args)}
       </pre>
-      {buttons}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onDecide('allow')}
+          className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium"
+        >
+          Allow
+        </button>
+        <button
+          onClick={() => onDecide('deny')}
+          className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[11px] font-medium"
+        >
+          Deny
+        </button>
+      </div>
     </div>
   )
 }

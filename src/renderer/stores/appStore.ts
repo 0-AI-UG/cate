@@ -318,6 +318,10 @@ interface AppStoreActions {
    *  no longer fight the chosen name. */
   renamePanelByUser: (workspaceId: string, panelId: string, title: string) => void
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
+  /** Return the panel's stable agent handle ("p1", "p2", …), assigning the next
+   *  one (and persisting it) if the panel doesn't have one yet. Handles are
+   *  monotonic per workspace and never reused. */
+  ensurePanelAgentId: (workspaceId: string, panelId: string) => string
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
@@ -401,11 +405,19 @@ function addAndPlacePanel(
   position: Point | undefined,
 ): string {
   set((state) => ({
-    workspaces: state.workspaces.map((ws) =>
-      ws.id === workspaceId
-        ? { ...ws, panels: { ...ws.panels, [panel.id]: panel } }
-        : ws,
-    ),
+    workspaces: state.workspaces.map((ws) => {
+      if (ws.id !== workspaceId) return ws
+      // Assign the next stable agent handle at creation, so handles follow
+      // creation order ("p1" = first panel opened). Restored panels already
+      // carry their persisted handle and skip this.
+      const seq = (ws.agentSeq ?? 0) + 1
+      const placed: PanelState = panel.agentId ? panel : { ...panel, agentId: `p${seq}` }
+      return {
+        ...ws,
+        agentSeq: panel.agentId ? ws.agentSeq : seq,
+        panels: { ...ws.panels, [panel.id]: placed },
+      }
+    }),
   }))
   try {
     placePanel(panel.id, panel.type, placement, position, workspaceId === get().selectedWorkspaceId)
@@ -897,6 +909,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   updatePanelUrl(workspaceId, panelId, url) {
     setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, url }))
+  },
+
+  ensurePanelAgentId(workspaceId, panelId) {
+    const ws0 = get().workspaces.find((w) => w.id === workspaceId)
+    const existing = ws0?.panels[panelId]?.agentId
+    if (existing) return existing
+    const next = (ws0?.agentSeq ?? 0) + 1
+    const assigned = `p${next}`
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        const panel = ws.panels[panelId]
+        if (!panel || panel.agentId) return ws
+        return { ...ws, agentSeq: next, panels: { ...ws.panels, [panelId]: { ...panel, agentId: assigned } } }
+      }),
+    }))
+    return get().workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.agentId ?? assigned
   },
 
   updatePanelFilePath(workspaceId, panelId, filePath) {

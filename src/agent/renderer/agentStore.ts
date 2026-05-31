@@ -211,9 +211,6 @@ export interface PanelAgentState {
   /** Optional session display name (mirrors pi's `set_session_name`). */
   sessionName?: string
   sessionFile?: string
-  /** Renderer-side control mode for the cate-control feature. Defaults to
-   *  'guarded' (side-effects need approval); 'auto' executes immediately. */
-  cateControlMode?: 'guarded' | 'auto'
 }
 
 interface AgentStoreState {
@@ -237,8 +234,6 @@ interface AgentStoreActions {
   setModel: (panelId: string, model: AgentModelRef | null) => void
   addApproval: (panelId: string, req: AgentToolApprovalRequest) => void
   resolveApproval: (panelId: string, toolCallId: string) => void
-  requestCateApproval: (panelId: string, action: string, params: Record<string, unknown>) => Promise<boolean>
-  resolveCateApproval: (panelId: string, toolCallId: string, allow: boolean) => void
   appendSystem: (panelId: string, text: string, kind?: SystemMessage['kind']) => void
   loadMessages: (panelId: string, messages: AgentMessage[]) => void
   clearMessages: (panelId: string) => void
@@ -251,8 +246,6 @@ interface AgentStoreActions {
   setRetry: (panelId: string, next: Partial<RetryState>) => void
   setQueues: (panelId: string, steering: string[], followUp: string[]) => void
   setExtensionStatus: (panelId: string, key: string, text?: string) => void
-  setCateControlMode: (panelId: string, mode: 'guarded' | 'auto') => void
-  getCateControlMode: (panelId: string) => 'guarded' | 'auto'
   setExtensionWidget: (
     panelId: string,
     key: string,
@@ -308,10 +301,6 @@ function withPanel(
   return { panels: { ...state.panels, [panelId]: next } }
 }
 
-// In-flight cate-control approvals, keyed by a synthetic toolCallId. The
-// dispatcher awaits these Promises; the AgentPanel approval card resolves them.
-const pendingCateApprovals = new Map<string, (allow: boolean) => void>()
-let cateApprovalSeq = 0
 // Monotonic id for the synthetic tool-call messages we add to the thread so the
 // user sees each cate-control action render as a card (not a silent round-trip).
 let cateCallSeq = 0
@@ -510,23 +499,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     )
   },
 
-  requestCateApproval(panelId, action, params) {
-    const toolCallId = `cate:${action}:${cateApprovalSeq++}`
-    return new Promise<boolean>((resolve) => {
-      pendingCateApprovals.set(toolCallId, resolve)
-      get().addApproval(panelId, { panelId, toolCallId, toolName: `cate:${action}`, args: params })
-    })
-  },
-
-  resolveCateApproval(panelId, toolCallId, allow) {
-    const resolver = pendingCateApprovals.get(toolCallId)
-    if (resolver) {
-      pendingCateApprovals.delete(toolCallId)
-      resolver(allow)
-    }
-    get().resolveApproval(panelId, toolCallId)
-  },
-
   setStats(panelId, stats) {
     set((state) => withPanel(state, panelId, (p) => ({ ...p, stats })))
   },
@@ -589,17 +561,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         return { ...p, extensionStatuses: [...filtered, { key, text }] }
       }),
     )
-  },
-
-  setCateControlMode(panelId, mode) {
-    set((state) => {
-      const current = state.panels[panelId] ?? emptyPanel()
-      return { panels: { ...state.panels, [panelId]: { ...current, cateControlMode: mode } } }
-    })
-  },
-
-  getCateControlMode(panelId) {
-    return get().panels[panelId]?.cateControlMode ?? 'guarded'
   },
 
   setExtensionWidget(panelId, key, lines, placement) {
@@ -875,6 +836,11 @@ function handleEvent(panelId: string, event: { type: string; [key: string]: unkn
         const name = asString(event.toolName) ?? asString(event.name) ?? 'tool'
         const args = event.args ?? event.input ?? {}
         if (!toolCallId) return
+        // cate-control tools (cate_terminal / cate_panel / cate_layout /
+        // cate_browser) round-trip through ctx.ui.input(), which the interception
+        // below renders as a richer CateToolCard (structured params + response).
+        // Skip the raw pi tool card so we don't show a duplicate bare-JSON entry.
+        if (name.startsWith('cate_')) return
         useAgentStore.getState().addToolCall(panelId, toolCallId, name, args)
         useAgentStore.getState().updateToolCall(panelId, toolCallId, { status: 'running' })
         return
@@ -1046,7 +1012,7 @@ function handleEvent(panelId: string, event: { type: string; [key: string]: unkn
                     ? response.result
                     : JSON.stringify(response.result, null, 2)
               useAgentStore.getState().updateToolCall(panelId, callId, {
-                status: response.denied ? 'denied' : response.ok ? 'success' : 'error',
+                status: response.ok ? 'success' : 'error',
                 result,
                 error: response.error,
               })

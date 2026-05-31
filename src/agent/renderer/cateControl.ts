@@ -1,15 +1,15 @@
 // =============================================================================
 // Renderer-side dispatcher for the cate-control agent feature. Receives control
 // requests intercepted from pi's ctx.ui.input() channel (see agentStore
-// handleEvent), resolves the calling chat's workspace/canvas via a registry
-// that AgentPanel populates, gates side-effects per the chat's mode, and runs an
-// executor. Returns a CateControlResponse the extension reads back.
+// handleEvent), resolves the calling chat's workspace/canvas via a registry that
+// AgentPanel populates, and runs an executor. Returns a CateControlResponse the
+// extension reads back. The feature is a plain on/off (cateControlEnabled): when
+// off the extension isn't even installed, so the agent never sees the tools.
 // =============================================================================
 
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../renderer/stores/canvasStore'
-import { classifyCateAction, type CateControlRequest, type CateControlResponse, type CateControlAction } from '../../shared/cateControl'
-import { useAgentStore } from './agentStore'
+import { type CateControlRequest, type CateControlResponse, type CateControlAction } from '../../shared/cateControl'
 import { useSettingsStore } from '../../renderer/stores/settingsStore'
 import log from '../../renderer/lib/logger'
 
@@ -20,9 +20,6 @@ export interface CateControlContext {
   hostPanelId: string
   /** The canvas store for this chat's workspace. */
   canvasStore: StoreApi<CanvasStore>
-  /** Renders an inline approval card and resolves true=allow / false=deny.
-   *  Injected by AgentPanel; in tests a stub is supplied. */
-  requestApproval?: (action: CateControlAction, params: Record<string, unknown>) => Promise<boolean>
 }
 
 export type CateExecutor = (
@@ -68,22 +65,10 @@ export async function dispatchCateRequest(
 ): Promise<CateControlResponse> {
   try {
     if (!useSettingsStore.getState().cateControlEnabled) {
-      return { ok: false, error: 'Cate control is disabled in settings.' }
+      return { ok: false, error: 'Cate control is disabled.' }
     }
     const ctx = registry.get(agentKey)
     if (!ctx) return { ok: false, error: 'No context registered for this chat.' }
-
-    // Guard: only the active workspace can be controlled in v1.
-    // (Resolution of non-active workspaces is deferred — spec §11.)
-
-    const klass = classifyCateAction(req.action, req.params)
-    if (klass === 'side-effect') {
-      const mode = useAgentStore.getState().getCateControlMode(agentKey)
-      if (mode === 'guarded') {
-        const allowed = ctx.requestApproval ? await ctx.requestApproval(req.action, req.params) : false
-        if (!allowed) return { ok: false, denied: true }
-      }
-    }
 
     const exec = executorHolder().map?.[req.action]
     if (!exec) return { ok: false, error: `Unknown or unimplemented action: ${req.action}` }

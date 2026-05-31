@@ -29,12 +29,14 @@ declare global {
       writeTerminal(nodeId: string, data: string): boolean
       /** Read the rendered text of a terminal panel's xterm buffer (by panelId). */
       terminalText(panelId: string): string
+      /** Resolve a panel title to its panelId (cate tools report titles, not ids). */
+      panelIdByTitle(title: string): string | null
       /** Dispatch a cate-control action through the real renderer dispatcher,
-       *  exactly as an agent tool call would. Side-effects are auto-approved. */
+       *  exactly as an agent tool call would. */
       cateControl(
         action: string,
         params: Record<string, unknown>,
-      ): Promise<{ ok: boolean; result?: unknown; error?: string; denied?: boolean }>
+      ): Promise<{ ok: boolean; result?: unknown; error?: string }>
       dragSnapshot(): {
         isDragging: boolean
         sourceKind: string | null
@@ -152,6 +154,15 @@ export function installE2EHarness(): void {
     return out
   }
 
+  const panelIdByTitle = (title: string): string | null => {
+    for (const ws of useAppStore.getState().workspaces) {
+      for (const [id, panel] of Object.entries(ws.panels ?? {})) {
+        if ((panel as { title?: string } | null)?.title === title) return id
+      }
+    }
+    return null
+  }
+
   const cateControl = async (action: string, params: Record<string, unknown>) => {
     // Lazy-load the agent dispatcher + executors so this stays out of the main
     // bundle. Importing cateExecutors runs its setCateExecutors() registration.
@@ -165,7 +176,6 @@ export function installE2EHarness(): void {
       workspaceId: wsId,
       hostPanelId: 'e2e-host',
       canvasStore: cs!,
-      requestApproval: async () => true,
     })
     return dispatchCateRequest('e2e-agent', { action: action as never, params })
   }
@@ -194,6 +204,7 @@ export function installE2EHarness(): void {
     terminalPtyId,
     writeTerminal,
     terminalText,
+    panelIdByTitle,
     cateControl,
     dragSnapshot,
   }

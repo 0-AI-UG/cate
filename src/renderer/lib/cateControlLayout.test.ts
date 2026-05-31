@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computePlacement, computeArrange, type Rect } from './cateControlLayout'
+import { computePlacement, type Rect } from './cateControlLayout'
 
 const GAP = 40
 
@@ -39,30 +39,5 @@ describe('computePlacement', () => {
     // candidate at {350,300} overlaps -> shifted right by width+gap
     expect(r.x).toBe(350 + 300 + GAP)
     expect(r.y).toBe(300)
-  })
-})
-
-describe('computeArrange', () => {
-  const viewport = { x: 0, y: 0, width: 1000, height: 800 }
-
-  it('tiles 4 rects into a 2x2 grid filling the viewport', () => {
-    const out = computeArrange('tile', 4, viewport)
-    expect(out).toHaveLength(4)
-    expect(out[0]).toEqual({ x: 0, y: 0, width: 500, height: 400 })
-    expect(out[1]).toEqual({ x: 500, y: 0, width: 500, height: 400 })
-    expect(out[2]).toEqual({ x: 0, y: 400, width: 500, height: 400 })
-    expect(out[3]).toEqual({ x: 500, y: 400, width: 500, height: 400 })
-  })
-
-  it('cascades rects with a fixed offset', () => {
-    const out = computeArrange('cascade', 3, viewport)
-    expect(out[0]).toEqual({ x: 0, y: 0, width: 600, height: 480 })
-    expect(out[1]).toEqual({ x: 40, y: 40, width: 600, height: 480 })
-    expect(out[2]).toEqual({ x: 80, y: 80, width: 600, height: 480 })
-  })
-
-  it('returns one full-viewport rect for focus-one', () => {
-    const out = computeArrange('focus-one', 1, viewport)
-    expect(out).toEqual([{ x: 0, y: 0, width: 1000, height: 800 }])
   })
 })

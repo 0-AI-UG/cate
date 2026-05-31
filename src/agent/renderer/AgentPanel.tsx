@@ -29,6 +29,7 @@ import { CateLogo } from '../../renderer/ui/CateLogo'
 import log from '../../renderer/lib/logger'
 import type { PanelProps } from '../../renderer/panels/types'
 import { useAppStore } from '../../renderer/stores/appStore'
+import { useSettingsStore } from '../../renderer/stores/settingsStore'
 import { useStatusStore } from '../../renderer/stores/statusStore'
 import { useCanvasStoreApi } from '../../renderer/stores/CanvasStoreContext'
 import { useAgentStore } from './agentStore'
@@ -139,7 +140,9 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const followUpQueue = slice?.followUpQueue ?? []
   const extensionStatuses = slice?.extensionStatuses ?? []
   const extensionWidgets = slice?.extensionWidgets ?? []
-  const cateControlMode = slice?.cateControlMode ?? 'guarded'
+  // Master on/off for the cate-control feature (global setting). When off, the
+  // extension isn't installed for new chats, so the agent never sees the tools.
+  const cateControlEnabled = useSettingsStore((s) => s.cateControlEnabled)
 
   const uiRequests = slice?.uiRequests ?? []
   const currentUiRequest = uiRequests[0]
@@ -500,12 +503,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const handleApproval = useCallback(
     async (toolCallId: string, decision: 'allow' | 'deny') => {
       if (!activeAgentKey) return
-      // cate-control approvals resolve a local Promise in the dispatcher — there
-      // is no pi tool call awaiting them, so don't hit the pi IPC channel.
-      if (toolCallId.startsWith('cate:')) {
-        useAgentStore.getState().resolveCateApproval(activeAgentKey, toolCallId, decision === 'allow')
-        return
-      }
       useAgentStore.getState().resolveApproval(activeAgentKey, toolCallId)
       try {
         await window.electronAPI.agentToolDecision(activeAgentKey, toolCallId, decision)
@@ -520,8 +517,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   )
 
   // Register this chat's cate-control context so the dispatcher can resolve its
-  // workspace/canvas and route guarded-mode approvals through the panel's
-  // approval card. Re-registers whenever the active chat or workspace changes.
+  // workspace/canvas. Re-registers whenever the active chat or workspace changes.
   useEffect(() => {
     if (!activeAgentKey) return
     const key = activeAgentKey
@@ -529,8 +525,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       workspaceId,
       hostPanelId: panelId,
       canvasStore: canvasStoreApi,
-      requestApproval: (action, params) =>
-        useAgentStore.getState().requestCateApproval(key, action, params),
     })
     return () => unregisterCateContext(key)
   }, [activeAgentKey, workspaceId, panelId, canvasStoreApi])
@@ -738,10 +732,15 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     catch (err) { log.warn('[AgentPanel] toggle plan mode failed', err) }
   }, [activeAgentKey])
 
-  const handleToggleCateControlMode = useCallback(() => {
+  const handleToggleCateControl = useCallback(async () => {
+    const s = useSettingsStore.getState()
+    const next = !s.cateControlEnabled
+    s.setSetting('cateControlEnabled', next)
+    // Apply live to the current chat (no reload), mirroring plan mode's /plan:
+    // the extension's /cate-on|/cate-off command flips the tools' active state.
     if (!activeAgentKey) return
-    const next = useAgentStore.getState().getCateControlMode(activeAgentKey) === 'auto' ? 'guarded' : 'auto'
-    useAgentStore.getState().setCateControlMode(activeAgentKey, next)
+    try { await window.electronAPI.agentPrompt(activeAgentKey, next ? '/cate-on' : '/cate-off') }
+    catch (err) { log.warn('[AgentPanel] toggle cate control failed', err) }
   }, [activeAgentKey])
 
   const handleImplementPlan = useCallback(async () => {
@@ -969,8 +968,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                       compactionActive={compaction.active}
                       planModeActive={planModeActive}
                       onTogglePlanMode={handleTogglePlanMode}
-                      cateControlMode={cateControlMode}
-                      onToggleCateControlMode={handleToggleCateControlMode}
+                      cateControlEnabled={cateControlEnabled}
+                      onToggleCateControl={handleToggleCateControl}
                       placeholder={
                         !selectedModel ? 'Pick a model to start…'
                           : !selectedProviderConnected ? `Connect ${selectedModel.provider} to start…`
@@ -1028,8 +1027,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                   compactionActive={compaction.active}
                   planModeActive={planModeActive}
                   onTogglePlanMode={handleTogglePlanMode}
-                  cateControlMode={cateControlMode}
-                  onToggleCateControlMode={handleToggleCateControlMode}
+                  cateControlEnabled={cateControlEnabled}
+                  onToggleCateControl={handleToggleCateControl}
                 />
               </>
             )}

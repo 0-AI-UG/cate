@@ -19,6 +19,13 @@ export interface PortalWebview {
   getURL(): string
   getTitle(): string
   loadURL(url: string): void
+  goBack(): void
+  goForward(): void
+  canGoBack(): boolean
+  canGoForward(): boolean
+  reload(): void
+  stop(): void
+  executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
 }
 
 interface Entry {

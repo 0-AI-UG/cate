@@ -2,6 +2,10 @@
 // Concrete executors for cate-control actions. Each takes (params, ctx, agentKey)
 // and returns a CateControlResponse. Pure-ish: side effects go through appStore /
 // canvasStore / terminalRegistry. Geometry comes from cateControlLayout.
+//
+// The agent addresses panels by TITLE (e.g. "Terminal 2", "a.ts"), never by the
+// internal UUID - resolvePanelRef() maps a title to a panelId, and results report
+// titles back. 'self' refers to the agent's own host panel.
 // =============================================================================
 
 import type { CateControlResponse } from '../../shared/cateControl'
@@ -12,11 +16,54 @@ import type { PanelType } from '../../shared/types'
 import { computePlacement, type Rect } from '../../renderer/lib/cateControlLayout'
 import { openFileAsPanel } from '../../renderer/lib/fileRouting'
 import { setPendingReveal } from '../../renderer/lib/editorReveal'
+import { terminalRegistry } from '../../renderer/lib/terminalRegistry'
+import { portalRegistry, type PortalWebview } from '../../renderer/lib/portalRegistry'
+import { setCateExecutors } from './cateControl'
+
+/** Cap on text returned to the agent from read/eval (keeps tool results small). */
+const MAX_BROWSER_TEXT = 30000
 
 const OPENABLE: PanelType[] = ['editor', 'terminal', 'browser', 'document']
 
 function fail(error: string): CateControlResponse { return { ok: false, error } }
 function ok(result?: unknown): CateControlResponse { return { ok: true, result } }
+
+/** The panels of the executor's workspace, keyed by panelId. */
+function workspacePanels(ctx: CateControlContext): Record<string, { type?: string; title?: string; agentId?: string }> {
+  const ws = useAppStore.getState().workspaces.find((w: any) => w.id === ctx.workspaceId)
+  return (ws?.panels ?? {}) as Record<string, { type?: string; title?: string; agentId?: string }>
+}
+
+/** Human title for a panelId (falls back to the id if the panel is gone). */
+function titleFor(ctx: CateControlContext, panelId: string): string {
+  return workspacePanels(ctx)[panelId]?.title || panelId
+}
+
+/** The panel's stable agent handle ("p1", "p2", …), assigning one if needed.
+ *  This is what the agent uses to target a panel - titles change, handles don't. */
+function agentIdFor(ctx: CateControlContext, panelId: string): string {
+  return useAppStore.getState().ensurePanelAgentId(ctx.workspaceId, panelId)
+}
+
+/** Resolve a panel reference - the stable agent handle ("p1"), or 'self' for the
+ *  agent's host panel - to its panelId. A raw panelId and an exact title are
+ *  accepted as fallbacks, but the handle is the canonical, stable way to target
+ *  a panel (titles track the page/file and change underfoot). */
+function resolvePanelRef(ctx: CateControlContext, ref: unknown): { panelId?: string; error?: string } {
+  const s = String(ref ?? '').trim()
+  if (!s) return { error: 'missing `panel` (expected a panel id like "p1").' }
+  if (s === 'self') return { panelId: ctx.hostPanelId }
+  const panels = workspacePanels(ctx)
+  // Primary: the stable agent handle.
+  const byAgent = Object.keys(panels).filter((id) => panels[id]?.agentId === s)
+  if (byAgent.length === 1) return { panelId: byAgent[0] }
+  // Fallbacks: a raw panelId, then an exact (but possibly stale/ambiguous) title.
+  if (panels[s]) return { panelId: s }
+  const byTitle = Object.keys(panels).filter((id) => panels[id]?.title === s)
+  if (byTitle.length === 1) return { panelId: byTitle[0] }
+  if (byTitle.length === 0) return { error: `No panel with id "${s}" - call cate_layout to list panel ids.` }
+  return { error: `"${s}" matches several panels by title - target it by id (e.g. "p1") instead.` }
+}
 
 /** Read occupied rects + viewport center from a context's canvas store. */
 function readCanvasGeometry(ctx: CateControlContext): { occupied: Rect[]; viewportCenter: { x: number; y: number }; nodesByPanel: Map<string, { nodeId: string; rect: Rect }> } {
@@ -45,130 +92,52 @@ function readCanvasGeometry(ctx: CateControlContext): { occupied: Rect[]; viewpo
   return { occupied, viewportCenter: center, nodesByPanel }
 }
 
-export const execGetLayout: CateExecutor = async (_params, ctx) => {
-  const app = useAppStore.getState()
-  const ws = app.workspaces.find((w: any) => w.id === ctx.workspaceId)
-  const st = ctx.canvasStore.getState()
-  const panels = Object.values(st.nodes).map((node: any) => {
-    const panel = ws?.panels?.[node.panelId]
-    return {
-      panelId: node.panelId,
-      type: panel?.type ?? 'unknown',
-      title: panel?.title ?? '',
-      x: node.origin.x, y: node.origin.y, width: node.size.width, height: node.size.height,
-      focused: st.focusedNodeId === node.id,
-      isSelf: node.panelId === ctx.hostPanelId,
-    }
-  })
-  return ok({
-    workspaceId: ctx.workspaceId,
-    viewport: { zoom: st.zoomLevel, offset: st.viewportOffset },
-    panels,
-  })
+/** Resolve a placement's `relativeTo` (a title or 'self') to a node rect. */
+function relativeRect(ctx: CateControlContext, placement: Record<string, unknown>, nodesByPanel: Map<string, { rect: Rect }>): Rect | undefined {
+  if (placement.relativeTo == null) return undefined
+  const relPanelId = resolvePanelRef(ctx, placement.relativeTo).panelId
+  return relPanelId ? nodesByPanel.get(relPanelId)?.rect : undefined
 }
 
-export const execOpenPanel: CateExecutor = async (params, ctx) => {
-  const type = String(params.type ?? '') as PanelType
-  if (!OPENABLE.includes(type)) return fail(`Unsupported panel type: ${String(params.type)}`)
-  const target = (params.target ?? {}) as Record<string, unknown>
-  const app = useAppStore.getState()
-  const wsId = ctx.workspaceId
+/** Run a node-creating action while keeping the camera fixed. Every app.create*()
+ *  routes through addNodeAndFocus, which focus-AND-centers the new node - i.e. it
+ *  pans/zooms the user's view. The agent must never move the camera, so we
+ *  snapshot the viewport, run the creator, then restore it. */
+function withCameraPreserved<T>(ctx: CateControlContext, create: () => T): T {
+  const s = ctx.canvasStore.getState()
+  const cam = { zoom: s.zoomLevel, offset: { ...s.viewportOffset } }
+  const out = create()
+  ctx.canvasStore.getState().setZoomAndOffset(cam.zoom, cam.offset)
+  return out
+}
 
-  let panelId: string
-  // A terminal `command` is run after the panel mounts (see below) — NOT passed
-  // as createTerminal's `initialInput`, which the store drops.
-  let pendingTerminalCommand: string | undefined
-  switch (type) {
-    case 'editor': {
-      const path = typeof target.path === 'string' ? target.path : undefined
-      panelId = path ? openFileAsPanel(wsId, path) : app.createEditor(wsId)
-      if (path && (typeof target.line === 'number')) {
-        setPendingReveal(panelId, { line: target.line as number, column: typeof target.column === 'number' ? (target.column as number) : undefined })
-      }
-      // Convenience: open straight into rendered markdown preview (markdown files only).
-      if (target.preview === true) {
-        app.setPanelMarkdownPreview(wsId, panelId, true)
-      }
-      break
-    }
-    case 'terminal':
-      panelId = app.createTerminal(wsId, undefined, undefined, undefined, typeof target.cwd === 'string' ? target.cwd : undefined)
-      pendingTerminalCommand = typeof target.command === 'string' && target.command.trim() ? target.command : undefined
-      break
-    case 'browser':
-      panelId = app.createBrowser(wsId, typeof target.url === 'string' ? target.url : undefined)
-      break
-    case 'document':
-      panelId = typeof target.path === 'string' ? openFileAsPanel(wsId, target.path) : app.createEditor(wsId)
-      break
-    default:
-      return fail(`Unsupported panel type: ${type}`)
-  }
-
-  // Apply semantic placement if requested (move the freshly-created node).
-  const placement = (params.placement ?? {}) as Record<string, unknown>
-  if (placement.position || placement.relativeTo) {
-    const { occupied, viewportCenter, nodesByPanel } = readCanvasGeometry(ctx)
-    const size = PANEL_DEFINITIONS[type].defaultSize
-    const relPanelId = placement.relativeTo === 'self' ? ctx.hostPanelId : (typeof placement.relativeTo === 'string' ? placement.relativeTo : undefined)
-    const relativeTo = relPanelId ? nodesByPanel.get(relPanelId)?.rect : undefined
-    const rect = computePlacement({
-      size,
-      relativeTo,
-      position: placement.position as any,
-      occupied,
-      viewportCenter,
-    })
-    const node = ctx.canvasStore.getState().nodeForPanel(panelId)
-    if (node) {
-      ctx.canvasStore.getState().moveNode(node, { x: rect.x, y: rect.y })
-    }
-  }
-
-  // Run the requested command once the freshly-created terminal's PTY is live.
-  if (pendingTerminalCommand) {
-    await writeToTerminalWhenReady(panelId, pendingTerminalCommand)
-  }
-
+/** Move a freshly-created node into view: to an explicit semantic placement if
+ *  given, else the current viewport center. Never moves the camera. addNode's
+ *  default drops the node near the focused node, which may be off-screen. */
+function placeNewNode(
+  ctx: CateControlContext,
+  panelId: string,
+  fallbackType: PanelType,
+  placement: Record<string, unknown> = {},
+): void {
   const node = ctx.canvasStore.getState().nodeForPanel(panelId)
-  // Focus + center the freshly opened panel so it lands in view. Without this the
-  // viewport stayed where it was and a newly-opened panel could appear off-screen
-  // (read as "panned to a random location").
-  if (node) ctx.canvasStore.getState().focusAndCenter(node)
-  const frame = node ? ctx.canvasStore.getState().nodes[node] : undefined
-  return ok({ panelId, x: frame?.origin.x, y: frame?.origin.y, width: frame?.size.width, height: frame?.size.height })
-}
-
-export const execClosePanel: CateExecutor = async (params, ctx) => {
-  const panelId = String(params.panelId ?? '')
-  const app = useAppStore.getState()
-  const ws = app.workspaces.find((w: any) => w.id === ctx.workspaceId)
-  if (!ws?.panels?.[panelId]) return fail(`Panel not found: ${panelId}`)
-  if (panelId === ctx.hostPanelId) return fail('Refusing to close the agent panel hosting this chat.')
-  app.closePanel(ctx.workspaceId, panelId)
-  return ok({ closed: panelId })
-}
-
-import { computeArrange } from '../../renderer/lib/cateControlLayout'
-import { terminalRegistry } from '../../renderer/lib/terminalRegistry'
-import { setCateExecutors } from './cateControl'
-
-const SIZE_PRESETS: Record<string, { width: number; height: number }> = {
-  small: { width: 400, height: 300 },
-  medium: { width: 640, height: 480 },
-  large: { width: 960, height: 720 },
-}
-
-function requireNode(ctx: CateControlContext, panelId: string): string | null {
-  return ctx.canvasStore.getState().nodeForPanel(panelId)
+  if (!node) return
+  const { occupied, viewportCenter, nodesByPanel } = readCanvasGeometry(ctx)
+  const size = ctx.canvasStore.getState().nodes[node]?.size ?? PANEL_DEFINITIONS[fallbackType].defaultSize
+  const relativeTo = relativeRect(ctx, placement, nodesByPanel)
+  // Exclude the freshly-created node from its own obstacle set (by identity).
+  const selfRect = nodesByPanel.get(panelId)?.rect
+  const obstacles = selfRect ? occupied.filter((r) => r !== selfRect) : occupied
+  const rect = computePlacement({ size, relativeTo, position: placement.position as any, occupied: obstacles, viewportCenter })
+  ctx.canvasStore.getState().moveNode(node, { x: rect.x, y: rect.y })
 }
 
 /** Send `command` to a terminal panel's PTY, waiting for the PTY to spawn.
  *  A freshly-created terminal needs panel mount + async node-pty spawn before
- *  terminalRegistry has its ptyId, so a single fixed delay is unreliable — poll
+ *  terminalRegistry has its ptyId, so a single fixed delay is unreliable - poll
  *  until ready (or time out). Returns true once the command was written.
  *  (`appStore.createTerminal`'s `initialInput` arg is intentionally not persisted
- *  to PanelState — it would re-run on session restore — so it can't be used here.) */
+ *  to PanelState - it would re-run on session restore - so it can't be used here.) */
 async function writeToTerminalWhenReady(panelId: string, command: string, timeoutMs = 6000): Promise<boolean> {
   const data = command.endsWith('\r') || command.endsWith('\n') ? command : command + '\r'
   const deadline = Date.now() + timeoutMs
@@ -180,119 +149,261 @@ async function writeToTerminalWhenReady(panelId: string, command: string, timeou
   }
 }
 
-export const execFocusPanel: CateExecutor = async (params, ctx) => {
-  const panelId = String(params.panelId ?? '')
-  const node = requireNode(ctx, panelId)
-  if (!node) return fail(`Panel not found on canvas: ${panelId}`)
-  ctx.canvasStore.getState().focusAndCenter(node)
-  return ok({ focused: panelId })
+// ---------------------------------------------------------------------------
+// layout - read the canvas
+// ---------------------------------------------------------------------------
+
+/** Report the open panels by title/type so the agent can target them. */
+export const execGetLayout: CateExecutor = async (_params, ctx) => {
+  const panels = workspacePanels(ctx)
+  const st = ctx.canvasStore.getState()
+  const out = Object.values(st.nodes).map((node: any) => {
+    const panel = panels[node.panelId]
+    return {
+      id: agentIdFor(ctx, node.panelId),
+      title: panel?.title ?? '',
+      type: panel?.type ?? 'unknown',
+      focused: st.focusedNodeId === node.id,
+      isSelf: node.panelId === ctx.hostPanelId,
+    }
+  })
+  return ok({ panels: out })
+}
+
+// ---------------------------------------------------------------------------
+// panel - open / close / move
+// ---------------------------------------------------------------------------
+
+export const execOpenPanel: CateExecutor = async (params, ctx) => {
+  const type = String(params.type ?? '') as PanelType
+  if (!OPENABLE.includes(type)) return fail(`Unsupported panel type: ${String(params.type)}`)
+  const target = (params.target ?? {}) as Record<string, unknown>
+  const app = useAppStore.getState()
+  const wsId = ctx.workspaceId
+
+  // A terminal `command` is run after the panel mounts (see below) - NOT passed
+  // as createTerminal's `initialInput`, which the store drops.
+  let pendingTerminalCommand: string | undefined
+  // create*() pans/zooms to the new node; keep the camera fixed (see helper).
+  const panelId = withCameraPreserved(ctx, () => {
+    switch (type) {
+      case 'editor': {
+        const path = typeof target.path === 'string' ? target.path : undefined
+        const id = path ? openFileAsPanel(wsId, path) : app.createEditor(wsId)
+        if (path && (typeof target.line === 'number')) {
+          setPendingReveal(id, { line: target.line as number, column: typeof target.column === 'number' ? (target.column as number) : undefined })
+        }
+        // Convenience: open straight into rendered markdown preview (markdown files only).
+        if (target.preview === true) {
+          app.setPanelMarkdownPreview(wsId, id, true)
+        }
+        return id
+      }
+      case 'terminal': {
+        const id = app.createTerminal(wsId, undefined, undefined, undefined, typeof target.cwd === 'string' ? target.cwd : undefined)
+        pendingTerminalCommand = typeof target.command === 'string' && target.command.trim() ? target.command : undefined
+        return id
+      }
+      case 'browser':
+        return app.createBrowser(wsId, typeof target.url === 'string' ? target.url : undefined)
+      case 'document':
+        return typeof target.path === 'string' ? openFileAsPanel(wsId, target.path) : app.createEditor(wsId)
+      default:
+        return ''
+    }
+  })
+  if (!panelId) return fail(`Unsupported panel type: ${String(params.type)}`)
+
+  // Place the new node into view (explicit placement or viewport center) without
+  // moving the camera.
+  placeNewNode(ctx, panelId, type, (params.placement ?? {}) as Record<string, unknown>)
+
+  // Run the requested command once the freshly-created terminal's PTY is live.
+  if (pendingTerminalCommand) {
+    await writeToTerminalWhenReady(panelId, pendingTerminalCommand)
+  }
+
+  // Raise + focus the freshly opened panel, but never move the camera.
+  const node = ctx.canvasStore.getState().nodeForPanel(panelId)
+  if (node) ctx.canvasStore.getState().focusNode(node)
+  return ok({ id: agentIdFor(ctx, panelId), title: titleFor(ctx, panelId), type })
+}
+
+export const execClosePanel: CateExecutor = async (params, ctx) => {
+  const ref = resolvePanelRef(ctx, params.panel)
+  if (ref.error) return fail(ref.error)
+  const panelId = ref.panelId!
+  if (panelId === ctx.hostPanelId) return fail('Refusing to close the agent panel hosting this chat.')
+  const title = titleFor(ctx, panelId)
+  useAppStore.getState().closePanel(ctx.workspaceId, panelId)
+  return ok({ closed: title })
 }
 
 export const execMovePanel: CateExecutor = async (params, ctx) => {
-  const panelId = String(params.panelId ?? '')
-  if (panelId === ctx.hostPanelId && !params.placement) return fail('Refusing to move the host agent panel without an explicit placement.')
-  const node = requireNode(ctx, panelId)
-  if (!node) return fail(`Panel not found on canvas: ${panelId}`)
+  const ref = resolvePanelRef(ctx, params.panel)
+  if (ref.error) return fail(ref.error)
+  const panelId = ref.panelId!
+  if (panelId === ctx.hostPanelId) return fail('Refusing to move the agent panel hosting this chat.')
+  const node = ctx.canvasStore.getState().nodeForPanel(panelId)
+  if (!node) return fail(`Panel "${titleFor(ctx, panelId)}" is not on the canvas.`)
   const { occupied, viewportCenter, nodesByPanel } = readCanvasGeometry(ctx)
   const st = ctx.canvasStore.getState()
   const size = st.nodes[node].size
   const placement = (params.placement ?? {}) as Record<string, unknown>
-  const relPanelId = placement.relativeTo === 'self' ? ctx.hostPanelId : (typeof placement.relativeTo === 'string' ? placement.relativeTo : undefined)
-  const relativeTo = relPanelId ? nodesByPanel.get(relPanelId)?.rect : undefined
-  // Exclude the node being moved from its own obstacle set (by identity, not index).
+  const relativeTo = relativeRect(ctx, placement, nodesByPanel)
+  // Exclude the node being moved from its own obstacle set (by identity).
   const selfRect = nodesByPanel.get(panelId)?.rect
   const obstacles = selfRect ? occupied.filter((r) => r !== selfRect) : occupied
   const rect = computePlacement({ size, relativeTo, position: placement.position as any, occupied: obstacles, viewportCenter })
   st.moveNode(node, { x: rect.x, y: rect.y })
-  return ok({ panelId, x: rect.x, y: rect.y })
+  return ok({ moved: titleFor(ctx, panelId) })
 }
 
-export const execResizePanel: CateExecutor = async (params, ctx) => {
-  const panelId = String(params.panelId ?? '')
-  const node = requireNode(ctx, panelId)
-  if (!node) return fail(`Panel not found on canvas: ${panelId}`)
-  let size: { width: number; height: number } | undefined
-  if (typeof params.preset === 'string') size = SIZE_PRESETS[params.preset]
-  else if (params.size && typeof params.size === 'object') {
-    const s = params.size as Record<string, unknown>
-    if (typeof s.width === 'number' && typeof s.height === 'number') size = { width: s.width, height: s.height }
+// ---------------------------------------------------------------------------
+// browser - control an existing browser panel (opening is the `panel` tool's job)
+// ---------------------------------------------------------------------------
+
+/** Resolve a panel ref to its live <webview>. The panel must be a browser and
+ *  have mounted (registered its guest in portalRegistry). */
+function resolveBrowser(
+  ctx: CateControlContext,
+  ref: unknown,
+): { webview?: PortalWebview; panelId?: string; title?: string; error?: string } {
+  const r = resolvePanelRef(ctx, ref)
+  if (r.error) return { error: r.error }
+  const panelId = r.panelId!
+  const type = workspacePanels(ctx)[panelId]?.type
+  if (type && type !== 'browser') return { error: `Panel "${titleFor(ctx, panelId)}" is not a browser panel.` }
+  const webview = portalRegistry.get(panelId)
+  if (!webview) return { error: `Browser "${titleFor(ctx, panelId)}" is not ready (no live web view).` }
+  return { webview, panelId, title: titleFor(ctx, panelId) }
+}
+
+function truncate(text: string): { text: string; truncated?: true } {
+  if (text.length <= MAX_BROWSER_TEXT) return { text }
+  return { text: text.slice(0, MAX_BROWSER_TEXT), truncated: true }
+}
+
+/** navigate - point an existing browser panel at a url. */
+export const execBrowserNavigate: CateExecutor = async (params, ctx) => {
+  const url = String(params.url ?? '')
+  if (!/^(https?|file):\/\//i.test(url)) return fail('browser navigate requires an http(s) or file URL.')
+  const b = resolveBrowser(ctx, params.panel)
+  if (b.error) return fail(b.error)
+  await b.webview!.loadURL(url)
+  // Persist so a session restore reopens the panel on this url (the webview's
+  // own did-navigate also persists, but loadURL is async - do it eagerly too).
+  useAppStore.getState().updatePanelUrl(ctx.workspaceId, b.panelId!, url)
+  return ok({ browser: b.title, url })
+}
+
+/** back / forward / reload / stop - history + loading control. */
+export const execBrowserHistory: CateExecutor = async (params, ctx) => {
+  const op = String(params.op ?? '')
+  const b = resolveBrowser(ctx, params.panel)
+  if (b.error) return fail(b.error)
+  const wv = b.webview!
+  switch (op) {
+    case 'back':
+      if (!wv.canGoBack()) return fail(`Browser "${b.title}" cannot go back.`)
+      wv.goBack(); break
+    case 'forward':
+      if (!wv.canGoForward()) return fail(`Browser "${b.title}" cannot go forward.`)
+      wv.goForward(); break
+    case 'reload': wv.reload(); break
+    case 'stop': wv.stop(); break
+    default: return fail(`browser: unknown history op "${op}".`)
   }
-  if (!size) return fail('resize requires a valid `preset` (small|medium|large) or `size` {width,height}.')
-  ctx.canvasStore.getState().resizeNode(node, size)
-  return ok({ panelId, ...size })
+  return ok({ browser: b.title, op })
 }
 
-export const execArrange: CateExecutor = async (params, ctx) => {
-  // `layout` tool exposes the style as `style`; accept legacy `layout` too.
-  const layout = String(params.style ?? params.layout ?? 'tile') as 'tile' | 'grid' | 'cascade' | 'focus-one'
-  const st = ctx.canvasStore.getState()
-  const all = Object.values(st.nodes).filter((n: any) => n.panelId !== ctx.hostPanelId) // self-protection
-  const requested = Array.isArray(params.panelIds) ? (params.panelIds as string[]) : null
-  const targets = requested
-    ? all.filter((n: any) => requested.includes(n.panelId))
-    : all
-  if (!targets.length) return ok({ arranged: 0 })
-  // Frame: union viewport of current nodes (canvas-space).
-  const minX = Math.min(...targets.map((n: any) => n.origin.x))
-  const minY = Math.min(...targets.map((n: any) => n.origin.y))
-  const viewport: Rect = { x: minX, y: minY, width: 1200, height: 900 }
-  const rects = computeArrange(layout, targets.length, viewport)
-  targets.forEach((n: any, i) => {
-    st.moveNode(n.id, { x: rects[i].x, y: rects[i].y })
-    st.resizeNode(n.id, { width: rects[i].width, height: rects[i].height })
+/** info - report the current navigation state (read-only). */
+export const execBrowserInfo: CateExecutor = async (params, ctx) => {
+  const b = resolveBrowser(ctx, params.panel)
+  if (b.error) return fail(b.error)
+  const wv = b.webview!
+  return ok({
+    browser: b.title,
+    url: wv.getURL(),
+    title: wv.getTitle(),
+    canGoBack: wv.canGoBack(),
+    canGoForward: wv.canGoForward(),
   })
-  return ok({ arranged: targets.length, layout })
 }
+
+/** read - the page's visible text, or one CSS selector's text (read-only). */
+export const execBrowserRead: CateExecutor = async (params, ctx) => {
+  const b = resolveBrowser(ctx, params.panel)
+  if (b.error) return fail(b.error)
+  const selector = typeof params.selector === 'string' ? params.selector.trim() : ''
+  const code = selector
+    ? `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el ? el.innerText : null })()`
+    : `document.body ? document.body.innerText : ''`
+  const raw = await b.webview!.executeJavaScript(code)
+  if (selector && raw == null) return fail(`No element matches selector "${selector}".`)
+  const { text, truncated } = truncate(String(raw ?? ''))
+  return ok({ browser: b.title, url: b.webview!.getURL(), ...(selector ? { selector } : {}), text, ...(truncated ? { truncated } : {}) })
+}
+
+/** eval - run arbitrary JavaScript in the page and return its result. */
+export const execBrowserEval: CateExecutor = async (params, ctx) => {
+  const js = String(params.js ?? '')
+  if (!js.trim()) return fail('browser eval requires `js` (JavaScript to run in the page).')
+  const b = resolveBrowser(ctx, params.panel)
+  if (b.error) return fail(b.error)
+  const raw = await b.webview!.executeJavaScript(js, true)
+  let result: string | undefined
+  if (raw !== undefined) {
+    let serialized: string
+    try { serialized = typeof raw === 'string' ? raw : JSON.stringify(raw) } catch { serialized = String(raw) }
+    result = truncate(serialized ?? String(raw)).text
+  }
+  return ok({ browser: b.title, result })
+}
+
+/** screenshot - capture the page to an image file (reuses the main-process path). */
+export const execBrowserScreenshot: CateExecutor = async (params, ctx) => {
+  const b = resolveBrowser(ctx, params.panel)
+  if (b.error) return fail(b.error)
+  const wcId = b.webview!.getWebContentsId()
+  const shot = await window.electronAPI.webviewScreenshot(wcId)
+  if (!shot?.filePath) return fail(`Screenshot of "${b.title}" failed.`)
+  return ok({ browser: b.title, filePath: shot.filePath })
+}
+
+// ---------------------------------------------------------------------------
+// terminal - run / read
+// ---------------------------------------------------------------------------
 
 export const execRunInTerminal: CateExecutor = async (params, ctx) => {
   const command = String(params.command ?? '')
   if (!command.trim()) return fail('terminal run requires a non-empty command.')
   const app = useAppStore.getState()
-  let panelId = typeof params.panelId === 'string' ? params.panelId : ''
-  if (!panelId || params.newPanel) {
-    panelId = app.createTerminal(ctx.workspaceId)
+  let panelId = ''
+  if (params.panel != null && !params.newPanel) {
+    const ref = resolvePanelRef(ctx, params.panel)
+    if (ref.error) return fail(ref.error)
+    panelId = ref.panelId!
+  }
+  if (!panelId) {
+    panelId = withCameraPreserved(ctx, () => app.createTerminal(ctx.workspaceId))
+    placeNewNode(ctx, panelId, 'terminal')
   }
   const sent = await writeToTerminalWhenReady(panelId, command)
-  if (!sent) return fail(`Terminal ${panelId} did not become ready to receive input (timed out).`)
-  return ok({ panelId, command })
-}
-
-export const execOpenUrl: CateExecutor = async (params, ctx) => {
-  const url = String(params.url ?? '')
-  if (!/^(https?|file):\/\//i.test(url)) return fail('browser navigate requires an http(s) or file URL.')
-  const app = useAppStore.getState()
-  let panelId = typeof params.panelId === 'string' ? params.panelId : ''
-  if (!panelId) { panelId = app.createBrowser(ctx.workspaceId, url); return ok({ panelId, url }) }
-  app.updatePanelUrl(ctx.workspaceId, panelId, url)
-  return ok({ panelId, url })
-}
-
-/** Toggle the rendered markdown preview for an open editor panel. The app gates
- *  the actual render to .md files (EditorPanel), so this is a no-op visually for
- *  non-markdown editors but still records the flag. */
-export const execSetMarkdownPreview: CateExecutor = async (params, ctx) => {
-  const panelId = String(params.panelId ?? '')
-  if (!panelId) return fail('panel preview requires a panelId.')
-  const app = useAppStore.getState()
-  const ws = app.workspaces.find((w: any) => w.id === ctx.workspaceId)
-  const panel = ws?.panels?.[panelId]
-  if (!panel) return fail(`Panel not found: ${panelId}`)
-  if (panel.type !== 'editor') return fail(`Panel ${panelId} is a ${panel.type}; markdown preview applies to editor panels.`)
-  const preview = params.preview !== false
-  app.setPanelMarkdownPreview(ctx.workspaceId, panelId, preview)
-  return ok({ panelId, preview })
+  if (!sent) return fail(`Terminal "${titleFor(ctx, panelId)}" did not become ready to receive input (timed out).`)
+  return ok({ terminal: titleFor(ctx, panelId), command })
 }
 
 /** Read the recent buffer (visible screen + scrollback) of a terminal panel as
- *  plain text. Lets an agent inspect command output it ran via terminal run —
- *  the other half of terminal orchestration. Reads straight from the live xterm
- *  buffer; no PTY round-trip. Safe (read-only). */
-export const execReadTerminal: CateExecutor = async (params) => {
-  const panelId = String(params.panelId ?? '')
-  if (!panelId) return fail('terminal read requires a panelId.')
+ *  plain text. Lets an agent inspect command output it ran via terminal run.
+ *  Reads straight from the live xterm buffer; no PTY round-trip. Safe (read-only). */
+export const execReadTerminal: CateExecutor = async (params, ctx) => {
+  const ref = resolvePanelRef(ctx, params.panel)
+  if (ref.error) return fail(ref.error)
+  const panelId = ref.panelId!
   const entry = terminalRegistry.getEntry(panelId)
   const buffer = (entry as { terminal?: { buffer?: { active?: any } } } | undefined)?.terminal?.buffer?.active
-  if (!entry || !buffer) return fail(`No live terminal for panel ${panelId}.`)
+  if (!entry || !buffer) return fail(`No live terminal for "${titleFor(ctx, panelId)}".`)
 
   const requested = typeof params.lines === 'number' ? Math.floor(params.lines) : 50
   const maxLines = Math.max(1, Math.min(requested, 1000))
@@ -305,41 +416,42 @@ export const execReadTerminal: CateExecutor = async (params) => {
   }
   // Drop trailing blank rows (an idle terminal pads the screen with empties).
   while (collected.length && collected[collected.length - 1] === '') collected.pop()
-  return ok({ panelId, lineCount: collected.length, text: collected.join('\n') })
+  return ok({ terminal: titleFor(ctx, panelId), lineCount: collected.length, text: collected.join('\n') })
 }
 
 // ---------------------------------------------------------------------------
-// Consolidated op-routers — the agent sees four tools (layout / panel / browser
-// / terminal); each dispatches to the focused executors above by `op`. Keeps the
-// tool surface (and its token cost) small while preserving per-op behavior +
-// self-protection.
+// Op-routers - the agent sees four tools (layout / panel / browser / terminal);
+// each dispatches to the focused executors above by `op`.
 // ---------------------------------------------------------------------------
-
-/** Canvas-wide: read the layout (default) or rearrange panels. */
-export const execLayout: CateExecutor = async (params, ctx, agentKey) => {
-  return String(params.op ?? 'get') === 'arrange'
-    ? execArrange(params, ctx, agentKey)
-    : execGetLayout(params, ctx, agentKey)
-}
 
 /** Single-panel lifecycle/geometry. */
 export const execPanel: CateExecutor = async (params, ctx, agentKey) => {
   const op = String(params.op ?? '')
   switch (op) {
     case 'open': return execOpenPanel(params, ctx, agentKey)
-    case 'focus': return execFocusPanel(params, ctx, agentKey)
-    case 'move': return execMovePanel(params, ctx, agentKey)
-    case 'resize': return execResizePanel(params, ctx, agentKey)
     case 'close': return execClosePanel(params, ctx, agentKey)
-    case 'preview': return execSetMarkdownPreview(params, ctx, agentKey)
+    case 'move': return execMovePanel(params, ctx, agentKey)
     default:
-      return fail(`panel: unknown op "${op}". Expected open|focus|move|resize|close|preview.`)
+      return fail(`panel: unknown op "${op}". Expected open|close|move.`)
   }
 }
 
-/** Browser content: navigate a browser panel to a url (creates one if needed). */
+/** Browser control: drive an existing browser panel (opening is the panel tool). */
 export const execBrowser: CateExecutor = async (params, ctx, agentKey) => {
-  return execOpenUrl(params, ctx, agentKey)
+  const op = String(params.op ?? '')
+  switch (op) {
+    case 'navigate': return execBrowserNavigate(params, ctx, agentKey)
+    case 'back':
+    case 'forward':
+    case 'reload':
+    case 'stop': return execBrowserHistory(params, ctx, agentKey)
+    case 'info': return execBrowserInfo(params, ctx, agentKey)
+    case 'read': return execBrowserRead(params, ctx, agentKey)
+    case 'eval': return execBrowserEval(params, ctx, agentKey)
+    case 'screenshot': return execBrowserScreenshot(params, ctx, agentKey)
+    default:
+      return fail(`browser: unknown op "${op}". Expected navigate|back|forward|reload|stop|info|read|eval|screenshot.`)
+  }
 }
 
 export const execTerminal: CateExecutor = async (params, ctx, agentKey) => {
@@ -352,10 +464,9 @@ export const execTerminal: CateExecutor = async (params, ctx, agentKey) => {
   }
 }
 
-// Register the 4-tool surface with the dispatcher. The routers delegate to the
-// focused executors above.
+// Register the 4-tool surface with the dispatcher.
 setCateExecutors({
-  layout: execLayout,
+  layout: execGetLayout,
   panel: execPanel,
   browser: execBrowser,
   terminal: execTerminal,

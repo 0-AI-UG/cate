@@ -50,8 +50,8 @@ export function ChatInput({
   compactionActive,
   planModeActive,
   onTogglePlanMode,
-  cateControlMode,
-  onToggleCateControlMode,
+  cateControlEnabled,
+  onToggleCateControl,
   placeholder: placeholderOverride,
 }: {
   draft: string
@@ -76,8 +76,8 @@ export function ChatInput({
   compactionActive: boolean
   planModeActive: boolean
   onTogglePlanMode: () => void
-  cateControlMode?: 'guarded' | 'auto'
-  onToggleCateControlMode?: () => void
+  cateControlEnabled?: boolean
+  onToggleCateControl?: () => void
   placeholder?: string
 }) {
   useEffect(() => {
@@ -230,15 +230,15 @@ export function ChatInput({
             <ClipboardText size={12} weight={planModeActive ? 'fill' : 'regular'} />
           </button>
           <button
-            onClick={onToggleCateControlMode}
+            onClick={onToggleCateControl}
             className={`p-1.5 rounded-md ${
-              cateControlMode === 'auto'
+              cateControlEnabled
                 ? 'bg-agent/25 text-primary'
                 : 'text-primary/80 hover:bg-white/5'
             }`}
-            title={`Cate control: ${cateControlMode === 'auto' ? 'Auto (no prompts)' : 'Guarded (side-effects ask first)'}. Click to toggle.`}
+            title={`Cate control: ${cateControlEnabled ? 'On' : 'Off'}. Click to toggle whether the agent can drive panels.`}
           >
-            <SquaresFour size={12} weight={cateControlMode === 'auto' ? 'fill' : 'regular'} />
+            <SquaresFour size={12} weight={cateControlEnabled ? 'fill' : 'regular'} />
           </button>
           <CompactButton
             onManualCompact={onManualCompact}

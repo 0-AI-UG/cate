@@ -13,7 +13,6 @@ import {
   dispatchCateRequest,
   __setExecutorsForTest,
 } from './cateControl'
-import { useAgentStore } from './agentStore'
 import { useSettingsStore } from '../../renderer/stores/settingsStore'
 
 function fakeCanvasStore() {
@@ -22,13 +21,12 @@ function fakeCanvasStore() {
 
 describe('dispatchCateRequest', () => {
   beforeEach(() => {
-    useAgentStore.setState({ panels: {} })
     useSettingsStore.setState({ cateControlEnabled: true } as any)
     unregisterCateContext('k1')
     __setExecutorsForTest(null)
   })
 
-  it('errors when the feature is globally disabled', async () => {
+  it('errors when the feature is disabled', async () => {
     useSettingsStore.setState({ cateControlEnabled: false } as any)
     registerCateContext('k1', { workspaceId: 'w1', hostPanelId: 'p1', canvasStore: fakeCanvasStore() })
     const res = await dispatchCateRequest('k1', { action: 'layout', params: {} })
@@ -42,7 +40,7 @@ describe('dispatchCateRequest', () => {
     expect(res.error).toMatch(/not registered|no context/i)
   })
 
-  it('runs safe actions immediately without approval', async () => {
+  it('runs the executor for the action when enabled (no approval gate)', async () => {
     registerCateContext('k1', { workspaceId: 'w1', hostPanelId: 'p1', canvasStore: fakeCanvasStore() })
     const exec = vi.fn().mockResolvedValue({ ok: true, result: { panels: [] } })
     __setExecutorsForTest({ layout: exec } as any)
@@ -51,26 +49,21 @@ describe('dispatchCateRequest', () => {
     expect(res).toEqual({ ok: true, result: { panels: [] } })
   })
 
-  it('auto mode runs side-effect actions without approval', async () => {
+  it('runs side-effect actions immediately (no guard)', async () => {
     registerCateContext('k1', { workspaceId: 'w1', hostPanelId: 'p1', canvasStore: fakeCanvasStore() })
-    useAgentStore.getState().setCateControlMode('k1', 'auto')
     const exec = vi.fn().mockResolvedValue({ ok: true })
     __setExecutorsForTest({ panel: exec } as any)
-    const res = await dispatchCateRequest('k1', { action: 'panel', params: { op: 'close', panelId: 'x' } })
+    const res = await dispatchCateRequest('k1', { action: 'panel', params: { op: 'close', panel: 'x' } })
     expect(exec).toHaveBeenCalledTimes(1)
     expect(res.ok).toBe(true)
   })
 
-  it('guarded mode asks for approval and denies when the resolver says deny', async () => {
-    const requestApproval = vi.fn().mockResolvedValue(false)
-    registerCateContext('k1', { workspaceId: 'w1', hostPanelId: 'p1', canvasStore: fakeCanvasStore(), requestApproval })
-    useAgentStore.getState().setCateControlMode('k1', 'guarded')
-    const exec = vi.fn().mockResolvedValue({ ok: true })
-    __setExecutorsForTest({ panel: exec } as any)
-    const res = await dispatchCateRequest('k1', { action: 'panel', params: { op: 'close', panelId: 'x' } })
-    expect(requestApproval).toHaveBeenCalledWith('panel', { op: 'close', panelId: 'x' })
-    expect(exec).not.toHaveBeenCalled()
-    expect(res).toEqual({ ok: false, denied: true })
+  it('errors for an unknown action', async () => {
+    registerCateContext('k1', { workspaceId: 'w1', hostPanelId: 'p1', canvasStore: fakeCanvasStore() })
+    __setExecutorsForTest({} as any)
+    const res = await dispatchCateRequest('k1', { action: 'nope' as any, params: {} })
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/unknown or unimplemented/i)
   })
 
   it('catches executor errors and returns them', async () => {

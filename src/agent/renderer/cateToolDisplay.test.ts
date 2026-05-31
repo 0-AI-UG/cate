@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cateToolDisplay, cateActionName } from './cateToolDisplay'
+import { cateToolDisplay, cateActionName, cateToolFields } from './cateToolDisplay'
 
 describe('cateActionName', () => {
   it('strips the cate: prefix', () => {
@@ -9,23 +9,25 @@ describe('cateActionName', () => {
 })
 
 describe('cateToolDisplay', () => {
-  it('reads the canvas for layout with no op', () => {
+  it('reads the canvas for layout', () => {
     const d = cateToolDisplay('layout', {})
     expect(d.verb).toBe('Read')
     expect(d.summary).toBe('canvas layout')
   })
 
-  it('summarises a layout arrange with its style', () => {
-    const d = cateToolDisplay('layout', { op: 'arrange', style: 'grid' })
-    expect(d.verb).toBe('Arranged')
-    expect(d.summary).toBe('panels · grid')
-  })
-
   it('summarises a browser navigate with its url', () => {
-    const d = cateToolDisplay('browser', { panelId: 'p1', url: 'https://example.com' })
+    const d = cateToolDisplay('browser', { panel: 'Browser', url: 'https://example.com' })
     expect(d.verb).toBe('Navigated')
     expect(d.request).toBe('navigate')
     expect(d.summary).toBe('https://example.com')
+  })
+
+  it('summarises browser read / eval / reload by op', () => {
+    expect(cateToolDisplay('browser', { op: 'eval', panel: 'Browser', js: 'foo()' }).verb).toBe('Evaluated')
+    const r = cateToolDisplay('browser', { op: 'read', panel: 'Browser', selector: 'h1' })
+    expect(r.verb).toBe('Read')
+    expect(r.summary).toBe('h1')
+    expect(cateToolDisplay('browser', { op: 'reload', panel: 'Browser' }).verb).toBe('Reloaded')
   })
 
   it('summarises panel open with the panel type and target', () => {
@@ -41,10 +43,10 @@ describe('cateToolDisplay', () => {
     expect(d.summary).toBe('npm test')
   })
 
-  it('summarises a terminal read by panelId', () => {
-    const d = cateToolDisplay('terminal', { op: 'read', panelId: 'p1' })
+  it('summarises a terminal read by panel title', () => {
+    const d = cateToolDisplay('terminal', { op: 'read', panel: 'Terminal 2' })
     expect(d.verb).toBe('Read')
-    expect(d.summary).toBe('terminal p1')
+    expect(d.summary).toBe('Terminal 2')
   })
 
   it('summarises a terminal panel open with its command', () => {
@@ -57,17 +59,17 @@ describe('cateToolDisplay', () => {
     expect(d.summary).toBe('document')
   })
 
-  it('describes a resize op with its preset', () => {
-    const d = cateToolDisplay('panel', { op: 'resize', panelId: 'p1', preset: 'large' })
-    expect(d.verb).toBe('Resized')
-    expect(d.summary).toBe('p1 → large')
+  it('describes a move op by panel title', () => {
+    const d = cateToolDisplay('panel', { op: 'move', panel: 'a.ts' })
+    expect(d.verb).toBe('Moved')
+    expect(d.summary).toBe('a.ts')
   })
 
-  it('describes a close op', () => {
-    const d = cateToolDisplay('panel', { op: 'close', panelId: 'p1' })
+  it('describes a close op by panel title', () => {
+    const d = cateToolDisplay('panel', { op: 'close', panel: 'Terminal 2' })
     expect(d.verb).toBe('Closed')
     expect(d.request).toBe('close')
-    expect(d.summary).toBe('p1')
+    expect(d.summary).toBe('Terminal 2')
   })
 
   it('always returns a usable icon + verb + summary, even for unknown actions', () => {
@@ -75,5 +77,47 @@ describe('cateToolDisplay', () => {
     expect(d.Icon).toBeTruthy()
     expect(d.verb).toBeTruthy()
     expect(d.summary).toBe('not_a_real_action')
+  })
+})
+
+describe('cateToolFields', () => {
+  it('expands a panel open into typed rows (skipping empty values)', () => {
+    const fields = cateToolFields('panel', {
+      op: 'open',
+      type: 'editor',
+      target: { path: 'src/main/index.ts', line: 42 },
+      placement: { position: 'right', relativeTo: 'self' },
+    })
+    expect(fields).toEqual([
+      { label: 'type', value: 'editor' },
+      { label: 'path', value: 'src/main/index.ts' },
+      { label: 'line', value: '42' },
+      { label: 'placement', value: 'right of self' },
+    ])
+  })
+
+  it('surfaces the command and reused panel (by title) for a terminal run', () => {
+    const fields = cateToolFields('terminal', { op: 'run', command: 'npm test', panel: 'Terminal 1' })
+    expect(fields).toEqual([
+      { label: 'panel', value: 'Terminal 1' },
+      { label: 'command', value: 'npm test' },
+    ])
+  })
+
+  it('shows the panel title for a close', () => {
+    expect(cateToolFields('panel', { op: 'close', panel: 'a.ts' })).toEqual([
+      { label: 'panel', value: 'a.ts' },
+    ])
+  })
+
+  it('shows the target panel and placement for a move', () => {
+    expect(cateToolFields('panel', { op: 'move', panel: 'a.ts', placement: { relativeTo: 'Terminal 1', position: 'right' } })).toEqual([
+      { label: 'panel', value: 'a.ts' },
+      { label: 'placement', value: 'right of Terminal 1' },
+    ])
+  })
+
+  it('returns no rows for a layout read', () => {
+    expect(cateToolFields('layout', {})).toEqual([])
   })
 })

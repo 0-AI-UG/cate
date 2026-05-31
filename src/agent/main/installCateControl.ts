@@ -1,5 +1,5 @@
 // =============================================================================
-// installCateControl — copy the bundled cate-control extension into a
+// installCateControl - copy the bundled cate-control extension into a
 // workspace's pi-agent extensions dir, where pi auto-discovers it.
 //
 // Source lives in our own tree at src/agent/extensions/cate-control/. Pi
@@ -16,7 +16,7 @@
 // renderer no longer handles ("Unknown or unimplemented action"), so the bundled
 // copy is authoritative and is rewritten whenever its bytes differ from the
 // installed copy. (Previously skip-if-exists, which silently broke the feature
-// after any extension update — dev or app upgrade.)
+// after any extension update - dev or app upgrade.)
 // =============================================================================
 
 import fs from 'fs'
@@ -48,14 +48,14 @@ export async function copyIfChanged(src: string, dest: string): Promise<void> {
   const srcData = await fsp.readFile(src)
   try {
     const destData = await fsp.readFile(dest)
-    if (destData.equals(srcData)) return // up to date — nothing to do
-  } catch { /* missing — fall through to write */ }
+    if (destData.equals(srcData)) return // up to date - nothing to do
+  } catch { /* missing - fall through to write */ }
   await fsp.mkdir(path.dirname(dest), { recursive: true })
   await fsp.writeFile(dest, srcData)
   log.info('[installCateControl] installed/updated %s', dest)
 }
 
-/** Idempotent — safe to call from AgentManager.create() on every session. */
+/** Idempotent - safe to call from AgentManager.create() on every session. */
 export async function installCateControlExtension(cwd: string): Promise<void> {
   const home = agentDirFor(cwd)
   if (installed.has(home)) return
@@ -63,7 +63,7 @@ export async function installCateControlExtension(cwd: string): Promise<void> {
   try {
     const src = sourceDir()
     if (!src) {
-      log.warn('[installCateControl] source dir not found — cate-control not installed')
+      log.warn('[installCateControl] source dir not found - cate-control not installed')
       return
     }
     const destDir = path.join(home, 'extensions', 'cate-control')
