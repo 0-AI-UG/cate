@@ -30,6 +30,7 @@ import type {
   PanelState,
 } from '../../shared/types'
 import { toRelativePath, toAbsolutePath } from '../../shared/pathUtils'
+import { deriveSidebarSession, applySidebarSession } from './sidebarSession'
 import { useDockStore } from '../stores/dockStore'
 import { terminalRegistry } from './terminalRegistry'
 import { mark } from './perfMarks'
@@ -43,9 +44,6 @@ function prefetchPanelChunks(types: ReadonlySet<PanelType>): void {
   if (types.has('terminal')) void import('../panels/TerminalPanel')
   if (types.has('editor')) void import('../panels/EditorPanel')
   if (types.has('browser')) void import('../panels/BrowserPanel')
-  if (types.has('git')) void import('../panels/GitPanel')
-  if (types.has('fileExplorer')) void import('../panels/FileExplorerPanel')
-  if (types.has('projectList')) void import('../panels/ProjectListPanel')
   if (types.has('canvas')) void import('../panels/CanvasPanel')
 }
 
@@ -69,6 +67,9 @@ export const deferredSnapshots = new Map<string, SessionSnapshot>()
 // syncCanvasToWorkspace, which re-fires the auto-save subscriptions; without
 // this guard those phantom changes produce a save loop every ~1s.
 const lastSerializedByRoot = new Map<string, string>()
+// Same idea for the global sidebar arrangement: skip the IPC + electron-store
+// write when order/active-workspace haven't changed since the last save.
+let lastSidebarSessionSerialized: string | null = null
 
 function restoreDockPanelsForWorkspace(workspaceId: string, snapshot: SessionSnapshot): number {
   const appStore = useAppStore.getState()
@@ -299,8 +300,8 @@ export async function saveSession(): Promise<void> {
       : workspace.dockState ?? undefined
 
     // Collect panels that live in dock zones (not on the canvas).
-    // These are panels like canvas, git, fileExplorer, projectList that are
-    // referenced by the dock layout but not saved as canvas NodeSnapshots.
+    // These are panels like canvas that are referenced by the dock layout
+    // but not saved as canvas NodeSnapshots.
     let dockPanels: Record<string, import('../../shared/types').PanelState> | undefined
     if (dockSnapshot) {
       const dockPanelIds = collectPanelIdsFromDockState(dockSnapshot.zones)
@@ -378,6 +379,20 @@ export async function saveSession(): Promise<void> {
       .then(() => { lastSerializedByRoot.set(snapshot.rootPath!, serialized) })
       .catch((err) => {
         log.warn('[session] Project state save failed for %s: %s', snapshot.rootPath, err)
+      })
+  }
+
+  // Persist the sidebar arrangement (order + active workspace, keyed by root
+  // path) so a manual reorder and the active tab survive a restart. Triggered by
+  // the same autosave that runs on reorder/select. recentProjects is left
+  // recency-ordered for the Welcome page.
+  const sidebarSession = deriveSidebarSession(updatedState.workspaces, updatedState.selectedWorkspaceId)
+  const sidebarSerialized = JSON.stringify(sidebarSession)
+  if (sidebarSerialized !== lastSidebarSessionSerialized) {
+    await window.electronAPI.sidebarSessionSet(sidebarSession)
+      .then(() => { lastSidebarSessionSerialized = sidebarSerialized })
+      .catch((err) => {
+        log.warn('[session] Sidebar session save failed: %s', err)
       })
   }
 }
@@ -493,10 +508,16 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
 
   if (snapshots.length === 0) return null
 
+  // Apply the persisted sidebar arrangement: reorder to the saved order and pick
+  // the active workspace. Falls back to recentProjects order / index 0 when no
+  // arrangement is stored yet (first run after upgrade).
+  const sidebarSession = await window.electronAPI.sidebarSessionGet().catch(() => null)
+  const { workspaces, selectedWorkspaceIndex } = applySidebarSession(snapshots, sidebarSession)
+
   return {
     version: 2,
-    selectedWorkspaceIndex: 0,
-    workspaces: snapshots,
+    selectedWorkspaceIndex,
+    workspaces,
     panelWindows: panelWindows.length > 0 ? panelWindows : undefined,
     dockWindows: dockWindows.length > 0 ? dockWindows : undefined,
   }

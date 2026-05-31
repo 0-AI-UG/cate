@@ -87,8 +87,7 @@ All optional — anything you omit inherits the base for the theme's `type`.
 `shadow-node-focused`, `node-bg-active`, `node-dim-overlay`, `scrollbar-thumb`,
 `scrollbar-thumb-hover`, `surface-hover`, `surface-hover-strong`, `git-added`,
 `git-modified`, `git-deleted`, `git-untracked`, `git-renamed`, `panel-terminal`,
-`panel-browser`, `panel-editor`, `panel-git`, `panel-fileExplorer`,
-`panel-projectList`, `panel-canvas`, `agent-rgb`, `agent-light-rgb`.
+`panel-browser`, `panel-editor`, `panel-canvas`, `agent-rgb`, `agent-light-rgb`.
 
 Values are hex (`#rrggbb` / `#rrggbbaa`), `rgba(...)`, or — for `agent-rgb` /
 `agent-light-rgb` only — three space-separated channels like `"224 104 60"`.

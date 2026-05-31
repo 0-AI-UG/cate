@@ -45,9 +45,6 @@
     "panel-terminal": "#6a8a4a",
     "panel-browser": "#5f82b0",
     "panel-editor": "#c47a4a",
-    "panel-git": "#c45a3a",
-    "panel-fileExplorer": "#5f9aa8",
-    "panel-projectList": "#b0902a",
     "panel-canvas": "#9579a8",
     "agent-rgb": "224 104 60",
     "agent-light-rgb": "240 133 90"
