@@ -299,9 +299,6 @@ interface AppStoreActions {
   createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
-  createGit: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
-  createFileExplorer: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
-  createProjectList: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
@@ -806,36 +803,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       isDirty: false,
       filePath,
       diffMode,
-    }
-    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
-  },
-
-  createGit(workspaceId, position?, placement?) {
-    const panel: PanelState = {
-      id: generateId(),
-      type: 'git',
-      title: 'Git',
-      isDirty: false,
-    }
-    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
-  },
-
-  createFileExplorer(workspaceId, position?, placement?) {
-    const panel: PanelState = {
-      id: generateId(),
-      type: 'fileExplorer',
-      title: 'File Explorer',
-      isDirty: false,
-    }
-    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
-  },
-
-  createProjectList(workspaceId, position?, placement?) {
-    const panel: PanelState = {
-      id: generateId(),
-      type: 'projectList',
-      title: 'Projects',
-      isDirty: false,
     }
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
