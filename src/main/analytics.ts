@@ -345,6 +345,11 @@ export function decideUpdateAction(current: string, state: AnalyticsState): Upda
  * actual behavior matrix.
  */
 export async function checkAndReportUpdate(mainWin: BrowserWindow): Promise<void> {
+  // E2E profiles start from a fresh version state every run, which looks like a
+  // first install / version bump and would pop the post-update feedback modal.
+  // That modal intercepts pointer events and flakes tests — never show it here.
+  if (process.env.CATE_E2E === '1') return
+
   if (process.env.DEV_FORCE_DIALOG) {
     promptFeedback(mainWin, app.getVersion(), '0.0.0')
     return

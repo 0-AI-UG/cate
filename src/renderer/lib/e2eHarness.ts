@@ -6,6 +6,7 @@
 // the UI for setup is brittle; reaching into stores is reliable.
 
 import { useAppStore } from '../stores/appStore'
+import { useUIStore, type SidebarView } from '../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useDragStore } from '../drag/store'
 import { terminalRegistry } from './terminalRegistry'
@@ -27,6 +28,13 @@ declare global {
       terminalPtyId(nodeId: string): string | null
       /** Write raw data to a terminal node's PTY (e.g. a flooding command). */
       writeTerminal(nodeId: string, data: string): boolean
+      /** Point the selected workspace at a real directory (registers it as an
+       *  allowed root) so content search has files to scan. */
+      setWorkspaceRoot(rootPath: string): Promise<boolean>
+      /** Activate a sidebar view (e.g. 'search') on the left activity bar. */
+      openSidebarView(view: SidebarView): void
+      /** File paths of currently-open editor panels (for open-at-match asserts). */
+      editorPaths(): string[]
       dragSnapshot(): {
         isDragging: boolean
         sourceKind: string | null
@@ -119,6 +127,24 @@ export function installE2EHarness(): void {
     return true
   }
 
+  const setWorkspaceRoot = (rootPath: string): Promise<boolean> => {
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    return useAppStore.getState().setWorkspaceRootPath(wsId, rootPath)
+  }
+
+  const openSidebarView = (view: SidebarView): void => {
+    useUIStore.getState().setActiveLeftSidebarView(view)
+  }
+
+  const editorPaths = (): string[] => {
+    const s = useAppStore.getState()
+    const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
+    if (!ws) return []
+    return Object.values(ws.panels)
+      .filter((p) => p.type === 'editor' && !!p.filePath)
+      .map((p) => p.filePath as string)
+  }
+
   const dragSnapshot = () => {
     const s = useDragStore.getState()
     return {
@@ -142,6 +168,9 @@ export function installE2EHarness(): void {
     resetViewport,
     terminalPtyId,
     writeTerminal,
+    setWorkspaceRoot,
+    openSidebarView,
+    editorPaths,
     dragSnapshot,
   }
 }
