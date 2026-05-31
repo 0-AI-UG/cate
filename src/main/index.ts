@@ -1260,17 +1260,22 @@ process.on('SIGINT', () => {
   process.exit(0)
 })
 
-// Single-instance lock. A second `cate` launch (CLI, double-click, or an
-// installed build started alongside a dev build) must not spin up a rival
-// process: two Cate processes on the same project both autosave
-// .cate/workspace.json, and each then sees the other's writes as an external
-// edit, firing a spurious "Reload workspace from disk?" prompt on a ~30s loop.
-// Hand off to the already-running instance and focus its window instead.
-const gotSingleInstanceLock = app.requestSingleInstanceLock()
+// Single-instance lock — packaged builds only. A second launch (CLI,
+// double-click) must not spin up a rival process: two Cate processes on the same
+// project both autosave .cate/workspace.json, and each then sees the other's
+// writes as an external edit, firing a spurious "Reload workspace from disk?"
+// prompt on a ~30s loop. Hand off to the already-running instance and focus its
+// window instead.
+//
+// Dev builds are exempt: they run on a separate `Cate/Dev` userData profile (set
+// above), so they never collide with an installed build, and running several
+// `npm run dev` copies side by side (e.g. different branches) stays useful.
+const enforceSingleInstance = app.isPackaged
+const gotSingleInstanceLock = !enforceSingleInstance || app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   log.info('Another Cate instance already holds the single-instance lock; quitting this one')
   app.quit()
-} else {
+} else if (enforceSingleInstance) {
   app.on('second-instance', () => {
     focusRunningInstanceWindow(BrowserWindow.getAllWindows())
   })
