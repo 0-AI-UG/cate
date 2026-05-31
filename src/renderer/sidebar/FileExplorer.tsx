@@ -59,6 +59,13 @@ interface FileExplorerProps {
 export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  // Bumped on every successful tree read. Nested folders cache their own
+  // children in local state (keyed by stable path, so they survive a root
+  // re-render); this signal tells each cached/expanded folder to re-read from
+  // disk so a reload — or a move/create/delete — actually reflects on-disk state
+  // instead of showing stale children (e.g. a moved file lingering in its old
+  // folder, which reads as a copy).
+  const [refreshSignal, setRefreshSignal] = useState(0)
   const [gitTree, setGitTree] = useState<GitTree | undefined>(undefined)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
@@ -140,6 +147,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       }
 
       setNodes(entries)
+      // Invalidate cached children in every expanded/loaded nested folder so the
+      // refreshed root read propagates the whole way down the tree.
+      setRefreshSignal((n) => n + 1)
       setIsLoading(false)
     } catch (err) {
       // The read was rejected (e.g. the root path isn't registered as an allowed
@@ -627,6 +637,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               onSelect={handleSelect}
               onFileOpen={handleFileOpen}
               onTreeChanged={handleReload}
+              refreshSignal={refreshSignal}
               visiblePaths={visiblePaths}
               searchQuery=""
               rootPath={rootPath}
