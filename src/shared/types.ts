@@ -823,6 +823,12 @@ export interface AppSettings {
   /** Vertical wheel-scroll speed multiplier for terminals (xterm scrollSensitivity).
    *  1.0 = xterm default; lower = slower. Range 0.25–3.0. */
   terminalScrollSpeed: number
+  /** Minimum contrast ratio enforced between terminal text and its background
+   *  (xterm `minimumContrastRatio`). xterm lightens/darkens low-contrast or dim
+   *  text until it meets this WCAG ratio, so dim output stays readable on dark
+   *  themes. 1 = off (use the theme colors exactly); 4.5 = WCAG AA — the default,
+   *  matching VS Code's `terminal.integrated.minimumContrastRatio`. Range 1–21. */
+  terminalContrast: number
   /** Blink the terminal cursor. Off by default: each blink forces a GPU draw +
    *  compositor update, so a focused terminal keeps the compositor awake even
    *  when otherwise idle. A steady cursor is still fully visible. */
@@ -901,6 +907,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalFontSize: 0,
   terminalScrollback: 2000,
   terminalScrollSpeed: 1.0,
+  terminalContrast: 4.5,
   terminalCursorBlink: false,
   terminalOptionIsMeta: true,
   autoSuspendIdleTerminals: true,

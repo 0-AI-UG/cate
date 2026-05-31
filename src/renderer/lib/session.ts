@@ -505,9 +505,8 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
 /**
  * Re-read the active workspace's .cate/workspace.json from disk and rebuild the
  * canvas from it, discarding the current in-memory layout. This is how an
- * external edit (e.g. an agent following the .cate skill) is applied without
- * quitting the app — the autosave guard in main keeps the edit from being
- * clobbered until this runs.
+ * external edit to the file is applied without quitting the app — the autosave
+ * guard in main keeps the edit from being clobbered until this runs.
  *
  * Tears down current panels (disposing terminals) then replays the on-disk
  * snapshot through the same restore path used at launch.

@@ -82,6 +82,7 @@ vi.mock('../stores/settingsStore', () => ({
       terminalScrollback: 2000,
       terminalCursorBlink: false,
       terminalScrollSpeed: 1.0,
+      terminalContrast: 4.5,
     }),
     subscribe: () => () => {},
   },
@@ -223,6 +224,33 @@ describe('clampScrollSensitivity', () => {
     expect(clampScrollSensitivity(-1)).toBe(1.0)
     expect(clampScrollSensitivity(NaN)).toBe(1.0)
     expect(clampScrollSensitivity(undefined as unknown as number)).toBe(1.0)
+  })
+})
+
+describe('clampContrastRatio', () => {
+  it('passes through 4.5 (the WCAG-AA default)', async () => {
+    const { clampContrastRatio } = await import('./terminalRegistry')
+    expect(clampContrastRatio(4.5)).toBe(4.5)
+  })
+
+  it('allows the slider bounds 1 (off) and 21', async () => {
+    const { clampContrastRatio } = await import('./terminalRegistry')
+    expect(clampContrastRatio(1)).toBe(1)
+    expect(clampContrastRatio(21)).toBe(21)
+  })
+
+  it('clamps above the ceiling down to 21 and below the floor up to 1', async () => {
+    const { clampContrastRatio } = await import('./terminalRegistry')
+    expect(clampContrastRatio(30)).toBe(21)
+    expect(clampContrastRatio(0.5)).toBe(1)
+  })
+
+  it('falls back to 4.5 for invalid or missing values', async () => {
+    const { clampContrastRatio } = await import('./terminalRegistry')
+    expect(clampContrastRatio(0)).toBe(4.5)
+    expect(clampContrastRatio(-1)).toBe(4.5)
+    expect(clampContrastRatio(NaN)).toBe(4.5)
+    expect(clampContrastRatio(undefined as unknown as number)).toBe(4.5)
   })
 })
 

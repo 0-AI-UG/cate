@@ -38,6 +38,26 @@ export function TerminalSettings() {
         />
       </SettingRow>
       <SettingRow
+        label="Text contrast"
+        description={
+          store.terminalContrast <= 1
+            ? 'Off — theme colors shown exactly'
+            : `${store.terminalContrast.toFixed(1)}:1 — lightens dim / low-contrast text (4.5 = WCAG AA, like VS Code)`
+        }
+      >
+        {/* Slider max is intentionally below clampContrastRatio's 21 ceiling: above
+            ~7:1 almost all text is already forced to near-black/near-white, so the
+            extra travel does nothing visible. Step 0.1 matches xterm's internal
+            rounding. Hand-edited stored values up to 21 still validate. */}
+        <Slider
+          value={store.terminalContrast}
+          onChange={(v) => store.setSetting('terminalContrast', v)}
+          min={1}
+          max={7}
+          step={0.1}
+        />
+      </SettingRow>
+      <SettingRow
         label="Blink cursor"
         description="Off by default. A blinking cursor forces a GPU/compositor redraw on every blink, keeping the compositor awake even when the terminal is otherwise idle. A steady cursor stays fully visible."
       >
