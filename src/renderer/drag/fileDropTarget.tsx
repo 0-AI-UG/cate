@@ -11,7 +11,7 @@
 import React, { useEffect } from 'react'
 import { create } from 'zustand'
 
-export type FileDropKind = 'canvas' | 'dock' | 'agent'
+export type FileDropKind = 'canvas' | 'dock' | 'agent' | 'terminal'
 
 interface FileDropTarget {
   kind: FileDropKind
@@ -58,7 +58,14 @@ export function useFileDropTracker(): void {
       // Avoid churn: only recompute the rect when the target element changes.
       if (store.target && store.target.kind === kind && store.target.id === id) return
       const r = host.getBoundingClientRect()
-      store.set({ kind, id, rect: { left: r.left, top: r.top, width: r.width, height: r.height } })
+      // Clamp horizontally so the indicator doesn't slide under the open
+      // sidebars (which are absolute overlays spanning the canvas full-width).
+      const cs = getComputedStyle(document.documentElement)
+      const leftInset = parseFloat(cs.getPropertyValue('--cate-left-sidebar-width')) || 0
+      const rightInset = parseFloat(cs.getPropertyValue('--cate-right-sidebar-width')) || 0
+      const left = Math.max(r.left, leftInset)
+      const right = Math.min(r.right, window.innerWidth - rightInset)
+      store.set({ kind, id, rect: { left, top: r.top, width: Math.max(0, right - left), height: r.height } })
     }
     const clear = (): void => {
       if (useFileDropStore.getState().target) useFileDropStore.getState().set(null)
@@ -67,15 +74,17 @@ export function useFileDropTracker(): void {
       // relatedTarget null === cursor left the window entirely.
       if (!e.relatedTarget) clear()
     }
-    window.addEventListener('dragover', onDragOver)
-    window.addEventListener('drop', clear)
-    window.addEventListener('dragend', clear)
-    window.addEventListener('dragleave', onDragLeave)
+    // Capture phase: fire before any target handler's stopPropagation (the
+    // terminal stops dragover/drop propagation), so the tracker always updates.
+    window.addEventListener('dragover', onDragOver, true)
+    window.addEventListener('drop', clear, true)
+    window.addEventListener('dragend', clear, true)
+    window.addEventListener('dragleave', onDragLeave, true)
     return () => {
-      window.removeEventListener('dragover', onDragOver)
-      window.removeEventListener('drop', clear)
-      window.removeEventListener('dragend', clear)
-      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('dragover', onDragOver, true)
+      window.removeEventListener('drop', clear, true)
+      window.removeEventListener('dragend', clear, true)
+      window.removeEventListener('dragleave', onDragLeave, true)
     }
   }, [])
 }
@@ -84,6 +93,7 @@ const LABEL: Record<FileDropKind, string> = {
   canvas: 'Drop to open on canvas',
   dock: 'Drop to open here',
   agent: 'Drop file to add to chat',
+  terminal: 'Drop to paste path',
 }
 
 /** Single indicator for the active file-drop target. Mirrors the internal

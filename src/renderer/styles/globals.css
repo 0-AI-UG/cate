@@ -89,6 +89,10 @@
 
   .bg-hover { background-color: var(--surface-hover); }
   .bg-hover-strong { background-color: var(--surface-hover-strong); }
+
+  /* Theme accent (per-theme --focus-blue) — used for active toggles etc. */
+  .bg-accent { background-color: var(--focus-blue); }
+  .text-accent { color: var(--focus-blue); }
   .hover\:bg-hover:hover { background-color: var(--surface-hover); }
   .hover\:bg-hover-strong:hover { background-color: var(--surface-hover-strong); }
   .active\:bg-hover-strong:active { background-color: var(--surface-hover-strong); }

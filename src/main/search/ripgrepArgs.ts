@@ -61,6 +61,9 @@ export function buildRipgrepArgs(
       if (name) args.push('--glob', `!${name}`)
     }
   }
+  // Always skip the VCS internals dir — never useful to search and, with
+  // --hidden, ripgrep would otherwise descend into it.
+  args.push('--glob', '!.git')
 
   // Pattern via -e so a query starting with "-" is never mistaken for a flag,
   // then the search root as the only positional path.

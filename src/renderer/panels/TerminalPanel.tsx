@@ -575,8 +575,6 @@ export default function TerminalPanel({
   // Drag-and-drop: accept files from OS or internal file explorer
   // -------------------------------------------------------------------------
 
-  const [isDragOver, setIsDragOver] = useState(false)
-
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     // Accept drops from internal file explorer or external file drops
     if (
@@ -585,18 +583,11 @@ export default function TerminalPanel({
     ) {
       // Stop here so the app-root background handler doesn't override the drop
       // effect to 'none' (which would suppress the drop event entirely and stop
-      // file paths from being inserted into the terminal).
+      // file paths from being inserted into the terminal). The drop indicator
+      // is driven globally via the capture-phase tracker, which still fires.
       e.stopPropagation()
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
-      setIsDragOver(true)
-    }
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // Only clear when leaving the container itself, not child elements
-    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsDragOver(false)
     }
   }, [])
 
@@ -604,7 +595,6 @@ export default function TerminalPanel({
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
       e.stopPropagation()
-      setIsDragOver(false)
 
       const refs: DroppedRef[] = []
 
@@ -690,8 +680,9 @@ export default function TerminalPanel({
         ref={containerRef}
         className="flex-1 relative min-h-0"
         style={{ padding: 0, overflow: 'hidden' }}
+        data-filedrop="terminal"
+        data-filedrop-id={panelId}
         onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {/*
@@ -714,11 +705,8 @@ export default function TerminalPanel({
             transformOrigin: '0 0',
           }}
         />
-        {isDragOver && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-blue-500/10 border-2 border-dashed border-blue-500/40 rounded pointer-events-none">
-            <span className="text-blue-400 text-sm font-medium">Drop to paste path</span>
-          </div>
-        )}
+        {/* File-drop indicator is rendered globally by <FileDropOverlay/>
+            (this container is marked data-filedrop="terminal"). */}
         {/* Inline URL prompt is rendered outside this scaled box so it
             stays at panel scale regardless of renderScale. */}
         {createError && (

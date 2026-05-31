@@ -11,7 +11,10 @@ import { buildRipgrepArgs } from './ripgrepArgs'
 import { parseEvent, groupEvents, type RgEvent } from './ripgrepParser'
 import { getRgPath } from './ripgrepPath'
 
-const DEFAULT_MAX_RESULTS = 5000
+// Caps total matches. Kept modest because the results list isn't virtualized —
+// rendering many thousands of rows (e.g. when "use ignore files" is off and the
+// search descends into node_modules) is what causes a brief UI stall.
+const DEFAULT_MAX_RESULTS = 2000
 /** Coalesce completed files into batches flushed on this cadence (ms). */
 const FLUSH_INTERVAL_MS = 40
 /** Hard wall-clock cap so a pathological regex can't hang ripgrep forever. */

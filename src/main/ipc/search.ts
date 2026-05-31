@@ -36,7 +36,7 @@ function sanitize(raw: Partial<SearchOptions> | undefined): SearchOptions {
     includes: stringArray(raw?.includes),
     excludes: stringArray(raw?.excludes),
     respectIgnore: raw?.respectIgnore !== false,
-    maxResults: clampInt(raw?.maxResults, 5000, 1, 20000),
+    maxResults: clampInt(raw?.maxResults, 2000, 1, 20000),
   }
 }
 

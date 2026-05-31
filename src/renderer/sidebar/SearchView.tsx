@@ -37,7 +37,7 @@ const ToggleBtn: React.FC<ToggleBtnProps> = ({ active, onClick, title, children 
       aria-pressed={active}
       onClick={onClick}
       className={`flex items-center justify-center w-5 h-5 rounded text-[11px] leading-none transition-colors ${
-        active ? 'bg-blue-600 text-white' : 'text-secondary hover:text-primary hover:bg-surface-5'
+        active ? 'bg-accent text-white' : 'text-secondary hover:text-primary hover:bg-surface-5'
       }`}
     >
       {children}

@@ -64,10 +64,17 @@ describe('buildRipgrepArgs', () => {
     expect(globs).toContain('!.git')
   })
 
-  it('ignores blank include/exclude entries', () => {
+  it('ignores blank include/exclude entries (only the always-on !.git remains)', () => {
     const args = buildRipgrepArgs(base({ includes: ['  ', ''], excludes: [' '] }), '/root')
     const globs = args.filter((_, i) => args[i - 1] === '--glob')
-    expect(globs).toHaveLength(0)
+    expect(globs).toEqual(['!.git'])
+  })
+
+  it('always excludes the .git directory', () => {
+    const globs = buildRipgrepArgs(base({ respectIgnore: false }), '/root').filter(
+      (_, i, a) => a[i - 1] === '--glob',
+    )
+    expect(globs).toContain('!.git')
   })
 
   it('passes the query via -e and the root path as the final argument', () => {
