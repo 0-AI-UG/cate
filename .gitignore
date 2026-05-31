@@ -10,8 +10,8 @@ build/
 release/
 test-results/
 
-# Claude Code local settings
-.claude/settings.local.json
+# Claude Code
+.claude/
 
 # Cate workspace + local session state
 .cate/
