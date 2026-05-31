@@ -95,6 +95,29 @@ async function runSmokeAssertions(win: BrowserWindow): Promise<void> {
   }
 }
 
+// Under Playwright (CATE_E2E=1) a normal show() opens the window on the user's
+// active screen and steals focus. We can't just keep it hidden either: a hidden
+// window throttles its rAF loop, so the node enter/leave transitions never
+// settle and the drag specs read the wrong rects. So under e2e we SHOW the
+// window (renderer composites, rAF runs, animations settle) but make it fully
+// transparent and inactive — invisible to the user and never focused, while
+// behaving exactly like a visible window for the renderer. Transparency (vs an
+// off-screen position) sidesteps macOS clamping a far-off-screen window back
+// onto a display. Playwright drives it over CDP regardless of opacity/focus.
+const IS_E2E = process.env.CATE_E2E === '1'
+
+/** Show a window — but under e2e make it transparent + inactive so it never
+ *  appears on screen or steals focus (while still compositing for Playwright). */
+function revealWindow(win: BrowserWindow, opts: { focus?: boolean } = {}): void {
+  try {
+    if (IS_E2E) return // never map to a display — Playwright drives it over CDP
+    win.show()
+    if (opts.focus) win.focus()
+  } catch {
+    /* window may already be destroyed */
+  }
+}
+
 function createWindow(params?: CateWindowParams): BrowserWindow {
   const iconPath = path.join(__dirname, '../../build/icon-1024.png')
   const windowType = params?.type ?? 'main'
@@ -159,13 +182,19 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
       sandbox: !disableRendererSandbox(),
       webSecurity: true,
       webviewTag: true,
+      // Under e2e the window is shown transparent + inactive (see revealWindow).
+      // paintWhenInitiallyHidden makes it paint + fire ready-to-show before that
+      // first show; backgroundThrottling:false keeps rAF/timers running so the
+      // animation-timed node/drag specs settle as on a normal window. Harmless
+      // no-ops outside e2e.
+      ...(IS_E2E ? { backgroundThrottling: false, paintWhenInitiallyHidden: true } : {}),
     },
   })
 
   // Show on ready-to-show so the first frame is fully painted before the
   // window appears — eliminates the white flash from initial mount.
   win.once('ready-to-show', () => {
-    try { win.show() } catch { /* destroyed */ }
+    revealWindow(win)
   })
 
   // Persist main-window geometry to the boot snapshot so the next cold launch
@@ -919,12 +948,8 @@ function registerWindowAndDialogHandlers(): void {
       sendToWindow(newWin.id, PANEL_RECEIVE, snapshot)
       // Force show + focus — on macOS in fullscreen, the new window may not
       // auto-show because the OS thinks it belongs to a different Space.
-      try {
-        newWin.show()
-        newWin.focus()
-      } catch {
-        /* window may already be destroyed */
-      }
+      // (revealWindow skips the focus and stays inactive under e2e.)
+      revealWindow(newWin, { focus: true })
     })
 
     cleanupDragTempFile()
@@ -1151,6 +1176,9 @@ if (process.env.CATE_E2E === '1') {
   const os = require('os') as typeof import('os')
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))
   app.setPath('userData', tmp)
+  // Keep the e2e app out of the macOS dock / app-switcher so launching it never
+  // foregrounds the shared Electron bundle (and a running `npm run dev`).
+  app.dock?.hide()
 }
 
 // ---------------------------------------------------------------------------
@@ -1183,7 +1211,7 @@ function deliverOpenPath(p: string): void {
   }
   try {
     if (win.isMinimized()) win.restore()
-    win.focus()
+    if (!IS_E2E) win.focus()
   } catch { /* noop */ }
   win.webContents.send(APP_OPEN_PATH, p)
 }
