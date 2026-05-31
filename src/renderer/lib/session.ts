@@ -43,9 +43,6 @@ function prefetchPanelChunks(types: ReadonlySet<PanelType>): void {
   if (types.has('terminal')) void import('../panels/TerminalPanel')
   if (types.has('editor')) void import('../panels/EditorPanel')
   if (types.has('browser')) void import('../panels/BrowserPanel')
-  if (types.has('git')) void import('../panels/GitPanel')
-  if (types.has('fileExplorer')) void import('../panels/FileExplorerPanel')
-  if (types.has('projectList')) void import('../panels/ProjectListPanel')
   if (types.has('canvas')) void import('../panels/CanvasPanel')
 }
 
@@ -299,8 +296,8 @@ export async function saveSession(): Promise<void> {
       : workspace.dockState ?? undefined
 
     // Collect panels that live in dock zones (not on the canvas).
-    // These are panels like canvas, git, fileExplorer, projectList that are
-    // referenced by the dock layout but not saved as canvas NodeSnapshots.
+    // These are panels like canvas that are referenced by the dock layout
+    // but not saved as canvas NodeSnapshots.
     let dockPanels: Record<string, import('../../shared/types').PanelState> | undefined
     if (dockSnapshot) {
       const dockPanelIds = collectPanelIdsFromDockState(dockSnapshot.zones)

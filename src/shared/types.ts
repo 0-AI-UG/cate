@@ -29,7 +29,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'git' | 'fileExplorer' | 'projectList' | 'canvas' | 'agent' | 'document'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -626,7 +626,7 @@ export interface SessionSnapshot {
   regions?: Record<string, CanvasRegion>
   /** Dock zone layout state — added in Phase 5. Missing = empty dock (migration). */
   dockState?: DockStateSnapshot
-  /** Panels that live in dock zones (canvas, git, fileExplorer, etc.) — not on the canvas. */
+  /** Panels that live in dock zones (canvas, etc.) — not on the canvas. */
   dockPanels?: Record<string, PanelState>
 }
 
@@ -953,9 +953,6 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   terminal: { width: 520, height: 340 },
   browser: { width: 640, height: 440 },
   editor: { width: 540, height: 420 },
-  git: { width: 440, height: 500 },
-  fileExplorer: { width: 280, height: 440 },
-  projectList: { width: 280, height: 360 },
   canvas: { width: 640, height: 480 },
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },

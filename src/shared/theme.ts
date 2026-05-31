@@ -32,8 +32,7 @@ export const APP_COLOR_KEYS = [
   'scrollbar-thumb', 'scrollbar-thumb-hover',
   'surface-hover', 'surface-hover-strong',
   'git-added', 'git-modified', 'git-deleted', 'git-untracked', 'git-renamed',
-  'panel-terminal', 'panel-browser', 'panel-editor', 'panel-git',
-  'panel-fileExplorer', 'panel-projectList', 'panel-canvas',
+  'panel-terminal', 'panel-browser', 'panel-editor', 'panel-canvas',
   'agent-rgb', 'agent-light-rgb',
 ] as const
 

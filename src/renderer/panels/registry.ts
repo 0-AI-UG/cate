@@ -17,10 +17,7 @@ import {
   Terminal,
   Globe,
   FileText,
-  GitBranch,
-  TreeStructure,
   SquaresFour,
-  List,
   FileDoc,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
@@ -40,9 +37,6 @@ import type { PanelProps } from './types'
 const TerminalPanel = React.lazy(() => import('./TerminalPanel'))
 const EditorPanel = React.lazy(() => import('./EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./BrowserPanel'))
-const GitPanel = React.lazy(() => import('./GitPanel'))
-const FileExplorerPanel = React.lazy(() => import('./FileExplorerPanel'))
-const ProjectListPanel = React.lazy(() => import('./ProjectListPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('../../agent/renderer/AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
@@ -104,27 +98,6 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: EditorPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath }) =>
       useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null,
-  },
-  git: {
-    ...PANEL_DEFINITIONS.git,
-    icon: GitBranch,
-    Component: GitPanel,
-    create: ({ workspaceId, canvasPoint, placement }) =>
-      useAppStore.getState().createGit(workspaceId, canvasPoint, placement) || null,
-  },
-  fileExplorer: {
-    ...PANEL_DEFINITIONS.fileExplorer,
-    icon: TreeStructure,
-    Component: FileExplorerPanel,
-    create: ({ workspaceId, canvasPoint, placement }) =>
-      useAppStore.getState().createFileExplorer(workspaceId, canvasPoint, placement) || null,
-  },
-  projectList: {
-    ...PANEL_DEFINITIONS.projectList,
-    icon: List,
-    Component: ProjectListPanel,
-    create: ({ workspaceId, canvasPoint, placement }) =>
-      useAppStore.getState().createProjectList(workspaceId, canvasPoint, placement) || null,
   },
   canvas: {
     ...PANEL_DEFINITIONS.canvas,
