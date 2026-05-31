@@ -25,7 +25,7 @@ export interface SearchState {
   wholeWord: boolean
   includes: string
   excludes: string
-  contextLines: number
+  respectIgnore: boolean
   optionsExpanded: boolean
 
   // Results
@@ -57,7 +57,7 @@ export interface SearchState {
 
 export type SearchOptionFields = Pick<
   SearchState,
-  'isRegex' | 'matchCase' | 'wholeWord' | 'includes' | 'excludes' | 'contextLines'
+  'isRegex' | 'matchCase' | 'wholeWord' | 'includes' | 'excludes' | 'respectIgnore'
 >
 
 /** Key for an individual dismissed match line. */
@@ -92,7 +92,7 @@ export const createSearchStore = () =>
     wholeWord: false,
     includes: '',
     excludes: '',
-    contextLines: 0,
+    respectIgnore: true,
     optionsExpanded: false,
 
     status: 'idle',

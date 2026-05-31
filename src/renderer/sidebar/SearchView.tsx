@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React, { useEffect, useMemo, useRef } from 'react'
-import { MagnifyingGlass, CaretRight, CaretDown } from '@phosphor-icons/react'
+import { MagnifyingGlass, CaretRight, CaretDown, Gear } from '@phosphor-icons/react'
 import { SidebarSectionHeader } from './SidebarSectionHeader'
 import { SearchResultsTree } from './SearchResultsTree'
 import { useSearchStore, lineKey } from '../stores/searchStore'
@@ -34,7 +34,7 @@ const ToggleBtn: React.FC<ToggleBtnProps> = ({ active, onClick, title, children 
     title={title}
     onClick={onClick}
     className={`flex items-center justify-center w-5 h-5 rounded text-[11px] leading-none transition-colors ${
-      active ? 'bg-blue-500/25 text-blue-300' : 'text-muted hover:text-primary hover:bg-surface-5'
+      active ? 'bg-blue-500/25 text-blue-300' : 'text-secondary hover:text-primary hover:bg-surface-5'
     }`}
   >
     {children}
@@ -48,7 +48,7 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
   const wholeWord = useSearchStore((s) => s.wholeWord)
   const includes = useSearchStore((s) => s.includes)
   const excludes = useSearchStore((s) => s.excludes)
-  const contextLines = useSearchStore((s) => s.contextLines)
+  const respectIgnore = useSearchStore((s) => s.respectIgnore)
   const optionsExpanded = useSearchStore((s) => s.optionsExpanded)
 
   const status = useSearchStore((s) => s.status)
@@ -97,12 +97,12 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
           wholeWord,
           includes: splitGlobs(includes),
           excludes: splitGlobs(excludes),
-          contextLines,
+          respectIgnore,
         })
         .catch((err) => log.warn('[search] start failed:', err))
     }, DEBOUNCE_MS)
     return () => window.clearTimeout(handle)
-  }, [query, isRegex, matchCase, wholeWord, includes, excludes, contextLines, rootPath])
+  }, [query, isRegex, matchCase, wholeWord, includes, excludes, respectIgnore, rootPath])
 
   // Visible files + accurate counts (excluding dismissed files / lines).
   const { visibleFiles, matchCount, fileCount } = useMemo(() => {
@@ -133,14 +133,14 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
       <div className="px-2 py-1.5 border-b border-subtle flex flex-col gap-1.5">
         <div className="flex items-center gap-1">
           <button
-            className="flex-shrink-0 text-muted hover:text-primary"
+            className="flex-shrink-0 text-secondary hover:text-primary"
             title={optionsExpanded ? 'Hide search details' : 'Toggle search details'}
             onClick={toggleOptionsExpanded}
           >
             {optionsExpanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
           </button>
           <div className="flex-1 relative">
-            <MagnifyingGlass size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" />
+            <MagnifyingGlass size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-secondary" />
             <input
               ref={inputRef}
               value={query}
@@ -167,37 +167,42 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
           </div>
         </div>
 
-        {/* Expandable include / exclude / context */}
+        {/* Expandable include / exclude (VS Code-style) */}
         {optionsExpanded && (
-          <div className="flex flex-col gap-1 pl-5">
-            <input
-              value={includes}
-              onChange={(e) => setOptions({ includes: e.target.value })}
-              onKeyDown={(e) => e.stopPropagation()}
-              placeholder="files to include (e.g. src/**, *.ts)"
-              spellCheck={false}
-              className="w-full bg-surface-5 text-primary text-[11px] px-2 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
-            />
-            <input
-              value={excludes}
-              onChange={(e) => setOptions({ excludes: e.target.value })}
-              onKeyDown={(e) => e.stopPropagation()}
-              placeholder="files to exclude (e.g. *.lock, dist/**)"
-              spellCheck={false}
-              className="w-full bg-surface-5 text-primary text-[11px] px-2 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
-            />
-            <label className="flex items-center gap-1.5 text-[11px] text-muted">
-              <span>Context lines</span>
+          <div className="flex flex-col gap-2 pl-5">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-muted">files to include</span>
               <input
-                type="number"
-                min={0}
-                max={10}
-                value={contextLines}
-                onChange={(e) => setOptions({ contextLines: Math.max(0, Math.min(10, Number(e.target.value) || 0)) })}
+                value={includes}
+                onChange={(e) => setOptions({ includes: e.target.value })}
                 onKeyDown={(e) => e.stopPropagation()}
-                className="w-12 bg-surface-5 text-primary px-1 py-0.5 rounded border border-subtle focus:border-blue-500/50 outline-none"
+                placeholder="e.g. src/**, *.ts"
+                spellCheck={false}
+                className="w-full bg-surface-5 text-primary text-[11px] px-2 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
               />
-            </label>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-muted">files to exclude</span>
+              <div className="relative">
+                <input
+                  value={excludes}
+                  onChange={(e) => setOptions({ excludes: e.target.value })}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder="e.g. *.lock, dist/**"
+                  spellCheck={false}
+                  className="w-full bg-surface-5 text-primary text-[11px] pl-2 pr-7 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
+                />
+                <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                  <ToggleBtn
+                    active={respectIgnore}
+                    onClick={() => setOptions({ respectIgnore: !respectIgnore })}
+                    title="Use Exclude Settings and Ignore Files"
+                  >
+                    <Gear size={13} />
+                  </ToggleBtn>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

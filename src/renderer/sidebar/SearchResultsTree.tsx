@@ -5,8 +5,11 @@
 // =============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { CaretRight, CaretDown, File as FileIcon, X } from '@phosphor-icons/react'
+import { createPortal } from 'react-dom'
+import { CaretRight, CaretDown, X } from '@phosphor-icons/react'
 import type { SearchFileResult, SearchMatchRange } from '../../shared/types'
+import { getFileIcon } from './FileTreeNode'
+import { trimLeading, trimForDisplay } from './searchDisplay'
 import { useSearchStore, lineKey } from '../stores/searchStore'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fileRouting'
@@ -20,7 +23,7 @@ const Highlighted: React.FC<{ text: string; ranges: SearchMatchRange[] }> = ({ t
   ranges.forEach((r, i) => {
     if (r.start > cursor) parts.push(<span key={`p${i}`}>{text.slice(cursor, r.start)}</span>)
     parts.push(
-      <mark key={`m${i}`} className="bg-yellow-400/30 text-primary rounded-[2px]">
+      <mark key={`m${i}`} className="bg-surface-6 text-primary rounded-[2px]">
         {text.slice(r.start, r.end)}
       </mark>,
     )
@@ -30,16 +33,6 @@ const Highlighted: React.FC<{ text: string; ranges: SearchMatchRange[] }> = ({ t
   return <>{parts}</>
 }
 
-/** Trim leading whitespace for display and shift ranges to match. */
-function trimLeading(text: string, ranges: SearchMatchRange[]): { text: string; ranges: SearchMatchRange[] } {
-  const leading = text.length - text.trimStart().length
-  if (leading === 0) return { text, ranges }
-  return {
-    text: text.slice(leading),
-    ranges: ranges.map((r) => ({ start: Math.max(0, r.start - leading), end: Math.max(0, r.end - leading) })),
-  }
-}
-
 const baseName = (p: string): string => {
   const i = p.lastIndexOf('/')
   return i === -1 ? p : p.slice(i + 1)
@@ -47,6 +40,23 @@ const baseName = (p: string): string => {
 const dirName = (p: string): string => {
   const i = p.lastIndexOf('/')
   return i === -1 ? '' : p.slice(0, i)
+}
+const extOf = (name: string): string => {
+  const i = name.lastIndexOf('.')
+  return i === -1 ? '' : name.slice(i + 1)
+}
+
+/** Populate a drag with the same MIME types the Explorer uses, so canvas / dock
+ *  / terminal / agent drop targets all accept it. For a line drag, also carry
+ *  the line + column so canvas/dock drops can open at the match. */
+function setFileDrag(e: React.DragEvent, path: string, line?: number, column?: number): void {
+  e.dataTransfer.setData('application/cate-file', path)
+  e.dataTransfer.setData('application/cate-files', JSON.stringify([path]))
+  e.dataTransfer.setData('text/plain', path)
+  if (line != null) {
+    e.dataTransfer.setData('application/cate-file-line', JSON.stringify({ path, line, column: column ?? 1 }))
+  }
+  e.dataTransfer.effectAllowed = 'copy'
 }
 
 type Row =
@@ -66,6 +76,13 @@ export const SearchResultsTree: React.FC<Props> = ({ files }) => {
   const dismissLine = useSearchStore((s) => s.dismissLine)
 
   const [selected, setSelected] = useState(0)
+  // Full-line preview shown on row hover (portal tooltip; no layout shift).
+  const [hover, setHover] = useState<{
+    text: string
+    ranges: SearchMatchRange[]
+    top: number
+    left: number
+  } | null>(null)
 
   // Build the flat list of visible rows (file headers + non-dismissed match lines).
   const rows = useMemo<Row[]>(() => {
@@ -153,7 +170,14 @@ export const SearchResultsTree: React.FC<Props> = ({ files }) => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto outline-none py-1" tabIndex={0} onKeyDown={onKeyDown}>
+    <div
+      className="flex-1 overflow-y-auto overflow-x-hidden outline-none py-1"
+      tabIndex={0}
+      data-testid="search-results"
+      data-keynav=""
+      onKeyDown={onKeyDown}
+      onMouseLeave={() => setHover(null)}
+    >
       {rows.map((row, idx) => {
         const isSel = selected === idx
         if (row.kind === 'file') {
@@ -161,26 +185,34 @@ export const SearchResultsTree: React.FC<Props> = ({ files }) => {
           const isCollapsed = collapsed.has(file.path)
           const dir = dirName(file.relativePath)
           const count = visibleCount.get(file.path) ?? file.matchCount
+          const fileIcon = getFileIcon(extOf(file.relativePath), false, false)
           return (
             <div
               key={`f:${file.path}`}
-              className={`group flex items-center gap-1 pl-1 pr-2 py-0.5 text-xs cursor-pointer ${
-                isSel ? 'bg-surface-5' : 'hover:bg-surface-5/50'
+              data-testid="search-file"
+              data-path={file.path}
+              data-selected={isSel}
+              className={`group flex items-center gap-1.5 pl-2 pr-2 py-[3px] text-xs cursor-pointer min-w-0 ${
+                isSel ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40' : 'hover:bg-surface-5'
               }`}
               onClick={() => {
                 setSelected(idx)
                 toggleCollapse(file.path)
               }}
               title={file.relativePath}
+              draggable
+              onDragStart={(e) => setFileDrag(e, file.path)}
             >
               <span className="flex-shrink-0 text-muted">
                 {isCollapsed ? <CaretRight size={12} /> : <CaretDown size={12} />}
               </span>
-              <FileIcon size={13} className="flex-shrink-0 text-muted" />
-              <span className="text-primary truncate">{baseName(file.relativePath)}</span>
-              {dir && <span className="text-muted text-[10px] truncate">{dir}</span>}
-              <span className="ml-auto flex items-center gap-1">
-                <span className="text-muted text-[10px] tabular-nums rounded-full bg-surface-5 px-1.5 leading-4 group-hover:hidden">
+              <span className="flex-shrink-0 flex items-center" style={{ color: fileIcon.color }}>
+                {fileIcon.icon}
+              </span>
+              <span className="text-primary truncate flex-shrink-0 max-w-[60%]">{baseName(file.relativePath)}</span>
+              {dir && <span className="text-secondary text-[10px] truncate min-w-0">{dir}</span>}
+              <span className="ml-auto flex-shrink-0 flex items-center gap-1 pl-1">
+                <span className="text-secondary text-[10px] tabular-nums rounded-full bg-surface-6 px-1.5 leading-4 group-hover:hidden">
                   {count}
                 </span>
                 <button
@@ -201,23 +233,35 @@ export const SearchResultsTree: React.FC<Props> = ({ files }) => {
         const { file, lineIdx } = row
         const ln = file.lines[lineIdx]
         const isContext = ln.ranges.length === 0
-        const display = trimLeading(ln.text, ln.ranges)
+        const display = trimForDisplay(ln.text, ln.ranges) // start-trimmed; match stays visible
+        const full = trimLeading(ln.text, ln.ranges)        // full line for the tooltip
         return (
           <div
             key={`l:${file.path}:${ln.line}:${lineIdx}`}
-            className={`group flex items-start gap-2 pr-2 py-0.5 text-xs cursor-pointer ${
-              isSel ? 'bg-surface-5' : 'hover:bg-surface-5/50'
+            data-testid="search-line"
+            data-path={file.path}
+            data-line={ln.line}
+            data-selected={isSel}
+            className={`group flex items-center gap-1.5 pr-1 py-[2px] text-xs cursor-pointer ${
+              isSel ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40' : 'hover:bg-surface-5'
             }`}
-            style={{ paddingLeft: 26 }}
+            style={{ paddingLeft: 20 }}
+            onMouseEnter={(e) => {
+              const r = e.currentTarget.getBoundingClientRect()
+              setHover({ text: full.text, ranges: full.ranges, top: r.bottom, left: r.left })
+            }}
             onClick={() => {
               setSelected(idx)
               if (!isContext) openLine(file, lineIdx)
             }}
+            draggable
+            onDragStart={(e) => setFileDrag(e, file.path, ln.line, (ln.ranges[0]?.start ?? 0) + 1)}
           >
-            <span className="flex-shrink-0 text-muted text-[10px] tabular-nums w-8 text-right select-none">
-              {ln.line}
+            <span className="flex-shrink-0 text-muted text-[10px] tabular-nums text-left select-none min-w-[1.6rem]">
+              :{ln.line}
             </span>
-            <span className={`truncate font-mono ${isContext ? 'text-muted/70' : 'text-secondary'}`}>
+            <span className={`truncate min-w-0 font-mono ${isContext ? 'text-muted' : 'text-primary'}`}>
+              {display.ellipsis && <span className="text-muted">…</span>}
               <Highlighted text={display.text} ranges={display.ranges} />
             </span>
             {!isContext && (
@@ -235,6 +279,16 @@ export const SearchResultsTree: React.FC<Props> = ({ files }) => {
           </div>
         )
       })}
+      {hover &&
+        createPortal(
+          <div
+            className="fixed z-[100] max-w-[520px] px-2 py-1 rounded border border-subtle bg-surface-2 shadow-lg text-[11px] font-mono text-primary whitespace-pre-wrap break-all pointer-events-none"
+            style={{ top: hover.top + 2, left: hover.left }}
+          >
+            <Highlighted text={hover.text} ranges={hover.ranges} />
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

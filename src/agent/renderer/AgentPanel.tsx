@@ -31,6 +31,7 @@ import type { PanelProps } from '../../renderer/panels/types'
 import { useAppStore } from '../../renderer/stores/appStore'
 import { useStatusStore } from '../../renderer/stores/statusStore'
 import { useAgentStore } from './agentStore'
+import { buildFileMentions, type LineRef } from './agentDrop'
 import { ChatThread } from './ChatThread'
 import { AgentSidebar } from './AgentSidebar'
 import { ChatInput } from './AgentChatInput'
@@ -772,17 +773,56 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     if (any) e.preventDefault()
   }, [handleAddImage])
 
+  // Whole-panel file drop. The chat input also forwards drops here; handleDrop
+  // stops propagation so a drop never fires twice.
+  const [panelDragOver, setPanelDragOver] = useState(false)
+  const dragDepthRef = useRef(0)
+  const isFileDrag = (e: React.DragEvent): boolean => {
+    const t = e.dataTransfer?.types
+    return (
+      !!t &&
+      (t.includes('application/cate-files') ||
+        t.includes('application/cate-file') ||
+        t.includes('Files'))
+    )
+  }
+  const handlePanelDragEnter = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    dragDepthRef.current += 1
+    setPanelDragOver(true)
+  }, [])
+  const handlePanelDragOver = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
+  const handlePanelDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setPanelDragOver(false)
+  }, [])
+
   const handleDrop = useCallback(async (e: React.DragEvent) => {
+    dragDepthRef.current = 0
+    setPanelDragOver(false)
     // Files dragged from Cate's own Explorer come through as a JSON payload of
     // absolute paths under `application/cate-files`. Insert them into the draft
     // as @-mentions instead of trying to read them as images.
     const cateRaw = e.dataTransfer?.getData('application/cate-files')
     if (cateRaw) {
       e.preventDefault()
+      e.stopPropagation()
       try {
         const paths = JSON.parse(cateRaw) as string[]
         if (Array.isArray(paths) && paths.length > 0) {
-          const mentions = paths.map((p) => `@${p}`).join(' ')
+          // A search-line drag carries the line number — mention it as
+          // @path:line so the agent gets the exact location.
+          let lineRef: LineRef | null = null
+          const lineRaw = e.dataTransfer.getData('application/cate-file-line')
+          if (lineRaw) {
+            try { lineRef = JSON.parse(lineRaw) } catch { /* ignore */ }
+          }
+          const mentions = buildFileMentions(paths, lineRef)
           setDraft((prev) => (prev ? `${prev}${prev.endsWith(' ') ? '' : ' '}${mentions} ` : `${mentions} `))
         }
       } catch { /* ignore malformed payload */ }
@@ -790,6 +830,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     }
     if (!e.dataTransfer?.files?.length) return
     e.preventDefault()
+    e.stopPropagation()
     for (const file of Array.from(e.dataTransfer.files)) {
       const img = await readFileAsImage(file)
       if (img) handleAddImage(img)
@@ -801,7 +842,20 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="w-full h-full flex bg-surface-4 text-primary min-h-0 overflow-hidden">
+    <div
+      className="relative w-full h-full flex bg-surface-4 text-primary min-h-0 overflow-hidden"
+      onDragEnter={handlePanelDragEnter}
+      onDragOver={handlePanelDragOver}
+      onDragLeave={handlePanelDragLeave}
+      onDrop={handleDrop}
+    >
+      {panelDragOver && (
+        <div className="absolute inset-0 z-30 pointer-events-none ring-2 ring-inset ring-blue-500/60 bg-blue-500/5 flex items-center justify-center">
+          <span className="text-xs text-primary bg-surface-2 px-2 py-1 rounded border border-subtle shadow-lg">
+            Drop file to add to chat
+          </span>
+        </div>
+      )}
       {sidebarOpen && (
         <AgentSidebar
           chats={filteredChats}

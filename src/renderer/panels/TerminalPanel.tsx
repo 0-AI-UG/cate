@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 
 import type { TerminalPanelProps } from './types'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { formatTerminalPaste, type DroppedRef } from './terminalDrop'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 
@@ -605,35 +606,36 @@ export default function TerminalPanel({
       e.stopPropagation()
       setIsDragOver(false)
 
-      const paths: string[] = []
+      const refs: DroppedRef[] = []
 
-      // Internal file explorer drag
+      // Internal file explorer / search drag. A search-line drag carries the
+      // line number too — pasted as path:line (like a VS Code reference).
       const catePath = e.dataTransfer.getData('application/cate-file')
       if (catePath) {
-        paths.push(catePath)
+        let line: number | undefined
+        const lineRaw = e.dataTransfer.getData('application/cate-file-line')
+        if (lineRaw) {
+          try {
+            const lr = JSON.parse(lineRaw) as { path?: string; line?: number }
+            if (lr?.path === catePath) line = lr.line
+          } catch { /* ignore */ }
+        }
+        refs.push({ path: catePath, line })
       }
 
       // External OS file drop — use Electron's webUtils to get real paths
       if (e.dataTransfer.files.length > 0) {
         for (const file of Array.from(e.dataTransfer.files)) {
           const filePath = window.electronAPI?.getPathForFile(file)
-          if (filePath) paths.push(filePath)
+          if (filePath) refs.push({ path: filePath })
         }
       }
 
-      if (paths.length === 0) return
-
-      // Shell-escape each path and write to terminal as space-separated text
-      const escaped = paths.map((p) => {
-        // If path contains no special shell characters, use it as-is
-        if (/^[a-zA-Z0-9_./:@~=-]+$/.test(p)) return p
-        // Otherwise, single-quote it (escaping any existing single quotes)
-        return "'" + p.replace(/'/g, "'\\''") + "'"
-      })
+      if (refs.length === 0) return
 
       const entry = terminalRegistry.getEntry(panelId)
       if (entry) {
-        entry.terminal.paste(escaped.join(' '))
+        entry.terminal.paste(formatTerminalPaste(refs))
       }
     },
     [panelId],

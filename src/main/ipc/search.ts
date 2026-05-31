@@ -35,7 +35,7 @@ function sanitize(raw: Partial<SearchOptions> | undefined): SearchOptions {
     wholeWord: !!raw?.wholeWord,
     includes: stringArray(raw?.includes),
     excludes: stringArray(raw?.excludes),
-    contextLines: clampInt(raw?.contextLines, 0, 0, 10),
+    respectIgnore: raw?.respectIgnore !== false,
     maxResults: clampInt(raw?.maxResults, 5000, 1, 20000),
   }
 }

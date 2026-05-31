@@ -15,6 +15,7 @@ import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import type { Point, PanelType } from '../../shared/types'
 import { openFileAsPanel } from '../lib/fileRouting'
+import { setPendingReveal } from '../lib/editorReveal'
 
 // Module-level style injection — shared across all Canvas instances
 let canvasStyleInjected = false
@@ -273,6 +274,12 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     // Support internal multi-file drops…
     const multiData = e.dataTransfer.getData('application/cate-files')
     const singlePath = e.dataTransfer.getData('application/cate-file')
+    // Optional open-at-line payload (dragging a specific search-result line).
+    let lineReveal: { path: string; line: number; column?: number } | null = null
+    const lineRaw = e.dataTransfer.getData('application/cate-file-line')
+    if (lineRaw) {
+      try { lineReveal = JSON.parse(lineRaw) } catch { /* ignore */ }
+    }
     let filePaths: string[] = []
     if (multiData) {
       try { filePaths = JSON.parse(multiData) } catch { /* ignore */ }
@@ -290,6 +297,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     if (filePaths.length === 0) return
 
     e.preventDefault()
+    e.stopPropagation()
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
     const viewPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top }
@@ -309,7 +317,10 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         // Drop of a folder → spawn a terminal scoped to that path.
         useAppStore.getState().createTerminal(wsId, undefined, pos, undefined, filePath)
       } else {
-        openFileAsPanel(wsId, filePath, pos)
+        const panelId = openFileAsPanel(wsId, filePath, pos)
+        if (panelId && lineReveal && lineReveal.path === filePath) {
+          setPendingReveal(panelId, { line: lineReveal.line, column: lineReveal.column })
+        }
       }
       offsetX += 40
     }

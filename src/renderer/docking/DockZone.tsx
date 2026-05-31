@@ -4,12 +4,15 @@
 // Registers as a drop zone for dock-aware drag-and-drop.
 // =============================================================================
 
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useDockStoreContext } from '../stores/DockStoreContext'
 import type { DockZonePosition, DockLayoutNode, PanelState } from '../../shared/types'
 import DockTabStack from './DockTabStack'
 import DockSplitContainer from './DockSplitContainer'
 import { registerDropZone } from '../drag'
+import { openFileAsPanel } from '../lib/fileRouting'
+import { setPendingReveal } from '../lib/editorReveal'
+import { useAppStore } from '../stores/appStore'
 
 interface DockZoneProps {
   position: DockZonePosition
@@ -34,6 +37,79 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
       getRect: () => zoneRef.current?.getBoundingClientRect() ?? null,
     })
   }, [position])
+
+  // Native file drop (from Search results, the Explorer, or the OS) → open the
+  // file(s) as editor tabs in this zone. The canvas handles its own area and
+  // stops propagation, so canvas drops still open floating nodes.
+  const [fileDragOver, setFileDragOver] = useState(false)
+  const dragDepthRef = useRef(0)
+  const isFileDrag = (e: React.DragEvent): boolean =>
+    e.dataTransfer.types.includes('application/cate-file') || e.dataTransfer.types.includes('Files')
+
+  const handleFileDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (isFileDrag(e)) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
+
+  const handleFileDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(e)) return
+    dragDepthRef.current += 1
+    setFileDragOver(true)
+  }, [])
+
+  const handleFileDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(e)) return
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setFileDragOver(false)
+  }, [])
+
+  const handleFileDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      dragDepthRef.current = 0
+      setFileDragOver(false)
+      const multiData = e.dataTransfer.getData('application/cate-files')
+      const singlePath = e.dataTransfer.getData('application/cate-file')
+      let paths: string[] = []
+      if (multiData) {
+        try { paths = JSON.parse(multiData) } catch { /* ignore */ }
+      }
+      if (paths.length === 0 && singlePath) paths = [singlePath]
+      if (paths.length === 0 && e.dataTransfer.files.length > 0) {
+        for (const f of Array.from(e.dataTransfer.files)) {
+          const p = (f as { path?: string }).path
+          if (p) paths.push(p)
+        }
+      }
+      if (paths.length === 0) return
+
+      e.preventDefault()
+      e.stopPropagation()
+
+      let lineReveal: { path: string; line: number; column?: number } | null = null
+      const lineRaw = e.dataTransfer.getData('application/cate-file-line')
+      if (lineRaw) {
+        try { lineReveal = JSON.parse(lineRaw) } catch { /* ignore */ }
+      }
+
+      const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
+      if (!wsId) return
+      for (const filePath of paths) {
+        let isDir = false
+        try {
+          const st = await window.electronAPI.fsStat(filePath)
+          isDir = !!st?.isDirectory
+        } catch { /* treat as file */ }
+        if (isDir) continue // dock tabs don't host folders
+        const panelId = openFileAsPanel(wsId, filePath, undefined, { target: 'dock', zone: position })
+        if (panelId && lineReveal && lineReveal.path === filePath) {
+          setPendingReveal(panelId, { line: lineReveal.line, column: lineReveal.column })
+        }
+      }
+    },
+    [workspaceId, position],
+  )
 
   const renderNode = useCallback(
     (node: DockLayoutNode, leftEdge = false, rightEdge = false): React.ReactNode => {
@@ -82,12 +158,24 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
   return (
     <div
       ref={zoneRef}
+      data-dock-zone={position}
       className={`flex flex-col overflow-hidden relative ${isCenter ? 'bg-canvas-bg' : 'bg-surface-4'}`}
       style={style}
+      onDragEnter={handleFileDragEnter}
+      onDragOver={handleFileDragOver}
+      onDragLeave={handleFileDragLeave}
+      onDrop={handleFileDrop}
     >
       {zone.layout ? renderNode(zone.layout, true, true) : (
         // Empty center zone — show background
         isCenter && <div className="w-full h-full" />
+      )}
+      {fileDragOver && (
+        <div className="absolute inset-0 z-30 pointer-events-none ring-2 ring-inset ring-blue-500/60 bg-blue-500/10 flex items-start justify-center">
+          <span className="mt-3 text-xs text-primary bg-surface-2 px-2 py-1 rounded border border-subtle shadow-lg">
+            Drop to open here
+          </span>
+        </div>
       )}
     </div>
   )

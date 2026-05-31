@@ -320,9 +320,10 @@ export function useShortcuts(): void {
       const ui = useUIStore.getState()
 
       // Single-key tool/navigation shortcuts (V, H, arrows) must not fire while
-      // typing in a terminal/editor, or steal arrows from the open overlays.
+      // typing in a terminal/editor, or steal arrows from the open overlays or a
+      // keyboard-navigable list (e.g. the Search results tree, marked data-keynav).
       if (TOOL_AND_NAV_ACTIONS.has(action)) {
-        if (terminalHasFocus || isTextSurfaceFocused()) return
+        if (terminalHasFocus || isTextSurfaceFocused() || isKeyNavFocused()) return
         const navOnly = action !== 'toolSelect' && action !== 'toolHand'
         if (navOnly && (ui.showNodeSwitcher || ui.showCommandPalette)) return
       }
@@ -380,6 +381,14 @@ export function useShortcuts(): void {
       if (active.getAttribute('contenteditable') === 'true') return true
       if (active.closest('[contenteditable="true"]')) return true
       return false
+    }
+
+    /** True when focus is inside a list that handles its own arrow keys (e.g.
+     *  the Search results tree). Such surfaces opt out via `data-keynav` so the
+     *  global canvas-navigation shortcuts don't steal their arrow keys. */
+    function isKeyNavFocused(): boolean {
+      const active = document.activeElement as HTMLElement | null
+      return !!active?.closest('[data-keynav]')
     }
 
     document.addEventListener('keydown', handleKeyDown, { capture: true })

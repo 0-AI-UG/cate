@@ -11,9 +11,9 @@ import type { SearchOptions } from '../../shared/types'
  *
  * @param opts          the user's search options
  * @param rootPath      directory to search (passed as the final positional arg)
- * @param extraExcludes project-level directory/file names to always exclude
- *                      (parity with the Explorer exclusion set); each becomes a
- *                      negated glob.
+ * @param extraExcludes project-level directory/file names to exclude (parity
+ *                      with the Explorer exclusion set); applied only when
+ *                      respectIgnore is not disabled. Each becomes a negated glob.
  */
 export function buildRipgrepArgs(
   opts: SearchOptions,
@@ -35,9 +35,12 @@ export function buildRipgrepArgs(
   // pattern literal.
   if (!opts.isRegex) args.push('--fixed-strings')
 
-  // Context lines around each match.
-  if (opts.contextLines && opts.contextLines > 0) {
-    args.push('--context', String(Math.floor(opts.contextLines)))
+  // Ignore handling. respectIgnore defaults to true. When explicitly false,
+  // search ignored + hidden files too (VS Code's gear toggle turned off) and
+  // skip the project exclusion set.
+  const respectIgnore = opts.respectIgnore !== false
+  if (!respectIgnore) {
+    args.push('--no-ignore', '--hidden')
   }
 
   // Include globs (whitelist). A glob without a slash matches at any depth,
@@ -47,13 +50,16 @@ export function buildRipgrepArgs(
     if (g) args.push('--glob', g)
   }
 
-  // Exclude globs — user-provided first, then project-level excludes.
+  // Exclude globs — user-provided always apply; project-level excludes only
+  // when respecting ignore files.
   for (const raw of opts.excludes ?? []) {
     const g = raw.trim()
     if (g) args.push('--glob', `!${g}`)
   }
-  for (const name of extraExcludes) {
-    if (name) args.push('--glob', `!${name}`)
+  if (respectIgnore) {
+    for (const name of extraExcludes) {
+      if (name) args.push('--glob', `!${name}`)
+    }
   }
 
   // Pattern via -e so a query starting with "-" is never mistaken for a flag,

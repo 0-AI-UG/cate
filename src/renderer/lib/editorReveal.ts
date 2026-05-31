@@ -17,9 +17,13 @@ export interface EditorReveal {
 
 const pending = new Map<string, EditorReveal>()
 
+/** Last reveal requested, kept for e2e assertions (not consumed by editors). */
+let lastReveal: (EditorReveal & { panelId: string }) | null = null
+
 /** Record where a freshly-created editor panel should jump once it mounts. */
 export function setPendingReveal(panelId: string, reveal: EditorReveal): void {
   pending.set(panelId, reveal)
+  lastReveal = { panelId, ...reveal }
 }
 
 /** Consume the pending reveal for a panel (one-shot — cleared on read). */
@@ -27,4 +31,9 @@ export function takePendingReveal(panelId: string): EditorReveal | undefined {
   const reveal = pending.get(panelId)
   if (reveal) pending.delete(panelId)
   return reveal
+}
+
+/** The most recent reveal request (for tests). Persists across consumption. */
+export function getLastReveal(): (EditorReveal & { panelId: string }) | null {
+  return lastReveal
 }

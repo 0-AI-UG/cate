@@ -28,12 +28,12 @@ import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
 // Mirrors the Swift sfSymbolName mapping from FileTreeNode.swift
 // -----------------------------------------------------------------------------
 
-interface IconDef {
+export interface IconDef {
   icon: React.ReactNode
   color: string
 }
 
-function getFileIcon(extension: string, isDirectory: boolean, isExpanded: boolean): IconDef {
+export function getFileIcon(extension: string, isDirectory: boolean, isExpanded: boolean): IconDef {
   if (isDirectory) {
     return isExpanded ? ICON_FOLDER_OPEN : ICON_FOLDER
   }

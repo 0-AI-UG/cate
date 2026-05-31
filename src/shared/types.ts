@@ -616,8 +616,11 @@ export interface SearchOptions {
   includes?: string[]
   /** Glob patterns to exclude (e.g. "*.lock", "dist/**"). */
   excludes?: string[]
-  /** Number of context lines to show before/after each match (default 0). */
-  contextLines?: number
+  /** When true (default), respect .gitignore/.ignore and the project exclusion
+   *  set. When false, also search ignored and hidden files (ripgrep
+   *  --no-ignore --hidden), like VS Code's "Use Exclude Settings and Ignore
+   *  Files" toggle turned off. */
+  respectIgnore?: boolean
   /** Hard cap on total matches before the search is truncated (default 5000). */
   maxResults?: number
 }
