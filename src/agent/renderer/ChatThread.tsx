@@ -7,7 +7,7 @@
 // expands what they want to see.
 // =============================================================================
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRenderCount } from '../../renderer/lib/perf/perfClient'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -20,6 +20,7 @@ import {
   Copy,
   ClipboardText,
   ArrowClockwise,
+  ArrowDown,
   WarningCircle,
   Info,
 } from '@phosphor-icons/react'
@@ -33,6 +34,10 @@ import type {
 } from './agentStore'
 import { deriveDiff } from './agentStore'
 import { cateToolDisplay, cateActionName, cateToolFields, type CateField } from './cateToolDisplay'
+
+// Per-conversation scroll memory — survives the dock-tab unmount/remount cycle.
+// Transient UI state, intentionally module-level (not persisted to disk/store).
+const scrollMemory = new Map<string, { top: number; atBottom: boolean }>()
 
 interface ChatThreadProps {
   messages: AgentMessage[]
@@ -53,11 +58,70 @@ interface ChatThreadProps {
   /** Connection retry state — rendered inline at the tail of the chat. */
   retry?: RetryState
   onAbortRetry?: () => void
+  /** Stable per-conversation key — used to remember/restore scroll position
+   *  across the dock-tab unmount/remount cycle. */
+  scrollKey: string
 }
 
-export function ChatThread({ messages, pendingApprovals, onApproval, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry }: ChatThreadProps) {
+export function ChatThread({ messages, pendingApprovals, onApproval, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry, scrollKey }: ChatThreadProps) {
   useRenderCount('ChatThread')
   const scrollRef = useRef<HTMLDivElement>(null)
+  // Button visibility — init true so it never flashes before the first measure.
+  const [atBottom, setAtBottom] = useState(true)
+
+  const scrollToBottom = (smooth: boolean) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  }
+
+  // Restore the remembered position when the panel mounts/remounts (e.g. after
+  // a dock-tab switch) or when switching between conversations. A new chat with
+  // no saved entry opens at the bottom; a chat the user had scrolled to the
+  // bottom of re-pins to the newest message; otherwise the exact offset is
+  // restored. useLayoutEffect runs before paint, so there's no flash at the top.
+  const restoreScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const saved = scrollMemory.get(scrollKey)
+    if (!saved || saved.atBottom) {
+      scrollToBottom(false)
+      setAtBottom(true)
+    } else {
+      el.scrollTop = saved.top
+      setAtBottom(false)
+    }
+  }
+
+  useLayoutEffect(() => {
+    restoreScroll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollKey])
+
+  // Re-restore when the container goes from hidden to visible without a remount
+  // (the display:none case, which also resets scrollTop to 0 on reshow).
+  const wasVisibleRef = useRef(true)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries[0]?.isIntersecting ?? false
+      if (visible && !wasVisibleRef.current) restoreScroll()
+      wasVisibleRef.current = visible
+    }, { threshold: 0 })
+    io.observe(el)
+    return () => io.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollKey])
+
+  const handleScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    const bottom = distance < 120
+    setAtBottom(bottom)
+    scrollMemory.set(scrollKey, { top: el.scrollTop, atBottom: bottom })
+  }
 
   const last = messages[messages.length - 1]
 
@@ -90,8 +154,10 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
     if (distance < 120) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      setAtBottom(true)
+      scrollMemory.set(scrollKey, { top: el.scrollHeight, atBottom: true })
     }
-  }, [messages.length, last])
+  }, [messages.length, last, scrollKey])
 
   // Find the last message that actually renders visible content — skip empty
   // streaming assistant stubs so the *previous* real item gets the shimmer.
@@ -115,8 +181,10 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
   }
 
   return (
+    <div className="relative flex-1 min-h-0 flex flex-col">
     <div
       ref={scrollRef}
+      onScroll={handleScroll}
       className="flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0"
     >
       {messages.map((m, idx) => {
@@ -165,6 +233,17 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
       {retry && (retry.active || retry.finalError) && (
         <RetryIndicator state={retry} onAbort={onAbortRetry} />
       )}
+    </div>
+    {!atBottom && (
+      <button
+        onClick={() => { scrollToBottom(true); setAtBottom(true) }}
+        title="Scroll to bottom"
+        aria-label="Scroll to bottom"
+        className="absolute bottom-3 right-3 z-10 p-2 rounded-full bg-surface-2 border border-white/10 text-muted hover:text-primary shadow-lg cate-fade-in"
+      >
+        <ArrowDown size={14} weight="bold" />
+      </button>
+    )}
     </div>
   )
 }
