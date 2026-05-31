@@ -13,6 +13,7 @@ import {
 import type { ProjectWorkspaceFile, ProjectSessionFile, MultiWorkspaceSession, SessionSnapshot, DockLayoutNode, WindowDockState } from '../shared/types'
 import { toRelativePath } from '../shared/pathUtils'
 import { broadcastToAll } from './windowRegistry'
+import { ensureCateGitignore } from './cateGitignore'
 
 const CATE_DIR = '.cate'
 const WORKSPACE_FILE = 'workspace.json'
@@ -157,6 +158,7 @@ export async function saveProjectState(
 ): Promise<void> {
   const wsJson = JSON.stringify(workspace, null, 2)
   const sessJson = JSON.stringify(session, null, 2)
+  await ensureCateGitignore(cateDir(rootPath))
   await Promise.all([
     atomicWrite(workspacePath(rootPath), wsJson),
     atomicWrite(sessionPath(rootPath), sessJson),
@@ -388,6 +390,7 @@ export function registerProjectStateHandlers(): void {
       const sessJson = JSON.stringify(session, null, 2)
       lastSavedProjectStates.set(rootPath, { workspace: wsJson, session: sessJson })
       await enqueueSave(rootPath, async () => {
+        await ensureCateGitignore(cateDir(rootPath))
         // session.json is machine-local and never hand-edited, so always write it.
         const writes: Promise<void>[] = [atomicWrite(sessionPath(rootPath), sessJson)]
         if (await workspaceEditedExternallyAsync(rootPath)) {
