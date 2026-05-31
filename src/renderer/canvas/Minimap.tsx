@@ -40,9 +40,6 @@ function themedPanelColor(panelType: string): string {
     case 'terminal':
     case 'browser':
     case 'editor':
-    case 'git':
-    case 'fileExplorer':
-    case 'projectList':
     case 'canvas':
       return `var(--panel-${panelType})`
     default:

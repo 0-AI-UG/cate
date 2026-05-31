@@ -7,7 +7,7 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import type { PanelType } from '../../shared/types'
-import { Terminal as TerminalIcon, Globe, FileText, GitBranch, TreeStructure, SquaresFour, List } from '@phosphor-icons/react'
+import { Terminal as TerminalIcon, Globe, FileText, SquaresFour } from '@phosphor-icons/react'
 
 export type SplitMenuItem = { type: PanelType; label: string; Icon: React.ComponentType<any> }
 
@@ -16,10 +16,7 @@ export const SPLIT_MENU_ITEMS: SplitMenuItem[] = [
   { type: 'editor', label: 'Editor', Icon: FileText },
   { type: 'terminal', label: 'Terminal', Icon: TerminalIcon },
   { type: 'browser', label: 'Browser', Icon: Globe },
-  { type: 'fileExplorer', label: 'File Explorer', Icon: TreeStructure },
-  { type: 'git', label: 'Git', Icon: GitBranch },
   { type: 'canvas', label: 'Canvas', Icon: SquaresFour },
-  { type: 'projectList', label: 'Projects', Icon: List },
 ]
 
 export interface DockTabContextMenuProps {
