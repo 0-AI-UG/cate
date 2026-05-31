@@ -19,6 +19,15 @@ export function CanvasSettings() {
           onChange={(v) => store.setSetting('autoFocusLargestVisibleNode', v)}
         />
       </SettingRow>
+      <SettingRow
+        label="Snap to grid"
+        description="Align panels to the canvas grid while dragging and resizing. Hold Alt to bypass it temporarily (except when dragging between windows)."
+      >
+        <Toggle
+          checked={store.snapToGrid}
+          onChange={(v) => store.setSetting('snapToGrid', v)}
+        />
+      </SettingRow>
       <SettingRow label="Canvas background">
         <Select
           value={store.canvasGridStyle}

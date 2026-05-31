@@ -24,6 +24,7 @@ import {
 } from '../../shared/types'
 import {
   autoLayoutAll as computeAutoLayoutAll,
+  CANVAS_GRID_SIZE,
 } from '../canvas/layoutEngine'
 import { viewToCanvas as viewToCanvasCoords } from '../lib/coordinates'
 import { REGION_FILL_COLORS } from '../../shared/colors'
@@ -210,7 +211,7 @@ function findFreePosition(
   }
 
   const gap = 40
-  const grid = 20
+  const grid = CANVAS_GRID_SIZE
   const snap = (v: number) => Math.round(v / grid) * grid
 
   const overlaps = (p: Point) => {

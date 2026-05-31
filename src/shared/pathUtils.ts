@@ -10,6 +10,10 @@ export function toAbsolutePath(relPath: string, rootPath: string): string {
   const normRoot = rootPath.replace(/\\/g, '/').replace(/\/$/, '')
   const normRel = relPath.replace(/\\/g, '/')
   const joined = normRoot + '/' + normRel
-  if (process.platform === 'win32') return joined.replace(/\//g, '\\')
+  // Derive the platform from the root path itself rather than `process.platform`:
+  // this helper also runs in the renderer (workspace restore), where there is no
+  // Node `process` global — referencing it there throws "process is not defined".
+  const isWindowsRoot = /^[A-Za-z]:/.test(rootPath) || rootPath.includes('\\')
+  if (isWindowsRoot) return joined.replace(/\//g, '\\')
   return joined
 }
