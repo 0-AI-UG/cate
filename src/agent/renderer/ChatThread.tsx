@@ -33,7 +33,7 @@ import type {
   ToolMessage,
 } from './agentStore'
 import { deriveDiff } from './agentStore'
-import { cateToolDisplay, cateActionName, cateToolFields, type CateField } from './cateToolDisplay'
+import { cateToolDisplay, cateActionName, cateToolFields, isCateTool, type CateField } from './cateToolDisplay'
 
 // Per-conversation scroll memory — survives the dock-tab unmount/remount cycle.
 // Transient UI state, intentionally module-level (not persisted to disk/store).
@@ -374,7 +374,7 @@ function MessageRow({
         : 'text-muted'
     return <div className={`text-center text-[11px] italic ${tone}`}>{msg.text}</div>
   }
-  if (msg.type === 'tool' && msg.name.startsWith('cate:')) {
+  if (msg.type === 'tool' && isCateTool(msg.name)) {
     return <CateToolCard msg={msg} shimmer={shimmer} />
   }
   if (msg.type === 'tool' && msg.name === 'subagent') {
@@ -632,22 +632,23 @@ function CateTerminalOutput({ text, lineCount }: { text: string; lineCount?: num
       {typeof lineCount === 'number' && (
         <div className="text-[10.5px] text-muted mb-0.5">{lineCount} line{lineCount === 1 ? '' : 's'}</div>
       )}
-      <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto rounded bg-black/20 px-2 py-1">
+      <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
         {text || '(no output)'}
       </pre>
     </div>
   )
 }
 
-// `layout get` result: one compact row per open panel — type + title (never the
-// raw panelId), with focused/self tags.
+// `layout get` result: one compact row per open panel — stable id + type +
+// title, with focused/self tags. The id is the handle the agent targets by.
 function CatePanelList({ panels }: { panels: Array<Record<string, unknown>> }) {
   if (!panels.length) return <div className="text-[11px] text-muted font-mono leading-snug">No open panels.</div>
   return (
     <div className="space-y-0.5">
       {panels.map((p, i) => (
-        <div key={String(p.panelId ?? i)} className="flex items-center gap-2 text-[11px] font-mono leading-snug">
-          <span className="text-muted shrink-0 w-[68px]">{String(p.type ?? 'panel')}</span>
+        <div key={String(p.id ?? i)} className="flex items-center gap-2 text-[11px] font-mono leading-snug">
+          <span className="text-agent-light shrink-0 w-7">{String(p.id ?? '')}</span>
+          <span className="text-muted shrink-0 w-[56px]">{String(p.type ?? 'panel')}</span>
           <span className="truncate text-primary/85 flex-1">{String(p.title || '(untitled)')}</span>
           {p.focused === true && <span className="text-[10px] text-agent-light shrink-0">focused</span>}
           {p.isSelf === true && <span className="text-[10px] text-muted shrink-0">self</span>}
@@ -655,6 +656,47 @@ function CatePanelList({ panels }: { panels: Array<Record<string, unknown>> }) {
       ))}
     </div>
   )
+}
+
+// Browser-control result body. Only renders genuinely NEW information (read text,
+// eval result, info/state, screenshot path); navigate + history ops just echo
+// their input (already shown by the field rows), so they render nothing.
+function CateBrowserResult({ op, rec }: { op: string; rec: Record<string, unknown> }) {
+  if (op === 'read') {
+    const text = typeof rec.text === 'string' ? rec.text : ''
+    return (
+      <div>
+        {rec.truncated === true && <div className="text-[10.5px] text-muted mb-0.5">truncated</div>}
+        <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
+          {text || '(empty)'}
+        </pre>
+      </div>
+    )
+  }
+  if (op === 'eval') {
+    const v = rec.result
+    return (
+      <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
+        {v === undefined ? 'undefined' : String(v)}
+      </pre>
+    )
+  }
+  if (op === 'info') {
+    return (
+      <CateFieldRows
+        fields={[
+          { label: 'url', value: String(rec.url ?? '') },
+          { label: 'title', value: String(rec.title ?? '') },
+          { label: 'back', value: rec.canGoBack ? 'yes' : 'no' },
+          { label: 'forward', value: rec.canGoForward ? 'yes' : 'no' },
+        ]}
+      />
+    )
+  }
+  if (op === 'screenshot') {
+    return <CateFieldRows fields={[{ label: 'file', value: String(rec.filePath ?? '') }]} />
+  }
+  return null
 }
 
 function parseCateResult(result?: string): unknown {
@@ -684,6 +726,9 @@ function CateToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean })
     if (action === 'layout' && Array.isArray(rec?.panels)) {
       return <CatePanelList panels={rec.panels as Array<Record<string, unknown>>} />
     }
+    if (action === 'browser' && rec) {
+      return <CateBrowserResult op={typeof params.op === 'string' ? params.op : ''} rec={rec} />
+    }
     if (!rec && typeof result === 'string' && result) {
       return (
         <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
@@ -692,7 +737,7 @@ function CateToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean })
       )
     }
     return null
-  }, [action, result])
+  }, [action, result, params])
 
   const isRunning = msg.status === 'running' || msg.status === 'pending'
   const isDenied = msg.status === 'denied'
@@ -710,11 +755,7 @@ function CateToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean })
       {expanded && hasExtras && (
         <div className="mt-1 pl-4 space-y-1.5 select-text cursor-text">
           {fields.length > 0 && <CateFieldRows fields={fields} />}
-          {resultNode && (
-            <div className={fields.length > 0 ? 'border-t border-white/5 pt-1.5' : undefined}>
-              {resultNode}
-            </div>
-          )}
+          {resultNode}
           {isDenied && (
             <div className="text-[11px] text-muted font-mono leading-snug">Denied by user</div>
           )}

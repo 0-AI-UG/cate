@@ -19,7 +19,7 @@ vi.mock('../../renderer/lib/logger', () => ({
 
 // execOpenPanel routes file opens through openFileAsPanel (not createEditor directly).
 vi.mock('../../renderer/lib/fileRouting', () => ({
-  openFileAsPanel: vi.fn(() => 'panel-ed'),
+  openFileAsPanel: vi.fn(() => 'ed-panel'),
 }))
 vi.mock('../../renderer/lib/editorReveal', () => ({
   setPendingReveal: vi.fn(),
@@ -38,19 +38,19 @@ vi.mock('../../renderer/stores/appStore', () => {
     __closed: closed,
     useAppStore: {
       getState: () => ({
-        createEditor: (...a: any[]) => { created.push(['editor', ...a]); return 'panel-ed' },
-        createTerminal: (...a: any[]) => { created.push(['terminal', ...a]); return 'panel-tm' },
-        createBrowser: (...a: any[]) => { created.push(['browser', ...a]); return 'panel-br' },
-        createDocument: (...a: any[]) => { created.push(['document', ...a]); return 'panel-doc' },
+        createEditor: (...a: any[]) => { created.push(['editor', ...a]); return 'ed-panel' },
+        createTerminal: (...a: any[]) => { created.push(['terminal', ...a]); return 'tm-panel' },
+        createBrowser: (...a: any[]) => { created.push(['browser', ...a]); return 'br-panel' },
+        createDocument: (...a: any[]) => { created.push(['document', ...a]); return 'doc-panel' },
         closePanel: (...a: any[]) => { closed.push(a) },
         updatePanelUrl: (...a: any[]) => { created.push(['url', ...a]) },
         setPanelMarkdownPreview: (...a: any[]) => { created.push(['mdpreview', ...a]) },
-        ensurePanelAgentId: (_wsId: string, panelId: string) =>
-          (({ 'panel-ed': 'p1', 'panel-tm': 'p2', 'panel-br': 'p3' } as Record<string, string>)[panelId] ?? `p-${panelId}`),
         workspaces: [{ id: 'w1', panels: {
-          'panel-ed': { id: 'panel-ed', type: 'editor', title: 'a.ts', filePath: 'a.ts', agentId: 'p1' },
-          'panel-tm': { id: 'panel-tm', type: 'terminal', title: 'Terminal 1', agentId: 'p2' },
-          'panel-br': { id: 'panel-br', type: 'browser', title: 'Browser', agentId: 'p3' },
+          // The agent-facing id is the first 6 chars of these (e.g. "ed-pan");
+          // they're given distinct 6-char prefixes so the short ids don't collide.
+          'ed-panel': { id: 'ed-panel', type: 'editor', title: 'a.ts', filePath: 'a.ts' },
+          'tm-panel': { id: 'tm-panel', type: 'terminal', title: 'Terminal 1' },
+          'br-panel': { id: 'br-panel', type: 'browser', title: 'Browser' },
         } }],
         selectedWorkspaceId: 'w1',
       }),
@@ -71,9 +71,9 @@ beforeEach(async () => {
   mod.__closed.length = 0
   vi.mocked(openFileAsPanel).mockClear()
   vi.mocked(terminalRegistry.getEntry).mockReturnValue({ ptyId: 'pty-1' } as any)
-  // Stand in for the live <webview> of the mock 'Browser' panel (id 'panel-br').
+  // Stand in for the live <webview> of the mock 'Browser' panel (id 'br-panel').
   browserEvalResult = ''
-  portalRegistry.register('panel-br', {
+  portalRegistry.register('br-panel', {
     getWebContentsId: () => 1,
     getURL: () => 'https://example.com',
     getTitle: () => 'Example',
@@ -88,7 +88,7 @@ describe('execOpenPanel', () => {
   it('opens an editor with a file path via openFileAsPanel and reports its id + title', async () => {
     const res = await execOpenPanel({ type: 'editor', target: { path: 'a.ts' } }, ctxWith(), 'k1')
     expect(res.ok).toBe(true)
-    expect((res.result as any).id).toBe('p1')
+    expect((res.result as any).id).toBe('ed-pan')
     expect((res.result as any).title).toBe('a.ts')
     expect((res.result as any).type).toBe('editor')
     expect(openFileAsPanel).toHaveBeenCalledWith('w1', 'a.ts')
@@ -108,22 +108,22 @@ describe('execOpenPanel', () => {
 
   it('focuses the panel it opens so it lands in view (open-focus fix)', async () => {
     const store = createCanvasStore()
-    store.getState().addNode('panel-br', 'browser', { x: 800, y: 800 }, { width: 100, height: 100 })
+    store.getState().addNode('br-panel', 'browser', { x: 800, y: 800 }, { width: 100, height: 100 })
     const res = await execOpenPanel({ type: 'browser', target: { url: 'https://example.com' } }, ctxWith(store), 'k1')
     expect(res.ok).toBe(true)
-    expect(store.getState().focusedNodeId).toBe(store.getState().nodeForPanel('panel-br'))
+    expect(store.getState().focusedNodeId).toBe(store.getState().nodeForPanel('br-panel'))
   })
 
   it('never moves the camera and drops the new panel at the viewport center', async () => {
     const store = createCanvasStore()
     store.getState().setContainerSize({ width: 1000, height: 1000 })
-    store.getState().addNode('panel-br', 'browser', { x: 5000, y: 5000 }, { width: 100, height: 100 })
+    store.getState().addNode('br-panel', 'browser', { x: 5000, y: 5000 }, { width: 100, height: 100 })
     const offsetBefore = { ...store.getState().viewportOffset }
     const zoomBefore = store.getState().zoomLevel
     await execOpenPanel({ type: 'browser', target: { url: 'https://example.com' } }, ctxWith(store), 'k1')
     expect(store.getState().viewportOffset).toEqual(offsetBefore)
     expect(store.getState().zoomLevel).toBe(zoomBefore)
-    const nodeId = store.getState().nodeForPanel('panel-br')!
+    const nodeId = store.getState().nodeForPanel('br-panel')!
     expect(store.getState().nodes[nodeId].origin).toEqual({ x: 450, y: 450 })
   })
 
@@ -131,7 +131,7 @@ describe('execOpenPanel', () => {
     const res = await execOpenPanel({ type: 'editor', target: { path: 'README.md', preview: true } }, ctxWith(), 'k1')
     expect(res.ok).toBe(true)
     const mod: any = await import('../../renderer/stores/appStore')
-    expect(mod.__created.find((c: any[]) => c[0] === 'mdpreview')).toEqual(['mdpreview', 'w1', 'panel-ed', true])
+    expect(mod.__created.find((c: any[]) => c[0] === 'mdpreview')).toEqual(['mdpreview', 'w1', 'ed-panel', true])
   })
 })
 
@@ -147,14 +147,14 @@ describe('execClosePanel', () => {
     expect(res.ok).toBe(true)
     expect((res.result as any).closed).toBe('a.ts')
     const mod: any = await import('../../renderer/stores/appStore')
-    expect(mod.__closed[0]).toEqual(['w1', 'panel-ed'])
+    expect(mod.__closed[0]).toEqual(['w1', 'ed-panel'])
   })
 
-  it('closes a panel addressed by its stable id (p1)', async () => {
-    const res = await execClosePanel({ panel: 'p1' }, ctxWith(), 'k1')
+  it('closes a panel addressed by its short id (UUID prefix)', async () => {
+    const res = await execClosePanel({ panel: 'ed-pan' }, ctxWith(), 'k1')
     expect(res.ok).toBe(true)
     const mod: any = await import('../../renderer/stores/appStore')
-    expect(mod.__closed[0]).toEqual(['w1', 'panel-ed'])
+    expect(mod.__closed[0]).toEqual(['w1', 'ed-panel'])
   })
 
   it("refuses to close the agent's own panel", async () => {
@@ -168,13 +168,13 @@ describe('execMovePanel', () => {
   it('moves a panel (by title) relative to another panel', async () => {
     const store = createCanvasStore()
     store.getState().setContainerSize({ width: 1000, height: 1000 })
-    store.getState().addNode('panel-ed', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
-    store.getState().addNode('panel-tm', 'terminal', { x: 600, y: 0 }, { width: 100, height: 100 })
+    store.getState().addNode('ed-panel', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    store.getState().addNode('tm-panel', 'terminal', { x: 600, y: 0 }, { width: 100, height: 100 })
     const res = await execMovePanel({ panel: 'a.ts', placement: { relativeTo: 'Terminal 1', position: 'right' } }, ctxWith(store), 'k1')
     expect(res.ok).toBe(true)
     expect((res.result as any).moved).toBe('a.ts')
     // Placed to the right of Terminal 1 (x 600 + width 100 + gap 40 = 740).
-    const node = store.getState().nodeForPanel('panel-ed')!
+    const node = store.getState().nodeForPanel('ed-panel')!
     expect(store.getState().nodes[node].origin.x).toBe(740)
   })
 
@@ -189,14 +189,14 @@ describe('execGetLayout', () => {
   it('reports panels with a stable id + title/type and an isSelf flag (no raw panelId)', async () => {
     const store = createCanvasStore()
     store.getState().addNode('host', 'agent', { x: 0, y: 0 }, { width: 200, height: 200 })
-    store.getState().addNode('panel-ed', 'editor', { x: 300, y: 0 }, { width: 200, height: 200 })
+    store.getState().addNode('ed-panel', 'editor', { x: 300, y: 0 }, { width: 200, height: 200 })
     const res = await execGetLayout({}, ctxWith(store), 'k1')
     expect(res.ok).toBe(true)
     const panels = (res.result as any).panels as any[]
     expect(panels.some((p) => p.isSelf)).toBe(true)
     expect(panels.find((p) => p.title === 'a.ts')?.type).toBe('editor')
-    // stable agent handle is exposed as `id` (e.g. "p1") for targeting.
-    expect(panels.find((p) => p.title === 'a.ts')?.id).toBe('p1')
+    // the short id (first 6 chars of the panel UUID) is exposed as `id`.
+    expect(panels.find((p) => p.title === 'a.ts')?.id).toBe('ed-pan')
     // the raw internal panelId is never leaked.
     expect(panels.every((p) => p.panelId === undefined)).toBe(true)
   })
@@ -221,7 +221,7 @@ describe('content executors', () => {
     expect(res.ok).toBe(true)
     expect((res.result as any).browser).toBe('Browser')
     const mod: any = await import('../../renderer/stores/appStore')
-    expect(mod.__created.find((c: any[]) => c[0] === 'url')).toEqual(['url', 'w1', 'panel-br', 'https://example.com'])
+    expect(mod.__created.find((c: any[]) => c[0] === 'url')).toEqual(['url', 'w1', 'br-panel', 'https://example.com'])
   })
 
   it('browser navigate rejects a non-url', async () => {
@@ -317,7 +317,7 @@ describe('terminal command reliability', () => {
 describe('op routers', () => {
   it('layout reads the canvas', async () => {
     const store = createCanvasStore()
-    store.getState().addNode('panel-ed', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    store.getState().addNode('ed-panel', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
     const res = await execGetLayout({}, ctxWith(store), 'k1')
     expect(res.ok).toBe(true)
     expect((res.result as any).panels).toBeDefined()
@@ -333,13 +333,13 @@ describe('op routers', () => {
     const res = await execPanel({ op: 'close', panel: 'a.ts' }, ctxWith(), 'k1')
     expect(res.ok).toBe(true)
     const mod: any = await import('../../renderer/stores/appStore')
-    expect(mod.__closed[0]).toEqual(['w1', 'panel-ed'])
+    expect(mod.__closed[0]).toEqual(['w1', 'ed-panel'])
   })
 
   it("execPanel routes op:'move'", async () => {
     const store = createCanvasStore()
     store.getState().setContainerSize({ width: 1000, height: 1000 })
-    store.getState().addNode('panel-ed', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    store.getState().addNode('ed-panel', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
     const res = await execPanel({ op: 'move', panel: 'a.ts' }, ctxWith(store), 'k1')
     expect(res.ok).toBe(true)
     expect((res.result as any).moved).toBe('a.ts')

@@ -305,6 +305,15 @@ export async function loadSessionTranscript(filePath: string): Promise<RendererM
       const isError = msg.isError === true
       const text = extractText(msg.content) ?? ''
       const subagent = tool.name === 'subagent' ? normalizeSubagent(msg.details) : undefined
+      // cate-control tools persist the structured CateControlResponse in
+      // `details` ({ ok, result, error }); the text content is just prose
+      // ("browser ok: {…}"). CateToolCard expects the JSON result, so rebuild
+      // it from details — mirroring the live round-trip in agentStore.
+      const cate = tool.name.startsWith('cate_') ? cateResultFromDetails(msg.details) : undefined
+      if (cate) {
+        out[idx] = { ...tool, ...cate }
+        continue
+      }
       out[idx] = {
         ...tool,
         status: isError ? 'error' : 'success',
@@ -328,6 +337,26 @@ export async function loadSessionTranscript(filePath: string): Promise<RendererM
 // ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
+
+/** Rebuild a tool message's status/result/error from a cate-control tool's
+ *  persisted `details` (the CateControlResponse). Returns undefined when the
+ *  details aren't shaped like a response, so the caller falls back to the prose
+ *  content. Result is JSON-stringified to match the live path, which CateToolCard
+ *  parses back into a structured object. */
+function cateResultFromDetails(
+  details: unknown,
+): Pick<RendererToolMessage, 'status' | 'result' | 'error'> | undefined {
+  if (!details || typeof details !== 'object') return undefined
+  const d = details as Record<string, unknown>
+  if (typeof d.ok !== 'boolean') return undefined
+  if (!d.ok) {
+    return { status: 'error', error: typeof d.error === 'string' ? d.error : 'Cate reported an error' }
+  }
+  return {
+    status: 'success',
+    result: d.result === undefined ? undefined : JSON.stringify(d.result),
+  }
+}
 
 function extractText(content: unknown): string {
   if (typeof content === 'string') return content

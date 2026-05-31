@@ -95,11 +95,6 @@ export interface PanelState {
   id: string
   type: PanelType
   title: string
-  /** Stable, short, human-friendly handle the Cate agent uses to target this
-   *  panel (e.g. "p1", "p2"). Assigned once at creation and never changed -
-   *  unlike `title`, which tracks the page/file and is only a display label.
-   *  Persisted so a handle keeps pointing at the same panel across restarts. */
-  agentId?: string
   isDirty: boolean
   filePath?: string
   url?: string
@@ -335,10 +330,6 @@ export interface WorkspaceState {
   rootPathError?: string | null
   isRootPathPending?: boolean
   panels: Record<string, PanelState>
-  /** Monotonic high-water counter for `PanelState.agentId` handles. Bumped on
-   *  every assignment and never decremented, so a closed panel's handle is
-   *  never reused within the workspace (an "p3" always means the same panel). */
-  agentSeq?: number
   // Primary canvas state (current behavior)
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>

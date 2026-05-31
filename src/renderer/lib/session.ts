@@ -609,7 +609,7 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
 
     switch (nodeSnap.panelType) {
       case 'terminal': {
-        const panelId = appStore.createTerminal(wsId, undefined, position)
+        const panelId = appStore.createTerminal(wsId, undefined, position, undefined, undefined, nodeSnap.panelId)
         // Restore the original title (e.g. "Sage", "Reviewer") instead of the
         // default "Terminal N" that createTerminal auto-assigned. Without this,
         // every cate-recruit'd terminal comes back as "Terminal 1/2/3..." on
@@ -634,7 +634,7 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
         break
       }
       case 'editor': {
-        const panelId = appStore.createEditor(wsId, nodeSnap.filePath ?? undefined)
+        const panelId = appStore.createEditor(wsId, nodeSnap.filePath ?? undefined, undefined, undefined, nodeSnap.panelId)
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         if (!nodeSnap.filePath && nodeSnap.unsavedContent) {
           appStore.setPanelUnsavedContent(wsId, panelId, nodeSnap.unsavedContent)
@@ -654,7 +654,7 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
         break
       }
       case 'browser': {
-        const panelId = appStore.createBrowser(wsId, nodeSnap.url ?? undefined)
+        const panelId = appStore.createBrowser(wsId, nodeSnap.url ?? undefined, undefined, undefined, nodeSnap.panelId)
         // Browser panels are addressed by their title in `cate portal` — same
         // reason as terminals, the saved name must come back.
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
@@ -673,7 +673,7 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
         break
       }
       case 'document': {
-        const panelId = appStore.createDocument(wsId, nodeSnap.filePath ?? undefined, nodeSnap.documentType, position)
+        const panelId = appStore.createDocument(wsId, nodeSnap.filePath ?? undefined, nodeSnap.documentType, position, undefined, nodeSnap.panelId)
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         const canvasState = getCanvasState()
         if (canvasState) {
@@ -690,7 +690,7 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
         break
       }
       case 'agent': {
-        const panelId = appStore.createAgent(wsId, position)
+        const panelId = appStore.createAgent(wsId, position, undefined, nodeSnap.panelId)
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         const canvasState = getCanvasState()
         if (canvasState) {

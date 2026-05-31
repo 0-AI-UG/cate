@@ -23,7 +23,7 @@ function toResult(action: string, res: CateResponse) {
 }
 
 const Placement = Type.Optional(Type.Object({
-  relativeTo: Type.Optional(Type.String({ description: "panel id (e.g. \"p1\") or 'self'" })),
+  relativeTo: Type.Optional(Type.String({ description: "panel id (e.g. \"a1b2c3\") or 'self'" })),
   position: Type.Optional(Type.Union([Type.Literal("right"), Type.Literal("left"), Type.Literal("above"), Type.Literal("below")])),
 }))
 
@@ -56,7 +56,7 @@ export default function (pi: ExtensionAPI) {
     })
 
   tool("cate_layout", "Read the canvas",
-    "Return the open panels - {id, title, type, focused, isSelf} for each. Target panels in the other cate tools by their `id` (e.g. \"p1\") - it is stable. `title` is only a display label and changes (a browser's title becomes the page title, etc.).",
+    "Return the open panels - {id, title, type, focused, isSelf} for each. Target panels in the other cate tools by their `id` (e.g. \"a1b2c3\") - it is stable. `title` is only a display label and changes (a browser's title becomes the page title, etc.).",
     Type.Object({}), "layout")
 
   tool("cate_panel", "Open, close, or move a panel",
@@ -65,7 +65,7 @@ export default function (pi: ExtensionAPI) {
       "- 'open': create a panel. {type: editor|terminal|browser|document, target?, placement?}. target: {path,line?,column?,preview?} for editor (preview:true opens a markdown file straight into rendered preview); {url} for browser; {cwd?,command?} for terminal. Returns the new panel's {id, title} - keep the id to target it later.",
       "- 'close': {panel} - the panel id.",
       "- 'move': {panel, placement:{relativeTo,position}} - reposition relative to another panel.",
-      "`panel` and placement.relativeTo are panel IDs like \"p1\" (from cate_layout or an open result), or 'self' for your own panel. This never pans or zooms the user's view.",
+      "`panel` and placement.relativeTo are panel IDs like \"a1b2c3\" (from cate_layout or an open result), or 'self' for your own panel. This never pans or zooms the user's view.",
     ].join("\n"),
     Type.Object({
       op: Type.Union([Type.Literal("open"), Type.Literal("close"), Type.Literal("move")]),
@@ -88,7 +88,7 @@ export default function (pi: ExtensionAPI) {
       "- 'read': the page's visible text, or one CSS selector's text. {panel, selector?}.",
       "- 'eval': run JavaScript in the page and return its result (use this to click, fill, or scroll). {panel, js}.",
       "- 'screenshot': capture the page to an image file. {panel}.",
-      "`panel` is a panel id (e.g. \"p1\", from cate_layout or the open result).",
+      "`panel` is a panel id (e.g. \"a1b2c3\", from cate_layout or the open result).",
     ].join("\n"),
     Type.Object({
       op: Type.Union([
@@ -96,7 +96,7 @@ export default function (pi: ExtensionAPI) {
         Type.Literal("reload"), Type.Literal("stop"), Type.Literal("info"),
         Type.Literal("read"), Type.Literal("eval"), Type.Literal("screenshot"),
       ]),
-      panel: Type.String({ description: "panel id, e.g. \"p1\"" }),
+      panel: Type.String({ description: "panel id, e.g. \"a1b2c3\"" }),
       url: Type.Optional(Type.String()),
       selector: Type.Optional(Type.String({ description: "CSS selector for read" })),
       js: Type.Optional(Type.String({ description: "JavaScript to run in the page for eval" })),
@@ -107,7 +107,7 @@ export default function (pi: ExtensionAPI) {
       "Drive a terminal panel. Choose `op`:",
       "- 'run': run a shell command. {command, panel? (reuse an existing terminal by id), newPanel?:bool (force a fresh one)}. Returns the terminal's {id, title}.",
       "- 'read': read recent output (visible screen + scrollback) as text. {panel, lines?:number (trailing lines, default 50, max 1000)}.",
-      "`panel` is a panel id (e.g. \"p1\").",
+      "`panel` is a panel id (e.g. \"a1b2c3\").",
     ].join("\n"),
     Type.Object({
       op: Type.Union([Type.Literal("run"), Type.Literal("read")]),

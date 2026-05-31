@@ -294,14 +294,17 @@ interface AppStoreActions {
   selectWorkspace: (id: string) => Promise<void>
   removeWorkspace: (id: string) => void
 
-  // Panel creation — each adds a PanelState to the workspace AND places it
-  createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement, cwd?: string) => string
-  createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement) => string
-  createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
+  // Panel creation — each adds a PanelState to the workspace AND places it.
+  // The trailing `id` is only passed by session restore, which reuses the
+  // panel's persisted UUID so its identity (and the agent-facing short id
+  // derived from it) survives a restart instead of being regenerated.
+  createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement, cwd?: string, id?: string) => string
+  createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement, id?: string) => string
+  createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement, id?: string) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
-  createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
-  createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
+  createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement, id?: string) => string
+  createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement, id?: string) => string
 
   // Ensure the center dock zone contains a canvas panel for the given workspace.
   // Covers session-restore and new-workspace paths where the center layout may
@@ -318,10 +321,6 @@ interface AppStoreActions {
    *  no longer fight the chosen name. */
   renamePanelByUser: (workspaceId: string, panelId: string, title: string) => void
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
-  /** Return the panel's stable agent handle ("p1", "p2", …), assigning the next
-   *  one (and persisting it) if the panel doesn't have one yet. Handles are
-   *  monotonic per workspace and never reused. */
-  ensurePanelAgentId: (workspaceId: string, panelId: string) => string
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
@@ -407,16 +406,7 @@ function addAndPlacePanel(
   set((state) => ({
     workspaces: state.workspaces.map((ws) => {
       if (ws.id !== workspaceId) return ws
-      // Assign the next stable agent handle at creation, so handles follow
-      // creation order ("p1" = first panel opened). Restored panels already
-      // carry their persisted handle and skip this.
-      const seq = (ws.agentSeq ?? 0) + 1
-      const placed: PanelState = panel.agentId ? panel : { ...panel, agentId: `p${seq}` }
-      return {
-        ...ws,
-        agentSeq: panel.agentId ? ws.agentSeq : seq,
-        panels: { ...ws.panels, [panel.id]: placed },
-      }
+      return { ...ws, panels: { ...ws.panels, [panel.id]: panel } }
     }),
   }))
   try {
@@ -738,8 +728,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   // --- Panel creation ---
 
-  createTerminal(workspaceId, initialInput?, position?, placement?, cwd?) {
-    const panelId = generateId()
+  createTerminal(workspaceId, initialInput?, position?, placement?, cwd?, id?) {
+    const panelId = id ?? generateId()
     // Auto-number terminal titles within the workspace so `cate ask "Terminal 2"`
     // and similar inter-panel calls can address each one unambiguously. Looks
     // for the highest existing "Terminal N" name and picks N+1.
@@ -765,8 +755,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
-  createBrowser(workspaceId, url?, position?, placement?) {
-    const panelId = generateId()
+  createBrowser(workspaceId, url?, position?, placement?, id?) {
+    const panelId = id ?? generateId()
     const panel: PanelState = {
       id: panelId,
       type: 'browser',
@@ -777,8 +767,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
-  createEditor(workspaceId, filePath?, position?, placement?) {
-    const panelId = generateId()
+  createEditor(workspaceId, filePath?, position?, placement?, id?) {
+    const panelId = id ?? generateId()
     const fileName = filePath ? filePath.split('/').pop() ?? 'Untitled' : 'Untitled'
     const panel: PanelState = {
       id: panelId,
@@ -790,8 +780,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
-  createDocument(workspaceId, filePath?, documentType?, position?, placement?) {
-    const panelId = generateId()
+  createDocument(workspaceId, filePath?, documentType?, position?, placement?, id?) {
+    const panelId = id ?? generateId()
     const fileName = filePath ? filePath.split('/').pop() ?? 'Document' : 'Document'
     const panel: PanelState = {
       id: panelId,
@@ -829,9 +819,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
-  createAgent(workspaceId, position?, placement?) {
+  createAgent(workspaceId, position?, placement?, id?) {
     const panel: PanelState = {
-      id: generateId(),
+      id: id ?? generateId(),
       type: 'agent',
       title: 'Agent',
       isDirty: false,
@@ -909,23 +899,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   updatePanelUrl(workspaceId, panelId, url) {
     setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, url }))
-  },
-
-  ensurePanelAgentId(workspaceId, panelId) {
-    const ws0 = get().workspaces.find((w) => w.id === workspaceId)
-    const existing = ws0?.panels[panelId]?.agentId
-    if (existing) return existing
-    const next = (ws0?.agentSeq ?? 0) + 1
-    const assigned = `p${next}`
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        const panel = ws.panels[panelId]
-        if (!panel || panel.agentId) return ws
-        return { ...ws, agentSeq: next, panels: { ...ws.panels, [panelId]: { ...panel, agentId: assigned } } }
-      }),
-    }))
-    return get().workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.agentId ?? assigned
   },
 
   updatePanelFilePath(workspaceId, panelId, filePath) {

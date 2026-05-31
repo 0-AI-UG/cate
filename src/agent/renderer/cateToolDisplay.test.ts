@@ -1,10 +1,24 @@
 import { describe, it, expect } from 'vitest'
-import { cateToolDisplay, cateActionName, cateToolFields } from './cateToolDisplay'
+import { cateToolDisplay, cateActionName, cateToolFields, isCateTool } from './cateToolDisplay'
 
 describe('cateActionName', () => {
-  it('strips the cate: prefix', () => {
+  it('strips the cate: prefix (live round-trip name)', () => {
     expect(cateActionName('cate:panel')).toBe('panel')
     expect(cateActionName('panel')).toBe('panel')
+  })
+  it('strips the cate_ prefix (raw pi name replayed on resume)', () => {
+    expect(cateActionName('cate_browser')).toBe('browser')
+  })
+})
+
+describe('isCateTool', () => {
+  it('matches both the live cate: and persisted cate_ forms', () => {
+    expect(isCateTool('cate:browser')).toBe(true)
+    expect(isCateTool('cate_browser')).toBe(true)
+  })
+  it('does not match other tools', () => {
+    expect(isCateTool('plan_complete')).toBe(false)
+    expect(isCateTool('bash')).toBe(false)
   })
 })
 

@@ -107,9 +107,16 @@ const PANEL_ICONS: Record<string, PhosphorIcon> = {
   document: FileText,
 }
 
-/** Strip the `cate:` prefix from a synthetic tool name, if present. */
+/** True for a cate-control tool call, in either form: the live round-trip's
+ *  synthetic `cate:<action>` name, or pi's raw `cate_<action>` name as persisted
+ *  in the session file (replayed verbatim on resume, like `plan_complete`). */
+export function isCateTool(toolName: string): boolean {
+  return toolName.startsWith('cate:') || toolName.startsWith('cate_')
+}
+
+/** Strip the `cate:` / `cate_` prefix to the bare action (e.g. "browser"). */
 export function cateActionName(toolName: string): string {
-  return toolName.startsWith('cate:') ? toolName.slice('cate:'.length) : toolName
+  return isCateTool(toolName) ? toolName.slice('cate:'.length) : toolName
 }
 
 export function cateToolDisplay(

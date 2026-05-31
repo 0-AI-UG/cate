@@ -3,9 +3,11 @@
 // and returns a CateControlResponse. Pure-ish: side effects go through appStore /
 // canvasStore / terminalRegistry. Geometry comes from cateControlLayout.
 //
-// The agent addresses panels by TITLE (e.g. "Terminal 2", "a.ts"), never by the
-// internal UUID - resolvePanelRef() maps a title to a panelId, and results report
-// titles back. 'self' refers to the agent's own host panel.
+// The agent addresses panels by a short id - the first 6 chars of the panel's
+// UUID (e.g. "a1b2c3"), which cate_layout reports and resolvePanelRef() resolves
+// back to the full panelId by prefix. The full UUID and an exact title are
+// accepted as fallbacks. The short id is stable across restarts because the
+// panel keeps its UUID on restore. 'self' refers to the agent's own host panel.
 // =============================================================================
 
 import type { CateControlResponse } from '../../shared/cateControl'
@@ -29,9 +31,9 @@ function fail(error: string): CateControlResponse { return { ok: false, error } 
 function ok(result?: unknown): CateControlResponse { return { ok: true, result } }
 
 /** The panels of the executor's workspace, keyed by panelId. */
-function workspacePanels(ctx: CateControlContext): Record<string, { type?: string; title?: string; agentId?: string }> {
+function workspacePanels(ctx: CateControlContext): Record<string, { type?: string; title?: string }> {
   const ws = useAppStore.getState().workspaces.find((w: any) => w.id === ctx.workspaceId)
-  return (ws?.panels ?? {}) as Record<string, { type?: string; title?: string; agentId?: string }>
+  return (ws?.panels ?? {}) as Record<string, { type?: string; title?: string }>
 }
 
 /** Human title for a panelId (falls back to the id if the panel is gone). */
@@ -39,30 +41,35 @@ function titleFor(ctx: CateControlContext, panelId: string): string {
   return workspacePanels(ctx)[panelId]?.title || panelId
 }
 
-/** The panel's stable agent handle ("p1", "p2", …), assigning one if needed.
- *  This is what the agent uses to target a panel - titles change, handles don't. */
-function agentIdFor(ctx: CateControlContext, panelId: string): string {
-  return useAppStore.getState().ensurePanelAgentId(ctx.workspaceId, panelId)
+/** SHORT_ID_LEN chars of a panel's UUID — the stable handle the agent targets.
+ *  Long enough that a collision within one workspace is astronomically unlikely;
+ *  resolvePanelRef still errors loudly if two panels ever share a prefix. */
+const SHORT_ID_LEN = 6
+function shortId(panelId: string): string {
+  return panelId.slice(0, SHORT_ID_LEN)
 }
 
-/** Resolve a panel reference - the stable agent handle ("p1"), or 'self' for the
- *  agent's host panel - to its panelId. A raw panelId and an exact title are
- *  accepted as fallbacks, but the handle is the canonical, stable way to target
- *  a panel (titles track the page/file and change underfoot). */
+/** Resolve a panel reference - the short id (e.g. "a1b2c3"), or 'self' for the
+ *  agent's host panel - to its full panelId. The full UUID and an exact title
+ *  are accepted as fallbacks. The short id is the canonical, stable way to
+ *  target a panel (titles track the page/file and change underfoot). */
 function resolvePanelRef(ctx: CateControlContext, ref: unknown): { panelId?: string; error?: string } {
   const s = String(ref ?? '').trim()
-  if (!s) return { error: 'missing `panel` (expected a panel id like "p1").' }
+  if (!s) return { error: 'missing `panel` (expected a panel id like "a1b2c3").' }
   if (s === 'self') return { panelId: ctx.hostPanelId }
   const panels = workspacePanels(ctx)
-  // Primary: the stable agent handle.
-  const byAgent = Object.keys(panels).filter((id) => panels[id]?.agentId === s)
-  if (byAgent.length === 1) return { panelId: byAgent[0] }
-  // Fallbacks: a raw panelId, then an exact (but possibly stale/ambiguous) title.
+  // Exact full UUID.
   if (panels[s]) return { panelId: s }
+  // Primary: the short id (a UUID prefix). Error if it's ambiguous so the agent
+  // retries with a longer prefix instead of acting on the wrong panel.
+  const byPrefix = Object.keys(panels).filter((id) => id.startsWith(s))
+  if (byPrefix.length === 1) return { panelId: byPrefix[0] }
+  if (byPrefix.length > 1) return { error: `"${s}" matches ${byPrefix.length} panels - use a longer id prefix (call cate_layout for the full ids).` }
+  // Fallback: an exact (but possibly stale/ambiguous) title.
   const byTitle = Object.keys(panels).filter((id) => panels[id]?.title === s)
   if (byTitle.length === 1) return { panelId: byTitle[0] }
   if (byTitle.length === 0) return { error: `No panel with id "${s}" - call cate_layout to list panel ids.` }
-  return { error: `"${s}" matches several panels by title - target it by id (e.g. "p1") instead.` }
+  return { error: `"${s}" matches several panels by title - target it by id (e.g. "a1b2c3") instead.` }
 }
 
 /** Read occupied rects + viewport center from a context's canvas store. */
@@ -160,7 +167,7 @@ export const execGetLayout: CateExecutor = async (_params, ctx) => {
   const out = Object.values(st.nodes).map((node: any) => {
     const panel = panels[node.panelId]
     return {
-      id: agentIdFor(ctx, node.panelId),
+      id: shortId(node.panelId),
       title: panel?.title ?? '',
       type: panel?.type ?? 'unknown',
       focused: st.focusedNodeId === node.id,
@@ -226,7 +233,7 @@ export const execOpenPanel: CateExecutor = async (params, ctx) => {
   // Raise + focus the freshly opened panel, but never move the camera.
   const node = ctx.canvasStore.getState().nodeForPanel(panelId)
   if (node) ctx.canvasStore.getState().focusNode(node)
-  return ok({ id: agentIdFor(ctx, panelId), title: titleFor(ctx, panelId), type })
+  return ok({ id: shortId(panelId), title: titleFor(ctx, panelId), type })
 }
 
 export const execClosePanel: CateExecutor = async (params, ctx) => {
@@ -391,7 +398,7 @@ export const execRunInTerminal: CateExecutor = async (params, ctx) => {
   }
   const sent = await writeToTerminalWhenReady(panelId, command)
   if (!sent) return fail(`Terminal "${titleFor(ctx, panelId)}" did not become ready to receive input (timed out).`)
-  return ok({ terminal: titleFor(ctx, panelId), command })
+  return ok({ id: shortId(panelId), terminal: titleFor(ctx, panelId), command })
 }
 
 /** Read the recent buffer (visible screen + scrollback) of a terminal panel as
