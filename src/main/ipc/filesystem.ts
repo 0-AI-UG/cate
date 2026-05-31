@@ -30,7 +30,7 @@ import { getSettingSync } from '../store'
 
 // Read the user-configured exclusion list live so changes take effect without
 // a relaunch. Built into a Set per call for fast membership checks.
-function currentExclusionSet(): Set<string> {
+export function currentExclusionSet(): Set<string> {
   return new Set(getSettingSync('fileExclusions'))
 }
 

@@ -30,6 +30,12 @@ export const FS_IMPORT_ENTRIES = 'fs:import-entries'
 export const FS_SEARCH = 'fs:search'
 export const FS_READ_BINARY = 'fs:readBinary'
 
+// Content search (ripgrep-backed Search view)
+export const SEARCH_START = 'search:start'    // renderer -> main (invoke, returns searchId)
+export const SEARCH_CANCEL = 'search:cancel'  // renderer -> main (invoke)
+export const SEARCH_RESULT = 'search:result'  // main -> renderer (streamed batch)
+export const SEARCH_DONE = 'search:done'      // main -> renderer (terminal event)
+
 // Shell utilities
 export const SHELL_SHOW_IN_FOLDER = 'shell:showInFolder'
 

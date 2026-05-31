@@ -17,6 +17,10 @@ asarUnpack:
   - "node_modules/@earendil-works/**"
   - "node_modules/.bin/pi"
   - "node_modules/.bin/pi.cmd"
+  # ripgrep binary for the Search view. The wrapper resolves to a per-platform
+  # package (@vscode/ripgrep-<os>-<arch>); unpack both so rgPath is a real file.
+  - "node_modules/@vscode/ripgrep/**"
+  - "node_modules/@vscode/ripgrep-*/**"
   - "node_modules/@anthropic-ai/sdk/**"
   - "node_modules/@aws-crypto/crc32/**"
   - "node_modules/@aws-crypto/sha256-browser/**"

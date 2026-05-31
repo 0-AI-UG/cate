@@ -98,6 +98,10 @@ import {
   FS_COPY,
   FS_IMPORT_ENTRIES,
   FS_SEARCH,
+  SEARCH_START,
+  SEARCH_CANCEL,
+  SEARCH_RESULT,
+  SEARCH_DONE,
   SHELL_SHOW_IN_FOLDER,
   NOTIFY_OS,
   NOTIFY_ACTION,
@@ -195,7 +199,7 @@ import {
   AUTH_DELETE,
   PERF_GET,
 } from '../shared/ipc-channels'
-import type { AppSettings } from '../shared/types'
+import type { AppSettings, SearchOptions, SearchResultBatch, SearchDoneEvent } from '../shared/types'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
 // check it without an IPC round-trip on every mousemove. Main BROADCASTS
@@ -341,6 +345,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(FS_WATCH_EVENT, listener)
     return () => {
       ipcRenderer.removeListener(FS_WATCH_EVENT, listener)
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Content search (ripgrep-backed Search view)
+  // ---------------------------------------------------------------------------
+
+  searchStart(rootPath: string, searchId: string, options: SearchOptions): Promise<string> {
+    return ipcRenderer.invoke(SEARCH_START, rootPath, searchId, options)
+  },
+
+  searchCancel(): Promise<void> {
+    return ipcRenderer.invoke(SEARCH_CANCEL)
+  },
+
+  onSearchResult(callback: (batch: SearchResultBatch) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, batch: SearchResultBatch): void => {
+      callback(batch)
+    }
+    ipcRenderer.on(SEARCH_RESULT, listener)
+    return () => {
+      ipcRenderer.removeListener(SEARCH_RESULT, listener)
+    }
+  },
+
+  onSearchDone(callback: (event: SearchDoneEvent) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, done: SearchDoneEvent): void => {
+      callback(done)
+    }
+    ipcRenderer.on(SEARCH_DONE, listener)
+    return () => {
+      ipcRenderer.removeListener(SEARCH_DONE, listener)
     }
   },
 

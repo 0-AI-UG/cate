@@ -17,6 +17,7 @@ import {
 import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals, terminalPids } from './ipc/terminal'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
+import { registerHandlers as registerSearchHandlers, stopSearchesForWindow } from './ipc/search'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
 import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, getSettingSync, readBootSnapshot, writeBootSnapshot } from './store'
@@ -243,6 +244,7 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     stopWatchersForWindow(windowId)
     unregisterTerminalsForWindow(windowId)
     stopMonitorsForWindow(windowId)
+    stopSearchesForWindow(windowId)
     clearScopedWriteAllowancesForWindow(windowId)
     clearFileGrantsForWindow(windowId)
     // Rebuild menu to update panel/dock window list
@@ -458,6 +460,7 @@ function registerCriticalHandlers(): void {
  */
 function registerDeferredHandlers(): void {
   registerGitHandlers()
+  registerSearchHandlers()
   registerGitMonitorHandlers()
   registerNotificationHandlers()
   registerAuthHandlers(authManager)

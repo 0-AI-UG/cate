@@ -3,6 +3,8 @@
 # Restore exec bit on node-pty's spawn-helper — npm sometimes strips it on
 # extraction, causing posix_spawnp to fail at runtime.
 chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true
+# Same for the bundled ripgrep binary used by the Search view.
+chmod +x node_modules/@vscode/ripgrep*/bin/rg 2>/dev/null || true
 
 PLIST="node_modules/electron/dist/Electron.app/Contents/Info.plist"
 if [ -f "$PLIST" ]; then

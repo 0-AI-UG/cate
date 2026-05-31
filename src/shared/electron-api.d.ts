@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult } from './types'
 
 export interface NativeContextMenuItem {
   id?: string
@@ -96,6 +96,24 @@ export interface ElectronAPI {
   onFsWatchEvent(
     callback: (event: { type: 'create' | 'update' | 'delete'; path: string }) => void,
   ): () => void
+
+  // ---------------------------------------------------------------------------
+  // Content search (ripgrep-backed Search view)
+  // ---------------------------------------------------------------------------
+
+  /** Start a streaming content search. The caller supplies a searchId (set in
+   *  the store first) so streamed events can be correlated without a race.
+   *  Cancels any previous search for this window. */
+  searchStart(rootPath: string, searchId: string, options: SearchOptions): Promise<string>
+
+  /** Cancel the in-flight search for this window. */
+  searchCancel(): Promise<void>
+
+  /** Subscribe to streamed search result batches (main -> renderer). */
+  onSearchResult(callback: (batch: SearchResultBatch) => void): () => void
+
+  /** Subscribe to the terminal search event with final stats / error. */
+  onSearchDone(callback: (event: SearchDoneEvent) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Git

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
+import { SearchView } from './SearchView'
 import { SourceControlView } from './SourceControlView'
 import { ParallelWorkTab } from './ParallelWorkTab'
 import { useAppStore } from '../stores/appStore'
@@ -24,6 +25,7 @@ import pkg from '../../../package.json'
 const VIEW_META: Record<SidebarView, { icon: PhosphorIcon; title: string }> = {
   workspaces: { icon: Stack, title: 'Workspaces' },
   explorer: { icon: FolderOpen, title: 'Explorer' },
+  search: { icon: MagnifyingGlass, title: 'Search' },
   git: { icon: GitBranch, title: 'Source Control' },
   parallelWork: { icon: ArrowsSplit, title: 'Parallel Work' },
 }
@@ -62,6 +64,8 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
           </button>
         </div>
       )
+    case 'search':
+      return <SearchView rootPath={rootPath} />
     case 'git':
       return <SourceControlView rootPath={rootPath} />
     case 'parallelWork':

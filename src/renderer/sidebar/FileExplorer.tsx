@@ -6,9 +6,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import log from '../lib/logger'
 import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X, Folder, File } from '@phosphor-icons/react'
-import type { FileTreeNode as FileTreeNodeType, FileSearchResult } from '../../shared/types'
+import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
-import { buildGitTreeDecorations, folderColorClass, lookupNodeDecoration, toPosixPath, type GitTree } from './gitStatusDecoration'
+import { buildGitTreeDecorations, toPosixPath, type GitTree } from './gitStatusDecoration'
 import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
@@ -73,9 +73,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [createRequest, setCreateRequest] = useState<{ type: 'file' | 'folder'; targetDir: string; seq: number } | null>(null)
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<FileSearchResult[]>([])
-  const [searchLoading, setSearchLoading] = useState(false)
-  const searchSeqRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const rootCreateInputRef = useRef<HTMLInputElement>(null)
   const lastSelectedPath = useRef<string | null>(null)
@@ -239,34 +236,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     }
   }, [rootPath, loadTree])
 
-  // ---------------------------------------------------------------------------
-  // Debounced file search (name + content) — runs in main process.
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    const trimmed = searchQuery.trim()
-    if (!trimmed || !rootPath || !window.electronAPI) {
-      setSearchResults([])
-      setSearchLoading(false)
-      return
-    }
-    const seq = ++searchSeqRef.current
-    setSearchLoading(true)
-    const handle = window.setTimeout(async () => {
-      try {
-        const results = await window.electronAPI.fsSearch(rootPath, trimmed)
-        if (seq !== searchSeqRef.current) return
-        setSearchResults(results)
-      } catch (err) {
-        if (seq !== searchSeqRef.current) return
-        log.warn('[file-explorer] search failed:', err)
-        setSearchResults([])
-      } finally {
-        if (seq === searchSeqRef.current) setSearchLoading(false)
-      }
-    }, 200)
-    return () => window.clearTimeout(handle)
-  }, [searchQuery, rootPath])
+  // Inline Explorer search is a lightweight name-only tree filter ("filter on
+  // type"). Full content search lives in the dedicated Search view.
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -511,7 +482,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
                 }
                 e.stopPropagation()
               }}
-              placeholder="Search files"
+              placeholder="Filter by name"
               className="w-full bg-surface-5 text-primary text-xs pl-7 pr-2 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
             />
           </div>
@@ -527,62 +498,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       )}
 
       {/* Tree content */}
-      {searchQuery.trim() ? (
-        <div className="flex-1 overflow-y-auto py-1">
-          {searchLoading && searchResults.length === 0 ? (
-            <div className="flex items-center justify-center py-4 text-xs text-muted">Searching…</div>
-          ) : searchResults.length === 0 ? (
-            <div className="flex items-center justify-center py-4 text-xs text-muted">No matches</div>
-          ) : (
-            searchResults.map((r) => {
-              const parentRel = r.relativePath.includes('/')
-                ? r.relativePath.substring(0, r.relativePath.lastIndexOf('/'))
-                : ''
-              const isSel = selectedPaths.has(r.path)
-              const { decoration, folderKind } = lookupNodeDecoration(gitTree, r.path, r.isDirectory)
-              const nameColor = decoration
-                ? decoration.colorClass
-                : folderKind
-                  ? folderColorClass(folderKind)
-                  : 'text-primary'
-              return (
-                <div
-                  key={r.path}
-                  className={`flex flex-col gap-0.5 px-2 py-1 text-xs cursor-pointer ${isSel ? 'bg-surface-5' : 'hover:bg-surface-5/50'}`}
-                  onClick={(e) => {
-                    handleSelect(r.path, { shift: e.shiftKey, cmd: e.metaKey || e.ctrlKey })
-                  }}
-                  onDoubleClick={() => {
-                    if (!r.isDirectory) handleFileOpen([r.path])
-                  }}
-                >
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="flex-shrink-0" style={{ color: r.isDirectory ? '#E2B855' : '#9CA3AF' }}>
-                      {r.isDirectory ? <Folder size={13} /> : <File size={13} />}
-                    </span>
-                    <span className={`truncate ${nameColor} ${decoration?.strike ? 'line-through' : ''}`}>{r.name}</span>
-                    {decoration && (
-                      <span
-                        className={`flex-shrink-0 w-4 text-center font-mono text-[10px] ${decoration.colorClass}`}
-                        title={`Git: ${decoration.title}`}
-                      >
-                        {decoration.letter}
-                      </span>
-                    )}
-                    {parentRel && <span className="truncate text-muted text-[10px]">{parentRel}</span>}
-                  </div>
-                  {r.contentPreview && (
-                    <div className="text-muted text-[10px] truncate pl-5">
-                      <span className="opacity-60">{r.contentLine}: </span>
-                      {r.contentPreview}
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          )}
-        </div>
-      ) : isLoading && nodes.length === 0 ? (
+      {isLoading && nodes.length === 0 ? (
         <div className="flex items-center justify-center flex-1 text-xs text-muted">
           Loading...
         </div>
@@ -639,7 +555,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               onTreeChanged={handleReload}
               refreshSignal={refreshSignal}
               visiblePaths={visiblePaths}
-              searchQuery=""
+              searchQuery={searchQuery.trim().toLowerCase()}
               rootPath={rootPath}
               createRequest={createRequest}
               onCreateRequestHandled={() => setCreateRequest(null)}
