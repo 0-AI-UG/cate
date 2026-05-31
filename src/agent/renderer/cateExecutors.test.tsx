@@ -117,6 +117,7 @@ describe('execGetLayout', () => {
 
 import { execFocusPanel, execResizePanel, execArrange } from './cateExecutors'
 import { execRunInTerminal, execOpenUrl, execReadTerminal } from './cateExecutors'
+import { execLayout, execPanel, execBrowser, execTerminal } from './cateExecutors'
 
 vi.mock('../../renderer/lib/terminalRegistry', () => ({
   terminalRegistry: { getEntry: vi.fn(() => ({ ptyId: 'pty-1' })) },
@@ -258,5 +259,111 @@ describe('markdown preview (Issue 2 fix)', () => {
     expect(res.ok).toBe(true)
     const mod: any = await import('../../renderer/stores/appStore')
     expect(mod.__created.find((c: any[]) => c[0] === 'mdpreview')).toEqual(['mdpreview', 'w1', 'panel-ed', true])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Consolidated op routers (4-tool surface: layout / panel / browser / terminal)
+// ---------------------------------------------------------------------------
+
+describe('execLayout (op router)', () => {
+  it("defaults to reading the canvas layout", async () => {
+    const store = createCanvasStore()
+    store.getState().addNode('panel-ed', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    const res = await execLayout({}, ctxWith(store), 'k1')
+    expect(res.ok).toBe(true)
+    expect((res.result as any).panels).toBeDefined()
+  })
+
+  it("routes op:'arrange' to arrange panels with the given style", async () => {
+    const store = createCanvasStore()
+    store.getState().addNode('p1', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    store.getState().addNode('p2', 'editor', { x: 300, y: 0 }, { width: 100, height: 100 })
+    const res = await execLayout({ op: 'arrange', style: 'grid' }, ctxWith(store), 'k1')
+    expect(res.ok).toBe(true)
+    expect((res.result as any).layout).toBe('grid')
+  })
+})
+
+describe('execBrowser', () => {
+  beforeEach(async () => {
+    const mod: any = await import('../../renderer/stores/appStore')
+    mod.__created.length = 0
+  })
+
+  it('opens a browser at a url when no panelId is given', async () => {
+    const res = await execBrowser({ url: 'https://example.com' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect((res.result as any).panelId).toBe('panel-br')
+  })
+
+  it('rejects a non-url', async () => {
+    const res = await execBrowser({ url: 'not a url' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(false)
+  })
+})
+
+describe('execPanel (op router)', () => {
+  beforeEach(async () => {
+    const mod: any = await import('../../renderer/stores/appStore')
+    mod.__created.length = 0
+    mod.__closed.length = 0
+  })
+
+  it("routes op:'open' to open a panel", async () => {
+    const res = await execPanel({ op: 'open', type: 'editor', target: { path: 'a.ts' } }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect((res.result as any).panelId).toBe('panel-ed')
+  })
+
+  it("routes op:'close' to close a panel", async () => {
+    const res = await execPanel({ op: 'close', panelId: 'panel-ed' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    const mod: any = await import('../../renderer/stores/appStore')
+    expect(mod.__closed[0]).toEqual(['w1', 'panel-ed'])
+  })
+
+  it("routes op:'focus' to focus a node", async () => {
+    const store = createCanvasStore()
+    store.getState().addNode('panel-ed', 'editor', { x: 0, y: 0 }, { width: 100, height: 100 })
+    const res = await execPanel({ op: 'focus', panelId: 'panel-ed' }, ctxWith(store), 'k1')
+    expect(res.ok).toBe(true)
+    expect(store.getState().focusedNodeId).toBe(store.getState().nodeForPanel('panel-ed'))
+  })
+
+  it('rejects an unknown op', async () => {
+    const res = await execPanel({ op: 'teleport', panelId: 'x' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/unknown op/i)
+  })
+})
+
+describe('execTerminal (op router)', () => {
+  beforeEach(() => {
+    ;(window.electronAPI as any).terminalWrite = vi.fn()
+    vi.mocked(terminalRegistry.getEntry).mockReturnValue({ ptyId: 'pty-1' } as any)
+  })
+
+  it("routes op:'run' to run a command", async () => {
+    const res = await execTerminal({ op: 'run', command: 'ls', newPanel: true }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect((window.electronAPI as any).terminalWrite).toHaveBeenCalledWith('pty-1', 'ls\r')
+  })
+
+  it("routes op:'read' to read the terminal buffer", async () => {
+    const lines = ['output line', '']
+    vi.mocked(terminalRegistry.getEntry).mockReturnValue({
+      ptyId: 'pty-1',
+      terminal: { buffer: { active: { length: lines.length, getLine: (i: number) => ({ translateToString: () => lines[i] }) } } },
+    } as any)
+    const res = await execTerminal({ op: 'read', panelId: 'panel-tm' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(true)
+    expect((res.result as any).text).toBe('output line')
+  })
+
+  it('rejects an unknown op', async () => {
+    const res = await execTerminal({ op: 'beam' }, ctxWith(), 'k1')
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/unknown op/i)
   })
 })

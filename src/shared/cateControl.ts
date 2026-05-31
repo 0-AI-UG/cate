@@ -9,17 +9,25 @@
 export const CATE_SENTINEL = '@@cate-control@@'
 
 export type CateControlAction =
-  | 'get_layout'
-  | 'open_panel'
-  | 'close_panel'
-  | 'focus_panel'
-  | 'move_panel'
-  | 'resize_panel'
-  | 'arrange'
-  | 'run_in_terminal'
-  | 'read_terminal'
-  | 'open_url'
-  | 'set_markdown_preview'
+  | 'layout'
+  | 'panel'
+  | 'browser'
+  | 'terminal'
+
+/** Sub-operations of the canvas-wide `layout` tool (read + rearrange). */
+export type LayoutOp = 'get' | 'arrange'
+
+/** Sub-operations of the per-panel `panel` tool. */
+export type PanelOp =
+  | 'open'
+  | 'focus'
+  | 'move'
+  | 'resize'
+  | 'close'
+  | 'preview'
+
+/** Sub-operations of the `terminal` tool. */
+export type TerminalOp = 'run' | 'read'
 
 /** Emitted by the extension (inside the input() title, after CATE_SENTINEL). */
 export interface CateControlRequest {
@@ -44,24 +52,33 @@ function isRemoteUrl(url: unknown): boolean {
   return /^https?:\/\//i.test(url)
 }
 
-/** Static classification + per-call escalation for open_panel. Drives whether
- *  guarded mode requires approval. Pure — no side effects. */
+/** Static classification + per-call escalation. Drives whether guarded mode
+ *  requires approval. Pure — no side effects. Only destructive (close) and
+ *  outbound (run a command, open/navigate a remote url) ops escalate; reads,
+ *  focus, and pure layout stay safe. */
 export function classifyCateAction(
   action: CateControlAction,
   params: Record<string, unknown>,
 ): CateActionClass {
   switch (action) {
-    case 'close_panel':
-    case 'run_in_terminal':
-    case 'open_url':
-      return 'side-effect'
-    case 'open_panel': {
-      const target = (params.target ?? {}) as Record<string, unknown>
-      if (typeof target.command === 'string' && target.command.trim()) return 'side-effect'
-      if (isRemoteUrl(target.url)) return 'side-effect'
+    case 'terminal':
+      // run a command = side-effect; read output = safe.
+      return String(params.op ?? '') === 'read' ? 'safe' : 'side-effect'
+    case 'browser':
+      // navigating to a remote url sends a request; a local file:// preview is safe.
+      return isRemoteUrl(params.url) ? 'side-effect' : 'safe'
+    case 'panel': {
+      const op = String(params.op ?? '')
+      if (op === 'open') {
+        const target = (params.target ?? {}) as Record<string, unknown>
+        if (typeof target.command === 'string' && target.command.trim()) return 'side-effect'
+        if (isRemoteUrl(target.url)) return 'side-effect'
+        return 'safe'
+      }
+      if (op === 'close') return 'side-effect'
       return 'safe'
     }
     default:
-      return 'safe'
+      return 'safe' // layout (get / arrange) — never destructive or outbound
   }
 }

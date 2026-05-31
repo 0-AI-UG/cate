@@ -229,7 +229,8 @@ export const execResizePanel: CateExecutor = async (params, ctx) => {
 }
 
 export const execArrange: CateExecutor = async (params, ctx) => {
-  const layout = String(params.layout ?? 'tile') as 'tile' | 'grid' | 'cascade' | 'focus-one'
+  // `layout` tool exposes the style as `style`; accept legacy `layout` too.
+  const layout = String(params.style ?? params.layout ?? 'tile') as 'tile' | 'grid' | 'cascade' | 'focus-one'
   const st = ctx.canvasStore.getState()
   const all = Object.values(st.nodes).filter((n: any) => n.panelId !== ctx.hostPanelId) // self-protection
   const requested = Array.isArray(params.panelIds) ? (params.panelIds as string[]) : null
@@ -251,7 +252,7 @@ export const execArrange: CateExecutor = async (params, ctx) => {
 
 export const execRunInTerminal: CateExecutor = async (params, ctx) => {
   const command = String(params.command ?? '')
-  if (!command.trim()) return fail('run_in_terminal requires a non-empty command.')
+  if (!command.trim()) return fail('terminal run requires a non-empty command.')
   const app = useAppStore.getState()
   let panelId = typeof params.panelId === 'string' ? params.panelId : ''
   if (!panelId || params.newPanel) {
@@ -264,7 +265,7 @@ export const execRunInTerminal: CateExecutor = async (params, ctx) => {
 
 export const execOpenUrl: CateExecutor = async (params, ctx) => {
   const url = String(params.url ?? '')
-  if (!/^(https?|file):\/\//i.test(url)) return fail('open_url requires an http(s) or file URL.')
+  if (!/^(https?|file):\/\//i.test(url)) return fail('browser navigate requires an http(s) or file URL.')
   const app = useAppStore.getState()
   let panelId = typeof params.panelId === 'string' ? params.panelId : ''
   if (!panelId) { panelId = app.createBrowser(ctx.workspaceId, url); return ok({ panelId, url }) }
@@ -277,7 +278,7 @@ export const execOpenUrl: CateExecutor = async (params, ctx) => {
  *  non-markdown editors but still records the flag. */
 export const execSetMarkdownPreview: CateExecutor = async (params, ctx) => {
   const panelId = String(params.panelId ?? '')
-  if (!panelId) return fail('set_markdown_preview requires a panelId.')
+  if (!panelId) return fail('panel preview requires a panelId.')
   const app = useAppStore.getState()
   const ws = app.workspaces.find((w: any) => w.id === ctx.workspaceId)
   const panel = ws?.panels?.[panelId]
@@ -289,12 +290,12 @@ export const execSetMarkdownPreview: CateExecutor = async (params, ctx) => {
 }
 
 /** Read the recent buffer (visible screen + scrollback) of a terminal panel as
- *  plain text. Lets an agent inspect command output it ran via run_in_terminal —
+ *  plain text. Lets an agent inspect command output it ran via terminal run —
  *  the other half of terminal orchestration. Reads straight from the live xterm
  *  buffer; no PTY round-trip. Safe (read-only). */
 export const execReadTerminal: CateExecutor = async (params) => {
   const panelId = String(params.panelId ?? '')
-  if (!panelId) return fail('read_terminal requires a panelId.')
+  if (!panelId) return fail('terminal read requires a panelId.')
   const entry = terminalRegistry.getEntry(panelId)
   const buffer = (entry as { terminal?: { buffer?: { active?: any } } } | undefined)?.terminal?.buffer?.active
   if (!entry || !buffer) return fail(`No live terminal for panel ${panelId}.`)
@@ -313,17 +314,55 @@ export const execReadTerminal: CateExecutor = async (params) => {
   return ok({ panelId, lineCount: collected.length, text: collected.join('\n') })
 }
 
-// Register everything with the dispatcher.
+// ---------------------------------------------------------------------------
+// Consolidated op-routers — the agent sees four tools (layout / panel / browser
+// / terminal); each dispatches to the focused executors above by `op`. Keeps the
+// tool surface (and its token cost) small while preserving per-op behavior +
+// self-protection.
+// ---------------------------------------------------------------------------
+
+/** Canvas-wide: read the layout (default) or rearrange panels. */
+export const execLayout: CateExecutor = async (params, ctx, agentKey) => {
+  return String(params.op ?? 'get') === 'arrange'
+    ? execArrange(params, ctx, agentKey)
+    : execGetLayout(params, ctx, agentKey)
+}
+
+/** Single-panel lifecycle/geometry. */
+export const execPanel: CateExecutor = async (params, ctx, agentKey) => {
+  const op = String(params.op ?? '')
+  switch (op) {
+    case 'open': return execOpenPanel(params, ctx, agentKey)
+    case 'focus': return execFocusPanel(params, ctx, agentKey)
+    case 'move': return execMovePanel(params, ctx, agentKey)
+    case 'resize': return execResizePanel(params, ctx, agentKey)
+    case 'close': return execClosePanel(params, ctx, agentKey)
+    case 'preview': return execSetMarkdownPreview(params, ctx, agentKey)
+    default:
+      return fail(`panel: unknown op "${op}". Expected open|focus|move|resize|close|preview.`)
+  }
+}
+
+/** Browser content: navigate a browser panel to a url (creates one if needed). */
+export const execBrowser: CateExecutor = async (params, ctx, agentKey) => {
+  return execOpenUrl(params, ctx, agentKey)
+}
+
+export const execTerminal: CateExecutor = async (params, ctx, agentKey) => {
+  const op = String(params.op ?? '')
+  switch (op) {
+    case 'run': return execRunInTerminal(params, ctx, agentKey)
+    case 'read': return execReadTerminal(params, ctx, agentKey)
+    default:
+      return fail(`terminal: unknown op "${op}". Expected run|read.`)
+  }
+}
+
+// Register the 4-tool surface with the dispatcher. The routers delegate to the
+// focused executors above.
 setCateExecutors({
-  get_layout: execGetLayout,
-  open_panel: execOpenPanel,
-  close_panel: execClosePanel,
-  focus_panel: execFocusPanel,
-  move_panel: execMovePanel,
-  resize_panel: execResizePanel,
-  arrange: execArrange,
-  run_in_terminal: execRunInTerminal,
-  read_terminal: execReadTerminal,
-  open_url: execOpenUrl,
-  set_markdown_preview: execSetMarkdownPreview,
+  layout: execLayout,
+  panel: execPanel,
+  browser: execBrowser,
+  terminal: execTerminal,
 })

@@ -1,8 +1,9 @@
 // E2E coverage for the cate-control agent feature — drives the real renderer
 // dispatcher (window.__cateE2E.cateControl) exactly as an agent tool call would,
-// then observes the live app. Focused on the two fixes from live testing:
-//   1. terminal commands actually run (open_panel + run_in_terminal)
-//   2. markdown preview can be toggled
+// then observes the live app. Uses the consolidated 4-tool surface
+// (layout{op} / panel{op} / browser / terminal{op}). Focused on:
+//   1. terminal commands actually run (panel open + terminal run)
+//   2. markdown preview can be toggled (panel preview)
 import { test, expect } from '@playwright/test'
 import { launchApp, closeApp } from './fixtures/electron-app'
 import type { ElectronApplication, Page } from 'playwright'
@@ -22,8 +23,8 @@ async function cate(p: Page, action: string, params: Record<string, unknown>): P
   )
 }
 
-test('run_in_terminal runs the command in a live PTY', async () => {
-  const res = await cate(page, 'run_in_terminal', { command: 'echo $((6*7))_CATEOK', newPanel: true })
+test('terminal run executes the command in a live PTY', async () => {
+  const res = await cate(page, 'terminal', { op: 'run', command: 'echo $((6*7))_CATEOK', newPanel: true })
   expect(res.ok).toBe(true)
   const panelId = res.result.panelId as string
   expect(panelId).toBeTruthy()
@@ -37,8 +38,8 @@ test('run_in_terminal runs the command in a live PTY', async () => {
     .toContain('42_CATEOK')
 })
 
-test('open_panel(terminal, command) runs the command', async () => {
-  const res = await cate(page, 'open_panel', { type: 'terminal', target: { command: 'echo $((8*8))_CATEOPEN' } })
+test('panel open (terminal, command) runs the command', async () => {
+  const res = await cate(page, 'panel', { op: 'open', type: 'terminal', target: { command: 'echo $((8*8))_CATEOPEN' } })
   expect(res.ok).toBe(true)
   const panelId = res.result.panelId as string
   await expect
@@ -49,8 +50,8 @@ test('open_panel(terminal, command) runs the command', async () => {
     .toContain('64_CATEOPEN')
 })
 
-test('set_markdown_preview toggles the editor into preview mode', async () => {
-  const opened = await cate(page, 'open_panel', { type: 'editor', target: { path: 'CATE_NOTES.md' } })
+test('panel preview toggles the editor into preview mode', async () => {
+  const opened = await cate(page, 'panel', { op: 'open', type: 'editor', target: { path: 'CATE_NOTES.md' } })
   expect(opened.ok).toBe(true)
   const panelId = opened.result.panelId as string
   const nodeId = await page.evaluate(
@@ -65,14 +66,14 @@ test('set_markdown_preview toggles the editor into preview mode', async () => {
   await expect(page.locator(`${nodeSel} button:has-text("Preview")`)).toBeVisible()
 
   // Turn preview on through the tool.
-  const pv = await cate(page, 'set_markdown_preview', { panelId, preview: true })
+  const pv = await cate(page, 'panel', { op: 'preview', panelId, preview: true })
   expect(pv.ok).toBe(true)
 
   // After: the toggle flips to "Source" — preview is now active.
   await expect(page.locator(`${nodeSel} button:has-text("Source")`)).toBeVisible()
 })
 
-test('set_markdown_preview rejects a non-existent panel', async () => {
-  const res = await cate(page, 'set_markdown_preview', { panelId: 'does-not-exist', preview: true })
+test('panel preview rejects a non-existent panel', async () => {
+  const res = await cate(page, 'panel', { op: 'preview', panelId: 'does-not-exist', preview: true })
   expect(res.ok).toBe(false)
 })
