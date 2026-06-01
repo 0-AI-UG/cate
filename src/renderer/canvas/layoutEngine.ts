@@ -20,8 +20,13 @@ import { PANEL_DEFAULT_SIZES, PANEL_MINIMUM_SIZES } from '../../shared/types'
 // Grid snapping
 // -----------------------------------------------------------------------------
 
+/** Canvas-space spacing of the snap/background grid, in canvas units. Shared by
+ *  the visual grid (CanvasGrid), auto-placement, and the snap-to-grid feature so
+ *  snapped panels line up with the dots/lines the user actually sees. */
+export const CANVAS_GRID_SIZE = 20
+
 /** Round a point to the nearest grid intersection. */
-export function snapToGrid(point: Point, gridSize = 20): Point {
+export function snapToGrid(point: Point, gridSize = CANVAS_GRID_SIZE): Point {
   return {
     x: Math.round(point.x / gridSize) * gridSize,
     y: Math.round(point.y / gridSize) * gridSize,
@@ -32,7 +37,7 @@ export function snapToGrid(point: Point, gridSize = 20): Point {
  * Snap a size so that the bottom-right corner lands on a grid line.
  * The resulting size is at least one gridSize unit in each dimension.
  */
-export function snapSize(size: Size, origin: Point, gridSize = 20): Size {
+export function snapSize(size: Size, origin: Point, gridSize = CANVAS_GRID_SIZE): Size {
   const bottomRight: Point = {
     x: origin.x + size.width,
     y: origin.y + size.height,
@@ -42,6 +47,50 @@ export function snapSize(size: Size, origin: Point, gridSize = 20): Size {
     width: Math.max(snappedBR.x - origin.x, gridSize),
     height: Math.max(snappedBR.y - origin.y, gridSize),
   }
+}
+
+/** Which edges a resize gesture is moving. Cardinal edges set one flag; corners
+ *  set one horizontal and one vertical flag. */
+export interface MovingEdges {
+  left: boolean
+  right: boolean
+  top: boolean
+  bottom: boolean
+}
+
+/**
+ * Adjust a resize delta so the moving edge(s) land on the nearest grid line,
+ * keeping the opposite (fixed) edge put. Pure counterpart to the geometry in
+ * useNodeResize — snapping the delta (rather than the final rect) lets the
+ * shared-border neighbor math, which is derived from the same delta, stay
+ * consistent with the primary node.
+ */
+export function snapResizeDelta(
+  moving: MovingEdges,
+  startOrigin: Point,
+  startSize: Size,
+  delta: Point,
+  gridSize = CANVAS_GRID_SIZE,
+): Point {
+  let dx = delta.x
+  let dy = delta.y
+  const round = (v: number) => Math.round(v / gridSize) * gridSize
+
+  if (moving.right) {
+    const right = startOrigin.x + startSize.width + dx
+    dx = round(right) - (startOrigin.x + startSize.width)
+  } else if (moving.left) {
+    dx = round(startOrigin.x + dx) - startOrigin.x
+  }
+
+  if (moving.bottom) {
+    const bottom = startOrigin.y + startSize.height + dy
+    dy = round(bottom) - (startOrigin.y + startSize.height)
+  } else if (moving.top) {
+    dy = round(startOrigin.y + dy) - startOrigin.y
+  }
+
+  return { x: dx, y: dy }
 }
 
 // -----------------------------------------------------------------------------
@@ -165,7 +214,7 @@ export function snapToEdges(
 export function snap(
   rect: Rect,
   neighbors: Rect[],
-  gridSize = 20,
+  gridSize = CANVAS_GRID_SIZE,
   edgeThreshold = 8,
 ): Point {
   const gridOrigin = snapToGrid(rect.origin, gridSize)
@@ -207,7 +256,7 @@ export function findFreePosition(
   near: Point | null,
   existingRects: Rect[],
   panelType: PanelType,
-  gridSize = 20,
+  gridSize = CANVAS_GRID_SIZE,
 ): Point {
   if (existingRects.length === 0) {
     return { x: 100, y: 100 }

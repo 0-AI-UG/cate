@@ -106,6 +106,8 @@ interface FileTreeNodeProps {
   selectedPaths: Set<string>
   onSelect: (path: string, meta: { shift?: boolean; cmd?: boolean }) => void
   onFileOpen: (paths: string[], mode?: 'dock' | 'canvas') => void
+  /** Delete the given paths (confirms + reloads + clears selection in the explorer). */
+  onDeletePaths?: (paths: string[]) => void
   onTreeChanged?: () => void
   /** Bumped by the explorer on every tree read; signals cached/expanded folders
    *  to re-read their children from disk so reloads reflect on-disk state. */
@@ -129,6 +131,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   selectedPaths,
   onSelect,
   onFileOpen,
+  onDeletePaths,
   onTreeChanged,
   refreshSignal,
   visiblePaths,
@@ -287,7 +290,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       { id: 'copy-rel-path', label: 'Copy Relative Path', accelerator: 'Alt+Shift+Cmd+C' },
       { id: 'copy-name', label: 'Copy Name' },
       { type: 'separator' },
-      { id: 'delete', label: 'Delete', accelerator: 'Cmd+Backspace' },
+      { id: 'delete', label: pathsToOpen.length > 1 ? `Delete ${pathsToOpen.length} Items` : 'Delete', accelerator: 'Cmd+Backspace' },
     )
 
     const id = await window.electronAPI.showContextMenu(items)
@@ -303,10 +306,16 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       case 'copy-path': navigator.clipboard.writeText(node.path); break
       case 'copy-rel-path': navigator.clipboard.writeText(relPath); break
       case 'copy-name': navigator.clipboard.writeText(node.name); break
-      case 'delete': handleDelete(); break
+      case 'delete':
+        // Delete the whole multi-selection in one go when this node is part of
+        // it; otherwise just this node. Falls back to the local single-node
+        // delete if no explorer-level handler was provided.
+        if (onDeletePaths) onDeletePaths(pathsToOpen)
+        else handleDelete()
+        break
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node, rootPath, selectedPaths, onFileOpen])
+  }, [node, rootPath, selectedPaths, onFileOpen, onDeletePaths])
 
   // --- Rename ---
   const startRename = useCallback(() => {
@@ -498,6 +507,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     <div>
       {/* Node row */}
       <div
+        data-filepath={node.path}
         className={`h-7 flex items-center gap-1.5 px-2 text-sm text-primary cursor-pointer rounded-sm ${
           isSelected ? 'bg-surface-6 text-primary' : 'hover:bg-hover'
         } ${isIgnored ? 'opacity-40' : ''} ${isDragOver && node.isDirectory ? 'ring-1 ring-blue-500/60 bg-blue-500/10' : ''}`}
@@ -619,6 +629,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
               selectedPaths={selectedPaths}
               onSelect={onSelect}
               onFileOpen={onFileOpen}
+              onDeletePaths={onDeletePaths}
               onTreeChanged={onTreeChanged}
               refreshSignal={refreshSignal}
               visiblePaths={visiblePaths}

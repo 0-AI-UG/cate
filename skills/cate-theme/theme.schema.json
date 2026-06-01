@@ -73,9 +73,6 @@
         "panel-terminal": { "$ref": "#/definitions/cssColor" },
         "panel-browser": { "$ref": "#/definitions/cssColor" },
         "panel-editor": { "$ref": "#/definitions/cssColor" },
-        "panel-git": { "$ref": "#/definitions/cssColor" },
-        "panel-fileExplorer": { "$ref": "#/definitions/cssColor" },
-        "panel-projectList": { "$ref": "#/definitions/cssColor" },
         "panel-canvas": { "$ref": "#/definitions/cssColor" },
         "agent-rgb": { "$ref": "#/definitions/cssColor" },
         "agent-light-rgb": { "$ref": "#/definitions/cssColor" }

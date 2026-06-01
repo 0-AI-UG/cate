@@ -49,6 +49,7 @@ import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
 import { PERF_GET } from '../shared/ipc-channels'
 import { installWebContentsSecurity } from './webSecurity'
 import { installThemeSkill } from './installThemeSkill'
+import { releaseAllProjectLocks } from './projectLock'
 import {
   startCrossWindowDrag,
   updateCrossWindowCursor,
@@ -93,6 +94,28 @@ async function runSmokeAssertions(win: BrowserWindow): Promise<void> {
 
   if (!result?.hasElectronAPI || !result?.hasFullscreenCheck) {
     throw new Error('Smoke test failed: preload bridge did not initialize correctly')
+  }
+}
+
+// Under Playwright (CATE_E2E=1) a normal show() opens the window on the user's
+// active screen and steals focus — and on macOS a *shown* window can't be kept
+// off-screen (off-screen coordinates get clamped back onto a display). So under
+// e2e we never show the window at all: it's never mapped to a display, and
+// Playwright drives the renderer over CDP. A hidden window throttles its rAF
+// loop, so the renderer is instead made deterministic without a visible window
+// elsewhere (e2eHarness zeroes CSS animations; canvas nodes are created already
+// idle; node removal is finalized immediately) so the drag specs stay reliable.
+const IS_E2E = process.env.CATE_E2E === '1'
+
+/** Show a window — but under e2e keep it hidden (never mapped to a display) so it
+ *  never appears on screen or steals focus. Playwright drives it over CDP. */
+function revealWindow(win: BrowserWindow, opts: { focus?: boolean } = {}): void {
+  try {
+    if (IS_E2E) return // never map to a display — Playwright drives it over CDP
+    win.show()
+    if (opts.focus) win.focus()
+  } catch {
+    /* window may already be destroyed */
   }
 }
 
@@ -160,13 +183,19 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
       sandbox: !disableRendererSandbox(),
       webSecurity: true,
       webviewTag: true,
+      // Under e2e the window is never shown (revealWindow is a no-op).
+      // paintWhenInitiallyHidden makes the hidden renderer paint + fire
+      // ready-to-show anyway; backgroundThrottling:false keeps its rAF/timers
+      // running. (CSS animations are also disabled in e2eHarness.) Harmless
+      // no-ops outside e2e.
+      ...(IS_E2E ? { backgroundThrottling: false, paintWhenInitiallyHidden: true } : {}),
     },
   })
 
   // Show on ready-to-show so the first frame is fully painted before the
   // window appears — eliminates the white flash from initial mount.
   win.once('ready-to-show', () => {
-    try { win.show() } catch { /* destroyed */ }
+    revealWindow(win)
   })
 
   // Persist main-window geometry to the boot snapshot so the next cold launch
@@ -921,12 +950,8 @@ function registerWindowAndDialogHandlers(): void {
       sendToWindow(newWin.id, PANEL_RECEIVE, snapshot)
       // Force show + focus — on macOS in fullscreen, the new window may not
       // auto-show because the OS thinks it belongs to a different Space.
-      try {
-        newWin.show()
-        newWin.focus()
-      } catch {
-        /* window may already be destroyed */
-      }
+      // (revealWindow skips the focus and stays inactive under e2e.)
+      revealWindow(newWin, { focus: true })
     })
 
     cleanupDragTempFile()
@@ -1153,6 +1178,9 @@ if (process.env.CATE_E2E === '1') {
   const os = require('os') as typeof import('os')
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))
   app.setPath('userData', tmp)
+  // Keep the e2e app out of the macOS dock / app-switcher so launching it never
+  // foregrounds the shared Electron bundle (and a running `npm run dev`).
+  app.dock?.hide()
 }
 
 // ---------------------------------------------------------------------------
@@ -1185,7 +1213,7 @@ function deliverOpenPath(p: string): void {
   }
   try {
     if (win.isMinimized()) win.restore()
-    win.focus()
+    if (!IS_E2E) win.focus()
   } catch { /* noop */ }
   win.webContents.send(APP_OPEN_PATH, p)
 }
@@ -1421,6 +1449,9 @@ app.on('will-quit', () => {
   // we write something if it didn't.
   log.info('will-quit: sync project state save fallback')
   saveProjectStateSync()
+  // Drop per-project locks so a co-running instance can take over immediately
+  // (a crash skips this; the next instance reclaims the stale lock by pid).
+  releaseAllProjectLocks()
   // Kill all PTYs now — AFTER session save so the renderer had access to live
   // PTY data (CWD, scrollback) during the flush triggered in before-quit.
   // Must happen while the JS environment is still alive. If we let them die

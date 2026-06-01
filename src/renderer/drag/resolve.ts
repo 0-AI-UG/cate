@@ -22,6 +22,7 @@ import { findNodeIdForDockStore } from '../panels/nodeDockRegistry'
 import { getDefaultSession } from './session'
 import { cursorToCanvasOrigin } from './geometry'
 import { findTabStackAcrossZones } from '../stores/dockTreeUtils'
+import { snapToGrid, CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { WindowDockState } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -69,15 +70,25 @@ export const defaultDropEnvironment: DropEnvironment = {
   },
 }
 
-/** Resolve cursor + source into a typed DropTarget. */
+/** Optional resolution context. `env` injects DOM/store lookups (defaults to the
+ *  real DOM); `snap` requests canvas-grid snapping for canvas drops. */
+export interface ResolveOptions {
+  env?: DropEnvironment
+  snap?: boolean
+}
+
+/** Resolve cursor + source into a typed DropTarget. When `opts.snap` is true,
+ *  the committed origin of a canvas drop is snapped to the canvas grid (the
+ *  ghost still free-tracks the cursor — see Overlay). */
 export function resolveDrop(
   cursor: { client: Point; screen: Point; insideWindow: boolean },
   source: DragSource,
   grab: Point,
   ghostSize: Size,
   panelType: PanelType,
-  env: DropEnvironment = defaultDropEnvironment,
+  opts: ResolveOptions = {},
 ): DropTarget | null {
+  const { env = defaultDropEnvironment, snap = false } = opts
   if (!cursor.insideWindow) {
     return { kind: 'detach', screen: cursor.screen }
   }
@@ -87,7 +98,7 @@ export function resolveDrop(
   if (dockTarget) return dockTarget
 
   // --- 2. Canvas surface under cursor ---
-  const canvasTarget = resolveCanvasHit(cursor, source, grab, ghostSize, env)
+  const canvasTarget = resolveCanvasHit(cursor, source, grab, ghostSize, env, snap)
   if (canvasTarget) return canvasTarget
 
   return null
@@ -177,6 +188,7 @@ function resolveCanvasHit(
   grab: Point,
   ghostSize: Size,
   env: DropEnvironment,
+  snap: boolean,
 ): DropTarget | null {
   const hit = env.canvasAtCursor(cursor.client)
   if (!hit) return null
@@ -186,13 +198,17 @@ function resolveCanvasHit(
     viewportOffset: Point
   }
 
-  const origin = cursorToCanvasOrigin(
+  const rawOrigin = cursorToCanvasOrigin(
     cursor,
     rect,
     state.zoomLevel,
     state.viewportOffset,
     grab,
   )
+  // Snap the committed origin to the grid when snap-to-grid is active. The ghost
+  // still free-tracks the cursor during the drag (see Overlay) — the panel moves
+  // freely and only snaps to the grid on release.
+  const origin = snap ? snapToGrid(rawOrigin, CANVAS_GRID_SIZE) : rawOrigin
 
   // Source is a canvas-node already on this canvas → reposition (move existing).
   if (source.origin.kind === 'canvas-node' && source.origin.canvasStoreApi === canvasStoreApi) {

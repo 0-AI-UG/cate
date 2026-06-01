@@ -167,6 +167,11 @@ export const PANEL_WINDOW_SYNC_META = 'panel:windowSyncMeta'
 // Recent Projects
 export const RECENT_PROJECTS_GET = 'recent-projects:get'
 export const RECENT_PROJECTS_ADD = 'recent-projects:add'
+export const RECENT_PROJECTS_REMOVE = 'recent-projects:remove'
+
+// Sidebar session (persisted workspace order + active workspace, by root path)
+export const SIDEBAR_SESSION_GET = 'sidebar-session:get'
+export const SIDEBAR_SESSION_SET = 'sidebar-session:set'
 
 // Layouts
 export const LAYOUT_SAVE = 'layout:save'

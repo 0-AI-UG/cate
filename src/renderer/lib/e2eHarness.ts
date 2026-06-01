@@ -40,6 +40,20 @@ declare global {
 export function installE2EHarness(): void {
   if (window.__cateE2E) return
 
+  // Kill CSS transitions/animations under e2e. The windows are hidden (main's
+  // revealWindow is a no-op under CATE_E2E), and a hidden window throttles the
+  // compositor — so anything animated over time (node enter/exit, drag opacity,
+  // layout) would otherwise leave the timing-sensitive specs reading a
+  // mid-animation rect. Making every transition instant keeps geometry/visual
+  // state final the moment it changes. (Node enter/exit state is also forced to
+  // its final value at the source — see canvasStore/CanvasNode — since those are
+  // rAF/timer driven, not pure CSS.)
+  const noAnim = document.createElement('style')
+  noAnim.setAttribute('data-cate-e2e-no-animations', '')
+  noAnim.textContent =
+    '*, *::before, *::after { transition-duration: 0s !important; transition-delay: 0s !important; animation-duration: 0s !important; animation-delay: 0s !important; }'
+  document.head.appendChild(noAnim)
+
   // The Canvas component stamps data-canvas-panel-id on its root — use the
   // DOM as the source of truth for which canvas is currently mounted/active.
   const activeCanvasPanelId = (): string | null => {

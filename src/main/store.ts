@@ -17,13 +17,16 @@ import {
   BOOT_SNAPSHOT_WRITE,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
+  RECENT_PROJECTS_REMOVE,
+  SIDEBAR_SESSION_GET,
+  SIDEBAR_SESSION_SET,
   LAYOUT_SAVE,
   LAYOUT_LIST,
   LAYOUT_LOAD,
   LAYOUT_DELETE,
 } from '../shared/ipc-channels'
 import { DEFAULT_SETTINGS } from '../shared/types'
-import type { AppSettings } from '../shared/types'
+import type { AppSettings, SidebarSession } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
 
 // ---------------------------------------------------------------------------
@@ -44,6 +47,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   zoomSpeed: 'number',
   autoFocusLargestVisibleNode: 'boolean',
   canvasGridStyle: 'string',
+  snapToGrid: 'boolean',
   terminalFontFamily: 'string',
   terminalFontSize: 'number',
   terminalScrollback: 'number',
@@ -296,6 +300,27 @@ export function registerHandlers(): void {
     const filtered = existing.filter((p) => p !== projectPath)
     const updated = [projectPath, ...filtered].slice(0, 10)
     store.set('recentProjects', updated)
+  })
+
+  // Drop a project from the recent list (issue #220): closing a workspace should
+  // forget the project so it doesn't reappear on next launch and re-enter the
+  // deferred-restore path. Without this the only way to forget a project was to
+  // hand-edit config.json.
+  ipcMain.handle(RECENT_PROJECTS_REMOVE, async (_event, projectPath: string) => {
+    const store = await getStore()
+    const existing: string[] = store.get('recentProjects', []) as string[]
+    store.set('recentProjects', existing.filter((p) => p !== projectPath))
+  })
+
+  // Sidebar session (workspace order + active workspace, keyed by root path)
+  ipcMain.handle(SIDEBAR_SESSION_GET, async () => {
+    const store = await getStore()
+    return store.get('sidebarSession', null) as SidebarSession | null
+  })
+
+  ipcMain.handle(SIDEBAR_SESSION_SET, async (_event, session: SidebarSession) => {
+    const store = await getStore()
+    store.set('sidebarSession', session)
   })
 
   // Layouts
