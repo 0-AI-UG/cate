@@ -119,6 +119,27 @@
   }
 }
 
+/* Sidebar scrollbars: a touch thicker, squared-off, and only visible while the
+   pointer is over the sidebar. The thumb is transparent until then (its track
+   space stays reserved, so revealing it doesn't shift the content). Unlayered
+   so it overrides the @layer base defaults above. */
+[data-sidebar-scrollarea] ::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+[data-sidebar-scrollarea] ::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 0;
+  /* Fade the thumb in/out as the pointer enters/leaves the sidebar. */
+  transition: background-color 280ms ease;
+}
+[data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+[data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
 /* Electron window drag region */
 .titlebar-drag {
   -webkit-app-region: drag;

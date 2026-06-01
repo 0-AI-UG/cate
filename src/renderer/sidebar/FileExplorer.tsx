@@ -79,6 +79,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const rootCreateInputRef = useRef<HTMLInputElement>(null)
   const lastSelectedPath = useRef<string | null>(null)
+  const treeContainerRef = useRef<HTMLDivElement>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rootPathRef = useRef(rootPath)
@@ -274,6 +275,14 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
 
   const handleSelect = useCallback(
     (path: string, meta: { shift?: boolean; cmd?: boolean }) => {
+      // Shift-range needs the paths in their actual on-screen order. visiblePaths
+      // only has top-level entries (nested children live in each FileTreeNode's
+      // local state), so read the rendered rows from the DOM instead — that
+      // reflects exactly what's visible, including expanded sub-folders.
+      const domOrder = meta.shift && treeContainerRef.current
+        ? Array.from(treeContainerRef.current.querySelectorAll<HTMLElement>('[data-filepath]'))
+            .map((el) => el.dataset.filepath!)
+        : visiblePaths
       setSelectedPaths((prev) => {
         if (meta.cmd) {
           // Toggle individual selection
@@ -287,15 +296,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
           return next
         }
         if (meta.shift && lastSelectedPath.current) {
-          // Range selection
-          const startIdx = visiblePaths.indexOf(lastSelectedPath.current)
-          const endIdx = visiblePaths.indexOf(path)
+          // Range selection across the visible rows (anchor → clicked).
+          const startIdx = domOrder.indexOf(lastSelectedPath.current)
+          const endIdx = domOrder.indexOf(path)
           if (startIdx !== -1 && endIdx !== -1) {
             const [lo, hi] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx]
             const next = new Set(prev)
             for (let i = lo; i <= hi; i++) {
-              next.add(visiblePaths[i])
+              next.add(domOrder[i])
             }
+            // Keep the anchor where it was so a second shift-click re-ranges
+            // from the same origin (matches Finder/VS Code behavior).
             return next
           }
         }
@@ -303,6 +314,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         lastSelectedPath.current = path
         return new Set([path])
       })
+      // Move keyboard focus into the tree so Delete/Backspace is handled here.
+      // The rows are draggable <div>s, which don't reliably take focus on click,
+      // so focus the (tabbable) scroll container explicitly. preventScroll keeps
+      // the list from jumping when a row deep in the tree is clicked.
+      treeContainerRef.current?.focus({ preventScroll: true })
     },
     [visiblePaths],
   )
@@ -327,6 +343,33 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const handleReload = useCallback(() => {
     if (rootPath) loadTree(rootPath)
   }, [rootPath, loadTree])
+
+  // Delete one or many paths in a single confirm (used by both the
+  // Cmd+Backspace / Delete keyboard shortcut and the right-click menu, so a
+  // multi-selection is removed all at once rather than one file per action).
+  const deletePaths = useCallback(async (paths: string[]) => {
+    if (!window.electronAPI || paths.length === 0) return
+    const label = paths.length === 1
+      ? `"${paths[0].split('/').pop()}"`
+      : `${paths.length} items`
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    for (const p of paths) {
+      try {
+        await window.electronAPI.fsDelete(p)
+      } catch (err) {
+        console.error('[file-explorer] Failed to delete entry:', err)
+      }
+    }
+    setSelectedPaths(new Set())
+    handleReload()
+  }, [handleReload])
+
+  const handleTreeKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPaths.size > 0) {
+      e.preventDefault()
+      void deletePaths([...selectedPaths])
+    }
+  }, [selectedPaths, deletePaths])
 
   // Resolve the target directory for new file/folder creation based on selection
   const getSelectedDir = useCallback((): string | null => {
@@ -596,7 +639,15 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         </div>
       ) : (
         <div
-          className="flex-1 overflow-y-auto py-1"
+          ref={treeContainerRef}
+          className="flex-1 overflow-y-auto py-1 outline-none"
+          // Focusable + tagged so Delete/Backspace (incl. Cmd+Backspace) deletes
+          // the selection here instead of being swallowed by the canvas-level
+          // shortcut handler. Focused explicitly from onSelect (draggable rows
+          // don't reliably focus this container on click).
+          tabIndex={-1}
+          data-sidebar-keynav
+          onKeyDown={handleTreeKeyDown}
           onClick={(e) => {
             // Click on empty area clears selection
             if (e.target === e.currentTarget) setSelectedPaths(new Set())
@@ -636,6 +687,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               selectedPaths={selectedPaths}
               onSelect={handleSelect}
               onFileOpen={handleFileOpen}
+              onDeletePaths={deletePaths}
               onTreeChanged={handleReload}
               refreshSignal={refreshSignal}
               visiblePaths={visiblePaths}

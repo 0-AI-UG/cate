@@ -27,6 +27,7 @@ export const ProjectList: React.FC = () => {
   }, [workspaces])
 
   const handleWorkspaceClick = useCallback((index: number, wsId: string, e?: React.MouseEvent) => {
+    // Shift-click — select the contiguous range from the anchor to here.
     if (e?.shiftKey && lastClickedIndexRef.current !== null) {
       const start = Math.min(lastClickedIndexRef.current, index)
       const end = Math.max(lastClickedIndexRef.current, index)
@@ -35,6 +36,19 @@ export const ProjectList: React.FC = () => {
         rangeIds.add(workspaces[i].id)
       }
       setMultiSelected(rangeIds)
+      return
+    }
+
+    // Cmd/Ctrl-click — toggle this workspace in/out of the multi-selection
+    // (matches the file explorer's multi-select).
+    if (e?.metaKey || e?.ctrlKey) {
+      setMultiSelected((prev) => {
+        const next = new Set(prev)
+        if (next.has(wsId)) next.delete(wsId)
+        else next.add(wsId)
+        return next
+      })
+      lastClickedIndexRef.current = index
       return
     }
 
@@ -99,6 +113,7 @@ export const ProjectList: React.FC = () => {
       className="flex flex-col h-full"
       ref={containerRef}
       tabIndex={-1}
+      data-sidebar-keynav
       onKeyDown={handleKeyDown}
     >
       <SidebarSectionHeader
@@ -110,8 +125,11 @@ export const ProjectList: React.FC = () => {
         }
       />
 
-      {/* Scrollable workspace list */}
-      <div className="flex-1 overflow-y-auto py-1">
+      {/* Scrollable workspace list. No top padding so the first row sits flush
+          beneath the 36px header — matching the canvas dock tab bar, whose
+          content starts flush below its bar. A top gap makes the header read
+          as taller than the canvas header. */}
+      <div className="flex-1 overflow-y-auto pb-1">
         <div className="flex flex-col">
           {displayWorkspaces.map((ws, index) => {
             const isLast = index === displayWorkspaces.length - 1

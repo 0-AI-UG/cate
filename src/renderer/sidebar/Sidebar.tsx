@@ -338,6 +338,12 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
     <div
       className={`flex-1 min-w-0 flex flex-col h-full overflow-hidden transition-opacity duration-200 relative ${
         isExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
+      } ${
+        // Left sidebar's vertical scrollbar is on its right edge — exactly where
+        // the 6px resize handle sits. Inset the content by the handle width so
+        // the scrollbar clears it and stays draggable. (The right sidebar's
+        // scrollbar is next to its activity bar, away from its handle.)
+        side === 'left' ? 'pr-1' : ''
       }`}
     >
       <div className="flex-1 min-h-0 overflow-hidden relative">
@@ -364,6 +370,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
 
   return (
     <div
+      data-sidebar-scrollarea
       className={`flex-shrink-0 relative flex flex-row h-full select-none overflow-hidden ${
         isResizing ? '' : 'transition-[width] duration-200 ease-in-out'
       }`}
@@ -408,7 +415,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
       {/* Resize handle on the inner edge, only when expanded */}
       {isExpanded && (
         <div
-          className={`absolute top-0 ${side === 'left' ? 'right-0' : 'left-0'} w-[6px] h-full cursor-col-resize z-10 ${
+          className={`absolute top-0 ${side === 'left' ? 'right-0' : 'left-0'} w-[4px] h-full cursor-col-resize z-10 ${
             isResizing ? 'bg-blue-500/30' : ''
           }`}
           onMouseDown={handleResizeDown}
