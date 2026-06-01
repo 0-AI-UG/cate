@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-01
+
+Polish release: grid snapping on the canvas, steadier sidebar and window handling, a big batch of new editor themes, and opt-in usage analytics for agent messages.
+
+### Added
+
+- **Snap to grid**: windows snap to a grid as you drag them on the canvas, so they line up cleanly without manual nudging. (#165)
+- **Sidebar memory and tab menu**: the sidebar remembers its tab order and the active workspace, and a right-click menu lets you rename or close a tab. (#225, #193)
+- **Custom OpenAI-compatible endpoint**: point the agent at your own provider through a configurable endpoint. (#203)
+- **Theme-aware window chrome**: native window chrome follows the active theme, with a new Dark Cold default. (#190)
+- **Git decorations in the file tree**: VS Code-style status colors so you can read a file's git state at a glance. (#205)
+- **More terminal controls**: a text-contrast setting and an Option-as-Meta toggle for macOS keyboards. (#206, #192)
+- **New themes**: Clay Light and Clay Dark, plus Visual Studio Light and Dark, the One Dark Pro family, and One Light. (#210, #196)
+- **One .cate gitignore**: a single `.cate/.gitignore` now covers session, agent, and worktree files. (#218)
+- **Usage analytics for agent messages**: anonymous, opt-in tracking of how many messages are sent to agents. It records only the message kind, its length, and whether images were attached, never the message text, and you can turn it off in settings. (#244)
+
+### Changed
+
+- **Markdown preview follows the theme**: the preview now matches whichever theme is active. (#208)
+- **Lighter idle cost**: idle terminals use less CPU and per-frame canvas culling is cheaper. (#201)
+- **Shared window focus helper**: window restore and focus logic now lives in one place. (#230)
+- **Removed legacy canvas panels**: dropped the obsolete git, file explorer, and project list canvas panels. (#226)
+
+### Fixed
+
+- **Deferred workspace activation**: activating a deferred workspace no longer wipes the canvas, and browser logins persist across sessions. (#220, #235)
+- **Chat scroll position**: the agent chat keeps its place across refocus, with a new scroll-to-bottom button. (#233)
+- **Shared-project reload loop**: two copies of Cate open on the same project no longer loop on reload. (#229)
+- **Empty file tree on new workspaces**: the explorer retries its initial load, and nested folders refresh to match disk. (#212, #219)
+- **Popover position and selectable replies**: chat input popovers stay correctly placed at any zoom, and chat replies can be selected. (#199, #189)
+- **Terminal scroll and file drop**: the terminal keeps its scroll position across dock-tab switches, and external file drops insert a path again. (#202, #200)
+- **Hand tool**: the Hand tool is fully inert, showing a grab cursor without firing clicks. (#207)
+- **Sidebar polish**: header alignment, multi-select and delete, and scrollbar fixes. (#242)
+- **Packaged builds**: the gh CLI resolves through the shell environment, and the subagent extension ships in packaged builds. (#198, #197)
+- **Running-title shimmer**: stays white over worktree colors. (#234)
+
 ## [1.1.0] - 2026-05-29
 
 Feature release: unified theming, a redesigned parallel-work flow, clickable terminal links, and configurable file exclusions.
