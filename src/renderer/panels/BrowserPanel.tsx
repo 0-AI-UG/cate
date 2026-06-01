@@ -20,6 +20,15 @@ import { isUrl, normalizeUrl } from './browserUrl'
 
 // Electron already declares webview in its types - we use 'as any' on the ref instead
 
+// Single shared persistent session for all browser panels (issue #220 bug 2).
+// Previously the partition was keyed to the runtime panelId
+// (`persist:browser-${panelId}`), but panelId is regenerated as a fresh UUID on
+// every session restore, so each restart pointed at a brand-new empty cookie
+// jar and logins were lost (with an orphaned partition leaking on disk per
+// restart). A single stable partition keeps cookies/logins across restarts and
+// panel re-creation. Trade-off: all browser panels share one cookie store.
+const BROWSER_PARTITION = 'persist:browser-shared'
+
 interface WebviewElement extends HTMLElement {
   loadURL(url: string): void
   goBack(): void
@@ -366,7 +375,7 @@ export default function BrowserPanel({
           ref={webviewRef as any}
           src={webviewSrc}
           className={`w-full h-full ${loadError ? 'hidden' : ''}`}
-          partition={`persist:browser-${panelId}`}
+          partition={BROWSER_PARTITION}
         />
 
         {/* Screenshot thumbnail */}

@@ -95,6 +95,14 @@ export function getAllWindows(): BrowserWindow[] {
   return result
 }
 
+/** Un-minimize (if needed) and bring a single window to the foreground.
+ *  The shared "make this window the active one" idiom used wherever the app
+ *  surfaces an existing window (open-path, notification click). */
+export function focusWindow(win: BrowserWindow): void {
+  if (win.isMinimized()) win.restore()
+  win.focus()
+}
+
 /**
  * Send an IPC message to a specific window by ID. No-op if window is gone.
  */

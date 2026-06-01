@@ -273,6 +273,9 @@ export function useShortcuts(): void {
       // shortcut below (which deletes the currently focused panel).
       if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey) {
         if (terminalHasFocus) return
+        // The sidebar (workspace list / file explorer) owns Delete/Backspace
+        // when focused, so its own handler can delete the multi-selection.
+        if (isSidebarKeyNavFocused()) return
         const state = canvasStore()
         if (state.selectedNodeIds.size > 0 || state.selectedRegionIds.size > 0) {
           // Don't delete if a text input is focused
@@ -329,6 +332,10 @@ export function useShortcuts(): void {
       // the keystroke would never reach the shell (issue #172).
       if (action === 'deleteNode') {
         if (terminalHasFocus || isTextSurfaceFocused()) return
+        // Cmd+Backspace inside the sidebar deletes the selected workspaces/files
+        // — let it bubble to the sidebar's own keydown handler instead of
+        // closing a canvas panel.
+        if (isSidebarKeyNavFocused()) return
       }
 
       // Keyboard-only passthrough: when a browser panel is focused, let
@@ -369,6 +376,17 @@ export function useShortcuts(): void {
       if (active.getAttribute('contenteditable') === 'true') return true
       if (active.closest('[contenteditable="true"]')) return true
       return false
+    }
+
+    /**
+     * True when focus is inside a sidebar list that handles its own
+     * Delete/Backspace (workspace list, file explorer). Those containers are
+     * tagged with `data-sidebar-keynav`; when one is focused the global canvas
+     * delete shortcuts must stand down so the list can delete its selection.
+     */
+    function isSidebarKeyNavFocused(): boolean {
+      const active = document.activeElement as HTMLElement | null
+      return !!active?.closest('[data-sidebar-keynav]')
     }
 
     document.addEventListener('keydown', handleKeyDown, { capture: true })

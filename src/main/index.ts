@@ -31,7 +31,7 @@ import { AgentManager } from '../agent/main/agentManager'
 // Shared singletons for pi agent + auth.
 const agentManager = new AgentManager(authManager)
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
-import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
+import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows, focusWindow } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { addAllowedRoot, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow, grantFileAccess, validatePath } from './ipc/pathValidation'
 import { listPersistentGrants, recordPersistentGrant } from './grantedPathStore'
@@ -49,7 +49,6 @@ import { PERF_GET } from '../shared/ipc-channels'
 import { installWebContentsSecurity } from './webSecurity'
 import { installThemeSkill } from './installThemeSkill'
 import { releaseAllProjectLocks } from './projectLock'
-import { focusRunningInstanceWindow, focusWindow } from './singleInstance'
 import {
   startCrossWindowDrag,
   updateCrossWindowCursor,
@@ -94,6 +93,28 @@ async function runSmokeAssertions(win: BrowserWindow): Promise<void> {
 
   if (!result?.hasElectronAPI || !result?.hasFullscreenCheck) {
     throw new Error('Smoke test failed: preload bridge did not initialize correctly')
+  }
+}
+
+// Under Playwright (CATE_E2E=1) a normal show() opens the window on the user's
+// active screen and steals focus — and on macOS a *shown* window can't be kept
+// off-screen (off-screen coordinates get clamped back onto a display). So under
+// e2e we never show the window at all: it's never mapped to a display, and
+// Playwright drives the renderer over CDP. A hidden window throttles its rAF
+// loop, so the renderer is instead made deterministic without a visible window
+// elsewhere (e2eHarness zeroes CSS animations; canvas nodes are created already
+// idle; node removal is finalized immediately) so the drag specs stay reliable.
+const IS_E2E = process.env.CATE_E2E === '1'
+
+/** Show a window — but under e2e keep it hidden (never mapped to a display) so it
+ *  never appears on screen or steals focus. Playwright drives it over CDP. */
+function revealWindow(win: BrowserWindow, opts: { focus?: boolean } = {}): void {
+  try {
+    if (IS_E2E) return // never map to a display — Playwright drives it over CDP
+    win.show()
+    if (opts.focus) win.focus()
+  } catch {
+    /* window may already be destroyed */
   }
 }
 
@@ -161,13 +182,19 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
       sandbox: !disableRendererSandbox(),
       webSecurity: true,
       webviewTag: true,
+      // Under e2e the window is never shown (revealWindow is a no-op).
+      // paintWhenInitiallyHidden makes the hidden renderer paint + fire
+      // ready-to-show anyway; backgroundThrottling:false keeps its rAF/timers
+      // running. (CSS animations are also disabled in e2eHarness.) Harmless
+      // no-ops outside e2e.
+      ...(IS_E2E ? { backgroundThrottling: false, paintWhenInitiallyHidden: true } : {}),
     },
   })
 
   // Show on ready-to-show so the first frame is fully painted before the
   // window appears — eliminates the white flash from initial mount.
   win.once('ready-to-show', () => {
-    try { win.show() } catch { /* destroyed */ }
+    revealWindow(win)
   })
 
   // Persist main-window geometry to the boot snapshot so the next cold launch
@@ -921,12 +948,8 @@ function registerWindowAndDialogHandlers(): void {
       sendToWindow(newWin.id, PANEL_RECEIVE, snapshot)
       // Force show + focus — on macOS in fullscreen, the new window may not
       // auto-show because the OS thinks it belongs to a different Space.
-      try {
-        newWin.show()
-        newWin.focus()
-      } catch {
-        /* window may already be destroyed */
-      }
+      // (revealWindow skips the focus and stays inactive under e2e.)
+      revealWindow(newWin, { focus: true })
     })
 
     cleanupDragTempFile()
@@ -1153,6 +1176,9 @@ if (process.env.CATE_E2E === '1') {
   const os = require('os') as typeof import('os')
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))
   app.setPath('userData', tmp)
+  // Keep the e2e app out of the macOS dock / app-switcher so launching it never
+  // foregrounds the shared Electron bundle (and a running `npm run dev`).
+  app.dock?.hide()
 }
 
 // ---------------------------------------------------------------------------
@@ -1184,7 +1210,8 @@ function deliverOpenPath(p: string): void {
     return
   }
   try {
-    focusWindow(win)
+    // Skip in e2e so opening a path never foregrounds the shared Electron bundle.
+    if (!IS_E2E) focusWindow(win)
   } catch { /* noop */ }
   win.webContents.send(APP_OPEN_PATH, p)
 }
@@ -1260,31 +1287,7 @@ process.on('SIGINT', () => {
   process.exit(0)
 })
 
-// Single-instance lock — packaged builds only. A second launch (CLI,
-// double-click) must not spin up a rival process: two Cate processes on the same
-// project both autosave .cate/workspace.json, and each then sees the other's
-// writes as an external edit, firing a spurious "Reload workspace from disk?"
-// prompt on a ~30s loop. Hand off to the already-running instance and focus its
-// window instead.
-//
-// Dev builds are exempt: they run on a separate `Cate/Dev` userData profile (set
-// above), so they never collide with an installed build, and running several
-// `npm run dev` copies side by side (e.g. different branches) stays useful.
-const enforceSingleInstance = app.isPackaged
-const gotSingleInstanceLock = !enforceSingleInstance || app.requestSingleInstanceLock()
-if (!gotSingleInstanceLock) {
-  log.info('Another Cate instance already holds the single-instance lock; quitting this one')
-  app.quit()
-} else if (enforceSingleInstance) {
-  app.on('second-instance', () => {
-    focusRunningInstanceWindow(BrowserWindow.getAllWindows())
-  })
-}
-
 app.whenReady().then(async () => {
-  // The losing instance may still reach 'ready' before app.quit() settles —
-  // never build windows or register handlers in it.
-  if (!gotSingleInstanceLock) return
   // Phase 0 perf marker — log a high-resolution timestamp at app.whenReady
   // so cold-launch traces can be reconstructed from main + renderer logs.
   log.info('[perf] app.whenReady t=%dms', Math.round(performance.now()))

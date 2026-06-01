@@ -4,8 +4,7 @@
 
 import { ipcMain, Notification, app } from 'electron'
 import { NOTIFY_OS, NOTIFY_ACTION } from '../../shared/ipc-channels'
-import { sendToWindow, windowFromEvent } from '../windowRegistry'
-import { focusWindow } from '../singleInstance'
+import { sendToWindow, windowFromEvent, focusWindow } from '../windowRegistry'
 import type { NotificationAction } from '../../shared/types'
 
 export function registerHandlers(): void {

@@ -30,6 +30,12 @@ import { viewToCanvas as viewToCanvasCoords } from '../lib/coordinates'
 import { REGION_FILL_COLORS } from '../../shared/colors'
 import { perfCount } from '../lib/perf/perfClient'
 
+// Under e2e the windows are hidden, which throttles rAF — the rAF-driven
+// entering->idle node transition can stall, leaving nodes at scale(0.85) so
+// boundingBox-based drag specs grab the wrong point. Create nodes already idle
+// in e2e so their geometry is final immediately (no enter animation).
+const IS_E2E = typeof window !== 'undefined' && window.electronAPI?.isE2E === true
+
 // -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
@@ -418,7 +424,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       size: defaultSize,
       zOrder: state.nextZOrder,
       creationIndex: state.nextCreationIndex,
-      animationState: 'entering',
+      animationState: IS_E2E ? 'idle' : 'entering',
       // Seed the per-node dock layout with a single tab stack containing the
       // initial panel. The CanvasNodeWrapper hydrates this into a per-node
       // DockStore on mount.

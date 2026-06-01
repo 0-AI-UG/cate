@@ -132,12 +132,57 @@ async function tryReadJson<T>(filePath: string): Promise<T | null> {
   }
 }
 
+// Count of canvas nodes in a workspace file, or -1 when the value isn't a
+// readable workspace. Used by the data-loss guards (issue #220) to compare the
+// richness of two candidate files / an incoming write vs. what's on disk.
+function workspaceNodeCount(data: unknown): number {
+  if (!isValidWorkspace(data)) return -1
+  const nodes = (data as ProjectWorkspaceFile).canvas?.nodes
+  return Array.isArray(nodes) ? nodes.length : -1
+}
+
+// True when writing `incomingNodeCount` nodes over the workspace.json at
+// `rootPath` would replace a non-empty saved canvas with an empty one — the
+// issue #220 data-loss footgun. The sync read keeps the quit-time fallback
+// (saveProjectStateSync) honest without an await.
+function wouldEmptyOverwriteWorkspaceSync(rootPath: string, incomingNodeCount: number): boolean {
+  if (incomingNodeCount > 0) return false
+  try {
+    const existing = JSON.parse(fsSync.readFileSync(workspacePath(rootPath), 'utf-8'))
+    return workspaceNodeCount(existing) > 0
+  } catch {
+    return false
+  }
+}
+
 async function tryReadWithFallback<T>(filePath: string): Promise<T | null> {
   const result = await tryReadJson<T>(filePath)
   if (result) return result
   const tmp = await tryReadJson<T>(filePath + '.tmp')
   if (tmp) return tmp
   return tryReadJson<T>(filePath + '.bak')
+}
+
+// Workspace-aware read (issue #220): the plain primary file can be a valid but
+// *empty* canvas left behind by a wipe. When that happens, prefer the richer of
+// primary / .tmp / .bak so a previously-wiped workspace still recovers its
+// panels on the next load instead of perpetuating the empty state.
+async function readWorkspaceWithFallback(filePath: string): Promise<ProjectWorkspaceFile | null> {
+  const candidates = await Promise.all([
+    tryReadJson<ProjectWorkspaceFile>(filePath),
+    tryReadJson<ProjectWorkspaceFile>(filePath + '.tmp'),
+    tryReadJson<ProjectWorkspaceFile>(filePath + '.bak'),
+  ])
+  let best: ProjectWorkspaceFile | null = null
+  let bestCount = -1
+  for (const candidate of candidates) {
+    const count = workspaceNodeCount(candidate)
+    if (count > bestCount) {
+      best = candidate
+      bestCount = count
+    }
+  }
+  return best
 }
 
 function isValidWorkspace(data: unknown): data is ProjectWorkspaceFile {
@@ -157,6 +202,26 @@ export async function saveProjectState(
   workspace: ProjectWorkspaceFile,
   session: ProjectSessionFile,
 ): Promise<void> {
+  // Data-loss backstop (issue #220): never overwrite a non-empty saved canvas
+  // with an empty one. A renderer-side race while activating a deferred
+  // (non-selected) workspace can momentarily serialize an empty canvas; without
+  // this guard that empty snapshot clobbers the good workspace.json/session.json
+  // and the loss is permanent — the empty file is still structurally "valid", so
+  // the .bak fallback is never consulted on the next load. This mirrors the
+  // renderer's own shouldPreserveExistingCanvas guard (clearing every panel
+  // already doesn't persist as empty for the selected workspace), extended to
+  // the disk boundary so it also covers deferred/non-selected workspaces.
+  if (workspace.canvas.nodes.length === 0) {
+    const existingCount = workspaceNodeCount(await tryReadJson(workspacePath(rootPath)))
+    if (existingCount > 0) {
+      log.warn(
+        'Refusing to overwrite %d-node canvas with an empty one for %s (issue #220 guard)',
+        existingCount,
+        cateDir(rootPath),
+      )
+      return
+    }
+  }
   const wsJson = JSON.stringify(workspace, null, 2)
   const sessJson = JSON.stringify(session, null, 2)
   await ensureCateGitignore(cateDir(rootPath))
@@ -171,7 +236,7 @@ export async function loadProjectState(rootPath: string): Promise<{
   workspace: ProjectWorkspaceFile
   session: ProjectSessionFile | null
 } | null> {
-  const ws = await tryReadWithFallback<ProjectWorkspaceFile>(workspacePath(rootPath))
+  const ws = await readWorkspaceWithFallback(workspacePath(rootPath))
   if (!ws || !isValidWorkspace(ws)) return null
   // Track the on-disk content so a later autosave can tell our own writes apart
   // from an external edit. Hash the raw file (not a re-serialization) so the
@@ -196,6 +261,10 @@ export function saveProjectStateSync(): void {
       atomicWriteSync(sessionPath(rootPath), session)
       if (workspaceEditedExternallySync(rootPath)) {
         log.info('Skipping workspace.json sync overwrite for %s — edited externally', cateDir(rootPath))
+      } else if (wouldEmptyOverwriteWorkspaceSync(rootPath, workspaceNodeCount(JSON.parse(workspace)))) {
+        // issue #220 guard: don't let the quit-time fallback flush an empty
+        // canvas over a good one (mirrors the async saveProjectState guard).
+        log.warn('Refusing empty workspace.json sync overwrite for %s (issue #220 guard)', cateDir(rootPath))
       } else {
         atomicWriteSync(workspacePath(rootPath), workspace)
         rememberWorkspaceContent(rootPath, workspace)
