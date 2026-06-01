@@ -489,6 +489,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }, [workspace.name, workspace.rootPath])
 
   const handleTitleClick = useCallback((e: React.MouseEvent) => {
+    // Modified clicks are multi-select gestures — let them fall through to the
+    // row handler instead of entering rename.
+    if (e.shiftKey || e.metaKey || e.ctrlKey) return
     // First click selects the workspace (parent handler). Once selected, a
     // click on the title enters rename mode — replacing the dedicated pencil.
     if (!isSelected) return
