@@ -88,6 +88,7 @@ import {
   DIALOG_TERMINAL_LINK_OPEN,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
+  RECENT_PROJECTS_REMOVE,
   SIDEBAR_SESSION_GET,
   SIDEBAR_SESSION_SET,
   LAYOUT_SAVE,
@@ -771,6 +772,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   recentProjectsAdd(projectPath: string): Promise<void> {
     return ipcRenderer.invoke(RECENT_PROJECTS_ADD, projectPath)
+  },
+  recentProjectsRemove(projectPath: string): Promise<void> {
+    return ipcRenderer.invoke(RECENT_PROJECTS_REMOVE, projectPath)
   },
 
   sidebarSessionGet(): Promise<SidebarSession | null> {
