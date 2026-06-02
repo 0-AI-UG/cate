@@ -115,8 +115,95 @@ jobs:
             --repo "${{ github.repository }}" \
             --clobber
 
+  # Per-target cate-companion daemon tarballs. Built on the matching runner so
+  # node-pty's native binary is correct for the target; linux-arm64 is cross-
+  # built in a QEMU-emulated container (--docker). Uploaded to the same release
+  # so a connecting host can pull its tarball straight from the release URL
+  # (see src/main/companion/companionArtifacts.ts).
+  companion:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: ubuntu-latest
+            target: linux-arm64
+            docker: true
+          - os: macos-latest
+            target: darwin-arm64
+          - os: macos-13
+            target: darwin-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install setuptools (needed by node-gyp)
+        run: pip install setuptools
+
+      - name: Set up QEMU (linux-arm64 cross-build)
+        if: matrix.docker
+        uses: docker/setup-qemu-action@v3
+
+      - name: Delete lockfile
+        run: node -e "try{require('fs').unlinkSync('package-lock.json')}catch{}"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build companion tarball (${{ matrix.target }})
+        run: node scripts/build-companion-tarball.mjs --target ${{ matrix.target }} ${{ matrix.docker && '--docker' || '' }}
+
+      - name: Upload companion tarball
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release upload "$TAG_NAME" dist-companion/cate-companion-*-${{ matrix.target }}.tgz \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+  # The pi coding agent tarball — cross-platform (no native deps in --mode rpc),
+  # so a single runner builds the one artifact for every host. Pulled on demand
+  # when the agent is first used on a host (local or remote).
+  pi:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Delete lockfile
+        run: node -e "try{require('fs').unlinkSync('package-lock.json')}catch{}"
+      - name: Install dependencies
+        run: npm install
+      - name: Build pi tarball
+        run: node scripts/build-pi-tarball.mjs
+      - name: Upload pi tarball
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release upload "$TAG_NAME" dist-companion/cate-pi-*.tgz \
+            --repo "${{ github.repository }}" \
+            --clobber
+
   publish-release:
-    needs: release
+    needs: [release, companion, pi]
     runs-on: ubuntu-latest
     steps:
       - name: Publish release (remove draft)

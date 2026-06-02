@@ -16,6 +16,7 @@ import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
+import { workspaceDisplayName } from '../lib/displayPath'
 
 // -----------------------------------------------------------------------------
 // Panel jump helper — focus a panel inside a workspace, switching workspace
@@ -383,7 +384,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     switch (id) {
       case 'select': app.selectWorkspace(workspace.id); break
       case 'rename':
-        setRenameValue(workspace.name || workspace.rootPath.split('/').pop() || 'Workspace')
+        setRenameValue(workspace.name || workspaceDisplayName(workspace.rootPath) || 'Workspace')
         setIsRenaming(true)
         break
       case 'select-folder': {
@@ -484,7 +485,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }, [workspace.id])
 
   const beginRename = useCallback(() => {
-    setRenameValue(workspace.name || workspace.rootPath?.split('/').pop() || 'Workspace')
+    setRenameValue(workspace.name || (workspace.rootPath ? workspaceDisplayName(workspace.rootPath) : '') || 'Workspace')
     setIsRenaming(true)
   }, [workspace.name, workspace.rootPath])
 
@@ -526,7 +527,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     )
   }
 
-  const lastSegment = workspace.rootPath.split('/').filter(Boolean).pop() || 'Workspace'
+  const lastSegment = workspaceDisplayName(workspace.rootPath) || 'Workspace'
   const hasCustomName = workspace.name && workspace.name !== lastSegment && workspace.name !== 'Workspace'
   const displayTitle = hasCustomName ? workspace.name! : lastSegment
 

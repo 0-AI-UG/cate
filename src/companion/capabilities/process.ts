@@ -1,0 +1,272 @@
+// =============================================================================
+// Process capability — electron-free node-pty wrapper. Owns the PTY map keyed by
+// id and streams output via the create-time callbacks; it has NO knowledge of
+// windows, buffering, transfer, idle-suspend, or logging — those stay in the
+// terminal.ts session layer (electron) which forwards to the owning window.
+//
+// Shell resolution + env are injected so the SAME code runs locally (Electron's
+// resolveShell + login-shell env) and inside the daemon (the remote host's
+// shell + env). lsof-based cwd resolution is POSIX-only (null elsewhere).
+// =============================================================================
+
+import type { IPty } from 'node-pty'
+import os from 'os'
+import { execFile } from 'child_process'
+import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/companion/types'
+import type { TerminalActivity } from '../../shared/types'
+
+// ---------------------------------------------------------------------------
+// Process-monitor helpers (POSIX). Ported verbatim from the old shell.ts local
+// monitor so a LOCAL companion derives byte-identical activity/ports; a remote
+// companion runs the same scans on the daemon host (`ps`/`lsof` are POSIX there).
+// ---------------------------------------------------------------------------
+
+interface ProcTree {
+  /** comm basename, keyed by pid. */
+  nameByPid: Map<number, string>
+  /** direct child pids, keyed by parent pid. */
+  childrenByPid: Map<number, number[]>
+}
+
+/** ONE `ps` snapshot of the whole process table, indexed for tree walks. */
+function snapshotProcessTree(): Promise<ProcTree> {
+  return new Promise((resolve) => {
+    execFile('ps', ['-axo', 'pid=,ppid=,comm='], {
+      encoding: 'utf-8',
+      timeout: 3000,
+      maxBuffer: 8 * 1024 * 1024,
+    }, (err, stdout) => {
+      if (err || !stdout) {
+        resolve({ nameByPid: new Map(), childrenByPid: new Map() })
+        return
+      }
+      const nameByPid = new Map<number, string>()
+      const childrenByPid = new Map<number, number[]>()
+      for (const line of stdout.split('\n')) {
+        // "<pid> <ppid> <comm>" — comm may contain spaces (keep remainder) and
+        // can be a full path on macOS, so take the basename.
+        const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*\S)\s*$/)
+        if (!m) continue
+        const pid = parseInt(m[1], 10)
+        const ppid = parseInt(m[2], 10)
+        if (isNaN(pid) || isNaN(ppid)) continue
+        nameByPid.set(pid, m[3].split('/').pop() ?? m[3])
+        const siblings = childrenByPid.get(ppid)
+        if (siblings) siblings.push(pid)
+        else childrenByPid.set(ppid, [pid])
+      }
+      resolve({ nameByPid, childrenByPid })
+    })
+  })
+}
+
+/** All descendant pids of `pid` (BFS over the snapshot), excluding `pid`. */
+function descendantsOf(pid: number, tree: ProcTree): number[] {
+  const out: number[] = []
+  const stack = [...(tree.childrenByPid.get(pid) ?? [])]
+  while (stack.length > 0) {
+    const p = stack.pop()!
+    out.push(p)
+    const kids = tree.childrenByPid.get(p)
+    if (kids) stack.push(...kids)
+  }
+  return out
+}
+
+const AGENT_DEFINITIONS: { displayName: string; match: (name: string) => boolean }[] = [
+  { displayName: 'Claude Code', match: (n) => n === 'claude' || n === 'claude-code' || n.startsWith('claude') },
+  { displayName: 'Codex', match: (n) => n === 'codex' },
+  // Antigravity's CLI installs as `agy` (`antigravity` is the GUI IDE).
+  { displayName: 'Antigravity', match: (n) => n === 'agy' },
+  { displayName: 'Cursor', match: (n) => n === 'cursor' || n === 'cursor-agent' },
+  { displayName: 'OpenCode', match: (n) => n === 'opencode' },
+  // @earendil-works/pi-coding-agent — runs as the `pi` binary.
+  { displayName: 'PI Agent', match: (n) => n === 'pi' },
+]
+
+function matchAgentProcess(name: string): string | null {
+  const lower = name.toLowerCase()
+  for (const agent of AGENT_DEFINITIONS) {
+    if (agent.match(lower)) return agent.displayName
+  }
+  return null
+}
+
+function isShellProcess(name: string): boolean {
+  const shells = ['zsh', 'bash', 'fish', 'sh', 'tcsh', 'ksh', 'dash']
+  return shells.includes(name.toLowerCase())
+}
+
+/** Derive one pty's activity + agent detection from its direct children. */
+function activityForPid(shellPid: number, tree: ProcTree): PtyActivity {
+  const childrenToScan = tree.childrenByPid.get(shellPid) ?? []
+  let foundAgentName: string | null = null
+  let firstChildName: string | null = null
+  for (const childPid of childrenToScan) {
+    const name = tree.nameByPid.get(childPid)
+    if (!name) continue
+    if (firstChildName === null && !isShellProcess(name)) firstChildName = name
+    if (!foundAgentName) {
+      const agentMatch = matchAgentProcess(name)
+      if (agentMatch) foundAgentName = agentMatch
+    }
+  }
+  const activity: TerminalActivity =
+    firstChildName != null ? { type: 'running', processName: firstChildName } : { type: 'idle' }
+  return { activity, agentName: foundAgentName, agentPresent: foundAgentName != null }
+}
+
+// node-pty is loaded LAZILY so the daemon still starts (and serves files/git)
+// on a host where the native PTY binary isn't available (e.g. a Linux server
+// with no node-pty prebuild) — only terminal creation fails there, with a clear
+// error, instead of the whole daemon crashing on import.
+type PtySpawn = typeof import('node-pty').spawn
+let cachedSpawn: PtySpawn | null = null
+async function getPtySpawn(): Promise<PtySpawn> {
+  if (cachedSpawn) return cachedSpawn
+  try {
+    const mod = await import('node-pty')
+    cachedSpawn = mod.spawn
+    return cachedSpawn
+  } catch (err) {
+    throw new Error(
+      `Terminals are unavailable on this host: failed to load node-pty (${err instanceof Error ? err.message : String(err)}). ` +
+        'A platform-matched node-pty native binary must be staged for this target.',
+    )
+  }
+}
+
+export interface ResolvedProcessShell {
+  path: string
+  args: string[]
+  /** Optional notice to surface in the terminal (shell fallback, etc.). */
+  notice?: string
+}
+
+export interface ProcessDeps {
+  resolveShell: (requested?: string) => ResolvedProcessShell
+  getEnv: () => Record<string, string>
+}
+
+export function createProcessCapability(deps: ProcessDeps): ProcessHost {
+  const ptys = new Map<string, IPty>()
+  let seq = 0
+
+  return {
+    async create(
+      opts: PtyCreateOptions,
+      onData: (id: string, data: string) => void,
+      onExit: (id: string, exitCode: number) => void,
+    ): Promise<PtyHandle> {
+      const id = opts.id ?? `pty-${Date.now()}-${Math.round(seq++ + Math.random() * 1e6).toString(36)}`
+      const ptySpawn = await getPtySpawn()
+      const shell = deps.resolveShell(opts.shell)
+      const pty = ptySpawn(shell.path, shell.args, {
+        name: 'xterm-256color',
+        cols: opts.cols,
+        rows: opts.rows,
+        // Empty cwd → the host's home dir (resolved on whichever host this
+        // capability runs on: the local machine or the remote daemon).
+        cwd: opts.cwd || os.homedir(),
+        env: deps.getEnv(),
+      })
+      ptys.set(id, pty)
+      pty.onData((data) => onData(id, data))
+      pty.onExit(({ exitCode }) => {
+        ptys.delete(id)
+        onExit(id, exitCode)
+      })
+      return { id, pid: pty.pid, notice: shell.notice }
+    },
+
+    write(id: string, data: string): void {
+      const pty = ptys.get(id)
+      if (!pty) return
+      try { pty.write(data) } catch { /* fd closed between exit and write */ }
+    },
+
+    resize(id: string, cols: number, rows: number): void {
+      try { ptys.get(id)?.resize(cols, rows) } catch { /* pty gone */ }
+    },
+
+    kill(id: string): void {
+      const pty = ptys.get(id)
+      if (!pty) return
+      try { pty.kill() } catch { /* already dead */ }
+      ptys.delete(id)
+    },
+
+    async getCwd(id: string): Promise<string | null> {
+      const pty = ptys.get(id)
+      if (!pty || process.platform === 'win32') return null
+      return new Promise((resolve) => {
+        execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pty.pid}`, '-Fn'], { encoding: 'utf-8', timeout: 2000 }, (err, stdout) => {
+          if (err || !stdout) return resolve(null)
+          const nameLine = stdout.split('\n').find((l) => l.startsWith('n'))
+          resolve(nameLine ? nameLine.slice(1) : null)
+        })
+      })
+    },
+
+    setVisibility(): void {
+      // Idle-suspend (SIGSTOP) is handled by the local session layer (it needs
+      // the user setting + the local pid); a no-op at the capability level.
+    },
+
+    async scanActivity(ids: string[]): Promise<Record<string, PtyActivity>> {
+      const owned = ids
+        .map((id) => ({ id, pid: ptys.get(id)?.pid }))
+        .filter((e): e is { id: string; pid: number } => e.pid != null)
+      if (owned.length === 0 || process.platform === 'win32') return {}
+      const tree = await snapshotProcessTree()
+      const out: Record<string, PtyActivity> = {}
+      for (const { id, pid } of owned) out[id] = activityForPid(pid, tree)
+      return out
+    },
+
+    async scanPorts(ids: string[]): Promise<Record<string, number[]>> {
+      const owned = ids
+        .map((id) => ({ id, pid: ptys.get(id)?.pid }))
+        .filter((e): e is { id: string; pid: number } => e.pid != null)
+      if (owned.length === 0 || process.platform === 'win32') return {}
+      const tree = await snapshotProcessTree()
+
+      // Map every pid in each pty's subtree back to its pty id.
+      const pidToPty = new Map<number, string>()
+      for (const { id, pid } of owned) {
+        pidToPty.set(pid, id)
+        for (const child of descendantsOf(pid, tree)) pidToPty.set(child, id)
+      }
+      const pids = Array.from(pidToPty.keys())
+      if (pids.length === 0) return {}
+
+      return new Promise((resolve) => {
+        // `-a` ANDs the network filter with `-p <pids>` so lsof inspects ONLY
+        // these process trees (without it lsof ORs the filters → whole system).
+        execFile('lsof', ['-iTCP', '-sTCP:LISTEN', '-P', '-n', '-a', '-p', pids.join(','), '-F', 'pn'], {
+          timeout: 5000,
+        }, (_err, stdout) => {
+          const result: Record<string, number[]> = {}
+          // Parse regardless of exit status: lsof exits 1 when some requested
+          // pids have no listeners but still emits records for those that do.
+          if (!stdout) { resolve(result); return }
+          let currentPid: number | null = null
+          for (const line of stdout.split('\n')) {
+            if (line.startsWith('p')) {
+              currentPid = parseInt(line.slice(1), 10)
+            } else if (line.startsWith('n') && currentPid != null) {
+              const id = pidToPty.get(currentPid)
+              if (!id) continue
+              const match = line.match(/:(\d+)$/)
+              if (!match) continue
+              const port = parseInt(match[1], 10)
+              const ports = result[id] ?? (result[id] = [])
+              if (!ports.includes(port)) ports.push(port)
+            }
+          }
+          resolve(result)
+        })
+      })
+    },
+  }
+}

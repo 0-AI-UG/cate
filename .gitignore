@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-companion/
 .DS_Store
 *.tsbuildinfo
 .worktrees/

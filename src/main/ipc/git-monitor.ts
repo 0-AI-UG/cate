@@ -2,18 +2,17 @@
 // Git Monitor — polls git branch + dirty status per workspace
 // =============================================================================
 
-import { execFile } from 'child_process'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import log from '../logger'
-import { validateCwd } from './pathValidation'
 import {
   GIT_BRANCH_UPDATE,
   GIT_MONITOR_START,
   GIT_MONITOR_STOP,
 } from '../../shared/ipc-channels'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
-import { subscribeFsChanges } from './filesystem'
-import { countSpawn } from '../perf/perfMonitor'
+import { parseLocator } from '../companion/locator'
+import { companions } from '../companion/companionManager'
+import type { Companion } from '../companion/types'
 
 // Adaptive polling: start fast right after a detected change, back off
 // exponentially while nothing changes, cap at 30s. Reset to MIN on any
@@ -26,10 +25,15 @@ interface MonitorEntry {
   ownerWindowId: number
   rootPath: string
   workspaceId: string
+  /** Companion hosting this workspace (local or remote); polled for status. */
+  companion: Companion
   /** Next delay to schedule after the current poll completes (ms). */
   nextDelayMs: number
-  /** AbortController for the currently in-flight execFile calls. */
-  abortController: AbortController | null
+  /** Incremented on every poll start; a poll whose epoch is stale (a newer
+   *  poll was kicked, or the monitor was torn down) discards its result. This
+   *  replaces the old execFile AbortController, which only abort()-ed local
+   *  child processes that no longer exist on this path. */
+  pollEpoch: number
   /** Unsubscribe fn from the shared chokidar pool, if wired. */
   unsubscribeFs: (() => void) | null
   /** Coalesce fs-watcher bursts into at most one immediate poll. */
@@ -78,66 +82,33 @@ async function tick(entry: MonitorEntry): Promise<void> {
   scheduleNext(entry, entry.nextDelayMs)
 }
 
-function runGit(rootPath: string, args: string[], signal: AbortSignal): Promise<string> {
-  return new Promise((resolve, reject) => {
-    countSpawn('git')
-    execFile(
-      'git',
-      ['-C', rootPath, ...args],
-      { timeout: 3000, signal },
-      (err, stdout, stderr) => {
-        if (err) {
-          if ((err as NodeJS.ErrnoException).code === 'ABORT_ERR') {
-            reject(err)
-            return
-          }
-          // Surface stderr when available so the caller can log it.
-          reject(new Error(stderr?.trim() || err.message))
-          return
-        }
-        resolve(stdout)
-      },
-    )
-  })
-}
-
 /**
- * Run one git poll. Returns true iff observable state changed (and a
- * GIT_BRANCH_UPDATE was sent), which drives the adaptive interval reset.
+ * Run one git poll via the workspace's companion. For the local companion this
+ * is byte-identical to the old raw-git poll (same `git branch/status/for-each-ref`
+ * commands, run by the unified vcs capability); for a remote companion the
+ * commands run on the daemon host, so the sidebar reflects the remote repo.
+ * Returns true iff observable state changed (and a GIT_BRANCH_UPDATE was sent),
+ * which drives the adaptive interval reset.
  */
 async function pollGitStatus(entry: MonitorEntry): Promise<boolean> {
-  const { ownerWindowId, workspaceId, rootPath } = entry
+  const { ownerWindowId, workspaceId, rootPath, companion } = entry
 
-  // Abort any previous in-flight calls for this workspace
-  entry.abortController?.abort()
-  const ac = new AbortController()
-  entry.abortController = ac
+  // A newer poll (or teardown) supersedes this one: bump the epoch, and discard
+  // our own result if it changes again before we resolve.
+  const epoch = ++entry.pollEpoch
 
   try {
-    // Current branch, dirty flag, and the full local branch list run in
-    // parallel — deletion of a non-current branch doesn't change the
-    // first two, so we need the third to detect it and re-notify the UI.
-    const [branchOut, statusOut, branchesOut] = await Promise.all([
-      runGit(rootPath, ['branch', '--show-current'], ac.signal),
-      runGit(rootPath, ['status', '--porcelain', '-uno'], ac.signal),
-      runGit(rootPath, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], ac.signal),
-    ])
+    const { branch, dirty: isDirty, branches } = await companion.vcs.monitorStatus(rootPath)
 
-    if (entry.abortController === ac) entry.abortController = null
+    // Stale: a fresher poll started, or the monitor was torn down/restarted.
+    if (entry.pollEpoch !== epoch || !activeMonitors.has(workspaceId)) return false
 
-    const branch = branchOut.trim()
     if (!branch) return false
 
-    const isDirty = statusOut.trim().length > 0
     // Sort so reordering (e.g. committerdate changes) doesn't spuriously
     // look like a list change; a newline-joined canonical string is
     // cheaper to diff than the array.
-    const branchesKey = branchesOut
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .sort()
-      .join('\n')
+    const branchesKey = [...branches].sort().join('\n')
 
     const prev = lastState.get(workspaceId)
     if (
@@ -151,7 +122,6 @@ async function pollGitStatus(entry: MonitorEntry): Promise<boolean> {
     sendToWindow(ownerWindowId, GIT_BRANCH_UPDATE, workspaceId, branch, isDirty)
     return true
   } catch (err) {
-    if ((err as NodeJS.ErrnoException | undefined)?.code === 'ABORT_ERR') return false
     log.debug(
       'git monitor poll failed for %s: %s',
       rootPath,
@@ -176,8 +146,8 @@ function resumeAllMonitors(): void {
 function pauseAllMonitors(): void {
   for (const entry of activeMonitors.values()) {
     clearTimer(entry)
-    entry.abortController?.abort()
-    entry.abortController = null
+    // Supersede any in-flight poll so its late result is discarded.
+    entry.pollEpoch++
   }
 }
 
@@ -207,7 +177,7 @@ export function stopMonitorsForWindow(windowId: number): void {
   for (const [workspaceId, entry] of activeMonitors) {
     if (entry.ownerWindowId === windowId) {
       clearTimer(entry)
-      entry.abortController?.abort()
+      entry.pollEpoch++
       entry.unsubscribeFs?.()
       activeMonitors.delete(workspaceId)
       lastState.delete(workspaceId)
@@ -225,9 +195,16 @@ export function registerHandlers(): void {
     // here during session restore (renderer requests monitoring before the
     // workspace root has been registered as an allowed root), so treat a
     // validation failure as "don't start monitoring" instead of a hard error.
+    // Resolve the target companion off the locator, then validate. For the
+    // local companion this is identical to the previous validateCwd(rootPath).
+    // The poll itself routes through companion.vcs.monitorStatus, so a remote
+    // workspace's branch/dirty indicator reflects the remote repo.
+    const { companionId, path: rootP } = parseLocator(rootPath)
+    let companion: ReturnType<typeof companions.resolve>
     let validRoot: string
     try {
-      validRoot = validateCwd(rootPath)
+      companion = companions.resolve(companionId)
+      validRoot = companion.validateCwd(rootP)
     } catch (err) {
       log.warn(
         '[git-monitor] skipping monitor for workspace %s: %s',
@@ -239,7 +216,7 @@ export function registerHandlers(): void {
     const existing = activeMonitors.get(workspaceId)
     if (existing) {
       clearTimer(existing)
-      existing.abortController?.abort()
+      existing.pollEpoch++
       existing.unsubscribeFs?.()
     }
 
@@ -251,8 +228,9 @@ export function registerHandlers(): void {
       ownerWindowId,
       rootPath: validRoot,
       workspaceId,
+      companion,
       nextDelayMs: POLL_INTERVAL_MIN_MS,
-      abortController: null,
+      pollEpoch: 0,
       unsubscribeFs: null,
       fsKickPending: false,
     }
@@ -261,7 +239,7 @@ export function registerHandlers(): void {
     // immediate poll. The periodic timer becomes a safety net for changes
     // chokidar may miss (e.g. atomic renames on some filesystems, or repo
     // mutations that happen before any watcher root covers this path).
-    entry.unsubscribeFs = subscribeFsChanges(validRoot, () => {
+    entry.unsubscribeFs = companion.file.watch(validRoot, () => {
       if (!anyWindowFocused) return
       if (entry.fsKickPending) return
       entry.fsKickPending = true
@@ -285,7 +263,7 @@ export function registerHandlers(): void {
     const entry = activeMonitors.get(workspaceId)
     if (entry) {
       clearTimer(entry)
-      entry.abortController?.abort()
+      entry.pollEpoch++
       entry.unsubscribeFs?.()
       activeMonitors.delete(workspaceId)
     }

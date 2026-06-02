@@ -148,11 +148,67 @@ export interface WorktreeMeta {
 // Workspace metadata — shared across windows, managed by main process
 // -----------------------------------------------------------------------------
 
+/**
+ * Where a workspace's files physically live, and how the companion that hosts
+ * its terminal/fs/git operations is reached. Absent ⇒ `{ kind: 'local' }` (the
+ * migration default for every workspace that predates remote support). Secrets
+ * (SSH passphrases/keys) NEVER live here — they are stored encrypted via
+ * Electron safeStorage, keyed by companionId.
+ */
+export type CompanionConnection =
+  | { kind: 'local' }
+  | {
+      kind: 'server'
+      /** Routing key; matches the authority in this workspace's rootPath URI. */
+      companionId: string
+      host: string
+      user: string
+      port?: number
+      /** Companion-absolute root on the server. */
+      remotePath: string
+    }
+  | {
+      kind: 'wsl'
+      companionId: string
+      distro: string
+      /** Companion-absolute root inside the distro. */
+      distroPath: string
+    }
+
 export interface WorkspaceInfo {
   id: string
   name: string
   color: string
+  /** Locator string: a bare absolute path for local, a `cate-companion://`
+   *  URI otherwise. See src/main/companion/locator.ts. */
   rootPath: string
+  /** Defaults to { kind: 'local' } when absent (migration rule). */
+  connection?: CompanionConnection
+}
+
+/** What the connect UI sends to main to establish a remote companion. SSH auth
+ *  secrets are passed once to be stored encrypted (safeStorage); they are not
+ *  echoed back. */
+export type RemoteConnectSpec =
+  | {
+      kind: 'server'
+      host: string
+      user: string
+      port?: number
+      remotePath: string
+      auth?: { keyPath?: string; passphrase?: string; useAgent?: boolean }
+    }
+  | { kind: 'wsl'; distro: string; distroPath: string }
+
+export type CompanionConnectResult =
+  | { ok: true; companionId: string; rootPath: string; connection: CompanionConnection }
+  | { ok: false; error: string }
+
+/** Live connection state pushed to the renderer (COMPANION_STATUS). */
+export interface CompanionStatusEvent {
+  companionId: string
+  status: 'connecting' | 'connected' | 'error' | 'disconnected'
+  message?: string
 }
 
 export interface WorkspaceMutationError {
@@ -321,6 +377,11 @@ export interface WorkspaceState {
   name: string
   color: string
   rootPath: string
+  /** Companion connection for a remote/WSL workspace (absent ⇒ local). Mirrors
+   *  WorkspaceInfo.connection; drives reconnect-on-restore. */
+  connection?: CompanionConnection
+  /** Live companion connection state for UI (set from COMPANION_STATUS). */
+  companionStatus?: CompanionStatusEvent['status']
   /** Additional project roots opened alongside the primary `rootPath`.
    *  Used to keep multiple repos in one canvas. Order is user-controlled. */
   additionalRoots?: string[]
@@ -628,6 +689,24 @@ export interface SessionSnapshot {
   dockState?: DockStateSnapshot
   /** Panels that live in dock zones (canvas, etc.) — not on the canvas. */
   dockPanels?: Record<string, PanelState>
+  /** Resolved companion connection for a remote/WSL workspace (absent ⇒ local).
+   *  Persisted so the companion can be reconnected on restore before any
+   *  fs/git/terminal op runs. Mirrors WorkspaceState.connection. */
+  connection?: CompanionConnection
+}
+
+/** One persisted remote workspace (electron-store `remoteProjects`). Remote
+ *  workspaces can't use the local `.cate/` project-state files (their tree lives
+ *  on a companion), so their full restore snapshot + reconnect info is kept here,
+ *  keyed by the `cate-companion://` locator. Local workspaces never appear here —
+ *  they round-trip through recentProjects + `.cate/` as before. */
+export interface RemoteProjectEntry {
+  /** The `cate-companion://` locator string (this workspace's rootPath). */
+  locator: string
+  /** Reconnect info, used by ensureWorkspaceCompanion on restore. */
+  connection: CompanionConnection
+  /** Full session snapshot to rebuild the canvas/panels on restore. */
+  snapshot: SessionSnapshot
 }
 
 /** Persisted sidebar arrangement (electron-store `sidebarSession`). Keyed by
@@ -728,6 +807,10 @@ export interface ProjectSessionFile {
   panelWindows?: PanelWindowSnapshot[]
   /** Detached dock windows (machine-local, not committed). */
   dockWindows?: DetachedDockWindowSnapshot[]
+  /** Resolved companion connection for THIS workspace on THIS machine. Machine-
+   *  local on purpose — a server/wsl choice is the opener's, not the repo's, so
+   *  it lives here and never in the VCS-committed workspace.json. Absent ⇒ local. */
+  connection?: CompanionConnection
 }
 
 export interface ProjectSessionNode {

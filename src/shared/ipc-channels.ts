@@ -170,6 +170,11 @@ export const RECENT_PROJECTS_REMOVE = 'recent-projects:remove'
 export const SIDEBAR_SESSION_GET = 'sidebar-session:get'
 export const SIDEBAR_SESSION_SET = 'sidebar-session:set'
 
+// Remote projects (persisted restore snapshots + reconnect info for
+// cate-companion:// workspaces, which can't use the local .cate/ files)
+export const REMOTE_PROJECTS_GET = 'remote-projects:get'
+export const REMOTE_PROJECTS_SET = 'remote-projects:set'
+
 // Layouts
 export const LAYOUT_SAVE = 'layout:save'
 export const LAYOUT_LIST = 'layout:list'
@@ -293,6 +298,14 @@ export const WORKSPACE_CREATE = 'workspace:create'
 export const WORKSPACE_UPDATE = 'workspace:update'
 export const WORKSPACE_REMOVE = 'workspace:remove'
 export const WORKSPACE_CHANGED = 'workspace:changed' // main -> renderer (broadcast)
+
+// Companion connections (remote / WSL backends)
+export const COMPANION_CONNECT = 'companion:connect'       // renderer -> main
+export const COMPANION_ENSURE = 'companion:ensure'         // renderer -> main (reconnect from a stored connection)
+export const COMPANION_LIST = 'companion:list'             // renderer -> main
+export const COMPANION_WSL_DISTROS = 'companion:wsl-distros' // renderer -> main (list installed WSL distros)
+export const COMPANION_DISCONNECT = 'companion:disconnect' // renderer -> main
+export const COMPANION_STATUS = 'companion:status'         // main -> renderer (broadcast)
 
 
 // Performance profiler (only active under CATE_PERF=1)
