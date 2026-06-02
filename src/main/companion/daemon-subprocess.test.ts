@@ -91,37 +91,49 @@ describe('cate-companion daemon (real subprocess)', () => {
     expect(status.files.some((f) => f.path === 'hello.ts')).toBe(true)
   }, 30_000)
 
-  test('spawns a real PTY on the daemon and streams its output over the wire', async () => {
-    mgr = new CompanionManager()
-    const transport = new LocalSubprocessTransport({
-      nodePath: process.execPath,
-      bundlePath,
-      root: workspace,
-      id: 'srv_pty',
-    })
-    const companion = await mgr.connect('srv_pty', transport)
-
-    let output = ''
-    const sawMarker = new Promise<void>((resolve) => {
-      void companion.process.create(
-        { cols: 80, rows: 24, cwd: workspace, shell: '/bin/sh' },
-        (_id, data) => {
-          output += data
-          if (output.includes('CATE_REMOTE_PTY_OK')) resolve()
-        },
-        () => { /* exit */ },
-      ).then((handle) => {
-        // Write a command into the remote shell; its echo + output stream back.
-        companion.process.write(handle.id, 'echo CATE_REMOTE_PTY_OK\n')
+  // POSIX-only: the daemon's resolveShell falls back through $SHELL → /bin/bash →
+  // /bin/sh, which don't exist on a native Windows host. In production the daemon
+  // only ever runs on POSIX (SSH → Linux/macOS, WSL → Linux inside the distro);
+  // the local Windows machine uses the Electron-side terminal, not this daemon.
+  test.skipIf(process.platform === 'win32')(
+    'spawns a real PTY on the daemon and streams its output over the wire',
+    async () => {
+      mgr = new CompanionManager()
+      const transport = new LocalSubprocessTransport({
+        nodePath: process.execPath,
+        bundlePath,
+        root: workspace,
+        id: 'srv_pty',
       })
-    })
+      const companion = await mgr.connect('srv_pty', transport)
 
-    await Promise.race([
-      sawMarker,
-      new Promise((_r, reject) => setTimeout(() => reject(new Error(`no marker; got: ${output.slice(0, 200)}`)), 8000)),
-    ])
-    expect(output).toContain('CATE_REMOTE_PTY_OK')
-  }, 30_000)
+      let output = ''
+      const sawMarker = new Promise<void>((resolve, reject) => {
+        companion.process
+          .create(
+            { cols: 80, rows: 24, cwd: workspace, shell: '/bin/sh' },
+            (_id, data) => {
+              output += data
+              if (output.includes('CATE_REMOTE_PTY_OK')) resolve()
+            },
+            () => { /* exit */ },
+          )
+          .then((handle) => {
+            // Write a command into the remote shell; its echo + output stream back.
+            companion.process.write(handle.id, 'echo CATE_REMOTE_PTY_OK\n')
+          })
+          // Surface a spawn failure instead of letting it time out with empty output.
+          .catch(reject)
+      })
+
+      await Promise.race([
+        sawMarker,
+        new Promise((_r, reject) => setTimeout(() => reject(new Error(`no marker; got: ${output.slice(0, 200)}`)), 8000)),
+      ])
+      expect(output).toContain('CATE_REMOTE_PTY_OK')
+    },
+    30_000,
+  )
 
   test('streams remote filesystem changes over the wire', async () => {
     mgr = new CompanionManager()

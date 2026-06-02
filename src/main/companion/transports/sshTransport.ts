@@ -20,9 +20,6 @@
 // keep the build resilient.
 // =============================================================================
 
-import { mkdtemp, rm } from 'fs/promises'
-import os from 'os'
-import path from 'path'
 import log from '../../logger'
 import { ensureLocalTarball, ensureLocalPiTarball, localTarballIfPresent, localCompanionBundlePath, isCompanionDevMode, tarballHash, releaseUrl, isCompanionTarget, type CompanionTarget } from '../companionArtifacts'
 import type { CompanionChannel, CompanionTransport } from './transport'
@@ -203,20 +200,15 @@ export class SshTransport implements CompanionTransport {
     const localTar = await ensureLocalTarball(version, this.target)
     const D = shq(this.installDir)
     const remoteTar = `${this.installDir}/pkg.tgz`
-    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'cate-companion-push-'))
-    try {
-      await this.exec(`mkdir -p ${D}`)
-      await this.sftpPut(localTar, remoteTar)
-      const extract = await this.exec(
-        `cd ${D} && tar -xzf pkg.tgz && rm -f pkg.tgz && ` +
-          `test -x runtime/bin/node && test -f companion.cjs && ` +
-          `printf %s ${shq(marker)} > .ok && echo CATE_EXTRACT_OK`,
-      )
-      if (!extract.stdout.includes('CATE_EXTRACT_OK')) {
-        throw new Error(`remote extract failed: ${extract.stderr || extract.stdout}`)
-      }
-    } finally {
-      await rm(tmpDir, { recursive: true, force: true }).catch(() => {})
+    await this.exec(`mkdir -p ${D}`)
+    await this.sftpPut(localTar, remoteTar)
+    const extract = await this.exec(
+      `cd ${D} && tar -xzf pkg.tgz && rm -f pkg.tgz && ` +
+        `test -x runtime/bin/node && test -f companion.cjs && ` +
+        `printf %s ${shq(marker)} > .ok && echo CATE_EXTRACT_OK`,
+    )
+    if (!extract.stdout.includes('CATE_EXTRACT_OK')) {
+      throw new Error(`remote extract failed: ${extract.stderr || extract.stdout}`)
     }
   }
 
