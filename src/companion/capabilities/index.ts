@@ -19,7 +19,7 @@ import {
   validatePathForCreation,
   validateCwd,
 } from '../../main/ipc/pathValidation'
-import type { Companion, FileHost } from '../../main/companion/types'
+import type { Companion, FileHost, ProcessHost } from '../../main/companion/types'
 
 export interface DaemonCompanionConfig {
   id: string
@@ -56,11 +56,12 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
       fileLeaf.searchFiles(await validatePathStrict(root), query, exclusionSet, opts),
     watch: (prefix, onChange) => {
       // watch returns its unsub synchronously; use the cheap lexical check.
+      // Map chokidar's events to the real change type so the client can prune
+      // removed entries (not just re-read on every event).
       const w = watch(validatePath(prefix), { ignoreInitial: true })
-      const fire = (fp: string) => onChange(fp)
-      w.on('add', fire)
-      w.on('change', fire)
-      w.on('unlink', fire)
+      w.on('add', (fp) => onChange(fp, 'create'))
+      w.on('change', (fp) => onChange(fp, 'update'))
+      w.on('unlink', (fp) => onChange(fp, 'delete'))
       return () => { void w.close() }
     },
   }
@@ -71,7 +72,7 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
   // Daemon shell resolution: first existing of [requested, $SHELL, bash, sh].
   // Verifying existence avoids an execvp ENOENT (e.g. a stale $SHELL, or a shell
   // path forwarded from a different-OS client) — we fall back with a notice.
-  const proc = createProcessCapability({
+  const innerProc = createProcessCapability({
     resolveShell: (requested) => {
       const candidates = [requested, process.env.SHELL, '/bin/bash', '/bin/sh'].filter(Boolean) as string[]
       const found = candidates.find((p) => existsSync(p))
@@ -84,6 +85,17 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
     },
     getEnv: () => Object.fromEntries(Object.entries(env()).filter(([, v]) => v !== undefined)) as Record<string, string>,
   })
+
+  // The daemon is the AUTHORITATIVE cwd check (RemoteCompanion.validateCwd is a
+  // client-side pass-through), so validate the terminal cwd here before spawning,
+  // matching what terminal.ts does for a local companion. Throwing rejects create.
+  const proc: ProcessHost = {
+    ...innerProc,
+    create: async (opts, onData, onExit) => {
+      if (opts.cwd) validateCwd(opts.cwd) // throws -> rejects create, matching local
+      return innerProc.create(opts, onData, onExit)
+    },
+  }
 
   // Agent: the daemon pulls the pi tarball to the host and runs it under the
   // bundled node (process.execPath == the companion's runtime node here).

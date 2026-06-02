@@ -134,7 +134,8 @@ export class RemoteCompanion implements Companion {
           }
           streamId = id
           this.rpc.registerStream(id, (payload) => {
-            onChange((payload as FsWatchEvtPayload).changedPath)
+            const p = payload as FsWatchEvtPayload
+            onChange(p.changedPath, p.type)
           })
         }).catch(() => { /* watch failed to start; no events */ })
         return () => {

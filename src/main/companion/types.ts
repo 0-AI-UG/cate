@@ -138,8 +138,10 @@ export interface AgentHost {
 // File host (fs/promises + chokidar)
 // ---------------------------------------------------------------------------
 
+export type FsChangeType = 'create' | 'update' | 'delete'
+
 export interface FsChangeEvent {
-  type: 'create' | 'update' | 'delete'
+  type: FsChangeType
   /** Companion-absolute path of the changed entry. */
   path: string
 }
@@ -174,11 +176,13 @@ export interface FileHost {
   /**
    * Subscribe to filesystem changes under `prefix`. Returns an unsubscribe fn.
    * Matches the in-process `subscribeFsChanges` semantics (one call per event,
-   * path only, no coalescing — the caller debounces). Used by the git monitor.
+   * no coalescing — the caller debounces). `type` carries the real change kind
+   * (create/update/delete) so consumers can prune removed entries; the git
+   * monitor ignores it. Used by the git monitor and the remote watch wrapper.
    * The renderer-facing watch path (per-window debounce + FS_WATCH_EVENT) stays
    * its own window-keyed wrapper in filesystem.ts for now (routed in Phase 3).
    */
-  watch(prefix: string, onChange: (changedPath: string) => void): () => void
+  watch(prefix: string, onChange: (changedPath: string, type: FsChangeType) => void): () => void
 }
 
 // ---------------------------------------------------------------------------

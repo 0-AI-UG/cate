@@ -152,22 +152,34 @@ describe('cate-companion daemon (real subprocess)', () => {
     })
     const companion = await mgr.connect('srv_watch', transport)
 
-    const changes: string[] = []
-    const sawChange = new Promise<void>((resolve) => {
-      companion.file.watch(workspace, (p) => {
-        changes.push(p)
-        if (p.includes('fresh.txt')) resolve()
-      })
+    const changes: Array<{ path: string; type: string }> = []
+    let resolveCreate!: () => void
+    let resolveDelete!: () => void
+    const sawCreate = new Promise<void>((resolve) => { resolveCreate = resolve })
+    const sawDelete = new Promise<void>((resolve) => { resolveDelete = resolve })
+    companion.file.watch(workspace, (p, type) => {
+      changes.push({ path: p, type })
+      if (p.includes('fresh.txt') && type === 'create') resolveCreate()
+      if (p.includes('fresh.txt') && type === 'delete') resolveDelete()
     })
 
     // Give the daemon's chokidar a moment to initialize, then create a file.
     await new Promise((r) => setTimeout(r, 400))
-    await fs.writeFile(path.join(workspace, 'fresh.txt'), 'new\n')
+    const freshPath = path.join(workspace, 'fresh.txt')
+    await fs.writeFile(freshPath, 'new\n')
 
     await Promise.race([
-      sawChange,
-      new Promise((_r, reject) => setTimeout(() => reject(new Error(`no fs event; got: ${JSON.stringify(changes)}`)), 6000)),
+      sawCreate,
+      new Promise((_r, reject) => setTimeout(() => reject(new Error(`no create event; got: ${JSON.stringify(changes)}`)), 6000)),
     ])
-    expect(changes.some((c) => c.includes('fresh.txt'))).toBe(true)
+    expect(changes.some((c) => c.path.includes('fresh.txt') && c.type === 'create')).toBe(true)
+
+    // Now delete it and assert a 'delete'-typed event arrives over the wire.
+    await fs.rm(freshPath)
+    await Promise.race([
+      sawDelete,
+      new Promise((_r, reject) => setTimeout(() => reject(new Error(`no delete event; got: ${JSON.stringify(changes)}`)), 6000)),
+    ])
+    expect(changes.some((c) => c.path.includes('fresh.txt') && c.type === 'delete')).toBe(true)
   }, 30_000)
 })

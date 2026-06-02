@@ -196,8 +196,8 @@ export class RpcServer {
 
   private startWatch(prefix: string): string {
     const streamId = `w${++this.streamSeq}`
-    const unsub = this.api.file.watch(prefix, (changedPath) => {
-      const payload: FsWatchEvtPayload = { changedPath }
+    const unsub = this.api.file.watch(prefix, (changedPath, type) => {
+      const payload: FsWatchEvtPayload = { changedPath, type }
       this.write(serializeFrame({ t: 'evt', streamId, payload }))
     })
     this.watchUnsubs.set(streamId, unsub)

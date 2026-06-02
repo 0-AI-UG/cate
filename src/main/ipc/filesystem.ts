@@ -8,6 +8,7 @@ import { ipcMain } from 'electron'
 import log from '../logger'
 import { consumeScopedWriteAllowance, validatePathStrict } from './pathValidation'
 import { parseLocator, formatLocator, LOCAL_COMPANION_ID } from '../companion/locator'
+import type { FsChangeType } from '../companion/types'
 import { companions } from '../companion/companionManager'
 import { uploadEntriesToCompanion } from '../companion/uploadEntries'
 import {
@@ -324,7 +325,7 @@ export function refreshWatcherIgnores(): void {
 // existing renderer-side semantics.
 // ---------------------------------------------------------------------------
 
-type InProcListener = (filePath: string) => void
+type InProcListener = (filePath: string, type: FsChangeType) => void
 
 interface InProcSub {
   prefix: string
@@ -344,7 +345,7 @@ function attachInProcToWatcher(sub: InProcSub, root: string, shared: SharedWatch
     // No coalescing here — in-process consumers are expected to debounce
     // themselves if they care; passing every event through makes "immediate
     // poll on change" behaviour easy to reason about.
-    dispatch: (_type, filePath) => sub.listener(filePath),
+    dispatch: (type, filePath) => sub.listener(filePath, type as FsChangeType),
     cancelFlush: () => { /* no-op */ },
   })
   shared.refCount++
@@ -446,9 +447,9 @@ function startRemoteWatch(
       try { sendToWindow(windowId, FS_WATCH_EVENT, event) } catch { /* window gone */ }
     }
   }
-  const onChange = (changedPath: string): void => {
+  const onChange = (changedPath: string, type: FsChangeType): void => {
     const locator = formatLocator({ companionId, path: changedPath })
-    pending.set(locator, { type: 'update', path: locator })
+    pending.set(locator, { type, path: locator })
     if (!flushTimer) flushTimer = setTimeout(flush, DISPATCH_DEBOUNCE_MS)
   }
   const unsubscribe = companion.file.watch(remotePath, onChange)

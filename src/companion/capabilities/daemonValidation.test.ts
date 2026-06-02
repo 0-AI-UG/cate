@@ -92,4 +92,19 @@ describe('buildDaemonCompanion FileHost path validation', () => {
       /Access denied|outside allowed directories/,
     )
   })
+
+  // The daemon validates the terminal cwd before spawning a pty (parity with the
+  // local companion, whose terminal.ts calls validateCwd). validateCwd throws
+  // synchronously, rejecting create BEFORE any node-pty spawn — so no pty is
+  // needed here. Use an outside path NOT under os.tmpdir() (tmpdir is allowed).
+  test('process.create with a cwd outside the root rejects', async () => {
+    const outside = path.join(os.homedir(), 'cate-nope')
+    await expect(
+      companion.process.create(
+        { cols: 80, rows: 24, cwd: outside, shell: '/bin/sh' },
+        () => {},
+        () => {},
+      ),
+    ).rejects.toThrow(/Access denied|outside allowed/)
+  })
 })

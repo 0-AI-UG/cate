@@ -134,9 +134,14 @@ export const Methods = {
 
 export type MethodName = (typeof Methods)[keyof typeof Methods]
 
+/** Mirrors FsChangeType in main/companion/types. Inlined here so protocol.ts
+ *  stays dependency-light (it type-imports nothing from the main process). */
+export type FsChangeType = 'create' | 'update' | 'delete'
+
 /** Payload carried by a `file.watch` stream's evt frames. */
 export interface FsWatchEvtPayload {
   changedPath: string
+  type: FsChangeType
 }
 
 /** Payload carried by an `agent.start` stream's evt frames (keyed by agent id).
