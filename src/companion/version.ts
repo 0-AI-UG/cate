@@ -6,4 +6,4 @@
 // matching companion tarballs (see companionArtifacts.ts).
 // =============================================================================
 
-export const COMPANION_VERSION = '1.1.0'
+export const COMPANION_VERSION = '1.1.1'
