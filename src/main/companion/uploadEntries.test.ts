@@ -7,6 +7,7 @@
 import { mkdtemp, writeFile, readFile, mkdir, symlink, rm, access } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import posix from 'node:path/posix'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { uploadEntriesToCompanion } from './uploadEntries'
 import { localCompanion } from './LocalCompanion'
@@ -41,9 +42,10 @@ describe('uploadEntriesToCompanion', () => {
 
     const result = await uploadEntriesToCompanion(localCompanion, [src], destDir, 'copy')
 
-    const destFile = path.join(destDir, 'a.txt')
-    expect(result).toEqual({ created: [destFile], failed: 0 })
-    expect(await readFile(destFile)).toEqual(bytes)
+    // uploadEntriesToCompanion targets a remote (POSIX) host, so created paths
+    // are posix-joined even when localCompanion stands in on Windows.
+    expect(result).toEqual({ created: [posix.join(destDir, 'a.txt')], failed: 0 })
+    expect(await readFile(path.join(destDir, 'a.txt'))).toEqual(bytes)
     // copy leaves the source in place
     expect(await exists(src)).toBe(true)
   })
@@ -72,9 +74,8 @@ describe('uploadEntriesToCompanion', () => {
 
     const result = await uploadEntriesToCompanion(localCompanion, [src], destDir, 'move')
 
-    const destFile = path.join(destDir, 'a.txt')
-    expect(result).toEqual({ created: [destFile], failed: 0 })
-    expect(await exists(destFile)).toBe(true)
+    expect(result).toEqual({ created: [posix.join(destDir, 'a.txt')], failed: 0 })
+    expect(await exists(path.join(destDir, 'a.txt'))).toBe(true)
     await expect(access(src)).rejects.toBeTruthy()
   })
 
@@ -87,7 +88,7 @@ describe('uploadEntriesToCompanion', () => {
     const result = await uploadEntriesToCompanion(localCompanion, [dir], destDir, 'copy')
 
     expect(result.failed).toBe(0)
-    expect(result.created).toEqual([path.join(destDir, 'dir')])
+    expect(result.created).toEqual([posix.join(destDir, 'dir')])
 
     const x = path.join(destDir, 'dir', 'x.txt')
     const y = path.join(destDir, 'dir', 'sub', 'y.txt')
@@ -121,7 +122,7 @@ describe('uploadEntriesToCompanion', () => {
     const result = await uploadEntriesToCompanion(localCompanion, [d], destDir, 'copy')
 
     expect(result.failed).toBe(0)
-    expect(result.created).toEqual([path.join(destDir, 'd')])
+    expect(result.created).toEqual([posix.join(destDir, 'd')])
 
     // the regular file lands, the inner symlink is skipped by uploadOne
     expect(await readFile(path.join(destDir, 'd', 'f.txt'))).toEqual(Buffer.from('f-bytes'))
