@@ -357,6 +357,8 @@ export type ThemeSelection = 'system' | string
 
 export type BrowserSearchEngine = 'google' | 'duckDuckGo' | 'bing' | 'brave'
 
+export type PlantumlRender = 'off' | 'server' | 'local'
+
 export const SEARCH_ENGINE_URLS: Record<BrowserSearchEngine, string> = {
   google: 'https://www.google.com/search?q=',
   duckDuckGo: 'https://duckduckgo.com/?q=',
@@ -888,6 +890,19 @@ export interface AppSettings {
   /** Send anonymous usage data (app starts, version upgrades, feedback) to the
    *  cero-analytics endpoint. No personal data, no file paths, no project info. */
   usageAnalyticsEnabled: boolean
+
+  // Markdown diagrams (PlantUML)
+  /** How PlantUML fenced blocks in the markdown preview are rendered. Defaults to
+   *  'off' so previewed markdown is never sent off-machine without explicit consent.
+   *  - 'off':    render the source as a code block; nothing leaves the machine.
+   *  - 'server': encode + fetch an <img> from `plantumlServerUrl` (sends diagram text).
+   *  - 'local':  spawn `java -jar <plantumlJarPath> -tsvg -pipe`. */
+  plantumlRender: PlantumlRender
+  /** PlantUML server base URL (server mode). Diagram text is sent here unless
+   *  you point it at a self-hosted/local server. */
+  plantumlServerUrl: string
+  /** Absolute path to plantuml.jar (local mode). Empty = local mode disabled. */
+  plantumlJarPath: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -944,6 +959,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Privacy
   crashReportingEnabled: true,
   usageAnalyticsEnabled: true,
+
+  // Markdown diagrams (PlantUML) — default 'off': opt-in to avoid sending
+  // diagram text to a third-party server without explicit consent.
+  plantumlRender: 'off',
+  plantumlServerUrl: 'https://www.plantuml.com/plantuml',
+  plantumlJarPath: '',
 }
 
 // -----------------------------------------------------------------------------

@@ -86,6 +86,9 @@ export const SETTINGS_GET_ALL = 'settings:getAll'
 export const SETTINGS_RESET = 'settings:reset'
 export const SETTINGS_CHANGED = 'settings:changed' // main -> renderer (broadcast)
 
+// PlantUML local render (renderer -> main)
+export const PLANTUML_RENDER = 'plantuml:render'
+
 // Session
 export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer
 export const SESSION_FLUSH_SAVE_DONE = 'session:flushSaveDone' // renderer -> main

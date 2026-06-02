@@ -330,6 +330,10 @@ export interface ElectronAPI {
   /** Reset all settings to defaults. */
   settingsReset(): Promise<void>
 
+  /** Render PlantUML locally via `java -jar <jarPath> -tsvg -pipe`. Returns the
+   *  SVG string, or an error message (never throws across IPC). */
+  plantumlRender(source: string, jarPath: string): Promise<{ svg?: string; error?: string }>
+
   /** Subscribe to setting-change broadcasts from main (key + new value). Returns unsubscribe. */
   onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void
 

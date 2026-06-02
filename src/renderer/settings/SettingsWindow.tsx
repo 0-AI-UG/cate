@@ -13,6 +13,7 @@ import { SidebarSettings } from './SidebarSettings'
 import { FileExplorerSettings } from './FileExplorerSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
+import { DiagramsSettings } from './DiagramsSettings'
 
 const SECTIONS = [
   { title: 'General', component: GeneralSettings },
@@ -20,6 +21,7 @@ const SECTIONS = [
   { title: 'Canvas', component: CanvasSettings },
   { title: 'Terminal', component: TerminalSettings },
   { title: 'Browser', component: BrowserSettings },
+  { title: 'Diagrams', component: DiagramsSettings },
   { title: 'Sidebar', component: SidebarSettings },
   { title: 'File Explorer', component: FileExplorerSettings },
   { title: 'Notifications', component: NotificationSettings },

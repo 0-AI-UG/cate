@@ -23,6 +23,7 @@ import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, ge
 import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
+import { registerHandlers as registerPlantumlHandlers } from './ipc/plantuml'
 import { registerAgentHandlers } from '../agent/main/ipcAgent'
 import { registerAuthHandlers } from '../agent/main/ipcAuth'
 import { authManager } from '../agent/main/authManager'
@@ -489,6 +490,7 @@ function registerDeferredHandlers(): void {
   registerGitHandlers()
   registerGitMonitorHandlers()
   registerNotificationHandlers()
+  registerPlantumlHandlers()
   registerAuthHandlers(authManager)
   registerAgentHandlers(authManager, agentManager)
 }
