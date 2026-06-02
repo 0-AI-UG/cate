@@ -19,7 +19,7 @@ import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow }
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, getSettingSync, readBootSnapshot, writeBootSnapshot } from './store'
+import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot } from './store'
 import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
@@ -131,19 +131,14 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   const snapGeom = bootSnap?.geometry
   const snapBg = bootSnap?.backgroundColor
 
-  // Apply the active theme's native appearance before the window exists so the
-  // macOS native title bar (native-tabs mode) paints with the right dark/light
-  // material on the first frame. themeSource is app-wide, so we only need it
-  // once from the main window's snapshot; the renderer keeps it in sync after.
+  // Apply the active theme's native appearance before the window exists so
+  // native chrome (menus, scrollbars, the window backdrop) paints with the
+  // right dark/light material on the first frame. themeSource is app-wide, so
+  // we only need it once from the main window's snapshot; the renderer keeps it
+  // in sync after.
   if (windowType === 'main' && bootSnap?.appearance) {
     try { nativeTheme.themeSource = bootSnap.appearance } catch { /* noop */ }
   }
-
-  // Snapshot native-tabs state at window creation. The renderer reads this via
-  // the URL query so that the React TitlebarStrip matches the actual
-  // titleBarStyle — toggling the setting at runtime only takes effect on the
-  // next launch.
-  const nativeTabsActive = process.platform === 'darwin' && windowType === 'main' && getSettingSync('nativeTabs')
 
   const win = new BrowserWindow({
     width: snapGeom?.width ?? (isDock ? 700 : isPanel ? 700 : 1200),
@@ -154,25 +149,19 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     minWidth: isDock ? 400 : isPanel ? undefined : 800,
     minHeight: isDock ? 300 : isPanel ? undefined : 600,
     title: isDock ? 'Cate' : isPanel ? 'Cate Panel' : 'Cate',
-    // macOS native window tabs require a standard title bar — `hiddenInset`
-    // suppresses the tab bar entirely. When native tabs are enabled for main
-    // windows we fall back to the default title bar so the tab strip (app
-    // name tab + "+" button) can render.
-    titleBarStyle: isPanel ? 'hidden' : nativeTabsActive ? 'default' : 'hiddenInset',
+    // Main + dock windows hide the native title bar and draw a themed strip in
+    // its place (the macOS native bar can't be tinted to a theme color — only
+    // dark/light — so we always use `hiddenInset` and render TitlebarStrip).
+    titleBarStyle: isPanel ? 'hidden' : 'hiddenInset',
     // Align traffic lights with our 28px themed TitlebarStrip on macOS. Apple's
     // standard NSWindow title bar is ~28pt with lights at y≈7; matching that
     // here makes the themed bar visually identical to a native title bar.
     trafficLightPosition: isDock
       ? { x: 12, y: 11 }
-      : (process.platform === 'darwin' && windowType === 'main' && !nativeTabsActive)
+      : (process.platform === 'darwin' && windowType === 'main')
         ? { x: 10, y: 6 }
         : undefined,
     frame: !(isPanel || isDock),
-    // macOS native window tabs — only on main windows. Setting tabbingIdentifier
-    // makes new windows in this group join as native tabs in the title bar
-    // (subject to System Settings → Desktop & Dock → "Prefer tabs"). Panel and
-    // dock windows are excluded so they stay free-floating.
-    ...(nativeTabsActive ? { tabbingIdentifier: 'cate-main' } : {}),
     backgroundColor: snapBg ?? '#1f1e1c',
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
@@ -329,7 +318,6 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   // Build query string from params
   const queryParts: string[] = []
   queryParts.push(`type=${encodeURIComponent(windowType)}`)
-  if (nativeTabsActive) queryParts.push('nativeTabsBoot=1')
   if (params?.panelType) queryParts.push(`panelType=${encodeURIComponent(params.panelType)}`)
   if (params?.panelId) queryParts.push(`panelId=${encodeURIComponent(params.panelId)}`)
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)
