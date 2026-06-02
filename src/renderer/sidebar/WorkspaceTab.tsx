@@ -706,6 +706,36 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           </span>
         )}
 
+        {/* Companion connection indicator (remote workspaces only). Surfaces a
+            connecting/error/disconnected state the user otherwise couldn't see;
+            clicking an error/disconnected dot reinstalls + reconnects the daemon. */}
+        {workspace.connection && workspace.connection.kind !== 'local' &&
+          workspace.companionStatus && workspace.companionStatus !== 'connected' && (
+          <button
+            className={`flex-shrink-0 w-2 h-2 rounded-full focus:outline-none ${
+              workspace.companionStatus === 'error'
+                ? 'bg-red-500 hover:ring-2 hover:ring-red-500/40'
+                : workspace.companionStatus === 'connecting'
+                ? 'bg-amber-400 animate-pulse'
+                : 'bg-muted opacity-70 hover:opacity-100'
+            }`}
+            disabled={workspace.companionStatus === 'connecting'}
+            title={
+              workspace.companionStatus === 'error'
+                ? `Companion error: ${workspace.rootPathError || 'connection failed'} — click to reinstall`
+                : workspace.companionStatus === 'connecting'
+                ? 'Connecting to companion…'
+                : 'Companion disconnected — click to reinstall'
+            }
+            onClick={(e) => {
+              e.stopPropagation()
+              if (workspace.companionStatus !== 'connecting') {
+                void useAppStore.getState().reinstallCompanion(workspace.id)
+              }
+            }}
+          />
+        )}
+
         {/* Panel count badge (only when collapsed and has panels) */}
         {panelCount > 0 && !isExpanded && (
           <span className="flex-shrink-0 text-[10px] text-secondary font-semibold opacity-80 group-hover:opacity-100 transition-opacity">

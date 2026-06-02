@@ -19,6 +19,7 @@ import {
   Square,
   FloppyDisk,
   ArrowsClockwise,
+  DownloadSimple,
 } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
 import { CateLogo } from './CateLogo'
@@ -56,6 +57,7 @@ const ZoomToFitIcon = () => <ArrowsOutSimple size={ICON_SIZE} />
 const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
 const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
+const ReinstallIcon = () => <DownloadSimple size={ICON_SIZE} />
 const AgentIcon = () => <CateLogo size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
@@ -100,6 +102,12 @@ export const CommandPalette: React.FC = () => {
     const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
     return ws?.rootPath
   })
+  // The reinstall command is only meaningful for a remote (ssh/wsl) workspace.
+  const isRemoteWorkspace = useAppStore((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
+    return !!ws?.connection && ws.connection.kind !== 'local'
+  })
+  const reinstallCompanion = useAppStore((s) => s.reinstallCompanion)
 
   const [searchText, setSearchText] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -219,6 +227,16 @@ export const CommandPalette: React.FC = () => {
           void import('../lib/session').then((m) => m.reloadActiveWorkspaceFromDisk())
         },
       },
+      // Remote-only: force a clean reinstall of this workspace's companion daemon.
+      ...(isRemoteWorkspace
+        ? [{
+            id: 'reinstallCompanion',
+            title: 'Reinstall Companion',
+            shortcutText: '',
+            icon: <ReinstallIcon />,
+            action: () => { void reinstallCompanion(selectedWorkspaceId) },
+          }]
+        : []),
     ],
     [
       selectedWorkspaceId,
@@ -231,6 +249,8 @@ export const CommandPalette: React.FC = () => {
       setActiveRightSidebarView,
       setShowNodeSwitcher,
       setZoom,
+      isRemoteWorkspace,
+      reinstallCompanion,
     ],
   )
 

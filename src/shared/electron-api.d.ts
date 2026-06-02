@@ -609,6 +609,10 @@ export interface ElectronAPI {
   /** Disconnect a companion (kills its daemon / closes the connection). */
   companionDisconnect(companionId: string): Promise<{ ok: boolean }>
 
+  /** Force a clean reinstall of a remote companion's daemon (wipes the host
+   *  install dir, then reconnects). Recovers a corrupt/outdated bundle. */
+  companionReinstall(connection: CompanionConnection): Promise<CompanionConnectResult>
+
   /** Subscribe to companion connection status (main -> renderer). */
   onCompanionStatus(callback: (event: CompanionStatusEvent) => void): () => void
 

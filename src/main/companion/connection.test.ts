@@ -13,6 +13,7 @@ import type { CompanionChannel, CompanionTransport } from './transports/transpor
 class FakeTransport implements CompanionTransport {
   readonly kind = 'wsl'
   bootstrapped = false
+  forcedBootstrap = false
   disposed = false
   private server: RpcServer | null = null
   private dataCb: ((chunk: string | Buffer) => void) | null = null
@@ -20,8 +21,9 @@ class FakeTransport implements CompanionTransport {
 
   constructor(private readonly serverOpts: RpcServerOptions = {}) {}
 
-  async bootstrap(): Promise<void> {
+  async bootstrap(_version?: string, force = false): Promise<void> {
     this.bootstrapped = true
+    this.forcedBootstrap = force
   }
 
   async launch(): Promise<CompanionChannel> {
@@ -57,6 +59,17 @@ describe('CompanionManager connection lifecycle', () => {
     // The connected companion really works over the wire. tmpdir is always an
     // allowed root, and it isn't a git repo.
     expect(await companion.vcs.isRepo(os.tmpdir())).toBe(false)
+  })
+
+  test('connect threads the force flag to transport.bootstrap (reinstall path)', async () => {
+    const mgr = new CompanionManager()
+    const def = new FakeTransport()
+    await mgr.connect('wsl_default', def)
+    expect(def.forcedBootstrap).toBe(false)
+
+    const forced = new FakeTransport()
+    await mgr.connect('wsl_forced', forced, true)
+    expect(forced.forcedBootstrap).toBe(true)
   })
 
   test('concurrent connects to the same id share one in-flight attempt', async () => {

@@ -76,7 +76,7 @@ export class CompanionManager {
    * Establish (or reuse) a connection to a remote/WSL companion over `transport`.
    * Concurrent calls for the same id share one in-flight connect.
    */
-  connect(id: CompanionId, transport: CompanionTransport): Promise<Companion> {
+  connect(id: CompanionId, transport: CompanionTransport, force = false): Promise<Companion> {
     if (id === LOCAL_COMPANION_ID) {
       throw new Error('The local companion does not connect over a transport')
     }
@@ -86,7 +86,7 @@ export class CompanionManager {
     const inFlight = this.connecting.get(id)
     if (inFlight) return inFlight
 
-    const promise = this.doConnect(id, transport).finally(() => {
+    const promise = this.doConnect(id, transport, force).finally(() => {
       this.connecting.delete(id)
     })
     this.connecting.set(id, promise)
@@ -98,8 +98,9 @@ export class CompanionManager {
    *  reason (not just a 10s timeout). */
   private async launchOnce(
     transport: CompanionTransport,
+    force = false,
   ): Promise<{ channel: CompanionChannel; client: CompanionRpcClient; hello: Awaited<CompanionRpcClient['ready']> }> {
-    await transport.bootstrap(COMPANION_VERSION)
+    await transport.bootstrap(COMPANION_VERSION, force)
     const channel = await transport.launch()
     const client = new CompanionRpcClient((line) => channel.write(line))
     channel.onData((chunk) => client.handleChunk(chunk))
@@ -123,11 +124,13 @@ export class CompanionManager {
     }
   }
 
-  private async doConnect(id: CompanionId, transport: CompanionTransport): Promise<Companion> {
+  private async doConnect(id: CompanionId, transport: CompanionTransport, force = false): Promise<Companion> {
     this.emitStatus(id, 'connecting')
     let attempt: Awaited<ReturnType<CompanionManager['launchOnce']>>
     try {
-      attempt = await this.launchOnce(transport)
+      // `force` only applies to this first bootstrap (the clean reinstall); the
+      // version-mismatch retry below re-pushes the right bundle on its own.
+      attempt = await this.launchOnce(transport, force)
     } catch (err) {
       await transport.dispose().catch(() => {})
       this.emitStatus(id, 'error', err instanceof Error ? err.message : String(err))

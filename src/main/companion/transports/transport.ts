@@ -20,8 +20,10 @@ export interface CompanionChannel {
 
 export interface CompanionTransport {
   readonly kind: 'local' | 'server' | 'wsl'
-  /** Ensure the correct-version companion bundle is present on the host. */
-  bootstrap(expectedVersion: string): Promise<void>
+  /** Ensure the correct-version companion bundle is present on the host. When
+   *  `force` is set, wipe any existing install first so a corrupt or partial
+   *  bundle is replaced by a clean download/push+extract (the reinstall path). */
+  bootstrap(expectedVersion: string, force?: boolean): Promise<void>
   /** Launch the daemon and return its stdio channel. */
   launch(): Promise<CompanionChannel>
   /**

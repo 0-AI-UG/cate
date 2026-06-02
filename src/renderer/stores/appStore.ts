@@ -350,6 +350,7 @@ interface AppStoreActions {
   setWorkspaceRootPath: (wsId: string, rootPath: string) => Promise<boolean>
   connectRemoteWorkspace: (wsId: string, spec: RemoteConnectSpec) => Promise<boolean>
   ensureWorkspaceCompanion: (wsId: string) => Promise<boolean>
+  reinstallCompanion: (wsId: string) => Promise<boolean>
   setWorkspaceColor: (wsId: string, color: string) => void
   renameWorkspace: (wsId: string, name: string) => void
   duplicateWorkspace: (wsId: string) => string
@@ -1150,6 +1151,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
+  async reinstallCompanion(wsId) {
+    const ws = get().workspaces.find((w) => w.id === wsId)
+    if (!ws?.connection || ws.connection.kind === 'local') return false
+    const connection = ws.connection
+    const mark = (status: NonNullable<WorkspaceState['companionStatus']>, error?: string | null): void => {
+      set((state) => ({
+        workspaces: state.workspaces.map((c) =>
+          c.id === wsId ? { ...c, companionStatus: status, ...(error !== undefined ? { rootPathError: error } : {}) } : c,
+        ),
+      }))
+    }
+    mark('connecting', null)
+    try {
+      const res = await window.electronAPI.companionReinstall(connection)
+      if (!res?.ok) {
+        mark('error', res?.error ?? 'Failed to reinstall companion')
+        return false
+      }
+      mark('connected', null)
+      return true
+    } catch (err) {
+      mark('error', err instanceof Error ? err.message : String(err))
+      return false
+    }
+  },
+
   setWorkspaceColor(wsId, color) {
     set((state) => ({
       workspaces: state.workspaces.map((ws) =>
@@ -1417,7 +1444,17 @@ export function setupWorkspaceSync(): () => void {
     useAppStore.setState((state) => ({
       workspaces: state.workspaces.map((ws) =>
         ws.connection && ws.connection.kind !== 'local' && ws.connection.companionId === evt.companionId
-          ? { ...ws, companionStatus: evt.status }
+          ? {
+              ...ws,
+              companionStatus: evt.status,
+              // Carry the failure reason so the sidebar indicator can explain an
+              // async drop; clear it once the companion is healthy again.
+              ...(evt.status === 'error'
+                ? { rootPathError: evt.message ?? ws.rootPathError ?? 'Companion connection lost' }
+                : evt.status === 'connected'
+                ? { rootPathError: null }
+                : {}),
+            }
           : ws,
       ),
     }))

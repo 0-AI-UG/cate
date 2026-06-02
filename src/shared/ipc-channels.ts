@@ -305,6 +305,7 @@ export const COMPANION_ENSURE = 'companion:ensure'         // renderer -> main (
 export const COMPANION_LIST = 'companion:list'             // renderer -> main
 export const COMPANION_WSL_DISTROS = 'companion:wsl-distros' // renderer -> main (list installed WSL distros)
 export const COMPANION_DISCONNECT = 'companion:disconnect' // renderer -> main
+export const COMPANION_REINSTALL = 'companion:reinstall'   // renderer -> main (force a clean daemon reinstall)
 export const COMPANION_STATUS = 'companion:status'         // main -> renderer (broadcast)
 
 

@@ -103,12 +103,16 @@ export class SshTransport implements CompanionTransport {
     return target
   }
 
-  async bootstrap(version: string): Promise<void> {
+  async bootstrap(version: string, force?: boolean): Promise<void> {
     await this.ensureConnected()
     this.target = await this.probeTarget()
     const { stdout: home } = await this.exec('echo $HOME')
     this.installDir = `${home.trim()}/.cate/companion/${version}/${this.target}`
     const D = shq(this.installDir)
+
+    // Reinstall: drop the whole install dir (binaries + .ok/.cjs.ok markers) so
+    // every "already provisioned?" probe below sees a clean slate and re-pulls.
+    if (force) await this.exec(`rm -rf ${D}`)
 
     // DEV: never remote-pull (it would fetch a stale release tarball). Provision
     // the heavy parts once from the local tarball, then hot-swap only the 262KB

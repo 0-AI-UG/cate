@@ -54,7 +54,7 @@ export class WslTransport implements CompanionTransport {
     }
   }
 
-  async bootstrap(version: string): Promise<void> {
+  async bootstrap(version: string, force?: boolean): Promise<void> {
     const { stdout: machine } = await this.wsl(['uname', '-m'])
     const arch = /(aarch64|arm64)/i.test(machine) ? 'arm64' : /(x86_64|amd64)/i.test(machine) ? 'x64' : null
     if (!arch) throw new Error(`Unsupported WSL arch: "${machine.trim()}"`)
@@ -65,6 +65,10 @@ export class WslTransport implements CompanionTransport {
     const { stdout: home } = await this.wsl(['sh', '-c', 'echo $HOME'])
     this.installDir = `${home.trim()}/.cate/companion/${version}/${this.target}`
     const D = shq(this.installDir)
+
+    // Reinstall: wipe the install dir (binaries + .ok/.cjs.ok markers) so the
+    // provisioned/marker probes below see a clean slate and re-copy.
+    if (force) await this.wslSh(`rm -rf ${D}`)
 
     // DEV: provision the heavy parts once, then hot-swap only companion.cjs by
     // hash (mirrors sshTransport.bootstrapDev) — no version bump, no /mnt of the

@@ -135,6 +135,7 @@ import {
   COMPANION_LIST,
   COMPANION_WSL_DISTROS,
   COMPANION_DISCONNECT,
+  COMPANION_REINSTALL,
   COMPANION_STATUS,
   WEBVIEW_SCREENSHOT,
   NATIVE_FILE_DRAG,
@@ -1021,6 +1022,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   companionDisconnect(companionId: string): Promise<{ ok: boolean }> {
     return ipcRenderer.invoke(COMPANION_DISCONNECT, companionId)
+  },
+  companionReinstall(connection: unknown): Promise<unknown> {
+    return ipcRenderer.invoke(COMPANION_REINSTALL, connection)
   },
   onCompanionStatus(callback: (event: unknown) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
