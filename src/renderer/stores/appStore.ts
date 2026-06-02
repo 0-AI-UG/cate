@@ -37,6 +37,14 @@ import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from './ca
 
 export interface CanvasOperations {
   addNodeAndFocus: (panelId: string, panelType: PanelType, position?: Point) => void
+  /** Begin interactive ghost placement. Returns true if ghosts are shown (the
+   *  caller must NOT also place the node). `onCancelled` rolls the panel back. */
+  beginPlacement: (
+    panelId: string,
+    panelType: PanelType,
+    size: Size,
+    onCancelled: (panelId: string) => void,
+  ) => boolean
   removeNodeForPanel: (panelId: string) => void
   loadWorkspaceCanvas: (
     nodes: Record<CanvasNodeId, CanvasNodeState>,
@@ -366,6 +374,7 @@ function placePanel(
   placement: PanelPlacement | undefined,
   position: Point | undefined,
   isActiveWorkspace: boolean,
+  onGhostCancel?: (panelId: string) => void,
 ): void {
   // No-op: caller is placing the panel itself into a private DockStore.
   if (placement?.target === 'none') return
@@ -382,7 +391,17 @@ function placePanel(
   if (isActiveWorkspace) {
     const canvasPosition = placement?.target === 'canvas' ? placement.position ?? position : position
     const ops = getActiveCanvasOps()
-    ops?.addNodeAndFocus(panelId, panelType, canvasPosition)
+    if (!ops) return
+    // Ambiguous create (no explicit position): show ghost candidates and let
+    // the user choose where the node lands. Explicit-position paths
+    // (drag-drop, session restore, right-click "new here") skip ghosts and
+    // place immediately below. If ghosts are shown, node creation is deferred
+    // until the user commits — onGhostCancel rolls the panel back on cancel.
+    if (canvasPosition == null && onGhostCancel) {
+      const shown = ops.beginPlacement(panelId, panelType, PANEL_DEFAULT_SIZES[panelType], onGhostCancel)
+      if (shown) return
+    }
+    ops.addNodeAndFocus(panelId, panelType, canvasPosition)
   }
 }
 
@@ -407,9 +426,9 @@ function addAndPlacePanel(
         : ws,
     ),
   }))
-  try {
-    placePanel(panel.id, panel.type, placement, position, workspaceId === get().selectedWorkspaceId)
-  } catch (error) {
+  // Roll the panel record back out of the workspace — used both on a placement
+  // error and when an interactive ghost placement is cancelled (no orphan left).
+  const discardPanel = () => {
     set((state) => ({
       workspaces: state.workspaces.map((ws) =>
         ws.id === workspaceId
@@ -419,6 +438,11 @@ function addAndPlacePanel(
           : ws,
       ),
     }))
+  }
+  try {
+    placePanel(panel.id, panel.type, placement, position, workspaceId === get().selectedWorkspaceId, discardPanel)
+  } catch (error) {
+    discardPanel()
     log.error(`Failed to place ${panel.type} panel:`, error)
     return null as unknown as string
   }

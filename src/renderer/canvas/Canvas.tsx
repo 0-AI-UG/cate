@@ -13,6 +13,7 @@ import { canvasToView, viewToCanvas } from '../lib/coordinates'
 import CanvasGrid from './CanvasGrid'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
+import GhostPlacementLayer from './GhostPlacementLayer'
 import type { Point, PanelType } from '../../shared/types'
 import { openFileAsPanel } from '../lib/fileRouting'
 
@@ -223,8 +224,16 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
   // Click on the canvas background (world div) to unfocus
   const handleWorldClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      // Only unfocus if clicking directly on the world div, not on a child node
       const target = e.target as HTMLElement
+      // A click that misses every ghost cancels a pending ghost placement.
+      // (Ghosts stopPropagation on their own clicks, so this only fires on a miss.)
+      if (canvasApi.getState().pendingPlacement) {
+        if (!target.closest('[data-ghost-candidate]')) {
+          canvasApi.getState().cancelPlacement()
+        }
+        return
+      }
+      // Only unfocus if clicking directly on the world div, not on a child node
       if (!target.closest('[data-node-id]') && !target.closest('[data-region-id]')) {
         canvasApi.getState().unfocus()
       }
@@ -471,6 +480,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           />
         )}
         {children}
+        <GhostPlacementLayer />
       </div>
 
     </div>

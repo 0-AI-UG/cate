@@ -40,6 +40,27 @@ const IS_E2E = typeof window !== 'undefined' && window.electronAPI?.isE2E === tr
 // Store interface
 // -----------------------------------------------------------------------------
 
+/** A candidate spot for a new node, surfaced as a clickable "ghost". */
+export interface PlacementCandidate {
+  /** Snapped canvas-space top-left origin for the new node. */
+  point: Point
+  /** 0 = best; ascending. Mirrors array order. */
+  rank: number
+  /** True when the candidate rect intersects the current viewport. */
+  onScreen: boolean
+}
+
+/** Interactive ghost placement awaiting a user-chosen spot. */
+export interface PendingPlacement {
+  panelId: string
+  panelType: PanelType
+  size: Size
+  candidates: PlacementCandidate[]
+  hoveredIndex: number | null
+  /** Invoked if the placement is cancelled — rolls the orphan panel record back. */
+  onCancelled?: (panelId: string) => void
+}
+
 export interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
@@ -66,6 +87,8 @@ export interface CanvasStoreState {
   history: CanvasHistoryEntry[]
   /** Redo stack — populated when undo() is called. */
   future: CanvasHistoryEntry[]
+  /** Interactive ghost placement in progress (null when idle). */
+  pendingPlacement: PendingPlacement | null
 }
 
 export interface CanvasHistoryEntry {
@@ -111,6 +134,22 @@ export interface CanvasStoreActions {
 
   // Focus and center viewport on a node
   focusAndCenter: (nodeId: CanvasNodeId) => void
+
+  // Interactive ghost placement
+  /** Compute candidate spots and show ghosts. Returns true if ghosts are shown
+   *  (caller must NOT also place the node). `onCancelled` rolls the panel back. */
+  beginPlacement: (
+    panelId: string,
+    panelType: PanelType,
+    size: Size,
+    onCancelled?: (panelId: string) => void,
+  ) => boolean
+  /** Commit the pending placement at the given candidate index; returns the new node id. */
+  commitPlacement: (index: number) => CanvasNodeId | null
+  /** Cancel the pending placement and roll back the orphan panel record. */
+  cancelPlacement: () => void
+  /** Highlight a candidate ghost (null clears the hover). */
+  setPlacementHover: (index: number | null) => void
 
   // Move focus to the spatially-nearest node in a direction, centering it
   navigateDirection: (dir: 'up' | 'down' | 'left' | 'right') => void
@@ -284,6 +323,165 @@ function findFreePosition(
   return { x: snap(ref.origin.x), y: snap(maxBottom + gap) }
 }
 
+/**
+ * Compute a ranked set of candidate origins for a new node, for interactive
+ * "ghost" placement. From the reference node (focused, else most recently
+ * created) AND its nearest neighbour in each cardinal direction, ray-march
+ * outward jumping past obstacles, collect the overlap-free slots, dedupe, and
+ * rank by proximity to the reference centre (on-screen candidates ranked
+ * first). Always returns at least one candidate — the single-slot answer from
+ * findFreePosition is appended as a guaranteed fallback so the list is never
+ * empty, even in fully crowded layouts.
+ */
+export function findFreePositions(
+  nodes: Record<CanvasNodeId, CanvasNodeState>,
+  focusedNodeId: CanvasNodeId | null,
+  defaultSize: Size,
+  viewport: { offset: Point; zoom: number; containerSize: Size },
+  max = 6,
+): PlacementCandidate[] {
+  const grid = CANVAS_GRID_SIZE
+  const snap = (v: number) => Math.round(v / grid) * grid
+  const snapPt = (p: Point): Point => ({ x: snap(p.x), y: snap(p.y) })
+
+  // Viewport rect in canvas space — used for the on-screen ranking bias.
+  const { offset, zoom, containerSize } = viewport
+  const hasViewport = containerSize.width > 0 && containerSize.height > 0
+  const viewTopLeft = viewToCanvasCoords({ x: 0, y: 0 }, zoom, offset)
+  const viewBottomRight = viewToCanvasCoords(
+    { x: containerSize.width, y: containerSize.height },
+    zoom,
+    offset,
+  )
+  const viewRect: Rect = {
+    origin: viewTopLeft,
+    size: {
+      width: viewBottomRight.x - viewTopLeft.x,
+      height: viewBottomRight.y - viewTopLeft.y,
+    },
+  }
+  const isOnScreen = (p: Point): boolean =>
+    hasViewport && rectsOverlap({ origin: p, size: defaultSize }, viewRect)
+
+  const nodeList = Object.values(nodes)
+
+  // Empty canvas: a single candidate centred in the current viewport.
+  if (nodeList.length === 0) {
+    const center = hasViewport
+      ? {
+          x: viewTopLeft.x + viewRect.size.width / 2,
+          y: viewTopLeft.y + viewRect.size.height / 2,
+        }
+      : { x: 100 + defaultSize.width / 2, y: 100 + defaultSize.height / 2 }
+    const point = snapPt({
+      x: center.x - defaultSize.width / 2,
+      y: center.y - defaultSize.height / 2,
+    })
+    return [{ point, rank: 0, onScreen: true }]
+  }
+
+  const gap = 40
+  const overlaps = (p: Point): CanvasNodeState | undefined => {
+    const rect = { origin: p, size: defaultSize }
+    return nodeList.find((n) =>
+      rectsOverlap({ origin: n.origin, size: n.size }, rect),
+    )
+  }
+
+  const reference =
+    (focusedNodeId && nodes[focusedNodeId]) ||
+    nodeList.reduce((a, b) => (b.creationIndex > a.creationIndex ? b : a))
+  const refCenter = {
+    x: reference.origin.x + reference.size.width / 2,
+    y: reference.origin.y + reference.size.height / 2,
+  }
+
+  type Dir = { dx: -1 | 0 | 1; dy: -1 | 0 | 1 }
+  const directions: Dir[] = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
+  ]
+
+  // Ray-march from a seed node in one direction, jumping past obstacles.
+  const slotFromSeed = (seed: CanvasNodeState, dir: Dir): Point | null => {
+    let p: Point
+    if (dir.dx > 0) p = { x: seed.origin.x + seed.size.width + gap, y: seed.origin.y }
+    else if (dir.dx < 0) p = { x: seed.origin.x - defaultSize.width - gap, y: seed.origin.y }
+    else if (dir.dy > 0) p = { x: seed.origin.x, y: seed.origin.y + seed.size.height + gap }
+    else p = { x: seed.origin.x, y: seed.origin.y - defaultSize.height - gap }
+
+    for (let i = 0; i < 200; i++) {
+      const obstacle = overlaps(p)
+      if (!obstacle) return p
+      if (dir.dx > 0) p = { x: obstacle.origin.x + obstacle.size.width + gap, y: p.y }
+      else if (dir.dx < 0) p = { x: obstacle.origin.x - defaultSize.width - gap, y: p.y }
+      else if (dir.dy > 0) p = { x: p.x, y: obstacle.origin.y + obstacle.size.height + gap }
+      else p = { x: p.x, y: obstacle.origin.y - defaultSize.height - gap }
+    }
+    return null
+  }
+
+  // Seeds: the reference plus its nearest neighbour in each direction, so a
+  // boxed-in focused node still yields reachable slots inside a dense cluster.
+  const nearestNeighbour = (dir: Dir): CanvasNodeState | null => {
+    let best: CanvasNodeState | null = null
+    let bestDist = Infinity
+    for (const n of nodeList) {
+      if (n.id === reference.id) continue
+      const cx = n.origin.x + n.size.width / 2
+      const cy = n.origin.y + n.size.height / 2
+      // Keep only neighbours that lie in the direction of travel.
+      const along = dir.dx !== 0 ? (cx - refCenter.x) * dir.dx : (cy - refCenter.y) * dir.dy
+      if (along <= 0) continue
+      const dist = Math.hypot(cx - refCenter.x, cy - refCenter.y)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = n
+      }
+    }
+    return best
+  }
+  const seeds: CanvasNodeState[] = [reference]
+  for (const dir of directions) {
+    const n = nearestNeighbour(dir)
+    if (n && !seeds.some((s) => s.id === n.id)) seeds.push(n)
+  }
+
+  // Collect, dedupe by snapped key, and score (on-screen first, then nearest).
+  const seen = new Set<string>()
+  const scored: Array<{ point: Point; onScreen: boolean; score: number }> = []
+  const consider = (rawPoint: Point) => {
+    const point = snapPt(rawPoint)
+    if (overlaps(point)) return
+    const key = `${point.x},${point.y}`
+    if (seen.has(key)) return
+    seen.add(key)
+    const cx = point.x + defaultSize.width / 2
+    const cy = point.y + defaultSize.height / 2
+    const onScreen = isOnScreen(point)
+    const dist = Math.hypot(cx - refCenter.x, cy - refCenter.y)
+    scored.push({ point, onScreen, score: (onScreen ? 0 : 1e9) + dist })
+  }
+
+  for (const seed of seeds) {
+    for (const dir of directions) {
+      const slot = slotFromSeed(seed, dir)
+      if (slot) consider(slot)
+    }
+  }
+  // Guaranteed fallback so the list is never empty (crowded / pathological).
+  consider(findFreePosition(nodes, focusedNodeId, defaultSize))
+
+  scored.sort((a, b) => a.score - b.score)
+  return scored.slice(0, max).map((c, i) => ({
+    point: c.point,
+    rank: i,
+    onScreen: c.onScreen,
+  }))
+}
+
 function rectsOverlap(a: Rect, b: Rect): boolean {
   return !(
     a.origin.x + a.size.width <= b.origin.x ||
@@ -325,6 +523,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   dropTargetRegionId: null,
   history: [],
   future: [],
+  pendingPlacement: null,
 
   // --- Actions ---
 
@@ -766,6 +965,51 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       }
     }
     set(newState)
+  },
+
+  beginPlacement(panelId, panelType, size, onCancelled) {
+    const state = get()
+    // Re-trigger while a placement is pending: latest wins. Roll the previous
+    // pending panel back before replacing it so no orphan record lingers.
+    const prev = state.pendingPlacement
+    if (prev && prev.panelId !== panelId) {
+      prev.onCancelled?.(prev.panelId)
+    }
+    const candidates = findFreePositions(state.nodes, state.focusedNodeId, size, {
+      offset: state.viewportOffset,
+      zoom: state.zoomLevel,
+      containerSize: state.containerSize,
+    })
+    if (candidates.length === 0) return false
+    set({
+      pendingPlacement: { panelId, panelType, size, candidates, hoveredIndex: null, onCancelled },
+    })
+    return true
+  },
+
+  commitPlacement(index) {
+    const pending = get().pendingPlacement
+    if (!pending) return null
+    const candidate = pending.candidates[index]
+    if (!candidate) return null
+    set({ pendingPlacement: null })
+    const nodeId = get().addNode(pending.panelId, pending.panelType, candidate.point, pending.size)
+    if (!nodeId) return null
+    get().focusAndCenter(nodeId)
+    return nodeId
+  },
+
+  cancelPlacement() {
+    const pending = get().pendingPlacement
+    if (!pending) return
+    set({ pendingPlacement: null })
+    pending.onCancelled?.(pending.panelId)
+  },
+
+  setPlacementHover(index) {
+    const pending = get().pendingPlacement
+    if (!pending || pending.hoveredIndex === index) return
+    set({ pendingPlacement: { ...pending, hoveredIndex: index } })
   },
 
   navigateDirection(dir) {
@@ -1415,6 +1659,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       selectedRegionIds: new Set<string>(),
       history: [],
       future: [],
+      pendingPlacement: null,
     })
   },
 }))
