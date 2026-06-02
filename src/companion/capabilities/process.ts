@@ -14,22 +14,27 @@ import os from 'os'
 import { execFile } from 'child_process'
 import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/companion/types'
 import type { TerminalActivity } from '../../shared/types'
+import {
+  type ProcTree,
+  snapshotProcessTreeProc,
+  getCwdProc,
+  listeningPortsByPidProc,
+} from './procfs'
 
 // ---------------------------------------------------------------------------
 // Process-monitor helpers (POSIX). Ported verbatim from the old shell.ts local
 // monitor so a LOCAL companion derives byte-identical activity/ports; a remote
 // companion runs the same scans on the daemon host (`ps`/`lsof` are POSIX there).
+//
+// On Linux these scans read /proc directly instead of forking ps/lsof — forking
+// ~1.6×/sec stalls the Electron main event loop and lags renderer IPC (#246).
+// macOS keeps the ps/lsof path; /proc is Linux-only. See procfs.ts.
 // ---------------------------------------------------------------------------
 
-interface ProcTree {
-  /** comm basename, keyed by pid. */
-  nameByPid: Map<number, string>
-  /** direct child pids, keyed by parent pid. */
-  childrenByPid: Map<number, number[]>
-}
+const isLinux = process.platform === 'linux'
 
 /** ONE `ps` snapshot of the whole process table, indexed for tree walks. */
-function snapshotProcessTree(): Promise<ProcTree> {
+function snapshotProcessTreePs(): Promise<ProcTree> {
   return new Promise((resolve) => {
     execFile('ps', ['-axo', 'pid=,ppid=,comm='], {
       encoding: 'utf-8',
@@ -58,6 +63,11 @@ function snapshotProcessTree(): Promise<ProcTree> {
       resolve({ nameByPid, childrenByPid })
     })
   })
+}
+
+/** Process-table snapshot: /proc on Linux (no fork — #246), `ps` elsewhere. */
+function snapshotProcessTree(): Promise<ProcTree> {
+  return isLinux ? snapshotProcessTreeProc() : snapshotProcessTreePs()
 }
 
 /** All descendant pids of `pid` (BFS over the snapshot), excluding `pid`. */
@@ -199,6 +209,8 @@ export function createProcessCapability(deps: ProcessDeps): ProcessHost {
     async getCwd(id: string): Promise<string | null> {
       const pty = ptys.get(id)
       if (!pty || process.platform === 'win32') return null
+      // Linux: readlink /proc/<pid>/cwd (no fork — #246). macOS: lsof.
+      if (isLinux) return getCwdProc(pty.pid)
       return new Promise((resolve) => {
         execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pty.pid}`, '-Fn'], { encoding: 'utf-8', timeout: 2000 }, (err, stdout) => {
           if (err || !stdout) return resolve(null)
@@ -239,6 +251,19 @@ export function createProcessCapability(deps: ProcessDeps): ProcessHost {
       }
       const pids = Array.from(pidToPty.keys())
       if (pids.length === 0) return {}
+
+      // Linux: cross /proc/net/tcp{,6} with each pid's socket fds (no fork — #246).
+      if (isLinux) {
+        const byPid = await listeningPortsByPidProc(pids)
+        const result: Record<string, number[]> = {}
+        for (const [pid, ports] of byPid) {
+          const id = pidToPty.get(pid)
+          if (!id) continue
+          const acc = result[id] ?? (result[id] = [])
+          for (const port of ports) if (!acc.includes(port)) acc.push(port)
+        }
+        return result
+      }
 
       return new Promise((resolve) => {
         // `-a` ANDs the network filter with `-p <pids>` so lsof inspects ONLY
