@@ -26,6 +26,7 @@ import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
 const CanvasPanel = PANEL_REGISTRY.canvas.Component
 import { NodeSwitcher } from './ui/NodeSwitcher'
 import { CommandPalette } from './ui/CommandPalette'
+import { CompanionLockOverlay } from './ui/CompanionLockOverlay'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
@@ -520,6 +521,11 @@ function MainApp() {
         getPanelTitle={getPanelTitle}
         onClosePanel={handleDockClosePanel}
       />
+
+      {/* Companion lock: covers the canvas area (z-10, beneath the z-20 sidebars
+          so workspace switching stays live) when the selected remote workspace's
+          companion is down. Renders nothing for local/healthy workspaces. */}
+      <CompanionLockOverlay />
 
       {/* Sidebars: absolutely-positioned overlays on top of the shell */}
       <div className="absolute inset-y-0 left-0 z-20 flex pointer-events-none">
