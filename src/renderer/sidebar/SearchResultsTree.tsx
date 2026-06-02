@@ -385,7 +385,7 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
       {hover &&
         createPortal(
           <div
-            className="fixed z-[100] max-w-[520px] px-2 py-1 rounded border border-subtle bg-surface-2 shadow-lg text-[11px] font-mono text-primary whitespace-pre-wrap break-all pointer-events-none"
+            className="fixed z-[100] max-w-[480px] px-2 py-1 rounded border border-subtle bg-surface-2 shadow-lg text-[11px] font-mono text-primary break-words line-clamp-2 pointer-events-none"
             style={{ top: hover.top + 2, left: hover.left }}
           >
             <Highlighted text={hover.text} ranges={hover.ranges} />
