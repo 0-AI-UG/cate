@@ -194,6 +194,37 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     return () => el.removeEventListener('wheel', onWheel, { capture: true })
   }, []) // mount-only — no dependency on handleWheel
 
+  // Track the canvas-space pointer so ghost-placement recommendations can be
+  // anchored to where the mouse is hovering. rAF-throttled; the store setter is
+  // non-reactive so this never triggers a re-render.
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    let pending: { clientX: number; clientY: number } | null = null
+    let rafId = 0
+    const flush = () => {
+      rafId = 0
+      if (!pending) return
+      const rect = el.getBoundingClientRect()
+      const { zoomLevel, viewportOffset } = canvasApi.getState()
+      const canvasPt = viewToCanvas(
+        { x: pending.clientX - rect.left, y: pending.clientY - rect.top },
+        zoomLevel,
+        viewportOffset,
+      )
+      canvasApi.getState().setPlacementPointer(canvasPt)
+    }
+    const onMove = (e: MouseEvent) => {
+      pending = { clientX: e.clientX, clientY: e.clientY }
+      if (!rafId) rafId = requestAnimationFrame(flush)
+    }
+    el.addEventListener('mousemove', onMove)
+    return () => {
+      el.removeEventListener('mousemove', onMove)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
+  }, [])
+
   // Track container size for grid visibility calculations
   useEffect(() => {
     const el = canvasRef.current

@@ -42,7 +42,6 @@ export interface CanvasOperations {
   beginPlacement: (
     panelId: string,
     panelType: PanelType,
-    size: Size,
     onCancelled: (panelId: string) => void,
   ) => boolean
   removeNodeForPanel: (panelId: string) => void
@@ -398,7 +397,7 @@ function placePanel(
     // place immediately below. If ghosts are shown, node creation is deferred
     // until the user commits — onGhostCancel rolls the panel back on cancel.
     if (canvasPosition == null && onGhostCancel) {
-      const shown = ops.beginPlacement(panelId, panelType, PANEL_DEFAULT_SIZES[panelType], onGhostCancel)
+      const shown = ops.beginPlacement(panelId, panelType, onGhostCancel)
       if (shown) return
     }
     ops.addNodeAndFocus(panelId, panelType, canvasPosition)

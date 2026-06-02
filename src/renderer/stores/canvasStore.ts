@@ -40,10 +40,20 @@ const IS_E2E = typeof window !== 'undefined' && window.electronAPI?.isE2E === tr
 // Store interface
 // -----------------------------------------------------------------------------
 
-/** A candidate spot for a new node, surfaced as a clickable "ghost". */
+/** One offered new-node size/shape (multiple aspect ratios per panel type). */
+export interface PlacementSizeVariant {
+  size: Size
+  label: string
+}
+
+/** A candidate spot+shape for a new node, surfaced as a clickable "ghost". */
 export interface PlacementCandidate {
   /** Snapped canvas-space top-left origin for the new node. */
   point: Point
+  /** The size/shape this ghost would create (varies across candidates). */
+  size: Size
+  /** Human label for the size variant (e.g. "Standard", "Wide"). */
+  sizeLabel: string
   /** 0 = best; ascending. Mirrors array order. */
   rank: number
   /** True when the candidate rect intersects the current viewport. */
@@ -54,9 +64,11 @@ export interface PlacementCandidate {
 export interface PendingPlacement {
   panelId: string
   panelType: PanelType
-  size: Size
   candidates: PlacementCandidate[]
   hoveredIndex: number | null
+  /** Viewport before we zoomed out to show recommendations — restored on cancel/commit. */
+  prevZoom: number
+  prevOffset: Point
   /** Invoked if the placement is cancelled — rolls the orphan panel record back. */
   onCancelled?: (panelId: string) => void
 }
@@ -136,12 +148,15 @@ export interface CanvasStoreActions {
   focusAndCenter: (nodeId: CanvasNodeId) => void
 
   // Interactive ghost placement
-  /** Compute candidate spots and show ghosts. Returns true if ghosts are shown
-   *  (caller must NOT also place the node). `onCancelled` rolls the panel back. */
+  /** Record the latest canvas-space pointer position so recommendations can be
+   *  anchored to where the mouse is hovering. Non-reactive (no re-render). */
+  setPlacementPointer: (point: Point | null) => void
+  /** Compute candidate spots/shapes, zoom out to show them, and render ghosts.
+   *  Returns true if ghosts are shown (caller must NOT also place the node).
+   *  `onCancelled` rolls the panel back. */
   beginPlacement: (
     panelId: string,
     panelType: PanelType,
-    size: Size,
     onCancelled?: (panelId: string) => void,
   ) => boolean
   /** Commit the pending placement at the given candidate index; returns the new node id. */
@@ -324,25 +339,54 @@ function findFreePosition(
 }
 
 /**
- * Compute a ranked set of candidate origins for a new node, for interactive
- * "ghost" placement. From the reference node (focused, else most recently
- * created) AND its nearest neighbour in each cardinal direction, ray-march
- * outward jumping past obstacles, collect the overlap-free slots, dedupe, and
- * rank by proximity to the reference centre (on-screen candidates ranked
- * first). Always returns at least one candidate — the single-slot answer from
- * findFreePosition is appended as a guaranteed fallback so the list is never
- * empty, even in fully crowded layouts.
+ * Size/shape variants offered for a new panel — multiple aspect ratios so the
+ * user can pick not just where but how big/what shape the node is. Derived from
+ * the panel's default size and grid-snapped.
  */
-export function findFreePositions(
+export function placementSizeVariants(panelType: PanelType): PlacementSizeVariant[] {
+  const base = PANEL_DEFAULT_SIZES[panelType]
+  const g = CANVAS_GRID_SIZE
+  const snap = (v: number) => Math.max(g, Math.round(v / g) * g)
+  const mk = (w: number, h: number, label: string): PlacementSizeVariant => ({
+    size: { width: snap(w), height: snap(h) },
+    label,
+  })
+  return [
+    mk(base.width, base.height, 'Standard'),
+    mk(base.width * 1.5, base.height, 'Wide'),
+    mk(base.width, base.height * 1.4, 'Tall'),
+    mk(base.width * 1.3, base.height * 1.25, 'Large'),
+  ]
+}
+
+/**
+ * Compute ranked candidate spots+shapes for interactive "ghost" placement.
+ *
+ * Spots are generated where the mouse is hovering (a ring around the anchor) AND
+ * around existing nodes (rays past obstacles from the focused node and its
+ * nearest neighbours), then ranked by proximity to the anchor (on-screen
+ * first). Spots are accepted greedily, each assigned a size variant for variety
+ * (multiple aspect ratios), and rejected if the chosen rect overlaps any
+ * existing node OR an already-accepted candidate — so ghosts never overlap each
+ * other. Always returns at least one candidate.
+ *
+ * @param anchor canvas-space point to bias toward (mouse pos); falls back to the
+ *               focused node centre, then the viewport centre.
+ */
+export function findPlacementCandidates(
   nodes: Record<CanvasNodeId, CanvasNodeState>,
   focusedNodeId: CanvasNodeId | null,
-  defaultSize: Size,
+  panelType: PanelType,
   viewport: { offset: Point; zoom: number; containerSize: Size },
+  anchor: Point | null,
   max = 6,
 ): PlacementCandidate[] {
   const grid = CANVAS_GRID_SIZE
   const snap = (v: number) => Math.round(v / grid) * grid
   const snapPt = (p: Point): Point => ({ x: snap(p.x), y: snap(p.y) })
+  const gap = 40
+  const base = PANEL_DEFAULT_SIZES[panelType]
+  const variants = placementSizeVariants(panelType)
 
   // Viewport rect in canvas space — used for the on-screen ranking bias.
   const { offset, zoom, containerSize } = viewport
@@ -360,126 +404,151 @@ export function findFreePositions(
       height: viewBottomRight.y - viewTopLeft.y,
     },
   }
-  const isOnScreen = (p: Point): boolean =>
-    hasViewport && rectsOverlap({ origin: p, size: defaultSize }, viewRect)
+  const viewCenter = {
+    x: viewTopLeft.x + viewRect.size.width / 2,
+    y: viewTopLeft.y + viewRect.size.height / 2,
+  }
+  const isOnScreen = (rect: Rect): boolean => hasViewport && rectsOverlap(rect, viewRect)
 
   const nodeList = Object.values(nodes)
+  const overlapsNode = (rect: Rect): boolean =>
+    nodeList.some((n) => rectsOverlap({ origin: n.origin, size: n.size }, rect))
 
-  // Empty canvas: a single candidate centred in the current viewport.
-  if (nodeList.length === 0) {
-    const center = hasViewport
-      ? {
-          x: viewTopLeft.x + viewRect.size.width / 2,
-          y: viewTopLeft.y + viewRect.size.height / 2,
-        }
-      : { x: 100 + defaultSize.width / 2, y: 100 + defaultSize.height / 2 }
-    const point = snapPt({
-      x: center.x - defaultSize.width / 2,
-      y: center.y - defaultSize.height / 2,
-    })
-    return [{ point, rank: 0, onScreen: true }]
-  }
-
-  const gap = 40
-  const overlaps = (p: Point): CanvasNodeState | undefined => {
-    const rect = { origin: p, size: defaultSize }
-    return nodeList.find((n) =>
-      rectsOverlap({ origin: n.origin, size: n.size }, rect),
-    )
-  }
-
+  const focused = (focusedNodeId && nodes[focusedNodeId]) || null
   const reference =
-    (focusedNodeId && nodes[focusedNodeId]) ||
-    nodeList.reduce((a, b) => (b.creationIndex > a.creationIndex ? b : a))
-  const refCenter = {
-    x: reference.origin.x + reference.size.width / 2,
-    y: reference.origin.y + reference.size.height / 2,
+    focused ||
+    (nodeList.length > 0
+      ? nodeList.reduce((a, b) => (b.creationIndex > a.creationIndex ? b : a))
+      : null)
+
+  // Anchor: mouse hover → focused node centre → viewport centre.
+  const anchorPt: Point =
+    anchor ??
+    (reference
+      ? { x: reference.origin.x + reference.size.width / 2, y: reference.origin.y + reference.size.height / 2 }
+      : hasViewport
+        ? viewCenter
+        : { x: 100 + base.width / 2, y: 100 + base.height / 2 })
+
+  // --- Generate candidate spots (top-left for the base size) ---------------
+  const spots: Point[] = []
+  // 1) Where the mouse hovers: the anchor itself plus a ring (and a second ring)
+  //    so recommendations cluster around the cursor.
+  const stepX = base.width + gap
+  const stepY = base.height + gap
+  const ringOffsets = [
+    [0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [-1, 1], [1, -1], [-1, -1],
+    [2, 0], [-2, 0], [0, 2], [0, -2],
+  ]
+  for (const [dx, dy] of ringOffsets) {
+    spots.push({ x: anchorPt.x - base.width / 2 + dx * stepX, y: anchorPt.y - base.height / 2 + dy * stepY })
   }
 
+  // 2) Node-aware rays: from the focused node and its nearest neighbour in each
+  //    direction, march past obstacles so dense clusters still yield slots.
   type Dir = { dx: -1 | 0 | 1; dy: -1 | 0 | 1 }
   const directions: Dir[] = [
-    { dx: 1, dy: 0 },
-    { dx: -1, dy: 0 },
-    { dx: 0, dy: 1 },
-    { dx: 0, dy: -1 },
+    { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
   ]
-
-  // Ray-march from a seed node in one direction, jumping past obstacles.
-  const slotFromSeed = (seed: CanvasNodeState, dir: Dir): Point | null => {
-    let p: Point
-    if (dir.dx > 0) p = { x: seed.origin.x + seed.size.width + gap, y: seed.origin.y }
-    else if (dir.dx < 0) p = { x: seed.origin.x - defaultSize.width - gap, y: seed.origin.y }
-    else if (dir.dy > 0) p = { x: seed.origin.x, y: seed.origin.y + seed.size.height + gap }
-    else p = { x: seed.origin.x, y: seed.origin.y - defaultSize.height - gap }
-
-    for (let i = 0; i < 200; i++) {
-      const obstacle = overlaps(p)
-      if (!obstacle) return p
-      if (dir.dx > 0) p = { x: obstacle.origin.x + obstacle.size.width + gap, y: p.y }
-      else if (dir.dx < 0) p = { x: obstacle.origin.x - defaultSize.width - gap, y: p.y }
-      else if (dir.dy > 0) p = { x: p.x, y: obstacle.origin.y + obstacle.size.height + gap }
-      else p = { x: p.x, y: obstacle.origin.y - defaultSize.height - gap }
+  if (reference) {
+    const refCenter = {
+      x: reference.origin.x + reference.size.width / 2,
+      y: reference.origin.y + reference.size.height / 2,
     }
-    return null
-  }
-
-  // Seeds: the reference plus its nearest neighbour in each direction, so a
-  // boxed-in focused node still yields reachable slots inside a dense cluster.
-  const nearestNeighbour = (dir: Dir): CanvasNodeState | null => {
-    let best: CanvasNodeState | null = null
-    let bestDist = Infinity
-    for (const n of nodeList) {
-      if (n.id === reference.id) continue
-      const cx = n.origin.x + n.size.width / 2
-      const cy = n.origin.y + n.size.height / 2
-      // Keep only neighbours that lie in the direction of travel.
-      const along = dir.dx !== 0 ? (cx - refCenter.x) * dir.dx : (cy - refCenter.y) * dir.dy
-      if (along <= 0) continue
-      const dist = Math.hypot(cx - refCenter.x, cy - refCenter.y)
-      if (dist < bestDist) {
-        bestDist = dist
-        best = n
+    const slotFromSeed = (seed: CanvasNodeState, dir: Dir): Point | null => {
+      let p: Point
+      if (dir.dx > 0) p = { x: seed.origin.x + seed.size.width + gap, y: seed.origin.y }
+      else if (dir.dx < 0) p = { x: seed.origin.x - base.width - gap, y: seed.origin.y }
+      else if (dir.dy > 0) p = { x: seed.origin.x, y: seed.origin.y + seed.size.height + gap }
+      else p = { x: seed.origin.x, y: seed.origin.y - base.height - gap }
+      for (let i = 0; i < 200; i++) {
+        const obstacle = nodeList.find((n) =>
+          rectsOverlap({ origin: n.origin, size: n.size }, { origin: p, size: base }),
+        )
+        if (!obstacle) return p
+        if (dir.dx > 0) p = { x: obstacle.origin.x + obstacle.size.width + gap, y: p.y }
+        else if (dir.dx < 0) p = { x: obstacle.origin.x - base.width - gap, y: p.y }
+        else if (dir.dy > 0) p = { x: p.x, y: obstacle.origin.y + obstacle.size.height + gap }
+        else p = { x: p.x, y: obstacle.origin.y - base.height - gap }
+      }
+      return null
+    }
+    const nearestNeighbour = (dir: Dir): CanvasNodeState | null => {
+      let best: CanvasNodeState | null = null
+      let bestDist = Infinity
+      for (const n of nodeList) {
+        if (n.id === reference.id) continue
+        const cx = n.origin.x + n.size.width / 2
+        const cy = n.origin.y + n.size.height / 2
+        const along = dir.dx !== 0 ? (cx - refCenter.x) * dir.dx : (cy - refCenter.y) * dir.dy
+        if (along <= 0) continue
+        const dist = Math.hypot(cx - refCenter.x, cy - refCenter.y)
+        if (dist < bestDist) { bestDist = dist; best = n }
+      }
+      return best
+    }
+    const seeds: CanvasNodeState[] = [reference]
+    for (const dir of directions) {
+      const n = nearestNeighbour(dir)
+      if (n && !seeds.some((s) => s.id === n.id)) seeds.push(n)
+    }
+    for (const seed of seeds) {
+      for (const dir of directions) {
+        const slot = slotFromSeed(seed, dir)
+        if (slot) spots.push(slot)
       }
     }
-    return best
-  }
-  const seeds: CanvasNodeState[] = [reference]
-  for (const dir of directions) {
-    const n = nearestNeighbour(dir)
-    if (n && !seeds.some((s) => s.id === n.id)) seeds.push(n)
+    // Guaranteed fallback spot so the list is never empty in crowded layouts.
+    spots.push(findFreePosition(nodes, focusedNodeId, base))
   }
 
-  // Collect, dedupe by snapped key, and score (on-screen first, then nearest).
+  // --- Rank spots by proximity to the anchor (on-screen first), dedupe ------
   const seen = new Set<string>()
-  const scored: Array<{ point: Point; onScreen: boolean; score: number }> = []
-  const consider = (rawPoint: Point) => {
-    const point = snapPt(rawPoint)
-    if (overlaps(point)) return
-    const key = `${point.x},${point.y}`
-    if (seen.has(key)) return
-    seen.add(key)
-    const cx = point.x + defaultSize.width / 2
-    const cy = point.y + defaultSize.height / 2
-    const onScreen = isOnScreen(point)
-    const dist = Math.hypot(cx - refCenter.x, cy - refCenter.y)
-    scored.push({ point, onScreen, score: (onScreen ? 0 : 1e9) + dist })
-  }
+  const rankedSpots = spots
+    .map((s) => snapPt(s))
+    .filter((p) => {
+      const key = `${p.x},${p.y}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map((p) => {
+      const cx = p.x + base.width / 2
+      const cy = p.y + base.height / 2
+      const onScreen = isOnScreen({ origin: p, size: base })
+      return { p, score: (onScreen ? 0 : 1e9) + Math.hypot(cx - anchorPt.x, cy - anchorPt.y) }
+    })
+    .sort((a, b) => a.score - b.score)
 
-  for (const seed of seeds) {
-    for (const dir of directions) {
-      const slot = slotFromSeed(seed, dir)
-      if (slot) consider(slot)
+  // --- Accept greedily, assigning diverse sizes, never overlapping ----------
+  const accepted: PlacementCandidate[] = []
+  const acceptedRects: Rect[] = []
+  const fits = (rect: Rect): boolean =>
+    !overlapsNode(rect) && !acceptedRects.some((r) => rectsOverlap(r, rect))
+
+  for (const { p } of rankedSpots) {
+    if (accepted.length >= max) break
+    // Rotate the variant order per accepted index so shapes vary; the best
+    // (first) candidate stays "Standard". Fall through to a fitting variant.
+    let chosen: PlacementSizeVariant | null = null
+    for (let k = 0; k < variants.length; k++) {
+      const v = variants[(accepted.length + k) % variants.length]
+      if (fits({ origin: p, size: v.size })) { chosen = v; break }
     }
+    if (!chosen) continue
+    const rect: Rect = { origin: p, size: chosen.size }
+    acceptedRects.push(rect)
+    accepted.push({ point: p, size: chosen.size, sizeLabel: chosen.label, rank: accepted.length, onScreen: isOnScreen(rect) })
   }
-  // Guaranteed fallback so the list is never empty (crowded / pathological).
-  consider(findFreePosition(nodes, focusedNodeId, defaultSize))
 
-  scored.sort((a, b) => a.score - b.score)
-  return scored.slice(0, max).map((c, i) => ({
-    point: c.point,
-    rank: i,
-    onScreen: c.onScreen,
-  }))
+  // Last-resort guarantee (e.g. fully boxed in at every spot).
+  if (accepted.length === 0) {
+    const p = snapPt(findFreePosition(nodes, focusedNodeId, base))
+    accepted.push({ point: p, size: base, sizeLabel: 'Standard', rank: 0, onScreen: isOnScreen({ origin: p, size: base }) })
+  }
+
+  return accepted
 }
 
 function rectsOverlap(a: Rect, b: Rect): boolean {
@@ -498,6 +567,11 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   // Each store instance gets its own zoom animation RAF tracking
   let activeZoomAnimationRafId = 0
+
+  // Latest canvas-space pointer position (for anchoring ghost recommendations
+  // to where the mouse is hovering). Kept off zustand state so high-frequency
+  // mousemove updates never trigger re-renders.
+  let lastPointerCanvasPos: Point | null = null
 
   function cancelZoomAnim() {
     if (activeZoomAnimationRafId) {
@@ -967,7 +1041,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     set(newState)
   },
 
-  beginPlacement(panelId, panelType, size, onCancelled) {
+  setPlacementPointer(point) {
+    // Intentionally not via set() — this must not cause re-renders.
+    lastPointerCanvasPos = point
+  },
+
+  beginPlacement(panelId, panelType, onCancelled) {
     const state = get()
     // Re-trigger while a placement is pending: latest wins. Roll the previous
     // pending panel back before replacing it so no orphan record lingers.
@@ -975,14 +1054,52 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     if (prev && prev.panelId !== panelId) {
       prev.onCancelled?.(prev.panelId)
     }
-    const candidates = findFreePositions(state.nodes, state.focusedNodeId, size, {
-      offset: state.viewportOffset,
-      zoom: state.zoomLevel,
-      containerSize: state.containerSize,
-    })
+    const candidates = findPlacementCandidates(
+      state.nodes,
+      state.focusedNodeId,
+      panelType,
+      { offset: state.viewportOffset, zoom: state.zoomLevel, containerSize: state.containerSize },
+      lastPointerCanvasPos,
+    )
     if (candidates.length === 0) return false
+
+    // Zoom out so every recommendation (plus the focused node for context) is
+    // visible at once. Mirrors zoomToFit's framing math over the ghost rects.
+    let nextZoom = state.zoomLevel
+    let nextOffset = state.viewportOffset
+    const cs = state.containerSize
+    if (cs.width > 0 && cs.height > 0) {
+      const rects: Rect[] = candidates.map((c) => ({ origin: c.point, size: c.size }))
+      const focused = state.focusedNodeId ? state.nodes[state.focusedNodeId] : null
+      if (focused) rects.push({ origin: focused.origin, size: focused.size })
+      const minX = Math.min(...rects.map((r) => r.origin.x))
+      const minY = Math.min(...rects.map((r) => r.origin.y))
+      const maxX = Math.max(...rects.map((r) => r.origin.x + r.size.width))
+      const maxY = Math.max(...rects.map((r) => r.origin.y + r.size.height))
+      const padding = 80
+      const contentW = maxX - minX + padding * 2
+      const contentH = maxY - minY + padding * 2
+      // Only ever zoom OUT to reveal recommendations; never zoom further in.
+      const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
+      nextZoom = Math.min(Math.max(Math.min(state.zoomLevel, fitZoom), ZOOM_MIN), ZOOM_MAX)
+      nextOffset = {
+        x: (cs.width - contentW * nextZoom) / 2 - (minX - padding) * nextZoom,
+        y: (cs.height - contentH * nextZoom) / 2 - (minY - padding) * nextZoom,
+      }
+    }
+
     set({
-      pendingPlacement: { panelId, panelType, size, candidates, hoveredIndex: null, onCancelled },
+      pendingPlacement: {
+        panelId,
+        panelType,
+        candidates,
+        hoveredIndex: null,
+        prevZoom: state.zoomLevel,
+        prevOffset: state.viewportOffset,
+        onCancelled,
+      },
+      zoomLevel: nextZoom,
+      viewportOffset: nextOffset,
     })
     return true
   },
@@ -992,8 +1109,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     if (!pending) return null
     const candidate = pending.candidates[index]
     if (!candidate) return null
-    set({ pendingPlacement: null })
-    const nodeId = get().addNode(pending.panelId, pending.panelType, candidate.point, pending.size)
+    // Restore the pre-placement zoom, drop the ghosts, then create + centre the
+    // node at the chosen spot with the chosen size/shape.
+    set({ pendingPlacement: null, zoomLevel: pending.prevZoom })
+    const nodeId = get().addNode(pending.panelId, pending.panelType, candidate.point, candidate.size)
     if (!nodeId) return null
     get().focusAndCenter(nodeId)
     return nodeId
@@ -1002,7 +1121,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   cancelPlacement() {
     const pending = get().pendingPlacement
     if (!pending) return
-    set({ pendingPlacement: null })
+    // Restore the viewport we zoomed out from.
+    set({ pendingPlacement: null, zoomLevel: pending.prevZoom, viewportOffset: pending.prevOffset })
     pending.onCancelled?.(pending.panelId)
   },
 

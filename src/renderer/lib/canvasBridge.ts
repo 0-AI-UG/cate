@@ -7,7 +7,7 @@
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import type { CanvasOperations } from '../stores/appStore'
-import type { PanelType, Point, Size, CanvasNodeId, CanvasNodeState, CanvasRegion, DockLayoutNode } from '../../shared/types'
+import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, DockLayoutNode } from '../../shared/types'
 
 function countLayoutPanels(node: DockLayoutNode): number {
   if (node.type === 'tabs') return node.panelIds.length
@@ -28,10 +28,9 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
     beginPlacement(
       panelId: string,
       panelType: PanelType,
-      size: Size,
       onCancelled: (panelId: string) => void,
     ) {
-      return storeApi.getState().beginPlacement(panelId, panelType, size, onCancelled)
+      return storeApi.getState().beginPlacement(panelId, panelType, onCancelled)
     },
 
     removeNodeForPanel(panelId: string) {

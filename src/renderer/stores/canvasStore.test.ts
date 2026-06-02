@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { createCanvasStore, findFreePositions } from './canvasStore'
+import { createCanvasStore, findPlacementCandidates, placementSizeVariants } from './canvasStore'
 import { CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { CanvasNodeState, CanvasNodeId } from '../../shared/types'
 
@@ -223,11 +223,10 @@ describe('canvasStore.zoomToSelection', () => {
 })
 
 // =============================================================================
-// findFreePositions — ranked candidate spots for interactive ghost placement.
+// findPlacementCandidates — ranked spots+shapes for interactive ghost placement.
 // =============================================================================
 
-describe('canvasStore.findFreePositions', () => {
-  const SIZE = { width: 200, height: 150 }
+describe('canvasStore.findPlacementCandidates', () => {
   const VIEWPORT = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1000, height: 800 } }
 
   function node(id: string, x: number, y: number, w = 200, h = 150, creationIndex = 0): CanvasNodeState {
@@ -239,71 +238,99 @@ describe('canvasStore.findFreePositions', () => {
   function toMap(...ns: CanvasNodeState[]): Record<CanvasNodeId, CanvasNodeState> {
     return Object.fromEntries(ns.map((n) => [n.id, n]))
   }
-  const overlaps = (a: CanvasNodeState, p: { x: number; y: number }) =>
-    !(a.origin.x + a.size.width <= p.x ||
-      p.x + SIZE.width <= a.origin.x ||
-      a.origin.y + a.size.height <= p.y ||
-      p.y + SIZE.height <= a.origin.y)
+  type R = { origin: { x: number; y: number }; size: { width: number; height: number } }
+  const rectsOverlap = (a: R, b: R) =>
+    !(a.origin.x + a.size.width <= b.origin.x ||
+      b.origin.x + b.size.width <= a.origin.x ||
+      a.origin.y + a.size.height <= b.origin.y ||
+      b.origin.y + b.size.height <= a.origin.y)
+  const rectOf = (c: { point: { x: number; y: number }; size: { width: number; height: number } }): R =>
+    ({ origin: c.point, size: c.size })
 
-  it('empty canvas → exactly one on-screen candidate centered in the viewport', () => {
-    const cands = findFreePositions({}, null, SIZE, VIEWPORT)
-    expect(cands).toHaveLength(1)
-    expect(cands[0].onScreen).toBe(true)
-    expect(cands[0].rank).toBe(0)
-    // Centered: viewport center (500,400) minus half the node size, grid-snapped.
-    expect(cands[0].point.x).toBeCloseTo(400, -1)
-    expect(cands[0].point.y).toBeCloseTo(320, -1)
-  })
-
-  it('single node → multiple non-overlapping candidates, ranks sequential from 0', () => {
-    const n = node('a', 0, 0)
-    const cands = findFreePositions(toMap(n), 'a', SIZE, VIEWPORT)
+  it('returns candidates that never overlap each other', () => {
+    const cands = findPlacementCandidates(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThan(1)
-    cands.forEach((c) => expect(overlaps(n, c.point)).toBe(false))
-    expect(cands.map((c) => c.rank)).toEqual(cands.map((_, i) => i))
+    for (let i = 0; i < cands.length; i++) {
+      for (let j = i + 1; j < cands.length; j++) {
+        expect(rectsOverlap(rectOf(cands[i]), rectOf(cands[j]))).toBe(false)
+      }
+    }
   })
 
-  it('all candidates are grid-snapped and unique', () => {
-    const cands = findFreePositions(toMap(node('a', 0, 0), node('b', 400, 0)), 'a', SIZE, VIEWPORT)
-    const keys = new Set<string>()
+  it('candidates never overlap existing nodes', () => {
+    const nodes = toMap(node('a', 0, 0), node('b', 400, 0))
+    const cands = findPlacementCandidates(nodes, 'a', 'terminal', VIEWPORT, null)
+    cands.forEach((c) => {
+      Object.values(nodes).forEach((n) =>
+        expect(rectsOverlap(rectOf(c), { origin: n.origin, size: n.size })).toBe(false),
+      )
+    })
+  })
+
+  it('offers multiple aspect ratios (size variants)', () => {
+    const cands = findPlacementCandidates(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
+    const labels = new Set(cands.map((c) => c.sizeLabel))
+    expect(labels.size).toBeGreaterThanOrEqual(2)
+  })
+
+  it('anchors recommendations to the mouse position', () => {
+    const anchor = { x: 300, y: 300 }
+    const cands = findPlacementCandidates({}, null, 'terminal', VIEWPORT, anchor)
+    expect(cands.length).toBeGreaterThan(0)
+    const best = cands[0]
+    expect(best.point.x + best.size.width / 2).toBeCloseTo(anchor.x, -1)
+    expect(best.point.y + best.size.height / 2).toBeCloseTo(anchor.y, -1)
+  })
+
+  it('all candidates are grid-snapped, ranks sequential from 0', () => {
+    const cands = findPlacementCandidates(toMap(node('a', 0, 0), node('b', 400, 0)), 'a', 'terminal', VIEWPORT, null)
     cands.forEach((c) => {
       expect(c.point.x % CANVAS_GRID_SIZE === 0).toBe(true)
       expect(c.point.y % CANVAS_GRID_SIZE === 0).toBe(true)
-      keys.add(`${c.point.x},${c.point.y}`)
     })
-    expect(keys.size).toBe(cands.length)
+    expect(cands.map((c) => c.rank)).toEqual(cands.map((_, i) => i))
   })
 
   it('crowded cluster (focused node boxed in) still yields ≥1 overlap-free candidate', () => {
-    // Center node tightly surrounded on all four sides (gap < 40).
-    const center = node('c', 0, 0, 200, 150)
-    const right = node('r', 220, 0, 200, 150)
-    const left = node('l', -220, 0, 200, 150)
-    const down = node('d', 0, 170, 200, 150)
-    const up = node('u', 0, -170, 200, 150)
-    const nodes = toMap(center, right, left, down, up)
-    const cands = findFreePositions(nodes, 'c', SIZE, VIEWPORT)
+    const nodes = toMap(
+      node('c', 0, 0, 200, 150),
+      node('r', 220, 0, 200, 150),
+      node('l', -220, 0, 200, 150),
+      node('d', 0, 170, 200, 150),
+      node('u', 0, -170, 200, 150),
+    )
+    const cands = findPlacementCandidates(nodes, 'c', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThanOrEqual(1)
-    // Every candidate must be free of every existing node.
     cands.forEach((c) => {
-      Object.values(nodes).forEach((nd) => expect(overlaps(nd, c.point)).toBe(false))
+      Object.values(nodes).forEach((n) =>
+        expect(rectsOverlap(rectOf(c), { origin: n.origin, size: n.size })).toBe(false),
+      )
     })
   })
 
   it('respects the max cap', () => {
-    const nodes = toMap(
-      node('a', 0, 0), node('b', 400, 0), node('c', -400, 0),
-      node('d', 0, 300), node('e', 0, -300), node('f', 800, 0),
-    )
-    const cands = findFreePositions(nodes, 'a', SIZE, VIEWPORT, 3)
+    const cands = findPlacementCandidates(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 3)
     expect(cands.length).toBeLessThanOrEqual(3)
   })
 
-  it('flags off-screen candidates when the reference is outside the viewport', () => {
+  it('flags off-screen candidates when everything is outside the viewport', () => {
     const far = node('far', 5000, 5000)
-    const cands = findFreePositions(toMap(far), 'far', SIZE, VIEWPORT)
+    const cands = findPlacementCandidates(toMap(far), 'far', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThan(0)
     expect(cands.every((c) => c.onScreen === false)).toBe(true)
+  })
+})
+
+describe('canvasStore.placementSizeVariants', () => {
+  it('returns at least two distinct, grid-snapped sizes', () => {
+    const variants = placementSizeVariants('terminal')
+    expect(variants.length).toBeGreaterThanOrEqual(2)
+    const keys = new Set(variants.map((v) => `${v.size.width}x${v.size.height}`))
+    expect(keys.size).toBeGreaterThanOrEqual(2)
+    variants.forEach((v) => {
+      expect(v.size.width % CANVAS_GRID_SIZE === 0).toBe(true)
+      expect(v.size.height % CANVAS_GRID_SIZE === 0).toBe(true)
+    })
   })
 })
 
@@ -318,9 +345,9 @@ describe('canvasStore ghost placement actions', () => {
     return store
   }
 
-  it('beginPlacement sets pendingPlacement and returns true (even on empty canvas)', () => {
+  it('beginPlacement sets pendingPlacement and returns true', () => {
     const store = setup()
-    const shown = store.getState().beginPlacement('p1', 'terminal', { width: 200, height: 150 })
+    const shown = store.getState().beginPlacement('p1', 'terminal')
     expect(shown).toBe(true)
     const pending = store.getState().pendingPlacement
     expect(pending).not.toBeNull()
@@ -328,10 +355,10 @@ describe('canvasStore ghost placement actions', () => {
     expect(pending!.candidates.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('commitPlacement creates exactly one node at the chosen spot and clears state', () => {
+  it('commitPlacement creates one node at the chosen spot+size and clears state', () => {
     const store = setup()
     store.getState().addNode('seed', 'editor', { x: 0, y: 0 }, { width: 200, height: 150 })
-    store.getState().beginPlacement('p1', 'terminal', { width: 200, height: 150 })
+    store.getState().beginPlacement('p1', 'terminal')
     const target = store.getState().pendingPlacement!.candidates[1] ?? store.getState().pendingPlacement!.candidates[0]
     const idx = store.getState().pendingPlacement!.candidates.indexOf(target)
 
@@ -341,14 +368,30 @@ describe('canvasStore ghost placement actions', () => {
     const node = store.getState().nodes[nodeId!]
     expect(node.panelId).toBe('p1')
     expect(node.origin).toEqual(target.point)
+    expect(node.size).toEqual(target.size)
     expect(Object.values(store.getState().nodes).filter((n) => n.panelId === 'p1')).toHaveLength(1)
     expect(store.getState().focusedNodeId).toBe(nodeId)
+  })
+
+  it('beginPlacement only ever zooms out, and cancel restores the viewport', () => {
+    const store = setup()
+    // Two far-apart nodes force a zoom-out to fit the recommendations.
+    store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 400, height: 300 })
+    store.getState().addNode('b', 'editor', { x: 4000, y: 3000 }, { width: 400, height: 300 })
+    const zoomBefore = store.getState().zoomLevel
+    const offsetBefore = store.getState().viewportOffset
+    store.getState().beginPlacement('p1', 'terminal')
+    expect(store.getState().zoomLevel).toBeLessThanOrEqual(zoomBefore)
+    expect(store.getState().pendingPlacement!.prevZoom).toBe(zoomBefore)
+    store.getState().cancelPlacement()
+    expect(store.getState().zoomLevel).toBe(zoomBefore)
+    expect(store.getState().viewportOffset).toEqual(offsetBefore)
   })
 
   it('cancelPlacement clears state and invokes the rollback callback', () => {
     const store = setup()
     let cancelledId: string | null = null
-    store.getState().beginPlacement('p1', 'terminal', { width: 200, height: 150 }, (id) => { cancelledId = id })
+    store.getState().beginPlacement('p1', 'terminal', (id) => { cancelledId = id })
     store.getState().cancelPlacement()
     expect(store.getState().pendingPlacement).toBeNull()
     expect(cancelledId).toBe('p1')
@@ -357,15 +400,15 @@ describe('canvasStore ghost placement actions', () => {
   it('re-trigger rolls the previous pending panel back (latest wins)', () => {
     const store = setup()
     let cancelledId: string | null = null
-    store.getState().beginPlacement('p1', 'terminal', { width: 200, height: 150 }, (id) => { cancelledId = id })
-    store.getState().beginPlacement('p2', 'terminal', { width: 200, height: 150 }, () => {})
+    store.getState().beginPlacement('p1', 'terminal', (id) => { cancelledId = id })
+    store.getState().beginPlacement('p2', 'terminal', () => {})
     expect(cancelledId).toBe('p1')
     expect(store.getState().pendingPlacement!.panelId).toBe('p2')
   })
 
   it('setPlacementHover updates the hovered index', () => {
     const store = setup()
-    store.getState().beginPlacement('p1', 'terminal', { width: 200, height: 150 })
+    store.getState().beginPlacement('p1', 'terminal')
     store.getState().setPlacementHover(0)
     expect(store.getState().pendingPlacement!.hoveredIndex).toBe(0)
     store.getState().setPlacementHover(null)
@@ -374,10 +417,9 @@ describe('canvasStore ghost placement actions', () => {
 
   it('commitPlacement is a no-op with an out-of-range index', () => {
     const store = setup()
-    store.getState().beginPlacement('p1', 'terminal', { width: 200, height: 150 })
+    store.getState().beginPlacement('p1', 'terminal')
     const result = store.getState().commitPlacement(999)
     expect(result).toBeNull()
-    // pendingPlacement remains so the user can still pick a valid spot.
     expect(store.getState().pendingPlacement).not.toBeNull()
   })
 })

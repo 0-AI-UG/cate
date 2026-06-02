@@ -70,8 +70,8 @@ const GhostPlacementLayer: React.FC = () => {
               position: 'absolute',
               left: c.point.x,
               top: c.point.y,
-              width: pending.size.width,
-              height: pending.size.height,
+              width: c.size.width,
+              height: c.size.height,
               border: `${isBest ? 2 : 1.5}px ${isBest ? 'solid' : 'dashed'} rgba(${ACCENT}, ${hovered ? 0.95 : 0.7})`,
               borderRadius: 8,
               background: `rgba(${ACCENT}, ${hovered ? 0.16 : 0.08})`,
@@ -81,6 +81,8 @@ const GhostPlacementLayer: React.FC = () => {
               zIndex: 50000 + i,
               transition: 'background 120ms ease, border-color 120ms ease',
               display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -90,21 +92,44 @@ const GhostPlacementLayer: React.FC = () => {
                 transform: `scale(${badgeScale})`,
                 transformOrigin: 'center',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center',
-                width: 34,
-                height: 34,
-                borderRadius: 17,
-                background: `rgba(${ACCENT}, ${hovered ? 1 : 0.9})`,
-                color: '#fff',
-                fontWeight: 600,
-                fontSize: 16,
-                fontFamily: 'system-ui, -apple-system, sans-serif',
+                gap: 6,
                 userSelect: 'none',
-                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.25)',
               }}
             >
-              {i + 1}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  background: `rgba(${ACCENT}, ${hovered ? 1 : 0.9})`,
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: 16,
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.25)',
+                }}
+              >
+                {i + 1}
+              </div>
+              <div
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  background: 'rgba(0, 0, 0, 0.55)',
+                  color: '#fff',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {c.sizeLabel}
+              </div>
             </div>
           </div>
         )
