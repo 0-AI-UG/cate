@@ -19,6 +19,7 @@ import {
   FileText,
   SquaresFour,
   FileDoc,
+  TextT,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import { CateLogo } from '../ui/CateLogo'
@@ -40,6 +41,7 @@ const BrowserPanel = React.lazy(() => import('./BrowserPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('../../agent/renderer/AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
+const TextPanel = React.lazy(() => import('./TextPanel'))
 
 // -----------------------------------------------------------------------------
 // Renderer definition
@@ -119,6 +121,13 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: DocumentPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath, documentType }) =>
       useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null,
+  },
+  text: {
+    ...PANEL_DEFINITIONS.text,
+    icon: TextT,
+    Component: TextPanel,
+    create: ({ workspaceId, canvasPoint, placement }) =>
+      useAppStore.getState().createText(workspaceId, canvasPoint, placement) || null,
   },
 }
 

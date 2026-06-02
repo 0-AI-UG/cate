@@ -129,6 +129,18 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(191,90,242)', '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>'),
     canLiveOnCanvas: false,
   },
+  text: {
+    type: 'text',
+    label: 'Text',
+    brandColor: '#FF6482',
+    switcherColor: '#FF375F',
+    mutedColor: '#a0506a',
+    tintClass: 'text-rose-400',
+    defaultSize: { width: 320, height: 160 },
+    minimumSize: { width: 220, height: 80 },
+    ghostSvg: ghost('rgb(255,100,130)', '<polyline points="4 7 4 5 20 5 20 7"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="9" y1="19" x2="15" y2="19"/>'),
+    canLiveOnCanvas: true,
+  },
 }
 
 /** Ordered list of every known panel type. */

@@ -509,6 +509,100 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   if (!node) return null
 
+  // ---------------------------------------------------------------------------
+  // Bare text node — text elements live directly on the canvas with no window
+  // chrome (no tab bar, border, or background). The whole block is the drag
+  // handle when unfocused; when focused it becomes editable. Resize handles
+  // show only while active. Everything else (move, resize, focus, z-order,
+  // persistence) reuses the normal canvas-node machinery.
+  // ---------------------------------------------------------------------------
+  if (primaryPanelType === 'text') {
+    const textPanelId = primaryPanel?.id ?? node.panelId
+    const active = isFocused || isSelected
+    return (
+      <>
+        <div
+          ref={nodeRef}
+          data-node-id={nodeId}
+          data-node-active={isFocused ? 'true' : 'false'}
+          style={{
+            ...containerStyle,
+            background: 'transparent',
+            backgroundColor: 'transparent',
+            border: 'none',
+            boxShadow: 'none',
+            borderRadius: 0,
+            overflow: 'visible',
+            outline: active ? '1.5px solid var(--focus-blue)' : 'none',
+            outlineOffset: 2,
+            userSelect: 'auto',
+          }}
+          onClick={handleClick}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
+          {/* Text content (editable once the node is focused). */}
+          <div style={{ width: '100%', height: '100%' }}>
+            {renderPanel(textPanelId)}
+          </div>
+          {/* Drag layer — on top while unfocused so a press moves the block and
+              a click focuses it. Disabled once focused so the text is editable. */}
+          <div
+            onMouseDown={(e) => {
+              if (isFocused || e.button !== 0) return
+              if (handToolPanShouldWin(e)) return
+              e.stopPropagation()
+              handleDragStart(e)
+            }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 2,
+              cursor: isFocused ? 'text' : 'grab',
+              pointerEvents: isFocused ? 'none' : 'auto',
+            }}
+          />
+
+          {/* Close / delete — appears while the block is active or hovered. */}
+          {(active || isHovered) && (
+            <button
+              type="button"
+              title="Delete text"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleClose()
+              }}
+              className="absolute flex items-center justify-center w-5 h-5 rounded-full border border-subtle bg-surface-0 text-secondary hover:text-primary hover:bg-hover-strong shadow-[0_4px_12px_-4px_var(--shadow-node)]"
+              style={{ top: -8, right: -8, zIndex: 3 }}
+            >
+              <X size={11} weight="bold" />
+            </button>
+          )}
+        </div>
+
+        {/* Resize handles — only while active, to keep the block clean. */}
+        {!isWholeNodeDragSource && (active || isHovered) && (
+          <div
+            aria-hidden
+            data-resize-frame-for={nodeId}
+            style={{
+              position: 'absolute',
+              left: node.origin.x,
+              top: node.origin.y,
+              width: node.size.width,
+              height: node.size.height,
+              zIndex: 1000 + node.zOrder,
+              pointerEvents: 'none',
+            }}
+          >
+            <NodeResizeOverlay onResizeStart={handleResizeStartGuarded} />
+          </div>
+        )}
+      </>
+    )
+  }
+
   return (
     <>
     {glowStyle && <div aria-hidden data-glow-for={nodeId} style={glowStyle} />}

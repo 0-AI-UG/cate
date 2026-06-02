@@ -128,6 +128,11 @@ function buildWorkspaceFile(
     url: n.url ?? undefined,
     regionId: n.regionId,
     documentType: n.documentType,
+    text: n.text,
+    textColor: n.textColor,
+    textBgColor: n.textBgColor,
+    textFontSize: n.textFontSize,
+    textFontFamily: n.textFontFamily,
   }))
 
   const regions: ProjectCanvasRegion[] = snapshot.regions
@@ -240,6 +245,11 @@ export async function saveSession(): Promise<void> {
           ? panel?.unsavedContent
           : undefined,
         documentType: panel?.documentType,
+        text: panel?.type === 'text' ? panel?.text : undefined,
+        textColor: panel?.type === 'text' ? panel?.textColor : undefined,
+        textBgColor: panel?.type === 'text' ? panel?.textBgColor : undefined,
+        textFontSize: panel?.type === 'text' ? panel?.textFontSize : undefined,
+        textFontFamily: panel?.type === 'text' ? panel?.textFontFamily : undefined,
       }
     })
 
@@ -427,6 +437,11 @@ export function projectFilesToSnapshot(
       url: pn.url,
       regionId: pn.regionId,
       documentType: pn.documentType,
+      text: pn.text,
+      textColor: pn.textColor,
+      textBgColor: pn.textBgColor,
+      textFontSize: pn.textFontSize,
+      textFontFamily: pn.textFontFamily,
       ptyId: ephemeral?.ptyId,
       workingDirectory: ephemeral?.workingDirectory,
       unsavedContent: ephemeral?.unsavedContent,
@@ -675,6 +690,30 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
       case 'document': {
         const panelId = appStore.createDocument(wsId, nodeSnap.filePath ?? undefined, nodeSnap.documentType, position)
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
+        const canvasState = getCanvasState()
+        if (canvasState) {
+          const newNodeId = canvasState.nodeForPanel(panelId)
+          if (newNodeId) {
+            canvasState.moveNode(newNodeId, position)
+            canvasState.resizeNode(newNodeId, size)
+            if (nodeSnap.regionId) {
+              const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
+              if (mappedRegionId) canvasState.setNodeRegion(newNodeId, mappedRegionId)
+            }
+          }
+        }
+        break
+      }
+      case 'text': {
+        const panelId = appStore.createText(wsId, position)
+        if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
+        appStore.updateTextPanel(wsId, panelId, {
+          text: nodeSnap.text ?? '',
+          textColor: nodeSnap.textColor,
+          textBgColor: nodeSnap.textBgColor,
+          textFontSize: nodeSnap.textFontSize,
+          textFontFamily: nodeSnap.textFontFamily,
+        })
         const canvasState = getCanvasState()
         if (canvasState) {
           const newNodeId = canvasState.nodeForPanel(panelId)

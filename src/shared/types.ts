@@ -29,7 +29,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'text'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -121,6 +121,17 @@ export interface PanelState {
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
    *  no longer overwrite the chosen name. */
   titleUserOverridden?: boolean
+  /** Text panels only: the note's plain-text body. */
+  text?: string
+  /** Text panels only: CSS color applied to the whole note (hex, e.g. #FF9F0A).
+   *  Unset falls back to the theme's primary text color. */
+  textColor?: string
+  /** Text panels only: fill color behind the note (hex). Unset = transparent. */
+  textBgColor?: string
+  /** Text panels only: font size in px applied to the whole note. */
+  textFontSize?: number
+  /** Text panels only: CSS font-family stack applied to the whole note. */
+  textFontFamily?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -614,6 +625,12 @@ export interface NodeSnapshot {
   unsavedContent?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
+  /** Text panels only: note body + styling, restored on load. */
+  text?: string
+  textColor?: string
+  textBgColor?: string
+  textFontSize?: number
+  textFontFamily?: string
 }
 
 export interface SessionSnapshot {
@@ -695,6 +712,12 @@ export interface ProjectCanvasNode {
   regionId?: string
   documentType?: 'pdf' | 'docx' | 'image'
   dockLayout?: DockLayoutNode | null
+  /** Text panels only: note body + styling (committed to workspace.json). */
+  text?: string
+  textColor?: string
+  textBgColor?: string
+  textFontSize?: number
+  textFontFamily?: string
 }
 
 export interface ProjectCanvasRegion {
@@ -973,6 +996,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   canvas: { width: 640, height: 480 },
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
+  text: { width: 320, height: 160 },
 }
 
 // -----------------------------------------------------------------------------

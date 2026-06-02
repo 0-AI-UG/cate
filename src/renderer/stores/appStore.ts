@@ -302,6 +302,7 @@ interface AppStoreActions {
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
+  createText: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
 
   // Ensure the center dock zone contains a canvas panel for the given workspace.
   // Covers session-restore and new-workspace paths where the center layout may
@@ -322,6 +323,8 @@ interface AppStoreActions {
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
+  /** Text panels only: patch the note body and/or styling. */
+  updateTextPanel: (workspaceId: string, panelId: string, patch: Partial<Pick<PanelState, 'text' | 'textColor' | 'textBgColor' | 'textFontSize' | 'textFontFamily'>>) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
 
   // Helpers
@@ -854,6 +857,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
+  createText(workspaceId, position?, placement?) {
+    const panel: PanelState = {
+      id: generateId(),
+      type: 'text',
+      title: 'Text',
+      isDirty: false,
+      text: '',
+      textFontSize: 24,
+    }
+    return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
+  },
+
   // --- Panel management ---
 
   closePanel(workspaceId, panelId) {
@@ -950,6 +965,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setPanelUnsavedContent(workspaceId, panelId, content) {
     setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, unsavedContent: content }))
+  },
+
+  updateTextPanel(workspaceId, panelId, patch) {
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, ...patch }))
   },
 
   addPanel(workspaceId, panel) {

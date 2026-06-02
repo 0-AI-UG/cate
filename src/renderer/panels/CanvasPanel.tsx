@@ -254,6 +254,11 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
     if (wsId) useAppStore.getState().createAgent(wsId)
   }, [workspaceId])
 
+  const onNewText = useCallback(async () => {
+    const wsId = await ensureWorkspaceFolder(workspaceId)
+    if (wsId) useAppStore.getState().createText(wsId)
+  }, [workspaceId])
+
   const onZoomIn = useCallback(() => {
     store.getState().animateZoomTo(zoomLevel + 0.1)
   }, [zoomLevel, store])
@@ -328,6 +333,7 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
             onNewBrowser={onNewBrowser}
             onNewEditor={onNewEditor}
             onNewAgent={onNewAgent}
+            onNewText={onNewText}
             onNewCanvas={onNewCanvas}
             onNewRegion={onNewRegion}
             onAutoLayout={onAutoLayout}

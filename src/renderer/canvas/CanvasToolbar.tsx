@@ -8,6 +8,7 @@ import {
   Terminal,
   Globe,
   FileText,
+  TextT,
   Minus,
   Plus,
   Square,
@@ -47,6 +48,7 @@ interface CanvasToolbarProps {
   onNewBrowser: () => void
   onNewEditor: () => void
   onNewAgent: () => void
+  onNewText: () => void
   onNewCanvas: () => void
   onNewRegion: () => void
   onAutoLayout: () => void
@@ -127,6 +129,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onNewBrowser,
   onNewEditor,
   onNewAgent,
+  onNewText,
   onNewCanvas,
   onNewRegion,
   onAutoLayout,
@@ -231,6 +234,11 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             data-theme="dark-warm"
             className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 min-w-[200px] rounded-lg border border-subtle bg-surface-4/95 backdrop-blur-xl backdrop-saturate-150 shadow-[0_10px_30px_-10px_var(--shadow-node)] p-1"
           >
+            <MenuItem
+              onClick={pick(onNewText)}
+              icon={<TextT size={16} />}
+              label="New Text"
+            />
             <MenuItem
               onClick={pick(onNewRegion)}
               icon={<Square size={16} />}

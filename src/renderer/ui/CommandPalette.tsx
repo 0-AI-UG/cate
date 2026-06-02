@@ -10,6 +10,7 @@ import {
   Terminal,
   Globe,
   FileText,
+  TextT,
   SquaresFour,
   Sidebar,
   FolderOpen,
@@ -57,6 +58,7 @@ const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
 const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const AgentIcon = () => <CateLogo size={ICON_SIZE} />
+const TextIcon = () => <TextT size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
 // Search result types (merged from GlobalSearch)
@@ -91,6 +93,7 @@ export const CommandPalette: React.FC = () => {
   const createEditor = useAppStore((s) => s.createEditor)
   const createCanvas = useAppStore((s) => s.createCanvas)
   const createAgent = useAppStore((s) => s.createAgent)
+  const createText = useAppStore((s) => s.createText)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const setActiveRightSidebarView = useUIStore((s) => s.setActiveRightSidebarView)
   const canvasApi = useCanvasStoreApi()
@@ -146,6 +149,13 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '',
         icon: <AgentIcon />,
         action: () => createAgent(selectedWorkspaceId, undefined, dockCenter),
+      },
+      {
+        id: 'newText',
+        title: 'New Text',
+        shortcutText: '',
+        icon: <TextIcon />,
+        action: () => createText(selectedWorkspaceId),
       },
       {
         id: 'newCanvas',
@@ -227,6 +237,7 @@ export const CommandPalette: React.FC = () => {
       createEditor,
       createCanvas,
       createAgent,
+      createText,
       toggleSidebar,
       setActiveRightSidebarView,
       setShowNodeSwitcher,
