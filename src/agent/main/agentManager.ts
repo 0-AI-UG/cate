@@ -45,8 +45,22 @@ import { mirrorModelsToWorkspace } from './customModels'
 import type { AuthManager } from './authManager'
 
 function resolvePiCliPath(): string {
+  const appPath = app.getAppPath()
+  const unpackedAppPath = appPath.includes('app.asar')
+    ? appPath.replace('app.asar', 'app.asar.unpacked')
+    : appPath
+  const unpackedCliPath = path.join(
+    unpackedAppPath,
+    'node_modules',
+    '@earendil-works',
+    'pi-coding-agent',
+    'dist',
+    'cli.js',
+  )
+  if (fs.existsSync(unpackedCliPath)) return unpackedCliPath
+
   return path.join(
-    app.getAppPath(),
+    appPath,
     'node_modules',
     '@earendil-works',
     'pi-coding-agent',
@@ -57,10 +71,10 @@ function resolvePiCliPath(): string {
 
 // RpcClient hardcodes `spawn("node", ...)`, so `node` must be on PATH.
 //
-// In production we MUST use Electron's own binary (with ELECTRON_RUN_AS_NODE=1)
-// because it has built-in asar support — a regular system `node` can't resolve
-// modules from inside the asar archive. In dev we fall back to the system node
-// only if one exists; otherwise we shim Electron the same way.
+// If pi's CLI is still inside app.asar, we need Electron's built-in asar
+// support. If the CLI is available in app.asar.unpacked, a regular system Node
+// can launch it from the real filesystem. On Windows this avoids Electron's
+// `ELECTRON_RUN_AS_NODE` ICU fd startup failure in packaged builds.
 let fallbackNodeDir: string | null = null
 
 function nodeExistsOnPath(env: Record<string, string>): boolean {
@@ -87,18 +101,25 @@ function ensureElectronNodeShim(): string {
   return dir
 }
 
+function canUseSystemNodeForCli(cliPath: string): boolean {
+  return cliPath.includes('app.asar.unpacked')
+}
+
 function buildAgentEnv(cwd: string): Record<string, string> {
   const env = { ...getShellEnv() }
   // Scope pi's entire config (extensions, sessions, settings, auth) to this
   // workspace instead of the user's global ~/.pi/agent.
   env.PI_CODING_AGENT_DIR = agentDirFor(cwd)
-  const needsShim = app.isPackaged || !nodeExistsOnPath(env)
+  const cliPath = resolvePiCliPath()
+  const needsShim = !nodeExistsOnPath(env) || (app.isPackaged && !canUseSystemNodeForCli(cliPath))
   if (needsShim) {
     const shimDir = ensureElectronNodeShim()
     const sep = process.platform === 'win32' ? ';' : ':'
     env.PATH = shimDir + sep + (env.PATH || '')
     env.ELECTRON_RUN_AS_NODE = '1'
     log.info('[agentManager] using Electron as node (packaged=%s)', app.isPackaged)
+  } else if (app.isPackaged) {
+    log.info('[agentManager] using system node for unpacked pi CLI')
   }
   return env
 }
