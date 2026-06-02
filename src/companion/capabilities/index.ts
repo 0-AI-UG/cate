@@ -32,21 +32,31 @@ export interface DaemonCompanionConfig {
 export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
   const exclusionSet = new Set(config.exclusions ?? [])
 
+  // The daemon is the AUTHORITATIVE path check: only it can realpath its own
+  // filesystem, and RemoteCompanion's client-side validate* are pass-throughs.
+  // So every leaf op validates its path(s) against the daemon's allowed root
+  // (addAllowedRoot(--root) at startup) here, before touching the fs. Reads use
+  // the strict (symlink-resolving) check; creates use the parent-exists check.
   const file: FileHost = {
-    readFile: fileLeaf.readFile,
-    readBinary: fileLeaf.readBinary,
-    writeFile: fileLeaf.writeFile,
-    readDir: (p) => fileLeaf.readDir(p, exclusionSet),
-    stat: fileLeaf.statEntry,
-    remove: fileLeaf.removeEntry,
-    rename: fileLeaf.renameEntry,
-    mkdir: fileLeaf.mkdirEntry,
-    copy: fileLeaf.copyInto,
-    importEntries: (sources, destDir, mode, winId) =>
-      fileLeaf.importEntriesInto(sources, destDir, mode, winId, () => { /* errors counted, not logged */ }),
-    search: (root, query, opts) => fileLeaf.searchFiles(root, query, exclusionSet, opts),
+    readFile: async (p) => fileLeaf.readFile(await validatePathStrict(p)),
+    readBinary: async (p) => fileLeaf.readBinary(await validatePathStrict(p)),
+    writeFile: async (p, content) => fileLeaf.writeFile(await validatePathForCreation(p), content),
+    writeBinary: async (p, data) => fileLeaf.writeBinary(await validatePathForCreation(p), data),
+    readDir: async (p) => fileLeaf.readDir(await validatePathStrict(p), exclusionSet),
+    stat: async (p) => fileLeaf.statEntry(await validatePathStrict(p)),
+    remove: async (p) => fileLeaf.removeEntry(await validatePathStrict(p)),
+    rename: async (oldP, newP) =>
+      fileLeaf.renameEntry(await validatePathStrict(oldP), await validatePathForCreation(newP)),
+    mkdir: async (p) => fileLeaf.mkdirEntry(await validatePathForCreation(p)),
+    copy: async (src, destDir) =>
+      fileLeaf.copyInto(await validatePathStrict(src), await validatePathStrict(destDir)),
+    importEntries: async (sources, destDir, mode, winId) =>
+      fileLeaf.importEntriesInto(sources, await validatePathStrict(destDir), mode, winId, () => { /* errors counted, not logged */ }),
+    search: async (root, query, opts) =>
+      fileLeaf.searchFiles(await validatePathStrict(root), query, exclusionSet, opts),
     watch: (prefix, onChange) => {
-      const w = watch(prefix, { ignoreInitial: true })
+      // watch returns its unsub synchronously; use the cheap lexical check.
+      const w = watch(validatePath(prefix), { ignoreInitial: true })
       const fire = (fp: string) => onChange(fp)
       w.on('add', fire)
       w.on('change', fire)

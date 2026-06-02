@@ -69,6 +69,7 @@ export const Methods = {
   fileReadFile: 'file.readFile',
   fileReadBinary: 'file.readBinary', // result is base64
   fileWriteFile: 'file.writeFile',
+  fileWriteBinary: 'file.writeBinary', // data is base64 on the wire
   fileReadDir: 'file.readDir',
   fileStat: 'file.stat',
   fileRemove: 'file.remove',

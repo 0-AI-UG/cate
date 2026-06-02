@@ -83,6 +83,13 @@ describe('cate-companion daemon (real subprocess)', () => {
     await companion.file.writeFile(target, 'from the daemon\n')
     expect(await fs.readFile(path.join(workspace, 'written.txt'), 'utf-8')).toBe('from the daemon\n')
 
+    // writeBinary over the wire (base64-encoded both ways): raw bytes round-trip.
+    const bytes = Buffer.from([0, 1, 2, 250, 251, 255])
+    const binTarget = await companion.validatePathForCreation(path.join(workspace, 'blob.bin'))
+    await companion.file.writeBinary(binTarget, bytes)
+    expect([...(await fs.readFile(path.join(workspace, 'blob.bin')))]).toEqual([...bytes])
+    expect([...(await companion.file.readBinary(binTarget))]).toEqual([...bytes])
+
     // git ops
     expect(await companion.vcs.isRepo(workspace)).toBe(false)
     await companion.vcs.init(workspace)

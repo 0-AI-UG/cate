@@ -112,6 +112,7 @@ export class RpcServer {
       case Methods.fileReadFile: return api.file.readFile(s(0))
       case Methods.fileReadBinary: return (await api.file.readBinary(s(0))).toString('base64')
       case Methods.fileWriteFile: return api.file.writeFile(s(0), s(1))
+      case Methods.fileWriteBinary: return api.file.writeBinary(s(0), Buffer.from(s(1), 'base64'))
       case Methods.fileReadDir: return api.file.readDir(s(0))
       case Methods.fileStat: return api.file.stat(s(0))
       case Methods.fileRemove: return api.file.remove(s(0))

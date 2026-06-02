@@ -45,6 +45,12 @@ export class RemoteCompanion implements Companion {
   ) {
     const call = <T>(method: string, params: unknown[] = []) =>
       this.rpc.call(method, params) as Promise<T>
+    // Long ops (tarball install, network git, full-tree search, byte upload)
+    // routinely outrun the default 30s timeout on a real remote host. They run
+    // with no client-side deadline; the daemon still owns liveness via the
+    // transport closing (which rejects all in-flight calls).
+    const longCall = <T>(method: string, params: unknown[] = []) =>
+      this.rpc.call(method, params, { timeoutMs: 0 }) as Promise<T>
 
     this.process = {
       create: async (opts, onData, onExit) => {
@@ -80,7 +86,7 @@ export class RemoteCompanion implements Companion {
     // Agent: pi runs on the daemon's host; lines/exit stream back keyed by the
     // caller-generated id (PiRpcClient registers before start, like ptyCreate).
     this.agent = {
-      ensurePi: () => call<void>(Methods.agentEnsurePi, []),
+      ensurePi: () => longCall<void>(Methods.agentEnsurePi, []),
       start: async (opts, onLine, onExit) => {
         this.rpc.registerStream(opts.id, (payload) => {
           const p = payload as AgentEvtPayload
@@ -106,6 +112,7 @@ export class RemoteCompanion implements Companion {
       readBinary: async (p) =>
         Buffer.from(await call<string>(Methods.fileReadBinary, [p]), 'base64'),
       writeFile: (p, content) => call<void>(Methods.fileWriteFile, [p, content]),
+      writeBinary: (p, data) => longCall<void>(Methods.fileWriteBinary, [p, data.toString('base64')]),
       readDir: (p) => call<FileTreeNode[]>(Methods.fileReadDir, [p]),
       stat: (p) => call<{ isDirectory: boolean; isFile: boolean }>(Methods.fileStat, [p]),
       remove: (p) => call<void>(Methods.fileRemove, [p]),
@@ -115,7 +122,7 @@ export class RemoteCompanion implements Companion {
       importEntries: (sources, destDir, mode, winId) =>
         call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, winId]),
       search: (root, query, opts?: FileSearchOptions) =>
-        call<FileSearchResult[]>(Methods.fileSearch, [root, query, opts]),
+        longCall<FileSearchResult[]>(Methods.fileSearch, [root, query, opts]),
       watch: (prefix, onChange) => {
         let streamId: string | null = null
         let stopped = false
@@ -152,9 +159,9 @@ export class RemoteCompanion implements Companion {
       stage: (cwd, filePath) => call<void>(Methods.vcsStage, [cwd, filePath]),
       unstage: (cwd, filePath) => call<void>(Methods.vcsUnstage, [cwd, filePath]),
       commit: (cwd, message) => call<void>(Methods.vcsCommit, [cwd, message]),
-      push: (cwd, remote, branch) => call<void>(Methods.vcsPush, [cwd, remote, branch]),
-      pull: (cwd, remote, branch) => call<GitPullResult>(Methods.vcsPull, [cwd, remote, branch]),
-      fetch: (cwd, remote) => call<void>(Methods.vcsFetch, [cwd, remote]),
+      push: (cwd, remote, branch) => longCall<void>(Methods.vcsPush, [cwd, remote, branch]),
+      pull: (cwd, remote, branch) => longCall<GitPullResult>(Methods.vcsPull, [cwd, remote, branch]),
+      fetch: (cwd, remote) => longCall<void>(Methods.vcsFetch, [cwd, remote]),
       log: (cwd, maxCount) => call<GitLogEntry[]>(Methods.vcsLog, [cwd, maxCount]),
       branchList: (cwd) => call<GitBranchListResult>(Methods.vcsBranchList, [cwd]),
       branchCreate: (cwd, name, startPoint) => call<void>(Methods.vcsBranchCreate, [cwd, name, startPoint]),
@@ -167,16 +174,16 @@ export class RemoteCompanion implements Companion {
       worktreeAdd: (repoCwd, branch, target, options) =>
         call<{ path: string; branch: string }>(Methods.vcsWorktreeAdd, [repoCwd, branch, target, options]),
       worktreeAddFromPr: (repoCwd, pr, target) =>
-        call<{ path: string; branch: string }>(Methods.vcsWorktreeAddFromPr, [repoCwd, pr, target]),
+        longCall<{ path: string; branch: string }>(Methods.vcsWorktreeAddFromPr, [repoCwd, pr, target]),
       worktreeRemove: (repoCwd, worktreePath, options) =>
         call<void>(Methods.vcsWorktreeRemove, [repoCwd, worktreePath, options]),
       worktreePrune: (repoCwd) => call<{ output: string }>(Methods.vcsWorktreePrune, [repoCwd]),
       worktreeStatus: (worktreePath) => call<WorktreeStatusResult | null>(Methods.vcsWorktreeStatus, [worktreePath]),
       worktreeMergeTo: (repoCwd, from, to) => call<MergeResult>(Methods.vcsWorktreeMergeTo, [repoCwd, from, to]),
       worktreeUpdateFrom: (worktreePath, from) => call<MergeResult>(Methods.vcsWorktreeUpdateFrom, [worktreePath, from]),
-      createPr: (worktreePath, branch) => call<CreatePrResult>(Methods.vcsCreatePr, [worktreePath, branch]),
-      prStatus: (worktreePath, branch) => call<PrStatusResult | null>(Methods.vcsPrStatus, [worktreePath, branch]),
-      prList: (repoCwd) => call<PrSummary[]>(Methods.vcsPrList, [repoCwd]),
+      createPr: (worktreePath, branch) => longCall<CreatePrResult>(Methods.vcsCreatePr, [worktreePath, branch]),
+      prStatus: (worktreePath, branch) => longCall<PrStatusResult | null>(Methods.vcsPrStatus, [worktreePath, branch]),
+      prList: (repoCwd) => longCall<PrSummary[]>(Methods.vcsPrList, [repoCwd]),
     }
   }
 

@@ -9,6 +9,7 @@ import log from '../logger'
 import { consumeScopedWriteAllowance, validatePathStrict } from './pathValidation'
 import { parseLocator, formatLocator, LOCAL_COMPANION_ID } from '../companion/locator'
 import { companions } from '../companion/companionManager'
+import { uploadEntriesToCompanion } from '../companion/uploadEntries'
 import {
   FS_READ_FILE,
   FS_WRITE_FILE,
@@ -96,6 +97,7 @@ export {
   readFile,
   readBinary,
   writeFile,
+  writeBinary,
   statEntry,
   removeEntry,
   renameEntry,
@@ -606,10 +608,11 @@ export function registerHandlers(): void {
   // Import external files/folders (dragged in from the OS file manager) into a
   // workspace directory. The security boundary is the DESTINATION: `destDir`
   // must resolve inside an allowed workspace root. The SOURCE paths originate
-  // from a user-initiated OS drag (webUtils.getPathForFile) and may live
-  // anywhere — they are only read server-side to copy/move into `destDir`, and
-  // their contents are never returned to the renderer. This mirrors the
-  // explicit per-window grant model used by the native Open/Save dialogs.
+  // from a user-initiated OS drag (webUtils.getPathForFile) and are LOCAL OS
+  // paths. For a local workspace they are copied/moved in place on the daemon.
+  // For a REMOTE workspace the daemon can't see them, so we read each entry here
+  // and stream its bytes to the host via uploadEntriesToCompanion (an upload).
+  // Source contents are never returned to the renderer either way.
   ipcMain.handle(
     FS_IMPORT_ENTRIES,
     async (event, sources: string[], destDir: string, mode: 'copy' | 'move') => {
@@ -617,7 +620,10 @@ export function registerHandlers(): void {
       const { companionId, path: destP } = parseLocator(destDir)
       const companion = companions.resolve(companionId)
       const safeDestDir = await companion.validatePathStrict(destP, win?.id)
-      const result = await companion.file.importEntries(sources, safeDestDir, mode, win?.id)
+      const result =
+        companionId === LOCAL_COMPANION_ID
+          ? await companion.file.importEntries(sources, safeDestDir, mode, win?.id)
+          : await uploadEntriesToCompanion(companion, sources, safeDestDir, mode)
       return {
         ...result,
         created: result.created.map((p) => encodeResultPath(companionId, p)),

@@ -154,6 +154,9 @@ export interface FileHost {
   readFile(safePath: string): Promise<string>
   readBinary(safePath: string): Promise<Buffer>
   writeFile(safePath: string, content: string): Promise<void>
+  /** Write raw bytes. Used by remote upload (drag-import into a remote workspace):
+   *  the source is read on the client and its bytes written here on the host. */
+  writeBinary(safePath: string, data: Buffer): Promise<void>
   readDir(safePath: string): Promise<FileTreeNode[]>
   stat(safePath: string): Promise<{ isDirectory: boolean; isFile: boolean }>
   remove(safePath: string): Promise<void>

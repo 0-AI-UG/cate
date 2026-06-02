@@ -25,6 +25,13 @@ export async function writeFile(filePath: string, content: string): Promise<void
   await fs.writeFile(filePath, content, 'utf-8')
 }
 
+/** Write raw bytes (used by remote upload, where the source is read client-side
+ *  and the contents are streamed in as a Buffer). Creates the parent directory. */
+export async function writeBinary(filePath: string, data: Buffer): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  await fs.writeFile(filePath, data)
+}
+
 /** lstat + reject symlinks, returning the directory/file discriminator. */
 export async function statEntry(safePath: string): Promise<{ isDirectory: boolean; isFile: boolean }> {
   const stat = await fs.lstat(safePath)

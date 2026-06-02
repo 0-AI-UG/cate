@@ -78,22 +78,31 @@ export class CompanionRpcClient {
     this.decoder.push(chunk)
   }
 
-  /** Issue a request and await its response. */
-  call(method: string, params: unknown[] = []): Promise<unknown> {
+  /**
+   * Issue a request and await its response. `opts.timeoutMs` overrides the
+   * default deadline for this call; pass `0` to disable it entirely (long ops
+   * like tarball install, network git, full-tree search, or a byte upload, which
+   * legitimately outrun a fixed timeout on a real remote host). Liveness for
+   * untimed calls comes from the transport closing, which rejects all pending.
+   */
+  call(method: string, params: unknown[] = [], opts: { timeoutMs?: number } = {}): Promise<unknown> {
     if (this.disposed) return Promise.reject(new Error('Companion connection is closed'))
     const id = this.nextId++
     return new Promise<unknown>((resolve, reject) => {
-      const timeoutMs = this.opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-      const timer = setTimeout(() => {
-        this.pending.delete(id)
-        reject(new Error(`Companion request "${method}" timed out`))
-      }, timeoutMs)
+      const timeoutMs = opts.timeoutMs ?? this.opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+      const timer =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              this.pending.delete(id)
+              reject(new Error(`Companion request "${method}" timed out`))
+            }, timeoutMs)
+          : null
       this.pending.set(id, { resolve, reject, timer })
       try {
         this.write(serializeFrame({ t: 'req', id, method, params }))
       } catch (err) {
         this.pending.delete(id)
-        clearTimeout(timer)
+        if (timer) clearTimeout(timer)
         reject(err instanceof Error ? err : new Error(String(err)))
       }
     })
