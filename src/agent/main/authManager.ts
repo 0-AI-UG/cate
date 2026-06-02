@@ -24,6 +24,7 @@ import {
 } from '@earendil-works/pi-ai'
 import { getOAuthProvider, getOAuthProviders } from '@earendil-works/pi-ai/oauth'
 import { sharedAuthPath } from './agentDir'
+import { readCustomOpenAI } from './customModels'
 import log from '../../main/logger'
 import type {
   AuthProviderDescriptor,
@@ -188,6 +189,18 @@ export class AuthManager {
         connectedAt: connected ? this.connectedAt.get(p.id) : undefined,
       })
     }
+
+    // Custom OpenAI-compatible endpoint (lives in models.json, not auth.json).
+    // Connected once a baseUrl and at least one model are configured — the key
+    // is optional since local servers (Ollama, LM Studio, vLLM) ignore it.
+    const custom = await readCustomOpenAI()
+    const customConnected = !!custom && !!custom.baseUrl && custom.models.length > 0
+    result.push({
+      id: 'custom-openai',
+      connected: customConnected,
+      source: customConnected ? 'config' : undefined,
+      connectedAt: customConnected ? this.connectedAt.get('custom-openai') : undefined,
+    })
 
     return result
   }

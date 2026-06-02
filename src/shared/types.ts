@@ -1010,7 +1010,7 @@ export interface AuthProviderStatus {
   /** Last connect time as ISO string, if known. */
   connectedAt?: string
   /** Where the credential lives. */
-  source?: 'oauth' | 'safeStorage' | 'env'
+  source?: 'oauth' | 'safeStorage' | 'env' | 'config'
 }
 
 /** A user-defined OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, a
