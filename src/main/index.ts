@@ -31,7 +31,7 @@ import { AgentManager } from '../agent/main/agentManager'
 // Shared singletons for pi agent + auth.
 const agentManager = new AgentManager(authManager)
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
-import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows } from './windowRegistry'
+import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows, focusWindow } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { addAllowedRoot, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow, grantFileAccess, validatePath } from './ipc/pathValidation'
 import { listPersistentGrants, recordPersistentGrant } from './grantedPathStore'
@@ -1210,8 +1210,8 @@ function deliverOpenPath(p: string): void {
     return
   }
   try {
-    if (win.isMinimized()) win.restore()
-    if (!IS_E2E) win.focus()
+    // Skip in e2e so opening a path never foregrounds the shared Electron bundle.
+    if (!IS_E2E) focusWindow(win)
   } catch { /* noop */ }
   win.webContents.send(APP_OPEN_PATH, p)
 }

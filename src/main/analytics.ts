@@ -11,6 +11,8 @@
 //   - update_manual_open_clicked : user clicked through to GitHub release page
 //   - feedback_submitted       : 1-5 rating + optional free-text comment, post-update
 //   - feedback_dismissed       : user skipped/closed the post-update feedback dialog
+//   - agent_message_sent       : user sent a message to an agent — kind (prompt/
+//                                steer/follow_up), char count, has_images. No text.
 //
 // What we deliberately do NOT send: file paths, project names, workspace
 // contents, hostname, IP-derived identifiers, user account info.
