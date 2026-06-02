@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { createCanvasStore, placementCluster, placementSizeVariants } from './canvasStore'
+import { createCanvasStore, recommendPlacements, placementSizeVariants } from './canvasStore'
 import { CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { CanvasNodeState, CanvasNodeId } from '../../shared/types'
 
@@ -223,10 +223,10 @@ describe('canvasStore.zoomToSelection', () => {
 })
 
 // =============================================================================
-// placementCluster — cursor-anchored ghost cluster for interactive placement.
+// recommendPlacements — 3–5 ranked, non-overlapping spots for the ghost picker.
 // =============================================================================
 
-describe('canvasStore.placementCluster', () => {
+describe('canvasStore.recommendPlacements', () => {
   const VIEWPORT = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1000, height: 800 } }
 
   function node(id: string, x: number, y: number, w = 200, h = 150, creationIndex = 0): CanvasNodeState {
@@ -247,17 +247,8 @@ describe('canvasStore.placementCluster', () => {
   const rectOf = (c: { point: { x: number; y: number }; size: { width: number; height: number } }): R =>
     ({ origin: c.point, size: c.size })
 
-  it('anchors the primary ghost on the cursor', () => {
-    const cursor = { x: 300, y: 300 }
-    const cands = placementCluster({}, 'terminal', cursor, VIEWPORT)
-    expect(cands.length).toBeGreaterThan(0)
-    const primary = cands[0]
-    expect(primary.point.x + primary.size.width / 2).toBeCloseTo(cursor.x, -1)
-    expect(primary.point.y + primary.size.height / 2).toBeCloseTo(cursor.y, -1)
-  })
-
-  it('returns ghosts that never overlap each other', () => {
-    const cands = placementCluster(toMap(node('a', 0, 0)), 'terminal', { x: 600, y: 400 }, VIEWPORT)
+  it('returns recommendations that never overlap each other', () => {
+    const cands = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThan(1)
     for (let i = 0; i < cands.length; i++) {
       for (let j = i + 1; j < cands.length; j++) {
@@ -266,9 +257,9 @@ describe('canvasStore.placementCluster', () => {
     }
   })
 
-  it('ghosts never overlap existing nodes', () => {
+  it('recommendations never overlap existing nodes', () => {
     const nodes = toMap(node('a', 0, 0), node('b', 400, 0))
-    const cands = placementCluster(nodes, 'terminal', { x: 200, y: 100 }, VIEWPORT)
+    const cands = recommendPlacements(nodes, 'a', 'terminal', VIEWPORT, null)
     cands.forEach((c) => {
       Object.values(nodes).forEach((n) =>
         expect(rectsOverlap(rectOf(c), { origin: n.origin, size: n.size })).toBe(false),
@@ -276,14 +267,24 @@ describe('canvasStore.placementCluster', () => {
     })
   })
 
-  it('offers multiple aspect ratios (size variants)', () => {
-    const cands = placementCluster({}, 'terminal', { x: 500, y: 400 }, VIEWPORT)
-    const labels = new Set(cands.map((c) => c.sizeLabel))
-    expect(labels.size).toBeGreaterThanOrEqual(2)
+  it('caps the recommendation count (3–5)', () => {
+    const cands = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeLessThanOrEqual(5)
+    const three = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 3)
+    expect(three.length).toBeLessThanOrEqual(3)
   })
 
-  it('all ghosts are grid-snapped, ranks sequential from 0', () => {
-    const cands = placementCluster(toMap(node('a', 0, 0)), 'terminal', { x: 600, y: 400 }, VIEWPORT)
+  it('biases the best recommendation toward the anchor (mouse) when given', () => {
+    const anchor = { x: 300, y: 300 }
+    const cands = recommendPlacements({}, null, 'terminal', VIEWPORT, anchor)
+    expect(cands.length).toBeGreaterThan(0)
+    const best = cands[0]
+    expect(best.point.x + best.size.width / 2).toBeCloseTo(anchor.x, -1)
+    expect(best.point.y + best.size.height / 2).toBeCloseTo(anchor.y, -1)
+  })
+
+  it('all recommendations are grid-snapped, ranks sequential from 0', () => {
+    const cands = recommendPlacements(toMap(node('a', 0, 0), node('b', 400, 0)), 'a', 'terminal', VIEWPORT, null)
     cands.forEach((c) => {
       expect(c.point.x % CANVAS_GRID_SIZE === 0).toBe(true)
       expect(c.point.y % CANVAS_GRID_SIZE === 0).toBe(true)
@@ -291,7 +292,7 @@ describe('canvasStore.placementCluster', () => {
     expect(cands.map((c) => c.rank)).toEqual(cands.map((_, i) => i))
   })
 
-  it('still yields ≥1 overlap-free ghost when the cursor is boxed in', () => {
+  it('still yields ≥1 overlap-free recommendation when the focused node is boxed in', () => {
     const nodes = toMap(
       node('c', 0, 0, 200, 150),
       node('r', 220, 0, 200, 150),
@@ -299,7 +300,7 @@ describe('canvasStore.placementCluster', () => {
       node('d', 0, 170, 200, 150),
       node('u', 0, -170, 200, 150),
     )
-    const cands = placementCluster(nodes, 'terminal', { x: 100, y: 75 }, VIEWPORT)
+    const cands = recommendPlacements(nodes, 'c', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThanOrEqual(1)
     cands.forEach((c) => {
       Object.values(nodes).forEach((n) =>
@@ -308,8 +309,9 @@ describe('canvasStore.placementCluster', () => {
     })
   })
 
-  it('flags off-screen ghosts when the cursor is outside the viewport', () => {
-    const cands = placementCluster({}, 'terminal', { x: 5000, y: 5000 }, VIEWPORT)
+  it('flags off-screen recommendations when everything is outside the viewport', () => {
+    const far = node('far', 5000, 5000)
+    const cands = recommendPlacements(toMap(far), 'far', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThan(0)
     expect(cands.every((c) => c.onScreen === false)).toBe(true)
   })
@@ -367,17 +369,19 @@ describe('canvasStore ghost placement actions', () => {
     expect(store.getState().focusedNodeId).toBe(nodeId)
   })
 
-  it('updatePlacementCursor re-anchors the cluster to the new cursor', () => {
+  it('beginPlacement only ever zooms out, and cancel restores the viewport', () => {
     const store = setup()
+    // Two far-apart nodes force a zoom-out to fit the recommendations.
+    store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 400, height: 300 })
+    store.getState().addNode('b', 'editor', { x: 4000, y: 3000 }, { width: 400, height: 300 })
+    const zoomBefore = store.getState().zoomLevel
+    const offsetBefore = store.getState().viewportOffset
     store.getState().beginPlacement('p1', 'terminal')
-    const cursor = { x: 250, y: 350 }
-    store.getState().updatePlacementCursor(cursor)
-    const pending = store.getState().pendingPlacement!
-    expect(pending.cursor).toEqual(cursor)
-    const primary = pending.candidates[0]
-    // Grid-snapping the top-left can shift the centre by up to half a grid cell.
-    expect(Math.abs(primary.point.x + primary.size.width / 2 - cursor.x)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
-    expect(Math.abs(primary.point.y + primary.size.height / 2 - cursor.y)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
+    expect(store.getState().zoomLevel).toBeLessThanOrEqual(zoomBefore)
+    expect(store.getState().pendingPlacement!.prevZoom).toBe(zoomBefore)
+    store.getState().cancelPlacement()
+    expect(store.getState().zoomLevel).toBe(zoomBefore)
+    expect(store.getState().viewportOffset).toEqual(offsetBefore)
   })
 
   it('cancelPlacement clears state and invokes the rollback callback', () => {
