@@ -69,6 +69,8 @@ export const Methods = {
   validateCwd: 'validateCwd',
   addAllowedRoot: 'addAllowedRoot',
   removeAllowedRoot: 'removeAllowedRoot',
+  setExclusions: 'setExclusions',
+  setIdleSuspend: 'setIdleSuspend',
   grantFileAccess: 'grantFileAccess',
   registerScopedWriteAllowance: 'registerScopedWriteAllowance',
 

@@ -365,6 +365,15 @@ export interface Companion {
    *  daemon's authoritative path checks allow them. */
   addAllowedRoot(root: string): Promise<void>
   removeAllowedRoot(root: string): Promise<void>
+  /** Replace this companion's readDir/search exclusion basenames live (the
+   *  daemon's mirror of the fileExclusions setting). For the LOCAL daemon the
+   *  main process forwards this when the setting changes, so the file tree /
+   *  file-name search hide the new set without an app restart. */
+  setExclusions(names: string[]): Promise<void>
+  /** Toggle POSIX idle-suspend of backgrounded terminals live (the daemon's
+   *  mirror of autoSuspendIdleTerminals). Forwarded to the LOCAL daemon when the
+   *  setting changes, so toggling takes effect without an app restart. */
+  setIdleSuspend(enabled: boolean): Promise<void>
   /** Forward a persistent per-window file grant (Save-As / open dialogs /
    *  restored grants) to this companion, so its authoritative path checks allow
    *  the granted out-of-root file. Mirrors pathValidation.grantFileAccess. */

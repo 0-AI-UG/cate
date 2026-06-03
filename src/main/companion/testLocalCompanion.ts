@@ -75,6 +75,8 @@ export function makeTestLocalCompanion(): Companion {
     validateCwd: (cwd, winId) => validateCwd(cwd, winId),
     addAllowedRoot: async (root) => { addRoot(root) },
     removeAllowedRoot: async (root) => { removeRoot(root) },
+    setExclusions: async () => {},
+    setIdleSuspend: async () => {},
     grantFileAccess: async (filePath, ownerWindowId) => { await grantFile(ownerWindowId, filePath) },
     registerScopedWriteAllowance: async (safePath, ownerWindowId) => { await registerWriteAllowance(ownerWindowId, safePath) },
   }

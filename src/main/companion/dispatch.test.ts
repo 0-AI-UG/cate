@@ -29,6 +29,8 @@ function makeStub(id: string, calls: string[]): Companion {
     validateCwd: (p) => p,
     addAllowedRoot: async () => {},
     removeAllowedRoot: async () => {},
+    setExclusions: async () => {},
+    setIdleSuspend: async () => {},
     grantFileAccess: async () => {},
     registerScopedWriteAllowance: async () => {},
   }

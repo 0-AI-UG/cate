@@ -178,6 +178,16 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
     validateCwd,
     addAllowedRoot: async (root) => { addRoot(root) },
     removeAllowedRoot: async (root) => { removeRoot(root) },
+    // Mutate the existing Set IN PLACE so the readDir/search closures that
+    // captured this reference see the new exclusions live (do NOT reassign).
+    // Active chokidar watchers built their `ignored` list at watch-creation time
+    // and won't pick up the change until re-created — acceptable, since the
+    // user-visible tree readDir + file-name search update immediately.
+    setExclusions: async (names) => {
+      exclusionSet.clear()
+      for (const name of names) exclusionSet.add(name)
+    },
+    setIdleSuspend: async (enabled) => { proc.setIdleSuspend(enabled) },
     // pathValidation's functions take (windowId, path); the Companion contract
     // (and the wire) is (path, windowId) — swap here.
     grantFileAccess: async (filePath, ownerWindowId) => { await grantFile(ownerWindowId, filePath) },

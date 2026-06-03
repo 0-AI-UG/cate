@@ -256,6 +256,14 @@ export class RemoteCompanion implements Companion {
     return this.rpc.call(Methods.removeAllowedRoot, [root]) as Promise<void>
   }
 
+  setExclusions(names: string[]): Promise<void> {
+    return this.rpc.call(Methods.setExclusions, [names]) as Promise<void>
+  }
+
+  setIdleSuspend(enabled: boolean): Promise<void> {
+    return this.rpc.call(Methods.setIdleSuspend, [enabled]) as Promise<void>
+  }
+
   grantFileAccess(filePath: string, ownerWindowId: number): Promise<void> {
     return this.rpc.call(Methods.grantFileAccess, [filePath, ownerWindowId]) as Promise<void>
   }

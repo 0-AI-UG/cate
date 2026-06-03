@@ -172,6 +172,11 @@ export interface ProcessCapability extends ProcessHost {
   /** SIGKILL every live pty's process GROUP synchronously (daemon shutdown), so
    *  quitting the app (which kills the local daemon) doesn't orphan dev servers. */
   killAllGroups(): void
+  /** Enable/disable idle-suspend at runtime (mirrors the autoSuspendIdleTerminals
+   *  setting). Enabling on a POSIX host starts the scanner; disabling stops it and
+   *  SIGCONT-resumes any currently-suspended ptys so none are left frozen. win32 is
+   *  a no-op (idle-suspend is POSIX-only). */
+  setIdleSuspend(enabled: boolean): void
 }
 
 interface IdleState {
@@ -187,9 +192,11 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
   const ptys = new Map<string, IPty>()
   let seq = 0
 
-  // Idle-suspend state (only populated when deps.idleSuspend && POSIX). Tracks
-  // per-pty last output, visibility, and whether we've SIGSTOP'd it.
-  const idleEnabled = deps.idleSuspend === true && process.platform !== 'win32'
+  // Idle-suspend state (only populated when idleEnabled && POSIX). Tracks per-pty
+  // last output, visibility, and whether we've SIGSTOP'd it. `idleEnabled` is
+  // mutable so the setting can be toggled live (setIdleSuspend); always false on
+  // win32 (idle-suspend is POSIX-only).
+  let idleEnabled = deps.idleSuspend === true && process.platform !== 'win32'
   const idle = new Map<string, IdleState>()
   let scanner: ReturnType<typeof setInterval> | null = null
 
@@ -222,6 +229,10 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
   const ensureScanner = (): void => {
     if (!idleEnabled || scanner) return
     scanner = setInterval(scan, IDLE_CHECK_INTERVAL_MS)
+  }
+
+  const stopScanner = (): void => {
+    if (scanner) { clearInterval(scanner); scanner = null }
   }
 
   return {
@@ -383,8 +394,30 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       })
     },
 
+    setIdleSuspend(enabled: boolean): void {
+      // POSIX-only; win32 stays a no-op (idleEnabled is already false there).
+      if (process.platform === 'win32') return
+      if (enabled === idleEnabled) return
+      idleEnabled = enabled
+      if (enabled) {
+        // Start tracking every live pty (none have idle state if we were off at
+        // create time), then start the scanner.
+        const now = Date.now()
+        for (const id of ptys.keys()) {
+          if (!idle.has(id)) idle.set(id, { lastOutputAt: now, visible: true, suspended: false })
+        }
+        ensureScanner()
+      } else {
+        // Stop the scanner and SIGCONT-resume anything we'd suspended, so no pty
+        // is left frozen, then drop the tracking state entirely.
+        stopScanner()
+        for (const id of [...idle.keys()]) resume(id)
+        idle.clear()
+      }
+    },
+
     killAllGroups(): void {
-      if (scanner) { clearInterval(scanner); scanner = null }
+      stopScanner()
       if (process.platform === 'win32') {
         for (const pty of ptys.values()) { try { pty.kill() } catch { /* gone */ } }
         ptys.clear()

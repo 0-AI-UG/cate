@@ -174,6 +174,24 @@ describe('companion loopback (real daemon capabilities over the wire)', () => {
     await remote.removeAllowedRoot(extra)
     expect(getAllowedRoots().has(extra)).toBe(false)
   })
+
+  test('setExclusions mutates the daemon set live so readDir hides the new name', async () => {
+    const { remote } = loopback(daemonApi())
+    await fs.writeFile(path.join(rootDir, 'a.ts'), 'a\n')
+    await fs.writeFile(path.join(rootDir, 'ignoreme.log'), 'noise\n')
+    const safe = await remote.validatePathStrict(rootDir)
+
+    // No exclusions yet: both files show in the tree.
+    const before = (await remote.file.readDir(safe)).map((n) => n.name)
+    expect(before).toContain('a.ts')
+    expect(before).toContain('ignoreme.log')
+
+    // Push a live exclusion; the daemon's readDir closure sees the mutated set.
+    await remote.setExclusions(['ignoreme.log'])
+    const after = (await remote.file.readDir(safe)).map((n) => n.name)
+    expect(after).toContain('a.ts')
+    expect(after).not.toContain('ignoreme.log')
+  })
 })
 
 describe('companion loopback (protocol behaviors via a stub)', () => {
@@ -190,6 +208,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       validateCwd: (p: string) => p,
       addAllowedRoot: async () => {},
       removeAllowedRoot: async () => {},
+      setExclusions: async () => {},
+      setIdleSuspend: async () => {},
       grantFileAccess: async () => {},
       registerScopedWriteAllowance: async () => {},
     } as Companion
@@ -216,6 +236,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       validateCwd: (p: string) => p,
       addAllowedRoot: async () => {},
       removeAllowedRoot: async () => {},
+      setExclusions: async () => {},
+      setIdleSuspend: async () => {},
       grantFileAccess: async () => {},
       registerScopedWriteAllowance: async () => {},
     } as Companion
@@ -255,6 +277,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       validateCwd: (p: string) => p,
       addAllowedRoot: async () => {},
       removeAllowedRoot: async () => {},
+      setExclusions: async () => {},
+      setIdleSuspend: async () => {},
       grantFileAccess: async () => {},
       registerScopedWriteAllowance: async () => {},
     } as Companion
@@ -297,6 +321,8 @@ function localCompanionLike(): Companion {
     validateCwd: (p) => p,
     addAllowedRoot: async () => {},
     removeAllowedRoot: async () => {},
+    setExclusions: async () => {},
+    setIdleSuspend: async () => {},
     grantFileAccess: async () => {},
     registerScopedWriteAllowance: async () => {},
   }
