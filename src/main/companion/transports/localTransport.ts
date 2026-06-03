@@ -38,10 +38,12 @@ export interface LocalSubprocessOptions {
   installDir?: string
 }
 
-/** node binary inside an extracted tarball, per platform layout. */
+/** node binary inside an extracted tarball. Unified layout: runtime/bin/node on
+ *  posix, runtime/bin/node.exe on win32 — only the filename differs, so the
+ *  install-dir depth (and every other resolver) stays platform-agnostic. */
 function tarballNode(installDir: string): string {
   return process.platform === 'win32'
-    ? path.join(installDir, 'runtime', 'node.exe')
+    ? path.join(installDir, 'runtime', 'bin', 'node.exe')
     : path.join(installDir, 'runtime', 'bin', 'node')
 }
 

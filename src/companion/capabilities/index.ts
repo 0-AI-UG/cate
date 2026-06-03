@@ -45,10 +45,11 @@ export interface DaemonCompanion {
 }
 
 /** The ripgrep binary shipped in the companion tarball, staged next to the
- *  bundled node runtime. The daemon runs as `runtime/bin/node companion.cjs`, so
- *  process.execPath is runtime/bin/node and `rg` is its sibling. */
+ *  bundled node runtime. The daemon runs as `runtime/bin/node[.exe] companion.cjs`,
+ *  so process.execPath is runtime/bin/node[.exe] and `rg[.exe]` is its sibling.
+ *  Unified layout: only the filename differs on win32. */
 function daemonRgPath(): string {
-  return path.join(path.dirname(process.execPath), 'rg')
+  return path.join(path.dirname(process.execPath), process.platform === 'win32' ? 'rg.exe' : 'rg')
 }
 
 export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompanion {
@@ -97,11 +98,25 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
   const env = config.env ?? (() => process.env)
   const vcs = createVcsCapability({ env })
 
-  // Daemon shell resolution: first existing of [requested, $SHELL, bash, sh].
-  // Verifying existence avoids an execvp ENOENT (e.g. a stale $SHELL, or a shell
-  // path forwarded from a different-OS client) — we fall back with a notice.
+  // Daemon shell resolution: first existing of [requested, $SHELL, bash, sh]
+  // (or, on Windows, [requested, %COMSPEC%, powershell.exe, cmd.exe]). Verifying
+  // existence avoids an execvp ENOENT (e.g. a stale $SHELL, or a shell path
+  // forwarded from a different-OS client) — we fall back with a notice.
   const innerProc = createProcessCapability({
     resolveShell: (requested) => {
+      if (process.platform === 'win32') {
+        const candidates = [requested, process.env.COMSPEC, 'powershell.exe', 'cmd.exe'].filter(Boolean) as string[]
+        // COMSPEC/cmd.exe are absolute (existsSync works); powershell.exe is on
+        // PATH (existsSync on a bare name is false), so it's a sensible default
+        // rather than something we can stat — fall back to cmd.exe if nothing
+        // absolute exists, letting CreateProcess resolve it via PATH.
+        const found = candidates.find((p) => existsSync(p))
+        if (found) {
+          const notice = requested && found !== requested ? `Shell "${requested}" not found; using ${found}\r\n` : undefined
+          return { path: found, args: [], notice }
+        }
+        return { path: 'cmd.exe', args: [] }
+      }
       const candidates = [requested, process.env.SHELL, '/bin/bash', '/bin/sh'].filter(Boolean) as string[]
       const found = candidates.find((p) => existsSync(p))
       if (found) {

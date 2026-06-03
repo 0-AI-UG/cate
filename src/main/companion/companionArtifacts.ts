@@ -22,14 +22,17 @@ import { mkdir, rename, writeFile, readFile, stat } from 'fs/promises'
 import log from '../logger'
 import { GH_OWNER, GH_REPO, releaseTag, piTarballName, piReleaseUrl } from '../../companion/release'
 
-/** Targets we build companion tarballs for. WSL reuses the linux targets. */
-export type CompanionTarget = 'linux-x64' | 'linux-arm64' | 'darwin-x64' | 'darwin-arm64'
+/** Targets we build companion tarballs for. WSL reuses the linux targets;
+ *  win32-x64 is local-only (a Windows laptop running its OWN workspace daemon —
+ *  there is no Windows remote, since ssh/wsl hosts are both Linux). */
+export type CompanionTarget = 'linux-x64' | 'linux-arm64' | 'darwin-x64' | 'darwin-arm64' | 'win32-x64'
 
 export const COMPANION_TARGETS: readonly CompanionTarget[] = [
   'linux-x64',
   'linux-arm64',
   'darwin-x64',
   'darwin-arm64',
+  'win32-x64',
 ]
 
 export function isCompanionTarget(s: string): s is CompanionTarget {
@@ -37,8 +40,9 @@ export function isCompanionTarget(s: string): s is CompanionTarget {
 }
 
 /** This machine's companion target, or null on an unsupported platform/arch
- *  (e.g. win32 until that target ships). Used to provision + run the local
- *  workspace on the same daemon tarball as remote hosts. */
+ *  (e.g. win32-arm64, which has no tarball yet). Used to provision + run the
+ *  local workspace on the same daemon tarball as remote hosts. With 'win32-x64'
+ *  now in the union, `win32-<arch>` composes to a real target on x64 Windows. */
 export function hostCompanionTarget(): CompanionTarget | null {
   const t = `${process.platform === 'win32' ? 'win32' : process.platform}-${process.arch}`
   return isCompanionTarget(t) ? t : null
