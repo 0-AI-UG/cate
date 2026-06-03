@@ -31,6 +31,12 @@ export class CompanionManager {
   /** Dedupe concurrent connects to the same id (mirrors AgentManager.withLock). */
   private readonly connecting = new Map<CompanionId, Promise<Companion>>()
   private statusListener: ((id: CompanionId, state: CompanionPhase, message?: string) => void) | null = null
+  /** The opts the LOCAL daemon was launched with, kept so a crash can be
+   *  re-provisioned + relaunched identically. Set by ensureLocalCompanion. */
+  private localOpts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv; idleSuspend?: boolean } | null = null
+  /** Pending LOCAL auto-reconnect timer — guards against stacking reconnects on
+   *  a crash loop (one backoff in flight at a time). */
+  private localReconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
     // The LOCAL workspace runs as the companion daemon subprocess. It's NOT
@@ -49,6 +55,9 @@ export class CompanionManager {
    * then fails with a clear "No companion registered" error until it's fixed.
    */
   async ensureLocalCompanion(opts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv; idleSuspend?: boolean }): Promise<void> {
+    // Remember the launch opts so a crash can re-provision + relaunch identically
+    // (see the LOCAL auto-reconnect in doConnect's onClose handler).
+    this.localOpts = opts
     if (this.companions.has(LOCAL_COMPANION_ID)) return
     const hint = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV
       ? ' In dev, build it first: `npm run companion:tarball`.'
@@ -74,6 +83,25 @@ export class CompanionManager {
       log.error('[companion] local daemon failed to start: %s', detail)
       this.emitStatus(LOCAL_COMPANION_ID, 'unreachable', `Local companion failed to start: ${detail}${hint}`)
     }
+  }
+
+  /**
+   * Re-provision + relaunch the LOCAL daemon after a crash, using the opts it was
+   * started with. Backs off briefly to avoid a tight crash loop and never stacks
+   * (one pending timer at a time; the `connecting` map dedupes the connect once it
+   * fires). Emits `connecting` so the UI reflects the in-flight retry.
+   */
+  private scheduleLocalReconnect(): void {
+    if (this.localReconnectTimer) return // a reconnect is already pending
+    if (!this.localOpts) return // never came up; nothing to relaunch
+    this.emitStatus(LOCAL_COMPANION_ID, 'connecting', 'Local companion crashed — reconnecting…')
+    this.localReconnectTimer = setTimeout(() => {
+      this.localReconnectTimer = null
+      // ensureLocalCompanion short-circuits if LOCAL is already registered, never
+      // throws, and re-emits its own status; localOpts is non-null here.
+      void this.ensureLocalCompanion(this.localOpts!)
+    }, 1000)
+    if (this.localReconnectTimer.unref) this.localReconnectTimer.unref()
   }
 
   /** Wire a status sink (the IPC layer broadcasts these to the renderer). */
@@ -277,6 +305,16 @@ export class CompanionManager {
       if (this.connections.get(id) !== conn) return
       this.connections.delete(id)
       this.companions.delete(id)
+      // The LOCAL workspace runs as a daemon subprocess. A remote drop is the
+      // user's to reconnect, but a LOCAL crash leaves the whole workspace dead
+      // (resolve(LOCAL) throws) until app restart — so auto-reconnect it. The
+      // intentional-teardown case already returned above (disposeConnection
+      // deletes the connection first), so reaching here for LOCAL means a real
+      // crash.
+      if (id === LOCAL_COMPANION_ID) {
+        this.scheduleLocalReconnect()
+        return
+      }
       this.emitStatus(id, 'disconnected')
     })
     this.companions.set(id, companion)
@@ -330,8 +368,13 @@ export class CompanionManager {
     }
   }
 
-  /** Tear down every remote connection (app quit). */
+  /** Tear down every connection (app quit). Cancels any pending LOCAL reconnect
+   *  so a quit during a crash backoff doesn't relaunch the daemon. */
   async disposeAll(): Promise<void> {
+    if (this.localReconnectTimer) {
+      clearTimeout(this.localReconnectTimer)
+      this.localReconnectTimer = null
+    }
     await Promise.all([...this.connections.keys()].map((id) => this.disposeConnection(id)))
   }
 }

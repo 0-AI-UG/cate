@@ -129,9 +129,7 @@ async function stageNodePty(outRoot) {
       dereference: true,
       filter: (s) => !s.endsWith('.pdb'),
     })
-    if (!existsSync(path.join(pbDir, 'pty.node'))) {
-      throw new Error(`staged win32 node-pty missing pty.node (from ${winPrebuild})`)
-    }
+    assertWinConptyStaged(pbDir, winPrebuild)
     console.log(`[companion] staged node-pty win32 conpty native for ${targetArg}`)
     return
   }
@@ -144,6 +142,41 @@ async function stageNodePty(outRoot) {
     chmodSync(path.join(pbDir, 'spawn-helper'), 0o755)
   }
   console.log(`[companion] staged node-pty native for ${targetArg}`)
+}
+
+/**
+ * Fail loudly if the staged win32 prebuild dir is missing a file node-pty's win
+ * loader actually pulls in — otherwise we'd ship a daemon that can't spawn a PTY
+ * (a runtime "Failed to load native module" crash instead of a build-time error).
+ *
+ * Required (require()'d by node-pty/lib on win32):
+ *   - pty.node                 (winpty fallback module; windowsPtyAgent.js)
+ *   - conpty.node              (primary conpty backend;  windowsPtyAgent.js)
+ *   - conpty_console_list.node (process list agent;      conpty_console_list_agent.js)
+ *   - conpty/                  (helper dir: OpenConsole.exe + conpty.dll, loaded
+ *                               at runtime by the conpty backend)
+ * Optional (winpty fallback, only used on pre-1809 Windows where conpty is
+ * unavailable) — warn but don't fail, since conpty is primary on modern Windows:
+ *   - winpty.dll, winpty-agent.exe
+ */
+function assertWinConptyStaged(pbDir, fromDir) {
+  const required = ['pty.node', 'conpty.node', 'conpty_console_list.node', 'conpty']
+  const missing = required.filter((f) => !existsSync(path.join(pbDir, f)))
+  if (missing.length) {
+    throw new Error(
+      `staged win32 node-pty is missing required conpty file(s): ${missing.join(', ')} ` +
+        `(staged into ${pbDir} from ${fromDir}). node-pty cannot spawn a PTY without these.`,
+    )
+  }
+  const optional = ['winpty.dll', 'winpty-agent.exe']
+  const missingOpt = optional.filter((f) => !existsSync(path.join(pbDir, f)))
+  if (missingOpt.length) {
+    console.warn(
+      `[companion] WARNING: staged win32 node-pty missing winpty fallback file(s): ` +
+        `${missingOpt.join(', ')}. conpty is primary on modern Windows, but pre-1809 ` +
+        `Windows would have no PTY backend.`,
+    )
+  }
 }
 
 /** Locate the host's win32-x64 node-pty prebuild directory (pty.node + conpty*

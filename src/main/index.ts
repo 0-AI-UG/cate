@@ -499,12 +499,6 @@ function registerDeferredHandlers(): void {
   registerCompanionHandlers()
 }
 
-/** Union of critical + deferred — kept for any callers that want the full set in one call. */
-function registerAllHandlers(): void {
-  registerCriticalHandlers()
-  registerDeferredHandlers()
-}
-
 /**
  * Window, dialog, panel-transfer, drag, and ad-hoc IPC handlers. Split out so
  * registerCriticalHandlers can include them without duplicating the bodies.

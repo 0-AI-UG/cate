@@ -61,7 +61,8 @@ export class LocalSubprocessTransport implements CompanionTransport {
 
   /** Build a provisioned local transport from the host-target tarball (dev build
    *  or cache). Returns null on an unsupported platform or when no tarball is
-   *  available — callers fall back to the in-process companion. */
+   *  available — ensureLocalCompanion then marks LOCAL unreachable (there is no
+   *  in-process fallback). */
   static forLocalHost(opts: {
     root: string
     id?: string
@@ -123,12 +124,50 @@ export class LocalSubprocessTransport implements CompanionTransport {
       onData: (cb) => { child.stdout?.on('data', cb) },
       onStderr: (cb) => { child.stderr?.on('data', cb) },
       onClose: (cb) => { child.on('close', (code) => cb({ code })) },
-      kill: () => { child.kill() },
+      // Graceful, cross-platform: close stdin so the daemon's `stdin.on('close')`
+      // handler reaps its pty groups + exits; only hard-kill if it lingers. On
+      // POSIX child.kill() (SIGTERM) already runs that handler; on Windows
+      // child.kill() terminates hard and would orphan pty grandchildren, so the
+      // stdin-close path is what saves us there.
+      kill: () => { void gracefulStop(child) },
     }
   }
 
   async dispose(): Promise<void> {
-    this.child?.kill()
+    const child = this.child
     this.child = null
+    if (child) await gracefulStop(child)
   }
+}
+
+/**
+ * Ask the companion daemon to shut down cleanly, then force-kill if it lingers.
+ * Closing stdin triggers the daemon's `process.stdin.on('close')` handler
+ * (src/companion/index.ts), which reaps every live pty's process group via
+ * killAllGroups before exiting — so dev-server grandchildren don't orphan. This
+ * works on Windows too, where a bare child.kill() terminates the process hard
+ * and bypasses that handler. Resolves as soon as the child exits, or after the
+ * grace window when we send a hard kill as a fallback.
+ */
+function gracefulStop(child: ChildProcess, graceMs = 1500): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    let settled = false
+    const done = (): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve()
+    }
+    child.once('close', done)
+    // Closing stdin lets the daemon reap its pty groups + exit gracefully.
+    try { child.stdin?.end() } catch { /* already closed */ }
+    const timer = setTimeout(() => {
+      // Force-kill the laggard. SIGKILL on POSIX can't be trapped/ignored; on
+      // Windows the signal arg is ignored and child.kill() terminates hard.
+      try { child.kill('SIGKILL') } catch { /* already gone */ }
+      done()
+    }, graceMs)
+    if (timer.unref) timer.unref()
+  })
 }

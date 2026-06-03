@@ -1,5 +1,5 @@
 import os from 'node:os'
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { CompanionManager } from './companionManager'
 import { LOCAL_COMPANION_ID } from './locator'
 import { buildDaemonCompanion } from '../../companion/capabilities'
@@ -234,5 +234,78 @@ describe('CompanionManager connection lifecycle', () => {
     const companion = await mgr.connect(LOCAL_COMPANION_ID, new FakeTransport(), { install: true })
     expect(companion.id).toBe(LOCAL_COMPANION_ID)
     expect(mgr.resolve(LOCAL_COMPANION_ID)).toBe(companion)
+  })
+})
+
+// FIX [4]: a LOCAL daemon crash auto-reconnects (the whole workspace is dead
+// otherwise), while REMOTE drops stay the user's to reconnect.
+describe('CompanionManager LOCAL auto-reconnect (FIX 4)', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  /** Prime localOpts the way ensureLocalCompanion would, then connect LOCAL over
+   *  a fake transport so we have a live connection to drop. */
+  async function connectLocal(mgr: CompanionManager): Promise<FakeTransport> {
+    ;(mgr as unknown as { localOpts: unknown }).localOpts = { root: os.homedir() }
+    const transport = new FakeTransport()
+    await mgr.connect(LOCAL_COMPANION_ID, transport, { install: true })
+    return transport
+  }
+
+  test('a LOCAL crash schedules a reconnect (connecting, not disconnected)', async () => {
+    vi.useFakeTimers()
+    const mgr = new CompanionManager()
+    const transport = await connectLocal(mgr)
+    // Spy on the relaunch entry point. Stub the body so the test doesn't depend on
+    // whether a real tarball happens to exist in the env — we only assert the
+    // reconnect FIRES with the original opts.
+    const ensureSpy = vi
+      .spyOn(mgr, 'ensureLocalCompanion')
+      .mockResolvedValue(undefined)
+    const seen: string[] = []
+    mgr.setStatusListener((_id, state) => seen.push(state))
+
+    transport.triggerClose() // daemon crash on the live connection
+    // Reconnect path: emits 'connecting' immediately, NOT 'disconnected'.
+    expect(seen).toContain('connecting')
+    expect(seen).not.toContain('disconnected')
+    expect(mgr.has(LOCAL_COMPANION_ID)).toBe(false) // dropped, awaiting relaunch
+
+    // A second close while a reconnect is pending must NOT stack a second timer.
+    seen.length = 0
+    transport.triggerClose()
+    expect(seen).not.toContain('connecting')
+
+    // Let the backoff fire: ensureLocalCompanion re-runs once with the same opts.
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(ensureSpy).toHaveBeenCalledTimes(1)
+    expect(ensureSpy).toHaveBeenCalledWith({ root: os.homedir() })
+  })
+
+  test('an intentional LOCAL teardown does NOT reconnect', async () => {
+    vi.useFakeTimers()
+    const mgr = new CompanionManager()
+    await connectLocal(mgr)
+    const seen: string[] = []
+    mgr.setStatusListener((_id, state) => seen.push(state))
+
+    await mgr.disposeConnection(LOCAL_COMPANION_ID)
+    // disposeConnection removes the connection first, so the late close event is
+    // ignored — no reconnect 'connecting' is emitted.
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(seen).not.toContain('connecting')
+  })
+
+  test('a REMOTE drop still reports disconnected (no reconnect)', async () => {
+    vi.useFakeTimers()
+    const mgr = new CompanionManager()
+    const transport = new FakeTransport()
+    await mgr.connect('wsl_remote', transport)
+    const seen: string[] = []
+    mgr.setStatusListener((_id, state) => seen.push(state))
+
+    transport.triggerClose()
+    expect(seen).toContain('disconnected')
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(seen).not.toContain('connecting') // REMOTE never auto-reconnects
   })
 })

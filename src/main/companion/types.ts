@@ -1,20 +1,17 @@
 // =============================================================================
-// Companion capability interfaces — the contract every backend implements,
-// whether it runs in-process (LocalCompanion, today's code) or behind a
-// transport (RemoteCompanion, over stdio JSON-RPC to a server/WSL daemon).
+// Companion capability interfaces — the contract every backend implements. Every
+// host (local machine, server, WSL) runs the standalone companion daemon and is
+// reached as a RemoteCompanion over stdio JSON-RPC; there is no in-process
+// implementation.
 //
 // These interfaces are the seam the IPC handlers in terminal.ts / filesystem.ts
 // / git.ts delegate to. They are intentionally shaped so the SAME capability
-// implementation can run inside the Electron main process and inside the
-// standalone companion bundle:
+// implementation can run inside the standalone companion bundle:
 //   - methods are async and take/return JSON-serializable values
 //   - streaming (PTY output, fs-watch events) is delivered via callbacks, so
 //     the IPC layer keeps ownership of WHERE a stream is forwarded (e.g. which
 //     window a terminal currently belongs to — see terminalOwners in
 //     terminal.ts, which must stay in the IPC layer for cross-window transfer).
-//
-// Phase 0: these are declarations only — nothing imports them yet. Phase 1
-// implements them with a LocalCompanion that wraps the existing functions.
 // =============================================================================
 
 import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity } from '../../shared/types'
@@ -341,9 +338,9 @@ export interface VcsHost {
 
 // ---------------------------------------------------------------------------
 // Companion — the resolved backend for one location. Path validation is a
-// method (not a free function) so each companion enforces its own root set:
-// LocalCompanion delegates to pathValidation.ts unchanged; a RemoteCompanion
-// validates against the daemon's roots, authoritatively on the daemon side.
+// method (not a free function) so each companion enforces its own root set: a
+// RemoteCompanion validates against its daemon's roots, authoritatively on the
+// daemon side.
 // ---------------------------------------------------------------------------
 
 export interface Companion {

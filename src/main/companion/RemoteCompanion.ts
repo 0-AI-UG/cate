@@ -1,8 +1,8 @@
 // =============================================================================
 // RemoteCompanion — a Companion whose every operation is an RPC to a daemon over
-// a CompanionRpcClient. Type-identical to LocalCompanion, so the IPC handlers
-// neither know nor care whether they are talking to the local machine, a server,
-// or WSL. (Like LocalCompanion, `process`/terminals land in a later step.)
+// a CompanionRpcClient. This is the ONLY Companion implementation: the local
+// machine, a server, and WSL all run the same daemon, so the IPC handlers neither
+// know nor care which host they are talking to.
 // =============================================================================
 
 import { Methods } from '../../companion/protocol'
