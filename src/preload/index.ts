@@ -155,6 +155,7 @@ import {
   ANALYTICS_FEEDBACK_ENGAGED,
   ANALYTICS_FEEDBACK_GET_PENDING,
   ANALYTICS_LINK_CLICK,
+  TELEMETRY_SET_CONSENT,
   OPEN_EXTERNAL_URL,
   AGENT_CREATE,
   AGENT_PROMPT,
@@ -1161,6 +1162,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   trackLinkClick(link: string): void {
     ipcRenderer.send(ANALYTICS_LINK_CLICK, link)
+  },
+
+  setTelemetryConsent(choice: { crashReporting: boolean; usageAnalytics: boolean }): Promise<void> {
+    return ipcRenderer.invoke(TELEMETRY_SET_CONSENT, choice)
   },
 
   openExternalUrl(url: string): void {

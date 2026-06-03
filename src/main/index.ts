@@ -22,7 +22,7 @@ import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow }
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow, getRunningTerminals } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot } from './store'
+import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot, getSettingSync, setSettingsFromMain } from './store'
 import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
@@ -44,6 +44,7 @@ import { initShellEnv } from './shellEnv'
 import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
 import { initSentry, captureMainException, captureMainMessage, flushSentry } from './sentry'
 import { initAnalytics, trackAppStart, checkAndReportUpdate } from './analytics'
+import { TELEMETRY_SET_CONSENT } from '../shared/ipc-channels'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer, handleCrossWindowDropTerminalTransfer } from './ipc/terminal'
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
 import { disableRendererSandbox, disableTrustScoping } from './featureFlags'
@@ -1414,6 +1415,39 @@ loadSettingsSyncFromDisk()
 initSentry()
 initAnalytics()
 
+// Fire the first-run/version-change analytics + app_start. Held back entirely
+// until the user has made a telemetry choice, so we never persist install state
+// (or send anything) pre-consent. The event sends inside are additionally gated
+// by the usage-analytics toggle; the version-detection + welcome prompt run once
+// consent is decided either way.
+function fireStartupTelemetry(mainWin: BrowserWindow): void {
+  if (!getSettingSync('telemetryConsentDecided')) {
+    log.info('[telemetry] startup events deferred — awaiting first-run consent')
+    return
+  }
+  checkAndReportUpdate(mainWin).catch((err) => log.warn('Update detection failed:', err))
+  trackAppStart()
+}
+
+// First-run telemetry consent from the renderer. Persists the choice, applies it
+// live (Sentry on/off without restart), and releases the previously-deferred
+// startup analytics.
+ipcMain.handle(TELEMETRY_SET_CONSENT, async (_e, choice: { crashReporting?: boolean; usageAnalytics?: boolean }) => {
+  const crashReporting = choice?.crashReporting === true
+  const usageAnalytics = choice?.usageAnalytics === true
+  await setSettingsFromMain({
+    telemetryConsentDecided: true,
+    crashReportingEnabled: crashReporting,
+    usageAnalyticsEnabled: usageAnalytics,
+  })
+  // initSentry now sees consent=true; it inits only if crash reporting was accepted.
+  initSentry()
+  const mainWin = BrowserWindow.getAllWindows().find(
+    (w) => !w.isDestroyed() && getWindowType(w.id) === 'main',
+  )
+  if (mainWin) fireStartupTelemetry(mainWin)
+})
+
 // Provide the menu module a way to spawn additional main windows without
 // importing this file (which would create a circular dependency).
 setNewMainWindowFn(() => createWindow({ type: 'main' }))
@@ -1520,9 +1554,9 @@ app.whenReady().then(async () => {
     log.info('Deferred IPC handlers registered')
     initAutoUpdater()
     // Detect a version change since last launch and emit an app_updated event
-    // before app_start, so the upgrade path lands in analytics in order.
-    checkAndReportUpdate(mainWin).catch((err) => log.warn('Update detection failed:', err))
-    trackAppStart()
+    // before app_start, so the upgrade path lands in analytics in order. Held
+    // back on first run until the user accepts/declines telemetry consent.
+    fireStartupTelemetry(mainWin)
     if (process.env.CATE_SMOKE_TEST === '1') {
       runSmokeAssertions(mainWin)
         .then(() => app.exit(0))

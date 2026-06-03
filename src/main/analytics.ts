@@ -1,6 +1,8 @@
 // =============================================================================
 // Analytics — anonymous product telemetry posted to cero-analytics'
-// /api/app-events endpoint. Strictly opt-in via `usageAnalyticsEnabled`.
+// /api/app-events endpoint. Gated by a first-run consent decision
+// (`telemetryConsentDecided`) AND the `usageAnalyticsEnabled` toggle — nothing
+// is sent until the user has explicitly chosen (see isEnabled()).
 //
 // What we send:
 //   - app_start                : version, platform, arch, locale, electron version
@@ -201,6 +203,8 @@ async function sendEvent(name: string, props?: Record<string, unknown>): Promise
 // ---------------------------------------------------------------------------
 
 function isEnabled(): boolean {
+  // Nothing is sent until the user has made a first-run telemetry choice.
+  if (getSettingSync('telemetryConsentDecided') !== true) return false
   return getSettingSync('usageAnalyticsEnabled') !== false
 }
 

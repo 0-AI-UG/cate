@@ -711,6 +711,9 @@ export interface ElectronAPI {
   getPendingFeedback(): Promise<{ fromVersion: string; toVersion: string } | null>
   /** Track a promo link click (e.g. product_hunt, github_star, newsletter). */
   trackLinkClick(link: string): void
+  /** Record the first-run telemetry consent decision. Persists the choice and
+   *  releases the deferred crash-reporting + analytics init. */
+  setTelemetryConsent(choice: { crashReporting: boolean; usageAnalytics: boolean }): Promise<void>
   /** Open an external URL in the user's default browser. */
   openExternalUrl(url: string): void
 

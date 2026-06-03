@@ -76,6 +76,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   notifyOnlyWhenUnfocused: 'boolean',
   crashReportingEnabled: 'boolean',
   usageAnalyticsEnabled: 'boolean',
+  telemetryConsentDecided: 'boolean',
 }
 
 // Settings that open windows react to live (via onSettingsChanged). The
@@ -178,6 +179,22 @@ export function loadSettingsSyncFromDisk(): void {
 
 export function getSettingSync<K extends keyof AppSettings>(key: K): AppSettings[K] {
   return (settingsCache[key] ?? DEFAULT_SETTINGS[key]) as AppSettings[K]
+}
+
+/** Persist a settings patch from the main process — updates the sync cache
+ *  immediately and writes through to the on-disk store. Used by main-driven
+ *  flows like first-run telemetry consent. */
+export async function setSettingsFromMain(patch: Partial<AppSettings>): Promise<void> {
+  // Update the sync cache first so any immediate getSettingSync() reflects it.
+  for (const [k, v] of Object.entries(patch)) {
+    ;(settingsCache as Record<string, unknown>)[k] = v
+  }
+  try {
+    const store = await getStore()
+    for (const [k, v] of Object.entries(patch)) store.set(k, v as never)
+  } catch (err) {
+    log.warn('[settings] setSettingsFromMain write failed: %O', err)
+  }
 }
 
 // ---------------------------------------------------------------------------
