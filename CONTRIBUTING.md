@@ -62,6 +62,8 @@ We would rather say "not yet" in a one paragraph issue than decline a polished P
    npm run typecheck
    npm run test:unit
    npm run build
+   npm run typecheck
+   npm run lint
    ```
 4. Commit with a clear message following [Conventional Commits](https://www.conventionalcommits.org/):
    ```
@@ -75,7 +77,7 @@ We would rather say "not yet" in a one paragraph issue than decline a polished P
 - **Link the issue** the PR resolves (`Closes #123`).
 - **Describe what changed and why.** The "why" matters more than the "what".
 - **Include screenshots or a short clip for any UI change.**
-- **Make sure `npm run typecheck`, `npm run test:unit`, and `npm run build` all pass.**
+- **Make sure `npm run typecheck`, `npm run test:unit`, `npm run build`, and `npm run lint` all pass.**
 - **Add or update tests** when you change behavior.
 - **Don't bundle unrelated changes.** No drive-by reformatting, dependency bumps, or refactors mixed into a feature PR.
 - Expect review feedback. A few rounds of back and forth is normal and is not a sign anything is wrong.

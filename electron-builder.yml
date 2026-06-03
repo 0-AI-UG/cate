@@ -186,6 +186,14 @@ mac:
         - arm64
 win:
   icon: build/icon.ico
+  # Code signing is driven by CI env vars (CSC_LINK / CSC_KEY_PASSWORD), wired
+  # from the WINDOWS_CERTS / WINDOWS_CERTS_PASSWORD repo secrets in
+  # .github/workflows/release.yml. With them set, electron-builder signs the
+  # nsis installer + the app exe (no SmartScreen "unknown publisher" warning)
+  # and uses an RFC-3161 timestamp so the signature outlives the cert. Without
+  # them the build is simply unsigned — nothing here forces signing.
+  signtoolOptions:
+    rfc3161TimeStampServer: http://timestamp.digicert.com
   target:
     - target: nsis
       arch:

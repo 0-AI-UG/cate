@@ -88,9 +88,18 @@ jobs:
 
       - name: Package (Windows)
         if: matrix.platform == 'win'
+        # Code signing: set the WINDOWS_CERTS (base64 of the .pfx) +
+        # WINDOWS_CERTS_PASSWORD repo secrets and electron-builder signs the
+        # installer + exe automatically (removes the SmartScreen "unknown
+        # publisher" warning). When the secrets are absent the build still
+        # succeeds — it just produces an unsigned artifact, so this is safe to
+        # land before the certificate is provisioned. (Microsoft's newer Azure
+        # Trusted Signing is the alternative if an OV/EV .pfx isn't available.)
         run: npx electron-builder --win --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
 
       - name: Upload release assets
         shell: bash
