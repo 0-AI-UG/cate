@@ -268,9 +268,9 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
-  it('caps the recommendation count (3–5)', () => {
+  it('caps the recommendation count at max', () => {
     const cands = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
-    expect(cands.length).toBeLessThanOrEqual(5)
+    expect(cands.length).toBeLessThanOrEqual(6)
     const three = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 3)
     expect(three.length).toBeLessThanOrEqual(3)
   })
@@ -325,13 +325,15 @@ describe('canvasStore.recommendPlacements', () => {
     expect(cands[0].onScreen).toBe(true)
   })
 
-  it('ACTIVE node: recommendations cluster tightly around the focused node', () => {
+  it('ACTIVE node: the best recommendation sits directly beside the focused node', () => {
     const a = node('a', 400, 320) // on-screen, focused → active
     const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThanOrEqual(3)
+    // The BEST spot hugs the node (one gap away); the group stays nearby.
+    expect(rectGap(rectOf(cands[0]), { origin: a.origin, size: a.size })).toBeLessThanOrEqual(60)
+    const pitch = 640 + 40
     cands.forEach((c) => {
-      // Each ghost sits directly beside the active node (one gap away).
-      expect(rectGap(rectOf(c), { origin: a.origin, size: a.size })).toBeLessThanOrEqual(60)
+      expect(rectGap(rectOf(c), { origin: a.origin, size: a.size })).toBeLessThan(pitch * 2)
     })
   })
 

@@ -447,7 +447,9 @@ export function recommendPlacements(
     const visited = new Set<string>(['0,0'])
     const queue: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]]
     let placed = 0
-    while (queue.length > 0 && placed < 4) {
+    // Generate plenty of free spots around the node (nearest-first); the accept
+    // pass below keeps the closest `cap` of them, so the group fills the space.
+    while (queue.length > 0 && placed < cap * 4) {
       queue.sort((a, b) =>
         (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) ||
         (a[0] * a[0] + a[1] * a[1]) - (b[0] * b[0] + b[1] * b[1]),
