@@ -354,14 +354,14 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
-  it('ADAPTIVE SIZE: recommendations match the size of the active node', () => {
-    // A larger-than-default (900×600) focused node → recommendations are 900×600,
-    // not the 640×400 default, so new panels match the ones beside them.
-    const a = node('a', 200, 200, 900, 600)
+  it('STANDARD SIZE: recommendations use the default size, not the active node size', () => {
+    // An unusually-shaped (tall) focused node → recommendations are still the
+    // standard 640×400, not the node's shape.
+    const std = recommendPlacements({}, null, 'terminal', VIEWPORT, null)[0].size
+    const a = node('a', 200, 200, 600, 1000)
     const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThanOrEqual(1)
-    expect(cands[0].size.width).toBe(900)
-    expect(cands[0].size.height).toBe(600)
+    expect(cands[0].size).toEqual(std)
   })
 
   it('GAP-FILL: a sub-standard gap between nodes gets a custom-sized recommendation', () => {

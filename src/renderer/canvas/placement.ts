@@ -299,14 +299,6 @@ function gapFillCandidates(
   return out
 }
 
-/** Median width/height of a set of nodes — the cluster's "typical" panel size. */
-function medianNodeSize(nodes: CanvasNodeState[]): Size {
-  const ws = nodes.map((n) => n.size.width).sort((a, b) => a - b)
-  const hs = nodes.map((n) => n.size.height).sort((a, b) => a - b)
-  const mid = (arr: number[]) => arr[Math.floor(arr.length / 2)]
-  return { width: mid(ws), height: mid(hs) }
-}
-
 /**
  * Compute context-aware recommended spots for the interactive "ghost" picker.
  *
@@ -341,9 +333,9 @@ export function recommendPlacements(
   const snapPt = (p: Point): Point => ({ x: snap(p.x), y: snap(p.y) })
   const gap = PLACEMENT_GAP
   const baseSize = PANEL_DEFAULT_SIZES[panelType]
-  // Adaptive recommendation size — set per context below so new panels match the
-  // panels they sit beside (and never become absurdly small/large).
-  let size = baseSize
+  // Recommendations use the standard panel size; only gap-fill candidates take a
+  // custom size (to fit an irregular hole).
+  const size = baseSize
 
   const { offset, zoom, containerSize } = viewport
   const hasViewport = containerSize.width > 0 && containerSize.height > 0
@@ -412,12 +404,6 @@ export function recommendPlacements(
     }
   }
 
-  // --- Adaptive size: match the panels we're sitting beside ----------------
-  if (mode === 'active' && activeNode) size = clampPlacementSize(activeNode.size.width, activeNode.size.height, grid)
-  else if (mode === 'island' && target) {
-    const m = medianNodeSize(target)
-    size = clampPlacementSize(m.width, m.height, grid)
-  }
 
   // Spots aligned to a node's edges (right/left/below/above), grouped together.
   const edgeSlots = (n: CanvasNodeState): Point[] => [
