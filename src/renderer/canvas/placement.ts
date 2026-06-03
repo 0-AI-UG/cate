@@ -290,7 +290,7 @@ export function recommendPlacements(
 
   // A panel-pitch lattice phased to the reference node's edges: cell 0 is the
   // node itself, cell ±1 hugs its edge (one gap away), further cells step by one
-  // panel pitch. Spots therefore line up with the node and with each other.
+  // panel pitch. This fills open areas with a regular grid of spots.
   const cellX = (i: number): number =>
     i === 0 ? ref.origin.x
       : i > 0 ? ref.origin.x + ref.size.width + gap + (i - 1) * pitchX
@@ -300,13 +300,14 @@ export function recommendPlacements(
       : j > 0 ? ref.origin.y + ref.size.height + gap + (j - 1) * pitchY
         : ref.origin.y - pitchY - (-j - 1) * pitchY
 
-  // A node already sits on this cell — don't place here (but the scan still
-  // visits cells beyond it, so a boxed-in reference still finds open space).
+  // A node already sits on this point — don't place here (but the scan still
+  // visits points beyond it, so a boxed-in reference still finds open space).
   const occupied = (p: Point): boolean =>
     nodeRects.some((r) => rectsOverlap({ origin: p, size: { width: PLACEMENT_MIN_W, height: PLACEMENT_MIN_H } }, r))
 
   // Largest panel (≤ standard, ≥ min) that fits at top-left `p`, bounded by the
-  // nearest node to the right/below — so a cell crowded by a neighbour shrinks.
+  // nearest node to the right/below — so a spot crowded by a neighbour shrinks to
+  // fill the gap rather than being dropped. Standard size wherever there's room.
   const fitAt = (p: Point): Size | null => {
     let right = p.x + std.width
     let bottom = p.y + std.height
@@ -319,15 +320,31 @@ export function recommendPlacements(
     return clampPlacementSize(right - p.x, bottom - p.y, grid)
   }
 
-  // Full bounded scan of the lattice over the place area (cells whose standard
-  // rect intersects it). Pitch-spaced cells don't overlap, so the spots tile the
-  // free space densely without fighting each other in `finalize`.
+  // Candidate top-left positions = a grid woven from the reference lattice (open
+  // areas) AND every nearby node's edges (the gap just right of / below each
+  // node). The node edges are what let spots land in the irregular gaps between
+  // staggered windows — a single lattice would step right over them. `fitAt`
+  // then shrinks each spot to its actual gap, so smaller holes get smaller ghosts.
   const cols = Math.ceil(area.size.width / pitchX) + 2
   const rows = Math.ceil(area.size.height / pitchY) + 2
+  const xs = new Set<number>()
+  const ys = new Set<number>()
+  const addX = (x: number) => xs.add(Math.round(x / grid) * grid)
+  const addY = (y: number) => ys.add(Math.round(y / grid) * grid)
+  addX(area.origin.x)
+  addY(area.origin.y)
+  for (let i = -cols; i <= cols; i++) addX(cellX(i))
+  for (let j = -rows; j <= rows; j++) addY(cellY(j))
+  for (const r of nodeRects) {
+    if (!rectsOverlap(inflateRect(r, pitchX), area)) continue // node not near the area
+    addX(r.origin.x); addX(r.origin.x + r.size.width + gap)
+    addY(r.origin.y); addY(r.origin.y + r.size.height + gap)
+  }
+
   const raw: Raw[] = []
-  for (let i = -cols; i <= cols; i++) {
-    for (let j = -rows; j <= rows; j++) {
-      const p = snapPt({ x: cellX(i), y: cellY(j) })
+  for (const x of xs) {
+    for (const y of ys) {
+      const p = { x, y }
       if (!rectsOverlap({ origin: p, size: std }, area)) continue // outside the place area
       if (occupied(p)) continue
       const size = fitAt(p)

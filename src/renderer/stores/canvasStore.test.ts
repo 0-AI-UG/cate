@@ -465,16 +465,19 @@ describe('canvasStore.recommendPlacements', () => {
     const a = node('a', 100, 100, 200, 150)
     const b = node('b', 700, 500, 200, 150, 1)
     const nodes = toMap(a, b)
-    const aR: R = { origin: a.origin, size: a.size }
-    const bR: R = { origin: b.origin, size: b.size }
+    const centre = (r: R) => ({ x: r.origin.x + r.size.width / 2, y: r.origin.y + r.size.height / 2 })
+    const aC = centre({ origin: a.origin, size: a.size })
+    const bC = centre({ origin: b.origin, size: b.size })
+    const distTo = (c: { point: { x: number; y: number }; size: { width: number; height: number } }, p: { x: number; y: number }) =>
+      Math.hypot(c.point.x + c.size.width / 2 - p.x, c.point.y + c.size.height / 2 - p.y)
 
-    // Focused on A (no cursor) → the best spot sits beside A, not B.
+    // Focused on A (no cursor) → the best spot gravitates to A, not B.
     const focused = recommendPlacements(nodes, 'a', 'terminal', VIEWPORT, null)
-    expect(rectGap(rectOf(focused[0]), aR)).toBeLessThan(rectGap(rectOf(focused[0]), bR))
+    expect(distTo(focused[0], aC)).toBeLessThan(distTo(focused[0], bC))
 
     // Nothing focused, cursor by B → the best spot follows the cursor to B, not A.
     const free = recommendPlacements(nodes, null, 'terminal', VIEWPORT, { x: 660, y: 460 })
-    expect(rectGap(rectOf(free[0]), bR)).toBeLessThan(rectGap(rectOf(free[0]), aR))
+    expect(distTo(free[0], bC)).toBeLessThan(distTo(free[0], aC))
   })
 })
 
