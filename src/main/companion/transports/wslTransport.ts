@@ -78,7 +78,7 @@ export class WslTransport implements CompanionTransport {
     const D = shq(installDir)
     if (isCompanionDevMode()) {
       return (await this.wslSh(
-        `test -x ${D}/runtime/bin/node && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+        `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
       )).stdout.includes('CATE_PROVISIONED')
     }
     const localTar = localTarballIfPresent(version, this.target as CompanionTarget)
@@ -140,7 +140,7 @@ export class WslTransport implements CompanionTransport {
    *  local companion.cjs keyed by its hash in `.cjs.ok`. Never in-distro pulls. */
   private async bootstrapDev(version: string, D: string): Promise<void> {
     const provisioned = (await this.wslSh(
-      `test -x ${D}/runtime/bin/node && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+      `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
     )).stdout.includes('CATE_PROVISIONED')
 
     if (!provisioned) await this.copyTarball(version, version)

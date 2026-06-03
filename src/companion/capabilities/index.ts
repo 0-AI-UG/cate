@@ -8,7 +8,9 @@
 
 import { watch } from 'chokidar'
 import { existsSync } from 'fs'
+import path from 'path'
 import * as fileLeaf from './file'
+import { runRipgrepSearch } from '../search/engine'
 import { createVcsCapability } from './vcs'
 import { createProcessCapability } from './process'
 import { createAgentCapability } from './agent'
@@ -27,6 +29,13 @@ export interface DaemonCompanionConfig {
   exclusions?: string[]
   /** Env for git/gh subprocesses. Defaults to process.env. */
   env?: () => NodeJS.ProcessEnv
+}
+
+/** The ripgrep binary shipped in the companion tarball, staged next to the
+ *  bundled node runtime. The daemon runs as `runtime/bin/node companion.cjs`, so
+ *  process.execPath is runtime/bin/node and `rg` is its sibling. */
+function daemonRgPath(): string {
+  return path.join(path.dirname(process.execPath), 'rg')
 }
 
 export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
@@ -54,6 +63,12 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
       fileLeaf.importEntriesInto(sources, await validatePathStrict(destDir), mode, winId, () => { /* errors counted, not logged */ }),
     search: async (root, query, opts) =>
       fileLeaf.searchFiles(await validatePathStrict(root), query, exclusionSet, opts),
+    // Content search spawns the ripgrep shipped beside the daemon's node
+    // runtime (runtime/bin/rg, sibling of process.execPath = runtime/bin/node).
+    // Uses the sync lexical root check, like watch — it returns a handle, not a
+    // promise, and the spawn root must be authoritative-validated here.
+    searchContent: (root, opts, cbs) =>
+      runRipgrepSearch(daemonRgPath(), opts, validatePath(root), [...exclusionSet], cbs),
     watch: (prefix, onChange) => {
       // watch returns its unsub synchronously; use the cheap lexical check.
       // Map chokidar's events to the real change type so the client can prune

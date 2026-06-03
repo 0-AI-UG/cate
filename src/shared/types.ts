@@ -787,17 +787,20 @@ export interface SearchResultBatch {
   files: SearchFileResult[]
 }
 
+/** Final stats for a content search. */
+export interface SearchStats {
+  /** Total matches found (capped at maxResults). */
+  matches: number
+  /** Number of files with at least one match. */
+  files: number
+  /** True if the search stopped early at the result cap. */
+  truncated: boolean
+}
+
 /** Terminal event for a search — carries final stats and any engine error. */
 export interface SearchDoneEvent {
   searchId: string
-  stats: {
-    /** Total matches found (capped at maxResults). */
-    matches: number
-    /** Number of files with at least one match. */
-    files: number
-    /** True if the search stopped early at the result cap. */
-    truncated: boolean
-  }
+  stats: SearchStats
   /** Set when the search failed (e.g. invalid regex); results are then empty. */
   error?: string
 }

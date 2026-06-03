@@ -152,7 +152,7 @@ export class SshTransport implements CompanionTransport {
     const D = shq(installDir)
     if (isCompanionDevMode()) {
       return (await this.exec(
-        `test -x ${D}/runtime/bin/node && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+        `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
       )).stdout.includes('CATE_PROVISIONED')
     }
     const localTar = localTarballIfPresent(version, this.target as CompanionTarget)
@@ -222,7 +222,7 @@ export class SshTransport implements CompanionTransport {
    */
   private async bootstrapDev(version: string, D: string): Promise<void> {
     const provisioned = (await this.exec(
-      `test -x ${D}/runtime/bin/node && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+      `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
     )).stdout.includes('CATE_PROVISIONED')
 
     // First connect on this host/version: lay down runtime + node_modules from the

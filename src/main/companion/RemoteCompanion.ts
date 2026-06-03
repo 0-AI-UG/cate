@@ -29,7 +29,7 @@ import type {
   PrSummary,
 } from './types'
 import type { CompanionRpcClient } from './rpcClient'
-import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload } from '../../companion/protocol'
+import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, SearchEvtPayload } from '../../companion/protocol'
 import type { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
 
 export class RemoteCompanion implements Companion {
@@ -123,6 +123,42 @@ export class RemoteCompanion implements Companion {
         call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, winId]),
       search: (root, query, opts?: FileSearchOptions) =>
         longCall<FileSearchResult[]>(Methods.fileSearch, [root, query, opts]),
+      searchContent: (root, opts, cbs) => {
+        // Server-assigned streamId, like watch: start, then register the stream
+        // when the round-trip resolves. batch/done arrive as evt frames.
+        let streamId: string | null = null
+        let stopped = false
+        void call<string>(Methods.fileSearchContentStart, [root, opts]).then((id) => {
+          if (stopped) {
+            // Cancelled before the start round-trip resolved.
+            void this.rpc.call(Methods.fileSearchContentStop, [id]).catch(() => {})
+            return
+          }
+          streamId = id
+          this.rpc.registerStream(id, (payload) => {
+            const p = payload as SearchEvtPayload
+            if (p.kind === 'batch') cbs.onBatch(p.files)
+            else {
+              cbs.onDone(p.stats, p.error)
+              this.rpc.unregisterStream(id)
+            }
+          })
+        }).catch((err) => {
+          // The start request itself failed (e.g. transport dropped): surface a
+          // terminal done so the renderer's spinner clears.
+          if (!stopped) cbs.onDone({ matches: 0, files: 0, truncated: false }, err instanceof Error ? err.message : String(err))
+        })
+        return {
+          cancel: () => {
+            stopped = true
+            if (streamId) {
+              this.rpc.unregisterStream(streamId)
+              void this.rpc.call(Methods.fileSearchContentStop, [streamId]).catch(() => {})
+              streamId = null
+            }
+          },
+        }
+      },
       watch: (prefix, onChange) => {
         let streamId: string | null = null
         let stopped = false

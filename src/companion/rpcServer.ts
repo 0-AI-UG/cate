@@ -18,9 +18,11 @@ import {
   type ReqFrame,
   type HelloFrame,
   type FsWatchEvtPayload,
+  type SearchEvtPayload,
 } from './protocol'
 import { COMPANION_VERSION } from './version'
 import type { Companion } from '../main/companion/types'
+import type { SearchOptions } from '../shared/types'
 
 export interface RpcServerOptions {
   /** Override hello fields (tests / version-skew simulation). */
@@ -30,6 +32,7 @@ export interface RpcServerOptions {
 export class RpcServer {
   private readonly decoder: FrameDecoder
   private readonly watchUnsubs = new Map<string, () => void>()
+  private readonly searchCancels = new Map<string, () => void>()
   private streamSeq = 0
 
   constructor(
@@ -75,6 +78,10 @@ export class RpcServer {
       try { unsub() } catch { /* ignore */ }
     }
     this.watchUnsubs.clear()
+    for (const cancel of this.searchCancels.values()) {
+      try { cancel() } catch { /* ignore */ }
+    }
+    this.searchCancels.clear()
   }
 
   private async dispatch(req: ReqFrame): Promise<void> {
@@ -125,6 +132,8 @@ export class RpcServer {
         // JSON turns a trailing `undefined` arg into `null`; restore undefined
         // so search's default-parameter ({}) applies.
         return api.file.search(s(0), s(1), (p[2] ?? undefined) as never)
+      case Methods.fileSearchContentStart: return this.startSearch(s(0), p[1] as SearchOptions)
+      case Methods.fileSearchContentStop: return this.stopSearch(s(0))
       case Methods.fileWatchStart: return this.startWatch(s(0))
       case Methods.fileWatchStop: return this.stopWatch(s(0))
 
@@ -191,6 +200,30 @@ export class RpcServer {
 
       default:
         throw new Error(`Unknown companion method: ${method}`)
+    }
+  }
+
+  private startSearch(root: string, opts: SearchOptions): string {
+    const streamId = `s${++this.streamSeq}`
+    const handle = this.api.file.searchContent(root, opts, {
+      onBatch: (files) => {
+        const payload: SearchEvtPayload = { kind: 'batch', files }
+        this.write(serializeFrame({ t: 'evt', streamId, payload }))
+      },
+      onDone: (stats, error) => {
+        const payload: SearchEvtPayload = { kind: 'done', stats, error }
+        this.write(serializeFrame({ t: 'evt', streamId, payload }))
+        this.searchCancels.delete(streamId)
+      },
+    })
+    this.searchCancels.set(streamId, handle.cancel)
+    return streamId
+  }
+
+  private stopSearch(streamId: string): void {
+    const cancel = this.searchCancels.get(streamId)
+    if (cancel) {
+      try { cancel() } finally { this.searchCancels.delete(streamId) }
     }
   }
 

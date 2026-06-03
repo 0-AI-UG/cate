@@ -26,6 +26,7 @@ import {
   copyInto,
   importEntriesInto,
   searchFiles,
+  searchContent,
   subscribeFsChanges,
 } from '../ipc/filesystem'
 import {
@@ -54,6 +55,7 @@ const localFile: FileHost = {
   copy: (src, destDir) => copyInto(src, destDir),
   importEntries: (sources, destDir, mode, winId) => importEntriesInto(sources, destDir, mode, winId),
   search: (root, query, opts) => searchFiles(root, query, opts),
+  searchContent: (root, opts, cbs) => searchContent(root, opts, cbs),
   watch: (prefix, onChange) => subscribeFsChanges(prefix, onChange),
 }
 

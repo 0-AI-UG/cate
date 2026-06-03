@@ -1,15 +1,19 @@
 // =============================================================================
-// searchEngine — spawn ripgrep, stream parsed results in batches, support
-// cancellation and a total-match cap.
+// Content-search engine — spawn ripgrep, stream parsed results in batches,
+// support cancellation and a total-match cap.
+//
+// Electron-free and host-agnostic: the ripgrep binary path is INJECTED by the
+// caller, so the same engine runs inside the Electron main process (binary from
+// @vscode/ripgrep) and inside the standalone companion daemon (binary shipped in
+// the companion tarball). It runs on whichever host owns the files, so relative
+// paths use that host's path semantics and the search hits the right filesystem.
 // =============================================================================
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import path from 'path'
-import log from '../logger'
-import type { SearchOptions, SearchFileResult } from '../../shared/types'
+import type { SearchOptions, SearchFileResult, SearchStats } from '../../shared/types'
 import { buildRipgrepArgs } from './ripgrepArgs'
 import { parseEvent, groupEvents, type RgEvent } from './ripgrepParser'
-import { getRgPath } from './ripgrepPath'
 
 // Caps total matches. Kept modest because the results list isn't virtualized —
 // rendering many thousands of rows (e.g. when "use ignore files" is off and the
@@ -19,12 +23,6 @@ const DEFAULT_MAX_RESULTS = 2000
 const FLUSH_INTERVAL_MS = 40
 /** Hard wall-clock cap so a pathological regex can't hang ripgrep forever. */
 const SEARCH_TIMEOUT_MS = 15000
-
-export interface SearchStats {
-  matches: number
-  files: number
-  truncated: boolean
-}
 
 export interface SearchCallbacks {
   onBatch: (files: SearchFileResult[]) => void
@@ -45,8 +43,14 @@ function toRelative(rootPath: string, filePath: string): string {
  * Run a streaming ripgrep search. Returns a handle whose `cancel()` kills the
  * underlying process. Results are delivered to `onBatch` as files complete and
  * `onDone` fires exactly once when the search ends, is cancelled, or fails.
+ *
+ * @param rgPath        absolute path to the ripgrep binary on this host
+ * @param opts          the user's search options
+ * @param rootPath      already-validated, host-absolute directory to search
+ * @param extraExcludes project-level directory/file names to exclude
  */
-export function runSearch(
+export function runRipgrepSearch(
+  rgPath: string,
   opts: SearchOptions,
   rootPath: string,
   extraExcludes: string[],
@@ -146,7 +150,7 @@ export function runSearch(
   }
 
   try {
-    child = spawn(getRgPath(), args, { cwd: rootPath })
+    child = spawn(rgPath, args, { cwd: rootPath })
   } catch (err) {
     finishOnce(err instanceof Error ? err.message : String(err))
     return { cancel: () => { cancelled = true } }
@@ -167,7 +171,6 @@ export function runSearch(
     if (stderrBuf.length < 4096) stderrBuf += chunk.toString('utf-8')
   })
   child.on('error', (err) => {
-    log.warn('[search] ripgrep spawn error:', err)
     finishOnce(err.message)
   })
   child.on('close', (code) => {

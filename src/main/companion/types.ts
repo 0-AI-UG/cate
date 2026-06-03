@@ -17,7 +17,7 @@
 // implements them with a LocalCompanion that wraps the existing functions.
 // =============================================================================
 
-import type { FileTreeNode, FileSearchResult, FileSearchOptions, TerminalActivity } from '../../shared/types'
+import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity } from '../../shared/types'
 import type { CompanionId } from './locator'
 
 // ---------------------------------------------------------------------------
@@ -173,6 +173,23 @@ export interface FileHost {
     ownerWindowId?: number,
   ): Promise<{ created: string[]; failed: number }>
   search(safeRoot: string, query: string, opts?: FileSearchOptions): Promise<FileSearchResult[]>
+  /**
+   * Streaming ripgrep content search (the VS Code-style Search view). Runs on
+   * whichever host owns the files — the local machine spawns its bundled
+   * ripgrep, a remote daemon spawns the ripgrep shipped in its tarball — so a
+   * remote workspace is searched on the remote, not the client. `onBatch` fires
+   * per completed-file batch with host-absolute paths (the IPC layer re-encodes
+   * them as companion locators); `onDone` fires exactly once. The returned
+   * `cancel()` kills the search. Mirrors `watch`'s synchronous-handle shape.
+   */
+  searchContent(
+    safeRoot: string,
+    opts: SearchOptions,
+    callbacks: {
+      onBatch: (files: SearchFileResult[]) => void
+      onDone: (stats: SearchStats, error?: string) => void
+    },
+  ): { cancel: () => void }
   /**
    * Subscribe to filesystem changes under `prefix`. Returns an unsubscribe fn.
    * Matches the in-process `subscribeFsChanges` semantics (one call per event,

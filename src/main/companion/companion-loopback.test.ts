@@ -29,6 +29,21 @@ function loopback(api: Companion): { remote: RemoteCompanion; client: CompanionR
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
+/** Drive a streaming searchContent to completion, collecting every batch. */
+function collectSearch(
+  remote: RemoteCompanion,
+  root: string,
+  opts: import('../../shared/types').SearchOptions,
+): Promise<{ files: import('../../shared/types').SearchFileResult[]; stats: import('../../shared/types').SearchStats; error?: string }> {
+  return new Promise((resolve) => {
+    const files: import('../../shared/types').SearchFileResult[] = []
+    remote.file.searchContent(root, opts, {
+      onBatch: (b) => files.push(...b),
+      onDone: (stats, error) => resolve({ files, stats, error }),
+    })
+  })
+}
+
 describe('companion loopback (real LocalCompanion over the wire)', () => {
   let rootDir: string
 
@@ -88,6 +103,17 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
     const viaRemote = await remote.file.search(safe, 'needle')
     const direct = await searchFiles(safe, 'needle')
     expect(viaRemote).toEqual(direct)
+  })
+
+  test('file.searchContent streams ripgrep results over the wire', async () => {
+    const { remote } = loopback(localCompanion)
+    const safe = await remote.validatePathStrict(rootDir)
+    const { files, stats, error } = await collectSearch(remote, safe, { query: 'needle' })
+    expect(error).toBeUndefined()
+    expect(stats.matches).toBe(1)
+    const hit = files.find((f) => f.relativePath === 'alpha.ts')
+    expect(hit).toBeTruthy()
+    expect(hit!.lines[0].text).toContain('needle')
   })
 
   test('vcs.isRepo + vcs.status + vcs.init over the wire', async () => {
@@ -157,6 +183,43 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
     unsubscribe()
     await flush()
     expect(emit).toBeNull() // daemon-side subscription torn down
+  })
+
+  test('file.searchContent streams batches over evt frames and cancel tears down the daemon search', async () => {
+    let callbacks: { onBatch: (f: unknown[]) => void; onDone: (s: unknown, e?: string) => void } | null = null
+    let cancelled = false
+    const api = {
+      id: 'srv_test',
+      process: stubProcess,
+      file: {
+        searchContent: (_root: string, _opts: unknown, cbs: typeof callbacks) => {
+          callbacks = cbs
+          return { cancel: () => { cancelled = true } }
+        },
+      } as unknown as FileHost,
+      vcs: {} as VcsHost,
+      validatePath: (p: string) => p,
+      validatePathStrict: async (p: string) => p,
+      validatePathForCreation: async (p: string) => p,
+      validateCwd: (p: string) => p,
+    } as Companion
+
+    const { remote } = loopback(api)
+    const seen: unknown[] = []
+    const handle = remote.file.searchContent('/root', { query: 'x' }, {
+      onBatch: (f) => seen.push(...f),
+      onDone: () => {},
+    })
+
+    await flush() // let the searchContent.start round-trip register the stream
+    expect(callbacks).toBeTruthy()
+    callbacks!.onBatch([{ path: '/root/a.ts', relativePath: 'a.ts', lines: [], matchCount: 1 }])
+    await flush()
+    expect(seen).toHaveLength(1)
+
+    handle.cancel()
+    await flush()
+    expect(cancelled).toBe(true) // daemon-side search torn down
   })
 
   test('an unknown method rejects', async () => {

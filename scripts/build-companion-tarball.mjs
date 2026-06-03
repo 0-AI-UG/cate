@@ -6,6 +6,7 @@
 //     node_modules/node-pty/...           (with prebuilds/<target>/pty.node
 //                                          + spawn-helper — the only native dep)
 //     runtime/bin/node                    (bundled Node runtime for the target)
+//     runtime/bin/rg                       (bundled ripgrep for content search)
 //
 // node-pty resolves its native binary from prebuilds/<platform>-<arch>/ (see
 // node-pty/lib/utils.js), and the npm package ships NO linux prebuild — so we
@@ -36,6 +37,17 @@ import { companionBuildOptions, syncCompanionVersion } from '../src/companion/bu
 // crashes pi on launch under an older runtime). Keep on a 22.x LTS line.
 const NODE_VERSION = '22.19.0'
 const NODE_PTY_VERSION = '1.1.0' // must match package.json
+// ripgrep for the daemon's content search. Prebuilt static binaries from the
+// upstream GitHub release (no CI build needed) — fetched like the node runtime.
+const RIPGREP_VERSION = '14.1.1'
+// target → ripgrep release triple. linux-x64 uses the static musl build (runs on
+// any glibc/musl host); the others match the node runtime's libc/abi.
+const RIPGREP_TRIPLES = {
+  'linux-x64': 'x86_64-unknown-linux-musl',
+  'linux-arm64': 'aarch64-unknown-linux-gnu',
+  'darwin-x64': 'x86_64-apple-darwin',
+  'darwin-arm64': 'aarch64-apple-darwin',
+}
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(repoRoot, 'dist-companion')
 
@@ -57,6 +69,7 @@ mkdirSync(stageDir, { recursive: true })
 cpSync(path.join(dist, 'companion.cjs'), path.join(stageDir, 'companion.cjs'))
 await stageNodePty(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', 'node'))
+await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', 'rg'))
 
 const outTar = path.join(dist, `cate-companion-${version}-${targetArg}.tgz`)
 rmSync(outTar, { force: true })
@@ -163,6 +176,29 @@ async function stageNodeRuntime(platform, arch, outBin) {
   chmodSync(outBin, 0o755)
   rmSync(tmp, { recursive: true, force: true })
   console.log(`[companion] staged node ${NODE_VERSION} runtime for ${platform}-${arch}`)
+}
+
+/** Download just the `rg` binary for the target into `outBin`. */
+async function stageRipgrep(target, outBin) {
+  const triple = RIPGREP_TRIPLES[target]
+  if (!triple) throw new Error(`no ripgrep triple for target "${target}"`)
+  const name = `ripgrep-${RIPGREP_VERSION}-${triple}`
+  const url = `https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/${name}.tar.gz`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`ripgrep download failed: ${res.status} ${url}`)
+  const buf = Buffer.from(await res.arrayBuffer())
+  const tmp = path.join(os.tmpdir(), `cate-rg-${target}-${RIPGREP_VERSION}`)
+  rmSync(tmp, { recursive: true, force: true })
+  mkdirSync(tmp, { recursive: true })
+  const tarPath = path.join(tmp, 'rg.tar.gz')
+  await writeFile(tarPath, buf)
+  // The archive's top dir is `${name}/`; pull out only the rg binary.
+  execFileSync('tar', ['-xzf', tarPath, '-C', tmp, `${name}/rg`], { stdio: 'ignore' })
+  mkdirSync(path.dirname(outBin), { recursive: true })
+  renameSync(path.join(tmp, name, 'rg'), outBin)
+  chmodSync(outBin, 0o755)
+  rmSync(tmp, { recursive: true, force: true })
+  console.log(`[companion] staged ripgrep ${RIPGREP_VERSION} for ${target}`)
 }
 
 function plat(p) {
