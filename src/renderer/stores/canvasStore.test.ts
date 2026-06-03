@@ -353,6 +353,35 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
+  it('GAP-FILL: a sub-standard gap between nodes gets a custom-sized recommendation', () => {
+    // Two standard (640×400) nodes with a ~460px horizontal gap — too narrow for
+    // a standard panel, but wide enough for a custom one.
+    const a = node('a', 0, 0, 640, 400)
+    const b = node('b', 1100, 0, 640, 400, 1)
+    const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
+    const custom = cands.find((c) => c.size.width !== 640 || c.size.height !== 400)
+    expect(custom).toBeDefined()
+    // It sits inside the gap and overlaps neither neighbour.
+    expect(custom!.point.x).toBeGreaterThanOrEqual(640)
+    expect(custom!.point.x + custom!.size.width).toBeLessThanOrEqual(1100)
+    expect(rectsOverlap(rectOf(custom!), { origin: a.origin, size: a.size })).toBe(false)
+    expect(rectsOverlap(rectOf(custom!), { origin: b.origin, size: b.size })).toBe(false)
+    // Custom size respects the minimums.
+    expect(custom!.size.width).toBeGreaterThanOrEqual(280)
+    expect(custom!.size.height).toBeGreaterThanOrEqual(180)
+  })
+
+  it('GAP-FILL: a gap below the minimum gets no recommendation', () => {
+    const a = node('a', 0, 0, 640, 400)
+    const b = node('b', 840, 0, 640, 400, 1) // only a 200px gap → too small
+    const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
+    // No candidate squeezes into the tiny gap (640 < x < 840).
+    cands.forEach((c) => {
+      const insideGap = c.point.x > 640 && c.point.x + c.size.width < 840
+      expect(insideGap).toBe(false)
+    })
+  })
+
   it('ISLANDS: with no active node, recommends around the island nearest the anchor', () => {
     const near = node('near', 0, 0)
     const far = node('far', 5000, 5000, 200, 150, 1)

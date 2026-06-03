@@ -374,6 +374,13 @@ export function placementSizeVariants(panelType: PanelType): PlacementSizeVarian
 
 /** Uniform gap (canvas px) between a new panel and its neighbours / other ghosts. */
 const PLACEMENT_GAP = 40
+/** Smallest a gap-fill recommendation may be (canvas px), and its aspect-ratio
+ *  bounds (width / height) — a sub-standard hole only gets a recommendation if a
+ *  panel within these limits fits it. */
+const PLACEMENT_MIN_W = 280
+const PLACEMENT_MIN_H = 180
+const PLACEMENT_MIN_AR = 0.6
+const PLACEMENT_MAX_AR = 2.6
 
 // --- Geometry helpers for context-aware recommendations ----------------------
 
@@ -433,6 +440,75 @@ function boundsOf(nodes: CanvasNodeState[]): Rect {
   return { origin: { x: minX, y: minY }, size: { width: maxX - minX, height: maxY - minY } }
 }
 
+/** Grow a rect by `m` on every side. */
+function inflateRect(r: Rect, m: number): Rect {
+  return {
+    origin: { x: r.origin.x - m, y: r.origin.y - m },
+    size: { width: r.size.width + m * 2, height: r.size.height + m * 2 },
+  }
+}
+
+/** Shrink (w,h) to fall within [minAR, maxAR] aspect ratio, keeping it inside. */
+function clampAspect(w: number, h: number, minAR: number, maxAR: number): Size {
+  const ar = w / h
+  if (ar > maxAR) w = h * maxAR
+  else if (ar < minAR) h = w / minAR
+  return { width: w, height: h }
+}
+
+/**
+ * Find sub-standard gaps BETWEEN nodes in a cluster and size a panel to fill
+ * each. A horizontal gap (between two side-by-side nodes) narrower than a
+ * standard panel — but at least the minimum, within the aspect-ratio bounds, and
+ * actually free — yields a custom-sized candidate centred in it; likewise for
+ * vertical gaps. The returned rects already keep a gap to their neighbours.
+ */
+function gapFillCandidates(
+  cluster: CanvasNodeState[],
+  std: Size,
+  gap: number,
+  allNodeRects: Rect[],
+): Rect[] {
+  const out: Rect[] = []
+  const fits = (rect: Rect): boolean =>
+    rect.size.width > 0 && rect.size.height > 0 &&
+    !allNodeRects.some((r) => rectsOverlap(inflateRect(rect, gap - 1), r))
+  const rects = cluster.map((n) => ({ origin: n.origin, size: n.size }))
+  const consider = (availW: number, availH: number, ox0: number, oy0: number, subStandard: boolean) => {
+    if (!subStandard) return
+    if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) return
+    const s = clampAspect(availW, availH, PLACEMENT_MIN_AR, PLACEMENT_MAX_AR)
+    if (s.width < PLACEMENT_MIN_W || s.height < PLACEMENT_MIN_H) return
+    const rect: Rect = {
+      origin: { x: ox0 + (availW - s.width) / 2, y: oy0 + (availH - s.height) / 2 },
+      size: s,
+    }
+    if (fits(rect)) out.push(rect)
+  }
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = 0; j < rects.length; j++) {
+      if (i === j) continue
+      const A = rects[i]
+      const B = rects[j]
+      const aR = A.origin.x + A.size.width
+      const aB = A.origin.y + A.size.height
+      const bR = B.origin.x + B.size.width
+      const bB = B.origin.y + B.size.height
+      // Horizontal gap: B to the right of A, sharing a vertical band.
+      const hTop = Math.max(A.origin.y, B.origin.y)
+      const hBot = Math.min(aB, bB)
+      consider(B.origin.x - aR - 2 * gap, hBot - hTop - 2 * gap, aR + gap, hTop + gap,
+        B.origin.x - aR - 2 * gap < std.width)
+      // Vertical gap: B below A, sharing a horizontal band.
+      const vLeft = Math.max(A.origin.x, B.origin.x)
+      const vRight = Math.min(aR, bR)
+      consider(vRight - vLeft - 2 * gap, B.origin.y - aB - 2 * gap, vLeft + gap, aB + gap,
+        B.origin.y - aB - 2 * gap < std.height)
+    }
+  }
+  return out
+}
+
 /**
  * Compute context-aware recommended spots for the interactive "ghost" picker.
  *
@@ -484,20 +560,15 @@ export function recommendPlacements(
     x: viewTopLeft.x + viewRect.size.width / 2,
     y: viewTopLeft.y + viewRect.size.height / 2,
   }
-  const isOnScreen = (p: Point): boolean => hasViewport && rectsOverlap({ origin: p, size }, viewRect)
   const nodeOnScreen = (n: CanvasNodeState): boolean =>
     hasViewport && rectsOverlap({ origin: n.origin, size: n.size }, viewRect)
 
   const nodeList = Object.values(nodes)
   const nodeRects: Rect[] = nodeList.map((n) => ({ origin: n.origin, size: n.size }))
   const margin = gap - 1
-  const clearOf = (p: Point, rects: Rect[]): boolean => {
-    const grown: Rect = {
-      origin: { x: p.x - margin, y: p.y - margin },
-      size: { width: size.width + margin * 2, height: size.height + margin * 2 },
-    }
-    return !rects.some((r) => rectsOverlap(grown, r))
-  }
+  const clearRect = (rect: Rect, rects: Rect[]): boolean =>
+    !rects.some((r) => rectsOverlap(inflateRect(rect, margin), r))
+  const onScreenRect = (rect: Rect): boolean => hasViewport && rectsOverlap(rect, viewRect)
   const centerOf = (n: CanvasNodeState): Point => ({
     x: n.origin.x + n.size.width / 2,
     y: n.origin.y + n.size.height / 2,
@@ -513,15 +584,18 @@ export function recommendPlacements(
     { x: n.origin.x, y: n.origin.y - size.height - gap },
   ]
 
-  // --- Decide the mode and gather candidate spots --------------------------
-  const spots: Point[] = []
+  // --- Decide the mode and gather candidate rects (standard + gap-fill) -----
+  type Cand = { point: Point; size: Size; custom: boolean }
+  const cands: Cand[] = []
+  const pushStd = (p: Point) => cands.push({ point: snapPt(p), size, custom: false })
   let rankAnchor = anchorPt
   let cap = max
+  let relevantCluster: CanvasNodeState[] | null = null
 
   if (nodeList.length === 0) {
     // EMPTY canvas → centre on the anchor.
     const c = { x: anchorPt.x - size.width / 2, y: anchorPt.y - size.height / 2 }
-    spots.push(c, { x: c.x + size.width + gap, y: c.y }, { x: c.x, y: c.y + size.height + gap })
+    pushStd(c); pushStd({ x: c.x + size.width + gap, y: c.y }); pushStd({ x: c.x, y: c.y + size.height + gap })
     cap = Math.min(max, 3)
   } else {
     // Detect the "active" node: focused (if on screen) or a viewport-dominant one.
@@ -537,6 +611,8 @@ export function recommendPlacements(
       }
       if (bestFrac >= 0.5) activeNode = best
     }
+    const clusterThreshold = Math.max(size.width, size.height)
+    const clusters = clusterNodes(nodeList, clusterThreshold)
 
     if (activeNode) {
       // ACTIVE NODE → recommend a single CONTIGUOUS group right next to it.
@@ -544,26 +620,27 @@ export function recommendPlacements(
       // breadth-first search, accepting only free cells and never crossing an
       // occupied one — so the ghosts stay connected to the node's free corner
       // instead of scattering to opposite edges of a crowded cluster.
-      rankAnchor = centerOf(activeNode)
-      cap = Math.min(max, 4)
+      const an = activeNode
+      rankAnchor = centerOf(an)
+      relevantCluster = clusters.find((c) => c.some((n) => n.id === an.id)) ?? [an]
       const pitchX = size.width + gap
       const pitchY = size.height + gap
       // Edge-anchored lattice: the first cell in each direction sits one gap from
       // the active node's edge (correct even when the node differs in size from a
       // new panel); further cells step by one new-panel pitch.
       const cellX = (i: number): number =>
-        i === 0 ? activeNode.origin.x
-          : i > 0 ? activeNode.origin.x + activeNode.size.width + gap + (i - 1) * pitchX
-            : activeNode.origin.x - (size.width + gap) - (-i - 1) * pitchX
+        i === 0 ? an.origin.x
+          : i > 0 ? an.origin.x + an.size.width + gap + (i - 1) * pitchX
+            : an.origin.x - (size.width + gap) - (-i - 1) * pitchX
       const cellY = (j: number): number =>
-        j === 0 ? activeNode.origin.y
-          : j > 0 ? activeNode.origin.y + activeNode.size.height + gap + (j - 1) * pitchY
-            : activeNode.origin.y - (size.height + gap) - (-j - 1) * pitchY
+        j === 0 ? an.origin.y
+          : j > 0 ? an.origin.y + an.size.height + gap + (j - 1) * pitchY
+            : an.origin.y - (size.height + gap) - (-j - 1) * pitchY
       const cell = (i: number, j: number): Point => snapPt({ x: cellX(i), y: cellY(j) })
       const visited = new Set<string>(['0,0'])
       const queue: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-      while (queue.length > 0 && spots.length < cap) {
-        // Nearest cell to the active node first (Manhattan, then Euclidean).
+      let placed = 0
+      while (queue.length > 0 && placed < 4) {
         queue.sort((a, b) =>
           (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) ||
           (a[0] * a[0] + a[1] * a[1]) - (b[0] * b[0] + b[1] * b[1]),
@@ -573,8 +650,8 @@ export function recommendPlacements(
         if (visited.has(key)) continue
         visited.add(key)
         const p = cell(i, j)
-        if (!clearOf(p, nodeRects)) continue // occupied — don't accept or expand through it
-        spots.push(p)
+        if (!clearRect({ origin: p, size }, nodeRects)) continue // occupied — don't expand through it
+        pushStd(p); placed++
         queue.push([i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1])
       }
     } else {
@@ -582,53 +659,61 @@ export function recommendPlacements(
       if (onScreenNodes.length === 0) {
         // BLANK viewport (panned to empty space) → place where the user looks.
         const c = { x: anchorPt.x - size.width / 2, y: anchorPt.y - size.height / 2 }
-        spots.push(c, { x: c.x + size.width + gap, y: c.y }, { x: c.x, y: c.y + size.height + gap })
+        pushStd(c); pushStd({ x: c.x + size.width + gap, y: c.y }); pushStd({ x: c.x, y: c.y + size.height + gap })
         cap = Math.min(max, 3)
       } else {
         // ISLANDS → pick the cluster nearest the anchor; recommend around it.
-        const clusterThreshold = Math.max(size.width, size.height)
-        const clusters = clusterNodes(nodeList, clusterThreshold)
         let target = clusters[0]
         let bestDist = Infinity
         for (const c of clusters) {
           const d = pointRectDistance(anchorPt, boundsOf(c))
           if (d < bestDist) { bestDist = d; target = c }
         }
-        for (const n of target) spots.push(...edgeSlots(n))
+        for (const n of target) for (const p of edgeSlots(n)) pushStd(p)
+        relevantCluster = target
       }
+    }
+  }
+
+  // Gap-fill: sub-standard holes between the relevant cluster's nodes get a
+  // custom-sized recommendation (within min size + aspect-ratio bounds).
+  if (relevantCluster && relevantCluster.length >= 2) {
+    for (const r of gapFillCandidates(relevantCluster, size, gap, nodeRects)) {
+      cands.push({ point: snapPt(r.origin), size: r.size, custom: true })
     }
   }
 
   // --- Dedupe, rank (on-screen first, nearest the anchor), accept ----------
   const seen = new Set<string>()
-  const ranked = spots
-    .map(snapPt)
-    .filter((p) => {
-      const key = `${p.x},${p.y}`
+  const ranked = cands
+    .filter((c) => {
+      const key = `${c.point.x},${c.point.y},${c.size.width},${c.size.height}`
       if (seen.has(key)) return false
       seen.add(key)
       return true
     })
-    .map((p) => {
-      const onScreen = isOnScreen(p)
-      const dist = Math.hypot(p.x + size.width / 2 - rankAnchor.x, p.y + size.height / 2 - rankAnchor.y)
-      return { p, onScreen, score: (onScreen ? 0 : 1e9) + dist }
+    .map((c) => {
+      const rect: Rect = { origin: c.point, size: c.size }
+      const onScreen = onScreenRect(rect)
+      const dist = Math.hypot(c.point.x + c.size.width / 2 - rankAnchor.x, c.point.y + c.size.height / 2 - rankAnchor.y)
+      // Slight penalty for custom sizes so a comparable standard spot ranks first.
+      return { rect, point: c.point, size: c.size, onScreen, score: (onScreen ? 0 : 1e9) + dist + (c.custom ? 150 : 0) }
     })
     .sort((a, b) => a.score - b.score)
 
   const accepted: PlacementCandidate[] = []
   const acceptedRects: Rect[] = []
-  for (const { p, onScreen } of ranked) {
+  for (const c of ranked) {
     if (accepted.length >= cap) break
-    if (!clearOf(p, nodeRects)) continue
-    if (!clearOf(p, acceptedRects)) continue
-    acceptedRects.push({ origin: p, size })
-    accepted.push({ point: p, size, rank: accepted.length, onScreen })
+    if (!clearRect(c.rect, nodeRects)) continue
+    if (!clearRect(c.rect, acceptedRects)) continue
+    acceptedRects.push(c.rect)
+    accepted.push({ point: c.point, size: c.size, rank: accepted.length, onScreen: c.onScreen })
   }
 
   if (accepted.length === 0) {
     const p = snapPt(findFreePosition(nodes, focusedNodeId, size))
-    accepted.push({ point: p, size, rank: 0, onScreen: isOnScreen(p) })
+    accepted.push({ point: p, size, rank: 0, onScreen: onScreenRect({ origin: p, size }) })
   }
   return accepted
 }
