@@ -204,6 +204,17 @@ export type CompanionConnectResult =
   | { ok: true; companionId: string; rootPath: string; connection: CompanionConnection }
   | { ok: false; error: string }
 
+/** A connectable host alias parsed from the user's ~/.ssh/config. Wildcard
+ *  patterns (`Host *`) are excluded — only concrete aliases the user can dial.
+ *  `host` is the resolved HostName (falls back to the alias when unset). */
+export interface SshHostEntry {
+  alias: string
+  host: string
+  user?: string
+  port?: number
+  identityFile?: string
+}
+
 /**
  * Canonical lifecycle phase of a remote companion. Emitted by the main process
  * (CompanionManager) and projected onto the owning workspace, where it is the

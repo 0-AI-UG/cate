@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, CompanionConnectResult, CompanionStatusEvent, CompanionConnection, RemoteProjectEntry } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, CompanionConnectResult, CompanionStatusEvent, CompanionConnection, RemoteProjectEntry, SshHostEntry } from './types'
 
 export interface NativeContextMenuItem {
   id?: string
@@ -605,6 +605,9 @@ export interface ElectronAPI {
 
   /** Names of WSL distros installed on this host ([] on non-Windows / no WSL). */
   companionWslDistros(): Promise<string[]>
+
+  /** Connectable host aliases from the user's ~/.ssh/config ([] if none). */
+  companionSshHosts(): Promise<SshHostEntry[]>
 
   /** Explicit clean install of a remote companion's daemon (wipes the host
    *  install dir, re-pulls/pushes the bundle, then connects). The only call that

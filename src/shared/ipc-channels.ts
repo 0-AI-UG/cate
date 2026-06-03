@@ -304,6 +304,7 @@ export const COMPANION_CONNECT = 'companion:connect'       // renderer -> main
 export const COMPANION_ENSURE = 'companion:ensure'         // renderer -> main (reconnect from a stored connection)
 export const COMPANION_LIST = 'companion:list'             // renderer -> main
 export const COMPANION_WSL_DISTROS = 'companion:wsl-distros' // renderer -> main (list installed WSL distros)
+export const COMPANION_SSH_HOSTS = 'companion:ssh-hosts'   // renderer -> main (host aliases from ~/.ssh/config)
 export const COMPANION_INSTALL = 'companion:install'       // renderer -> main (explicit clean install + connect)
 export const COMPANION_DELETE = 'companion:delete'         // renderer -> main (rm -rf the host install, keep saved auth)
 export const COMPANION_STATUS = 'companion:status'         // main -> renderer (broadcast)

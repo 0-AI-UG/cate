@@ -68,30 +68,23 @@ export function CompanionLockOverlay(): JSX.Element | null {
   const label = connectionLabel(connection)
   const isBusy = runtime.status === 'installing' || runtime.status === 'connecting'
 
-  // Per-phase copy + actions. The phase is whatever main's probe reported; the
-  // overlay only maps it to copy + the action that recovers from it. Each button
-  // is opt-in per phase so we only show what actually fixes that state:
-  //   - disconnected (was live, channel dropped): the connection is known-good,
-  //     so Reconnect; Delete as an escape hatch. Editing the connection wouldn't
-  //     help, so no Edit.
-  //   - missing (host reachable, daemon absent / version mismatch): the
-  //     connection is known-good, so Install only. No Edit, nothing to Delete.
-  //   - unreachable (couldn't reach host/auth/path, or an initial connect never
-  //     bound): the connection details may be wrong, so this is the one phase
-  //     that offers Edit connection. Retry/Delete need a stored connection.
-  // "Delete companion" → main rm -rf's the host install and re-probes to
-  // `missing`, from where the user does a clean Install.
+  // Per-phase title + actions. The phase is whatever main's probe reported; the
+  // overlay only maps it to a short title + the actions that recover from it.
+  // Each button is opt-in per phase so we only show what actually fixes that
+  // state: disconnected → Reconnect (+Delete escape hatch); missing → Install;
+  // unreachable → Retry + Edit connection (+Delete). The error message, when
+  // there is one, is the only body text. "Delete companion" → main rm -rf's the
+  // host install and re-probes to `missing`, where the user does a clean Install.
   const view = (() => {
     switch (runtime.status) {
       case 'installing':
-        return { icon: 'install' as const, title: 'Installing companion', reason: 'Setting up the companion daemon on the host…' }
+        return { icon: 'install' as const, title: 'Installing companion…' }
       case 'connecting':
-        return { icon: 'spin' as const, title: 'Connecting to companion', reason: 'Reaching the companion daemon…' }
+        return { icon: 'spin' as const, title: 'Connecting…' }
       case 'disconnected':
         return {
           icon: 'warn' as const,
           title: 'Companion disconnected',
-          reason: runtime.error || 'The companion daemon dropped. Reconnect to keep working.',
           primary: { label: 'Reconnect', onClick: onRetry, icon: 'plug' as const },
           del: true,
         }
@@ -99,15 +92,13 @@ export function CompanionLockOverlay(): JSX.Element | null {
         return {
           icon: 'install' as const,
           title: 'Companion not installed',
-          reason: runtime.error || 'The companion daemon isn’t installed on the host.',
-          primary: { label: 'Install Companion', onClick: onInstall, icon: 'install' as const },
+          primary: { label: 'Install', onClick: onInstall, icon: 'install' as const },
         }
       case 'unreachable':
       default:
         return {
           icon: 'warn' as const,
-          title: 'Companion not reachable',
-          reason: runtime.error || 'Could not reach the companion. Retry, edit the connection, or delete and reinstall it.',
+          title: 'Companion unreachable',
           primary: runtime.hasConnection ? { label: 'Retry', onClick: onRetry, icon: 'plug' as const } : undefined,
           edit: true,
           del: runtime.hasConnection,
@@ -118,23 +109,23 @@ export function CompanionLockOverlay(): JSX.Element | null {
   return (
     <>
       <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-4/80 backdrop-blur-sm select-none">
-        <div className="w-[420px] max-w-[90%] flex flex-col items-center gap-3 rounded-lg border border-subtle bg-surface-3 px-6 py-7 shadow-xl">
+        <div className="w-[300px] max-w-[90%] flex flex-col items-center gap-2.5 rounded-lg border border-subtle bg-surface-3 px-5 py-6 shadow-xl">
           {view.icon === 'spin' ? (
-            <CircleNotch size={32} className="text-muted animate-spin" />
+            <CircleNotch size={22} className="text-muted animate-spin" />
           ) : view.icon === 'install' ? (
-            <CloudArrowDown size={32} weight="fill" className="text-focus-blue animate-pulse" />
+            <CloudArrowDown size={22} weight="fill" className="text-focus-blue animate-pulse" />
           ) : (
-            <CloudWarning size={32} weight="fill" className="text-red-400" />
+            <CloudWarning size={22} weight="fill" className="text-red-400" />
           )}
 
-          <div className="text-center">
-            <div className="text-[15px] font-semibold text-primary">{view.title}</div>
-            {label && <div className="mt-0.5 text-[12px] text-muted">{label}</div>}
-          </div>
+          <div className="text-[13px] font-medium text-primary text-center">{view.title}</div>
+          {label && <div className="-mt-1.5 text-[11px] text-muted">{label}</div>}
 
-          <div className="w-full text-center text-[12px] text-secondary whitespace-pre-wrap break-words max-h-32 overflow-auto rounded bg-surface-2 border border-subtle px-3 py-2">
-            {view.reason}
-          </div>
+          {runtime.error && (
+            <div className="w-full text-center text-[11px] text-muted whitespace-pre-wrap break-words max-h-20 overflow-auto">
+              {runtime.error}
+            </div>
+          )}
 
           {!isBusy && (
             <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
@@ -156,7 +147,7 @@ export function CompanionLockOverlay(): JSX.Element | null {
                   className="px-3 py-1.5 rounded text-[13px] bg-surface-2 text-secondary hover:text-primary border border-subtle"
                   onClick={() => setEditing(true)}
                 >
-                  Edit connection
+                  Edit
                 </button>
               )}
               {view.del && (
@@ -165,7 +156,7 @@ export function CompanionLockOverlay(): JSX.Element | null {
                   onClick={onDelete}
                   title="Delete the daemon from the host so you can do a clean install"
                 >
-                  Delete companion
+                  Delete
                 </button>
               )}
             </div>

@@ -37,10 +37,10 @@ export function RemoteConnectDialog({
       onClick={onClose}
     >
       <div
-        className="w-[460px] max-h-[85vh] overflow-auto bg-surface-2 rounded-xl border border-subtle shadow-[0_24px_64px_rgba(0,0,0,0.55)]"
+        className="w-[340px] max-h-[85vh] overflow-auto bg-surface-2 rounded-xl border border-subtle shadow-[0_24px_64px_rgba(0,0,0,0.55)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 pt-3.5 text-[13px] font-semibold text-primary">
+        <div className="px-4 pt-3.5 text-[13px] font-medium text-primary">
           {initial ? 'Edit connection' : 'Connect to remote'}
         </div>
         <RemoteConnect onSubmit={onSubmit} onCancel={onClose} pending={pending} error={error} initial={initial} />

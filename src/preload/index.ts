@@ -134,6 +134,7 @@ import {
   COMPANION_ENSURE,
   COMPANION_LIST,
   COMPANION_WSL_DISTROS,
+  COMPANION_SSH_HOSTS,
   COMPANION_DELETE,
   COMPANION_INSTALL,
   COMPANION_STATUS,
@@ -1019,6 +1020,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   companionWslDistros(): Promise<string[]> {
     return ipcRenderer.invoke(COMPANION_WSL_DISTROS)
+  },
+  companionSshHosts(): Promise<unknown[]> {
+    return ipcRenderer.invoke(COMPANION_SSH_HOSTS)
   },
   companionInstall(connection: unknown): Promise<unknown> {
     return ipcRenderer.invoke(COMPANION_INSTALL, connection)
