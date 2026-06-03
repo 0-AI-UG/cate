@@ -7,6 +7,7 @@
 //                                          + spawn-helper — the only native dep)
 //     runtime/bin/node                    (bundled Node runtime for the target)
 //     runtime/bin/rg                       (bundled ripgrep for content search)
+//     pi/dist/cli.js                       (bundled pi coding agent, cross-platform)
 //
 // node-pty resolves its native binary from prebuilds/<platform>-<arch>/ (see
 // node-pty/lib/utils.js), and the npm package ships NO linux prebuild — so we
@@ -23,7 +24,7 @@
 // (e.g. a Mac) for local end-to-end testing before CI exists.
 // =============================================================================
 
-import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, renameSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
@@ -70,6 +71,7 @@ cpSync(path.join(dist, 'companion.cjs'), path.join(stageDir, 'companion.cjs'))
 await stageNodePty(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', 'node'))
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', 'rg'))
+stagePi(path.join(stageDir, 'pi'))
 
 const outTar = path.join(dist, `cate-companion-${version}-${targetArg}.tgz`)
 rmSync(outTar, { force: true })
@@ -199,6 +201,27 @@ async function stageRipgrep(target, outBin) {
   chmodSync(outBin, 0o755)
   rmSync(tmp, { recursive: true, force: true })
   console.log(`[companion] staged ripgrep ${RIPGREP_VERSION} for ${target}`)
+}
+
+/** Stage the cross-platform pi coding agent into <outRoot> (pi/dist/cli.js …).
+ *  pi rides in the companion tarball so node + node-pty + rg + pi all ship as
+ *  ONE per-target artifact — the daemon resolves pi from here, no on-demand
+ *  download or air-gapped push. Builds the pi tarball first if it's absent. */
+function stagePi(outRoot) {
+  const piVersion = JSON.parse(
+    readFileSync(path.join(repoRoot, 'node_modules', '@earendil-works', 'pi-coding-agent', 'package.json'), 'utf-8'),
+  ).version
+  const tar = path.join(dist, `cate-pi-${piVersion}.tgz`)
+  if (!existsSync(tar)) {
+    console.log('[companion] pi tarball missing; building it…')
+    execFileSync('node', [path.join(repoRoot, 'scripts', 'build-pi-tarball.mjs')], { stdio: 'inherit' })
+  }
+  if (!existsSync(tar)) throw new Error(`pi tarball not found at ${tar}`)
+  rmSync(outRoot, { recursive: true, force: true })
+  mkdirSync(outRoot, { recursive: true })
+  execFileSync('tar', ['-xzf', tar, '-C', outRoot], { stdio: 'ignore' })
+  if (!existsSync(path.join(outRoot, 'dist', 'cli.js'))) throw new Error('staged pi missing dist/cli.js')
+  console.log(`[companion] staged pi ${piVersion}`)
 }
 
 function plat(p) {

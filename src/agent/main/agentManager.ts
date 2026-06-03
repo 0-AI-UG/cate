@@ -13,13 +13,11 @@
 // =============================================================================
 
 import path from 'path'
-import { app, type WebContents } from 'electron'
+import { type WebContents } from 'electron'
 import log from '../../main/logger'
 import { parseLocator } from '../../main/companion/locator'
 import { companions } from '../../main/companion/companionManager'
-import { PI_VERSION } from '../../companion/piVersion'
 import type { Companion } from '../../main/companion/types'
-import type { CompanionId } from '../../main/companion/locator'
 import { PiRpcClient } from './piRpcClient'
 
 import type { PiImageContent } from './piRpcClient'
@@ -97,30 +95,6 @@ export class AgentManager {
     }
   }
 
-  /**
-   * Ensure pi is installed on the host. The daemon (or local host) pulls pi
-   * itself first. If that fails — typically because a remote host has no
-   * internet — push the pi tarball from the client over the transport (SFTP for
-   * ssh, /mnt copy for wsl) and retry the daemon-side ensure (which then
-   * extracts the pushed tarball). Local has no transport push, so its ensurePi
-   * error simply propagates (it downloads client-side already).
-   */
-  private async ensurePiWithPushFallback(companion: Companion, companionId: CompanionId): Promise<void> {
-    try {
-      await companion.agent.ensurePi()
-    } catch (err) {
-      const pushed = await companions
-        .pushPi(companionId, app.getVersion(), PI_VERSION)
-        .catch((pushErr) => {
-          log.warn('[agentManager] pi push fallback failed for %s: %O', companionId, pushErr)
-          return false
-        })
-      if (!pushed) throw err
-      log.info('[agentManager] pushed pi tarball to %s; retrying ensurePi', companionId)
-      await companion.agent.ensurePi()
-    }
-  }
-
   private withLock<T>(panelId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.locks.get(panelId) ?? Promise.resolve()
     const next = prev.then(fn, fn)
@@ -159,10 +133,10 @@ export class AgentManager {
         env: { PI_CODING_AGENT_DIR: hostAgentDir(companionId, cwd) },
       })
 
-      // Ensure pi is installed on the host BEFORE start. On a remote companion
-      // whose host has no internet, the daemon's own download fails — fall back
-      // to pushing the tarball from the client, then retry the daemon ensure.
-      await this.ensurePiWithPushFallback(companion, companionId)
+      // Ensure pi is present on the host BEFORE start. pi ships in the companion
+      // tarball (remote) or is resolved/extracted client-side (local), so on a
+      // provisioned host this is a quick verify.
+      await companion.agent.ensurePi()
 
       try {
         await client.start()

@@ -17,7 +17,7 @@
 import { spawn, execFile, type ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import log from '../../logger'
-import { ensureLocalTarball, ensureLocalPiTarball, localTarballIfPresent, localCompanionBundlePath, isCompanionDevMode, tarballHash, releaseUrl, isCompanionTarget, type CompanionTarget } from '../companionArtifacts'
+import { ensureLocalTarball, localTarballIfPresent, localCompanionBundlePath, isCompanionDevMode, tarballHash, releaseUrl, isCompanionTarget, type CompanionTarget } from '../companionArtifacts'
 import type { CompanionChannel, CompanionTransport } from './transport'
 
 const execFileP = promisify(execFile)
@@ -78,7 +78,7 @@ export class WslTransport implements CompanionTransport {
     const D = shq(installDir)
     if (isCompanionDevMode()) {
       return (await this.wslSh(
-        `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+        `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/pi/dist/cli.js && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
       )).stdout.includes('CATE_PROVISIONED')
     }
     const localTar = localTarballIfPresent(version, this.target as CompanionTarget)
@@ -140,7 +140,7 @@ export class WslTransport implements CompanionTransport {
    *  local companion.cjs keyed by its hash in `.cjs.ok`. Never in-distro pulls. */
   private async bootstrapDev(version: string, D: string): Promise<void> {
     const provisioned = (await this.wslSh(
-      `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+      `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/pi/dist/cli.js && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
     )).stdout.includes('CATE_PROVISIONED')
 
     if (!provisioned) await this.copyTarball(version, version)
@@ -196,31 +196,6 @@ export class WslTransport implements CompanionTransport {
     if (!extract.stdout.includes('CATE_EXTRACT_OK')) {
       throw new Error(`WSL extract failed: ${extract.stderr || extract.stdout}`)
     }
-  }
-
-  /**
-   * Air-gapped pi fallback (mirrors the /mnt companion-tarball copy). Copies the
-   * client-downloaded pi tarball into ~/.cate/pi/<piVersion>/pkg.tgz inside the
-   * distro so the daemon's re-invoked ensurePiOnHost extracts it. Idempotent.
-   * NOTE: not runtime-verified (needs a Windows host with WSL).
-   */
-  async pushPi(appVersion: string, piVersion: string): Promise<void> {
-    const { stdout: home } = await this.wsl(['sh', '-c', 'echo $HOME'])
-    const piDir = `${home.trim()}/.cate/pi/${piVersion}`
-    const D = shq(piDir)
-
-    const installed = await this.wslSh(`test -f ${D}/dist/cli.js && echo CATE_PI_OK`)
-    if (installed.stdout.includes('CATE_PI_OK')) return
-
-    const localTar = await ensureLocalPiTarball(appVersion, piVersion)
-    const { stdout: srcMnt } = await this.wsl(['wslpath', localTar])
-    const copied = await this.wslSh(
-      `mkdir -p ${D} && cp ${shq(srcMnt.trim())} ${D}/pkg.tgz && echo CATE_PI_PUSH_OK`,
-    )
-    if (!copied.stdout.includes('CATE_PI_PUSH_OK')) {
-      throw new Error(`WSL pi push failed: ${copied.stderr || copied.stdout}`)
-    }
-    log.info('[companion:wsl] copied pi tarball to %s (air-gapped fallback)', piDir)
   }
 
   async launch(): Promise<CompanionChannel> {

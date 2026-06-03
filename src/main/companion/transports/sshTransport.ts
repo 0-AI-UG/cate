@@ -21,7 +21,7 @@
 // =============================================================================
 
 import log from '../../logger'
-import { ensureLocalTarball, ensureLocalPiTarball, localTarballIfPresent, localCompanionBundlePath, isCompanionDevMode, tarballHash, releaseUrl, isCompanionTarget, type CompanionTarget } from '../companionArtifacts'
+import { ensureLocalTarball, localTarballIfPresent, localCompanionBundlePath, isCompanionDevMode, tarballHash, releaseUrl, isCompanionTarget, type CompanionTarget } from '../companionArtifacts'
 import { verifyAndPinHostKey, hostKeyId } from '../sshKnownHosts'
 import type { CompanionChannel, CompanionTransport } from './transport'
 
@@ -152,7 +152,7 @@ export class SshTransport implements CompanionTransport {
     const D = shq(installDir)
     if (isCompanionDevMode()) {
       return (await this.exec(
-        `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+        `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/pi/dist/cli.js && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
       )).stdout.includes('CATE_PROVISIONED')
     }
     const localTar = localTarballIfPresent(version, this.target as CompanionTarget)
@@ -222,7 +222,7 @@ export class SshTransport implements CompanionTransport {
    */
   private async bootstrapDev(version: string, D: string): Promise<void> {
     const provisioned = (await this.exec(
-      `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+      `test -x ${D}/runtime/bin/node && test -x ${D}/runtime/bin/rg && test -f ${D}/pi/dist/cli.js && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
     )).stdout.includes('CATE_PROVISIONED')
 
     // First connect on this host/version: lay down runtime + node_modules from the
@@ -278,30 +278,6 @@ export class SshTransport implements CompanionTransport {
     if (!extract.stdout.includes('CATE_EXTRACT_OK')) {
       throw new Error(`remote extract failed: ${extract.stderr || extract.stdout}`)
     }
-  }
-
-  /**
-   * Air-gapped pi fallback: download the pi tarball client-side and SFTP it to
-   * ~/.cate/pi/<piVersion>/pkg.tgz so the daemon's re-invoked ensurePiOnHost
-   * extracts it instead of downloading. Idempotent — no-op if pi is installed.
-   */
-  async pushPi(appVersion: string, piVersion: string): Promise<void> {
-    await this.ensureConnected()
-    const { stdout: home } = await this.exec('echo $HOME')
-    const piDir = `${home.trim()}/.cate/pi/${piVersion}`
-    const D = shq(piDir)
-
-    // Already installed on the host? Then there's nothing to push.
-    const installed = await this.exec(`test -f ${D}/dist/cli.js && echo CATE_PI_OK`)
-    if (installed.stdout.includes('CATE_PI_OK')) return
-
-    const localTar = await ensureLocalPiTarball(appVersion, piVersion)
-    await this.exec(`mkdir -p ${D}`)
-    // Push to pkg.tgz — the exact path ensurePi.piPushedTarballPath() expects.
-    await this.sftpPut(localTar, `${piDir}/pkg.tgz`)
-    log.info('[companion:ssh] pushed pi tarball to %s (air-gapped fallback)', piDir)
-    // Extraction happens daemon-side: agent.ensurePi() is retried after this,
-    // and ensurePi.doInstall extracts the pushed pkg.tgz.
   }
 
   private sftpPut(localPath: string, remotePath: string): Promise<void> {

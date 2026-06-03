@@ -98,16 +98,9 @@ function cachedPiTarball(piVersion: string): string {
   return path.join(cacheDir(), piTarballName(piVersion))
 }
 
-/** A local pi tarball if present (dev build / cache), without downloading. */
-export function localPiTarballIfPresent(piVersion: string): string | null {
-  const dev = devPiTarball(piVersion)
-  if (dev) return dev
-  const cached = cachedPiTarball(piVersion)
-  return existsSync(cached) ? cached : null
-}
-
-/** Local path to the pi tarball for the SFTP/copy fallback, downloading from
- *  the release if needed (dev build → cache → network). */
+/** Local path to the pi tarball (the local machine extracts it into userData for
+ *  its in-process agent), downloading if needed (dev build → cache → network).
+ *  Remote hosts get pi from the companion tarball, not this. */
 export async function ensureLocalPiTarball(appVersion: string, piVersion: string): Promise<string> {
   const dev = devPiTarball(piVersion)
   if (dev) return dev

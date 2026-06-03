@@ -249,20 +249,6 @@ export class CompanionManager {
     if (this.companions.has(id)) this.emitStatus(id, 'connected')
   }
 
-  /**
-   * Air-gapped pi fallback: push the pi tarball to a connected remote companion's
-   * host over its transport (SFTP for ssh, /mnt copy for wsl). Called by the
-   * agent layer when the daemon's own `agent.ensurePi` fails to download pi.
-   * After this resolves the caller re-invokes `agent.ensurePi` to extract it.
-   * Returns false if there's no connection or the transport can't push (local).
-   */
-  async pushPi(id: CompanionId, appVersion: string, piVersion: string): Promise<boolean> {
-    const conn = this.connections.get(id)
-    if (!conn || !conn.transport.pushPi) return false
-    await conn.transport.pushPi(appVersion, piVersion)
-    return true
-  }
-
   /** Tear down a remote connection and unregister it. */
   async disposeConnection(id: CompanionId): Promise<void> {
     const conn = this.connections.get(id)
