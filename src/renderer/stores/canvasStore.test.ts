@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { createCanvasStore, recommendPlacements, placementSizeVariants } from './canvasStore'
+import { createCanvasStore, recommendPlacements, placementSizeVariants, nudgeToFree } from './canvasStore'
 import { CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { CanvasNodeState, CanvasNodeId } from '../../shared/types'
 
@@ -330,6 +330,29 @@ describe('canvasStore.placementSizeVariants', () => {
   })
 })
 
+describe('canvasStore.nudgeToFree', () => {
+  const size = { width: 200, height: 150 }
+  const node = (id: string, x: number, y: number) => ({
+    id, panelId: `p-${id}`, origin: { x, y }, size, zOrder: 0, creationIndex: 0,
+  })
+  const toMap = (...ns: ReturnType<typeof node>[]) => Object.fromEntries(ns.map((n) => [n.id, n]))
+  const overlaps = (a: { origin: { x: number; y: number }; size: { width: number; height: number } }, p: { x: number; y: number }) =>
+    !(a.origin.x + a.size.width <= p.x || p.x + size.width <= a.origin.x ||
+      a.origin.y + a.size.height <= p.y || p.y + size.height <= a.origin.y)
+
+  it('returns the snapped point when it is already free', () => {
+    const p = nudgeToFree({}, size, { x: 305, y: 207 })
+    expect(p.x % CANVAS_GRID_SIZE === 0).toBe(true)
+    expect(p.y % CANVAS_GRID_SIZE === 0).toBe(true)
+  })
+
+  it('pushes off an overlapping node to a free spot', () => {
+    const nodes = toMap(node('a', 0, 0))
+    const p = nudgeToFree(nodes, size, { x: 10, y: 10 }) // would land on top of 'a'
+    expect(overlaps(nodes['a'], p)).toBe(false)
+  })
+})
+
 // =============================================================================
 // Interactive ghost placement — beginPlacement / commitPlacement / cancel.
 // =============================================================================
@@ -417,5 +440,28 @@ describe('canvasStore ghost placement actions', () => {
     const result = store.getState().commitPlacement(999)
     expect(result).toBeNull()
     expect(store.getState().pendingPlacement).not.toBeNull()
+  })
+
+  it('updatePlacementCursor previews a free spot under the cursor', () => {
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    store.getState().updatePlacementCursor({ x: 700, y: 500 })
+    const free = store.getState().pendingPlacement!.freeGhost!
+    expect(free).not.toBeNull()
+    // Centre of the free ghost tracks the cursor (within grid-snap tolerance).
+    expect(Math.abs(free.point.x + free.size.width / 2 - 700)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
+    expect(Math.abs(free.point.y + free.size.height / 2 - 500)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
+  })
+
+  it('commitFreePlacement creates a node centred on the click point and clears state', () => {
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    const nodeId = store.getState().commitFreePlacement({ x: 650, y: 450 })
+    expect(nodeId).toBeTruthy()
+    expect(store.getState().pendingPlacement).toBeNull()
+    const node = store.getState().nodes[nodeId!]
+    expect(node.panelId).toBe('p1')
+    expect(Math.abs(node.origin.x + node.size.width / 2 - 650)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
+    expect(store.getState().focusedNodeId).toBe(nodeId)
   })
 })

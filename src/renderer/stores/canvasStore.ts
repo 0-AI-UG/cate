@@ -65,6 +65,9 @@ export interface PendingPlacement {
   /** 3–5 recommended spots; candidates[0] is the best. User picks by click or number. */
   candidates: PlacementCandidate[]
   hoveredIndex: number | null
+  /** Escape hatch: when the cursor is over empty canvas (no recommendation fits),
+   *  this previews where a free "click-anywhere" placement would land. */
+  freeGhost: { point: Point; size: Size } | null
   /** Viewport before we zoomed out to show recommendations — restored on cancel/commit. */
   prevZoom: number
   prevOffset: Point
@@ -160,6 +163,11 @@ export interface CanvasStoreActions {
   ) => boolean
   /** Commit the pending placement at the given candidate index; returns the new node id. */
   commitPlacement: (index: number) => CanvasNodeId | null
+  /** Escape hatch: preview a free placement centred on `point` (canvas-space),
+   *  nudged to the nearest non-overlapping spot. No-op when idle. */
+  updatePlacementCursor: (point: Point) => void
+  /** Escape hatch: commit a free placement centred on `point` (click-anywhere). */
+  commitFreePlacement: (point: Point) => CanvasNodeId | null
   /** Cancel the pending placement and roll back the orphan panel record. */
   cancelPlacement: () => void
   /** Highlight a candidate ghost (null clears the hover). */
@@ -522,6 +530,35 @@ export function recommendPlacements(
     accepted.push({ point: p, size, rank: 0, onScreen: isOnScreen(p) })
   }
   return accepted
+}
+
+/**
+ * Snap a desired top-left to the nearest grid-aligned, overlap-free position by
+ * spiralling outward. Used by the free "click-anywhere" placement escape hatch
+ * so a manual drop lands cleanly instead of on top of an existing node.
+ */
+export function nudgeToFree(
+  nodes: Record<CanvasNodeId, CanvasNodeState>,
+  size: Size,
+  desired: Point,
+): Point {
+  const grid = CANVAS_GRID_SIZE
+  const snap = (v: number) => Math.round(v / grid) * grid
+  const start = { x: snap(desired.x), y: snap(desired.y) }
+  const nodeList = Object.values(nodes)
+  const free = (p: Point) =>
+    !nodeList.some((n) => rectsOverlap({ origin: n.origin, size: n.size }, { origin: p, size }))
+  if (free(start)) return start
+  for (let r = 1; r <= 25; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue // ring only
+        const p = { x: start.x + dx * grid * 2, y: start.y + dy * grid * 2 }
+        if (free(p)) return p
+      }
+    }
+  }
+  return start // give up — allow the overlap rather than refuse the placement
 }
 
 function rectsOverlap(a: Rect, b: Rect): boolean {
@@ -1066,6 +1103,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
         panelType,
         candidates,
         hoveredIndex: null,
+        freeGhost: null,
         prevZoom: state.zoomLevel,
         prevOffset: state.viewportOffset,
         onCancelled,
@@ -1085,6 +1123,30 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     // node at the chosen recommended spot.
     set({ pendingPlacement: null, zoomLevel: pending.prevZoom })
     const nodeId = get().addNode(pending.panelId, pending.panelType, candidate.point, candidate.size)
+    if (!nodeId) return null
+    get().focusAndCenter(nodeId)
+    return nodeId
+  },
+
+  updatePlacementCursor(point) {
+    const pending = get().pendingPlacement
+    if (!pending) return
+    const size = PANEL_DEFAULT_SIZES[pending.panelType]
+    const desired = { x: point.x - size.width / 2, y: point.y - size.height / 2 }
+    const p = nudgeToFree(get().nodes, size, desired)
+    const cur = pending.freeGhost
+    if (cur && cur.point.x === p.x && cur.point.y === p.y) return
+    set({ pendingPlacement: { ...pending, freeGhost: { point: p, size } } })
+  },
+
+  commitFreePlacement(point) {
+    const pending = get().pendingPlacement
+    if (!pending) return null
+    const size = PANEL_DEFAULT_SIZES[pending.panelType]
+    const desired = { x: point.x - size.width / 2, y: point.y - size.height / 2 }
+    const p = nudgeToFree(get().nodes, size, desired)
+    set({ pendingPlacement: null, zoomLevel: pending.prevZoom })
+    const nodeId = get().addNode(pending.panelId, pending.panelType, p, size)
     if (!nodeId) return null
     get().focusAndCenter(nodeId)
     return nodeId

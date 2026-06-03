@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Terminal,
   Globe,
@@ -24,7 +25,8 @@ import Minimap from './Minimap'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
 import { useShortcutStore } from '../stores/shortcutStore'
-import { displayString } from '../../shared/types'
+import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
+import { useAppStore } from '../stores/appStore'
 import { UpdateButton } from './UpdateButton'
 
 // The minimap pill can be docked in any of the four canvas corners. The choice
@@ -60,20 +62,110 @@ const ToolbarButton: React.FC<{
   title: string
   size?: 'panel' | 'zoom'
   active?: boolean
+  onMouseDown?: (e: React.MouseEvent) => void
   children: React.ReactNode
-}> = ({ onClick, title, size = 'panel', active = false, children }) => {
+}> = ({ onClick, title, size = 'panel', active = false, onMouseDown, children }) => {
   const sizeClass = size === 'panel' ? 'w-9 h-9' : 'w-8 h-8'
   const activeClass = active ? 'bg-hover-strong' : 'bg-transparent'
   return (
     <button
       type="button"
       onClick={onClick}
+      onMouseDown={onMouseDown}
       title={title}
       style={{ WebkitTapHighlightColor: 'transparent' }}
       className={`${sizeClass} ${activeClass} flex items-center justify-center rounded-full text-secondary hover:text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
     >
       {children}
     </button>
+  )
+}
+
+// Terminal button with drag-to-place: a plain click opens the recommendation
+// picker (onClick), while dragging onto the canvas spawns a ghost that follows
+// the cursor and drops a terminal at that exact spot (explicit position →
+// bypasses the picker). The cursor is treated as the new terminal's centre.
+const TerminalSpawnButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+  const canvasApi = useCanvasStoreApi()
+  const [ghost, setGhost] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const justDragged = useRef(false)
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    const startX = e.clientX
+    const startY = e.clientY
+    let moved = false
+
+    const onMove = (ev: MouseEvent) => {
+      if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return
+      moved = true
+      const zoom = canvasApi.getState().zoomLevel
+      const base = PANEL_DEFAULT_SIZES.terminal
+      const w = base.width * zoom
+      const h = base.height * zoom
+      setGhost({ x: ev.clientX - w / 2, y: ev.clientY - h / 2, w, h })
+    }
+    const onUp = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', onMove, true)
+      window.removeEventListener('mouseup', onUp, true)
+      setGhost(null)
+      if (!moved) return // a click — let onClick open the picker
+      justDragged.current = true // suppress the click that follows this drag
+      const target = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
+      const container = target?.closest('[data-canvas-container]') as HTMLElement | null
+      if (!container) return
+      const rect = container.getBoundingClientRect()
+      const center = canvasApi
+        .getState()
+        .viewToCanvas({ x: ev.clientX - rect.left, y: ev.clientY - rect.top })
+      const base = PANEL_DEFAULT_SIZES.terminal
+      const pos = { x: center.x - base.width / 2, y: center.y - base.height / 2 }
+      const wsId = useAppStore.getState().selectedWorkspaceId
+      if (wsId) useAppStore.getState().createTerminal(wsId, undefined, pos)
+    }
+    window.addEventListener('mousemove', onMove, true)
+    window.addEventListener('mouseup', onUp, true)
+  }
+
+  return (
+    <>
+      <ToolbarButton
+        onClick={() => {
+          if (justDragged.current) { justDragged.current = false; return }
+          onClick()
+        }}
+        onMouseDown={handleMouseDown}
+        title="Terminal — click for recommendations, or drag onto the canvas"
+        size="panel"
+      >
+        <Terminal size={18} />
+      </ToolbarButton>
+      {ghost &&
+        createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              left: ghost.x, top: ghost.y, width: ghost.w, height: ghost.h,
+              borderRadius: 8,
+              border: '1.5px solid rgba(74, 158, 255, 0.75)',
+              background: 'rgba(74, 158, 255, 0.1)',
+              boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+              pointerEvents: 'none',
+              zIndex: 2147483000,
+              overflow: 'hidden',
+              backdropFilter: 'blur(1px)',
+            }}
+          >
+            <div style={{ height: 22, background: 'rgba(74, 158, 255, 0.22)',
+              display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px',
+              color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: 600,
+              fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+              <Terminal size={12} /> Terminal
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   )
 }
 
@@ -274,9 +366,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             <div className="w-px h-5 bg-surface-5 mx-1" />
 
             {/* Basic panel buttons */}
-            <ToolbarButton onClick={onNewTerminal} title="Terminal" size="panel">
-              <Terminal size={18} />
-            </ToolbarButton>
+            <TerminalSpawnButton onClick={onNewTerminal} />
             <ToolbarButton onClick={onNewBrowser} title="Browser" size="panel">
               <Globe size={18} />
             </ToolbarButton>
