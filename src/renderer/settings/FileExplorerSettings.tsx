@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, X, ArrowCounterClockwise } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { DEFAULT_SETTINGS } from '../../shared/types'
+import { SearchableBlock } from './SettingsComponents'
 
 function sameAsDefault(list: string[]): boolean {
   const defaults = DEFAULT_SETTINGS.fileExclusions
@@ -48,6 +49,7 @@ export function FileExplorerSettings() {
   }
 
   return (
+    <SearchableBlock keywords="file explorer exclusions hidden ignore folders gitignore exclude">
     <div className="flex flex-col gap-1">
       <p className="text-xs text-muted mb-3">
         Folders and files with these exact names are hidden from the file
@@ -114,5 +116,6 @@ export function FileExplorerSettings() {
         </button>
       </div>
     </div>
+    </SearchableBlock>
   )
 }

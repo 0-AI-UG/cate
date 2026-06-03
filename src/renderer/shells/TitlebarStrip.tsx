@@ -1,12 +1,9 @@
 // =============================================================================
-// TitlebarStrip — themed drag region rendered at the top of the main window
-// when macOS native tabs are disabled (titleBarStyle: 'hiddenInset'). Reserves
-// space for the traffic lights and gives the window a drag region matched to
-// the app theme.
-//
-// Reads the boot-time nativeTabs value from the URL (set by main on window
-// create) instead of the live setting, so the strip always matches the actual
-// window chrome. Toggling the setting at runtime has no effect until restart.
+// TitlebarStrip — themed drag region rendered at the top of the main window on
+// macOS (titleBarStyle: 'hiddenInset'). Reserves space for the traffic lights
+// and gives the window a drag region matched to the app theme. macOS always
+// uses the hidden-inset title bar — the native bar can't be tinted to a theme
+// color, only dark/light.
 //
 // In native macOS fullscreen the traffic lights are hidden by the OS, so the
 // strip would otherwise show as a 28px dead zone at the top — subscribe to
@@ -16,7 +13,6 @@
 import { useEffect, useState } from 'react'
 
 const IS_MAC = navigator.userAgent.includes('Mac')
-const NATIVE_TABS_BOOT = new URLSearchParams(window.location.search).get('nativeTabsBoot') === '1'
 
 export default function TitlebarStrip() {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(
@@ -24,11 +20,11 @@ export default function TitlebarStrip() {
   )
 
   useEffect(() => {
-    if (!IS_MAC || NATIVE_TABS_BOOT) return
+    if (!IS_MAC) return
     return window.electronAPI.onFullscreenChange?.((value) => setIsFullscreen(value))
   }, [])
 
-  if (!IS_MAC || NATIVE_TABS_BOOT || isFullscreen) return null
+  if (!IS_MAC || isFullscreen) return null
 
   return (
     <div

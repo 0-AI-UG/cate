@@ -36,10 +36,12 @@
     "test:smoke:electron": "node scripts/run-electron-smoke.mjs",
     "preview": "electron-vite preview",
     "icons": "node scripts/generate-icons.js",
-    "package": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder",
-    "package:mac": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder --mac",
-    "package:win": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder --win",
-    "package:linux": "export SENTRY_DSN=\"${SENTRY_DSN:-https://any@analytics.cero-ai.com/1}\"; npm run icons && electron-vite build && electron-builder --linux"
+    "package": "node scripts/package.mjs",
+    "package:mac": "node scripts/package.mjs --mac",
+    "package:win": "node scripts/package.mjs --win",
+    "package:win:dir": "node scripts/package.mjs --win --dir -c.npmRebuild=false -c.win.signAndEditExecutable=false",
+    "package:win:unsigned": "node scripts/package.mjs --win -c.npmRebuild=false -c.win.signAndEditExecutable=false",
+    "package:linux": "node scripts/package.mjs --linux"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.75.4",
