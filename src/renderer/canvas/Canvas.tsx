@@ -126,19 +126,27 @@ const PlacementOverlay: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }>
   if (!pending) return null
   const r = canvasRef.current?.getBoundingClientRect()
   if (!r) return null
+  // The canvas spans full-width behind the absolute-overlay sidebars, so the
+  // VISIBLE canvas is the strip between them. Dim/center against that.
+  const sb = (side: 'left' | 'right') =>
+    (document.querySelector(`[data-app-sidebar="${side}"]`) as HTMLElement | null)?.getBoundingClientRect()
+  const left = sb('left'); const right = sb('right')
+  const visLeft = left && left.width > 0 ? left.right : r.left
+  const visRight = right && right.width > 0 ? right.left : r.right
+  const visWidth = Math.max(0, visRight - visLeft)
   const count = pending.candidates.length
   const armed = pending.freeArmed
   return createPortal(
     <>
-      {/* Dim everything except the strip containing the canvas + its tab bar. */}
+      {/* Dim everything except the visible canvas strip (+ its tab bar above). */}
       <div style={{
-        position: 'fixed', left: r.left, top: 0, width: r.width, height: r.bottom,
-        boxShadow: '0 0 0 9999px rgba(6, 9, 15, 0.55)',
+        position: 'fixed', left: visLeft, top: 0, width: visWidth, height: r.bottom,
+        boxShadow: '0 0 0 9999px rgba(6, 9, 15, 0.6)',
         pointerEvents: 'none', zIndex: 2147482000,
       }} />
-      {/* Canvas-centred hint pill. */}
+      {/* Hint pill centred on the visible canvas (matching the bottom toolbar). */}
       <div style={{
-        position: 'fixed', left: r.left + r.width / 2, top: r.top + 16, transform: 'translateX(-50%)',
+        position: 'fixed', left: visLeft + visWidth / 2, top: r.top + 16, transform: 'translateX(-50%)',
         zIndex: 2147483000, display: 'flex', alignItems: 'center', gap: 14,
         padding: '9px 9px 9px 16px', borderRadius: 999,
         background: 'rgba(20, 24, 32, 0.95)', border: '1px solid rgba(255,255,255,0.08)',
