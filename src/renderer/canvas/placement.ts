@@ -402,13 +402,26 @@ export function recommendPlacements(
     }
   }
 
-  // When focused, keep only spots within ~one panel-pitch of the node so recs stay
-  // clustered around it instead of scattering into far open space when it's boxed
-  // in. Fall back to the unfiltered set if nothing close survives.
+  // When focused, keep only the connected cluster of spots that touches the node:
+  // seed with spots adjacent to the node, then grow through spots adjacent to each
+  // other (within ~one gap). A spot a neighbour window sits in front of — a far
+  // column hugging some OTHER node — never chains back, so it's dropped no matter
+  // how it ranks. This is what kills the "giant gap" floaters.
   if (focusedOnScreen) {
-    const limit = Math.max(pitchX, pitchY)
-    const near = raw.filter((r) => rectGap({ origin: r.point, size: r.size }, { origin: ref.origin, size: ref.size }) <= limit)
-    if (near.length > 0) raw = near
+    const adj = gap * 1.6 // grid-adjacent ghosts sit one `gap` apart (diagonal ≈ gap·√2)
+    const refRect: Rect = { origin: ref.origin, size: ref.size }
+    const rectOf = (r: Raw): Rect => ({ origin: r.point, size: r.size })
+    const cluster: Raw[] = []
+    const pending = raw.filter((r) => rectGap(rectOf(r), refRect) <= adj)
+    const rest = raw.filter((r) => !pending.includes(r))
+    while (pending.length > 0) {
+      const r = pending.pop()!
+      cluster.push(r)
+      for (let i = rest.length - 1; i >= 0; i--) {
+        if (rectGap(rectOf(rest[i]), rectOf(r)) <= adj) pending.push(rest.splice(i, 1)[0])
+      }
+    }
+    if (cluster.length > 0) raw = cluster
   }
 
   return finalize(raw, rankAt)

@@ -494,6 +494,18 @@ describe('canvasStore.recommendPlacements', () => {
     expect(rectsOverlap(rectOf(beside!), { origin: a.origin, size: a.size })).toBe(false)
   })
 
+  it('CONNECTED: no recommendation lands past a neighbour blocking the node', () => {
+    // A neighbour directly to the right blocks that side; the free space far past
+    // it must NOT be recommended — recs form one cluster touching the node.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 0.5, containerSize: { width: 2400, height: 1800 } }
+    const foc = node('foc', 1000, 1000, 640, 400, 9)
+    const blocker = node('r', 1680, 1000, 640, 400, 1)
+    const cands = recommendPlacements(toMap(foc, blocker), 'foc', 'terminal', VP, null)
+    const blockerRight = blocker.origin.x + blocker.size.width
+    expect(cands.length).toBeGreaterThanOrEqual(1)
+    cands.forEach((c) => expect(c.point.x).toBeLessThan(blockerRight))
+  })
+
   it('NO GIANT GAPS: focused recommendations stay clustered near the node', () => {
     // Box the focused node tightly on three sides, leaving far-open space. Recs
     // must hug the node, not scatter into the distance to fill the count.
