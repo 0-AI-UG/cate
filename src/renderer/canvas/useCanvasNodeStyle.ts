@@ -14,6 +14,10 @@ const SHADOW_UNFOCUSED = `0 12px 36px -14px rgba(0,0,0,0.28), 0 4px 10px -5px rg
 const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 0 18px rgba(255,255,255,0.015)`
 // Active/focused pane: a very faint bright (white) halo — no blue tint.
 const FOCUS_GLOW = `0 0 20px 1px rgba(255,255,255,0.025), 0 0 8px rgba(255,255,255,0.02)`
+// Selected-but-not-activated pane (e.g. jumped to via Cmd+Arrow): a crisp
+// accent outline ring so it's clearly "this is the current node" without the
+// active-pane halo. Distinct from the focus glow above.
+const SELECTION_RING = `0 0 0 2px var(--focus-blue), 0 0 14px -2px var(--focus-blue)`
 
 function boxShadow(hovered: boolean): string {
   if (hovered) return SHADOW_HOVERED
@@ -116,7 +120,8 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       height: node.size.height,
       zIndex: 999,
       borderRadius: CORNER_RADIUS,
-      boxShadow: FOCUS_GLOW,
+      // Focused/active → soft halo; selected-only (keyboard jump) → outline ring.
+      boxShadow: isFocused ? FOCUS_GLOW : SELECTION_RING,
       pointerEvents: 'none',
       transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
       opacity: isEntering || isExiting ? 0 : 1,

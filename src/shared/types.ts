@@ -446,6 +446,10 @@ export type ShortcutAction =
   | 'navigateDown'
   | 'navigateLeft'
   | 'navigateRight'
+  | 'panUp'
+  | 'panDown'
+  | 'panLeft'
+  | 'panRight'
 
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
@@ -486,6 +490,10 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'navigateDown',
   'navigateLeft',
   'navigateRight',
+  'panUp',
+  'panDown',
+  'panLeft',
+  'panRight',
 ]
 
 export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
@@ -513,10 +521,14 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   deleteNode: 'Delete Focused Panel',
   toolSelect: 'Select Tool',
   toolHand: 'Hand Tool',
-  navigateUp: 'Navigate Up',
-  navigateDown: 'Navigate Down',
-  navigateLeft: 'Navigate Left',
-  navigateRight: 'Navigate Right',
+  navigateUp: 'Navigate to Panel Above',
+  navigateDown: 'Navigate to Panel Below',
+  navigateLeft: 'Navigate to Panel Left',
+  navigateRight: 'Navigate to Panel Right',
+  panUp: 'Pan Canvas Up',
+  panDown: 'Pan Canvas Down',
+  panLeft: 'Pan Canvas Left',
+  panRight: 'Pan Canvas Right',
 }
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
@@ -544,10 +556,14 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   deleteNode: storedShortcut('Backspace', { command: true }),
   toolSelect: storedShortcut('v'),
   toolHand: storedShortcut('h'),
-  navigateUp: storedShortcut('↑'),
-  navigateDown: storedShortcut('↓'),
-  navigateLeft: storedShortcut('←'),
-  navigateRight: storedShortcut('→'),
+  navigateUp: storedShortcut('↑', { command: true }),
+  navigateDown: storedShortcut('↓', { command: true }),
+  navigateLeft: storedShortcut('←', { command: true }),
+  navigateRight: storedShortcut('→', { command: true }),
+  panUp: storedShortcut('↑', { shift: true }),
+  panDown: storedShortcut('↓', { shift: true }),
+  panLeft: storedShortcut('←', { shift: true }),
+  panRight: storedShortcut('→', { shift: true }),
 }
 
 // -----------------------------------------------------------------------------
