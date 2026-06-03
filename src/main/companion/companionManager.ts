@@ -8,7 +8,7 @@
 // =============================================================================
 
 import log from '../logger'
-import { LOCAL_COMPANION_ID, type CompanionId } from './locator'
+import { LOCAL_COMPANION_ID, parseLocator, type CompanionId } from './locator'
 import type { Companion } from './types'
 import { CompanionRpcClient } from './rpcClient'
 import { RemoteCompanion } from './RemoteCompanion'
@@ -338,3 +338,26 @@ export class CompanionManager {
 
 /** Process-wide singleton used by the IPC handlers. */
 export const companions = new CompanionManager()
+
+/**
+ * Forward a persistent per-window file grant to the companion that OWNS the
+ * granted path. The main process keeps its own grant maps (for its own path
+ * checks), but the owning companion (the LOCAL daemon, or a remote/WSL one) runs
+ * its own authoritative check against its OWN grant map, so a Save-As / restored
+ * grant must be mirrored there too. Decodes the locator's host-absolute path and
+ * forwards only when the companion is registered. Best-effort: a rejected RPC
+ * never breaks the dialog / restore flow. Mirrors workspaceManager.forwardAllowedRoot.
+ */
+export function forwardFileGrant(rawPath: string, ownerWindowId: number): void {
+  const { companionId, path } = parseLocator(rawPath)
+  if (!path || !companions.has(companionId)) return
+  companions.resolve(companionId).grantFileAccess(path, ownerWindowId).catch(() => { /* best-effort */ })
+}
+
+/** Forward a one-shot scoped write allowance to the owning companion. See
+ *  forwardFileGrant for the rationale; same best-effort, decode-first contract. */
+export function forwardScopedWriteAllowance(rawPath: string, ownerWindowId: number): void {
+  const { companionId, path } = parseLocator(rawPath)
+  if (!path || !companions.has(companionId)) return
+  companions.resolve(companionId).registerScopedWriteAllowance(path, ownerWindowId).catch(() => { /* best-effort */ })
+}

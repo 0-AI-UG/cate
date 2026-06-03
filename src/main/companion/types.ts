@@ -365,4 +365,11 @@ export interface Companion {
    *  daemon's authoritative path checks allow them. */
   addAllowedRoot(root: string): Promise<void>
   removeAllowedRoot(root: string): Promise<void>
+  /** Forward a persistent per-window file grant (Save-As / open dialogs /
+   *  restored grants) to this companion, so its authoritative path checks allow
+   *  the granted out-of-root file. Mirrors pathValidation.grantFileAccess. */
+  grantFileAccess(filePath: string, ownerWindowId: number): Promise<void>
+  /** Forward a one-shot scoped write allowance to this companion. Mirrors
+   *  pathValidation.registerScopedWriteAllowance. */
+  registerScopedWriteAllowance(safePath: string, ownerWindowId: number): Promise<void>
 }

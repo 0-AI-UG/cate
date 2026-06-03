@@ -22,6 +22,8 @@ import {
   validateCwd,
   addAllowedRoot as addRoot,
   removeAllowedRoot as removeRoot,
+  grantFileAccess as grantFile,
+  registerScopedWriteAllowance as registerWriteAllowance,
 } from '../../main/ipc/pathValidation'
 import type { Companion, FileHost } from '../../main/companion/types'
 
@@ -92,7 +94,14 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
       // watch returns its unsub synchronously; use the cheap lexical check.
       // Map chokidar's events to the real change type so the client can prune
       // removed entries (not just re-read on every event).
-      const w = watch(validatePath(prefix), { ignoreInitial: true })
+      // Mirror the in-process createWatcher: hidden dotfiles + the daemon's
+      // exclusionSet (two globs per name) and a depth cap, so the watcher never
+      // floods with node_modules/.git events. Electron-free (no getSettingSync).
+      const ignored: Array<RegExp | string> = [
+        /(^|[/\\])\../, // hidden files
+        ...[...exclusionSet].flatMap((name) => [`**/${name}`, `**/${name}/**`]),
+      ]
+      const w = watch(validatePath(prefix), { ignoreInitial: true, depth: 1, ignored })
       w.on('add', (fp) => onChange(fp, 'create'))
       w.on('change', (fp) => onChange(fp, 'update'))
       w.on('unlink', (fp) => onChange(fp, 'delete'))
@@ -169,6 +178,10 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
     validateCwd,
     addAllowedRoot: async (root) => { addRoot(root) },
     removeAllowedRoot: async (root) => { removeRoot(root) },
+    // pathValidation's functions take (windowId, path); the Companion contract
+    // (and the wire) is (path, windowId) — swap here.
+    grantFileAccess: async (filePath, ownerWindowId) => { await grantFile(ownerWindowId, filePath) },
+    registerScopedWriteAllowance: async (safePath, ownerWindowId) => { await registerWriteAllowance(ownerWindowId, safePath) },
   }
   return { companion, process: proc }
 }

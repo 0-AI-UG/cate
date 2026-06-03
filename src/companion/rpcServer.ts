@@ -115,6 +115,8 @@ export class RpcServer {
       case Methods.validateCwd: return api.validateCwd(s(0), n(1))
       case Methods.addAllowedRoot: return api.addAllowedRoot(s(0))
       case Methods.removeAllowedRoot: return api.removeAllowedRoot(s(0))
+      case Methods.grantFileAccess: return api.grantFileAccess(s(0), n(1) as number)
+      case Methods.registerScopedWriteAllowance: return api.registerScopedWriteAllowance(s(0), n(1) as number)
 
       // --- file ---
       case Methods.fileReadFile: return api.file.readFile(s(0))

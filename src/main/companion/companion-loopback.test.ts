@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { addAllowedRoot, removeAllowedRoot, getAllowedRoots } from '../ipc/pathValidation'
+import { addAllowedRoot, removeAllowedRoot, getAllowedRoots, clearFileGrantsForWindow } from '../ipc/pathValidation'
 import { readDir, searchFiles } from '../ipc/filesystem'
 import { RpcServer } from '../../companion/rpcServer'
 import { COMPANION_PROTOCOL_VERSION } from '../../companion/protocol'
@@ -143,6 +143,26 @@ describe('companion loopback (real daemon capabilities over the wire)', () => {
     expect(await fs.readFile(target, 'utf-8')).toBe('hello from remote\n')
   })
 
+  test('grantFileAccess round-trips so the daemon allows an out-of-root file', async () => {
+    const { remote } = loopback(daemonApi())
+    // A file OUTSIDE any allowed root (not under rootDir, not under tmpdir): the
+    // daemon's strict validation must reject it until the grant is forwarded.
+    const outsideDir = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-grant-')))
+    const outsideFile = path.join(outsideDir, 'granted.txt')
+    await fs.writeFile(outsideFile, 'secret\n')
+    try {
+      await expect(remote.validatePathStrict(outsideFile, 1)).rejects.toThrow(/Access denied/)
+      await remote.grantFileAccess(outsideFile, 1)
+      // Same window id now passes the daemon's authoritative strict check.
+      await expect(remote.validatePathStrict(outsideFile, 1)).resolves.toBe(outsideFile)
+      // A different window without the grant is still denied.
+      await expect(remote.validatePathStrict(outsideFile, 2)).rejects.toThrow(/Access denied/)
+    } finally {
+      clearFileGrantsForWindow(1)
+      await fs.rm(outsideDir, { recursive: true, force: true })
+    }
+  })
+
   test('addAllowedRoot / removeAllowedRoot round-trip over the wire', async () => {
     const { remote } = loopback(daemonApi())
     const extra = path.resolve(rootDir, 'extra-root')
@@ -170,6 +190,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       validateCwd: (p: string) => p,
       addAllowedRoot: async () => {},
       removeAllowedRoot: async () => {},
+      grantFileAccess: async () => {},
+      registerScopedWriteAllowance: async () => {},
     } as Companion
     const { remote } = loopback(api)
     await expect(remote.file.readFile('/x')).rejects.toThrow('boom on daemon')
@@ -194,6 +216,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       validateCwd: (p: string) => p,
       addAllowedRoot: async () => {},
       removeAllowedRoot: async () => {},
+      grantFileAccess: async () => {},
+      registerScopedWriteAllowance: async () => {},
     } as Companion
 
     const { remote } = loopback(api)
@@ -231,6 +255,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       validateCwd: (p: string) => p,
       addAllowedRoot: async () => {},
       removeAllowedRoot: async () => {},
+      grantFileAccess: async () => {},
+      registerScopedWriteAllowance: async () => {},
     } as Companion
 
     const { remote } = loopback(api)
@@ -271,5 +297,7 @@ function localCompanionLike(): Companion {
     validateCwd: (p) => p,
     addAllowedRoot: async () => {},
     removeAllowedRoot: async () => {},
+    grantFileAccess: async () => {},
+    registerScopedWriteAllowance: async () => {},
   }
 }

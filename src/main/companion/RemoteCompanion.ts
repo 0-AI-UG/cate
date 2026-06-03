@@ -255,4 +255,12 @@ export class RemoteCompanion implements Companion {
   removeAllowedRoot(root: string): Promise<void> {
     return this.rpc.call(Methods.removeAllowedRoot, [root]) as Promise<void>
   }
+
+  grantFileAccess(filePath: string, ownerWindowId: number): Promise<void> {
+    return this.rpc.call(Methods.grantFileAccess, [filePath, ownerWindowId]) as Promise<void>
+  }
+
+  registerScopedWriteAllowance(safePath: string, ownerWindowId: number): Promise<void> {
+    return this.rpc.call(Methods.registerScopedWriteAllowance, [safePath, ownerWindowId]) as Promise<void>
+  }
 }

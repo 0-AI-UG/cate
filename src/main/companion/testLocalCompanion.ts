@@ -32,6 +32,8 @@ import {
   validateCwd,
   addAllowedRoot as addRoot,
   removeAllowedRoot as removeRoot,
+  grantFileAccess as grantFile,
+  registerScopedWriteAllowance as registerWriteAllowance,
 } from '../ipc/pathValidation'
 import { createVcsCapability } from '../../companion/capabilities/vcs'
 import { getShellEnv } from '../shellEnv'
@@ -73,6 +75,8 @@ export function makeTestLocalCompanion(): Companion {
     validateCwd: (cwd, winId) => validateCwd(cwd, winId),
     addAllowedRoot: async (root) => { addRoot(root) },
     removeAllowedRoot: async (root) => { removeRoot(root) },
+    grantFileAccess: async (filePath, ownerWindowId) => { await grantFile(ownerWindowId, filePath) },
+    registerScopedWriteAllowance: async (safePath, ownerWindowId) => { await registerWriteAllowance(ownerWindowId, safePath) },
   }
 }
 

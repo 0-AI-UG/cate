@@ -15,7 +15,7 @@ import {
   SESSION_FLUSH_SAVE_DONE,
 } from '../shared/ipc-channels'
 import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals } from './ipc/terminal'
-import { companions } from './companion/companionManager'
+import { companions, forwardFileGrant } from './companion/companionManager'
 import { registerCompanionHandlers } from './ipc/companion'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
@@ -236,6 +236,9 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
         // exact path; it does not widen access elsewhere.
         try {
           await grantFileAccess(windowId, filePath)
+          // Mirror the grant into the owning companion's authoritative map so a
+          // restored out-of-root editor can read/save against the daemon.
+          forwardFileGrant(filePath, windowId)
         } catch (err) {
           log.warn('[grants] Failed to grant %s to window %d: %s', filePath, windowId, err)
         }
@@ -554,6 +557,9 @@ function registerWindowAndDialogHandlers(): void {
     if (win) {
       try {
         const safePath = await grantFileAccess(win.id, result.filePath)
+        // Mirror the grant into the owning companion (the LOCAL daemon owns this
+        // host-absolute path) so the initial write + later reloads validate there.
+        forwardFileGrant(safePath, win.id)
         // Persist the approval so future windows (and future app launches)
         // can read+write this file via createWindow's grantsReady pass.
         // Critically there is NO renderer-facing IPC to add paths here —
@@ -573,6 +579,7 @@ function registerWindowAndDialogHandlers(): void {
           if (other.id === win.id || other.isDestroyed()) continue
           try {
             await grantFileAccess(other.id, safePath)
+            forwardFileGrant(safePath, other.id)
           } catch (err) {
             log.warn('[DIALOG_SAVE_FILE] Failed to grant to window %d: %s', other.id, err)
           }
