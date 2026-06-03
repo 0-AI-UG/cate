@@ -65,6 +65,16 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      # The local workspace runs the companion daemon tarball, shipped inside the
+      # installer (electron-builder.yml extraResources → companion-host.tgz). Build
+      # this runner's host-target tarball and stage it under the fixed name so the
+      # extraResource exists. Each runner builds only its own host target.
+      - name: Build + stage host companion tarball
+        shell: bash
+        run: |
+          node scripts/build-companion-tarball.mjs
+          cp dist-companion/cate-companion-*.tgz dist-companion/companion-host.tgz
+
       - name: Package (macOS)
         if: matrix.platform == 'mac'
         # Raise the file-descriptor limit: codesign walks every unpacked file
@@ -135,6 +145,8 @@ jobs:
             target: darwin-arm64
           - os: macos-13
             target: darwin-x64
+          - os: windows-latest
+            target: win32-x64
 
     runs-on: ${{ matrix.os }}
 

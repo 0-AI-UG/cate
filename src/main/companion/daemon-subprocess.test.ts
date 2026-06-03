@@ -200,6 +200,37 @@ describe('cate-companion daemon (real subprocess)', () => {
     30_000,
   )
 
+  // Cross-platform PTY smoke (NOT win32-skipped) — the only PTY test that runs on
+  // Windows CI, so it's the "conpty loads + streams under the daemon" check. Uses
+  // the daemon's resolved default shell (cmd.exe on win, sh on posix).
+  test('spawns a pty and streams I/O (conpty on Windows)', async () => {
+    mgr = new CompanionManager()
+    const transport = new LocalSubprocessTransport({
+      nodePath: process.execPath,
+      bundlePath,
+      root: workspace,
+      id: 'srv_pty',
+    })
+    const companion = await mgr.connect('srv_pty', transport)
+
+    let output = ''
+    const sawMarker = new Promise<void>((resolve) => {
+      void companion.process.create(
+        { cols: 80, rows: 24, cwd: workspace },
+        (_id, data) => { output += data; if (output.includes('cate-pty-ok')) resolve() },
+        () => { /* exit */ },
+      ).then((h) => {
+        expect(h.pid).toBeGreaterThan(0)
+        companion.process.write(h.id, 'echo cate-pty-ok\n')
+      })
+    })
+    await Promise.race([
+      sawMarker,
+      new Promise((_r, reject) =>
+        setTimeout(() => reject(new Error(`no pty output; got: ${output.slice(0, 200)}`)), 15000)),
+    ])
+  }, 30_000)
+
   test('streams remote filesystem changes over the wire', async () => {
     mgr = new CompanionManager()
     const transport = new LocalSubprocessTransport({
