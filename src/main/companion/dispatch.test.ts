@@ -28,6 +28,8 @@ function makeStub(id: string, calls: string[]): Companion {
     validatePathStrict: async (p) => p,
     validatePathForCreation: async (p) => p,
     validateCwd: (p) => p,
+    addAllowedRoot: async () => {},
+    removeAllowedRoot: async () => {},
   }
 }
 

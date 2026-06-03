@@ -20,6 +20,8 @@ import {
   validatePathStrict,
   validatePathForCreation,
   validateCwd,
+  addAllowedRoot as addRoot,
+  removeAllowedRoot as removeRoot,
 } from '../../main/ipc/pathValidation'
 import type { Companion, FileHost, ProcessHost } from '../../main/companion/types'
 
@@ -131,5 +133,7 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
     validatePathStrict,
     validatePathForCreation,
     validateCwd,
+    addAllowedRoot: async (root) => { addRoot(root) },
+    removeAllowedRoot: async (root) => { removeRoot(root) },
   }
 }

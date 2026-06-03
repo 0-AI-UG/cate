@@ -247,4 +247,12 @@ export class RemoteCompanion implements Companion {
     // Authoritative validation happens on the daemon inside each vcs op.
     return cwd
   }
+
+  addAllowedRoot(root: string): Promise<void> {
+    return this.rpc.call(Methods.addAllowedRoot, [root]) as Promise<void>
+  }
+
+  removeAllowedRoot(root: string): Promise<void> {
+    return this.rpc.call(Methods.removeAllowedRoot, [root]) as Promise<void>
+  }
 }

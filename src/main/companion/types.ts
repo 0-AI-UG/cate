@@ -360,4 +360,9 @@ export interface Companion {
   validatePathForCreation(filePath: string, ownerWindowId?: number): Promise<string>
   /** Directory validation for cwd parameters. */
   validateCwd(cwd: string, ownerWindowId?: number): string
+  /** Add/remove a path from this companion's allowed-roots set. For the local
+   *  daemon (and remote daemons), workspace roots are forwarded here so the
+   *  daemon's authoritative path checks allow them. */
+  addAllowedRoot(root: string): Promise<void>
+  removeAllowedRoot(root: string): Promise<void>
 }

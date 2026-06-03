@@ -19,7 +19,8 @@ import { broadcastToAll, windowFromEvent } from './windowRegistry'
 import { addAllowedRoot, removeAllowedRoot } from './ipc/pathValidation'
 import { resolveTrustedWorkspaceRoot } from './workspaceRoots'
 import { acquireProjectLock, releaseProjectLock } from './projectLock'
-import { isLocalLocator } from './companion/locator'
+import { isLocalLocator, parseLocator } from './companion/locator'
+import { companions } from './companion/companionManager'
 import type { CompanionConnection } from '../shared/types'
 
 // In-memory workspace list — authoritative source of truth
@@ -75,6 +76,23 @@ function dropProjectLock(rootPath: string, exceptId?: string): void {
 }
 
 // -----------------------------------------------------------------------------
+// Companion root forwarding — the main process keeps its own allowed-root set
+// (file grants), but the companion that OWNS this workspace runs its own
+// authoritative path check. When local runs as a daemon (or the root lives on a
+// remote/WSL companion), forward the root change there too. Best-effort: a
+// not-yet-connected companion is skipped, and a rejected RPC never breaks
+// workspace open/close.
+// -----------------------------------------------------------------------------
+
+function forwardAllowedRoot(rootPath: string, op: 'add' | 'remove'): void {
+  const { companionId, path } = parseLocator(rootPath)
+  if (!path || !companions.has(companionId)) return
+  const companion = companions.resolve(companionId)
+  const result = op === 'add' ? companion.addAllowedRoot(path) : companion.removeAllowedRoot(path)
+  result.catch(() => { /* best-effort: never break workspace lifecycle */ })
+}
+
+// -----------------------------------------------------------------------------
 // Public API (called by IPC handlers)
 // -----------------------------------------------------------------------------
 
@@ -124,6 +142,7 @@ async function createWorkspace(
   log.info('Workspace created: %s (%s%s)', info.id, info.rootPath || 'no root', remote ? ', remote' : '')
   if (info.rootPath && !remote) {
     addAllowedRoot(info.rootPath)
+    forwardAllowedRoot(info.rootPath, 'add')
     claimProjectLock(info.rootPath, info.name)
   }
   return { ok: true, workspace: info }
@@ -178,12 +197,14 @@ async function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 
   const nextLocal = !!nextRootPath && isLocalLocator(nextRootPath)
   if (existingLocal && rootChanged) {
     removeAllowedRoot(existing.rootPath)
+    forwardAllowedRoot(existing.rootPath, 'remove')
   }
 
   const updated = { ...existing, ...changes, rootPath: nextRootPath }
   workspaces.set(id, updated)
   if (nextLocal) {
     addAllowedRoot(updated.rootPath)
+    forwardAllowedRoot(updated.rootPath, 'add')
   }
   if (rootChanged) {
     // Release the lock on the old root (local only) and claim the new one.
@@ -202,6 +223,7 @@ function removeWorkspace(id: string): boolean {
   const removed = workspaces.delete(id)
   if (existing?.rootPath && isLocalLocator(existing.rootPath)) {
     removeAllowedRoot(existing.rootPath)
+    forwardAllowedRoot(existing.rootPath, 'remove')
     // Delete first so rootInUse() doesn't count the workspace we just removed.
     dropProjectLock(existing.rootPath, id)
   }

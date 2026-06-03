@@ -114,6 +114,8 @@ export class RpcServer {
       case Methods.validatePathStrict: return api.validatePathStrict(s(0), n(1))
       case Methods.validatePathForCreation: return api.validatePathForCreation(s(0), n(1))
       case Methods.validateCwd: return api.validateCwd(s(0), n(1))
+      case Methods.addAllowedRoot: return api.addAllowedRoot(s(0))
+      case Methods.removeAllowedRoot: return api.removeAllowedRoot(s(0))
 
       // --- file ---
       case Methods.fileReadFile: return api.file.readFile(s(0))

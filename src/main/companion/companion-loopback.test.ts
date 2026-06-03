@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { addAllowedRoot, removeAllowedRoot } from '../ipc/pathValidation'
+import { addAllowedRoot, removeAllowedRoot, getAllowedRoots } from '../ipc/pathValidation'
 import { readDir, searchFiles } from '../ipc/filesystem'
 import { RpcServer } from '../../companion/rpcServer'
 import { COMPANION_PROTOCOL_VERSION } from '../../companion/protocol'
@@ -134,6 +134,18 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
     await remote.file.writeFile(safe, 'hello from remote\n')
     expect(await fs.readFile(target, 'utf-8')).toBe('hello from remote\n')
   })
+
+  test('addAllowedRoot / removeAllowedRoot round-trip over the wire', async () => {
+    const { remote } = loopback(localCompanion)
+    const extra = path.resolve(rootDir, 'extra-root')
+
+    expect(getAllowedRoots().has(extra)).toBe(false)
+    await remote.addAllowedRoot(extra)
+    expect(getAllowedRoots().has(extra)).toBe(true)
+
+    await remote.removeAllowedRoot(extra)
+    expect(getAllowedRoots().has(extra)).toBe(false)
+  })
 })
 
 describe('companion loopback (protocol behaviors via a stub)', () => {
@@ -141,12 +153,15 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
     const api = {
       id: 'srv_test',
       process: stubProcess,
+      agent: stubAgent,
       file: { readFile: async () => { throw new Error('boom on daemon') } } as unknown as FileHost,
       vcs: {} as VcsHost,
       validatePath: (p: string) => p,
       validatePathStrict: async (p: string) => p,
       validatePathForCreation: async (p: string) => p,
       validateCwd: (p: string) => p,
+      addAllowedRoot: async () => {},
+      removeAllowedRoot: async () => {},
     } as Companion
     const { remote } = loopback(api)
     await expect(remote.file.readFile('/x')).rejects.toThrow('boom on daemon')
@@ -157,6 +172,7 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
     const api = {
       id: 'srv_test',
       process: stubProcess,
+      agent: stubAgent,
       file: {
         watch: (_prefix: string, onChange: (p: string) => void) => {
           emit = onChange
@@ -168,6 +184,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       validatePathStrict: async (p: string) => p,
       validatePathForCreation: async (p: string) => p,
       validateCwd: (p: string) => p,
+      addAllowedRoot: async () => {},
+      removeAllowedRoot: async () => {},
     } as Companion
 
     const { remote } = loopback(api)
@@ -191,6 +209,7 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
     const api = {
       id: 'srv_test',
       process: stubProcess,
+      agent: stubAgent,
       file: {
         searchContent: (_root: string, _opts: unknown, cbs: typeof callbacks) => {
           callbacks = cbs
@@ -202,6 +221,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       validatePathStrict: async (p: string) => p,
       validatePathForCreation: async (p: string) => p,
       validateCwd: (p: string) => p,
+      addAllowedRoot: async () => {},
+      removeAllowedRoot: async () => {},
     } as Companion
 
     const { remote } = loopback(api)
@@ -240,5 +261,7 @@ function localCompanionLike(): Companion {
     validatePathStrict: async (p) => p,
     validatePathForCreation: async (p) => p,
     validateCwd: (p) => p,
+    addAllowedRoot: async () => {},
+    removeAllowedRoot: async () => {},
   }
 }

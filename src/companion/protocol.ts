@@ -67,6 +67,8 @@ export const Methods = {
   validatePathStrict: 'validatePathStrict',
   validatePathForCreation: 'validatePathForCreation',
   validateCwd: 'validateCwd',
+  addAllowedRoot: 'addAllowedRoot',
+  removeAllowedRoot: 'removeAllowedRoot',
 
   fileReadFile: 'file.readFile',
   fileReadBinary: 'file.readBinary', // result is base64

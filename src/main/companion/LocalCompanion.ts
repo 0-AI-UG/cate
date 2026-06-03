@@ -34,6 +34,8 @@ import {
   validatePathStrict,
   validatePathForCreation,
   validateCwd,
+  addAllowedRoot as addRoot,
+  removeAllowedRoot as removeRoot,
 } from '../ipc/pathValidation'
 import { createVcsCapability } from '../../companion/capabilities/vcs'
 import { getShellEnv } from '../shellEnv'
@@ -75,4 +77,6 @@ export const localCompanion: Companion = {
   validatePathStrict: (p, winId) => validatePathStrict(p, winId),
   validatePathForCreation: (p, winId) => validatePathForCreation(p, winId),
   validateCwd: (cwd, winId) => validateCwd(cwd, winId),
+  addAllowedRoot: async (root) => { addRoot(root) },
+  removeAllowedRoot: async (root) => { removeRoot(root) },
 }
