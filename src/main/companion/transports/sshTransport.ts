@@ -22,6 +22,7 @@
 
 import log from '../../logger'
 import { ensureLocalTarball, ensureLocalPiTarball, localTarballIfPresent, localCompanionBundlePath, isCompanionDevMode, tarballHash, releaseUrl, isCompanionTarget, type CompanionTarget } from '../companionArtifacts'
+import { verifyAndPinHostKey, hostKeyId } from '../sshKnownHosts'
 import type { CompanionChannel, CompanionTransport } from './transport'
 
 export interface SshOptions {
@@ -35,6 +36,10 @@ export interface SshOptions {
   passphrase?: string
   agentSock?: string
   exclusions?: string[]
+  /** Host-key policy (TOFU pin). Injected for tests; defaults to the on-disk
+   *  known-hosts store keyed by host:port. Receives ssh2's sha256 fingerprint;
+   *  must throw to reject the connection (host-key mismatch / MITM). */
+  verifyHostKey?: (fingerprint: string) => Promise<void>
 }
 
 async function loadSsh2(): Promise<unknown> {
@@ -51,14 +56,23 @@ export class SshTransport implements CompanionTransport {
 
   constructor(private readonly opts: SshOptions) {}
 
+  private verifyHostKey(fingerprint: string): Promise<void> {
+    if (this.opts.verifyHostKey) return this.opts.verifyHostKey(fingerprint)
+    return verifyAndPinHostKey(hostKeyId(this.opts.host, this.opts.port), fingerprint)
+  }
+
   private async ensureConnected(): Promise<void> {
     if (this.conn) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ssh2 = (await loadSsh2()) as any
     const conn = new ssh2.Client()
+    // Host-key verification (TOFU). ssh2 does NO checking without a hostVerifier;
+    // a mismatch here is captured so the connect rejects with a clear reason
+    // rather than ssh2's generic transport error.
+    let hostKeyError: Error | null = null
     await new Promise<void>((resolve, reject) => {
       conn.on('ready', resolve)
-      conn.on('error', reject)
+      conn.on('error', (err: Error) => reject(hostKeyError ?? err))
       conn.connect({
         host: this.opts.host,
         port: this.opts.port ?? 22,
@@ -67,6 +81,16 @@ export class SshTransport implements CompanionTransport {
         passphrase: this.opts.passphrase,
         agent: this.opts.agentSock,
         keepaliveInterval: 15000,
+        readyTimeout: 20000,
+        // hostHash makes ssh2 hand us a hex sha256 of the host key — our pin.
+        hostHash: 'sha256',
+        hostVerifier: (hashedKey: string | Buffer, cb: (valid: boolean) => void) => {
+          const fingerprint = typeof hashedKey === 'string' ? hashedKey : Buffer.from(hashedKey).toString('hex')
+          this.verifyHostKey(fingerprint).then(
+            () => cb(true),
+            (err: unknown) => { hostKeyError = err instanceof Error ? err : new Error(String(err)); cb(false) },
+          )
+        },
       })
     })
     this.conn = conn
@@ -78,6 +102,9 @@ export class SshTransport implements CompanionTransport {
       this.conn.exec(cmd, (err: unknown, stream: any) => {
         if (err) return reject(err)
         let stdout = '', stderr = ''
+        // A channel-level error (connection dropped mid-command) would otherwise
+        // never fire 'close', hanging this promise forever — reject instead.
+        stream.on('error', (e: unknown) => reject(e instanceof Error ? e : new Error(String(e))))
         stream.on('data', (d: Buffer) => { stdout += d.toString() })
         stream.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
         stream.on('close', (code: number) => resolve({ code, stdout, stderr }))
