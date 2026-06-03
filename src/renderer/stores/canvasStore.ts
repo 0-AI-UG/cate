@@ -65,8 +65,12 @@ export interface PendingPlacement {
   /** 3–5 recommended spots; candidates[0] is the best. User picks by click or number. */
   candidates: PlacementCandidate[]
   hoveredIndex: number | null
-  /** Escape hatch: when the cursor is over empty canvas (no recommendation fits),
-   *  this previews where a free "click-anywhere" placement would land. */
+  /** Free "place anywhere" mode — armed by pressing F. While armed, the cursor
+   *  shows a "Place here" ghost and a click drops there; otherwise the ghost is
+   *  hidden and clicking empty canvas cancels. */
+  freeArmed: boolean
+  /** Escape hatch preview: where a free "click-anywhere" placement would land
+   *  (only while `freeArmed`). */
   freeGhost: { point: Point; size: Size } | null
   /** Viewport before we zoomed out to show recommendations — restored on cancel/commit. */
   prevZoom: number
@@ -163,6 +167,8 @@ export interface CanvasStoreActions {
   ) => boolean
   /** Commit the pending placement at the given candidate index; returns the new node id. */
   commitPlacement: (index: number) => CanvasNodeId | null
+  /** Arm/disarm free "place anywhere" mode (press F). Disarming clears the ghost. */
+  setFreeArmed: (armed: boolean) => void
   /** Escape hatch: preview a free placement centred on `point` (canvas-space),
    *  nudged to the nearest non-overlapping spot. No-op when idle. */
   updatePlacementCursor: (point: Point) => void
@@ -533,25 +539,43 @@ export function recommendPlacements(
     }
 
     if (activeNode) {
-      // ACTIVE NODE → recommend around it. March each direction past at most one
-      // immediate neighbour so a blocked edge still yields a nearby slot.
+      // ACTIVE NODE → recommend a single CONTIGUOUS group right next to it.
+      // Walk a lattice anchored on the active node (one panel + gap per cell) by
+      // breadth-first search, accepting only free cells and never crossing an
+      // occupied one — so the ghosts stay connected to the node's free corner
+      // instead of scattering to opposite edges of a crowded cluster.
       rankAnchor = centerOf(activeNode)
       cap = Math.min(max, 4)
-      const dirs = [
-        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-      ] as const
-      for (const dir of dirs) {
-        let p = edgeSlots(activeNode)[dir.dx > 0 ? 0 : dir.dx < 0 ? 1 : dir.dy > 0 ? 2 : 3]
-        for (let hop = 0; hop < 3; hop++) {
-          const obstacle = nodeList.find((n) =>
-            rectsOverlap({ origin: n.origin, size: n.size }, { origin: p, size }),
-          )
-          if (!obstacle) { spots.push(p); break }
-          if (dir.dx > 0) p = { x: obstacle.origin.x + obstacle.size.width + gap, y: p.y }
-          else if (dir.dx < 0) p = { x: obstacle.origin.x - size.width - gap, y: p.y }
-          else if (dir.dy > 0) p = { x: p.x, y: obstacle.origin.y + obstacle.size.height + gap }
-          else p = { x: p.x, y: obstacle.origin.y - size.height - gap }
-        }
+      const pitchX = size.width + gap
+      const pitchY = size.height + gap
+      // Edge-anchored lattice: the first cell in each direction sits one gap from
+      // the active node's edge (correct even when the node differs in size from a
+      // new panel); further cells step by one new-panel pitch.
+      const cellX = (i: number): number =>
+        i === 0 ? activeNode.origin.x
+          : i > 0 ? activeNode.origin.x + activeNode.size.width + gap + (i - 1) * pitchX
+            : activeNode.origin.x - (size.width + gap) - (-i - 1) * pitchX
+      const cellY = (j: number): number =>
+        j === 0 ? activeNode.origin.y
+          : j > 0 ? activeNode.origin.y + activeNode.size.height + gap + (j - 1) * pitchY
+            : activeNode.origin.y - (size.height + gap) - (-j - 1) * pitchY
+      const cell = (i: number, j: number): Point => snapPt({ x: cellX(i), y: cellY(j) })
+      const visited = new Set<string>(['0,0'])
+      const queue: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+      while (queue.length > 0 && spots.length < cap) {
+        // Nearest cell to the active node first (Manhattan, then Euclidean).
+        queue.sort((a, b) =>
+          (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) ||
+          (a[0] * a[0] + a[1] * a[1]) - (b[0] * b[0] + b[1] * b[1]),
+        )
+        const [i, j] = queue.shift()!
+        const key = `${i},${j}`
+        if (visited.has(key)) continue
+        visited.add(key)
+        const p = cell(i, j)
+        if (!clearOf(p, nodeRects)) continue // occupied — don't accept or expand through it
+        spots.push(p)
+        queue.push([i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1])
       }
     } else {
       const onScreenNodes = nodeList.filter(nodeOnScreen)
@@ -1180,6 +1204,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
         panelType,
         candidates,
         hoveredIndex: null,
+        freeArmed: false,
         freeGhost: null,
         prevZoom: state.zoomLevel,
         prevOffset: state.viewportOffset,
@@ -1203,6 +1228,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     if (!nodeId) return null
     get().focusAndCenter(nodeId)
     return nodeId
+  },
+
+  setFreeArmed(armed) {
+    const pending = get().pendingPlacement
+    if (!pending || pending.freeArmed === armed) return
+    set({ pendingPlacement: { ...pending, freeArmed: armed, freeGhost: armed ? pending.freeGhost : null } })
   },
 
   updatePlacementCursor(point) {

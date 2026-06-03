@@ -3,23 +3,20 @@
 //
 // When a create action is deferred (canvasStore.pendingPlacement is set), the
 // canvas zooms out and this renders, inside the world div:
-//   - a dim "placement surface" scrim that focuses attention and doubles as the
-//     escape hatch — hovering it previews a free spot, clicking it drops there
-//     ("none of these fit? click anywhere");
-//   - 3–5 numbered recommendation ghosts (the smart picks);
-// plus a fixed hint pill (portalled to <body>) with the controls.
-//
-// Pick by clicking a ghost, pressing its number (1..N), Enter (best), or clicking
-// anywhere on the canvas. Esc / the Cancel button cancels.
+//   - a transparent "placement surface" covering the canvas: clicking empty
+//     space cancels (unless free mode is armed), and — once the user presses F
+//     to arm free placement — it previews/drops a "Place here" ghost at the
+//     cursor ("none of these fit? press F, then click anywhere");
+//   - 3–5 numbered recommendation ghosts (the smart picks).
+// The hint pill + app dim are rendered by Canvas (screen space). Pick by clicking
+// a ghost, pressing its number (1..N), or Enter (best). Esc cancels.
 // =============================================================================
 
 import React, { useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 
 const ACCENT = '74, 158, 255'
 
-// Inject the entrance keyframes once.
 let stylesInjected = false
 function injectStyles() {
   if (stylesInjected || typeof document === 'undefined') return
@@ -41,8 +38,7 @@ const GhostPlacementLayer: React.FC = () => {
 
   useEffect(injectStyles, [])
 
-  // Keyboard commit/cancel — active only while a placement is pending. Capture
-  // phase so digits/Enter/Esc are intercepted before panel content sees them.
+  // Keyboard: digits / Enter commit, F arms free placement, Esc cancels.
   useEffect(() => {
     if (!pending) return
     const onKey = (e: KeyboardEvent) => {
@@ -54,6 +50,12 @@ const GhostPlacementLayer: React.FC = () => {
       if (e.key === 'Enter') {
         e.preventDefault(); e.stopPropagation()
         api.getState().commitPlacement(0)
+        return
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault(); e.stopPropagation()
+        const p = api.getState().pendingPlacement
+        if (p) api.getState().setFreeArmed(!p.freeArmed)
         return
       }
       const n = Number(e.key)
@@ -73,6 +75,7 @@ const GhostPlacementLayer: React.FC = () => {
 
   if (!pending) return null
 
+  const armed = pending.freeArmed
   const toCanvas = (clientX: number, clientY: number, el: HTMLElement) => {
     const container = el.closest('[data-canvas-container]') as HTMLElement | null
     if (!container) return null
@@ -82,52 +85,52 @@ const GhostPlacementLayer: React.FC = () => {
   const flushMove = () => {
     moveRaf.current = 0
     const d = lastClient.current
-    if (!d) return
+    if (!d || !api.getState().pendingPlacement?.freeArmed) return
     const pt = toCanvas(d.x, d.y, d.el)
     if (pt) api.getState().updatePlacementCursor(pt)
   }
   const onSurfaceMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!armed) return
     lastClient.current = { x: e.clientX, y: e.clientY, el: e.currentTarget }
     if (!moveRaf.current) moveRaf.current = requestAnimationFrame(flushMove)
   }
   const onSurfaceClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
+    if (!armed) { api.getState().cancelPlacement(); return }
     const pt = toCanvas(e.clientX, e.clientY, e.currentTarget)
     if (pt) api.getState().commitFreePlacement(pt)
   }
 
   // Counter-scale the badge so it stays a constant on-screen size at any zoom.
   const badgeScale = 1 / Math.max(zoom, 0.6)
-  const free = pending.hoveredIndex == null ? pending.freeGhost : null
+  const free = armed && pending.hoveredIndex == null ? pending.freeGhost : null
 
   return (
     <>
-      {/* Dim placement surface — focuses attention + click-anywhere escape hatch. */}
+      {/* Transparent placement surface (canvas stays bright). */}
       <div
         data-placement-surface
         onMouseMove={onSurfaceMove}
-        onMouseLeave={() => api.getState().updatePlacementCursor({ x: -1e6, y: -1e6 })}
         onClick={onSurfaceClick}
         style={{
           position: 'absolute',
           left: -100000, top: -100000, width: 200000, height: 200000,
           zIndex: 40000,
-          background: 'rgba(8, 12, 20, 0.34)',
-          cursor: 'crosshair',
+          cursor: armed ? 'crosshair' : 'default',
           pointerEvents: 'auto',
         }}
       />
 
-      {/* Free-placement preview ghost (where a click would land). */}
+      {/* Free-placement preview ghost (only while armed). */}
       {free && (
         <div
           style={{
             position: 'absolute',
             left: free.point.x, top: free.point.y,
             width: free.size.width, height: free.size.height,
-            border: `1.5px dashed rgba(${ACCENT}, 0.6)`,
+            border: `1.5px dashed rgba(${ACCENT}, 0.7)`,
             borderRadius: 8,
-            background: `rgba(${ACCENT}, 0.06)`,
+            background: `rgba(${ACCENT}, 0.08)`,
             zIndex: 49000,
             pointerEvents: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -200,62 +203,8 @@ const GhostPlacementLayer: React.FC = () => {
           </div>
         )
       })}
-
-      <HintPill onCancel={() => api.getState().cancelPlacement()} count={count} />
     </>
   )
 }
-
-// Fixed instruction pill, portalled to <body> so it sits in screen space.
-const HintPill: React.FC<{ onCancel: () => void; count: number }> = ({ onCancel, count }) => {
-  const body = typeof document !== 'undefined' ? document.body : null
-  if (!body) return null
-  return createPortal(
-    <div
-      style={{
-        position: 'fixed', left: '50%', top: 24, transform: 'translateX(-50%)',
-        zIndex: 2147483000,
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '9px 9px 9px 16px', borderRadius: 999,
-        background: 'rgba(20, 24, 32, 0.92)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 10px 30px rgba(0,0,0,0.45)',
-        color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: 500,
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-        animation: 'ghostHintIn 200ms ease both',
-        userSelect: 'none',
-      }}
-    >
-      <span>
-        Pick a spot — press <Kbd>1</Kbd>–<Kbd>{count}</Kbd>, or click any ghost or empty space
-      </span>
-      <button
-        onClick={onCancel}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: '5px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
-          background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)',
-          fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
-        }}
-      >
-        Cancel <Kbd>Esc</Kbd>
-      </button>
-    </div>,
-    body,
-  )
-}
-
-const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <kbd style={{
-    display: 'inline-block', minWidth: 18, padding: '1px 5px', margin: '0 1px',
-    borderRadius: 5, background: 'rgba(255,255,255,0.14)',
-    border: '1px solid rgba(255,255,255,0.12)', borderBottomWidth: 2,
-    fontSize: 11, fontWeight: 600, textAlign: 'center', lineHeight: '16px',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  }}>
-    {children}
-  </kbd>
-)
 
 export default React.memo(GhostPlacementLayer)

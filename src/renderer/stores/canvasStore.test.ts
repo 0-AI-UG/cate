@@ -334,6 +334,25 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
+  it('ACTIVE node in a cluster: recommendations form one connected group', () => {
+    // 2×2 cluster; focus the bottom-right node. Recs must stay attached to it or
+    // each other — never flung to the far side of the cluster.
+    const nodes = toMap(
+      node('tl', 0, 0), node('tr', 240, 0),
+      node('bl', 0, 190), node('br', 240, 190, 200, 150, 3),
+    )
+    const cands = recommendPlacements(nodes, 'br', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThanOrEqual(1)
+    const br: R = { origin: nodes['br'].origin, size: nodes['br'].size }
+    const pitch = 640 + 40 + 5 // new-panel pitch + slack
+    cands.forEach((c) => {
+      const connected =
+        rectGap(rectOf(c), br) <= pitch ||
+        cands.some((o) => o !== c && rectGap(rectOf(c), rectOf(o)) <= pitch)
+      expect(connected).toBe(true)
+    })
+  })
+
   it('ISLANDS: with no active node, recommends around the island nearest the anchor', () => {
     const near = node('near', 0, 0)
     const far = node('far', 5000, 5000, 200, 150, 1)
@@ -492,6 +511,19 @@ describe('canvasStore ghost placement actions', () => {
     // Centre of the free ghost tracks the cursor (within grid-snap tolerance).
     expect(Math.abs(free.point.x + free.size.width / 2 - 700)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
     expect(Math.abs(free.point.y + free.size.height / 2 - 500)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
+  })
+
+  it('F arms free placement; disarming clears the preview ghost', () => {
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    expect(store.getState().pendingPlacement!.freeArmed).toBe(false)
+    store.getState().setFreeArmed(true)
+    expect(store.getState().pendingPlacement!.freeArmed).toBe(true)
+    store.getState().updatePlacementCursor({ x: 700, y: 500 })
+    expect(store.getState().pendingPlacement!.freeGhost).not.toBeNull()
+    store.getState().setFreeArmed(false)
+    expect(store.getState().pendingPlacement!.freeArmed).toBe(false)
+    expect(store.getState().pendingPlacement!.freeGhost).toBeNull()
   })
 
   it('commitFreePlacement creates a node centred on the click point and clears state', () => {

@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
@@ -104,6 +105,70 @@ const RegionsLayer: React.FC = React.memo(() => {
     </>
   )
 })
+
+// Screen-space chrome for the placement picker: a full-window dim with a bright
+// cutout over this canvas (+ its tab bar) so the surrounding UI recedes, plus a
+// canvas-centred hint pill. Rendered via a body portal so it floats above all
+// app chrome; positioned from the canvas container's on-screen rect.
+const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <kbd style={{
+    display: 'inline-block', minWidth: 18, padding: '1px 5px', margin: '0 1px',
+    borderRadius: 5, background: 'rgba(255,255,255,0.14)',
+    border: '1px solid rgba(255,255,255,0.12)', borderBottomWidth: 2,
+    fontSize: 11, fontWeight: 600, textAlign: 'center', lineHeight: '16px',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  }}>{children}</kbd>
+)
+
+const PlacementOverlay: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = ({ canvasRef }) => {
+  const pending = useCanvasStoreContext((s) => s.pendingPlacement)
+  const api = useCanvasStoreApi()
+  if (!pending) return null
+  const r = canvasRef.current?.getBoundingClientRect()
+  if (!r) return null
+  const count = pending.candidates.length
+  const armed = pending.freeArmed
+  return createPortal(
+    <>
+      {/* Dim everything except the strip containing the canvas + its tab bar. */}
+      <div style={{
+        position: 'fixed', left: r.left, top: 0, width: r.width, height: r.bottom,
+        boxShadow: '0 0 0 9999px rgba(6, 9, 15, 0.55)',
+        pointerEvents: 'none', zIndex: 2147482000,
+      }} />
+      {/* Canvas-centred hint pill. */}
+      <div style={{
+        position: 'fixed', left: r.left + r.width / 2, top: r.top + 16, transform: 'translateX(-50%)',
+        zIndex: 2147483000, display: 'flex', alignItems: 'center', gap: 14,
+        padding: '9px 9px 9px 16px', borderRadius: 999,
+        background: 'rgba(20, 24, 32, 0.95)', border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.5)', color: 'rgba(255,255,255,0.92)',
+        fontSize: 13, fontWeight: 500, fontFamily: 'system-ui, -apple-system, sans-serif',
+        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        animation: 'ghostHintIn 200ms ease both', userSelect: 'none', whiteSpace: 'nowrap',
+      }}>
+        <span>
+          {armed ? (
+            <>Click anywhere to place. <Kbd>F</Kbd> to go back.</>
+          ) : (
+            <>Pick a spot. Press <Kbd>1</Kbd>{count > 1 ? <>–<Kbd>{count}</Kbd></> : null}, click a ghost, or <Kbd>F</Kbd> to place anywhere.</>
+          )}
+        </span>
+        <button
+          onClick={() => api.getState().cancelPlacement()}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999,
+            border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.1)',
+            color: 'rgba(255,255,255,0.9)', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
+          }}
+        >
+          Cancel <Kbd>Esc</Kbd>
+        </button>
+      </div>
+    </>,
+    document.body,
+  )
+}
 
 interface CanvasProps {
   children?: React.ReactNode
@@ -514,6 +579,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         <GhostPlacementLayer />
       </div>
 
+      <PlacementOverlay canvasRef={canvasRef} />
     </div>
   )
 }
