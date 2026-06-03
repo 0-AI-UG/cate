@@ -129,7 +129,7 @@ const PLACEMENT_MAX_AR = 2.6
 /** How far (in panel "pitches" = std size + gap) the place-area extends around a
  *  focused node. A tight ring → recommendations hug the node, yet still reach the
  *  free space just beyond a surrounding ring of windows. */
-const PLACEMENT_FOCUS_MARGIN = 1.5
+const PLACEMENT_FOCUS_MARGIN = 1
 
 // --- Geometry helpers --------------------------------------------------------
 
@@ -325,20 +325,25 @@ export function recommendPlacements(
   // node). The node edges are what let spots land in the irregular gaps between
   // staggered windows — a single lattice would step right over them. `fitAt`
   // then shrinks each spot to its actual gap, so smaller holes get smaller ghosts.
+  //
+  // Hug anchors are snapped AWAY from the node (ceil to the right/below, floor to
+  // the left/above) so grid-snapping never eats into the gap — otherwise a spot
+  // hugging a non-grid-aligned edge lands a few px too close and `finalize`'s
+  // clearance check drops it, leaving no spot directly beside the node.
   const cols = Math.ceil(area.size.width / pitchX) + 2
   const rows = Math.ceil(area.size.height / pitchY) + 2
   const xs = new Set<number>()
   const ys = new Set<number>()
-  const addX = (x: number) => xs.add(Math.round(x / grid) * grid)
-  const addY = (y: number) => ys.add(Math.round(y / grid) * grid)
-  addX(area.origin.x)
-  addY(area.origin.y)
-  for (let i = -cols; i <= cols; i++) addX(cellX(i))
-  for (let j = -rows; j <= rows; j++) addY(cellY(j))
+  const away = (v: number, dir: number) =>
+    dir > 0 ? Math.ceil(v / grid) * grid : dir < 0 ? Math.floor(v / grid) * grid : Math.round(v / grid) * grid
+  xs.add(away(area.origin.x, 0))
+  ys.add(away(area.origin.y, 0))
+  for (let i = -cols; i <= cols; i++) xs.add(away(cellX(i), i))
+  for (let j = -rows; j <= rows; j++) ys.add(away(cellY(j), j))
   for (const r of nodeRects) {
     if (!rectsOverlap(inflateRect(r, pitchX), area)) continue // node not near the area
-    addX(r.origin.x); addX(r.origin.x + r.size.width + gap)
-    addY(r.origin.y); addY(r.origin.y + r.size.height + gap)
+    xs.add(away(r.origin.x, -1)); xs.add(away(r.origin.x + r.size.width + gap, 1))
+    ys.add(away(r.origin.y, -1)); ys.add(away(r.origin.y + r.size.height + gap, 1))
   }
 
   const raw: Raw[] = []

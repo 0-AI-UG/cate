@@ -479,6 +479,21 @@ describe('canvasStore.recommendPlacements', () => {
     const free = recommendPlacements(nodes, null, 'terminal', VIEWPORT, { x: 660, y: 460 })
     expect(distTo(free[0], bC)).toBeLessThan(distTo(free[0], aC))
   })
+
+  it('HUG SNAP: a node with a non-grid-aligned edge still gets a spot directly beside it', () => {
+    // The right edge (843) isn't on the 20px grid. The hug anchor must snap AWAY
+    // from the node so grid-snapping doesn't eat the gap and make finalize drop it.
+    const a = node('a', 200, 200, 643, 411)
+    const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
+    const aRight = a.origin.x + a.size.width
+    const beside = cands.find(
+      (c) =>
+        c.point.x >= aRight && c.point.x <= aRight + 60 && // just to the right, gap preserved
+        c.point.y < a.origin.y + a.size.height && c.point.y + c.size.height > a.origin.y, // shares its rows
+    )
+    expect(beside).toBeDefined()
+    expect(rectsOverlap(rectOf(beside!), { origin: a.origin, size: a.size })).toBe(false)
+  })
 })
 
 describe('canvasStore.nudgeToFree', () => {
