@@ -130,6 +130,10 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   const bootSnap = windowType === 'main' ? readBootSnapshot() : null
   const snapGeom = bootSnap?.geometry
   const snapBg = bootSnap?.backgroundColor
+  // The exact background color used for both the native window backdrop and the
+  // renderer's first-paint loading splash, so the splash matches the themed
+  // window before the renderer's JS theme injection runs.
+  const bgColor = snapBg ?? '#1f1e1c'
 
   // Apply the active theme's native appearance before the window exists so
   // native chrome (menus, scrollbars, the window backdrop) paints with the
@@ -162,7 +166,7 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
         ? { x: 10, y: 6 }
         : undefined,
     frame: !(isPanel || isDock),
-    backgroundColor: snapBg ?? '#1f1e1c',
+    backgroundColor: bgColor,
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -318,6 +322,9 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   // Build query string from params
   const queryParts: string[] = []
   queryParts.push(`type=${encodeURIComponent(windowType)}`)
+  // Pass the themed boot background so the renderer can paint its loading splash
+  // to match the window backdrop on the first frame (main window only).
+  if (windowType === 'main') queryParts.push(`bg=${encodeURIComponent(bgColor)}`)
   if (params?.panelType) queryParts.push(`panelType=${encodeURIComponent(params.panelType)}`)
   if (params?.panelId) queryParts.push(`panelId=${encodeURIComponent(params.panelId)}`)
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)
