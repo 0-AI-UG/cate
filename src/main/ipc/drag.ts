@@ -57,13 +57,3 @@ export function createDragGhostImage(): Electron.NativeImage {
     ),
   )
 }
-
-/**
- * Register drag-related IPC handlers.
- * Called from registerAllHandlers() in index.ts.
- */
-export function registerHandlers(): void {
-  // Drag handlers are registered inline in index.ts because they need
-  // access to createWindow(). This function is a no-op placeholder that
-  // keeps the import pattern consistent with other IPC modules.
-}

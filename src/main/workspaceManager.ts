@@ -19,6 +19,8 @@ import { broadcastToAll, windowFromEvent } from './windowRegistry'
 import { addAllowedRoot, removeAllowedRoot } from './ipc/pathValidation'
 import { resolveTrustedWorkspaceRoot } from './workspaceRoots'
 import { acquireProjectLock, releaseProjectLock } from './projectLock'
+import { isLocalLocator } from './companion/locator'
+import type { CompanionConnection } from '../shared/types'
 
 // In-memory workspace list — authoritative source of truth
 const workspaces: Map<string, WorkspaceInfo> = new Map()
@@ -80,7 +82,12 @@ function listWorkspaces(): WorkspaceInfo[] {
   return Array.from(workspaces.values())
 }
 
-async function createWorkspace(name?: string, rootPath?: string, id?: string): Promise<WorkspaceMutationResult> {
+async function createWorkspace(
+  name?: string,
+  rootPath?: string,
+  id?: string,
+  connection?: CompanionConnection,
+): Promise<WorkspaceMutationResult> {
   // Validate caller-supplied id; fall back to a fresh UUID if invalid.
   const resolvedId = id && isValidWorkspaceId(id) ? id : generateId()
   if (id && resolvedId !== id) {
@@ -88,18 +95,22 @@ async function createWorkspace(name?: string, rootPath?: string, id?: string): P
   }
 
   let trustedRoot = ''
+  const remote = !!rootPath && !isLocalLocator(rootPath)
   if (rootPath) {
-    const resolvedRoot = await resolveTrustedWorkspaceRoot(rootPath)
-    if (!resolvedRoot) {
-      return {
-        ok: false,
-        error: {
-          code: 'INVALID_ROOT_PATH',
-          message: `Workspace root is not a readable directory: ${rootPath}`,
-        },
+    if (remote) {
+      // Remote/WSL: rootPath is a cate-companion:// locator. The daemon validates
+      // its own filesystem, so we don't realpath/lock/allow-root it locally.
+      trustedRoot = rootPath
+    } else {
+      const resolvedRoot = await resolveTrustedWorkspaceRoot(rootPath)
+      if (!resolvedRoot) {
+        return {
+          ok: false,
+          error: { code: 'INVALID_ROOT_PATH', message: `Workspace root is not a readable directory: ${rootPath}` },
+        }
       }
+      trustedRoot = resolvedRoot
     }
-    trustedRoot = resolvedRoot
   }
 
   const info: WorkspaceInfo = {
@@ -107,10 +118,11 @@ async function createWorkspace(name?: string, rootPath?: string, id?: string): P
     name: name ?? 'Workspace',
     color: '',
     rootPath: trustedRoot,
+    ...(connection ? { connection } : {}),
   }
   workspaces.set(info.id, info)
-  log.info('Workspace created: %s (%s)', info.id, info.rootPath || 'no root')
-  if (info.rootPath) {
+  log.info('Workspace created: %s (%s%s)', info.id, info.rootPath || 'no root', remote ? ', remote' : '')
+  if (info.rootPath && !remote) {
     addAllowedRoot(info.rootPath)
     claimProjectLock(info.rootPath, info.name)
   }
@@ -143,6 +155,9 @@ async function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 
   if (typeof changes.rootPath === 'string') {
     if (!changes.rootPath) {
       nextRootPath = ''
+    } else if (!isLocalLocator(changes.rootPath)) {
+      // Remote/WSL locator — trusted as-is; the daemon validates its own fs.
+      nextRootPath = changes.rootPath
     } else {
       const resolvedRoot = await resolveTrustedWorkspaceRoot(changes.rootPath)
       if (!resolvedRoot) {
@@ -159,20 +174,21 @@ async function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 
   }
 
   const rootChanged = existing.rootPath !== nextRootPath
-  if (existing.rootPath && rootChanged) {
+  const existingLocal = !!existing.rootPath && isLocalLocator(existing.rootPath)
+  const nextLocal = !!nextRootPath && isLocalLocator(nextRootPath)
+  if (existingLocal && rootChanged) {
     removeAllowedRoot(existing.rootPath)
   }
 
   const updated = { ...existing, ...changes, rootPath: nextRootPath }
   workspaces.set(id, updated)
-  if (updated.rootPath) {
+  if (nextLocal) {
     addAllowedRoot(updated.rootPath)
   }
   if (rootChanged) {
-    // Release the lock on the old root (if no sibling workspace still uses it)
-    // and claim the new one.
-    if (existing.rootPath) dropProjectLock(existing.rootPath, id)
-    if (updated.rootPath) claimProjectLock(updated.rootPath, updated.name)
+    // Release the lock on the old root (local only) and claim the new one.
+    if (existingLocal) dropProjectLock(existing.rootPath, id)
+    if (nextLocal) claimProjectLock(updated.rootPath, updated.name)
   }
   return { ok: true, workspace: updated }
 }
@@ -184,7 +200,7 @@ function removeWorkspace(id: string): boolean {
   }
   const existing = workspaces.get(id)
   const removed = workspaces.delete(id)
-  if (existing?.rootPath) {
+  if (existing?.rootPath && isLocalLocator(existing.rootPath)) {
     removeAllowedRoot(existing.rootPath)
     // Delete first so rootInUse() doesn't count the workspace we just removed.
     dropProjectLock(existing.rootPath, id)
@@ -209,8 +225,8 @@ export function registerWorkspaceHandlers(): void {
   // Create a new workspace
   ipcMain.handle(
     WORKSPACE_CREATE,
-    async (event, options?: { name?: string; rootPath?: string; id?: string }) => {
-      const result = await createWorkspace(options?.name, options?.rootPath, options?.id)
+    async (event, options?: { name?: string; rootPath?: string; id?: string; connection?: CompanionConnection }) => {
+      const result = await createWorkspace(options?.name, options?.rootPath, options?.id, options?.connection)
       if (!result.ok) return result
       const win = windowFromEvent(event)
       broadcastWorkspaceChange(win?.id)

@@ -16,6 +16,46 @@ import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
+import { workspaceDisplayName } from '../lib/displayPath'
+import { workspaceRuntime } from '../lib/workspaceRuntime'
+
+// -----------------------------------------------------------------------------
+// Companion status dot — surfaces a remote workspace's connection state in the
+// sidebar and offers the matching one-click recovery. Driven by the canonical
+// workspaceRuntime status (shared with the canvas lock overlay).
+// -----------------------------------------------------------------------------
+
+function CompanionDot({ workspace }: { workspace: WorkspaceState }): JSX.Element | null {
+  const { status, error } = workspaceRuntime(workspace)
+  // Only remote, non-connected states get a dot.
+  if (status === 'local' || status === 'connected') return null
+
+  const busy = status === 'installing' || status === 'connecting'
+  const color = busy ? 'bg-amber-400 animate-pulse' : 'bg-red-500 hover:ring-2 hover:ring-red-500/40'
+  const title =
+    status === 'installing' ? 'Installing companion…'
+    : status === 'connecting' ? 'Connecting to companion…'
+    : status === 'disconnected' ? `Companion disconnected${error ? `: ${error}` : ''} — click to reconnect`
+    : status === 'missing' ? `Companion not installed${error ? `: ${error}` : ''} — click to install`
+    : `Companion not reachable${error ? `: ${error}` : ''} — click to retry`
+
+  const onClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    if (busy) return
+    const app = useAppStore.getState()
+    if (status === 'missing') void app.installCompanion(workspace.id)
+    else void app.retryCompanion(workspace.id)
+  }
+
+  return (
+    <button
+      className={`flex-shrink-0 w-2 h-2 rounded-full focus:outline-none ${color}`}
+      disabled={busy}
+      title={title}
+      onClick={onClick}
+    />
+  )
+}
 
 // -----------------------------------------------------------------------------
 // Panel jump helper — focus a panel inside a workspace, switching workspace
@@ -383,7 +423,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     switch (id) {
       case 'select': app.selectWorkspace(workspace.id); break
       case 'rename':
-        setRenameValue(workspace.name || workspace.rootPath.split('/').pop() || 'Workspace')
+        setRenameValue(workspace.name || workspaceDisplayName(workspace.rootPath) || 'Workspace')
         setIsRenaming(true)
         break
       case 'select-folder': {
@@ -484,7 +524,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }, [workspace.id])
 
   const beginRename = useCallback(() => {
-    setRenameValue(workspace.name || workspace.rootPath?.split('/').pop() || 'Workspace')
+    setRenameValue(workspace.name || (workspace.rootPath ? workspaceDisplayName(workspace.rootPath) : '') || 'Workspace')
     setIsRenaming(true)
   }, [workspace.name, workspace.rootPath])
 
@@ -526,7 +566,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     )
   }
 
-  const lastSegment = workspace.rootPath.split('/').filter(Boolean).pop() || 'Workspace'
+  const lastSegment = workspaceDisplayName(workspace.rootPath) || 'Workspace'
   const hasCustomName = workspace.name && workspace.name !== lastSegment && workspace.name !== 'Workspace'
   const displayTitle = hasCustomName ? workspace.name! : lastSegment
 
@@ -704,6 +744,11 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
             {displayTitle}
           </span>
         )}
+
+        {/* Companion connection indicator (remote workspaces only). Reads the
+            same canonical runtime status as the canvas lock, so the dot and the
+            overlay never disagree. */}
+        <CompanionDot workspace={workspace} />
 
         {/* Panel count badge (only when collapsed and has panels) */}
         {panelCount > 0 && !isExpanded && (

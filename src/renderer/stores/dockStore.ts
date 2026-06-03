@@ -624,14 +624,3 @@ function updateSplitRatios(
 // Selectors
 // -----------------------------------------------------------------------------
 
-export function useDockZone(position: DockZonePosition): DockZoneState {
-  return useDockStore((s) => s.zones[position])
-}
-
-export function useDockZoneVisible(position: DockZonePosition): boolean {
-  return useDockStore((s) => s.zones[position].visible)
-}
-
-export function useIsDocked(panelId: string): boolean {
-  return useDockStore((s) => s.panelLocations[panelId]?.type === 'dock')
-}

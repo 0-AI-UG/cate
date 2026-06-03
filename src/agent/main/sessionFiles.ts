@@ -14,28 +14,19 @@
 // tolerate v1/v2/v3 by being lenient about which fields we read.
 // =============================================================================
 
-import fs from 'fs/promises'
-import path from 'path'
 import log from '../../main/logger'
-import { agentDirFor } from './agentDir'
+import { hostSessionsDir, hostJoin } from './agentDir'
+import { parseLocator, formatLocator } from '../../main/companion/locator'
+import { companions } from '../../main/companion/companionManager'
+import type { Companion } from '../../main/companion/types'
 import type { AgentSessionListEntry } from '../../shared/types'
 
-/** Encode a cwd to pi's directory naming. Pi maps `/Users/anton/Dev/cate` to
- *  `--Users-anton-Dev-cate--`. */
-function encodeCwd(cwd: string): string {
-  const trimmed = cwd.replace(/\/+$/, '')
-  const dashed = trimmed.replace(/\//g, '-')
-  return `-${dashed}--`
-}
-
-function sessionsDirFor(cwd: string): string {
-  return path.join(agentDirFor(cwd), 'sessions', encodeCwd(cwd))
-}
-
-// Pi nests sessions under <agentDir>/sessions/<encoded-cwd>/. The agent dir is
-// now per-workspace, so we validate file ops by this path segment rather than a
-// single global root.
-const SESSIONS_SEGMENT = `${path.sep}${path.join('.cate', 'pi-agent', 'sessions')}${path.sep}`
+// Pi nests sessions under <agentDir>/sessions/<encoded-cwd>/. We validate file
+// ops by this path segment (POSIX, since the daemon side is POSIX and the
+// segment is the same shape on the local machine for forward-slash paths). For
+// local Windows paths we also accept the native-separator form.
+const SESSIONS_SEGMENT_POSIX = '/.cate/pi-agent/sessions/'
+const SESSIONS_SEGMENT_NATIVE = `\\.cate\\pi-agent\\sessions\\`
 
 interface ParsedHeader {
   id: string
@@ -46,16 +37,20 @@ interface ParsedHeader {
 /** Stream-read enough of a .jsonl to compute the sidebar entry. Stops at the
  *  first user message (for the title) but continues scanning for the latest
  *  `session_info.sessionName`, since names can be set anywhere in the file. */
-async function summarizeFile(filePath: string): Promise<AgentSessionListEntry | null> {
+async function summarizeFile(
+  companion: Companion,
+  hostFilePath: string,
+): Promise<AgentSessionListEntry | null> {
   let raw: string
   try {
-    raw = await fs.readFile(filePath, 'utf-8')
+    raw = await companion.file.readFile(hostFilePath)
   } catch (err) {
-    log.warn('[sessionFiles] read failed for %s: %O', filePath, err)
+    log.warn('[sessionFiles] read failed for %s: %O', hostFilePath, err)
     return null
   }
 
-  const stat = await fs.stat(filePath).catch(() => null)
+  // The FileHost contract exposes no mtime, so we key updatedAt off the session
+  // header timestamp (set below). Local and remote behave identically here.
   const lines = raw.split('\n')
   let header: ParsedHeader | null = null
   let firstUserText: string | null = null
@@ -110,51 +105,60 @@ async function summarizeFile(filePath: string): Promise<AgentSessionListEntry | 
       ? truncate(firstUserText.replace(/\s+/g, ' ').trim(), 64)
       : 'New chat')
   return {
-    path: filePath,
+    // Re-encode the host path as a locator so the renderer's load/delete calls
+    // route back to the same companion. No-op for the local companion.
+    path: formatLocator({ companionId: companion.id, path: hostFilePath }),
     id: header.id,
     title: title || 'New chat',
     named: sessionName != null,
     cwd: header.cwd,
     createdAt: header.timestamp,
-    updatedAt: stat?.mtime?.toISOString() ?? header.timestamp,
+    updatedAt: header.timestamp,
     messageCount,
     ...(lastModel ? { lastModel } : {}),
   }
 }
 
-/** List sessions for a given cwd, newest first. Returns [] when the directory
- *  doesn't exist yet (a workspace pi hasn't been invoked in). */
+/** List sessions for a given workspace locator, newest first. Returns [] when
+ *  the directory doesn't exist yet (a workspace pi hasn't been invoked in).
+ *  Routed through the companion so it works for local and remote hosts. */
 export async function listSessions(cwd: string): Promise<AgentSessionListEntry[]> {
-  const dir = sessionsDirFor(cwd)
-  let names: string[]
-  try { names = await fs.readdir(dir) }
-  catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return []
-    log.warn('[sessionFiles] readdir failed for %s: %O', dir, err)
-    return []
-  }
-  const files = names.filter((n) => n.endsWith('.jsonl')).map((n) => path.join(dir, n))
+  const { companionId, path: hostCwd } = parseLocator(cwd)
+  let companion: Companion
+  try { companion = companions.resolve(companionId) }
+  catch (err) { log.warn('[sessionFiles] resolve companion failed: %O', err); return [] }
+
+  const dir = hostSessionsDir(companionId, hostCwd)
+  // FileHost.readDir returns [] for a missing dir (it swallows readdir errors),
+  // so the "pi never ran here" case lands as an empty list.
+  const nodes = await companion.file.readDir(dir)
+  const files = nodes
+    .filter((n) => !n.isDirectory && n.name.endsWith('.jsonl'))
+    .map((n) => hostJoin(companionId, dir, n.name))
   const entries: AgentSessionListEntry[] = []
   for (const f of files) {
-    const s = await summarizeFile(f)
+    const s = await summarizeFile(companion, f)
     if (s) entries.push(s)
   }
   entries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
   return entries
 }
 
-/** Refuse to touch anything that isn't a pi session file — guards delete/read. */
-function isSessionFile(filePath: string): boolean {
-  const resolved = path.resolve(filePath)
-  return resolved.includes(SESSIONS_SEGMENT) && resolved.endsWith('.jsonl')
+/** Refuse to touch anything that isn't a pi session file — guards delete/read.
+ *  Accepts the HOST path (after parseLocator); checks the POSIX segment, or the
+ *  native-separator form for local Windows paths. */
+function isSessionFile(hostPath: string): boolean {
+  if (!hostPath.endsWith('.jsonl')) return false
+  return hostPath.includes(SESSIONS_SEGMENT_POSIX) || hostPath.includes(SESSIONS_SEGMENT_NATIVE)
 }
 
-export async function deleteSession(filePath: string): Promise<void> {
-  if (!isSessionFile(filePath)) {
-    throw new Error(`Refusing to delete ${filePath} — not a pi session file`)
+export async function deleteSession(sessionFile: string): Promise<void> {
+  const { companionId, path: hostPath } = parseLocator(sessionFile)
+  if (!isSessionFile(hostPath)) {
+    throw new Error(`Refusing to delete ${sessionFile} — not a pi session file`)
   }
-  await fs.unlink(filePath)
+  const companion = companions.resolve(companionId)
+  await companion.file.remove(hostPath)
 }
 
 // ----------------------------------------------------------------------------
@@ -193,11 +197,13 @@ export type RendererMessage =
 let counter = 0
 const nid = (): string => { counter += 1; return `s${counter}` }
 
-export async function loadSessionTranscript(filePath: string): Promise<RendererMessage[]> {
-  if (!isSessionFile(filePath)) {
-    throw new Error(`Refusing to read ${filePath} — not a pi session file`)
+export async function loadSessionTranscript(sessionFile: string): Promise<RendererMessage[]> {
+  const { companionId, path: hostPath } = parseLocator(sessionFile)
+  if (!isSessionFile(hostPath)) {
+    throw new Error(`Refusing to read ${sessionFile} — not a pi session file`)
   }
-  const raw = await fs.readFile(filePath, 'utf-8')
+  const companion = companions.resolve(companionId)
+  const raw = await companion.file.readFile(hostPath)
   const out: RendererMessage[] = []
   // Map of toolCallId → index in `out` so toolResult can update in place.
   const toolIndex = new Map<string, number>()

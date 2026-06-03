@@ -9,7 +9,7 @@ import type { StoreApi } from 'zustand'
 import type { DockStore } from './dockStore'
 import { useDockStore as defaultDockStore } from './dockStore'
 
-export const DockStoreContext = createContext<StoreApi<DockStore>>(defaultDockStore)
+const DockStoreContext = createContext<StoreApi<DockStore>>(defaultDockStore)
 
 export function DockStoreProvider({ store, children }: {
   store: StoreApi<DockStore>

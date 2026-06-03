@@ -15,6 +15,17 @@ import {
   mirrorModelsToWorkspace,
 } from './customModels'
 import { agentDirFor } from './agentDir'
+import type { Companion } from '../../main/companion/types'
+
+// A minimal local companion: hostAgentDir uses 'local' (native paths) and the
+// file ops go straight to real fs — exactly what mirrorModelsToWorkspace needs.
+const fakeCompanion = {
+  id: 'local',
+  file: {
+    mkdir: (p: string) => fsp.mkdir(p, { recursive: true }),
+    writeFile: (p: string, c: string) => fsp.writeFile(p, c, 'utf-8'),
+  },
+} as unknown as Companion
 
 let testUserData: string
 
@@ -85,7 +96,7 @@ describe('customModels', () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-ws-'))
     try {
       await saveCustomOpenAI({ baseUrl: 'http://x/v1', apiKey: '', models: ['m1'] })
-      await mirrorModelsToWorkspace(cwd)
+      await mirrorModelsToWorkspace(fakeCompanion, cwd)
       const dest = path.join(agentDirFor(cwd), 'models.json')
       const raw = JSON.parse(await fsp.readFile(dest, 'utf-8'))
       expect(raw.providers['custom-openai'].baseUrl).toBe('http://x/v1')
@@ -97,7 +108,7 @@ describe('customModels', () => {
   it('mirror is a no-op when no shared file exists (never clobbers workspace)', async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-ws-'))
     try {
-      await mirrorModelsToWorkspace(cwd)
+      await mirrorModelsToWorkspace(fakeCompanion, cwd)
       const dest = path.join(agentDirFor(cwd), 'models.json')
       expect(fs.existsSync(dest)).toBe(false)
     } finally {

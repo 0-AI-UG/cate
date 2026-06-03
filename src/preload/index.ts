@@ -93,6 +93,8 @@ import {
   RECENT_PROJECTS_REMOVE,
   SIDEBAR_SESSION_GET,
   SIDEBAR_SESSION_SET,
+  REMOTE_PROJECTS_GET,
+  REMOTE_PROJECTS_SET,
   LAYOUT_SAVE,
   LAYOUT_LIST,
   LAYOUT_LOAD,
@@ -130,6 +132,14 @@ import {
   WORKSPACE_UPDATE,
   WORKSPACE_REMOVE,
   WORKSPACE_CHANGED,
+  COMPANION_CONNECT,
+  COMPANION_ENSURE,
+  COMPANION_LIST,
+  COMPANION_WSL_DISTROS,
+  COMPANION_SSH_HOSTS,
+  COMPANION_DELETE,
+  COMPANION_INSTALL,
+  COMPANION_STATUS,
   WEBVIEW_SCREENSHOT,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
@@ -751,6 +761,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(SIDEBAR_SESSION_SET, session)
   },
 
+  remoteProjectsGet(): Promise<unknown> {
+    return ipcRenderer.invoke(REMOTE_PROJECTS_GET)
+  },
+
+  remoteProjectsSet(entries: unknown): Promise<void> {
+    return ipcRenderer.invoke(REMOTE_PROJECTS_SET, entries)
+  },
+
   // ---------------------------------------------------------------------------
   // Layouts
   // ---------------------------------------------------------------------------
@@ -988,8 +1006,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Workspace management (main process is source of truth)
   // ---------------------------------------------------------------------------
 
-  workspaceCreate(options?: { name?: string; rootPath?: string; id?: string }): Promise<unknown> {
+  workspaceCreate(options?: { name?: string; rootPath?: string; id?: string; connection?: unknown }): Promise<unknown> {
     return ipcRenderer.invoke(WORKSPACE_CREATE, options)
+  },
+
+  // --- Companion connections (remote / WSL) ---
+  companionConnect(spec: unknown): Promise<unknown> {
+    return ipcRenderer.invoke(COMPANION_CONNECT, spec)
+  },
+  companionEnsure(connection: unknown): Promise<unknown> {
+    return ipcRenderer.invoke(COMPANION_ENSURE, connection)
+  },
+  companionList(): Promise<string[]> {
+    return ipcRenderer.invoke(COMPANION_LIST)
+  },
+  companionWslDistros(): Promise<string[]> {
+    return ipcRenderer.invoke(COMPANION_WSL_DISTROS)
+  },
+  companionSshHosts(): Promise<unknown[]> {
+    return ipcRenderer.invoke(COMPANION_SSH_HOSTS)
+  },
+  companionInstall(connection: unknown): Promise<unknown> {
+    return ipcRenderer.invoke(COMPANION_INSTALL, connection)
+  },
+  companionDelete(connection: unknown): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(COMPANION_DELETE, connection)
+  },
+  onCompanionStatus(callback: (event: unknown) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(COMPANION_STATUS, listener)
+    return () => {
+      ipcRenderer.removeListener(COMPANION_STATUS, listener)
+    }
   },
 
   workspaceUpdate(id: string, changes: Record<string, unknown>): Promise<unknown> {

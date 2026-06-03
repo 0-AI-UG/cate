@@ -20,13 +20,15 @@ import {
   RECENT_PROJECTS_REMOVE,
   SIDEBAR_SESSION_GET,
   SIDEBAR_SESSION_SET,
+  REMOTE_PROJECTS_GET,
+  REMOTE_PROJECTS_SET,
   LAYOUT_SAVE,
   LAYOUT_LIST,
   LAYOUT_LOAD,
   LAYOUT_DELETE,
 } from '../shared/ipc-channels'
 import { DEFAULT_SETTINGS } from '../shared/types'
-import type { AppSettings, SidebarSession } from '../shared/types'
+import type { AppSettings, SidebarSession, RemoteProjectEntry } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
 
 /** Push saved-layout names to the native Layouts menu. Imported lazily so the
@@ -325,6 +327,19 @@ export function registerHandlers(): void {
   ipcMain.handle(SIDEBAR_SESSION_SET, async (_event, session: SidebarSession) => {
     const store = await getStore()
     store.set('sidebarSession', session)
+  })
+
+  // Remote projects (cate-companion:// workspaces): full restore snapshot +
+  // reconnect info, since their tree lives on a companion and can't use the
+  // local .cate/ project-state files.
+  ipcMain.handle(REMOTE_PROJECTS_GET, async () => {
+    const store = await getStore()
+    return store.get('remoteProjects', []) as RemoteProjectEntry[]
+  })
+
+  ipcMain.handle(REMOTE_PROJECTS_SET, async (_event, entries: RemoteProjectEntry[]) => {
+    const store = await getStore()
+    store.set('remoteProjects', Array.isArray(entries) ? entries : [])
   })
 
   // Layouts

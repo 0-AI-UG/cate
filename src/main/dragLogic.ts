@@ -34,7 +34,7 @@ const GHOST_DEFAULT_SIZE = { width: 320, height: 200 } as const
 
 /** Default cursor-grab offset used when a snapshot doesn't provide one — the
  *  drop target's top-left lands a few pixels above-left of the cursor. */
-export const DEFAULT_GRAB_OFFSET: Point = { x: 12, y: 12 }
+const DEFAULT_GRAB_OFFSET: Point = { x: 12, y: 12 }
 
 // -----------------------------------------------------------------------------
 // Cross-window state machine

@@ -58,5 +58,3 @@ export function DockZoneDropIndicator({ position, isActive }: DockZoneDropIndica
 
   return <div style={style} />
 }
-
-export default DockZoneDropIndicator
