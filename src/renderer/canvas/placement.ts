@@ -126,10 +126,24 @@ const PLACEMENT_MAX_W = 1400
 const PLACEMENT_MAX_H = 900
 const PLACEMENT_MIN_AR = 0.6
 const PLACEMENT_MAX_AR = 2.6
-/** How far (in panel "pitches" = std size + gap) the place-area extends around a
+/** How far (in panel "pitches" = slot size + gap) the place-area extends around a
  *  focused node. A tight ring → recommendations hug the node, yet still reach the
  *  free space just beyond a surrounding ring of windows. */
 const PLACEMENT_FOCUS_MARGIN = 1
+
+/** The canonical "slot" the recommendation grid is laid out on — the largest panel
+ *  default, so the *positions* of spots are identical whatever panel type is being
+ *  placed (only each ghost's size tracks its own type). Sized so a type-sized ghost
+ *  always fits its slot, keeping the spot count stable across types. */
+const PLACEMENT_SLOT: Size = (() => {
+  let width = 0
+  let height = 0
+  for (const s of Object.values(PANEL_DEFAULT_SIZES)) {
+    width = Math.max(width, s.width)
+    height = Math.max(height, s.height)
+  }
+  return { width, height }
+})()
 
 // --- Geometry helpers --------------------------------------------------------
 
@@ -139,6 +153,38 @@ function inflateRect(r: Rect, m: number): Rect {
     origin: { x: r.origin.x - m, y: r.origin.y - m },
     size: { width: r.size.width + m * 2, height: r.size.height + m * 2 },
   }
+}
+
+/** True when point `p` lies inside rect `r`. */
+function rectContainsPoint(r: Rect, p: Point): boolean {
+  return p.x >= r.origin.x && p.x <= r.origin.x + r.size.width && p.y >= r.origin.y && p.y <= r.origin.y + r.size.height
+}
+
+/** True when the segment a→b crosses rect `r` (Liang–Barsky clip). Used to hide a
+ *  recommendation that sits behind a nearer one — i.e. another spot is between it
+ *  and the viewpoint. */
+function segHitsRect(a: Point, b: Point, r: Rect): boolean {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const p = [-dx, dx, -dy, dy]
+  const q = [a.x - r.origin.x, r.origin.x + r.size.width - a.x, a.y - r.origin.y, r.origin.y + r.size.height - a.y]
+  let t0 = 0
+  let t1 = 1
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return false // parallel and outside this edge
+    } else {
+      const t = q[i] / p[i]
+      if (p[i] < 0) {
+        if (t > t1) return false
+        if (t > t0) t0 = t
+      } else {
+        if (t < t0) return false
+        if (t < t1) t1 = t
+      }
+    }
+  }
+  return t0 <= t1
 }
 
 /** Shrink (w,h) to fall within [minAR, maxAR] aspect ratio, keeping it inside. */
@@ -191,6 +237,10 @@ export function recommendPlacements(
   const snapPt = (p: Point): Point => ({ x: Math.round(p.x / grid) * grid, y: Math.round(p.y / grid) * grid })
   const gap = PLACEMENT_GAP
   const std = PANEL_DEFAULT_SIZES[panelType]
+  // Spot POSITIONS are laid out on the canonical slot so the grid is the same for
+  // every panel type; only each ghost's SIZE (via fitAt) tracks `std`. (Bigger
+  // panels still fit fewer spots in open areas — that part is unavoidable.)
+  const slot = PLACEMENT_SLOT
 
   const { offset, zoom, containerSize } = viewport
   const hasVp = containerSize.width > 0 && containerSize.height > 0
@@ -209,6 +259,11 @@ export function recommendPlacements(
   // that keep a gap to every node and to each other. Always returns ≥1.
   const finalize = (raw: Raw[], rankAt: Point): PlacementCandidate[] => {
     const clear = (rect: Rect, others: Rect[]) => !others.some((r) => rectsOverlap(inflateRect(rect, gap - 1), r))
+    const centreOf = (r: Rect): Point => ({ x: r.origin.x + r.size.width / 2, y: r.origin.y + r.size.height / 2 })
+    // A spot is "behind" an already-taken one when a nearer spot sits between it
+    // and the viewpoint — don't recommend a spot you'd have to look past another.
+    const occluded = (rect: Rect, taken: Rect[]) =>
+      taken.some((t) => !rectContainsPoint(t, rankAt) && segHitsRect(rankAt, centreOf(rect), t))
     const seen = new Set<string>()
     const ranked = raw
       .map((c) => ({ point: snapPt(c.point), size: c.size }))
@@ -229,6 +284,7 @@ export function recommendPlacements(
     for (const c of ranked) {
       if (out.length >= max) break
       if (!clear(c.rect, nodeRects) || !clear(c.rect, taken)) continue
+      if (occluded(c.rect, taken)) continue
       taken.push(c.rect)
       out.push({ point: c.point, size: c.size, rank: out.length, onScreen: c.vis })
     }
@@ -265,8 +321,8 @@ export function recommendPlacements(
   // reference being the on-screen node nearest the cursor (wider, island-biased).
   const focused = (focusedNodeId && nodes[focusedNodeId]) || null
   const focusedOnScreen = !!focused && onScreen({ origin: focused.origin, size: focused.size })
-  const pitchX = std.width + gap
-  const pitchY = std.height + gap
+  const pitchX = slot.width + gap
+  const pitchY = slot.height + gap
 
   let ref: CanvasNodeState
   let area: Rect
@@ -350,7 +406,7 @@ export function recommendPlacements(
   for (const x of xs) {
     for (const y of ys) {
       const p = { x, y }
-      if (!rectsOverlap({ origin: p, size: std }, area)) continue // outside the place area
+      if (!rectsOverlap({ origin: p, size: slot }, area)) continue // outside the place area
       if (occupied(p)) continue
       const size = fitAt(p)
       if (size) raw.push({ point: p, size })

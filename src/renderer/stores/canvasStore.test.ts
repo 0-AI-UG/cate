@@ -462,22 +462,21 @@ describe('canvasStore.recommendPlacements', () => {
   })
 
   it('FOCUS vs CURSOR: focus pulls the best spot to the node; no focus follows the cursor', () => {
-    const a = node('a', 100, 100, 200, 150)
-    const b = node('b', 700, 500, 200, 150, 1)
+    // Big viewport, nodes far apart so the best spot can hug one without reaching the other.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1800, height: 1400 } }
+    const a = node('a', 100, 100, 300, 220)
+    const b = node('b', 1300, 1000, 300, 220, 1)
     const nodes = toMap(a, b)
-    const centre = (r: R) => ({ x: r.origin.x + r.size.width / 2, y: r.origin.y + r.size.height / 2 })
-    const aC = centre({ origin: a.origin, size: a.size })
-    const bC = centre({ origin: b.origin, size: b.size })
-    const distTo = (c: { point: { x: number; y: number }; size: { width: number; height: number } }, p: { x: number; y: number }) =>
-      Math.hypot(c.point.x + c.size.width / 2 - p.x, c.point.y + c.size.height / 2 - p.y)
+    const aR: R = { origin: a.origin, size: a.size }
+    const bR: R = { origin: b.origin, size: b.size }
 
-    // Focused on A (no cursor) → the best spot gravitates to A, not B.
-    const focused = recommendPlacements(nodes, 'a', 'terminal', VIEWPORT, null)
-    expect(distTo(focused[0], aC)).toBeLessThan(distTo(focused[0], bC))
+    // Focused on A (no cursor) → the best spot hugs A, not B.
+    const focused = recommendPlacements(nodes, 'a', 'terminal', VP, null)
+    expect(rectGap(rectOf(focused[0]), aR)).toBeLessThan(rectGap(rectOf(focused[0]), bR))
 
     // Nothing focused, cursor by B → the best spot follows the cursor to B, not A.
-    const free = recommendPlacements(nodes, null, 'terminal', VIEWPORT, { x: 660, y: 460 })
-    expect(distTo(free[0], bC)).toBeLessThan(distTo(free[0], aC))
+    const free = recommendPlacements(nodes, null, 'terminal', VP, { x: 1280, y: 980 })
+    expect(rectGap(rectOf(free[0]), bR)).toBeLessThan(rectGap(rectOf(free[0]), aR))
   })
 
   it('HUG SNAP: a node with a non-grid-aligned edge still gets a spot directly beside it', () => {
@@ -493,6 +492,19 @@ describe('canvasStore.recommendPlacements', () => {
     )
     expect(beside).toBeDefined()
     expect(rectsOverlap(rectOf(beside!), { origin: a.origin, size: a.size })).toBe(false)
+  })
+
+  it('OCCLUSION: a spot is not shown when a nearer one sits between it and the node', () => {
+    // A long open strip to the right of the node would otherwise yield several
+    // spots stacked in the same row; only the nearest should survive.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2600, height: 1000 } }
+    const a = node('a', 100, 100, 200, 150)
+    const cands = recommendPlacements(toMap(a), null, 'terminal', VP, { x: 200, y: 175 })
+    const aRight = a.origin.x + a.size.width
+    const rightBand = cands.filter(
+      (c) => c.point.x >= aRight && c.point.y < a.origin.y + a.size.height && c.point.y + c.size.height > a.origin.y,
+    )
+    expect(rightBand.length).toBeLessThanOrEqual(1)
   })
 })
 
