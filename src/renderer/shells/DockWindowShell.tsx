@@ -16,6 +16,7 @@ import { terminalRestoreData } from '../lib/session'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { applyCanvasChildPanels } from '../lib/applyCanvasChildPanels'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
+import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { isDockEmpty } from './dockEmpty'
 import { shouldCloseDockWindow } from './shouldCloseDockWindow'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -321,8 +322,8 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
   const handleClosePanel = useCallback(
     async (panelId: string) => {
-      const ok = await confirmCloseDirtyPanels([panels[panelId]])
-      if (!ok) return
+      if (!(await confirmCloseDirtyPanels([panels[panelId]]))) return
+      if (!(await confirmCloseRunningTerminals([panels[panelId]]))) return
       dockStore.getState().undockPanel(panelId)
       setPanels((prev) => {
         const { [panelId]: _removed, ...rest } = prev
