@@ -10,9 +10,6 @@ import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import { ALL_ZONES } from '../../shared/types'
 import type { NotificationAction, PanelLocation } from '../../shared/types'
 
-export { shouldSendNotification } from './notificationGating'
-export { sendOsNotification } from './osNotificationSend'
-
 type DockStoreState = ReturnType<typeof useDockStore.getState>
 
 function focusDockPanel(dock: DockStoreState, panelId: string, location: PanelLocation): void {

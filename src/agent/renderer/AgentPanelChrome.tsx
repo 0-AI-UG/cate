@@ -1,8 +1,5 @@
 // =============================================================================
 // AgentPanelChrome — extra UI surfaces for the agent panel:
-//   • StatsBar         — context%/cost/turn counters in the header
-//   • CompactionBanner — visible while pi compacts the conversation
-//   • RetryBanner      — visible while pi auto-retries a transient API error
 //   • QueueBadges      — small chips for pending steering / follow-up messages
 //   • ExtensionStatusBar — extension setStatus() text (footer)
 //   • ExtensionWidget   — extension setWidget() lines (above/below editor)
@@ -17,171 +14,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-
   Image as ImageIcon,
-
-  Spinner,
-  Stack,
-  Warning,
-  WarningCircle,
   X,
 } from '@phosphor-icons/react'
 import type {
   AgentExtensionUIRequest,
   AgentImageAttachment,
-  AgentSessionStats,
   AgentThinkingLevel,
 } from '../../shared/types'
 import type {
-  CompactionState,
-
   ExtensionStatusEntry,
   ExtensionWidgetEntry,
-  RetryState,
 } from './agentStore'
-
-// -----------------------------------------------------------------------------
-// Stats bar
-// -----------------------------------------------------------------------------
-
-export function StatsBar({ stats }: { stats: AgentSessionStats | null }) {
-  if (!stats) return null
-  const ctx = stats.contextUsage
-  const pct = ctx?.percent ?? null
-  const window = ctx?.contextWindow
-  const pctColor =
-    pct == null ? 'text-muted' : pct > 85 ? 'text-red-300' : pct > 65 ? 'text-amber-300' : 'text-muted'
-
-  return (
-    <div className="flex items-center gap-2 text-[11px] font-mono">
-      {pct != null && window != null && (
-        <div className="flex items-center gap-1.5" title={`${ctx?.tokens ?? 0} / ${window} tokens`}>
-          <Stack size={11} className="text-muted" />
-          <span className={pctColor}>{pct}%</span>
-        </div>
-      )}
-      <span className="text-muted/60">·</span>
-      <span className="text-muted" title="Total tokens this session">
-        {formatTokens(stats.tokens.total)}t
-      </span>
-      <span className="text-muted/60">·</span>
-      <span className="text-muted" title="Estimated cost so far">
-        ${stats.cost.toFixed(stats.cost < 0.01 ? 4 : 2)}
-      </span>
-    </div>
-  )
-}
-
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n)
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`
-  return `${(n / 1_000_000).toFixed(2)}M`
-}
-
-// -----------------------------------------------------------------------------
-// Compaction + retry banners
-// -----------------------------------------------------------------------------
-
-export function CompactionBanner({ state }: { state: CompactionState }) {
-  if (!state.active && !state.lastErrorMessage && !state.lastResult) return null
-
-  if (state.active) {
-    const label =
-      state.reason === 'manual'
-        ? 'Compacting context…'
-        : state.reason === 'overflow'
-        ? 'Context overflow — compacting…'
-        : 'Auto-compacting context…'
-    return (
-      <BannerRow tone="info">
-        <Spinner size={11} className="text-agent-light animate-spin shrink-0" />
-        <span>{label}</span>
-      </BannerRow>
-    )
-  }
-
-  if (state.lastErrorMessage) {
-    return (
-      <BannerRow tone="error">
-        <Warning size={11} className="shrink-0" />
-        <span>Compaction failed: {state.lastErrorMessage}</span>
-      </BannerRow>
-    )
-  }
-
-  if (state.lastResult) {
-    return (
-      <BannerRow tone="muted">
-        <Stack size={11} className="shrink-0" />
-        <span>
-          Compacted context
-          {state.lastResult.tokensBefore != null ? ` (was ${formatTokens(state.lastResult.tokensBefore)}t)` : ''}.
-        </span>
-      </BannerRow>
-    )
-  }
-  return null
-}
-
-export function RetryBanner({
-  state,
-  onAbort,
-}: {
-  state: RetryState
-  onAbort: () => void
-}) {
-  if (!state.active && !state.finalError) return null
-  if (state.active) {
-    const delay = state.delayMs != null ? `${Math.round(state.delayMs / 100) / 10}s` : '…'
-    return (
-      <BannerRow tone="warning">
-        <Spinner size={11} className="animate-spin shrink-0" />
-        <span className="flex-1">
-          Auto-retry attempt {state.attempt ?? '?'}/{state.maxAttempts ?? '?'} in {delay}
-          {state.errorMessage ? ` — ${trimMessage(state.errorMessage)}` : ''}
-        </span>
-        <button
-          onClick={onAbort}
-          className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 text-primary text-[10px]"
-        >
-          Abort
-        </button>
-      </BannerRow>
-    )
-  }
-  return (
-    <BannerRow tone="error">
-      <WarningCircle size={11} className="shrink-0" />
-      <span>Retries exhausted: {trimMessage(state.finalError ?? 'unknown error')}</span>
-    </BannerRow>
-  )
-}
-
-function trimMessage(s: string): string {
-  return s.length > 160 ? `${s.slice(0, 160)}…` : s
-}
-
-function BannerRow({
-  tone,
-  children,
-}: {
-  tone: 'info' | 'warning' | 'error' | 'muted'
-  children: React.ReactNode
-}) {
-  const toneClass =
-    tone === 'info'
-      ? 'bg-agent/10 text-primary border-agent/30'
-      : tone === 'warning'
-      ? 'bg-amber-500/10 text-amber-100 border-amber-500/30'
-      : tone === 'error'
-      ? 'bg-red-500/10 text-red-100 border-red-500/30'
-      : 'bg-white/[0.02] text-muted border-white/5'
-  return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 border-b text-[11.5px] ${toneClass}`}>
-      {children}
-    </div>
-  )
-}
 
 // -----------------------------------------------------------------------------
 // Steering / follow-up queue chips

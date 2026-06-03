@@ -11,8 +11,6 @@
 import { create } from 'zustand'
 import { INITIAL_DRAG_STATE, type DragState } from './types'
 
-export type { DragSource, DropTarget, DragState } from './types'
-
 export interface DragActions {
   /** Replace the state slice in one shot — used by the runtime dispatcher. */
   applyDragState(next: DragState): void

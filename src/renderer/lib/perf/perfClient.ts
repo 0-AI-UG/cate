@@ -134,9 +134,3 @@ export function resetPerfWindow(): void {
   longTaskCount = 0
   longTaskMaxMs = 0
 }
-
-export function stopPerfClient(): void {
-  if (longTaskObserver) { longTaskObserver.disconnect(); longTaskObserver = null }
-  if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = 0 }
-  started = false
-}

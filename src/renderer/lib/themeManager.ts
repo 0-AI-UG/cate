@@ -21,7 +21,6 @@ import { useSettingsStore } from '../stores/settingsStore'
 import {
   BASE_DARK,
   BASE_LIGHT,
-  BUILT_IN_THEMES,
   DEFAULT_DARK_THEME_ID,
   DEFAULT_LIGHT_THEME_ID,
   BUILT_IN_BY_ID,
@@ -38,13 +37,6 @@ let mediaListener: ((e: MediaQueryListEvent) => void) | null = null
 // Theme lookup
 // ---------------------------------------------------------------------------
 
-/** All selectable themes: user customs first (so they can shadow a built-in by
- *  id), then built-ins. */
-export function getAllThemes(): Theme[] {
-  const custom = useSettingsStore.getState().customThemes ?? []
-  return [...custom, ...BUILT_IN_THEMES]
-}
-
 function themeById(id: string): Theme | undefined {
   const custom = useSettingsStore.getState().customThemes ?? []
   return custom.find((t) => t.id === id) ?? BUILT_IN_BY_ID[id]
@@ -57,7 +49,7 @@ function prefersDark(): boolean {
 
 /** Resolve a selection ('system' or a theme id) to a concrete Theme. Unknown
  *  ids fall back to the matching default so a deleted/renamed theme never breaks. */
-export function resolveTheme(selection: ThemeSelection): Theme {
+function resolveTheme(selection: ThemeSelection): Theme {
   if (selection === 'system') {
     const s = useSettingsStore.getState()
     const id = prefersDark()
@@ -146,12 +138,6 @@ export function applyTheme(selection: ThemeSelection): void {
     detachMediaListener()
   }
   applyResolved(resolveTheme(selection))
-}
-
-/** Re-apply the current selection — call after customThemes / systemLight/Dark
- *  ids change so an edited or newly-imported active theme repaints live. */
-export function reapplyTheme(): void {
-  applyResolved(resolveTheme(currentSelection))
 }
 
 export function getActiveTheme(): Theme {
