@@ -101,10 +101,51 @@ function mergeValidatedSettings(target: Partial<AppSettings>, source: Record<str
 // Lazy-loaded store instance (ESM dynamic import)
 let storeInstance: any = null
 
+/** If `config.json` is present but not valid JSON, copy it aside before
+ *  electron-store (with `clearInvalidConfig`) silently overwrites it with
+ *  defaults — so a user's corrupt settings are preserved for support/recovery
+ *  rather than lost. Best-effort; never throws. */
+function backupConfigIfCorrupt(): void {
+  try {
+    const cfgPath = path.join(app.getPath('userData'), 'config.json')
+    if (!fsSync.existsSync(cfgPath)) return
+    const raw = fsSync.readFileSync(cfgPath, 'utf-8')
+    try {
+      JSON.parse(raw)
+    } catch {
+      const backupPath = `${cfgPath}.corrupt-${Date.now()}`
+      fsSync.copyFileSync(cfgPath, backupPath)
+      log.error('config.json is corrupt; backed up to %s and resetting to defaults', backupPath)
+    }
+  } catch (err) {
+    log.warn('Corrupt-config check failed: %O', err)
+  }
+}
+
 async function getStore(): Promise<any> {
   if (storeInstance) return storeInstance
   const { default: Store } = await import('electron-store')
-  storeInstance = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
+  // Preserve a corrupt config before clearInvalidConfig wipes it.
+  backupConfigIfCorrupt()
+  // clearInvalidConfig: a corrupt config.json resets to defaults instead of
+  // throwing on construction — which would otherwise reject every settings
+  // IPC call (settings, recent projects, layouts) for the whole session.
+  const opts = { defaults: DEFAULT_SETTINGS, clearInvalidConfig: true }
+  try {
+    storeInstance = new Store<AppSettings>(opts)
+  } catch (err) {
+    // clearInvalidConfig only covers JSON SyntaxErrors. For anything else
+    // (e.g. an unreadable/locked file), move the bad file aside and retry so
+    // settings keep working rather than failing for the entire session.
+    log.error('electron-store construction failed; quarantining config and retrying: %O', err)
+    try {
+      const cfgPath = path.join(app.getPath('userData'), 'config.json')
+      if (fsSync.existsSync(cfgPath)) fsSync.renameSync(cfgPath, `${cfgPath}.broken-${Date.now()}`)
+    } catch (mvErr) {
+      log.warn('Failed to quarantine config.json: %O', mvErr)
+    }
+    storeInstance = new Store<AppSettings>(opts)
+  }
   // Hydrate sync cache from the freshly loaded store
   try {
     Object.assign(settingsCache, storeInstance.store as Partial<AppSettings>)
