@@ -27,6 +27,9 @@ export interface LocalSubprocessOptions {
   id: string
   exclusions?: string[]
   env?: NodeJS.ProcessEnv
+  /** POSIX-only idle-suspend of backgrounded terminals (the user's setting);
+   *  appended as `--idle-suspend` to the daemon launch args when true. */
+  idleSuspend?: boolean
   /** Direct mode: explicit node + bundle, no provisioning (tests). */
   nodePath?: string
   bundlePath?: string
@@ -62,6 +65,7 @@ export class LocalSubprocessTransport implements CompanionTransport {
     id?: string
     exclusions?: string[]
     env?: NodeJS.ProcessEnv
+    idleSuspend?: boolean
   }): LocalSubprocessTransport | null {
     const target = hostCompanionTarget()
     if (!target) return null
@@ -104,6 +108,7 @@ export class LocalSubprocessTransport implements CompanionTransport {
     const bundlePath = this.opts.bundlePath ?? path.join(this.opts.installDir!, 'companion.cjs')
     const args = [bundlePath, '--root', this.opts.root, '--id', this.opts.id]
     if (this.opts.exclusions?.length) args.push('--exclude', this.opts.exclusions.join(','))
+    if (this.opts.idleSuspend) args.push('--idle-suspend')
 
     const child = spawn(nodePath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],

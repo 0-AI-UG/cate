@@ -142,6 +142,64 @@ describe('cate-companion daemon (real subprocess)', () => {
     30_000,
   )
 
+  // Group-kill: killing a terminal must reap its CHILDREN (dev servers), not
+  // just the shell. The daemon's process capability SIGTERMs the pty's whole
+  // process GROUP. Spawn a long-lived backgrounded child, capture its pid from
+  // the pty output, kill the terminal, and assert the child is gone — the
+  // deterministic, high-value half of the lifecycle behavior.
+  test.skipIf(process.platform === 'win32')(
+    'killing a terminal reaps its child process group',
+    async () => {
+      mgr = new CompanionManager()
+      const transport = new LocalSubprocessTransport({
+        nodePath: process.execPath,
+        bundlePath,
+        root: workspace,
+        id: 'srv_groupkill',
+      })
+      const companion = await mgr.connect('srv_groupkill', transport)
+
+      let output = ''
+      let resolvePid!: (pid: number) => void
+      const sawChildPid = new Promise<number>((resolve) => { resolvePid = resolve })
+      const handle = await companion.process.create(
+        { cols: 80, rows: 24, cwd: workspace, shell: '/bin/sh' },
+        (_id, data) => {
+          output += data
+          const m = output.match(/CHILD=(\d+)/)
+          if (m) resolvePid(parseInt(m[1], 10))
+        },
+        () => { /* exit */ },
+      )
+      // Background a long-lived child and print its pid. `sleep 300 &` detaches
+      // it from the shell's foreground but keeps it in the pty's process group.
+      companion.process.write(handle.id, 'sleep 300 & echo CHILD=$!\n')
+
+      const childPid = await Promise.race([
+        sawChildPid,
+        new Promise<number>((_r, reject) =>
+          setTimeout(() => reject(new Error(`no child pid; got: ${output.slice(0, 200)}`)), 8000)),
+      ])
+
+      // The child is alive right now (signal 0 = existence probe, no kill).
+      expect(() => process.kill(childPid, 0)).not.toThrow()
+
+      // Kill the terminal — the daemon SIGTERMs the whole process group.
+      companion.process.kill(handle.id)
+
+      // Poll until the child is gone (ESRCH) or we time out.
+      const gone = await (async () => {
+        for (let i = 0; i < 40; i++) {
+          try { process.kill(childPid, 0) } catch { return true } // ESRCH: reaped
+          await new Promise((r) => setTimeout(r, 50))
+        }
+        return false
+      })()
+      expect(gone).toBe(true)
+    },
+    30_000,
+  )
+
   test('streams remote filesystem changes over the wire', async () => {
     mgr = new CompanionManager()
     const transport = new LocalSubprocessTransport({

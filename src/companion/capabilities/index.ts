@@ -12,7 +12,7 @@ import path from 'path'
 import * as fileLeaf from './file'
 import { runRipgrepSearch } from '../search/engine'
 import { createVcsCapability } from './vcs'
-import { createProcessCapability } from './process'
+import { createProcessCapability, type ProcessCapability } from './process'
 import { createAgentCapability } from './agent'
 import { ensurePiOnHost, piCliPath } from '../ensurePi'
 import {
@@ -23,7 +23,7 @@ import {
   addAllowedRoot as addRoot,
   removeAllowedRoot as removeRoot,
 } from '../../main/ipc/pathValidation'
-import type { Companion, FileHost, ProcessHost } from '../../main/companion/types'
+import type { Companion, FileHost } from '../../main/companion/types'
 
 export interface DaemonCompanionConfig {
   id: string
@@ -31,6 +31,17 @@ export interface DaemonCompanionConfig {
   exclusions?: string[]
   /** Env for git/gh subprocesses. Defaults to process.env. */
   env?: () => NodeJS.ProcessEnv
+  /** POSIX-only idle-suspend of backgrounded local terminals (off for remote
+   *  daemons — only the local-workspace daemon sets it, mirroring the in-process
+   *  local host's setting). Passed through to the process capability. */
+  idleSuspend?: boolean
+}
+
+/** A built daemon Companion plus the concrete process capability, so the daemon
+ *  entry can call killAllGroups() on shutdown (not part of the ProcessHost interface). */
+export interface DaemonCompanion {
+  companion: Companion
+  process: ProcessCapability
 }
 
 /** The ripgrep binary shipped in the companion tarball, staged next to the
@@ -40,7 +51,7 @@ function daemonRgPath(): string {
   return path.join(path.dirname(process.execPath), 'rg')
 }
 
-export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
+export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompanion {
   const exclusionSet = new Set(config.exclusions ?? [])
 
   // The daemon is the AUTHORITATIVE path check: only it can realpath its own
@@ -101,12 +112,15 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
       return { path: 'sh', args: [] }
     },
     getEnv: () => Object.fromEntries(Object.entries(env()).filter(([, v]) => v !== undefined)) as Record<string, string>,
+    idleSuspend: config.idleSuspend,
   })
 
   // The daemon is the AUTHORITATIVE cwd check (RemoteCompanion.validateCwd is a
   // client-side pass-through), so validate the terminal cwd here before spawning,
   // matching what terminal.ts does for a local companion. Throwing rejects create.
-  const proc: ProcessHost = {
+  // Keep it a ProcessCapability (spread carries killAllGroups) so the daemon
+  // entry can reap process groups on shutdown.
+  const proc: ProcessCapability = {
     ...innerProc,
     create: async (opts, onData, onExit) => {
       if (opts.cwd) validateCwd(opts.cwd) // throws -> rejects create, matching local
@@ -123,7 +137,7 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
     baseEnv: () => Object.fromEntries(Object.entries(env()).filter(([, v]) => v !== undefined)) as Record<string, string>,
   })
 
-  return {
+  const companion: Companion = {
     id: config.id,
     process: proc,
     agent,
@@ -136,4 +150,5 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): Companion {
     addAllowedRoot: async (root) => { addRoot(root) },
     removeAllowedRoot: async (root) => { removeRoot(root) },
   }
+  return { companion, process: proc }
 }

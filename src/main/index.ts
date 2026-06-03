@@ -23,7 +23,7 @@ import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerSearchHandlers, stopSearchesForWindow } from './ipc/search'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot } from './store'
+import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot, getSettingSync } from './store'
 import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
@@ -1327,6 +1327,7 @@ app.whenReady().then(async () => {
     root: app.getPath('home'),
     exclusions: [...currentExclusionSet()],
     env: getShellEnv(),
+    idleSuspend: getSettingSync('autoSuspendIdleTerminals'),
   })
 
   if (process.platform === 'darwin') {

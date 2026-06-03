@@ -53,7 +53,7 @@ export class CompanionManager {
    * remote host. Falls back to the in-process companion if no local tarball/target
    * is available. Call once at startup before the first local workspace op.
    */
-  async ensureLocalCompanion(opts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv }): Promise<void> {
+  async ensureLocalCompanion(opts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv; idleSuspend?: boolean }): Promise<void> {
     if (!localDaemonEnabled()) return
     if (this.companions.has(LOCAL_COMPANION_ID)) return
     const transport = LocalSubprocessTransport.forLocalHost({
@@ -61,6 +61,7 @@ export class CompanionManager {
       id: LOCAL_COMPANION_ID,
       exclusions: opts.exclusions,
       env: opts.env,
+      idleSuspend: opts.idleSuspend,
     })
     if (!transport) {
       log.warn('[companion] CATE_LOCAL_DAEMON set but no local tarball/target — using in-process companion')

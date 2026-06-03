@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { buildDaemonCompanion } from './index'
 import { addAllowedRoot, removeAllowedRoot } from '../../main/ipc/pathValidation'
+import type { Companion } from '../../main/companion/types'
 
 // The daemon's FileHost is the AUTHORITATIVE path check: each leaf fs op runs
 // through validatePathStrict (reads) or validatePathForCreation (creates)
@@ -17,7 +18,7 @@ import { addAllowedRoot, removeAllowedRoot } from '../../main/ipc/pathValidation
 
 describe('buildDaemonCompanion FileHost path validation', () => {
   let root: string
-  let companion: ReturnType<typeof buildDaemonCompanion>
+  let companion: Companion
 
   beforeEach(async () => {
     // realpath the temp dir so macOS /var -> /private/var symlinks don't trip
@@ -25,7 +26,7 @@ describe('buildDaemonCompanion FileHost path validation', () => {
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-daemon-val-')))
     addAllowedRoot(root)
     await fs.writeFile(path.join(root, 'inside.txt'), 'hello from inside\n')
-    companion = buildDaemonCompanion({ id: 'test' })
+    companion = buildDaemonCompanion({ id: 'test' }).companion
   })
 
   afterEach(async () => {
