@@ -18,7 +18,7 @@ import os from 'os'
 import path from 'path'
 import type { CompanionChannel, CompanionTransport } from './transport'
 import { COMPANION_VERSION } from '../../../companion/version'
-import { hostCompanionTarget, localTarballIfPresent, type CompanionTarget } from '../companionArtifacts'
+import { hostCompanionTarget, localTarballIfPresent, shippedCompanionTarball, type CompanionTarget } from '../companionArtifacts'
 
 const execFileP = promisify(execFile)
 
@@ -71,7 +71,7 @@ export class LocalSubprocessTransport implements CompanionTransport {
   }): LocalSubprocessTransport | null {
     const target = hostCompanionTarget()
     if (!target) return null
-    const tarballPath = localTarballIfPresent(COMPANION_VERSION, target)
+    const tarballPath = localTarballIfPresent(COMPANION_VERSION, target) ?? shippedCompanionTarball()
     if (!tarballPath) return null
     return new LocalSubprocessTransport({
       ...opts,

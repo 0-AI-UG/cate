@@ -164,6 +164,13 @@ extraResources:
     to: skills
     filter:
       - "**/*"
+  # Ship the host-target companion tarball under a fixed name so the packaged
+  # LOCAL workspace can run the same daemon tarball as remote hosts (resolved at
+  # runtime via shippedCompanionTarball() → resources/companion-host.tgz).
+  # scripts/package.mjs always produces this file before electron-builder runs
+  # (copying cate-companion-<version>-<target>.tgz → companion-host.tgz).
+  - from: dist-companion/companion-host.tgz
+    to: companion-host.tgz
 publish:
   provider: github
   owner: 0-AI-UG

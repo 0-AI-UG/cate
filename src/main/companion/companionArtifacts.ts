@@ -150,6 +150,14 @@ export function localTarballIfPresent(version: string, target: CompanionTarget):
   return existsSync(cached) ? cached : null
 }
 
+/** The host-target companion tarball shipped inside the packaged app
+ *  (resources/companion-host.tgz), or null in dev / when absent. */
+export function shippedCompanionTarball(): string | null {
+  if (!app.isPackaged) return null
+  const p = path.join(process.resourcesPath, 'companion-host.tgz')
+  return existsSync(p) ? p : null
+}
+
 /** Short content hash of a local tarball, for the remote `.ok` marker. */
 export async function tarballHash(file: string): Promise<string> {
   return createHash('sha256').update(await readFile(file)).digest('hex').slice(0, 16)
