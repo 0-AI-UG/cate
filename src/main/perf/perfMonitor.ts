@@ -30,12 +30,6 @@ const ipcByChannel = new Map<string, { bytes: number; count: number }>()
 let terminalBytes = 0
 let terminalChunks = 0
 
-/** Count a subprocess spawn, labelled by command (e.g. 'pgrep', 'git'). */
-export function countSpawn(label: string): void {
-  if (!PERF_ENABLED) return
-  spawnCounts.set(label, (spawnCounts.get(label) ?? 0) + 1)
-}
-
 /** Count a main->renderer IPC send. `bytes` is an approximate payload size. */
 export function countIpc(channel: string, bytes: number): void {
   if (!PERF_ENABLED) return
@@ -121,8 +115,4 @@ export function startPerfMonitor(): void {
   timer = setInterval(tick, SAMPLE_INTERVAL_MS)
   // Don't keep the event loop alive solely for profiling.
   if (typeof timer.unref === 'function') timer.unref()
-}
-
-export function stopPerfMonitor(): void {
-  if (timer) { clearInterval(timer); timer = null }
 }

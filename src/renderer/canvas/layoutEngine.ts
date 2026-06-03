@@ -3,18 +3,14 @@
 // Ported from CanvasLayoutEngine.swift.
 // =============================================================================
 
-import type { StoreApi } from 'zustand'
-// Type-only import — no runtime circular dependency with canvasStore
-import type { CanvasStore } from '../stores/canvasStore'
 import type {
   Point,
   Size,
-  Rect,
   PanelType,
   CanvasNodeState,
   CanvasRegion,
 } from '../../shared/types'
-import { PANEL_DEFAULT_SIZES, PANEL_MINIMUM_SIZES } from '../../shared/types'
+import { PANEL_MINIMUM_SIZES } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
 // Grid snapping
@@ -30,22 +26,6 @@ export function snapToGrid(point: Point, gridSize = CANVAS_GRID_SIZE): Point {
   return {
     x: Math.round(point.x / gridSize) * gridSize,
     y: Math.round(point.y / gridSize) * gridSize,
-  }
-}
-
-/**
- * Snap a size so that the bottom-right corner lands on a grid line.
- * The resulting size is at least one gridSize unit in each dimension.
- */
-export function snapSize(size: Size, origin: Point, gridSize = CANVAS_GRID_SIZE): Size {
-  const bottomRight: Point = {
-    x: origin.x + size.width,
-    y: origin.y + size.height,
-  }
-  const snappedBR = snapToGrid(bottomRight, gridSize)
-  return {
-    width: Math.max(snappedBR.x - origin.x, gridSize),
-    height: Math.max(snappedBR.y - origin.y, gridSize),
   }
 }
 
@@ -94,202 +74,12 @@ export function snapResizeDelta(
 }
 
 // -----------------------------------------------------------------------------
-// Edge snapping
-// -----------------------------------------------------------------------------
-
-export interface SnapLine {
-  axis: 'x' | 'y'
-  position: number
-  type: 'edge' | 'center'
-}
-
-export interface SnapResult {
-  /** The position to snap the node to (same as input origin if no snap). */
-  snappedOrigin: Point
-  /** All alignment lines within threshold to render as guides. */
-  lines: SnapLine[]
-}
-
-/**
- * Snap a rect's origin to nearby edges (and center lines) of neighbor rects.
- *
- * Returns a `SnapResult` with:
- *  - `snappedOrigin`: where the node should be placed (closest match per axis)
- *  - `lines`: every alignment line within `threshold` for guide rendering
- *
- * Edge checks per axis (X example):
- *   node.left  vs neighbor.left / neighbor.right
- *   node.right vs neighbor.left / neighbor.right
- *   node.centerX vs neighbor.centerX
- * Same pattern applies to Y with top / bottom / centerY.
- */
-export function snapToEdges(
-  rect: Rect,
-  neighbors: Rect[],
-  threshold = 8,
-): SnapResult {
-  // Best snapped origin per axis and the distance that achieved it
-  let bestSnapX: number | null = null
-  let bestSnapY: number | null = null
-  let bestDX = Infinity
-  let bestDY = Infinity
-
-  const lines: SnapLine[] = []
-
-  const rLeft   = rect.origin.x
-  const rRight  = rect.origin.x + rect.size.width
-  const rCenterX = rect.origin.x + rect.size.width / 2
-  const rTop    = rect.origin.y
-  const rBottom = rect.origin.y + rect.size.height
-  const rCenterY = rect.origin.y + rect.size.height / 2
-
-  for (const neighbor of neighbors) {
-    const nLeft    = neighbor.origin.x
-    const nRight   = neighbor.origin.x + neighbor.size.width
-    const nCenterX = neighbor.origin.x + neighbor.size.width / 2
-    const nTop     = neighbor.origin.y
-    const nBottom  = neighbor.origin.y + neighbor.size.height
-    const nCenterY = neighbor.origin.y + neighbor.size.height / 2
-
-    // ---- X-axis candidates: [distance, snapped origin.x, guide line position, type] ----
-    const xCandidates: [number, number, number, 'edge' | 'center'][] = [
-      [Math.abs(rLeft   - nLeft),    nLeft,                  nLeft,    'edge'],
-      [Math.abs(rLeft   - nRight),   nRight,                 nRight,   'edge'],
-      [Math.abs(rRight  - nLeft),    nLeft   - rect.size.width, nLeft, 'edge'],
-      [Math.abs(rRight  - nRight),   nRight  - rect.size.width, nRight,'edge'],
-      [Math.abs(rCenterX - nCenterX), nCenterX - rect.size.width / 2, nCenterX, 'center'],
-    ]
-
-    for (const [dist, snappedOriginX, guideX, type] of xCandidates) {
-      if (dist < threshold) {
-        // Add guide line if not already present at this position/axis/type
-        if (!lines.some((l) => l.axis === 'x' && l.position === guideX && l.type === type)) {
-          lines.push({ axis: 'x', position: guideX, type })
-        }
-        if (dist < bestDX) {
-          bestDX = dist
-          bestSnapX = snappedOriginX
-        }
-      }
-    }
-
-    // ---- Y-axis candidates ----
-    const yCandidates: [number, number, number, 'edge' | 'center'][] = [
-      [Math.abs(rTop    - nTop),    nTop,                   nTop,    'edge'],
-      [Math.abs(rTop    - nBottom), nBottom,                nBottom, 'edge'],
-      [Math.abs(rBottom - nTop),    nTop    - rect.size.height, nTop, 'edge'],
-      [Math.abs(rBottom - nBottom), nBottom - rect.size.height, nBottom, 'edge'],
-      [Math.abs(rCenterY - nCenterY), nCenterY - rect.size.height / 2, nCenterY, 'center'],
-    ]
-
-    for (const [dist, snappedOriginY, guideY, type] of yCandidates) {
-      if (dist < threshold) {
-        if (!lines.some((l) => l.axis === 'y' && l.position === guideY && l.type === type)) {
-          lines.push({ axis: 'y', position: guideY, type })
-        }
-        if (dist < bestDY) {
-          bestDY = dist
-          bestSnapY = snappedOriginY
-        }
-      }
-    }
-  }
-
-  const snappedOrigin: Point = {
-    x: bestSnapX !== null ? bestSnapX : rect.origin.x,
-    y: bestSnapY !== null ? bestSnapY : rect.origin.y,
-  }
-
-  return { snappedOrigin, lines }
-}
-
-// -----------------------------------------------------------------------------
-// Combined snap (grid + edge, best wins per axis)
-// -----------------------------------------------------------------------------
-
-/**
- * Snap a rect using both grid and edge snapping.
- * For each axis, the snap source with the smaller distance wins.
- */
-export function snap(
-  rect: Rect,
-  neighbors: Rect[],
-  gridSize = CANVAS_GRID_SIZE,
-  edgeThreshold = 8,
-): Point {
-  const gridOrigin = snapToGrid(rect.origin, gridSize)
-  const gridRect: Rect = { origin: gridOrigin, size: rect.size }
-  const edgeResult = snapToEdges(gridRect, neighbors, edgeThreshold)
-  const edgeSnappedOrigin = edgeResult.snappedOrigin
-
-  // For each axis, pick the snap with the smaller displacement from the original
-  let x = gridOrigin.x
-  {
-    const edgeDist = Math.abs(edgeSnappedOrigin.x - rect.origin.x)
-    const gridDist = Math.abs(gridOrigin.x - rect.origin.x)
-    if (edgeResult.lines.some((l) => l.axis === 'x') && edgeDist < gridDist) {
-      x = edgeSnappedOrigin.x
-    }
-  }
-
-  let y = gridOrigin.y
-  {
-    const edgeDist = Math.abs(edgeSnappedOrigin.y - rect.origin.y)
-    const gridDist = Math.abs(gridOrigin.y - rect.origin.y)
-    if (edgeResult.lines.some((l) => l.axis === 'y') && edgeDist < gridDist) {
-      y = edgeSnappedOrigin.y
-    }
-  }
-
-  return { x, y }
-}
-
-// -----------------------------------------------------------------------------
 // Panel size helpers
 // -----------------------------------------------------------------------------
-
-/** Default size for a given panel type. */
-export function defaultSize(panelType: PanelType): Size {
-  return PANEL_DEFAULT_SIZES[panelType]
-}
 
 /** Minimum size for a given panel type. */
 export function minimumSize(panelType: PanelType): Size {
   return PANEL_MINIMUM_SIZES[panelType]
-}
-
-// -----------------------------------------------------------------------------
-// Auto layout
-// -----------------------------------------------------------------------------
-
-/**
- * Compute a grid layout for a set of nodes.
- * Returns a map of nodeId → new origin.
- */
-export function autoLayout(
-  nodes: { id: string; size: Size }[],
-  containerWidth: number,
-  gap = 40,
-): Record<string, Point> {
-  const result: Record<string, Point> = {}
-  let x = gap
-  let y = gap
-  let rowHeight = 0
-
-  for (const node of nodes) {
-    // Wrap to next row if exceeding container width
-    if (x + node.size.width + gap > containerWidth && x > gap) {
-      x = gap
-      y += rowHeight + gap
-      rowHeight = 0
-    }
-
-    result[node.id] = { x, y }
-    x += node.size.width + gap
-    rowHeight = Math.max(rowHeight, node.size.height)
-  }
-
-  return result
 }
 
 // -----------------------------------------------------------------------------
@@ -513,87 +303,6 @@ export function autoLayoutAll(input: AutoLayoutAllInput): AutoLayoutAllResult {
   }
 
   return result
-}
-
-// -----------------------------------------------------------------------------
-// Overlap detection
-// -----------------------------------------------------------------------------
-
-/**
- * Snap a node to grid on release (shared by drag and resize mouseUp handlers).
- * Reads node state from the store, computes snapped position, and applies it.
- */
-export function snapNodeToGrid(
-  canvasStoreApi: StoreApi<CanvasStore>,
-  nodeId: string,
-  gridSpacing: number,
-  includeRegions: boolean,
-): void {
-  const state = canvasStoreApi.getState()
-  const node = state.nodes[nodeId]
-  if (!node) return
-
-  const nodeRect: Rect = { origin: node.origin, size: node.size }
-  const neighbors: Rect[] = Object.values(state.nodes)
-    .filter((n) => n.id !== nodeId)
-    .map((n) => ({ origin: n.origin, size: n.size }))
-
-  if (includeRegions) {
-    for (const r of Object.values(state.regions)) {
-      neighbors.push({ origin: r.origin, size: r.size })
-    }
-  }
-
-  const snappedOrigin = snap(nodeRect, neighbors, gridSpacing, 8)
-  canvasStoreApi.getState().moveNode(nodeId, snappedOrigin)
-}
-
-/** Axis-aligned rectangle overlap check. */
-export function rectsOverlap(a: Rect, b: Rect): boolean {
-  return !(
-    a.origin.x + a.size.width <= b.origin.x ||
-    b.origin.x + b.size.width <= a.origin.x ||
-    a.origin.y + a.size.height <= b.origin.y ||
-    b.origin.y + b.size.height <= a.origin.y
-  )
-}
-
-// -----------------------------------------------------------------------------
-// Selective grid snap (preserves magnetically-snapped axes)
-// -----------------------------------------------------------------------------
-
-/**
- * Like `snapNodeToGrid` but skips axes that were magnetically snapped during
- * drag to prevent a visible jump on release.
- */
-export function snapNodeToGridSelective(
-  canvasStoreApi: StoreApi<CanvasStore>,
-  nodeId: string,
-  gridSpacing: number,
-  includeRegions: boolean,
-  skipAxes: { x: boolean; y: boolean },
-): void {
-  const state = canvasStoreApi.getState()
-  const node = state.nodes[nodeId]
-  if (!node) return
-
-  const nodeRect: Rect = { origin: node.origin, size: node.size }
-  const neighbors: Rect[] = Object.values(state.nodes)
-    .filter((n) => n.id !== nodeId)
-    .map((n) => ({ origin: n.origin, size: n.size }))
-
-  if (includeRegions) {
-    for (const r of Object.values(state.regions)) {
-      neighbors.push({ origin: r.origin, size: r.size })
-    }
-  }
-
-  const snappedOrigin = snap(nodeRect, neighbors, gridSpacing, 8)
-  const finalOrigin: Point = {
-    x: skipAxes.x ? node.origin.x : snappedOrigin.x,
-    y: skipAxes.y ? node.origin.y : snappedOrigin.y,
-  }
-  canvasStoreApi.getState().moveNode(nodeId, finalOrigin)
 }
 
 // -----------------------------------------------------------------------------

@@ -14,7 +14,10 @@ import {
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
 } from '../shared/ipc-channels'
-import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals, terminalPids } from './ipc/terminal'
+import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals } from './ipc/terminal'
+import { localProcessHost } from './companion/localProcessHost'
+import { companions } from './companion/companionManager'
+import { registerCompanionHandlers } from './ipc/companion'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
@@ -34,6 +37,7 @@ import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './
 import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows, focusWindow } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { addAllowedRoot, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow, grantFileAccess, validatePath } from './ipc/pathValidation'
+import { isLocalLocator } from './companion/locator'
 import { listPersistentGrants, recordPersistentGrant } from './grantedPathStore'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
@@ -130,6 +134,10 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   const bootSnap = windowType === 'main' ? readBootSnapshot() : null
   const snapGeom = bootSnap?.geometry
   const snapBg = bootSnap?.backgroundColor
+  // The exact background color used for both the native window backdrop and the
+  // renderer's first-paint loading splash, so the splash matches the themed
+  // window before the renderer's JS theme injection runs.
+  const bgColor = snapBg ?? '#1f1e1c'
 
   // Apply the active theme's native appearance before the window exists so
   // native chrome (menus, scrollbars, the window backdrop) paints with the
@@ -162,7 +170,7 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
         ? { x: 10, y: 6 }
         : undefined,
     frame: !(isPanel || isDock),
-    backgroundColor: snapBg ?? '#1f1e1c',
+    backgroundColor: bgColor,
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -318,6 +326,9 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   // Build query string from params
   const queryParts: string[] = []
   queryParts.push(`type=${encodeURIComponent(windowType)}`)
+  // Pass the themed boot background so the renderer can paint its loading splash
+  // to match the window backdrop on the first frame (main window only).
+  if (windowType === 'main') queryParts.push(`bg=${encodeURIComponent(bgColor)}`)
   if (params?.panelType) queryParts.push(`panelType=${encodeURIComponent(params.panelType)}`)
   if (params?.panelId) queryParts.push(`panelId=${encodeURIComponent(params.panelId)}`)
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)
@@ -479,6 +490,7 @@ function registerDeferredHandlers(): void {
   registerNotificationHandlers()
   registerAuthHandlers(authManager)
   registerAgentHandlers(authManager, agentManager)
+  registerCompanionHandlers()
 }
 
 /** Union of critical + deferred — kept for any callers that want the full set in one call. */
@@ -494,8 +506,15 @@ function registerAllHandlers(): void {
 function registerWindowAndDialogHandlers(): void {
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, async (_event, filePath: string) => {
+    // A remote (cate-companion://) path has no representation on this machine —
+    // there is nothing local to reveal. Return a structured result instead of
+    // throwing so the renderer can quietly ignore/disable the action.
+    if (!isLocalLocator(filePath)) {
+      return { ok: false, reason: 'remote' }
+    }
     try {
       shell.showItemInFolder(validatePath(filePath))
+      return { ok: true }
     } catch (error) {
       log.error('[SHELL_SHOW_IN_FOLDER]', error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -749,6 +768,11 @@ function registerWindowAndDialogHandlers(): void {
 
   // Native file drag from renderer (for screenshot thumbnails etc.)
   ipcMain.handle(NATIVE_FILE_DRAG, async (event, filePath: string) => {
+    // A remote path has no local file to export into a native OS drag — no-op
+    // rather than mis-resolving the locator against the local filesystem.
+    if (!isLocalLocator(filePath)) {
+      return { ok: false, reason: 'remote' }
+    }
     try {
       const validPath = validatePath(filePath)
       const win = BrowserWindow.fromWebContents(event.sender)
@@ -1152,6 +1176,13 @@ function buildSinglePanelDockState(panelId: string): WindowDockState {
 // Set app name before menu and window creation
 app.setName('Cate')
 
+// Windows: the toast notification system keys off the AppUserModelID, and it
+// must match the install shortcut's ID (electron-builder uses `appId`) for the
+// notification 'click' event to fire reliably. No-op on macOS/Linux.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.cate.app')
+}
+
 // In dev mode, use a separate userData directory so dev and production don't collide
 if (!app.isPackaged) {
   app.setPath('userData', path.join(app.getPath('userData'), 'Dev'))
@@ -1245,9 +1276,7 @@ setNewMainWindowFn(() => createWindow({ type: 'main' }))
 // ---------------------------------------------------------------------------
 
 function emergencyKillPTYs(): void {
-  for (const pid of terminalPids.values()) {
-    try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ }
-  }
+  localProcessHost.emergencyKill()
 }
 
 // Global error handlers — Sentry (when configured) captures the error before
@@ -1444,6 +1473,9 @@ app.on('will-quit', () => {
   // during Environment::CleanupHandles, node-pty's ThreadSafeFunction exit
   // callback throws into a torn-down context and SIGABRTs the process.
   killAllTerminals()
+  // Tear down any remote/WSL companion connections (kills their daemons /
+  // closes SSH). Fire-and-forget — quit must not block on a remote socket.
+  void companions.disposeAll()
   // When an update install is in flight, DO NOT reallyExit — that bypasses
   // Electron's relaunch hook (queued by autoUpdater.quitAndInstall(_, true)).
   // We need the natural quit path to run so the updater can launch the new

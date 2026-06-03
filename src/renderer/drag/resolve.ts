@@ -47,7 +47,7 @@ export interface DropEnvironment {
 }
 
 /** Default DropEnvironment that reads from the real DOM + global registries. */
-export const defaultDropEnvironment: DropEnvironment = {
+const defaultDropEnvironment: DropEnvironment = {
   canvasAtCursor(client) {
     const el = document.elementFromPoint(client.x, client.y) as HTMLElement | null
     if (!el) return null

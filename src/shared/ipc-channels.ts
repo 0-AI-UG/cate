@@ -141,6 +141,14 @@ export const MENU_OPEN_SETTINGS = 'menu:openSettings'
 /** Generic menu-action dispatch — main sends a MenuActionId and the focused
  *  renderer runs the matching handler (via useShortcuts). */
 export const MENU_TRIGGER_ACTION = 'menu:triggerAction'
+/** Load a named saved layout — main sends the layout name and the focused
+ *  renderer restores it (replacing the workspace). */
+export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
+
+/** Browser navigation shortcut (main -> renderer). Sent when a webview guest
+ *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the
+ *  Browser menu. The focused BrowserPanel acts on it. */
+export const BROWSER_SHORTCUT = 'browser:shortcut'
 
 // Native context menu (renderer -> main)
 export const MENU_SHOW_CONTEXT = 'menu:showContext'
@@ -169,6 +177,11 @@ export const RECENT_PROJECTS_REMOVE = 'recent-projects:remove'
 // Sidebar session (persisted workspace order + active workspace, by root path)
 export const SIDEBAR_SESSION_GET = 'sidebar-session:get'
 export const SIDEBAR_SESSION_SET = 'sidebar-session:set'
+
+// Remote projects (persisted restore snapshots + reconnect info for
+// cate-companion:// workspaces, which can't use the local .cate/ files)
+export const REMOTE_PROJECTS_GET = 'remote-projects:get'
+export const REMOTE_PROJECTS_SET = 'remote-projects:set'
 
 // Layouts
 export const LAYOUT_SAVE = 'layout:save'
@@ -293,6 +306,16 @@ export const WORKSPACE_CREATE = 'workspace:create'
 export const WORKSPACE_UPDATE = 'workspace:update'
 export const WORKSPACE_REMOVE = 'workspace:remove'
 export const WORKSPACE_CHANGED = 'workspace:changed' // main -> renderer (broadcast)
+
+// Companion connections (remote / WSL backends)
+export const COMPANION_CONNECT = 'companion:connect'       // renderer -> main
+export const COMPANION_ENSURE = 'companion:ensure'         // renderer -> main (reconnect from a stored connection)
+export const COMPANION_LIST = 'companion:list'             // renderer -> main
+export const COMPANION_WSL_DISTROS = 'companion:wsl-distros' // renderer -> main (list installed WSL distros)
+export const COMPANION_SSH_HOSTS = 'companion:ssh-hosts'   // renderer -> main (host aliases from ~/.ssh/config)
+export const COMPANION_INSTALL = 'companion:install'       // renderer -> main (explicit clean install + connect)
+export const COMPANION_DELETE = 'companion:delete'         // renderer -> main (rm -rf the host install, keep saved auth)
+export const COMPANION_STATUS = 'companion:status'         // main -> renderer (broadcast)
 
 
 // Performance profiler (only active under CATE_PERF=1)

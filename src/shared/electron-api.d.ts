@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, CompanionConnectResult, CompanionStatusEvent, CompanionConnection, RemoteProjectEntry, SshHostEntry } from './types'
 
 export interface NativeContextMenuItem {
   id?: string
@@ -429,6 +429,12 @@ export interface ElectronAPI {
   /** Persist the sidebar arrangement (workspace order + active workspace). */
   sidebarSessionSet(session: SidebarSession): Promise<void>
 
+  /** Get persisted remote-workspace restore entries (cate-companion:// only). */
+  remoteProjectsGet(): Promise<RemoteProjectEntry[]>
+
+  /** Persist remote-workspace restore entries (cate-companion:// only). */
+  remoteProjectsSet(entries: RemoteProjectEntry[]): Promise<void>
+
   // ---------------------------------------------------------------------------
   // Layouts
   // ---------------------------------------------------------------------------
@@ -583,7 +589,38 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   /** Create a new workspace in the main process. */
-  workspaceCreate(options?: { name?: string; rootPath?: string; id?: string }): Promise<WorkspaceMutationResult>
+  workspaceCreate(options?: { name?: string; rootPath?: string; id?: string; connection?: CompanionConnection }): Promise<WorkspaceMutationResult>
+
+  /** Connect to a remote (SSH) or WSL companion. Returns the locator rootPath +
+   *  connection record to create the workspace with. */
+  companionConnect(spec: RemoteConnectSpec): Promise<CompanionConnectResult>
+
+  /** Re-establish a connection from a stored connection record (session restore
+   *  / reconnect). Auth comes from the encrypted secret store. No-op if already
+   *  connected. */
+  companionEnsure(connection: CompanionConnection): Promise<CompanionConnectResult>
+
+  /** Ids of currently-connected remote/WSL companions. */
+  companionList(): Promise<string[]>
+
+  /** Names of WSL distros installed on this host ([] on non-Windows / no WSL). */
+  companionWslDistros(): Promise<string[]>
+
+  /** Connectable host aliases from the user's ~/.ssh/config ([] if none). */
+  companionSshHosts(): Promise<SshHostEntry[]>
+
+  /** Explicit clean install of a remote companion's daemon (wipes the host
+   *  install dir, re-pulls/pushes the bundle, then connects). The only call that
+   *  installs — probes (connect/ensure) never do. */
+  companionInstall(connection: CompanionConnection): Promise<CompanionConnectResult>
+
+  /** Literally delete a companion: stop its daemon and rm -rf the host install,
+   *  keeping the saved auth. Drops the workspace to `missing`; recover via
+   *  Install. */
+  companionDelete(connection: CompanionConnection): Promise<{ ok: boolean; error?: string }>
+
+  /** Subscribe to companion connection status (main -> renderer). */
+  onCompanionStatus(callback: (event: CompanionStatusEvent) => void): () => void
 
   /** Update workspace metadata in the main process. */
   workspaceUpdate(id: string, changes: Partial<Omit<WorkspaceInfo, 'id'>>): Promise<WorkspaceMutationResult>
@@ -609,6 +646,13 @@ export interface ElectronAPI {
 
   /** Subscribe to native menu action dispatches (File, Edit, etc.). */
   onMenuTriggerAction(callback: (action: import('./types').MenuActionId) => void): () => void
+
+  /** Subscribe to "load this saved layout" dispatches from the native Layouts menu. */
+  onMenuLoadLayout(callback: (name: string) => void): () => void
+
+  /** Subscribe to browser navigation shortcuts forwarded from a focused webview
+   *  guest (Cmd+R/[/]/L) or the Browser menu. */
+  onBrowserShortcut(callback: (action: import('./types').BrowserShortcutAction) => void): () => void
 
   /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
   showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>

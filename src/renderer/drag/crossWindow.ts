@@ -44,10 +44,6 @@ interface ActiveRemote {
 
 let activeRemote: ActiveRemote | null = null
 
-export function getCrossWindowSnapshot(): PanelTransferSnapshot | null {
-  return activeRemote?.snapshot ?? null
-}
-
 function buildRemoteSource(snapshot: PanelTransferSnapshot): DragSource {
   return {
     panelId: snapshot.panel.id,

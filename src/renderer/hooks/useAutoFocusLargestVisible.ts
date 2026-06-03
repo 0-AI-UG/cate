@@ -41,6 +41,10 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
 
       const state = canvasApi.getState()
       const { nodes, viewportOffset, zoomLevel, containerSize, focusedNodeId } = state
+      // Keyboard canvas movement (Cmd+Arrow jump / Shift+Arrow pan) deliberately
+      // selects without activating — don't fight it by auto-focusing whatever
+      // scrolls into view.
+      if (state.suppressAutoFocus) return
       if (containerSize.width <= 0 || containerSize.height <= 0) return
       if (zoomLevel <= 0) return
 

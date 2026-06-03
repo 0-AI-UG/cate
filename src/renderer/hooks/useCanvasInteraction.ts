@@ -304,7 +304,10 @@ export function useCanvasInteraction(
       }
 
       // --- Physical mouse wheel over empty canvas / unfocused panel: zoom ---
-      if (mouse) {
+      // Exception: while the Hand tool (or Space-hold) is active, a mouse wheel
+      // scrolls/pans the canvas instead of zooming — falls through to the pan
+      // path below.
+      if (mouse && effectiveCanvasTool(useUIStore.getState()) !== 'hand') {
         applyWheelZoom(e, true)
         return
       }

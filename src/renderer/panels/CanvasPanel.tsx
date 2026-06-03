@@ -12,6 +12,7 @@ import Canvas from '../canvas/Canvas'
 import CanvasNode from '../canvas/CanvasNode'
 import CanvasToolbar from '../canvas/CanvasToolbar'
 import WelcomePage from '../ui/WelcomePage'
+import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, PanelLocation, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, setActiveCanvasPanelId } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -308,6 +309,13 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
             blank when emptied — the start page does not return. */}
         {nodeIds.length === 0 && !workspaceRootPath && (
           <WelcomePage workspaceId={workspaceId} />
+        )}
+
+        {/* Empty canvas with a folder open (e.g. a freshly-added 2nd canvas):
+            offer one-click loading of a saved layout into this canvas. Self-
+            hides when there are no saved layouts. */}
+        {nodeIds.length === 0 && workspaceRootPath && (
+          <EmptyCanvasOverlay workspaceId={workspaceId} panelId={panelId} canvasApi={store} />
         )}
 
         <Canvas onCreateAtPoint={onCreateAtPoint} panelId={panelId}>

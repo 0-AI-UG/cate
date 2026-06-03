@@ -11,10 +11,17 @@ import { useUIStore } from '../stores/uiStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 
-// Single-key (no-modifier) actions that must be suppressed while typing.
-const TOOL_AND_NAV_ACTIONS = new Set<ShortcutAction>([
-  'toolSelect', 'toolHand',
+// Single-key (no-modifier) tool shortcuts (V, H) — suppressed while typing.
+const TOOL_ACTIONS = new Set<ShortcutAction>(['toolSelect', 'toolHand'])
+
+// Cmd+Arrow panel navigation — moves the selection cursor between nodes.
+const NAVIGATE_ACTIONS = new Set<ShortcutAction>([
   'navigateUp', 'navigateDown', 'navigateLeft', 'navigateRight',
+])
+
+// Shift+Arrow canvas panning.
+const PAN_ACTIONS = new Set<ShortcutAction>([
+  'panUp', 'panDown', 'panLeft', 'panRight',
 ])
 
 /**
@@ -71,6 +78,10 @@ export function useShortcuts(): void {
         await reloadActiveWorkspaceFromDisk()
         return
       }
+      if (action === 'manageLayouts') {
+        useUIStore.getState().setShowLayoutsDialog(true)
+        return
+      }
 
       switch (action as ShortcutAction) {
         case 'newTerminal': {
@@ -83,7 +94,8 @@ export function useShortcuts(): void {
           if (wsId) appStore().createBrowser(wsId)
           break
         }
-        case 'newEditor': {
+        case 'newEditor':
+        case 'newFile': {
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createEditor(wsId)
           break
@@ -153,16 +165,28 @@ export function useShortcuts(): void {
           useUIStore.getState().setActiveTool('hand')
           break
         case 'navigateUp':
-          canvasStore().navigateDirection('up')
+          canvasStore().navigateSelect('up')
           break
         case 'navigateDown':
-          canvasStore().navigateDirection('down')
+          canvasStore().navigateSelect('down')
           break
         case 'navigateLeft':
-          canvasStore().navigateDirection('left')
+          canvasStore().navigateSelect('left')
           break
         case 'navigateRight':
-          canvasStore().navigateDirection('right')
+          canvasStore().navigateSelect('right')
+          break
+        case 'panUp':
+          canvasStore().panViewport('up')
+          break
+        case 'panDown':
+          canvasStore().panViewport('down')
+          break
+        case 'panLeft':
+          canvasStore().panViewport('left')
+          break
+        case 'panRight':
+          canvasStore().panViewport('right')
           break
         case 'autoLayout':
           canvasStore().autoLayout()
@@ -188,6 +212,13 @@ export function useShortcuts(): void {
     // View / Terminal / etc. item that maps to a runnable action.
     const unsubscribeMenu = window.electronAPI.onMenuTriggerAction((action) => {
       runAction(action).catch(() => { /* noop — menu actions are best-effort */ })
+    })
+
+    // Native "Layouts" menu → load a specific saved layout (replaces workspace).
+    const unsubscribeLoadLayout = window.electronAPI.onMenuLoadLayout((name) => {
+      import('../lib/layouts')
+        .then((m) => m.loadLayoutReplacingWorkspace(name))
+        .catch(() => { /* best-effort */ })
     })
 
     function handleKeyDown(e: KeyboardEvent) {
@@ -311,12 +342,28 @@ export function useShortcuts(): void {
       // When panel switcher is open, only handle the toggle shortcut
       const ui = useUIStore.getState()
 
-      // Single-key tool/navigation shortcuts (V, H, arrows) must not fire while
-      // typing in a terminal/editor, or steal arrows from the open overlays.
-      if (TOOL_AND_NAV_ACTIONS.has(action)) {
+      // Single-key tool shortcuts (V, H) must not fire while typing in a
+      // terminal/editor.
+      if (TOOL_ACTIONS.has(action)) {
         if (terminalHasFocus || isTextSurfaceFocused()) return
-        const navOnly = action !== 'toolSelect' && action !== 'toolHand'
-        if (navOnly && (ui.showNodeSwitcher || ui.showCommandPalette)) return
+      }
+
+      // Cmd+Arrow navigation / Shift+Arrow panning.
+      if (NAVIGATE_ACTIONS.has(action) || PAN_ACTIONS.has(action)) {
+        // Let an open overlay own the arrow keys.
+        if (ui.showNodeSwitcher || ui.showCommandPalette) return
+        // Defer to a real text editor (Monaco / input / textarea /
+        // contenteditable) so its own Cmd/Shift+Arrow editing keys keep
+        // working. Terminals don't rely on those chords, so canvas navigation
+        // overrides a focused terminal — letting the user jump/pan straight out
+        // of one and keep going.
+        if (!terminalHasFocus && isTextSurfaceFocused()) return
+        // Navigating deliberately doesn't activate the destination, so drop
+        // keyboard focus out of a focused terminal — otherwise its cursor keeps
+        // capturing input and the next arrow never reaches the canvas.
+        if (NAVIGATE_ACTIONS.has(action) && terminalHasFocus) {
+          ;(document.activeElement as HTMLElement | null)?.blur()
+        }
       }
       // Context-aware guard: when a real text editor (Monaco, input, textarea,
       // contenteditable) has focus, let Cmd+Z/Y fall through to it natively.
@@ -405,6 +452,7 @@ export function useShortcuts(): void {
       document.removeEventListener('keyup', handleKeyUp, { capture: true })
       window.removeEventListener('blur', handleBlur)
       unsubscribeMenu()
+      unsubscribeLoadLayout()
     }
   }, [canvasStoreApi])
 }

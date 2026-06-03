@@ -6,7 +6,7 @@
 import { BrowserWindow, Menu, ipcMain, type MenuItemConstructorOptions } from 'electron'
 import { MENU_SHOW_CONTEXT } from '../../shared/ipc-channels'
 
-export interface ContextMenuTemplateItem {
+interface ContextMenuTemplateItem {
   id?: string
   label?: string
   accelerator?: string

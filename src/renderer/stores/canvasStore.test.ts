@@ -187,6 +187,124 @@ describe('canvasStore.navigateDirection', () => {
 })
 
 // =============================================================================
+// navigateSelect — Cmd+Arrow node jumping that selects without activating.
+// =============================================================================
+
+describe('canvasStore.navigateSelect', () => {
+  function setup() {
+    const store = createCanvasStore()
+    store.getState().setContainerSize({ width: 1000, height: 800 })
+    const c = store.getState().addNode('c', 'editor', { x: -50, y: -40 }, { width: 100, height: 80 })
+    const r = store.getState().addNode('r', 'editor', { x: 450, y: -40 }, { width: 100, height: 80 })
+    const l = store.getState().addNode('l', 'editor', { x: -550, y: -40 }, { width: 100, height: 80 })
+    const u = store.getState().addNode('u', 'editor', { x: -50, y: -540 }, { width: 100, height: 80 })
+    const d = store.getState().addNode('d', 'editor', { x: -50, y: 460 }, { width: 100, height: 80 })
+    return { store, c, r, l, u, d }
+  }
+
+  it('moves the selection to the nearest node in each direction', () => {
+    const { store, c, r, l, u, d } = setup()
+    const nav = (dir: 'up' | 'down' | 'left' | 'right') => {
+      store.getState().selectNodes([c])
+      store.getState().navigateSelect(dir)
+      return [...store.getState().selectedNodeIds]
+    }
+    expect(nav('right')).toEqual([r])
+    expect(nav('left')).toEqual([l])
+    expect(nav('up')).toEqual([u])
+    expect(nav('down')).toEqual([d])
+  })
+
+  it('does NOT activate (focus) the destination, so arrows keep jumping', () => {
+    const { store, c, r } = setup()
+    store.getState().focusNode(c)
+    store.getState().navigateSelect('right')
+    expect(store.getState().focusedNodeId).toBeNull()
+    expect([...store.getState().selectedNodeIds]).toEqual([r])
+  })
+
+  it('uses the focused node as the reference when nothing is selected', () => {
+    const { store, c, r } = setup()
+    store.getState().focusNode(c)
+    store.getState().navigateSelect('right')
+    expect([...store.getState().selectedNodeIds]).toEqual([r])
+  })
+
+  it('chains: jumping again continues from the newly selected node', () => {
+    const { store, c, r } = setup()
+    const rr = store.getState().addNode('rr', 'editor', { x: 950, y: -40 }, { width: 100, height: 80 })
+    store.getState().selectNodes([c])
+    store.getState().navigateSelect('right')
+    expect([...store.getState().selectedNodeIds]).toEqual([r])
+    store.getState().navigateSelect('right')
+    expect([...store.getState().selectedNodeIds]).toEqual([rr])
+  })
+
+  it('is a no-op when no node lies in the requested direction', () => {
+    const { store, r } = setup()
+    store.getState().selectNodes([r]) // rightmost
+    store.getState().navigateSelect('right')
+    expect([...store.getState().selectedNodeIds]).toEqual([r])
+  })
+
+  it('suppresses auto-focus on jump, and resumes it on explicit focus or manual pan', () => {
+    const { store, c, r } = setup()
+    store.getState().selectNodes([c])
+    store.getState().navigateSelect('right')
+    expect(store.getState().suppressAutoFocus).toBe(true)
+
+    // Clicking / explicitly focusing a node resumes auto-focus.
+    store.getState().focusNode(r)
+    expect(store.getState().suppressAutoFocus).toBe(false)
+
+    // A keyboard pan suppresses again; a manual pan resumes.
+    store.getState().panViewport('left')
+    expect(store.getState().suppressAutoFocus).toBe(true)
+    store.getState().setViewportOffset({ x: 10, y: 10 })
+    expect(store.getState().suppressAutoFocus).toBe(false)
+  })
+})
+
+// =============================================================================
+// panViewport — Shift+Arrow canvas panning.
+// =============================================================================
+
+describe('canvasStore.panViewport', () => {
+  it('pans the viewport one step per direction without touching selection/focus', () => {
+    const store = createCanvasStore()
+    store.getState().setViewportOffset({ x: 0, y: 0 })
+
+    store.getState().panViewport('right')
+    expect(store.getState().viewportOffset.x).toBeLessThan(0)
+    store.getState().panViewport('left') // back to start
+    expect(store.getState().viewportOffset.x).toBeCloseTo(0)
+
+    store.getState().setViewportOffset({ x: 0, y: 0 })
+    store.getState().panViewport('down')
+    expect(store.getState().viewportOffset.y).toBeLessThan(0)
+    store.getState().setViewportOffset({ x: 0, y: 0 })
+    store.getState().panViewport('up')
+    expect(store.getState().viewportOffset.y).toBeGreaterThan(0)
+
+    // No selection/focus side effects.
+    expect(store.getState().focusedNodeId).toBeNull()
+    expect(store.getState().selectedNodeIds.size).toBe(0)
+  })
+
+  it('left and right pan by equal and opposite amounts', () => {
+    const store = createCanvasStore()
+    store.getState().setViewportOffset({ x: 0, y: 0 })
+    store.getState().panViewport('left')
+    const left = store.getState().viewportOffset.x
+    store.getState().setViewportOffset({ x: 0, y: 0 })
+    store.getState().panViewport('right')
+    const right = store.getState().viewportOffset.x
+    expect(left).toBeCloseTo(-right)
+    expect(left).toBeGreaterThan(0)
+  })
+})
+
+// =============================================================================
 // zoomToSelection — fit and center the current selection.
 // =============================================================================
 

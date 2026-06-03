@@ -125,7 +125,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
       onClick={onClose}
     >
       <div
-        className="w-[min(900px,92vw)] max-h-[80vh] bg-surface-1 rounded-xl border border-subtle shadow-[0_24px_64px_-12px_rgba(0,0,0,0.7)] ring-1 ring-black/40 flex flex-col overflow-hidden"
+        className="w-[min(900px,92vw)] h-[80vh] bg-surface-1 rounded-xl border border-subtle shadow-[0_24px_64px_-12px_rgba(0,0,0,0.7)] ring-1 ring-black/40 flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

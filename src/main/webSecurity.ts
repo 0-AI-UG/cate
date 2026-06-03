@@ -1,6 +1,29 @@
 import { app, session, shell, type Session, type WebContents } from 'electron'
 import log from './logger'
 import { disableWebviewHardening } from './featureFlags'
+import { BROWSER_SHORTCUT } from '../shared/ipc-channels'
+import type { BrowserShortcutAction } from '../shared/types'
+
+/** Map a webview guest key event to a browser navigation action. Returns null
+ *  for keys we don't own, so the guest page handles them normally. Uses
+ *  `input.code` (layout-independent) rather than `input.key`. */
+function browserActionForInput(input: Electron.Input): BrowserShortcutAction | null {
+  if (input.type !== 'keyDown') return null
+  const mod = process.platform === 'darwin' ? input.meta : input.control
+  if (!mod) return null
+  switch (input.code) {
+    case 'KeyR':
+      return input.shift ? 'reloadHard' : 'reload'
+    case 'KeyL':
+      return input.shift ? null : 'focusUrl'
+    case 'BracketLeft':
+      return input.shift ? null : 'back'
+    case 'BracketRight':
+      return input.shift ? null : 'forward'
+    default:
+      return null
+  }
+}
 
 // Hosts whose OAuth/sign-in flows are forced into the user's real browser via
 // shell.openExternal (see installWebContentsSecurity below) rather than running
@@ -32,7 +55,7 @@ function isOAuthUrl(url: string): boolean {
 
 const configuredGuestSessions = new Set<string>()
 
-export function isTrustedAppUrl(url: string): boolean {
+function isTrustedAppUrl(url: string): boolean {
   if (url.startsWith('file://')) return true
   if (!process.env.ELECTRON_RENDERER_URL) return false
   try {
@@ -42,7 +65,7 @@ export function isTrustedAppUrl(url: string): boolean {
   }
 }
 
-export function isAllowedGuestUrl(url: string): boolean {
+function isAllowedGuestUrl(url: string): boolean {
   if (url === 'about:blank') return true
   try {
     const parsed = new URL(url)
@@ -102,6 +125,21 @@ export function installWebContentsSecurity(): void {
           shell.openExternal(url)
         }
         return { action: 'deny' }
+      })
+
+      // Capture browser navigation keys (Cmd+R/[/]/L) even when the guest page
+      // has keyboard focus, and forward them to the embedding renderer so the
+      // focused BrowserPanel can act. Scoped to webview guests, so Monaco's
+      // Cmd+[ / Cmd+] / Cmd+L are never affected.
+      contents.on('before-input-event', (event, input) => {
+        const action = browserActionForInput(input)
+        if (!action) return
+        event.preventDefault()
+        try {
+          contents.hostWebContents?.send(BROWSER_SHORTCUT, action)
+        } catch {
+          /* host gone — ignore */
+        }
       })
     } else {
       contents.setWindowOpenHandler(() => ({ action: 'deny' }))

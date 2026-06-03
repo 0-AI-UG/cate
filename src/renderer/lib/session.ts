@@ -28,8 +28,10 @@ import type {
   ProjectSessionNode,
   CanvasRegion,
   PanelState,
+  RemoteProjectEntry,
 } from '../../shared/types'
 import { toRelativePath, toAbsolutePath } from '../../shared/pathUtils'
+import { isLocalLocator } from '../../main/companion/locator'
 import { deriveSidebarSession, applySidebarSession } from './sidebarSession'
 import { useDockStore } from '../stores/dockStore'
 import { terminalRegistry } from './terminalRegistry'
@@ -70,6 +72,8 @@ const lastSerializedByRoot = new Map<string, string>()
 // Same idea for the global sidebar arrangement: skip the IPC + electron-store
 // write when order/active-workspace haven't changed since the last save.
 let lastSidebarSessionSerialized: string | null = null
+// And for the remote-projects list (cate-companion:// restore snapshots).
+let lastRemoteProjectsSerialized: string | null = null
 
 function restoreDockPanelsForWorkspace(workspaceId: string, snapshot: SessionSnapshot): number {
   const appStore = useAppStore.getState()
@@ -187,6 +191,8 @@ function buildSessionFile(
     nodes,
     panelWindows: panelWindows?.length ? panelWindows : undefined,
     dockWindows: dockWindows?.length ? dockWindows : undefined,
+    // Machine-local reconnect info for a remote workspace (absent ⇒ local).
+    connection: snapshot.connection,
   }
 }
 
@@ -327,6 +333,8 @@ export async function saveSession(): Promise<void> {
       regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
       dockState: dockSnapshot,
       dockPanels,
+      // Carry the remote reconnect info so it survives restart (Finding 2).
+      connection: workspace.connection,
     })
   }
 
@@ -356,12 +364,39 @@ export async function saveSession(): Promise<void> {
     log.warn('[session] Dock window listing failed:', err)
   }
 
-  // Save to .cate/workspace.json + .cate/session.json per workspace
+  // Remote (cate-companion://) workspaces can't use the local .cate/ files —
+  // their tree lives on a companion. Collect their full snapshots + reconnect
+  // info into the electron-store remoteProjects list so restart can rebuild and
+  // reconnect them (Findings 2/3/4). TODO: route remote project-state through
+  // companion.file so .cate/ lives next to the remote repo instead of here.
+  const remoteEntries: RemoteProjectEntry[] = []
+  for (const snapshot of snapshots) {
+    if (!snapshot.rootPath || isLocalLocator(snapshot.rootPath)) continue
+    if (!snapshot.connection || snapshot.connection.kind === 'local') continue
+    remoteEntries.push({
+      locator: snapshot.rootPath,
+      connection: snapshot.connection,
+      snapshot,
+    })
+  }
+  const remoteSerialized = JSON.stringify(remoteEntries)
+  if (remoteSerialized !== lastRemoteProjectsSerialized) {
+    window.electronAPI.remoteProjectsSet(remoteEntries)
+      .then(() => { lastRemoteProjectsSerialized = remoteSerialized })
+      .catch((err) => {
+        log.warn('[session] Remote projects save failed: %s', err)
+      })
+  }
+
+  // Save to .cate/workspace.json + .cate/session.json per LOCAL workspace.
   const workspacesByRoot = new Map(
     persistableWorkspaces.filter((w) => w.rootPath).map((w) => [w.rootPath, w]),
   )
   for (const snapshot of snapshots) {
     if (!snapshot.rootPath) continue
+    // Skip remote locators — guarded so projectStateSave never mangles a
+    // cate-companion:// URI into a junk local .cate path (Finding 4).
+    if (!isLocalLocator(snapshot.rootPath)) continue
 
     const ws = workspacesByRoot.get(snapshot.rootPath)
     const wsFile = buildWorkspaceFile(snapshot, snapshot.rootPath, ws?.color)
@@ -470,6 +505,10 @@ export function projectFilesToSnapshot(
     regions: Object.keys(regions).length > 0 ? regions : undefined,
     dockState: ws.dockState,
     dockPanels: snapshotDockPanels,
+    // Restore the machine-local reconnect info (absent ⇒ local). Only the
+    // local-disk path carries it here; remote workspaces come straight from the
+    // remoteProjects store with their connection already on the snapshot.
+    connection: sess?.connection,
   }
 }
 
@@ -478,15 +517,29 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
   try {
     recentProjects = (await window.electronAPI.recentProjectsGet()) ?? []
   } catch {
-    return null
+    recentProjects = []
   }
-  if (recentProjects.length === 0) return null
+
+  // Remote (cate-companion://) workspaces never appear in recentProjects — they
+  // live in the parallel remoteProjects store with their full restore snapshot
+  // and reconnect info (Finding 3). Load them up front so they round-trip too.
+  let remoteEntries: RemoteProjectEntry[] = []
+  try {
+    remoteEntries = (await window.electronAPI.remoteProjectsGet()) ?? []
+  } catch {
+    remoteEntries = []
+  }
+
+  if (recentProjects.length === 0 && remoteEntries.length === 0) return null
 
   const snapshots: SessionSnapshot[] = []
   let panelWindows: PanelWindowSnapshot[] = []
   let dockWindows: DetachedDockWindowSnapshot[] = []
 
   for (const rootPath of recentProjects) {
+    // Defensive: a remote locator must never reach projectStateLoad (it would
+    // mangle into a junk local path). Remote workspaces are loaded below.
+    if (!isLocalLocator(rootPath)) continue
     try {
       const projectState = await window.electronAPI.projectStateLoad(rootPath) as {
         workspace: ProjectWorkspaceFile
@@ -504,6 +557,17 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
     } catch (err) {
       log.warn('[session] Failed to load project state for %s: %s', rootPath, err)
     }
+  }
+
+  // Append remote workspaces. Their snapshot is self-contained (canvas layout +
+  // connection), so no projectStateLoad is needed. Skip any whose connection
+  // somehow went missing — without it ensureWorkspaceCompanion can't reconnect.
+  for (const entry of remoteEntries) {
+    if (!entry?.snapshot || !entry.connection || entry.connection.kind === 'local') continue
+    const snap = entry.snapshot
+    // Ensure the connection rides on the snapshot even for entries persisted
+    // before connection was stored on the snapshot itself.
+    snapshots.push({ ...snap, connection: snap.connection ?? entry.connection })
   }
 
   if (snapshots.length === 0) return null
@@ -537,6 +601,13 @@ export async function reloadActiveWorkspaceFromDisk(): Promise<void> {
   const wsId = appStore.selectedWorkspaceId
   const ws = appStore.workspaces.find((w) => w.id === wsId)
   if (!ws?.rootPath) return
+  // Remote workspaces have no local .cate/ layout — reading it would mangle the
+  // cate-companion:// locator into a junk local path (Finding 4). Skip cleanly.
+  // TODO: route remote reload through the companion file API.
+  if (!isLocalLocator(ws.rootPath)) {
+    log.info('[session] skip reload-from-disk for remote workspace %s', wsId)
+    return
+  }
 
   const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
     workspace: ProjectWorkspaceFile
@@ -801,13 +872,35 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
   for (let i = 0; i < session.workspaces.length; i++) {
     const snapshot = session.workspaces[i]
     log.debug(`[session] workspace ${i + 1}/${session.workspaces.length}: "${snapshot.workspaceName}" (${snapshot.nodes.length} nodes)`)
-    const wsId = appStore.addWorkspace(snapshot.workspaceName, snapshot.rootPath ?? undefined, snapshot.workspaceId)
+    const wsId = appStore.addWorkspace(
+      snapshot.workspaceName,
+      snapshot.rootPath ?? undefined,
+      snapshot.workspaceId,
+      snapshot.connection,
+    )
     wsIds.push(wsId)
 
     if (i === selectedIdx) {
-      // Select and fully restore the active workspace
-      appStore.selectWorkspace(wsId)
-      await restoreSession(snapshot, canvasStoreApi)
+      const isRemote = !!snapshot.connection && snapshot.connection.kind !== 'local'
+      if (isRemote) {
+        // Remote workspace: do NOT block app startup on the companion connect.
+        // selectWorkspace sets the selection and marks the companion
+        // 'connecting' synchronously (before its first await), so the sidebar
+        // shows this workspace immediately with a connecting indicator. The
+        // network handshake and panel restore then run in the background.
+        // restoreSession still runs only AFTER selectWorkspace resolves (i.e.
+        // after the companion is live) so terminals/fs reads can't race an
+        // unregistered companion.
+        void appStore
+          .selectWorkspace(wsId)
+          .then(() => restoreSession(snapshot, canvasStoreApi))
+          .catch((error) => log.error('[session] background restore of remote workspace failed:', error))
+      } else {
+        // Local workspace: fully synchronous restore. No connection ⇒ no await
+        // on the network, so this stays fast and the UI paints right after.
+        await appStore.selectWorkspace(wsId)
+        await restoreSession(snapshot, canvasStoreApi)
+      }
     } else {
       // Defer restoration — store the snapshot for lazy loading on first switch
       deferredSnapshots.set(wsId, snapshot)
