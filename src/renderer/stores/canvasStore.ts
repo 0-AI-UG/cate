@@ -1635,11 +1635,6 @@ export function getAllCanvasStores(): UseBoundStore<StoreApi<CanvasStore>>[] {
   return Array.from(canvasBoundStoresByPanelId.values())
 }
 
-/** @deprecated Use store.getState().cancelZoomAnimation() instead */
-export function cancelZoomAnimation() {
-  useCanvasStore.getState().cancelZoomAnimation()
-}
-
 // -----------------------------------------------------------------------------
 // Granular selectors
 // -----------------------------------------------------------------------------

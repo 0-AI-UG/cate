@@ -6,19 +6,22 @@
 // empty catalog so the UI can show "Catalog unavailable" rather than a stale
 // bundled list.
 //
-// Install/uninstall shells out to the pi CLI at node_modules/.bin/pi (anchored
-// on app.getAppPath() so it works both in dev and once packaged via
-// electron-builder), with PI_CODING_AGENT_DIR pointed at the workspace's
-// pi-agent dir so installs are scoped per workspace.
+// `listInstalled` is companion-aware: it reads <hostAgentDir>/{extensions,npm}
+// through `companion.file`, so it works for local and remote workspaces alike.
+//
+// Install/uninstall used to shell out to a bundled pi CLI on the LOCAL machine.
+// That binary no longer ships (pi is delivered on demand as a tarball run via
+// `companion.agent`), and a local spawn could never reach a remote host anyway.
+// Until pi exposes an install/uninstall RPC over the agent channel, these two
+// operations are structured no-ops that report "not supported on this host yet"
+// rather than spawning a nonexistent binary. See installExtension below.
 // =============================================================================
 
-import fs from 'fs'
-import fsp from 'fs/promises'
-import path from 'path'
-import { spawn } from 'child_process'
-import { app } from 'electron'
 import log from '../../main/logger'
-import { agentDirFor } from './agentDir'
+import { hostAgentDir, hostJoin } from './agentDir'
+import { parseLocator } from '../../main/companion/locator'
+import { companions } from '../../main/companion/companionManager'
+import type { Companion } from '../../main/companion/types'
 
 export interface MarketplaceEntry {
   name: string
@@ -37,26 +40,17 @@ export interface InstalledExtension {
   path: string
 }
 
-function extensionsDir(cwd: string): string {
-  return path.join(agentDirFor(cwd), 'extensions')
+function extensionsDir(companionId: string, hostCwd: string): string {
+  return hostJoin(companionId, hostAgentDir(companionId, hostCwd), 'extensions')
 }
 
-function npmModulesDir(cwd: string): string {
+function npmModulesDir(companionId: string, hostCwd: string): string {
   // Pi 0.x installs packages into <agentDir>/npm/node_modules/<name>/
-  return path.join(agentDirFor(cwd), 'npm', 'node_modules')
+  return hostJoin(companionId, hostAgentDir(companionId, hostCwd), 'npm', 'node_modules')
 }
 
-function settingsPath(cwd: string): string {
-  return path.join(agentDirFor(cwd), 'settings.json')
-}
-
-function piBinaryPath(): string {
-  const base = app.getAppPath()
-  const root = base.includes('app.asar') ? base.replace('app.asar', 'app.asar.unpacked') : base
-  const directPath = path.join(root, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js')
-  if (fs.existsSync(directPath)) return directPath
-  const binName = process.platform === 'win32' ? 'pi.cmd' : 'pi'
-  return path.join(root, 'node_modules', '.bin', binName)
+function settingsHostPath(companionId: string, hostCwd: string): string {
+  return hostJoin(companionId, hostAgentDir(companionId, hostCwd), 'settings.json')
 }
 
 /** Heuristic: pi extensions that call ctx.ui.custom(...) need a real terminal
@@ -64,23 +58,25 @@ function piBinaryPath(): string {
  *  we flag them with a warning badge. */
 const TERMINAL_REQUIRED_PATTERN = /\b(?:ctx\.ui\.custom|\.custom)\s*\(/
 
-async function detectTerminalRequired(extDir: string): Promise<boolean> {
+async function detectTerminalRequired(
+  companion: Companion,
+  extDir: string,
+): Promise<boolean> {
   // Look at the package's main file. Try package.json -> main, else common
-  // defaults (index.ts, index.js, index.mjs). Read at most ~200KB.
+  // defaults (index.ts, index.js, index.mjs). All reads route through the
+  // companion so this works on a remote host too.
   const candidates: string[] = []
   try {
-    const pkgJsonRaw = await fsp.readFile(path.join(extDir, 'package.json'), 'utf-8')
+    const pkgJsonRaw = await companion.file.readFile(hostJoin(companion.id, extDir, 'package.json'))
     const pkg = JSON.parse(pkgJsonRaw) as { main?: string }
-    if (pkg.main) candidates.push(path.join(extDir, pkg.main))
+    if (pkg.main) candidates.push(hostJoin(companion.id, extDir, pkg.main))
   } catch { /* no package.json — fine */ }
   for (const name of ['index.ts', 'index.js', 'index.mjs', 'index.cjs']) {
-    candidates.push(path.join(extDir, name))
+    candidates.push(hostJoin(companion.id, extDir, name))
   }
   for (const file of candidates) {
     try {
-      const stat = await fsp.stat(file)
-      if (!stat.isFile()) continue
-      const content = await fsp.readFile(file, 'utf-8')
+      const content = await companion.file.readFile(file)
       if (TERMINAL_REQUIRED_PATTERN.test(content)) return true
       // Found a readable main file — that's enough; don't peek further.
       return false
@@ -89,9 +85,12 @@ async function detectTerminalRequired(extDir: string): Promise<boolean> {
   return false
 }
 
-async function readDescription(extDir: string): Promise<string | undefined> {
+async function readDescription(
+  companion: Companion,
+  extDir: string,
+): Promise<string | undefined> {
   try {
-    const raw = await fsp.readFile(path.join(extDir, 'package.json'), 'utf-8')
+    const raw = await companion.file.readFile(hostJoin(companion.id, extDir, 'package.json'))
     const pkg = JSON.parse(raw) as { description?: string }
     if (typeof pkg.description === 'string' && pkg.description.trim()) {
       return pkg.description.trim()
@@ -294,55 +293,65 @@ export async function fetchMarketplacePage(
   return emptyPayload(page)
 }
 
-async function buildEntry(name: string, dirPath: string): Promise<InstalledExtension> {
+async function buildEntry(
+  companion: Companion,
+  name: string,
+  dirPath: string,
+): Promise<InstalledExtension> {
   return {
     name,
-    description: await readDescription(dirPath),
-    requiresTerminal: await detectTerminalRequired(dirPath),
+    description: await readDescription(companion, dirPath),
+    requiresTerminal: await detectTerminalRequired(companion, dirPath),
     path: dirPath,
   }
 }
 
-async function scanExtensionsDir(cwd: string): Promise<InstalledExtension[]> {
-  const dir = extensionsDir(cwd)
-  if (!fs.existsSync(dir)) return []
+async function scanExtensionsDir(
+  companion: Companion,
+  hostCwd: string,
+): Promise<InstalledExtension[]> {
+  const dir = extensionsDir(companion.id, hostCwd)
+  // readDir yields [] for a missing dir.
+  const entries = await companion.file.readDir(dir)
   const out: InstalledExtension[] = []
-  const entries = await fsp.readdir(dir, { withFileTypes: true })
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue
+    if (!entry.isDirectory) continue
     // Scoped packages can show up as `@scope/<name>` if pi ever organizes
     // them that way; handle both flat and one-level-of-scope layouts.
     if (entry.name.startsWith('@')) {
-      const scopeDir = path.join(dir, entry.name)
+      const scopeDir = hostJoin(companion.id, dir, entry.name)
       try {
-        const inner = await fsp.readdir(scopeDir, { withFileTypes: true })
+        const inner = await companion.file.readDir(scopeDir)
         for (const sub of inner) {
-          if (!sub.isDirectory()) continue
-          const full = path.join(scopeDir, sub.name)
-          out.push(await buildEntry(`${entry.name}/${sub.name}`, full))
+          if (!sub.isDirectory) continue
+          const full = hostJoin(companion.id, scopeDir, sub.name)
+          out.push(await buildEntry(companion, `${entry.name}/${sub.name}`, full))
         }
         continue
       } catch { /* fall through */ }
     }
-    out.push(await buildEntry(entry.name, path.join(dir, entry.name)))
+    out.push(await buildEntry(companion, entry.name, hostJoin(companion.id, dir, entry.name)))
   }
   return out
 }
 
-async function scanInstalledPackages(cwd: string): Promise<InstalledExtension[]> {
+async function scanInstalledPackages(
+  companion: Companion,
+  hostCwd: string,
+): Promise<InstalledExtension[]> {
   // Pi 0.x records `pi install`-ed packages in settings.json -> packages[],
   // and unpacks them into <agentDir>/npm/node_modules/<name>/. The two
   // locations (<agentDir>/extensions and <agentDir>/npm/node_modules) are
   // disjoint — the first is for hand-placed extensions like our bundled
   // subagent, the second is for everything `pi install` puts on disk.
   let raw: string
-  try { raw = await fsp.readFile(settingsPath(cwd), 'utf-8') }
+  try { raw = await companion.file.readFile(settingsHostPath(companion.id, hostCwd)) }
   catch { return [] }
   let parsed: { packages?: string[] } = {}
   try { parsed = JSON.parse(raw) }
   catch { return [] }
   const refs = parsed.packages ?? []
-  const modulesRoot = npmModulesDir(cwd)
+  const modulesRoot = npmModulesDir(companion.id, hostCwd)
   const out: InstalledExtension[] = []
   for (const ref of refs) {
     // Refs look like "npm:<name>" or "git:<url>" or "https://..." — we only
@@ -350,15 +359,22 @@ async function scanInstalledPackages(cwd: string): Promise<InstalledExtension[]>
     if (typeof ref !== 'string') continue
     if (!ref.startsWith('npm:')) continue
     const name = ref.slice(4)
-    const dirPath = path.join(modulesRoot, ...name.split('/'))
-    if (!fs.existsSync(dirPath)) continue
-    out.push(await buildEntry(name, dirPath))
+    const dirPath = hostJoin(companion.id, modulesRoot, ...name.split('/'))
+    // Confirm the directory exists on the host before listing it.
+    try { if (!(await companion.file.stat(dirPath)).isDirectory) continue }
+    catch { continue }
+    out.push(await buildEntry(companion, name, dirPath))
   }
   return out
 }
 
 export async function listInstalled(cwd: string): Promise<InstalledExtension[]> {
-  const [a, b] = await Promise.all([scanExtensionsDir(cwd), scanInstalledPackages(cwd)])
+  const { companionId, path: hostCwd } = parseLocator(cwd)
+  const companion = companions.resolve(companionId)
+  const [a, b] = await Promise.all([
+    scanExtensionsDir(companion, hostCwd),
+    scanInstalledPackages(companion, hostCwd),
+  ])
   const seen = new Set<string>()
   const out: InstalledExtension[] = []
   for (const e of [...a, ...b]) {
@@ -369,62 +385,33 @@ export async function listInstalled(cwd: string): Promise<InstalledExtension[]> 
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-function runPi(cwd: string, args: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
-  return new Promise((resolve) => {
-    const bin = piBinaryPath()
-    if (!fs.existsSync(bin)) {
-      resolve({ ok: false, error: `pi binary not found at ${bin}` })
-      return
-    }
-    const spawnBin = bin.endsWith('.js') ? process.execPath : bin
-    const spawnArgs = bin.endsWith('.js') ? [bin, ...args] : args
-    const child = spawn(spawnBin, spawnArgs, {
-      env: {
-        ...process.env,
-        PI_OFFLINE: process.env.PI_OFFLINE ?? '0',
-        ELECTRON_RUN_AS_NODE: '1',
-        PI_CODING_AGENT_DIR: agentDirFor(cwd),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (chunk: Buffer) => {
-      const s = chunk.toString()
-      stdout += s
-      log.info('[marketplace] pi %s stdout: %s', args.join(' '), s.trimEnd())
-    })
-    child.stderr.on('data', (chunk: Buffer) => {
-      const s = chunk.toString()
-      stderr += s
-      log.info('[marketplace] pi %s stderr: %s', args.join(' '), s.trimEnd())
-    })
-    child.on('error', (err) => {
-      log.warn('[marketplace] pi spawn error: %O', err)
-      resolve({ ok: false, error: err.message })
-    })
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ ok: true })
-      } else {
-        const msg = (stderr.trim() || stdout.trim() || `pi exited with code ${code}`).slice(0, 4000)
-        resolve({ ok: false, error: msg })
-      }
-    })
-  })
-}
+// Install/uninstall are deferred until pi exposes an install RPC over the agent
+// channel. The previous implementation spawned a bundled pi binary on the local
+// machine, which (a) no longer ships and (b) could never target a remote host.
+// We return a structured "not supported" so the UI shows a clear message
+// instead of silently failing on a missing binary.
+const INSTALL_NOT_SUPPORTED =
+  'Installing pi extensions from Cate is not supported on this host yet. ' +
+  'Use the pi CLI in a terminal on the workspace host (e.g. `pi install npm:<name>`).'
 
-export async function installExtension(cwd: string, name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function installExtension(
+  _cwd: string,
+  name: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!name || /[\s;|&`$<>]/.test(name)) {
     return { ok: false, error: 'Invalid package name' }
   }
-  return runPi(cwd, ['install', `npm:${name}`])
+  log.info('[marketplace] install deferred (no pi RPC): %s', name)
+  return { ok: false, error: INSTALL_NOT_SUPPORTED }
 }
 
-export async function uninstallExtension(cwd: string, name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function uninstallExtension(
+  _cwd: string,
+  name: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!name || /[\s;|&`$<>]/.test(name)) {
     return { ok: false, error: 'Invalid package name' }
   }
-  // `pi remove` is documented; `uninstall` is an alias.
-  return runPi(cwd, ['remove', `npm:${name}`])
+  log.info('[marketplace] uninstall deferred (no pi RPC): %s', name)
+  return { ok: false, error: INSTALL_NOT_SUPPORTED }
 }

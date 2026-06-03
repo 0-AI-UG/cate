@@ -9,21 +9,42 @@ import {
   FolderOpen,
   Keyboard,
   Folder,
+  CloudArrowUp,
 } from '@phosphor-icons/react'
+import { abbreviateLocalPath } from '../lib/displayPath'
+import { parseLocator, LOCAL_COMPANION_ID } from '../../main/companion/locator'
+import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
+import { workspaceRuntime } from '../lib/workspaceRuntime'
+import type { RemoteConnectSpec } from '../../shared/types'
 
 // Abbreviate home directory in paths
-function abbreviatePath(fullPath: string): string {
-  const home = '/Users/'
-  if (fullPath.startsWith(home)) {
-    const rest = fullPath.slice(home.length)
-    const slashIdx = rest.indexOf('/')
-    return '~' + (slashIdx >= 0 ? rest.slice(slashIdx) : '')
-  }
-  return fullPath
-}
-
 export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
   const [recentProjects, setRecentProjects] = useState<string[]>([])
+  const [showRemote, setShowRemote] = useState(false)
+  const [remotePending, setRemotePending] = useState(false)
+  const [remoteError, setRemoteError] = useState<string | null>(null)
+
+  const connectRemote = useCallback(
+    async (spec: RemoteConnectSpec) => {
+      setRemotePending(true)
+      setRemoteError(null)
+      const app = useAppStore.getState()
+      const ok = await app.connectRemoteWorkspace(workspaceId, spec)
+      setRemotePending(false)
+      if (ok) {
+        setShowRemote(false)
+        // The workspace is registered; the probe drives its phase. Only spawn a
+        // terminal if it actually connected — otherwise the canvas lock shows
+        // the probed state (missing → Install, unreachable → Retry/Edit).
+        const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+        if (workspaceRuntime(ws).editable) app.createTerminal(workspaceId)
+      } else {
+        const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+        setRemoteError(ws?.companion?.error ?? 'Failed to connect')
+      }
+    },
+    [workspaceId],
+  )
 
   useEffect(() => {
     window.electronAPI.recentProjectsGet().then(setRecentProjects).catch((err) => log.warn('[welcome] Failed to load recent projects:', err))
@@ -97,6 +118,11 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
                 onClick={openFolder}
               />
               <ActionItem
+                icon={<CloudArrowUp size={16} />}
+                label="Connect to Remote..."
+                onClick={() => { setRemoteError(null); setShowRemote(true) }}
+              />
+              <ActionItem
                 icon={<Terminal size={16} />}
                 label="New Terminal"
                 shortcut="⌘T"
@@ -125,10 +151,12 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
               </h2>
               <div className="flex flex-col gap-0.5">
                 {recentProjects.map((projectPath) => {
-                  const name = projectPath.split('/').filter(Boolean).pop() ?? projectPath
-                  const parent = abbreviatePath(
-                    projectPath.split('/').slice(0, -1).join('/'),
-                  )
+                  const { companionId, path: decodedPath } = parseLocator(projectPath)
+                  const name = decodedPath.split('/').filter(Boolean).pop() ?? projectPath
+                  const parentPath = decodedPath.split('/').slice(0, -1).join('/')
+                  const parent = companionId === LOCAL_COMPANION_ID
+                    ? abbreviateLocalPath(parentPath)
+                    : `${companionId}:${parentPath}`
                   return (
                     <button
                       key={projectPath}
@@ -168,6 +196,15 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
       </div>
+
+      {showRemote && (
+        <RemoteConnectDialog
+          onSubmit={connectRemote}
+          onClose={() => setShowRemote(false)}
+          pending={remotePending}
+          error={remoteError}
+        />
+      )}
     </div>
   )
 }

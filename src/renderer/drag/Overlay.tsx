@@ -9,7 +9,6 @@ import { useDragStore } from './store'
 import type { DropTarget } from './types'
 import { getDropZoneEntries } from './registry'
 import { ghostScreenRect } from './geometry'
-import type { Point } from '../../shared/types'
 
 export default function DragOverlay() {
   const isDragging = useDragStore((s) => s.isDragging)
@@ -207,6 +206,3 @@ function lookupStackRect(target: DropTarget): { left: number; top: number; width
   }
   return null
 }
-
-// Avoid unused warnings on point type if downstream consumers reach for it.
-export type { Point }

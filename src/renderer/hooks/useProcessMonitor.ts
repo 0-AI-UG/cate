@@ -3,6 +3,7 @@ import { useStatusStore } from '../stores/statusStore'
 import { useAppStore } from '../stores/appStore'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { noteAgentPresence } from '../lib/agentScreenDetector'
+import { isWorkspaceMonitorReady } from './workspaceMonitorReady'
 import type { TerminalActivity } from '../../shared/types'
 
 /** Last agent name we observed per terminal — module-level so we only push a
@@ -92,13 +93,23 @@ export function useProcessMonitor(workspaceId: string): void {
     return () => { unsubscribe() }
   }, [])
 
+  // Re-arm whenever this workspace's companion becomes ready. During a
+  // background restore the renderer can fire GIT_MONITOR_START before a remote
+  // companion finishes connecting; the main handler throws on an unconnected id
+  // and never arms. Keying on `ready` lets the effect re-run once the companion
+  // flips to 'connected'. For local workspaces `ready` is true immediately, so
+  // behavior is unchanged.
+  const ready = useAppStore((s) =>
+    isWorkspaceMonitorReady(s.workspaces.find((w) => w.id === workspaceId)),
+  )
   useEffect(() => {
     const api = window.electronAPI
     if (!api?.gitMonitorStart) return
+    if (!ready) return
     const ws = useAppStore.getState().getWorkspace(workspaceId)
     if (ws?.rootPath) {
       api.gitMonitorStart(workspaceId, ws.rootPath)
     }
     return () => { api.gitMonitorStop?.(workspaceId) }
-  }, [workspaceId])
+  }, [workspaceId, ready])
 }

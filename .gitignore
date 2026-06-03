@@ -1,5 +1,7 @@
 node_modules/
+bun.lock
 dist/
+dist-companion/
 .DS_Store
 *.tsbuildinfo
 .worktrees/

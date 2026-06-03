@@ -16,7 +16,8 @@ import fsp from 'fs/promises'
 import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
-import { agentDirFor } from './agentDir'
+import { hostAgentDir, hostJoin } from './agentDir'
+import type { Companion } from '../../main/companion/types'
 import type { CustomOpenAIProvider } from '../../shared/types'
 
 const PROVIDER_ID = 'custom-openai'
@@ -25,10 +26,6 @@ const PI_AGENT_DIR = 'pi-agent'
 /** The shared models.json — source of truth, mirrored into each workspace. */
 export function sharedModelsPath(): string {
   return path.join(app.getPath('userData'), PI_AGENT_DIR, 'models.json')
-}
-
-function workspaceModelsPath(cwd: string): string {
-  return path.join(agentDirFor(cwd), 'models.json')
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,16 +74,16 @@ export async function saveCustomOpenAI(cfg: CustomOpenAIProvider | null): Promis
   await fsp.writeFile(shared, JSON.stringify(data, null, 2) + '\n', 'utf-8')
 }
 
-/** Copy the shared models.json into a workspace's pi-agent dir. No-op when the
- *  shared file doesn't exist (so we never clobber a hand-written workspace
- *  models.json for users who haven't touched this feature). Safe per spawn. */
-export async function mirrorModelsToWorkspace(cwd: string): Promise<void> {
+/** Mirror the shared models.json into the host's pi-agent dir via the companion
+ *  (works local + remote). No-op when the shared file doesn't exist. */
+export async function mirrorModelsToWorkspace(companion: Companion, hostCwd: string): Promise<void> {
   const data = await readJson(sharedModelsPath())
   if (data == null) return
-  const dest = workspaceModelsPath(cwd)
+  const dir = hostAgentDir(companion.id, hostCwd)
+  const dest = hostJoin(companion.id, dir, 'models.json')
   try {
-    await fsp.mkdir(path.dirname(dest), { recursive: true })
-    await fsp.writeFile(dest, JSON.stringify(data, null, 2) + '\n', 'utf-8')
+    await companion.file.mkdir(dir)
+    await companion.file.writeFile(dest, JSON.stringify(data, null, 2) + '\n')
   } catch (err) {
     log.warn('[customModels] mirror to %s failed: %O', dest, err)
   }

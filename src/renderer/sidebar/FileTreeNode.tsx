@@ -22,6 +22,7 @@ import { isExternalFileDrag, importDroppedEntries } from '../lib/importExternalE
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
+import { parseLocator } from '../../main/companion/locator'
 
 // -----------------------------------------------------------------------------
 // Icon mapping — extension to inline SVG icons with colors
@@ -303,7 +304,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       case 'copy': setClipboard(pathsToOpen); break
       case 'paste': await handlePaste(); break
       case 'rename': startRename(); break
-      case 'copy-path': navigator.clipboard.writeText(node.path); break
+      case 'copy-path': navigator.clipboard.writeText(parseLocator(node.path).path); break
       case 'copy-rel-path': navigator.clipboard.writeText(relPath); break
       case 'copy-name': navigator.clipboard.writeText(node.name); break
       case 'delete':
