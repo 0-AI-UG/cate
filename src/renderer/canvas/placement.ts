@@ -465,11 +465,20 @@ export function recommendPlacements(
     for (const n of target) for (const p of edgeSlots(n)) pushStd(p)
   }
 
-  // Gap-fill: holes between the relevant cluster's nodes get an individually
-  // sized recommendation (fills the gap within the placement bounds).
-  if (target && target.length >= 2) {
-    for (const r of gapFillCandidates(target, size, gap, grid, nodeRects)) {
-      cands.push({ point: snapPt(r.origin), size: r.size, custom: true })
+  // Gap-fill: holes around the focus (active node, else the target island) get
+  // an individually-sized recommendation that fills the hole. We look at the
+  // focus plus every node within ~2 panels of it — wider than the clustering
+  // threshold — so a big gap between two far-apart nodes is filled too.
+  const focusRect: Rect | null = activeNode
+    ? { origin: activeNode.origin, size: activeNode.size }
+    : target ? boundsOf(target) : null
+  if (focusRect) {
+    const nearMax = Math.max(baseSize.width, baseSize.height) * 2
+    const gapNodes = nodeList.filter((n) => rectGap(focusRect, { origin: n.origin, size: n.size }) <= nearMax)
+    if (gapNodes.length >= 2) {
+      for (const r of gapFillCandidates(gapNodes, size, gap, grid, nodeRects)) {
+        cands.push({ point: snapPt(r.origin), size: r.size, custom: true })
+      }
     }
   }
 
