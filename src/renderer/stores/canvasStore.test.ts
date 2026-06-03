@@ -247,6 +247,10 @@ describe('canvasStore.recommendPlacements', () => {
       b.origin.y + b.size.height <= a.origin.y)
   const rectOf = (c: { point: { x: number; y: number }; size: { width: number; height: number } }): R =>
     ({ origin: c.point, size: c.size })
+  // VIEWPORT (offset 0, zoom 1) maps to the canvas rect 0..1000 × 0..800.
+  const viewRect: R = { origin: { x: 0, y: 0 }, size: { width: 1000, height: 800 } }
+  const onScreen = (c: { point: { x: number; y: number }; size: { width: number; height: number } }) =>
+    rectsOverlap(rectOf(c), viewRect)
 
   it('returns recommendations that never overlap each other', () => {
     const cands = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
@@ -284,13 +288,12 @@ describe('canvasStore.recommendPlacements', () => {
     expect(best.point.y + best.size.height / 2).toBeCloseTo(anchor.y, -1)
   })
 
-  it('all recommendations are grid-snapped, ranks sequential from 0', () => {
+  it('all recommendations are grid-snapped', () => {
     const cands = recommendPlacements(toMap(node('a', 0, 0), node('b', 400, 0)), 'a', 'terminal', VIEWPORT, null)
     cands.forEach((c) => {
       expect(c.point.x % CANVAS_GRID_SIZE === 0).toBe(true)
       expect(c.point.y % CANVAS_GRID_SIZE === 0).toBe(true)
     })
-    expect(cands.map((c) => c.rank)).toEqual(cands.map((_, i) => i))
   })
 
   it('still yields ≥1 overlap-free recommendation when the focused node is boxed in', () => {
@@ -319,10 +322,10 @@ describe('canvasStore.recommendPlacements', () => {
   it('on-screen recommendations rank before off-screen ones', () => {
     // Node near the right edge: its right slot is off-screen, others on-screen.
     const cands = recommendPlacements(toMap(node('a', 850, 350)), 'a', 'terminal', VIEWPORT, null)
-    const firstOff = cands.findIndex((c) => !c.onScreen)
-    const lastOn = cands.map((c) => c.onScreen).lastIndexOf(true)
+    const firstOff = cands.findIndex((c) => !onScreen(c))
+    const lastOn = cands.map((c) => onScreen(c)).lastIndexOf(true)
     if (firstOff !== -1) expect(firstOff).toBeGreaterThan(lastOn)
-    expect(cands[0].onScreen).toBe(true)
+    expect(onScreen(cands[0])).toBe(true)
   })
 
   it('ACTIVE node: the best recommendation sits directly beside the focused node', () => {
@@ -436,7 +439,7 @@ describe('canvasStore.recommendPlacements', () => {
     // The only node is far off-screen and not focused.
     const cands = recommendPlacements(toMap(node('off', 4000, 4000)), null, 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThan(0)
-    expect(cands[0].onScreen).toBe(true)
+    expect(onScreen(cands[0])).toBe(true)
     // Best ghost is centred on the viewport centre (500, 400).
     expect(Math.abs(cands[0].point.x + cands[0].size.width / 2 - 500)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
     expect(Math.abs(cands[0].point.y + cands[0].size.height / 2 - 400)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)

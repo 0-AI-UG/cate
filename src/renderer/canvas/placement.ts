@@ -12,16 +12,13 @@ import { PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { CANVAS_GRID_SIZE } from './layoutEngine'
 import { viewToCanvas as viewToCanvasCoords } from '../lib/coordinates'
 
-/** A recommended spot for a new node, surfaced as a numbered, clickable "ghost". */
+/** A recommended spot for a new node, surfaced as a numbered, clickable "ghost".
+ *  Best first; the on-screen number is the array index + 1. */
 export interface PlacementCandidate {
   /** Snapped canvas-space top-left origin for the new node. */
   point: Point
   /** The size the ghost (and resulting node) would have. */
   size: Size
-  /** 0 = best; ascending. Mirrors array order / the on-screen number (rank+1). */
-  rank: number
-  /** True when the candidate rect intersects the current viewport. */
-  onScreen: boolean
 }
 
 
@@ -272,11 +269,11 @@ export function recommendPlacements(
       if (out.length >= max) break
       if (!clear(c.rect, nodeRects) || !clear(c.rect, taken)) continue
       taken.push(c.rect)
-      out.push({ point: c.point, size: c.size, rank: out.length, onScreen: c.vis })
+      out.push({ point: c.point, size: c.size })
     }
     if (out.length === 0) {
       const p = snapPt(findFreePosition(nodes, focusedNodeId, std))
-      out.push({ point: p, size: std, rank: 0, onScreen: onScreen({ origin: p, size: std }) })
+      out.push({ point: p, size: std })
     }
     return out
   }
