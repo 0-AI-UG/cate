@@ -129,15 +129,17 @@ export async function searchFiles(
   const maxFileBytes = opts.maxFileBytes ?? 1024 * 1024
   const lowerQuery = query.toLowerCase()
   const allowDotFiles = query.startsWith('.')
-  const results: FileSearchResult[] = []
+  // Name and content matches accumulate into separate buckets, each with its own
+  // budget. This is what keeps in-file search alive: with a single shared cap, a
+  // query matching many file names fills the whole result limit during the cheap
+  // name pass, the walk short-circuits before recursing into deep directories,
+  // and content search silently returns nothing. Independent budgets let the walk
+  // keep reading file contents even once the name bucket is full.
+  const nameResults: FileSearchResult[] = []
+  const contentResults: FileSearchResult[] = []
   const seenPaths = new Set<string>()
-
-  const pushResult = (r: FileSearchResult): boolean => {
-    if (seenPaths.has(r.path)) return results.length < maxResults
-    seenPaths.add(r.path)
-    results.push(r)
-    return results.length < maxResults
-  }
+  const budgetsFull = () =>
+    nameResults.length >= maxResults && contentResults.length >= maxResults
 
   const walk = async (dir: string): Promise<boolean> => {
     let entries: string[]
@@ -164,9 +166,10 @@ export async function searchFiles(
 
       const isDirectory = stat.isDirectory()
       const nameMatches = entry.toLowerCase().includes(lowerQuery)
-      if (nameMatches) {
+      if (nameMatches && nameResults.length < maxResults && !seenPaths.has(full)) {
+        seenPaths.add(full)
         const relativePath = path.relative(rootPath, full).split(path.sep).join('/')
-        if (!pushResult({ name: entry, path: full, relativePath, isDirectory, nameMatch: true })) return false
+        nameResults.push({ name: entry, path: full, relativePath, isDirectory, nameMatch: true })
       }
 
       if (isDirectory) {
@@ -178,7 +181,7 @@ export async function searchFiles(
     }
 
     for (const f of filesAtLevel) {
-      if (results.length >= maxResults) return false
+      if (contentResults.length >= maxResults) break
       if (seenPaths.has(f.full)) continue
       if (f.size === 0 || f.size > maxFileBytes) continue
       if (BINARY_EXTENSIONS.has(f.ext)) continue
@@ -206,15 +209,16 @@ export async function searchFiles(
       const line = text.slice(lineStart, lineEnd).trim().slice(0, 200)
       const lineNumber = (text.slice(0, lineStart).match(/\n/g)?.length ?? 0) + 1
       const relativePath = path.relative(rootPath, f.full).split(path.sep).join('/')
-      if (!pushResult({
+      seenPaths.add(f.full)
+      contentResults.push({
         name: f.name, path: f.full, relativePath,
         isDirectory: false, nameMatch: false,
         contentPreview: line, contentLine: lineNumber,
-      })) return false
+      })
     }
 
     for (const sub of subdirs) {
-      if (results.length >= maxResults) return false
+      if (budgetsFull()) return false
       const cont = await walk(sub)
       if (!cont) return false
     }
@@ -222,6 +226,14 @@ export async function searchFiles(
   }
 
   await walk(rootPath)
+
+  // Merge the buckets into a single capped list. Name matches rank first, but
+  // content matches keep a reserved share of the cap so a flood of name matches
+  // can't crowd them out entirely — the whole point of also searching contents.
+  const reserve = Math.min(contentResults.length, Math.floor(maxResults / 2))
+  const keepName = Math.min(nameResults.length, maxResults - reserve)
+  const keepContent = Math.min(contentResults.length, maxResults - keepName)
+  const results = [...nameResults.slice(0, keepName), ...contentResults.slice(0, keepContent)]
   results.sort((a, b) => {
     if (a.nameMatch !== b.nameMatch) return a.nameMatch ? -1 : 1
     return a.relativePath.length - b.relativePath.length

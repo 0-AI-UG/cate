@@ -7,6 +7,12 @@ import { NOTIFY_OS, NOTIFY_ACTION } from '../../shared/ipc-channels'
 import { sendToWindow, windowFromEvent, focusWindow } from '../windowRegistry'
 import type { NotificationAction } from '../../shared/types'
 
+// Hold a strong reference to every shown notification until it resolves.
+// Without this the Notification is GC'd once the IPC handler returns, and on
+// some platforms (notably macOS) its 'click' event then never fires — the OS
+// banner still shows, but clicking it is dead. Released on click/close/failed.
+const liveNotifications = new Set<Notification>()
+
 export function registerHandlers(): void {
   ipcMain.handle(
     NOTIFY_OS,
@@ -22,6 +28,10 @@ export function registerHandlers(): void {
           title: payload.title,
           body: payload.body,
         })
+        liveNotifications.add(notification)
+        const release = (): void => {
+          liveNotifications.delete(notification)
+        }
 
         notification.on('click', () => {
           // Focus the owning window
@@ -33,7 +43,11 @@ export function registerHandlers(): void {
           if (payload.action) {
             sendToWindow(ownerWindowId, NOTIFY_ACTION, payload.action)
           }
+
+          release()
         })
+        notification.on('close', release)
+        notification.on('failed', release)
 
         notification.show()
       }

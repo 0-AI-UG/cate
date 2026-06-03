@@ -11,6 +11,7 @@ import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { SEARCH_ENGINE_URLS } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
+import type { BrowserShortcutAction } from '../../shared/types'
 import { portalRegistry } from '../lib/portalRegistry'
 import { isUrl, normalizeUrl } from './browserUrl'
 
@@ -34,6 +35,7 @@ interface WebviewElement extends HTMLElement {
   goBack(): void
   goForward(): void
   reload(): void
+  reloadIgnoringCache(): void
   canGoBack(): boolean
   canGoForward(): boolean
   getURL(): string
@@ -68,6 +70,10 @@ export default function BrowserPanel({
   const [webviewSrc] = useState(() => initialUrl)
 
   const webviewRef = useRef<WebviewElement | null>(null)
+  const urlInputRef = useRef<HTMLInputElement | null>(null)
+  // Mirror isFocused into a ref so the long-lived browser-shortcut subscription
+  // reads the current value without re-subscribing on every focus change.
+  const isFocusedRef = useRef(isFocused)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
   const [inputUrl, setInputUrl] = useState(initialUrl)
   const [canGoBack, setCanGoBack] = useState(false)
@@ -172,10 +178,67 @@ export default function BrowserPanel({
   }, [inputUrl, navigateTo])
 
   // -------------------------------------------------------------------------
+  // Browser navigation shortcuts (Cmd+R/[/]/L)
+  // -------------------------------------------------------------------------
+
+  const runBrowserAction = useCallback((action: BrowserShortcutAction) => {
+    const webview = webviewRef.current
+    switch (action) {
+      case 'reload':
+        webview?.reload()
+        break
+      case 'reloadHard':
+        webview?.reloadIgnoringCache()
+        break
+      case 'back':
+        webview?.goBack()
+        break
+      case 'forward':
+        webview?.goForward()
+        break
+      case 'focusUrl': {
+        const input = urlInputRef.current
+        if (input) {
+          input.focus()
+          input.select()
+        }
+        break
+      }
+    }
+  }, [])
+
+  // Map a key event that lands on the panel chrome (e.g. the URL bar) to a
+  // browser action. The webview-guest case is handled in the main process via
+  // before-input-event (see webSecurity.ts), which forwards through
+  // onBrowserShortcut below. Using e.code keeps this layout-independent.
+  const handleChromeKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!(e.metaKey || e.ctrlKey)) return
+    let action: BrowserShortcutAction | null = null
+    switch (e.code) {
+      case 'KeyR':
+        action = e.shiftKey ? 'reloadHard' : 'reload'
+        break
+      case 'KeyL':
+        if (!e.shiftKey) action = 'focusUrl'
+        break
+      case 'BracketLeft':
+        if (!e.shiftKey) action = 'back'
+        break
+      case 'BracketRight':
+        if (!e.shiftKey) action = 'forward'
+        break
+    }
+    if (!action) return
+    e.preventDefault()
+    runBrowserAction(action)
+  }, [runBrowserAction])
+
+  // -------------------------------------------------------------------------
   // Focus the webview when this panel becomes the focused node
   // -------------------------------------------------------------------------
 
   useEffect(() => {
+    isFocusedRef.current = isFocused
     if (!isFocused) return
     const webview = webviewRef.current
     if (!webview) return
@@ -183,6 +246,16 @@ export default function BrowserPanel({
       webview.focus()
     })
   }, [isFocused])
+
+  // Browser nav keys forwarded from the main process (fired while the webview
+  // guest had keyboard focus) or from the Browser menu. Only the focused panel
+  // reacts, so the key affects the browser the user is actually looking at.
+  useEffect(() => {
+    return window.electronAPI.onBrowserShortcut((action) => {
+      if (!isFocusedRef.current) return
+      runBrowserAction(action as BrowserShortcutAction)
+    })
+  }, [runBrowserAction])
 
   // -------------------------------------------------------------------------
   // Webview event listeners
@@ -298,7 +371,7 @@ export default function BrowserPanel({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="flex flex-col w-full h-full">
+    <div className="flex flex-col w-full h-full" onKeyDown={handleChromeKeyDown}>
       {/* URL bar */}
       <div className="h-10 flex items-center gap-2 px-2 bg-surface-4 border-b border-subtle shrink-0">
         {/* Navigation pill */}
@@ -334,6 +407,7 @@ export default function BrowserPanel({
         <div className="flex-1 flex items-center h-7 rounded-full border border-subtle bg-surface-5 px-3 gap-2 focus-within:border-strong transition-colors">
           <MagnifyingGlass size={13} className="text-muted shrink-0" />
           <input
+            ref={urlInputRef}
             type="text"
             value={inputUrl}
             onChange={(e) => setInputUrl(e.target.value)}

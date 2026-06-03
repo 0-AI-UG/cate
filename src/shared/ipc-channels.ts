@@ -142,6 +142,11 @@ export const MENU_OPEN_SETTINGS = 'menu:openSettings'
  *  renderer runs the matching handler (via useShortcuts). */
 export const MENU_TRIGGER_ACTION = 'menu:triggerAction'
 
+/** Browser navigation shortcut (main -> renderer). Sent when a webview guest
+ *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the
+ *  Browser menu. The focused BrowserPanel acts on it. */
+export const BROWSER_SHORTCUT = 'browser:shortcut'
+
 // Native context menu (renderer -> main)
 export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
