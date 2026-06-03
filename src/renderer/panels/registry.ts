@@ -26,6 +26,7 @@ import type { PanelType, Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { PANEL_DEFINITIONS, type SharedPanelDefinition } from '../../shared/panels'
+import { PanelErrorBoundary } from '../ui/PanelErrorBoundary'
 import type { PanelProps } from './types'
 
 // -----------------------------------------------------------------------------
@@ -158,5 +159,12 @@ export function renderPanelComponent(
     nodeId: ctx.nodeId,
     ...extras,
   }
-  return React.createElement(Component, props)
+  // Wrap every panel in its own error boundary so a render error in one panel
+  // fails in place rather than collapsing the whole window through the single
+  // top-level boundary. Keyed by panel id so a reused slot resets cleanly.
+  return React.createElement(
+    PanelErrorBoundary,
+    { panelType: panel.type, panelId: panel.id },
+    React.createElement(Component, props),
+  )
 }

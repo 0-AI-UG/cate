@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { IconContext } from '@phosphor-icons/react'
 import log from './lib/logger'
 import { mark } from './lib/perfMarks'
-import { initRendererSentry } from './lib/sentry'
+import { initRendererSentry, captureRendererException } from './lib/sentry'
 import App from './App'
 import { subscribeToOsNotificationClicks } from './lib/osNotifications'
 import './styles/globals.css'
@@ -39,6 +39,12 @@ class ErrorBoundary extends React.Component<
   }
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     log.error('React render error:', error.message, errorInfo.componentStack)
+    // React swallows render errors before they reach window.onerror, so capture
+    // explicitly here — otherwise top-level render crashes never reach Sentry.
+    captureRendererException(error, {
+      componentStack: errorInfo.componentStack,
+      source: 'RootErrorBoundary',
+    })
   }
   render() {
     if (this.state.error) {

@@ -119,6 +119,20 @@ export function captureMainException(err: unknown): void {
   }
 }
 
+/** Capture a named message event (e.g. a renderer crash that has no JS stack)
+ *  with optional structured context. Best-effort, never throws. */
+export function captureMainMessage(
+  message: string,
+  extra?: Record<string, unknown>,
+): void {
+  if (!initialized) return
+  try {
+    Sentry.captureMessage(message, { level: 'error', extra })
+  } catch (sentryErr) {
+    log.warn('[sentry] captureMessage failed: %s', sentryErr instanceof Error ? sentryErr.message : String(sentryErr))
+  }
+}
+
 /** Flush buffered Sentry events before exiting. Returns a promise that
  *  resolves once flushed or after a 2-second timeout. */
 export async function flushSentry(): Promise<void> {

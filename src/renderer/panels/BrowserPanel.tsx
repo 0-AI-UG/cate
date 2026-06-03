@@ -123,6 +123,10 @@ export default function BrowserPanel({
   const [canGoForward, setCanGoForward] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Distinct from loadError: the guest *renderer process* died (OOM / GPU
+  // fault / native crash), not merely a failed navigation. Needs a reload to
+  // respawn the renderer, so it gets its own overlay + recovery affordance.
+  const [crashed, setCrashed] = useState(false)
   const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -420,6 +424,22 @@ export default function BrowserPanel({
     const onDidStartLoading = () => {
       setIsLoading(true)
       setLoadError(null)
+      setCrashed(false)
+    }
+
+    // The guest renderer process died. Newer Electron fires `render-process-gone`
+    // (with a reason); older builds fire the deprecated `crashed`. Handle both.
+    const onRenderProcessGone = (event: any) => {
+      const reason = event?.reason ?? 'crashed'
+      if (reason === 'clean-exit') return // normal teardown, not a crash
+      console.error('[BrowserPanel] webview renderer gone:', reason)
+      setCrashed(true)
+      setIsLoading(false)
+    }
+    const onCrashed = () => {
+      console.error('[BrowserPanel] webview crashed')
+      setCrashed(true)
+      setIsLoading(false)
     }
 
     const onDidStopLoading = () => {
@@ -463,6 +483,8 @@ export default function BrowserPanel({
     webview.addEventListener('did-stop-loading', onDidStopLoading)
     webview.addEventListener('will-navigate', onWillNavigate)
     webview.addEventListener('new-window', onNewWindow)
+    webview.addEventListener('render-process-gone', onRenderProcessGone)
+    webview.addEventListener('crashed', onCrashed)
 
     return () => {
       try { portalRegistry.unregister(panelId) } catch { /* ignore */ }
@@ -475,6 +497,8 @@ export default function BrowserPanel({
       webview.removeEventListener('did-stop-loading', onDidStopLoading)
       webview.removeEventListener('will-navigate', onWillNavigate)
       webview.removeEventListener('new-window', onNewWindow)
+      webview.removeEventListener('render-process-gone', onRenderProcessGone)
+      webview.removeEventListener('crashed', onCrashed)
     }
     // `partition` + `proxyReady` are deps so the listeners re-bind to the fresh
     // <webview> element after a proxy change remounts it (key={partition} +
@@ -573,6 +597,21 @@ export default function BrowserPanel({
           </div>
         )}
 
+        {/* Crash state overlay — guest renderer process died (OOM/GPU/native). */}
+        {crashed && !loadError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-4 text-secondary p-4 text-center z-10">
+            <Globe size={32} className="mb-2 text-muted" />
+            <p className="text-sm font-medium mb-1">This page crashed</p>
+            <p className="text-xs text-muted">The browser process for this panel stopped unexpectedly.</p>
+            <button
+              onClick={handleReload}
+              className="mt-3 px-3 py-1 text-xs rounded bg-surface-6 hover:bg-hover text-primary"
+            >
+              Reload Page
+            </button>
+          </div>
+        )}
+
         {/* Webview — keyed by partition so a proxy change cleanly remounts it,
             and only rendered once the proxy session is configured. */}
         {proxyReady && (
@@ -580,7 +619,7 @@ export default function BrowserPanel({
             key={partition}
             ref={webviewRef as any}
             src={webviewSrc}
-            className={`w-full h-full ${loadError ? 'hidden' : ''}`}
+            className={`w-full h-full ${loadError || crashed ? 'hidden' : ''}`}
             partition={partition}
           />
         )}
