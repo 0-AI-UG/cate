@@ -67,6 +67,11 @@ function getWindowParams(): { type: string; panelType?: string; panelId?: string
   }
 }
 
+// Themed background passed by main from the boot snapshot (the same color as the
+// native window backdrop). Lets the loading splash paint in the theme color on
+// the very first frame, before the renderer's JS theme injection runs.
+const BOOT_BG = new URLSearchParams(window.location.search).get('bg') ?? undefined
+
 // -----------------------------------------------------------------------------
 // App — routes to the correct shell based on window type
 // -----------------------------------------------------------------------------
@@ -546,7 +551,10 @@ function MainApp() {
       <PerfHud />
 
       {initializing && (
-        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-4 select-none pointer-events-none">
+        <div
+          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-4 select-none pointer-events-none"
+          style={{ backgroundColor: BOOT_BG }}
+        >
           <svg viewBox="0 0 389 204" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-8 text-muted">
             <path d="M274 203.2L307.29 1.79999H388.29L384.51 24.84H329.97L320.5 80.16H342.22H366.34L362.74 103.2H338.62H316.5L304.06 180.16H358.6L355 203.2H314.5H274Z" fill="currentColor"/>
             <path d="M201.264 203.2L230.424 26.5H197.124L201.264 1.3H294.864L290.724 26.5H257.424L228.264 203.2H201.264Z" fill="currentColor"/>

@@ -700,7 +700,7 @@ const Row: React.FC<{
 }> = ({ selected, onClick, onMouseEnter, children }) => (
   <div
     className={`flex items-center gap-2.5 mx-1.5 px-2.5 py-1.5 cursor-pointer rounded-md ${
-      selected ? 'bg-[rgb(var(--agent-rgb))]/22' : 'hover:bg-hover'
+      selected ? 'bg-[rgb(var(--agent-rgb))]/12' : ''
     }`}
     onClick={onClick}
     onMouseEnter={onMouseEnter}
