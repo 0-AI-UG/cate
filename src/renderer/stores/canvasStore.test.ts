@@ -309,11 +309,52 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
-  it('flags off-screen recommendations when everything is outside the viewport', () => {
-    const far = node('far', 5000, 5000)
-    const cands = recommendPlacements(toMap(far), 'far', 'terminal', VIEWPORT, null)
+  const rectGap = (a: R, b: R) => {
+    const dx = Math.max(0, a.origin.x - (b.origin.x + b.size.width), b.origin.x - (a.origin.x + a.size.width))
+    const dy = Math.max(0, a.origin.y - (b.origin.y + b.size.height), b.origin.y - (a.origin.y + a.size.height))
+    return Math.hypot(dx, dy)
+  }
+
+  it('on-screen recommendations rank before off-screen ones', () => {
+    // Node near the right edge: its right slot is off-screen, others on-screen.
+    const cands = recommendPlacements(toMap(node('a', 850, 350)), 'a', 'terminal', VIEWPORT, null)
+    const firstOff = cands.findIndex((c) => !c.onScreen)
+    const lastOn = cands.map((c) => c.onScreen).lastIndexOf(true)
+    if (firstOff !== -1) expect(firstOff).toBeGreaterThan(lastOn)
+    expect(cands[0].onScreen).toBe(true)
+  })
+
+  it('ACTIVE node: recommendations cluster tightly around the focused node', () => {
+    const a = node('a', 400, 320) // on-screen, focused → active
+    const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThanOrEqual(3)
+    cands.forEach((c) => {
+      // Each ghost sits directly beside the active node (one gap away).
+      expect(rectGap(rectOf(c), { origin: a.origin, size: a.size })).toBeLessThanOrEqual(60)
+    })
+  })
+
+  it('ISLANDS: with no active node, recommends around the island nearest the anchor', () => {
+    const near = node('near', 0, 0)
+    const far = node('far', 5000, 5000, 200, 150, 1)
+    const nodes = toMap(near, far)
+    // No focus; anchor sits on the near island.
+    const cands = recommendPlacements(nodes, null, 'terminal', VIEWPORT, { x: 100, y: 75 })
     expect(cands.length).toBeGreaterThan(0)
-    expect(cands.every((c) => c.onScreen === false)).toBe(true)
+    cands.forEach((c) => {
+      expect(rectGap(rectOf(c), { origin: near.origin, size: near.size }))
+        .toBeLessThan(rectGap(rectOf(c), { origin: far.origin, size: far.size }))
+    })
+  })
+
+  it('BLANK viewport: no active node and nothing on screen → centre on the view', () => {
+    // The only node is far off-screen and not focused.
+    const cands = recommendPlacements(toMap(node('off', 4000, 4000)), null, 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThan(0)
+    expect(cands[0].onScreen).toBe(true)
+    // Best ghost is centred on the viewport centre (500, 400).
+    expect(Math.abs(cands[0].point.x + cands[0].size.width / 2 - 500)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
+    expect(Math.abs(cands[0].point.y + cands[0].size.height / 2 - 400)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
   })
 })
 
