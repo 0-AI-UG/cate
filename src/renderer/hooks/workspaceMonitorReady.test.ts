@@ -44,7 +44,7 @@ describe('isWorkspaceMonitorReady', () => {
     const w = ws({
       rootPath: 'cate-companion://abc/repo',
       connection: { kind: 'wsl', companionId: 'abc', distro: 'Ubuntu', distroPath: '/repo' },
-      companionStatus: 'connecting',
+      companion: { phase: 'connecting' },
     })
     expect(isWorkspaceMonitorReady(w)).toBe(false)
   })
@@ -67,7 +67,7 @@ describe('isWorkspaceMonitorReady', () => {
         user: 'u',
         remotePath: '/repo',
       },
-      companionStatus: 'connected',
+      companion: { phase: 'connected' },
     })
     expect(isWorkspaceMonitorReady(w)).toBe(true)
   })

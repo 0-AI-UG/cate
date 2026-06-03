@@ -43,31 +43,47 @@ const inputCls =
   'w-full text-[13px] bg-surface-3 border border-subtle rounded px-2 py-1 outline-none text-primary focus:border-focus-blue'
 const labelCls = 'text-[11px] uppercase tracking-wider text-muted mb-1'
 
+/** Non-secret fields that can be pre-filled when editing an existing
+ *  connection. SSH key/passphrase live in safeStorage and are never echoed
+ *  back, so they're re-entered (or left blank to reuse the stored secret). */
+export interface RemoteConnectInitial {
+  kind?: Kind
+  host?: string
+  user?: string
+  port?: string
+  remotePath?: string
+  distro?: string
+  distroPath?: string
+}
+
 export function RemoteConnect({
   onSubmit,
   onCancel,
   pending = false,
   error = null,
+  initial,
 }: {
   onSubmit: (spec: RemoteConnectSpec) => void
   onCancel?: () => void
   pending?: boolean
   error?: string | null
+  /** Pre-fill the form to edit an existing connection (see RemoteConnectInitial). */
+  initial?: RemoteConnectInitial
 }) {
-  const [kind, setKind] = useState<Kind>('server')
+  const [kind, setKind] = useState<Kind>(initial?.kind ?? 'server')
 
   // server fields
-  const [host, setHost] = useState('')
-  const [user, setUser] = useState('')
-  const [port, setPort] = useState('')
-  const [remotePath, setRemotePath] = useState('')
+  const [host, setHost] = useState(initial?.host ?? '')
+  const [user, setUser] = useState(initial?.user ?? '')
+  const [port, setPort] = useState(initial?.port ?? '')
+  const [remotePath, setRemotePath] = useState(initial?.remotePath ?? '')
   const [keyPath, setKeyPath] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [useAgent, setUseAgent] = useState(true)
 
   // wsl fields
-  const [distro, setDistro] = useState('')
-  const [distroPath, setDistroPath] = useState('')
+  const [distro, setDistro] = useState(initial?.distro ?? '')
+  const [distroPath, setDistroPath] = useState(initial?.distroPath ?? '')
   // Installed distros for the picker; null = not loaded yet. Empty (non-Windows /
   // no WSL / probe failed) falls back to a free-text input.
   const [distros, setDistros] = useState<string[] | null>(null)

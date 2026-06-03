@@ -20,10 +20,23 @@ export interface CompanionChannel {
 
 export interface CompanionTransport {
   readonly kind: 'local' | 'server' | 'wsl'
+  /**
+   * Probe whether the correct-version daemon bundle is already installed on the
+   * host, WITHOUT installing anything. Connecting the transport happens here, so
+   * a failure to reach the host surfaces (the manager maps it to `unreachable`);
+   * resolving `false` means the host is reachable but the daemon needs to be
+   * installed (the manager maps that to `missing`). Optional — a transport that
+   * omits it is treated as always-installed (local subprocess / in-proc fakes).
+   */
+  isInstalled?(expectedVersion: string): Promise<boolean>
   /** Ensure the correct-version companion bundle is present on the host. When
    *  `force` is set, wipe any existing install first so a corrupt or partial
    *  bundle is replaced by a clean download/push+extract (the reinstall path). */
   bootstrap(expectedVersion: string, force?: boolean): Promise<void>
+  /** Remove the companion install from the host (rm -rf ~/.cate/companion).
+   *  Backs the explicit "Delete companion" action. Optional — omitted by
+   *  transports with nothing host-side to remove. */
+  uninstall?(): Promise<void>
   /** Launch the daemon and return its stdio channel. */
   launch(): Promise<CompanionChannel>
   /**

@@ -54,17 +54,50 @@ export class WslTransport implements CompanionTransport {
     }
   }
 
-  async bootstrap(version: string, force?: boolean): Promise<void> {
-    const { stdout: machine } = await this.wsl(['uname', '-m'])
-    const arch = /(aarch64|arm64)/i.test(machine) ? 'arm64' : /(x86_64|amd64)/i.test(machine) ? 'x64' : null
-    if (!arch) throw new Error(`Unsupported WSL arch: "${machine.trim()}"`)
-    const target = `linux-${arch}`
-    if (!isCompanionTarget(target)) throw new Error(`No companion build for target "${target}"`)
-    this.target = target
+  /** Probe arch + resolve the version-specific install dir, caching both.
+   *  Shared by isInstalled / bootstrap / launch / uninstall. */
+  private async resolveInstallDir(version: string): Promise<string> {
+    if (!this.target) {
+      const { stdout: machine } = await this.wsl(['uname', '-m'])
+      const arch = /(aarch64|arm64)/i.test(machine) ? 'arm64' : /(x86_64|amd64)/i.test(machine) ? 'x64' : null
+      if (!arch) throw new Error(`Unsupported WSL arch: "${machine.trim()}"`)
+      const target = `linux-${arch}`
+      if (!isCompanionTarget(target)) throw new Error(`No companion build for target "${target}"`)
+      this.target = target
+    }
+    if (!this.installDir) {
+      const { stdout: home } = await this.wsl(['sh', '-c', 'echo $HOME'])
+      this.installDir = `${home.trim()}/.cate/companion/${version}/${this.target}`
+    }
+    return this.installDir
+  }
 
+  /** Reachable + correct-version bundle present? Does NOT install. */
+  async isInstalled(version: string): Promise<boolean> {
+    const installDir = await this.resolveInstallDir(version)
+    const D = shq(installDir)
+    if (isCompanionDevMode()) {
+      return (await this.wslSh(
+        `test -x ${D}/runtime/bin/node && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+      )).stdout.includes('CATE_PROVISIONED')
+    }
+    const localTar = localTarballIfPresent(version, this.target as CompanionTarget)
+    const marker = localTar ? `${version}:${await tarballHash(localTar)}` : version
+    const ok = (await this.wslSh(
+      `test -x ${D}/runtime/bin/node && test -f ${D}/companion.cjs && cat ${D}/.ok 2>/dev/null`,
+    )).stdout.trim()
+    return ok === marker || (!localTar && ok.startsWith(version))
+  }
+
+  /** Remove the whole companion install tree inside the distro (all versions). */
+  async uninstall(): Promise<void> {
     const { stdout: home } = await this.wsl(['sh', '-c', 'echo $HOME'])
-    this.installDir = `${home.trim()}/.cate/companion/${version}/${this.target}`
-    const D = shq(this.installDir)
+    await this.wslSh(`rm -rf ${shq(`${home.trim()}/.cate/companion`)}`)
+    this.installDir = ''
+  }
+
+  async bootstrap(version: string, force?: boolean): Promise<void> {
+    const D = shq(await this.resolveInstallDir(version))
 
     // Reinstall: wipe the install dir (binaries + .ok/.cjs.ok markers) so the
     // provisioned/marker probes below see a clean slate and re-copy.
@@ -79,7 +112,7 @@ export class WslTransport implements CompanionTransport {
     }
 
     // See sshTransport: hash-aware marker so a changed daemon re-installs in dev.
-    const localTar = localTarballIfPresent(version, this.target)
+    const localTar = localTarballIfPresent(version, this.target as CompanionTarget)
     const marker = localTar ? `${version}:${await tarballHash(localTar)}` : version
 
     // Already installed and current?
@@ -90,7 +123,7 @@ export class WslTransport implements CompanionTransport {
     if (ok === marker || (!localTar && ok.startsWith(version))) return
 
     // 1. In-distro pull.
-    const url = releaseUrl(version, this.target)
+    const url = releaseUrl(version, this.target as CompanionTarget)
     const pull = await this.wslSh(this.pullScript(this.installDir, url, version))
     if (pull.stdout.includes('CATE_PULL_OK')) {
       log.info('[companion:wsl] %s pulled tarball from release', this.target)

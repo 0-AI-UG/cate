@@ -103,12 +103,49 @@ export class SshTransport implements CompanionTransport {
     return target
   }
 
-  async bootstrap(version: string, force?: boolean): Promise<void> {
+  /** Connect + probe the host's arch and resolve the version-specific install
+   *  dir, caching both. Shared by isInstalled / bootstrap / launch / uninstall
+   *  so any of them can be the first call in a connect lifecycle. */
+  private async resolveInstallDir(version: string): Promise<string> {
     await this.ensureConnected()
-    this.target = await this.probeTarget()
+    if (!this.target) this.target = await this.probeTarget()
+    if (!this.installDir) {
+      const { stdout: home } = await this.exec('echo $HOME')
+      this.installDir = `${home.trim()}/.cate/companion/${version}/${this.target}`
+    }
+    return this.installDir
+  }
+
+  /** Reachable + correct-version bundle present? Does NOT install. A connect
+   *  failure rejects (→ unreachable); `false` means reachable-but-absent (→
+   *  missing). In dev the freshness key is the provisioned core (the cjs hot-swap
+   *  is part of install, not the probe). */
+  async isInstalled(version: string): Promise<boolean> {
+    const installDir = await this.resolveInstallDir(version)
+    const D = shq(installDir)
+    if (isCompanionDevMode()) {
+      return (await this.exec(
+        `test -x ${D}/runtime/bin/node && test -f ${D}/companion.cjs && test -d ${D}/node_modules && echo CATE_PROVISIONED`,
+      )).stdout.includes('CATE_PROVISIONED')
+    }
+    const localTar = localTarballIfPresent(version, this.target as CompanionTarget)
+    const marker = localTar ? `${version}:${await tarballHash(localTar)}` : version
+    const ok = (await this.exec(
+      `test -x ${D}/runtime/bin/node && test -f ${D}/companion.cjs && cat ${D}/.ok 2>/dev/null`,
+    )).stdout.trim()
+    return ok === marker || (!localTar && ok.startsWith(version))
+  }
+
+  /** Remove the whole companion install tree on the host (all versions). */
+  async uninstall(): Promise<void> {
+    await this.ensureConnected()
     const { stdout: home } = await this.exec('echo $HOME')
-    this.installDir = `${home.trim()}/.cate/companion/${version}/${this.target}`
-    const D = shq(this.installDir)
+    await this.exec(`rm -rf ${shq(`${home.trim()}/.cate/companion`)}`)
+    this.installDir = '' // force a fresh resolve on the next probe/install
+  }
+
+  async bootstrap(version: string, force?: boolean): Promise<void> {
+    const D = shq(await this.resolveInstallDir(version))
 
     // Reinstall: drop the whole install dir (binaries + .ok/.cjs.ok markers) so
     // every "already provisioned?" probe below sees a clean slate and re-pulls.
@@ -126,7 +163,7 @@ export class SshTransport implements CompanionTransport {
     // Marker stored in `.ok`. When a local tarball is present (dev build / cache)
     // it includes its content hash, so a changed daemon at the same version
     // re-installs automatically; otherwise (production pull) it's just the version.
-    const localTar = localTarballIfPresent(version, this.target)
+    const localTar = localTarballIfPresent(version, this.target as CompanionTarget)
     const marker = localTar ? `${version}:${await tarballHash(localTar)}` : version
 
     // Already installed and current?
@@ -137,7 +174,7 @@ export class SshTransport implements CompanionTransport {
     if (ok === marker || (!localTar && ok.startsWith(version))) return
 
     // 1. Remote pull — let the host fetch its own tarball from the release.
-    const url = releaseUrl(version, this.target)
+    const url = releaseUrl(version, this.target as CompanionTarget)
     const pull = await this.exec(this.remotePullCmd(this.installDir, url, version))
     if (pull.stdout.includes('CATE_PULL_OK')) {
       log.info('[companion:ssh] %s pulled tarball from release', this.target)

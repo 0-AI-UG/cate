@@ -14,6 +14,7 @@ import {
 import { abbreviateLocalPath } from '../lib/displayPath'
 import { parseLocator, LOCAL_COMPANION_ID } from '../../main/companion/locator'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
+import { workspaceRuntime } from '../lib/workspaceRuntime'
 import type { RemoteConnectSpec } from '../../shared/types'
 
 // Abbreviate home directory in paths
@@ -32,10 +33,14 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
       setRemotePending(false)
       if (ok) {
         setShowRemote(false)
-        app.createTerminal(workspaceId)
+        // The workspace is registered; the probe drives its phase. Only spawn a
+        // terminal if it actually connected — otherwise the canvas lock shows
+        // the probed state (missing → Install, unreachable → Retry/Edit).
+        const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+        if (workspaceRuntime(ws).editable) app.createTerminal(workspaceId)
       } else {
         const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-        setRemoteError(ws?.rootPathError ?? 'Failed to connect')
+        setRemoteError(ws?.companion?.error ?? 'Failed to connect')
       }
     },
     [workspaceId],

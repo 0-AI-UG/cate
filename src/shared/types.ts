@@ -204,11 +204,43 @@ export type CompanionConnectResult =
   | { ok: true; companionId: string; rootPath: string; connection: CompanionConnection }
   | { ok: false; error: string }
 
+/**
+ * Canonical lifecycle phase of a remote companion. Emitted by the main process
+ * (CompanionManager) and projected onto the owning workspace, where it is the
+ * single source of truth the UI derives its runtime status from. Local
+ * workspaces have no phase (absent ⇒ no companion).
+ *
+ *  - `installing`   — bootstrapping the daemon bundle onto the host (pull/push + extract)
+ *  - `connecting`   — launching the daemon + protocol/version handshake
+ *  - `connected`    — daemon is live; the workspace is fully functional
+ *  - `disconnected` — was connected, the channel dropped (daemon crash / network)
+ *  - `unreachable`  — connect/launch/handshake failed (bad host/auth/network); retry or edit
+ *  - `missing`      — the daemon bundle isn't installed / install failed; needs (re)install
+ */
+export type CompanionPhase =
+  | 'installing'
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'unreachable'
+  | 'missing'
+
 /** Live connection state pushed to the renderer (COMPANION_STATUS). */
 export interface CompanionStatusEvent {
   companionId: string
-  status: 'connecting' | 'connected' | 'error' | 'disconnected'
+  phase: CompanionPhase
   message?: string
+}
+
+/** The canonical companion runtime state stored on a remote workspace. Written
+ *  by exactly one path in the renderer (the COMPANION_STATUS subscription, plus
+ *  the optimistic seed during the initial connect before companionId is bound).
+ *  Absent ⇒ local workspace, or a remote workspace whose companion hasn't been
+ *  contacted yet this session. */
+export interface CompanionRuntime {
+  phase: CompanionPhase
+  /** Human-readable failure reason for unreachable/missing/disconnected. */
+  error?: string
 }
 
 export interface WorkspaceMutationError {
@@ -380,8 +412,11 @@ export interface WorkspaceState {
   /** Companion connection for a remote/WSL workspace (absent ⇒ local). Mirrors
    *  WorkspaceInfo.connection; drives reconnect-on-restore. */
   connection?: CompanionConnection
-  /** Live companion connection state for UI (set from COMPANION_STATUS). */
-  companionStatus?: CompanionStatusEvent['status']
+  /** Canonical companion runtime state for a remote workspace (set from
+   *  COMPANION_STATUS, seeded during initial connect). The single source of
+   *  truth the UI derives editability + the lock overlay from. Absent ⇒ local,
+   *  or remote-not-yet-contacted. See lib/workspaceRuntime.ts. */
+  companion?: CompanionRuntime
   /** Additional project roots opened alongside the primary `rootPath`.
    *  Used to keep multiple repos in one canvas. Order is user-controlled. */
   additionalRoots?: string[]

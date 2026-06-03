@@ -12,8 +12,10 @@ import type { CompanionChannel, CompanionTransport } from './transports/transpor
 // listener attaches, so the hello frame is never dropped.
 class FakeTransport implements CompanionTransport {
   readonly kind = 'wsl'
+  installed = true
   bootstrapped = false
   forcedBootstrap = false
+  uninstalled = false
   disposed = false
   private server: RpcServer | null = null
   private dataCb: ((chunk: string | Buffer) => void) | null = null
@@ -21,9 +23,19 @@ class FakeTransport implements CompanionTransport {
 
   constructor(private readonly serverOpts: RpcServerOptions = {}) {}
 
+  async isInstalled(): Promise<boolean> {
+    return this.installed
+  }
+
   async bootstrap(_version?: string, force = false): Promise<void> {
     this.bootstrapped = true
     this.forcedBootstrap = force
+    this.installed = true
+  }
+
+  async uninstall(): Promise<void> {
+    this.uninstalled = true
+    this.installed = false
   }
 
   async launch(): Promise<CompanionChannel> {
@@ -44,15 +56,21 @@ class FakeTransport implements CompanionTransport {
     this.disposed = true
     this.server?.dispose()
   }
+
+  /** Simulate an *unexpected* drop (daemon crash / network), distinct from an
+   *  intentional disposeConnection() teardown. */
+  triggerClose(code = 1): void {
+    this.closeCb?.({ code })
+  }
 }
 
 describe('CompanionManager connection lifecycle', () => {
-  test('connect bootstraps, handshakes, registers, and resolves', async () => {
+  test('a probe connect to an installed host connects WITHOUT installing', async () => {
     const mgr = new CompanionManager()
-    const transport = new FakeTransport()
+    const transport = new FakeTransport() // installed = true
     const companion = await mgr.connect('wsl_test', transport)
 
-    expect(transport.bootstrapped).toBe(true)
+    expect(transport.bootstrapped).toBe(false) // probe never installs
     expect(companion.id).toBe('wsl_test')
     expect(mgr.resolve('wsl_test')).toBe(companion)
 
@@ -61,14 +79,37 @@ describe('CompanionManager connection lifecycle', () => {
     expect(await companion.vcs.isRepo(os.tmpdir())).toBe(false)
   })
 
-  test('connect threads the force flag to transport.bootstrap (reinstall path)', async () => {
+  test('a probe to a NOT-installed host stops at missing and does not register', async () => {
+    const mgr = new CompanionManager()
+    const transport = new FakeTransport()
+    transport.installed = false
+    const seen: string[] = []
+    mgr.setStatusListener((_id, state) => seen.push(state))
+
+    await expect(mgr.connect('wsl_test', transport)).rejects.toThrow(/not installed/i)
+    expect(transport.bootstrapped).toBe(false) // probe never installs
+    expect(seen).toContain('missing')
+    expect(mgr.has('wsl_test')).toBe(false)
+  })
+
+  test('an install connect bootstraps a not-installed host, then connects', async () => {
+    const mgr = new CompanionManager()
+    const transport = new FakeTransport()
+    transport.installed = false
+    const companion = await mgr.connect('wsl_test', transport, { install: true })
+    expect(transport.bootstrapped).toBe(true)
+    expect(companion.id).toBe('wsl_test')
+  })
+
+  test('install threads the force flag to transport.bootstrap (clean reinstall)', async () => {
     const mgr = new CompanionManager()
     const def = new FakeTransport()
-    await mgr.connect('wsl_default', def)
+    await mgr.connect('wsl_default', def) // probe only — installed, no bootstrap
     expect(def.forcedBootstrap).toBe(false)
+    expect(def.bootstrapped).toBe(false)
 
     const forced = new FakeTransport()
-    await mgr.connect('wsl_forced', forced, true)
+    await mgr.connect('wsl_forced', forced, { install: true, force: true })
     expect(forced.forcedBootstrap).toBe(true)
   })
 
@@ -82,10 +123,15 @@ describe('CompanionManager connection lifecycle', () => {
     expect(a).toBe(b)
   })
 
-  test('a version mismatch rejects the connect and disposes the transport', async () => {
+  test('a version mismatch reports missing, rejects, and disposes (no auto-upgrade)', async () => {
     const mgr = new CompanionManager()
     const transport = new FakeTransport({ hello: { companionVersion: '0.0.0-old' } })
+    const seen: string[] = []
+    mgr.setStatusListener((_id, state) => seen.push(state))
+    // An installed-but-wrong-version bundle isn't silently re-bootstrapped: it
+    // surfaces as `missing` so the user reinstalls explicitly.
     await expect(mgr.connect('wsl_test', transport)).rejects.toThrow(/version mismatch/)
+    expect(seen).toContain('missing')
     expect(transport.disposed).toBe(true)
     expect(mgr.has('wsl_test')).toBe(false)
   })
@@ -100,35 +146,20 @@ describe('CompanionManager connection lifecycle', () => {
     expect(transport.disposed).toBe(true)
   })
 
-  test('a version mismatch auto-upgrades: re-bootstrap + relaunch, then connects', async () => {
-    // First launch reports an old version; bootstrap "installs" the correct one,
-    // so the relaunch after the mismatch reports the right version.
-    class UpgradingTransport implements CompanionTransport {
-      readonly kind = 'wsl'
-      bootstrapCount = 0
-      private dataCb: ((c: string | Buffer) => void) | null = null
-      async bootstrap(): Promise<void> { this.bootstrapCount++ }
-      async launch(): Promise<CompanionChannel> {
-        const correct = this.bootstrapCount >= 2
-        const server = new RpcServer(
-          localCompanion,
-          (line) => this.dataCb?.(line),
-          correct ? {} : { hello: { companionVersion: '0.0.0-old' } },
-        )
-        return {
-          write: (line) => server.handleChunk(line),
-          onData: (cb) => { this.dataCb = cb; server.start() },
-          onClose: () => {},
-          kill: () => server.dispose(),
-        }
-      }
-      async dispose(): Promise<void> {}
-    }
+  test('deleteInstall removes the host install and reports missing', async () => {
     const mgr = new CompanionManager()
-    const transport = new UpgradingTransport()
-    const companion = await mgr.connect('wsl_test', transport)
-    expect(companion.id).toBe('wsl_test')
-    expect(transport.bootstrapCount).toBe(2) // initial + re-bootstrap
+    const transport = new FakeTransport()
+    await mgr.connect('wsl_test', transport)
+    expect(mgr.has('wsl_test')).toBe(true)
+
+    const seen: string[] = []
+    mgr.setStatusListener((_id, state) => seen.push(state))
+    // Delete uses a fresh transport (like the IPC layer); reuse this fake.
+    const deleter = new FakeTransport()
+    await mgr.deleteInstall('wsl_test', deleter)
+    expect(mgr.has('wsl_test')).toBe(false) // daemon torn down
+    expect(deleter.uninstalled).toBe(true) // host install removed
+    expect(seen).toContain('missing') // recover via a normal Install
   })
 
   test('a daemon that exits before handshake surfaces its stderr in the error', async () => {
@@ -163,9 +194,26 @@ describe('CompanionManager connection lifecycle', () => {
     const seen: string[] = []
     mgr.setStatusListener((_id, state) => seen.push(state))
     await mgr.connect('wsl_test', new FakeTransport())
+    // Probe of an installed host: connecting (probe + launch) → connected. No
+    // 'installing' — probes never install.
     expect(seen).toEqual(['connecting', 'connected'])
+    // An intentional teardown must NOT report a drop — the caller (reinstall /
+    // remove) drives the phase itself, and a late 'disconnected' would clobber
+    // a freshly reconnected companion back to disconnected.
     await mgr.disposeConnection('wsl_test')
+    expect(seen).not.toContain('disconnected')
+  })
+
+  test('an unexpected channel close reports disconnected', async () => {
+    const mgr = new CompanionManager()
+    const transport = new FakeTransport()
+    const seen: string[] = []
+    mgr.setStatusListener((_id, state) => seen.push(state))
+    await mgr.connect('wsl_test', transport)
+    // Daemon crash / network drop while still the live connection.
+    transport.triggerClose()
     expect(seen).toContain('disconnected')
+    expect(mgr.has('wsl_test')).toBe(false)
   })
 
   test('the local companion is always present and never connects over a transport', () => {

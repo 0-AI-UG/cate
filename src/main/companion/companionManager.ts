@@ -15,6 +15,7 @@ import { RemoteCompanion } from './RemoteCompanion'
 import type { CompanionTransport, CompanionChannel } from './transports/transport'
 import { COMPANION_VERSION } from '../../companion/version'
 import { COMPANION_PROTOCOL_VERSION } from '../../companion/protocol'
+import type { CompanionPhase } from '../../shared/types'
 
 interface Connection {
   transport: CompanionTransport
@@ -23,25 +24,23 @@ interface Connection {
   companion: RemoteCompanion
 }
 
-export type CompanionConnState = 'connecting' | 'connected' | 'error' | 'disconnected'
-
 export class CompanionManager {
   private readonly companions = new Map<CompanionId, Companion>()
   private readonly connections = new Map<CompanionId, Connection>()
   /** Dedupe concurrent connects to the same id (mirrors AgentManager.withLock). */
   private readonly connecting = new Map<CompanionId, Promise<Companion>>()
-  private statusListener: ((id: CompanionId, state: CompanionConnState, message?: string) => void) | null = null
+  private statusListener: ((id: CompanionId, state: CompanionPhase, message?: string) => void) | null = null
 
   constructor() {
     this.companions.set(LOCAL_COMPANION_ID, localCompanion)
   }
 
   /** Wire a status sink (the IPC layer broadcasts these to the renderer). */
-  setStatusListener(fn: (id: CompanionId, state: CompanionConnState, message?: string) => void): void {
+  setStatusListener(fn: (id: CompanionId, state: CompanionPhase, message?: string) => void): void {
     this.statusListener = fn
   }
 
-  private emitStatus(id: CompanionId, state: CompanionConnState, message?: string): void {
+  private emitStatus(id: CompanionId, state: CompanionPhase, message?: string): void {
     try { this.statusListener?.(id, state, message) } catch { /* listener must not break connect */ }
   }
 
@@ -75,8 +74,18 @@ export class CompanionManager {
   /**
    * Establish (or reuse) a connection to a remote/WSL companion over `transport`.
    * Concurrent calls for the same id share one in-flight connect.
+   *
+   * `opts.install` controls what happens when the host is reachable but the
+   * daemon isn't installed: a plain probe (install=false — reconnect / restore /
+   * retry) STOPS at the `missing` phase; only an explicit install (install=true)
+   * runs bootstrap. `opts.force` wipes any existing install first (clean
+   * reinstall). The phase is driven entirely from here, step by step.
    */
-  connect(id: CompanionId, transport: CompanionTransport, force = false): Promise<Companion> {
+  connect(
+    id: CompanionId,
+    transport: CompanionTransport,
+    opts: { install?: boolean; force?: boolean } = {},
+  ): Promise<Companion> {
     if (id === LOCAL_COMPANION_ID) {
       throw new Error('The local companion does not connect over a transport')
     }
@@ -86,21 +95,27 @@ export class CompanionManager {
     const inFlight = this.connecting.get(id)
     if (inFlight) return inFlight
 
-    const promise = this.doConnect(id, transport, force).finally(() => {
+    const promise = this.doConnect(id, transport, opts).finally(() => {
       this.connecting.delete(id)
     })
     this.connecting.set(id, promise)
     return promise
   }
 
-  /** bootstrap → launch → attach reader → await hello. Caller checks versions.
-   *  Captures daemon stderr and a pre-handshake exit so failures carry a real
-   *  reason (not just a 10s timeout). */
-  private async launchOnce(
+  /** Raised when a probe (install=false) finds the host reachable but the daemon
+   *  not installed. Carries the `missing` phase; the IPC layer treats it as a
+   *  non-error outcome (the user installs explicitly). */
+  static readonly NotInstalled = class extends Error {
+    constructor() { super('Companion is not installed on the host') }
+  }
+
+  /** launch → attach reader → await hello. Caller checks versions. Captures
+   *  daemon stderr and a pre-handshake exit so failures carry a real reason
+   *  (not just a 10s timeout). The install-state probe and bootstrap run
+   *  separately in doConnect so each step maps to its own phase. */
+  private async launchAndHandshake(
     transport: CompanionTransport,
-    force = false,
   ): Promise<{ channel: CompanionChannel; client: CompanionRpcClient; hello: Awaited<CompanionRpcClient['ready']> }> {
-    await transport.bootstrap(COMPANION_VERSION, force)
     const channel = await transport.launch()
     const client = new CompanionRpcClient((line) => channel.write(line))
     channel.onData((chunk) => client.handleChunk(chunk))
@@ -124,62 +139,98 @@ export class CompanionManager {
     }
   }
 
-  private async doConnect(id: CompanionId, transport: CompanionTransport, force = false): Promise<Companion> {
+  /**
+   * The probe pipeline. Each step maps a failure to a canonical phase, so the
+   * renderer never has to guess which state we're in — the first failing step
+   * IS the state:
+   *   1. reach host + check install   → fail = `unreachable`
+   *   2. not installed                → `missing` (probe), or install when asked
+   *   3. launch + handshake           → fail = `unreachable`
+   *   4. protocol/version sane        → mismatch = `missing` (reinstall needed)
+   *   5. all pass                     → `connected`
+   */
+  private async doConnect(
+    id: CompanionId,
+    transport: CompanionTransport,
+    { install = false, force = false }: { install?: boolean; force?: boolean },
+  ): Promise<Companion> {
+    // Step 1: reach the host and probe whether the daemon is installed. A
+    // transport without isInstalled (local subprocess / in-proc fakes) is
+    // treated as always-installed.
     this.emitStatus(id, 'connecting')
-    let attempt: Awaited<ReturnType<CompanionManager['launchOnce']>>
+    let installed: boolean
     try {
-      // `force` only applies to this first bootstrap (the clean reinstall); the
-      // version-mismatch retry below re-pushes the right bundle on its own.
-      attempt = await this.launchOnce(transport, force)
+      installed = transport.isInstalled ? await transport.isInstalled(COMPANION_VERSION) : true
     } catch (err) {
       await transport.dispose().catch(() => {})
-      this.emitStatus(id, 'error', err instanceof Error ? err.message : String(err))
+      this.emitStatus(id, 'unreachable', err instanceof Error ? err.message : String(err))
       throw err
     }
 
-    // Protocol mismatch is wire-incompatible — never self-heals.
-    if (attempt.hello.protocolVersion !== COMPANION_PROTOCOL_VERSION) {
+    // Step 2: install only when explicitly asked. A plain probe stops at
+    // `missing` — the user installs from there (delete → missing → Install).
+    if (force || !installed) {
+      if (!install) {
+        await transport.dispose().catch(() => {})
+        this.emitStatus(id, 'missing', 'The companion daemon is not installed on the host.')
+        throw new CompanionManager.NotInstalled()
+      }
+      this.emitStatus(id, 'installing')
+      try {
+        await transport.bootstrap(COMPANION_VERSION, force)
+      } catch (err) {
+        await transport.dispose().catch(() => {})
+        this.emitStatus(id, 'missing', err instanceof Error ? err.message : String(err))
+        throw err
+      }
+      this.emitStatus(id, 'connecting') // installing → back to connecting for launch
+    }
+
+    // Step 3: launch + handshake. (Still 'connecting' from step 1 when we didn't
+    // install, so no redundant re-emit here.)
+    let attempt: Awaited<ReturnType<CompanionManager['launchAndHandshake']>>
+    try {
+      attempt = await this.launchAndHandshake(transport)
+    } catch (err) {
+      await transport.dispose().catch(() => {})
+      this.emitStatus(id, 'unreachable', err instanceof Error ? err.message : String(err))
+      throw err
+    }
+
+    // Step 4: protocol/version sanity. A mismatch means the installed bundle is
+    // wrong — surface `missing` so the user reinstalls (no silent auto-upgrade).
+    if (
+      attempt.hello.protocolVersion !== COMPANION_PROTOCOL_VERSION ||
+      attempt.hello.companionVersion !== COMPANION_VERSION
+    ) {
       attempt.client.dispose()
       attempt.channel.kill()
       await transport.dispose().catch(() => {})
-      const msg = `Companion protocol mismatch (daemon ${attempt.hello.protocolVersion}, client ${COMPANION_PROTOCOL_VERSION})`
-      this.emitStatus(id, 'error', msg)
+      const msg =
+        attempt.hello.protocolVersion !== COMPANION_PROTOCOL_VERSION
+          ? `Companion protocol mismatch (daemon ${attempt.hello.protocolVersion}, client ${COMPANION_PROTOCOL_VERSION})`
+          : `Companion version mismatch (daemon ${attempt.hello.companionVersion}, client ${COMPANION_VERSION})`
+      this.emitStatus(id, 'missing', msg)
       throw new Error(msg)
     }
 
-    // Version mismatch → auto-upgrade: tear down, re-bootstrap (re-pushes the
-    // correct-version bundle for ssh/wsl), relaunch once.
-    if (attempt.hello.companionVersion !== COMPANION_VERSION) {
-      log.info('[companion] %s version %s != %s; re-bootstrapping', id, attempt.hello.companionVersion, COMPANION_VERSION)
-      attempt.client.dispose('upgrading')
-      attempt.channel.kill()
-      try {
-        attempt = await this.launchOnce(transport)
-      } catch (err) {
-        await transport.dispose().catch(() => {})
-        this.emitStatus(id, 'error', err instanceof Error ? err.message : String(err))
-        throw err
-      }
-      if (attempt.hello.companionVersion !== COMPANION_VERSION) {
-        attempt.client.dispose()
-        attempt.channel.kill()
-        await transport.dispose().catch(() => {})
-        const msg = `Companion version mismatch after upgrade (daemon ${attempt.hello.companionVersion}, client ${COMPANION_VERSION})`
-        this.emitStatus(id, 'error', msg)
-        throw new Error(msg)
-      }
-    }
-
+    // Step 5: connected.
     const { channel, client, hello } = attempt
+    const companion = new RemoteCompanion(id, client)
+    const conn: Connection = { transport, channel, client, companion }
     channel.onClose(() => {
       client.dispose('Companion connection closed')
+      // Only report a *drop* if this is still the live connection. An
+      // intentional teardown (disposeConnection during reinstall/remove)
+      // removes it first and drives the phase itself — a late close event from
+      // the killed channel must not clobber that back to 'disconnected'.
+      if (this.connections.get(id) !== conn) return
       this.connections.delete(id)
       this.companions.delete(id)
       this.emitStatus(id, 'disconnected')
     })
-    const companion = new RemoteCompanion(id, client)
     this.companions.set(id, companion)
-    this.connections.set(id, { transport, channel, client, companion })
+    this.connections.set(id, conn)
     log.info('[companion] connected %s (%s) node=%s', id, transport.kind, hello.node.version)
     this.emitStatus(id, 'connected')
     return companion
@@ -188,6 +239,14 @@ export class CompanionManager {
   /** Ids of currently-connected remote/WSL companions. */
   connectedIds(): CompanionId[] {
     return [...this.connections.keys()]
+  }
+
+  /** Re-assert the `connected` phase for an already-registered companion. Used
+   *  by the ensure short-circuit so a renderer that missed the original
+   *  broadcast (e.g. a window opened after the connect) still learns it's live —
+   *  keeps the phase main-driven instead of having the client assume it. */
+  reportConnected(id: CompanionId): void {
+    if (this.companions.has(id)) this.emitStatus(id, 'connected')
   }
 
   /**
@@ -213,6 +272,26 @@ export class CompanionManager {
     conn.client.dispose('Companion disposed')
     try { conn.channel.kill() } catch { /* ignore */ }
     await conn.transport.dispose().catch(() => {})
+  }
+
+  /**
+   * Literally delete the companion: stop any running daemon, then remove its
+   * install from the host over a fresh transport (rm -rf ~/.cate/companion).
+   * Drives the phase to `missing` on success so the next state is the clean
+   * "needs install" — the user reinstalls from there. Emits `unreachable` if the
+   * host can't be reached to remove it. The transport is disposed either way.
+   */
+  async deleteInstall(id: CompanionId, transport: CompanionTransport): Promise<void> {
+    await this.disposeConnection(id)
+    try {
+      if (transport.uninstall) await transport.uninstall()
+      this.emitStatus(id, 'missing', 'Companion deleted. Click Install to set it up again.')
+    } catch (err) {
+      this.emitStatus(id, 'unreachable', err instanceof Error ? err.message : String(err))
+      throw err
+    } finally {
+      await transport.dispose().catch(() => {})
+    }
   }
 
   /** Tear down every remote connection (app quit). */

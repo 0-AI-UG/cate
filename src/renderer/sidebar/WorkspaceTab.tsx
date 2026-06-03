@@ -17,6 +17,45 @@ import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { workspaceDisplayName } from '../lib/displayPath'
+import { workspaceRuntime } from '../lib/workspaceRuntime'
+
+// -----------------------------------------------------------------------------
+// Companion status dot — surfaces a remote workspace's connection state in the
+// sidebar and offers the matching one-click recovery. Driven by the canonical
+// workspaceRuntime status (shared with the canvas lock overlay).
+// -----------------------------------------------------------------------------
+
+function CompanionDot({ workspace }: { workspace: WorkspaceState }): JSX.Element | null {
+  const { status, error } = workspaceRuntime(workspace)
+  // Only remote, non-connected states get a dot.
+  if (status === 'local' || status === 'connected') return null
+
+  const busy = status === 'installing' || status === 'connecting'
+  const color = busy ? 'bg-amber-400 animate-pulse' : 'bg-red-500 hover:ring-2 hover:ring-red-500/40'
+  const title =
+    status === 'installing' ? 'Installing companion…'
+    : status === 'connecting' ? 'Connecting to companion…'
+    : status === 'disconnected' ? `Companion disconnected${error ? `: ${error}` : ''} — click to reconnect`
+    : status === 'missing' ? `Companion not installed${error ? `: ${error}` : ''} — click to install`
+    : `Companion not reachable${error ? `: ${error}` : ''} — click to retry`
+
+  const onClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    if (busy) return
+    const app = useAppStore.getState()
+    if (status === 'missing') void app.installCompanion(workspace.id)
+    else void app.retryCompanion(workspace.id)
+  }
+
+  return (
+    <button
+      className={`flex-shrink-0 w-2 h-2 rounded-full focus:outline-none ${color}`}
+      disabled={busy}
+      title={title}
+      onClick={onClick}
+    />
+  )
+}
 
 // -----------------------------------------------------------------------------
 // Panel jump helper — focus a panel inside a workspace, switching workspace
@@ -706,35 +745,10 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           </span>
         )}
 
-        {/* Companion connection indicator (remote workspaces only). Surfaces a
-            connecting/error/disconnected state the user otherwise couldn't see;
-            clicking an error/disconnected dot reinstalls + reconnects the daemon. */}
-        {workspace.connection && workspace.connection.kind !== 'local' &&
-          workspace.companionStatus && workspace.companionStatus !== 'connected' && (
-          <button
-            className={`flex-shrink-0 w-2 h-2 rounded-full focus:outline-none ${
-              workspace.companionStatus === 'error'
-                ? 'bg-red-500 hover:ring-2 hover:ring-red-500/40'
-                : workspace.companionStatus === 'connecting'
-                ? 'bg-amber-400 animate-pulse'
-                : 'bg-muted opacity-70 hover:opacity-100'
-            }`}
-            disabled={workspace.companionStatus === 'connecting'}
-            title={
-              workspace.companionStatus === 'error'
-                ? `Companion error: ${workspace.rootPathError || 'connection failed'} — click to reinstall`
-                : workspace.companionStatus === 'connecting'
-                ? 'Connecting to companion…'
-                : 'Companion disconnected — click to reinstall'
-            }
-            onClick={(e) => {
-              e.stopPropagation()
-              if (workspace.companionStatus !== 'connecting') {
-                void useAppStore.getState().reinstallCompanion(workspace.id)
-              }
-            }}
-          />
-        )}
+        {/* Companion connection indicator (remote workspaces only). Reads the
+            same canonical runtime status as the canvas lock, so the dot and the
+            overlay never disagree. */}
+        <CompanionDot workspace={workspace} />
 
         {/* Panel count badge (only when collapsed and has panels) */}
         {panelCount > 0 && !isExpanded && (

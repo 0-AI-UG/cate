@@ -19,7 +19,7 @@ import {
   Square,
   FloppyDisk,
   ArrowsClockwise,
-  DownloadSimple,
+  Trash,
 } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
 import { CateLogo } from './CateLogo'
@@ -57,7 +57,7 @@ const ZoomToFitIcon = () => <ArrowsOutSimple size={ICON_SIZE} />
 const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
 const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
-const ReinstallIcon = () => <DownloadSimple size={ICON_SIZE} />
+const DeleteCompanionIcon = () => <Trash size={ICON_SIZE} />
 const AgentIcon = () => <CateLogo size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
@@ -107,7 +107,7 @@ export const CommandPalette: React.FC = () => {
     const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
     return !!ws?.connection && ws.connection.kind !== 'local'
   })
-  const reinstallCompanion = useAppStore((s) => s.reinstallCompanion)
+  const deleteCompanion = useAppStore((s) => s.deleteCompanion)
 
   const [searchText, setSearchText] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -227,14 +227,16 @@ export const CommandPalette: React.FC = () => {
           void import('../lib/session').then((m) => m.reloadActiveWorkspaceFromDisk())
         },
       },
-      // Remote-only: force a clean reinstall of this workspace's companion daemon.
+      // Remote-only: delete the daemon from the host. Main re-probes to the
+      // 'missing' phase; the canvas lock then offers "Install Companion" for a
+      // clean reinstall — the deliberate delete → install two-step.
       ...(isRemoteWorkspace
         ? [{
-            id: 'reinstallCompanion',
-            title: 'Reinstall Companion',
+            id: 'deleteCompanion',
+            title: 'Delete Companion',
             shortcutText: '',
-            icon: <ReinstallIcon />,
-            action: () => { void reinstallCompanion(selectedWorkspaceId) },
+            icon: <DeleteCompanionIcon />,
+            action: () => { void deleteCompanion(selectedWorkspaceId) },
           }]
         : []),
     ],
@@ -250,7 +252,7 @@ export const CommandPalette: React.FC = () => {
       setShowNodeSwitcher,
       setZoom,
       isRemoteWorkspace,
-      reinstallCompanion,
+      deleteCompanion,
     ],
   )
 

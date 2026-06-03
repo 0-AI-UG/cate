@@ -606,12 +606,15 @@ export interface ElectronAPI {
   /** Names of WSL distros installed on this host ([] on non-Windows / no WSL). */
   companionWslDistros(): Promise<string[]>
 
-  /** Disconnect a companion (kills its daemon / closes the connection). */
-  companionDisconnect(companionId: string): Promise<{ ok: boolean }>
+  /** Explicit clean install of a remote companion's daemon (wipes the host
+   *  install dir, re-pulls/pushes the bundle, then connects). The only call that
+   *  installs — probes (connect/ensure) never do. */
+  companionInstall(connection: CompanionConnection): Promise<CompanionConnectResult>
 
-  /** Force a clean reinstall of a remote companion's daemon (wipes the host
-   *  install dir, then reconnects). Recovers a corrupt/outdated bundle. */
-  companionReinstall(connection: CompanionConnection): Promise<CompanionConnectResult>
+  /** Literally delete a companion: stop its daemon and rm -rf the host install,
+   *  keeping the saved auth. Drops the workspace to `missing`; recover via
+   *  Install. */
+  companionDelete(connection: CompanionConnection): Promise<{ ok: boolean; error?: string }>
 
   /** Subscribe to companion connection status (main -> renderer). */
   onCompanionStatus(callback: (event: CompanionStatusEvent) => void): () => void
