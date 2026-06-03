@@ -11,7 +11,8 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { createCanvasStore, recommendPlacements, placementSizeVariants, nudgeToFree } from './canvasStore'
+import { createCanvasStore } from './canvasStore'
+import { recommendPlacements, nudgeToFree } from '../canvas/placement'
 import { CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { CanvasNodeState, CanvasNodeId } from '../../shared/types'
 
@@ -425,19 +426,6 @@ describe('canvasStore.recommendPlacements', () => {
     // Best ghost is centred on the viewport centre (500, 400).
     expect(Math.abs(cands[0].point.x + cands[0].size.width / 2 - 500)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
     expect(Math.abs(cands[0].point.y + cands[0].size.height / 2 - 400)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
-  })
-})
-
-describe('canvasStore.placementSizeVariants', () => {
-  it('returns at least two distinct, grid-snapped sizes', () => {
-    const variants = placementSizeVariants('terminal')
-    expect(variants.length).toBeGreaterThanOrEqual(2)
-    const keys = new Set(variants.map((v) => `${v.size.width}x${v.size.height}`))
-    expect(keys.size).toBeGreaterThanOrEqual(2)
-    variants.forEach((v) => {
-      expect(v.size.width % CANVAS_GRID_SIZE === 0).toBe(true)
-      expect(v.size.height % CANVAS_GRID_SIZE === 0).toBe(true)
-    })
   })
 })
 
