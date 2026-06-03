@@ -524,17 +524,24 @@ describe('canvasStore.recommendPlacements', () => {
     cands.forEach((c) => expect(rectGap(rectOf(c), focR)).toBeLessThanOrEqual(pitch))
   })
 
-  it('OCCLUSION: a spot is not shown when a nearer one sits between it and the node', () => {
-    // A long open strip to the right of the node would otherwise yield several
-    // spots stacked in the same row; only the nearest should survive.
-    const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2600, height: 1000 } }
-    const a = node('a', 100, 100, 200, 150)
-    const cands = recommendPlacements(toMap(a), null, 'terminal', VP, { x: 200, y: 175 })
-    const aRight = a.origin.x + a.size.width
-    const rightBand = cands.filter(
-      (c) => c.point.x >= aRight && c.point.y < a.origin.y + a.size.height && c.point.y + c.size.height > a.origin.y,
+  it('PACKING: spots never overlap each other or any node', () => {
+    // The packer carves each placed ghost (plus its gap) out of the free space, so
+    // recommendations are always mutually non-overlapping and clear of every window.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2600, height: 1400 } }
+    const nodes = toMap(
+      node('a', 400, 300, 640, 400, 1),
+      node('b', 1200, 360, 600, 500, 2),
+      node('c', 500, 900, 700, 360, 3),
     )
-    expect(rightBand.length).toBeLessThanOrEqual(1)
+    const cands = recommendPlacements(nodes, 'a', 'terminal', VP, null)
+    for (let i = 0; i < cands.length; i++) {
+      Object.values(nodes).forEach((n) =>
+        expect(rectsOverlap(rectOf(cands[i]), { origin: n.origin, size: n.size })).toBe(false),
+      )
+      for (let j = i + 1; j < cands.length; j++) {
+        expect(rectsOverlap(rectOf(cands[i]), rectOf(cands[j]))).toBe(false)
+      }
+    }
   })
 })
 

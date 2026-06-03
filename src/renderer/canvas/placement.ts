@@ -126,11 +126,6 @@ const PLACEMENT_MAX_W = 1400
 const PLACEMENT_MAX_H = 900
 const PLACEMENT_MIN_AR = 0.6
 const PLACEMENT_MAX_AR = 2.6
-/** How far (in panel "pitches" = slot size + gap) the place-area extends around a
- *  focused node. A tight ring → recommendations hug the node, yet still reach the
- *  free space just beyond a surrounding ring of windows. */
-const PLACEMENT_FOCUS_MARGIN = 1
-
 // --- Geometry helpers --------------------------------------------------------
 
 /** Grow a rect by `m` on every side. */
@@ -141,43 +136,51 @@ function inflateRect(r: Rect, m: number): Rect {
   }
 }
 
-/** True when point `p` lies inside rect `r`. */
-function rectContainsPoint(r: Rect, p: Point): boolean {
-  return p.x >= r.origin.x && p.x <= r.origin.x + r.size.width && p.y >= r.origin.y && p.y <= r.origin.y + r.size.height
+/** True when rect `a` is fully contained within rect `b`. */
+function rectContains(b: Rect, a: Rect): boolean {
+  return (
+    a.origin.x >= b.origin.x - 0.5 &&
+    a.origin.y >= b.origin.y - 0.5 &&
+    a.origin.x + a.size.width <= b.origin.x + b.size.width + 0.5 &&
+    a.origin.y + a.size.height <= b.origin.y + b.size.height + 0.5
+  )
 }
 
-/** Edge-to-edge distance between two rects (0 when they overlap or touch). */
-function rectGap(a: Rect, b: Rect): number {
-  const dx = Math.max(0, a.origin.x - (b.origin.x + b.size.width), b.origin.x - (a.origin.x + a.size.width))
-  const dy = Math.max(0, a.origin.y - (b.origin.y + b.size.height), b.origin.y - (a.origin.y + a.size.height))
-  return Math.hypot(dx, dy)
+/** Split free rect `f` by obstacle `obs` into up to four maximal remainder slabs
+ *  (left / right / above / below). Returns `[f]` if they don't overlap. The slabs
+ *  overlap at the corners — that's correct for maximal rectangles; the packer
+ *  carves placed ghosts out the same way. */
+function splitFree(f: Rect, obs: Rect): Rect[] {
+  if (!rectsOverlap(f, obs)) return [f]
+  const fL = f.origin.x, fT = f.origin.y, fR = fL + f.size.width, fB = fT + f.size.height
+  const oL = obs.origin.x, oT = obs.origin.y, oR = oL + obs.size.width, oB = oT + obs.size.height
+  const out: Rect[] = []
+  if (oL > fL) out.push({ origin: { x: fL, y: fT }, size: { width: oL - fL, height: f.size.height } })
+  if (oR < fR) out.push({ origin: { x: oR, y: fT }, size: { width: fR - oR, height: f.size.height } })
+  if (oT > fT) out.push({ origin: { x: fL, y: fT }, size: { width: f.size.width, height: oT - fT } })
+  if (oB < fB) out.push({ origin: { x: fL, y: oB }, size: { width: f.size.width, height: fB - oB } })
+  return out
 }
 
-/** True when the segment a→b crosses rect `r` (Liang–Barsky clip). Used to hide a
- *  recommendation that sits behind a nearer one — i.e. another spot is between it
- *  and the viewpoint. */
-function segHitsRect(a: Point, b: Point, r: Rect): boolean {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const p = [-dx, dx, -dy, dy]
-  const q = [a.x - r.origin.x, r.origin.x + r.size.width - a.x, a.y - r.origin.y, r.origin.y + r.size.height - a.y]
-  let t0 = 0
-  let t1 = 1
-  for (let i = 0; i < 4; i++) {
-    if (p[i] === 0) {
-      if (q[i] < 0) return false // parallel and outside this edge
-    } else {
-      const t = q[i] / p[i]
-      if (p[i] < 0) {
-        if (t > t1) return false
-        if (t > t0) t0 = t
-      } else {
-        if (t < t0) return false
-        if (t < t1) t1 = t
-      }
+/** Decompose `area` minus `obstacles` into the maximal empty rectangles at least
+ *  `minW`×`minH` in size. Obstacles should already be inflated by the gap so every
+ *  rect keeps its clearance. Subsumed rects are pruned; the set is capped for speed. */
+function freeRectangles(area: Rect, obstacles: Rect[], minW: number, minH: number): Rect[] {
+  const big = (r: Rect) => r.size.width >= minW && r.size.height >= minH
+  let free: Rect[] = [area]
+  for (const obs of obstacles) {
+    const split: Rect[] = []
+    for (const f of free) split.push(...(rectsOverlap(f, obs) ? splitFree(f, obs) : [f]))
+    free = []
+    for (const r of split) {
+      if (!big(r)) continue
+      if (free.some((o) => rectContains(o, r))) continue
+      for (let i = free.length - 1; i >= 0; i--) if (rectContains(r, free[i])) free.splice(i, 1)
+      free.push(r)
+      if (free.length >= 80) break
     }
   }
-  return t0 <= t1
+  return free
 }
 
 /** Shrink (w,h) to fall within [minAR, maxAR] aspect ratio, keeping it inside. */
@@ -202,17 +205,15 @@ function clampPlacementSize(w: number, h: number, grid: number): Size {
 /**
  * Recommend where a new node should go, for the interactive "ghost" picker.
  *
- * Model: pick a PLACE AREA and a reference node, lay a panel-pitch grid aligned to
- * that node across the area, and keep every grid cell that has room — sized to the
- * standard panel where it fits, shrunk to fill a tighter cell (individualized sizes;
- * standard preferred). Because the cells are pitch-spaced they tile the free space
- * densely without overlapping, and a full scan (not a flood through free cells) still
- * reaches the open space beyond a node that is boxed in on every side.
+ * Model: decompose the free space (a place area minus the existing windows) into
+ * empty rectangles, then PACK ghosts into it nearest-first — each step drops one
+ * ghost into the free spot closest to the ranking point, carves it out, and repeats.
+ * Using the nearest free space first means no closer empty spot is ever left unused,
+ * so the result stays tight with no odd gaps even when the windows aren't on a grid.
+ * A ghost is standard-sized where there's room and shrunk to fill a tighter gap.
  *
- *  - A focused node on screen → a tight area around it, so spots hug the node and,
- *    when it is boxed in, surface the nearest free space just beyond the ring.
- *  - Nothing focused → the whole visible viewport, ranked toward the on-screen
- *    cluster nearest the cursor — a wider spread with more options.
+ *  - A focused node on screen → packs around it (ranked from its centre).
+ *  - Nothing focused → packs across the viewport, ranked from the cursor.
  *  - No nodes (or panned to blank space) → a few spots centred where you're looking.
  *
  * @param anchor canvas-space point (mouse pos) used to rank spots and centre the
@@ -248,11 +249,6 @@ export function recommendPlacements(
   // that keep a gap to every node and to each other. Always returns ≥1.
   const finalize = (raw: Raw[], rankAt: Point): PlacementCandidate[] => {
     const clear = (rect: Rect, others: Rect[]) => !others.some((r) => rectsOverlap(inflateRect(rect, gap - 1), r))
-    const centreOf = (r: Rect): Point => ({ x: r.origin.x + r.size.width / 2, y: r.origin.y + r.size.height / 2 })
-    // A spot is "behind" an already-taken one when a nearer spot sits between it
-    // and the viewpoint — don't recommend a spot you'd have to look past another.
-    const occluded = (rect: Rect, taken: Rect[]) =>
-      taken.some((t) => !rectContainsPoint(t, rankAt) && segHitsRect(rankAt, centreOf(rect), t))
     const seen = new Set<string>()
     const ranked = raw
       .map((c) => ({ point: snapPt(c.point), size: c.size }))
@@ -273,7 +269,6 @@ export function recommendPlacements(
     for (const c of ranked) {
       if (out.length >= max) break
       if (!clear(c.rect, nodeRects) || !clear(c.rect, taken)) continue
-      if (occluded(c.rect, taken)) continue
       taken.push(c.rect)
       out.push({ point: c.point, size: c.size, rank: out.length, onScreen: c.vis })
     }
@@ -305,126 +300,86 @@ export function recommendPlacements(
     return finalize(centred(c), c)
   }
 
-  // PLACE AREA + reference node + ranking point. A focused node on screen → a
-  // tight area around it (recs hug it). Otherwise → the whole viewport, with the
-  // reference being the on-screen node nearest the cursor (wider, island-biased).
+  // PLACE AREA + ranking point. A focused node on screen → a generous area around
+  // it, ranked from its centre so recs hug it. Otherwise → the whole viewport,
+  // ranked from the cursor (a wider spread, biased to where you're looking).
   const focused = (focusedNodeId && nodes[focusedNodeId]) || null
   const focusedOnScreen = !!focused && onScreen({ origin: focused.origin, size: focused.size })
   const pitchX = std.width + gap
   const pitchY = std.height + gap
 
-  let ref: CanvasNodeState
   let area: Rect
   let rankAt: Point
   if (focusedOnScreen && focused) {
-    ref = focused
-    const mx = pitchX * PLACEMENT_FOCUS_MARGIN
-    const my = pitchY * PLACEMENT_FOCUS_MARGIN
+    const mx = pitchX * 2
+    const my = pitchY * 2
     area = {
-      origin: { x: ref.origin.x - mx, y: ref.origin.y - my },
-      size: { width: ref.size.width + mx * 2, height: ref.size.height + my * 2 },
+      origin: { x: focused.origin.x - mx, y: focused.origin.y - my },
+      size: { width: focused.size.width + mx * 2, height: focused.size.height + my * 2 },
     }
-    rankAt = { x: ref.origin.x + ref.size.width / 2, y: ref.origin.y + ref.size.height / 2 }
+    rankAt = { x: focused.origin.x + focused.size.width / 2, y: focused.origin.y + focused.size.height / 2 }
   } else {
     rankAt = anchor ?? viewCenter
-    const distToRank = (n: CanvasNodeState) =>
-      Math.hypot(n.origin.x + n.size.width / 2 - rankAt.x, n.origin.y + n.size.height / 2 - rankAt.y)
-    ref = onScreenNodes.reduce((b, n) => (distToRank(n) < distToRank(b) ? n : b))
     area = viewRect
   }
 
-  // A panel-pitch lattice phased to the reference node's edges: cell 0 is the
-  // node itself, cell ±1 hugs its edge (one gap away), further cells step by one
-  // panel pitch. This fills open areas with a regular grid of spots.
-  const cellX = (i: number): number =>
-    i === 0 ? ref.origin.x
-      : i > 0 ? ref.origin.x + ref.size.width + gap + (i - 1) * pitchX
-        : ref.origin.x - pitchX - (-i - 1) * pitchX
-  const cellY = (j: number): number =>
-    j === 0 ? ref.origin.y
-      : j > 0 ? ref.origin.y + ref.size.height + gap + (j - 1) * pitchY
-        : ref.origin.y - pitchY - (-j - 1) * pitchY
+  // Pack ghosts into the FREE SPACE, nearest the ranking point first. Each step
+  // drops one ghost into the empty rectangle whose best spot is closest to the
+  // ranking point, then carves that ghost (plus its gap) out of the free space and
+  // repeats. Because the nearest free space is always used first, no closer empty
+  // spot is ever left unused — which is what avoids the odd gaps in irregular
+  // layouts — and large areas get tiled while tight gaps get a shrunk ghost.
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+  let free = freeRectangles(
+    area,
+    nodeRects.map((r) => inflateRect(r, gap)),
+    PLACEMENT_MIN_W,
+    PLACEMENT_MIN_H,
+  )
 
-  // A node already sits on this point — don't place here (but the scan still
-  // visits points beyond it, so a boxed-in reference still finds open space).
-  const occupied = (p: Point): boolean =>
-    nodeRects.some((r) => rectsOverlap({ origin: p, size: { width: PLACEMENT_MIN_W, height: PLACEMENT_MIN_H } }, r))
-
-  // Largest panel (≤ standard, ≥ min) that fits at top-left `p`, bounded by the
-  // nearest node to the right/below — so a spot crowded by a neighbour shrinks to
-  // fill the gap rather than being dropped. Standard size wherever there's room.
-  const fitAt = (p: Point): Size | null => {
-    let right = p.x + std.width
-    let bottom = p.y + std.height
-    for (const r of nodeRects) {
-      const rL = r.origin.x, rR = rL + r.size.width, rT = r.origin.y, rB = rT + r.size.height
-      if (rL >= p.x + 1 && rT < p.y + std.height && rB > p.y) right = Math.min(right, rL - gap)
-      if (rT >= p.y + 1 && rL < p.x + std.width && rR > p.x) bottom = Math.min(bottom, rT - gap)
-    }
-    if (right - p.x < PLACEMENT_MIN_W || bottom - p.y < PLACEMENT_MIN_H) return null
-    return clampPlacementSize(right - p.x, bottom - p.y, grid)
-  }
-
-  // Candidate top-left positions = a grid woven from the reference lattice (open
-  // areas) AND every nearby node's edges (the gap just right of / below each
-  // node). The node edges are what let spots land in the irregular gaps between
-  // staggered windows — a single lattice would step right over them. `fitAt`
-  // then shrinks each spot to its actual gap, so smaller holes get smaller ghosts.
-  //
-  // Hug anchors are snapped AWAY from the node (ceil to the right/below, floor to
-  // the left/above) so grid-snapping never eats into the gap — otherwise a spot
-  // hugging a non-grid-aligned edge lands a few px too close and `finalize`'s
-  // clearance check drops it, leaving no spot directly beside the node.
-  const cols = Math.ceil(area.size.width / pitchX) + 2
-  const rows = Math.ceil(area.size.height / pitchY) + 2
-  const xs = new Set<number>()
-  const ys = new Set<number>()
-  const away = (v: number, dir: number) =>
-    dir > 0 ? Math.ceil(v / grid) * grid : dir < 0 ? Math.floor(v / grid) * grid : Math.round(v / grid) * grid
-  xs.add(away(area.origin.x, 0))
-  ys.add(away(area.origin.y, 0))
-  for (let i = -cols; i <= cols; i++) xs.add(away(cellX(i), i))
-  for (let j = -rows; j <= rows; j++) ys.add(away(cellY(j), j))
-  for (const r of nodeRects) {
-    if (!rectsOverlap(inflateRect(r, pitchX), area)) continue // node not near the area
-    xs.add(away(r.origin.x, -1)); xs.add(away(r.origin.x + r.size.width + gap, 1))
-    ys.add(away(r.origin.y, -1)); ys.add(away(r.origin.y + r.size.height + gap, 1))
-  }
-
-  let raw: Raw[] = []
-  for (const x of xs) {
-    for (const y of ys) {
-      const p = { x, y }
-      if (!rectsOverlap({ origin: p, size: std }, area)) continue // outside the place area
-      if (occupied(p)) continue
-      const size = fitAt(p)
-      if (size) raw.push({ point: p, size })
-    }
-  }
-
-  // When focused, keep only the connected cluster of spots that touches the node:
-  // seed with spots adjacent to the node, then grow through spots adjacent to each
-  // other (within ~one gap). A spot a neighbour window sits in front of — a far
-  // column hugging some OTHER node — never chains back, so it's dropped no matter
-  // how it ranks. This is what kills the "giant gap" floaters.
-  if (focusedOnScreen) {
-    const adj = gap * 1.6 // grid-adjacent ghosts sit one `gap` apart (diagonal ≈ gap·√2)
-    const refRect: Rect = { origin: ref.origin, size: ref.size }
-    const rectOf = (r: Raw): Rect => ({ origin: r.point, size: r.size })
-    const cluster: Raw[] = []
-    const pending = raw.filter((r) => rectGap(rectOf(r), refRect) <= adj)
-    const rest = raw.filter((r) => !pending.includes(r))
-    while (pending.length > 0) {
-      const r = pending.pop()!
-      cluster.push(r)
-      for (let i = rest.length - 1; i >= 0; i--) {
-        if (rectGap(rectOf(rest[i]), rectOf(r)) <= adj) pending.push(rest.splice(i, 1)[0])
+  const raw: Raw[] = []
+  for (let n = 0; n < max && free.length > 0; n++) {
+    let best: { point: Point; size: Size; score: number } | null = null
+    for (const f of free) {
+      // Largest panel ≤ standard that fits this rect (grid-snapped, ≥ min).
+      const size = clampPlacementSize(Math.min(std.width, f.size.width), Math.min(std.height, f.size.height), grid)
+      if (size.width > f.size.width + 0.5 || size.height > f.size.height + 0.5) continue
+      // Grid-aligned positions inside the rect (the rect already carries the gap,
+      // so snapping INTO it keeps the clearance — snapping toward the edge would
+      // eat into the gap and get the spot rejected later).
+      const gx0 = Math.ceil(f.origin.x / grid) * grid
+      const gx1 = Math.floor((f.origin.x + f.size.width - size.width) / grid) * grid
+      const gy0 = Math.ceil(f.origin.y / grid) * grid
+      const gy1 = Math.floor((f.origin.y + f.size.height - size.height) / grid) * grid
+      if (gx1 < gx0 || gy1 < gy0) continue
+      // Position the panel at the point of the rect closest to the ranking point.
+      const point = {
+        x: clamp(Math.round((rankAt.x - size.width / 2) / grid) * grid, gx0, gx1),
+        y: clamp(Math.round((rankAt.y - size.height / 2) / grid) * grid, gy0, gy1),
       }
+      const score = Math.hypot(point.x + size.width / 2 - rankAt.x, point.y + size.height / 2 - rankAt.y)
+      if (!best || score < best.score) best = { point, size, score }
     }
-    if (cluster.length > 0) raw = cluster
+    if (!best) break
+    raw.push({ point: best.point, size: best.size })
+    const placed = inflateRect({ origin: best.point, size: best.size }, gap)
+    free = freeRectanglesPrune(free.flatMap((f) => splitFree(f, placed)))
   }
 
   return finalize(raw, rankAt)
+}
+
+/** Drop too-small and subsumed rects from a freshly-split free list. */
+function freeRectanglesPrune(rects: Rect[]): Rect[] {
+  const out: Rect[] = []
+  for (const r of rects) {
+    if (r.size.width < PLACEMENT_MIN_W || r.size.height < PLACEMENT_MIN_H) continue
+    if (out.some((o) => rectContains(o, r))) continue
+    for (let i = out.length - 1; i >= 0; i--) if (rectContains(r, out[i])) out.splice(i, 1)
+    out.push(r)
+    if (out.length >= 80) break
+  }
+  return out
 }
 
 /**
