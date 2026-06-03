@@ -1,9 +1,16 @@
 // =============================================================================
-// SettingsWindow — Single scrollable settings card with all sections.
+// SettingsWindow — wide settings dialog: a left sidebar (search + section nav
+// with scroll-spy) beside one long scrollable content column.
+//
+// The content stays a single scrollable page; the sidebar jumps to a section
+// on click and highlights whichever section is currently scrolled into view.
+// The search box live-filters individual setting rows across every section
+// (via SettingsSearchContext) — non-matching rows hide, empty sections
+// collapse, and the sidebar lists only sections that still have matches.
 // =============================================================================
 
-import { X } from '@phosphor-icons/react'
-import { useEffect, useRef } from 'react'
+import { X, MagnifyingGlass } from '@phosphor-icons/react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { GeneralSettings } from './GeneralSettings'
 import { AppearanceSettings } from './AppearanceSettings'
 import { CanvasSettings } from './CanvasSettings'
@@ -13,6 +20,7 @@ import { SidebarSettings } from './SidebarSettings'
 import { FileExplorerSettings } from './FileExplorerSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
+import { SettingsSearchContext } from './SettingsSearchContext'
 
 const SECTIONS = [
   { title: 'General', component: GeneralSettings },
@@ -26,6 +34,10 @@ const SECTIONS = [
   { title: 'Shortcuts', component: ShortcutSettings },
 ] as const
 
+// DOM id for a section. Slugify spaces (e.g. "File Explorer") so the result is
+// a valid CSS selector for querySelector/scrollIntoView.
+const sectionId = (title: string): string => `settings-section-${title.toLowerCase().replace(/\s+/g, '-')}`
+
 interface SettingsWindowProps {
   isOpen: boolean
   onClose: () => void
@@ -35,16 +47,77 @@ interface SettingsWindowProps {
 
 export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [rawQuery, setRawQuery] = useState('')
+  const [activeId, setActiveId] = useState<string>(SECTIONS[0].title.toLowerCase())
+  const [visibleSections, setVisibleSections] = useState<Set<string>>(
+    () => new Set(SECTIONS.map((s) => s.title.toLowerCase())),
+  )
+
+  const query = rawQuery.trim().toLowerCase()
+
+  // Reset search + scroll to the requested section whenever the dialog opens.
   useEffect(() => {
-    if (!isOpen || !initialTab) return
-    const id = `settings-section-${initialTab.toLowerCase()}`
-    // Wait one frame so the section is mounted, then scroll into view.
+    if (!isOpen) return
+    setRawQuery('')
+    const target = (initialTab ?? SECTIONS[0].title).toLowerCase()
+    setActiveId(target)
     requestAnimationFrame(() => {
-      scrollRef.current?.querySelector(`#${id}`)?.scrollIntoView({ block: 'start', behavior: 'auto' })
+      scrollRef.current?.querySelector(`#${sectionId(target)}`)?.scrollIntoView({ block: 'start', behavior: 'auto' })
     })
   }, [isOpen, initialTab])
 
+  // Match scan — after each query change, determine which sections still have
+  // visible content. A section shows when there's no query, when its title
+  // matches, or when it contains at least one visible row/block ([data-srow]).
+  useLayoutEffect(() => {
+    if (!isOpen) return
+    const root = scrollRef.current
+    if (!root) return
+    const next = new Set<string>()
+    for (const { title } of SECTIONS) {
+      const id = title.toLowerCase()
+      if (query === '' || title.toLowerCase().includes(query)) {
+        next.add(id)
+        continue
+      }
+      if (root.querySelector(`#${sectionId(title)} [data-srow]`)) next.add(id)
+    }
+    setVisibleSections(next)
+  }, [query, isOpen])
+
+  // Scroll-spy — highlight the section whose top sits at/above the fold.
+  useEffect(() => {
+    if (!isOpen) return
+    const root = scrollRef.current
+    if (!root) return
+    const onScroll = () => {
+      const sections = Array.from(root.querySelectorAll<HTMLElement>('[data-section-id]'))
+      const rootTop = root.getBoundingClientRect().top
+      let current: string | undefined
+      for (const s of sections) {
+        if (s.hidden) continue
+        const top = s.getBoundingClientRect().top - rootTop
+        if (top <= 16) current = s.dataset.sectionId
+        else break
+      }
+      const fallback = sections.find((s) => !s.hidden)?.dataset.sectionId
+      setActiveId((prev) => current ?? fallback ?? prev)
+    }
+    onScroll()
+    root.addEventListener('scroll', onScroll, { passive: true })
+    return () => root.removeEventListener('scroll', onScroll)
+    // Re-attach when visibility changes so hidden sections are skipped.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, visibleSections])
+
   if (!isOpen) return null
+
+  const jumpTo = (id: string) => {
+    scrollRef.current?.querySelector(`#${sectionId(id)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    setActiveId(id)
+  }
+
+  const navSections = SECTIONS.filter(({ title }) => query === '' || visibleSections.has(title.toLowerCase()))
 
   return (
     <div
@@ -52,7 +125,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
       onClick={onClose}
     >
       <div
-        className="w-[520px] max-h-[80vh] bg-surface-1 rounded-xl border border-subtle shadow-[0_24px_64px_-12px_rgba(0,0,0,0.7)] ring-1 ring-black/40 flex flex-col overflow-hidden"
+        className="w-[min(900px,92vw)] max-h-[80vh] bg-surface-1 rounded-xl border border-subtle shadow-[0_24px_64px_-12px_rgba(0,0,0,0.7)] ring-1 ring-black/40 flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -66,17 +139,77 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
           </button>
         </div>
 
-        {/* Scrollable sections */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="flex flex-col gap-6">
-            {SECTIONS.map(({ title, component: Component }) => (
-              <section key={title} id={`settings-section-${title.toLowerCase()}`}>
-                <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-2">
-                  {title}
-                </h3>
-                <Component />
-              </section>
-            ))}
+        {/* Body: sidebar + scrollable content */}
+        <div className="flex flex-1 min-h-0" data-sidebar-scrollarea>
+          {/* Sidebar */}
+          <div className="w-[208px] flex-shrink-0 flex flex-col bg-surface-0/30">
+            <div className="p-3 flex-shrink-0">
+              <div className="relative">
+                <MagnifyingGlass
+                  size={13}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
+                />
+                <input
+                  type="text"
+                  value={rawQuery}
+                  onChange={(e) => setRawQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && rawQuery) {
+                      e.stopPropagation()
+                      setRawQuery('')
+                    }
+                  }}
+                  placeholder="Search settings…"
+                  className="w-full bg-surface-5 border border-subtle rounded-md pl-7 pr-2 py-1 text-sm text-primary placeholder:text-muted focus:border-focus-blue focus:outline-none"
+                />
+              </div>
+            </div>
+            <nav className="flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-0.5">
+              {navSections.map(({ title }) => {
+                const id = title.toLowerCase()
+                const active = id === activeId
+                return (
+                  <button
+                    key={title}
+                    onClick={() => jumpTo(id)}
+                    className={`text-left px-2.5 py-1.5 rounded-md text-sm transition-colors ${
+                      active ? 'bg-surface-3 text-primary' : 'text-secondary hover:bg-hover hover:text-primary'
+                    }`}
+                  >
+                    {title}
+                  </button>
+                )
+              })}
+              {navSections.length === 0 && (
+                <span className="px-2.5 py-1.5 text-xs text-muted">No matches</span>
+              )}
+            </nav>
+          </div>
+
+          {/* Scrollable sections */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="flex flex-col gap-6">
+              {SECTIONS.map(({ title, component: Component }) => {
+                const id = title.toLowerCase()
+                const sectionMatched = query !== '' && title.toLowerCase().includes(query)
+                const hidden = query !== '' && !visibleSections.has(id)
+                return (
+                  <section key={title} id={sectionId(title)} data-section-id={id} hidden={hidden}>
+                    <h3 className="text-sm font-semibold text-primary mb-2">
+                      {title}
+                    </h3>
+                    <SettingsSearchContext.Provider value={{ query, sectionMatched }}>
+                      <Component />
+                    </SettingsSearchContext.Provider>
+                  </section>
+                )
+              })}
+              {query !== '' && visibleSections.size === 0 && (
+                <div className="py-10 text-center text-sm text-muted">
+                  No settings match “{rawQuery.trim()}”.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
