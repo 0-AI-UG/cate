@@ -2,7 +2,6 @@
 // Filesystem IPC handlers — file read/write and directory watching
 // =============================================================================
 
-import path from 'path'
 import { watch, FSWatcher } from 'chokidar'
 import { ipcMain } from 'electron'
 import log from '../logger'
@@ -553,8 +552,8 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_STAT, async (_event, filePath: string) => {
     try {
-      // Use lstat so symlinks are detected; validatePathStrict already resolves
-      // the real path, but we stat the original so the caller gets correct info.
+      // validatePathStrict resolves and authorizes the path; we stat the
+      // resolved path on the owning companion.
       const { companionId, path: p } = parseLocator(filePath)
       const companion = companions.resolve(companionId)
       return await companion.file.stat(await companion.validatePathStrict(p))

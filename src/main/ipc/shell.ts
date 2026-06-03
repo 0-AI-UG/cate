@@ -297,9 +297,7 @@ export function registerHandlers(): void {
 
   // Renderer reports screen-derived agent state; rebroadcast so every
   // window's sidebar gets it (the sidebar in the main window won't otherwise
-  // see state for terminals that live in a detached panel window). Also
-  // record it in previousStates so the next process-tree scan doesn't clobber
-  // the renderer's reading by re-emitting 'running'.
+  // see state for terminals that live in a detached panel window).
   ipcMain.on(SHELL_AGENT_SCREEN_STATE, (_event, terminalId: string, state: string) => {
     broadcastToAll(SHELL_AGENT_SCREEN_STATE, terminalId, state)
   })

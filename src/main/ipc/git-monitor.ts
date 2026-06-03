@@ -34,7 +34,7 @@ interface MonitorEntry {
    *  replaces the old execFile AbortController, which only abort()-ed local
    *  child processes that no longer exist on this path. */
   pollEpoch: number
-  /** Unsubscribe fn from the shared chokidar pool, if wired. */
+  /** Unsubscribe fn from the companion file watcher, if wired. */
   unsubscribeFs: (() => void) | null
   /** Coalesce fs-watcher bursts into at most one immediate poll. */
   fsKickPending: boolean
@@ -235,9 +235,9 @@ export function registerHandlers(): void {
       fsKickPending: false,
     }
 
-    // Wire fs-watcher events from the shared chokidar pool to trigger an
+    // Wire fs-watcher events from the companion file watcher to trigger an
     // immediate poll. The periodic timer becomes a safety net for changes
-    // chokidar may miss (e.g. atomic renames on some filesystems, or repo
+    // the watcher may miss (e.g. atomic renames on some filesystems, or repo
     // mutations that happen before any watcher root covers this path).
     entry.unsubscribeFs = companion.file.watch(validRoot, () => {
       if (!anyWindowFocused) return
