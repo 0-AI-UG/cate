@@ -975,6 +975,11 @@ export interface AppSettings {
    *  bypass it (the Alt bypass can't apply to drags between windows, since the
    *  modifier state isn't carried across the cross-window IPC). */
   snapToGrid: boolean
+  /** When creating a new panel without an explicit position (Cmd+T, toolbar
+   *  click), show the recommendation picker — zoom out and let the user choose
+   *  among numbered spots / click anywhere. When off, the best spot is chosen
+   *  automatically and the panel is placed immediately. */
+  placementPicker: boolean
 
   // Terminal
   terminalFontFamily: string
@@ -1058,6 +1063,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoFocusLargestVisibleNode: false,
   canvasGridStyle: 'dots',
   snapToGrid: false,
+  placementPicker: true,
 
   // Terminal
   terminalFontFamily: '',

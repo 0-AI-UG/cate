@@ -25,6 +25,14 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       storeApi.getState().focusAndCenter(nodeId)
     },
 
+    beginPlacement(
+      panelId: string,
+      panelType: PanelType,
+      onCancelled: (panelId: string) => void,
+    ) {
+      return storeApi.getState().beginPlacement(panelId, panelType, onCancelled)
+    },
+
     removeNodeForPanel(panelId: string) {
       const state = storeApi.getState()
       const nodeId = state.nodeForPanel(panelId)

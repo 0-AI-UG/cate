@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
@@ -13,6 +14,7 @@ import { canvasToView, viewToCanvas } from '../lib/coordinates'
 import CanvasGrid from './CanvasGrid'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
+import GhostPlacementLayer from './GhostPlacementLayer'
 import type { Point, PanelType } from '../../shared/types'
 import { openFileAsPanel } from '../lib/fileRouting'
 
@@ -104,6 +106,69 @@ const RegionsLayer: React.FC = React.memo(() => {
   )
 })
 
+// A small instruction pill for the placement picker, centred over the visible
+// canvas (the strip between the absolute-overlay sidebars). Body-portalled so it
+// floats above app chrome. No dimming/blocking — the app stays interactive.
+const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <kbd style={{
+    display: 'inline-block', minWidth: 18, padding: '1px 5px', margin: '0 1px',
+    borderRadius: 5, background: 'rgba(255,255,255,0.14)',
+    border: '1px solid rgba(255,255,255,0.12)', borderBottomWidth: 2,
+    fontSize: 11, fontWeight: 600, textAlign: 'center', lineHeight: '16px',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  }}>{children}</kbd>
+)
+
+const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = ({ canvasRef }) => {
+  const pending = useCanvasStoreContext((s) => s.pendingPlacement)
+  const api = useCanvasStoreApi()
+  if (!pending) return null
+  const r = canvasRef.current?.getBoundingClientRect()
+  if (!r) return null
+  const sb = (side: 'left' | 'right') =>
+    (document.querySelector(`[data-app-sidebar="${side}"]`) as HTMLElement | null)?.getBoundingClientRect()
+  const left = sb('left'); const right = sb('right')
+  const visLeft = left && left.width > 0 ? left.right : r.left
+  const visRight = right && right.width > 0 ? right.left : r.right
+  const count = pending.candidates.length
+  const armed = pending.freeArmed
+
+  return createPortal(
+    <>
+      {/* Hint pill centred on the visible canvas (matching the bottom toolbar). */}
+      <div style={{
+        position: 'fixed', left: (visLeft + visRight) / 2, top: r.top + 16, transform: 'translateX(-50%)',
+        zIndex: 2147483000, display: 'flex', alignItems: 'center', gap: 14,
+        padding: '9px 9px 9px 16px', borderRadius: 999,
+        background: 'rgba(20, 24, 32, 0.95)', border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.5)', color: 'rgba(255,255,255,0.92)',
+        fontSize: 13, fontWeight: 500, fontFamily: 'system-ui, -apple-system, sans-serif',
+        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        animation: 'ghostHintIn 200ms ease both', userSelect: 'none', whiteSpace: 'nowrap',
+      }}>
+        <span>
+          {armed ? (
+            <>Click anywhere to place. <Kbd>F</Kbd> to go back.</>
+          ) : (
+            <>Pick a spot. Press <Kbd>1</Kbd>{count > 1 ? <>–<Kbd>{count}</Kbd></> : null}, click a ghost, or <Kbd>F</Kbd> to place anywhere.</>
+          )}
+        </span>
+        <button
+          onClick={() => api.getState().cancelPlacement()}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999,
+            border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.1)',
+            color: 'rgba(255,255,255,0.9)', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
+          }}
+        >
+          Cancel <Kbd>Esc</Kbd>
+        </button>
+      </div>
+    </>,
+    document.body,
+  )
+}
+
 interface CanvasProps {
   children?: React.ReactNode
   /** Called when the user right-clicks empty canvas and picks a panel type. */
@@ -193,6 +258,37 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     return () => el.removeEventListener('wheel', onWheel, { capture: true })
   }, []) // mount-only — no dependency on handleWheel
 
+  // Track the canvas-space pointer so ghost-placement recommendations can be
+  // anchored to where the mouse is hovering. rAF-throttled; the store setter is
+  // non-reactive so this never triggers a re-render.
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    let pending: { clientX: number; clientY: number } | null = null
+    let rafId = 0
+    const flush = () => {
+      rafId = 0
+      if (!pending) return
+      const rect = el.getBoundingClientRect()
+      const { zoomLevel, viewportOffset } = canvasApi.getState()
+      const canvasPt = viewToCanvas(
+        { x: pending.clientX - rect.left, y: pending.clientY - rect.top },
+        zoomLevel,
+        viewportOffset,
+      )
+      canvasApi.getState().setPlacementPointer(canvasPt)
+    }
+    const onMove = (e: MouseEvent) => {
+      pending = { clientX: e.clientX, clientY: e.clientY }
+      if (!rafId) rafId = requestAnimationFrame(flush)
+    }
+    el.addEventListener('mousemove', onMove)
+    return () => {
+      el.removeEventListener('mousemove', onMove)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
+  }, [])
+
   // Track container size for grid visibility calculations
   useEffect(() => {
     const el = canvasRef.current
@@ -223,8 +319,16 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
   // Click on the canvas background (world div) to unfocus
   const handleWorldClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      // Only unfocus if clicking directly on the world div, not on a child node
       const target = e.target as HTMLElement
+      // A click that misses every ghost cancels a pending ghost placement.
+      // (Ghosts stopPropagation on their own clicks, so this only fires on a miss.)
+      if (canvasApi.getState().pendingPlacement) {
+        if (!target.closest('[data-ghost-candidate]')) {
+          canvasApi.getState().cancelPlacement()
+        }
+        return
+      }
+      // Only unfocus if clicking directly on the world div, not on a child node
       if (!target.closest('[data-node-id]') && !target.closest('[data-region-id]')) {
         canvasApi.getState().unfocus()
       }
@@ -471,8 +575,10 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           />
         )}
         {children}
+        <GhostPlacementLayer />
       </div>
 
+      <PlacementHint canvasRef={canvasRef} />
     </div>
   )
 }

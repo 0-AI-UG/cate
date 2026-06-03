@@ -57,6 +57,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   autoFocusLargestVisibleNode: 'boolean',
   canvasGridStyle: 'string',
   snapToGrid: 'boolean',
+  placementPicker: 'boolean',
   terminalFontFamily: 'string',
   terminalFontSize: 'number',
   terminalScrollback: 'number',

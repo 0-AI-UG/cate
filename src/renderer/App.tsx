@@ -534,10 +534,10 @@ function MainApp() {
 
       {/* Sidebars: absolutely-positioned overlays on top of the shell */}
       <div className="absolute inset-y-0 left-0 z-20 flex pointer-events-none">
-        <div className="pointer-events-auto h-full"><Sidebar /></div>
+        <div data-app-sidebar="left" className="pointer-events-auto h-full"><Sidebar /></div>
       </div>
       <div className="absolute inset-y-0 right-0 z-20 flex pointer-events-none">
-        <div className="pointer-events-auto h-full"><RightSidebar /></div>
+        <div data-app-sidebar="right" className="pointer-events-auto h-full"><RightSidebar /></div>
       </div>
 
       {/* Modal overlays */}
