@@ -470,13 +470,65 @@ function clampPlacementSize(w: number, h: number, grid: number): Size {
 }
 
 /**
- * Find gaps BETWEEN nodes in a cluster and size a panel to FILL each, within the
- * placement bounds. A horizontal gap (between two side-by-side nodes) and a
- * vertical gap each yield a candidate sized to the gap (clamped to min/max + AR)
- * and centred in it — so both narrower-than-reference and wider-than-reference
- * gaps get an individually-sized recommendation. A candidate is emitted only
- * when its size differs meaningfully from the reference `ref` (otherwise an
- * ordinary reference-sized spot already covers the gap) and it is actually free.
+ * Maximal empty rectangles inside `region` that no node covers (coordinate
+ * compression over node edges → free-cell grid → maximal free rectangles). This
+ * finds the actual holes in a layout — including the irregular ones a staggered
+ * arrangement produces, not just gaps between two aligned nodes.
+ */
+function findEmptyRects(region: Rect, nodeRects: Rect[]): Rect[] {
+  const rx0 = region.origin.x, ry0 = region.origin.y
+  const rx1 = rx0 + region.size.width, ry1 = ry0 + region.size.height
+  const xs = new Set<number>([rx0, rx1])
+  const ys = new Set<number>([ry0, ry1])
+  for (const n of nodeRects) {
+    for (const x of [n.origin.x, n.origin.x + n.size.width]) if (x > rx0 && x < rx1) xs.add(x)
+    for (const y of [n.origin.y, n.origin.y + n.size.height]) if (y > ry0 && y < ry1) ys.add(y)
+  }
+  const X = [...xs].sort((a, b) => a - b)
+  const Y = [...ys].sort((a, b) => a - b)
+  const cols = X.length - 1, rows = Y.length - 1
+  if (cols <= 0 || rows <= 0) return []
+  const occ: boolean[][] = []
+  for (let r = 0; r < rows; r++) {
+    occ[r] = []
+    const cy = (Y[r] + Y[r + 1]) / 2
+    for (let c = 0; c < cols; c++) {
+      const cx = (X[c] + X[c + 1]) / 2
+      occ[r][c] = nodeRects.some((n) =>
+        cx > n.origin.x && cx < n.origin.x + n.size.width && cy > n.origin.y && cy < n.origin.y + n.size.height)
+    }
+  }
+  const rects: Rect[] = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (occ[r][c]) continue
+      let limit = c
+      while (limit + 1 < cols && !occ[r][limit + 1]) limit++
+      for (let r2 = r; r2 < rows; r2++) {
+        if (occ[r2][c]) break
+        let rl = c
+        while (rl + 1 <= limit && !occ[r2][rl + 1]) rl++
+        limit = rl
+        rects.push({ origin: { x: X[c], y: Y[r] }, size: { width: X[limit + 1] - X[c], height: Y[r2 + 1] - Y[r] } })
+      }
+    }
+  }
+  const area = (a: Rect) => a.size.width * a.size.height
+  const contains = (b: Rect, a: Rect) =>
+    b.origin.x <= a.origin.x && b.origin.y <= a.origin.y &&
+    b.origin.x + b.size.width >= a.origin.x + a.size.width &&
+    b.origin.y + b.size.height >= a.origin.y + a.size.height
+  // Keep only the maximal rectangles (drop ones contained in a bigger sibling).
+  return rects.filter((a, i) => !rects.some((b, j) =>
+    i !== j && contains(b, a) && (area(b) > area(a) || (area(b) === area(a) && j < i))))
+}
+
+/**
+ * Size a panel to FILL each maximal empty rectangle inside the cluster's bounds,
+ * within the placement bounds (min/max + aspect ratio). A candidate is emitted
+ * only when its size differs meaningfully from the reference `ref` — otherwise an
+ * ordinary reference-sized spot already covers the hole. This gives individually
+ * sized ghosts for the irregular gaps a layout leaves behind.
  */
 function gapFillCandidates(
   cluster: CanvasNodeState[],
@@ -489,36 +541,17 @@ function gapFillCandidates(
   const fits = (rect: Rect): boolean =>
     rect.size.width > 0 && rect.size.height > 0 &&
     !allNodeRects.some((r) => rectsOverlap(inflateRect(rect, gap - 1), r))
-  const rects = cluster.map((n) => ({ origin: n.origin, size: n.size }))
-  const consider = (availW: number, availH: number, ox0: number, oy0: number) => {
-    if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) return
+  for (const er of findEmptyRects(boundsOf(cluster), allNodeRects)) {
+    const availW = er.size.width - 2 * gap
+    const availH = er.size.height - 2 * gap
+    if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) continue
     const s = clampPlacementSize(availW, availH, grid)
-    // Skip gaps a reference-sized panel already fits cleanly.
-    if (Math.abs(s.width - ref.width) <= 2 * gap && Math.abs(s.height - ref.height) <= 2 * gap) return
+    if (Math.abs(s.width - ref.width) <= 2 * gap && Math.abs(s.height - ref.height) <= 2 * gap) continue
     const rect: Rect = {
-      origin: { x: ox0 + (availW - s.width) / 2, y: oy0 + (availH - s.height) / 2 },
+      origin: { x: er.origin.x + gap + (availW - s.width) / 2, y: er.origin.y + gap + (availH - s.height) / 2 },
       size: s,
     }
     if (fits(rect)) out.push(rect)
-  }
-  for (let i = 0; i < rects.length; i++) {
-    for (let j = 0; j < rects.length; j++) {
-      if (i === j) continue
-      const A = rects[i]
-      const B = rects[j]
-      const aR = A.origin.x + A.size.width
-      const aB = A.origin.y + A.size.height
-      const bR = B.origin.x + B.size.width
-      const bB = B.origin.y + B.size.height
-      // Horizontal gap: B to the right of A, sharing a vertical band.
-      const hTop = Math.max(A.origin.y, B.origin.y)
-      const hBot = Math.min(aB, bB)
-      consider(B.origin.x - aR - 2 * gap, hBot - hTop - 2 * gap, aR + gap, hTop + gap)
-      // Vertical gap: B below A, sharing a horizontal band.
-      const vLeft = Math.max(A.origin.x, B.origin.x)
-      const vRight = Math.min(aR, bR)
-      consider(vRight - vLeft - 2 * gap, B.origin.y - aB - 2 * gap, vLeft + gap, aB + gap)
-    }
   }
   return out
 }
@@ -724,18 +757,24 @@ export function recommendPlacements(
       const rect: Rect = { origin: c.point, size: c.size }
       const onScreen = onScreenRect(rect)
       const dist = Math.hypot(c.point.x + c.size.width / 2 - rankAnchor.x, c.point.y + c.size.height / 2 - rankAnchor.y)
-      // Slight penalty for custom sizes so a comparable reference spot ranks first.
-      return { rect, point: c.point, size: c.size, onScreen, score: (onScreen ? 0 : 1e9) + dist + (c.custom ? 60 : 0) }
+      // A gap-filler only exists where a reference-sized spot fits the hole
+      // poorly, so it should WIN that hole over the overlapping standard spot —
+      // a small preference does this without letting customs dominate globally.
+      return { rect, custom: c.custom, point: c.point, size: c.size, onScreen, score: (onScreen ? 0 : 1e9) + dist - (c.custom ? 120 : 0) }
     })
     .sort((a, b) => a.score - b.score)
 
   const accepted: PlacementCandidate[] = []
   const acceptedRects: Rect[] = []
+  const maxCustom = Math.max(1, Math.floor(cap / 2)) // keep room for standard spots
+  let customCount = 0
   for (const c of ranked) {
     if (accepted.length >= cap) break
+    if (c.custom && customCount >= maxCustom) continue
     if (!clearRect(c.rect, nodeRects)) continue
     if (!clearRect(c.rect, acceptedRects)) continue
     acceptedRects.push(c.rect)
+    if (c.custom) customCount++
     accepted.push({ point: c.point, size: c.size, rank: accepted.length, onScreen: c.onScreen })
   }
 

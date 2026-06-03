@@ -381,6 +381,18 @@ describe('canvasStore.recommendPlacements', () => {
     expect(custom!.size.height).toBeGreaterThanOrEqual(180)
   })
 
+  it('GAP-FILL: a staggered layout yields a custom ghost filling an irregular hole', () => {
+    // Two diagonally-offset nodes leave an L-shaped empty region a pairwise
+    // gap check would miss — the rectangle finder fills its holes.
+    const a = node('a', 0, 0, 400, 300)
+    const b = node('b', 600, 360, 400, 300, 1)
+    const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
+    const custom = cands.find((c) => c.size.width !== 400 || c.size.height !== 300)
+    expect(custom).toBeDefined()
+    expect(rectsOverlap(rectOf(custom!), { origin: a.origin, size: a.size })).toBe(false)
+    expect(rectsOverlap(rectOf(custom!), { origin: b.origin, size: b.size })).toBe(false)
+  })
+
   it('GAP-FILL: a gap below the minimum gets no recommendation', () => {
     const a = node('a', 0, 0, 640, 400)
     const b = node('b', 840, 0, 640, 400, 1) // only a 200px gap → too small
