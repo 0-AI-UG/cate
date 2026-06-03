@@ -527,9 +527,9 @@ export const CommandPalette: React.FC = () => {
       document.removeEventListener('keydown', handleKey, { capture: true })
   }, [showCommandPalette, filteredCommands, searchResults, recommendedPanels, showRecommended, selectedIndex, totalItems, executeCommand, selectSearchResult, close, canvasApi, focusPanelById])
 
-  if (!showCommandPalette) return null
-
-  // Group search results by kind for section headers
+  // Group search results by kind for section headers. Must run before the
+  // early return below — a hook called conditionally changes the hook order
+  // between renders and crashes React when the palette is toggled.
   const groupedResults = useMemo(() => {
     const seen = new Set<SearchResultKind>()
     const sections: { kind: SearchResultKind; items: SearchResult[] }[] = []
@@ -539,6 +539,8 @@ export const CommandPalette: React.FC = () => {
     }
     return sections
   }, [searchResults])
+
+  if (!showCommandPalette) return null
 
   const sectionLabel = (kind: SearchResultKind) =>
     kind === 'file' ? 'Files' : kind === 'panel' ? 'Panels' : 'Terminals'

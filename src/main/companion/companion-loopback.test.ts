@@ -19,6 +19,8 @@ const stubAgent = {} as unknown as AgentHost
 // correlation, handshake, streaming, RemoteCompanion proxying) end to end —
 // executing REAL fs/git on a temp dir — without needing SSH or WSL.
 function loopback(api: Companion): { remote: RemoteCompanion; client: CompanionRpcClient; server: RpcServer } {
+  // Forward reference: `server` closes over `client`, so it's declared first.
+  // eslint-disable-next-line prefer-const
   let client!: CompanionRpcClient
   const server = new RpcServer(api, (line) => client.handleChunk(line))
   client = new CompanionRpcClient((line) => server.handleChunk(line))

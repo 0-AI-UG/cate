@@ -538,8 +538,8 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
   if (recentProjects.length === 0 && remoteEntries.length === 0) return null
 
   const snapshots: SessionSnapshot[] = []
-  let panelWindows: PanelWindowSnapshot[] = []
-  let dockWindows: DetachedDockWindowSnapshot[] = []
+  const panelWindows: PanelWindowSnapshot[] = []
+  const dockWindows: DetachedDockWindowSnapshot[] = []
 
   for (const rootPath of recentProjects) {
     // Defensive: a remote locator must never reach projectStateLoad (it would

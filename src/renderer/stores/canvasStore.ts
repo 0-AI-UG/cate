@@ -1154,7 +1154,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   selectRegions(ids, additive) {
     set((state) => {
       const nextRegions = additive ? new Set(state.selectedRegionIds) : new Set<string>()
-      let nextNodes = additive ? new Set(state.selectedNodeIds) : new Set<string>()
+      const nextNodes = additive ? new Set(state.selectedNodeIds) : new Set<string>()
       for (const id of ids) {
         nextRegions.add(id)
         // Cascade: select all contained nodes

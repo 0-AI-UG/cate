@@ -654,7 +654,8 @@ export default function TerminalPanel({
             onChange={(e) => handleSearchChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                e.shiftKey ? handleFindPrevious() : handleFindNext()
+                if (e.shiftKey) handleFindPrevious()
+                else handleFindNext()
               }
               if (e.key === 'Escape') handleCloseSearch()
             }}

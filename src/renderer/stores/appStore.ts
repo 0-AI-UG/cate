@@ -199,11 +199,10 @@ export function getWorkspaceCanvasStore(workspaceId: string): StoreApi<CanvasSto
 // fire-and-forget approach allowed them to land out of order).
 let workspaceSyncQueue: Promise<unknown> = Promise.resolve()
 function enqueueWorkspaceSync<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
-  let resultPromise: Promise<T | undefined>
   workspaceSyncQueue = workspaceSyncQueue
     .then(fn, fn)
     .catch((err) => log.warn(`[workspace-sync] ${label} failed:`, err))
-  resultPromise = workspaceSyncQueue as Promise<T | undefined>
+  const resultPromise = workspaceSyncQueue as Promise<T | undefined>
   return resultPromise
 }
 
