@@ -6,7 +6,7 @@
 import { useEffect } from 'react'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
-import { useAppStore } from '../stores/appStore'
+import { useAppStore, getActiveCanvasOps } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
@@ -54,7 +54,15 @@ export function useShortcuts(): void {
 
   useEffect(() => {
     const shortcutStore = useShortcutStore.getState
-    const canvasStore = canvasStoreApi.getState
+    // Resolve the *active* canvas store at call time rather than binding to the
+    // context store captured on mount. The visible canvas is a per-panel store
+    // (CanvasPanel registers it and marks itself active via setActiveCanvasPanelId);
+    // the App-level context only aliases the legacy singleton, which is usually
+    // NOT the canvas the user is looking at once more than one canvas exists.
+    // Routing every canvas action through the active store keeps keyboard
+    // navigation/pan/zoom acting on the canvas actually on screen. Falls back to
+    // the context store for single-canvas / detached windows.
+    const canvasStore = () => (getActiveCanvasOps()?.storeApi ?? canvasStoreApi).getState()
     const appStore = useAppStore.getState
 
     /**

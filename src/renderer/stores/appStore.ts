@@ -99,7 +99,7 @@ export function setActiveCanvasPanelId(canvasPanelId: string) {
 }
 
 /** Returns the CanvasOperations for the currently active canvas, falling back to the primary */
-function getActiveCanvasOps(): CanvasOperations | null {
+export function getActiveCanvasOps(): CanvasOperations | null {
   if (activeCanvasPanelId) {
     const ops = canvasOpsRegistry.get(activeCanvasPanelId)
     if (ops) return ops
