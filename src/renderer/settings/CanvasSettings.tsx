@@ -28,6 +28,15 @@ export function CanvasSettings() {
           onChange={(v) => store.setSetting('snapToGrid', v)}
         />
       </SettingRow>
+      <SettingRow
+        label="Recommend where new panels go"
+        description="On Cmd+T or a toolbar click, zoom out and show numbered spots to choose from (or click anywhere). Turn off to place each new panel in the best spot automatically."
+      >
+        <Toggle
+          checked={store.placementPicker}
+          onChange={(v) => store.setSetting('placementPicker', v)}
+        />
+      </SettingRow>
       <SettingRow label="Canvas background">
         <Select
           value={store.canvasGridStyle}

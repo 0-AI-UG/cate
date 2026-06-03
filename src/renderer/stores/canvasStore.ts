@@ -366,14 +366,18 @@ export function placementSizeVariants(panelType: PanelType): PlacementSizeVarian
   ]
 }
 
+/** Uniform gap (canvas px) between a new panel and its neighbours / other ghosts. */
+const PLACEMENT_GAP = 40
+
 /**
  * Compute 3–5 recommended spots for a new node, for the interactive "ghost"
- * picker. From the focused node (else most-recently-created) and its nearest
- * neighbour in each cardinal direction, ray-march outward past obstacles, plus a
- * ring of spots around the anchor. Spots are deduped, ranked by proximity to the
- * anchor (on-screen first), and accepted greedily so no two recommendations —
- * and no recommendation and existing node — overlap. All use the panel's default
- * size. Always returns at least one candidate.
+ * picker. Candidates are the four edge-adjacent slots of every existing node —
+ * each aligned to that node's top/left edge and offset by a uniform gap — so the
+ * recommendations line up tidily with the current layout (a new panel slots
+ * neatly beside, above, or below what's already there). Slots are kept only if
+ * they clear every node AND every other accepted ghost by at least the gap (no
+ * touching, no oversized gaps), deduped, and ranked by proximity to the anchor
+ * (on-screen first). All use the panel's default size; always returns ≥1.
  *
  * @param anchor canvas-space point to rank around (mouse pos when available);
  *               falls back to the focused node centre, then the viewport centre.
@@ -389,7 +393,7 @@ export function recommendPlacements(
   const grid = CANVAS_GRID_SIZE
   const snap = (v: number) => Math.round(v / grid) * grid
   const snapPt = (p: Point): Point => ({ x: snap(p.x), y: snap(p.y) })
-  const gap = 40
+  const gap = PLACEMENT_GAP
   const size = PANEL_DEFAULT_SIZES[panelType]
 
   // Viewport rect in canvas space — for the on-screen ranking bias.
@@ -412,8 +416,18 @@ export function recommendPlacements(
   const isOnScreen = (p: Point): boolean => hasViewport && rectsOverlap({ origin: p, size }, viewRect)
 
   const nodeList = Object.values(nodes)
-  const overlapsNode = (p: Point): boolean =>
-    nodeList.some((n) => rectsOverlap({ origin: n.origin, size: n.size }, { origin: p, size }))
+  // A spot is clear if its rect, grown by ~gap on every side, overlaps no other
+  // rect in `rects`. This enforces a uniform gap (never touching, never a giant
+  // gap) to nodes and to already-accepted ghosts alike.
+  const margin = gap - 1
+  const clearOf = (p: Point, rects: Rect[]): boolean => {
+    const grown: Rect = {
+      origin: { x: p.x - margin, y: p.y - margin },
+      size: { width: size.width + margin * 2, height: size.height + margin * 2 },
+    }
+    return !rects.some((r) => rectsOverlap(grown, r))
+  }
+  const nodeRects: Rect[] = nodeList.map((n) => ({ origin: n.origin, size: n.size }))
 
   const focused = (focusedNodeId && nodes[focusedNodeId]) || null
   const reference =
@@ -421,8 +435,6 @@ export function recommendPlacements(
     (nodeList.length > 0
       ? nodeList.reduce((a, b) => (b.creationIndex > a.creationIndex ? b : a))
       : null)
-
-  // Anchor: mouse hover → focused node centre → viewport centre.
   const anchorPt: Point =
     anchor ??
     (reference
@@ -433,66 +445,19 @@ export function recommendPlacements(
 
   // --- Generate candidate spots --------------------------------------------
   const spots: Point[] = []
-  // A ring around the anchor so there's always a recommendation near where the
-  // user is looking, even on an empty canvas.
-  const stepX = size.width + gap
-  const stepY = size.height + gap
-  const ring = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]
-  for (const [dx, dy] of ring) {
-    spots.push({ x: anchorPt.x - size.width / 2 + dx * stepX, y: anchorPt.y - size.height / 2 + dy * stepY })
-  }
-
-  // Node-aware rays: from the reference and its nearest neighbour per direction,
-  // march past obstacles so dense clusters still yield reachable slots.
-  type Dir = { dx: -1 | 0 | 1; dy: -1 | 0 | 1 }
-  const directions: Dir[] = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }]
-  if (reference) {
-    const refCenter = {
-      x: reference.origin.x + reference.size.width / 2,
-      y: reference.origin.y + reference.size.height / 2,
-    }
-    const slotFromSeed = (seed: CanvasNodeState, dir: Dir): Point | null => {
-      let p: Point
-      if (dir.dx > 0) p = { x: seed.origin.x + seed.size.width + gap, y: seed.origin.y }
-      else if (dir.dx < 0) p = { x: seed.origin.x - size.width - gap, y: seed.origin.y }
-      else if (dir.dy > 0) p = { x: seed.origin.x, y: seed.origin.y + seed.size.height + gap }
-      else p = { x: seed.origin.x, y: seed.origin.y - size.height - gap }
-      for (let i = 0; i < 200; i++) {
-        const obstacle = nodeList.find((n) =>
-          rectsOverlap({ origin: n.origin, size: n.size }, { origin: p, size }),
-        )
-        if (!obstacle) return p
-        if (dir.dx > 0) p = { x: obstacle.origin.x + obstacle.size.width + gap, y: p.y }
-        else if (dir.dx < 0) p = { x: obstacle.origin.x - size.width - gap, y: p.y }
-        else if (dir.dy > 0) p = { x: p.x, y: obstacle.origin.y + obstacle.size.height + gap }
-        else p = { x: p.x, y: obstacle.origin.y - size.height - gap }
-      }
-      return null
-    }
-    const nearestNeighbour = (dir: Dir): CanvasNodeState | null => {
-      let best: CanvasNodeState | null = null
-      let bestDist = Infinity
-      for (const n of nodeList) {
-        if (n.id === reference.id) continue
-        const cx = n.origin.x + n.size.width / 2
-        const cy = n.origin.y + n.size.height / 2
-        const along = dir.dx !== 0 ? (cx - refCenter.x) * dir.dx : (cy - refCenter.y) * dir.dy
-        if (along <= 0) continue
-        const dist = Math.hypot(cx - refCenter.x, cy - refCenter.y)
-        if (dist < bestDist) { bestDist = dist; best = n }
-      }
-      return best
-    }
-    const seeds: CanvasNodeState[] = [reference]
-    for (const dir of directions) {
-      const n = nearestNeighbour(dir)
-      if (n && !seeds.some((s) => s.id === n.id)) seeds.push(n)
-    }
-    for (const seed of seeds) {
-      for (const dir of directions) {
-        const slot = slotFromSeed(seed, dir)
-        if (slot) spots.push(slot)
-      }
+  if (nodeList.length === 0) {
+    // Empty canvas: centre on the anchor, plus right/below alternatives.
+    const c = { x: anchorPt.x - size.width / 2, y: anchorPt.y - size.height / 2 }
+    spots.push(c)
+    spots.push({ x: c.x + size.width + gap, y: c.y })
+    spots.push({ x: c.x, y: c.y + size.height + gap })
+  } else {
+    // Edge-adjacent slots of every node, aligned to that node's top/left edge.
+    for (const n of nodeList) {
+      spots.push({ x: n.origin.x + n.size.width + gap, y: n.origin.y })          // right
+      spots.push({ x: n.origin.x - size.width - gap, y: n.origin.y })            // left
+      spots.push({ x: n.origin.x, y: n.origin.y + n.size.height + gap })         // below
+      spots.push({ x: n.origin.x, y: n.origin.y - size.height - gap })           // above
     }
     spots.push(findFreePosition(nodes, focusedNodeId, size)) // guaranteed non-empty
   }
@@ -514,13 +479,13 @@ export function recommendPlacements(
     })
     .sort((a, b) => a.score - b.score)
 
-  // --- Accept greedily; never overlap a node or another recommendation -----
+  // --- Accept greedily; keep a uniform gap to nodes and other ghosts -------
   const accepted: PlacementCandidate[] = []
   const acceptedRects: Rect[] = []
   for (const { p, onScreen } of ranked) {
     if (accepted.length >= max) break
-    if (overlapsNode(p)) continue
-    if (acceptedRects.some((r) => rectsOverlap(r, { origin: p, size }))) continue
+    if (!clearOf(p, nodeRects)) continue
+    if (!clearOf(p, acceptedRects)) continue
     acceptedRects.push({ origin: p, size })
     accepted.push({ point: p, size, rank: accepted.length, onScreen })
   }

@@ -28,6 +28,7 @@ import type { CanvasStore } from './canvasStore'
 import { shouldPreserveExistingCanvas } from './canvasSyncGuard'
 import { terminalRegistry } from '../lib/terminalRegistry'
 import { useDockStore } from './dockStore'
+import { useSettingsStore } from './settingsStore'
 import { createCanvasOps } from '../lib/canvasBridge'
 import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from './canvasStore'
 
@@ -391,12 +392,13 @@ function placePanel(
     const canvasPosition = placement?.target === 'canvas' ? placement.position ?? position : position
     const ops = getActiveCanvasOps()
     if (!ops) return
-    // Ambiguous create (no explicit position): show ghost candidates and let
-    // the user choose where the node lands. Explicit-position paths
-    // (drag-drop, session restore, right-click "new here") skip ghosts and
-    // place immediately below. If ghosts are shown, node creation is deferred
-    // until the user commits — onGhostCancel rolls the panel back on cancel.
-    if (canvasPosition == null && onGhostCancel) {
+    // Ambiguous create (no explicit position): when the recommendation picker
+    // is enabled, show ghost candidates and let the user choose where the node
+    // lands (deferred until commit; onGhostCancel rolls the panel back). When
+    // the setting is off, fall through and auto-place in the best spot.
+    // Explicit-position paths (drag-drop, session restore, right-click "new
+    // here") always skip the picker and place immediately below.
+    if (canvasPosition == null && onGhostCancel && useSettingsStore.getState().placementPicker) {
       const shown = ops.beginPlacement(panelId, panelType, onGhostCancel)
       if (shown) return
     }

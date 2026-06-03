@@ -27,7 +27,7 @@ function injectStyles() {
   const style = document.createElement('style')
   style.textContent = `
     @keyframes ghostIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
-    @keyframes ghostHintIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @keyframes ghostHintIn { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
   `
   document.head.appendChild(style)
 }
@@ -213,7 +213,7 @@ const HintPill: React.FC<{ onCancel: () => void; count: number }> = ({ onCancel,
   return createPortal(
     <div
       style={{
-        position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)',
+        position: 'fixed', left: '50%', top: 24, transform: 'translateX(-50%)',
         zIndex: 2147483000,
         display: 'flex', alignItems: 'center', gap: 14,
         padding: '9px 9px 9px 16px', borderRadius: 999,
