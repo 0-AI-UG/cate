@@ -101,6 +101,19 @@ export function getAllWindows(): BrowserWindow[] {
 export function focusWindow(win: BrowserWindow): void {
   if (win.isMinimized()) win.restore()
   win.focus()
+
+  // macOS lets a backgrounded app raise itself on focus(); Windows and Linux do
+  // not — their foreground-lock / focus-stealing prevention often leaves focus()
+  // only flashing the taskbar. Briefly toggling always-on-top forces the window
+  // to the front, then releases it so it isn't actually pinned. (A notification
+  // click grants the app the foreground rights this relies on.) Preserve an
+  // existing always-on-top state if the window already had one.
+  if (process.platform !== 'darwin') {
+    const alreadyPinned = win.isAlwaysOnTop()
+    win.setAlwaysOnTop(true)
+    win.focus()
+    if (!alreadyPinned) win.setAlwaysOnTop(false)
+  }
 }
 
 /**

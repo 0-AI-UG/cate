@@ -1159,6 +1159,13 @@ function buildSinglePanelDockState(panelId: string): WindowDockState {
 // Set app name before menu and window creation
 app.setName('Cate')
 
+// Windows: the toast notification system keys off the AppUserModelID, and it
+// must match the install shortcut's ID (electron-builder uses `appId`) for the
+// notification 'click' event to fire reliably. No-op on macOS/Linux.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.cate.app')
+}
+
 // In dev mode, use a separate userData directory so dev and production don't collide
 if (!app.isPackaged) {
   app.setPath('userData', path.join(app.getPath('userData'), 'Dev'))
