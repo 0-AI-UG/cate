@@ -126,6 +126,10 @@ const PLACEMENT_MAX_W = 1400
 const PLACEMENT_MAX_H = 900
 const PLACEMENT_MIN_AR = 0.6
 const PLACEMENT_MAX_AR = 2.6
+/** How far (in panel "pitches" = std size + gap) the place-area extends around a
+ *  focused node. A tight ring → recommendations hug the node, yet still reach the
+ *  free space just beyond a surrounding ring of windows. */
+const PLACEMENT_FOCUS_MARGIN = 1.5
 
 // --- Geometry helpers --------------------------------------------------------
 
@@ -159,15 +163,21 @@ function clampPlacementSize(w: number, h: number, grid: number): Size {
 /**
  * Recommend where a new node should go, for the interactive "ghost" picker.
  *
- * Minimal model: find the ACTIVE node (the focused one if on screen, else the
- * on-screen node nearest the viewport centre), then look at the empty rectangles
- * around it and drop one panel into each — hugging the active node, sized to the
- * hole. A standard panel is used wherever it fits; a smaller hole gets a panel
- * shrunk to fill it (individualized). With no nodes (or panned to blank space)
- * it offers a few spots centred where the user is looking.
+ * Model: pick a PLACE AREA and a reference node, lay a panel-pitch grid aligned to
+ * that node across the area, and keep every grid cell that has room — sized to the
+ * standard panel where it fits, shrunk to fill a tighter cell (individualized sizes;
+ * standard preferred). Because the cells are pitch-spaced they tile the free space
+ * densely without overlapping, and a full scan (not a flood through free cells) still
+ * reaches the open space beyond a node that is boxed in on every side.
+ *
+ *  - A focused node on screen → a tight area around it, so spots hug the node and,
+ *    when it is boxed in, surface the nearest free space just beyond the ring.
+ *  - Nothing focused → the whole visible viewport, ranked toward the on-screen
+ *    cluster nearest the cursor — a wider spread with more options.
+ *  - No nodes (or panned to blank space) → a few spots centred where you're looking.
  *
  * @param anchor canvas-space point (mouse pos) used to rank spots and centre the
- *               empty-canvas case; falls back to the viewport / active centre.
+ *               empty-canvas case; falls back to the viewport / focused centre.
  */
 export function recommendPlacements(
   nodes: Record<CanvasNodeId, CanvasNodeState>,
@@ -250,34 +260,53 @@ export function recommendPlacements(
     return finalize(centred(c), c)
   }
 
-  // ACTIVE node: focused (if on screen) else the on-screen node nearest the view.
+  // PLACE AREA + reference node + ranking point. A focused node on screen → a
+  // tight area around it (recs hug it). Otherwise → the whole viewport, with the
+  // reference being the on-screen node nearest the cursor (wider, island-biased).
   const focused = (focusedNodeId && nodes[focusedNodeId]) || null
-  const distToView = (n: CanvasNodeState) =>
-    Math.hypot(n.origin.x + n.size.width / 2 - viewCenter.x, n.origin.y + n.size.height / 2 - viewCenter.y)
-  const active =
-    focused && onScreen({ origin: focused.origin, size: focused.size })
-      ? focused
-      : onScreenNodes.reduce((b, n) => (distToView(n) < distToView(b) ? n : b))
+  const focusedOnScreen = !!focused && onScreen({ origin: focused.origin, size: focused.size })
+  const pitchX = std.width + gap
+  const pitchY = std.height + gap
 
-  const aRect: Rect = { origin: active.origin, size: active.size }
-  const aCenter: Point = { x: aRect.origin.x + aRect.size.width / 2, y: aRect.origin.y + aRect.size.height / 2 }
+  let ref: CanvasNodeState
+  let area: Rect
+  let rankAt: Point
+  if (focusedOnScreen && focused) {
+    ref = focused
+    const mx = pitchX * PLACEMENT_FOCUS_MARGIN
+    const my = pitchY * PLACEMENT_FOCUS_MARGIN
+    area = {
+      origin: { x: ref.origin.x - mx, y: ref.origin.y - my },
+      size: { width: ref.size.width + mx * 2, height: ref.size.height + my * 2 },
+    }
+    rankAt = { x: ref.origin.x + ref.size.width / 2, y: ref.origin.y + ref.size.height / 2 }
+  } else {
+    rankAt = anchor ?? viewCenter
+    const distToRank = (n: CanvasNodeState) =>
+      Math.hypot(n.origin.x + n.size.width / 2 - rankAt.x, n.origin.y + n.size.height / 2 - rankAt.y)
+    ref = onScreenNodes.reduce((b, n) => (distToRank(n) < distToRank(b) ? n : b))
+    area = viewRect
+  }
 
-  // A lattice anchored on the active node's edges: each cell is one panel + gap
-  // away, aligned to the node, so spots extend its grid. The first cell in each
-  // direction hugs the node's edge; further cells step by one panel pitch.
+  // A panel-pitch lattice phased to the reference node's edges: cell 0 is the
+  // node itself, cell ±1 hugs its edge (one gap away), further cells step by one
+  // panel pitch. Spots therefore line up with the node and with each other.
   const cellX = (i: number): number =>
-    i === 0 ? aRect.origin.x
-      : i > 0 ? aRect.origin.x + aRect.size.width + gap + (i - 1) * (std.width + gap)
-        : aRect.origin.x - (std.width + gap) - (-i - 1) * (std.width + gap)
+    i === 0 ? ref.origin.x
+      : i > 0 ? ref.origin.x + ref.size.width + gap + (i - 1) * pitchX
+        : ref.origin.x - pitchX - (-i - 1) * pitchX
   const cellY = (j: number): number =>
-    j === 0 ? aRect.origin.y
-      : j > 0 ? aRect.origin.y + aRect.size.height + gap + (j - 1) * (std.height + gap)
-        : aRect.origin.y - (std.height + gap) - (-j - 1) * (std.height + gap)
+    j === 0 ? ref.origin.y
+      : j > 0 ? ref.origin.y + ref.size.height + gap + (j - 1) * pitchY
+        : ref.origin.y - pitchY - (-j - 1) * pitchY
+
+  // A node already sits on this cell — don't place here (but the scan still
+  // visits cells beyond it, so a boxed-in reference still finds open space).
+  const occupied = (p: Point): boolean =>
+    nodeRects.some((r) => rectsOverlap({ origin: p, size: { width: PLACEMENT_MIN_W, height: PLACEMENT_MIN_H } }, r))
 
   // Largest panel (≤ standard, ≥ min) that fits at top-left `p`, bounded by the
   // nearest node to the right/below — so a cell crowded by a neighbour shrinks.
-  const occupied = (p: Point): boolean =>
-    nodeRects.some((r) => rectsOverlap({ origin: p, size: { width: PLACEMENT_MIN_W, height: PLACEMENT_MIN_H } }, r))
   const fitAt = (p: Point): Size | null => {
     let right = p.x + std.width
     let bottom = p.y + std.height
@@ -290,28 +319,23 @@ export function recommendPlacements(
     return clampPlacementSize(right - p.x, bottom - p.y, grid)
   }
 
-  // Breadth-first outward from the node (nearest cells first), expanding only
-  // through free cells so the group stays connected and hugs the node.
-  const visited = new Set<string>(['0,0'])
-  const queue: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+  // Full bounded scan of the lattice over the place area (cells whose standard
+  // rect intersects it). Pitch-spaced cells don't overlap, so the spots tile the
+  // free space densely without fighting each other in `finalize`.
+  const cols = Math.ceil(area.size.width / pitchX) + 2
+  const rows = Math.ceil(area.size.height / pitchY) + 2
   const raw: Raw[] = []
-  while (queue.length > 0 && raw.length < max * 3) {
-    queue.sort((a, b) =>
-      (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) ||
-      (a[0] * a[0] + a[1] * a[1]) - (b[0] * b[0] + b[1] * b[1]))
-    const [i, j] = queue.shift()!
-    const key = `${i},${j}`
-    if (visited.has(key)) continue
-    visited.add(key)
-    const p = snapPt({ x: cellX(i), y: cellY(j) })
-    if (occupied(p)) continue // a node sits here — don't place or expand through
-    const size = fitAt(p)
-    if (!size) continue
-    raw.push({ point: p, size })
-    queue.push([i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1])
+  for (let i = -cols; i <= cols; i++) {
+    for (let j = -rows; j <= rows; j++) {
+      const p = snapPt({ x: cellX(i), y: cellY(j) })
+      if (!rectsOverlap({ origin: p, size: std }, area)) continue // outside the place area
+      if (occupied(p)) continue
+      const size = fitAt(p)
+      if (size) raw.push({ point: p, size })
+    }
   }
 
-  return finalize(raw, anchor ?? aCenter)
+  return finalize(raw, rankAt)
 }
 
 /**

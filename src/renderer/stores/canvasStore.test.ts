@@ -441,6 +441,41 @@ describe('canvasStore.recommendPlacements', () => {
     expect(Math.abs(cands[0].point.x + cands[0].size.width / 2 - 500)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
     expect(Math.abs(cands[0].point.y + cands[0].size.height / 2 - 400)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
   })
+
+  it('BOXED-IN: a surrounded focused node still surfaces several spots beyond the ring', () => {
+    // The old lattice/BFS died to a single fallback spot once every neighbour cell
+    // was occupied. Decomposing the free space reaches the open area past the ring.
+    const nodes = toMap(
+      node('c', 0, 0, 200, 150),
+      node('r', 220, 0, 200, 150),
+      node('l', -220, 0, 200, 150),
+      node('d', 0, 170, 200, 150),
+      node('u', 0, -170, 200, 150),
+    )
+    const cands = recommendPlacements(nodes, 'c', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThanOrEqual(3)
+    cands.forEach((c) => {
+      Object.values(nodes).forEach((n) =>
+        expect(rectsOverlap(rectOf(c), { origin: n.origin, size: n.size })).toBe(false),
+      )
+    })
+  })
+
+  it('FOCUS vs CURSOR: focus pulls the best spot to the node; no focus follows the cursor', () => {
+    const a = node('a', 100, 100, 200, 150)
+    const b = node('b', 700, 500, 200, 150, 1)
+    const nodes = toMap(a, b)
+    const aR: R = { origin: a.origin, size: a.size }
+    const bR: R = { origin: b.origin, size: b.size }
+
+    // Focused on A (no cursor) → the best spot sits beside A, not B.
+    const focused = recommendPlacements(nodes, 'a', 'terminal', VIEWPORT, null)
+    expect(rectGap(rectOf(focused[0]), aR)).toBeLessThan(rectGap(rectOf(focused[0]), bR))
+
+    // Nothing focused, cursor by B → the best spot follows the cursor to B, not A.
+    const free = recommendPlacements(nodes, null, 'terminal', VIEWPORT, { x: 660, y: 460 })
+    expect(rectGap(rectOf(free[0]), bR)).toBeLessThan(rectGap(rectOf(free[0]), aR))
+  })
 })
 
 describe('canvasStore.nudgeToFree', () => {
