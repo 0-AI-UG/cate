@@ -162,24 +162,26 @@ function splitFree(f: Rect, obs: Rect): Rect[] {
   return out
 }
 
-/** Decompose `area` minus `obstacles` into the maximal empty rectangles at least
- *  `minW`×`minH` in size. Obstacles should already be inflated by the gap so every
- *  rect keeps its clearance. Subsumed rects are pruned; the set is capped for speed. */
-function freeRectangles(area: Rect, obstacles: Rect[], minW: number, minH: number): Rect[] {
-  const big = (r: Rect) => r.size.width >= minW && r.size.height >= minH
-  let free: Rect[] = [area]
-  for (const obs of obstacles) {
-    const split: Rect[] = []
-    for (const f of free) split.push(...(rectsOverlap(f, obs) ? splitFree(f, obs) : [f]))
-    free = []
-    for (const r of split) {
-      if (!big(r)) continue
-      if (free.some((o) => rectContains(o, r))) continue
-      for (let i = free.length - 1; i >= 0; i--) if (rectContains(r, free[i])) free.splice(i, 1)
-      free.push(r)
-      if (free.length >= 80) break
-    }
+/** Drop too-small (< PLACEMENT_MIN) and subsumed rects from a free-rect list, and
+ *  cap the count for speed. */
+function pruneFreeRects(rects: Rect[]): Rect[] {
+  const out: Rect[] = []
+  for (const r of rects) {
+    if (r.size.width < PLACEMENT_MIN_W || r.size.height < PLACEMENT_MIN_H) continue
+    if (out.some((o) => rectContains(o, r))) continue
+    for (let i = out.length - 1; i >= 0; i--) if (rectContains(r, out[i])) out.splice(i, 1)
+    out.push(r)
+    if (out.length >= 80) break
   }
+  return out
+}
+
+/** Decompose `area` minus `obstacles` into its maximal empty rectangles (each at
+ *  least PLACEMENT_MIN in size). Obstacles should already be inflated by the gap so
+ *  every emitted rect keeps its clearance. */
+function freeRectangles(area: Rect, obstacles: Rect[]): Rect[] {
+  let free: Rect[] = [area]
+  for (const obs of obstacles) free = pruneFreeRects(free.flatMap((f) => splitFree(f, obs)))
   return free
 }
 
@@ -330,12 +332,7 @@ export function recommendPlacements(
   // spot is ever left unused — which is what avoids the odd gaps in irregular
   // layouts — and large areas get tiled while tight gaps get a shrunk ghost.
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
-  let free = freeRectangles(
-    area,
-    nodeRects.map((r) => inflateRect(r, gap)),
-    PLACEMENT_MIN_W,
-    PLACEMENT_MIN_H,
-  )
+  let free = freeRectangles(area, nodeRects.map((r) => inflateRect(r, gap)))
 
   const raw: Raw[] = []
   for (let n = 0; n < max && free.length > 0; n++) {
@@ -363,23 +360,10 @@ export function recommendPlacements(
     if (!best) break
     raw.push({ point: best.point, size: best.size })
     const placed = inflateRect({ origin: best.point, size: best.size }, gap)
-    free = freeRectanglesPrune(free.flatMap((f) => splitFree(f, placed)))
+    free = pruneFreeRects(free.flatMap((f) => splitFree(f, placed)))
   }
 
   return finalize(raw, rankAt)
-}
-
-/** Drop too-small and subsumed rects from a freshly-split free list. */
-function freeRectanglesPrune(rects: Rect[]): Rect[] {
-  const out: Rect[] = []
-  for (const r of rects) {
-    if (r.size.width < PLACEMENT_MIN_W || r.size.height < PLACEMENT_MIN_H) continue
-    if (out.some((o) => rectContains(o, r))) continue
-    for (let i = out.length - 1; i >= 0; i--) if (rectContains(r, out[i])) out.splice(i, 1)
-    out.push(r)
-    if (out.length >= 80) break
-  }
-  return out
 }
 
 /**
