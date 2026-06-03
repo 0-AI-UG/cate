@@ -25,9 +25,6 @@ function injectStyles() {
   style.textContent = `
     @keyframes ghostIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
     @keyframes ghostHintIn { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
-    /* During placement, the in-canvas chrome (toolbar, minimap) is inert. */
-    body.cate-placement-active [data-canvas-chrome],
-    body.cate-placement-active [data-canvas-chrome] * { pointer-events: none !important; }
   `
   document.head.appendChild(style)
 }
@@ -40,13 +37,6 @@ const GhostPlacementLayer: React.FC = () => {
   const count = pending?.candidates.length ?? 0
 
   useEffect(injectStyles, [])
-
-  // Mark the app while a placement is pending so in-canvas chrome goes inert.
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-    document.body.classList.toggle('cate-placement-active', !!pending)
-    return () => document.body.classList.remove('cate-placement-active')
-  }, [pending])
 
   // Keyboard: digits / Enter commit, F arms free placement, Esc cancels.
   useEffect(() => {
@@ -106,7 +96,6 @@ const GhostPlacementLayer: React.FC = () => {
   }
   const onSurfaceClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
-    if (!armed) { api.getState().cancelPlacement(); return }
     const pt = toCanvas(e.clientX, e.clientY, e.currentTarget)
     if (pt) api.getState().commitFreePlacement(pt)
   }
@@ -117,19 +106,20 @@ const GhostPlacementLayer: React.FC = () => {
 
   return (
     <>
-      {/* Transparent placement surface (canvas stays bright). */}
-      <div
-        data-placement-surface
-        onMouseMove={onSurfaceMove}
-        onClick={onSurfaceClick}
-        style={{
-          position: 'absolute',
-          left: -100000, top: -100000, width: 200000, height: 200000,
-          zIndex: 40000,
-          cursor: armed ? 'crosshair' : 'default',
-          pointerEvents: 'auto',
-        }}
-      />
+      {/* Free "place anywhere" surface — only while armed (press F); otherwise
+          the app stays fully interactive and the ghosts are picked directly. */}
+      {armed && (
+        <div
+          data-placement-surface
+          onMouseMove={onSurfaceMove}
+          onClick={onSurfaceClick}
+          style={{
+            position: 'absolute',
+            left: -100000, top: -100000, width: 200000, height: 200000,
+            zIndex: 40000, cursor: 'crosshair', pointerEvents: 'auto',
+          }}
+        />
+      )}
 
       {/* Free-placement preview ghost (only while armed). */}
       {free && (

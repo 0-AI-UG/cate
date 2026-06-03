@@ -106,10 +106,9 @@ const RegionsLayer: React.FC = React.memo(() => {
   )
 })
 
-// Screen-space chrome for the placement picker: a full-window dim with a bright
-// cutout over this canvas (+ its tab bar) so the surrounding UI recedes, plus a
-// canvas-centred hint pill. Rendered via a body portal so it floats above all
-// app chrome; positioned from the canvas container's on-screen rect.
+// A small instruction pill for the placement picker, centred over the visible
+// canvas (the strip between the absolute-overlay sidebars). Body-portalled so it
+// floats above app chrome. No dimming/blocking — the app stays interactive.
 const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <kbd style={{
     display: 'inline-block', minWidth: 18, padding: '1px 5px', margin: '0 1px',
@@ -120,68 +119,25 @@ const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   }}>{children}</kbd>
 )
 
-const PlacementOverlay: React.FC<{ canvasRef: React.RefObject<HTMLDivElement>; panelId?: string }> = ({ canvasRef, panelId }) => {
+const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = ({ canvasRef }) => {
   const pending = useCanvasStoreContext((s) => s.pendingPlacement)
   const api = useCanvasStoreApi()
   if (!pending) return null
   const r = canvasRef.current?.getBoundingClientRect()
   if (!r) return null
-  const W = window.innerWidth
-  const H = window.innerHeight
-  // The canvas spans full-width behind the absolute-overlay sidebars, so the
-  // VISIBLE canvas is the strip between them.
   const sb = (side: 'left' | 'right') =>
     (document.querySelector(`[data-app-sidebar="${side}"]`) as HTMLElement | null)?.getBoundingClientRect()
   const left = sb('left'); const right = sb('right')
   const visLeft = left && left.width > 0 ? left.right : r.left
   const visRight = right && right.width > 0 ? right.left : r.right
-  const visWidth = Math.max(0, visRight - visLeft)
-  const top = r.top    // canvas content top (header sits above this)
-  const bottom = r.bottom
-  // The active canvas's tab stays bright; the rest of the header dims.
-  const tab = panelId
-    ? (document.querySelector(`[data-tab-panel-id="${panelId}"]`) as HTMLElement | null)?.getBoundingClientRect()
-    : undefined
   const count = pending.candidates.length
   const armed = pending.freeArmed
-  const cancel = () => api.getState().cancelPlacement()
-
-  // Dim + block everything except the canvas content and its tab. Each rect is
-  // interactive (swallows clicks; clicking the backdrop cancels), so the app
-  // chrome is inert during placement.
-  const header = tab && tab.top < top
-    ? [
-        { x: 0, y: 0, w: tab.left, h: top },
-        { x: tab.right, y: 0, w: W - tab.right, h: top },
-        { x: tab.left, y: 0, w: tab.width, h: tab.top },
-        { x: tab.left, y: tab.bottom, w: tab.width, h: top - tab.bottom },
-      ]
-    : [{ x: 0, y: 0, w: W, h: top }]
-  const dims = [
-    ...header,
-    { x: 0, y: top, w: visLeft, h: bottom - top },          // left of canvas (sidebar)
-    { x: visRight, y: top, w: W - visRight, h: bottom - top }, // right of canvas
-    { x: 0, y: bottom, w: W, h: H - bottom },                // below canvas
-  ].filter((d) => d.w > 0 && d.h > 0)
 
   return createPortal(
     <>
-      {dims.map((d, i) => (
-        <div key={i} onClick={cancel} style={{
-          position: 'fixed', left: d.x, top: d.y, width: d.w, height: d.h,
-          background: 'rgba(6, 9, 15, 0.62)', pointerEvents: 'auto', zIndex: 2147482000,
-        }} />
-      ))}
-      {/* Transparent blocker over the (bright) canvas tab so it's inert too. */}
-      {tab && (
-        <div onClick={cancel} style={{
-          position: 'fixed', left: tab.left, top: tab.top, width: tab.width, height: tab.height,
-          pointerEvents: 'auto', zIndex: 2147482000,
-        }} />
-      )}
       {/* Hint pill centred on the visible canvas (matching the bottom toolbar). */}
       <div style={{
-        position: 'fixed', left: visLeft + visWidth / 2, top: top + 16, transform: 'translateX(-50%)',
+        position: 'fixed', left: (visLeft + visRight) / 2, top: r.top + 16, transform: 'translateX(-50%)',
         zIndex: 2147483000, display: 'flex', alignItems: 'center', gap: 14,
         padding: '9px 9px 9px 16px', borderRadius: 999,
         background: 'rgba(20, 24, 32, 0.95)', border: '1px solid rgba(255,255,255,0.08)',
@@ -622,7 +578,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         <GhostPlacementLayer />
       </div>
 
-      <PlacementOverlay canvasRef={canvasRef} panelId={panelId} />
+      <PlacementHint canvasRef={canvasRef} />
     </div>
   )
 }

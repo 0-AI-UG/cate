@@ -310,7 +310,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   return (
     <>
     <div
-      data-canvas-chrome
       className="absolute bottom-4 z-50 flex justify-center pointer-events-none"
       style={{
         left: 'var(--cate-left-sidebar-width, 0px)',
@@ -418,7 +417,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         the docked corner so open and close feel like the same gesture. Drag the
         button to re-dock the pill to a different corner. */}
     <div
-      data-canvas-chrome
       className="absolute z-50 flex gap-2"
       style={{
         ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
