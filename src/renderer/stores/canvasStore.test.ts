@@ -494,6 +494,24 @@ describe('canvasStore.recommendPlacements', () => {
     expect(rectsOverlap(rectOf(beside!), { origin: a.origin, size: a.size })).toBe(false)
   })
 
+  it('NO GIANT GAPS: focused recommendations stay clustered near the node', () => {
+    // Box the focused node tightly on three sides, leaving far-open space. Recs
+    // must hug the node, not scatter into the distance to fill the count.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2600, height: 2200 } }
+    const foc = node('foc', 1000, 1000, 640, 400, 9)
+    const nodes = toMap(
+      foc,
+      node('up', 1000, 560, 640, 400, 1),
+      node('down', 1000, 1440, 640, 400, 2),
+      node('left', 320, 1000, 640, 400, 3),
+    )
+    const cands = recommendPlacements(nodes, 'foc', 'terminal', VP, null)
+    const focR: R = { origin: foc.origin, size: foc.size }
+    const pitch = 640 + 40
+    expect(cands.length).toBeGreaterThanOrEqual(1)
+    cands.forEach((c) => expect(rectGap(rectOf(c), focR)).toBeLessThanOrEqual(pitch))
+  })
+
   it('OCCLUSION: a spot is not shown when a nearer one sits between it and the node', () => {
     // A long open strip to the right of the node would otherwise yield several
     // spots stacked in the same row; only the nearest should survive.

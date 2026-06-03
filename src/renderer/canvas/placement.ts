@@ -131,20 +131,6 @@ const PLACEMENT_MAX_AR = 2.6
  *  free space just beyond a surrounding ring of windows. */
 const PLACEMENT_FOCUS_MARGIN = 1
 
-/** The canonical "slot" the recommendation grid is laid out on — the largest panel
- *  default, so the *positions* of spots are identical whatever panel type is being
- *  placed (only each ghost's size tracks its own type). Sized so a type-sized ghost
- *  always fits its slot, keeping the spot count stable across types. */
-const PLACEMENT_SLOT: Size = (() => {
-  let width = 0
-  let height = 0
-  for (const s of Object.values(PANEL_DEFAULT_SIZES)) {
-    width = Math.max(width, s.width)
-    height = Math.max(height, s.height)
-  }
-  return { width, height }
-})()
-
 // --- Geometry helpers --------------------------------------------------------
 
 /** Grow a rect by `m` on every side. */
@@ -158,6 +144,13 @@ function inflateRect(r: Rect, m: number): Rect {
 /** True when point `p` lies inside rect `r`. */
 function rectContainsPoint(r: Rect, p: Point): boolean {
   return p.x >= r.origin.x && p.x <= r.origin.x + r.size.width && p.y >= r.origin.y && p.y <= r.origin.y + r.size.height
+}
+
+/** Edge-to-edge distance between two rects (0 when they overlap or touch). */
+function rectGap(a: Rect, b: Rect): number {
+  const dx = Math.max(0, a.origin.x - (b.origin.x + b.size.width), b.origin.x - (a.origin.x + a.size.width))
+  const dy = Math.max(0, a.origin.y - (b.origin.y + b.size.height), b.origin.y - (a.origin.y + a.size.height))
+  return Math.hypot(dx, dy)
 }
 
 /** True when the segment a→b crosses rect `r` (Liang–Barsky clip). Used to hide a
@@ -237,10 +230,6 @@ export function recommendPlacements(
   const snapPt = (p: Point): Point => ({ x: Math.round(p.x / grid) * grid, y: Math.round(p.y / grid) * grid })
   const gap = PLACEMENT_GAP
   const std = PANEL_DEFAULT_SIZES[panelType]
-  // Spot POSITIONS are laid out on the canonical slot so the grid is the same for
-  // every panel type; only each ghost's SIZE (via fitAt) tracks `std`. (Bigger
-  // panels still fit fewer spots in open areas — that part is unavoidable.)
-  const slot = PLACEMENT_SLOT
 
   const { offset, zoom, containerSize } = viewport
   const hasVp = containerSize.width > 0 && containerSize.height > 0
@@ -321,8 +310,8 @@ export function recommendPlacements(
   // reference being the on-screen node nearest the cursor (wider, island-biased).
   const focused = (focusedNodeId && nodes[focusedNodeId]) || null
   const focusedOnScreen = !!focused && onScreen({ origin: focused.origin, size: focused.size })
-  const pitchX = slot.width + gap
-  const pitchY = slot.height + gap
+  const pitchX = std.width + gap
+  const pitchY = std.height + gap
 
   let ref: CanvasNodeState
   let area: Rect
@@ -402,15 +391,24 @@ export function recommendPlacements(
     ys.add(away(r.origin.y, -1)); ys.add(away(r.origin.y + r.size.height + gap, 1))
   }
 
-  const raw: Raw[] = []
+  let raw: Raw[] = []
   for (const x of xs) {
     for (const y of ys) {
       const p = { x, y }
-      if (!rectsOverlap({ origin: p, size: slot }, area)) continue // outside the place area
+      if (!rectsOverlap({ origin: p, size: std }, area)) continue // outside the place area
       if (occupied(p)) continue
       const size = fitAt(p)
       if (size) raw.push({ point: p, size })
     }
+  }
+
+  // When focused, keep only spots within ~one panel-pitch of the node so recs stay
+  // clustered around it instead of scattering into far open space when it's boxed
+  // in. Fall back to the unfiltered set if nothing close survives.
+  if (focusedOnScreen) {
+    const limit = Math.max(pitchX, pitchY)
+    const near = raw.filter((r) => rectGap({ origin: r.point, size: r.size }, { origin: ref.origin, size: ref.size }) <= limit)
+    if (near.length > 0) raw = near
   }
 
   return finalize(raw, rankAt)
