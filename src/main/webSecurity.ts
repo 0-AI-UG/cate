@@ -32,7 +32,7 @@ function isOAuthUrl(url: string): boolean {
 
 const configuredGuestSessions = new Set<string>()
 
-export function isTrustedAppUrl(url: string): boolean {
+function isTrustedAppUrl(url: string): boolean {
   if (url.startsWith('file://')) return true
   if (!process.env.ELECTRON_RENDERER_URL) return false
   try {
@@ -42,7 +42,7 @@ export function isTrustedAppUrl(url: string): boolean {
   }
 }
 
-export function isAllowedGuestUrl(url: string): boolean {
+function isAllowedGuestUrl(url: string): boolean {
   if (url === 'about:blank') return true
   try {
     const parsed = new URL(url)

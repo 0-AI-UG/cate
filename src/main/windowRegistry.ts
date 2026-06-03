@@ -51,13 +51,6 @@ export function setPanelWindowMeta(windowId: number, panel: PanelState, workspac
 }
 
 /**
- * Get panel metadata for a panel window.
- */
-export function getPanelWindowMeta(windowId: number): { panel: PanelState; workspaceId?: string; terminalPtyId?: string } | undefined {
-  return panelWindowMeta.get(windowId)
-}
-
-/**
  * Update the terminal ptyId for a panel window. The renderer reports this
  * shortly after the terminal panel is mounted so that session persistence can
  * later replay its scrollback log.
@@ -82,17 +75,6 @@ export function getWindow(id: number): BrowserWindow | undefined {
   const win = windows.get(id)
   if (win && !win.isDestroyed()) return win
   return undefined
-}
-
-/**
- * Get all active (non-destroyed) windows.
- */
-export function getAllWindows(): BrowserWindow[] {
-  const result: BrowserWindow[] = []
-  for (const win of windows.values()) {
-    if (!win.isDestroyed()) result.push(win)
-  }
-  return result
 }
 
 /** Un-minimize (if needed) and bring a single window to the foreground.
@@ -182,13 +164,6 @@ export function setDockWindowState(
   state: { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> },
 ): void {
   dockWindowState.set(windowId, state)
-}
-
-/**
- * Get dock window state.
- */
-export function getDockWindowState(windowId: number): { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> } | undefined {
-  return dockWindowState.get(windowId)
 }
 
 /**

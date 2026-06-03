@@ -1509,14 +1509,6 @@ export function useWorkspacePanels(): Record<string, PanelState> | undefined {
   )
 }
 
-/** Returns the rootPath for a workspace (defaults to selected). */
-export function useWorkspaceRootPath(wsId?: string): string | undefined {
-  return useAppStore((s) => {
-    const id = wsId ?? s.selectedWorkspaceId
-    return s.workspaces.find((w) => w.id === id)?.rootPath
-  })
-}
-
 /** Returns workspaces array, re-rendering on add/remove/reorder and metadata changes (name, color, rootPath). */
 export function useWorkspaceList(): WorkspaceState[] {
   return useStoreWithEqualityFn(

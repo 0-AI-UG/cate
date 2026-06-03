@@ -10,7 +10,7 @@ import type { CanvasStore } from './canvasStore'
 import { useCanvasStore as defaultCanvasStore } from './canvasStore'
 export { shallow } from 'zustand/shallow'
 
-export const CanvasStoreContext = createContext<StoreApi<CanvasStore>>(defaultCanvasStore)
+const CanvasStoreContext = createContext<StoreApi<CanvasStore>>(defaultCanvasStore)
 
 export function CanvasStoreProvider({ store, children }: {
   store: StoreApi<CanvasStore>

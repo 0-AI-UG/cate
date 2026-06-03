@@ -99,13 +99,3 @@ export function createTransferSnapshot(
   return snapshot
 }
 
-/**
- * After a transfer snapshot is received and the panel is created in the target
- * window, call this to finalize the transfer (ACK terminal buffering, etc.).
- */
-export async function acknowledgeTransfer(snapshot: PanelTransferSnapshot): Promise<void> {
-  if (snapshot.terminalPtyId) {
-    await window.electronAPI.panelTransferAck(snapshot.terminalPtyId)
-  }
-}
-

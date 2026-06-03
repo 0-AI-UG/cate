@@ -15,7 +15,3 @@ export function disableWebviewHardening(): boolean {
 export function disableRendererSandbox(): boolean {
   return devOnlyFlagEnabled('CATE_DISABLE_RENDERER_SANDBOX')
 }
-
-export function disableVerifiedUpdater(): boolean {
-  return devOnlyFlagEnabled('CATE_DISABLE_VERIFIED_UPDATER')
-}

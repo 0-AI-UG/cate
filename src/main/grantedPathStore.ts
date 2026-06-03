@@ -63,11 +63,3 @@ export async function recordPersistentGrant(filePath: string): Promise<void> {
 export async function listPersistentGrants(): Promise<string[]> {
   return Array.from(await load())
 }
-
-/** Drop a persisted entry — used to prune paths that no longer exist on disk.
- *  Flushed synchronously for the same reason as {@link recordPersistentGrant}. */
-export async function removePersistentGrant(filePath: string): Promise<void> {
-  const set = await load()
-  if (!set.delete(filePath)) return
-  await flush()
-}

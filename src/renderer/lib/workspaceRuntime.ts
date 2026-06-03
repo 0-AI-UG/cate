@@ -9,7 +9,7 @@ import type { CompanionPhase, WorkspaceState } from '../../shared/types'
 // =============================================================================
 
 /** Mirrors CompanionPhase, plus `local` for workspaces with no companion. */
-export type WorkspaceRuntimeStatus = 'local' | CompanionPhase
+type WorkspaceRuntimeStatus = 'local' | CompanionPhase
 
 export interface WorkspaceRuntime {
   status: WorkspaceRuntimeStatus
