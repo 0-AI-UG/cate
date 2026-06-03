@@ -157,60 +157,6 @@ function clampPlacementSize(w: number, h: number, grid: number): Size {
 }
 
 /**
- * Maximal empty rectangles inside `region` that no node covers (coordinate
- * compression over node edges → free-cell grid → maximal free rectangles). This
- * finds the actual holes in a layout — including the irregular ones a staggered
- * arrangement produces, not just gaps between two aligned nodes.
- */
-function findEmptyRects(region: Rect, nodeRects: Rect[]): Rect[] {
-  const rx0 = region.origin.x, ry0 = region.origin.y
-  const rx1 = rx0 + region.size.width, ry1 = ry0 + region.size.height
-  const xs = new Set<number>([rx0, rx1])
-  const ys = new Set<number>([ry0, ry1])
-  for (const n of nodeRects) {
-    for (const x of [n.origin.x, n.origin.x + n.size.width]) if (x > rx0 && x < rx1) xs.add(x)
-    for (const y of [n.origin.y, n.origin.y + n.size.height]) if (y > ry0 && y < ry1) ys.add(y)
-  }
-  const X = [...xs].sort((a, b) => a - b)
-  const Y = [...ys].sort((a, b) => a - b)
-  const cols = X.length - 1, rows = Y.length - 1
-  if (cols <= 0 || rows <= 0) return []
-  const occ: boolean[][] = []
-  for (let r = 0; r < rows; r++) {
-    occ[r] = []
-    const cy = (Y[r] + Y[r + 1]) / 2
-    for (let c = 0; c < cols; c++) {
-      const cx = (X[c] + X[c + 1]) / 2
-      occ[r][c] = nodeRects.some((n) =>
-        cx > n.origin.x && cx < n.origin.x + n.size.width && cy > n.origin.y && cy < n.origin.y + n.size.height)
-    }
-  }
-  const rects: Rect[] = []
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (occ[r][c]) continue
-      let limit = c
-      while (limit + 1 < cols && !occ[r][limit + 1]) limit++
-      for (let r2 = r; r2 < rows; r2++) {
-        if (occ[r2][c]) break
-        let rl = c
-        while (rl + 1 <= limit && !occ[r2][rl + 1]) rl++
-        limit = rl
-        rects.push({ origin: { x: X[c], y: Y[r] }, size: { width: X[limit + 1] - X[c], height: Y[r2 + 1] - Y[r] } })
-      }
-    }
-  }
-  const area = (a: Rect) => a.size.width * a.size.height
-  const contains = (b: Rect, a: Rect) =>
-    b.origin.x <= a.origin.x && b.origin.y <= a.origin.y &&
-    b.origin.x + b.size.width >= a.origin.x + a.size.width &&
-    b.origin.y + b.size.height >= a.origin.y + a.size.height
-  // Keep only the maximal rectangles (drop ones contained in a bigger sibling).
-  return rects.filter((a, i) => !rects.some((b, j) =>
-    i !== j && contains(b, a) && (area(b) > area(a) || (area(b) === area(a) && j < i))))
-}
-
-/**
  * Recommend where a new node should go, for the interactive "ghost" picker.
  *
  * Minimal model: find the ACTIVE node (the focused one if on screen, else the
@@ -315,20 +261,54 @@ export function recommendPlacements(
 
   const aRect: Rect = { origin: active.origin, size: active.size }
   const aCenter: Point = { x: aRect.origin.x + aRect.size.width / 2, y: aRect.origin.y + aRect.size.height / 2 }
-  const reach = Math.max(std.width, std.height) * 2
-  const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
-  // One panel per empty rectangle around the active node, sized to the hole
-  // (standard where it fits, shrunk otherwise) and hugged against the node.
+  // A lattice anchored on the active node's edges: each cell is one panel + gap
+  // away, aligned to the node, so spots extend its grid. The first cell in each
+  // direction hugs the node's edge; further cells step by one panel pitch.
+  const cellX = (i: number): number =>
+    i === 0 ? aRect.origin.x
+      : i > 0 ? aRect.origin.x + aRect.size.width + gap + (i - 1) * (std.width + gap)
+        : aRect.origin.x - (std.width + gap) - (-i - 1) * (std.width + gap)
+  const cellY = (j: number): number =>
+    j === 0 ? aRect.origin.y
+      : j > 0 ? aRect.origin.y + aRect.size.height + gap + (j - 1) * (std.height + gap)
+        : aRect.origin.y - (std.height + gap) - (-j - 1) * (std.height + gap)
+
+  // Largest panel (≤ standard, ≥ min) that fits at top-left `p`, bounded by the
+  // nearest node to the right/below — so a cell crowded by a neighbour shrinks.
+  const occupied = (p: Point): boolean =>
+    nodeRects.some((r) => rectsOverlap({ origin: p, size: { width: PLACEMENT_MIN_W, height: PLACEMENT_MIN_H } }, r))
+  const fitAt = (p: Point): Size | null => {
+    let right = p.x + std.width
+    let bottom = p.y + std.height
+    for (const r of nodeRects) {
+      const rL = r.origin.x, rR = rL + r.size.width, rT = r.origin.y, rB = rT + r.size.height
+      if (rL >= p.x + 1 && rT < p.y + std.height && rB > p.y) right = Math.min(right, rL - gap)
+      if (rT >= p.y + 1 && rL < p.x + std.width && rR > p.x) bottom = Math.min(bottom, rT - gap)
+    }
+    if (right - p.x < PLACEMENT_MIN_W || bottom - p.y < PLACEMENT_MIN_H) return null
+    return clampPlacementSize(right - p.x, bottom - p.y, grid)
+  }
+
+  // Breadth-first outward from the node (nearest cells first), expanding only
+  // through free cells so the group stays connected and hugs the node.
+  const visited = new Set<string>(['0,0'])
+  const queue: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]]
   const raw: Raw[] = []
-  for (const er of findEmptyRects(inflateRect(aRect, reach), nodeRects)) {
-    const availW = er.size.width - 2 * gap
-    const availH = er.size.height - 2 * gap
-    if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) continue
-    const size = clampPlacementSize(Math.min(availW, std.width), Math.min(availH, std.height), grid)
-    const x = clampN(aRect.origin.x, er.origin.x + gap, er.origin.x + er.size.width - gap - size.width)
-    const y = clampN(aRect.origin.y, er.origin.y + gap, er.origin.y + er.size.height - gap - size.height)
-    raw.push({ point: { x, y }, size })
+  while (queue.length > 0 && raw.length < max * 3) {
+    queue.sort((a, b) =>
+      (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) ||
+      (a[0] * a[0] + a[1] * a[1]) - (b[0] * b[0] + b[1] * b[1]))
+    const [i, j] = queue.shift()!
+    const key = `${i},${j}`
+    if (visited.has(key)) continue
+    visited.add(key)
+    const p = snapPt({ x: cellX(i), y: cellY(j) })
+    if (occupied(p)) continue // a node sits here — don't place or expand through
+    const size = fitAt(p)
+    if (!size) continue
+    raw.push({ point: p, size })
+    queue.push([i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1])
   }
 
   return finalize(raw, anchor ?? aCenter)
