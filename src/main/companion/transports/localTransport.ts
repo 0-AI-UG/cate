@@ -1,22 +1,51 @@
 // =============================================================================
 // LocalSubprocessTransport — runs the companion daemon as a child process on
-// THIS machine. Mainly a building block / parity test of the protocol against a
-// real OS pipe (the local workspace itself uses the in-process LocalCompanion,
-// not this). In the packaged app, `nodePath` is Electron-as-node
-// (process.execPath with ELECTRON_RUN_AS_NODE=1) and `bundlePath` is the
-// shipped companion.cjs.
+// THIS machine, over real OS stdio pipes. Two modes:
+//
+//   - Direct (nodePath + bundlePath given): launch an explicit node + bundle, no
+//     provisioning. Used by tests and as a building block.
+//   - Provisioned (tarballPath + installDir given, or via `forLocalHost`): extract
+//     the SAME per-target companion tarball remote hosts use into a local install
+//     dir and run its bundled `runtime/bin/node` + companion.cjs — so the local
+//     workspace is just another companion host, ABI-matched to its own node-pty.
 // =============================================================================
 
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn, execFile, type ChildProcess } from 'child_process'
+import { existsSync, readFileSync } from 'fs'
+import { mkdir, rm, writeFile } from 'fs/promises'
+import { promisify } from 'util'
+import os from 'os'
+import path from 'path'
 import type { CompanionChannel, CompanionTransport } from './transport'
+import { COMPANION_VERSION } from '../../../companion/version'
+import { hostCompanionTarget, localTarballIfPresent, type CompanionTarget } from '../companionArtifacts'
+
+const execFileP = promisify(execFile)
 
 export interface LocalSubprocessOptions {
-  nodePath: string
-  bundlePath: string
   root: string
   id: string
   exclusions?: string[]
   env?: NodeJS.ProcessEnv
+  /** Direct mode: explicit node + bundle, no provisioning (tests). */
+  nodePath?: string
+  bundlePath?: string
+  /** Provisioned mode: extract this tarball into installDir, then run its node. */
+  tarballPath?: string
+  installDir?: string
+}
+
+/** node binary inside an extracted tarball, per platform layout. */
+function tarballNode(installDir: string): string {
+  return process.platform === 'win32'
+    ? path.join(installDir, 'runtime', 'node.exe')
+    : path.join(installDir, 'runtime', 'bin', 'node')
+}
+
+/** Where the local host's companion tarball is extracted, keyed by version +
+ *  target (mirrors the remote `~/.cate/companion/<ver>/<target>` layout). */
+export function localInstallDir(target: CompanionTarget): string {
+  return path.join(os.homedir(), '.cate', 'companion', COMPANION_VERSION, target)
 }
 
 export class LocalSubprocessTransport implements CompanionTransport {
@@ -25,15 +54,58 @@ export class LocalSubprocessTransport implements CompanionTransport {
 
   constructor(private readonly opts: LocalSubprocessOptions) {}
 
-  async bootstrap(): Promise<void> {
-    // The bundle is shipped with the app; nothing to install for local.
+  /** Build a provisioned local transport from the host-target tarball (dev build
+   *  or cache). Returns null on an unsupported platform or when no tarball is
+   *  available — callers fall back to the in-process companion. */
+  static forLocalHost(opts: {
+    root: string
+    id?: string
+    exclusions?: string[]
+    env?: NodeJS.ProcessEnv
+  }): LocalSubprocessTransport | null {
+    const target = hostCompanionTarget()
+    if (!target) return null
+    const tarballPath = localTarballIfPresent(COMPANION_VERSION, target)
+    if (!tarballPath) return null
+    return new LocalSubprocessTransport({
+      ...opts,
+      id: opts.id ?? 'local',
+      tarballPath,
+      installDir: localInstallDir(target),
+    })
+  }
+
+  /** Provisioned mode only: true when the install dir holds this version. */
+  async isInstalled(version: string): Promise<boolean> {
+    const { installDir, tarballPath } = this.opts
+    if (!installDir || !tarballPath) return true // direct mode: nothing to install
+    const ok = path.join(installDir, '.ok')
+    return (
+      existsSync(tarballNode(installDir)) &&
+      existsSync(path.join(installDir, 'companion.cjs')) &&
+      existsSync(ok) &&
+      readFileSync(ok, 'utf-8').trim() === version
+    )
+  }
+
+  /** Provisioned mode only: extract the tarball into the install dir. */
+  async bootstrap(version: string, force?: boolean): Promise<void> {
+    const { installDir, tarballPath } = this.opts
+    if (!installDir || !tarballPath) return // direct mode: bundle ships with the app
+    if (!force && (await this.isInstalled(version))) return
+    await rm(installDir, { recursive: true, force: true })
+    await mkdir(installDir, { recursive: true })
+    await execFileP('tar', ['-xzf', tarballPath, '-C', installDir])
+    await writeFile(path.join(installDir, '.ok'), version)
   }
 
   async launch(): Promise<CompanionChannel> {
-    const args = [this.opts.bundlePath, '--root', this.opts.root, '--id', this.opts.id]
+    const nodePath = this.opts.nodePath ?? tarballNode(this.opts.installDir!)
+    const bundlePath = this.opts.bundlePath ?? path.join(this.opts.installDir!, 'companion.cjs')
+    const args = [bundlePath, '--root', this.opts.root, '--id', this.opts.id]
     if (this.opts.exclusions?.length) args.push('--exclude', this.opts.exclusions.join(','))
 
-    const child = spawn(this.opts.nodePath, args, {
+    const child = spawn(nodePath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: this.opts.env ?? process.env,
     })

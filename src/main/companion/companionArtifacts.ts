@@ -36,6 +36,14 @@ export function isCompanionTarget(s: string): s is CompanionTarget {
   return (COMPANION_TARGETS as readonly string[]).includes(s)
 }
 
+/** This machine's companion target, or null on an unsupported platform/arch
+ *  (e.g. win32 until that target ships). Used to provision + run the local
+ *  workspace on the same daemon tarball as remote hosts. */
+export function hostCompanionTarget(): CompanionTarget | null {
+  const t = `${process.platform === 'win32' ? 'win32' : process.platform}-${process.arch}`
+  return isCompanionTarget(t) ? t : null
+}
+
 /** `cate-companion-1.1.0-linux-x64.tgz` */
 export function tarballName(version: string, target: CompanionTarget): string {
   return `cate-companion-${version}-${target}.tgz`

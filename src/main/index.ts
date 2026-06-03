@@ -41,7 +41,8 @@ import { addAllowedRoot, clearFileGrantsForWindow, clearScopedWriteAllowancesFor
 import { isLocalLocator } from './companion/locator'
 import { listPersistentGrants, recordPersistentGrant } from './grantedPathStore'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
-import { initShellEnv } from './shellEnv'
+import { initShellEnv, getShellEnv } from './shellEnv'
+import { currentExclusionSet } from './ipc/filesystem'
 import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
 import { initSentry, captureMainException, flushSentry } from './sentry'
 import { initAnalytics, trackAppStart, checkAndReportUpdate } from './analytics'
@@ -1317,6 +1318,16 @@ app.whenReady().then(async () => {
   // This ensures MCP servers, `which` lookups, etc. see the full PATH.
   await initShellEnv()
   log.info('Shell environment resolved')
+
+  // Bring the local companion online. Default: in-process (no-op here). Under
+  // CATE_LOCAL_DAEMON: provision + launch the host-target companion tarball as a
+  // local daemon, the same path remote hosts use. Done after the shell env so the
+  // daemon inherits the full PATH for git/terminals.
+  await companions.ensureLocalCompanion({
+    root: app.getPath('home'),
+    exclusions: [...currentExclusionSet()],
+    env: getShellEnv(),
+  })
 
   if (process.platform === 'darwin') {
     app.setAboutPanelOptions({

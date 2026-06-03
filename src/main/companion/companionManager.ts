@@ -12,6 +12,7 @@ import type { Companion } from './types'
 import { localCompanion } from './LocalCompanion'
 import { CompanionRpcClient } from './rpcClient'
 import { RemoteCompanion } from './RemoteCompanion'
+import { LocalSubprocessTransport } from './transports/localTransport'
 import type { CompanionTransport, CompanionChannel } from './transports/transport'
 import { COMPANION_VERSION } from '../../companion/version'
 import { COMPANION_PROTOCOL_VERSION } from '../../companion/protocol'
@@ -24,6 +25,13 @@ interface Connection {
   companion: RemoteCompanion
 }
 
+/** Opt-in: run the LOCAL workspace on the companion daemon tarball (same path as
+ *  remote) instead of the in-process companion. Off by default while the
+ *  migration lands; flip to default-on once Phases 1-3 ship on all platforms. */
+function localDaemonEnabled(): boolean {
+  return process.env.CATE_LOCAL_DAEMON === '1'
+}
+
 export class CompanionManager {
   private readonly companions = new Map<CompanionId, Companion>()
   private readonly connections = new Map<CompanionId, Connection>()
@@ -32,7 +40,40 @@ export class CompanionManager {
   private statusListener: ((id: CompanionId, state: CompanionPhase, message?: string) => void) | null = null
 
   constructor() {
-    this.companions.set(LOCAL_COMPANION_ID, localCompanion)
+    // Default: the local workspace runs in-process. Behind CATE_LOCAL_DAEMON it
+    // instead runs the same daemon tarball remote hosts use — registered lazily
+    // by `ensureLocalCompanion` (so resolve() works only after it connects).
+    if (!localDaemonEnabled()) this.companions.set(LOCAL_COMPANION_ID, localCompanion)
+  }
+
+  /**
+   * Bring the local companion online. In the default (in-process) mode this is a
+   * no-op — it's already registered. Under CATE_LOCAL_DAEMON it provisions and
+   * launches the host-target companion tarball as a local daemon, exactly like a
+   * remote host. Falls back to the in-process companion if no local tarball/target
+   * is available. Call once at startup before the first local workspace op.
+   */
+  async ensureLocalCompanion(opts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv }): Promise<void> {
+    if (!localDaemonEnabled()) return
+    if (this.companions.has(LOCAL_COMPANION_ID)) return
+    const transport = LocalSubprocessTransport.forLocalHost({
+      root: opts.root,
+      id: LOCAL_COMPANION_ID,
+      exclusions: opts.exclusions,
+      env: opts.env,
+    })
+    if (!transport) {
+      log.warn('[companion] CATE_LOCAL_DAEMON set but no local tarball/target — using in-process companion')
+      this.companions.set(LOCAL_COMPANION_ID, localCompanion)
+      return
+    }
+    try {
+      await this.connect(LOCAL_COMPANION_ID, transport, { install: true })
+      log.info('[companion] local workspace running on the daemon tarball')
+    } catch (err) {
+      log.error('[companion] local daemon failed to start; using in-process companion: %O', err)
+      this.companions.set(LOCAL_COMPANION_ID, localCompanion)
+    }
   }
 
   /** Wire a status sink (the IPC layer broadcasts these to the renderer). */
@@ -86,7 +127,9 @@ export class CompanionManager {
     transport: CompanionTransport,
     opts: { install?: boolean; force?: boolean } = {},
   ): Promise<Companion> {
-    if (id === LOCAL_COMPANION_ID) {
+    // LOCAL connects over a transport only in daemon mode (CATE_LOCAL_DAEMON);
+    // in the default in-process mode it's pre-registered and never reaches here.
+    if (id === LOCAL_COMPANION_ID && !localDaemonEnabled()) {
       throw new Error('The local companion does not connect over a transport')
     }
     const existing = this.companions.get(id)
