@@ -2,17 +2,17 @@
 // Git IPC handlers — thin routers over the resolved companion's VcsHost.
 //
 // The git logic itself lives in ONE place: the electron-free factory
-// `createVcsCapability` (src/companion/capabilities/vcs.ts). The local companion
-// builds its vcs from that factory (see LocalCompanion.ts); the daemon builds
-// the same factory with process.env. The handlers below parse the locator off
-// the cwd-like argument, resolve the target companion, and delegate to
-// `companion.vcs.<op>` — they contain no git logic.
+// `createVcsCapability` (src/companion/capabilities/vcs.ts). Every companion
+// (the local daemon and remote daemons) builds its vcs from that factory. The
+// handlers below parse the locator off the cwd-like argument, resolve the target
+// companion, and delegate to `companion.vcs.<op>` — they contain no git logic.
 // =============================================================================
 
 import { ipcMain } from 'electron'
 import { parseLocator, formatLocator } from '../companion/locator'
 import { companions } from '../companion/companionManager'
-import { localCompanion } from '../companion/LocalCompanion'
+import { createVcsCapability } from '../../companion/capabilities/vcs'
+import { getShellEnv } from '../shellEnv'
 import {
   GIT_IS_REPO,
   GIT_INIT,
@@ -47,13 +47,17 @@ import {
   GIT_DISCARD_FILE,
 } from '../../shared/ipc-channels'
 
+// The single vcs implementation, wired with the resolved login-shell env so
+// git/gh see the full PATH — matching how every companion daemon builds it.
+const localVcs = createVcsCapability({ env: getShellEnv })
+
 /**
  * Create a local branch, optionally from an explicit start point. Thin
  * back-compat wrapper over the single vcs implementation (the logic lives in
  * `createVcsCapability().branchCreate`) — kept exported for the git tests.
  */
 export async function createBranch(cwd: string, branchName: string, startPoint?: string): Promise<void> {
-  return localCompanion.vcs.branchCreate(cwd, branchName, startPoint)
+  return localVcs.branchCreate(cwd, branchName, startPoint)
 }
 
 // =============================================================================

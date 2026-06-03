@@ -26,7 +26,7 @@ import {
   FS_SEARCH,
   FS_READ_BINARY,
 } from '../../shared/ipc-channels'
-import { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions } from '../../shared/types'
+import { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
 import { getSettingSync } from '../store'
 
@@ -110,9 +110,6 @@ import {
   searchFiles as capSearchFiles,
   importEntriesInto as capImportEntriesInto,
 } from '../../companion/capabilities/file'
-import { runRipgrepSearch, type SearchCallbacks, type SearchHandle } from '../../companion/search/engine'
-import { getRgPath } from '../search/ripgrepPath'
-
 export function readDir(dirPath: string): Promise<FileTreeNode[]> {
   return capReadDir(dirPath, currentExclusionSet())
 }
@@ -123,17 +120,6 @@ export function searchFiles(
   opts: FileSearchOptions = {},
 ): Promise<FileSearchResult[]> {
   return capSearchFiles(rootPath, query, currentExclusionSet(), opts)
-}
-
-/** Local content search: the bundled ripgrep (@vscode/ripgrep) + the live
- *  project exclusion set. The companion daemon wires the same engine with its
- *  shipped ripgrep — see capabilities/index.ts. */
-export function searchContent(
-  rootPath: string,
-  opts: SearchOptions,
-  callbacks: SearchCallbacks,
-): SearchHandle {
-  return runRipgrepSearch(getRgPath(), opts, rootPath, [...currentExclusionSet()], callbacks)
 }
 
 export function importEntriesInto(

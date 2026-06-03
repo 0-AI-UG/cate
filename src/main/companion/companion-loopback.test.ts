@@ -8,8 +8,16 @@ import { COMPANION_PROTOCOL_VERSION } from '../../companion/protocol'
 import { COMPANION_VERSION } from '../../companion/version'
 import { CompanionRpcClient } from './rpcClient'
 import { RemoteCompanion } from './RemoteCompanion'
-import { localCompanion } from './LocalCompanion'
+import { buildDaemonCompanion } from '../../companion/capabilities'
+import { rgPath } from '@vscode/ripgrep'
 import type { Companion, FileHost, VcsHost, ProcessHost, AgentHost } from './types'
+
+/** The real daemon capability set over the wire — same FileHost/VcsHost the
+ *  local workspace daemon hosts. rgPath is injected because tests don't run under
+ *  the bundled runtime layout where rg sits beside the daemon's node binary. */
+function daemonApi(): Companion {
+  return buildDaemonCompanion({ id: 'srv_test', rgPath }).companion
+}
 
 const stubProcess = {} as unknown as ProcessHost
 const stubAgent = {} as unknown as AgentHost
@@ -44,7 +52,7 @@ function collectSearch(
   })
 }
 
-describe('companion loopback (real LocalCompanion over the wire)', () => {
+describe('companion loopback (real daemon capabilities over the wire)', () => {
   let rootDir: string
 
   beforeEach(async () => {
@@ -61,20 +69,20 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
   })
 
   test('handshake resolves with the daemon version + protocol', async () => {
-    const { client } = loopback(localCompanion)
+    const { client } = loopback(daemonApi())
     const hello = await client.ready
     expect(hello.companionVersion).toBe(COMPANION_VERSION)
     expect(hello.protocolVersion).toBe(COMPANION_PROTOCOL_VERSION)
   })
 
   test('ping round-trips', async () => {
-    const { client } = loopback(localCompanion)
+    const { client } = loopback(daemonApi())
     await client.ready
     expect(await client.call('ping')).toBe('pong')
   })
 
   test('file.readDir over the wire matches the local function', async () => {
-    const { remote } = loopback(localCompanion)
+    const { remote } = loopback(daemonApi())
     const safe = await remote.validatePathStrict(rootDir)
     const viaRemote = await remote.file.readDir(safe)
     const direct = await readDir(safe)
@@ -83,14 +91,14 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
   })
 
   test('file.readFile + file.stat over the wire', async () => {
-    const { remote } = loopback(localCompanion)
+    const { remote } = loopback(daemonApi())
     const file = await remote.validatePathStrict(path.join(rootDir, 'alpha.ts'))
     expect(await remote.file.readFile(file)).toBe('const needle = 42\n')
     expect(await remote.file.stat(file)).toEqual({ isDirectory: false, isFile: true })
   })
 
   test('file.readBinary survives base64 transit', async () => {
-    const { remote } = loopback(localCompanion)
+    const { remote } = loopback(daemonApi())
     const file = await remote.validatePathStrict(path.join(rootDir, 'pic.bin'))
     const buf = await remote.file.readBinary(file)
     expect(Buffer.isBuffer(buf)).toBe(true)
@@ -98,7 +106,7 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
   })
 
   test('file.search over the wire matches the local function', async () => {
-    const { remote } = loopback(localCompanion)
+    const { remote } = loopback(daemonApi())
     const safe = await remote.validatePathStrict(rootDir)
     const viaRemote = await remote.file.search(safe, 'needle')
     const direct = await searchFiles(safe, 'needle')
@@ -106,7 +114,7 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
   })
 
   test('file.searchContent streams ripgrep results over the wire', async () => {
-    const { remote } = loopback(localCompanion)
+    const { remote } = loopback(daemonApi())
     const safe = await remote.validatePathStrict(rootDir)
     const { files, stats, error } = await collectSearch(remote, safe, { query: 'needle' })
     expect(error).toBeUndefined()
@@ -117,7 +125,7 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
   })
 
   test('vcs.isRepo + vcs.status + vcs.init over the wire', async () => {
-    const { remote } = loopback(localCompanion)
+    const { remote } = loopback(daemonApi())
     expect(await remote.vcs.isRepo(rootDir)).toBe(false)
     await remote.vcs.init(rootDir)
     expect(await remote.vcs.isRepo(rootDir)).toBe(true)
@@ -128,7 +136,7 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
   })
 
   test('write through the wire then read it back', async () => {
-    const { remote } = loopback(localCompanion)
+    const { remote } = loopback(daemonApi())
     const target = path.join(rootDir, 'written.txt')
     const safe = await remote.validatePathForCreation(target)
     await remote.file.writeFile(safe, 'hello from remote\n')
@@ -136,7 +144,7 @@ describe('companion loopback (real LocalCompanion over the wire)', () => {
   })
 
   test('addAllowedRoot / removeAllowedRoot round-trip over the wire', async () => {
-    const { remote } = loopback(localCompanion)
+    const { remote } = loopback(daemonApi())
     const extra = path.resolve(rootDir, 'extra-root')
 
     expect(getAllowedRoots().has(extra)).toBe(false)

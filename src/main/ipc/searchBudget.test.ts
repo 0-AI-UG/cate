@@ -20,8 +20,10 @@ vi.mock('../store', () => ({ getSettingSync: (k: string) => (k === 'fileExclusio
 const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_SEARCH } = await import('../../shared/ipc-channels')
+const { registerTestLocalCompanion } = await import('../companion/testLocalCompanion')
 
 registerHandlers()
+registerTestLocalCompanion()
 const searchHandler = handlers.get(FS_SEARCH)!
 const fakeEvent = { sender: {} } as unknown
 const search = (root: string, q: string, max: number) =>

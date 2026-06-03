@@ -1,15 +1,15 @@
 // =============================================================================
-// CompanionManager — registry + connection lifecycle. The local companion is
-// always present. Remote (server / WSL) companions are established via a
-// CompanionTransport: bootstrap → launch → handshake → version-check → wrap in
-// a RemoteCompanion and register. `resolve` of an unknown id throws, which
-// surfaces as a normal IPC error.
+// CompanionManager — registry + connection lifecycle. The LOCAL workspace runs
+// as the companion daemon subprocess, provisioned + connected at startup by
+// `ensureLocalCompanion` (so resolve() works only once it's online). Remote
+// (server / WSL) companions are established via a CompanionTransport: bootstrap
+// → launch → handshake → version-check → wrap in a RemoteCompanion and register.
+// `resolve` of an unknown id throws, which surfaces as a normal IPC error.
 // =============================================================================
 
 import log from '../logger'
 import { LOCAL_COMPANION_ID, type CompanionId } from './locator'
 import type { Companion } from './types'
-import { localCompanion } from './LocalCompanion'
 import { CompanionRpcClient } from './rpcClient'
 import { RemoteCompanion } from './RemoteCompanion'
 import { LocalSubprocessTransport } from './transports/localTransport'
@@ -25,13 +25,6 @@ interface Connection {
   companion: RemoteCompanion
 }
 
-/** Opt-in: run the LOCAL workspace on the companion daemon tarball (same path as
- *  remote) instead of the in-process companion. Off by default while the
- *  migration lands; flip to default-on once Phases 1-3 ship on all platforms. */
-function localDaemonEnabled(): boolean {
-  return process.env.CATE_LOCAL_DAEMON === '1'
-}
-
 export class CompanionManager {
   private readonly companions = new Map<CompanionId, Companion>()
   private readonly connections = new Map<CompanionId, Connection>()
@@ -40,22 +33,26 @@ export class CompanionManager {
   private statusListener: ((id: CompanionId, state: CompanionPhase, message?: string) => void) | null = null
 
   constructor() {
-    // Default: the local workspace runs in-process. Behind CATE_LOCAL_DAEMON it
-    // instead runs the same daemon tarball remote hosts use — registered lazily
-    // by `ensureLocalCompanion` (so resolve() works only after it connects).
-    if (!localDaemonEnabled()) this.companions.set(LOCAL_COMPANION_ID, localCompanion)
+    // The LOCAL workspace runs as the companion daemon subprocess. It's NOT
+    // registered here — `ensureLocalCompanion` (called once at startup) provisions
+    // and connects it, so resolve() works only once the daemon is online.
   }
 
   /**
-   * Bring the local companion online. In the default (in-process) mode this is a
-   * no-op — it's already registered. Under CATE_LOCAL_DAEMON it provisions and
-   * launches the host-target companion tarball as a local daemon, exactly like a
-   * remote host. Falls back to the in-process companion if no local tarball/target
-   * is available. Call once at startup before the first local workspace op.
+   * Bring the local workspace online: provision + launch the host-target companion
+   * tarball as a local daemon, exactly like a remote host, and register it under
+   * LOCAL_COMPANION_ID. Call once at startup before the first local workspace op.
+   *
+   * This runs at app launch, so it must NEVER throw (that would break the launch).
+   * If no local tarball/target is available, or the connect fails, it logs and
+   * emits an `unreachable` status, leaving LOCAL unregistered — every local op
+   * then fails with a clear "No companion registered" error until it's fixed.
    */
   async ensureLocalCompanion(opts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv; idleSuspend?: boolean }): Promise<void> {
-    if (!localDaemonEnabled()) return
     if (this.companions.has(LOCAL_COMPANION_ID)) return
+    const hint = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV
+      ? ' In dev, build it first: `npm run companion:tarball`.'
+      : ''
     const transport = LocalSubprocessTransport.forLocalHost({
       root: opts.root,
       id: LOCAL_COMPANION_ID,
@@ -64,16 +61,18 @@ export class CompanionManager {
       idleSuspend: opts.idleSuspend,
     })
     if (!transport) {
-      log.warn('[companion] CATE_LOCAL_DAEMON set but no local tarball/target — using in-process companion')
-      this.companions.set(LOCAL_COMPANION_ID, localCompanion)
+      const msg = `No local companion tarball/target available for this platform.${hint}`
+      log.error('[companion] %s', msg)
+      this.emitStatus(LOCAL_COMPANION_ID, 'unreachable', msg)
       return
     }
     try {
       await this.connect(LOCAL_COMPANION_ID, transport, { install: true })
       log.info('[companion] local workspace running on the daemon tarball')
     } catch (err) {
-      log.error('[companion] local daemon failed to start; using in-process companion: %O', err)
-      this.companions.set(LOCAL_COMPANION_ID, localCompanion)
+      const detail = err instanceof Error ? err.message : String(err)
+      log.error('[companion] local daemon failed to start: %s', detail)
+      this.emitStatus(LOCAL_COMPANION_ID, 'unreachable', `Local companion failed to start: ${detail}${hint}`)
     }
   }
 
@@ -114,6 +113,18 @@ export class CompanionManager {
   }
 
   /**
+   * TEST SEAM: register a stand-in LOCAL companion synchronously, without a
+   * transport. In production the LOCAL workspace is provisioned by
+   * `ensureLocalCompanion` (a daemon subprocess over a transport); unit tests
+   * that exercise the fs/git IPC handlers directly use this to register an
+   * in-process companion so `resolve(LOCAL_COMPANION_ID)` works. Not used by the
+   * app at runtime.
+   */
+  registerLocalForTest(companion: Companion): void {
+    this.companions.set(LOCAL_COMPANION_ID, companion)
+  }
+
+  /**
    * Establish (or reuse) a connection to a remote/WSL companion over `transport`.
    * Concurrent calls for the same id share one in-flight connect.
    *
@@ -128,11 +139,6 @@ export class CompanionManager {
     transport: CompanionTransport,
     opts: { install?: boolean; force?: boolean } = {},
   ): Promise<Companion> {
-    // LOCAL connects over a transport only in daemon mode (CATE_LOCAL_DAEMON);
-    // in the default in-process mode it's pre-registered and never reaches here.
-    if (id === LOCAL_COMPANION_ID && !localDaemonEnabled()) {
-      throw new Error('The local companion does not connect over a transport')
-    }
     const existing = this.companions.get(id)
     if (existing) return Promise.resolve(existing)
 

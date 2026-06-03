@@ -35,6 +35,10 @@ export interface DaemonCompanionConfig {
    *  daemons — only the local-workspace daemon sets it, mirroring the in-process
    *  local host's setting). Passed through to the process capability. */
   idleSuspend?: boolean
+  /** Override the ripgrep binary path for content search. Defaults to the rg
+   *  shipped beside the daemon's node runtime (runtime/bin/rg). Tests inject a
+   *  real rg here since they don't run under the bundled runtime layout. */
+  rgPath?: string
 }
 
 /** A built daemon Companion plus the concrete process capability, so the daemon
@@ -54,6 +58,7 @@ function daemonRgPath(): string {
 
 export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompanion {
   const exclusionSet = new Set(config.exclusions ?? [])
+  const rgPath = config.rgPath ?? daemonRgPath()
 
   // The daemon is the AUTHORITATIVE path check: only it can realpath its own
   // filesystem, and RemoteCompanion's client-side validate* are pass-throughs.
@@ -82,7 +87,7 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
     // Uses the sync lexical root check, like watch — it returns a handle, not a
     // promise, and the spawn root must be authoritative-validated here.
     searchContent: (root, opts, cbs) =>
-      runRipgrepSearch(daemonRgPath(), opts, validatePath(root), [...exclusionSet], cbs),
+      runRipgrepSearch(rgPath, opts, validatePath(root), [...exclusionSet], cbs),
     watch: (prefix, onChange) => {
       // watch returns its unsub synchronously; use the cheap lexical check.
       // Map chokidar's events to the real change type so the client can prune

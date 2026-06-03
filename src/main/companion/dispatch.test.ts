@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { companions } from './companionManager'
-import { localCompanion } from './LocalCompanion'
 import { parseLocator, LOCAL_COMPANION_ID } from './locator'
 import type { Companion, FileHost, VcsHost, ProcessHost, AgentHost } from './types'
 
-// Phase 2: prove the decode-and-dispatch layer routes a `cate-companion://` URI
-// to a registered (non-local) companion, while bare local paths still resolve to
-// the built-in LocalCompanion. This is exactly what every IPC handler does:
+// Prove the decode-and-dispatch layer routes a `cate-companion://` URI to a
+// registered (non-local) companion, while bare local paths still parse to the
+// LOCAL companion id. This is exactly what every IPC handler does:
 //   const { companionId, path } = parseLocator(raw)
 //   companions.resolve(companionId).file.readFile(path)
 
@@ -55,10 +54,13 @@ describe('companion dispatch', () => {
     expect(calls).toEqual(['readFile:/home/me/proj/file.ts'])
   })
 
-  test('a bare local path still resolves to the built-in local companion', () => {
+  test('a bare local path parses to the LOCAL companion id', () => {
     const { companionId } = parseLocator('/Users/anton/proj/file.ts')
     expect(companionId).toBe(LOCAL_COMPANION_ID)
-    expect(companions.resolve(companionId)).toBe(localCompanion)
+    // The LOCAL companion is the daemon subprocess, provisioned at startup by
+    // ensureLocalCompanion — it isn't registered in this unit-test context, so
+    // resolve() throws until it's online. (parseLocator routing is what matters here.)
+    expect(() => companions.resolve(companionId)).toThrow(/No companion registered/)
   })
 
   test('the local companion cannot be replaced', () => {

@@ -1,13 +1,18 @@
 import os from 'node:os'
 import { describe, expect, test } from 'vitest'
 import { CompanionManager } from './companionManager'
-import { localCompanion } from './LocalCompanion'
 import { LOCAL_COMPANION_ID } from './locator'
+import { buildDaemonCompanion } from '../../companion/capabilities'
 import { RpcServer, type RpcServerOptions } from '../../companion/rpcServer'
+import type { Companion } from './types'
 import type { CompanionChannel, CompanionTransport } from './transports/transport'
 
+// The real daemon capability set, hosted by the fake transport's in-process
+// RpcServer — same api the local/remote workspace daemons serve.
+const daemonApi: Companion = buildDaemonCompanion({ id: 'srv_test' }).companion
+
 // A transport whose "daemon" is an in-process RpcServer backed by the real
-// LocalCompanion — exercises the full connect/handshake/version lifecycle in
+// daemon capabilities — exercises the full connect/handshake/version lifecycle in
 // CompanionManager without a real host. The server is started only once a data
 // listener attaches, so the hello frame is never dropped.
 class FakeTransport implements CompanionTransport {
@@ -39,7 +44,7 @@ class FakeTransport implements CompanionTransport {
   }
 
   async launch(): Promise<CompanionChannel> {
-    const server = new RpcServer(localCompanion, (line) => this.dataCb?.(line), this.serverOpts)
+    const server = new RpcServer(daemonApi, (line) => this.dataCb?.(line), this.serverOpts)
     this.server = server
     return {
       write: (line) => server.handleChunk(line),
@@ -216,9 +221,18 @@ describe('CompanionManager connection lifecycle', () => {
     expect(mgr.has('wsl_test')).toBe(false)
   })
 
-  test('the local companion is always present and never connects over a transport', () => {
+  test('the local companion is NOT registered until ensureLocalCompanion brings it online', () => {
     const mgr = new CompanionManager()
-    expect(mgr.resolve(LOCAL_COMPANION_ID)).toBe(localCompanion)
-    expect(() => mgr.connect(LOCAL_COMPANION_ID, new FakeTransport())).toThrow(/does not connect/)
+    // The LOCAL workspace runs as the daemon subprocess, provisioned by
+    // ensureLocalCompanion. Until then it's unregistered and resolve() throws.
+    expect(mgr.has(LOCAL_COMPANION_ID)).toBe(false)
+    expect(() => mgr.resolve(LOCAL_COMPANION_ID)).toThrow(/No companion registered/)
+  })
+
+  test('the LOCAL companion connects over a transport like any other (no special guard)', async () => {
+    const mgr = new CompanionManager()
+    const companion = await mgr.connect(LOCAL_COMPANION_ID, new FakeTransport(), { install: true })
+    expect(companion.id).toBe(LOCAL_COMPANION_ID)
+    expect(mgr.resolve(LOCAL_COMPANION_ID)).toBe(companion)
   })
 })

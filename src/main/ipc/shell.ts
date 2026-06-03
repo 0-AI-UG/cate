@@ -19,7 +19,6 @@ import {
   SHELL_CWD_UPDATE,
   SHELL_AGENT_SCREEN_STATE,
 } from '../../shared/ipc-channels'
-import { localProcessHost } from '../companion/localProcessHost'
 import { getCompanionForTerminal } from './terminal'
 import { sendToWindow, windowFromEvent, broadcastToAll } from '../windowRegistry'
 import type { Companion, PtyActivity } from '../companion/types'
@@ -133,11 +132,10 @@ async function runActivityScan(): Promise<void> {
 
     await Promise.all(
       Array.from(groups.entries()).map(async ([companion, ids]) => {
-        // A SIGSTOP-suspended local terminal's process tree is frozen — it can't
-        // change state until resumed (which forces a fresh scan), so scanning it
-        // would just re-derive the same result. Skip those. (Remote terminals are
-        // never suspended; isSuspended is false for ids the local host doesn't own.)
-        const toScan = ids.filter((id) => !localProcessHost.isSuspended(id))
+        // The daemon's scanActivity skips SIGSTOP-suspended ptys internally (their
+        // process tree is frozen and can't change until resumed), so no client-side
+        // filter is needed here — scan all ids the companion hosts.
+        const toScan = ids
         if (toScan.length === 0) return
 
         let results: Record<string, PtyActivity> = {}

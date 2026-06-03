@@ -6,9 +6,8 @@
 //
 // Capability types are imported type-only from the main process module so the
 // companion bundle carries no runtime dependency on main (the import is erased
-// by esbuild). The hosted object is a plain Companion — locally that is the
-// in-process LocalCompanion (used by the loopback test); in a real deployment
-// it is an electron-free capability set built inside the daemon (see index.ts).
+// by esbuild). The hosted object is a plain Companion — the electron-free
+// capability set built inside the daemon (see index.ts / buildDaemonCompanion).
 // =============================================================================
 
 import { FrameDecoder, serializeFrame } from './jsonl'

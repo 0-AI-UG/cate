@@ -31,7 +31,6 @@ import { sendToWindow, windowFromEvent } from '../windowRegistry'
 import { countTerminalData } from '../perf/perfMonitor'
 import { parseLocator, type CompanionId } from '../companion/locator'
 import { companions } from '../companion/companionManager'
-import { localProcessHost } from '../companion/localProcessHost'
 import type { Companion } from '../companion/types'
 
 // Set true during app shutdown so PTY data/exit callbacks no-op instead of
@@ -264,14 +263,16 @@ export function registerHandlers(): void {
 }
 
 /**
- * Kill all LOCAL PTY process groups on app quit (remote daemons are torn down
- * by companions.disposeAll). Must run while the JS env is alive so node-pty's
- * exit callback doesn't fire into a torn-down context.
+ * Tear down all terminals on app quit. Local terminals now live in the local
+ * companion daemon subprocess, so disposing the companion connections sends each
+ * daemon SIGTERM and closes its stdin — its ProcessHost then group-kills its ptys
+ * (reaping dev servers/watchers) and exits. Remote daemons are torn down the same
+ * way. Fire-and-forget: quit must not block on a remote socket.
  */
 export function killAllTerminals(): void {
   shuttingDown = true
   disposeAllLoggers()
-  localProcessHost.killAll()
+  void companions.disposeAll()
   terminalOwners.clear()
   terminalCompanion.clear()
 }

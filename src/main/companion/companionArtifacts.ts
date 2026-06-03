@@ -20,7 +20,7 @@ import path from 'path'
 import { existsSync } from 'fs'
 import { mkdir, rename, writeFile, readFile, stat } from 'fs/promises'
 import log from '../logger'
-import { GH_OWNER, GH_REPO, releaseTag, piTarballName, piReleaseUrl } from '../../companion/release'
+import { GH_OWNER, GH_REPO, releaseTag } from '../../companion/release'
 
 /** Targets we build companion tarballs for. WSL reuses the linux targets;
  *  win32-x64 is local-only (a Windows laptop running its OWN workspace daemon —
@@ -90,55 +90,6 @@ function cacheDir(): string {
 
 function cachedTarball(version: string, target: CompanionTarget): string {
   return path.join(cacheDir(), tarballName(version, target))
-}
-
-// ---------------------------------------------------------------------------
-// pi coding agent tarball — cross-platform (one artifact for every target; in
-// --mode rpc pi loads no native deps), keyed by the pi version. Uploaded to the
-// same `v<appVersion>` release as the companion tarballs, pulled on demand to
-// the host (local or remote) when the agent is first used. `appVersion` is the
-// release tag; `piVersion` is the filename (the two version independently).
-// ---------------------------------------------------------------------------
-
-function devPiTarball(piVersion: string): string | null {
-  if (app.isPackaged) return null
-  const p = path.join(app.getAppPath(), 'dist-companion', piTarballName(piVersion))
-  return existsSync(p) ? p : null
-}
-
-function cachedPiTarball(piVersion: string): string {
-  return path.join(cacheDir(), piTarballName(piVersion))
-}
-
-/** Local path to the pi tarball (the local machine extracts it into userData for
- *  its in-process agent), downloading if needed (dev build → cache → network).
- *  Remote hosts get pi from the companion tarball, not this. */
-export async function ensureLocalPiTarball(appVersion: string, piVersion: string): Promise<string> {
-  const dev = devPiTarball(piVersion)
-  if (dev) return dev
-  const cached = cachedPiTarball(piVersion)
-  if (existsSync(cached) && (await stat(cached)).size > 0) return cached
-
-  const url = piReleaseUrl(appVersion, piVersion)
-  log.info('[companion] downloading %s', url)
-  let res: Response
-  try {
-    res = await fetch(url)
-  } catch (err) {
-    throw new Error(`Could not reach the pi release (${url}): ${err instanceof Error ? err.message : String(err)}`)
-  }
-  if (!res.ok) {
-    throw new Error(
-      `pi tarball not found at ${url} (HTTP ${res.status}). ` +
-        (app.isPackaged ? 'The release may not include pi yet.' : 'In dev, build it first: `npm run pi:tarball`.'),
-    )
-  }
-  const buf = Buffer.from(await res.arrayBuffer())
-  await mkdir(cacheDir(), { recursive: true })
-  const tmp = `${cached}.${process.pid}.part`
-  await writeFile(tmp, buf)
-  await rename(tmp, cached)
-  return cached
 }
 
 /** A local tarball if one is already present (dev build or cache) — no download.

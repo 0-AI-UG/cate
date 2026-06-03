@@ -158,10 +158,9 @@ export interface ProcessDeps {
   getEnv: () => Record<string, string>
   /**
    * Idle-suspend (POSIX-only): SIGSTOP a pty that's offscreen and silent past
-   * the threshold, SIGCONT on input/visibility. OFF by default — the in-process
-   * local host (localProcessHost) keeps its OWN idle-suspend layer and does NOT
-   * pass this, so its behavior is unchanged. The daemon hosting the local
-   * workspace passes it so backgrounded local terminals still suspend.
+   * the threshold, SIGCONT on input/visibility. OFF by default — remote daemons
+   * don't pass it. The daemon hosting the LOCAL workspace passes it so
+   * backgrounded local terminals still suspend.
    */
   idleSuspend?: boolean
 }

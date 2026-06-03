@@ -23,8 +23,10 @@ vi.mock('../windowRegistry', () => ({
 const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_IMPORT_ENTRIES } = await import('../../shared/ipc-channels')
+const { registerTestLocalCompanion } = await import('../companion/testLocalCompanion')
 
 registerHandlers()
+registerTestLocalCompanion()
 const importEntries = handlers.get(FS_IMPORT_ENTRIES)!
 const fakeEvent = { sender: {} } as unknown
 

@@ -1,8 +1,9 @@
-// Real-fs coverage for uploadEntriesToCompanion against the in-process
-// localCompanion. The companion's file ops are plain fs against real paths, so
-// we point sources/dest at temp dirs under os.tmpdir() and assert the bytes and
-// tree that actually land on disk. No allowed-root setup is needed because the
-// leaf ops are called directly.
+// Real-fs coverage for uploadEntriesToCompanion against a Companion backed by the
+// electron-free file leaf ops (the same ones every daemon hosts). The file ops
+// are plain fs against real paths, so we point sources/dest at temp dirs under
+// os.tmpdir() and assert the bytes and tree that actually land on disk. The stub
+// skips path validation (the real daemon validates against its allowed root; here
+// the leaf ops are exercised directly).
 
 import { mkdtemp, writeFile, readFile, mkdir, symlink, rm, access } from 'node:fs/promises'
 import os from 'node:os'
@@ -10,7 +11,19 @@ import path from 'node:path'
 import posix from 'node:path/posix'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { uploadEntriesToCompanion } from './uploadEntries'
-import { localCompanion } from './LocalCompanion'
+import * as fileLeaf from '../../companion/capabilities/file'
+import type { Companion, FileHost } from './types'
+
+// A Companion whose file ops are the unvalidated leaf fs functions (what the
+// daemon wraps with path validation). uploadEntriesToCompanion only touches
+// file.stat / file.mkdir / file.writeBinary.
+const localCompanion = {
+  file: {
+    stat: (p: string) => fileLeaf.statEntry(p),
+    mkdir: (p: string) => fileLeaf.mkdirEntry(p),
+    writeBinary: (p: string, data: Buffer) => fileLeaf.writeBinary(p, data),
+  } as unknown as FileHost,
+} as unknown as Companion
 
 let srcDir = ''
 let destDir = ''

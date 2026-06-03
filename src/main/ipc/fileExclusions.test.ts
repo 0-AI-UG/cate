@@ -32,8 +32,10 @@ vi.mock('../store', () => ({
 const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_READ_DIR, FS_SEARCH } = await import('../../shared/ipc-channels')
+const { registerTestLocalCompanion } = await import('../companion/testLocalCompanion')
 
 registerHandlers()
+registerTestLocalCompanion()
 const readDirHandler = handlers.get(FS_READ_DIR)!
 const searchHandler = handlers.get(FS_SEARCH)!
 const fakeEvent = { sender: {} } as unknown

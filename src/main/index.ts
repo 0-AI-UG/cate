@@ -15,7 +15,6 @@ import {
   SESSION_FLUSH_SAVE_DONE,
 } from '../shared/ipc-channels'
 import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals } from './ipc/terminal'
-import { localProcessHost } from './companion/localProcessHost'
 import { companions } from './companion/companionManager'
 import { registerCompanionHandlers } from './ipc/companion'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
@@ -1274,21 +1273,18 @@ initAnalytics()
 setNewMainWindowFn(() => createWindow({ type: 'main' }))
 
 // ---------------------------------------------------------------------------
-// Emergency PTY cleanup — kill child process groups on crash or signal so
-// dev servers, watchers, etc. don't survive as zombies keeping ports open.
-// Defined before the error handlers that call it.
+// Crash / signal teardown. Local terminals run in the companion daemon
+// subprocess: when this main process dies its stdin closes, and the daemon's
+// `process.stdin.on('close')` handler (src/companion/index.ts) group-kills its
+// ptys and exits — so dev servers/watchers don't survive as zombies. No
+// in-process PTY cleanup is needed here anymore.
 // ---------------------------------------------------------------------------
 
-function emergencyKillPTYs(): void {
-  localProcessHost.emergencyKill()
-}
-
 // Global error handlers — Sentry (when configured) captures the error before
-// process exit. Also kill PTY process groups so dev servers don't survive.
+// process exit.
 process.on('uncaughtException', (err) => {
   log.error('uncaughtException: %O', err)
   captureMainException(err)
-  emergencyKillPTYs()
   flushSentry().finally(() => process.exit(1))
 })
 process.on('unhandledRejection', (reason) => {
@@ -1297,14 +1293,12 @@ process.on('unhandledRejection', (reason) => {
 })
 
 process.on('SIGTERM', () => {
-  log.info('Received SIGTERM, killing PTY process groups')
-  emergencyKillPTYs()
+  log.info('Received SIGTERM, exiting')
   process.exit(0)
 })
 
 process.on('SIGINT', () => {
-  log.info('Received SIGINT, killing PTY process groups')
-  emergencyKillPTYs()
+  log.info('Received SIGINT, exiting')
   process.exit(0)
 })
 
@@ -1319,10 +1313,9 @@ app.whenReady().then(async () => {
   await initShellEnv()
   log.info('Shell environment resolved')
 
-  // Bring the local companion online. Default: in-process (no-op here). Under
-  // CATE_LOCAL_DAEMON: provision + launch the host-target companion tarball as a
-  // local daemon, the same path remote hosts use. Done after the shell env so the
-  // daemon inherits the full PATH for git/terminals.
+  // Bring the local workspace online: provision + launch the host-target companion
+  // tarball as a local daemon, the same path remote hosts use. Done after the shell
+  // env so the daemon inherits the full PATH for git/terminals.
   await companions.ensureLocalCompanion({
     root: app.getPath('home'),
     exclusions: [...currentExclusionSet()],
