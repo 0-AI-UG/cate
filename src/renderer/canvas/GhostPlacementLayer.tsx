@@ -25,6 +25,9 @@ function injectStyles() {
   style.textContent = `
     @keyframes ghostIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
     @keyframes ghostHintIn { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    /* During placement, the in-canvas chrome (toolbar, minimap) is inert. */
+    body.cate-placement-active [data-canvas-chrome],
+    body.cate-placement-active [data-canvas-chrome] * { pointer-events: none !important; }
   `
   document.head.appendChild(style)
 }
@@ -37,6 +40,13 @@ const GhostPlacementLayer: React.FC = () => {
   const count = pending?.candidates.length ?? 0
 
   useEffect(injectStyles, [])
+
+  // Mark the app while a placement is pending so in-canvas chrome goes inert.
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.body.classList.toggle('cate-placement-active', !!pending)
+    return () => document.body.classList.remove('cate-placement-active')
+  }, [pending])
 
   // Keyboard: digits / Enter commit, F arms free placement, Esc cancels.
   useEffect(() => {
