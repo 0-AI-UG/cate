@@ -37,7 +37,6 @@ import { broadcastToAll } from './windowRegistry'
 const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   defaultShellPath: 'string',
   warnBeforeQuit: 'boolean',
-  nativeTabs: 'boolean',
   activeThemeId: 'string',
   systemLightThemeId: 'string',
   systemDarkThemeId: 'string',
@@ -143,10 +142,10 @@ export interface BootSnapshot {
   theme?: string
   backgroundColor?: string
   // Desired native window appearance for the active theme. Drives
-  // nativeTheme.themeSource so the macOS native title bar (native-tabs mode)
-  // matches the theme's dark/light instead of the OS. 'system' tracks the OS.
+  // nativeTheme.themeSource so native chrome (menus, scrollbars, the window
+  // backdrop) matches the theme's dark/light instead of the OS. 'system' tracks
+  // the OS.
   appearance?: 'dark' | 'light' | 'system'
-  nativeTabs?: boolean
   lastWorkspaceId?: string
 }
 

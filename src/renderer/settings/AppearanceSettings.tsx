@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Check, Trash, Upload, DownloadSimple, Sparkle } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
-import { SettingRow, Select, NumberInput } from './SettingsComponents'
+import { SettingRow, Select, NumberInput, SearchableBlock } from './SettingsComponents'
 import type { Theme } from '../../shared/types'
 import { validateTheme } from '../../shared/theme'
 import { BASE_DARK, BASE_LIGHT, BUILT_IN_THEMES } from '../../shared/themes'
@@ -91,6 +91,7 @@ export function AppearanceSettings() {
 
   return (
     <div className="flex flex-col gap-1">
+      <SearchableBlock keywords="theme appearance color dark light catalog import export system mode">
       {/* Mode + catalog header */}
       <div className="flex items-center justify-between py-2.5">
         <span className="text-sm text-primary">Theme</span>
@@ -158,6 +159,7 @@ export function AppearanceSettings() {
         </div>
         <h4 className="text-[13px] font-semibold text-primary">Create your own theme</h4>
       </button>
+      </SearchableBlock>
 
       <SettingRow label="Editor font size">
         <NumberInput value={store.editorFontSize} onChange={(v) => store.setSetting('editorFontSize', v)} min={8} max={32} step={1} />

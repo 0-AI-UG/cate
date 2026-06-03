@@ -930,9 +930,6 @@ export interface AppSettings {
   // General
   defaultShellPath: string
   warnBeforeQuit: boolean
-  /** macOS only: enable native window tabs (tabbingIdentifier on main windows).
-   *  Takes effect on next launch. */
-  nativeTabs: boolean
 
   // Appearance
   /** Active unified theme: 'system' (auto light/dark) or a theme id. */
@@ -1026,7 +1023,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // where it commonly isn't installed.
   defaultShellPath: '',
   warnBeforeQuit: false,
-  nativeTabs: false,
 
   // Appearance
   activeThemeId: 'system',

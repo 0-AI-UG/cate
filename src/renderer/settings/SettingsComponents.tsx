@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useSettingsSearch, matchesQuery } from './SettingsSearchContext'
 
 // -----------------------------------------------------------------------------
 // SettingRow — label + control layout
@@ -18,8 +19,14 @@ interface SettingRowProps {
 }
 
 export function SettingRow({ label, description, hint, children }: SettingRowProps) {
+  const { query, sectionMatched } = useSettingsSearch()
+  // Hide when there's an active query the section title didn't match and
+  // neither the label nor description contains it.
+  if (query !== '' && !sectionMatched && !matchesQuery(label, query) && !matchesQuery(description, query)) {
+    return null
+  }
   return (
-    <div className="flex items-center justify-between py-2.5 border-b border-subtle">
+    <div data-srow className="flex items-center justify-between py-2.5 border-b border-subtle">
       <div className="flex flex-col min-w-0">
         <span className="text-sm text-primary">{label}</span>
         {description && <span className="text-xs text-muted mt-0.5">{description}</span>}
@@ -28,6 +35,26 @@ export function SettingRow({ label, description, hint, children }: SettingRowPro
       <div className="flex-shrink-0 ml-4">{children}</div>
     </div>
   )
+}
+
+// -----------------------------------------------------------------------------
+// SearchableBlock — wraps custom (non-SettingRow) content so it participates
+// in settings search. Hidden when an active query matches neither the section
+// title nor the block's keywords.
+// -----------------------------------------------------------------------------
+
+interface SearchableBlockProps {
+  /** Space-separated terms describing this block, matched against the query. */
+  keywords?: string
+  children: ReactNode
+}
+
+export function SearchableBlock({ keywords, children }: SearchableBlockProps) {
+  const { query, sectionMatched } = useSettingsSearch()
+  if (query !== '' && !sectionMatched && !matchesQuery(keywords, query)) {
+    return null
+  }
+  return <div data-srow>{children}</div>
 }
 
 // -----------------------------------------------------------------------------
