@@ -11,7 +11,8 @@ import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useDragStore } from '../drag/store'
 import { useSearchStore } from '../stores/searchStore'
 import { getLastReveal } from './editorReveal'
-import { applyTheme, getAllThemes } from './themeManager'
+import { applyTheme } from './themeManager'
+import { BUILT_IN_THEMES } from '../../shared/themes'
 import { terminalRegistry } from './terminalRegistry'
 import type { Point } from '../../shared/types'
 
@@ -48,6 +49,8 @@ declare global {
       zoom(): number
       setZoom(z: number): void
       resetViewport(): void
+      addWorkspace(name?: string, rootPath?: string, id?: string): string
+      selectWorkspace(id: string): Promise<void>
       /** Resolve the PTY id backing a terminal node (null until the PTY spawns). */
       terminalPtyId(nodeId: string): string | null
       /** Write raw data to a terminal node's PTY (e.g. a flooding command). */
@@ -158,6 +161,14 @@ export function installE2EHarness(): void {
     activeCanvasStore()?.setState({ viewportOffset: { x: 0, y: 0 } })
   }
 
+  const addWorkspace = (name?: string, rootPath?: string, id?: string): string => {
+    return useAppStore.getState().addWorkspace(name, rootPath, id)
+  }
+
+  const selectWorkspace = async (id: string): Promise<void> => {
+    await useAppStore.getState().selectWorkspace(id)
+  }
+
   const terminalPtyId = (nodeId: string): string | null => {
     const cs = activeCanvasStore()
     if (!cs) return null
@@ -218,7 +229,7 @@ export function installE2EHarness(): void {
 
   const setTheme = (id: string): void => applyTheme(id)
   const themeIds = (): { id: string; type: string }[] =>
-    getAllThemes().map((t) => ({ id: t.id, type: t.type }))
+    BUILT_IN_THEMES.map((t) => ({ id: t.id, type: t.type }))
 
   const dragSnapshot = () => {
     const s = useDragStore.getState()
@@ -241,6 +252,8 @@ export function installE2EHarness(): void {
     zoom,
     setZoom,
     resetViewport,
+    addWorkspace,
+    selectWorkspace,
     terminalPtyId,
     writeTerminal,
     setWorkspaceRoot,

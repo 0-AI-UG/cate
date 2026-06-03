@@ -2,12 +2,14 @@
 // Filesystem IPC handlers — file read/write and directory watching
 // =============================================================================
 
-import fs from 'fs/promises'
-import path from 'path'
 import { watch, FSWatcher } from 'chokidar'
 import { ipcMain } from 'electron'
 import log from '../logger'
-import { consumeScopedWriteAllowance, validatePathStrict, validatePathForCreation } from './pathValidation'
+import { consumeScopedWriteAllowance, validatePathStrict } from './pathValidation'
+import { parseLocator, formatLocator, LOCAL_COMPANION_ID } from '../companion/locator'
+import type { FsChangeType } from '../companion/types'
+import { companions } from '../companion/companionManager'
+import { uploadEntriesToCompanion } from '../companion/uploadEntries'
 import {
   FS_READ_FILE,
   FS_WRITE_FILE,
@@ -83,206 +85,73 @@ function pathHasPrefix(filePath: string, prefix: string): boolean {
   return next === 47 || next === 92
 }
 
-async function readFile(filePath: string): Promise<string> {
-  return fs.readFile(filePath, 'utf-8')
+// -----------------------------------------------------------------------------
+// Leaf filesystem operations live in the electron-free capability module
+// (src/companion/capabilities/file.ts) so the local process and the standalone
+// companion daemon share ONE implementation. Path-only ops are re-exported
+// verbatim; the two ops that need the live `fileExclusions` setting (readDir,
+// searchFiles) and import-entry logging are wrapped below to inject it.
+// -----------------------------------------------------------------------------
+
+export {
+  readFile,
+  readBinary,
+  writeFile,
+  writeBinary,
+  statEntry,
+  removeEntry,
+  renameEntry,
+  mkdirEntry,
+  copyInto,
+} from '../../companion/capabilities/file'
+
+import {
+  readDir as capReadDir,
+  searchFiles as capSearchFiles,
+  importEntriesInto as capImportEntriesInto,
+} from '../../companion/capabilities/file'
+
+export function readDir(dirPath: string): Promise<FileTreeNode[]> {
+  return capReadDir(dirPath, currentExclusionSet())
 }
 
-async function writeFile(filePath: string, content: string): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.writeFile(filePath, content, 'utf-8')
-}
-
-/**
- * Read a single level of a directory, building FileTreeNode[].
- * Matches FileTreeModel.buildNodes logic from Swift:
- * - Skip hidden files (starting with '.')
- * - Skip entries in the user's fileExclusions setting
- * - Sort directories first, then files, each alphabetically case-insensitive
- * - Children are empty arrays for directories (lazy loading)
- */
-async function readDir(dirPath: string): Promise<FileTreeNode[]> {
-  let entries: string[]
-  try {
-    entries = await fs.readdir(dirPath)
-  } catch {
-    return []
-  }
-
-  const exclusionSet = currentExclusionSet()
-  const dirs: FileTreeNode[] = []
-  const files: FileTreeNode[] = []
-
-  for (const entry of entries) {
-    // Skip exclusions
-    if (exclusionSet.has(entry)) continue
-
-    const fullPath = path.join(dirPath, entry)
-    let stat
-    try {
-      stat = await fs.lstat(fullPath)
-    } catch {
-      // Skip files we can't stat (permission errors, etc.)
-      continue
-    }
-
-    // Skip symlinks — they may point outside the workspace root.
-    if (stat.isSymbolicLink()) continue
-
-    const isDirectory = stat.isDirectory()
-    const ext = isDirectory ? '' : path.extname(entry).replace(/^\./, '')
-
-    const node: FileTreeNode = {
-      name: entry,
-      path: fullPath,
-      isDirectory,
-      isExpanded: false,
-      children: [],
-      fileExtension: ext,
-    }
-
-    if (isDirectory) {
-      dirs.push(node)
-    } else {
-      files.push(node)
-    }
-  }
-
-  // Sort: directories first, each group alphabetically (case-insensitive)
-  const caseInsensitiveSort = (a: FileTreeNode, b: FileTreeNode): number =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-
-  dirs.sort(caseInsensitiveSort)
-  files.sort(caseInsensitiveSort)
-
-  return [...dirs, ...files]
-}
-
-// ---------------------------------------------------------------------------
-// File search — name + content matching with a flat result list.
-// ---------------------------------------------------------------------------
-
-const BINARY_EXTENSIONS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'icns', 'tiff', 'avif',
-  'pdf', 'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'jar', 'war',
-  'mp3', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'wav', 'flac', 'ogg', 'm4a',
-  'woff', 'woff2', 'ttf', 'otf', 'eot',
-  'so', 'dylib', 'dll', 'exe', 'bin', 'o', 'a', 'class', 'wasm',
-  'sqlite', 'db', 'lock', 'pack', 'idx',
-])
-
-async function searchFiles(
+export function searchFiles(
   rootPath: string,
   query: string,
   opts: FileSearchOptions = {},
 ): Promise<FileSearchResult[]> {
-  const maxResults = opts.maxResults ?? 200
-  const maxFileBytes = opts.maxFileBytes ?? 1024 * 1024
-  const lowerQuery = query.toLowerCase()
-  const allowDotFiles = query.startsWith('.')
-  const exclusionSet = currentExclusionSet()
-  const results: FileSearchResult[] = []
-  const seenPaths = new Set<string>()
+  return capSearchFiles(rootPath, query, currentExclusionSet(), opts)
+}
 
-  const pushResult = (r: FileSearchResult): boolean => {
-    if (seenPaths.has(r.path)) return results.length < maxResults
-    seenPaths.add(r.path)
-    results.push(r)
-    return results.length < maxResults
-  }
+export function importEntriesInto(
+  sources: string[],
+  safeDestDir: string,
+  mode: 'copy' | 'move',
+  ownerWindowId?: number,
+): Promise<{ created: string[]; failed: number }> {
+  return capImportEntriesInto(sources, safeDestDir, mode, ownerWindowId, (src, error) =>
+    log.error(`[${FS_IMPORT_ENTRIES}]`, src, error),
+  )
+}
 
-  const walk = async (dir: string): Promise<boolean> => {
-    let entries: string[]
-    try {
-      entries = await fs.readdir(dir)
-    } catch {
-      return true
-    }
+// ---------------------------------------------------------------------------
+// Locator re-encoding — any host path RETURNED to the renderer must be wrapped
+// back into a locator so the renderer's next op on that path routes to the same
+// companion. `formatLocator` is a no-op for the local companion, so these are
+// safe (and identity-preserving) for local workspaces.
+// ---------------------------------------------------------------------------
 
-    // Match names first (cheap), then recurse, then content-search files.
-    const subdirs: string[] = []
-    const files: { full: string; name: string; ext: string; size: number }[] = []
+function encodeResultPath(companionId: string, p: string): string {
+  return formatLocator({ companionId, path: p })
+}
 
-    for (const entry of entries) {
-      if (exclusionSet.has(entry)) continue
-      if (!allowDotFiles && entry.startsWith('.')) continue
-      const full = path.join(dir, entry)
-      let stat
-      try {
-        stat = await fs.lstat(full)
-      } catch {
-        continue
-      }
-      if (stat.isSymbolicLink()) continue
-
-      const isDirectory = stat.isDirectory()
-      const nameMatches = entry.toLowerCase().includes(lowerQuery)
-      if (nameMatches) {
-        const relativePath = path.relative(rootPath, full).split(path.sep).join('/')
-        if (!pushResult({ name: entry, path: full, relativePath, isDirectory, nameMatch: true })) return false
-      }
-
-      if (isDirectory) {
-        subdirs.push(full)
-      } else {
-        const ext = path.extname(entry).replace(/^\./, '').toLowerCase()
-        files.push({ full, name: entry, ext, size: stat.size })
-      }
-    }
-
-    // Content-search files at this level (skip ones already added by name).
-    for (const f of files) {
-      if (results.length >= maxResults) return false
-      if (seenPaths.has(f.full)) continue
-      if (f.size === 0 || f.size > maxFileBytes) continue
-      if (BINARY_EXTENSIONS.has(f.ext)) continue
-      let buf: Buffer
-      try {
-        buf = await fs.readFile(f.full)
-      } catch {
-        continue
-      }
-      // Quick binary sniff: NUL byte in first 8KB → skip.
-      const sniffEnd = Math.min(buf.length, 8192)
-      let isBinary = false
-      for (let i = 0; i < sniffEnd; i++) {
-        if (buf[i] === 0) { isBinary = true; break }
-      }
-      if (isBinary) continue
-
-      const text = buf.toString('utf-8')
-      const idx = text.toLowerCase().indexOf(lowerQuery)
-      if (idx === -1) continue
-
-      // Locate the line containing the match.
-      const before = text.slice(0, idx)
-      const lineStart = before.lastIndexOf('\n') + 1
-      const lineEndRel = text.indexOf('\n', idx)
-      const lineEnd = lineEndRel === -1 ? text.length : lineEndRel
-      const line = text.slice(lineStart, lineEnd).trim().slice(0, 200)
-      const lineNumber = (text.slice(0, lineStart).match(/\n/g)?.length ?? 0) + 1
-      const relativePath = path.relative(rootPath, f.full).split(path.sep).join('/')
-      if (!pushResult({
-        name: f.name, path: f.full, relativePath,
-        isDirectory: false, nameMatch: false,
-        contentPreview: line, contentLine: lineNumber,
-      })) return false
-    }
-
-    for (const sub of subdirs) {
-      if (results.length >= maxResults) return false
-      const cont = await walk(sub)
-      if (!cont) return false
-    }
-    return true
-  }
-
-  await walk(rootPath)
-  // Sort: name matches first, then by relative path length (shallower first).
-  results.sort((a, b) => {
-    if (a.nameMatch !== b.nameMatch) return a.nameMatch ? -1 : 1
-    return a.relativePath.length - b.relativePath.length
-  })
-  return results
+/** Re-encode every absolute `path` in a file tree (recursively, for safety). */
+function encodeTreeNodes(companionId: string, nodes: FileTreeNode[]): FileTreeNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    path: encodeResultPath(companionId, node.path),
+    children: node.children?.length ? encodeTreeNodes(companionId, node.children) : node.children,
+  }))
 }
 
 // Chokidar ignore list: always-hidden dotfiles plus the user's exclusions.
@@ -455,7 +324,7 @@ export function refreshWatcherIgnores(): void {
 // existing renderer-side semantics.
 // ---------------------------------------------------------------------------
 
-type InProcListener = (filePath: string) => void
+type InProcListener = (filePath: string, type: FsChangeType) => void
 
 interface InProcSub {
   prefix: string
@@ -475,7 +344,7 @@ function attachInProcToWatcher(sub: InProcSub, root: string, shared: SharedWatch
     // No coalescing here — in-process consumers are expected to debounce
     // themselves if they care; passing every event through makes "immediate
     // poll on change" behaviour easy to reason about.
-    dispatch: (_type, filePath) => sub.listener(filePath),
+    dispatch: (type, filePath) => sub.listener(filePath, type as FsChangeType),
     cancelFlush: () => { /* no-op */ },
   })
   shared.refCount++
@@ -531,41 +400,80 @@ export function stopWatchersForWindow(windowId: number): void {
   for (const [normPath, wid] of toStop) {
     watchStop(normPath, wid)
   }
+  // Remote watches for this window.
+  const remotePrefix = `${windowId}:`
+  for (const key of [...remoteWatches.keys()]) {
+    if (key.startsWith(remotePrefix)) {
+      const entry = remoteWatches.get(key)
+      if (entry) { entry.cancelFlush(); entry.unsubscribe(); remoteWatches.delete(key) }
+    }
+  }
 }
 
-/**
- * Find a non-colliding entry name for `baseName` inside `destDir`. When the item
- * is landing in the directory it already lives in (`intoSameDir`), the first
- * candidate gets a " copy" suffix so it doesn't clobber the original; otherwise
- * the original name is kept. Further collisions add an incrementing counter.
- */
-async function nextAvailableName(
-  destDir: string,
-  baseName: string,
-  intoSameDir: boolean,
-): Promise<string> {
-  const ext = path.extname(baseName)
-  const stem = ext ? baseName.slice(0, -ext.length) : baseName
-  let candidate = intoSameDir ? `${stem} copy${ext}` : baseName
-  let n = 2
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    try {
-      await fs.lstat(path.join(destDir, candidate))
-    } catch {
-      // ENOENT — safe to use
-      return candidate
+// ---------------------------------------------------------------------------
+// Remote fs-watch — for non-local companions the renderer's watch is served by
+// the daemon's watch stream (companion.file.watch). Events are debounced per
+// window (matching the local pool) and re-encoded as locator paths so the
+// renderer sees the same representation it subscribed with. Keyed by
+// `${windowId}:${dirLocator}`.
+// ---------------------------------------------------------------------------
+interface RemoteWatchEntry {
+  unsubscribe: () => void
+  cancelFlush: () => void
+}
+const remoteWatches = new Map<string, RemoteWatchEntry>()
+
+function remoteWatchKey(windowId: number, dirLocator: string): string {
+  return `${windowId}:${dirLocator}`
+}
+
+function startRemoteWatch(
+  companion: ReturnType<typeof companions.resolve>,
+  companionId: string,
+  remotePath: string,
+  dirLocator: string,
+  windowId: number,
+): void {
+  stopRemoteWatch(dirLocator, windowId)
+
+  let pending = new Map<string, { type: string; path: string }>()
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+  const flush = (): void => {
+    const events = pending
+    pending = new Map()
+    flushTimer = null
+    for (const event of events.values()) {
+      try { sendToWindow(windowId, FS_WATCH_EVENT, event) } catch { /* window gone */ }
     }
-    candidate = intoSameDir ? `${stem} copy ${n}${ext}` : `${stem} (${n})${ext}`
-    n++
   }
+  const onChange = (changedPath: string, type: FsChangeType): void => {
+    const locator = formatLocator({ companionId, path: changedPath })
+    pending.set(locator, { type, path: locator })
+    if (!flushTimer) flushTimer = setTimeout(flush, DISPATCH_DEBOUNCE_MS)
+  }
+  const unsubscribe = companion.file.watch(remotePath, onChange)
+  remoteWatches.set(remoteWatchKey(windowId, dirLocator), {
+    unsubscribe,
+    cancelFlush: () => { if (flushTimer) clearTimeout(flushTimer) },
+  })
+}
+
+function stopRemoteWatch(dirLocator: string, windowId: number): void {
+  const key = remoteWatchKey(windowId, dirLocator)
+  const entry = remoteWatches.get(key)
+  if (!entry) return
+  entry.cancelFlush()
+  entry.unsubscribe()
+  remoteWatches.delete(key)
 }
 
 export function registerHandlers(): void {
   ipcMain.handle(FS_READ_FILE, async (event, filePath: string) => {
     try {
       const win = windowFromEvent(event)
-      return await readFile(await validatePathStrict(filePath, win?.id))
+      const { companionId, path: p } = parseLocator(filePath)
+      const companion = companions.resolve(companionId)
+      return await companion.file.readFile(await companion.validatePathStrict(p, win?.id))
     } catch (error) {
       log.error(`[${FS_READ_FILE}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -575,8 +483,9 @@ export function registerHandlers(): void {
   ipcMain.handle(FS_READ_BINARY, async (event, filePath: string) => {
     try {
       const win = windowFromEvent(event)
-      const safePath = await validatePathStrict(filePath, win?.id)
-      return await fs.readFile(safePath)
+      const { companionId, path: p } = parseLocator(filePath)
+      const companion = companions.resolve(companionId)
+      return await companion.file.readBinary(await companion.validatePathStrict(p, win?.id))
     } catch (error) {
       log.error(`[${FS_READ_BINARY}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -586,8 +495,10 @@ export function registerHandlers(): void {
   ipcMain.handle(FS_WRITE_FILE, async (event, filePath: string, content: string) => {
     try {
       const win = windowFromEvent(event)
-      const safePath = await validatePathForCreation(filePath, win?.id)
-      await writeFile(safePath, content)
+      const { companionId, path: p } = parseLocator(filePath)
+      const companion = companions.resolve(companionId)
+      const safePath = await companion.validatePathForCreation(p, win?.id)
+      await companion.file.writeFile(safePath, content)
       if (win) consumeScopedWriteAllowance(win.id, safePath)
     } catch (error) {
       log.error(`[${FS_WRITE_FILE}]`, error)
@@ -597,7 +508,10 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_READ_DIR, async (_event, dirPath: string) => {
     try {
-      return await readDir(await validatePathStrict(dirPath))
+      const { companionId, path: p } = parseLocator(dirPath)
+      const companion = companions.resolve(companionId)
+      const nodes = await companion.file.readDir(await companion.validatePathStrict(p))
+      return encodeTreeNodes(companionId, nodes)
     } catch (error) {
       log.error(`[${FS_READ_DIR}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -606,10 +520,13 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_WATCH_START, async (event, dirPath: string) => {
     try {
-      const validPath = await validatePathStrict(dirPath)
       const win = windowFromEvent(event)
-      if (win) {
-        watchStart(validPath, win.id)
+      if (!win) return
+      const { companionId, path: p } = parseLocator(dirPath)
+      if (companionId === LOCAL_COMPANION_ID) {
+        watchStart(await validatePathStrict(p), win.id)
+      } else {
+        startRemoteWatch(companions.resolve(companionId), companionId, p, dirPath, win.id)
       }
     } catch (error) {
       log.error(`[${FS_WATCH_START}]`, error)
@@ -619,10 +536,13 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_WATCH_STOP, async (event, dirPath: string) => {
     try {
-      const validPath = await validatePathStrict(dirPath)
       const win = windowFromEvent(event)
-      if (win) {
-        watchStop(validPath, win.id)
+      if (!win) return
+      const { companionId, path: p } = parseLocator(dirPath)
+      if (companionId === LOCAL_COMPANION_ID) {
+        watchStop(await validatePathStrict(p), win.id)
+      } else {
+        stopRemoteWatch(dirPath, win.id)
       }
     } catch (error) {
       log.error(`[${FS_WATCH_STOP}]`, error)
@@ -632,14 +552,11 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_STAT, async (_event, filePath: string) => {
     try {
-      // Use lstat so symlinks are detected; validatePathStrict already resolves
-      // the real path, but we stat the original so the caller gets correct info.
-      const validPath = await validatePathStrict(filePath)
-      const stat = await fs.lstat(validPath)
-      if (stat.isSymbolicLink()) {
-        throw new Error(`Access denied: "${filePath}" is a symbolic link`)
-      }
-      return { isDirectory: stat.isDirectory(), isFile: stat.isFile() }
+      // validatePathStrict resolves and authorizes the path; we stat the
+      // resolved path on the owning companion.
+      const { companionId, path: p } = parseLocator(filePath)
+      const companion = companions.resolve(companionId)
+      return await companion.file.stat(await companion.validatePathStrict(p))
     } catch (error) {
       log.error(`[${FS_STAT}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -648,17 +565,9 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_DELETE, async (_event, filePath: string) => {
     try {
-      const validPath = await validatePathStrict(filePath)
-      // Use lstat so we never follow a symlink to determine type; delete the
-      // symlink itself if one somehow passed validation.
-      const stat = await fs.lstat(validPath)
-      if (stat.isSymbolicLink()) {
-        await fs.unlink(validPath)
-      } else if (stat.isDirectory()) {
-        await fs.rm(validPath, { recursive: true })
-      } else {
-        await fs.unlink(validPath)
-      }
+      const { companionId, path: p } = parseLocator(filePath)
+      const companion = companions.resolve(companionId)
+      await companion.file.remove(await companion.validatePathStrict(p))
     } catch (error) {
       log.error(`[${FS_DELETE}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -667,7 +576,14 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_RENAME, async (_event, oldPath: string, newPath: string) => {
     try {
-      await fs.rename(await validatePathStrict(oldPath), await validatePathForCreation(newPath))
+      // Phase 1: rename is within a single companion (both bare/local).
+      const { companionId, path: oldP } = parseLocator(oldPath)
+      const companion = companions.resolve(companionId)
+      const { path: newP } = parseLocator(newPath)
+      await companion.file.rename(
+        await companion.validatePathStrict(oldP),
+        await companion.validatePathForCreation(newP),
+      )
     } catch (error) {
       log.error(`[${FS_RENAME}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -676,20 +592,13 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_COPY, async (_event, srcPath: string, destDir: string) => {
     try {
-      const safeSrc = await validatePathStrict(srcPath)
-      const safeDestDir = await validatePathStrict(destDir)
-
-      const intoSameDir = path.dirname(safeSrc) === safeDestDir
-      const candidate = await nextAvailableName(safeDestDir, path.basename(safeSrc), intoSameDir)
-      const finalDest = await validatePathForCreation(path.join(safeDestDir, candidate))
-
-      // Refuse to copy a directory into itself or one of its descendants.
-      if (finalDest === safeSrc || finalDest.startsWith(safeSrc + path.sep)) {
-        throw new Error('Cannot copy a folder into itself')
-      }
-
-      await fs.cp(safeSrc, finalDest, { recursive: true, errorOnExist: true, force: false })
-      return finalDest
+      const { companionId, path: srcP } = parseLocator(srcPath)
+      const companion = companions.resolve(companionId)
+      const { path: destP } = parseLocator(destDir)
+      const safeSrc = await companion.validatePathStrict(srcP)
+      const safeDestDir = await companion.validatePathStrict(destP)
+      const finalPath = await companion.file.copy(safeSrc, safeDestDir)
+      return encodeResultPath(companionId, finalPath)
     } catch (error) {
       log.error(`[${FS_COPY}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -699,62 +608,34 @@ export function registerHandlers(): void {
   // Import external files/folders (dragged in from the OS file manager) into a
   // workspace directory. The security boundary is the DESTINATION: `destDir`
   // must resolve inside an allowed workspace root. The SOURCE paths originate
-  // from a user-initiated OS drag (webUtils.getPathForFile) and may live
-  // anywhere — they are only read server-side to copy/move into `destDir`, and
-  // their contents are never returned to the renderer. This mirrors the
-  // explicit per-window grant model used by the native Open/Save dialogs.
+  // from a user-initiated OS drag (webUtils.getPathForFile) and are LOCAL OS
+  // paths. For a local workspace they are copied/moved in place on the daemon.
+  // For a REMOTE workspace the daemon can't see them, so we read each entry here
+  // and stream its bytes to the host via uploadEntriesToCompanion (an upload).
+  // Source contents are never returned to the renderer either way.
   ipcMain.handle(
     FS_IMPORT_ENTRIES,
     async (event, sources: string[], destDir: string, mode: 'copy' | 'move') => {
       const win = windowFromEvent(event)
-      const safeDestDir = await validatePathStrict(destDir, win?.id)
-      const created: string[] = []
-      let failed = 0
-
-      for (const src of Array.isArray(sources) ? sources : []) {
-        try {
-          // Resolve the real source (also proves it exists). Deliberately not
-          // restricted to allowed roots — this is an explicit user drag.
-          const realSrc = await fs.realpath(src)
-
-          // Never import a folder into itself or one of its own descendants.
-          if (safeDestDir === realSrc || safeDestDir.startsWith(realSrc + path.sep)) {
-            throw new Error('Cannot import a folder into itself')
-          }
-
-          const intoSameDir = path.dirname(realSrc) === safeDestDir
-          const candidate = await nextAvailableName(safeDestDir, path.basename(realSrc), intoSameDir)
-          const finalDest = await validatePathForCreation(path.join(safeDestDir, candidate), win?.id)
-
-          if (mode === 'move') {
-            try {
-              await fs.rename(realSrc, finalDest)
-            } catch (err) {
-              // rename can't cross filesystems/volumes — fall back to copy+delete.
-              if ((err as NodeJS.ErrnoException)?.code === 'EXDEV') {
-                await fs.cp(realSrc, finalDest, { recursive: true, errorOnExist: true, force: false })
-                await fs.rm(realSrc, { recursive: true, force: true })
-              } else {
-                throw err
-              }
-            }
-          } else {
-            await fs.cp(realSrc, finalDest, { recursive: true, errorOnExist: true, force: false })
-          }
-          created.push(finalDest)
-        } catch (error) {
-          failed++
-          log.error(`[${FS_IMPORT_ENTRIES}]`, src, error)
-        }
+      const { companionId, path: destP } = parseLocator(destDir)
+      const companion = companions.resolve(companionId)
+      const safeDestDir = await companion.validatePathStrict(destP, win?.id)
+      const result =
+        companionId === LOCAL_COMPANION_ID
+          ? await companion.file.importEntries(sources, safeDestDir, mode, win?.id)
+          : await uploadEntriesToCompanion(companion, sources, safeDestDir, mode)
+      return {
+        ...result,
+        created: result.created.map((p) => encodeResultPath(companionId, p)),
       }
-
-      return { created, failed }
     },
   )
 
   ipcMain.handle(FS_MKDIR, async (_event, dirPath: string) => {
     try {
-      await fs.mkdir(await validatePathForCreation(dirPath), { recursive: true })
+      const { companionId, path: p } = parseLocator(dirPath)
+      const companion = companions.resolve(companionId)
+      await companion.file.mkdir(await companion.validatePathForCreation(p))
     } catch (error) {
       log.error(`[${FS_MKDIR}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -763,10 +644,13 @@ export function registerHandlers(): void {
 
   ipcMain.handle(FS_SEARCH, async (_event, rootPath: string, query: string, options?: FileSearchOptions) => {
     try {
-      const validRoot = await validatePathStrict(rootPath)
+      const { companionId, path: p } = parseLocator(rootPath)
+      const companion = companions.resolve(companionId)
+      const validRoot = await companion.validatePathStrict(p)
       const trimmed = (query ?? '').trim()
       if (!trimmed) return []
-      return await searchFiles(validRoot, trimmed, options ?? {})
+      const results = await companion.file.search(validRoot, trimmed, options ?? {})
+      return results.map((r) => ({ ...r, path: encodeResultPath(companionId, r.path) }))
     } catch (error) {
       log.error(`[${FS_SEARCH}]`, error)
       throw error instanceof Error ? error : new Error(String(error))

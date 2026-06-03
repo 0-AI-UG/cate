@@ -361,7 +361,7 @@ export class TerminalLogger {
 // Module-level logger registry
 // =============================================================================
 
-export const loggers: Map<string, TerminalLogger> = new Map()
+const loggers: Map<string, TerminalLogger> = new Map()
 
 export function getOrCreateLogger(terminalId: string): TerminalLogger {
   let logger = loggers.get(terminalId)

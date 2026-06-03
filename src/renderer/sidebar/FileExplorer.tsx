@@ -14,6 +14,7 @@ import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { useDockStore } from '../stores/dockStore'
 import { openFileAsPanel } from '../lib/fileRouting'
+import { workspaceDisplayName } from '../lib/displayPath'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { DockLayoutNode } from '../../shared/types'
@@ -392,7 +393,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     }
   }, [rootCreating, rootCreateValue, rootPath, loadTree])
 
-  const folderName = rootPath.split('/').filter(Boolean).pop() ?? 'Explorer'
+  const folderName = workspaceDisplayName(rootPath) || 'Explorer'
 
   const handleRootContextMenu = useCallback(async (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return

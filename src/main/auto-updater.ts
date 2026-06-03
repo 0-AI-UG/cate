@@ -48,7 +48,7 @@ export function isInstallingUpdate(): boolean { return updateInstalling }
 // Update status broadcast
 // ---------------------------------------------------------------------------
 
-export type UpdateStatus =
+type UpdateStatus =
   | { state: 'idle' }
   | { state: 'checking' }
   | { state: 'available'; version: string; canAutoInstall: boolean; releaseUrl?: string }

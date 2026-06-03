@@ -51,13 +51,6 @@ export function setPanelWindowMeta(windowId: number, panel: PanelState, workspac
 }
 
 /**
- * Get panel metadata for a panel window.
- */
-export function getPanelWindowMeta(windowId: number): { panel: PanelState; workspaceId?: string; terminalPtyId?: string } | undefined {
-  return panelWindowMeta.get(windowId)
-}
-
-/**
  * Update the terminal ptyId for a panel window. The renderer reports this
  * shortly after the terminal panel is mounted so that session persistence can
  * later replay its scrollback log.
@@ -84,23 +77,25 @@ export function getWindow(id: number): BrowserWindow | undefined {
   return undefined
 }
 
-/**
- * Get all active (non-destroyed) windows.
- */
-export function getAllWindows(): BrowserWindow[] {
-  const result: BrowserWindow[] = []
-  for (const win of windows.values()) {
-    if (!win.isDestroyed()) result.push(win)
-  }
-  return result
-}
-
 /** Un-minimize (if needed) and bring a single window to the foreground.
  *  The shared "make this window the active one" idiom used wherever the app
  *  surfaces an existing window (open-path, notification click). */
 export function focusWindow(win: BrowserWindow): void {
   if (win.isMinimized()) win.restore()
   win.focus()
+
+  // macOS lets a backgrounded app raise itself on focus(); Windows and Linux do
+  // not — their foreground-lock / focus-stealing prevention often leaves focus()
+  // only flashing the taskbar. Briefly toggling always-on-top forces the window
+  // to the front, then releases it so it isn't actually pinned. (A notification
+  // click grants the app the foreground rights this relies on.) Preserve an
+  // existing always-on-top state if the window already had one.
+  if (process.platform !== 'darwin') {
+    const alreadyPinned = win.isAlwaysOnTop()
+    win.setAlwaysOnTop(true)
+    win.focus()
+    if (!alreadyPinned) win.setAlwaysOnTop(false)
+  }
 }
 
 /**
@@ -182,13 +177,6 @@ export function setDockWindowState(
   state: { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> },
 ): void {
   dockWindowState.set(windowId, state)
-}
-
-/**
- * Get dock window state.
- */
-export function getDockWindowState(windowId: number): { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> } | undefined {
-  return dockWindowState.get(windowId)
 }
 
 /**

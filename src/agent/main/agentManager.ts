@@ -1,31 +1,28 @@
 // =============================================================================
-// AgentManager — one pi `RpcClient` subprocess per panel.
+// AgentManager — one pi session per panel, run THROUGH the companion.
 //
-// We do not run the agent in-process anymore. Instead we spawn pi-coding-agent
-// as a long-lived child via its built-in `--mode rpc` protocol and let pi own
-// the agent loop, tools, system prompt, sessions, and extensions. Credentials
-// flow through ~/.pi/agent/auth.json (written by AuthManager).
+// pi is no longer spawned (or bundled) by the desktop app. The session resolves
+// the workspace's companion from its locator and drives pi via `companion.agent`
+// — local (in-process spawn from the on-demand pi tarball) or remote (pi on the
+// daemon's host) identically. PiRpcClient speaks pi's `--mode rpc` JSONL over
+// that channel. Provider credentials are seeded to the host's pi-agent dir via
+// `companion.file` (so they work on a remote host too).
 //
-// This file is intentionally a thin glue layer: it forwards renderer commands
-// to pi over RPC and forwards pi's events back to the renderer. Anything
-// agent-shaped that wants changing belongs upstream in pi.
+// This file stays a thin glue layer: forward renderer commands to pi, forward
+// pi's events back to the renderer.
 // =============================================================================
 
-import fs from 'fs'
 import path from 'path'
 import { app, type WebContents } from 'electron'
-import { RpcClient } from '@earendil-works/pi-coding-agent'
 import log from '../../main/logger'
-import { getShellEnv } from '../../main/shellEnv'
-import { createNodeShim } from './nodeShim'
+import { parseLocator } from '../../main/companion/locator'
+import { companions } from '../../main/companion/companionManager'
+import { PI_VERSION } from '../../companion/piVersion'
+import type { Companion } from '../../main/companion/types'
+import type { CompanionId } from '../../main/companion/locator'
+import { PiRpcClient } from './piRpcClient'
 
-// Structural alias for pi-ai's ImageContent — pi-ai doesn't expose a `.` export
-// so we duplicate the minimal shape here. Pi reads `{type, data, mimeType}`.
-interface ImageContent {
-  type: 'image'
-  data: string
-  mimeType: string
-}
+import type { PiImageContent } from './piRpcClient'
 import type {
   AgentCreateOptions,
   AgentEventEnvelope,
@@ -40,98 +37,28 @@ import type {
 import { AGENT_EVENT } from '../../shared/ipc-channels'
 import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
-import { agentDirFor, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace } from './agentDir'
+import { hostAgentDir, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace } from './agentDir'
 import { mirrorModelsToWorkspace } from './customModels'
 import type { AuthManager } from './authManager'
 
-function resolvePiCliPath(): string {
-  return path.join(
-    app.getAppPath(),
-    'node_modules',
-    '@earendil-works',
-    'pi-coding-agent',
-    'dist',
-    'cli.js',
-  )
-}
-
-// RpcClient hardcodes `spawn("node", ...)`, so `node` must be on PATH.
-//
-// In production we MUST use Electron's own binary (with ELECTRON_RUN_AS_NODE=1)
-// because it has built-in asar support — a regular system `node` can't resolve
-// modules from inside the asar archive. In dev we fall back to the system node
-// only if one exists; otherwise we shim Electron the same way.
-let fallbackNodeDir: string | null = null
-
-function nodeExistsOnPath(env: Record<string, string>): boolean {
-  const pathVar = env.PATH || env.Path || ''
-  if (!pathVar) return false
-  const sep = process.platform === 'win32' ? ';' : ':'
-  const name = process.platform === 'win32' ? 'node.exe' : 'node'
-  for (const dir of pathVar.split(sep)) {
-    if (!dir) continue
-    try {
-      fs.accessSync(path.join(dir, name), fs.constants.X_OK)
-      return true
-    } catch { /* not here */ }
-  }
-  return false
-}
-
-function ensureElectronNodeShim(): string {
-  if (fallbackNodeDir) return fallbackNodeDir
-  const dir = path.join(app.getPath('temp'), 'cate-node-shim')
-  createNodeShim(dir, process.execPath)
-  log.info('[agentManager] created node shim in %s (platform=%s)', dir, process.platform)
-  fallbackNodeDir = dir
-  return dir
-}
-
-function buildAgentEnv(cwd: string): Record<string, string> {
-  const env = { ...getShellEnv() }
-  // Scope pi's entire config (extensions, sessions, settings, auth) to this
-  // workspace instead of the user's global ~/.pi/agent.
-  env.PI_CODING_AGENT_DIR = agentDirFor(cwd)
-  const needsShim = app.isPackaged || !nodeExistsOnPath(env)
-  if (needsShim) {
-    const shimDir = ensureElectronNodeShim()
-    const sep = process.platform === 'win32' ? ';' : ':'
-    env.PATH = shimDir + sep + (env.PATH || '')
-    env.ELECTRON_RUN_AS_NODE = '1'
-    log.info('[agentManager] using Electron as node (packaged=%s)', app.isPackaged)
-  }
-  return env
-}
-
 interface AgentSession {
   panelId: string
+  /** The companion hosting this session (local or remote). */
+  companion: Companion
+  /** Companion-absolute workspace path (the locator's path part). */
   cwd: string
-  client: RpcClient
+  client: PiRpcClient
   sender: WebContents
   unsubscribeEvents: () => void
+  disposeExitWatcher: () => void
   disposeAuthWatcher: () => void
   modelRef: AgentModelRef | null
 }
 
 /** Convert renderer-side image attachments to pi's ImageContent shape. */
-function toImageContent(images?: AgentImageAttachment[]): ImageContent[] | undefined {
+function toImageContent(images?: AgentImageAttachment[]): PiImageContent[] | undefined {
   if (!images || images.length === 0) return undefined
-  return images.map((img) => ({
-    type: 'image',
-    data: img.data,
-    mimeType: img.mimeType,
-  })) as unknown as ImageContent[]
-}
-
-/** Write a raw line to pi's stdin via the (private) child process handle on
- *  RpcClient. Used for the extension UI sub-protocol — RpcClient does not
- *  expose a typed method for `extension_ui_response`. */
-function writeRawToClient(client: RpcClient, obj: unknown): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const proc = (client as any).process as { stdin?: { write: (s: string) => void } } | null
-  const stdin = proc?.stdin
-  if (!stdin) throw new Error('Pi RPC stdin not available')
-  stdin.write(JSON.stringify(obj) + '\n')
+  return images.map((img) => ({ type: 'image', data: img.data, mimeType: img.mimeType }))
 }
 
 export class AgentManager {
@@ -153,7 +80,7 @@ export class AgentManager {
   /** Push the shared auth.json into every live session's workspace dir. */
   private syncAuthToOpenSessions(): void {
     for (const session of this.sessions.values()) {
-      void pushSharedToWorkspace(session.cwd).catch((err) => {
+      void pushSharedToWorkspace(session.companion, session.cwd).catch((err) => {
         log.warn('[agentManager] auth sync failed for %s: %O', session.panelId, err)
       })
     }
@@ -164,9 +91,33 @@ export class AgentManager {
    *  on their next model-list fetch). */
   syncCustomModelsToOpenSessions(): void {
     for (const session of this.sessions.values()) {
-      void mirrorModelsToWorkspace(session.cwd).catch((err) => {
+      void mirrorModelsToWorkspace(session.companion, session.cwd).catch((err) => {
         log.warn('[agentManager] models sync failed for %s: %O', session.panelId, err)
       })
+    }
+  }
+
+  /**
+   * Ensure pi is installed on the host. The daemon (or local host) pulls pi
+   * itself first. If that fails — typically because a remote host has no
+   * internet — push the pi tarball from the client over the transport (SFTP for
+   * ssh, /mnt copy for wsl) and retry the daemon-side ensure (which then
+   * extracts the pushed tarball). Local has no transport push, so its ensurePi
+   * error simply propagates (it downloads client-side already).
+   */
+  private async ensurePiWithPushFallback(companion: Companion, companionId: CompanionId): Promise<void> {
+    try {
+      await companion.agent.ensurePi()
+    } catch (err) {
+      const pushed = await companions
+        .pushPi(companionId, app.getVersion(), PI_VERSION)
+        .catch((pushErr) => {
+          log.warn('[agentManager] pi push fallback failed for %s: %O', companionId, pushErr)
+          return false
+        })
+      if (!pushed) throw err
+      log.info('[agentManager] pushed pi tarball to %s; retrying ensurePi', companionId)
+      await companion.agent.ensurePi()
     }
   }
 
@@ -184,25 +135,34 @@ export class AgentManager {
         await this.disposeInternal(opts.panelId)
       }
 
-      // Create <cwd>/.cate/pi-agent, seed its auth.json from the shared file,
-      // and drop pi's official subagent + plan-mode extensions in so they are
-      // auto-discovered the first time pi spins up in this workspace.
-      await prepareAgentDir(opts.cwd)
-      await mirrorModelsToWorkspace(opts.cwd)
-      await installSubagentExtension(opts.cwd)
-      await installPlanModeExtension(opts.cwd)
+      // Resolve the workspace's companion from its locator (throws if a remote
+      // companion isn't connected — surfaced as a start error).
+      const { companionId, path: cwd } = parseLocator(opts.cwd)
+      const companion = companions.resolve(companionId)
+
+      // Seed the host's <cwd>/.cate/pi-agent: auth.json + models.json via the
+      // companion (so it lands on the remote host too), plus pi's subagent +
+      // plan-mode extensions. PI_CODING_AGENT_DIR points pi at that dir.
+      await prepareAgentDir(companion, cwd)
+      await mirrorModelsToWorkspace(companion, cwd)
+      await installSubagentExtension(companion, cwd)
+      await installPlanModeExtension(companion, cwd)
 
       const extraArgs: string[] = []
       if (opts.sessionFile) extraArgs.push('--session', opts.sessionFile)
 
-      const client = new RpcClient({
-        cliPath: resolvePiCliPath(),
-        cwd: opts.cwd,
+      const client = new PiRpcClient(companion, {
+        cwd,
         provider: opts.model?.provider,
         model: opts.model?.model,
         args: extraArgs.length > 0 ? extraArgs : undefined,
-        env: buildAgentEnv(opts.cwd),
+        env: { PI_CODING_AGENT_DIR: hostAgentDir(companionId, cwd) },
       })
+
+      // Ensure pi is installed on the host BEFORE start. On a remote companion
+      // whose host has no internet, the daemon's own download fails — fall back
+      // to pushing the tarball from the client, then retry the daemon ensure.
+      await this.ensurePiWithPushFallback(companion, companionId)
 
       try {
         await client.start()
@@ -226,16 +186,27 @@ export class AgentManager {
         }
       })
 
-      // Watch this workspace's auth.json so OAuth token refreshes written by pi
+      // If pi exits UNEXPECTEDLY (crash on launch, killed, etc.), surface its
+      // exit code + stderr to the panel instead of letting every subsequent RPC
+      // hang for 30s. stop()/dispose set a flag so a clean shutdown stays quiet.
+      const disposeExitWatcher = client.onExit((code, stderr) => {
+        const reason = stderr ? `\n${stderr}` : ''
+        log.warn('[agentManager] pi exited unexpectedly panel=%s code=%s%s', opts.panelId, code, reason)
+        this.sendErrorEvent(sender, opts.panelId, `Agent process exited (code ${code}).${reason}`)
+      })
+
+      // Watch the host's auth.json so OAuth token refreshes written by pi
       // propagate back to the shared file.
-      const disposeAuthWatcher = watchWorkspaceAuth(opts.cwd)
+      const disposeAuthWatcher = watchWorkspaceAuth(companion, cwd)
 
       this.sessions.set(opts.panelId, {
         panelId: opts.panelId,
-        cwd: opts.cwd,
+        companion,
+        cwd,
         client,
         sender,
         unsubscribeEvents,
+        disposeExitWatcher,
         disposeAuthWatcher,
         modelRef: opts.model ?? null,
       })
@@ -316,19 +287,10 @@ export class AgentManager {
     const session = this.sessions.get(panelId)
     if (!session) return
     try { session.unsubscribeEvents() } catch { /* noop */ }
+    try { session.disposeExitWatcher() } catch { /* noop */ }
     try { session.disposeAuthWatcher() } catch { /* noop */ }
-    // RpcClient.pendingRequests is a Map<string, { resolve, reject }>. When we
-    // kill the child, those promises will never resolve — so reject them now.
-    const pending = (session.client as unknown as {
-      pendingRequests?: Map<string, { reject: (err: Error) => void }>
-    }).pendingRequests
-    if (pending) {
-      const err = new Error('Pi session disposed')
-      for (const { reject } of pending.values()) {
-        try { reject(err) } catch { /* noop */ }
-      }
-      pending.clear()
-    }
+    // Reject any in-flight requests so their promises don't hang once pi is gone.
+    try { session.client.rejectAllPending('Pi session disposed') } catch { /* noop */ }
     try { await session.client.stop() } catch { /* noop */ }
     this.sessions.delete(panelId)
     log.info('[agentManager] disposed session panel=%s', panelId)
@@ -519,7 +481,7 @@ export class AgentManager {
     if (!session) return []
     try {
       const commands = await session.client.getCommands()
-      const homeAgent = agentDirFor(session.cwd) + path.sep
+      const homeAgent = hostAgentDir(session.companion.id, session.cwd) + path.sep
       return commands.map((c) => {
         const filePath = (c as { sourceInfo?: { path?: string; scope?: 'user' | 'project' | 'temporary' } }).sourceInfo?.path
         const scope = (c as { sourceInfo?: { scope?: 'user' | 'project' | 'temporary' } }).sourceInfo?.scope
@@ -548,7 +510,7 @@ export class AgentManager {
     const session = this.sessions.get(panelId)
     if (!session) return
     try {
-      writeRawToClient(session.client, { type: 'extension_ui_response', ...response })
+      session.client.writeRaw({ type: 'extension_ui_response', ...response })
     } catch (err) {
       log.warn('[agentManager] uiResponse failed for %s: %O', panelId, err)
     }

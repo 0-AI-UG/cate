@@ -131,9 +131,6 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
   },
 }
 
-/** Ordered list of every known panel type. */
-export const PANEL_TYPES: PanelType[] = Object.keys(PANEL_DEFINITIONS) as PanelType[]
-
 /** Lookup helper. Falls back to the editor definition (matches the previous
  *  drag-ghost behaviour). */
 export function getSharedPanelDef(type: PanelType | string): SharedPanelDefinition {

@@ -20,13 +20,15 @@ import {
   RECENT_PROJECTS_REMOVE,
   SIDEBAR_SESSION_GET,
   SIDEBAR_SESSION_SET,
+  REMOTE_PROJECTS_GET,
+  REMOTE_PROJECTS_SET,
   LAYOUT_SAVE,
   LAYOUT_LIST,
   LAYOUT_LOAD,
   LAYOUT_DELETE,
 } from '../shared/ipc-channels'
 import { DEFAULT_SETTINGS } from '../shared/types'
-import type { AppSettings, SidebarSession } from '../shared/types'
+import type { AppSettings, SidebarSession, RemoteProjectEntry } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
 
 // ---------------------------------------------------------------------------
@@ -35,7 +37,6 @@ import { broadcastToAll } from './windowRegistry'
 const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   defaultShellPath: 'string',
   warnBeforeQuit: 'boolean',
-  nativeTabs: 'boolean',
   activeThemeId: 'string',
   systemLightThemeId: 'string',
   systemDarkThemeId: 'string',
@@ -141,10 +142,10 @@ export interface BootSnapshot {
   theme?: string
   backgroundColor?: string
   // Desired native window appearance for the active theme. Drives
-  // nativeTheme.themeSource so the macOS native title bar (native-tabs mode)
-  // matches the theme's dark/light instead of the OS. 'system' tracks the OS.
+  // nativeTheme.themeSource so native chrome (menus, scrollbars, the window
+  // backdrop) matches the theme's dark/light instead of the OS. 'system' tracks
+  // the OS.
   appearance?: 'dark' | 'light' | 'system'
-  nativeTabs?: boolean
   lastWorkspaceId?: string
 }
 
@@ -318,6 +319,19 @@ export function registerHandlers(): void {
   ipcMain.handle(SIDEBAR_SESSION_SET, async (_event, session: SidebarSession) => {
     const store = await getStore()
     store.set('sidebarSession', session)
+  })
+
+  // Remote projects (cate-companion:// workspaces): full restore snapshot +
+  // reconnect info, since their tree lives on a companion and can't use the
+  // local .cate/ project-state files.
+  ipcMain.handle(REMOTE_PROJECTS_GET, async () => {
+    const store = await getStore()
+    return store.get('remoteProjects', []) as RemoteProjectEntry[]
+  })
+
+  ipcMain.handle(REMOTE_PROJECTS_SET, async (_event, entries: RemoteProjectEntry[]) => {
+    const store = await getStore()
+    store.set('remoteProjects', Array.isArray(entries) ? entries : [])
   })
 
   // Layouts

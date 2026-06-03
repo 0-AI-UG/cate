@@ -60,6 +60,11 @@ export interface CanvasStoreState {
   }
   selectedNodeIds: Set<string>
   selectedRegionIds: Set<string>
+  /** When true, the auto-focus-largest-visible hook stands down. Set while the
+   *  user is moving the canvas by keyboard (Cmd+Arrow jump / Shift+Arrow pan)
+   *  so those movements don't auto-activate whatever scrolls into view; cleared
+   *  by any explicit focus, manual pan, or zoom. */
+  suppressAutoFocus: boolean
   /** Region currently being hovered as a drop target during a node drag. */
   dropTargetRegionId: string | null
   /** Undo history — snapshots of {nodes, regions}. */
@@ -99,6 +104,8 @@ export interface CanvasStoreActions {
   setContainerSize: (size: Size) => void
   zoomAroundCenter: (newZoom: number) => void
   animateZoomTo: (targetZoom: number) => void
+  // Smoothly ease the viewport offset toward a target (Shift/Cmd+Arrow movement)
+  animateViewportTo: (target: Point) => void
 
   // Derived getters
   canvasToView: (point: Point) => Point
@@ -114,6 +121,14 @@ export interface CanvasStoreActions {
 
   // Move focus to the spatially-nearest node in a direction, centering it
   navigateDirection: (dir: 'up' | 'down' | 'left' | 'right') => void
+
+  // Move the selection cursor to the spatially-nearest node in a direction and
+  // centre it — without focusing it, so panel content never grabs the keyboard
+  // and the user can keep jumping (Cmd+Arrow).
+  navigateSelect: (dir: 'up' | 'down' | 'left' | 'right') => void
+
+  // Pan the canvas viewport one step in a direction (Shift+Arrow).
+  panViewport: (dir: 'up' | 'down' | 'left' | 'right') => void
 
   zoomToFit: () => void
   zoomToSelection: () => void
@@ -293,6 +308,48 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
   )
 }
 
+/** View-space pixels the canvas pans per Shift+Arrow keystroke. */
+const PAN_STEP = 120
+
+/**
+ * Find the spatially-nearest node in a direction from a reference centre.
+ * Uses a directional cone: the candidate must lie in the half-plane AND the
+ * move axis must dominate, so we don't jump to a node that's mostly sideways.
+ * Shared by navigateDirection (focus + activate) and navigateSelect (select
+ * without activating).
+ */
+function findNodeInDirection(
+  nodeList: CanvasNodeState[],
+  refX: number,
+  refY: number,
+  dir: 'up' | 'down' | 'left' | 'right',
+  excludeId?: CanvasNodeId,
+): CanvasNodeState | null {
+  let best: CanvasNodeState | null = null
+  let bestScore = Infinity
+  for (const n of nodeList) {
+    if (excludeId && n.id === excludeId) continue
+    const dx = n.origin.x + n.size.width / 2 - refX
+    const dy = n.origin.y + n.size.height / 2 - refY
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+
+    let inCone: boolean
+    let score: number
+    if (dir === 'left') { inCone = dx < 0 && adx >= ady; score = adx + 2 * ady }
+    else if (dir === 'right') { inCone = dx > 0 && adx >= ady; score = adx + 2 * ady }
+    else if (dir === 'up') { inCone = dy < 0 && ady >= adx; score = ady + 2 * adx }
+    else { inCone = dy > 0 && ady >= adx; score = ady + 2 * adx }
+    if (!inCone) continue
+
+    if (score < bestScore) {
+      bestScore = score
+      best = n
+    }
+  }
+  return best
+}
+
 // -----------------------------------------------------------------------------
 // Store factory — creates independent canvas store instances
 // -----------------------------------------------------------------------------
@@ -306,6 +363,21 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       cancelAnimationFrame(activeZoomAnimationRafId)
       activeZoomAnimationRafId = 0
     }
+  }
+
+  // Per-instance viewport-pan animation tracking. `offsetAnimTarget` is the
+  // destination the tween is easing toward; tracking it (rather than reading
+  // the mid-flight offset) lets rapid Shift+Arrow / Cmd+Arrow presses stack
+  // smoothly instead of lagging behind the keystrokes.
+  let activeOffsetAnimationRafId = 0
+  let offsetAnimTarget: Point | null = null
+
+  function cancelOffsetAnim() {
+    if (activeOffsetAnimationRafId) {
+      cancelAnimationFrame(activeOffsetAnimationRafId)
+      activeOffsetAnimationRafId = 0
+    }
+    offsetAnimTarget = null
   }
 
   return create<CanvasStore>((set, get) => ({
@@ -322,6 +394,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   snapGuides: { lines: [] },
   selectedNodeIds: new Set<string>(),
   selectedRegionIds: new Set<string>(),
+  suppressAutoFocus: false,
   dropTargetRegionId: null,
   history: [],
   future: [],
@@ -514,6 +587,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
         nextZOrder: state.nextZOrder + 1,
         focusedNodeId: id,
         focusEpoch: state.focusEpoch + 1,
+        // An explicit focus (click, switcher, auto-focus) ends keyboard-nav mode.
+        suppressAutoFocus: false,
       }
     })
   },
@@ -581,12 +656,16 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   },
 
   setViewportOffset(offset) {
-    set({ viewportOffset: offset })
+    // A manual pan (wheel / drag) interrupts any in-flight keyboard tween and
+    // resumes auto-focus-largest.
+    cancelOffsetAnim()
+    if (get().suppressAutoFocus) set({ viewportOffset: offset, suppressAutoFocus: false })
+    else set({ viewportOffset: offset })
   },
 
   setZoomAndOffset(zoom, offset) {
     const clamped = Math.min(Math.max(zoom, ZOOM_MIN), ZOOM_MAX)
-    set({ zoomLevel: clamped, viewportOffset: offset })
+    set({ zoomLevel: clamped, viewportOffset: offset, suppressAutoFocus: false })
   },
 
   setContainerSize(size) {
@@ -610,6 +689,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     }
     set({
       zoomLevel: clamped,
+      suppressAutoFocus: false,
       viewportOffset: {
         x: centerView.x - centerCanvas.x * clamped,
         y: centerView.y - centerCanvas.y * clamped,
@@ -619,6 +699,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 
   animateZoomTo(targetZoom) {
     cancelZoomAnim()
+    cancelOffsetAnim()
+    if (get().suppressAutoFocus) set({ suppressAutoFocus: false })
 
     const clampedTarget = Math.min(Math.max(targetZoom, ZOOM_MIN), ZOOM_MAX)
 
@@ -658,6 +740,41 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     }
 
     activeZoomAnimationRafId = requestAnimationFrame(tick)
+  },
+
+  animateViewportTo(target) {
+    // A pan and a zoom-recentre must not both drive viewportOffset at once.
+    cancelZoomAnim()
+    offsetAnimTarget = target
+
+    // No RAF (e.g. the node test environment) — apply instantly.
+    if (typeof requestAnimationFrame !== 'function') {
+      activeOffsetAnimationRafId = 0
+      offsetAnimTarget = null
+      set({ viewportOffset: target })
+      return
+    }
+
+    // A loop is already running — it will glide to the updated target.
+    if (activeOffsetAnimationRafId) return
+
+    const EASE = 0.18
+    const tick = () => {
+      const t = offsetAnimTarget
+      if (!t) { activeOffsetAnimationRafId = 0; return }
+      const { viewportOffset: o } = get()
+      const dx = t.x - o.x
+      const dy = t.y - o.y
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+        set({ viewportOffset: { x: t.x, y: t.y } })
+        activeOffsetAnimationRafId = 0
+        offsetAnimTarget = null
+        return
+      }
+      set({ viewportOffset: { x: o.x + dx * EASE, y: o.y + dy * EASE } })
+      activeOffsetAnimationRafId = requestAnimationFrame(tick)
+    }
+    activeOffsetAnimationRafId = requestAnimationFrame(tick)
   },
 
   // --- Derived getters ---
@@ -787,32 +904,78 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       refY = center.y
     }
 
-    let best: CanvasNodeState | null = null
-    let bestScore = Infinity
-    for (const n of nodeList) {
-      if (current && n.id === current.id) continue
-      const dx = n.origin.x + n.size.width / 2 - refX
-      const dy = n.origin.y + n.size.height / 2 - refY
-      const adx = Math.abs(dx)
-      const ady = Math.abs(dy)
+    const best = findNodeInDirection(nodeList, refX, refY, dir, current?.id)
+    if (best) get().focusAndCenter(best.id)
+  },
 
-      // Directional cone: the candidate must lie in the half-plane AND the move
-      // axis must dominate, so we don't jump to a node that's mostly sideways.
-      let inCone: boolean
-      let score: number
-      if (dir === 'left') { inCone = dx < 0 && adx >= ady; score = adx + 2 * ady }
-      else if (dir === 'right') { inCone = dx > 0 && adx >= ady; score = adx + 2 * ady }
-      else if (dir === 'up') { inCone = dy < 0 && ady >= adx; score = ady + 2 * adx }
-      else { inCone = dy > 0 && ady >= adx; score = ady + 2 * adx }
-      if (!inCone) continue
+  navigateSelect(dir) {
+    const state = get()
+    const nodeList = Object.values(state.nodes)
+    if (nodeList.length === 0) return
 
-      if (score < bestScore) {
-        bestScore = score
-        best = n
-      }
+    // Reference center: the single selected node, else the focused node, else
+    // the viewport center. Using selection (not focus) as the cursor lets the
+    // user chain jumps without the destination grabbing keyboard focus.
+    let ref: CanvasNodeState | null = null
+    if (state.selectedNodeIds.size === 1) {
+      const id = [...state.selectedNodeIds][0]
+      ref = state.nodes[id] ?? null
+    }
+    if (!ref && state.focusedNodeId) ref = state.nodes[state.focusedNodeId] ?? null
+
+    let refX: number
+    let refY: number
+    if (ref) {
+      refX = ref.origin.x + ref.size.width / 2
+      refY = ref.origin.y + ref.size.height / 2
+    } else {
+      const cs = state.containerSize
+      const center = get().viewToCanvas({ x: cs.width / 2, y: cs.height / 2 })
+      refX = center.x
+      refY = center.y
     }
 
-    if (best) get().focusAndCenter(best.id)
+    const best = findNodeInDirection(nodeList, refX, refY, dir, ref?.id)
+    if (!best) return
+
+    // Select + raise the target and clear focus so no panel content grabs the
+    // keyboard — otherwise the next arrow would be swallowed by the node
+    // instead of moving to the one beyond it. The viewport then glides to
+    // centre the node (see animateViewportTo) instead of snapping.
+    set({
+      nodes: { ...state.nodes, [best.id]: { ...best, zOrder: state.nextZOrder } },
+      nextZOrder: state.nextZOrder + 1,
+      selectedNodeIds: new Set([best.id]),
+      selectedRegionIds: new Set<string>(),
+      focusedNodeId: null,
+      // Don't let auto-focus-largest re-activate a node as we pan to centre.
+      suppressAutoFocus: true,
+    })
+    const cs = state.containerSize
+    const zoom = state.zoomLevel
+    if (cs.width > 0 && cs.height > 0) {
+      get().animateViewportTo({
+        x: cs.width / 2 - (best.origin.x + best.size.width / 2) * zoom,
+        y: cs.height / 2 - (best.origin.y + best.size.height / 2) * zoom,
+      })
+    }
+  },
+
+  panViewport(dir) {
+    // Panning the canvas by keyboard must not auto-activate nodes scrolling
+    // into view.
+    if (!get().suppressAutoFocus) set({ suppressAutoFocus: true })
+    // Accumulate from the in-flight target (if animating) so repeated key
+    // presses stack smoothly rather than chasing the easing tween.
+    const o = offsetAnimTarget ?? get().viewportOffset
+    // Arrow direction = direction the camera moves, so content scrolls the
+    // opposite way (Down reveals what's below → offset.y decreases).
+    const target =
+      dir === 'up' ? { x: o.x, y: o.y + PAN_STEP }
+      : dir === 'down' ? { x: o.x, y: o.y - PAN_STEP }
+      : dir === 'left' ? { x: o.x + PAN_STEP, y: o.y }
+      : { x: o.x - PAN_STEP, y: o.y }
+    get().animateViewportTo(target)
   },
 
   zoomToFit() {
@@ -1470,11 +1633,6 @@ export function releaseCanvasStoreForPanel(panelId: string): void {
  *  Used by drag handlers to find the source canvas of a given node id. */
 export function getAllCanvasStores(): UseBoundStore<StoreApi<CanvasStore>>[] {
   return Array.from(canvasBoundStoresByPanelId.values())
-}
-
-/** @deprecated Use store.getState().cancelZoomAnimation() instead */
-export function cancelZoomAnimation() {
-  useCanvasStore.getState().cancelZoomAnimation()
 }
 
 // -----------------------------------------------------------------------------

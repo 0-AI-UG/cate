@@ -14,13 +14,16 @@ import {
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
 } from '../shared/ipc-channels'
-import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals, terminalPids } from './ipc/terminal'
+import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals } from './ipc/terminal'
+import { localProcessHost } from './companion/localProcessHost'
+import { companions } from './companion/companionManager'
+import { registerCompanionHandlers } from './ipc/companion'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerSearchHandlers, stopSearchesForWindow } from './ipc/search'
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, getSettingSync, readBootSnapshot, writeBootSnapshot } from './store'
+import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot } from './store'
 import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
@@ -35,6 +38,7 @@ import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './
 import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows, focusWindow } from './windowRegistry'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { addAllowedRoot, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow, grantFileAccess, validatePath } from './ipc/pathValidation'
+import { isLocalLocator } from './companion/locator'
 import { listPersistentGrants, recordPersistentGrant } from './grantedPathStore'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv } from './shellEnv'
@@ -131,20 +135,19 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   const bootSnap = windowType === 'main' ? readBootSnapshot() : null
   const snapGeom = bootSnap?.geometry
   const snapBg = bootSnap?.backgroundColor
+  // The exact background color used for both the native window backdrop and the
+  // renderer's first-paint loading splash, so the splash matches the themed
+  // window before the renderer's JS theme injection runs.
+  const bgColor = snapBg ?? '#1f1e1c'
 
-  // Apply the active theme's native appearance before the window exists so the
-  // macOS native title bar (native-tabs mode) paints with the right dark/light
-  // material on the first frame. themeSource is app-wide, so we only need it
-  // once from the main window's snapshot; the renderer keeps it in sync after.
+  // Apply the active theme's native appearance before the window exists so
+  // native chrome (menus, scrollbars, the window backdrop) paints with the
+  // right dark/light material on the first frame. themeSource is app-wide, so
+  // we only need it once from the main window's snapshot; the renderer keeps it
+  // in sync after.
   if (windowType === 'main' && bootSnap?.appearance) {
     try { nativeTheme.themeSource = bootSnap.appearance } catch { /* noop */ }
   }
-
-  // Snapshot native-tabs state at window creation. The renderer reads this via
-  // the URL query so that the React TitlebarStrip matches the actual
-  // titleBarStyle — toggling the setting at runtime only takes effect on the
-  // next launch.
-  const nativeTabsActive = process.platform === 'darwin' && windowType === 'main' && getSettingSync('nativeTabs')
 
   const win = new BrowserWindow({
     width: snapGeom?.width ?? (isDock ? 700 : isPanel ? 700 : 1200),
@@ -155,26 +158,20 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     minWidth: isDock ? 400 : isPanel ? undefined : 800,
     minHeight: isDock ? 300 : isPanel ? undefined : 600,
     title: isDock ? 'Cate' : isPanel ? 'Cate Panel' : 'Cate',
-    // macOS native window tabs require a standard title bar — `hiddenInset`
-    // suppresses the tab bar entirely. When native tabs are enabled for main
-    // windows we fall back to the default title bar so the tab strip (app
-    // name tab + "+" button) can render.
-    titleBarStyle: isPanel ? 'hidden' : nativeTabsActive ? 'default' : 'hiddenInset',
+    // Main + dock windows hide the native title bar and draw a themed strip in
+    // its place (the macOS native bar can't be tinted to a theme color — only
+    // dark/light — so we always use `hiddenInset` and render TitlebarStrip).
+    titleBarStyle: isPanel ? 'hidden' : 'hiddenInset',
     // Align traffic lights with our 28px themed TitlebarStrip on macOS. Apple's
     // standard NSWindow title bar is ~28pt with lights at y≈7; matching that
     // here makes the themed bar visually identical to a native title bar.
     trafficLightPosition: isDock
       ? { x: 12, y: 11 }
-      : (process.platform === 'darwin' && windowType === 'main' && !nativeTabsActive)
+      : (process.platform === 'darwin' && windowType === 'main')
         ? { x: 10, y: 6 }
         : undefined,
     frame: !(isPanel || isDock),
-    // macOS native window tabs — only on main windows. Setting tabbingIdentifier
-    // makes new windows in this group join as native tabs in the title bar
-    // (subject to System Settings → Desktop & Dock → "Prefer tabs"). Panel and
-    // dock windows are excluded so they stay free-floating.
-    ...(nativeTabsActive ? { tabbingIdentifier: 'cate-main' } : {}),
-    backgroundColor: snapBg ?? '#1f1e1c',
+    backgroundColor: bgColor,
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -331,7 +328,9 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   // Build query string from params
   const queryParts: string[] = []
   queryParts.push(`type=${encodeURIComponent(windowType)}`)
-  if (nativeTabsActive) queryParts.push('nativeTabsBoot=1')
+  // Pass the themed boot background so the renderer can paint its loading splash
+  // to match the window backdrop on the first frame (main window only).
+  if (windowType === 'main') queryParts.push(`bg=${encodeURIComponent(bgColor)}`)
   if (params?.panelType) queryParts.push(`panelType=${encodeURIComponent(params.panelType)}`)
   if (params?.panelId) queryParts.push(`panelId=${encodeURIComponent(params.panelId)}`)
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)
@@ -494,6 +493,7 @@ function registerDeferredHandlers(): void {
   registerNotificationHandlers()
   registerAuthHandlers(authManager)
   registerAgentHandlers(authManager, agentManager)
+  registerCompanionHandlers()
 }
 
 /** Union of critical + deferred — kept for any callers that want the full set in one call. */
@@ -509,8 +509,15 @@ function registerAllHandlers(): void {
 function registerWindowAndDialogHandlers(): void {
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, async (_event, filePath: string) => {
+    // A remote (cate-companion://) path has no representation on this machine —
+    // there is nothing local to reveal. Return a structured result instead of
+    // throwing so the renderer can quietly ignore/disable the action.
+    if (!isLocalLocator(filePath)) {
+      return { ok: false, reason: 'remote' }
+    }
     try {
       shell.showItemInFolder(validatePath(filePath))
+      return { ok: true }
     } catch (error) {
       log.error('[SHELL_SHOW_IN_FOLDER]', error)
       throw error instanceof Error ? error : new Error(String(error))
@@ -764,6 +771,11 @@ function registerWindowAndDialogHandlers(): void {
 
   // Native file drag from renderer (for screenshot thumbnails etc.)
   ipcMain.handle(NATIVE_FILE_DRAG, async (event, filePath: string) => {
+    // A remote path has no local file to export into a native OS drag — no-op
+    // rather than mis-resolving the locator against the local filesystem.
+    if (!isLocalLocator(filePath)) {
+      return { ok: false, reason: 'remote' }
+    }
     try {
       const validPath = validatePath(filePath)
       const win = BrowserWindow.fromWebContents(event.sender)
@@ -1167,6 +1179,13 @@ function buildSinglePanelDockState(panelId: string): WindowDockState {
 // Set app name before menu and window creation
 app.setName('Cate')
 
+// Windows: the toast notification system keys off the AppUserModelID, and it
+// must match the install shortcut's ID (electron-builder uses `appId`) for the
+// notification 'click' event to fire reliably. No-op on macOS/Linux.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.cate.app')
+}
+
 // In dev mode, use a separate userData directory so dev and production don't collide
 if (!app.isPackaged) {
   app.setPath('userData', path.join(app.getPath('userData'), 'Dev'))
@@ -1260,9 +1279,7 @@ setNewMainWindowFn(() => createWindow({ type: 'main' }))
 // ---------------------------------------------------------------------------
 
 function emergencyKillPTYs(): void {
-  for (const pid of terminalPids.values()) {
-    try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ }
-  }
+  localProcessHost.emergencyKill()
 }
 
 // Global error handlers — Sentry (when configured) captures the error before
@@ -1459,6 +1476,9 @@ app.on('will-quit', () => {
   // during Environment::CleanupHandles, node-pty's ThreadSafeFunction exit
   // callback throws into a torn-down context and SIGABRTs the process.
   killAllTerminals()
+  // Tear down any remote/WSL companion connections (kills their daemons /
+  // closes SSH). Fire-and-forget — quit must not block on a remote socket.
+  void companions.disposeAll()
   // When an update install is in flight, DO NOT reallyExit — that bypasses
   // Electron's relaunch hook (queued by autoUpdater.quitAndInstall(_, true)).
   // We need the natural quit path to run so the updater can launch the new

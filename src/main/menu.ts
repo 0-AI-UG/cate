@@ -3,8 +3,8 @@
 // =============================================================================
 
 import { BrowserWindow, Menu, shell, app } from 'electron'
-import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION } from '../shared/ipc-channels'
-import type { MenuActionId } from '../shared/types'
+import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, BROWSER_SHORTCUT } from '../shared/ipc-channels'
+import type { MenuActionId, BrowserShortcutAction } from '../shared/types'
 import { checkForUpdatesManually } from './auto-updater'
 import { listPanelWindows, getWindow, getWindowType } from './windowRegistry'
 
@@ -16,6 +16,16 @@ function dispatch(action: MenuActionId): () => void {
   return (): void => {
     const win = BrowserWindow.getFocusedWindow()
     if (win) win.webContents.send(MENU_TRIGGER_ACTION, action)
+  }
+}
+
+/** Dispatch a browser navigation action to the focused window's BrowserPanel.
+ *  These items carry no accelerator: the keys (Cmd+R/[/]/L) are handled
+ *  panel-locally so they never steal Monaco's Cmd+[ / Cmd+] / Cmd+L. */
+function dispatchBrowser(action: BrowserShortcutAction): () => void {
+  return (): void => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win) win.webContents.send(BROWSER_SHORTCUT, action)
   }
 }
 
@@ -96,6 +106,7 @@ export function buildApplicationMenu(): void {
           },
         },
         { type: 'separator' },
+        { label: 'New File', accelerator: 'CmdOrCtrl+N', click: dispatch('newFile') },
         { label: 'New Editor', accelerator: 'CmdOrCtrl+Shift+E', click: dispatch('newEditor') },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: dispatch('newTerminal') },
         { label: 'New Browser', accelerator: 'CmdOrCtrl+Shift+B', click: dispatch('newBrowser') },
@@ -123,7 +134,7 @@ export function buildApplicationMenu(): void {
         { role: 'delete' },
         { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Find in Files...', accelerator: 'CmdOrCtrl+Shift+H', click: dispatch('commandPalette') },
+        { label: 'Find in Files...', accelerator: 'CmdOrCtrl+Shift+F', click: dispatch('commandPalette') },
       ],
     },
     // View menu
@@ -131,9 +142,15 @@ export function buildApplicationMenu(): void {
       label: 'View',
       submenu: [
         { label: 'Command Palette...', accelerator: 'CmdOrCtrl+K', click: dispatch('commandPalette') },
+        // VS Code-style aliases for the same unified palette (fuzzy file search +
+        // commands). Hidden so they don't clutter the menu but still bind the key.
+        { label: 'Go to File...', accelerator: 'CmdOrCtrl+P', click: dispatch('commandPalette'), visible: false, acceleratorWorksWhenHidden: true },
+        { label: 'Show All Commands', accelerator: 'CmdOrCtrl+Shift+P', click: dispatch('commandPalette'), visible: false, acceleratorWorksWhenHidden: true },
         { type: 'separator' },
-        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+\\', click: dispatch('toggleSidebar') },
-        { label: 'Toggle File Explorer', accelerator: 'CmdOrCtrl+Shift+F', click: dispatch('toggleFileExplorer') },
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: dispatch('toggleSidebar') },
+        // Secondary sidebar binding (legacy / VS Code split-editor key) kept as an alias.
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+\\', click: dispatch('toggleSidebar'), visible: false, acceleratorWorksWhenHidden: true },
+        { label: 'Toggle File Explorer', accelerator: 'CmdOrCtrl+Shift+X', click: dispatch('toggleFileExplorer') },
         { label: 'Toggle Minimap', accelerator: 'CmdOrCtrl+Shift+M', click: dispatch('toggleMinimap') },
         { type: 'separator' },
         { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: dispatch('zoomIn') },
@@ -159,13 +176,26 @@ export function buildApplicationMenu(): void {
         { label: 'Previous Panel', accelerator: 'Ctrl+Shift+Tab', click: dispatch('focusPrevious') },
       ],
     },
+    // Browser menu — acts on the focused browser panel. No accelerators: the
+    // keys are handled panel-locally so they don't collide with Monaco.
+    {
+      label: 'Browser',
+      submenu: [
+        { label: 'Reload (⌘R)', click: dispatchBrowser('reload') },
+        { label: 'Force Reload (⌘⇧R)', click: dispatchBrowser('reloadHard') },
+        { type: 'separator' },
+        { label: 'Back (⌘[)', click: dispatchBrowser('back') },
+        { label: 'Forward (⌘])', click: dispatchBrowser('forward') },
+        { type: 'separator' },
+        { label: 'Focus Address Bar (⌘L)', click: dispatchBrowser('focusUrl') },
+      ],
+    },
     // Window menu
     {
       label: 'Window',
       submenu: [
         {
           label: 'New Window',
-          accelerator: 'CmdOrCtrl+N',
           click: (): void => {
             if (!newMainWindowFn) return
             newMainWindowFn()

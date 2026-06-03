@@ -2,17 +2,19 @@ appId: com.cate.app
 productName: Cate
 directories:
   output: release
-# The pi coding agent (@earendil-works/pi-coding-agent) is loaded as ESM
-# directly from the unpacked location, so Node resolves all of its transitive
-# dependencies against the real filesystem rather than reading them from the
-# asar. npm's hoisting layout varies between installs: locally pi nests its
-# deps under its own node_modules (covered by the @earendil-works glob), but a
-# fresh CI install hoists them to the top-level node_modules. So we unpack pi
-# plus its full transitive dependency closure by name; the hoisted globs catch
-# the CI layout and match nothing (harmlessly) in the nested layout. Unpacking
-# the entire node_modules tree instead caused codesign to hit EMFILE on the
-# macOS runner, so the closure is scoped to exactly what pi needs (issue #150).
-# Regenerate the list below when pi's dependency tree changes.
+# The cate-companion daemon is NOT bundled in the app. One self-contained
+# tarball per target is built in CI and uploaded to the GitHub release
+# `v<version>`; on connect the remote pulls its own tarball (with a client-side
+# fallback). See companionArtifacts.ts + .github/workflows/release.yml.
+#
+# @earendil-works/pi-coding-agent (the agent runtime, ~271MB) is NO LONGER
+# bundled — it's a devDependency, shipped on demand as the cate-pi tarball and
+# run by the companion (local or remote). See build-pi-tarball.mjs + ensurePi.ts.
+# @earendil-works/pi-ai stays a production dependency (authManager uses /oauth
+# for cate's own login flow) and is unpacked here. The @earendil-works glob now
+# only matches pi-ai + pi-agent-core; the SDK closure below is retained for pi-ai
+# (electron-builder prunes anything that was pi-coding-agent-only). Unpacking the
+# whole node_modules tree caused codesign EMFILE on macOS (issue #150).
 asarUnpack:
   - "node_modules/@earendil-works/**"
   - "node_modules/.bin/pi"

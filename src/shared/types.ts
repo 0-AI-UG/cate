@@ -82,12 +82,6 @@ export interface CanvasRegion {
 }
 
 // -----------------------------------------------------------------------------
-// LOD state (level-of-detail for zoom)
-// -----------------------------------------------------------------------------
-
-export type LODState = 'live' | 'placeholder'
-
-// -----------------------------------------------------------------------------
 // Panel state (renderer-side representation)
 // -----------------------------------------------------------------------------
 
@@ -148,11 +142,110 @@ export interface WorktreeMeta {
 // Workspace metadata — shared across windows, managed by main process
 // -----------------------------------------------------------------------------
 
+/**
+ * Where a workspace's files physically live, and how the companion that hosts
+ * its terminal/fs/git operations is reached. Absent ⇒ `{ kind: 'local' }` (the
+ * migration default for every workspace that predates remote support). Secrets
+ * (SSH passphrases/keys) NEVER live here — they are stored encrypted via
+ * Electron safeStorage, keyed by companionId.
+ */
+export type CompanionConnection =
+  | { kind: 'local' }
+  | {
+      kind: 'server'
+      /** Routing key; matches the authority in this workspace's rootPath URI. */
+      companionId: string
+      host: string
+      user: string
+      port?: number
+      /** Companion-absolute root on the server. */
+      remotePath: string
+    }
+  | {
+      kind: 'wsl'
+      companionId: string
+      distro: string
+      /** Companion-absolute root inside the distro. */
+      distroPath: string
+    }
+
 export interface WorkspaceInfo {
   id: string
   name: string
   color: string
+  /** Locator string: a bare absolute path for local, a `cate-companion://`
+   *  URI otherwise. See src/main/companion/locator.ts. */
   rootPath: string
+  /** Defaults to { kind: 'local' } when absent (migration rule). */
+  connection?: CompanionConnection
+}
+
+/** What the connect UI sends to main to establish a remote companion. SSH auth
+ *  secrets are passed once to be stored encrypted (safeStorage); they are not
+ *  echoed back. */
+export type RemoteConnectSpec =
+  | {
+      kind: 'server'
+      host: string
+      user: string
+      port?: number
+      remotePath: string
+      auth?: { keyPath?: string; passphrase?: string; useAgent?: boolean }
+    }
+  | { kind: 'wsl'; distro: string; distroPath: string }
+
+export type CompanionConnectResult =
+  | { ok: true; companionId: string; rootPath: string; connection: CompanionConnection }
+  | { ok: false; error: string }
+
+/** A connectable host alias parsed from the user's ~/.ssh/config. Wildcard
+ *  patterns (`Host *`) are excluded — only concrete aliases the user can dial.
+ *  `host` is the resolved HostName (falls back to the alias when unset). */
+export interface SshHostEntry {
+  alias: string
+  host: string
+  user?: string
+  port?: number
+  identityFile?: string
+}
+
+/**
+ * Canonical lifecycle phase of a remote companion. Emitted by the main process
+ * (CompanionManager) and projected onto the owning workspace, where it is the
+ * single source of truth the UI derives its runtime status from. Local
+ * workspaces have no phase (absent ⇒ no companion).
+ *
+ *  - `installing`   — bootstrapping the daemon bundle onto the host (pull/push + extract)
+ *  - `connecting`   — launching the daemon + protocol/version handshake
+ *  - `connected`    — daemon is live; the workspace is fully functional
+ *  - `disconnected` — was connected, the channel dropped (daemon crash / network)
+ *  - `unreachable`  — connect/launch/handshake failed (bad host/auth/network); retry or edit
+ *  - `missing`      — the daemon bundle isn't installed / install failed; needs (re)install
+ */
+export type CompanionPhase =
+  | 'installing'
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'unreachable'
+  | 'missing'
+
+/** Live connection state pushed to the renderer (COMPANION_STATUS). */
+export interface CompanionStatusEvent {
+  companionId: string
+  phase: CompanionPhase
+  message?: string
+}
+
+/** The canonical companion runtime state stored on a remote workspace. Written
+ *  by exactly one path in the renderer (the COMPANION_STATUS subscription, plus
+ *  the optimistic seed during the initial connect before companionId is bound).
+ *  Absent ⇒ local workspace, or a remote workspace whose companion hasn't been
+ *  contacted yet this session. */
+export interface CompanionRuntime {
+  phase: CompanionPhase
+  /** Human-readable failure reason for unreachable/missing/disconnected. */
+  error?: string
 }
 
 export interface WorkspaceMutationError {
@@ -321,6 +414,14 @@ export interface WorkspaceState {
   name: string
   color: string
   rootPath: string
+  /** Companion connection for a remote/WSL workspace (absent ⇒ local). Mirrors
+   *  WorkspaceInfo.connection; drives reconnect-on-restore. */
+  connection?: CompanionConnection
+  /** Canonical companion runtime state for a remote workspace (set from
+   *  COMPANION_STATUS, seeded during initial connect). The single source of
+   *  truth the UI derives editability + the lock overlay from. Absent ⇒ local,
+   *  or remote-not-yet-contacted. See lib/workspaceRuntime.ts. */
+  companion?: CompanionRuntime
   /** Additional project roots opened alongside the primary `rootPath`.
    *  Used to keep multiple repos in one canvas. Order is user-controlled. */
   additionalRoots?: string[]
@@ -421,6 +522,7 @@ export type ShortcutAction =
   | 'newTerminal'
   | 'newBrowser'
   | 'newEditor'
+  | 'newFile'
   | 'closePanel'
   | 'toggleSidebar'
   | 'toggleFileExplorer'
@@ -446,16 +548,26 @@ export type ShortcutAction =
   | 'navigateDown'
   | 'navigateLeft'
   | 'navigateRight'
+  | 'panUp'
+  | 'panDown'
+  | 'panLeft'
+  | 'panRight'
 
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
  *  binding. */
 export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
 
+/** Browser-panel navigation actions. These are panel-scoped (handled by the
+ *  focused BrowserPanel) rather than global shortcuts, so they don't collide
+ *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
+export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
+
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
   'newBrowser',
   'newEditor',
+  'newFile',
   'closePanel',
   'toggleSidebar',
   'toggleFileExplorer',
@@ -481,12 +593,17 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'navigateDown',
   'navigateLeft',
   'navigateRight',
+  'panUp',
+  'panDown',
+  'panLeft',
+  'panRight',
 ]
 
 export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   newTerminal: 'New Terminal',
   newBrowser: 'New Browser',
   newEditor: 'New Editor',
+  newFile: 'New File',
   closePanel: 'Close Panel',
   toggleSidebar: 'Toggle Sidebar',
   toggleFileExplorer: 'Toggle File Explorer',
@@ -508,18 +625,23 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   deleteNode: 'Delete Focused Panel',
   toolSelect: 'Select Tool',
   toolHand: 'Hand Tool',
-  navigateUp: 'Navigate Up',
-  navigateDown: 'Navigate Down',
-  navigateLeft: 'Navigate Left',
-  navigateRight: 'Navigate Right',
+  navigateUp: 'Navigate to Panel Above',
+  navigateDown: 'Navigate to Panel Below',
+  navigateLeft: 'Navigate to Panel Left',
+  navigateRight: 'Navigate to Panel Right',
+  panUp: 'Pan Canvas Up',
+  panDown: 'Pan Canvas Down',
+  panLeft: 'Pan Canvas Left',
+  panRight: 'Pan Canvas Right',
 }
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   newTerminal: storedShortcut('t', { command: true }),
   newBrowser: storedShortcut('b', { command: true, shift: true }),
   newEditor: storedShortcut('e', { command: true, shift: true }),
+  newFile: storedShortcut('n', { command: true }),
   closePanel: storedShortcut('w', { command: true }),
-  toggleSidebar: storedShortcut('\\', { command: true }),
+  toggleSidebar: storedShortcut('b', { command: true }),
   toggleFileExplorer: storedShortcut('x', { command: true, shift: true }),
   toggleSearch: storedShortcut('f', { command: true, shift: true }),
   toggleMinimap: storedShortcut('m', { command: true, shift: true }),
@@ -539,10 +661,14 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   deleteNode: storedShortcut('Backspace', { command: true }),
   toolSelect: storedShortcut('v'),
   toolHand: storedShortcut('h'),
-  navigateUp: storedShortcut('↑'),
-  navigateDown: storedShortcut('↓'),
-  navigateLeft: storedShortcut('←'),
-  navigateRight: storedShortcut('→'),
+  navigateUp: storedShortcut('↑', { command: true }),
+  navigateDown: storedShortcut('↓', { command: true }),
+  navigateLeft: storedShortcut('←', { command: true }),
+  navigateRight: storedShortcut('→', { command: true }),
+  panUp: storedShortcut('↑', { shift: true }),
+  panDown: storedShortcut('↓', { shift: true }),
+  panLeft: storedShortcut('←', { shift: true }),
+  panRight: storedShortcut('→', { shift: true }),
 }
 
 // -----------------------------------------------------------------------------
@@ -709,6 +835,24 @@ export interface SessionSnapshot {
   dockState?: DockStateSnapshot
   /** Panels that live in dock zones (canvas, etc.) — not on the canvas. */
   dockPanels?: Record<string, PanelState>
+  /** Resolved companion connection for a remote/WSL workspace (absent ⇒ local).
+   *  Persisted so the companion can be reconnected on restore before any
+   *  fs/git/terminal op runs. Mirrors WorkspaceState.connection. */
+  connection?: CompanionConnection
+}
+
+/** One persisted remote workspace (electron-store `remoteProjects`). Remote
+ *  workspaces can't use the local `.cate/` project-state files (their tree lives
+ *  on a companion), so their full restore snapshot + reconnect info is kept here,
+ *  keyed by the `cate-companion://` locator. Local workspaces never appear here —
+ *  they round-trip through recentProjects + `.cate/` as before. */
+export interface RemoteProjectEntry {
+  /** The `cate-companion://` locator string (this workspace's rootPath). */
+  locator: string
+  /** Reconnect info, used by ensureWorkspaceCompanion on restore. */
+  connection: CompanionConnection
+  /** Full session snapshot to rebuild the canvas/panels on restore. */
+  snapshot: SessionSnapshot
 }
 
 /** Persisted sidebar arrangement (electron-store `sidebarSession`). Keyed by
@@ -809,6 +953,10 @@ export interface ProjectSessionFile {
   panelWindows?: PanelWindowSnapshot[]
   /** Detached dock windows (machine-local, not committed). */
   dockWindows?: DetachedDockWindowSnapshot[]
+  /** Resolved companion connection for THIS workspace on THIS machine. Machine-
+   *  local on purpose — a server/wsl choice is the opener's, not the repo's, so
+   *  it lives here and never in the VCS-committed workspace.json. Absent ⇒ local. */
+  connection?: CompanionConnection
 }
 
 export interface ProjectSessionNode {
@@ -882,9 +1030,6 @@ export interface AppSettings {
   // General
   defaultShellPath: string
   warnBeforeQuit: boolean
-  /** macOS only: enable native window tabs (tabbingIdentifier on main windows).
-   *  Takes effect on next launch. */
-  nativeTabs: boolean
 
   // Appearance
   /** Active unified theme: 'system' (auto light/dark) or a theme id. */
@@ -978,7 +1123,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // where it commonly isn't installed.
   defaultShellPath: '',
   warnBeforeQuit: false,
-  nativeTabs: false,
 
   // Appearance
   activeThemeId: 'system',
@@ -1091,7 +1235,7 @@ export interface AuthProviderStatus {
   /** Last connect time as ISO string, if known. */
   connectedAt?: string
   /** Where the credential lives. */
-  source?: 'oauth' | 'safeStorage' | 'env'
+  source?: 'oauth' | 'safeStorage' | 'env' | 'config'
 }
 
 /** A user-defined OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, a
