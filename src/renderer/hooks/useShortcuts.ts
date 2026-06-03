@@ -83,7 +83,8 @@ export function useShortcuts(): void {
           if (wsId) appStore().createBrowser(wsId)
           break
         }
-        case 'newEditor': {
+        case 'newEditor':
+        case 'newFile': {
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createEditor(wsId)
           break

@@ -421,6 +421,7 @@ export type ShortcutAction =
   | 'newTerminal'
   | 'newBrowser'
   | 'newEditor'
+  | 'newFile'
   | 'closePanel'
   | 'toggleSidebar'
   | 'toggleFileExplorer'
@@ -451,10 +452,16 @@ export type ShortcutAction =
  *  binding. */
 export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
 
+/** Browser-panel navigation actions. These are panel-scoped (handled by the
+ *  focused BrowserPanel) rather than global shortcuts, so they don't collide
+ *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
+export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
+
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
   'newBrowser',
   'newEditor',
+  'newFile',
   'closePanel',
   'toggleSidebar',
   'toggleFileExplorer',
@@ -485,6 +492,7 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   newTerminal: 'New Terminal',
   newBrowser: 'New Browser',
   newEditor: 'New Editor',
+  newFile: 'New File',
   closePanel: 'Close Panel',
   toggleSidebar: 'Toggle Sidebar',
   toggleFileExplorer: 'Toggle File Explorer',
@@ -515,8 +523,9 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   newTerminal: storedShortcut('t', { command: true }),
   newBrowser: storedShortcut('b', { command: true, shift: true }),
   newEditor: storedShortcut('e', { command: true, shift: true }),
+  newFile: storedShortcut('n', { command: true }),
   closePanel: storedShortcut('w', { command: true }),
-  toggleSidebar: storedShortcut('\\', { command: true }),
+  toggleSidebar: storedShortcut('b', { command: true }),
   toggleFileExplorer: storedShortcut('x', { command: true, shift: true }),
   toggleMinimap: storedShortcut('m', { command: true, shift: true }),
   nodeSwitcher: storedShortcut(' ', { control: true }),

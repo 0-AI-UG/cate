@@ -610,6 +610,10 @@ export interface ElectronAPI {
   /** Subscribe to native menu action dispatches (File, Edit, etc.). */
   onMenuTriggerAction(callback: (action: import('./types').MenuActionId) => void): () => void
 
+  /** Subscribe to browser navigation shortcuts forwarded from a focused webview
+   *  guest (Cmd+R/[/]/L) or the Browser menu. */
+  onBrowserShortcut(callback: (action: import('./types').BrowserShortcutAction) => void): () => void
+
   /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
   showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>
 
