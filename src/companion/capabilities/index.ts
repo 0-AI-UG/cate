@@ -24,8 +24,10 @@ import {
   removeAllowedRoot as removeRoot,
   grantFileAccess as grantFile,
   registerScopedWriteAllowance as registerWriteAllowance,
+  clearFileGrantsForWindow as clearFileGrants,
+  clearScopedWriteAllowancesForWindow as clearWriteAllowances,
 } from '../../main/ipc/pathValidation'
-import type { Companion, FileHost } from '../../main/companion/types'
+import type { Companion, FileHost, FsChangeType } from '../../main/companion/types'
 
 export interface DaemonCompanionConfig {
   id: string
@@ -62,6 +64,34 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
   const exclusionSet = new Set(config.exclusions ?? [])
   const rgPath = config.rgPath ?? daemonRgPath()
 
+  // The chokidar ignore list: hidden dotfiles + the daemon's live exclusionSet
+  // (two globs per name). Rebuilt from the CURRENT set each time a watcher is
+  // (re)created, so setExclusions takes effect on active watchers too.
+  const buildIgnored = (): Array<RegExp | string> => [
+    /(^|[/\\])\../, // hidden files
+    ...[...exclusionSet].flatMap((name) => [`**/${name}`, `**/${name}/**`]),
+  ]
+
+  // Registry of active fs-watch subscriptions, so setExclusions can rebuild each
+  // with the new ignore list. Keyed by a unique handle (an object identity) so a
+  // concurrent unsub during a rebuild removes exactly its own entry.
+  interface WatchEntry {
+    prefix: string
+    onChange: (changedPath: string, type: FsChangeType) => void
+    watcher: ReturnType<typeof watch>
+  }
+  const activeWatches = new Set<WatchEntry>()
+
+  // Create a chokidar watcher for `prefix` with the CURRENT ignore list, wiring
+  // its add/change/unlink to onChange. Used on first watch and on every rebuild.
+  const spawnWatcher = (prefix: string, onChange: (changedPath: string, type: FsChangeType) => void) => {
+    const w = watch(validatePath(prefix), { ignoreInitial: true, depth: 1, ignored: buildIgnored() })
+    w.on('add', (fp) => onChange(fp, 'create'))
+    w.on('change', (fp) => onChange(fp, 'update'))
+    w.on('unlink', (fp) => onChange(fp, 'delete'))
+    return w
+  }
+
   // The daemon is the AUTHORITATIVE path check: only it can realpath its own
   // filesystem, and RemoteCompanion's client-side validate* are pass-throughs.
   // So every leaf op validates its path(s) against the daemon's allowed root
@@ -97,15 +127,18 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
       // Mirror the in-process createWatcher: hidden dotfiles + the daemon's
       // exclusionSet (two globs per name) and a depth cap, so the watcher never
       // floods with node_modules/.git events. Electron-free (no getSettingSync).
-      const ignored: Array<RegExp | string> = [
-        /(^|[/\\])\../, // hidden files
-        ...[...exclusionSet].flatMap((name) => [`**/${name}`, `**/${name}/**`]),
-      ]
-      const w = watch(validatePath(prefix), { ignoreInitial: true, depth: 1, ignored })
-      w.on('add', (fp) => onChange(fp, 'create'))
-      w.on('change', (fp) => onChange(fp, 'update'))
-      w.on('unlink', (fp) => onChange(fp, 'delete'))
-      return () => { void w.close() }
+      //
+      // The watcher is tracked in activeWatches so setExclusions can rebuild it
+      // with a fresh ignore list — the chokidar `ignored` is fixed at creation,
+      // so a live exclusion change must recreate the watcher.
+      const entry: WatchEntry = { prefix, onChange, watcher: spawnWatcher(prefix, onChange) }
+      activeWatches.add(entry)
+      return () => {
+        // Remove from the registry FIRST so a concurrent setExclusions rebuild
+        // never resurrects a just-unsubscribed watcher.
+        activeWatches.delete(entry)
+        void entry.watcher.close()
+      }
     },
   }
 
@@ -180,18 +213,36 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
     removeAllowedRoot: async (root) => { removeRoot(root) },
     // Mutate the existing Set IN PLACE so the readDir/search closures that
     // captured this reference see the new exclusions live (do NOT reassign).
-    // Active chokidar watchers built their `ignored` list at watch-creation time
-    // and won't pick up the change until re-created — acceptable, since the
-    // user-visible tree readDir + file-name search update immediately.
+    // Active chokidar watchers fixed their `ignored` list at creation time, so
+    // rebuild each one against the new set: close the old watcher and spawn a
+    // fresh one (same prefix + onChange), swapping it into the registry entry.
     setExclusions: async (names) => {
       exclusionSet.clear()
       for (const name of names) exclusionSet.add(name)
+      // Snapshot first: rebuilding mutates nothing in activeWatches (we swap the
+      // watcher field in place), but an unsub during this loop deletes its entry,
+      // so iterating a snapshot + re-checking membership avoids reviving it.
+      // Close the OLD watcher fully before the swap is considered done, so it
+      // can't keep emitting events for newly-excluded names during the overlap.
+      await Promise.all(
+        [...activeWatches].map(async (entry) => {
+          if (!activeWatches.has(entry)) return // unsubscribed concurrently
+          const old = entry.watcher
+          entry.watcher = spawnWatcher(entry.prefix, entry.onChange)
+          // The entry may have been unsubscribed while we were swapping; if so its
+          // new watcher must also be closed (the unsub already closed the old one).
+          if (!activeWatches.has(entry)) void entry.watcher.close()
+          await old.close()
+        }),
+      )
     },
     setIdleSuspend: async (enabled) => { proc.setIdleSuspend(enabled) },
     // pathValidation's functions take (windowId, path); the Companion contract
     // (and the wire) is (path, windowId) — swap here.
     grantFileAccess: async (filePath, ownerWindowId) => { await grantFile(ownerWindowId, filePath) },
     registerScopedWriteAllowance: async (safePath, ownerWindowId) => { await registerWriteAllowance(ownerWindowId, safePath) },
+    clearFileGrantsForWindow: async (windowId) => { clearFileGrants(windowId) },
+    clearScopedWriteAllowancesForWindow: async (windowId) => { clearWriteAllowances(windowId) },
   }
   return { companion, process: proc }
 }

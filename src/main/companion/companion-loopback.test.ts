@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { addAllowedRoot, removeAllowedRoot, getAllowedRoots, clearFileGrantsForWindow } from '../ipc/pathValidation'
+import { addAllowedRoot, removeAllowedRoot, getAllowedRoots, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow } from '../ipc/pathValidation'
 import { readDir, searchFiles } from '../ipc/filesystem'
 import { RpcServer } from '../../companion/rpcServer'
 import { COMPANION_PROTOCOL_VERSION } from '../../companion/protocol'
@@ -192,7 +192,83 @@ describe('companion loopback (real daemon capabilities over the wire)', () => {
     expect(after).toContain('a.ts')
     expect(after).not.toContain('ignoreme.log')
   })
+
+  // FIX [7b]: per-window grant CLEARS round-trip so the daemon doesn't keep stale
+  // per-window grants after the window closes.
+  test('clearFileGrantsForWindow / clearScopedWriteAllowancesForWindow round-trip and revoke daemon grants', async () => {
+    const { remote } = loopback(daemonApi())
+    const outsideDir = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-clear-')))
+    const outsideFile = path.join(outsideDir, 'granted.txt')
+    await fs.writeFile(outsideFile, 'secret\n')
+    try {
+      // Grant, confirm the daemon's authoritative strict check now passes.
+      await remote.grantFileAccess(outsideFile, 7)
+      await expect(remote.validatePathStrict(outsideFile, 7)).resolves.toBe(outsideFile)
+
+      // Clear over the wire: the daemon drops the grant, so the check denies again.
+      await remote.clearFileGrantsForWindow(7)
+      await expect(remote.validatePathStrict(outsideFile, 7)).rejects.toThrow(/Access denied/)
+
+      // Scoped write allowance: register one, confirm creation passes, then clear.
+      const createTarget = path.join(outsideDir, 'new.txt')
+      await remote.registerScopedWriteAllowance(createTarget, 7)
+      await expect(remote.validatePathForCreation(createTarget, 7)).resolves.toBe(createTarget)
+      await remote.clearScopedWriteAllowancesForWindow(7)
+      await expect(remote.validatePathForCreation(createTarget, 7)).rejects.toThrow(/Access denied/)
+    } finally {
+      clearFileGrantsForWindow(7)
+      clearScopedWriteAllowancesForWindow(7)
+      await fs.rm(outsideDir, { recursive: true, force: true })
+    }
+  })
+
+  // FIX [7c]: a live setExclusions rebuilds ACTIVE watchers, and the rebuilt
+  // watcher keeps delivering events (the registry swap is correct). The exact
+  // glob-ignore behavior of chokidar is shared with the in-process watcher and
+  // not re-asserted here; what's new is that an active watcher is recreated
+  // against the current exclusion set rather than left stale.
+  test('setExclusions rebuilds active watchers and the rebuilt watcher still delivers events', async () => {
+    const api = daemonApi()
+    const { remote } = loopback(api)
+    const safe = await remote.validatePathStrict(rootDir)
+
+    const events: string[] = []
+    const unsub = remote.file.watch(safe, (changedPath) => { events.push(path.basename(changedPath)) })
+    await new Promise((r) => setTimeout(r, 300)) // let chokidar attach
+
+    // Baseline: a write under the watched root produces an event.
+    await fs.writeFile(path.join(rootDir, 'before.txt'), 'one\n')
+    await waitFor(() => events.includes('before.txt'), 2000)
+
+    // Live exclusion change: this closes + recreates the active watcher.
+    await remote.setExclusions(['whatever'])
+    await new Promise((r) => setTimeout(r, 300)) // let the rebuilt watcher attach
+    events.length = 0
+
+    // The rebuilt watcher is live and keeps delivering events for kept files.
+    await fs.writeFile(path.join(rootDir, 'after.txt'), 'two\n')
+    await waitFor(() => events.includes('after.txt'), 2000)
+
+    // Unsubscribe stops events even right after a rebuild (registry handled it).
+    unsub()
+    await new Promise((r) => setTimeout(r, 200))
+    events.length = 0
+    await fs.writeFile(path.join(rootDir, 'post-unsub.txt'), 'three\n')
+    await new Promise((r) => setTimeout(r, 400))
+    expect(events).not.toContain('post-unsub.txt')
+
+    await remote.setExclusions([])
+  })
 })
+
+/** Poll a predicate until true or the timeout elapses. */
+async function waitFor(pred: () => boolean, timeoutMs: number): Promise<void> {
+  const start = Date.now()
+  while (!pred()) {
+    if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out')
+    await new Promise((r) => setTimeout(r, 25))
+  }
+}
 
 describe('companion loopback (protocol behaviors via a stub)', () => {
   test('errors thrown on the daemon reject the client call with the message', async () => {
@@ -212,6 +288,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       setIdleSuspend: async () => {},
       grantFileAccess: async () => {},
       registerScopedWriteAllowance: async () => {},
+      clearFileGrantsForWindow: async () => {},
+      clearScopedWriteAllowancesForWindow: async () => {},
     } as Companion
     const { remote } = loopback(api)
     await expect(remote.file.readFile('/x')).rejects.toThrow('boom on daemon')
@@ -240,6 +318,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       setIdleSuspend: async () => {},
       grantFileAccess: async () => {},
       registerScopedWriteAllowance: async () => {},
+      clearFileGrantsForWindow: async () => {},
+      clearScopedWriteAllowancesForWindow: async () => {},
     } as Companion
 
     const { remote } = loopback(api)
@@ -281,6 +361,8 @@ describe('companion loopback (protocol behaviors via a stub)', () => {
       setIdleSuspend: async () => {},
       grantFileAccess: async () => {},
       registerScopedWriteAllowance: async () => {},
+      clearFileGrantsForWindow: async () => {},
+      clearScopedWriteAllowancesForWindow: async () => {},
     } as Companion
 
     const { remote } = loopback(api)
@@ -325,5 +407,7 @@ function localCompanionLike(): Companion {
     setIdleSuspend: async () => {},
     grantFileAccess: async () => {},
     registerScopedWriteAllowance: async () => {},
+    clearFileGrantsForWindow: async () => {},
+    clearScopedWriteAllowancesForWindow: async () => {},
   }
 }

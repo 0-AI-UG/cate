@@ -11,6 +11,14 @@ const allowedRoots = new Set<string>()
 const scopedWriteAllowances = new Map<number, Map<string, ReturnType<typeof setTimeout>>>()
 const DEFAULT_WRITE_ALLOWANCE_TTL_MS = 60_000
 
+// Windows paths are case-insensitive: a root or grant registered with different
+// casing than the request must still match. POSIX stays case-sensitive. The
+// comparison key is exported for unit-testing the win32 branch with an injected
+// platform (the live calls use the real process.platform).
+export function pathCompareKey(p: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? p.toLowerCase() : p
+}
+
 // Persistent per-window grants for files the user explicitly chose outside
 // the workspace roots (e.g. via the native Save-As dialog). Unlike scoped
 // write allowances, these:
@@ -35,13 +43,15 @@ export function getAllowedRoots(): ReadonlySet<string> {
 }
 
 function isWithinAllowedRoots(normalized: string): boolean {
-  const tmpDir = path.resolve(os.tmpdir())
-  if (normalized === tmpDir || normalized.startsWith(tmpDir + path.sep)) {
+  const key = pathCompareKey(normalized)
+  const tmpKey = pathCompareKey(path.resolve(os.tmpdir()))
+  if (key === tmpKey || key.startsWith(tmpKey + path.sep)) {
     return true
   }
 
   for (const root of allowedRoots) {
-    if (normalized.startsWith(root + path.sep) || normalized === root) {
+    const rootKey = pathCompareKey(root)
+    if (key.startsWith(rootKey + path.sep) || key === rootKey) {
       return true
     }
   }
@@ -69,9 +79,10 @@ async function normalizeCreationTarget(filePath: string): Promise<string> {
 
 function clearScopedWriteAllowance(windowId: number, safePath: string): void {
   const allowances = scopedWriteAllowances.get(windowId)
-  const timer = allowances?.get(safePath)
+  const key = pathCompareKey(safePath)
+  const timer = allowances?.get(key)
   if (timer) clearTimeout(timer)
-  allowances?.delete(safePath)
+  allowances?.delete(key)
   if (allowances && allowances.size === 0) {
     scopedWriteAllowances.delete(windowId)
   }
@@ -79,7 +90,7 @@ function clearScopedWriteAllowance(windowId: number, safePath: string): void {
 
 function hasScopedWriteAllowance(windowId: number | undefined, safePath: string): boolean {
   if (windowId == null) return false
-  return scopedWriteAllowances.get(windowId)?.has(safePath) ?? false
+  return scopedWriteAllowances.get(windowId)?.has(pathCompareKey(safePath)) ?? false
 }
 
 export async function registerScopedWriteAllowance(
@@ -93,7 +104,7 @@ export async function registerScopedWriteAllowance(
     clearScopedWriteAllowance(windowId, safePath)
   }, ttlMs)
   const allowances = scopedWriteAllowances.get(windowId) ?? new Map<string, ReturnType<typeof setTimeout>>()
-  allowances.set(safePath, timer)
+  allowances.set(pathCompareKey(safePath), timer)
   scopedWriteAllowances.set(windowId, allowances)
   return safePath
 }
@@ -119,14 +130,14 @@ export function clearScopedWriteAllowancesForWindow(windowId: number): void {
 export async function grantFileAccess(windowId: number, filePath: string): Promise<string> {
   const safePath = await normalizeCreationTarget(filePath)
   const set = persistentFileGrants.get(windowId) ?? new Set<string>()
-  set.add(safePath)
+  set.add(pathCompareKey(safePath))
   persistentFileGrants.set(windowId, set)
   return safePath
 }
 
 function hasGrantedFile(windowId: number | undefined, normalized: string): boolean {
   if (windowId == null) return false
-  return persistentFileGrants.get(windowId)?.has(normalized) ?? false
+  return persistentFileGrants.get(windowId)?.has(pathCompareKey(normalized)) ?? false
 }
 
 export function clearFileGrantsForWindow(windowId: number): void {

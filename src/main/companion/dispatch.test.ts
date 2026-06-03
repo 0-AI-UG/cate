@@ -33,6 +33,8 @@ function makeStub(id: string, calls: string[]): Companion {
     setIdleSuspend: async () => {},
     grantFileAccess: async () => {},
     registerScopedWriteAllowance: async () => {},
+    clearFileGrantsForWindow: async () => {},
+    clearScopedWriteAllowancesForWindow: async () => {},
   }
 }
 

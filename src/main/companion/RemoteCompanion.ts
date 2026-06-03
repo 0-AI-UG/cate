@@ -271,4 +271,12 @@ export class RemoteCompanion implements Companion {
   registerScopedWriteAllowance(safePath: string, ownerWindowId: number): Promise<void> {
     return this.rpc.call(Methods.registerScopedWriteAllowance, [safePath, ownerWindowId]) as Promise<void>
   }
+
+  clearFileGrantsForWindow(windowId: number): Promise<void> {
+    return this.rpc.call(Methods.clearFileGrantsForWindow, [windowId]) as Promise<void>
+  }
+
+  clearScopedWriteAllowancesForWindow(windowId: number): Promise<void> {
+    return this.rpc.call(Methods.clearScopedWriteAllowancesForWindow, [windowId]) as Promise<void>
+  }
 }

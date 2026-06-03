@@ -119,6 +119,8 @@ export class RpcServer {
       case Methods.setIdleSuspend: return api.setIdleSuspend(p[0] as boolean)
       case Methods.grantFileAccess: return api.grantFileAccess(s(0), n(1) as number)
       case Methods.registerScopedWriteAllowance: return api.registerScopedWriteAllowance(s(0), n(1) as number)
+      case Methods.clearFileGrantsForWindow: return api.clearFileGrantsForWindow(n(0) as number)
+      case Methods.clearScopedWriteAllowancesForWindow: return api.clearScopedWriteAllowancesForWindow(n(0) as number)
 
       // --- file ---
       case Methods.fileReadFile: return api.file.readFile(s(0))

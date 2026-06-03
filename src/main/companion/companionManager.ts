@@ -12,6 +12,7 @@ import { LOCAL_COMPANION_ID, parseLocator, type CompanionId } from './locator'
 import type { Companion } from './types'
 import { CompanionRpcClient } from './rpcClient'
 import { RemoteCompanion } from './RemoteCompanion'
+import { DeferredCompanion } from './DeferredCompanion'
 import { LocalSubprocessTransport } from './transports/localTransport'
 import type { CompanionTransport, CompanionChannel } from './transports/transport'
 import { COMPANION_VERSION } from '../../companion/version'
@@ -49,15 +50,23 @@ export class CompanionManager {
    * tarball as a local daemon, exactly like a remote host, and register it under
    * LOCAL_COMPANION_ID. Call once at startup before the first local workspace op.
    *
+   * Registers a DeferredCompanion SYNCHRONOUSLY (so resolve(LOCAL) and the window
+   * paint don't wait for the ~10s first-run tarball extraction) and connects the
+   * daemon in the BACKGROUND. Early IPC ops queue behind the deferred's `ready`,
+   * which resolves to the real RemoteCompanion once connected.
+   *
    * This runs at app launch, so it must NEVER throw (that would break the launch).
-   * If no local tarball/target is available, or the connect fails, it logs and
-   * emits an `unreachable` status, leaving LOCAL unregistered — every local op
-   * then fails with a clear "No companion registered" error until it's fixed.
+   * If no local tarball/target is available, it logs + emits `unreachable` and
+   * registers nothing. If the background connect fails, it unregisters the deferred
+   * and emits `unreachable`, so every local op fails with a clear error until fixed.
    */
-  async ensureLocalCompanion(opts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv; idleSuspend?: boolean }): Promise<void> {
+  ensureLocalCompanion(opts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv; idleSuspend?: boolean }): void {
     // Remember the launch opts so a crash can re-provision + relaunch identically
     // (see the LOCAL auto-reconnect in doConnect's onClose handler).
     this.localOpts = opts
+    // Already registered (real RemoteCompanion, or a deferred still connecting):
+    // nothing to do — the auto-reconnect path deletes the entry on a crash before
+    // calling here again, so a present entry means LOCAL is live or in-flight.
     if (this.companions.has(LOCAL_COMPANION_ID)) return
     const hint = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV
       ? ' In dev, build it first: `npm run companion:tarball`.'
@@ -75,14 +84,48 @@ export class CompanionManager {
       this.emitStatus(LOCAL_COMPANION_ID, 'unreachable', msg)
       return
     }
-    try {
-      await this.connect(LOCAL_COMPANION_ID, transport, { install: true })
-      log.info('[companion] local workspace running on the daemon tarball')
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err)
-      log.error('[companion] local daemon failed to start: %s', detail)
-      this.emitStatus(LOCAL_COMPANION_ID, 'unreachable', `Local companion failed to start: ${detail}${hint}`)
-    }
+
+    // Register a DeferredCompanion SYNCHRONOUSLY so resolve(LOCAL) works (and the
+    // window paints) immediately, while the daemon connects in the background.
+    // The deferred's `ready` mirrors the connect outcome below.
+    let resolveReady!: (c: Companion) => void
+    let rejectReady!: (err: unknown) => void
+    const readyPromise = new Promise<Companion>((res, rej) => { resolveReady = res; rejectReady = rej })
+    // Swallow unhandled-rejection warnings: callers that await a deferred op see
+    // the rejection, but the bare readyPromise must not warn if no op ran before
+    // a failed connect.
+    readyPromise.catch(() => {})
+    this.companions.set(LOCAL_COMPANION_ID, new DeferredCompanion(LOCAL_COMPANION_ID, readyPromise))
+
+    // Call the PRIVATE doConnect directly: the public connect() early-returns the
+    // existing companion, and we just registered the deferred under this id, so
+    // connect() would never actually connect. doConnect overwrites companions[
+    // LOCAL] with the real RemoteCompanion on success (subsequent resolves get it
+    // directly) and deletes the entry on failure. LOCAL connects once at startup
+    // (the reconnect path deletes the entry first), so no `connecting` dedupe is
+    // needed here.
+    void this.doConnect(LOCAL_COMPANION_ID, transport, { install: true })
+      .then((real) => {
+        resolveReady(real)
+        log.info('[companion] local workspace running on the daemon tarball')
+      })
+      .catch((err) => {
+        // doConnect failed BEFORE registering the real companion, so the deferred
+        // is still the registered entry. Remove it so resolve(LOCAL) fails with a
+        // clear "No companion registered" until fixed, AND so a later
+        // ensureLocalCompanion (manual retry / reconnect) isn't short-circuited by
+        // a stale deferred. Guard on identity in case a concurrent connect already
+        // replaced it (it can't today — LOCAL connects once — but stay defensive).
+        const cur = this.companions.get(LOCAL_COMPANION_ID)
+        if (cur instanceof DeferredCompanion) this.companions.delete(LOCAL_COMPANION_ID)
+        // Any op already queued behind `ready` must reject clearly.
+        rejectReady(err)
+        const detail = err instanceof Error ? err.message : String(err)
+        log.error('[companion] local daemon failed to start: %s', detail)
+        // doConnect already emitted a step-specific status (unreachable/missing);
+        // re-emit unreachable with the local-specific hint for the UI.
+        this.emitStatus(LOCAL_COMPANION_ID, 'unreachable', `Local companion failed to start: ${detail}${hint}`)
+      })
   }
 
   /**
@@ -329,6 +372,12 @@ export class CompanionManager {
     return [...this.connections.keys()]
   }
 
+  /** Ids of every registered companion (LOCAL deferred/real + any remote/WSL).
+   *  Used to fan window-close grant clears out to every host. */
+  registeredIds(): CompanionId[] {
+    return [...this.companions.keys()]
+  }
+
   /** Re-assert the `connected` phase for an already-registered companion. Used
    *  by the ensure short-circuit so a renderer that missed the original
    *  broadcast (e.g. a window opened after the connect) still learns it's live —
@@ -403,4 +452,27 @@ export function forwardScopedWriteAllowance(rawPath: string, ownerWindowId: numb
   const { companionId, path } = parseLocator(rawPath)
   if (!path || !companions.has(companionId)) return
   companions.resolve(companionId).registerScopedWriteAllowance(path, ownerWindowId).catch(() => { /* best-effort */ })
+}
+
+/**
+ * On window close, drop that window's per-window grants on EVERY registered
+ * companion — additions are forwarded per-companion (by the path's owner), but a
+ * close has only a window id, no locator, so we can't know which companions
+ * accumulated grants for it. Forwarding to all is cheap and keeps the daemons
+ * from leaking stale per-window grants. Best-effort: a rejected RPC never breaks
+ * window teardown. Mirrors pathValidation.clearFileGrantsForWindow.
+ */
+export function forwardClearFileGrantsForWindow(windowId: number): void {
+  for (const id of companions.registeredIds()) {
+    companions.resolve(id).clearFileGrantsForWindow(windowId).catch(() => { /* best-effort */ })
+  }
+}
+
+/** Forward a per-window scoped-write-allowance clear to all companions. See
+ *  forwardClearFileGrantsForWindow for the rationale. Mirrors
+ *  pathValidation.clearScopedWriteAllowancesForWindow. */
+export function forwardClearScopedWriteAllowancesForWindow(windowId: number): void {
+  for (const id of companions.registeredIds()) {
+    companions.resolve(id).clearScopedWriteAllowancesForWindow(windowId).catch(() => { /* best-effort */ })
+  }
 }

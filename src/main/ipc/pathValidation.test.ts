@@ -13,6 +13,7 @@ import {
   validatePath,
   validatePathForCreation,
   validatePathStrict,
+  pathCompareKey,
 } from './pathValidation'
 
 describe('pathValidation', () => {
@@ -102,5 +103,25 @@ describe('pathValidation', () => {
 
     clearFileGrantsForWindow(1)
     await expect(validatePathStrict(targetPath, 1)).rejects.toThrow(/outside allowed directories/)
+  })
+
+  // The root/grant comparison is case-insensitive on win32 (paths there are
+  // case-insensitive) and case-sensitive on POSIX. Exercise the pure key helper
+  // with an injected platform so the win32 branch is covered cross-platform.
+  describe('pathCompareKey (win32 case-insensitivity)', () => {
+    test('win32 lowercases so different-cased paths compare equal', () => {
+      expect(pathCompareKey('C:\\Users\\Alice\\Repo', 'win32')).toBe(
+        pathCompareKey('c:\\users\\alice\\repo', 'win32'),
+      )
+      expect(pathCompareKey('C:\\Users\\Alice', 'win32')).toBe('c:\\users\\alice')
+    })
+
+    test('posix is case-sensitive (paths preserved)', () => {
+      expect(pathCompareKey('/Users/Alice/Repo', 'linux')).toBe('/Users/Alice/Repo')
+      expect(pathCompareKey('/Users/Alice/Repo', 'linux')).not.toBe(
+        pathCompareKey('/users/alice/repo', 'linux'),
+      )
+      expect(pathCompareKey('/Users/Alice/Repo', 'darwin')).toBe('/Users/Alice/Repo')
+    })
   })
 })

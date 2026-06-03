@@ -15,7 +15,7 @@ import {
   SESSION_FLUSH_SAVE_DONE,
 } from '../shared/ipc-channels'
 import { registerHandlers as registerTerminalHandlers, flushAllLoggers, killAllTerminals } from './ipc/terminal'
-import { companions, forwardFileGrant } from './companion/companionManager'
+import { companions, forwardFileGrant, forwardClearFileGrantsForWindow, forwardClearScopedWriteAllowancesForWindow } from './companion/companionManager'
 import { registerCompanionHandlers } from './ipc/companion'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
@@ -276,6 +276,10 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
     stopSearchesForWindow(windowId)
     clearScopedWriteAllowancesForWindow(windowId)
     clearFileGrantsForWindow(windowId)
+    // Forward the clears to every registered companion (the daemon keeps its own
+    // grant maps; a window close has no locator, so fan out to all hosts).
+    forwardClearScopedWriteAllowancesForWindow(windowId)
+    forwardClearFileGrantsForWindow(windowId)
     // Rebuild menu to update panel/dock window list
     if (isPanel || isDock) rebuildApplicationMenu()
     // Trigger immediate session save from main window when a child window closes
@@ -1316,8 +1320,11 @@ app.whenReady().then(async () => {
 
   // Bring the local workspace online: provision + launch the host-target companion
   // tarball as a local daemon, the same path remote hosts use. Done after the shell
-  // env so the daemon inherits the full PATH for git/terminals.
-  await companions.ensureLocalCompanion({
+  // env so the daemon inherits the full PATH for git/terminals. This registers a
+  // DeferredCompanion SYNCHRONOUSLY (resolve(LOCAL) works immediately) and connects
+  // the daemon in the background, so first-run tarball provisioning never blocks
+  // the window paint — early IPC ops queue behind the deferred's `ready`.
+  companions.ensureLocalCompanion({
     root: app.getPath('home'),
     exclusions: [...currentExclusionSet()],
     env: getShellEnv(),

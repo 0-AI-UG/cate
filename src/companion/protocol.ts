@@ -73,6 +73,8 @@ export const Methods = {
   setIdleSuspend: 'setIdleSuspend',
   grantFileAccess: 'grantFileAccess',
   registerScopedWriteAllowance: 'registerScopedWriteAllowance',
+  clearFileGrantsForWindow: 'clearFileGrantsForWindow',
+  clearScopedWriteAllowancesForWindow: 'clearScopedWriteAllowancesForWindow',
 
   fileReadFile: 'file.readFile',
   fileReadBinary: 'file.readBinary', // result is base64

@@ -79,6 +79,8 @@ export function makeTestLocalCompanion(): Companion {
     setIdleSuspend: async () => {},
     grantFileAccess: async (filePath, ownerWindowId) => { await grantFile(ownerWindowId, filePath) },
     registerScopedWriteAllowance: async (safePath, ownerWindowId) => { await registerWriteAllowance(ownerWindowId, safePath) },
+    clearFileGrantsForWindow: async () => {},
+    clearScopedWriteAllowancesForWindow: async () => {},
   }
 }
 

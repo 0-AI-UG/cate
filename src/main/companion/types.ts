@@ -378,4 +378,11 @@ export interface Companion {
   /** Forward a one-shot scoped write allowance to this companion. Mirrors
    *  pathValidation.registerScopedWriteAllowance. */
   registerScopedWriteAllowance(safePath: string, ownerWindowId: number): Promise<void>
+  /** Drop all persistent per-window file grants for a closing window, so the
+   *  daemon doesn't accumulate stale grants. Mirrors
+   *  pathValidation.clearFileGrantsForWindow. */
+  clearFileGrantsForWindow(windowId: number): Promise<void>
+  /** Drop all one-shot scoped write allowances for a closing window. Mirrors
+   *  pathValidation.clearScopedWriteAllowancesForWindow. */
+  clearScopedWriteAllowancesForWindow(windowId: number): Promise<void>
 }
