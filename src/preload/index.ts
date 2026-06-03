@@ -77,6 +77,7 @@ import {
   APP_OPEN_PATH,
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
+  MENU_LOAD_LAYOUT,
   BROWSER_SHORTCUT,
   MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
@@ -1040,6 +1041,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_e: unknown, action: string): void => { callback(action) }
     ipcRenderer.on(MENU_TRIGGER_ACTION, listener)
     return () => { ipcRenderer.removeListener(MENU_TRIGGER_ACTION, listener) }
+  },
+
+  onMenuLoadLayout(callback: (name: string) => void): () => void {
+    const listener = (_e: unknown, name: string): void => { callback(name) }
+    ipcRenderer.on(MENU_LOAD_LAYOUT, listener)
+    return () => { ipcRenderer.removeListener(MENU_LOAD_LAYOUT, listener) }
   },
 
   onBrowserShortcut(callback: (action: string) => void): () => void {

@@ -610,6 +610,9 @@ export interface ElectronAPI {
   /** Subscribe to native menu action dispatches (File, Edit, etc.). */
   onMenuTriggerAction(callback: (action: import('./types').MenuActionId) => void): () => void
 
+  /** Subscribe to "load this saved layout" dispatches from the native Layouts menu. */
+  onMenuLoadLayout(callback: (name: string) => void): () => void
+
   /** Subscribe to browser navigation shortcuts forwarded from a focused webview
    *  guest (Cmd+R/[/]/L) or the Browser menu. */
   onBrowserShortcut(callback: (action: import('./types').BrowserShortcutAction) => void): () => void

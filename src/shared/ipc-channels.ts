@@ -141,6 +141,9 @@ export const MENU_OPEN_SETTINGS = 'menu:openSettings'
 /** Generic menu-action dispatch — main sends a MenuActionId and the focused
  *  renderer runs the matching handler (via useShortcuts). */
 export const MENU_TRIGGER_ACTION = 'menu:triggerAction'
+/** Load a named saved layout — main sends the layout name and the focused
+ *  renderer restores it (replacing the workspace). */
+export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
 
 /** Browser navigation shortcut (main -> renderer). Sent when a webview guest
  *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the

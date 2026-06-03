@@ -78,6 +78,10 @@ export function useShortcuts(): void {
         await reloadActiveWorkspaceFromDisk()
         return
       }
+      if (action === 'manageLayouts') {
+        useUIStore.getState().setShowLayoutsDialog(true)
+        return
+      }
 
       switch (action as ShortcutAction) {
         case 'newTerminal': {
@@ -208,6 +212,13 @@ export function useShortcuts(): void {
     // View / Terminal / etc. item that maps to a runnable action.
     const unsubscribeMenu = window.electronAPI.onMenuTriggerAction((action) => {
       runAction(action).catch(() => { /* noop — menu actions are best-effort */ })
+    })
+
+    // Native "Layouts" menu → load a specific saved layout (replaces workspace).
+    const unsubscribeLoadLayout = window.electronAPI.onMenuLoadLayout((name) => {
+      import('../lib/layouts')
+        .then((m) => m.loadLayoutReplacingWorkspace(name))
+        .catch(() => { /* best-effort */ })
     })
 
     function handleKeyDown(e: KeyboardEvent) {
@@ -441,6 +452,7 @@ export function useShortcuts(): void {
       document.removeEventListener('keyup', handleKeyUp, { capture: true })
       window.removeEventListener('blur', handleBlur)
       unsubscribeMenu()
+      unsubscribeLoadLayout()
     }
   }, [canvasStoreApi])
 }

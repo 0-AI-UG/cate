@@ -29,6 +29,14 @@ import { DEFAULT_SETTINGS } from '../shared/types'
 import type { AppSettings, SidebarSession } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
 
+/** Push saved-layout names to the native Layouts menu. Imported lazily so the
+ *  static module graph (and anything that pulls in ./store, e.g. terminal IPC)
+ *  doesn't drag in ./menu → ./auto-updater at load time. */
+async function pushLayoutNamesToMenu(names: string[]): Promise<void> {
+  const { setLayoutNames } = await import('./menu')
+  setLayoutNames(names)
+}
+
 // ---------------------------------------------------------------------------
 // Settings schema: expected key → expected typeof value (or 'array')
 // ---------------------------------------------------------------------------
@@ -325,6 +333,7 @@ export function registerHandlers(): void {
     const layouts = (store.get('layouts') as Record<string, unknown>) || {}
     layouts[name] = layout
     store.set('layouts', layouts)
+    void pushLayoutNamesToMenu(Object.keys(layouts))
   })
 
   ipcMain.handle(LAYOUT_LIST, async () => {
@@ -344,6 +353,12 @@ export function registerHandlers(): void {
     const layouts = (store.get('layouts') as Record<string, unknown>) || {}
     delete layouts[name]
     store.set('layouts', layouts)
+    void pushLayoutNamesToMenu(Object.keys(layouts))
   })
 
+  // Seed the native Layouts menu with whatever is already saved.
+  void getStore().then((store) => {
+    const layouts = (store.get('layouts') as Record<string, unknown>) || {}
+    return pushLayoutNamesToMenu(Object.keys(layouts))
+  }).catch(() => { /* menu just stays empty until first save */ })
 }
