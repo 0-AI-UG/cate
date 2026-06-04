@@ -9,10 +9,10 @@ import { create } from 'zustand'
 export type UpdateStatus =
   | { state: 'idle' }
   | { state: 'checking' }
-  | { state: 'available'; version: string; canAutoInstall: boolean; releaseUrl?: string }
-  | { state: 'downloading'; version: string; percent?: number }
-  | { state: 'downloaded'; version: string }
-  | { state: 'manual'; version: string; releaseUrl: string }
+  | { state: 'available'; version: string; canAutoInstall: boolean; releaseUrl?: string; prerelease?: boolean }
+  | { state: 'downloading'; version: string; percent?: number; prerelease?: boolean }
+  | { state: 'downloaded'; version: string; prerelease?: boolean }
+  | { state: 'manual'; version: string; releaseUrl: string; prerelease?: boolean }
   | { state: 'error'; message: string }
 
 interface UpdateStore {

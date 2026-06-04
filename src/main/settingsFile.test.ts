@@ -112,4 +112,18 @@ describe('settingsFile', () => {
     expect(m.isSettingsKey('editorFontSize')).toBe(true)
     expect(m.isSettingsKey('recentProjects')).toBe(false)
   })
+
+  it('round-trips the beta-updates opt-in (defaults off)', async () => {
+    const m = await freshModule()
+    m.loadSettingsSync()
+    expect(m.isSettingsKey('betaUpdatesEnabled')).toBe(true)
+    expect(m.getSetting('betaUpdatesEnabled')).toBe(DEFAULT_SETTINGS.betaUpdatesEnabled)
+    expect(DEFAULT_SETTINGS.betaUpdatesEnabled).toBe(false)
+
+    expect(m.setSetting('betaUpdatesEnabled', true)).toBe(true)
+    expect(m.getSetting('betaUpdatesEnabled')).toBe(true)
+    m.flushPendingWritesSync()
+    const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
+    expect(onDisk.betaUpdatesEnabled).toBe(true)
+  })
 })

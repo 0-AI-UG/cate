@@ -68,6 +68,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   usageAnalyticsEnabled: 'boolean',
   telemetryConsentDecided: 'boolean',
   onboardingCompleted: 'boolean',
+  betaUpdatesEnabled: 'boolean',
 }
 
 const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>

@@ -1060,6 +1060,13 @@ export interface AppSettings {
   /** Whether the user has finished (or skipped) the first-run guided tour.
    *  Set false to replay it. */
   onboardingCompleted: boolean
+
+  // Updates
+  /** Opt in to beta (pre-release / staged) builds. When on, the in-app
+   *  auto-updater also considers GitHub pre-releases (e.g. v1.2.0-beta.1) — see
+   *  src/main/auto-updater.ts (autoUpdater.allowPrerelease). Off by default, so
+   *  stable users and the public website download are never offered betas. */
+  betaUpdatesEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -1121,6 +1128,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // Onboarding
   onboardingCompleted: false,
+
+  // Updates
+  betaUpdatesEnabled: false,
 }
 
 // -----------------------------------------------------------------------------

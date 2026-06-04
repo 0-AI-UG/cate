@@ -37,7 +37,12 @@ export const UpdateButton: React.FC = () => {
         ? 'Restart'
         : 'Update'
 
-  const title =
+  // Beta / staged build — surfaced only to users who opted into the beta channel
+  // in Settings → Updates. Stable users never receive a pre-release, so this
+  // chip only ever shows for opted-in testers.
+  const isBeta = status.prerelease === true
+
+  const baseTitle =
     status.state === 'downloading'
       ? 'Downloading update…'
       : status.state === 'downloaded'
@@ -45,6 +50,7 @@ export const UpdateButton: React.FC = () => {
         : status.state === 'manual'
           ? 'Open release page to download manually'
           : 'Click to download the update'
+  const title = isBeta ? `Beta build ${status.version || ''} — ${baseTitle}`.trim() : baseTitle
 
   const onClick = () => {
     if (status.state === 'available') {
@@ -61,24 +67,36 @@ export const UpdateButton: React.FC = () => {
   const showFill = isDownloading || status.state === 'downloaded'
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={isDownloading}
-      title={title}
-      style={{ WebkitTapHighlightColor: 'transparent' }}
-      className="group relative overflow-hidden flex items-center justify-center gap-1 h-[28px] w-[76px] rounded-full bg-[var(--focus-blue,#3b82f6)] text-white text-[11px] font-medium shadow-[0_0_24px_-2px_rgba(59,130,246,0.7),0_8px_24px_-6px_rgba(59,130,246,0.55)] hover:brightness-110 active:scale-[0.97] disabled:active:scale-100 focus:outline-none transition-all"
-    >
-      {/* Progress fill — lighter blue overlay that grows left-to-right while downloading. */}
-      {showFill && (
+    <span className="flex items-center gap-1.5">
+      {/* Beta tag — marks a staged / pre-release build so an opted-in tester can
+          tell it apart from a stable update at a glance. */}
+      {isBeta && (
         <span
-          aria-hidden
-          className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-200 ease-out pointer-events-none"
-          style={{ width: `${percent}%` }}
-        />
+          title={title}
+          className="select-none rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500 ring-1 ring-amber-500/30"
+        >
+          Beta
+        </span>
       )}
-      <ArrowCircleUp size={12} weight="fill" className="relative z-[1]" />
-      <span className="relative z-[1] whitespace-nowrap">{label}</span>
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={isDownloading}
+        title={title}
+        style={{ WebkitTapHighlightColor: 'transparent' }}
+        className="group relative overflow-hidden flex items-center justify-center gap-1 h-[28px] w-[76px] rounded-full bg-[var(--focus-blue,#3b82f6)] text-white text-[11px] font-medium shadow-[0_0_24px_-2px_rgba(59,130,246,0.7),0_8px_24px_-6px_rgba(59,130,246,0.55)] hover:brightness-110 active:scale-[0.97] disabled:active:scale-100 focus:outline-none transition-all"
+      >
+        {/* Progress fill — lighter blue overlay that grows left-to-right while downloading. */}
+        {showFill && (
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-200 ease-out pointer-events-none"
+            style={{ width: `${percent}%` }}
+          />
+        )}
+        <ArrowCircleUp size={12} weight="fill" className="relative z-[1]" />
+        <span className="relative z-[1] whitespace-nowrap">{label}</span>
+      </button>
+    </span>
   )
 }
