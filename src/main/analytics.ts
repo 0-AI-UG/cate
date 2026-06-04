@@ -69,6 +69,20 @@ function writeState(state: AnalyticsState): void {
   writeJsonFile(STATE_FILENAME, state)
 }
 
+/** Dev-only: seed the analytics state so the next launch looks like an update
+ *  from a synthetic previous version one `level` below the current app version.
+ *  Returns the synthesized "from" version. A major/minor delta triggers the
+ *  post-update feedback dialog; a patch delta intentionally does not. */
+export function devSimulateUpdateFrom(level: 'major' | 'minor' | 'patch'): string {
+  const [maj = 0, min = 0, pat = 0] = app.getVersion().replace(/^v/, '').split('.').map(Number)
+  const from =
+    level === 'major' ? `${maj === 0 ? maj + 1 : maj - 1}.${min}.${pat}`
+    : level === 'minor' ? `${maj}.${min === 0 ? min + 1 : min - 1}.${pat}`
+    : `${maj}.${min}.${pat === 0 ? pat + 1 : pat - 1}`
+  writeState({ lastSeenVersion: from })
+  return from
+}
+
 function updateState(patch: Partial<AnalyticsState>): void {
   writeState({ ...readState(), ...patch })
 }

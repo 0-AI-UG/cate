@@ -132,7 +132,11 @@ async function getStore(): Promise<any> {
   // clearInvalidConfig: a corrupt config.json resets to defaults instead of
   // throwing on construction — which would otherwise reject every settings
   // IPC call (settings, recent projects, layouts) for the whole session.
-  const opts = { defaults: DEFAULT_SETTINGS, clearInvalidConfig: true }
+  // projectName is set explicitly so the store never depends on Electron
+  // app-name detection (electron-store still keys the file off the userData
+  // cwd, so this doesn't change the config path — it only removes a failure
+  // mode in non-standard runtimes/tests).
+  const opts = { defaults: DEFAULT_SETTINGS, clearInvalidConfig: true, projectName: 'cate' }
   try {
     storeInstance = new Store<AppSettings>(opts)
   } catch (err) {

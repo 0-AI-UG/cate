@@ -43,7 +43,7 @@ import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from
 import { initShellEnv } from './shellEnv'
 import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
 import { initSentry, captureMainException, captureMainMessage, flushSentry } from './sentry'
-import { initAnalytics, trackAppStart, checkAndReportUpdate, hasRunBefore } from './analytics'
+import { initAnalytics, trackAppStart, checkAndReportUpdate, hasRunBefore, devSimulateUpdateFrom } from './analytics'
 import { TELEMETRY_SET_CONSENT } from '../shared/ipc-channels'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer, handleCrossWindowDropTerminalTransfer } from './ipc/terminal'
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
@@ -1351,6 +1351,23 @@ if (!app.isPackaged && process.env.CATE_FRESH_USERDATA === '1') {
   log.info('[firststart] fresh userData (wiped on each launch): %s', dir)
 }
 
+// Dev-only: simulate launching right after an update at a given level
+// (major / minor / patch). Uses its own wiped userData dir, then seeds the
+// analytics state so `checkAndReportUpdate` sees a version bump from a synthetic
+// previous version. The grandfather block below then treats it as an existing
+// (already-onboarded, already-consented) user, so only the post-update feedback
+// dialog can appear — major/minor show it, patch shows nothing. See dev:update:*.
+if (!app.isPackaged && (process.env.CATE_SIMULATE_UPDATE === 'major' || process.env.CATE_SIMULATE_UPDATE === 'minor' || process.env.CATE_SIMULATE_UPDATE === 'patch')) {
+  const level = process.env.CATE_SIMULATE_UPDATE
+  const fs = require('fs') as typeof import('fs')
+  const dir = path.join(app.getPath('userData'), `SimUpdate-${level}`)
+  try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* noop */ }
+  fs.mkdirSync(dir, { recursive: true })
+  app.setPath('userData', dir)
+  const from = devSimulateUpdateFrom(level)
+  log.info('[sim-update] %s: simulating update %s → %s (userData: %s)', level, from, app.getVersion(), dir)
+}
+
 // In E2E mode, use a fresh tmpdir per launch so Playwright runs are isolated
 // from each other and from local dev state. The harness sets CATE_E2E=1.
 if (process.env.CATE_E2E === '1') {
@@ -1422,12 +1439,32 @@ log.info('Cate v%s starting (electron %s, node %s, platform %s)', app.getVersion
 // them before the async electron-store finishes initializing.
 loadSettingsSyncFromDisk()
 
-// Scope the onboarding tour to genuine first installs. Anyone who has launched
-// Cate before (incl. users upgrading from a pre-onboarding build) is marked as
-// already onboarded, so an update shows the feedback dialog — never the tour.
-// Runs long before the renderer queries settings, so there's no show/hide race.
-if (hasRunBefore() && !getSettingSync('onboardingCompleted')) {
-  void setSettingsFromMain({ onboardingCompleted: true })
+// Scope the WHOLE first-run experience (telemetry-consent screen + onboarding
+// tour) to genuine first installs. Anyone who has launched Cate before (incl.
+// users upgrading from a pre-onboarding / pre-consent build) is marked as past
+// it, so an update shows ONLY the post-update feedback dialog — never the tour
+// and never the consent screen. Telemetry stays OFF for these grandfathered
+// users (they never opted in); they can enable it from Settings. Runs long
+// before the renderer queries settings, so there's no show/hide race.
+if (hasRunBefore()) {
+  if (!getSettingSync('onboardingCompleted')) {
+    void setSettingsFromMain({ onboardingCompleted: true })
+  }
+  if (!getSettingSync('telemetryConsentDecided')) {
+    void setSettingsFromMain({
+      telemetryConsentDecided: true,
+      crashReportingEnabled: false,
+      usageAnalyticsEnabled: false,
+    })
+  }
+}
+
+// Under Playwright the profile is a fresh tmpdir, which would otherwise trigger
+// the first-run consent + onboarding takeover and cover the canvas the specs
+// drive. Mark both as already handled so e2e starts on a clean canvas. Runs
+// before the renderer queries settings, so the dialogs never flash.
+if (IS_E2E) {
+  void setSettingsFromMain({ telemetryConsentDecided: true, onboardingCompleted: true })
 }
 
 // Initialize Sentry as early as possible — after settings load (so the opt-out
