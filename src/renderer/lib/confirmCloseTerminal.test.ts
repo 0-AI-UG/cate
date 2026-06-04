@@ -4,7 +4,7 @@ import type { PanelState } from '../../shared/types'
 // Mock the registry (heavy xterm deps) and status store so we can drive the
 // panelId → ptyId → activity lookup the helper performs.
 const getEntry = vi.fn<(panelId: string) => { ptyId: string } | undefined>()
-vi.mock('./terminalRegistry', () => ({
+vi.mock('./terminal/terminalRegistry', () => ({
   terminalRegistry: { getEntry: (id: string) => getEntry(id) },
 }))
 

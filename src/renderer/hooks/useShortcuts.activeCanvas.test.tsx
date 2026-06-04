@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // Heavy renderer modules whose import-time side effects explode under jsdom,
 // pulled in transitively via the canvas/app stores. Mirrors the other hook tests.
-vi.mock('../lib/terminalRegistry', () => ({
+vi.mock('../lib/terminal/terminalRegistry', () => ({
   terminalRegistry: { release: vi.fn(), setPendingTransfer: vi.fn() },
 }))
 vi.mock('../lib/logger', () => ({

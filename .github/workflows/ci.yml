@@ -52,10 +52,7 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        # TEMP DIAGNOSTIC: serial + verbose so the CI log names the exact test
-        # file that hangs on macOS/Windows runners (cannot be reproduced locally).
-        # Revert to `npm run test:unit` once the culprit is identified.
-        run: npx vitest run --no-file-parallelism --reporter=verbose
+        run: npm run test:unit
 
       - name: Electron smoke test (macOS only)
         if: matrix.os == 'macos-latest'
