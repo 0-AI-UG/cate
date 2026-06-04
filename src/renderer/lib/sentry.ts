@@ -15,3 +15,16 @@ export function initRendererSentry(): void {
   Sentry.init({})
   initialized = true
 }
+
+/** Capture a caught exception (e.g. from a React error boundary). Best-effort;
+ *  no-ops if Sentry never initialized. Optional context is attached as extra. */
+export function captureRendererException(
+  err: unknown,
+  context?: Record<string, unknown>,
+): void {
+  try {
+    Sentry.captureException(err, context ? { extra: context } : undefined)
+  } catch {
+    /* best-effort */
+  }
+}

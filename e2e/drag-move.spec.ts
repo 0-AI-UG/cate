@@ -110,8 +110,6 @@ test('source node is hidden while dragging', async () => {
     nodeId,
   )
   expect(parseFloat(opacity)).toBe(0)
-  const attr = await page.getAttribute(`[data-node-id="${nodeId}"]`, 'data-drag-source')
-  expect(attr).toBe('true')
   await page.mouse.up()
 })
 

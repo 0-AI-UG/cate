@@ -31,6 +31,14 @@ import { DEFAULT_SETTINGS } from '../shared/types'
 import type { AppSettings, SidebarSession, RemoteProjectEntry } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
 
+/** Push saved-layout names to the native Layouts menu. Imported lazily so the
+ *  static module graph (and anything that pulls in ./store, e.g. terminal IPC)
+ *  doesn't drag in ./menu → ./auto-updater at load time. */
+async function pushLayoutNamesToMenu(names: string[]): Promise<void> {
+  const { setLayoutNames } = await import('./menu')
+  setLayoutNames(names)
+}
+
 // ---------------------------------------------------------------------------
 // Settings schema: expected key → expected typeof value (or 'array')
 // ---------------------------------------------------------------------------
@@ -49,6 +57,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   autoFocusLargestVisibleNode: 'boolean',
   canvasGridStyle: 'string',
   snapToGrid: 'boolean',
+  placementPicker: 'boolean',
   terminalFontFamily: 'string',
   terminalFontSize: 'number',
   terminalScrollback: 'number',
@@ -67,6 +76,8 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   notifyOnlyWhenUnfocused: 'boolean',
   crashReportingEnabled: 'boolean',
   usageAnalyticsEnabled: 'boolean',
+  telemetryConsentDecided: 'boolean',
+  onboardingCompleted: 'boolean',
 }
 
 // Settings that open windows react to live (via onSettingsChanged). The
@@ -92,10 +103,55 @@ function mergeValidatedSettings(target: Partial<AppSettings>, source: Record<str
 // Lazy-loaded store instance (ESM dynamic import)
 let storeInstance: any = null
 
+/** If `config.json` is present but not valid JSON, copy it aside before
+ *  electron-store (with `clearInvalidConfig`) silently overwrites it with
+ *  defaults — so a user's corrupt settings are preserved for support/recovery
+ *  rather than lost. Best-effort; never throws. */
+function backupConfigIfCorrupt(): void {
+  try {
+    const cfgPath = path.join(app.getPath('userData'), 'config.json')
+    if (!fsSync.existsSync(cfgPath)) return
+    const raw = fsSync.readFileSync(cfgPath, 'utf-8')
+    try {
+      JSON.parse(raw)
+    } catch {
+      const backupPath = `${cfgPath}.corrupt-${Date.now()}`
+      fsSync.copyFileSync(cfgPath, backupPath)
+      log.error('config.json is corrupt; backed up to %s and resetting to defaults', backupPath)
+    }
+  } catch (err) {
+    log.warn('Corrupt-config check failed: %O', err)
+  }
+}
+
 async function getStore(): Promise<any> {
   if (storeInstance) return storeInstance
   const { default: Store } = await import('electron-store')
-  storeInstance = new Store<AppSettings>({ defaults: DEFAULT_SETTINGS })
+  // Preserve a corrupt config before clearInvalidConfig wipes it.
+  backupConfigIfCorrupt()
+  // clearInvalidConfig: a corrupt config.json resets to defaults instead of
+  // throwing on construction — which would otherwise reject every settings
+  // IPC call (settings, recent projects, layouts) for the whole session.
+  // projectName is set explicitly so the store never depends on Electron
+  // app-name detection (electron-store still keys the file off the userData
+  // cwd, so this doesn't change the config path — it only removes a failure
+  // mode in non-standard runtimes/tests).
+  const opts = { defaults: DEFAULT_SETTINGS, clearInvalidConfig: true, projectName: 'cate' }
+  try {
+    storeInstance = new Store<AppSettings>(opts)
+  } catch (err) {
+    // clearInvalidConfig only covers JSON SyntaxErrors. For anything else
+    // (e.g. an unreadable/locked file), move the bad file aside and retry so
+    // settings keep working rather than failing for the entire session.
+    log.error('electron-store construction failed; quarantining config and retrying: %O', err)
+    try {
+      const cfgPath = path.join(app.getPath('userData'), 'config.json')
+      if (fsSync.existsSync(cfgPath)) fsSync.renameSync(cfgPath, `${cfgPath}.broken-${Date.now()}`)
+    } catch (mvErr) {
+      log.warn('Failed to quarantine config.json: %O', mvErr)
+    }
+    storeInstance = new Store<AppSettings>(opts)
+  }
   // Hydrate sync cache from the freshly loaded store
   try {
     Object.assign(settingsCache, storeInstance.store as Partial<AppSettings>)
@@ -128,6 +184,22 @@ export function loadSettingsSyncFromDisk(): void {
 
 export function getSettingSync<K extends keyof AppSettings>(key: K): AppSettings[K] {
   return (settingsCache[key] ?? DEFAULT_SETTINGS[key]) as AppSettings[K]
+}
+
+/** Persist a settings patch from the main process — updates the sync cache
+ *  immediately and writes through to the on-disk store. Used by main-driven
+ *  flows like first-run telemetry consent. */
+export async function setSettingsFromMain(patch: Partial<AppSettings>): Promise<void> {
+  // Update the sync cache first so any immediate getSettingSync() reflects it.
+  for (const [k, v] of Object.entries(patch)) {
+    ;(settingsCache as Record<string, unknown>)[k] = v
+  }
+  try {
+    const store = await getStore()
+    for (const [k, v] of Object.entries(patch)) store.set(k, v as never)
+  } catch (err) {
+    log.warn('[settings] setSettingsFromMain write failed: %O', err)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +439,7 @@ export function registerHandlers(): void {
     const layouts = (store.get('layouts') as Record<string, unknown>) || {}
     layouts[name] = layout
     store.set('layouts', layouts)
+    void pushLayoutNamesToMenu(Object.keys(layouts))
   })
 
   ipcMain.handle(LAYOUT_LIST, async () => {
@@ -386,6 +459,12 @@ export function registerHandlers(): void {
     const layouts = (store.get('layouts') as Record<string, unknown>) || {}
     delete layouts[name]
     store.set('layouts', layouts)
+    void pushLayoutNamesToMenu(Object.keys(layouts))
   })
 
+  // Seed the native Layouts menu with whatever is already saved.
+  void getStore().then((store) => {
+    const layouts = (store.get('layouts') as Record<string, unknown>) || {}
+    return pushLayoutNamesToMenu(Object.keys(layouts))
+  }).catch(() => { /* menu just stays empty until first save */ })
 }

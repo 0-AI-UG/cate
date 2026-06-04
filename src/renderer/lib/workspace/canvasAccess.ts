@@ -83,6 +83,17 @@ export function setActiveCanvasPanelId(canvasPanelId: string): void {
   activeCanvasPanelId = canvasPanelId
 }
 
+/** CanvasOperations for the currently active canvas panel, or null if none is
+ *  active/registered. Lets call-time consumers (e.g. keyboard shortcuts) route
+ *  to the canvas actually on screen rather than a mount-time context store. */
+export function getActiveCanvasOps(): CanvasOperations | null {
+  if (activeCanvasPanelId) {
+    const ops = canvasOpsRegistry.get(activeCanvasPanelId)
+    if (ops) return ops
+  }
+  return null
+}
+
 /** Iterate all registered CanvasOperations (used to find a panel across canvases). */
 export function allCanvasOps(): IterableIterator<CanvasOperations> {
   return canvasOpsRegistry.values()

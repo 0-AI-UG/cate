@@ -28,6 +28,7 @@ import { ACCENT_COLORS } from '../../shared/colors'
 import type { StoreApi } from 'zustand'
 import { shouldPreserveExistingCanvas } from './canvasSyncGuard'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
+import { useSettingsStore } from './settingsStore'
 import type { CanvasOperations } from '../lib/canvas/canvasBridge'
 import { releaseCanvasStoreForPanel } from './canvasStore'
 import {
@@ -37,6 +38,7 @@ import {
 } from '../lib/workspace/dockRegistry'
 import {
   ensureCanvasOpsForPanel,
+  getActiveCanvasOps,
   getWorkspaceCanvasOps,
   getWorkspaceCanvasPanelId,
   getWorkspaceCanvasStore,
@@ -49,6 +51,7 @@ import { LOCAL_COMPANION_ID } from '../../main/companion/locator'
 export type { CanvasOperations }
 export {
   ensureCanvasOpsForPanel,
+  getActiveCanvasOps,
   getWorkspaceCanvasPanelId,
   getWorkspaceCanvasStore,
   setActiveCanvasPanelId,
@@ -107,11 +110,10 @@ function createDefaultWorkspace(
 // fire-and-forget approach allowed them to land out of order).
 let workspaceSyncQueue: Promise<unknown> = Promise.resolve()
 function enqueueWorkspaceSync<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
-  let resultPromise: Promise<T | undefined>
   workspaceSyncQueue = workspaceSyncQueue
     .then(fn, fn)
     .catch((err) => log.warn(`[workspace-sync] ${label} failed:`, err))
-  resultPromise = workspaceSyncQueue as Promise<T | undefined>
+  const resultPromise = workspaceSyncQueue as Promise<T | undefined>
   return resultPromise
 }
 
@@ -163,7 +165,11 @@ function syncRemoveFromMain(id: string): void {
 // -----------------------------------------------------------------------------
 
 export type PanelPlacement =
-  | { target: 'canvas'; position?: Point }
+  /** `canvasPanelId` pins the create to a SPECIFIC canvas (the one the toolbar /
+   *  right-click menu / drop originated from). Without it, placement routes to
+   *  the workspace's primary canvas — correct for session restore and auto
+   *  creates, but wrong for an interactive create on a secondary/nested canvas. */
+  | { target: 'canvas'; position?: Point; canvasPanelId?: string }
   | { target: 'dock'; zone: DockZonePosition }
   | { target: 'auto' } // default: canvas
   /** No global routing — caller (e.g. canvas-node mini-dock) will place the
@@ -232,7 +238,7 @@ interface AppStoreActions {
 
   // Panel creation — each adds a PanelState to the workspace AND places it
   createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement, cwd?: string) => string
-  createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement) => string
+  createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement, proxyUrl?: string) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
@@ -254,6 +260,9 @@ interface AppStoreActions {
    *  no longer fight the chosen name. */
   renamePanelByUser: (workspaceId: string, panelId: string, title: string) => void
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
+  /** Browser panels only: set/clear the per-panel proxy. Pass undefined to
+   *  revert the panel to the shared (direct) browser session. */
+  updatePanelProxy: (workspaceId: string, panelId: string, proxyUrl?: string) => void
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
@@ -324,6 +333,8 @@ function placePanel(
   panelType: PanelType,
   placement: PanelPlacement | undefined,
   position: Point | undefined,
+  isActiveWorkspace: boolean,
+  onGhostCancel?: (panelId: string) => void,
 ): void {
   // No-op: caller is placing the panel itself into a private DockStore.
   if (placement?.target === 'none') return
@@ -337,9 +348,27 @@ function placePanel(
     dockStore.getState().dockPanel(panelId, placement.zone)
     return
   }
-  // Default: place on the workspace's canvas (target === 'canvas'/'auto'/undefined)
+  // Default: place on a canvas (target === 'canvas'/'auto'/undefined).
+  // Prefer the explicit originating canvas when the caller pinned one (an
+  // interactive create from a specific canvas's toolbar/menu/drop), so the node
+  // lands on the canvas the user aimed at — not just the primary one. Otherwise
+  // route by workspace id, which lands on the workspace's own primary canvas and
+  // works for a background restore into an inactive workspace.
+  const pinnedCanvasId = placement?.target === 'canvas' ? placement.canvasPanelId : undefined
+  const ops = pinnedCanvasId ? ensureCanvasOpsForPanel(pinnedCanvasId) : getWorkspaceCanvasOps(workspaceId)
+  if (!ops) return
   const canvasPosition = placement?.target === 'canvas' ? placement.position ?? position : position
-  getWorkspaceCanvasOps(workspaceId)?.addNodeAndFocus(panelId, panelType, canvasPosition)
+  // Ambiguous create (no explicit position) on the active workspace: when the
+  // recommendation picker is enabled, show ghost candidates and let the user
+  // choose where the node lands (deferred until commit; onGhostCancel rolls the
+  // panel back). When the setting is off — or for a background restore — fall
+  // through and auto-place in the best spot. Explicit-position paths (drag-drop,
+  // session restore, right-click "new here") always skip the picker.
+  if (isActiveWorkspace && canvasPosition == null && onGhostCancel && useSettingsStore.getState().placementPicker) {
+    const shown = ops.beginPlacement(panelId, panelType, onGhostCancel)
+    if (shown) return
+  }
+  ops.addNodeAndFocus(panelId, panelType, canvasPosition)
 }
 
 type AppSet = StoreApi<AppStore>['setState']
@@ -363,9 +392,9 @@ function addAndPlacePanel(
         : ws,
     ),
   }))
-  try {
-    placePanel(workspaceId, panel.id, panel.type, placement, position)
-  } catch (error) {
+  // Roll the panel record back out of the workspace — used both on a placement
+  // error and when an interactive ghost placement is cancelled (no orphan left).
+  const discardPanel = () => {
     set((state) => ({
       workspaces: state.workspaces.map((ws) =>
         ws.id === workspaceId
@@ -375,6 +404,11 @@ function addAndPlacePanel(
           : ws,
       ),
     }))
+  }
+  try {
+    placePanel(workspaceId, panel.id, panel.type, placement, position, workspaceId === get().selectedWorkspaceId, discardPanel)
+  } catch (error) {
+    discardPanel()
     log.error(`Failed to place ${panel.type} panel:`, error)
     return null as unknown as string
   }
@@ -685,7 +719,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
-  createBrowser(workspaceId, url?, position?, placement?) {
+  createBrowser(workspaceId, url?, position?, placement?, proxyUrl?) {
     const panelId = generateId()
     const panel: PanelState = {
       id: panelId,
@@ -693,6 +727,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       title: url ?? 'Browser',
       isDirty: false,
       url: url ?? 'about:blank',
+      ...(proxyUrl ? { proxyUrl } : {}),
     }
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
@@ -828,6 +863,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   updatePanelUrl(workspaceId, panelId, url) {
     setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, url }))
+  },
+
+  updatePanelProxy(workspaceId, panelId, proxyUrl) {
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, proxyUrl: proxyUrl || undefined }))
   },
 
   updatePanelFilePath(workspaceId, panelId, filePath) {

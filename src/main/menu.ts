@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { BrowserWindow, Menu, shell, app } from 'electron'
-import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, BROWSER_SHORTCUT } from '../shared/ipc-channels'
+import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, MENU_LOAD_LAYOUT, BROWSER_SHORTCUT } from '../shared/ipc-channels'
 import type { MenuActionId, BrowserShortcutAction } from '../shared/types'
 import { checkForUpdatesManually } from './auto-updater'
 import { listPanelWindows, getWindow, getWindowType } from './windowRegistry'
@@ -27,6 +27,22 @@ function dispatchBrowser(action: BrowserShortcutAction): () => void {
     const win = BrowserWindow.getFocusedWindow()
     if (win) win.webContents.send(BROWSER_SHORTCUT, action)
   }
+}
+
+/** Tell the focused renderer to load a named saved layout (replacing the workspace). */
+function dispatchLoadLayout(name: string): () => void {
+  return (): void => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win) win.webContents.send(MENU_LOAD_LAYOUT, name)
+  }
+}
+
+// Saved-layout names, kept in sync by store.ts so the Layouts menu can list
+// them. Mutating it triggers a menu rebuild.
+let layoutNames: string[] = []
+export function setLayoutNames(names: string[]): void {
+  layoutNames = names
+  buildApplicationMenu()
 }
 
 // Injected from main/index.ts to avoid a circular import. The menu's
@@ -174,6 +190,21 @@ export function buildApplicationMenu(): void {
         { type: 'separator' },
         { label: 'Next Panel', accelerator: 'Ctrl+Tab', click: dispatch('focusNext') },
         { label: 'Previous Panel', accelerator: 'Ctrl+Shift+Tab', click: dispatch('focusPrevious') },
+      ],
+    },
+    // Layouts menu — save / manage / load named canvas layouts. The list is
+    // populated from store.ts via setLayoutNames().
+    {
+      label: 'Layouts',
+      submenu: [
+        { label: 'Save Current Canvas…', click: dispatch('manageLayouts') },
+        { label: 'Manage Layouts…', click: dispatch('manageLayouts') },
+        ...(layoutNames.length > 0
+          ? [
+              { type: 'separator' as const },
+              ...layoutNames.map((name) => ({ label: name, click: dispatchLoadLayout(name) })),
+            ]
+          : []),
       ],
     },
     // Browser menu — acts on the focused browser panel. No accelerators: the

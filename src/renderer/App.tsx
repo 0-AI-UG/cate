@@ -32,6 +32,8 @@ import { CompanionLockOverlay } from './ui/CompanionLockOverlay'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
+import { WelcomeDialog } from './dialogs/WelcomeDialog'
+import { OnboardingTour } from './onboarding/OnboardingTour'
 import PerfHud from './ui/PerfHud'
 import { initPerfClient } from './lib/perf/perfClient'
 import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/workspace/session'
@@ -48,6 +50,7 @@ import { applyCanvasChildPanels } from './lib/canvas/applyCanvasChildPanels'
 import { applyTheme } from './lib/themeManager'
 import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
 import { confirmCloseCanvas } from './lib/canvas/confirmCloseCanvas'
+import { confirmCloseRunningTerminals } from './lib/confirmCloseTerminal'
 import { isExternalFileDrag } from './lib/fs/importExternalEntries'
 import pkg from '../../package.json'
 
@@ -190,7 +193,9 @@ function MainApp() {
   // workspaces apart at a glance.
   useEffect(() => {
     const name = currentWorkspace?.name?.trim()
-    const title = name ? `${name} — Cate` : 'Cate'
+    // Treat the default "Workspace" placeholder as no real name, so the title
+    // is just "Cate" until the user actually renames the workspace.
+    const title = name && name !== 'Workspace' ? `${name} — Cate` : 'Cate'
     const api = (window as unknown as { electronAPI?: { windowSetTitle?: (t: string) => Promise<void> } }).electronAPI
     api?.windowSetTitle?.(title).catch(() => { /* noop */ })
   }, [currentWorkspace?.name])
@@ -459,8 +464,8 @@ function MainApp() {
         useAppStore.getState().closePanel(selectedWorkspaceId, panelId)
         return
       }
-      const ok = await confirmCloseDirtyPanels([panel])
-      if (!ok) return
+      if (!(await confirmCloseDirtyPanels([panel]))) return
+      if (!(await confirmCloseRunningTerminals([panel]))) return
       useAppStore.getState().closePanel(selectedWorkspaceId, panelId)
     },
     [selectedWorkspaceId],
@@ -550,10 +555,10 @@ function MainApp() {
 
       {/* Sidebars: absolutely-positioned overlays on top of the shell */}
       <div className="absolute inset-y-0 left-0 z-20 flex pointer-events-none">
-        <div className="pointer-events-auto h-full"><Sidebar /></div>
+        <div data-app-sidebar="left" className="pointer-events-auto h-full"><Sidebar /></div>
       </div>
       <div className="absolute inset-y-0 right-0 z-20 flex pointer-events-none">
-        <div className="pointer-events-auto h-full"><RightSidebar /></div>
+        <div data-app-sidebar="right" className="pointer-events-auto h-full"><RightSidebar /></div>
       </div>
 
       {/* Single shared file-drag drop indicator (canvas / dock / agent) */}
@@ -566,6 +571,8 @@ function MainApp() {
         <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
       )}
       <SavedLayoutsDialog />
+      <WelcomeDialog />
+      <OnboardingTour />
       <PostUpdateFeedbackDialog />
       <PerfHud />
 

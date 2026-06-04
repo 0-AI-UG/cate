@@ -40,6 +40,24 @@ const registeredTerminals: Map<string, TerminalRegistration> = new Map()
 // Track previous state for transition detection
 const previousStates: Map<string, PreviousState> = new Map()
 
+// Last activity seen per terminal — used by the quit-confirmation flow to warn
+// when a foreground process (dev server, editor, agent, …) is still running.
+const lastActivity: Map<string, TerminalActivity> = new Map()
+
+/**
+ * Terminals that currently have a running foreground process, per the most
+ * recent activity scan. Drives the "still running" confirmation shown before
+ * the app quits. An idle shell reports `{ type: 'idle' }`, so it's excluded.
+ */
+export function getRunningTerminals(): Array<{ processName: string | null }> {
+  const out: Array<{ processName: string | null }> = []
+  for (const terminalId of registeredTerminals.keys()) {
+    const activity = lastActivity.get(terminalId)
+    if (activity?.type === 'running') out.push({ processName: activity.processName })
+  }
+  return out
+}
+
 // Fast poll: process-tree scan for agent detection — drives the activity
 // indicators and the agent "needs input" / "finished" notifications. It stays
 // at 1s while a window is focused so the UI feels live, but backs off to 5s
@@ -157,6 +175,7 @@ async function runActivityScan(): Promise<void> {
           const agentPresent = scanned?.agentPresent ?? false
 
           previousStates.set(terminalId, { previousAgentName: agentName })
+          lastActivity.set(terminalId, activity)
           sendToWindow(info.ownerWindowId, SHELL_ACTIVITY_UPDATE, terminalId, activity, agentName, agentPresent)
         }
       }),
@@ -258,6 +277,7 @@ export function unregisterTerminalsForWindow(windowId: number): void {
     if (info.ownerWindowId === windowId) {
       registeredTerminals.delete(terminalId)
       previousStates.delete(terminalId)
+      lastActivity.delete(terminalId)
     }
   }
   if (registeredTerminals.size === 0) {
@@ -303,6 +323,7 @@ export function registerHandlers(): void {
   ipcMain.handle(SHELL_UNREGISTER_TERMINAL, async (_event, terminalId: string) => {
     registeredTerminals.delete(terminalId)
     previousStates.delete(terminalId)
+    lastActivity.delete(terminalId)
     if (registeredTerminals.size === 0) {
       stopPolling()
     }

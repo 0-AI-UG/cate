@@ -77,13 +77,13 @@ export function PostUpdateFeedbackDialog() {
       })
       setResultMessage(
         result.buffered
-          ? "Saved offline — we'll send it next time you're online."
+          ? "Saved offline. We'll send it next time you're online."
           : 'Thanks for the feedback!',
       )
       setTimeout(() => setPayload(null), 1400)
     } catch {
       setSending(false)
-      setResultMessage("Couldn't send — try again?")
+      setResultMessage("Couldn't send. Try again?")
     }
   }, [rating, comment, sending])
 

@@ -43,9 +43,20 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint (ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run lint
+
       - name: Unit tests
         run: npm run test:unit
 
       - name: Electron smoke test (macOS only)
         if: matrix.os == 'macos-latest'
         run: npm run test:smoke:electron
+
+      # Functional drag/dock/detach e2e. Runs windowless on macOS (no display
+      # server needed); the perf-stress spec is skipped via E2E_SKIP_PERF since
+      # its thresholds depend on raw runner speed.
+      - name: E2E tests (macOS only)
+        if: matrix.os == 'macos-latest'
+        run: npm run test:e2e:ci

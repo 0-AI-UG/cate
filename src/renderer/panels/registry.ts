@@ -26,6 +26,7 @@ import type { PanelType, Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { PANEL_DEFINITIONS, type SharedPanelDefinition } from '../../shared/panels'
+import { PanelErrorBoundary } from '../ui/PanelErrorBoundary'
 import type { PanelProps } from './types'
 
 // -----------------------------------------------------------------------------
@@ -83,43 +84,54 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     icon: Terminal,
     Component: TerminalPanel,
     create: ({ workspaceId, canvasPoint, placement, initialInput }) =>
-      useAppStore.getState().createTerminal(workspaceId, initialInput, canvasPoint, placement) || null,
+      trackCreated('terminal', useAppStore.getState().createTerminal(workspaceId, initialInput, canvasPoint, placement) || null),
   },
   browser: {
     ...PANEL_DEFINITIONS.browser,
     icon: Globe,
     Component: BrowserPanel,
     create: ({ workspaceId, canvasPoint, placement, url }) =>
-      useAppStore.getState().createBrowser(workspaceId, url, canvasPoint, placement) || null,
+      trackCreated('browser', useAppStore.getState().createBrowser(workspaceId, url, canvasPoint, placement) || null),
   },
   editor: {
     ...PANEL_DEFINITIONS.editor,
     icon: FileText,
     Component: EditorPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath }) =>
-      useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null,
+      trackCreated('editor', useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null),
   },
   canvas: {
     ...PANEL_DEFINITIONS.canvas,
     icon: SquaresFour,
     Component: CanvasPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
-      useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null,
+      trackCreated('canvas', useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null),
   },
   agent: {
     ...PANEL_DEFINITIONS.agent,
     icon: CateLogo as unknown as PhosphorIcon,
     Component: AgentPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
-      useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null,
+      trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null),
   },
   document: {
     ...PANEL_DEFINITIONS.document,
     icon: FileDoc,
     Component: DocumentPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath, documentType }) =>
-      useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null,
+      trackCreated('document', useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null),
   },
+}
+
+/** Wrap a create() result with an anonymous usage signal. Lives on the registry
+ *  path (command palette, toolbar, welcome screen) — the user-initiated creation
+ *  surface — so session restore (which calls appStore.createX directly) does not
+ *  inflate the counts. No-ops when the panel wasn't created. */
+function trackCreated(type: PanelType, id: string | null): string | null {
+  if (id) {
+    try { window.electronAPI?.trackFeatureUsed?.('panel_created', { type }) } catch { /* noop */ }
+  }
+  return id
 }
 
 // -----------------------------------------------------------------------------
@@ -137,7 +149,7 @@ export function getPanelDef(type: PanelType | string): RendererPanelDefinition {
  *  the panel state itself, so callers don't need to know which extras any
  *  given type expects. Caller wraps in <Suspense> at the boundary it wants. */
 export function renderPanelComponent(
-  panel: { type: PanelType; id: string; filePath?: string; url?: string },
+  panel: { type: PanelType; id: string; filePath?: string; url?: string; proxyUrl?: string },
   ctx: { workspaceId: string; nodeId: string; zoomLevel?: number },
 ): React.ReactElement | null {
   const def = PANEL_REGISTRY[panel.type]
@@ -149,6 +161,7 @@ export function renderPanelComponent(
   if (panel.type === 'editor') extras.filePath = panel.filePath
   if (panel.type === 'browser') {
     extras.url = panel.url
+    extras.proxyUrl = panel.proxyUrl
     extras.zoomLevel = ctx.zoomLevel ?? 1
   }
   const props: PanelProps & Record<string, unknown> = {
@@ -157,5 +170,12 @@ export function renderPanelComponent(
     nodeId: ctx.nodeId,
     ...extras,
   }
-  return React.createElement(Component, props)
+  // Wrap every panel in its own error boundary so a render error in one panel
+  // fails in place rather than collapsing the whole window through the single
+  // top-level boundary. Keyed by panel id so a reused slot resets cleanly.
+  return React.createElement(
+    PanelErrorBoundary,
+    { panelType: panel.type, panelId: panel.id },
+    React.createElement(Component, props),
+  )
 }

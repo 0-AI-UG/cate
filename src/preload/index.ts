@@ -77,11 +77,13 @@ import {
   APP_OPEN_PATH,
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
+  MENU_LOAD_LAYOUT,
   BROWSER_SHORTCUT,
   MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
   DIALOG_SAVE_FILE,
   DIALOG_CONFIRM_UNSAVED,
+  DIALOG_CONFIRM_CLOSE_TERMINAL,
   DIALOG_CONFIRM_CLOSE_CANVAS,
   DIALOG_CONFIRM_RELOAD_WORKSPACE,
   DIALOG_CONFIRM_DELETE_REGION,
@@ -145,6 +147,7 @@ import {
   COMPANION_STATUS,
   COMPANION_LOCAL_STATUS,
   WEBVIEW_SCREENSHOT,
+  BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
   UPDATE_STATUS,
@@ -157,6 +160,8 @@ import {
   ANALYTICS_FEEDBACK_ENGAGED,
   ANALYTICS_FEEDBACK_GET_PENDING,
   ANALYTICS_LINK_CLICK,
+  ANALYTICS_TRACK_USAGE,
+  TELEMETRY_SET_CONSENT,
   OPEN_EXTERNAL_URL,
   AGENT_CREATE,
   AGENT_PROMPT,
@@ -755,6 +760,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DIALOG_CONFIRM_UNSAVED, payload)
   },
 
+  confirmCloseTerminal(payload: { count: number; processName?: string | null }): Promise<'close' | 'cancel'> {
+    return ipcRenderer.invoke(DIALOG_CONFIRM_CLOSE_TERMINAL, payload)
+  },
+
   confirmCloseCanvas(payload: { panelCount: number; isLast: boolean }): Promise<'move' | 'delete' | 'close' | 'cancel'> {
     return ipcRenderer.invoke(DIALOG_CONFIRM_CLOSE_CANVAS, payload)
   },
@@ -832,6 +841,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   webviewScreenshot(webContentsId: number): Promise<{ filePath: string; dataUrl: string } | null> {
     return ipcRenderer.invoke(WEBVIEW_SCREENSHOT, webContentsId)
+  },
+
+  browserSetProxy(partition: string, proxyUrl?: string): Promise<void> {
+    return ipcRenderer.invoke(BROWSER_SET_PROXY, partition, proxyUrl)
   },
 
   nativeFileDrag(filePath: string): Promise<void> {
@@ -1134,6 +1147,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => { ipcRenderer.removeListener(MENU_TRIGGER_ACTION, listener) }
   },
 
+  onMenuLoadLayout(callback: (name: string) => void): () => void {
+    const listener = (_e: unknown, name: string): void => { callback(name) }
+    ipcRenderer.on(MENU_LOAD_LAYOUT, listener)
+    return () => { ipcRenderer.removeListener(MENU_LOAD_LAYOUT, listener) }
+  },
+
   onBrowserShortcut(callback: (action: string) => void): () => void {
     const listener = (_e: unknown, action: string): void => { callback(action) }
     ipcRenderer.on(BROWSER_SHORTCUT, listener)
@@ -1186,6 +1205,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   trackLinkClick(link: string): void {
     ipcRenderer.send(ANALYTICS_LINK_CLICK, link)
+  },
+
+  setTelemetryConsent(choice: { crashReporting: boolean; usageAnalytics: boolean }): Promise<void> {
+    return ipcRenderer.invoke(TELEMETRY_SET_CONSENT, choice)
+  },
+
+  trackFeatureUsed(feature: string, props?: Record<string, string | number | boolean>): void {
+    ipcRenderer.send(ANALYTICS_TRACK_USAGE, { feature, props })
   },
 
   openExternalUrl(url: string): void {

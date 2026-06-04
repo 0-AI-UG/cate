@@ -946,14 +946,24 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   }, [rootPath, reconcile])
 
   const handlePrune = useCallback(async () => {
-    if (!rootPath) return
+    if (!rootPath || !selectedWorkspaceId) return
     try {
       await window.electronAPI.gitWorktreePrune(rootPath)
+      // `git worktree prune` only cleans entries git still tracks. The orphans
+      // shown here are store metadata for worktrees git no longer lists, so
+      // prune is a no-op for them — drop those stale entries from the store
+      // explicitly, otherwise "Clean up" appears to do nothing.
+      const list = await window.electronAPI.gitWorktreeList(rootPath)
+      const livePaths = new Set(list.map((g) => g.path))
+      const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
+      for (const w of ws?.worktrees ?? []) {
+        if (!w.isPrimary && !livePaths.has(w.path)) removeWorktree(selectedWorkspaceId, w.id)
+      }
       void reconcile()
     } catch (err: any) {
       setError(err?.message || 'Cleanup failed')
     }
-  }, [rootPath, reconcile])
+  }, [rootPath, selectedWorkspaceId, removeWorktree, reconcile])
 
   const makeCallbacks = useCallback(
     (wt: WorktreeMeta): CardCallbacks => ({

@@ -107,7 +107,7 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
         {/* Two-column layout: Start + Recent */}
         <div className="flex gap-12">
           {/* Start actions */}
-          <div className="flex-1">
+          <div data-onboarding="welcome-actions" className="flex-1">
             <h2 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-3">
               Start
             </h2>

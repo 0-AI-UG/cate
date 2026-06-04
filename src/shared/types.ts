@@ -92,6 +92,12 @@ export interface PanelState {
   isDirty: boolean
   filePath?: string
   url?: string
+  /** Browser panels only: per-panel HTTP/HTTPS/SOCKS5/PAC proxy. When set, the
+   *  panel runs in its own proxy-derived persistent session instead of the
+   *  shared browser session. Supports auth (`user:pass@host`), a `;bypass=`
+   *  suffix, and `pac://` PAC scripts. See `configureBrowserProxy` in
+   *  `src/main/browserProxy.ts`. */
+  proxyUrl?: string
   /** When set, EditorPanel renders as a Monaco diff editor. */
   diffMode?: 'staged' | 'working'
   /** Editor panels with a markdown file only: render the rendered preview
@@ -556,7 +562,7 @@ export type ShortcutAction =
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
  *  binding. */
-export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
+export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace' | 'manageLayouts'
 
 /** Browser-panel navigation actions. These are panel-scoped (handled by the
  *  focused BrowserPanel) rather than global shortcuts, so they don't collide
@@ -816,6 +822,8 @@ export interface NodeSnapshot {
   size: Size
   title: string
   url?: string | null
+  /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
+  proxyUrl?: string | null
   filePath?: string | null
   workingDirectory?: string | null
   ptyId?: string
@@ -920,6 +928,8 @@ export interface ProjectCanvasNode {
   size: Size
   filePath?: string
   url?: string
+  /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
+  proxyUrl?: string
   regionId?: string
   documentType?: 'pdf' | 'docx' | 'image'
   dockLayout?: DockLayoutNode | null
@@ -939,6 +949,8 @@ export interface ProjectPanelRef {
   title: string
   filePath?: string
   url?: string
+  /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
+  proxyUrl?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -1059,6 +1071,11 @@ export interface AppSettings {
    *  bypass it (the Alt bypass can't apply to drags between windows, since the
    *  modifier state isn't carried across the cross-window IPC). */
   snapToGrid: boolean
+  /** When creating a new panel without an explicit position (Cmd+T, toolbar
+   *  click), show the recommendation picker — zoom out and let the user choose
+   *  among numbered spots / click anywhere. When off, the best spot is chosen
+   *  automatically and the panel is placed immediately. */
+  placementPicker: boolean
 
   // Terminal
   terminalFontFamily: string
@@ -1117,6 +1134,16 @@ export interface AppSettings {
   /** Send anonymous usage data (app starts, version upgrades, feedback) to the
    *  cero-analytics endpoint. No personal data, no file paths, no project info. */
   usageAnalyticsEnabled: boolean
+  /** Whether the user has made a first-run choice about telemetry. Until this is
+   *  true, NOTHING is sent (crash reporting and analytics are both held off),
+   *  regardless of the two flags above — they only describe the post-consent
+   *  state. The first-run consent dialog sets this to true once the user picks. */
+  telemetryConsentDecided: boolean
+
+  // Onboarding
+  /** Whether the user has finished (or skipped) the first-run guided tour.
+   *  Set false to replay it. */
+  onboardingCompleted: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -1140,8 +1167,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultPanelHeight: 400,
   zoomSpeed: 1.0,
   autoFocusLargestVisibleNode: false,
-  canvasGridStyle: 'dots',
+  canvasGridStyle: 'lines',
   snapToGrid: false,
+  placementPicker: true,
 
   // Terminal
   terminalFontFamily: '',
@@ -1169,9 +1197,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   notifyOnlyWhenUnfocused: true,
 
-  // Privacy
+  // Privacy. The two flags describe the *post-consent* state; nothing is sent
+  // until telemetryConsentDecided flips true via the first-run consent dialog.
   crashReportingEnabled: true,
   usageAnalyticsEnabled: true,
+  telemetryConsentDecided: false,
+
+  // Onboarding
+  onboardingCompleted: false,
 }
 
 // -----------------------------------------------------------------------------

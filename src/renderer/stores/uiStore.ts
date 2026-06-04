@@ -54,6 +54,9 @@ interface UIStoreState {
   showNodeSwitcher: boolean
   showCommandPalette: boolean
   showLayoutsDialog: boolean
+  /** Bumped whenever a saved layout is created/deleted, so open surfaces
+   *  (dialog, empty-canvas overlay) can re-list. */
+  layoutsVersion: number
   /** Whether the minimap is currently expanded. */
   minimapOpen: boolean
   showSettings: boolean
@@ -80,6 +83,7 @@ interface UIStoreActions {
   setShowNodeSwitcher: (show: boolean) => void
   setShowCommandPalette: (show: boolean) => void
   setShowLayoutsDialog: (show: boolean) => void
+  bumpLayoutsVersion: () => void
   setMinimapOpen: (open: boolean) => void
   toggleMinimapOpen: () => void
   openSettings: (initialTab?: string) => void
@@ -107,6 +111,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showNodeSwitcher: false,
   showCommandPalette: false,
   showLayoutsDialog: false,
+  layoutsVersion: 0,
   minimapOpen: false,
   showSettings: false,
   settingsInitialTab: null,
@@ -131,6 +136,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setShowLayoutsDialog(show) {
     set({ showLayoutsDialog: show })
+  },
+
+  bumpLayoutsVersion() {
+    set((s) => ({ layoutsVersion: s.layoutsVersion + 1 }))
   },
 
   setMinimapOpen(open) {

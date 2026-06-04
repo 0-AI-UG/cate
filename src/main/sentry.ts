@@ -79,6 +79,12 @@ function actuallyInit(): void {
 }
 
 export function initSentry(): void {
+  // Hold off entirely until the user has made a first-run telemetry choice —
+  // nothing is captured or sent before consent.
+  if (!getSettingSync('telemetryConsentDecided')) {
+    log.info('[sentry] deferred — awaiting first-run consent')
+    return
+  }
   if (!getSettingSync('crashReportingEnabled')) {
     log.info('[sentry] disabled by user setting')
     return
@@ -116,6 +122,20 @@ export function captureMainException(err: unknown): void {
     Sentry.captureException(err)
   } catch (sentryErr) {
     log.warn('[sentry] captureException failed: %s', sentryErr instanceof Error ? sentryErr.message : String(sentryErr))
+  }
+}
+
+/** Capture a named message event (e.g. a renderer crash that has no JS stack)
+ *  with optional structured context. Best-effort, never throws. */
+export function captureMainMessage(
+  message: string,
+  extra?: Record<string, unknown>,
+): void {
+  if (!initialized) return
+  try {
+    Sentry.captureMessage(message, { level: 'error', extra })
+  } catch (sentryErr) {
+    log.warn('[sentry] captureMessage failed: %s', sentryErr instanceof Error ? sentryErr.message : String(sentryErr))
   }
 }
 

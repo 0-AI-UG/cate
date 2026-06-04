@@ -20,11 +20,13 @@ import {
   FloppyDisk,
   ArrowsClockwise,
   Trash,
+  GraduationCap,
 } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
 import { CateLogo } from './CateLogo'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { getWorkspaceDockStore } from '../stores/workspaceStores'
 import { findTabStack } from '../stores/dockTreeUtils'
@@ -58,6 +60,7 @@ const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
 const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const DeleteCompanionIcon = () => <Trash size={ICON_SIZE} />
+const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const AgentIcon = () => <CateLogo size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
@@ -217,6 +220,17 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '',
         icon: <SaveIcon />,
         action: () => useUIStore.getState().setShowLayoutsDialog(true),
+      },
+      {
+        id: 'showTutorial',
+        title: 'Show Tutorial',
+        shortcutText: '',
+        icon: <TutorialIcon />,
+        // Replays the first-run guided tour by clearing the completed flag.
+        action: () => {
+          useSettingsStore.getState().setSetting('onboardingCompleted', false)
+          try { window.electronAPI?.trackFeatureUsed?.('onboarding_replayed') } catch { /* noop */ }
+        },
       },
       {
         id: 'reloadWorkspace',
@@ -528,9 +542,9 @@ export const CommandPalette: React.FC = () => {
       document.removeEventListener('keydown', handleKey, { capture: true })
   }, [showCommandPalette, filteredCommands, searchResults, recommendedPanels, showRecommended, selectedIndex, totalItems, executeCommand, selectSearchResult, close, canvasApi, focusPanelById])
 
-  if (!showCommandPalette) return null
-
-  // Group search results by kind for section headers
+  // Group search results by kind for section headers. Must run before the
+  // early return below — a hook called conditionally changes the hook order
+  // between renders and crashes React when the palette is toggled.
   const groupedResults = useMemo(() => {
     const seen = new Set<SearchResultKind>()
     const sections: { kind: SearchResultKind; items: SearchResult[] }[] = []
@@ -540,6 +554,8 @@ export const CommandPalette: React.FC = () => {
     }
     return sections
   }, [searchResults])
+
+  if (!showCommandPalette) return null
 
   const sectionLabel = (kind: SearchResultKind) =>
     kind === 'file' ? 'Files' : kind === 'panel' ? 'Panels' : 'Terminals'
@@ -552,6 +568,7 @@ export const CommandPalette: React.FC = () => {
       onClick={close}
     >
       <div
+        data-onboarding="command-palette"
         className="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] rounded-xl overflow-hidden flex flex-col self-start bg-surface-2/95 backdrop-blur-xl border border-strong shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
         onClick={(e) => e.stopPropagation()}
       >

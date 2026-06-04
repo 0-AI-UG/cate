@@ -16,6 +16,13 @@ import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, Doc
 
 export interface CanvasOperations {
   addNodeAndFocus: (panelId: string, panelType: PanelType, position?: Point) => void
+  /** Begin interactive ghost placement. Returns true if ghosts are shown (the
+   *  caller must NOT also place the node). `onCancelled` rolls the panel back. */
+  beginPlacement: (
+    panelId: string,
+    panelType: PanelType,
+    onCancelled: (panelId: string) => void,
+  ) => boolean
   removeNodeForPanel: (panelId: string) => void
   loadWorkspaceCanvas: (
     nodes: Record<CanvasNodeId, CanvasNodeState>,
@@ -51,6 +58,14 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
     addNodeAndFocus(panelId: string, panelType: PanelType, position?: Point) {
       const nodeId = storeApi.getState().addNode(panelId, panelType, position)
       storeApi.getState().focusAndCenter(nodeId)
+    },
+
+    beginPlacement(
+      panelId: string,
+      panelType: PanelType,
+      onCancelled: (panelId: string) => void,
+    ) {
+      return storeApi.getState().beginPlacement(panelId, panelType, onCancelled)
     },
 
     removeNodeForPanel(panelId: string) {

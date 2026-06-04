@@ -4,6 +4,7 @@ import {
   closeApp,
   seedTerminal,
   resetViewport,
+  setZoom,
   titleBarCentre,
   getNodeRect,
   dragMouse,
@@ -77,6 +78,13 @@ test('drop on target top edge splits vertically', async () => {
 
 test('drop on target body centre (safe zone) does not commit', async () => {
   const { a, b } = await seedTwoTerminals(page)
+  // The two 640px nodes can't both fit at zoom 1 in the e2e window, which would
+  // push B's centre off-screen. Zoom out (and re-zero the offset) so B is fully
+  // visible AND tall enough that its vertical centre clears the 38px tab-bar
+  // drop band — otherwise the "body centre" drop lands off-screen / in the tab
+  // band and wrongly docks.
+  await setZoom(page, 0.6)
+  await resetViewport(page)
   const aGrab = await titleBarCentre(page, a)
   const bRect = await getNodeRect(page, b)
   // Mid-body — outside the 12% edge strips AND below the tab-bar.

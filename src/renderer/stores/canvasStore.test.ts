@@ -12,6 +12,9 @@
 
 import { describe, it, expect } from 'vitest'
 import { createCanvasStore } from './canvasStore'
+import { recommendPlacements, nudgeToFree } from '../canvas/placement'
+import { CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
+import type { CanvasNodeState, CanvasNodeId } from '../../shared/types'
 
 describe('canvasStore.addNode panelId dedup invariant', () => {
   it('single addNode produces exactly one node for that panelId', () => {
@@ -335,5 +338,479 @@ describe('canvasStore.zoomToSelection', () => {
     const vb = store.getState().canvasToView({ x: 1000, y: 100 })
     expect(va.x).toBeGreaterThanOrEqual(0)
     expect(vb.x).toBeLessThanOrEqual(1000)
+  })
+})
+
+// =============================================================================
+// recommendPlacements — 3–5 ranked, non-overlapping spots for the ghost picker.
+// =============================================================================
+
+describe('canvasStore.recommendPlacements', () => {
+  const VIEWPORT = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1000, height: 800 } }
+
+  function node(id: string, x: number, y: number, w = 200, h = 150, creationIndex = 0): CanvasNodeState {
+    return {
+      id, panelId: `panel-${id}`, origin: { x, y }, size: { width: w, height: h },
+      zOrder: 0, creationIndex,
+    }
+  }
+  function toMap(...ns: CanvasNodeState[]): Record<CanvasNodeId, CanvasNodeState> {
+    return Object.fromEntries(ns.map((n) => [n.id, n]))
+  }
+  type R = { origin: { x: number; y: number }; size: { width: number; height: number } }
+  const rectsOverlap = (a: R, b: R) =>
+    !(a.origin.x + a.size.width <= b.origin.x ||
+      b.origin.x + b.size.width <= a.origin.x ||
+      a.origin.y + a.size.height <= b.origin.y ||
+      b.origin.y + b.size.height <= a.origin.y)
+  const rectOf = (c: { point: { x: number; y: number }; size: { width: number; height: number } }): R =>
+    ({ origin: c.point, size: c.size })
+  // VIEWPORT (offset 0, zoom 1) maps to the canvas rect 0..1000 × 0..800.
+  const viewRect: R = { origin: { x: 0, y: 0 }, size: { width: 1000, height: 800 } }
+  const onScreen = (c: { point: { x: number; y: number }; size: { width: number; height: number } }) =>
+    rectsOverlap(rectOf(c), viewRect)
+
+  it('returns recommendations that never overlap each other', () => {
+    const cands = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThan(1)
+    for (let i = 0; i < cands.length; i++) {
+      for (let j = i + 1; j < cands.length; j++) {
+        expect(rectsOverlap(rectOf(cands[i]), rectOf(cands[j]))).toBe(false)
+      }
+    }
+  })
+
+  it('recommendations never overlap existing nodes', () => {
+    const nodes = toMap(node('a', 0, 0), node('b', 400, 0))
+    const cands = recommendPlacements(nodes, 'a', 'terminal', VIEWPORT, null)
+    cands.forEach((c) => {
+      Object.values(nodes).forEach((n) =>
+        expect(rectsOverlap(rectOf(c), { origin: n.origin, size: n.size })).toBe(false),
+      )
+    })
+  })
+
+  it('caps the recommendation count at max', () => {
+    const cands = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeLessThanOrEqual(6)
+    const three = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 3)
+    expect(three.length).toBeLessThanOrEqual(3)
+  })
+
+  it('biases the best recommendation toward the anchor (mouse) when given', () => {
+    const anchor = { x: 300, y: 300 }
+    const cands = recommendPlacements({}, null, 'terminal', VIEWPORT, anchor)
+    expect(cands.length).toBeGreaterThan(0)
+    const best = cands[0]
+    expect(best.point.x + best.size.width / 2).toBeCloseTo(anchor.x, -1)
+    expect(best.point.y + best.size.height / 2).toBeCloseTo(anchor.y, -1)
+  })
+
+  it('all recommendations are grid-snapped', () => {
+    const cands = recommendPlacements(toMap(node('a', 0, 0), node('b', 400, 0)), 'a', 'terminal', VIEWPORT, null)
+    cands.forEach((c) => {
+      expect(c.point.x % CANVAS_GRID_SIZE === 0).toBe(true)
+      expect(c.point.y % CANVAS_GRID_SIZE === 0).toBe(true)
+    })
+  })
+
+  it('still yields ≥1 overlap-free recommendation when the focused node is boxed in', () => {
+    const nodes = toMap(
+      node('c', 0, 0, 200, 150),
+      node('r', 220, 0, 200, 150),
+      node('l', -220, 0, 200, 150),
+      node('d', 0, 170, 200, 150),
+      node('u', 0, -170, 200, 150),
+    )
+    const cands = recommendPlacements(nodes, 'c', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThanOrEqual(1)
+    cands.forEach((c) => {
+      Object.values(nodes).forEach((n) =>
+        expect(rectsOverlap(rectOf(c), { origin: n.origin, size: n.size })).toBe(false),
+      )
+    })
+  })
+
+  const rectGap = (a: R, b: R) => {
+    const dx = Math.max(0, a.origin.x - (b.origin.x + b.size.width), b.origin.x - (a.origin.x + a.size.width))
+    const dy = Math.max(0, a.origin.y - (b.origin.y + b.size.height), b.origin.y - (a.origin.y + a.size.height))
+    return Math.hypot(dx, dy)
+  }
+
+  it('on-screen recommendations rank before off-screen ones', () => {
+    // Node near the right edge: its right slot is off-screen, others on-screen.
+    const cands = recommendPlacements(toMap(node('a', 850, 350)), 'a', 'terminal', VIEWPORT, null)
+    const firstOff = cands.findIndex((c) => !onScreen(c))
+    const lastOn = cands.map((c) => onScreen(c)).lastIndexOf(true)
+    if (firstOff !== -1) expect(firstOff).toBeGreaterThan(lastOn)
+    expect(onScreen(cands[0])).toBe(true)
+  })
+
+  it('ACTIVE node: the best recommendation sits directly beside the focused node', () => {
+    const a = node('a', 400, 320) // on-screen, focused → active
+    const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThanOrEqual(3)
+    // The BEST spot hugs the node (one gap away); the group stays nearby.
+    expect(rectGap(rectOf(cands[0]), { origin: a.origin, size: a.size })).toBeLessThanOrEqual(60)
+    const pitch = 640 + 40
+    cands.forEach((c) => {
+      expect(rectGap(rectOf(c), { origin: a.origin, size: a.size })).toBeLessThan(pitch * 2)
+    })
+  })
+
+  it('ACTIVE node in a cluster: recommendations form one connected group', () => {
+    // 2×2 cluster; focus the bottom-right node. Recs must stay attached to it or
+    // each other — never flung to the far side of the cluster.
+    const nodes = toMap(
+      node('tl', 0, 0), node('tr', 240, 0),
+      node('bl', 0, 190), node('br', 240, 190, 200, 150, 3),
+    )
+    const cands = recommendPlacements(nodes, 'br', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThanOrEqual(1)
+    const br: R = { origin: nodes['br'].origin, size: nodes['br'].size }
+    const pitch = 640 + 40 + 5 // new-panel pitch + slack
+    cands.forEach((c) => {
+      const connected =
+        rectGap(rectOf(c), br) <= pitch ||
+        cands.some((o) => o !== c && rectGap(rectOf(c), rectOf(o)) <= pitch)
+      expect(connected).toBe(true)
+    })
+  })
+
+  it('STANDARD SIZE: recommendations use the default size, not the active node size', () => {
+    // An unusually-shaped (tall) focused node → recommendations are still the
+    // standard 640×400, not the node's shape.
+    const std = recommendPlacements({}, null, 'terminal', VIEWPORT, null)[0].size
+    const a = node('a', 200, 200, 600, 1000)
+    const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThanOrEqual(1)
+    expect(cands[0].size).toEqual(std)
+  })
+
+  it('STANDARD PREFERRED: a gap a standard panel fits gets a standard ghost (not oversized)', () => {
+    // Two tall nodes with a wide gap between them — a standard panel fits, so the
+    // ghost in the gap is standard, hugging the active node (no oversized custom).
+    const std = recommendPlacements({}, null, 'terminal', VIEWPORT, null)[0].size
+    const a = node('a', 0, 0, 400, 800)
+    const b = node('b', 1300, 0, 400, 800, 1)
+    const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
+    const inGap = cands.find((c) => c.point.x >= 400 && c.point.x + c.size.width <= 1300)
+    expect(inGap).toBeDefined()
+    expect(inGap!.size).toEqual(std)
+  })
+
+  it('GAP-FILL: a sub-standard gap between nodes gets a custom-sized recommendation', () => {
+    // Two standard (640×400) nodes with a ~460px horizontal gap — too narrow for
+    // a standard panel, but wide enough for a custom one.
+    const a = node('a', 0, 0, 640, 400)
+    const b = node('b', 1100, 0, 640, 400, 1)
+    const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
+    const custom = cands.find((c) => c.size.width !== 640 || c.size.height !== 400)
+    expect(custom).toBeDefined()
+    // It sits inside the gap and overlaps neither neighbour.
+    expect(custom!.point.x).toBeGreaterThanOrEqual(640)
+    expect(custom!.point.x + custom!.size.width).toBeLessThanOrEqual(1100)
+    expect(rectsOverlap(rectOf(custom!), { origin: a.origin, size: a.size })).toBe(false)
+    expect(rectsOverlap(rectOf(custom!), { origin: b.origin, size: b.size })).toBe(false)
+    // Custom size respects the minimums.
+    expect(custom!.size.width).toBeGreaterThanOrEqual(280)
+    expect(custom!.size.height).toBeGreaterThanOrEqual(180)
+  })
+
+  it('GAP-FILL: a staggered layout yields a custom ghost filling an irregular hole', () => {
+    // Two diagonally-offset nodes leave an L-shaped empty region a pairwise
+    // gap check would miss — the rectangle finder fills its holes.
+    const a = node('a', 0, 0, 400, 300)
+    const b = node('b', 600, 360, 400, 300, 1)
+    const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
+    const custom = cands.find((c) => c.size.width !== 400 || c.size.height !== 300)
+    expect(custom).toBeDefined()
+    expect(rectsOverlap(rectOf(custom!), { origin: a.origin, size: a.size })).toBe(false)
+    expect(rectsOverlap(rectOf(custom!), { origin: b.origin, size: b.size })).toBe(false)
+  })
+
+  it('GAP-FILL: a gap below the minimum gets no recommendation', () => {
+    const a = node('a', 0, 0, 640, 400)
+    const b = node('b', 840, 0, 640, 400, 1) // only a 200px gap → too small
+    const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
+    // No candidate squeezes into the tiny gap (640 < x < 840).
+    cands.forEach((c) => {
+      const insideGap = c.point.x > 640 && c.point.x + c.size.width < 840
+      expect(insideGap).toBe(false)
+    })
+  })
+
+  it('ISLANDS: with no active node, recommends around the island nearest the anchor', () => {
+    const near = node('near', 0, 0)
+    const far = node('far', 5000, 5000, 200, 150, 1)
+    const nodes = toMap(near, far)
+    // No focus; anchor sits on the near island.
+    const cands = recommendPlacements(nodes, null, 'terminal', VIEWPORT, { x: 100, y: 75 })
+    expect(cands.length).toBeGreaterThan(0)
+    cands.forEach((c) => {
+      expect(rectGap(rectOf(c), { origin: near.origin, size: near.size }))
+        .toBeLessThan(rectGap(rectOf(c), { origin: far.origin, size: far.size }))
+    })
+  })
+
+  it('BLANK viewport: no active node and nothing on screen → centre on the view', () => {
+    // The only node is far off-screen and not focused.
+    const cands = recommendPlacements(toMap(node('off', 4000, 4000)), null, 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThan(0)
+    expect(onScreen(cands[0])).toBe(true)
+    // Best ghost is centred on the viewport centre (500, 400).
+    expect(Math.abs(cands[0].point.x + cands[0].size.width / 2 - 500)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
+    expect(Math.abs(cands[0].point.y + cands[0].size.height / 2 - 400)).toBeLessThanOrEqual(CANVAS_GRID_SIZE)
+  })
+
+  it('BOXED-IN: a surrounded focused node still surfaces several spots beyond the ring', () => {
+    // The old lattice/BFS died to a single fallback spot once every neighbour cell
+    // was occupied. Decomposing the free space reaches the open area past the ring.
+    const nodes = toMap(
+      node('c', 0, 0, 200, 150),
+      node('r', 220, 0, 200, 150),
+      node('l', -220, 0, 200, 150),
+      node('d', 0, 170, 200, 150),
+      node('u', 0, -170, 200, 150),
+    )
+    const cands = recommendPlacements(nodes, 'c', 'terminal', VIEWPORT, null)
+    expect(cands.length).toBeGreaterThanOrEqual(3)
+    cands.forEach((c) => {
+      Object.values(nodes).forEach((n) =>
+        expect(rectsOverlap(rectOf(c), { origin: n.origin, size: n.size })).toBe(false),
+      )
+    })
+  })
+
+  it('FOCUS vs CURSOR: focus pulls the best spot to the node; no focus follows the cursor', () => {
+    // Big viewport, nodes far apart so the best spot can hug one without reaching the other.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1800, height: 1400 } }
+    const a = node('a', 100, 100, 300, 220)
+    const b = node('b', 1300, 1000, 300, 220, 1)
+    const nodes = toMap(a, b)
+    const aR: R = { origin: a.origin, size: a.size }
+    const bR: R = { origin: b.origin, size: b.size }
+
+    // Focused on A (no cursor) → the best spot hugs A, not B.
+    const focused = recommendPlacements(nodes, 'a', 'terminal', VP, null)
+    expect(rectGap(rectOf(focused[0]), aR)).toBeLessThan(rectGap(rectOf(focused[0]), bR))
+
+    // Nothing focused, cursor by B → the best spot follows the cursor to B, not A.
+    const free = recommendPlacements(nodes, null, 'terminal', VP, { x: 1280, y: 980 })
+    expect(rectGap(rectOf(free[0]), bR)).toBeLessThan(rectGap(rectOf(free[0]), aR))
+  })
+
+  it('HUG SNAP: a node with a non-grid-aligned edge still gets a spot directly beside it', () => {
+    // The right edge (843) isn't on the 20px grid. The hug anchor must snap AWAY
+    // from the node so grid-snapping doesn't eat the gap and make finalize drop it.
+    const a = node('a', 200, 200, 643, 411)
+    const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
+    const aRight = a.origin.x + a.size.width
+    const beside = cands.find(
+      (c) =>
+        c.point.x >= aRight && c.point.x <= aRight + 60 && // just to the right, gap preserved
+        c.point.y < a.origin.y + a.size.height && c.point.y + c.size.height > a.origin.y, // shares its rows
+    )
+    expect(beside).toBeDefined()
+    expect(rectsOverlap(rectOf(beside!), { origin: a.origin, size: a.size })).toBe(false)
+  })
+
+  it('CONNECTED: no recommendation lands past a neighbour blocking the node', () => {
+    // A neighbour directly to the right blocks that side; the free space far past
+    // it must NOT be recommended — recs form one cluster touching the node.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 0.5, containerSize: { width: 2400, height: 1800 } }
+    const foc = node('foc', 1000, 1000, 640, 400, 9)
+    const blocker = node('r', 1680, 1000, 640, 400, 1)
+    const cands = recommendPlacements(toMap(foc, blocker), 'foc', 'terminal', VP, null)
+    const blockerRight = blocker.origin.x + blocker.size.width
+    expect(cands.length).toBeGreaterThanOrEqual(1)
+    cands.forEach((c) => expect(c.point.x).toBeLessThan(blockerRight))
+  })
+
+  it('NO GIANT GAPS: focused recommendations stay clustered near the node', () => {
+    // Box the focused node tightly on three sides, leaving far-open space. Recs
+    // must hug the node, not scatter into the distance to fill the count.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2600, height: 2200 } }
+    const foc = node('foc', 1000, 1000, 640, 400, 9)
+    const nodes = toMap(
+      foc,
+      node('up', 1000, 560, 640, 400, 1),
+      node('down', 1000, 1440, 640, 400, 2),
+      node('left', 320, 1000, 640, 400, 3),
+    )
+    const cands = recommendPlacements(nodes, 'foc', 'terminal', VP, null)
+    const focR: R = { origin: foc.origin, size: foc.size }
+    const pitch = 640 + 40
+    expect(cands.length).toBeGreaterThanOrEqual(1)
+    cands.forEach((c) => expect(rectGap(rectOf(c), focR)).toBeLessThanOrEqual(pitch))
+  })
+
+  it('PACKING: spots never overlap each other or any node', () => {
+    // The packer carves each placed ghost (plus its gap) out of the free space, so
+    // recommendations are always mutually non-overlapping and clear of every window.
+    const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2600, height: 1400 } }
+    const nodes = toMap(
+      node('a', 400, 300, 640, 400, 1),
+      node('b', 1200, 360, 600, 500, 2),
+      node('c', 500, 900, 700, 360, 3),
+    )
+    const cands = recommendPlacements(nodes, 'a', 'terminal', VP, null)
+    for (let i = 0; i < cands.length; i++) {
+      Object.values(nodes).forEach((n) =>
+        expect(rectsOverlap(rectOf(cands[i]), { origin: n.origin, size: n.size })).toBe(false),
+      )
+      for (let j = i + 1; j < cands.length; j++) {
+        expect(rectsOverlap(rectOf(cands[i]), rectOf(cands[j]))).toBe(false)
+      }
+    }
+  })
+})
+
+describe('canvasStore.nudgeToFree', () => {
+  const size = { width: 200, height: 150 }
+  const node = (id: string, x: number, y: number) => ({
+    id, panelId: `p-${id}`, origin: { x, y }, size, zOrder: 0, creationIndex: 0,
+  })
+  const toMap = (...ns: ReturnType<typeof node>[]) => Object.fromEntries(ns.map((n) => [n.id, n]))
+  const overlaps = (a: { origin: { x: number; y: number }; size: { width: number; height: number } }, p: { x: number; y: number }) =>
+    !(a.origin.x + a.size.width <= p.x || p.x + size.width <= a.origin.x ||
+      a.origin.y + a.size.height <= p.y || p.y + size.height <= a.origin.y)
+
+  it('returns the snapped point when it is already free', () => {
+    const p = nudgeToFree({}, size, { x: 305, y: 207 })
+    expect(p.x % CANVAS_GRID_SIZE === 0).toBe(true)
+    expect(p.y % CANVAS_GRID_SIZE === 0).toBe(true)
+  })
+
+  it('pushes off an overlapping node to a free spot', () => {
+    const nodes = toMap(node('a', 0, 0))
+    const p = nudgeToFree(nodes, size, { x: 10, y: 10 }) // would land on top of 'a'
+    expect(overlaps(nodes['a'], p)).toBe(false)
+  })
+})
+
+// =============================================================================
+// Interactive ghost placement — beginPlacement / commitPlacement / cancel.
+// =============================================================================
+
+describe('canvasStore ghost placement actions', () => {
+  function setup() {
+    const store = createCanvasStore()
+    store.getState().setContainerSize({ width: 1000, height: 800 })
+    return store
+  }
+
+  it('beginPlacement sets pendingPlacement and returns true', () => {
+    const store = setup()
+    const shown = store.getState().beginPlacement('p1', 'terminal')
+    expect(shown).toBe(true)
+    const pending = store.getState().pendingPlacement
+    expect(pending).not.toBeNull()
+    expect(pending!.panelId).toBe('p1')
+    expect(pending!.candidates.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('commitPlacement creates one node at the chosen spot+size and clears state', () => {
+    const store = setup()
+    store.getState().addNode('seed', 'editor', { x: 0, y: 0 }, { width: 200, height: 150 })
+    store.getState().beginPlacement('p1', 'terminal')
+    const target = store.getState().pendingPlacement!.candidates[1] ?? store.getState().pendingPlacement!.candidates[0]
+    const idx = store.getState().pendingPlacement!.candidates.indexOf(target)
+
+    const nodeId = store.getState().commitPlacement(idx)
+    expect(nodeId).toBeTruthy()
+    expect(store.getState().pendingPlacement).toBeNull()
+    const node = store.getState().nodes[nodeId!]
+    expect(node.panelId).toBe('p1')
+    expect(node.origin).toEqual(target.point)
+    expect(node.size).toEqual(target.size)
+    expect(Object.values(store.getState().nodes).filter((n) => n.panelId === 'p1')).toHaveLength(1)
+    expect(store.getState().focusedNodeId).toBe(nodeId)
+  })
+
+  it('beginPlacement only ever zooms out, and cancel restores the viewport', () => {
+    const store = setup()
+    // Two far-apart nodes force a zoom-out to fit the recommendations.
+    store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 400, height: 300 })
+    store.getState().addNode('b', 'editor', { x: 4000, y: 3000 }, { width: 400, height: 300 })
+    const zoomBefore = store.getState().zoomLevel
+    const offsetBefore = store.getState().viewportOffset
+    store.getState().beginPlacement('p1', 'terminal')
+    expect(store.getState().zoomLevel).toBeLessThanOrEqual(zoomBefore)
+    expect(store.getState().pendingPlacement!.prevZoom).toBe(zoomBefore)
+    store.getState().cancelPlacement()
+    expect(store.getState().zoomLevel).toBe(zoomBefore)
+    expect(store.getState().viewportOffset).toEqual(offsetBefore)
+  })
+
+  it('cancelPlacement clears state and invokes the rollback callback', () => {
+    const store = setup()
+    let cancelledId: string | null = null
+    store.getState().beginPlacement('p1', 'terminal', (id) => { cancelledId = id })
+    store.getState().cancelPlacement()
+    expect(store.getState().pendingPlacement).toBeNull()
+    expect(cancelledId).toBe('p1')
+  })
+
+  it('re-trigger rolls the previous pending panel back (latest wins)', () => {
+    const store = setup()
+    let cancelledId: string | null = null
+    store.getState().beginPlacement('p1', 'terminal', (id) => { cancelledId = id })
+    store.getState().beginPlacement('p2', 'terminal', () => {})
+    expect(cancelledId).toBe('p1')
+    expect(store.getState().pendingPlacement!.panelId).toBe('p2')
+  })
+
+  it('setPlacementHover updates the hovered index', () => {
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    store.getState().setPlacementHover(0)
+    expect(store.getState().pendingPlacement!.hoveredIndex).toBe(0)
+    store.getState().setPlacementHover(null)
+    expect(store.getState().pendingPlacement!.hoveredIndex).toBeNull()
+  })
+
+  it('commitPlacement is a no-op with an out-of-range index', () => {
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    const result = store.getState().commitPlacement(999)
+    expect(result).toBeNull()
+    expect(store.getState().pendingPlacement).not.toBeNull()
+  })
+
+  it('updatePlacementCursor previews a free spot under the cursor', () => {
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    store.getState().updatePlacementCursor({ x: 700, y: 500 })
+    const free = store.getState().pendingPlacement!.freeGhost!
+    expect(free).not.toBeNull()
+    // Centre of the free ghost tracks the cursor (within grid-snap tolerance).
+    expect(Math.abs(free.point.x + free.size.width / 2 - 700)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
+    expect(Math.abs(free.point.y + free.size.height / 2 - 500)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
+  })
+
+  it('F arms free placement; disarming clears the preview ghost', () => {
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    expect(store.getState().pendingPlacement!.freeArmed).toBe(false)
+    store.getState().setFreeArmed(true)
+    expect(store.getState().pendingPlacement!.freeArmed).toBe(true)
+    store.getState().updatePlacementCursor({ x: 700, y: 500 })
+    expect(store.getState().pendingPlacement!.freeGhost).not.toBeNull()
+    store.getState().setFreeArmed(false)
+    expect(store.getState().pendingPlacement!.freeArmed).toBe(false)
+    expect(store.getState().pendingPlacement!.freeGhost).toBeNull()
+  })
+
+  it('commitFreePlacement creates a node centred on the click point and clears state', () => {
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    const nodeId = store.getState().commitFreePlacement({ x: 650, y: 450 })
+    expect(nodeId).toBeTruthy()
+    expect(store.getState().pendingPlacement).toBeNull()
+    const node = store.getState().nodes[nodeId!]
+    expect(node.panelId).toBe('p1')
+    expect(Math.abs(node.origin.x + node.size.width / 2 - 650)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
+    expect(store.getState().focusedNodeId).toBe(nodeId)
   })
 })

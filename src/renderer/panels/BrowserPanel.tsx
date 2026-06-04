@@ -5,13 +5,14 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass } from '@phosphor-icons/react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { SEARCH_ENGINE_URLS } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
+import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { portalRegistry } from '../lib/portalRegistry'
 import { isUrl, normalizeUrl } from './browserUrl'
 
@@ -29,6 +30,31 @@ import { isUrl, normalizeUrl } from './browserUrl'
 // restart). A single stable partition keeps cookies/logins across restarts and
 // panel re-creation. Trade-off: all browser panels share one cookie store.
 const BROWSER_PARTITION = 'persist:browser-shared'
+
+// Per-panel proxy support (issue #241). A panel with a proxy configured can't
+// share the global `persist:browser-shared` session (setting a proxy there would
+// affect every browser panel), so it gets its own persistent partition. The key
+// is derived from the *proxy URL* — which is persisted in PanelState — rather
+// than the ephemeral panelId, so the session is stable across restarts (no
+// orphaned partitions, no lost cookies; this is the #220 regression the naive
+// `persist:browser-${panelId}` approach would reintroduce). Trade-off: two
+// panels configured with the same proxy share a cookie jar, which matches
+// "same environment" semantics.
+function stableHash(input: string): string {
+  // FNV-1a 32-bit — small, dependency-free, good enough to key a partition name.
+  let h = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(36)
+}
+
+/** The Electron session partition a browser panel should use given its proxy. */
+function partitionFor(proxyUrl?: string): string {
+  const trimmed = proxyUrl?.trim()
+  return trimmed ? `persist:browser-proxy-${stableHash(trimmed)}` : BROWSER_PARTITION
+}
 
 interface WebviewElement extends HTMLElement {
   loadURL(url: string): void
@@ -54,20 +80,34 @@ export default function BrowserPanel({
   workspaceId,
   nodeId,
   url,
+  proxyUrl,
 }: BrowserPanelProps) {
   const browserHomepage = useSettingsStore((s) => s.browserHomepage)
   const browserSearchEngine = useSettingsStore((s) => s.browserSearchEngine)
   const updatePanelTitle = useAppStore((s) => s.updatePanelTitle)
   const updatePanelUrl = useAppStore((s) => s.updatePanelUrl)
+  const updatePanelProxy = useAppStore((s) => s.updatePanelProxy)
 
   const isFocused = useCanvasStoreContext((s) => s.focusedNodeId === nodeId)
 
   const rawInitialUrl = url || browserHomepage || 'https://www.google.com'
   const initialUrl = rawInitialUrl.startsWith('about:') ? rawInitialUrl : normalizeUrl(rawInitialUrl)
 
-  // Stable src for the <webview> element — computed once at mount so React
-  // never updates the attribute on re-render (which would re-navigate).
-  const [webviewSrc] = useState(() => initialUrl)
+  // Per-panel proxy (issue #241). Local state mirrors PanelState.proxyUrl; the
+  // dialog updates both this (drives the session) and the store (persistence).
+  const [activeProxy, setActiveProxy] = useState<string | undefined>(proxyUrl)
+  const partition = partitionFor(activeProxy)
+  // Set false while the proxy is being (re)configured so the <webview> only
+  // attaches after the session's proxy is in place — the first request is then
+  // already proxied. No-proxy panels never block.
+  const [proxyReady, setProxyReady] = useState(!activeProxy)
+  const [proxyDialogOpen, setProxyDialogOpen] = useState(false)
+  const [proxyInput, setProxyInput] = useState('')
+
+  // src for the <webview> element. Frozen across normal re-renders (changing it
+  // would re-navigate), but intentionally re-seeded to the current page when the
+  // partition changes so the remounted webview reopens where the user was.
+  const [webviewSrc, setWebviewSrc] = useState(() => initialUrl)
 
   const webviewRef = useRef<WebviewElement | null>(null)
   const urlInputRef = useRef<HTMLInputElement | null>(null)
@@ -75,11 +115,18 @@ export default function BrowserPanel({
   // reads the current value without re-subscribing on every focus change.
   const isFocusedRef = useRef(isFocused)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
+  // Latest URL, read by the partition-change effect to re-seed the remounted
+  // webview without making it a dependency (which would remount on every nav).
+  const currentUrlRef = useRef(initialUrl)
   const [inputUrl, setInputUrl] = useState(initialUrl)
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Distinct from loadError: the guest *renderer process* died (OOM / GPU
+  // fault / native crash), not merely a failed navigation. Needs a reload to
+  // respawn the renderer, so it gets its own overlay + recovery affordance.
+  const [crashed, setCrashed] = useState(false)
   const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -176,6 +223,75 @@ export default function BrowserPanel({
       navigateTo(inputUrl)
     }
   }, [inputUrl, navigateTo])
+
+  // -------------------------------------------------------------------------
+  // Per-panel proxy (issue #241)
+  // -------------------------------------------------------------------------
+
+  // Keep currentUrlRef in step with currentUrl for the partition-change effect.
+  useEffect(() => {
+    currentUrlRef.current = currentUrl
+  }, [currentUrl])
+
+  // Configure the proxy on this panel's session before the webview attaches.
+  // Re-runs whenever the proxy (and therefore the partition) changes. No-proxy
+  // panels use the shared session as-is and never block on this.
+  useEffect(() => {
+    if (!activeProxy) {
+      setProxyReady(true)
+      return
+    }
+    let cancelled = false
+    setProxyReady(false)
+    window.electronAPI
+      .browserSetProxy(partition, activeProxy)
+      .then(() => { if (!cancelled) setProxyReady(true) })
+      .catch((err) => {
+        console.error('[BrowserPanel] Failed to configure proxy:', err)
+        // Surface the failure but still let the page load (direct) rather than
+        // leaving the panel permanently blank.
+        if (!cancelled) {
+          setLoadError('Failed to apply proxy settings')
+          setProxyReady(true)
+        }
+      })
+    return () => { cancelled = true }
+  }, [partition, activeProxy])
+
+  // When the partition changes (proxy added/removed/edited) the <webview> is
+  // remounted via its key; re-seed its src to the current page so the user
+  // stays where they were instead of jumping back to the initial URL.
+  const didMountRef = useRef(false)
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      return
+    }
+    setWebviewSrc(currentUrlRef.current)
+  }, [partition])
+
+  const openProxyDialog = useCallback(() => {
+    setProxyInput(activeProxy ?? '')
+    setProxyDialogOpen(true)
+  }, [activeProxy])
+
+  const applyProxy = useCallback((next?: string) => {
+    const value = next?.trim() || undefined
+    setActiveProxy(value)
+    updatePanelProxy(workspaceId, panelId, value)
+    setProxyDialogOpen(false)
+  }, [updatePanelProxy, workspaceId, panelId])
+
+  const handleProxyContextMenu = useCallback(async (e: React.MouseEvent) => {
+    e.preventDefault()
+    const items: NativeContextMenuItem[] = [
+      { id: 'configure', label: 'Configure Proxy…' },
+    ]
+    if (activeProxy) items.push({ id: 'clear', label: 'Clear Proxy (Direct)' })
+    const id = await window.electronAPI.showContextMenu(items)
+    if (id === 'configure') openProxyDialog()
+    else if (id === 'clear') applyProxy(undefined)
+  }, [activeProxy, openProxyDialog, applyProxy])
 
   // -------------------------------------------------------------------------
   // Browser navigation shortcuts (Cmd+R/[/]/L)
@@ -308,6 +424,22 @@ export default function BrowserPanel({
     const onDidStartLoading = () => {
       setIsLoading(true)
       setLoadError(null)
+      setCrashed(false)
+    }
+
+    // The guest renderer process died. Newer Electron fires `render-process-gone`
+    // (with a reason); older builds fire the deprecated `crashed`. Handle both.
+    const onRenderProcessGone = (event: any) => {
+      const reason = event?.reason ?? 'crashed'
+      if (reason === 'clean-exit') return // normal teardown, not a crash
+      console.error('[BrowserPanel] webview renderer gone:', reason)
+      setCrashed(true)
+      setIsLoading(false)
+    }
+    const onCrashed = () => {
+      console.error('[BrowserPanel] webview crashed')
+      setCrashed(true)
+      setIsLoading(false)
     }
 
     const onDidStopLoading = () => {
@@ -351,6 +483,8 @@ export default function BrowserPanel({
     webview.addEventListener('did-stop-loading', onDidStopLoading)
     webview.addEventListener('will-navigate', onWillNavigate)
     webview.addEventListener('new-window', onNewWindow)
+    webview.addEventListener('render-process-gone', onRenderProcessGone)
+    webview.addEventListener('crashed', onCrashed)
 
     return () => {
       try { portalRegistry.unregister(panelId) } catch { /* ignore */ }
@@ -363,8 +497,13 @@ export default function BrowserPanel({
       webview.removeEventListener('did-stop-loading', onDidStopLoading)
       webview.removeEventListener('will-navigate', onWillNavigate)
       webview.removeEventListener('new-window', onNewWindow)
+      webview.removeEventListener('render-process-gone', onRenderProcessGone)
+      webview.removeEventListener('crashed', onCrashed)
     }
-  }, [panelId, workspaceId, updatePanelTitle, updatePanelUrl])
+    // `partition` + `proxyReady` are deps so the listeners re-bind to the fresh
+    // <webview> element after a proxy change remounts it (key={partition} +
+    // the proxyReady gate); without them the new element would have no handlers.
+  }, [panelId, workspaceId, updatePanelTitle, updatePanelUrl, partition, proxyReady])
 
   // -------------------------------------------------------------------------
   // Render
@@ -417,6 +556,20 @@ export default function BrowserPanel({
           />
         </div>
 
+        {/* Proxy tool — left-click configures, right-click offers clear. */}
+        <button
+          onClick={openProxyDialog}
+          onContextMenu={handleProxyContextMenu}
+          className={`w-7 h-7 flex items-center justify-center rounded-full border transition-colors ${
+            activeProxy
+              ? 'border-agent bg-agent/15 text-agent hover:bg-agent/25'
+              : 'border-subtle bg-surface-5 hover:bg-hover text-primary'
+          }`}
+          title={activeProxy ? `Proxy: ${activeProxy}` : 'Configure proxy'}
+        >
+          <ShieldCheck size={13} weight={activeProxy ? 'fill' : 'regular'} />
+        </button>
+
         {/* Screenshot tool */}
         <button
           onClick={handleScreenshot}
@@ -444,13 +597,32 @@ export default function BrowserPanel({
           </div>
         )}
 
-        {/* Webview */}
-        <webview
-          ref={webviewRef as any}
-          src={webviewSrc}
-          className={`w-full h-full ${loadError ? 'hidden' : ''}`}
-          partition={BROWSER_PARTITION}
-        />
+        {/* Crash state overlay — guest renderer process died (OOM/GPU/native). */}
+        {crashed && !loadError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-4 text-secondary p-4 text-center z-10">
+            <Globe size={32} className="mb-2 text-muted" />
+            <p className="text-sm font-medium mb-1">This page crashed</p>
+            <p className="text-xs text-muted">The browser process for this panel stopped unexpectedly.</p>
+            <button
+              onClick={handleReload}
+              className="mt-3 px-3 py-1 text-xs rounded bg-surface-6 hover:bg-hover text-primary"
+            >
+              Reload Page
+            </button>
+          </div>
+        )}
+
+        {/* Webview — keyed by partition so a proxy change cleanly remounts it,
+            and only rendered once the proxy session is configured. */}
+        {proxyReady && (
+          <webview
+            key={partition}
+            ref={webviewRef as any}
+            src={webviewSrc}
+            className={`w-full h-full ${loadError || crashed ? 'hidden' : ''}`}
+            partition={partition}
+          />
+        )}
 
         {/* Screenshot thumbnail */}
         {screenshot && (
@@ -479,6 +651,95 @@ export default function BrowserPanel({
             </div>
           </div>
         )}
+
+        {/* Proxy configuration dialog */}
+        {proxyDialogOpen && (
+          <ProxyDialog
+            initialValue={proxyInput}
+            onCancel={() => setProxyDialogOpen(false)}
+            onSave={applyProxy}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Proxy configuration dialog
+// -----------------------------------------------------------------------------
+
+/** Inline monospace token used in the proxy dialog helper text. */
+function Token({ children }: { children: React.ReactNode }) {
+  return <span className="font-mono text-secondary">{children}</span>
+}
+
+function ProxyDialog({
+  initialValue,
+  onCancel,
+  onSave,
+}: {
+  initialValue: string
+  onCancel: () => void
+  onSave: (value?: string) => void
+}) {
+  const [value, setValue] = useState(initialValue)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  const submit = () => onSave(value)
+
+  return (
+    <div
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/50 backdrop-blur-[2px]"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <div className="w-[23rem] max-w-[90%] rounded-xl border border-subtle bg-surface-4 shadow-2xl p-5 animate-sidebar-view-in">
+        <h2 className="text-sm font-medium text-primary">Configure Proxy</h2>
+
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); submit() }
+            else if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+          }}
+          className="mt-3 w-full h-10 rounded-lg border border-subtle bg-surface-5 px-3 text-sm text-primary outline-none focus:border-strong placeholder:text-muted font-mono transition-colors"
+          placeholder="http://user:pass@proxy.company.com:8080"
+        />
+        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          Leave empty for a direct connection. Supports <Token>user:pass@</Token> auth,{' '}
+          <Token>pac://</Token> scripts, and <Token>;bypass=</Token> lists.
+        </p>
+
+        <div className="mt-5 flex items-center justify-between">
+          <button
+            onClick={() => onSave(undefined)}
+            className="text-xs text-muted hover:text-secondary transition-colors"
+          >
+            Clear (Direct)
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onCancel}
+              className="px-3.5 py-1.5 text-xs rounded-lg text-secondary hover:bg-hover transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              className="px-3.5 py-1.5 text-xs font-medium rounded-lg bg-agent text-white hover:opacity-90 transition-opacity"
+            >
+              Save
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

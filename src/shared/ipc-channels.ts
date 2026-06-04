@@ -137,6 +137,12 @@ export const ANALYTICS_FEEDBACK_ENGAGED = 'analytics:feedbackEngaged'
 export const ANALYTICS_FEEDBACK_GET_PENDING = 'analytics:feedbackGetPending'
 // Renderer -> main: track a promo link click (Product Hunt, GitHub, newsletter).
 export const ANALYTICS_LINK_CLICK = 'analytics:linkClick'
+// Renderer -> main: first-run telemetry consent decision.
+// Payload: { crashReporting: boolean, usageAnalytics: boolean }
+export const TELEMETRY_SET_CONSENT = 'telemetry:setConsent'
+// Renderer -> main: a feature was used (anonymous usage signal). Payload:
+// { feature: string, props?: Record<string, string|number|boolean> }
+export const ANALYTICS_TRACK_USAGE = 'analytics:trackUsage'
 
 // Open an external URL in the user's default browser (renderer -> main).
 export const OPEN_EXTERNAL_URL = 'open:externalUrl'
@@ -147,11 +153,19 @@ export const MENU_OPEN_SETTINGS = 'menu:openSettings'
 /** Generic menu-action dispatch — main sends a MenuActionId and the focused
  *  renderer runs the matching handler (via useShortcuts). */
 export const MENU_TRIGGER_ACTION = 'menu:triggerAction'
+/** Load a named saved layout — main sends the layout name and the focused
+ *  renderer restores it (replacing the workspace). */
+export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
 
 /** Browser navigation shortcut (main -> renderer). Sent when a webview guest
  *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the
  *  Browser menu. The focused BrowserPanel acts on it. */
 export const BROWSER_SHORTCUT = 'browser:shortcut'
+
+/** Configure the proxy for a browser panel's Electron session partition
+ *  (renderer -> main). Awaited before the panel mounts its <webview> so the
+ *  first request already goes through the proxy. */
+export const BROWSER_SET_PROXY = 'browser:setProxy'
 
 // Native context menu (renderer -> main)
 export const MENU_SHOW_CONTEXT = 'menu:showContext'
@@ -160,6 +174,7 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
 export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
+export const DIALOG_CONFIRM_CLOSE_TERMINAL = 'dialog:confirmCloseTerminal'
 export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
 export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'
 export const DIALOG_CONFIRM_IMPORT = 'dialog:confirmImport'

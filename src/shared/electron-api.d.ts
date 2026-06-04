@@ -406,6 +406,12 @@ export interface ElectronAPI {
    *  detail so the user can see exactly which file on disk is about to change. */
   confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean; filePath?: string }): Promise<'save' | 'discard' | 'cancel'>
 
+  /** Native confirmation shown when closing a terminal whose PTY is currently
+   *  running a foreground process (a dev server, an editor, an agent like Claude
+   *  or Codex, …). `processName`, when known for a single terminal, is shown so
+   *  the user sees what is about to be killed. Returns 'close' | 'cancel'. */
+  confirmCloseTerminal(payload: { count: number; processName?: string | null }): Promise<'close' | 'cancel'>
+
   /** Native confirmation shown when closing a canvas panel. When the canvas is
    *  not the last and has open panels, returns 'move' | 'delete' | 'cancel'.
    *  Otherwise returns 'close' | 'cancel'. */
@@ -476,6 +482,10 @@ export interface ElectronAPI {
 
   /** Capture a webview's content and save as PNG. Returns file path + data URL or null. */
   webviewScreenshot(webContentsId: number): Promise<{ filePath: string; dataUrl: string } | null>
+
+  /** Configure the proxy for a browser panel's session partition (issue #241).
+   *  Pass an empty/undefined proxyUrl to use a direct connection. */
+  browserSetProxy(partition: string, proxyUrl?: string): Promise<void>
 
   /** Initiate a native OS file drag from the renderer. */
   nativeFileDrag(filePath: string): Promise<void>
@@ -672,6 +682,9 @@ export interface ElectronAPI {
   /** Subscribe to native menu action dispatches (File, Edit, etc.). */
   onMenuTriggerAction(callback: (action: import('./types').MenuActionId) => void): () => void
 
+  /** Subscribe to "load this saved layout" dispatches from the native Layouts menu. */
+  onMenuLoadLayout(callback: (name: string) => void): () => void
+
   /** Subscribe to browser navigation shortcuts forwarded from a focused webview
    *  guest (Cmd+R/[/]/L) or the Browser menu. */
   onBrowserShortcut(callback: (action: import('./types').BrowserShortcutAction) => void): () => void
@@ -723,6 +736,12 @@ export interface ElectronAPI {
   getPendingFeedback(): Promise<{ fromVersion: string; toVersion: string } | null>
   /** Track a promo link click (e.g. product_hunt, github_star, newsletter). */
   trackLinkClick(link: string): void
+  /** Record the first-run telemetry consent decision. Persists the choice and
+   *  releases the deferred crash-reporting + analytics init. */
+  setTelemetryConsent(choice: { crashReporting: boolean; usageAnalytics: boolean }): Promise<void>
+  /** Report an anonymous feature-usage signal (gated by analytics consent).
+   *  `feature` is a short key; `props` are small primitives, clamped in main. */
+  trackFeatureUsed(feature: string, props?: Record<string, string | number | boolean>): void
   /** Open an external URL in the user's default browser. */
   openExternalUrl(url: string): void
 
