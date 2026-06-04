@@ -64,14 +64,16 @@ export function WelcomeDialog() {
   // Opaque themed fill — the welcome is a takeover screen, not a modal over the
   // app, so the UI behind is hidden. bg-canvas-bg uses the active theme's canvas
   // color (the default/basic theme on first start, the user's theme on later runs),
-  // overlaid with the same dot-grid the canvas + website use so it reads as a
-  // zoomed-out Cate surface.
+  // overlaid with the 80px line grid the cate website background uses. The line
+  // color uses --grid-dot (≈2× --grid-line) so the grid reads as boldly as it
+  // does on the website, while staying theme-aware.
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-canvas-bg"
       style={{
-        backgroundImage: 'radial-gradient(var(--grid-dot) 1.2px, transparent 1.2px)',
-        backgroundSize: '22px 22px',
+        backgroundImage:
+          'linear-gradient(to right, var(--grid-dot) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-dot) 1px, transparent 1px)',
+        backgroundSize: '80px 80px, 80px 80px',
       }}
     >
       <div className="relative w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)]">
