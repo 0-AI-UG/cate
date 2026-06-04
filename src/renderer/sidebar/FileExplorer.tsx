@@ -8,6 +8,7 @@ import log from '../lib/logger'
 import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X, Folder, File } from '@phosphor-icons/react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
+import { isNavKey, resolveTreeNavAction } from './treeKeyboardNav'
 import { buildGitTreeDecorations, toPosixPath, type GitTree } from './gitStatusDecoration'
 import { watchFsRoot } from '../lib/fs/fsWatchManager'
 import { getClipboard, hasClipboard } from './fileClipboard'
@@ -58,16 +59,31 @@ interface FileExplorerProps {
   rootPath: string
 }
 
+// One entry per on-screen row, top to bottom (root nodes + children of expanded
+// folders). Backbone for keyboard navigation and shift-click range ordering.
+interface FlatRow {
+  path: string
+  depth: number
+  isDirectory: boolean
+  parentPath: string | null
+  node: FileTreeNodeType
+}
+
 export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  // Bumped on every successful tree read. Nested folders cache their own
-  // children in local state (keyed by stable path, so they survive a root
-  // re-render); this signal tells each cached/expanded folder to re-read from
-  // disk so a reload — or a move/create/delete — actually reflects on-disk state
-  // instead of showing stale children (e.g. a moved file lingering in its old
-  // folder, which reads as a copy).
-  const [refreshSignal, setRefreshSignal] = useState(0)
+  // Expansion state is owned by the explorer (not each FileTreeNode) so this
+  // component knows the tree's full visible structure — needed for keyboard
+  // navigation (issue #268) and as the ordering source for shift-click ranges.
+  //  - expandedPaths: directory paths the user has expanded.
+  //  - childrenCache: each loaded directory's children (one fsReadDir level),
+  //    keyed by stable path so it survives root re-renders. Re-read on reload by
+  //    refreshExpandedChildren so a move/create/delete reflects on-disk state
+  //    instead of showing stale children (e.g. a moved file lingering as a copy).
+  //  - loadingPaths: directories currently being read (drives the "…" spinner).
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
+  const [childrenCache, setChildrenCache] = useState<Map<string, FileTreeNodeType[]>>(new Map())
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set())
   const [gitTree, setGitTree] = useState<GitTree | undefined>(undefined)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
@@ -84,6 +100,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const rootPathRef = useRef(rootPath)
   const createSeqRef = useRef(0)
   const loadRetryTimerRef = useRef<number | null>(null)
+  // Mirror of expandedPaths so the stable loadTree/refresh callbacks can read the
+  // current set without taking it as a dependency (which would re-create the
+  // fs-watch effect on every expand/collapse).
+  const expandedPathsRef = useRef(expandedPaths)
+  useEffect(() => { expandedPathsRef.current = expandedPaths }, [expandedPaths])
 
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
 
@@ -95,24 +116,178 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     setTimeout(() => searchInputRef.current?.focus(), 0)
   }, [])
 
-  // Build flat list of visible paths for shift-click range selection
-  const visiblePaths = useMemo(() => {
-    const paths: string[] = []
-    // We just collect top-level node paths; child visibility is managed by
-    // each FileTreeNode's local expansion state, so we flatten all nodes here.
-    // For shift-select we only need top-level; deeper nodes will be gathered
-    // by the recursive component passing the same visiblePaths down.
-    const collect = (nodeList: FileTreeNodeType[]) => {
-      for (const n of nodeList) {
-        paths.push(n.path)
-        // Children are loaded lazily by FileTreeNode, so we can't reliably
-        // enumerate them here. The shift-select will work on sibling level.
-        if (n.children.length > 0) collect(n.children)
+  // ---------------------------------------------------------------------------
+  // Name filter (inline Explorer search) — see the comment on `filter` below.
+  // ---------------------------------------------------------------------------
+  const filterQuery = searchQuery.trim().toLowerCase()
+  const isFiltering = filterQuery.length > 0
+
+  // Name-only filter over the *already-loaded* model (childrenCache). VS Code
+  // "filter on type": a node shows when its own name matches the query, when it
+  // is an ancestor of a match, or when it is any descendant under a folder that
+  // itself matches. We never eagerly read the whole tree — only loaded folders
+  // can be filtered (matches inside unopened folders won't appear until opened).
+  //
+  // We compute two things in one walk:
+  //  - `visible`: the set of paths to render (passed down as a predicate).
+  //  - `forceExpand`: ancestors of matches, force-expanded while filtering so the
+  //    matches are actually on screen even if the user hadn't opened them.
+  const filter = useMemo(() => {
+    if (!isFiltering) return null
+    const visible = new Set<string>()
+    const forceExpand = new Set<string>()
+
+    // Returns true if `node` (or any visible descendant) should be shown.
+    // `underMatch` is true when an ancestor folder already matched — then every
+    // descendant is shown wholesale.
+    const walk = (node: FileTreeNodeType, underMatch: boolean): boolean => {
+      const selfMatch = node.name.toLowerCase().includes(filterQuery)
+      const kids = node.isDirectory ? (childrenCache.get(node.path) ?? []) : []
+      let descendantVisible = false
+      const propagateMatch = underMatch || selfMatch
+      for (const child of kids) {
+        if (walk(child, propagateMatch)) descendantVisible = true
+      }
+      const show = selfMatch || underMatch || descendantVisible
+      if (show) {
+        visible.add(node.path)
+        // Force-expand a folder when one of its descendants matched (so the match
+        // is reachable). A folder that only matches by its own name stays as the
+        // user left it.
+        if (node.isDirectory && (descendantVisible || underMatch)) forceExpand.add(node.path)
+      }
+      return show
+    }
+
+    for (const n of nodes) walk(n, false)
+    return { visible, forceExpand }
+  }, [isFiltering, filterQuery, nodes, childrenCache])
+
+  // Effective expansion: while filtering, union the user's expansion with the
+  // ancestors of matches so matches are visible without permanently mutating
+  // expandedPaths (clearing the filter restores the user's own expansion).
+  const effectiveExpanded = useMemo(() => {
+    if (!filter) return expandedPaths
+    const merged = new Set(expandedPaths)
+    for (const p of filter.forceExpand) merged.add(p)
+    return merged
+  }, [filter, expandedPaths])
+
+  const isPathVisible = useMemo(
+    () => (filter ? (path: string) => filter.visible.has(path) : undefined),
+    [filter],
+  )
+
+  // Flat, top-to-bottom list of every visible row: root nodes plus the children
+  // of each expanded folder. Drives keyboard navigation and shift-click ranges.
+  // Uses effectiveExpanded (filter-aware) and skips rows hidden by the filter so
+  // keyboard nav matches exactly what's on screen.
+  const flatRows = useMemo<FlatRow[]>(() => {
+    const out: FlatRow[] = []
+    const walk = (list: FileTreeNodeType[], depth: number, parentPath: string | null) => {
+      for (const n of list) {
+        if (filter && !filter.visible.has(n.path)) continue
+        out.push({ path: n.path, depth, isDirectory: n.isDirectory, parentPath, node: n })
+        if (n.isDirectory && effectiveExpanded.has(n.path)) {
+          const kids = childrenCache.get(n.path)
+          if (kids) walk(kids, depth + 1, n.path)
+        }
       }
     }
-    collect(nodes)
-    return paths
-  }, [nodes])
+    walk(nodes, 0, null)
+    return out
+  }, [nodes, effectiveExpanded, childrenCache, filter])
+
+  const flatIndexByPath = useMemo(
+    () => new Map(flatRows.map((r, i) => [r.path, i] as const)),
+    [flatRows],
+  )
+
+  // ---------------------------------------------------------------------------
+  // Expansion controls (lifted out of FileTreeNode)
+  // ---------------------------------------------------------------------------
+
+  // Lazily read a directory's children into the cache (one fsReadDir level).
+  const ensureChildrenLoaded = useCallback(async (path: string) => {
+    if (!window.electronAPI || childrenCache.has(path)) return
+    setLoadingPaths((s) => new Set(s).add(path))
+    try {
+      const entries = await window.electronAPI.fsReadDir(path, selectedWorkspaceId)
+      setChildrenCache((prev) => new Map(prev).set(path, entries))
+    } catch {
+      // Cache an empty array so an unreadable folder doesn't retry-loop.
+      setChildrenCache((prev) => new Map(prev).set(path, []))
+    } finally {
+      setLoadingPaths((s) => {
+        const n = new Set(s)
+        n.delete(path)
+        return n
+      })
+    }
+  }, [childrenCache, selectedWorkspaceId])
+
+  const expand = useCallback(async (path: string) => {
+    setExpandedPaths((s) => (s.has(path) ? s : new Set(s).add(path)))
+    await ensureChildrenLoaded(path)
+  }, [ensureChildrenLoaded])
+
+  const collapse = useCallback((path: string) => {
+    setExpandedPaths((s) => {
+      if (!s.has(path)) return s
+      const n = new Set(s)
+      n.delete(path)
+      return n
+    })
+  }, [])
+
+  const toggleExpand = useCallback((path: string) => {
+    if (expandedPaths.has(path)) collapse(path)
+    else void expand(path)
+  }, [expandedPaths, expand, collapse])
+
+  // Re-read the children of every currently-expanded folder from disk and prune
+  // any expanded paths that no longer exist. Called after a (re)load so reloads,
+  // fs-watch events, and create/move/delete reflect on-disk state. Expansion
+  // itself is preserved across reloads (only vanished paths are dropped). Reads
+  // expandedPaths via a ref so this callback stays stable for loadTree.
+  const refreshExpandedChildren = useCallback(async () => {
+    if (!window.electronAPI) return
+    const paths = [...expandedPathsRef.current]
+    if (paths.length === 0) {
+      // Nothing expanded → drop stale cache so a later expand reads fresh.
+      setChildrenCache((prev) => (prev.size === 0 ? prev : new Map()))
+      return
+    }
+    const results = await Promise.all(
+      paths.map(async (p) => {
+        try {
+          return [p, await window.electronAPI!.fsReadDir(p, selectedWorkspaceId)] as const
+        } catch {
+          return [p, null] as const // null = path gone / unreadable
+        }
+      }),
+    )
+    // Rebuild the cache from the expanded set only; collapsed folders re-read on
+    // next expand. Orphaned entries (parent pruned) are simply not walked.
+    setChildrenCache(() => {
+      const next = new Map<string, FileTreeNodeType[]>()
+      for (const [p, kids] of results) {
+        if (kids) next.set(p, kids)
+      }
+      return next
+    })
+    setExpandedPaths((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      for (const [p, kids] of results) {
+        if (kids === null && next.has(p)) {
+          next.delete(p)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [selectedWorkspaceId])
 
   // ---------------------------------------------------------------------------
   // Load tree
@@ -147,9 +322,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       }
 
       setNodes(entries)
-      // Invalidate cached children in every expanded/loaded nested folder so the
-      // refreshed root read propagates the whole way down the tree.
-      setRefreshSignal((n) => n + 1)
+      // Re-read every expanded folder so the refreshed root read propagates the
+      // whole way down the tree (and prune folders that vanished on disk).
+      void refreshExpandedChildren()
       setIsLoading(false)
     } catch (err) {
       // The read was rejected (e.g. the root path isn't registered as an allowed
@@ -167,7 +342,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       setGitTree(undefined)
       setIsLoading(false)
     }
-  }, [selectedWorkspaceId])
+  }, [refreshExpandedChildren, selectedWorkspaceId])
 
   // ---------------------------------------------------------------------------
   // Watch for filesystem changes
@@ -234,10 +409,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         loadRetryTimerRef.current = null
       }
     }
-  }, [rootPath, loadTree])
+  }, [rootPath, loadTree, selectedWorkspaceId])
 
   // Inline Explorer search is a lightweight name-only tree filter ("filter on
-  // type"). Full content search lives in the dedicated Search view.
+  // type"). Full content search now lives in the dedicated Search view.
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -245,14 +420,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
 
   const handleSelect = useCallback(
     (path: string, meta: { shift?: boolean; cmd?: boolean }) => {
-      // Shift-range needs the paths in their actual on-screen order. visiblePaths
-      // only has top-level entries (nested children live in each FileTreeNode's
-      // local state), so read the rendered rows from the DOM instead — that
-      // reflects exactly what's visible, including expanded sub-folders.
-      const domOrder = meta.shift && treeContainerRef.current
-        ? Array.from(treeContainerRef.current.querySelectorAll<HTMLElement>('[data-filepath]'))
-            .map((el) => el.dataset.filepath!)
-        : visiblePaths
+      // Shift-range needs the paths in their actual on-screen order. flatRows is
+      // exactly that — every visible row, top to bottom, including the children
+      // of expanded folders.
+      const order = flatRows.map((r) => r.path)
       setSelectedPaths((prev) => {
         if (meta.cmd) {
           // Toggle individual selection
@@ -267,13 +438,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         }
         if (meta.shift && lastSelectedPath.current) {
           // Range selection across the visible rows (anchor → clicked).
-          const startIdx = domOrder.indexOf(lastSelectedPath.current)
-          const endIdx = domOrder.indexOf(path)
+          const startIdx = order.indexOf(lastSelectedPath.current)
+          const endIdx = order.indexOf(path)
           if (startIdx !== -1 && endIdx !== -1) {
             const [lo, hi] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx]
             const next = new Set(prev)
             for (let i = lo; i <= hi; i++) {
-              next.add(domOrder[i])
+              next.add(order[i])
             }
             // Keep the anchor where it was so a second shift-click re-ranges
             // from the same origin (matches Finder/VS Code behavior).
@@ -290,8 +461,19 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       // the list from jumping when a row deep in the tree is clicked.
       treeContainerRef.current?.focus({ preventScroll: true })
     },
-    [visiblePaths],
+    [flatRows],
   )
+
+  // Move the keyboard cursor to a single row: select it and scroll it into view.
+  const moveCursorTo = useCallback((path: string) => {
+    setSelectedPaths(new Set([path]))
+    lastSelectedPath.current = path
+    requestAnimationFrame(() => {
+      treeContainerRef.current
+        ?.querySelector<HTMLElement>(`[data-filepath="${CSS.escape(path)}"]`)
+        ?.scrollIntoView({ block: 'nearest' })
+    })
+  }, [])
 
   const handleFileOpen = useCallback(
     (filePaths: string[], mode?: 'dock' | 'canvas') => {
@@ -332,34 +514,58 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     }
     setSelectedPaths(new Set())
     handleReload()
-  }, [handleReload])
+  }, [handleReload, selectedWorkspaceId])
 
   const handleTreeKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Inline rename/create inputs handle their own keys.
+    if (e.target instanceof HTMLInputElement) return
+
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPaths.size > 0) {
       e.preventDefault()
       void deletePaths([...selectedPaths])
+      return
     }
-  }, [selectedPaths, deletePaths])
+
+    // VS Code-style tree navigation (issue #268). Only plain (unmodified) arrow/
+    // Enter keys act here — Cmd+Arrow (canvas navigate) and Shift+Arrow (canvas
+    // pan) are claimed by the global capture-phase handler before they reach us,
+    // and bailing on any modifier keeps the explorer from ever stealing them.
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+    if (!isNavKey(e.key)) return
+
+    const activePath = selectedPaths.size === 1 ? [...selectedPaths][0] : null
+    const action = resolveTreeNavAction(e.key, flatRows, activePath, (p) => effectiveExpanded.has(p))
+    if (!action) {
+      // Still swallow the key (e.g. Right on a file) so the scroll container
+      // doesn't scroll instead.
+      if (flatRows.length > 0) e.preventDefault()
+      return
+    }
+    e.preventDefault()
+    switch (action.type) {
+      case 'move': moveCursorTo(action.path); break
+      case 'expand': void expand(action.path); break
+      case 'collapse': collapse(action.path); break
+      case 'toggle': toggleExpand(action.path); break
+      case 'open': handleFileOpen([action.path], 'dock'); break
+    }
+  }, [
+    selectedPaths, deletePaths, flatRows,
+    effectiveExpanded, expand, collapse, toggleExpand, handleFileOpen, moveCursorTo,
+  ])
 
   // Resolve the target directory for new file/folder creation based on selection
   const getSelectedDir = useCallback((): string | null => {
     if (selectedPaths.size !== 1) return null
     const selectedPath = [...selectedPaths][0]
-    // Find if the selected path is a directory by searching the tree
-    const findNode = (nodeList: FileTreeNodeType[]): FileTreeNodeType | null => {
-      for (const n of nodeList) {
-        if (n.path === selectedPath) return n
-        if (n.children.length > 0) {
-          const found = findNode(n.children)
-          if (found) return found
-        }
-      }
-      return null
+    const row = flatRows[flatIndexByPath.get(selectedPath) ?? -1]
+    if (row) {
+      return row.isDirectory ? row.path : row.path.substring(0, row.path.lastIndexOf('/'))
     }
-    const node = findNode(nodes)
-    if (!node) return null
-    return node.isDirectory ? node.path : node.path.substring(0, node.path.lastIndexOf('/'))
-  }, [selectedPaths, nodes])
+    // Selected row isn't currently visible — fall back to its parent dir.
+    const slash = selectedPath.lastIndexOf('/')
+    return slash > 0 ? selectedPath.substring(0, slash) : rootPath
+  }, [selectedPaths, flatRows, flatIndexByPath, rootPath])
 
   const startRootCreate = useCallback((type: 'file' | 'folder') => {
     const targetDir = getSelectedDir()
@@ -391,7 +597,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     } catch (err) {
       console.error('[file-explorer] Failed to create entry:', err)
     }
-  }, [rootCreating, rootCreateValue, rootPath, loadTree])
+  }, [rootCreating, rootCreateValue, rootPath, loadTree, selectedWorkspaceId])
 
   const folderName = workspaceDisplayName(rootPath) || 'Explorer'
 
@@ -495,7 +701,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
                   return next
                 })
               }}
-              title="Search Files"
+              title="Filter Files"
             >
               <MagnifyingGlass size={13} />
             </SidebarHeaderButton>
@@ -593,26 +799,33 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
             handleReload()
           }}
         >
-          {nodes.map((node) => (
-            <FileTreeNode
-              key={node.path}
-              node={node}
-              depth={0}
-              git={gitTree}
-              selectedPaths={selectedPaths}
-              onSelect={handleSelect}
-              onFileOpen={handleFileOpen}
-              onDeletePaths={deletePaths}
-              onTreeChanged={handleReload}
-              refreshSignal={refreshSignal}
-              visiblePaths={visiblePaths}
-              searchQuery={searchQuery.trim().toLowerCase()}
-              rootPath={rootPath}
-              workspaceId={selectedWorkspaceId}
-              createRequest={createRequest}
-              onCreateRequestHandled={() => setCreateRequest(null)}
-            />
-          ))}
+          {isFiltering && flatRows.length === 0 ? (
+            <div className="flex items-center justify-center py-4 text-xs text-muted">No matches</div>
+          ) : (
+            nodes.map((node) => (
+              <FileTreeNode
+                key={node.path}
+                node={node}
+                depth={0}
+                git={gitTree}
+                selectedPaths={selectedPaths}
+                expandedPaths={effectiveExpanded}
+                childrenCache={childrenCache}
+                loadingPaths={loadingPaths}
+                onSelect={handleSelect}
+                onFileOpen={handleFileOpen}
+                onToggleExpand={toggleExpand}
+                onExpand={expand}
+                onDeletePaths={deletePaths}
+                onTreeChanged={handleReload}
+                rootPath={rootPath}
+                workspaceId={selectedWorkspaceId}
+                isPathVisible={isPathVisible}
+                createRequest={createRequest}
+                onCreateRequestHandled={() => setCreateRequest(null)}
+              />
+            ))
+          )}
 
           {/* Inline create input for root-level creation (from empty space context menu) */}
           {rootCreating && (
