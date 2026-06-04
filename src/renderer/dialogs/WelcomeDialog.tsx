@@ -82,8 +82,30 @@ export function WelcomeDialog() {
 
         {/* Header content over the image. */}
         <div className="relative flex flex-col items-center pt-9 pb-7">
-          <div className="w-16 h-16 rounded-2xl bg-[#1c1c20] border border-white/[0.14] shadow-[0_10px_28px_rgba(0,0,0,0.5)] flex items-center justify-center">
-            <CateLogo size={32} className="text-white" />
+          <div
+            className="relative w-16 h-16 rounded-[18px] flex items-center justify-center"
+            style={{
+              // Subtle vertical bevel — lighter top, darker bottom.
+              background: 'linear-gradient(180deg, #27272c 0%, #161619 100%)',
+              boxShadow: '0 12px 30px rgba(0,0,0,0.5), inset 0 -1px 1px rgba(0,0,0,0.5)',
+            }}
+          >
+            {/* macOS-style asymmetric highlight border: a 1px gradient ring that's
+                bright on the top edge and fades to nothing toward the bottom. The
+                mask cuts out the centre so only the border shows. */}
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-[18px]"
+              style={{
+                padding: '1px',
+                background:
+                  'linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.08) 38%, rgba(255,255,255,0) 70%)',
+                WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+                WebkitMaskComposite: 'xor',
+                maskComposite: 'exclude',
+              }}
+            />
+            <CateLogo size={30} className="relative text-white" />
           </div>
           <h2 className="mt-5 text-primary text-[22px] font-bold tracking-tight [text-shadow:0_2px_12px_rgba(0,0,0,0.5)]">Welcome to Cate</h2>
           <p className="mt-1.5 px-10 text-center text-muted text-[12.5px] leading-relaxed">
