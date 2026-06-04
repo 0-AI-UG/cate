@@ -41,24 +41,31 @@ export function WelcomeDialog() {
 
   const [enabled, setEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [exiting, setExiting] = useState(false)
 
   if (!loaded || decided) return null
 
-  const onContinue = async (): Promise<void> => {
+  const onContinue = (): void => {
     if (saving) return
     setSaving(true)
-    // Single switch covers both crash reporting + anonymous usage. Reflect it
-    // locally so Settings → Privacy is consistent; the IPC persists + applies it.
-    useSettingsStore.setState({
-      telemetryConsentDecided: true,
-      crashReportingEnabled: enabled,
-      usageAnalyticsEnabled: enabled,
-    })
+    setExiting(true)
+    // Persist now (fire-and-forget; doesn't touch the local `decided` gate that
+    // keeps this dialog mounted). Single switch covers crash + usage.
     try {
-      await window.electronAPI.setTelemetryConsent({ crashReporting: enabled, usageAnalytics: enabled })
+      void window.electronAPI.setTelemetryConsent({ crashReporting: enabled, usageAnalytics: enabled })
     } catch (err) {
       log.warn('[telemetry] consent save failed:', err)
     }
+    // Let the fade-out play before flipping the local setting — that unmounts
+    // this dialog and hands off to the tour (which fades in on its own), so the
+    // transition is a soft dissolve rather than a harsh cut.
+    window.setTimeout(() => {
+      useSettingsStore.setState({
+        telemetryConsentDecided: true,
+        crashReportingEnabled: enabled,
+        usageAnalyticsEnabled: enabled,
+      })
+    }, 320)
   }
 
   // Opaque themed fill — the welcome is a takeover screen, not a modal over the
@@ -68,13 +75,13 @@ export function WelcomeDialog() {
   // theme-aware) so it reads as a zoomed-out Cate surface.
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-canvas-bg"
+      className={`fixed inset-0 z-[60] flex items-center justify-center bg-canvas-bg transition-opacity duration-300 ease-out ${exiting ? 'opacity-0' : 'opacity-100'}`}
       style={{
         backgroundImage: 'radial-gradient(var(--grid-dot) 1.2px, transparent 1.2px)',
         backgroundSize: '22px 22px',
       }}
     >
-      <div className="relative w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)]">
+      <div className={`relative w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)] transition-all duration-300 ease-out ${exiting ? 'opacity-0 scale-[0.98] translate-y-1' : 'opacity-100 scale-100'}`}>
         {/* Moebius landscape header — slightly blurred and fading out, so it's
             only visible at the very top of the card. */}
         <img

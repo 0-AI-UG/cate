@@ -61,20 +61,28 @@ describe('WelcomeDialog', () => {
   })
 
   it('Continue with the default toggle on enables both telemetry flags', () => {
+    vi.useFakeTimers()
     act(() => root.render(<WelcomeDialog />))
     clickButton((b) => b.textContent?.trim() === 'Continue')
+    // The consent is persisted over IPC immediately…
     expect(setConsent).toHaveBeenCalledWith({ crashReporting: true, usageAnalytics: true })
+    // …and the local store reflects it after the fade-out delay.
+    act(() => { vi.advanceTimersByTime(350) })
     const s = useSettingsStore.getState()
     expect(s.telemetryConsentDecided).toBe(true)
     expect(s.crashReportingEnabled).toBe(true)
     expect(s.usageAnalyticsEnabled).toBe(true)
+    vi.useRealTimers()
   })
 
   it('toggling Enabled off then Continue declines both flags', () => {
+    vi.useFakeTimers()
     act(() => root.render(<WelcomeDialog />))
     clickButton((b) => b.getAttribute('role') === 'switch')
     clickButton((b) => b.textContent?.trim() === 'Continue')
     expect(setConsent).toHaveBeenCalledWith({ crashReporting: false, usageAnalytics: false })
+    act(() => { vi.advanceTimersByTime(350) })
     expect(useSettingsStore.getState().usageAnalyticsEnabled).toBe(false)
+    vi.useRealTimers()
   })
 })
