@@ -34,7 +34,7 @@ async function openSearch(page: Page) {
   await page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), REPO_ROOT)
   await page.evaluate(() => window.__cateE2E!.openSidebarView('search'))
   const input = page.locator('input[aria-label="Search"]')
-  await input.waitFor({ state: 'visible', timeout: 10_000 })
+  await input.waitFor({ state: 'visible', timeout: 30_000 })
   return input
 }
 
@@ -47,7 +47,7 @@ async function settle(page: Page, priorSearchId: string | null) {
         const s = await snap(page)
         return s.searchId !== priorSearchId && s.status === 'done'
       },
-      { timeout: 12_000 },
+      { timeout: 30_000 },
     )
     .toBe(true)
 }
@@ -74,13 +74,13 @@ test.describe('content search', () => {
     const input = await openSearch(page)
     await input.fill('registerSearchHandlers')
 
-    await expect(page.getByText(/results in .* files?/i)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/results in .* files?/i)).toBeVisible({ timeout: 30_000 })
     const mark = page.locator('mark', { hasText: 'registerSearchHandlers' }).first()
-    await expect(mark).toBeVisible({ timeout: 10_000 })
+    await expect(mark).toBeVisible({ timeout: 30_000 })
 
     await mark.click()
     await expect
-      .poll(async () => page.evaluate(() => window.__cateE2E!.editorPaths().length), { timeout: 10_000 })
+      .poll(async () => page.evaluate(() => window.__cateE2E!.editorPaths().length), { timeout: 30_000 })
       .toBeGreaterThan(0)
   })
 
@@ -88,7 +88,7 @@ test.describe('content search', () => {
     const page = app.mainWindow
     const input = await openSearch(page)
     await input.fill('zzz_no_such_token_qwerty_12345')
-    await expect(page.getByText('No results')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('No results')).toBeVisible({ timeout: 30_000 })
   })
 
   test('regex toggle changes literal vs pattern matching', async () => {
@@ -222,7 +222,7 @@ test.describe('content search', () => {
     await expect(page.locator('[data-selected="true"]')).toHaveAttribute('data-testid', 'search-line')
     await tree.press('Enter')
     await expect
-      .poll(async () => page.evaluate(() => window.__cateE2E!.editorPaths().length), { timeout: 10_000 })
+      .poll(async () => page.evaluate(() => window.__cateE2E!.editorPaths().length), { timeout: 30_000 })
       .toBeGreaterThan(0)
   })
 

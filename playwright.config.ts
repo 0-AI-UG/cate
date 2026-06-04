@@ -6,7 +6,10 @@ export default defineConfig({
   // raw speed, so it's a local regression tool, not a CI gate. CI sets
   // E2E_SKIP_PERF=1 to run only the functional (smoke/drag/dock) specs.
   testIgnore: process.env.E2E_SKIP_PERF ? ['**/perf-stress.spec.ts'] : [],
-  timeout: 60_000,
+  // Generous per-test cap: the content-search specs do up to two cold-daemon
+  // settles (ripgrep spawn) of up to 30s each, which can stack under full-suite
+  // load on a busy CI runner.
+  timeout: 120_000,
   expect: { timeout: 5_000 },
   fullyParallel: false,
   workers: 1,

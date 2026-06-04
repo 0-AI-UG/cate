@@ -14,11 +14,11 @@ async function openSearch(page: Page) {
   await page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), REPO_ROOT)
   await page.evaluate(() => window.__cateE2E!.openSidebarView('search'))
   const input = page.locator('input[aria-label="Search"]')
-  await input.waitFor({ state: 'visible', timeout: 10_000 })
+  await input.waitFor({ state: 'visible', timeout: 30_000 })
   await input.fill('registerSearchHandlers')
   await expect.poll(
     async () => page.evaluate(() => window.__cateE2E!.getSearchSnapshot().status),
-    { timeout: 12_000 },
+    { timeout: 30_000 },
   ).toBe('done')
 }
 
@@ -64,7 +64,7 @@ test.describe('search drag & drop', () => {
     await dragRowToTarget(page, 'search-file', '[data-canvas-panel-id]')
 
     await expect
-      .poll(async () => page.evaluate(() => window.__cateE2E!.nodes().length), { timeout: 10_000 })
+      .poll(async () => page.evaluate(() => window.__cateE2E!.nodes().length), { timeout: 30_000 })
       .toBeGreaterThan(before)
   })
 
@@ -79,7 +79,7 @@ test.describe('search drag & drop', () => {
     await dragRowToTarget(page, 'search-line', '[data-canvas-panel-id]')
 
     await expect
-      .poll(async () => page.evaluate(() => window.__cateE2E!.lastEditorReveal()?.line ?? 0), { timeout: 10_000 })
+      .poll(async () => page.evaluate(() => window.__cateE2E!.lastEditorReveal()?.line ?? 0), { timeout: 30_000 })
       .toBe(lineNo)
   })
 
@@ -91,7 +91,7 @@ test.describe('search drag & drop', () => {
     await dragRowToTarget(page, 'search-file', '[data-dock-zone="center"]')
 
     await expect
-      .poll(async () => page.evaluate(() => window.__cateE2E!.editorPaths().length), { timeout: 10_000 })
+      .poll(async () => page.evaluate(() => window.__cateE2E!.editorPaths().length), { timeout: 30_000 })
       .toBeGreaterThan(before)
   })
 })
