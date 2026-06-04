@@ -16,12 +16,16 @@ export interface OnboardingStep {
   emoji?: string
   /** Optional keycap chips (e.g. ['⌘', 'K']). */
   keys?: string[]
+  /** Clip the spotlight to the visible canvas area (between the sidebars),
+   *  not the full canvas element which extends edge-to-edge behind them. */
+  clipToVisibleCanvas?: boolean
 }
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'canvas',
     target: '[data-canvas-container]',
+    clipToVisibleCanvas: true,
     title: 'Your infinite canvas',
     body: 'Everything lives here. Drag panels anywhere, two-finger drag to pan, and ⌘ + scroll to zoom in and out.',
   },

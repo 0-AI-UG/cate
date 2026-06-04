@@ -85,4 +85,29 @@ describe('OnboardingTour', () => {
     expect(useSettingsStore.getState().onboardingCompleted).toBe(true)
     expect(host.textContent).toBe('')
   })
+
+  it('clips the canvas spotlight to the visible area between the sidebars', () => {
+    // The canvas element spans edge-to-edge under the translucent sidebars; the
+    // spotlight must inset by the left sidebar so it doesn't highlight (or place
+    // its card) behind it. Stub the geometry jsdom doesn't compute.
+    const canvas = document.createElement('div')
+    canvas.setAttribute('data-canvas-container', '')
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 40, width: 1000, height: 800, top: 40, left: 0, right: 1000, bottom: 840 }) as DOMRect
+    const sidebar = document.createElement('div')
+    sidebar.setAttribute('data-app-sidebar', 'left')
+    sidebar.getBoundingClientRect = () =>
+      ({ x: 0, y: 40, width: 240, height: 800, top: 40, left: 0, right: 240, bottom: 840 }) as DOMRect
+    document.body.append(canvas, sidebar)
+
+    act(() => root.render(<OnboardingTour />))
+
+    const spotlight = host.querySelector('.pointer-events-none') as HTMLElement
+    expect(spotlight).not.toBeNull()
+    // Left edge starts at the sidebar's right edge (240) minus the 8px pad.
+    expect(spotlight.style.left).toBe('232px')
+
+    canvas.remove()
+    sidebar.remove()
+  })
 })

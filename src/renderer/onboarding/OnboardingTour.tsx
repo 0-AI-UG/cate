@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { ArrowLeft, ArrowRight, X } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
-import { ONBOARDING_STEPS } from './steps'
+import { ONBOARDING_STEPS, type OnboardingStep } from './steps'
 
 interface Rect { x: number; y: number; width: number; height: number }
 
@@ -22,7 +22,26 @@ const SPOTLIGHT_PAD = 8 // px of breathing room around the highlighted element
 const CARD_WIDTH = 340
 const CARD_GAP = 16 // gap between the spotlight and the card
 
-function measure(selector: string | undefined): Rect | null {
+function sidebarRect(side: 'left' | 'right'): DOMRect | null {
+  const el = document.querySelector(`[data-app-sidebar="${side}"]`) as HTMLElement | null
+  const r = el?.getBoundingClientRect()
+  return r && r.width > 0 ? r : null
+}
+
+/** Shrink a rect to the canvas area that's actually visible — the canvas
+ *  element spans edge-to-edge *under* the translucent sidebars, so its raw box
+ *  would spotlight the region hidden behind them. Inset by the sidebar widths
+ *  (mirrors the visible-canvas math used by the placement hint in Canvas.tsx). */
+function clipToVisibleCanvas(rect: Rect): Rect {
+  const left = sidebarRect('left')
+  const right = sidebarRect('right')
+  const visLeft = left ? Math.max(rect.x, left.right) : rect.x
+  const visRight = right ? Math.min(rect.x + rect.width, right.left) : rect.x + rect.width
+  return { x: visLeft, y: rect.y, width: Math.max(0, visRight - visLeft), height: rect.height }
+}
+
+function measure(step: OnboardingStep | undefined): Rect | null {
+  const selector = step?.target
   if (!selector) return null
   // Comma-separated selectors are tried in preference order — the first that
   // exists and has a non-zero box wins. Lets a step prefer a first-run element
@@ -32,7 +51,8 @@ function measure(selector: string | undefined): Rect | null {
     if (!el) continue
     const r = el.getBoundingClientRect()
     if (r.width === 0 && r.height === 0) continue
-    return { x: r.x, y: r.y, width: r.width, height: r.height }
+    const rect = { x: r.x, y: r.y, width: r.width, height: r.height }
+    return step?.clipToVisibleCanvas ? clipToVisibleCanvas(rect) : rect
   }
   return null
 }
@@ -55,6 +75,9 @@ function cardPosition(rect: Rect | null): { left: number; top: number } {
   const roomLeft = spot.left
   const roomBelow = vh - spot.bottom
 
+  const spotWidth = spot.right - spot.left
+  const spotHeight = spot.bottom - spot.top
+
   let left: number
   let top: number
   if (roomRight >= CARD_WIDTH + CARD_GAP) {
@@ -63,6 +86,11 @@ function cardPosition(rect: Rect | null): { left: number; top: number } {
   } else if (roomLeft >= CARD_WIDTH + CARD_GAP) {
     left = spot.left - CARD_GAP - CARD_WIDTH
     top = spot.top
+  } else if (spotWidth >= CARD_WIDTH + 48 && spotHeight >= 280) {
+    // The spotlight is large (e.g. the whole visible canvas) — there's no room
+    // beside it, so float the card inside the highlighted area instead.
+    left = spot.left + (spotWidth - CARD_WIDTH) / 2
+    top = spot.top + Math.min(spotHeight * 0.18, 120)
   } else if (roomBelow > 200) {
     left = spot.left
     top = spot.bottom + CARD_GAP
@@ -96,7 +124,7 @@ export function OnboardingTour() {
   // tracks the live layout.
   useLayoutEffect(() => {
     if (!active) return
-    const update = () => setRect(measure(current?.target))
+    const update = () => setRect(measure(current))
     update()
     // A couple of follow-up frames catch late layout (fonts, sidebar width vars).
     const r1 = requestAnimationFrame(update)
@@ -109,7 +137,7 @@ export function OnboardingTour() {
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
-  }, [active, current?.target, step])
+  }, [active, current, step])
 
   // Fire a one-time "started" signal when the tour first becomes active.
   useEffect(() => {
