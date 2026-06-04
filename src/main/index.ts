@@ -1338,6 +1338,19 @@ if (!app.isPackaged) {
   app.setPath('userData', path.join(app.getPath('userData'), 'Dev'))
 }
 
+// First-start simulation (`npm run dev:firststart`). Point userData at a
+// dedicated dir that's wiped on every launch, so the app boots exactly like a
+// brand-new install: telemetry-consent prompt + onboarding tour, empty session,
+// no recent projects or saved window geometry. Dev-only; never in a packaged app.
+if (!app.isPackaged && process.env.CATE_FRESH_USERDATA === '1') {
+  const fs = require('fs') as typeof import('fs')
+  const dir = path.join(app.getPath('userData'), 'FirstStart')
+  try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* noop */ }
+  fs.mkdirSync(dir, { recursive: true })
+  app.setPath('userData', dir)
+  log.info('[firststart] fresh userData (wiped on each launch): %s', dir)
+}
+
 // In E2E mode, use a fresh tmpdir per launch so Playwright runs are isolated
 // from each other and from local dev state. The harness sets CATE_E2E=1.
 if (process.env.CATE_E2E === '1') {

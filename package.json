@@ -26,6 +26,7 @@
     "dev": "electron-vite dev",
     "dev:sentry": "SENTRY_DSN='https://any@analytics.cero-ai.com/1' electron-vite dev",
     "dev:dialog": "DEV_FORCE_DIALOG=1 electron-vite dev",
+    "dev:firststart": "CATE_FRESH_USERDATA=1 electron-vite dev",
     "sentry:test": "node scripts/sentry-test.mjs",
     "build": "electron-vite build",
     "build:companion": "node src/companion/build/esbuild.config.mjs",
