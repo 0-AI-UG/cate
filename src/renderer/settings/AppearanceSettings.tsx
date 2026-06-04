@@ -13,6 +13,15 @@ function appColors(theme: Theme): Record<string, string> {
   return { ...(theme.type === 'light' ? BASE_LIGHT : BASE_DARK), ...theme.app }
 }
 
+/** Resolve the surface-1 color of the theme currently mapped to a given OS
+ *  appearance, so the System card preview matches the real selection (falls
+ *  back to the generic base if the mapped theme can't be found). */
+function systemSurface(themes: Theme[], id: string, side: 'light' | 'dark'): string {
+  const theme = themes.find((t) => t.id === id)
+  if (theme) return appColors(theme)['surface-1']
+  return (side === 'light' ? BASE_LIGHT : BASE_DARK)['surface-1']
+}
+
 /** Ensure an id is unique against the existing theme list, suffixing -2, -3… */
 function uniqueId(id: string, taken: Set<string>): string {
   if (!taken.has(id)) return id
@@ -111,6 +120,8 @@ export function AppearanceSettings() {
       <div className="grid grid-cols-2 gap-2">
         <SystemCard
           active={isSystem}
+          lightColor={systemSurface(allThemes, store.systemLightThemeId, 'light')}
+          darkColor={systemSurface(allThemes, store.systemDarkThemeId, 'dark')}
           onClick={() => store.setSetting('activeThemeId', 'system')}
         />
         {allThemes.map((theme) => (
@@ -253,12 +264,14 @@ function ThemeCard({
   )
 }
 
-function SystemCard({ active, onClick }: { active: boolean; onClick: () => void }) {
+function SystemCard({
+  active, lightColor, darkColor, onClick,
+}: { active: boolean; lightColor: string; darkColor: string; onClick: () => void }) {
   return (
     <CardShell active={active} onClick={onClick}>
       <div className="h-12 rounded-md border border-subtle overflow-hidden flex">
-        <div className="flex-1" style={{ background: BASE_LIGHT['surface-1'] }} />
-        <div className="flex-1" style={{ background: BASE_DARK['surface-1'] }} />
+        <div className="flex-1" style={{ background: lightColor }} />
+        <div className="flex-1" style={{ background: darkColor }} />
       </div>
       <span className="text-[12px] text-primary truncate">System</span>
     </CardShell>
