@@ -1083,7 +1083,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultPanelHeight: 400,
   zoomSpeed: 1.0,
   autoFocusLargestVisibleNode: false,
-  canvasGridStyle: 'dots',
+  canvasGridStyle: 'lines',
   snapToGrid: false,
   placementPicker: true,
 
