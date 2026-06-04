@@ -21,7 +21,6 @@ interface Rect { x: number; y: number; width: number; height: number }
 const SPOTLIGHT_PAD = 8 // px of breathing room around the highlighted element
 const CARD_WIDTH = 340
 const CARD_GAP = 16 // gap between the spotlight and the card
-const CARD_EST_HEIGHT = 230 // approx card height, for corner placement
 
 function sidebarRect(side: 'left' | 'right'): DOMRect | null {
   const el = document.querySelector(`[data-app-sidebar="${side}"]`) as HTMLElement | null
@@ -58,9 +57,11 @@ function measure(step: OnboardingStep | undefined): Rect | null {
   return null
 }
 
-/** Place the card beside the spotlight, preferring the side with the most room
- *  and clamping to the viewport. Returns fixed-position coordinates. */
-function cardPosition(rect: Rect | null, pad: number): { left: number; top: number } {
+/** Place the card relative to the spotlight, preferring the side with the most
+ *  room and clamping to the viewport. Returns fixed-position coordinates; the
+ *  bottom-corner case anchors by `bottom` (independent of the card's height) so
+ *  it sits flush with the canvas bottom. */
+function cardPosition(rect: Rect | null, pad: number): { left: number; top?: number; bottom?: number } {
   const vw = window.innerWidth
   const vh = window.innerHeight
   if (!rect) {
@@ -79,33 +80,31 @@ function cardPosition(rect: Rect | null, pad: number): { left: number; top: numb
   const spotWidth = spot.right - spot.left
   const spotHeight = spot.bottom - spot.top
 
-  let left: number
-  let top: number
   if (roomRight >= CARD_WIDTH + CARD_GAP) {
-    left = spot.right + CARD_GAP
-    top = spot.top
-  } else if (roomLeft >= CARD_WIDTH + CARD_GAP) {
-    left = spot.left - CARD_GAP - CARD_WIDTH
-    top = spot.top
-  } else if (spotWidth >= CARD_WIDTH + 48 && spotHeight >= 280) {
-    // The spotlight is large (e.g. the whole visible canvas) — there's no room
-    // beside it, so tuck the card into the bottom-right corner of the area.
-    const margin = 24
-    left = spot.right - CARD_WIDTH - margin
-    top = spot.bottom - CARD_EST_HEIGHT - margin
-  } else if (roomBelow > 200) {
-    left = spot.left
-    top = spot.bottom + CARD_GAP
-  } else {
-    // Above the spotlight as the last resort.
-    left = spot.left
-    top = spot.top - CARD_GAP - 220
+    return { left: clampX(spot.right + CARD_GAP, vw), top: clampY(spot.top, vh) }
   }
-  // Clamp into the viewport with an 12px margin.
-  left = Math.max(12, Math.min(left, vw - CARD_WIDTH - 12))
-  top = Math.max(12, Math.min(top, vh - 240))
-  return { left, top }
+  if (roomLeft >= CARD_WIDTH + CARD_GAP) {
+    return { left: clampX(spot.left - CARD_GAP - CARD_WIDTH, vw), top: clampY(spot.top, vh) }
+  }
+  if (spotWidth >= CARD_WIDTH + 48 && spotHeight >= 280) {
+    // The spotlight is large (e.g. the whole visible canvas) — there's no room
+    // beside it, so tuck the card into the bottom-right corner, anchored to the
+    // canvas bottom so it sits flush regardless of how tall the card is.
+    const margin = 24
+    return {
+      left: clampX(spot.right - CARD_WIDTH - margin, vw),
+      bottom: Math.max(12, vh - spot.bottom + margin),
+    }
+  }
+  if (roomBelow > 200) {
+    return { left: clampX(spot.left, vw), top: clampY(spot.bottom + CARD_GAP, vh) }
+  }
+  // Above the spotlight as the last resort.
+  return { left: clampX(spot.left, vw), top: clampY(spot.top - CARD_GAP - 220, vh) }
 }
+
+const clampX = (x: number, vw: number): number => Math.max(12, Math.min(x, vw - CARD_WIDTH - 12))
+const clampY = (y: number, vh: number): number => Math.max(12, Math.min(y, vh - 240))
 
 export function OnboardingTour() {
   const loaded = useSettingsStore((s) => s._loaded)
@@ -186,7 +185,7 @@ export function OnboardingTour() {
   // room around a smaller target.
   const pad = current.clipToVisibleCanvas ? 0 : SPOTLIGHT_PAD
   const outlineOffset = current.clipToVisibleCanvas ? -2 : 0
-  const { left, top } = cardPosition(spotlight, pad)
+  const { left, top, bottom } = cardPosition(spotlight, pad)
   const isLast = step === ONBOARDING_STEPS.length - 1
 
   return (
@@ -212,7 +211,7 @@ export function OnboardingTour() {
       {/* Card */}
       <div
         className="absolute rounded-2xl bg-[#1a1a1e] border border-white/[0.08] shadow-[0_24px_64px_rgba(0,0,0,0.6)] p-5 flex flex-col gap-3"
-        style={{ left, top, width: CARD_WIDTH, animation: 'onboarding-card-in 0.18s ease-out' }}
+        style={{ left, top, bottom, width: CARD_WIDTH, animation: 'onboarding-card-in 0.18s ease-out' }}
       >
         <button
           onClick={() => finish('skipped')}
