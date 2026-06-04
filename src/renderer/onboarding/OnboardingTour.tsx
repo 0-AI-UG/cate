@@ -106,6 +106,20 @@ function cardPosition(rect: Rect | null, pad: number): { left: number; top?: num
 const clampX = (x: number, vw: number): number => Math.max(12, Math.min(x, vw - CARD_WIDTH - 12))
 const clampY = (y: number, vh: number): number => Math.max(12, Math.min(y, vh - 240))
 
+const EDGE_MARGIN = 4 // keep the outline a few px inside the window so it's visible
+
+/** The padded spotlight box, clamped into the viewport so all four outline edges
+ *  stay on screen even when the target sits flush against a window edge. */
+function clampBox(rect: Rect, pad: number): { left: number; top: number; width: number; height: number } {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const left = Math.max(EDGE_MARGIN, rect.x - pad)
+  const top = Math.max(EDGE_MARGIN, rect.y - pad)
+  const right = Math.min(vw - EDGE_MARGIN, rect.x + rect.width + pad)
+  const bottom = Math.min(vh - EDGE_MARGIN, rect.y + rect.height + pad)
+  return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }
+}
+
 export function OnboardingTour() {
   const loaded = useSettingsStore((s) => s._loaded)
   const consentDecided = useSettingsStore((s) => s.telemetryConsentDecided)
@@ -185,20 +199,24 @@ export function OnboardingTour() {
   // room around a smaller target.
   const pad = current.clipToVisibleCanvas ? 0 : SPOTLIGHT_PAD
   const outlineOffset = current.clipToVisibleCanvas ? -2 : 0
+  // Clamp the padded box into the viewport so the full outline is always
+  // visible — without this, a target flush against the window edges (e.g. the
+  // sidebar) shows only its inner edge as a stray line.
+  const box = spotlight ? clampBox(spotlight, pad) : null
   const { left, top, bottom } = cardPosition(spotlight, pad)
   const isLast = step === ONBOARDING_STEPS.length - 1
 
   return (
     <div className="fixed inset-0 z-[70]" aria-modal="true" role="dialog">
       {/* Backdrop — either a full dim (centered steps) or a spotlight cutout. */}
-      {spotlight ? (
+      {box ? (
         <div
           className="absolute rounded-md pointer-events-none transition-all duration-200"
           style={{
-            left: spotlight.x - pad,
-            top: spotlight.y - pad,
-            width: spotlight.width + pad * 2,
-            height: spotlight.height + pad * 2,
+            left: box.left,
+            top: box.top,
+            width: box.width,
+            height: box.height,
             boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
             outline: '2px solid rgba(96,165,250,0.95)',
             outlineOffset,
