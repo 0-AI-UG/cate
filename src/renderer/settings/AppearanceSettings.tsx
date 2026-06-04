@@ -140,8 +140,7 @@ export function AppearanceSettings() {
       {isSystem && (
         <div className="mt-3 flex flex-col gap-1 rounded-lg border border-subtle px-3 py-2">
           <p className="text-[11px] text-muted mb-1">
-            System mode follows your OS appearance, switching between the two
-            themes you pick below — any theme works for either.
+            Follows your OS appearance, switching between the two themes below.
           </p>
           <SettingRow label="Light appearance">
             <Select

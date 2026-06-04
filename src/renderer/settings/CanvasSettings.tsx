@@ -20,7 +20,7 @@ export function CanvasSettings() {
       </SettingRow>
       <SettingRow
         label="Auto-focus largest visible panel"
-        description="Automatically activate whichever panel occupies the most visible area as you pan and zoom."
+        description="Activate the panel filling the most visible area as you pan and zoom."
       >
         <Toggle
           checked={store.autoFocusLargestVisibleNode}
@@ -29,7 +29,7 @@ export function CanvasSettings() {
       </SettingRow>
       <SettingRow
         label="Snap to grid"
-        description="Align panels to the canvas grid while dragging and resizing. Hold Alt to bypass it temporarily (except when dragging between windows)."
+        description="Align panels to the grid while dragging and resizing. Hold Alt to bypass."
       >
         <Toggle
           checked={store.snapToGrid}
@@ -38,7 +38,7 @@ export function CanvasSettings() {
       </SettingRow>
       <SettingRow
         label="Recommend where new panels go"
-        description="On Cmd+T or a toolbar click, zoom out and show numbered spots to choose from (or click anywhere). Turn off to place each new panel in the best spot automatically."
+        description="On Cmd+T or a toolbar click, show numbered spots to pick from. Off places panels automatically."
       >
         <Toggle
           checked={store.placementPicker}

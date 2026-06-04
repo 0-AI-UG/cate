@@ -52,8 +52,8 @@ export function FileExplorerSettings() {
     <SearchableBlock keywords="file explorer exclusions hidden ignore folders gitignore exclude">
     <div className="flex flex-col gap-1">
       <p className="text-xs text-muted mb-3">
-        Folders and files with these exact names are hidden from the file
-        explorer, file search, and change watching. Applies to every project.
+        Names hidden from the explorer, search, and file watching, in every
+        project.
       </p>
 
       <div className="flex gap-1.5">
@@ -84,7 +84,7 @@ export function FileExplorerSettings() {
       <div className="flex flex-wrap gap-1.5 mt-3">
         {folders.length === 0 ? (
           <div className="text-[11px] text-muted italic px-0.5 py-1">
-            No exclusions — every file and folder is shown.
+            No exclusions. Every file and folder is shown.
           </div>
         ) : (
           folders.map((name) => (
