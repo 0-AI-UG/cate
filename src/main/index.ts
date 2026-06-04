@@ -43,7 +43,7 @@ import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from
 import { initShellEnv } from './shellEnv'
 import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
 import { initSentry, captureMainException, captureMainMessage, flushSentry } from './sentry'
-import { initAnalytics, trackAppStart, checkAndReportUpdate } from './analytics'
+import { initAnalytics, trackAppStart, checkAndReportUpdate, hasRunBefore } from './analytics'
 import { TELEMETRY_SET_CONSENT } from '../shared/ipc-channels'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer, handleCrossWindowDropTerminalTransfer } from './ipc/terminal'
 import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
@@ -1421,6 +1421,14 @@ log.info('Cate v%s starting (electron %s, node %s, platform %s)', app.getVersion
 // Load persisted settings synchronously so window-creation code paths can read
 // them before the async electron-store finishes initializing.
 loadSettingsSyncFromDisk()
+
+// Scope the onboarding tour to genuine first installs. Anyone who has launched
+// Cate before (incl. users upgrading from a pre-onboarding build) is marked as
+// already onboarded, so an update shows the feedback dialog — never the tour.
+// Runs long before the renderer queries settings, so there's no show/hide race.
+if (hasRunBefore() && !getSettingSync('onboardingCompleted')) {
+  void setSettingsFromMain({ onboardingCompleted: true })
+}
 
 // Initialize Sentry as early as possible — after settings load (so the opt-out
 // is honored) but before any IPC handlers or windows. No-op if DSN unset or

@@ -58,6 +58,13 @@ function readState(): AnalyticsState {
   return readJsonFile<AnalyticsState>(STATE_FILENAME, {})
 }
 
+/** Whether Cate has been launched before on this machine (sync). Used to scope
+ *  the onboarding tour to genuine first installs — anyone who has run a prior
+ *  version (so has a recorded lastSeenVersion) is treated as already onboarded. */
+export function hasRunBefore(): boolean {
+  return !!readState().lastSeenVersion
+}
+
 function writeState(state: AnalyticsState): void {
   writeJsonFile(STATE_FILENAME, state)
 }
@@ -309,7 +316,10 @@ export function initAnalytics(): void {
 // ---------------------------------------------------------------------------
 
 export type UpdateAction =
-  | { kind: 'first_install'; emit: 'app_install'; nextState: AnalyticsState; prompt: { from: string; to: string } }
+  // First install emits app_install but does NOT queue a feedback prompt — the
+  // onboarding tour is the first-run welcome, so the promo/feedback dialog would
+  // overlap it. The dialog is for updates only.
+  | { kind: 'first_install'; emit: 'app_install'; nextState: AnalyticsState }
   | { kind: 'no_change'; nextState: AnalyticsState; prompt?: { from: string; to: string } }
   | {
       kind: 'version_changed'
@@ -333,13 +343,9 @@ export function decideUpdateAction(current: string, state: AnalyticsState): Upda
     return {
       kind: 'first_install',
       emit: 'app_install',
-      nextState: {
-        ...state,
-        lastSeenVersion: current,
-        pendingFeedbackForVersion: current,
-        pendingFeedbackFromVersion: '',
-      },
-      prompt: { from: '', to: current },
+      // No pendingFeedback*: the first-run welcome is the onboarding tour, so we
+      // never surface the feedback/promo dialog on a brand-new install.
+      nextState: { ...state, lastSeenVersion: current },
     }
   }
 
@@ -391,7 +397,7 @@ export async function checkAndReportUpdate(mainWin: BrowserWindow): Promise<void
     case 'first_install':
       void sendEvent('app_install')
       writeState(action.nextState)
-      promptFeedback(mainWin, action.prompt.to, action.prompt.from)
+      // No feedback prompt — the onboarding tour is the first-run welcome.
       return
     case 'version_changed':
       void sendEvent('app_updated', { from_version: action.from, to_version: action.to })

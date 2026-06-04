@@ -16,7 +16,12 @@ export interface OnboardingStep {
   emoji?: string
   /** Optional keycap chips (e.g. ['⌘', 'K']). */
   keys?: string[]
+  /** Optional community links rendered as buttons (e.g. on the final card). */
+  links?: { label: string; url: string; track: string; icon: 'github' | 'newsletter' }[]
 }
+
+const GITHUB_REPO = 'https://github.com/0-AI-UG/cate'
+const NEWSLETTER_URL = 'https://cate.cero-ai.com'
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
@@ -56,6 +61,10 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: 'done',
     emoji: '🚀',
     title: 'You’re all set',
-    body: 'Build your first layout — or save and reuse layouts later. You can replay this tour anytime: open ⌘K and search “Show Tutorial”.',
+    body: 'Build your first layout — and replay this tour anytime from ⌘K → “Show Tutorial”. If Cate’s useful to you, a star or a subscribe goes a long way.',
+    links: [
+      { label: 'Star on GitHub', url: GITHUB_REPO, track: 'github_star', icon: 'github' },
+      { label: 'Newsletter', url: NEWSLETTER_URL, track: 'newsletter', icon: 'newsletter' },
+    ],
   },
 ]

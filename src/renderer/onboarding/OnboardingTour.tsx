@@ -12,7 +12,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
-import { ArrowLeft, ArrowRight, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, X, GithubLogo, Envelope } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { ONBOARDING_STEPS } from './steps'
 
@@ -202,6 +202,28 @@ export function OnboardingTour() {
               >
                 {k}
               </kbd>
+            ))}
+          </div>
+        )}
+
+        {current.links && (
+          <div className="flex gap-1.5">
+            {current.links.map((link) => (
+              <button
+                key={link.track}
+                onClick={() => {
+                  try {
+                    window.electronAPI?.trackLinkClick?.(link.track)
+                    window.electronAPI?.openExternalUrl?.(link.url)
+                  } catch { /* noop */ }
+                }}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-[12px] font-semibold transition-colors"
+              >
+                {link.icon === 'github'
+                  ? <GithubLogo size={15} weight="fill" />
+                  : <Envelope size={15} weight="fill" className="text-blue-400" />}
+                {link.label}
+              </button>
             ))}
           </div>
         )}

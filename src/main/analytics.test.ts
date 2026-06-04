@@ -50,17 +50,14 @@ describe('sanitizeUsageProps', () => {
 })
 
 describe('decideUpdateAction', () => {
-  test('first launch: emits app_install, persists version, and queues prompt', () => {
+  test('first launch: emits app_install, persists version, and does NOT queue a prompt', () => {
     const action = decideUpdateAction('1.0.0', {})
     expect(action.kind).toBe('first_install')
     if (action.kind !== 'first_install') return
     expect(action.emit).toBe('app_install')
-    expect(action.nextState).toEqual({
-      lastSeenVersion: '1.0.0',
-      pendingFeedbackForVersion: '1.0.0',
-      pendingFeedbackFromVersion: '',
-    })
-    expect(action.prompt).toEqual({ from: '', to: '1.0.0' })
+    // The onboarding tour is the first-run welcome — no feedback/promo dialog.
+    expect(action.nextState).toEqual({ lastSeenVersion: '1.0.0' })
+    expect('prompt' in action).toBe(false)
   })
 
   test('same version, no pending feedback: no event, no prompt, state unchanged', () => {
@@ -114,14 +111,12 @@ describe('decideUpdateAction', () => {
     expect(action.to).toBe('0.9.0')
   })
 
-  test('first launch always triggers the dialog prompt', () => {
+  test('first launch never triggers the feedback dialog (the tour is the welcome)', () => {
     const action = decideUpdateAction('2.0.0', {})
     expect(action.kind).toBe('first_install')
     if (action.kind !== 'first_install') return
-    expect(action.prompt).toBeDefined()
-    expect(action.prompt.to).toBe('2.0.0')
-    expect(action.prompt.from).toBe('')
-    expect(action.nextState.pendingFeedbackForVersion).toBe('2.0.0')
+    expect('prompt' in action).toBe(false)
+    expect(action.nextState.pendingFeedbackForVersion).toBeUndefined()
   })
 
   test('major/minor version update triggers the dialog prompt', () => {
