@@ -81,13 +81,14 @@ export function WelcomeDialog() {
           src={headerImg}
           alt=""
           aria-hidden="true"
-          className="pointer-events-none absolute top-0 left-0 w-full h-[210px] object-cover select-none"
+          className="pointer-events-none absolute top-0 left-0 w-full h-[240px] object-cover select-none"
           style={{
             filter: 'blur(2.5px)',
             opacity: 0.85,
             transform: 'scale(1.06)',
-            WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)',
-            maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)',
+            // Softer, more gradual fade-out with extra stops so there's no hard edge.
+            WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.72) 28%, rgba(0,0,0,0.42) 52%, rgba(0,0,0,0.16) 74%, transparent 100%)',
+            maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.72) 28%, rgba(0,0,0,0.42) 52%, rgba(0,0,0,0.16) 74%, transparent 100%)',
           }}
         />
 
