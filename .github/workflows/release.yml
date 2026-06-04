@@ -76,6 +76,14 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      # The companion tarball stages node-pty's native binary from build/Release,
+      # but a plain `npm install` satisfies node-pty from a shipped prebuild and
+      # never populates build/Release. Compile from source so the tarball build
+      # finds it. (node-pty is N-API: the node-20 binary runs under the tarball's
+      # bundled node-22 runtime.)
+      - name: Compile node-pty from source (companion tarball needs build/Release)
+        run: npm rebuild node-pty --build-from-source
+
       # The local workspace runs the companion daemon tarball, shipped inside the
       # installer (electron-builder.yml extraResources → companion-host.tgz). Build
       # this runner's host-target tarball and stage it under the fixed name so the
@@ -85,6 +93,23 @@ jobs:
         run: |
           node scripts/build-companion-tarball.mjs
           cp dist-companion/cate-companion-*.tgz dist-companion/companion-host.tgz
+
+      # Functional + content-search e2e against the real built app and the host
+      # companion tarball staged above (so the daemon's ripgrep is present — this
+      # is why e2e lives here, not in the fast PR CI). macOS gates the release
+      # (e2e is validated windowless there). Linux/Windows run for signal but are
+      # non-blocking for now: they're newly enabled here, need a virtual display
+      # (xvfb on linux), and haven't been proven stable on these runners.
+      - name: E2E tests (functional + search)
+        shell: bash
+        continue-on-error: ${{ matrix.platform != 'mac' }}
+        run: |
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            sudo apt-get update && sudo apt-get install -y xvfb
+            xvfb-run -a npm run test:e2e:ci
+          else
+            npm run test:e2e:ci
+          fi
 
       - name: Package (macOS)
         if: matrix.platform == 'mac'
@@ -193,6 +218,13 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      # Native targets stage node-pty from build/Release; a plain install only
+      # leaves a prebuild, so compile from source. (The --docker linux-arm64
+      # cross-build compiles node-pty inside the container, so skip it there.)
+      - name: Compile node-pty from source (native targets)
+        if: ${{ !matrix.docker }}
+        run: npm rebuild node-pty --build-from-source
 
       - name: Build companion tarball (${{ matrix.target }})
         run: node scripts/build-companion-tarball.mjs --target ${{ matrix.target }} ${{ matrix.docker && '--docker' || '' }}
