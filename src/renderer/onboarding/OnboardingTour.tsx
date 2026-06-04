@@ -60,17 +60,17 @@ function measure(step: OnboardingStep | undefined): Rect | null {
 
 /** Place the card beside the spotlight, preferring the side with the most room
  *  and clamping to the viewport. Returns fixed-position coordinates. */
-function cardPosition(rect: Rect | null): { left: number; top: number } {
+function cardPosition(rect: Rect | null, pad: number): { left: number; top: number } {
   const vw = window.innerWidth
   const vh = window.innerHeight
   if (!rect) {
     return { left: (vw - CARD_WIDTH) / 2, top: Math.max(80, vh * 0.32) }
   }
   const spot = {
-    left: rect.x - SPOTLIGHT_PAD,
-    top: rect.y - SPOTLIGHT_PAD,
-    right: rect.x + rect.width + SPOTLIGHT_PAD,
-    bottom: rect.y + rect.height + SPOTLIGHT_PAD,
+    left: rect.x - pad,
+    top: rect.y - pad,
+    right: rect.x + rect.width + pad,
+    bottom: rect.y + rect.height + pad,
   }
   const roomRight = vw - spot.right
   const roomLeft = spot.left
@@ -181,7 +181,12 @@ export function OnboardingTour() {
 
   // An anchored step whose target isn't on screen falls back to a centered card.
   const spotlight = current.target ? rect : null
-  const { left, top } = cardPosition(spotlight)
+  // The full-canvas highlight hugs the canvas edge (no outward pad, outline
+  // inset inward) so it never overflows the canvas; other steps get breathing
+  // room around a smaller target.
+  const pad = current.clipToVisibleCanvas ? 0 : SPOTLIGHT_PAD
+  const outlineOffset = current.clipToVisibleCanvas ? -2 : 0
+  const { left, top } = cardPosition(spotlight, pad)
   const isLast = step === ONBOARDING_STEPS.length - 1
 
   return (
@@ -191,13 +196,13 @@ export function OnboardingTour() {
         <div
           className="absolute rounded-md pointer-events-none transition-all duration-200"
           style={{
-            left: spotlight.x - SPOTLIGHT_PAD,
-            top: spotlight.y - SPOTLIGHT_PAD,
-            width: spotlight.width + SPOTLIGHT_PAD * 2,
-            height: spotlight.height + SPOTLIGHT_PAD * 2,
+            left: spotlight.x - pad,
+            top: spotlight.y - pad,
+            width: spotlight.width + pad * 2,
+            height: spotlight.height + pad * 2,
             boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
             outline: '2px solid rgba(96,165,250,0.95)',
-            outlineOffset: 0,
+            outlineOffset,
           }}
         />
       ) : (

@@ -104,8 +104,9 @@ describe('OnboardingTour', () => {
 
     const spotlight = host.querySelector('.pointer-events-none') as HTMLElement
     expect(spotlight).not.toBeNull()
-    // Left edge starts at the sidebar's right edge (240) minus the 8px pad.
-    expect(spotlight.style.left).toBe('232px')
+    // The full-canvas highlight hugs the edge (no outward pad), so the left edge
+    // sits exactly at the sidebar's right edge (240).
+    expect(spotlight.style.left).toBe('240px')
 
     canvas.remove()
     sidebar.remove()
