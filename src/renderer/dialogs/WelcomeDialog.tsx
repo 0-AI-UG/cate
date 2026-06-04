@@ -61,8 +61,11 @@ export function WelcomeDialog() {
     }
   }
 
+  // Opaque themed fill — the welcome is a takeover screen, not a modal over the
+  // app, so the UI behind is hidden. bg-canvas-bg uses the active theme's canvas
+  // color (the default/basic theme on first start, the user's theme on later runs).
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-canvas-bg">
       <div className="relative w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)]">
         {/* Moebius landscape header — slightly blurred and fading out, so it's
             only visible at the very top of the card. */}
