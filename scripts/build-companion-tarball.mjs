@@ -60,6 +60,10 @@ const RIPGREP_TRIPLES = {
 }
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(repoRoot, 'dist-companion')
+// GNU tar (the Windows runner's tar) reads the `D:` in an absolute archive path
+// as an rsh host spec ("Cannot connect to D:"). --force-local disables that. Only
+// on win32: macOS/Linux use bsdtar, which rejects the flag and has no drive colon.
+const FORCE_LOCAL = process.platform === 'win32' ? ['--force-local'] : []
 
 const args = process.argv.slice(2)
 const useDocker = args.includes('--docker')
@@ -110,7 +114,7 @@ if (missing.length) throw new Error(`[companion] incomplete stage for ${targetAr
 // --no-xattrs: don't archive extended attributes (macOS keeps re-stamping a
 // com.apple.provenance xattr that otherwise makes GNU tar warn on extraction
 // on the Ubuntu server). Supported by both bsdtar and GNU tar.
-execFileSync('tar', ['--no-xattrs', '-czf', outTar, '-C', stageDir, '.'], { stdio: 'inherit' })
+execFileSync('tar', [...FORCE_LOCAL, '--no-xattrs', '-czf', outTar, '-C', stageDir, '.'], { stdio: 'inherit' })
 console.log(`[companion] wrote ${path.relative(repoRoot, outTar)}`)
 
 // --------------------------------------------------------------------------
@@ -369,7 +373,7 @@ function stagePi(outRoot) {
   if (!existsSync(tar)) throw new Error(`pi tarball not found at ${tar}`)
   rmSync(outRoot, { recursive: true, force: true })
   mkdirSync(outRoot, { recursive: true })
-  execFileSync('tar', ['-xzf', tar, '-C', outRoot], { stdio: 'ignore' })
+  execFileSync('tar', [...FORCE_LOCAL, '-xzf', tar, '-C', outRoot], { stdio: 'ignore' })
   if (!existsSync(path.join(outRoot, 'dist', 'cli.js'))) throw new Error('staged pi missing dist/cli.js')
   console.log(`[companion] staged pi ${piVersion}`)
 }

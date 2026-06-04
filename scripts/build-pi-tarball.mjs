@@ -25,6 +25,10 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(repoRoot, 'dist-companion')
+// GNU tar (the Windows runner's tar) reads the `D:` in an absolute archive path
+// as an rsh host spec ("Cannot connect to D:"). --force-local disables that. Only
+// on win32: macOS/Linux use bsdtar, which rejects the flag and has no drive colon.
+const FORCE_LOCAL = process.platform === 'win32' ? ['--force-local'] : []
 const piSrc = path.join(repoRoot, 'node_modules', '@earendil-works', 'pi-coding-agent')
 
 if (!existsSync(piSrc)) {
@@ -90,7 +94,7 @@ const stagedSize = dirSizeMb(stage)
 const outTar = path.join(dist, `cate-pi-${piVersion}.tgz`)
 rmSync(outTar, { force: true })
 // --no-xattrs: macOS provenance xattrs would make GNU tar warn on extraction.
-execFileSync('tar', ['--no-xattrs', '-czf', outTar, '-C', stage, '.'], { stdio: 'inherit' })
+execFileSync('tar', [...FORCE_LOCAL, '--no-xattrs', '-czf', outTar, '-C', stage, '.'], { stdio: 'inherit' })
 console.log(`[pi] wrote ${path.relative(repoRoot, outTar)} (staged ${stagedSize} MB)`)
 
 // --------------------------------------------------------------------------
