@@ -9,7 +9,7 @@
 // =============================================================================
 
 import { useState } from 'react'
-import { Envelope, Check } from '@phosphor-icons/react'
+import { EnvelopeSimple, Check } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { CateLogo } from '../ui/CateLogo'
 import log from '../lib/logger'
@@ -106,7 +106,7 @@ export function WelcomeDialog() {
               onClick={() => openLink(NEWSLETTER_URL, 'newsletter')}
               className="flex-1 inline-flex items-center justify-center gap-2 h-9 rounded-lg border border-strong bg-surface-0/60 hover:bg-hover text-primary text-[12.5px] font-medium transition-colors"
             >
-              <Envelope size={15} weight="fill" className="text-blue-400" />
+              <EnvelopeSimple size={16} />
               Newsletter
             </button>
           </div>
