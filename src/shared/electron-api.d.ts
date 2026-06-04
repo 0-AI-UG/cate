@@ -333,6 +333,14 @@ export interface ElectronAPI {
   /** Subscribe to setting-change broadcasts from main (key + new value). Returns unsubscribe. */
   onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void
 
+  /** Grant this window access to settings.json and return its absolute path so
+   *  it can be opened in an editor panel. */
+  settingsOpenInEditor(): Promise<string>
+
+  /** Subscribe to full-settings broadcasts emitted when settings.json is edited
+   *  externally. Returns unsubscribe. */
+  onSettingsReloaded(callback: (settings: AppSettings) => void): () => void
+
   // ---------------------------------------------------------------------------
   // Session
   // ---------------------------------------------------------------------------

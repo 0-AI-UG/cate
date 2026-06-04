@@ -9,8 +9,11 @@
 // collapse, and the sidebar lists only sections that still have matches.
 // =============================================================================
 
-import { X, MagnifyingGlass } from '@phosphor-icons/react'
+import { X, MagnifyingGlass, BracketsCurly } from '@phosphor-icons/react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import log from '../lib/logger'
+import { useAppStore } from '../stores/appStore'
+import { openFileAsPanel } from '../lib/fileRouting'
 import { GeneralSettings } from './GeneralSettings'
 import { AppearanceSettings } from './AppearanceSettings'
 import { CanvasSettings } from './CanvasSettings'
@@ -110,6 +113,27 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, visibleSections])
 
+  // Open the underlying settings.json in a Cate editor panel (VS Code's "Open
+  // Settings (JSON)"). Main grants this window access to the file and returns
+  // its path; we then close the dialog and mount an editor on it. Edits saved
+  // there write back to the file, which the watcher reloads into the UI live.
+  const openSettingsJson = async () => {
+    try {
+      const filePath = await window.electronAPI.settingsOpenInEditor()
+      onClose()
+      const workspaceId = useAppStore.getState().selectedWorkspaceId
+      if (workspaceId) {
+        openFileAsPanel(workspaceId, filePath)
+      } else {
+        // No workspace/canvas to host an editor panel — reveal the file so the
+        // user can still open it in their own editor.
+        void window.electronAPI.shellShowInFolder(filePath)
+      }
+    } catch (err) {
+      log.warn('[settings] Failed to open settings.json:', err)
+    }
+  }
+
   if (!isOpen) return null
 
   const jumpTo = (id: string) => {
@@ -131,12 +155,22 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0 border-b border-subtle bg-surface-0/40">
           <h2 className="text-lg font-semibold text-primary">Settings</h2>
-          <button
-            onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-hover text-secondary hover:text-primary"
-          >
-            <X size={14} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={openSettingsJson}
+              title="Open settings.json in an editor — edit and export your settings directly"
+              className="flex items-center gap-1.5 px-2 h-7 rounded-md border border-subtle text-secondary hover:bg-hover hover:text-primary text-xs"
+            >
+              <BracketsCurly size={14} />
+              Open settings.json
+            </button>
+            <button
+              onClick={onClose}
+              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-hover text-secondary hover:text-primary"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Body: sidebar + scrollable content */}
