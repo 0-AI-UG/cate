@@ -14,6 +14,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { CateLogo } from '../ui/CateLogo'
 import log from '../lib/logger'
 import headerImg from '../assets/welcome-header.jpg'
+import { AnimatedDotGrid } from './AnimatedDotGrid'
 
 const GITHUB_REPO = 'https://github.com/0-AI-UG/cate'
 const NEWSLETTER_URL = 'https://cate.cero-ai.com'
@@ -70,18 +71,14 @@ export function WelcomeDialog() {
 
   // Opaque themed fill — the welcome is a takeover screen, not a modal over the
   // app, so the UI behind is hidden. bg-canvas-bg uses the active theme's canvas
-  // color (the default/basic theme on first start, the user's theme on later runs),
-  // overlaid with the same dot grid the canvas uses (var(--grid-dot), 22px,
-  // theme-aware) so it reads as a zoomed-out Cate surface.
+  // color (default/basic theme on first start, the user's theme later), overlaid
+  // with the canvas dot grid animated as soft waves (AnimatedDotGrid).
   return (
     <div
       className={`fixed inset-0 z-[60] flex items-center justify-center bg-canvas-bg transition-opacity duration-300 ease-out ${exiting ? 'opacity-0' : 'opacity-100'}`}
-      style={{
-        backgroundImage: 'radial-gradient(var(--grid-dot) 1.2px, transparent 1.2px)',
-        backgroundSize: '22px 22px',
-      }}
     >
-      <div className={`relative w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)] transition-all duration-300 ease-out ${exiting ? 'opacity-0 scale-[0.98] translate-y-1' : 'opacity-100 scale-100'}`}>
+      <AnimatedDotGrid className="absolute inset-0 w-full h-full pointer-events-none" />
+      <div className={`relative z-10 w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)] transition-all duration-300 ease-out ${exiting ? 'opacity-0 scale-[0.98] translate-y-1' : 'opacity-100 scale-100'}`}>
         {/* Moebius landscape header — slightly blurred and fading out, so it's
             only visible at the very top of the card. */}
         <img
