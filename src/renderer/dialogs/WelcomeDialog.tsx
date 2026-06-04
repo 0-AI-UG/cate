@@ -135,13 +135,13 @@ export function WelcomeDialog() {
 
           <div className="border-t border-subtle" />
 
-          {/* Consent — a single line the user can toggle. */}
-          <div className="flex items-start gap-3">
+          {/* Consent — a single centered line the user can toggle. */}
+          <div className="flex items-center justify-center gap-2.5">
             <button
               role="switch"
               aria-checked={enabled}
               onClick={() => setEnabled((v) => !v)}
-              className="mt-0.5 flex-shrink-0 group"
+              className="flex-shrink-0 group"
               aria-label="Share anonymous usage and crash data"
             >
               <span
@@ -152,11 +152,8 @@ export function WelcomeDialog() {
                 {enabled && <Check size={12} weight="bold" className="text-white" />}
               </span>
             </button>
-            <button onClick={() => setEnabled((v) => !v)} className="text-left">
-              <span className="text-secondary text-[12px] leading-relaxed">
-                Share anonymous usage &amp; crash data to help improve Cate — never your code, file
-                paths, or project contents.{' '}
-              </span>
+            <button onClick={() => setEnabled((v) => !v)} className="text-left whitespace-nowrap">
+              <span className="text-secondary text-[12px]">Share anonymous usage data.{' '}</span>
               <span
                 onClick={(e) => { e.stopPropagation(); openLink(PRIVACY_URL, 'privacy_policy') }}
                 className="text-blue-400 hover:text-blue-300 text-[12px] font-medium"
