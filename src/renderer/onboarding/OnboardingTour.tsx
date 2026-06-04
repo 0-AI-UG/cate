@@ -21,6 +21,7 @@ interface Rect { x: number; y: number; width: number; height: number }
 const SPOTLIGHT_PAD = 8 // px of breathing room around the highlighted element
 const CARD_WIDTH = 340
 const CARD_GAP = 16 // gap between the spotlight and the card
+const CARD_EST_HEIGHT = 230 // approx card height, for corner placement
 
 function sidebarRect(side: 'left' | 'right'): DOMRect | null {
   const el = document.querySelector(`[data-app-sidebar="${side}"]`) as HTMLElement | null
@@ -88,9 +89,10 @@ function cardPosition(rect: Rect | null): { left: number; top: number } {
     top = spot.top
   } else if (spotWidth >= CARD_WIDTH + 48 && spotHeight >= 280) {
     // The spotlight is large (e.g. the whole visible canvas) — there's no room
-    // beside it, so float the card inside the highlighted area instead.
-    left = spot.left + (spotWidth - CARD_WIDTH) / 2
-    top = spot.top + Math.min(spotHeight * 0.18, 120)
+    // beside it, so tuck the card into the bottom-right corner of the area.
+    const margin = 24
+    left = spot.right - CARD_WIDTH - margin
+    top = spot.bottom - CARD_EST_HEIGHT - margin
   } else if (roomBelow > 200) {
     left = spot.left
     top = spot.bottom + CARD_GAP
@@ -187,7 +189,7 @@ export function OnboardingTour() {
       {/* Backdrop — either a full dim (centered steps) or a spotlight cutout. */}
       {spotlight ? (
         <div
-          className="absolute rounded-xl pointer-events-none transition-all duration-200"
+          className="absolute rounded-md pointer-events-none transition-all duration-200"
           style={{
             left: spotlight.x - SPOTLIGHT_PAD,
             top: spotlight.y - SPOTLIGHT_PAD,
