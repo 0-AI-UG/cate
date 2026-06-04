@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { ArrowLeft, ArrowRight, X } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStore } from '../stores/uiStore'
 import { ONBOARDING_STEPS, type OnboardingStep } from './steps'
 
 interface Rect { x: number; y: number; width: number; height: number }
@@ -125,6 +126,7 @@ export function OnboardingTour() {
   const consentDecided = useSettingsStore((s) => s.telemetryConsentDecided)
   const completed = useSettingsStore((s) => s.onboardingCompleted)
   const setSetting = useSettingsStore((s) => s.setSetting)
+  const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
 
   const [step, setStep] = useState(0)
   const [rect, setRect] = useState<Rect | null>(null)
@@ -141,18 +143,29 @@ export function OnboardingTour() {
     if (!active) return
     const update = () => setRect(measure(current))
     update()
-    // A couple of follow-up frames catch late layout (fonts, sidebar width vars).
+    // A couple of follow-up frames catch late layout (fonts, sidebar width vars)
+    // and elements that mount on this step (e.g. the command palette opening).
     const r1 = requestAnimationFrame(update)
     const t1 = setTimeout(update, 120)
+    const t2 = setTimeout(update, 260)
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
     return () => {
       cancelAnimationFrame(r1)
       clearTimeout(t1)
+      clearTimeout(t2)
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
   }, [active, current, step])
+
+  // Force the command palette open for steps that spotlight it; close it again
+  // when the step changes or the tour ends.
+  useEffect(() => {
+    if (!active || !current?.openCommandPalette) return
+    setShowCommandPalette(true)
+    return () => setShowCommandPalette(false)
+  }, [active, current, setShowCommandPalette])
 
   // Fire a one-time "started" signal when the tour first becomes active.
   useEffect(() => {

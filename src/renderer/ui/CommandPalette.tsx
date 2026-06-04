@@ -567,6 +567,7 @@ export const CommandPalette: React.FC = () => {
       onClick={close}
     >
       <div
+        data-onboarding="command-palette"
         className="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] rounded-xl overflow-hidden flex flex-col self-start bg-surface-2/95 backdrop-blur-xl border border-strong shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
         onClick={(e) => e.stopPropagation()}
       >

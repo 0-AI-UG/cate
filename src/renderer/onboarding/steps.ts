@@ -23,6 +23,9 @@ export interface OnboardingStep {
    *  Use for large container targets (canvas, sidebar) where padding would
    *  overshoot the real boundary; small targets keep the breathing room. */
   tight?: boolean
+  /** Force the ⌘K command palette open while this step is active (and close it
+   *  again on leaving), so the step can spotlight the real palette. */
+  openCommandPalette?: boolean
 }
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
@@ -52,6 +55,8 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'palette',
     emoji: '⚡',
+    target: '[data-onboarding="command-palette"]',
+    openCommandPalette: true,
     title: 'One shortcut for everything',
     body: 'Press ⌘K to search files, jump between panels, and run any command — the fastest way to get around Cate.',
     keys: ['⌘', 'K'],
