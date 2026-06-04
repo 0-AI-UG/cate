@@ -109,6 +109,14 @@ function cardPosition(rect: Rect | null, pad: number, cardWidth: number): { left
 const clampX = (x: number, vw: number, cardWidth: number): number => Math.max(12, Math.min(x, vw - cardWidth - 12))
 const clampY = (y: number, vh: number): number => Math.max(12, Math.min(y, vh - 240))
 
+/** Render a step body with minimal **bold** support — segments wrapped in
+ *  double asterisks become <strong>, everything else stays plain text. */
+function renderBody(body: string) {
+  return body.split(/\*\*(.+?)\*\*/g).map((seg, i) =>
+    i % 2 === 1 ? <strong key={i} className="font-semibold text-white">{seg}</strong> : seg,
+  )
+}
+
 const EDGE_MARGIN = 4 // keep the outline a few px inside the window so it's visible
 
 /** The padded spotlight box, clamped into the viewport so all four outline edges
@@ -278,7 +286,7 @@ export function OnboardingTour() {
         <div className={`relative flex flex-col gap-3 ${hero ? 'px-6 pb-5 -mt-10' : 'p-5'}`}>
           <div>
             <h2 className={`text-white font-bold leading-tight pr-6 ${hero ? 'text-[20px] tracking-tight [text-shadow:0_2px_12px_rgba(0,0,0,0.6)]' : 'text-[15px]'}`}>{current.title}</h2>
-            <p className={`text-[#9a9a9f] leading-relaxed mt-1.5 ${hero ? 'text-[13px]' : 'text-[12.5px]'}`}>{current.body}</p>
+            <p className={`text-[#9a9a9f] leading-relaxed mt-1.5 ${hero ? 'text-[13px]' : 'text-[12.5px]'}`}>{renderBody(current.body)}</p>
           </div>
 
           {current.keys && (

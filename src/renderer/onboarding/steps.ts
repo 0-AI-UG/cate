@@ -43,7 +43,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     // (which only appears once the canvas has panels, e.g. on replay).
     target: '[data-onboarding="welcome-actions"], [data-onboarding="toolbar"]',
     title: 'Add anything',
-    body: 'Spin up a terminal, editor, browser, or Pi agent — from here or the bottom toolbar. Drag one straight onto the canvas to place it exactly where you want.',
+    body: 'Spin up a terminal, editor, browser, or Pi agent from here or the bottom toolbar. Drag one straight onto the canvas to place it exactly where you want.',
   },
   {
     id: 'sidebar',
@@ -57,13 +57,13 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     target: '[data-onboarding="command-palette"]',
     openCommandPalette: true,
     title: 'One shortcut for everything',
-    body: 'Press ⌘K to search files, jump between panels, and run any command — the fastest way to get around Cate.',
+    body: 'Press ⌘K to search files, jump between panels, and run any command. The fastest way to get around Cate.',
     keys: ['⌘', 'K'],
   },
   {
     id: 'done',
     hero: true,
     title: 'You’re all set',
-    body: 'Build your first layout — drag panels around, then save and reuse layouts later. Replay this tour anytime from ⌘K → “Show Tutorial”.',
+    body: 'Build your first layout: drag panels around, then save and reuse layouts later. Replay this tour anytime from **⌘K → “Show Tutorial”**.',
   },
 ]
