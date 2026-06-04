@@ -91,6 +91,18 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
       log.warn('Sentry live-toggle failed: %O', err)
     }
   }
+  // Re-point the auto-updater channel when the beta opt-in flips, and re-check
+  // immediately. Dynamic import keeps ./auto-updater (and electron-updater) out
+  // of ./store's static graph — auto-updater imports ./store, so a static import
+  // here would form a cycle.
+  if (key === 'betaUpdatesEnabled') {
+    try {
+      const { setBetaUpdatesEnabled } = await import('./auto-updater')
+      setBetaUpdatesEnabled(value !== false)
+    } catch (err) {
+      log.warn('Beta-updates live-toggle failed: %O', err)
+    }
+  }
 }
 
 // Lazy-loaded store instance (ESM dynamic import)

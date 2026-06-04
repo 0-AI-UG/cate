@@ -16,10 +16,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # A tag with a semver pre-release suffix (a hyphen, e.g. v1.2.0-beta.1)
+          # is published as a GitHub pre-release. GitHub excludes pre-releases
+          # from the "Latest" badge and the /releases/latest API the website
+          # uses, so stable users and the public download are unaffected — only
+          # users who opted into beta builds in-app (autoUpdater.allowPrerelease)
+          # are offered it. The later "Publish release" step un-drafts without
+          # touching the pre-release flag, so it stays a pre-release.
+          PRERELEASE_FLAG=""
+          case "${{ github.ref_name }}" in
+            *-*) PRERELEASE_FLAG="--prerelease" ;;
+          esac
           if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
             echo "Release ${{ github.ref_name }} already exists — skipping creation"
           else
-            gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --draft --generate-notes
+            gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --draft --generate-notes $PRERELEASE_FLAG
           fi
 
   release:

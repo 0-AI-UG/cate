@@ -24,6 +24,8 @@ import {
 } from '../shared/ipc-channels'
 import { getWindowType } from './windowRegistry'
 import { sendEvent } from './analytics'
+import { getSettingSync } from './store'
+import { compareSemver, isPrereleaseVersion } from './semver'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -32,6 +34,10 @@ import { sendEvent } from './analytics'
 const GITHUB_OWNER = '0-AI-UG'
 const GITHUB_REPO = 'cate'
 const API_LATEST_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
+// Full release list (newest first), including pre-releases — used by the
+// fallback path when the beta channel is opted into, since /releases/latest
+// excludes pre-releases by design.
+const API_RELEASES_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=30`
 
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
@@ -51,10 +57,10 @@ export function isInstallingUpdate(): boolean { return updateInstalling }
 type UpdateStatus =
   | { state: 'idle' }
   | { state: 'checking' }
-  | { state: 'available'; version: string; canAutoInstall: boolean; releaseUrl?: string }
-  | { state: 'downloading'; version: string; percent?: number }
-  | { state: 'downloaded'; version: string }
-  | { state: 'manual'; version: string; releaseUrl: string }
+  | { state: 'available'; version: string; canAutoInstall: boolean; releaseUrl?: string; prerelease?: boolean }
+  | { state: 'downloading'; version: string; percent?: number; prerelease?: boolean }
+  | { state: 'downloaded'; version: string; prerelease?: boolean }
+  | { state: 'manual'; version: string; releaseUrl: string; prerelease?: boolean }
   | { state: 'error'; message: string }
 
 let currentStatus: UpdateStatus = { state: 'idle' }
@@ -104,17 +110,6 @@ function flushSessionBeforeUpdate(): Promise<void> {
 let isManualCheck = false
 let fallbackInProgress = false
 
-/** Compare two semver strings. Returns 1 if a > b, -1 if a < b, 0 if equal. */
-function compareSemver(a: string, b: string): number {
-  const pa = a.replace(/^v/, '').split('.').map(Number)
-  const pb = b.replace(/^v/, '').split('.').map(Number)
-  for (let i = 0; i < 3; i++) {
-    const diff = (pa[i] || 0) - (pb[i] || 0)
-    if (diff !== 0) return diff > 0 ? 1 : -1
-  }
-  return 0
-}
-
 // ---------------------------------------------------------------------------
 // Fallback update check via GitHub Releases API
 // ---------------------------------------------------------------------------
@@ -122,6 +117,8 @@ function compareSemver(a: string, b: string): number {
 interface GitHubRelease {
   tag_name: string
   html_url: string
+  prerelease?: boolean
+  draft?: boolean
   assets: { name: string; browser_download_url: string }[]
 }
 
@@ -129,21 +126,44 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
   if (fallbackInProgress) return
   fallbackInProgress = true
 
+  // When the user has opted into beta builds we must consult the full release
+  // list — /releases/latest excludes pre-releases — and pick the newest entry,
+  // pre-release or not, by semver.
+  const includePrereleases = autoUpdater.allowPrerelease === true
+
   try {
-    log.info('[fallback-updater] Checking GitHub releases API…')
+    log.info('[fallback-updater] Checking GitHub releases API… (betas: %s)', includePrereleases)
 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15000)
-    const res = await fetch(API_LATEST_URL, {
+    const res = await fetch(includePrereleases ? API_RELEASES_URL : API_LATEST_URL, {
       signal: controller.signal,
       headers: { 'User-Agent': `Cate/${app.getVersion()}`, Accept: 'application/vnd.github.v3+json' },
     })
     clearTimeout(timeout)
 
     if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`)
-    const data = (await res.json()) as GitHubRelease
 
-    const latestVersion = data.tag_name
+    let chosen: GitHubRelease | null
+    if (includePrereleases) {
+      const list = (await res.json()) as GitHubRelease[]
+      // Drop drafts, then pick the highest version (pre-releases included).
+      chosen = list
+        .filter((r) => !r.draft)
+        .reduce<GitHubRelease | null>(
+          (best, r) => (best === null || compareSemver(r.tag_name, best.tag_name) > 0 ? r : best),
+          null,
+        )
+    } else {
+      chosen = (await res.json()) as GitHubRelease
+    }
+
+    if (!chosen) {
+      broadcastStatus({ state: 'idle' })
+      return
+    }
+
+    const latestVersion = chosen.tag_name
     const currentVersion = app.getVersion()
     log.info('[fallback-updater] Latest: %s  Current: v%s', latestVersion, currentVersion)
 
@@ -162,14 +182,15 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
       return
     }
 
-    latestReleaseUrl = data.html_url
+    latestReleaseUrl = chosen.html_url
     // Try native auto-update download first — the initial check may have
     // errored (e.g. provider mismatch) but downloadUpdate can still succeed.
     broadcastStatus({
       state: 'available',
       version: latestVersion.replace(/^v/, ''),
       canAutoInstall: true,
-      releaseUrl: data.html_url,
+      releaseUrl: chosen.html_url,
+      prerelease: chosen.prerelease === true || isPrereleaseVersion(latestVersion),
     })
   } catch (err: any) {
     log.error('[fallback-updater] Error:', err)
@@ -201,8 +222,9 @@ export function initAutoUpdater(): void {
     log.info('[auto-updater] Renderer requested download')
     const version = currentStatus.state === 'available' ? currentStatus.version : undefined
     const releaseUrl = currentStatus.state === 'available' ? currentStatus.releaseUrl : latestReleaseUrl
+    const prerelease = currentStatus.state === 'available' ? currentStatus.prerelease : undefined
     void sendEvent('update_download_clicked', { version: version ?? null })
-    broadcastStatus({ state: 'downloading', version: version ?? '' })
+    broadcastStatus({ state: 'downloading', version: version ?? '', prerelease })
     autoUpdater.downloadUpdate().catch((err) => {
       log.warn('[auto-updater] downloadUpdate failed, retrying with fresh check:', err)
       // The native updater may not have update info cached (e.g. initial check
@@ -214,7 +236,7 @@ export function initAutoUpdater(): void {
           log.error('[auto-updater] Retry check also failed, falling back to manual:', err2)
           autoUpdater.autoDownload = false
           if (releaseUrl && version) {
-            broadcastStatus({ state: 'manual', version, releaseUrl })
+            broadcastStatus({ state: 'manual', version, releaseUrl, prerelease })
           } else {
             broadcastStatus({ state: 'error', message: err2?.message || 'Download failed' })
           }
@@ -252,7 +274,13 @@ export function initAutoUpdater(): void {
   // Don't check for updates in dev mode
   if (!app.isPackaged) return
 
-  log.info('Auto-updater initialized')
+  // Honor the beta opt-in: when on, the updater also considers GitHub
+  // pre-releases (e.g. v1.2.0-beta.1). Off by default so stable users never see
+  // staged builds. Re-applied live via setBetaUpdatesEnabled when the toggle
+  // flips (see src/main/store.ts → applySettingSideEffect).
+  autoUpdater.allowPrerelease = getSettingSync('betaUpdatesEnabled') === true
+
+  log.info('Auto-updater initialized (betas: %s)', autoUpdater.allowPrerelease)
 
   autoUpdater.on('update-available', (info) => {
     log.info('Update available: v%s', info.version)
@@ -261,6 +289,7 @@ export function initAutoUpdater(): void {
       state: 'available',
       version: String(info.version),
       canAutoInstall: true,
+      prerelease: isPrereleaseVersion(String(info.version)),
     })
   })
 
@@ -285,16 +314,24 @@ export function initAutoUpdater(): void {
     const version = cur.state === 'downloading' || cur.state === 'available' || cur.state === 'downloaded'
       ? cur.version
       : ''
+    const prerelease = cur.state === 'downloading' || cur.state === 'available' || cur.state === 'downloaded'
+      ? cur.prerelease
+      : undefined
     broadcastStatus({
       state: 'downloading',
       version,
       percent: typeof progress?.percent === 'number' ? progress.percent : undefined,
+      prerelease,
     })
   })
 
   autoUpdater.on('update-downloaded', (info) => {
     log.info('Update downloaded, ready to install')
-    broadcastStatus({ state: 'downloaded', version: String(info?.version ?? '') })
+    broadcastStatus({
+      state: 'downloaded',
+      version: String(info?.version ?? ''),
+      prerelease: isPrereleaseVersion(String(info?.version ?? '')),
+    })
   })
 
   autoUpdater.on('checking-for-update', () => {
@@ -337,5 +374,22 @@ export function checkForUpdatesManually(): void {
     log.warn('[auto-updater] Manual check threw, trying fallback:', err)
     isManualCheck = false
     fallbackCheckForUpdate(true)
+  })
+}
+
+/** React to the beta-updates opt-in flipping. Re-points the updater channel
+ *  (allowPrerelease) and re-checks immediately so turning betas on surfaces an
+ *  available staged build without waiting for the 15-minute poll. Called from
+ *  the settings side-effect path (UI toggle AND hand-edited settings.json).
+ *  No-op until the app is packaged, since checks don't run in dev. */
+export function setBetaUpdatesEnabled(enabled: boolean): void {
+  autoUpdater.allowPrerelease = enabled
+  log.info('[auto-updater] Beta updates %s', enabled ? 'enabled' : 'disabled')
+  if (!app.isPackaged) return
+  // A fresh check on the new channel. Don't surface a "no updates" dialog — this
+  // is a background reaction to a settings change, not a manual check.
+  autoUpdater.checkForUpdates().catch((err) => {
+    log.warn('[auto-updater] Re-check after beta toggle threw, trying fallback:', err)
+    fallbackCheckForUpdate(false)
   })
 }
