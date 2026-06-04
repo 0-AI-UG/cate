@@ -76,12 +76,14 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
-      # The companion tarball stages node-pty's native binary from build/Release,
-      # but a plain `npm install` satisfies node-pty from a shipped prebuild and
-      # never populates build/Release. Compile from source so the tarball build
-      # finds it. (node-pty is N-API: the node-20 binary runs under the tarball's
-      # bundled node-22 runtime.)
-      - name: Compile node-pty from source (companion tarball needs build/Release)
+      # The companion tarball stages node-pty's native binary from build/Release.
+      # On macOS/Windows `npm install` satisfies node-pty from a shipped prebuild
+      # and never populates build/Release, so compile from source here. On Linux
+      # node-pty ships NO prebuild, so `npm install` already built it from source
+      # into build/Release — a rebuild would just duplicate that, so skip it.
+      # (node-pty is N-API: the node-20 binary runs under the bundled node-22.)
+      - name: Compile node-pty from source (mac/win; Linux builds it at install)
+        if: runner.os != 'Linux'
         run: npm rebuild node-pty --build-from-source
 
       # The local workspace runs the companion daemon tarball, shipped inside the
@@ -188,8 +190,6 @@ jobs:
             docker: true
           - os: macos-latest
             target: darwin-arm64
-          - os: macos-13
-            target: darwin-x64
           - os: windows-latest
             target: win32-x64
 
@@ -219,11 +219,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Native targets stage node-pty from build/Release; a plain install only
-      # leaves a prebuild, so compile from source. (The --docker linux-arm64
-      # cross-build compiles node-pty inside the container, so skip it there.)
-      - name: Compile node-pty from source (native targets)
-        if: ${{ !matrix.docker }}
+      # Stage node-pty from build/Release. macOS/Windows installs use a shipped
+      # prebuild (build/Release empty) so compile from source; Linux ships no
+      # prebuild, so `npm install` already built it from source. The --docker
+      # linux-arm64 cross-build compiles node-pty in the container — all of these
+      # Linux cases are exactly the ones runner.os != 'Linux' skips.
+      - name: Compile node-pty from source (mac/win; Linux builds it at install)
+        if: runner.os != 'Linux'
         run: npm rebuild node-pty --build-from-source
 
       - name: Build companion tarball (${{ matrix.target }})

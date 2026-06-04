@@ -26,6 +26,10 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(repoRoot, 'dist-companion')
 const piSrc = path.join(repoRoot, 'node_modules', '@earendil-works', 'pi-coding-agent')
+// Forward-slash relative path for tar's -C: keeps Windows drive letters/backslashes
+// out of tar args (both bsdtar and msys2 GNU tar choke on `D:\…`). See the companion
+// build script's `fwd` note.
+const fwd = (from, to) => path.relative(from, to).split(path.sep).join('/') || '.'
 
 if (!existsSync(piSrc)) {
   console.error('[pi] @earendil-works/pi-coding-agent not found — run `npm install` first')
@@ -90,10 +94,9 @@ const stagedSize = dirSizeMb(stage)
 const outTar = path.join(dist, `cate-pi-${piVersion}.tgz`)
 rmSync(outTar, { force: true })
 // --no-xattrs: macOS provenance xattrs would make GNU tar warn on extraction.
-// Run from the archive's dir with a colon-free basename: tar reads a `D:`-prefixed
-// absolute path as a remote `host:path` ("Cannot connect to D:") on the Windows
-// runner's bsdtar (which also has no --force-local), and GNU tar does the same.
-execFileSync('tar', ['--no-xattrs', '-czf', path.basename(outTar), '-C', stage, '.'], { stdio: 'inherit', cwd: path.dirname(outTar) })
+// Basename archive + relative -C (cwd = dist) keep Windows drive letters out of
+// tar's path args (both bsdtar and msys2 GNU tar read `D:\…` as a remote host).
+execFileSync('tar', ['--no-xattrs', '-czf', path.basename(outTar), '-C', fwd(dist, stage), '.'], { stdio: 'inherit', cwd: dist })
 console.log(`[pi] wrote ${path.relative(repoRoot, outTar)} (staged ${stagedSize} MB)`)
 
 // --------------------------------------------------------------------------

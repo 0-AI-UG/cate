@@ -61,6 +61,13 @@ const RIPGREP_TRIPLES = {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(repoRoot, 'dist-companion')
 
+// tar invocations must avoid Windows drive letters and backslashes: a `D:`-prefixed
+// path reads as a remote `host:path` spec on BOTH the Windows runner's System32
+// bsdtar (default-shell steps) and Git's msys2 GNU tar (shell: bash steps), and
+// msys2 tar also can't chdir into a backslashed path. So we run tar with `cwd` set
+// and pass the archive as a basename + the -C dir as a forward-slash relative path.
+const fwd = (from, to) => path.relative(from, to).split(path.sep).join('/') || '.'
+
 const args = process.argv.slice(2)
 const useDocker = args.includes('--docker')
 const targetArg = valueOf('--target') ?? `${plat(process.platform)}-${process.arch}`
@@ -109,12 +116,9 @@ if (missing.length) throw new Error(`[companion] incomplete stage for ${targetAr
 
 // --no-xattrs: don't archive extended attributes (macOS keeps re-stamping a
 // com.apple.provenance xattr that otherwise makes GNU tar warn on extraction
-// on the Ubuntu server). Supported by both bsdtar and GNU tar.
-// Run tar from the archive's own dir and name it by basename: tar reads a
-// `D:`-prefixed absolute path as a remote `host:path` spec ("Cannot connect to
-// D:") — true of the Windows runner's bsdtar AND GNU tar, and bsdtar has no
-// --force-local. A colon-free relative name never trips the remote heuristic.
-execFileSync('tar', ['--no-xattrs', '-czf', path.basename(outTar), '-C', stageDir, '.'], { stdio: 'inherit', cwd: path.dirname(outTar) })
+// on the Ubuntu server). Supported by both bsdtar and GNU tar. Basename + relative
+// -C (cwd = dist) keep Windows drive letters out of tar's path args — see `fwd`.
+execFileSync('tar', ['--no-xattrs', '-czf', path.basename(outTar), '-C', fwd(dist, stageDir), '.'], { stdio: 'inherit', cwd: dist })
 console.log(`[companion] wrote ${path.relative(repoRoot, outTar)}`)
 
 // --------------------------------------------------------------------------
@@ -373,9 +377,9 @@ function stagePi(outRoot) {
   if (!existsSync(tar)) throw new Error(`pi tarball not found at ${tar}`)
   rmSync(outRoot, { recursive: true, force: true })
   mkdirSync(outRoot, { recursive: true })
-  // Basename + cwd, not the absolute path — see the packaging tar above (a `D:`
-  // archive path reads as a remote host on the Windows runner's bsdtar).
-  execFileSync('tar', ['-xzf', path.basename(tar), '-C', outRoot], { stdio: 'ignore', cwd: path.dirname(tar) })
+  // Basename archive + relative -C (cwd = the tarball's dir) — see `fwd`. The msys2
+  // GNU tar in the release job's bash step can't chdir into a backslashed `D:\` -C.
+  execFileSync('tar', ['-xzf', path.basename(tar), '-C', fwd(path.dirname(tar), outRoot)], { stdio: 'ignore', cwd: path.dirname(tar) })
   if (!existsSync(path.join(outRoot, 'dist', 'cli.js'))) throw new Error('staged pi missing dist/cli.js')
   console.log(`[companion] staged pi ${piVersion}`)
 }
@@ -394,9 +398,8 @@ function unzipInto(zipPath, destDir) {
   } catch {
     // unzip absent (e.g. Windows runner) — fall through to bsdtar.
   }
-  // Basename + cwd (the bsdtar fallback would otherwise read `C:\…zip` as a
-  // remote host on Windows — see the packaging tar's note).
-  execFileSync('tar', ['-xf', path.basename(zipPath), '-C', destDir], { stdio: 'ignore', cwd: path.dirname(zipPath) })
+  // Basename archive + relative -C (cwd = the zip's dir) — see `fwd`.
+  execFileSync('tar', ['-xf', path.basename(zipPath), '-C', fwd(path.dirname(zipPath), destDir)], { stdio: 'ignore', cwd: path.dirname(zipPath) })
 }
 function valueOf(flag) {
   const i = args.indexOf(flag)
