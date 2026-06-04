@@ -58,6 +58,16 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: npm run test:smoke:electron
 
+      # The companion tarball build stages node-pty's native binary from
+      # build/Release (its own compiled output), but a plain `npm install` on the
+      # runner satisfies node-pty from a shipped prebuild and never populates
+      # build/Release. Compile it from source so the tarball build finds it.
+      # (node-pty is N-API, so the node-20-compiled binary runs under the
+      # tarball's bundled node-22 runtime.)
+      - name: Compile node-pty for the companion tarball (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm rebuild node-pty --build-from-source
+
       # The content-search e2e specs exercise the real local companion daemon,
       # whose ripgrep ships inside the host companion tarball (runtime/bin/rg).
       # `electron-vite build` doesn't produce that tarball, so build it natively
