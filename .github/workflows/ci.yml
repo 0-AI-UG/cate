@@ -58,6 +58,15 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: npm run test:smoke:electron
 
+      # The content-search e2e specs exercise the real local companion daemon,
+      # whose ripgrep ships inside the host companion tarball (runtime/bin/rg).
+      # `electron-vite build` doesn't produce that tarball, so build it natively
+      # on this runner first (same as release.yml) — otherwise the daemon has no
+      # rg and every content search returns zero results. (Self-builds pi.)
+      - name: Build companion tarball (macOS, for e2e search)
+        if: matrix.os == 'macos-latest'
+        run: node scripts/build-companion-tarball.mjs
+
       # Functional drag/dock/detach e2e. Runs windowless on macOS (no display
       # server needed); the perf-stress spec is skipped via E2E_SKIP_PERF since
       # its thresholds depend on raw runner speed.
