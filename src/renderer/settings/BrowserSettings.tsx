@@ -28,7 +28,7 @@ export function BrowserSettings() {
       </SettingRow>
       <SettingRow
         label="Open terminal links"
-        description="Where a Cmd/Ctrl+click on a terminal link opens. Ask prompts the first time (with an option to remember). On canvas reuses or creates a browser panel. In system browser opens your default browser. Cmd/Ctrl+Shift+click always uses the system browser."
+        description="Where Cmd/Ctrl+click on a terminal link opens. Cmd/Ctrl+Shift+click always uses the system browser."
       >
         <Select
           value={store.terminalLinkOpenTarget}

@@ -9,8 +9,8 @@ export function TerminalSettings() {
   return (
     <div className="flex flex-col gap-1">
       <p className="text-xs text-muted mb-3">
-        Leave font fields blank to use system defaults. Terminal colors follow
-        the active theme — change it in Appearance.
+        Leave font fields blank for system defaults. Colors follow the active
+        theme; change it in Appearance.
       </p>
       <SettingRow label="Font family override">
         <TextInput
@@ -41,8 +41,8 @@ export function TerminalSettings() {
         label="Text contrast"
         description={
           store.terminalContrast <= 1
-            ? 'Off — theme colors shown exactly'
-            : `${store.terminalContrast.toFixed(1)}:1 — lightens dim / low-contrast text (4.5 = WCAG AA, like VS Code)`
+            ? 'Off. Theme colors shown exactly.'
+            : `${store.terminalContrast.toFixed(1)}:1. Lifts dim text (4.5 = WCAG AA).`
         }
       >
         {/* Slider max is intentionally below clampContrastRatio's 21 ceiling: above
@@ -59,7 +59,7 @@ export function TerminalSettings() {
       </SettingRow>
       <SettingRow
         label="Blink cursor"
-        description="Off by default. A blinking cursor forces a GPU/compositor redraw on every blink, keeping the compositor awake even when the terminal is otherwise idle. A steady cursor stays fully visible."
+        description="A steady cursor avoids a compositor redraw on every blink, saving power when idle."
       >
         <Toggle
           checked={store.terminalCursorBlink}
@@ -69,7 +69,7 @@ export function TerminalSettings() {
       {IS_MAC && (
         <SettingRow
           label="Use ⌥ Option as Meta"
-          description="On: ⌥+key sends a Meta/ESC sequence (e.g. ⌥F / ⌥B word motion in zsh/bash). Off: ⌥ types the macOS layout's special characters — e.g. ⌥⇧- inserts an em dash (—) — and Meta is sent via the Esc prefix (press Esc, then the key)."
+          description="On: ⌥+key sends Meta/ESC (e.g. ⌥F / ⌥B word motion). Off: ⌥ types special characters."
         >
           <Toggle
             checked={store.terminalOptionIsMeta}
@@ -79,7 +79,7 @@ export function TerminalSettings() {
       )}
       <SettingRow
         label="Auto-suspend idle background terminals"
-        description="Pause (SIGSTOP) terminals that have been offscreen and silent for 2 minutes so macOS can reclaim their memory. Resumes instantly on focus — no state loss. POSIX-only."
+        description="Pause terminals idle and offscreen for 2 minutes to free memory. Resumes instantly on focus."
       >
         <Toggle
           checked={store.autoSuspendIdleTerminals}

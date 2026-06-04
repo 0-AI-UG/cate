@@ -160,7 +160,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
           <div className="flex items-center gap-1.5">
             <button
               onClick={openSettingsJson}
-              title="Open settings.json in an editor — edit and export your settings directly"
+              title="Open settings.json in an editor to edit and export your settings directly"
               className="flex items-center gap-1.5 px-2 h-7 rounded-md border border-subtle text-secondary hover:bg-hover hover:text-primary text-xs"
             >
               <BracketsCurly size={14} />

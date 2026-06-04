@@ -5,6 +5,14 @@ import type { CanvasGridStyle } from '../../shared/types'
 export function CanvasSettings() {
   const store = useSettingsStore()
 
+  const bgImagePath = store.canvasBackgroundImagePath
+  const bgImageName = bgImagePath ? bgImagePath.split(/[\\/]/).pop() : ''
+
+  const chooseBackgroundImage = async () => {
+    const picked = await window.electronAPI.openImageDialog()
+    if (picked) store.setSetting('canvasBackgroundImagePath', picked)
+  }
+
   return (
     <div className="flex flex-col gap-1">
       <SettingRow label="Zoom speed" description={`${store.zoomSpeed.toFixed(1)}x`}>
@@ -12,7 +20,7 @@ export function CanvasSettings() {
       </SettingRow>
       <SettingRow
         label="Auto-focus largest visible panel"
-        description="Automatically activate whichever panel occupies the most visible area as you pan and zoom."
+        description="Activate the panel filling the most visible area as you pan and zoom."
       >
         <Toggle
           checked={store.autoFocusLargestVisibleNode}
@@ -21,7 +29,7 @@ export function CanvasSettings() {
       </SettingRow>
       <SettingRow
         label="Snap to grid"
-        description="Align panels to the canvas grid while dragging and resizing. Hold Alt to bypass it temporarily (except when dragging between windows)."
+        description="Align panels to the grid while dragging and resizing. Hold Alt to bypass."
       >
         <Toggle
           checked={store.snapToGrid}
@@ -30,7 +38,7 @@ export function CanvasSettings() {
       </SettingRow>
       <SettingRow
         label="Recommend where new panels go"
-        description="On Cmd+T or a toolbar click, zoom out and show numbered spots to choose from (or click anywhere). Turn off to place each new panel in the best spot automatically."
+        description="On Cmd+T or a toolbar click, show numbered spots to pick from. Off places panels automatically."
       >
         <Toggle
           checked={store.placementPicker}
@@ -48,6 +56,41 @@ export function CanvasSettings() {
           ]}
         />
       </SettingRow>
+      <SettingRow
+        label="Background image"
+        description={bgImageName || 'Shown behind the canvas, auto-adjusted to keep titles readable.'}
+      >
+        <div className="flex items-center gap-2">
+          {bgImagePath && (
+            <button
+              onClick={() => store.setSetting('canvasBackgroundImagePath', '')}
+              className="px-2.5 py-1 text-sm rounded-md text-muted hover:text-primary transition-colors"
+            >
+              Clear
+            </button>
+          )}
+          <button
+            onClick={chooseBackgroundImage}
+            className="px-3 py-1 text-sm rounded-md bg-surface-5 border border-subtle text-primary hover:bg-surface-6 transition-colors"
+          >
+            {bgImagePath ? 'Change…' : 'Choose…'}
+          </button>
+        </div>
+      </SettingRow>
+      {bgImagePath && (
+        <SettingRow
+          label="Background image opacity"
+          description={`${Math.round(store.canvasBackgroundImageOpacity * 100)}%`}
+        >
+          <Slider
+            value={store.canvasBackgroundImageOpacity}
+            onChange={(v) => store.setSetting('canvasBackgroundImageOpacity', v)}
+            min={0.05}
+            max={1}
+            step={0.05}
+          />
+        </SettingRow>
+      )}
       <SettingRow label="Default panel width">
         <NumberInput value={store.defaultPanelWidth} onChange={(v) => store.setSetting('defaultPanelWidth', v)} min={300} max={1200} step={50} />
       </SettingRow>
