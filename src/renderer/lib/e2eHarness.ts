@@ -10,10 +10,10 @@ import { useUIStore, type SidebarView } from '../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useDragStore } from '../drag/store'
 import { useSearchStore } from '../stores/searchStore'
-import { getLastReveal } from './editorReveal'
+import { getLastReveal } from './editor/editorReveal'
 import { applyTheme } from './themeManager'
 import { BUILT_IN_THEMES } from '../../shared/themes'
-import { terminalRegistry } from './terminalRegistry'
+import { terminalRegistry } from './terminal/terminalRegistry'
 import type { Point } from '../../shared/types'
 
 /** Serializable snapshot of the search store for e2e assertions. */

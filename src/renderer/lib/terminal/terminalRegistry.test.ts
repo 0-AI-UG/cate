@@ -73,10 +73,10 @@ vi.mock('@xterm/addon-search', () => ({
   SearchAddon: class { findNext() { return false } findPrevious() { return false } clearDecorations() {} },
 }))
 
-vi.mock('../stores/statusStore', () => ({
+vi.mock('../../stores/statusStore', () => ({
   useStatusStore: { getState: () => ({ registerTerminal: vi.fn(), unregisterTerminal: vi.fn() }) },
 }))
-vi.mock('../stores/settingsStore', () => ({
+vi.mock('../../stores/settingsStore', () => ({
   useSettingsStore: {
     getState: () => ({
       terminalScrollback: 2000,
@@ -87,22 +87,22 @@ vi.mock('../stores/settingsStore', () => ({
     subscribe: () => () => {},
   },
 }))
-vi.mock('../stores/appStore', () => ({
+vi.mock('../../stores/appStore', () => ({
   awaitWorkspaceSync: async () => {},
   useAppStore: { getState: () => ({ workspaces: [] }) },
 }))
-vi.mock('./session', () => ({
+vi.mock('../workspace/session', () => ({
   terminalRestoreData: new Map(),
   replayTerminalLog: async () => {},
 }))
 vi.mock('./terminalUrlOpen', () => ({
   openTerminalUrl: () => {},
 }))
-vi.mock('./themeManager', () => ({
+vi.mock('../themeManager', () => ({
   getActiveTheme: () => ({ terminal: {} }),
   subscribeTheme: () => () => {},
 }))
-vi.mock('./logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
+vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
 
 // Track how many fresh PTYs are spawned vs reconnect-mode entries that adopt
 // a pre-existing ptyId. The bug manifests when a leaked pending-transfer

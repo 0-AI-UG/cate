@@ -4,20 +4,22 @@ import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, 
 import type { WorkspaceState, PanelType, PanelLocation, DockLayoutNode } from '../../shared/types'
 import { ALL_ZONES } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
-import { useAppStore, WORKSPACE_COLORS, getCanvasOperations, getWorkspaceCanvasPanelId, ensureCanvasOpsForPanel } from '../stores/appStore'
+import { useAppStore, WORKSPACE_COLORS, getWorkspaceCanvasPanelId, ensureCanvasOpsForPanel } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
+import { useStore } from 'zustand'
 import { useDockStore } from '../stores/dockStore'
+import { getOrCreateWorkspaceDockStore, getWorkspaceDockStore } from '../stores/workspaceStores'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
-import { terminalRegistry } from '../lib/terminalRegistry'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
-import { workspaceDisplayName } from '../lib/displayPath'
-import { workspaceRuntime } from '../lib/workspaceRuntime'
+import { workspaceDisplayName } from '../lib/fs/displayPath'
+import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 
 // -----------------------------------------------------------------------------
 // Companion status dot — surfaces a remote workspace's connection state in the
@@ -71,7 +73,7 @@ async function focusWorkspacePanel(workspaceId: string, panelId: string): Promis
   for (let attempt = 0; attempt < 10; attempt++) {
     if (attempt > 0) await new Promise<void>((r) => setTimeout(r, 50))
 
-    const dock = useDockStore.getState()
+    const dock = getOrCreateWorkspaceDockStore(workspaceId).getState()
     let location: PanelLocation | null = dock.getPanelLocation(panelId) ?? null
     if (!location) {
       for (const zoneName of ALL_ZONES) {
@@ -97,7 +99,7 @@ async function focusWorkspacePanel(workspaceId: string, panelId: string): Promis
     // Resolve the canvas ops for THIS workspace's canvas panel (not the
     // global singleton — that may point at a different workspace's store).
     const canvasPanelId = getWorkspaceCanvasPanelId(workspaceId)
-    const ops = canvasPanelId ? ensureCanvasOpsForPanel(canvasPanelId) : getCanvasOperations()
+    const ops = canvasPanelId ? ensureCanvasOpsForPanel(canvasPanelId) : null
     const nodeId = ops?.storeApi?.getState()?.nodeForPanel(panelId)
     if (nodeId) { ops!.focusPanelNode(panelId); return }
   }
@@ -316,7 +318,12 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }))
   const agentInfoByPanel = useAgentInfoByPanel(workspace.id)
 
-  const liveLocations = useDockStore((s) => s.panelLocations)
+  // Subscribe to this workspace's OWN dock store for live panel locations (only
+  // meaningful when it's the selected/active workspace). Falls back to the
+  // global default store when this workspace has no live store yet (the value
+  // is ignored for non-selected rows, which read the persisted snapshot).
+  const dockStoreForRow = getWorkspaceDockStore(workspace.id) ?? useDockStore
+  const liveLocations = useStore(dockStoreForRow, (s) => s.panelLocations)
   const panelLocations = isSelected ? liveLocations : workspace.dockState?.locations
 
   // useWorkspaceList's equality fn ignores `panels`, so subscribe to this

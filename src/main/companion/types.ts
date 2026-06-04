@@ -349,19 +349,22 @@ export interface Companion {
   readonly agent: AgentHost
   readonly file: FileHost
   readonly vcs: VcsHost
-  /** Lexical + allowed-root check; returns the normalized path. */
-  validatePath(filePath: string, ownerWindowId?: number): string
+  /** Lexical + allowed-root check; returns the normalized path. The optional
+   *  scopeId restricts the check to one workspace's roots (per-workspace
+   *  isolation); when omitted, validation falls back to the union of all roots. */
+  validatePath(filePath: string, ownerWindowId?: number, scopeId?: string): string
   /** Strict (symlink-resolving) read validation; returns the real path. */
-  validatePathStrict(filePath: string, ownerWindowId?: number): Promise<string>
+  validatePathStrict(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string>
   /** Validate a target whose parent must exist; returns the safe path. */
-  validatePathForCreation(filePath: string, ownerWindowId?: number): Promise<string>
+  validatePathForCreation(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string>
   /** Directory validation for cwd parameters. */
-  validateCwd(cwd: string, ownerWindowId?: number): string
+  validateCwd(cwd: string, ownerWindowId?: number, scopeId?: string): string
   /** Add/remove a path from this companion's allowed-roots set. For the local
    *  daemon (and remote daemons), workspace roots are forwarded here so the
-   *  daemon's authoritative path checks allow them. */
-  addAllowedRoot(root: string): Promise<void>
-  removeAllowedRoot(root: string): Promise<void>
+   *  daemon's authoritative path checks allow them. The optional scopeId keys the
+   *  root under one workspace's scope (per-workspace isolation). */
+  addAllowedRoot(root: string, scopeId?: string): Promise<void>
+  removeAllowedRoot(root: string, scopeId?: string): Promise<void>
   /** Replace this companion's readDir/search exclusion basenames live (the
    *  daemon's mirror of the fileExclusions setting). For the LOCAL daemon the
    *  main process forwards this when the setting changes, so the file tree /

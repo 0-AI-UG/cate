@@ -9,12 +9,12 @@ import {
   noteAgentPresence,
   noteAgentSpinnerByte,
 } from './agentScreenDetector'
-import { useStatusStore } from '../stores/statusStore'
+import { useStatusStore } from '../../stores/statusStore'
 
 // Mock the notification sender so the coordinator's import graph stays light
 // (the real module pulls settingsStore → logger, which starts a flush interval
 // that keeps vitest from exiting). These tests assert state, not notifications.
-vi.mock('./osNotificationSend', () => ({ sendOsNotification: vi.fn() }))
+vi.mock('../notifications/osNotificationSend', () => ({ sendOsNotification: vi.fn() }))
 
 describe('resolveAgentState', () => {
   it('not present, never was → notRunning', () => {

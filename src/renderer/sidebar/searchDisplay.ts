@@ -5,7 +5,7 @@
 
 import type { SearchMatchRange } from '../../shared/types'
 
-/** Trim leading whitespace and shift ranges. Used for the full-line tooltip. */
+/** Trim leading whitespace and shift ranges, so rows align without losing match offsets. */
 export function trimLeading(
   text: string,
   ranges: SearchMatchRange[],

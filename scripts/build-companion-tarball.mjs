@@ -76,17 +76,37 @@ const stageDir = path.join(dist, 'stage', targetArg)
 rmSync(stageDir, { recursive: true, force: true })
 mkdirSync(stageDir, { recursive: true })
 
+// Delete the previous tarball UP FRONT (before staging), not just before the
+// tar below. A staging step that throws partway (e.g. a ripgrep download
+// failure) used to exit here leaving the OLD .tgz in place — a misleading
+// "valid but incomplete" artifact (it shipped with no rg/pi, so the dev
+// isInstalled probe failed forever → reinstall on every connect). Now an
+// aborted build leaves no tarball at all.
+const exe = targetPlatform === 'win32' ? '.exe' : ''
+const outTar = path.join(dist, `cate-companion-${version}-${targetArg}.tgz`)
+rmSync(outTar, { force: true })
+
 // Unified runtime/bin/ layout; only the filename gains a `.exe` on win32 so the
 // install-dir depth (and thus the resolvers) stay identical across platforms.
-const exe = targetPlatform === 'win32' ? '.exe' : ''
 cpSync(path.join(dist, 'companion.cjs'), path.join(stageDir, 'companion.cjs'))
 await stageNodePty(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', `node${exe}`))
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 stagePi(path.join(stageDir, 'pi'))
 
-const outTar = path.join(dist, `cate-companion-${version}-${targetArg}.tgz`)
-rmSync(outTar, { force: true })
+// Fail loudly if anything the daemon's install-probe requires is missing, rather
+// than shipping a tarball that extracts but never satisfies isInstalled (every
+// connect would then re-push it). These are the exact paths sshTransport's
+// dev-mode isInstalled checks.
+const required = [
+  `companion.cjs`,
+  path.join('runtime', 'bin', `node${exe}`),
+  path.join('runtime', 'bin', `rg${exe}`),
+  path.join('pi', 'dist', 'cli.js'),
+]
+const missing = required.filter((rel) => !existsSync(path.join(stageDir, rel)))
+if (missing.length) throw new Error(`[companion] incomplete stage for ${targetArg}; missing: ${missing.join(', ')}`)
+
 // --no-xattrs: don't archive extended attributes (macOS keeps re-stamping a
 // com.apple.provenance xattr that otherwise makes GNU tar warn on extraction
 // on the Ubuntu server). Supported by both bsdtar and GNU tar.

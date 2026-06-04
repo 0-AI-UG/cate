@@ -1,4 +1,4 @@
-import type { AgentState } from '../../shared/types'
+import type { AgentState } from '../../../shared/types'
 
 /** How long an agent must stay idle (no spinner in its title) after finishing
  *  a turn before we flip the UI to `waitingForInput` and fire the "needs

@@ -53,7 +53,7 @@ export function stopSearchesForWindow(windowId: number): void {
 export function registerHandlers(): void {
   ipcMain.handle(
     SEARCH_START,
-    async (event, rootPath: string, searchIdRaw: string, optsRaw: Partial<SearchOptions>): Promise<string> => {
+    async (event, rootPath: string, searchIdRaw: string, optsRaw: Partial<SearchOptions>, workspaceId?: string): Promise<string> => {
       const wc = event.sender
       const wcId = wc.id
       // Clamp the renderer-supplied correlation id defensively.
@@ -75,7 +75,7 @@ export function registerHandlers(): void {
 
       let validRoot: string
       try {
-        validRoot = await companion.validatePathStrict(rootRel, wcId)
+        validRoot = await companion.validatePathStrict(rootRel, wcId, workspaceId)
       } catch (err) {
         log.warn(`[${SEARCH_START}] invalid root:`, err)
         if (!wc.isDestroyed()) {

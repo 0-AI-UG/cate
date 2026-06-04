@@ -105,6 +105,45 @@ describe('pathValidation', () => {
     await expect(validatePathStrict(targetPath, 1)).rejects.toThrow(/outside allowed directories/)
   })
 
+  // Phase 1 threads a per-workspace `scopeId` through the validators and records
+  // roots per scope, but does NOT yet restrict access by scope — the check stays a
+  // union of every scope's roots (strict enforcement is deferred to Phase 3). These
+  // lock that infra: scoped registration works, the union view is exposed, and a
+  // scoped request is NOT (yet) denied access to another scope's root.
+  describe('per-workspace scope (infrastructure, non-enforcing)', () => {
+    let scopedRoot: string
+
+    beforeEach(async () => {
+      scopedRoot = await fs.mkdtemp(path.join(process.cwd(), 'cate-scoped-'))
+      addAllowedRoot(scopedRoot, 'ws-b')
+    })
+
+    afterEach(async () => {
+      removeAllowedRoot(scopedRoot, 'ws-b')
+      await fs.rm(scopedRoot, { recursive: true, force: true })
+    })
+
+    test('getAllowedRoots returns the union across scopes', () => {
+      const roots = getAllowedRoots()
+      expect(roots.has(path.resolve(rootDir))).toBe(true) // legacy scope
+      expect(roots.has(path.resolve(scopedRoot))).toBe(true) // ws-b scope
+    })
+
+    test('removeAllowedRoot is scoped — wrong scope is a no-op', () => {
+      removeAllowedRoot(scopedRoot, 'ws-a') // wrong scope: should not remove
+      expect(getAllowedRoots().has(path.resolve(scopedRoot))).toBe(true)
+    })
+
+    test('does not yet enforce isolation: a scoped request still sees other roots', () => {
+      // rootDir is registered under the legacy scope; validating it while passing a
+      // DIFFERENT workspace scope still resolves (union behavior). Phase 3 flips this
+      // to a denial.
+      expect(validatePath(path.join(rootDir, 'file.txt'), 1, 'ws-b')).toBe(
+        path.resolve(path.join(rootDir, 'file.txt')),
+      )
+    })
+  })
+
   // The root/grant comparison is case-insensitive on win32 (paths there are
   // case-insensitive) and case-sensitive on POSIX. Exercise the pure key helper
   // with an injected platform so the win32 branch is covered cross-platform.

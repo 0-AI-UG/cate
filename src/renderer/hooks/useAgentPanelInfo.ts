@@ -6,8 +6,8 @@
 
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { useStatusStore, type StatusStore } from '../stores/statusStore'
-import { terminalRegistry } from '../lib/terminalRegistry'
-import { getAgentLogo } from '../lib/agentLogos'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
+import { getAgentLogo } from '../lib/agent/agentLogos'
 import type { AgentState } from '../../shared/types'
 
 export interface AgentPanelInfo {

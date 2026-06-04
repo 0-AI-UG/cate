@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { SessionSnapshot, SidebarSession } from '../../shared/types'
+import type { SessionSnapshot, SidebarSession } from '../../../shared/types'
 import { deriveSidebarSession, applySidebarSession } from './sidebarSession'
 
 // Minimal snapshot — only rootPath matters to the ordering logic.

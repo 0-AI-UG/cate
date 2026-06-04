@@ -21,7 +21,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // Mock heavy renderer-side modules whose import-time side effects (xterm,
 // electron-log) explode under jsdom — useNodeResize pulls them in transitively
 // via the canvas/app stores. Mirrors drag/__tests__/scenarios.test.tsx.
-vi.mock('../lib/terminalRegistry', () => ({
+vi.mock('../lib/terminal/terminalRegistry', () => ({
   terminalRegistry: { release: vi.fn() },
 }))
 vi.mock('../lib/logger', () => ({

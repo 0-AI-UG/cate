@@ -26,7 +26,7 @@ import {
   autoLayoutAll as computeAutoLayoutAll,
   CANVAS_GRID_SIZE,
 } from '../canvas/layoutEngine'
-import { viewToCanvas as viewToCanvasCoords } from '../lib/coordinates'
+import { viewToCanvas as viewToCanvasCoords } from '../lib/canvas/coordinates'
 import { REGION_FILL_COLORS } from '../../shared/colors'
 import { perfCount } from '../lib/perf/perfClient'
 
@@ -1607,17 +1607,13 @@ export function getOrCreateCanvasStoreForPanel(
 ): UseBoundStore<StoreApi<CanvasStore>> {
   const existing = canvasBoundStoresByPanelId.get(panelId)
   if (existing) return existing
-  // First panel to register inherits the legacy singleton — keeps session-
-  // restore and sidebar code paths that read `useCanvasStore` working.
-  const session = getDefaultSession()
-  let store: UseBoundStore<StoreApi<CanvasStore>>
-  if (session.getAllCanvasStores().length === 0) {
-    store = useCanvasStore
-  } else {
-    store = createCanvasStore()
-  }
+  // Every canvas panel gets its own fresh store. A canvas panel belongs to one
+  // workspace, so keying by panel id keeps workspaces fully isolated — no panel
+  // ever inherits the legacy `useCanvasStore` singleton (which, being shared and
+  // never cleared, used to leak one workspace's nodes into another).
+  const store = createCanvasStore()
   canvasBoundStoresByPanelId.set(panelId, store)
-  session.registerCanvasStore(panelId, store)
+  getDefaultSession().registerCanvasStore(panelId, store)
   return store
 }
 

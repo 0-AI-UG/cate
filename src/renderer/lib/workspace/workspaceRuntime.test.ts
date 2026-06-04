@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { workspaceRuntime } from './workspaceRuntime'
-import type { CompanionConnection, CompanionPhase, WorkspaceState } from '../../shared/types'
+import type { CompanionConnection, CompanionPhase, WorkspaceState } from '../../../shared/types'
 
 function ws(overrides: Partial<WorkspaceState>): WorkspaceState {
   return {

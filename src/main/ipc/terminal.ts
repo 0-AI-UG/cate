@@ -120,7 +120,7 @@ function cleanupTerminal(id: string): void {
 }
 
 async function spawnTerminal(
-  options: { cols: number; rows: number; cwd?: string; shell?: string },
+  options: { cols: number; rows: number; cwd?: string; shell?: string; workspaceId?: string },
   ownerWindowId: number,
 ): Promise<string> {
   const { companionId, path: cwdPath } = parseLocator(options.cwd ?? '')
@@ -129,8 +129,9 @@ async function spawnTerminal(
   // Resolve the cwd through the companion: the local one validates against its
   // allowed roots, the remote one trusts the locator path (its daemon validates).
   // An empty cwd is defaulted to the host's home dir inside the ProcessHost, so
-  // there's nothing host-specific to decide here.
-  const cwd = options.cwd ? companion.validateCwd(cwdPath) : ''
+  // there's nothing host-specific to decide here. The owning workspace id scopes
+  // validation to that workspace's roots when supplied.
+  const cwd = options.cwd ? companion.validateCwd(cwdPath, ownerWindowId, options.workspaceId) : ''
 
   // Per-terminal output coalescing (16ms) → owner window. Owner is read at flush
   // time so a cross-window transfer reroutes in-flight output.

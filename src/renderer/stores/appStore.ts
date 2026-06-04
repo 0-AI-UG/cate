@@ -25,81 +25,42 @@ import type {
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types'
 import { ACCENT_COLORS } from '../../shared/colors'
-import type { CanvasNodeId, CanvasNodeState, CanvasRegion } from '../../shared/types'
 import type { StoreApi } from 'zustand'
-import type { CanvasStore } from './canvasStore'
 import { shouldPreserveExistingCanvas } from './canvasSyncGuard'
-import { terminalRegistry } from '../lib/terminalRegistry'
-import { useDockStore } from './dockStore'
-import { createCanvasOps } from '../lib/canvasBridge'
-import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from './canvasStore'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
+import type { CanvasOperations } from '../lib/canvas/canvasBridge'
+import { releaseCanvasStoreForPanel } from './canvasStore'
+import {
+  getOrCreateWorkspaceDockStore,
+  getWorkspaceDockStore,
+  releaseWorkspaceDockStore,
+} from '../lib/workspace/dockRegistry'
+import {
+  ensureCanvasOpsForPanel,
+  getWorkspaceCanvasOps,
+  getWorkspaceCanvasPanelId,
+  getWorkspaceCanvasStore,
+  setActiveCanvasPanelId,
+  allCanvasOps,
+  invalidateWorkspaceCanvasCache,
+} from '../lib/workspace/canvasAccess'
+import { LOCAL_COMPANION_ID } from '../../main/companion/locator'
 
-// -----------------------------------------------------------------------------
-// Canvas operations callback — injected at init to decouple from canvasStore
-// -----------------------------------------------------------------------------
+export type { CanvasOperations }
+export {
+  ensureCanvasOpsForPanel,
+  getWorkspaceCanvasPanelId,
+  getWorkspaceCanvasStore,
+  setActiveCanvasPanelId,
+}
+export {
+  registerCanvasOps,
+  getCanvasOpsById,
+  unregisterCanvasOps,
+} from '../lib/workspace/canvasAccess'
 
-export interface CanvasOperations {
-  addNodeAndFocus: (panelId: string, panelType: PanelType, position?: Point) => void
-  removeNodeForPanel: (panelId: string) => void
-  loadWorkspaceCanvas: (
-    nodes: Record<CanvasNodeId, CanvasNodeState>,
-    viewportOffset: Point,
-    zoomLevel: number,
-    focusedNodeId: CanvasNodeId | null,
-    regions?: Record<string, CanvasRegion>,
-  ) => void
-  syncCanvasSnapshot: () => {
-    nodes: Record<CanvasNodeId, CanvasNodeState>
-    regions: Record<string, CanvasRegion>
-    viewportOffset: Point
-    zoomLevel: number
-    focusedNodeId: CanvasNodeId | null
-  }
-  clearAllNodes: () => void
-  focusPanelNode: (panelId: string) => void
-  /** Access the underlying store API (needed by session restore) */
-  storeApi: StoreApi<CanvasStore>
-}
-
-let canvasOps: CanvasOperations | null = null
-export function setCanvasOperations(ops: CanvasOperations) { canvasOps = ops }
-export function getCanvasOperations(): CanvasOperations | null { return canvasOps }
-
-// Registry for multi-canvas support — maps canvas panel IDs to their operations
-const canvasOpsRegistry = new Map<string, CanvasOperations>()
-let activeCanvasPanelId: string | null = null
-
-export function registerCanvasOps(canvasPanelId: string, ops: CanvasOperations) {
-  canvasOpsRegistry.set(canvasPanelId, ops)
-}
-export function getCanvasOpsById(canvasPanelId: string): CanvasOperations | null {
-  return canvasOpsRegistry.get(canvasPanelId) ?? null
-}
-export function ensureCanvasOpsForPanel(canvasPanelId: string): CanvasOperations {
-  const existing = canvasOpsRegistry.get(canvasPanelId)
-  if (existing) return existing
-  const ops = createCanvasOps(getOrCreateCanvasStoreForPanel(canvasPanelId))
-  canvasOpsRegistry.set(canvasPanelId, ops)
-  return ops
-}
-export function unregisterCanvasOps(canvasPanelId: string) {
-  canvasOpsRegistry.delete(canvasPanelId)
-  if (activeCanvasPanelId === canvasPanelId) activeCanvasPanelId = null
-}
-export function setActiveCanvasPanelId(canvasPanelId: string) {
-  activeCanvasPanelId = canvasPanelId
-}
-
-/** Returns the CanvasOperations for the currently active canvas, falling back to the primary */
-function getActiveCanvasOps(): CanvasOperations | null {
-  if (activeCanvasPanelId) {
-    const ops = canvasOpsRegistry.get(activeCanvasPanelId)
-    if (ops) return ops
-  }
-  return canvasOps
-}
-import { deferredSnapshots, restoreDeferredWorkspace } from '../lib/session'
-import { workspaceDisplayName } from '../lib/displayPath'
+import { deferredSnapshots, restoreDeferredWorkspace } from '../lib/workspace/deferredRestore'
+import { workspaceDisplayName } from '../lib/fs/displayPath'
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -135,51 +96,6 @@ function createDefaultWorkspace(
     viewportOffset: { x: 0, y: 0 },
     focusedNodeId: null,
   }
-}
-
-function collectDockPanelIds(
-  node: import('../../shared/types').DockLayoutNode | null | undefined,
-  out: Set<string>,
-): void {
-  if (!node) return
-  if (node.type === 'tabs') {
-    for (const panelId of node.panelIds) out.add(panelId)
-    return
-  }
-  for (const child of node.children) collectDockPanelIds(child, out)
-}
-
-export function getWorkspaceCanvasPanelId(workspaceId: string): string | null {
-  const state = useAppStore.getState()
-  const ws = state.workspaces.find((candidate) => candidate.id === workspaceId)
-  if (!ws) return null
-
-  const dockSnapshot = workspaceId === state.selectedWorkspaceId
-    ? useDockStore.getState().getSnapshot()
-    : ws.dockState
-
-  if (dockSnapshot) {
-    const panelIds = new Set<string>()
-    collectDockPanelIds(dockSnapshot.zones.center.layout, panelIds)
-    for (const panelId of panelIds) {
-      if (ws.panels[panelId]?.type === 'canvas') return panelId
-    }
-    for (const zoneName of ALL_ZONES) {
-      collectDockPanelIds(dockSnapshot.zones[zoneName].layout, panelIds)
-    }
-    for (const panelId of panelIds) {
-      if (ws.panels[panelId]?.type === 'canvas') return panelId
-    }
-  }
-
-  const fallback = Object.values(ws.panels).find((panel) => panel.type === 'canvas')
-  return fallback?.id ?? null
-}
-
-export function getWorkspaceCanvasStore(workspaceId: string): StoreApi<CanvasStore> | null {
-  const panelId = getWorkspaceCanvasPanelId(workspaceId)
-  if (panelId) return ensureCanvasOpsForPanel(panelId).storeApi
-  return canvasOps?.storeApi ?? null
 }
 
 // -----------------------------------------------------------------------------
@@ -302,6 +218,10 @@ function createCleanDockSnapshot(): DockStateSnapshot {
 interface AppStoreState {
   workspaces: WorkspaceState[]
   selectedWorkspaceId: string
+  /** Phase of the built-in LOCAL companion daemon (a process-wide singleton, so
+   *  it's global rather than per-workspace). Drives the local loading blocker.
+   *  `null` until seeded at init. */
+  localCompanionPhase: CompanionPhase | null
 }
 
 interface AppStoreActions {
@@ -366,6 +286,9 @@ interface AppStoreActions {
    *  phase (it probes the connection step by step). The connect/ensure/install/
    *  delete actions never set it themselves. */
   setWorkspaceCompanionPhase: (wsId: string, phase: CompanionPhase, error?: string | null) => void
+  /** Set the global LOCAL companion phase (drives the local loading blocker).
+   *  Written by the COMPANION_STATUS handler for LOCAL events + the init seed. */
+  setLocalCompanionPhase: (phase: CompanionPhase) => void
   setWorkspaceColor: (wsId: string, color: string) => void
   renameWorkspace: (wsId: string, name: string) => void
   duplicateWorkspace: (wsId: string) => string
@@ -392,31 +315,31 @@ export type AppStore = AppStoreState & AppStoreActions
 // Store
 // -----------------------------------------------------------------------------
 
-/** Place a panel based on placement target. Returns true if handled (dock), false if canvas (default). */
+/** Place a panel into its workspace's dock or canvas. Routes by the workspace's
+ *  own stores so it works for the active workspace AND for a background restore
+ *  into an inactive one — never touching another workspace's layout. */
 function placePanel(
+  workspaceId: string,
   panelId: string,
   panelType: PanelType,
   placement: PanelPlacement | undefined,
   position: Point | undefined,
-  isActiveWorkspace: boolean,
 ): void {
   // No-op: caller is placing the panel itself into a private DockStore.
   if (placement?.target === 'none') return
+  const dockStore = getOrCreateWorkspaceDockStore(workspaceId)
   // Canvas panels go to the center dock zone, not onto a canvas as a node
   if (panelType === 'canvas') {
-    useDockStore.getState().dockPanel(panelId, 'center')
+    dockStore.getState().dockPanel(panelId, 'center')
     return
   }
   if (placement?.target === 'dock') {
-    useDockStore.getState().dockPanel(panelId, placement.zone)
+    dockStore.getState().dockPanel(panelId, placement.zone)
     return
   }
-  // Default: place on canvas (target === 'canvas' or 'auto' or undefined)
-  if (isActiveWorkspace) {
-    const canvasPosition = placement?.target === 'canvas' ? placement.position ?? position : position
-    const ops = getActiveCanvasOps()
-    ops?.addNodeAndFocus(panelId, panelType, canvasPosition)
-  }
+  // Default: place on the workspace's canvas (target === 'canvas'/'auto'/undefined)
+  const canvasPosition = placement?.target === 'canvas' ? placement.position ?? position : position
+  getWorkspaceCanvasOps(workspaceId)?.addNodeAndFocus(panelId, panelType, canvasPosition)
 }
 
 type AppSet = StoreApi<AppStore>['setState']
@@ -441,7 +364,7 @@ function addAndPlacePanel(
     ),
   }))
   try {
-    placePanel(panel.id, panel.type, placement, position, workspaceId === get().selectedWorkspaceId)
+    placePanel(workspaceId, panel.id, panel.type, placement, position)
   } catch (error) {
     set((state) => ({
       workspaces: state.workspaces.map((ws) =>
@@ -485,6 +408,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Start empty — a default workspace is created during init only if no session is restored.
   workspaces: [],
   selectedWorkspaceId: '',
+  localCompanionPhase: null,
 
   // --- Workspace management ---
 
@@ -502,28 +426,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return get().selectedWorkspaceId || get().workspaces[0]?.id || ''
     }
     const ws = createDefaultWorkspace(name, rootPath, id, connection)
-    const isFirst = existingCount === 0
 
-    // Note: the new workspace starts with an empty panels map. selectWorkspace
-    // will reset the dock and the safety-net createCanvas will mint a fresh
-    // canvas panel for the center zone. Copying panels from another workspace
-    // here led to orphaned/duplicate canvas panels and the "empty pane" bug.
+    // Note: the new workspace starts with an empty panels map and its own (empty)
+    // dock + canvas stores. ensureCenterCanvas mints a fresh canvas panel for the
+    // center zone when the workspace is shown. Copying panels from another
+    // workspace here led to orphaned/duplicate canvas panels and the "empty pane"
+    // bug.
 
     set((state) => ({
       workspaces: [...state.workspaces, ws],
       // Auto-select if this is the first workspace
       selectedWorkspaceId: state.workspaces.length === 0 ? ws.id : state.selectedWorkspaceId,
     }))
-    // When auto-selected as the first workspace, load its (empty) canvas
-    if (isFirst) {
-      canvasOps?.loadWorkspaceCanvas(
-        ws.canvasNodes,
-        ws.viewportOffset,
-        ws.zoomLevel,
-        ws.focusedNodeId,
-        ws.regions,
-      )
-    }
     // Sync to main process
     syncCreateToMain(ws).then((result) => {
       if (!result?.ok) {
@@ -556,7 +470,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return
     }
 
-    // Snapshot current canvas state back into the outgoing workspace
+    // Snapshot the outgoing workspace's live stores back into its persisted
+    // fields so it round-trips through save/restore. Each workspace owns its
+    // dock + canvas stores, so nothing is ever copied between workspaces.
     get().syncCanvasToWorkspace(state.selectedWorkspaceId)
 
     // Discard outgoing workspace if it was never initialized (no folder
@@ -566,15 +482,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const shouldDropOutgoing =
       !!outgoing && !outgoing.rootPath && !outgoing.isRootPathPending && outgoing.id !== id
 
-    // Switch selection
+    // Switch selection. The shell is keyed by selectedWorkspaceId, so it
+    // remounts and reads the incoming workspace's OWN dock + canvas stores —
+    // there is no shared store to overwrite, so content cannot bleed across
+    // workspaces even if a restore is still in flight.
     set({ selectedWorkspaceId: id })
+    const incomingCanvasPanelId = getWorkspaceCanvasPanelId(id)
+    if (incomingCanvasPanelId) setActiveCanvasPanelId(incomingCanvasPanelId)
 
     // Reconnect a remote workspace's companion if it isn't live (e.g. after a
     // restart / restore). For a REMOTE workspace we must AWAIT this before the
-    // deferred-restore / canvas-load block below, because that block creates
-    // terminals and reads files that route through the companion — racing the
-    // async reconnect would hit an unregistered companion and throw (Finding 5).
-    // Local workspaces stay fully synchronous: no connection ⇒ no await.
+    // deferred restore below, because that creates terminals and reads files
+    // that route through the companion — racing the async reconnect would hit
+    // an unregistered companion and throw. Local workspaces stay synchronous.
     const incoming = get().workspaces.find((w) => w.id === id)
     if (incoming?.connection && incoming.connection.kind !== 'local') {
       const ok = await get().ensureWorkspaceCompanion(id)
@@ -587,101 +507,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
       get().removeWorkspace(outgoing.id)
     }
 
-    // Load the new workspace's canvas state into the canvas store
-    const ws = get().workspaces.find((w) => w.id === id)
-    if (ws) {
-      const canvasPanelId = getWorkspaceCanvasPanelId(id)
-      if (canvasPanelId) setActiveCanvasPanelId(canvasPanelId)
+    // First activation of a workspace restored from disk: replay its snapshot
+    // into its own stores. restoreDeferredWorkspace addresses the workspace by
+    // id, so a concurrent switch can never redirect it into another workspace.
+    if (deferredSnapshots.has(id)) {
       try {
-        getWorkspaceCanvasStore(id)?.getState().loadWorkspaceCanvas(
-          ws.canvasNodes,
-          ws.viewportOffset,
-          ws.zoomLevel,
-          ws.focusedNodeId,
-          ws.regions,
-        )
-      } catch (error) {
-        log.error('Failed to load canvas for workspace:', error)
-      }
-
-      // Restore dock state for the incoming workspace.
-      // If the workspace has saved dock state, restore it. Otherwise reset
-      // the dock to a clean state so panels from the previous workspace
-      // don't bleed through. Preserve the center zone (shared canvas panel).
-      try {
-        if (ws.dockState) {
-          useDockStore.getState().restoreSnapshot(ws.dockState)
-        } else {
-          // Brand new workspace — fully reset dock so leftover splits/panels
-          // from the previously selected workspace don't bleed through. The
-          // safety net below will create a fresh canvas panel for the center.
-          useDockStore.getState().restoreSnapshot(createCleanDockSnapshot())
-        }
-      } catch (error) {
-        log.error('Failed to restore dock state for workspace:', error)
-      }
-
-      // Check for deferred restore (lazy workspace loading)
-      let didDeferredRestore = false
-      try {
-        if (deferredSnapshots.has(id)) {
-          await restoreDeferredWorkspace(id, canvasOps?.storeApi)
-          didDeferredRestore = true
-        }
+        await restoreDeferredWorkspace(id)
       } catch (error) {
         log.error('Failed to restore deferred workspace:', error)
       }
+    }
 
-      // Ensure the center dock zone has a canvas panel — covers the case where
-      // a brand new workspace was created before any canvas panel existed yet,
-      // or where a restored dock layout references no canvas-type panel.
+    // Guarantee the center zone has a canvas panel — a brand new workspace, or
+    // a restored dock layout that referenced no canvas-type panel.
+    if (get().workspaces.some((w) => w.id === id)) {
       get().ensureCenterCanvas(id)
-
-      // ensureCenterCanvas may have just minted a brand-new canvas panel (empty
-      // or freshly created workspace). Its store can momentarily alias the
-      // legacy singleton, which still holds the previous workspace's nodes — so
-      // the freshly mounted CanvasPanel briefly renders a stale node before it
-      // settles, visible as an empty note blinking in then vanishing. Re-resolve
-      // the now-authoritative canvas store and load this workspace's state into
-      // it to clear any leftover nodes immediately.
-      const finalCanvasPanelId = getWorkspaceCanvasPanelId(id)
-      if (finalCanvasPanelId && finalCanvasPanelId !== canvasPanelId) {
-        setActiveCanvasPanelId(finalCanvasPanelId)
-        if (didDeferredRestore) {
-          // A deferred restore just populated the canvas *store* directly (via
-          // createTerminal/createBrowser/... → canvas addNode), but the
-          // workspace's own canvasNodes are still empty — they're only filled by
-          // syncCanvasToWorkspace. Reloading the empty canvasNodes here (the
-          // else branch) would wipe the freshly restored canvas, leaving panels
-          // in the sidebar tree but a blank canvas, and the next autosave would
-          // then persist that empty state (issue #220). Instead, capture the
-          // restored store back into the workspace so appStore and disk stay in
-          // sync with what was just restored.
-          get().syncCanvasToWorkspace(id)
-        } else {
-          const wsFinal = get().workspaces.find((w) => w.id === id)
-          if (wsFinal) {
-            try {
-              getWorkspaceCanvasStore(id)?.getState().loadWorkspaceCanvas(
-                wsFinal.canvasNodes,
-                wsFinal.viewportOffset,
-                wsFinal.zoomLevel,
-                wsFinal.focusedNodeId,
-                wsFinal.regions,
-              )
-            } catch (error) {
-              log.error('Failed to load canvas for workspace:', error)
-            }
-          }
-        }
-      }
     }
   },
 
   ensureCenterCanvas(workspaceId) {
     const ws = get().workspaces.find((w) => w.id === workspaceId)
     if (!ws) return
-    const dockState = useDockStore.getState()
+    const dockStore = getOrCreateWorkspaceDockStore(workspaceId)
+    const dockState = dockStore.getState()
 
     // Collect panel IDs referenced by any dock zone
     const walk = (
@@ -725,13 +573,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const orphanedDockIds = Array.from(allDockPanelIds).filter((id) => !ws.panels[id])
     if (orphanedDockIds.length > 0) {
       for (const id of orphanedDockIds) {
-        try { useDockStore.getState().undockPanel(id) } catch { /* ignore */ }
+        try { dockStore.getState().undockPanel(id) } catch { /* ignore */ }
       }
     }
 
     // Check if the center zone now contains a canvas-type panel
     const centerPanelIds: string[] = []
-    const center = dockState.zones.center
+    const center = dockStore.getState().zones.center
     if (center.layout) {
       const c = new Set<string>()
       walk(center.layout, c)
@@ -759,8 +607,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
     // Clean up deferred snapshot if workspace was never switched to
     deferredSnapshots.delete(id)
-    // Dispose terminals before removing workspace state
+    // Dispose terminals + clear the workspace's stores before removing it.
     get().closeAllPanels(id)
+    // Drop the workspace's isolated stores so they can't linger or be reused.
+    // Read the canvas panels AFTER closeAllPanels (it mints a fresh center
+    // canvas) so the minted store is released too.
+    for (const panel of Object.values(get().workspaces.find((w) => w.id === id)?.panels ?? {})) {
+      if (panel.type === 'canvas') {
+        try { releaseCanvasStoreForPanel(panel.id) } catch { /* ignore */ }
+      }
+    }
+    releaseWorkspaceDockStore(id)
+    invalidateWorkspaceCanvasCache(id)
+    terminalRegistry.disposeWorkspace(id)
 
     const wasSelected = get().selectedWorkspaceId === id
 
@@ -783,27 +642,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     })
 
-    // If the removed workspace was selected, load the new workspace's canvas and dock
+    // If the removed workspace was selected, the shell remounts onto the new
+    // selection and reads ITS own stores — nothing to copy. Just make sure the
+    // newly-selected workspace's center zone has a canvas panel.
     if (wasSelected) {
-      const newWs = get().workspaces.find((w) => w.id === get().selectedWorkspaceId)
-      if (newWs) {
-        canvasOps?.loadWorkspaceCanvas(
-          newWs.canvasNodes,
-          newWs.viewportOffset,
-          newWs.zoomLevel,
-          newWs.focusedNodeId,
-          newWs.regions,
-        )
-        if (newWs.dockState) {
-          useDockStore.getState().restoreSnapshot(newWs.dockState)
-        } else {
-          // Fresh workspace (e.g. the auto-created replacement when the last
-          // workspace is closed) has no dock state — reset to a clean dock so
-          // panel IDs from the removed workspace don't leave an empty pane
-          // behind, then mint a fresh canvas panel for the center zone.
-          useDockStore.getState().restoreSnapshot(createCleanDockSnapshot())
-          get().createCanvas(newWs.id)
-        }
+      const newId = get().selectedWorkspaceId
+      if (get().workspaces.some((w) => w.id === newId)) {
+        get().ensureCenterCanvas(newId)
       }
     }
 
@@ -928,22 +773,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     // Remove from dock/canvas first (less critical — log errors but continue)
+    const dockStore = getOrCreateWorkspaceDockStore(workspaceId)
     try {
-      const dockLocation = useDockStore.getState().panelLocations[panelId]
+      const dockLocation = dockStore.getState().panelLocations[panelId]
       if (dockLocation?.type === 'dock') {
-        useDockStore.getState().undockPanel(panelId)
-      } else if (workspaceId === get().selectedWorkspaceId) {
-        // Try all registered canvas stores (panel could be on any canvas)
-        let removed = false
-        for (const ops of canvasOpsRegistry.values()) {
+        dockStore.getState().undockPanel(panelId)
+      } else {
+        // Try all registered canvas stores (panel could be on any canvas,
+        // including a nested one). Workspace-agnostic: removes wherever found.
+        for (const ops of allCanvasOps()) {
           const nodeId = ops.storeApi.getState().nodeForPanel(panelId)
           if (nodeId) {
             ops.removeNodeForPanel(panelId)
-            removed = true
             break
           }
         }
-        if (!removed) canvasOps?.removeNodeForPanel(panelId)
       }
     } catch (error) {
       log.error('Failed to remove panel from dock/canvas during close:', error)
@@ -951,7 +795,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     // Clean up location tracking
     try {
-      useDockStore.getState().removePanelLocation(panelId)
+      dockStore.getState().removePanelLocation(panelId)
     } catch (error) {
       log.error('Failed to clean up panel location tracking:', error)
     }
@@ -1037,8 +881,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const canvasState = canvasStore?.getState()
     if (!canvasState) return
 
-    // Also snapshot dock state so it's saved per workspace
-    const dockSnapshot = useDockStore.getState().getSnapshot()
+    // Also snapshot this workspace's OWN dock state so it's saved per workspace.
+    const liveDock = getWorkspaceDockStore(workspaceId)
+    const dockSnapshot = liveDock?.getState().getSnapshot()
 
     set((state) => ({
       workspaces: state.workspaces.map((ws) => {
@@ -1048,7 +893,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           Object.keys(ws.canvasNodes ?? {}).length,
         )) {
           // Keep nodes/regions/viewport intact; only refresh dock state.
-          return { ...ws, dockState: dockSnapshot }
+          return { ...ws, dockState: dockSnapshot ?? ws.dockState }
         }
         return {
           ...ws,
@@ -1057,7 +902,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           viewportOffset: { ...canvasState.viewportOffset },
           zoomLevel: canvasState.zoomLevel,
           focusedNodeId: canvasState.focusedNodeId,
-          dockState: dockSnapshot,
+          dockState: dockSnapshot ?? ws.dockState,
         }
       }),
     }))
@@ -1114,6 +959,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         c.id === wsId ? { ...c, companion: { phase, ...(error != null ? { error } : {}) } } : c,
       ),
     }))
+  },
+
+  setLocalCompanionPhase(phase) {
+    set({ localCompanionPhase: phase })
   },
 
   async connectRemoteWorkspace(wsId, spec) {
@@ -1368,11 +1217,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!ws) return
 
     // Dispose any terminal panels via the registry (handles PTY kill, xterm
-    // disposal, listener cleanup, and shell unregister)
+    // disposal, listener cleanup, and shell unregister), and release the
+    // workspace's canvas stores since their panels are about to be wiped.
+    const canvasPanelIds: string[] = []
     for (const panel of Object.values(ws.panels)) {
-      if (panel.type === 'terminal') {
-        terminalRegistry.dispose(panel.id)
-      }
+      if (panel.type === 'terminal') terminalRegistry.dispose(panel.id)
+      if (panel.type === 'canvas') canvasPanelIds.push(panel.id)
     }
 
     set((state) => ({
@@ -1381,15 +1231,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ),
     }))
 
-    // Clear the canvas store if this is the active workspace
-    if (wsId === get().selectedWorkspaceId) {
-      canvasOps?.clearAllNodes()
-      // Reset the dock to a clean state so the just-cleared panel IDs don't
-      // linger in dock zones as orphan tabs (which render as a generic
-      // "Panel" tab with an editor icon).
-      useDockStore.getState().restoreSnapshot(createCleanDockSnapshot())
-      get().ensureCenterCanvas(wsId)
+    for (const id of canvasPanelIds) {
+      try { releaseCanvasStoreForPanel(id) } catch { /* ignore */ }
     }
+
+    // Reset the workspace's OWN dock store so the just-cleared panel IDs don't
+    // linger as orphan tabs (which render as a generic "Panel" tab), then mint a
+    // fresh canvas panel for the center zone.
+    getOrCreateWorkspaceDockStore(wsId).getState().restoreSnapshot(createCleanDockSnapshot())
+    get().ensureCenterCanvas(wsId)
   },
 
   // --- Cross-window sync ---
@@ -1473,11 +1323,29 @@ export function setupWorkspaceSync(): () => void {
   // the canonical field can't be set two different ways.
   const unsubscribeStatus = window.electronAPI.onCompanionStatus((evt) => {
     const store = useAppStore.getState()
+    // The LOCAL daemon is a singleton; its phase is global, not per-workspace.
+    if (evt.companionId === LOCAL_COMPANION_ID) {
+      store.setLocalCompanionPhase(evt.phase)
+      return
+    }
     const target = store.workspaces.find(
       (ws) => ws.connection && ws.connection.kind !== 'local' && ws.connection.companionId === evt.companionId,
     )
     if (target) store.setWorkspaceCompanionPhase(target.id, evt.phase, evt.message ?? null)
   })
+
+  // Seed the LOCAL phase once: the startup connect may have finished (or failed)
+  // before this listener attached, so a live event alone could miss it. Subscribe
+  // FIRST (above), then snapshot — and don't clobber a live event that already
+  // landed (only seed while still unknown).
+  void window.electronAPI
+    .companionLocalStatus()
+    .then((s) => {
+      if (useAppStore.getState().localCompanionPhase === null) {
+        useAppStore.getState().setLocalCompanionPhase(s.phase as CompanionPhase)
+      }
+    })
+    .catch(() => { /* best-effort seed; live events still drive updates */ })
 
   workspaceSyncCleanup = () => {
     unsubscribe()

@@ -7,8 +7,8 @@
 // (no type, no title), because detached windows never bootstrap workspaces.
 // =============================================================================
 
-import type { PanelState } from '../../shared/types'
-import { useAppStore } from '../stores/appStore'
+import type { PanelState } from '../../../shared/types'
+import { useAppStore } from '../../stores/appStore'
 
 export function applyCanvasChildPanels(
   workspaceId: string,

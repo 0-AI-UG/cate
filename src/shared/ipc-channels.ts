@@ -319,6 +319,7 @@ export const COMPANION_SSH_HOSTS = 'companion:ssh-hosts'   // renderer -> main (
 export const COMPANION_INSTALL = 'companion:install'       // renderer -> main (explicit clean install + connect)
 export const COMPANION_DELETE = 'companion:delete'         // renderer -> main (rm -rf the host install, keep saved auth)
 export const COMPANION_STATUS = 'companion:status'         // main -> renderer (broadcast)
+export const COMPANION_LOCAL_STATUS = 'companion:local-status' // renderer -> main (current LOCAL phase, seeds the loading blocker)
 
 
 // Performance profiler (only active under CATE_PERF=1)

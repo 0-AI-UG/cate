@@ -18,10 +18,10 @@ import {
   markEditorActive,
   clearEditorActive,
   getActiveEditorPanelId,
-} from '../lib/editorSaveRegistry'
+} from '../lib/editor/editorSaveRegistry'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import type { Theme } from '../../shared/types'
-import { takePendingReveal } from '../lib/editorReveal'
+import { takePendingReveal } from '../lib/editor/editorReveal'
 
 // -----------------------------------------------------------------------------
 // Monaco worker setup for Electron (Vite bundler)
@@ -378,7 +378,7 @@ export default function EditorPanel({
     }
 
     try {
-      await window.electronAPI.fsWriteFile(targetPath, content)
+      await window.electronAPI.fsWriteFile(targetPath, content, workspaceId)
     } catch (err) {
       log.error('[EditorPanel] Failed to save file:', err)
       return false
@@ -464,7 +464,7 @@ export default function EditorPanel({
       const loadDiff = async () => {
         let modifiedContent = ''
         try {
-          modifiedContent = await window.electronAPI.fsReadFile(filePath)
+          modifiedContent = await window.electronAPI.fsReadFile(filePath, workspaceId)
         } catch { /* empty */ }
 
         let originalContent = ''
@@ -573,7 +573,7 @@ export default function EditorPanel({
       } else {
         const language = detectLanguage(filePath)
         window.electronAPI
-          .fsReadFile(filePath)
+          .fsReadFile(filePath, workspaceId)
           .then((content) => {
             if (cancelled) return
             // Pass the file URI so Monaco indexes the model by it; this
@@ -719,14 +719,14 @@ export default function EditorPanel({
       if (model && !model.isDisposed()) {
         setMarkdownContent(model.getValue())
       } else if (filePath) {
-        window.electronAPI.fsReadFile(filePath).then(setMarkdownContent).catch(() => {})
+        window.electronAPI.fsReadFile(filePath, workspaceId).then(setMarkdownContent).catch(() => {})
       }
     } else {
       // Re-layout Monaco after unhiding — dimensions may have changed while hidden
       editorRef.current?.layout()
       diffEditorRef.current?.layout()
     }
-  }, [markdownPreview, isMarkdown, filePath])
+  }, [markdownPreview, isMarkdown, filePath, workspaceId])
 
   // ---------------------------------------------------------------------------
   // Watch app theme changes and update Monaco theme

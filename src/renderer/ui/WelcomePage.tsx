@@ -11,10 +11,10 @@ import {
   Folder,
   CloudArrowUp,
 } from '@phosphor-icons/react'
-import { abbreviateLocalPath } from '../lib/displayPath'
+import { abbreviateLocalPath } from '../lib/fs/displayPath'
 import { parseLocator, LOCAL_COMPANION_ID } from '../../main/companion/locator'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
-import { workspaceRuntime } from '../lib/workspaceRuntime'
+import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import type { RemoteConnectSpec } from '../../shared/types'
 
 // Abbreviate home directory in paths

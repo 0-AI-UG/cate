@@ -211,6 +211,8 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
           }
           if (wtPath) {
             worktrees.push({ path: wtPath, branch: branch || '(unknown)', isBare, isCurrent: path.resolve(wtPath) === path.resolve(cwd) })
+            // TODO(scope): pass requesting workspace scope once threaded — legacy
+            // (union) scope for now keeps worktree roots reachable.
             if (!isBare) addAllowedRoot(wtPath)
           }
         }
@@ -226,6 +228,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       if (options?.createBranch) args.push('-b', branch, targetPath, options.baseRef ?? 'HEAD')
       else args.push(targetPath, branch)
       await git.raw(args)
+      // TODO(scope): pass requesting workspace scope once threaded.
       addAllowedRoot(targetPath)
       return { path: targetPath, branch }
     },
@@ -235,6 +238,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       if (!(await ghAvailable(validRepo))) throw new Error('GitHub CLI (gh) is required to check out pull requests.')
       await ensureContainingDir(targetPath)
       await git.raw(['worktree', 'add', '--detach', targetPath])
+      // TODO(scope): pass requesting workspace scope once threaded.
       addAllowedRoot(targetPath)
       try {
         await execFileP('gh', ['pr', 'checkout', String(prNumber)], { cwd: targetPath, timeout: 120000, env: env() })

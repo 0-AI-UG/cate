@@ -151,20 +151,20 @@ export class DeferredCompanion implements Companion {
     return cwd
   }
 
-  validatePathStrict(filePath: string, ownerWindowId?: number): Promise<string> {
-    return this.ready.then((c) => c.validatePathStrict(filePath, ownerWindowId))
+  validatePathStrict(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string> {
+    return this.ready.then((c) => c.validatePathStrict(filePath, ownerWindowId, scopeId))
   }
 
-  validatePathForCreation(filePath: string, ownerWindowId?: number): Promise<string> {
-    return this.ready.then((c) => c.validatePathForCreation(filePath, ownerWindowId))
+  validatePathForCreation(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string> {
+    return this.ready.then((c) => c.validatePathForCreation(filePath, ownerWindowId, scopeId))
   }
 
-  addAllowedRoot(root: string): Promise<void> {
-    return this.ready.then((c) => c.addAllowedRoot(root))
+  addAllowedRoot(root: string, scopeId?: string): Promise<void> {
+    return this.ready.then((c) => c.addAllowedRoot(root, scopeId))
   }
 
-  removeAllowedRoot(root: string): Promise<void> {
-    return this.ready.then((c) => c.removeAllowedRoot(root))
+  removeAllowedRoot(root: string, scopeId?: string): Promise<void> {
+    return this.ready.then((c) => c.removeAllowedRoot(root, scopeId))
   }
 
   setExclusions(names: string[]): Promise<void> {

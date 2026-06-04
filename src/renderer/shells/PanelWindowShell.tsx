@@ -6,14 +6,14 @@
 import React, { useEffect, useState, useCallback, Suspense } from 'react'
 import { X } from '@phosphor-icons/react'
 import type { PanelState, PanelTransferSnapshot } from '../../shared/types'
-import { terminalRegistry } from '../lib/terminalRegistry'
-import { terminalRestoreData } from '../lib/session'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
+import { terminalRestoreData } from '../lib/workspace/session'
 import { DragOverlay, setupCrossWindowDragListeners, useDragOp } from '../drag'
 import { renderPanelComponent, getPanelDef } from '../panels/registry'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { applyTheme } from '../lib/themeManager'
-import { applyCanvasChildPanels } from '../lib/applyCanvasChildPanels'
+import { applyCanvasChildPanels } from '../lib/canvas/applyCanvasChildPanels'
 
 interface PanelWindowShellProps {
   panelType?: string

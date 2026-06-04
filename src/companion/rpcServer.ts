@@ -109,12 +109,14 @@ export class RpcServer {
         return 'pong'
 
       // --- validation ---
-      case Methods.validatePath: return api.validatePath(s(0), n(1))
-      case Methods.validatePathStrict: return api.validatePathStrict(s(0), n(1))
-      case Methods.validatePathForCreation: return api.validatePathForCreation(s(0), n(1))
-      case Methods.validateCwd: return api.validateCwd(s(0), n(1))
-      case Methods.addAllowedRoot: return api.addAllowedRoot(s(0))
-      case Methods.removeAllowedRoot: return api.removeAllowedRoot(s(0))
+      // scopeId is the trailing optional positional arg; inline the cast since
+      // the value may be undefined (older clients omit it).
+      case Methods.validatePath: return api.validatePath(s(0), n(1), p[2] as string | undefined)
+      case Methods.validatePathStrict: return api.validatePathStrict(s(0), n(1), p[2] as string | undefined)
+      case Methods.validatePathForCreation: return api.validatePathForCreation(s(0), n(1), p[2] as string | undefined)
+      case Methods.validateCwd: return api.validateCwd(s(0), n(1), p[2] as string | undefined)
+      case Methods.addAllowedRoot: return api.addAllowedRoot(s(0), p[1] as string | undefined)
+      case Methods.removeAllowedRoot: return api.removeAllowedRoot(s(0), p[1] as string | undefined)
       case Methods.setExclusions: return api.setExclusions(p[0] as string[])
       case Methods.setIdleSuspend: return api.setIdleSuspend(p[0] as boolean)
       case Methods.grantFileAccess: return api.grantFileAccess(s(0), n(1) as number)

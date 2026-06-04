@@ -204,7 +204,7 @@ export function registerHandlers(): void {
     let validRoot: string
     try {
       companion = companions.resolve(companionId)
-      validRoot = companion.validateCwd(rootP)
+      validRoot = companion.validateCwd(rootP, undefined, workspaceId)
     } catch (err) {
       log.warn(
         '[git-monitor] skipping monitor for workspace %s: %s',

@@ -14,7 +14,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 // Mock heavy renderer-side modules whose import-time side effects (xterm,
 // electron-log) explode under jsdom. The drag dispatcher only needs these for
 // real-window code paths that the harness doesn't exercise.
-vi.mock('../../lib/terminalRegistry', () => ({
+vi.mock('../../lib/terminal/terminalRegistry', () => ({
   terminalRegistry: { release: vi.fn() },
 }))
 vi.mock('../../lib/logger', () => ({

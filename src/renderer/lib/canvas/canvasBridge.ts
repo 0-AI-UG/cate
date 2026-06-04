@@ -5,9 +5,37 @@
 // =============================================================================
 
 import type { StoreApi } from 'zustand'
-import type { CanvasStore } from '../stores/canvasStore'
-import type { CanvasOperations } from '../stores/appStore'
-import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, DockLayoutNode } from '../../shared/types'
+import type { CanvasStore } from '../../stores/canvasStore'
+import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, DockLayoutNode } from '../../../shared/types'
+
+// -----------------------------------------------------------------------------
+// Canvas operations callback — the contract createCanvasOps implements, letting
+// the appStore (panel lifecycle) drive a canvas store (visual layout) without a
+// direct import dependency on canvasStore.
+// -----------------------------------------------------------------------------
+
+export interface CanvasOperations {
+  addNodeAndFocus: (panelId: string, panelType: PanelType, position?: Point) => void
+  removeNodeForPanel: (panelId: string) => void
+  loadWorkspaceCanvas: (
+    nodes: Record<CanvasNodeId, CanvasNodeState>,
+    viewportOffset: Point,
+    zoomLevel: number,
+    focusedNodeId: CanvasNodeId | null,
+    regions?: Record<string, CanvasRegion>,
+  ) => void
+  syncCanvasSnapshot: () => {
+    nodes: Record<CanvasNodeId, CanvasNodeState>
+    regions: Record<string, CanvasRegion>
+    viewportOffset: Point
+    zoomLevel: number
+    focusedNodeId: CanvasNodeId | null
+  }
+  clearAllNodes: () => void
+  focusPanelNode: (panelId: string) => void
+  /** Access the underlying store API (needed by session restore) */
+  storeApi: StoreApi<CanvasStore>
+}
 
 function countLayoutPanels(node: DockLayoutNode): number {
   if (node.type === 'tabs') return node.panelIds.length

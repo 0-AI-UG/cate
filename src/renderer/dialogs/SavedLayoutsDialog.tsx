@@ -13,7 +13,7 @@ import {
   ensureCanvasOpsForPanel,
   setActiveCanvasPanelId,
 } from '../stores/appStore'
-import { openFileAsPanel } from '../lib/fileRouting'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import log from '../lib/logger'
 

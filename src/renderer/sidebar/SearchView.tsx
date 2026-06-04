@@ -46,7 +46,7 @@ const ToggleBtn: React.FC<ToggleBtnProps> = ({ active, onClick, title, children 
   </Tooltip>
 )
 
-export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
+export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = ({ rootPath, workspaceId }) => {
   const query = useSearchStore((s) => s.query)
   const isRegex = useSearchStore((s) => s.isRegex)
   const matchCase = useSearchStore((s) => s.matchCase)
@@ -113,11 +113,11 @@ export const SearchView: React.FC<{ rootPath: string }> = ({ rootPath }) => {
           includes: splitGlobs(includes),
           excludes: splitGlobs(excludes),
           respectIgnore,
-        })
+        }, workspaceId)
         .catch((err) => log.warn('[search] start failed:', err))
     }, DEBOUNCE_MS)
     return () => window.clearTimeout(handle)
-  }, [query, isRegex, matchCase, wholeWord, includes, excludes, respectIgnore, rootPath])
+  }, [query, isRegex, matchCase, wholeWord, includes, excludes, respectIgnore, rootPath, workspaceId])
 
   // Visible files + accurate counts (excluding dismissed files / lines).
   const { visibleFiles, matchCount, fileCount } = useMemo(() => {

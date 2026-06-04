@@ -1,6 +1,6 @@
-import type { Point } from '../../shared/types'
-import type { PanelPlacement } from '../stores/appStore'
-import { useAppStore } from '../stores/appStore'
+import type { Point } from '../../../shared/types'
+import type { PanelPlacement } from '../../stores/appStore'
+import { useAppStore } from '../../stores/appStore'
 
 export type DocumentType = 'pdf' | 'docx' | 'image'
 

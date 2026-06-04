@@ -26,10 +26,10 @@ import { CateLogo } from './CateLogo'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
-import { useDockStore } from '../stores/dockStore'
+import { getWorkspaceDockStore } from '../stores/workspaceStores'
 import { findTabStack } from '../stores/dockTreeUtils'
-import { openFileAsPanel } from '../lib/fileRouting'
-import { terminalRegistry } from '../lib/terminalRegistry'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 
 // -----------------------------------------------------------------------------
 // Command definitions
@@ -224,7 +224,7 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '',
         icon: <ReloadIcon />,
         action: () => {
-          void import('../lib/session').then((m) => m.reloadActiveWorkspaceFromDisk())
+          void import('../lib/workspace/session').then((m) => m.reloadActiveWorkspaceFromDisk())
         },
       },
       // Remote-only: delete the daemon from the host. Main re-probes to the
@@ -355,7 +355,7 @@ export const CommandPalette: React.FC = () => {
       // 3) Workspace files (name + content) via fsSearch
       if (workspace.rootPath) {
         try {
-          const hits = await window.electronAPI.fsSearch(workspace.rootPath, searchText, { maxResults: 50 })
+          const hits = await window.electronAPI.fsSearch(workspace.rootPath, searchText, { maxResults: 50 }, workspace.id)
           for (const h of hits) {
             if (h.isDirectory) continue
             out.push({
@@ -425,7 +425,8 @@ export const CommandPalette: React.FC = () => {
         cs.focusAndCenter(node.id)
         return
       }
-      const dock = useDockStore.getState()
+      const dock = getWorkspaceDockStore(selectedWorkspaceId)?.getState()
+      if (!dock) return
       const loc = dock.getPanelLocation(panelId)
       if (loc && loc.type === 'dock') {
         const zone = dock.zones[loc.zone]
@@ -439,7 +440,7 @@ export const CommandPalette: React.FC = () => {
         }
       }
     },
-    [canvasApi],
+    [canvasApi, selectedWorkspaceId],
   )
 
   const selectSearchResult = useCallback(

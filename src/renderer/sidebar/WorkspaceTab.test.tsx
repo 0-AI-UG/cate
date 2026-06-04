@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 
 // Mock modules that explode under jsdom
-vi.mock('../lib/terminalRegistry', () => ({
+vi.mock('../lib/terminal/terminalRegistry', () => ({
   terminalRegistry: { entries: () => [], panelIdForPty: () => null },
 }))
 vi.mock('../lib/logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))

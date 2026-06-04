@@ -9,13 +9,13 @@ import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X, Folder, File 
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
 import { buildGitTreeDecorations, toPosixPath, type GitTree } from './gitStatusDecoration'
-import { watchFsRoot } from '../lib/fsWatchManager'
+import { watchFsRoot } from '../lib/fs/fsWatchManager'
 import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
-import { useDockStore } from '../stores/dockStore'
-import { openFileAsPanel } from '../lib/fileRouting'
-import { workspaceDisplayName } from '../lib/displayPath'
-import { isExternalFileDrag, importDroppedEntries } from '../lib/importExternalEntries'
+import { getWorkspaceDockStore } from '../stores/workspaceStores'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { workspaceDisplayName } from '../lib/fs/displayPath'
+import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { DockLayoutNode } from '../../shared/types'
 
@@ -41,11 +41,11 @@ function findActivePanel(node: DockLayoutNode): string | null {
 }
 
 function isCanvasActiveInCenter(): boolean {
-  const centerLayout = useDockStore.getState().zones.center.layout
+  const appState = useAppStore.getState()
+  const centerLayout = getWorkspaceDockStore(appState.selectedWorkspaceId)?.getState().zones.center.layout
   if (!centerLayout) return false
   const activePanelId = findActivePanel(centerLayout)
   if (!activePanelId) return false
-  const appState = useAppStore.getState()
   const ws = appState.workspaces.find((w) => w.id === appState.selectedWorkspaceId)
   return ws?.panels[activePanelId]?.type === 'canvas'
 }
@@ -123,7 +123,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
 
     setIsLoading(true)
     try {
-      const entries = await window.electronAPI.fsReadDir(dirPath)
+      const entries = await window.electronAPI.fsReadDir(dirPath, selectedWorkspaceId)
 
       // Check git status. We fetch both the tracked-file list and the porcelain
       // status: the status drives per-file decorations (modified/added/deleted/
@@ -167,7 +167,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       setGitTree(undefined)
       setIsLoading(false)
     }
-  }, [])
+  }, [selectedWorkspaceId])
 
   // ---------------------------------------------------------------------------
   // Watch for filesystem changes
@@ -205,7 +205,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         if (rootPathRef.current === rootPath) loadTree(rootPath)
       }, 150)
     }
-    const releaseWatch = watchFsRoot(rootPath, scheduleReload)
+    const releaseWatch = watchFsRoot(rootPath, scheduleReload, selectedWorkspaceId)
 
     // Reload when the exclusions list changes so hidden/shown folders update
     // without a relaunch.
@@ -325,7 +325,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
     for (const p of paths) {
       try {
-        await window.electronAPI.fsDelete(p)
+        await window.electronAPI.fsDelete(p, selectedWorkspaceId)
       } catch (err) {
         console.error('[file-explorer] Failed to delete entry:', err)
       }
@@ -383,9 +383,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     const newPath = rootPath + '/' + trimmed
     try {
       if (type === 'folder') {
-        await window.electronAPI.fsMkdir(newPath)
+        await window.electronAPI.fsMkdir(newPath, selectedWorkspaceId)
       } else {
-        await window.electronAPI.fsWriteFile(newPath, '')
+        await window.electronAPI.fsWriteFile(newPath, '', selectedWorkspaceId)
       }
       loadTree(rootPath)
     } catch (err) {
@@ -426,7 +426,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         const sources = getClipboard()
         for (const src of sources) {
           try {
-            await window.electronAPI.fsCopy(src, rootPath)
+            await window.electronAPI.fsCopy(src, rootPath, selectedWorkspaceId)
           } catch (err) {
             console.error('[file-explorer] Paste failed:', err)
           }
@@ -470,7 +470,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         e.preventDefault()
         e.stopPropagation()
         const files = e.dataTransfer.files
-        void importDroppedEntries(files, rootPath, folderName).then((ok) => {
+        void importDroppedEntries(files, rootPath, folderName, selectedWorkspaceId).then((ok) => {
           if (ok) handleReload()
         })
       }}
@@ -585,7 +585,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               const destPath = rootPath + '/' + fileName
               if (srcPath === destPath) continue
               try {
-                await window.electronAPI.fsRename(srcPath, destPath)
+                await window.electronAPI.fsRename(srcPath, destPath, selectedWorkspaceId)
               } catch (err) {
                 console.error('[file-explorer] Failed to move file:', err)
               }
@@ -608,6 +608,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
               visiblePaths={visiblePaths}
               searchQuery={searchQuery.trim().toLowerCase()}
               rootPath={rootPath}
+              workspaceId={selectedWorkspaceId}
               createRequest={createRequest}
               onCreateRequestHandled={() => setCreateRequest(null)}
             />

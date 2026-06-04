@@ -209,8 +209,8 @@ export function buildDaemonCompanion(config: DaemonCompanionConfig): DaemonCompa
     validatePathStrict,
     validatePathForCreation,
     validateCwd,
-    addAllowedRoot: async (root) => { addRoot(root) },
-    removeAllowedRoot: async (root) => { removeRoot(root) },
+    addAllowedRoot: async (root, scopeId) => { addRoot(root, scopeId) },
+    removeAllowedRoot: async (root, scopeId) => { removeRoot(root, scopeId) },
     // Mutate the existing Set IN PLACE so the readDir/search closures that
     // captured this reference see the new exclusions live (do NOT reassign).
     // Active chokidar watchers fixed their `ignored` list at creation time, so

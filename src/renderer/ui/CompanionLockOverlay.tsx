@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { CloudWarning, CloudArrowDown, CircleNotch, PlugsConnected } from '@phosphor-icons/react'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
-import { workspaceRuntime } from '../lib/workspaceRuntime'
+import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
 import type { CompanionConnection, RemoteConnectSpec } from '../../shared/types'
 
@@ -9,8 +9,10 @@ import type { CompanionConnection, RemoteConnectSpec } from '../../shared/types'
 // companion isn't usable. It blocks interaction with the dead panels beneath and
 // offers the recovery action that fits the current phase. Scoped to the canvas
 // host only (z-10, under the z-20 sidebars), so the sidebar stays live and the
-// user can switch workspaces. Renders nothing for local / connected workspaces —
-// the single source of truth is workspaceRuntime(workspace).
+// user can switch workspaces. For a LOCAL workspace it shows a minimal spinner-
+// only loading blocker while the built-in daemon comes up; for a connected
+// workspace it renders nothing. The single source of truth is
+// workspaceRuntime(workspace) plus the global LOCAL companion phase.
 
 /** Human label for the remote target (distro or user@host) when easy to derive. */
 function connectionLabel(connection: CompanionConnection | undefined): string | null {
@@ -40,6 +42,7 @@ export function CompanionLockOverlay(): JSX.Element | null {
   const installCompanion = useAppStore((s) => s.installCompanion)
   const deleteCompanion = useAppStore((s) => s.deleteCompanion)
   const connectRemoteWorkspace = useAppStore((s) => s.connectRemoteWorkspace)
+  const localCompanionPhase = useAppStore((s) => s.localCompanionPhase)
 
   const [editing, setEditing] = useState(false)
   const [editPending, setEditPending] = useState(false)
@@ -61,7 +64,24 @@ export function CompanionLockOverlay(): JSX.Element | null {
     [wsId, connectRemoteWorkspace],
   )
 
-  // Editable (local or connected) → no lock at all.
+  // Local workspace: a minimal loading blocker — just the blurred block + a
+  // spinner, no recovery actions (the local daemon self-heals via auto-reconnect)
+  // — while the built-in companion is still coming up (first-run tarball
+  // extraction or a reconnect). `null` = not seeded yet, still treated as loading.
+  if (workspace && runtime.status === 'local') {
+    const loading =
+      localCompanionPhase === null ||
+      localCompanionPhase === 'connecting' ||
+      localCompanionPhase === 'installing'
+    if (!loading) return null
+    return (
+      <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-4/80 backdrop-blur-sm select-none">
+        <CircleNotch size={24} className="text-muted animate-spin" />
+      </div>
+    )
+  }
+
+  // Editable (connected) → no lock at all.
   if (!workspace || runtime.editable) return null
 
   const connection = workspace.connection

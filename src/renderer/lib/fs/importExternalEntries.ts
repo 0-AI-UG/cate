@@ -9,7 +9,7 @@
 // detection, the dialog, and the import itself.
 // =============================================================================
 
-import log from './logger'
+import log from '../logger'
 
 /** True when the drag carries OS files (an external drop), not an internal
  *  Cate panel/file drag. */
@@ -27,6 +27,7 @@ export async function importDroppedEntries(
   files: FileList,
   destDir: string,
   destName?: string,
+  workspaceId?: string,
 ): Promise<boolean> {
   const api = window.electronAPI
   if (!api || !destDir) return false
@@ -41,7 +42,7 @@ export async function importDroppedEntries(
     const choice = await api.confirmImportEntries({ count: sources.length, destName: label })
     if (choice === 'cancel') return false
 
-    const result = await api.fsImportEntries(sources, destDir, choice)
+    const result = await api.fsImportEntries(sources, destDir, choice, workspaceId)
     if (result.failed > 0) {
       log.warn(`[file-explorer] ${result.failed} of ${sources.length} item(s) failed to import`)
     }

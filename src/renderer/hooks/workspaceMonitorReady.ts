@@ -1,5 +1,5 @@
 import type { WorkspaceState } from '../../shared/types'
-import { workspaceRuntime } from '../lib/workspaceRuntime'
+import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 
 /** Whether a workspace's git monitor can be armed yet. Local workspaces are
  *  always ready; a remote/WSL workspace is only ready once its companion is

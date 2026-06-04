@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 
-vi.mock('./terminalRegistry', () => ({
+vi.mock('./terminal/terminalRegistry', () => ({
   terminalRegistry: { getEntry: () => undefined },
 }))
 

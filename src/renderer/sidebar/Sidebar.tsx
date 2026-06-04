@@ -65,7 +65,7 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
         </div>
       )
     case 'search':
-      return <SearchView rootPath={rootPath} />
+      return <SearchView rootPath={rootPath} workspaceId={selectedWorkspaceId} />
     case 'git':
       return <SourceControlView rootPath={rootPath} />
     case 'parallelWork':

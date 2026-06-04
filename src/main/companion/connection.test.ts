@@ -128,6 +128,20 @@ describe('CompanionManager connection lifecycle', () => {
     expect(a).toBe(b)
   })
 
+  test('connect registers synchronously (a deferred) and resolves to the real companion', () => {
+    // The local and remote paths share this: connect() registers a companion the
+    // instant it is called (so resolve() works / the window paints before the
+    // daemon is online), while only reporting `isConnected` once fully connected.
+    const mgr = new CompanionManager()
+    const p = mgr.connect('wsl_test', new FakeTransport())
+    expect(mgr.has('wsl_test')).toBe(true) // registered synchronously…
+    expect(mgr.isConnected('wsl_test')).toBe(false) // …but not yet fully connected
+    return p.then((companion) => {
+      expect(mgr.isConnected('wsl_test')).toBe(true)
+      expect(mgr.resolve('wsl_test')).toBe(companion) // deferred replaced by the real one
+    })
+  })
+
   test('a version mismatch reports missing, rejects, and disposes (no auto-upgrade)', async () => {
     const mgr = new CompanionManager()
     const transport = new FakeTransport({ hello: { companionVersion: '0.0.0-old' } })
@@ -234,6 +248,17 @@ describe('CompanionManager connection lifecycle', () => {
     const companion = await mgr.connect(LOCAL_COMPANION_ID, new FakeTransport(), { install: true })
     expect(companion.id).toBe(LOCAL_COMPANION_ID)
     expect(mgr.resolve(LOCAL_COMPANION_ID)).toBe(companion)
+  })
+
+  test('localStatus() tracks the last LOCAL phase and ignores remote connects', async () => {
+    // Seeds the renderer's startup loading blocker, so it must be readable before
+    // any connect and reflect LOCAL transitions only.
+    const mgr = new CompanionManager()
+    expect(mgr.localStatus().phase).toBe('connecting') // default: LOCAL always comes up at launch
+    await mgr.connect('wsl_remote', new FakeTransport())
+    expect(mgr.localStatus().phase).toBe('connecting') // a remote connect doesn't touch it
+    await mgr.connect(LOCAL_COMPANION_ID, new FakeTransport(), { install: true })
+    expect(mgr.localStatus().phase).toBe('connected')
   })
 })
 

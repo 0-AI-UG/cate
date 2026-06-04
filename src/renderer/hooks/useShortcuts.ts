@@ -75,7 +75,7 @@ export function useShortcuts(): void {
         return
       }
       if (action === 'reloadWorkspace') {
-        const { reloadActiveWorkspaceFromDisk } = await import('../lib/session')
+        const { reloadActiveWorkspaceFromDisk } = await import('../lib/workspace/session')
         await reloadActiveWorkspaceFromDisk()
         return
       }

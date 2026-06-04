@@ -391,7 +391,7 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
     void import('../hooks/useProcessMonitor').then(({ forgetTerminalForProcessMonitor }) => {
       forgetTerminalForProcessMonitor(terminalId)
     })
-    void import('../lib/agentScreenDetector').then(({ forgetAgentTracker }) => {
+    void import('../lib/agent/agentScreenDetector').then(({ forgetAgentTracker }) => {
       forgetAgentTracker(terminalId)
     })
     set((state) => {

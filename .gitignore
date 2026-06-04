@@ -20,3 +20,9 @@ test-results/
 
 # Local logo scratch dir
 _logos/
+
+# Temp dirs from companion daemon tests (deleted on teardown; ignored here in
+# case a run is interrupted before afterAll fires)
+cate-local-ws-*/
+cate-local-install-*/
+cate-daemon-ws-*/

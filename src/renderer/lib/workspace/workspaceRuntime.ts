@@ -1,4 +1,4 @@
-import type { CompanionPhase, WorkspaceState } from '../../shared/types'
+import type { CompanionPhase, WorkspaceState } from '../../../shared/types'
 
 // =============================================================================
 // The ONE place that turns a workspace's stored state (connection record +

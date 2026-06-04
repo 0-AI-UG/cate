@@ -3,12 +3,12 @@
 // (AGENT_DEFINITIONS). Returns null for unknown agents — callers should
 // fall back to the panel's default Phosphor icon.
 
-import claudeLogo from '../assets/agentLogos/claude.svg?url'
-import codexLogo from '../assets/agentLogos/codex.svg?url'
-import antigravityLogo from '../assets/agentLogos/antigravity.svg?url'
-import cursorLogo from '../assets/agentLogos/cursor.svg?url'
-import opencodeLogo from '../assets/agentLogos/opencode.svg?url'
-import piLogo from '../assets/agentLogos/pi.svg?url'
+import claudeLogo from '../../assets/agentLogos/claude.svg?url'
+import codexLogo from '../../assets/agentLogos/codex.svg?url'
+import antigravityLogo from '../../assets/agentLogos/antigravity.svg?url'
+import cursorLogo from '../../assets/agentLogos/cursor.svg?url'
+import opencodeLogo from '../../assets/agentLogos/opencode.svg?url'
+import piLogo from '../../assets/agentLogos/pi.svg?url'
 
 const LOGO_BY_DISPLAY_NAME: Record<string, string> = {
   'Claude Code': claudeLogo,

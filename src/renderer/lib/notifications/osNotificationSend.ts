@@ -8,9 +8,9 @@
 // osNotifications.ts.
 // =============================================================================
 
-import { useSettingsStore } from '../stores/settingsStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { shouldSendNotification } from './notificationGating'
-import type { NotificationAction } from '../../shared/types'
+import type { NotificationAction } from '../../../shared/types'
 
 export function sendOsNotification(payload: {
   title: string

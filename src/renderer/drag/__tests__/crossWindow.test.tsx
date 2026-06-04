@@ -18,7 +18,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Heavy renderer-side mocks (must precede the drag/* imports).
-vi.mock('../../lib/terminalRegistry', () => ({
+vi.mock('../../lib/terminal/terminalRegistry', () => ({
   terminalRegistry: { release: vi.fn(), setPendingTransfer: vi.fn() },
 }))
 vi.mock('../../lib/logger', () => ({
@@ -29,7 +29,7 @@ import { renderDragScene, type SceneApi } from './harness'
 import { setupCrossWindowDragListeners } from '../crossWindow'
 import { useDragStore } from '../store'
 import { registerDropZone } from '../registry'
-import { terminalRegistry } from '../../lib/terminalRegistry'
+import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
 import type { PanelTransferSnapshot, Point } from '../../../shared/types'
 
 // -----------------------------------------------------------------------------

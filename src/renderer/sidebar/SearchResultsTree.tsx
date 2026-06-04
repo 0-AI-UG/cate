@@ -5,7 +5,6 @@
 // =============================================================================
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { CaretRight, CaretDown, X } from '@phosphor-icons/react'
 import type { SearchFileResult, SearchMatchRange } from '../../shared/types'
 import { getFileIcon } from './FileTreeNode'
@@ -13,8 +12,8 @@ import { trimLeading } from './searchDisplay'
 import { lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { useSearchStore, lineKey } from '../stores/searchStore'
 import { useAppStore } from '../stores/appStore'
-import { openFileAsPanel } from '../lib/fileRouting'
-import { setPendingReveal } from '../lib/editorReveal'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { setPendingReveal } from '../lib/editor/editorReveal'
 
 // Uniform row height (px). Both the file-header and code-line rows are forced to
 // this height so the windowed (virtualized) list can map scrollTop <-> row index
@@ -87,13 +86,6 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
   const dismissLine = useSearchStore((s) => s.dismissLine)
 
   const [selected, setSelected] = useState(0)
-  // Full-line preview shown on row hover (portal tooltip; no layout shift).
-  const [hover, setHover] = useState<{
-    text: string
-    ranges: SearchMatchRange[]
-    top: number
-    left: number
-  } | null>(null)
 
   // --- Virtualization state. Only the rows intersecting the viewport (plus a
   // small overscan) are mounted, so a query with thousands of matches stays
@@ -242,7 +234,6 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
       data-keynav=""
       onScroll={onScroll}
       onKeyDown={onKeyDown}
-      onMouseLeave={() => setHover(null)}
     >
       {/* Tall spacer = full scroll height; the windowed slice below is absolutely
           positioned and translated down to the first visible row. */}
@@ -282,14 +273,9 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
                     setSelected(idx)
                     toggleCollapse(file.path)
                   }}
-                  onMouseDown={() => setHover(null)}
                   title={file.relativePath}
                   draggable
-                  onDragStart={(e) => {
-                    setHover(null)
-                    setFileDrag(e, file.path)
-                  }}
-                  onDragEnd={() => setHover(null)}
+                  onDragStart={(e) => setFileDrag(e, file.path)}
                 >
                   <span className="flex-shrink-0 text-muted">
                     {isCollapsed ? <CaretRight size={12} /> : <CaretDown size={12} />}
@@ -329,7 +315,7 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
             const isContext = ln.ranges.length === 0
             // Show the line with only leading whitespace trimmed; the row
             // truncates on the RIGHT (CSS), like VS Code — no left "…" clipping,
-            // so leading context stays readable. Full line still in the tooltip.
+            // so leading context stays readable.
             const full = trimLeading(ln.text, ln.ranges)
             return (
               <div
@@ -342,22 +328,12 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
                   isSel ? 'bg-surface-5 ring-1 ring-inset ring-blue-500/40' : 'hover:bg-surface-5'
                 }`}
                 style={{ paddingLeft: 20, height: ROW_H }}
-                onMouseEnter={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect()
-                  setHover({ text: full.text, ranges: full.ranges, top: r.bottom, left: r.left })
-                }}
-                onMouseLeave={() => setHover(null)}
                 onClick={() => {
                   setSelected(idx)
                   if (!isContext) openLine(file, lineIdx)
                 }}
-                onMouseDown={() => setHover(null)}
                 draggable
-                onDragStart={(e) => {
-                  setHover(null)
-                  setFileDrag(e, file.path, ln.line, (ln.ranges[0]?.start ?? 0) + 1)
-                }}
-                onDragEnd={() => setHover(null)}
+                onDragStart={(e) => setFileDrag(e, file.path, ln.line, (ln.ranges[0]?.start ?? 0) + 1)}
               >
                 <span className="flex-shrink-0 text-muted text-[10px] tabular-nums text-left select-none min-w-[1.6rem]">
                   :{ln.line}
@@ -382,16 +358,6 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
           })}
         </div>
       </div>
-      {hover &&
-        createPortal(
-          <div
-            className="fixed z-[100] max-w-[480px] px-2 py-1 rounded border border-subtle bg-surface-2 shadow-lg text-[11px] font-mono text-primary break-words line-clamp-2 pointer-events-none"
-            style={{ top: hover.top + 2, left: hover.left }}
-          >
-            <Highlighted text={hover.text} ranges={hover.ranges} />
-          </div>,
-          document.body,
-        )}
     </div>
   )
 }

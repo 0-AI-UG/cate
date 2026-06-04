@@ -66,6 +66,13 @@ export function createAgentCapability(deps: AgentDeps): AgentHost {
         stderrTail += d.toString('utf-8')
         if (stderrTail.length > 8192) stderrTail = stderrTail.slice(-8192)
       })
+      // A spawn failure arrives as `error`, not `close`. Always end the handle so
+      // the client's start() rejects rather than hanging. Without this listener an
+      // `error` would be an uncaught throw.
+      child.on('error', (err) => {
+        children.delete(opts.id)
+        onExit(opts.id, -1, err instanceof Error ? err.message : String(err))
+      })
       child.on('close', (code) => {
         children.delete(opts.id)
         onExit(opts.id, code ?? 0, stderrTail.trim() || undefined)

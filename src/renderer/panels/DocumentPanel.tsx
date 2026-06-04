@@ -293,7 +293,7 @@ export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
     setLoading(true)
     setError(null)
 
-    window.electronAPI.fsReadBinary(filePath).then((buffer) => {
+    window.electronAPI.fsReadBinary(filePath, workspaceId).then((buffer) => {
       if (!cancelled) {
         setData(new Uint8Array(buffer))
         setLoading(false)
@@ -306,7 +306,7 @@ export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
     })
 
     return () => { cancelled = true }
-  }, [filePath])
+  }, [filePath, workspaceId])
 
   if (loading) {
     return (

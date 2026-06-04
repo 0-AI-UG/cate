@@ -4,7 +4,7 @@
 // =============================================================================
 
 import type { PanelState, PanelTransferSnapshot, PanelLocation, Point, Size } from '../../shared/types'
-import { terminalRegistry } from './terminalRegistry'
+import { terminalRegistry } from './terminal/terminalRegistry'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 
 /**

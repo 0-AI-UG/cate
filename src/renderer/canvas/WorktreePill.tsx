@@ -9,7 +9,7 @@
 import React, { useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../stores/appStore'
-import { terminalRegistry } from '../lib/terminalRegistry'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import type { PanelState } from '../../shared/types'
 
 interface WorktreePillProps {

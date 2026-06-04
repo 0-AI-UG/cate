@@ -467,36 +467,36 @@ function stopRemoteWatch(dirLocator: string, windowId: number): void {
 }
 
 export function registerHandlers(): void {
-  ipcMain.handle(FS_READ_FILE, async (event, filePath: string) => {
+  ipcMain.handle(FS_READ_FILE, async (event, filePath: string, workspaceId?: string) => {
     try {
       const win = windowFromEvent(event)
       const { companionId, path: p } = parseLocator(filePath)
       const companion = companions.resolve(companionId)
-      return await companion.file.readFile(await companion.validatePathStrict(p, win?.id))
+      return await companion.file.readFile(await companion.validatePathStrict(p, win?.id, workspaceId))
     } catch (error) {
       log.error(`[${FS_READ_FILE}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
-  ipcMain.handle(FS_READ_BINARY, async (event, filePath: string) => {
+  ipcMain.handle(FS_READ_BINARY, async (event, filePath: string, workspaceId?: string) => {
     try {
       const win = windowFromEvent(event)
       const { companionId, path: p } = parseLocator(filePath)
       const companion = companions.resolve(companionId)
-      return await companion.file.readBinary(await companion.validatePathStrict(p, win?.id))
+      return await companion.file.readBinary(await companion.validatePathStrict(p, win?.id, workspaceId))
     } catch (error) {
       log.error(`[${FS_READ_BINARY}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
-  ipcMain.handle(FS_WRITE_FILE, async (event, filePath: string, content: string) => {
+  ipcMain.handle(FS_WRITE_FILE, async (event, filePath: string, content: string, workspaceId?: string) => {
     try {
       const win = windowFromEvent(event)
       const { companionId, path: p } = parseLocator(filePath)
       const companion = companions.resolve(companionId)
-      const safePath = await companion.validatePathForCreation(p, win?.id)
+      const safePath = await companion.validatePathForCreation(p, win?.id, workspaceId)
       await companion.file.writeFile(safePath, content)
       if (win) consumeScopedWriteAllowance(win.id, safePath)
     } catch (error) {
@@ -505,11 +505,12 @@ export function registerHandlers(): void {
     }
   })
 
-  ipcMain.handle(FS_READ_DIR, async (_event, dirPath: string) => {
+  ipcMain.handle(FS_READ_DIR, async (event, dirPath: string, workspaceId?: string) => {
     try {
+      const win = windowFromEvent(event)
       const { companionId, path: p } = parseLocator(dirPath)
       const companion = companions.resolve(companionId)
-      const nodes = await companion.file.readDir(await companion.validatePathStrict(p))
+      const nodes = await companion.file.readDir(await companion.validatePathStrict(p, win?.id, workspaceId))
       return encodeTreeNodes(companionId, nodes)
     } catch (error) {
       log.error(`[${FS_READ_DIR}]`, error)
@@ -517,13 +518,13 @@ export function registerHandlers(): void {
     }
   })
 
-  ipcMain.handle(FS_WATCH_START, async (event, dirPath: string) => {
+  ipcMain.handle(FS_WATCH_START, async (event, dirPath: string, workspaceId?: string) => {
     try {
       const win = windowFromEvent(event)
       if (!win) return
       const { companionId, path: p } = parseLocator(dirPath)
       if (companionId === LOCAL_COMPANION_ID) {
-        watchStart(await validatePathStrict(p), win.id)
+        watchStart(await validatePathStrict(p, win.id, workspaceId), win.id)
       } else {
         startRemoteWatch(companions.resolve(companionId), companionId, p, dirPath, win.id)
       }
@@ -533,13 +534,13 @@ export function registerHandlers(): void {
     }
   })
 
-  ipcMain.handle(FS_WATCH_STOP, async (event, dirPath: string) => {
+  ipcMain.handle(FS_WATCH_STOP, async (event, dirPath: string, workspaceId?: string) => {
     try {
       const win = windowFromEvent(event)
       if (!win) return
       const { companionId, path: p } = parseLocator(dirPath)
       if (companionId === LOCAL_COMPANION_ID) {
-        watchStop(await validatePathStrict(p), win.id)
+        watchStop(await validatePathStrict(p, win.id, workspaceId), win.id)
       } else {
         stopRemoteWatch(dirPath, win.id)
       }
@@ -549,39 +550,42 @@ export function registerHandlers(): void {
     }
   })
 
-  ipcMain.handle(FS_STAT, async (_event, filePath: string) => {
+  ipcMain.handle(FS_STAT, async (event, filePath: string, workspaceId?: string) => {
     try {
       // validatePathStrict resolves and authorizes the path; we stat the
       // resolved path on the owning companion.
+      const win = windowFromEvent(event)
       const { companionId, path: p } = parseLocator(filePath)
       const companion = companions.resolve(companionId)
-      return await companion.file.stat(await companion.validatePathStrict(p))
+      return await companion.file.stat(await companion.validatePathStrict(p, win?.id, workspaceId))
     } catch (error) {
       log.error(`[${FS_STAT}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
-  ipcMain.handle(FS_DELETE, async (_event, filePath: string) => {
+  ipcMain.handle(FS_DELETE, async (event, filePath: string, workspaceId?: string) => {
     try {
+      const win = windowFromEvent(event)
       const { companionId, path: p } = parseLocator(filePath)
       const companion = companions.resolve(companionId)
-      await companion.file.remove(await companion.validatePathStrict(p))
+      await companion.file.remove(await companion.validatePathStrict(p, win?.id, workspaceId))
     } catch (error) {
       log.error(`[${FS_DELETE}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
-  ipcMain.handle(FS_RENAME, async (_event, oldPath: string, newPath: string) => {
+  ipcMain.handle(FS_RENAME, async (event, oldPath: string, newPath: string, workspaceId?: string) => {
     try {
       // Phase 1: rename is within a single companion (both bare/local).
+      const win = windowFromEvent(event)
       const { companionId, path: oldP } = parseLocator(oldPath)
       const companion = companions.resolve(companionId)
       const { path: newP } = parseLocator(newPath)
       await companion.file.rename(
-        await companion.validatePathStrict(oldP),
-        await companion.validatePathForCreation(newP),
+        await companion.validatePathStrict(oldP, win?.id, workspaceId),
+        await companion.validatePathForCreation(newP, win?.id, workspaceId),
       )
     } catch (error) {
       log.error(`[${FS_RENAME}]`, error)
@@ -589,13 +593,14 @@ export function registerHandlers(): void {
     }
   })
 
-  ipcMain.handle(FS_COPY, async (_event, srcPath: string, destDir: string) => {
+  ipcMain.handle(FS_COPY, async (event, srcPath: string, destDir: string, workspaceId?: string) => {
     try {
+      const win = windowFromEvent(event)
       const { companionId, path: srcP } = parseLocator(srcPath)
       const companion = companions.resolve(companionId)
       const { path: destP } = parseLocator(destDir)
-      const safeSrc = await companion.validatePathStrict(srcP)
-      const safeDestDir = await companion.validatePathStrict(destP)
+      const safeSrc = await companion.validatePathStrict(srcP, win?.id, workspaceId)
+      const safeDestDir = await companion.validatePathStrict(destP, win?.id, workspaceId)
       const finalPath = await companion.file.copy(safeSrc, safeDestDir)
       return encodeResultPath(companionId, finalPath)
     } catch (error) {
@@ -614,11 +619,11 @@ export function registerHandlers(): void {
   // Source contents are never returned to the renderer either way.
   ipcMain.handle(
     FS_IMPORT_ENTRIES,
-    async (event, sources: string[], destDir: string, mode: 'copy' | 'move') => {
+    async (event, sources: string[], destDir: string, mode: 'copy' | 'move', workspaceId?: string) => {
       const win = windowFromEvent(event)
       const { companionId, path: destP } = parseLocator(destDir)
       const companion = companions.resolve(companionId)
-      const safeDestDir = await companion.validatePathStrict(destP, win?.id)
+      const safeDestDir = await companion.validatePathStrict(destP, win?.id, workspaceId)
       const result =
         companionId === LOCAL_COMPANION_ID
           ? await companion.file.importEntries(sources, safeDestDir, mode, win?.id)
@@ -630,22 +635,24 @@ export function registerHandlers(): void {
     },
   )
 
-  ipcMain.handle(FS_MKDIR, async (_event, dirPath: string) => {
+  ipcMain.handle(FS_MKDIR, async (event, dirPath: string, workspaceId?: string) => {
     try {
+      const win = windowFromEvent(event)
       const { companionId, path: p } = parseLocator(dirPath)
       const companion = companions.resolve(companionId)
-      await companion.file.mkdir(await companion.validatePathForCreation(p))
+      await companion.file.mkdir(await companion.validatePathForCreation(p, win?.id, workspaceId))
     } catch (error) {
       log.error(`[${FS_MKDIR}]`, error)
       throw error instanceof Error ? error : new Error(String(error))
     }
   })
 
-  ipcMain.handle(FS_SEARCH, async (_event, rootPath: string, query: string, options?: FileSearchOptions) => {
+  ipcMain.handle(FS_SEARCH, async (event, rootPath: string, query: string, options?: FileSearchOptions, workspaceId?: string) => {
     try {
+      const win = windowFromEvent(event)
       const { companionId, path: p } = parseLocator(rootPath)
       const companion = companions.resolve(companionId)
-      const validRoot = await companion.validatePathStrict(p)
+      const validRoot = await companion.validatePathStrict(p, win?.id, workspaceId)
       const trimmed = (query ?? '').trim()
       if (!trimmed) return []
       const results = await companion.file.search(validRoot, trimmed, options ?? {})

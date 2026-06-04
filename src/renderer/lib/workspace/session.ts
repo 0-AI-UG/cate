@@ -3,16 +3,23 @@
 // Ported from SessionSnapshot.swift + SessionStore.swift
 // =============================================================================
 
-import log from './logger'
+import log from '../logger'
 import {
   useAppStore,
   ensureCanvasOpsForPanel,
   getWorkspaceCanvasStore,
+  getWorkspaceCanvasPanelId,
   setActiveCanvasPanelId,
-} from '../stores/appStore'
+} from '../../stores/appStore'
+import {
+  getOrCreateWorkspaceDockStore,
+  getWorkspaceDockStore,
+} from './dockRegistry'
+import { deferredSnapshots, setDeferredRestoreHandler } from './deferredRestore'
 import type { StoreApi } from 'zustand'
-import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
-import type { CanvasStore } from '../stores/canvasStore'
+import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
+import type { CanvasStore } from '../../stores/canvasStore'
+import type { DockStore } from '../../stores/dockStore'
 import type {
   SessionSnapshot,
   NodeSnapshot,
@@ -29,13 +36,12 @@ import type {
   CanvasRegion,
   PanelState,
   RemoteProjectEntry,
-} from '../../shared/types'
-import { toRelativePath, toAbsolutePath } from '../../shared/pathUtils'
-import { isLocalLocator } from '../../main/companion/locator'
+} from '../../../shared/types'
+import { toRelativePath, toAbsolutePath } from '../../../shared/pathUtils'
+import { isLocalLocator } from '../../../main/companion/locator'
 import { deriveSidebarSession, applySidebarSession } from './sidebarSession'
-import { useDockStore } from '../stores/dockStore'
-import { terminalRegistry } from './terminalRegistry'
-import { mark } from './perfMarks'
+import { terminalRegistry } from '../terminal/terminalRegistry'
+import { mark } from '../perfMarks'
 
 // ---------------------------------------------------------------------------
 // Session-aware panel chunk prefetch — kicks off dynamic imports for only the
@@ -43,10 +49,10 @@ import { mark } from './perfMarks'
 // the common defaults (terminal + editor + canvas).
 // ---------------------------------------------------------------------------
 function prefetchPanelChunks(types: ReadonlySet<PanelType>): void {
-  if (types.has('terminal')) void import('../panels/TerminalPanel')
-  if (types.has('editor')) void import('../panels/EditorPanel')
-  if (types.has('browser')) void import('../panels/BrowserPanel')
-  if (types.has('canvas')) void import('../panels/CanvasPanel')
+  if (types.has('terminal')) void import('../../panels/TerminalPanel')
+  if (types.has('editor')) void import('../../panels/EditorPanel')
+  if (types.has('browser')) void import('../../panels/BrowserPanel')
+  if (types.has('canvas')) void import('../../panels/CanvasPanel')
 }
 
 /** Prefetch the common panel chunks for a fresh workspace with no session. */
@@ -61,8 +67,11 @@ export function prefetchDefaultPanelChunks(): void {
 
 export const terminalRestoreData = new Map<string, { cwd?: string; replayFromId?: string }>()
 
-// Deferred snapshots for inactive workspaces — restored on first switch
-export const deferredSnapshots = new Map<string, SessionSnapshot>()
+// Deferred snapshots for inactive workspaces — restored on first switch. The
+// Map itself lives in the neutral lib/workspace/deferredRestore module (so
+// appStore can read it without importing session, breaking the old cycle);
+// re-exported here for existing importers.
+export { deferredSnapshots }
 
 // Last serialized session payload — used to skip disk writes when nothing
 // actually changed. saveSession() itself mutates the store via
@@ -299,16 +308,15 @@ export async function saveSession(): Promise<void> {
       }
     }
 
-    // Capture dock state — live from the dock store for the selected workspace,
-    // or from the workspace's last-saved dockState for inactive workspaces.
-    const dockSnapshot = isSelected
-      ? useDockStore.getState().getSnapshot()
-      : workspace.dockState ?? undefined
+    // Capture dock state from the workspace's OWN dock store if it has been
+    // activated; otherwise from its last-saved snapshot (never-activated).
+    const liveDock = getWorkspaceDockStore(workspace.id)
+    const dockSnapshot = liveDock ? liveDock.getState().getSnapshot() : workspace.dockState ?? undefined
 
     // Collect panels that live in dock zones (not on the canvas).
     // These are panels like canvas that are referenced by the dock layout
     // but not saved as canvas NodeSnapshots.
-    let dockPanels: Record<string, import('../../shared/types').PanelState> | undefined
+    let dockPanels: Record<string, import('../../../shared/types').PanelState> | undefined
     if (dockSnapshot) {
       const dockPanelIds = collectPanelIdsFromDockState(dockSnapshot.zones)
       // Exclude panels already captured as canvas nodes
@@ -625,7 +633,7 @@ export async function reloadActiveWorkspaceFromDisk(): Promise<void> {
 
   // Discard the live layout, then rebuild from the file via the launch path.
   appStore.closeAllPanels(wsId)
-  await restoreSession(snapshot)
+  await restoreSession(snapshot, wsId)
   log.info('[session] reloaded workspace %s from disk (%d nodes)', wsId, snapshot.nodes.length)
 }
 
@@ -633,31 +641,46 @@ export async function reloadActiveWorkspaceFromDisk(): Promise<void> {
 // Restore
 // -----------------------------------------------------------------------------
 
-export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?: StoreApi<CanvasStore>): Promise<void> {
+export async function restoreSession(snapshot: SessionSnapshot, workspaceId: string): Promise<void> {
   if (!snapshot?.nodes) {
     log.warn('[session] invalid snapshot (no nodes), skipping restore')
     return
   }
 
+  // Restore strictly into the workspace identified by `workspaceId` and its own
+  // stores — never the globally-selected workspace. This makes restore safe to
+  // run for any workspace at any time (active or background), so a concurrent
+  // switch can never redirect a restore into the wrong workspace.
   const appStore = useAppStore.getState()
-  const wsId = appStore.selectedWorkspaceId
+  const wsId = workspaceId
   const restoredDockPanelCount = restoreDockPanelsForWorkspace(wsId, snapshot)
   if (restoredDockPanelCount > 0) {
     log.debug(`[session] restored ${restoredDockPanelCount} dock-zone panels for workspace ${wsId}`)
   }
 
-  const preferredCanvasPanelId = resolveSnapshotCanvasPanelId(snapshot)
+  // Restore the dock layout into the workspace's OWN dock store up front, so the
+  // panel placement below resolves the same center canvas the snapshot used
+  // (rather than a freshly-minted one).
+  if (snapshot.dockState) {
+    try {
+      getOrCreateWorkspaceDockStore(wsId).getState().restoreSnapshot(snapshot.dockState)
+      log.debug(`[session] dock state restored for workspace ${wsId}`)
+    } catch (err) {
+      log.warn('[session] failed to restore dock state:', err)
+    }
+  }
+
+  const preferredCanvasPanelId = resolveSnapshotCanvasPanelId(snapshot) ?? getWorkspaceCanvasPanelId(wsId)
   if (preferredCanvasPanelId) {
     ensureCanvasOpsForPanel(preferredCanvasPanelId)
     setActiveCanvasPanelId(preferredCanvasPanelId)
   }
 
-  // Get the workspace's primary canvas store. Fall back to the passed-in store
-  // only when we have no saved canvas panel to target yet.
+  // The workspace's canvas store, addressed by the snapshot's canvas panel id.
   const getCanvasState = () =>
     (preferredCanvasPanelId
       ? getOrCreateCanvasStoreForPanel(preferredCanvasPanelId).getState()
-      : getWorkspaceCanvasStore(wsId)?.getState() ?? canvasStoreApi?.getState()) ?? null
+      : getWorkspaceCanvasStore(wsId)?.getState()) ?? null
 
   log.debug(`[session] restoring workspace ${wsId}: ${snapshot.nodes.length} nodes`)
   const t0 = performance.now()
@@ -786,16 +809,6 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
     canvasState.setViewportOffset(snapshot.viewportOffset)
   }
 
-  // Restore dock state if present
-  if (snapshot.dockState) {
-    try {
-      useDockStore.getState().restoreSnapshot(snapshot.dockState)
-      log.debug(`[session] dock state restored for workspace ${wsId}`)
-    } catch (err) {
-      log.warn('[session] failed to restore dock state:', err)
-    }
-  }
-
   // Safety net: guarantee the center zone has a canvas panel after restore.
   // Without this, a session saved in a bad state (or one whose center layout
   // references non-canvas panels only) would come up as a blank center pane.
@@ -843,7 +856,7 @@ export async function replayTerminalLog(panelId: string): Promise<void> {
 // Restore — multi-workspace
 // -----------------------------------------------------------------------------
 
-export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSession, canvasStoreApi?: StoreApi<CanvasStore>): Promise<void> {
+export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSession): Promise<void> {
   const appStore = useAppStore.getState()
   const tTotal = performance.now()
   log.debug(`[session] restoring multi-workspace session: ${session.workspaces.length} workspaces`)
@@ -884,22 +897,22 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
       const isRemote = !!snapshot.connection && snapshot.connection.kind !== 'local'
       if (isRemote) {
         // Remote workspace: do NOT block app startup on the companion connect.
-        // selectWorkspace sets the selection and marks the companion
-        // 'connecting' synchronously (before its first await), so the sidebar
-        // shows this workspace immediately with a connecting indicator. The
-        // network handshake and panel restore then run in the background.
-        // restoreSession still runs only AFTER selectWorkspace resolves (i.e.
-        // after the companion is live) so terminals/fs reads can't race an
-        // unregistered companion.
+        // selectWorkspace sets the selection + 'connecting' phase synchronously
+        // (before its first await), so the sidebar shows this workspace
+        // immediately. The handshake and panel restore run in the background.
+        // restoreSession runs only AFTER selectWorkspace resolves (companion
+        // live) so terminals/fs reads can't race an unregistered companion, and
+        // it writes into this workspace's own stores by id.
         void appStore
           .selectWorkspace(wsId)
-          .then(() => restoreSession(snapshot, canvasStoreApi))
+          .then(() => restoreSession(snapshot, wsId))
           .catch((error) => log.error('[session] background restore of remote workspace failed:', error))
       } else {
-        // Local workspace: fully synchronous restore. No connection ⇒ no await
-        // on the network, so this stays fast and the UI paints right after.
+        // Local workspace: restore into its own stores FIRST (by id), then mark
+        // it selected. Doing restore before select means selectWorkspace finds
+        // the center canvas already present and won't mint a throwaway one.
+        await restoreSession(snapshot, wsId)
         await appStore.selectWorkspace(wsId)
-        await restoreSession(snapshot, canvasStoreApi)
       }
     } else {
       // Defer restoration — store the snapshot for lazy loading on first switch
@@ -927,7 +940,7 @@ export async function restoreDetachedWindows(session: MultiWorkspaceSession): Pr
     log.debug(`[session] restoring ${session.panelWindows.length} panel windows`)
     for (const pw of session.panelWindows) {
       try {
-        const snapshot: import('../../shared/types').PanelTransferSnapshot = {
+        const snapshot: import('../../../shared/types').PanelTransferSnapshot = {
           panel: pw.panel,
           geometry: {
             origin: { x: pw.bounds.x, y: pw.bounds.y },
@@ -961,7 +974,7 @@ export async function restoreDetachedWindows(session: MultiWorkspaceSession): Pr
 
         const firstPanel = dw.panels[panelIds[0]]
         const replayPtyId = firstPanel.type === 'terminal' ? dw.terminalPtyIds?.[firstPanel.id] : undefined
-        const snapshot: import('../../shared/types').PanelTransferSnapshot = {
+        const snapshot: import('../../../shared/types').PanelTransferSnapshot = {
           panel: firstPanel,
           geometry: {
             origin: { x: dw.bounds.x, y: dw.bounds.y },
@@ -985,12 +998,16 @@ export async function restoreDetachedWindows(session: MultiWorkspaceSession): Pr
 // Restore a deferred workspace — called on first switch to an inactive workspace
 // -----------------------------------------------------------------------------
 
-export async function restoreDeferredWorkspace(workspaceId: string, canvasStoreApi?: StoreApi<CanvasStore>): Promise<void> {
+export async function restoreDeferredWorkspace(workspaceId: string): Promise<void> {
   const snapshot = deferredSnapshots.get(workspaceId)
   if (!snapshot) return
   deferredSnapshots.delete(workspaceId)
-  await restoreSession(snapshot, canvasStoreApi)
+  await restoreSession(snapshot, workspaceId)
 }
+
+// Register the real implementation with the neutral deferred-restore slot so
+// appStore can trigger restore without importing session (cycle break).
+setDeferredRestoreHandler(restoreDeferredWorkspace)
 
 // -----------------------------------------------------------------------------
 // Auto-save (idle debounce + max-wait + periodic unconditional save)
@@ -1012,6 +1029,17 @@ const PERIODIC_INTERVAL = 30_000
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 let maxWaitTimer: ReturnType<typeof setTimeout> | null = null
 let periodicTimer: ReturnType<typeof setInterval> | null = null
+
+// Don't let a pending autosave timer keep a process alive on its own. In the
+// browser/Electron renderer `setTimeout` returns a number (no `.unref`), so this
+// is a no-op there and the timer behaves normally; under the Node test runner the
+// handle is a Timeout object and unref'ing it lets vitest exit instead of hanging
+// on the periodic-save interval. The timer still fires while the app is running.
+function unrefTimer<T>(t: T): T {
+  const h = t as unknown as { unref?: () => void }
+  if (h && typeof h === 'object' && typeof h.unref === 'function') h.unref()
+  return t
+}
 let pendingSave = false
 let saveInFlight = false
 let autoSaveSetUp = false
@@ -1060,26 +1088,49 @@ function scheduleSave(): void {
   pendingSave = true
   sessionDirty = true
   if (idleTimer) clearTimeout(idleTimer)
-  idleTimer = setTimeout(runSave, IDLE_DELAY)
+  idleTimer = unrefTimer(setTimeout(runSave, IDLE_DELAY))
   if (!maxWaitTimer) {
-    maxWaitTimer = setTimeout(runSave, MAX_WAIT)
+    maxWaitTimer = unrefTimer(setTimeout(runSave, MAX_WAIT))
   }
 }
 
-export function setupAutoSave(canvasStoreApi?: StoreApi<CanvasStore>): () => void {
+export function setupAutoSave(): () => void {
   if (autoSaveSetUp) {
     return () => {}
   }
   autoSaveSetUp = true
 
-  const unsubCanvas = canvasStoreApi ? canvasStoreApi.subscribe(scheduleSave) : () => {}
-  const unsubApp = useAppStore.subscribe(scheduleSave)
-  const unsubDock = useDockStore.subscribe(scheduleSave)
+  // Each workspace owns its dock + canvas stores, so there is no single store to
+  // subscribe to. Track the ACTIVE workspace's stores and re-subscribe whenever
+  // the selection — or the resolved store instances — change. We re-evaluate on
+  // every appStore change (selection switch, panel add/remove), which also
+  // catches a canvas store being created lazily for the active workspace.
+  let unsubActive: () => void = () => {}
+  let curDock: StoreApi<DockStore> | null = null
+  let curCanvas: StoreApi<CanvasStore> | null = null
+  const subscribeActive = () => {
+    const wsId = useAppStore.getState().selectedWorkspaceId || null
+    const dock = wsId ? getOrCreateWorkspaceDockStore(wsId) : null
+    const canvas = wsId ? getWorkspaceCanvasStore(wsId) : null
+    if (dock === curDock && canvas === curCanvas) return
+    curDock = dock
+    curCanvas = canvas
+    unsubActive()
+    const subs: Array<() => void> = []
+    if (dock) subs.push(dock.subscribe(scheduleSave))
+    if (canvas) subs.push(canvas.subscribe(scheduleSave))
+    unsubActive = () => { for (const u of subs) u() }
+  }
+  const unsubApp = useAppStore.subscribe(() => {
+    subscribeActive()
+    scheduleSave()
+  })
+  subscribeActive()
 
   // Unconditional periodic save — ensures on-disk state is never more than
   // PERIODIC_INTERVAL stale, even without detected store changes. Protects
   // against crashes, force-kills, and update restarts.
-  periodicTimer = setInterval(() => {
+  periodicTimer = unrefTimer(setInterval(() => {
     if (pendingSave) {
       runSave()
     } else if (!saveInFlight) {
@@ -1088,7 +1139,7 @@ export function setupAutoSave(canvasStoreApi?: StoreApi<CanvasStore>): () => voi
       pendingSave = true
       runSave()
     }
-  }, PERIODIC_INTERVAL)
+  }, PERIODIC_INTERVAL))
 
   // Listen for flush-save requests from main process (quit, window close)
   const unsubFlush = window.electronAPI.onSessionFlushSave(() => {
@@ -1124,9 +1175,8 @@ export function setupAutoSave(canvasStoreApi?: StoreApi<CanvasStore>): () => voi
   })
 
   return () => {
-    unsubCanvas()
+    unsubActive()
     unsubApp()
-    unsubDock()
     unsubFlush()
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
     if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null }
@@ -1140,7 +1190,7 @@ export function setupAutoSave(canvasStoreApi?: StoreApi<CanvasStore>): () => voi
 // -----------------------------------------------------------------------------
 
 /** Collect all panel IDs referenced in a WindowDockState layout tree. */
-function collectPanelIdsFromDockState(zones: import('../../shared/types').WindowDockState): string[] {
+function collectPanelIdsFromDockState(zones: import('../../../shared/types').WindowDockState): string[] {
   const ids: string[] = []
   for (const zone of Object.values(zones)) {
     if (zone.layout) collectPanelIdsFromNode(zone.layout, ids)
@@ -1148,7 +1198,7 @@ function collectPanelIdsFromDockState(zones: import('../../shared/types').Window
   return ids
 }
 
-function collectPanelIdsFromNode(node: import('../../shared/types').DockLayoutNode, ids: string[]): void {
+function collectPanelIdsFromNode(node: import('../../../shared/types').DockLayoutNode, ids: string[]): void {
   if (node.type === 'tabs') {
     ids.push(...node.panelIds)
   } else {

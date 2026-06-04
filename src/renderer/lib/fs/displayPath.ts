@@ -8,7 +8,7 @@
 // These helpers decode the locator first so both local and remote paths render
 // cleanly. LOCAL output is byte-identical to the old split-based logic.
 
-import { parseLocator } from '../../main/companion/locator'
+import { parseLocator } from '../../../main/companion/locator'
 
 /** Abbreviate a macOS home-dir path to `~/...`, matching WelcomePage's legacy
  *  behavior exactly. */

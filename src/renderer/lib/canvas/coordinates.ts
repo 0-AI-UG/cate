@@ -3,7 +3,7 @@
 // Ported from CanvasState.swift canvasToView / viewToCanvas.
 // =============================================================================
 
-import type { Point, Size } from '../../shared/types'
+import type { Point, Size } from '../../../shared/types'
 
 /**
  * Convert a point from canvas-space to view-space.

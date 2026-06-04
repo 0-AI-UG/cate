@@ -10,9 +10,9 @@
 // itself before returning true.
 // =============================================================================
 
-import type { DockLayoutNode } from '../../shared/types'
-import { useAppStore } from '../stores/appStore'
-import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
+import type { DockLayoutNode } from '../../../shared/types'
+import { useAppStore } from '../../stores/appStore'
+import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
 
 /** Walk a per-node dock layout tree and collect every panelId inside it. */
 function collectPanelIds(layout: DockLayoutNode | null | undefined): string[] {

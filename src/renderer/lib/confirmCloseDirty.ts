@@ -5,7 +5,7 @@
 // =============================================================================
 
 import type { PanelState } from '../../shared/types'
-import { saveEditor } from './editorSaveRegistry'
+import { saveEditor } from './editor/editorSaveRegistry'
 
 export async function confirmCloseDirtyPanels(
   panels: Array<PanelState | undefined>,

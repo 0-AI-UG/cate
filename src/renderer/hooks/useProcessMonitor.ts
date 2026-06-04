@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore } from '../stores/appStore'
-import { terminalRegistry } from '../lib/terminalRegistry'
-import { noteAgentPresence } from '../lib/agentScreenDetector'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
+import { noteAgentPresence } from '../lib/agent/agentScreenDetector'
 import { isWorkspaceMonitorReady } from './workspaceMonitorReady'
 import type { TerminalActivity } from '../../shared/types'
 

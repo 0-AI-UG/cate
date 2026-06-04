@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
 import type { TerminalPanelProps } from './types'
-import { terminalRegistry } from '../lib/terminalRegistry'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { formatTerminalPaste, type DroppedRef } from './terminalDrop'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
@@ -171,7 +171,7 @@ export default function TerminalPanel({
 
     let cancelled = false
 
-    function attachAndObserve(entry: import('../lib/terminalRegistry').RegistryEntry): void {
+    function attachAndObserve(entry: import('../lib/terminal/terminalRegistry').RegistryEntry): void {
       if (cancelled) return
 
       // Move the xterm DOM element into the render box and fit it

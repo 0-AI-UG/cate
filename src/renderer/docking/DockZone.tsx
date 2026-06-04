@@ -10,8 +10,8 @@ import type { DockZonePosition, DockLayoutNode, PanelState } from '../../shared/
 import DockTabStack from './DockTabStack'
 import DockSplitContainer from './DockSplitContainer'
 import { registerDropZone } from '../drag'
-import { openFileAsPanel } from '../lib/fileRouting'
-import { setPendingReveal } from '../lib/editorReveal'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { setPendingReveal } from '../lib/editor/editorReveal'
 import { useAppStore } from '../stores/appStore'
 
 interface DockZoneProps {
@@ -81,7 +81,7 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
       for (const filePath of paths) {
         let isDir = false
         try {
-          const st = await window.electronAPI.fsStat(filePath)
+          const st = await window.electronAPI.fsStat(filePath, wsId)
           isDir = !!st?.isDirectory
         } catch { /* treat as file */ }
         if (isDir) continue // dock tabs don't host folders

@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { buildGitTreeDecorations, toPosixPath, type GitTree } from './gitStatusDecoration'
-import { watchFsRoot } from '../lib/fsWatchManager'
+import { watchFsRoot } from '../lib/fs/fsWatchManager'
 
 /** Build a GitTree for `rootPath` from the git IPC, or undefined outside a repo.
  *  Mirrors FileExplorer.loadTree's git fetch: the porcelain status drives the

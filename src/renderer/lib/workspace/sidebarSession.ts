@@ -1,4 +1,4 @@
-import type { SessionSnapshot, SidebarSession } from '../../shared/types'
+import type { SessionSnapshot, SidebarSession } from '../../../shared/types'
 
 // Persisted sidebar arrangement, keyed by workspace root paths (IDs are runtime
 // UUIDs, useless across restarts). `deriveSidebarSession` snapshots the current

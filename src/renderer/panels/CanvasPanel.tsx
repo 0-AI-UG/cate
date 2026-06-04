@@ -18,7 +18,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
-import { createCanvasOps } from '../lib/canvasBridge'
+import { createCanvasOps } from '../lib/canvas/canvasBridge'
 import { createDockStore, type DockStore } from '../stores/dockStore'
 import {
   registerNodeDockStore,

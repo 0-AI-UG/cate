@@ -8,8 +8,8 @@
 //     loadURL on its <webview>. Only creates a new panel when none exists.
 // =============================================================================
 
-import { useAppStore } from '../stores/appStore'
-import { portalRegistry } from './portalRegistry'
+import { useAppStore } from '../../stores/appStore'
+import { portalRegistry } from '../portalRegistry'
 
 function findBrowserPanelId(workspaceId: string): string | null {
   const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)

@@ -1,9 +1,13 @@
 // =============================================================================
-// CompanionManager — registry + connection lifecycle. The LOCAL workspace runs
-// as the companion daemon subprocess, provisioned + connected at startup by
-// `ensureLocalCompanion` (so resolve() works only once it's online). Remote
-// (server / WSL) companions are established via a CompanionTransport: bootstrap
-// → launch → handshake → version-check → wrap in a RemoteCompanion and register.
+// CompanionManager — registry + connection lifecycle. LOCAL and remote hosts
+// come online through the SAME path: `connect(id, transport, opts)` registers a
+// DeferredCompanion synchronously (so resolve() works and the window paints
+// before the daemon is online) and drives a CompanionTransport: bootstrap →
+// launch → handshake → version-check → wrap in a RemoteCompanion. The LOCAL
+// workspace is just `connect(LOCAL, localTransport, { install: true })`, kicked
+// off at startup by `ensureLocalCompanion`. The only things that differ between
+// local and remote are the `install` flag (local self-installs) and the
+// auto-reconnect on a LOCAL drop — both expressed inside this one pipeline.
 // `resolve` of an unknown id throws, which surfaces as a normal IPC error.
 // =============================================================================
 
@@ -38,6 +42,11 @@ export class CompanionManager {
   /** Pending LOCAL auto-reconnect timer — guards against stacking reconnects on
    *  a crash loop (one backoff in flight at a time). */
   private localReconnectTimer: ReturnType<typeof setTimeout> | null = null
+  /** Last status emitted for the LOCAL companion, so a window that subscribes to
+   *  COMPANION_STATUS after the startup connect already finished can still seed
+   *  its loading blocker. Defaults to `connecting` — ensureLocalCompanion runs at
+   *  every app launch, so LOCAL is always coming up until proven otherwise. */
+  private lastLocalStatus: { phase: CompanionPhase; message?: string } = { phase: 'connecting' }
 
   constructor() {
     // The LOCAL workspace runs as the companion daemon subprocess. It's NOT
@@ -46,28 +55,34 @@ export class CompanionManager {
   }
 
   /**
-   * Bring the local workspace online: provision + launch the host-target companion
-   * tarball as a local daemon, exactly like a remote host, and register it under
-   * LOCAL_COMPANION_ID. Call once at startup before the first local workspace op.
+   * Bring the local workspace online by handing a local-host transport to the same
+   * `connect()` every remote host uses, with `install: true` so the bundled tarball
+   * self-extracts on first run. Call once at startup before the first local op.
    *
-   * Registers a DeferredCompanion SYNCHRONOUSLY (so resolve(LOCAL) and the window
-   * paint don't wait for the ~10s first-run tarball extraction) and connects the
-   * daemon in the BACKGROUND. Early IPC ops queue behind the deferred's `ready`,
-   * which resolves to the real RemoteCompanion once connected.
+   * connect() registers a DeferredCompanion SYNCHRONOUSLY (so resolve(LOCAL) and
+   * the window paint don't wait for the ~10s first-run tarball extraction) and
+   * connects the daemon in the BACKGROUND. Early IPC ops queue behind the
+   * deferred's `ready`, which resolves to the real RemoteCompanion once connected.
    *
-   * This runs at app launch, so it must NEVER throw (that would break the launch).
-   * If no local tarball/target is available, it logs + emits `unreachable` and
-   * registers nothing. If the background connect fails, it unregisters the deferred
-   * and emits `unreachable`, so every local op fails with a clear error until fixed.
+   * This runs at app launch, so it must NEVER throw (that would break the launch);
+   * the connect runs fire-and-forget. If no local tarball/target is available, it
+   * logs + emits `unreachable` and connects nothing. If the background connect
+   * fails, connect() drops the deferred and this emits `unreachable`, so every
+   * local op fails with a clear error until fixed.
    */
   ensureLocalCompanion(opts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv; idleSuspend?: boolean }): void {
     // Remember the launch opts so a crash can re-provision + relaunch identically
     // (see the LOCAL auto-reconnect in doConnect's onClose handler).
     this.localOpts = opts
-    // Already registered (real RemoteCompanion, or a deferred still connecting):
-    // nothing to do — the auto-reconnect path deletes the entry on a crash before
-    // calling here again, so a present entry means LOCAL is live or in-flight.
-    if (this.companions.has(LOCAL_COMPANION_ID)) return
+    // LOCAL comes online through the SAME public connect() as every remote/WSL
+    // host — connect() registers a DeferredCompanion synchronously (so resolve(
+    // LOCAL) and first paint don't wait for the daemon) and dedupes concurrent /
+    // in-flight connects. So a live or in-flight LOCAL needs nothing here; the
+    // auto-reconnect path deletes the entry before calling, so a present
+    // non-deferred entry means LOCAL is already live.
+    if (this.connecting.has(LOCAL_COMPANION_ID)) return
+    const existing = this.companions.get(LOCAL_COMPANION_ID)
+    if (existing && !(existing instanceof DeferredCompanion)) return
     const hint = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV
       ? ' In dev, build it first: `npm run companion:tarball`.'
       : ''
@@ -85,41 +100,17 @@ export class CompanionManager {
       return
     }
 
-    // Register a DeferredCompanion SYNCHRONOUSLY so resolve(LOCAL) works (and the
-    // window paints) immediately, while the daemon connects in the background.
-    // The deferred's `ready` mirrors the connect outcome below.
-    let resolveReady!: (c: Companion) => void
-    let rejectReady!: (err: unknown) => void
-    const readyPromise = new Promise<Companion>((res, rej) => { resolveReady = res; rejectReady = rej })
-    // Swallow unhandled-rejection warnings: callers that await a deferred op see
-    // the rejection, but the bare readyPromise must not warn if no op ran before
-    // a failed connect.
-    readyPromise.catch(() => {})
-    this.companions.set(LOCAL_COMPANION_ID, new DeferredCompanion(LOCAL_COMPANION_ID, readyPromise))
-
-    // Call the PRIVATE doConnect directly: the public connect() early-returns the
-    // existing companion, and we just registered the deferred under this id, so
-    // connect() would never actually connect. doConnect overwrites companions[
-    // LOCAL] with the real RemoteCompanion on success (subsequent resolves get it
-    // directly) and deletes the entry on failure. LOCAL connects once at startup
-    // (the reconnect path deletes the entry first), so no `connecting` dedupe is
-    // needed here.
-    void this.doConnect(LOCAL_COMPANION_ID, transport, { install: true })
-      .then((real) => {
-        resolveReady(real)
+    // install:true — the local daemon self-installs (extracts the bundled tarball)
+    // on first run; a remote host installs only on an explicit user action. That
+    // flag is the ONLY thing distinguishing this from a remote connect. Fire-and-
+    // forget: connect() already registered the deferred synchronously (so the
+    // window paints), so we just log the eventual outcome. connect() drops the
+    // deferred on failure, so resolve(LOCAL) then fails clearly until fixed.
+    void this.connect(LOCAL_COMPANION_ID, transport, { install: true })
+      .then(() => {
         log.info('[companion] local workspace running on the daemon tarball')
       })
       .catch((err) => {
-        // doConnect failed BEFORE registering the real companion, so the deferred
-        // is still the registered entry. Remove it so resolve(LOCAL) fails with a
-        // clear "No companion registered" until fixed, AND so a later
-        // ensureLocalCompanion (manual retry / reconnect) isn't short-circuited by
-        // a stale deferred. Guard on identity in case a concurrent connect already
-        // replaced it (it can't today — LOCAL connects once — but stay defensive).
-        const cur = this.companions.get(LOCAL_COMPANION_ID)
-        if (cur instanceof DeferredCompanion) this.companions.delete(LOCAL_COMPANION_ID)
-        // Any op already queued behind `ready` must reject clearly.
-        rejectReady(err)
         const detail = err instanceof Error ? err.message : String(err)
         log.error('[companion] local daemon failed to start: %s', detail)
         // doConnect already emitted a step-specific status (unreachable/missing);
@@ -153,7 +144,15 @@ export class CompanionManager {
   }
 
   private emitStatus(id: CompanionId, state: CompanionPhase, message?: string): void {
+    if (id === LOCAL_COMPANION_ID) this.lastLocalStatus = { phase: state, ...(message != null ? { message } : {}) }
     try { this.statusListener?.(id, state, message) } catch { /* listener must not break connect */ }
+  }
+
+  /** Last status emitted for the LOCAL companion. Seeds the renderer's startup
+   *  loading blocker, since the local connect can finish (or fail) before a
+   *  window subscribes to the COMPANION_STATUS broadcast. */
+  localStatus(): { phase: CompanionPhase; message?: string } {
+    return this.lastLocalStatus
   }
 
   /** Resolve a companion by id. Throws if it isn't registered/connected. */
@@ -167,6 +166,14 @@ export class CompanionManager {
 
   has(id: CompanionId): boolean {
     return this.companions.has(id)
+  }
+
+  /** True only when a companion is FULLY connected (a live RemoteCompanion), not
+   *  while a connect is still in flight (a DeferredCompanion is registered but the
+   *  daemon isn't online yet). Backed by the connections map, which doConnect
+   *  populates only at the final `connected` step. */
+  isConnected(id: CompanionId): boolean {
+    return this.connections.has(id)
   }
 
   /** Register (or replace) a companion. The local companion cannot be replaced. */
@@ -210,15 +217,49 @@ export class CompanionManager {
     transport: CompanionTransport,
     opts: { install?: boolean; force?: boolean } = {},
   ): Promise<Companion> {
-    const existing = this.companions.get(id)
-    if (existing) return Promise.resolve(existing)
-
+    // Dedupe an in-flight connect FIRST, so concurrent callers share one attempt
+    // AND the DeferredCompanion this connect registers below can't short-circuit
+    // its own in-flight connect via the existing-entry check.
     const inFlight = this.connecting.get(id)
     if (inFlight) return inFlight
+    // A DeferredCompanion is only ever registered for the duration of an in-flight
+    // connect (deduped above), so any entry that ISN'T a deferred is a live
+    // connection — reused as-is (reconnect / restore / retry).
+    const existing = this.companions.get(id)
+    if (existing && !(existing instanceof DeferredCompanion)) return Promise.resolve(existing)
 
-    const promise = this.doConnect(id, transport, opts).finally(() => {
-      this.connecting.delete(id)
-    })
+    // Register a DeferredCompanion SYNCHRONOUSLY so resolve(id) works (and the
+    // window can paint) the instant connect() is called — identically for LOCAL
+    // and remote. Early ops queue behind `ready`, which settles with the connect
+    // outcome below. The returned promise still resolves to the REAL companion
+    // (or rejects), so awaiting callers get connect-completion semantics.
+    let resolveReady!: (c: Companion) => void
+    let rejectReady!: (err: unknown) => void
+    const ready = new Promise<Companion>((res, rej) => { resolveReady = res; rejectReady = rej })
+    // A bare `ready` must not emit an unhandled-rejection warning when no op was
+    // queued before a failed connect (queued ops see the rejection themselves).
+    ready.catch(() => {})
+    this.companions.set(id, new DeferredCompanion(id, ready))
+
+    const promise = this.doConnect(id, transport, opts)
+      .then((real) => {
+        // doConnect already replaced the deferred with the real companion.
+        resolveReady(real)
+        return real
+      })
+      .catch((err) => {
+        // doConnect failed before registering the real companion, so the deferred
+        // is still the registered entry. Drop it (guarding identity against a
+        // concurrent replace) so resolve(id) fails clearly and a later connect
+        // isn't short-circuited by a stale deferred.
+        const cur = this.companions.get(id)
+        if (cur instanceof DeferredCompanion) this.companions.delete(id)
+        rejectReady(err)
+        throw err
+      })
+      .finally(() => {
+        this.connecting.delete(id)
+      })
     this.connecting.set(id, promise)
     return promise
   }

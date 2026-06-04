@@ -18,7 +18,7 @@ import os from 'os'
 import path from 'path'
 import type { CompanionChannel, CompanionTransport } from './transport'
 import { COMPANION_VERSION } from '../../../companion/version'
-import { hostCompanionTarget, localTarballIfPresent, shippedCompanionTarball, type CompanionTarget } from '../companionArtifacts'
+import { hostCompanionTarget, localTarballIfPresent, shippedCompanionTarball, tarballHash, type CompanionTarget } from '../companionArtifacts'
 
 const execFileP = promisify(execFile)
 
@@ -82,17 +82,27 @@ export class LocalSubprocessTransport implements CompanionTransport {
     })
   }
 
-  /** Provisioned mode only: true when the install dir holds this version. */
+  /** Freshness marker stored in `.ok`: version + the tarball's content hash, so a
+   *  rebuilt daemon at the SAME version (dev iteration: `npm run companion:tarball`
+   *  with new companion.cjs/rg/pi) re-provisions instead of running stale bytes.
+   *  Mirrors SshTransport's `version:hash` marker. */
+  private async marker(version: string): Promise<string> {
+    return `${version}:${await tarballHash(this.opts.tarballPath!)}`
+  }
+
+  /** Provisioned mode only: true when the install dir holds THIS tarball's bytes. */
   async isInstalled(version: string): Promise<boolean> {
     const { installDir, tarballPath } = this.opts
     if (!installDir || !tarballPath) return true // direct mode: nothing to install
     const ok = path.join(installDir, '.ok')
-    return (
-      existsSync(tarballNode(installDir)) &&
-      existsSync(path.join(installDir, 'companion.cjs')) &&
-      existsSync(ok) &&
-      readFileSync(ok, 'utf-8').trim() === version
-    )
+    if (
+      !existsSync(tarballNode(installDir)) ||
+      !existsSync(path.join(installDir, 'companion.cjs')) ||
+      !existsSync(ok)
+    ) {
+      return false
+    }
+    return readFileSync(ok, 'utf-8').trim() === (await this.marker(version))
   }
 
   /** Provisioned mode only: extract the tarball into the install dir. */
@@ -103,7 +113,7 @@ export class LocalSubprocessTransport implements CompanionTransport {
     await rm(installDir, { recursive: true, force: true })
     await mkdir(installDir, { recursive: true })
     await execFileP('tar', ['-xzf', tarballPath, '-C', installDir])
-    await writeFile(path.join(installDir, '.ok'), version)
+    await writeFile(path.join(installDir, '.ok'), await this.marker(version))
   }
 
   async launch(): Promise<CompanionChannel> {

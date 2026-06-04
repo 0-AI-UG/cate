@@ -227,33 +227,36 @@ export class RemoteCompanion implements Companion {
   // Validation runs authoritatively on the daemon (only it can realpath the
   // remote filesystem). These mirror the Companion contract; the lexical local
   // fast-fail can be layered on later without changing callers.
-  validatePath(filePath: string, ownerWindowId?: number): string {
+  validatePath(filePath: string, ownerWindowId?: number, scopeId?: string): string {
     // Synchronous in the interface, but the authoritative check is remote and
     // async. We return the path as-is here; FileHost methods themselves call
     // through to the daemon, which validates before touching the fs.
     void ownerWindowId
+    void scopeId
     return filePath
   }
 
-  async validatePathStrict(filePath: string, ownerWindowId?: number): Promise<string> {
-    return this.rpc.call(Methods.validatePathStrict, [filePath, ownerWindowId]) as Promise<string>
+  async validatePathStrict(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string> {
+    return this.rpc.call(Methods.validatePathStrict, [filePath, ownerWindowId, scopeId]) as Promise<string>
   }
 
-  async validatePathForCreation(filePath: string, ownerWindowId?: number): Promise<string> {
-    return this.rpc.call(Methods.validatePathForCreation, [filePath, ownerWindowId]) as Promise<string>
+  async validatePathForCreation(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string> {
+    return this.rpc.call(Methods.validatePathForCreation, [filePath, ownerWindowId, scopeId]) as Promise<string>
   }
 
-  validateCwd(cwd: string): string {
+  validateCwd(cwd: string, ownerWindowId?: number, scopeId?: string): string {
     // Authoritative validation happens on the daemon inside each vcs op.
+    void ownerWindowId
+    void scopeId
     return cwd
   }
 
-  addAllowedRoot(root: string): Promise<void> {
-    return this.rpc.call(Methods.addAllowedRoot, [root]) as Promise<void>
+  addAllowedRoot(root: string, scopeId?: string): Promise<void> {
+    return this.rpc.call(Methods.addAllowedRoot, [root, scopeId]) as Promise<void>
   }
 
-  removeAllowedRoot(root: string): Promise<void> {
-    return this.rpc.call(Methods.removeAllowedRoot, [root]) as Promise<void>
+  removeAllowedRoot(root: string, scopeId?: string): Promise<void> {
+    return this.rpc.call(Methods.removeAllowedRoot, [root, scopeId]) as Promise<void>
   }
 
   setExclusions(names: string[]): Promise<void> {

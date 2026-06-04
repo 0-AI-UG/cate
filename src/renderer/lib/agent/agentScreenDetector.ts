@@ -21,10 +21,10 @@
 // presence poll can't keep resetting it.
 // =============================================================================
 
-import { useStatusStore } from '../stores/statusStore'
-import { sendOsNotification } from './osNotificationSend'
+import { useStatusStore } from '../../stores/statusStore'
+import { sendOsNotification } from '../notifications/osNotificationSend'
 import { resolveAgentState, WAITING_SETTLE_MS, BODY_SPINNER_TIMEOUT_MS } from './agentScreenDetectorLogic'
-import type { AgentState } from '../../shared/types'
+import type { AgentState } from '../../../shared/types'
 
 interface Tracker {
   present: boolean

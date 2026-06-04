@@ -7,22 +7,22 @@
 // =============================================================================
 
 import { Terminal } from '@xterm/xterm'
-import log from './logger'
+import log from '../logger'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { useStatusStore } from '../stores/statusStore'
-import { useSettingsStore } from '../stores/settingsStore'
-import { terminalRestoreData, replayTerminalLog } from './session'
-import { awaitWorkspaceSync, useAppStore } from '../stores/appStore'
-import { extractAgentTitleSegment } from './agentTitleParser'
-import { titleIndicatesRunning, outputShowsBodySpinner } from './agentSpinner'
-import { noteAgentTitle, noteAgentSpinnerByte } from './agentScreenDetector'
+import { useStatusStore } from '../../stores/statusStore'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { terminalRestoreData, replayTerminalLog } from '../workspace/session'
+import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
+import { extractAgentTitleSegment } from '../agent/agentTitleParser'
+import { titleIndicatesRunning, outputShowsBodySpinner } from '../agent/agentSpinner'
+import { noteAgentTitle, noteAgentSpinnerByte } from '../agent/agentScreenDetector'
 import { openTerminalUrl } from './terminalUrlOpen'
 import { resolveTerminalKeySequence } from './terminalKeymap'
-import { getActiveTheme, subscribeTheme } from './themeManager'
-import type { Theme } from '../../shared/types'
+import { getActiveTheme, subscribeTheme } from '../themeManager'
+import type { Theme } from '../../../shared/types'
 import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvider'
 import { resolveTerminalLinkTarget } from './terminalLinks'
 
@@ -412,8 +412,15 @@ if (typeof window !== 'undefined') {
 async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryEntry> {
   const existing = registry.get(panelId)
   if (existing) {
-    pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
-    return existing
+    if (existing.workspaceId !== opts.workspaceId) {
+      // The same panel id is being mounted under a DIFFERENT workspace. A PTY
+      // must never be shared across workspaces, so tear the stale one down and
+      // build a fresh terminal for the requesting workspace below.
+      dispose(panelId)
+    } else {
+      pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
+      return existing
+    }
   }
   // A retry starts here — clear any prior failure so observers re-render
   // back into the live terminal view.
@@ -519,6 +526,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
       rows,
       cwd: resolvedCwd,
       shell: (shell as string) || undefined,
+      workspaceId: opts.workspaceId,
     })
 
     // If the entry was disposed while we were waiting, bail out
@@ -1146,6 +1154,18 @@ function dispose(panelId: string): void {
   try { terminal.dispose() } catch { /* ignore */ }
 }
 
+/**
+ * Dispose every terminal owned by a workspace. Called when a workspace is
+ * removed so its PTYs can't linger or be reused under another workspace.
+ */
+function disposeWorkspace(workspaceId: string): void {
+  const ids: string[] = []
+  for (const [panelId, entry] of registry) {
+    if (entry.workspaceId === workspaceId) ids.push(panelId)
+  }
+  for (const id of ids) dispose(id)
+}
+
 /** Returns the RegistryEntry for panelId, or undefined if not present. */
 function getEntry(panelId: string): RegistryEntry | undefined {
   return registry.get(panelId)
@@ -1213,6 +1233,7 @@ export const terminalRegistry = {
   attach,
   detach,
   dispose,
+  disposeWorkspace,
   release,
   fit,
   restoreScroll,

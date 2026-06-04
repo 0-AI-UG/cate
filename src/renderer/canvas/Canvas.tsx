@@ -9,13 +9,13 @@ import { useAppStore } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
 import { useAutoFocusLargestVisible } from '../hooks/useAutoFocusLargestVisible'
 import { useUIStore, effectiveCanvasTool } from '../stores/uiStore'
-import { canvasToView, viewToCanvas } from '../lib/coordinates'
+import { canvasToView, viewToCanvas } from '../lib/canvas/coordinates'
 import CanvasGrid from './CanvasGrid'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import type { Point, PanelType } from '../../shared/types'
-import { openFileAsPanel } from '../lib/fileRouting'
-import { setPendingReveal } from '../lib/editorReveal'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { setPendingReveal } from '../lib/editor/editorReveal'
 
 // Module-level style injection — shared across all Canvas instances
 let canvasStyleInjected = false
@@ -309,7 +309,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     for (const filePath of filePaths) {
       let isDir = false
       try {
-        const stat = await window.electronAPI.fsStat(filePath)
+        const stat = await window.electronAPI.fsStat(filePath, wsId)
         isDir = !!stat?.isDirectory
       } catch { /* fall through; treat as file */ }
       const pos = { x: canvasPoint.x + offsetX, y: canvasPoint.y }

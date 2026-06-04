@@ -3,14 +3,15 @@
 // No in-app state: settings-gated dispatch + a global handler for click actions.
 // =============================================================================
 
-import { useAppStore, getCanvasOperations, getWorkspaceCanvasPanelId, ensureCanvasOpsForPanel } from '../stores/appStore'
-import { useDockStore } from '../stores/dockStore'
-import { terminalRegistry } from './terminalRegistry'
-import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
-import { ALL_ZONES } from '../../shared/types'
-import type { NotificationAction, PanelLocation } from '../../shared/types'
+import { useAppStore, getWorkspaceCanvasPanelId, ensureCanvasOpsForPanel } from '../../stores/appStore'
+import { getWorkspaceDockStore } from '../../stores/workspaceStores'
+import { terminalRegistry } from '../terminal/terminalRegistry'
+import { findTabStack, findStackContainingPanel } from '../../stores/dockTreeUtils'
+import { ALL_ZONES } from '../../../shared/types'
+import type { NotificationAction, PanelLocation } from '../../../shared/types'
+import type { DockStore } from '../../stores/dockStore'
 
-type DockStoreState = ReturnType<typeof useDockStore.getState>
+type DockStoreState = DockStore
 
 function focusDockPanel(dock: DockStoreState, panelId: string, location: PanelLocation): void {
   if (location.type !== 'dock') return
@@ -46,7 +47,8 @@ async function executeAction(action: NotificationAction): Promise<void> {
     if (attempt > 0) await new Promise<void>((r) => setTimeout(r, 50))
 
     const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
-    const dock = useDockStore.getState()
+    const dock = getWorkspaceDockStore(workspaceId)?.getState()
+    if (!dock) continue
 
     const location = dock.getPanelLocation(panelId)
     if (location?.type === 'dock') { focusDockPanel(dock, panelId, location); return }
@@ -55,7 +57,7 @@ async function executeAction(action: NotificationAction): Promise<void> {
     if (found) { focusDockPanel(dock, panelId, found); return }
 
     const canvasPanelId = getWorkspaceCanvasPanelId(workspaceId)
-    const ops = canvasPanelId ? ensureCanvasOpsForPanel(canvasPanelId) : getCanvasOperations()
+    const ops = canvasPanelId ? ensureCanvasOpsForPanel(canvasPanelId) : null
     const nodeId = ops?.storeApi?.getState()?.nodeForPanel(panelId)
     if (nodeId) { ops!.focusPanelNode(panelId); return }
   }

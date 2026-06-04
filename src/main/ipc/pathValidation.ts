@@ -7,7 +7,16 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 
-const allowedRoots = new Set<string>()
+// Per-workspace ("scope") allowed-root registry. Each scopeId is a workspace id.
+// Phase 1 records which roots belong to which workspace and threads the scopeId
+// end-to-end (renderer -> IPC -> companion -> daemon), but does NOT yet use it to
+// restrict access — isWithinAllowedRoots still checks the union of all scopes'
+// roots (pre-isolation behavior). Strict per-workspace enforcement is deferred to
+// Phase 3. Calls without a scopeId land under the LEGACY key (home/agent dirs,
+// daemon root, dev trust-scoping override) and stay globally allowed by design.
+const LEGACY_SCOPE = '__legacy_global__'
+const rootsByScope = new Map<string, Set<string>>()
+
 const scopedWriteAllowances = new Map<number, Map<string, ReturnType<typeof setTimeout>>>()
 const DEFAULT_WRITE_ALLOWANCE_TTL_MS = 60_000
 
@@ -30,32 +39,62 @@ export function pathCompareKey(p: string, platform: NodeJS.Platform = process.pl
 // location into the grant set.
 const persistentFileGrants = new Map<number, Set<string>>()
 
-export function addAllowedRoot(root: string): void {
-  allowedRoots.add(path.resolve(root))
+export function addAllowedRoot(root: string, scopeId?: string): void {
+  const key = scopeId ?? LEGACY_SCOPE
+  const set = rootsByScope.get(key) ?? new Set<string>()
+  set.add(path.resolve(root))
+  rootsByScope.set(key, set)
 }
 
-export function removeAllowedRoot(root: string): void {
-  allowedRoots.delete(path.resolve(root))
+export function removeAllowedRoot(root: string, scopeId?: string): void {
+  const key = scopeId ?? LEGACY_SCOPE
+  const set = rootsByScope.get(key)
+  if (!set) return
+  set.delete(path.resolve(root))
+  if (set.size === 0) rootsByScope.delete(key)
 }
 
 export function getAllowedRoots(): ReadonlySet<string> {
-  return allowedRoots
+  // Union of every scope's roots — some callers/tests want the global view.
+  const union = new Set<string>()
+  for (const set of rootsByScope.values()) {
+    for (const root of set) union.add(root)
+  }
+  return union
 }
 
-function isWithinAllowedRoots(normalized: string): boolean {
+// True if `key` (a pre-computed pathCompareKey) is the root itself or sits under
+// it. Roots are already path.resolve'd at registration; key-compare them so the
+// win32 case-insensitive match holds.
+function keyUnderRoots(key: string, roots: Iterable<string>): boolean {
+  for (const root of roots) {
+    const rootKey = pathCompareKey(root)
+    if (key.startsWith(rootKey + path.sep) || key === rootKey) {
+      return true
+    }
+  }
+  return false
+}
+
+function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
   const key = pathCompareKey(normalized)
   const tmpKey = pathCompareKey(path.resolve(os.tmpdir()))
   if (key === tmpKey || key.startsWith(tmpKey + path.sep)) {
     return true
   }
 
-  for (const root of allowedRoots) {
-    const rootKey = pathCompareKey(root)
-    if (key.startsWith(rootKey + path.sep) || key === rootKey) {
-      return true
-    }
+  // Phase 1 lands the SCOPE-THREADING INFRASTRUCTURE only: `scopeId` is recorded
+  // per workspace (see addAllowedRoot / rootsByScope) and is now carried end-to-end
+  // from the renderer through to this validator, but it is intentionally NOT used to
+  // restrict access yet. The check stays the pre-isolation "union of every open
+  // workspace's roots" so behavior is unchanged. Strict per-workspace enforcement
+  // (allow only `scopeId`'s own roots, denying cross-workspace access) is deferred to
+  // Phase 3, where each local workspace gets its own daemon rooted at its own root —
+  // see keyUnderRoots(key, rootsByScope.get(scopeId)) for the future strict branch.
+  void scopeId
+  for (const set of rootsByScope.values()) {
+    if (keyUnderRoots(key, set)) return true
   }
-
   return false
 }
 
@@ -149,13 +188,13 @@ export function clearFileGrantsForWindow(windowId: number): void {
  * persistently granted to the calling window. Returns the normalized
  * absolute path if valid, throws if not.
  */
-export function validatePath(filePath: string, ownerWindowId?: number): string {
+export function validatePath(filePath: string, ownerWindowId?: number, scopeId?: string): string {
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Access denied: invalid path')
   }
 
   const normalized = path.resolve(filePath)
-  if (isWithinAllowedRoots(normalized)) {
+  if (isWithinAllowedRoots(normalized, scopeId)) {
     return normalized
   }
   if (hasGrantedFile(ownerWindowId, normalized)) {
@@ -174,9 +213,9 @@ export function validatePath(filePath: string, ownerWindowId?: number): string {
  *
  * Returns the real absolute path if valid, throws if not.
  */
-export async function validatePathStrict(filePath: string, ownerWindowId?: number): Promise<string> {
+export async function validatePathStrict(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string> {
   // First do the cheap lexical check so we fail fast on obviously bad input.
-  validatePath(filePath, ownerWindowId)
+  validatePath(filePath, ownerWindowId, scopeId)
 
   let real: string
   try {
@@ -185,7 +224,7 @@ export async function validatePathStrict(filePath: string, ownerWindowId?: numbe
     throw new Error(`Access denied: cannot resolve real path for "${filePath}": ${err}`)
   }
 
-  if (isWithinAllowedRoots(real)) {
+  if (isWithinAllowedRoots(real, scopeId)) {
     return real
   }
   if (hasGrantedFile(ownerWindowId, real)) {
@@ -203,10 +242,10 @@ export async function validatePathStrict(filePath: string, ownerWindowId?: numbe
  *
  * Returns the safe absolute path (`realParent + baseName`).
  */
-export async function validatePathForCreation(filePath: string, ownerWindowId?: number): Promise<string> {
+export async function validatePathForCreation(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string> {
   const normalized = path.resolve(filePath)
   const safeTarget = await normalizeCreationTarget(filePath)
-  if (isWithinAllowedRoots(normalized) || isWithinAllowedRoots(safeTarget)) {
+  if (isWithinAllowedRoots(normalized, scopeId) || isWithinAllowedRoots(safeTarget, scopeId)) {
     return safeTarget
   }
   if (hasGrantedFile(ownerWindowId, safeTarget)) {
@@ -222,6 +261,6 @@ export async function validatePathForCreation(filePath: string, ownerWindowId?: 
  * Validates a directory path for git/shell operations.
  * Same as validatePath but specifically for cwd parameters.
  */
-export function validateCwd(cwd: string, ownerWindowId?: number): string {
-  return validatePath(cwd, ownerWindowId)
+export function validateCwd(cwd: string, ownerWindowId?: number, scopeId?: string): string {
+  return validatePath(cwd, ownerWindowId, scopeId)
 }

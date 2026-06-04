@@ -5,7 +5,7 @@
 // =============================================================================
 
 import type { Point, Size } from '../../shared/types'
-import { viewToCanvas } from '../lib/coordinates'
+import { viewToCanvas } from '../lib/canvas/coordinates'
 
 /**
  * Cursor → canvas-space origin for the dropped/repositioned node.

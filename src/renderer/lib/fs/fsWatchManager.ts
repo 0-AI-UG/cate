@@ -37,14 +37,14 @@ function toPosix(p: string): string {
  * function. The underlying watcher is shared and reference-counted, so it stays
  * alive as long as at least one subscriber for that root remains.
  */
-export function watchFsRoot(rootPath: string, listener: Listener): () => void {
+export function watchFsRoot(rootPath: string, listener: Listener, workspaceId?: string): () => void {
   if (!rootPath || !window.electronAPI) return () => {}
 
   let entry = entries.get(rootPath)
   if (!entry) {
     const created: Entry = { listeners: new Set(), unsubscribe: null }
     entries.set(rootPath, created)
-    window.electronAPI.fsWatchStart(rootPath).catch(() => { /* watcher unavailable */ })
+    window.electronAPI.fsWatchStart(rootPath, workspaceId).catch(() => { /* watcher unavailable */ })
     const rootPosix = toPosix(rootPath)
     // onFsWatchEvent delivers every watch event for this window; only forward
     // those under this root (matters when multiple roots are watched at once).
@@ -65,7 +65,7 @@ export function watchFsRoot(rootPath: string, listener: Listener): () => void {
     if (e.listeners.size === 0) {
       e.unsubscribe?.()
       entries.delete(rootPath)
-      window.electronAPI?.fsWatchStop(rootPath).catch(() => { /* already gone */ })
+      window.electronAPI?.fsWatchStop(rootPath, workspaceId).catch(() => { /* already gone */ })
     }
   }
 }

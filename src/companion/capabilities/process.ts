@@ -305,7 +305,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       if (isLinux) return getCwdProc(pty.pid)
       return new Promise((resolve) => {
         execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pty.pid}`, '-Fn'], { encoding: 'utf-8', timeout: 2000 }, (err, stdout) => {
-          if (err || !stdout) return resolve(null)
+          if (err || !stdout) { return resolve(null) }
           const nameLine = stdout.split('\n').find((l) => l.startsWith('n'))
           resolve(nameLine ? nameLine.slice(1) : null)
         })
@@ -370,7 +370,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
         // these process trees (without it lsof ORs the filters → whole system).
         execFile('lsof', ['-iTCP', '-sTCP:LISTEN', '-P', '-n', '-a', '-p', pids.join(','), '-F', 'pn'], {
           timeout: 5000,
-        }, (_err, stdout) => {
+        }, (err, stdout) => {
           const result: Record<string, number[]> = {}
           // Parse regardless of exit status: lsof exits 1 when some requested
           // pids have no listeners but still emits records for those that do.

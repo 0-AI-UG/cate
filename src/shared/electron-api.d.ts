@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, CompanionConnectResult, CompanionStatusEvent, CompanionConnection, RemoteProjectEntry, SshHostEntry } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AgentToolApprovalRequest, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DetachedDockWindowSnapshot, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PanelWindowSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, CompanionConnectResult, CompanionStatusEvent, CompanionConnection, CompanionPhase, RemoteProjectEntry, SshHostEntry } from './types'
 
 export interface NativeContextMenuItem {
   id?: string
@@ -34,6 +34,7 @@ export interface ElectronAPI {
     rows: number
     cwd?: string
     shell?: string
+    workspaceId?: string
   }): Promise<string>
 
   /** Write data (keystrokes) to a terminal. */
@@ -68,29 +69,30 @@ export interface ElectronAPI {
   // Filesystem
   // ---------------------------------------------------------------------------
 
-  /** Read a file as UTF-8 text. */
-  fsReadFile(filePath: string): Promise<string>
+  /** Read a file as UTF-8 text. The optional workspaceId scopes path
+   *  validation to the owning workspace's allowed roots. */
+  fsReadFile(filePath: string, workspaceId?: string): Promise<string>
 
   /** Read a file as binary (ArrayBuffer). */
-  fsReadBinary(filePath: string): Promise<ArrayBuffer>
+  fsReadBinary(filePath: string, workspaceId?: string): Promise<ArrayBuffer>
 
   /** Write UTF-8 text to a file. */
-  fsWriteFile(filePath: string, content: string): Promise<void>
+  fsWriteFile(filePath: string, content: string, workspaceId?: string): Promise<void>
 
   /** Read a directory and return FileTreeNode entries. */
-  fsReadDir(dirPath: string): Promise<FileTreeNode[]>
+  fsReadDir(dirPath: string, workspaceId?: string): Promise<FileTreeNode[]>
 
   /** Search for files by name and content (flat result list). */
-  fsSearch(rootPath: string, query: string, options?: FileSearchOptions): Promise<FileSearchResult[]>
+  fsSearch(rootPath: string, query: string, options?: FileSearchOptions, workspaceId?: string): Promise<FileSearchResult[]>
 
   /** Start watching a directory for changes. */
-  fsWatchStart(dirPath: string): Promise<void>
+  fsWatchStart(dirPath: string, workspaceId?: string): Promise<void>
 
   /** Stop watching a directory. */
-  fsWatchStop(dirPath: string): Promise<void>
+  fsWatchStop(dirPath: string, workspaceId?: string): Promise<void>
 
   /** Stat a path to determine if it is a file or directory. */
-  fsStat(filePath: string): Promise<{ isDirectory: boolean; isFile: boolean }>
+  fsStat(filePath: string, workspaceId?: string): Promise<{ isDirectory: boolean; isFile: boolean }>
 
   /** Subscribe to filesystem watch events (main -> renderer). */
   onFsWatchEvent(
@@ -104,7 +106,7 @@ export interface ElectronAPI {
   /** Start a streaming content search. The caller supplies a searchId (set in
    *  the store first) so streamed events can be correlated without a race.
    *  Cancels any previous search for this window. */
-  searchStart(rootPath: string, searchId: string, options: SearchOptions): Promise<string>
+  searchStart(rootPath: string, searchId: string, options: SearchOptions, workspaceId?: string): Promise<string>
 
   /** Cancel the in-flight search for this window. */
   searchCancel(): Promise<void>
@@ -482,14 +484,14 @@ export interface ElectronAPI {
   // Shell utilities
   // ---------------------------------------------------------------------------
 
-  fsDelete(filePath: string): Promise<void>
-  fsRename(oldPath: string, newPath: string): Promise<void>
-  fsMkdir(dirPath: string): Promise<void>
-  fsCopy(srcPath: string, destDir: string): Promise<string>
+  fsDelete(filePath: string, workspaceId?: string): Promise<void>
+  fsRename(oldPath: string, newPath: string, workspaceId?: string): Promise<void>
+  fsMkdir(dirPath: string, workspaceId?: string): Promise<void>
+  fsCopy(srcPath: string, destDir: string, workspaceId?: string): Promise<string>
   /** Import external files/folders (dragged in from the OS) into `destDir`,
    *  which must resolve inside a workspace root. `mode` is 'copy' or 'move'.
    *  Returns the created destination paths and a count of entries that failed. */
-  fsImportEntries(sources: string[], destDir: string, mode: 'copy' | 'move'): Promise<{ created: string[]; failed: number }>
+  fsImportEntries(sources: string[], destDir: string, mode: 'copy' | 'move', workspaceId?: string): Promise<{ created: string[]; failed: number }>
   shellShowInFolder(filePath: string): Promise<void>
 
   // ---------------------------------------------------------------------------
@@ -620,6 +622,11 @@ export interface ElectronAPI {
 
   /** Ids of currently-connected remote/WSL companions. */
   companionList(): Promise<string[]>
+
+  /** Current connection phase of the built-in LOCAL companion — a seed for the
+   *  startup loading blocker, since the local connect can finish (or fail) before
+   *  a window subscribes to the COMPANION_STATUS broadcast. */
+  companionLocalStatus(): Promise<{ phase: CompanionPhase; message?: string }>
 
   /** Names of WSL distros installed on this host ([] on non-Windows / no WSL). */
   companionWslDistros(): Promise<string[]>

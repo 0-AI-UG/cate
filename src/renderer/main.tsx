@@ -5,7 +5,7 @@ import log from './lib/logger'
 import { mark } from './lib/perfMarks'
 import { initRendererSentry } from './lib/sentry'
 import App from './App'
-import { subscribeToOsNotificationClicks } from './lib/osNotifications'
+import { subscribeToOsNotificationClicks } from './lib/notifications/osNotifications'
 import './styles/globals.css'
 import '@xterm/xterm/css/xterm.css'
 
