@@ -463,6 +463,10 @@ export interface ElectronAPI {
   /** Capture a webview's content and save as PNG. Returns file path + data URL or null. */
   webviewScreenshot(webContentsId: number): Promise<{ filePath: string; dataUrl: string } | null>
 
+  /** Configure the proxy for a browser panel's session partition (issue #241).
+   *  Pass an empty/undefined proxyUrl to use a direct connection. */
+  browserSetProxy(partition: string, proxyUrl?: string): Promise<void>
+
   /** Initiate a native OS file drag from the renderer. */
   nativeFileDrag(filePath: string): Promise<void>
 

@@ -92,6 +92,12 @@ export interface PanelState {
   isDirty: boolean
   filePath?: string
   url?: string
+  /** Browser panels only: per-panel HTTP/HTTPS/SOCKS5/PAC proxy. When set, the
+   *  panel runs in its own proxy-derived persistent session instead of the
+   *  shared browser session. Supports auth (`user:pass@host`), a `;bypass=`
+   *  suffix, and `pac://` PAC scripts. See `configureBrowserProxy` in
+   *  `src/main/browserProxy.ts`. */
+  proxyUrl?: string
   /** When set, EditorPanel renders as a Monaco diff editor. */
   diffMode?: 'staged' | 'working'
   /** Editor panels with a markdown file only: render the rendered preview
@@ -732,6 +738,8 @@ export interface NodeSnapshot {
   size: Size
   title: string
   url?: string | null
+  /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
+  proxyUrl?: string | null
   filePath?: string | null
   workingDirectory?: string | null
   ptyId?: string
@@ -836,6 +844,8 @@ export interface ProjectCanvasNode {
   size: Size
   filePath?: string
   url?: string
+  /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
+  proxyUrl?: string
   regionId?: string
   documentType?: 'pdf' | 'docx' | 'image'
   dockLayout?: DockLayoutNode | null
@@ -855,6 +865,8 @@ export interface ProjectPanelRef {
   title: string
   filePath?: string
   url?: string
+  /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
+  proxyUrl?: string
 }
 
 // -----------------------------------------------------------------------------

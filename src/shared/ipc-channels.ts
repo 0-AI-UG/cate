@@ -150,6 +150,11 @@ export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
  *  Browser menu. The focused BrowserPanel acts on it. */
 export const BROWSER_SHORTCUT = 'browser:shortcut'
 
+/** Configure the proxy for a browser panel's Electron session partition
+ *  (renderer -> main). Awaited before the panel mounts its <webview> so the
+ *  first request already goes through the proxy. */
+export const BROWSER_SET_PROXY = 'browser:setProxy'
+
 // Native context menu (renderer -> main)
 export const MENU_SHOW_CONTEXT = 'menu:showContext'
 

@@ -142,6 +142,7 @@ import {
   COMPANION_INSTALL,
   COMPANION_STATUS,
   WEBVIEW_SCREENSHOT,
+  BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
   UPDATE_STATUS,
@@ -800,6 +801,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   webviewScreenshot(webContentsId: number): Promise<{ filePath: string; dataUrl: string } | null> {
     return ipcRenderer.invoke(WEBVIEW_SCREENSHOT, webContentsId)
+  },
+
+  browserSetProxy(partition: string, proxyUrl?: string): Promise<void> {
+    return ipcRenderer.invoke(BROWSER_SET_PROXY, partition, proxyUrl)
   },
 
   nativeFileDrag(filePath: string): Promise<void> {
