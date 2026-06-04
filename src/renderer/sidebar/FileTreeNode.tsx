@@ -17,7 +17,6 @@ import {
   PaintBrush,
   Image as ImageIcon,
 } from '@phosphor-icons/react'
-import log from '../lib/logger'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/importExternalEntries'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
@@ -105,18 +104,21 @@ interface FileTreeNodeProps {
   /** Git decorations for the whole tree (undefined outside a git repo). */
   git?: GitTree
   selectedPaths: Set<string>
+  /** Explorer-owned expansion state (see FileExplorer). */
+  expandedPaths: Set<string>
+  /** Explorer-owned cache of each loaded directory's children, keyed by path. */
+  childrenCache: Map<string, FileTreeNodeType[]>
+  /** Directories currently being read (drives the "…" spinner). */
+  loadingPaths: Set<string>
   onSelect: (path: string, meta: { shift?: boolean; cmd?: boolean }) => void
   onFileOpen: (paths: string[], mode?: 'dock' | 'canvas') => void
+  /** Toggle a directory's expansion (lazy-loads children on expand). */
+  onToggleExpand: (path: string) => void
+  /** Force-expand a directory (used before showing an inline create input / paste). */
+  onExpand: (path: string) => Promise<void> | void
   /** Delete the given paths (confirms + reloads + clears selection in the explorer). */
   onDeletePaths?: (paths: string[]) => void
   onTreeChanged?: () => void
-  /** Bumped by the explorer on every tree read; signals cached/expanded folders
-   *  to re-read their children from disk so reloads reflect on-disk state. */
-  refreshSignal?: number
-  /** Flat ordered list of visible file paths for shift-click range selection */
-  visiblePaths: string[]
-  /** Lowercased search query; when non-empty, filters files and force-expands directories */
-  searchQuery?: string
   /** Workspace root path — used to compute relative paths for "Copy Relative Path". */
   rootPath: string
   /** External request to create a file/folder in a specific directory */
@@ -130,21 +132,23 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   depth,
   git,
   selectedPaths,
+  expandedPaths,
+  childrenCache,
+  loadingPaths,
   onSelect,
   onFileOpen,
+  onToggleExpand,
+  onExpand,
   onDeletePaths,
   onTreeChanged,
-  refreshSignal,
-  visiblePaths,
-  searchQuery,
   rootPath,
   createRequest,
   onCreateRequestHandled,
 }) => {
-  const isSearching = !!searchQuery
-  const [isExpanded, setIsExpanded] = useState(node.isExpanded)
-  const [children, setChildren] = useState<FileTreeNodeType[]>(node.children)
-  const [isLoading, setIsLoading] = useState(false)
+  // Expansion/children state is owned by the explorer; derive this node's slice.
+  const isExpanded = expandedPaths.has(node.path)
+  const children = childrenCache.get(node.path) ?? []
+  const isLoading = loadingPaths.has(node.path)
   const [isRenaming, setIsRenaming] = useState(false)
   const [isCreating, setIsCreating] = useState<'file' | 'folder' | null>(null)
   const [renameValue, setRenameValue] = useState(node.name)
@@ -165,46 +169,11 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       : ''
 
   const isSelected = selectedPaths.has(node.path)
-  const effectiveExpanded = isExpanded || isSearching
-  const iconDef = getFileIcon(node.fileExtension, node.isDirectory, effectiveExpanded)
-
-  // Auto-load directory children when search becomes active
-  useEffect(() => {
-    if (isSearching && node.isDirectory && children.length === 0 && window.electronAPI) {
-      window.electronAPI.fsReadDir(node.path).then(setChildren).catch(() => {})
-    }
-  }, [isSearching, node.isDirectory, node.path, children.length])
-
-  // While searching, hide files whose name doesn't match
-  const isHiddenBySearch = isSearching && !node.isDirectory && !node.name.toLowerCase().includes(searchQuery!)
+  const iconDef = getFileIcon(node.fileExtension, node.isDirectory, isExpanded)
 
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
-
-  const reloadChildren = useCallback(async () => {
-    if (!window.electronAPI || !node.isDirectory) return
-    try {
-      const entries = await window.electronAPI.fsReadDir(node.path)
-      setChildren(entries)
-    } catch {
-      /* ignore */
-    }
-  }, [node.path, node.isDirectory])
-
-  // Re-read children from disk when the explorer bumps refreshSignal (manual
-  // reload, fs-watch event, or a move/create/delete). Only folders we've already
-  // cached — expanded, or previously loaded then collapsed — need invalidating;
-  // never-opened folders read fresh on first expand. Acting only on an actual
-  // signal change (not on mount) avoids a redundant read right after loading.
-  const prevRefreshRef = useRef(refreshSignal)
-  useEffect(() => {
-    if (prevRefreshRef.current === refreshSignal) return
-    prevRefreshRef.current = refreshSignal
-    if (node.isDirectory && (isExpanded || children.length > 0)) {
-      reloadChildren()
-    }
-  }, [refreshSignal, node.isDirectory, isExpanded, children.length, reloadChildren])
 
   const parentDir = node.isDirectory ? node.path : node.path.substring(0, node.path.lastIndexOf('/'))
 
@@ -212,32 +181,15 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleClick = useCallback(async (e: React.MouseEvent) => {
+  const handleClick = useCallback((e: React.MouseEvent) => {
     const meta = { shift: e.shiftKey, cmd: e.metaKey || e.ctrlKey }
-    if (node.isDirectory) {
-      // Directories: toggle expand on click, but also select
-      onSelect(node.path, meta)
-      if (!meta.shift && !meta.cmd) {
-        const willExpand = !isExpanded
-        setIsExpanded(willExpand)
-
-        if (willExpand && children.length === 0 && window.electronAPI) {
-          setIsLoading(true)
-          try {
-            const entries = await window.electronAPI.fsReadDir(node.path)
-            setChildren(entries)
-          } catch {
-            setChildren([])
-          } finally {
-            setIsLoading(false)
-          }
-        }
-      }
-    } else {
-      // Files: single click only selects. Double-click opens (see handleDoubleClick).
-      onSelect(node.path, meta)
+    onSelect(node.path, meta)
+    // Directories: a plain click also toggles expand (the explorer lazy-loads
+    // children). Modifier-clicks only adjust the selection.
+    if (node.isDirectory && !meta.shift && !meta.cmd) {
+      onToggleExpand(node.path)
     }
-  }, [node, isExpanded, children.length, onSelect])
+  }, [node.path, node.isDirectory, onSelect, onToggleExpand])
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     if (node.isDirectory) return
@@ -348,15 +300,12 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   // --- Create new file/folder ---
   const startCreate = useCallback((type: 'file' | 'folder') => {
     if (node.isDirectory) {
-      setIsExpanded(true)
-      if (children.length === 0) {
-        window.electronAPI?.fsReadDir(node.path).then(setChildren).catch((err) => log.warn('[file-tree] Read dir failed:', err))
-      }
+      void onExpand(node.path)
     }
     setCreateValue('')
     setIsCreating(type)
     setTimeout(() => createInputRef.current?.focus(), 0)
-  }, [node.isDirectory, node.path, children.length])
+  }, [node.isDirectory, node.path, onExpand])
 
   // Handle external create requests (from header buttons targeting a selected folder)
   const lastHandledSeqRef = useRef(0)
@@ -386,14 +335,12 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       } else {
         await window.electronAPI.fsWriteFile(newPath, '')
       }
-      if (node.isDirectory) {
-        await reloadChildren()
-      }
+      // onTreeChanged → loadTree → refreshExpandedChildren re-reads this folder.
       onTreeChanged?.()
     } catch (err) {
       console.error('[file-tree] Failed to create entry:', err)
     }
-  }, [isCreating, createValue, node.isDirectory, node.path, parentDir, reloadChildren, onTreeChanged])
+  }, [isCreating, createValue, node.isDirectory, node.path, parentDir, onTreeChanged])
 
   // --- Paste (copy from clipboard) ---
   const handlePaste = useCallback(async () => {
@@ -401,7 +348,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     const sources = getClipboard()
     if (sources.length === 0) return
     const destDir = node.isDirectory ? node.path : parentDir
-    if (node.isDirectory && !isExpanded) setIsExpanded(true)
+    if (node.isDirectory) void onExpand(node.path)
     for (const src of sources) {
       try {
         await window.electronAPI.fsCopy(src, destDir)
@@ -410,8 +357,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       }
     }
     onTreeChanged?.()
-    if (node.isDirectory) await reloadChildren()
-  }, [node.isDirectory, node.path, parentDir, isExpanded, reloadChildren, onTreeChanged])
+  }, [node.isDirectory, node.path, parentDir, onExpand, onTreeChanged])
 
   // --- Delete ---
   const handleDelete = useCallback(async () => {
@@ -502,8 +448,6 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   // Render
   // ---------------------------------------------------------------------------
 
-  if (isHiddenBySearch) return null
-
   return (
     <div>
       {/* Node row */}
@@ -535,7 +479,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         {node.isDirectory ? (
           <span
             className="flex-shrink-0 text-muted transition-transform duration-150"
-            style={{ transform: effectiveExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+            style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
           >
             <CaretRight size={12} />
           </span>
@@ -615,7 +559,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       )}
 
       {/* Expanded children */}
-      {node.isDirectory && effectiveExpanded && (
+      {node.isDirectory && isExpanded && (
         <div className="relative">
           <div
             className="absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none"
@@ -628,13 +572,15 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
               depth={depth + 1}
               git={git}
               selectedPaths={selectedPaths}
+              expandedPaths={expandedPaths}
+              childrenCache={childrenCache}
+              loadingPaths={loadingPaths}
               onSelect={onSelect}
               onFileOpen={onFileOpen}
+              onToggleExpand={onToggleExpand}
+              onExpand={onExpand}
               onDeletePaths={onDeletePaths}
               onTreeChanged={onTreeChanged}
-              refreshSignal={refreshSignal}
-              visiblePaths={visiblePaths}
-              searchQuery={searchQuery}
               rootPath={rootPath}
               createRequest={createRequest}
               onCreateRequestHandled={onCreateRequestHandled}
