@@ -13,6 +13,7 @@ import { PaperPlaneTilt, Check } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { CateLogo } from '../ui/CateLogo'
 import log from '../lib/logger'
+import headerImg from '../assets/welcome-header.jpg'
 
 const GITHUB_REPO = 'https://github.com/0-AI-UG/cate'
 const NEWSLETTER_URL = 'https://cate.cero-ai.com'
@@ -62,23 +63,36 @@ export function WelcomeDialog() {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30">
-      <div className="w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)]">
-        {/* Header — soft blue wash with the logo tile, like an app icon. */}
-        <div
-          className="flex flex-col items-center pt-9 pb-7"
-          style={{ background: 'radial-gradient(120% 100% at 50% 0%, rgba(59,130,246,0.16), transparent 70%)' }}
-        >
-          <div className="w-16 h-16 rounded-2xl bg-surface-0 border border-subtle shadow-[0_8px_24px_rgba(0,0,0,0.35)] flex items-center justify-center">
-            <CateLogo size={32} className="text-blue-400" />
+      <div className="relative w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)]">
+        {/* Moebius landscape header — slightly blurred and fading out, so it's
+            only visible at the very top of the card. */}
+        <img
+          src={headerImg}
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute top-0 left-0 w-full h-[210px] object-cover select-none"
+          style={{
+            filter: 'blur(2.5px)',
+            opacity: 0.85,
+            transform: 'scale(1.06)',
+            WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)',
+            maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)',
+          }}
+        />
+
+        {/* Header content over the image. */}
+        <div className="relative flex flex-col items-center pt-9 pb-7">
+          <div className="w-16 h-16 rounded-2xl bg-[#1c1c20] border border-white/[0.14] shadow-[0_10px_28px_rgba(0,0,0,0.5)] flex items-center justify-center">
+            <CateLogo size={32} className="text-white" />
           </div>
-          <h2 className="mt-5 text-primary text-[22px] font-bold tracking-tight">Welcome to Cate</h2>
+          <h2 className="mt-5 text-primary text-[22px] font-bold tracking-tight [text-shadow:0_2px_12px_rgba(0,0,0,0.5)]">Welcome to Cate</h2>
           <p className="mt-1.5 px-10 text-center text-muted text-[12.5px] leading-relaxed">
             An infinite canvas for your terminals, editors, browsers, and agents.
           </p>
         </div>
 
         {/* Content */}
-        <div className="px-6 pb-6 flex flex-col gap-4">
+        <div className="relative px-6 pb-6 flex flex-col gap-4">
           {/* Community asks as two clean buttons. */}
           <div className="flex gap-2">
             <button
