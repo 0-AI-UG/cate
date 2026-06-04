@@ -20,6 +20,7 @@ import { oneDarkProVivid } from './oneDarkProVivid'
 import { oneLight } from './oneLight'
 import { clayLight } from './clayLight'
 import { clayDark } from './clayDark'
+import { intellijLight } from './intellijLight'
 
 export { BASE_DARK, BASE_LIGHT } from './base'
 
@@ -41,6 +42,7 @@ export const BUILT_IN_THEMES: Theme[] = [
   oneLight,
   clayLight,
   clayDark,
+  intellijLight,
 ]
 
 export const BUILT_IN_BY_ID: Record<string, Theme> = Object.fromEntries(
