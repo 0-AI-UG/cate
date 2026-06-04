@@ -6,16 +6,12 @@
 // isn't currently on screen, so the tour never breaks on a hidden element.
 // =============================================================================
 
-import type { OnboardingIconName } from './icons'
-
 export interface OnboardingStep {
   id: string
   title: string
   body: string
   /** CSS selector of the element to highlight. Omit for a centered card. */
   target?: string
-  /** Optional accent icon shown above the title. */
-  icon?: OnboardingIconName
   /** Optional keycap chips (e.g. ['⌘', 'K']). */
   keys?: string[]
   /** Clip the spotlight to the visible canvas area (between the sidebars),
@@ -56,7 +52,6 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: 'palette',
-    icon: 'bolt',
     target: '[data-onboarding="command-palette"]',
     openCommandPalette: true,
     title: 'One shortcut for everything',
@@ -65,7 +60,6 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: 'done',
-    icon: 'rocket',
     title: 'You’re all set',
     body: 'Build your first layout — drag panels around, then save and reuse layouts later. Replay this tour anytime from ⌘K → “Show Tutorial”.',
   },
