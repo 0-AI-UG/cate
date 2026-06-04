@@ -24,6 +24,8 @@ export interface OnboardingStep {
   /** Force the ⌘K command palette open while this step is active (and close it
    *  again on leaving), so the step can spotlight the real palette. */
   openCommandPalette?: boolean
+  /** Render the larger, image-topped "hero" card layout (used for the finale). */
+  hero?: boolean
 }
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
@@ -60,6 +62,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: 'done',
+    hero: true,
     title: 'You’re all set',
     body: 'Build your first layout — drag panels around, then save and reuse layouts later. Replay this tour anytime from ⌘K → “Show Tutorial”.',
   },

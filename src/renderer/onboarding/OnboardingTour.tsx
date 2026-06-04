@@ -16,11 +16,13 @@ import { ArrowLeft, ArrowRight, X } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { ONBOARDING_STEPS, type OnboardingStep } from './steps'
+import doneHeader from '../assets/done-header.jpg'
 
 interface Rect { x: number; y: number; width: number; height: number }
 
 const SPOTLIGHT_PAD = 8 // px of breathing room around the highlighted element
 const CARD_WIDTH = 340
+const HERO_WIDTH = 420 // wider card for the image-topped hero step (the finale)
 const CARD_GAP = 16 // gap between the spotlight and the card
 
 function sidebarRect(side: 'left' | 'right'): DOMRect | null {
@@ -62,11 +64,11 @@ function measure(step: OnboardingStep | undefined): Rect | null {
  *  room and clamping to the viewport. Returns fixed-position coordinates; the
  *  bottom-corner case anchors by `bottom` (independent of the card's height) so
  *  it sits flush with the canvas bottom. */
-function cardPosition(rect: Rect | null, pad: number): { left: number; top?: number; bottom?: number } {
+function cardPosition(rect: Rect | null, pad: number, cardWidth: number): { left: number; top?: number; bottom?: number } {
   const vw = window.innerWidth
   const vh = window.innerHeight
   if (!rect) {
-    return { left: (vw - CARD_WIDTH) / 2, top: Math.max(80, vh * 0.32) }
+    return { left: (vw - cardWidth) / 2, top: Math.max(80, vh * 0.28) }
   }
   const spot = {
     left: rect.x - pad,
@@ -81,30 +83,30 @@ function cardPosition(rect: Rect | null, pad: number): { left: number; top?: num
   const spotWidth = spot.right - spot.left
   const spotHeight = spot.bottom - spot.top
 
-  if (roomRight >= CARD_WIDTH + CARD_GAP) {
-    return { left: clampX(spot.right + CARD_GAP, vw), top: clampY(spot.top, vh) }
+  if (roomRight >= cardWidth + CARD_GAP) {
+    return { left: clampX(spot.right + CARD_GAP, vw, cardWidth), top: clampY(spot.top, vh) }
   }
-  if (roomLeft >= CARD_WIDTH + CARD_GAP) {
-    return { left: clampX(spot.left - CARD_GAP - CARD_WIDTH, vw), top: clampY(spot.top, vh) }
+  if (roomLeft >= cardWidth + CARD_GAP) {
+    return { left: clampX(spot.left - CARD_GAP - cardWidth, vw, cardWidth), top: clampY(spot.top, vh) }
   }
-  if (spotWidth >= CARD_WIDTH + 48 && spotHeight >= 280) {
+  if (spotWidth >= cardWidth + 48 && spotHeight >= 280) {
     // The spotlight is large (e.g. the whole visible canvas) — there's no room
     // beside it, so tuck the card into the bottom-right corner, anchored to the
     // canvas bottom so it sits flush regardless of how tall the card is.
     const margin = 24
     return {
-      left: clampX(spot.right - CARD_WIDTH - margin, vw),
+      left: clampX(spot.right - cardWidth - margin, vw, cardWidth),
       bottom: Math.max(12, vh - spot.bottom + margin),
     }
   }
   if (roomBelow > 200) {
-    return { left: clampX(spot.left, vw), top: clampY(spot.bottom + CARD_GAP, vh) }
+    return { left: clampX(spot.left, vw, cardWidth), top: clampY(spot.bottom + CARD_GAP, vh) }
   }
   // Above the spotlight as the last resort.
-  return { left: clampX(spot.left, vw), top: clampY(spot.top - CARD_GAP - 220, vh) }
+  return { left: clampX(spot.left, vw, cardWidth), top: clampY(spot.top - CARD_GAP - 220, vh) }
 }
 
-const clampX = (x: number, vw: number): number => Math.max(12, Math.min(x, vw - CARD_WIDTH - 12))
+const clampX = (x: number, vw: number, cardWidth: number): number => Math.max(12, Math.min(x, vw - cardWidth - 12))
 const clampY = (y: number, vh: number): number => Math.max(12, Math.min(y, vh - 240))
 
 const EDGE_MARGIN = 4 // keep the outline a few px inside the window so it's visible
@@ -216,7 +218,9 @@ export function OnboardingTour() {
   // visible — without this, a target flush against the window edges (e.g. the
   // sidebar) shows only its inner edge as a stray line.
   const box = spotlight ? clampBox(spotlight, pad) : null
-  const { left, top, bottom } = cardPosition(spotlight, pad)
+  const hero = !!current.hero
+  const cardWidth = hero ? HERO_WIDTH : CARD_WIDTH
+  const { left, top, bottom } = cardPosition(spotlight, pad, cardWidth)
   const isLast = step === ONBOARDING_STEPS.length - 1
 
   return (
@@ -241,34 +245,54 @@ export function OnboardingTour() {
 
       {/* Card */}
       <div
-        className="absolute rounded-2xl bg-[#1a1a1e] border border-white/[0.08] shadow-[0_24px_64px_rgba(0,0,0,0.6)] p-5 flex flex-col gap-3"
-        style={{ left, top, bottom, width: CARD_WIDTH, animation: 'onboarding-card-in 0.18s ease-out' }}
+        className="absolute rounded-2xl bg-[#1a1a1e] border border-white/[0.08] shadow-[0_24px_64px_rgba(0,0,0,0.6)] overflow-hidden flex flex-col"
+        style={{ left, top, bottom, width: cardWidth, animation: 'onboarding-card-in 0.18s ease-out' }}
       >
         <button
           onClick={() => finish('skipped')}
-          className="absolute top-3 right-3 w-6 h-6 flex items-center justify-center rounded-full text-[#777] hover:text-white hover:bg-white/[0.06] transition-colors"
+          className={`absolute top-3 right-3 z-10 w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
+            hero ? 'text-white/80 bg-black/30 hover:bg-black/50 hover:text-white' : 'text-[#777] hover:text-white hover:bg-white/[0.06]'
+          }`}
           aria-label="Skip tour"
         >
           <X size={14} />
         </button>
 
-        <div>
-          <h2 className="text-white text-[15px] font-bold leading-tight pr-6">{current.title}</h2>
-          <p className="text-[#9a9a9f] text-[12.5px] leading-relaxed mt-1.5">{current.body}</p>
-        </div>
-
-        {current.keys && (
-          <div className="flex items-center gap-1.5">
-            {current.keys.map((k) => (
-              <kbd
-                key={k}
-                className="px-2 py-1 rounded-md bg-white/[0.06] border border-white/[0.1] text-white text-[12px] font-semibold min-w-[24px] text-center"
-              >
-                {k}
-              </kbd>
-            ))}
+        {/* Hero image header (finale only) — Moebius cinematic, fading into the
+            card so the title reads cleanly over the lower portion. */}
+        {hero && (
+          <div className="relative h-[170px] shrink-0">
+            <img
+              src={doneHeader}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
+              style={{
+                WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 55%, rgba(0,0,0,0.35) 82%, transparent 100%)',
+                maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 55%, rgba(0,0,0,0.35) 82%, transparent 100%)',
+              }}
+            />
           </div>
         )}
+
+        <div className={`relative flex flex-col gap-3 ${hero ? 'px-6 pb-5 -mt-10' : 'p-5'}`}>
+          <div>
+            <h2 className={`text-white font-bold leading-tight pr-6 ${hero ? 'text-[20px] tracking-tight [text-shadow:0_2px_12px_rgba(0,0,0,0.6)]' : 'text-[15px]'}`}>{current.title}</h2>
+            <p className={`text-[#9a9a9f] leading-relaxed mt-1.5 ${hero ? 'text-[13px]' : 'text-[12.5px]'}`}>{current.body}</p>
+          </div>
+
+          {current.keys && (
+            <div className="flex items-center gap-1.5">
+              {current.keys.map((k) => (
+                <kbd
+                  key={k}
+                  className="px-2 py-1 rounded-md bg-white/[0.06] border border-white/[0.1] text-white text-[12px] font-semibold min-w-[24px] text-center"
+                >
+                  {k}
+                </kbd>
+              ))}
+            </div>
+          )}
 
         {/* Footer: progress dots + nav */}
         <div className="flex items-center justify-between mt-1">
@@ -298,6 +322,7 @@ export function OnboardingTour() {
               {!isLast && <ArrowRight size={13} weight="bold" />}
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>
