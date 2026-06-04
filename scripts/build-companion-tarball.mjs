@@ -31,7 +31,7 @@
 // (e.g. a Mac) for local end-to-end testing before CI exists.
 // =============================================================================
 
-import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, renameSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
@@ -290,7 +290,7 @@ async function stageNodeRuntime(platform, arch, outBin) {
     await writeFile(zipPath, buf)
     unzipInto(zipPath, tmp)
     mkdirSync(path.dirname(outBin), { recursive: true })
-    renameSync(path.join(tmp, name, 'node.exe'), outBin)
+    cpSync(path.join(tmp, name, 'node.exe'), outBin)
     rmSync(tmp, { recursive: true, force: true })
     console.log(`[companion] staged node ${NODE_VERSION} runtime for win32-${arch}`)
     return
@@ -308,7 +308,7 @@ async function stageNodeRuntime(platform, arch, outBin) {
   await writeFile(tarPath, buf)
   execFileSync('tar', ['-xzf', tarPath, '-C', tmp, `${name}/bin/node`], { stdio: 'ignore' })
   mkdirSync(path.dirname(outBin), { recursive: true })
-  renameSync(path.join(tmp, name, 'bin', 'node'), outBin)
+  cpSync(path.join(tmp, name, 'bin', 'node'), outBin)
   chmodSync(outBin, 0o755)
   rmSync(tmp, { recursive: true, force: true })
   console.log(`[companion] staged node ${NODE_VERSION} runtime for ${platform}-${arch}`)
@@ -337,7 +337,7 @@ async function stageRipgrep(target, outBin) {
     await writeFile(zipPath, buf)
     unzipInto(zipPath, tmp)
     // The archive's top dir is `${name}/`; pull out only rg.exe.
-    renameSync(path.join(tmp, name, 'rg.exe'), outBin)
+    cpSync(path.join(tmp, name, 'rg.exe'), outBin)
     rmSync(tmp, { recursive: true, force: true })
     console.log(`[companion] staged ripgrep ${RIPGREP_VERSION} for ${target}`)
     return
@@ -347,7 +347,7 @@ async function stageRipgrep(target, outBin) {
   await writeFile(tarPath, buf)
   // The archive's top dir is `${name}/`; pull out only the rg binary.
   execFileSync('tar', ['-xzf', tarPath, '-C', tmp, `${name}/rg`], { stdio: 'ignore' })
-  renameSync(path.join(tmp, name, 'rg'), outBin)
+  cpSync(path.join(tmp, name, 'rg'), outBin)
   chmodSync(outBin, 0o755)
   rmSync(tmp, { recursive: true, force: true })
   console.log(`[companion] staged ripgrep ${RIPGREP_VERSION} for ${target}`)
