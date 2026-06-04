@@ -358,6 +358,7 @@ function snapshotToWorkspaceFile(snapshot: SessionSnapshot): ProjectWorkspaceFil
       size: n.size,
       filePath: n.filePath ? toRelativePath(n.filePath, rootPath) : undefined,
       url: n.url ?? undefined,
+      proxyUrl: n.proxyUrl ?? undefined,
       regionId,
       documentType: n.documentType,
     }
@@ -374,6 +375,7 @@ function snapshotToWorkspaceFile(snapshot: SessionSnapshot): ProjectWorkspaceFil
           title: p.title,
           filePath: p.filePath ? toRelativePath(p.filePath, rootPath) : undefined,
           url: p.url ?? undefined,
+          proxyUrl: p.proxyUrl ?? undefined,
         },
       ]),
     )

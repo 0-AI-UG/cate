@@ -320,7 +320,7 @@ interface AppStoreActions {
 
   // Panel creation — each adds a PanelState to the workspace AND places it
   createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement, cwd?: string) => string
-  createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement) => string
+  createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement, proxyUrl?: string) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
@@ -342,6 +342,9 @@ interface AppStoreActions {
    *  no longer fight the chosen name. */
   renamePanelByUser: (workspaceId: string, panelId: string, title: string) => void
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
+  /** Browser panels only: set/clear the per-panel proxy. Pass undefined to
+   *  revert the panel to the shared (direct) browser session. */
+  updatePanelProxy: (workspaceId: string, panelId: string, proxyUrl?: string) => void
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
@@ -865,7 +868,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
-  createBrowser(workspaceId, url?, position?, placement?) {
+  createBrowser(workspaceId, url?, position?, placement?, proxyUrl?) {
     const panelId = generateId()
     const panel: PanelState = {
       id: panelId,
@@ -873,6 +876,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       title: url ?? 'Browser',
       isDirty: false,
       url: url ?? 'about:blank',
+      ...(proxyUrl ? { proxyUrl } : {}),
     }
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
@@ -1009,6 +1013,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   updatePanelUrl(workspaceId, panelId, url) {
     setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, url }))
+  },
+
+  updatePanelProxy(workspaceId, panelId, proxyUrl) {
+    setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, proxyUrl: proxyUrl || undefined }))
   },
 
   updatePanelFilePath(workspaceId, panelId, filePath) {

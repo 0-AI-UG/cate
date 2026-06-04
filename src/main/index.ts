@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session, nativeTheme } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -51,6 +51,7 @@ import { getSharedPanelDef } from '../shared/panels'
 import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
 import { PERF_GET } from '../shared/ipc-channels'
 import { installWebContentsSecurity } from './webSecurity'
+import { configureBrowserProxy, installProxyAuthHandler } from './browserProxy'
 import { installThemeSkill } from './installThemeSkill'
 import { releaseAllProjectLocks } from './projectLock'
 import {
@@ -766,6 +767,17 @@ function registerWindowAndDialogHandlers(): void {
     }
   })
 
+  // Configure a browser panel's per-partition proxy (issue #241). Awaited by the
+  // renderer before it mounts the <webview> so the first request is proxied.
+  ipcMain.handle(BROWSER_SET_PROXY, async (_event, partition: string, proxyUrl?: string) => {
+    try {
+      await configureBrowserProxy(partition, proxyUrl)
+    } catch (error) {
+      log.error(`[${BROWSER_SET_PROXY}]`, error)
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+  })
+
   // Native file drag from renderer (for screenshot thumbnails etc.)
   ipcMain.handle(NATIVE_FILE_DRAG, async (event, filePath: string) => {
     // A remote path has no local file to export into a native OS drag — no-op
@@ -1341,6 +1353,7 @@ app.whenReady().then(async () => {
   })
 
   installWebContentsSecurity()
+  installProxyAuthHandler()
   registerCriticalHandlers()
   log.info('Critical IPC handlers registered')
 

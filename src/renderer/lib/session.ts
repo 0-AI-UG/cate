@@ -130,6 +130,7 @@ function buildWorkspaceFile(
     size: n.size,
     filePath: n.filePath ? toRelativePath(n.filePath, rootPath) : undefined,
     url: n.url ?? undefined,
+    proxyUrl: n.proxyUrl ?? undefined,
     regionId: n.regionId,
     documentType: n.documentType,
   }))
@@ -154,6 +155,7 @@ function buildWorkspaceFile(
         title: p.title,
         filePath: p.filePath ? toRelativePath(p.filePath, rootPath) : undefined,
         url: p.url ?? undefined,
+        proxyUrl: p.proxyUrl ?? undefined,
       }
     }
   }
@@ -241,6 +243,7 @@ export async function saveSession(): Promise<void> {
         size: node.size,
         filePath: panel?.filePath ?? undefined,
         url: panel?.url ?? undefined,
+        proxyUrl: panel?.proxyUrl ?? undefined,
         regionId: node.regionId ?? undefined,
         unsavedContent: panel?.type === 'editor' && !panel?.filePath
           ? panel?.unsavedContent
@@ -460,6 +463,7 @@ export function projectFilesToSnapshot(
       size: pn.size,
       filePath: pn.filePath ? toAbsolutePath(pn.filePath, rootPath) : undefined,
       url: pn.url,
+      proxyUrl: pn.proxyUrl,
       regionId: pn.regionId,
       documentType: pn.documentType,
       ptyId: ephemeral?.ptyId,
@@ -491,6 +495,7 @@ export function projectFilesToSnapshot(
         isDirty: false,
         filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
         url: ref.url,
+        proxyUrl: ref.proxyUrl,
       }
     }
   }
@@ -725,7 +730,7 @@ export async function restoreSession(snapshot: SessionSnapshot, canvasStoreApi?:
         break
       }
       case 'browser': {
-        const panelId = appStore.createBrowser(wsId, nodeSnap.url ?? undefined)
+        const panelId = appStore.createBrowser(wsId, nodeSnap.url ?? undefined, undefined, undefined, nodeSnap.proxyUrl ?? undefined)
         // Browser panels are addressed by their title in `cate portal` — same
         // reason as terminals, the saved name must come back.
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)

@@ -137,7 +137,7 @@ export function getPanelDef(type: PanelType | string): RendererPanelDefinition {
  *  the panel state itself, so callers don't need to know which extras any
  *  given type expects. Caller wraps in <Suspense> at the boundary it wants. */
 export function renderPanelComponent(
-  panel: { type: PanelType; id: string; filePath?: string; url?: string },
+  panel: { type: PanelType; id: string; filePath?: string; url?: string; proxyUrl?: string },
   ctx: { workspaceId: string; nodeId: string; zoomLevel?: number },
 ): React.ReactElement | null {
   const def = PANEL_REGISTRY[panel.type]
@@ -149,6 +149,7 @@ export function renderPanelComponent(
   if (panel.type === 'editor') extras.filePath = panel.filePath
   if (panel.type === 'browser') {
     extras.url = panel.url
+    extras.proxyUrl = panel.proxyUrl
     extras.zoomLevel = ctx.zoomLevel ?? 1
   }
   const props: PanelProps & Record<string, unknown> = {
