@@ -4,12 +4,12 @@
 // Shown once, in the main window, on a (plain) first-run canvas before the
 // guided tour. Combines the community asks with the privacy choice: nothing is
 // sent until the user clicks Continue (the main process holds Sentry + analytics
-// off until `telemetryConsentDecided` flips true). Styled to sit on the canvas
-// with a light scrim rather than a heavy modal dim. Blue accent throughout.
+// off until `telemetryConsentDecided` flips true). Uses the app's surface tokens
+// + radius (matching the ⌘K palette) and the blue accent, with a logo header.
 // =============================================================================
 
 import { useState } from 'react'
-import { GithubLogo, Megaphone, ChartLineUp, Check } from '@phosphor-icons/react'
+import { PaperPlaneTilt, Check } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { CateLogo } from '../ui/CateLogo'
 import log from '../lib/logger'
@@ -25,12 +25,12 @@ function openLink(url: string, name: string): void {
   } catch { /* noop */ }
 }
 
-function Row({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+/** Crisp GitHub mark (the Phosphor fill icon reads as a blob at this size). */
+function GithubMark({ size = 17 }: { size?: number }) {
   return (
-    <div className="flex gap-4">
-      <div className="w-6 flex-shrink-0 flex justify-center pt-0.5 text-[#6f7079]">{icon}</div>
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23a11.5 11.5 0 0 1 3-.405c1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+    </svg>
   )
 }
 
@@ -61,80 +61,82 @@ export function WelcomeDialog() {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      {/* Light scrim — keeps the card on the plain canvas rather than a heavy modal dim. */}
-      <div className="absolute inset-0 bg-black/35" />
-
-      <div
-        className="relative w-[620px] max-w-[92vw] rounded-3xl border border-white/[0.08] shadow-[0_40px_100px_rgba(0,0,0,0.6)] overflow-hidden"
-        style={{
-          // Dark card with a soft blue glow at the top, mirroring the reference.
-          background:
-            'radial-gradient(130% 70% at 50% -10%, rgba(59,130,246,0.20), rgba(59,130,246,0) 55%), #17171b',
-        }}
-      >
-        <div className="px-12 pt-12 pb-10">
-          <CateLogo size={40} className="mx-auto mb-5 text-blue-400" />
-          <h2 className="text-center text-white text-[28px] font-bold tracking-tight mb-9">Welcome to Cate</h2>
-
-          <div className="flex flex-col gap-7">
-            <Row icon={<GithubLogo size={22} weight="fill" />}>
-              <h3 className="text-white text-[15px] font-semibold">Support us on GitHub</h3>
-              <p className="text-[#9a9aa2] text-[13px] leading-relaxed mt-1">
-                Cate is open-source, built for developers. A star helps more people find it —{' '}
-                <button onClick={() => openLink(GITHUB_REPO, 'github_star')} className="text-blue-400 hover:text-blue-300 font-medium">
-                  star us on GitHub
-                </button>
-                .
-              </p>
-            </Row>
-
-            <Row icon={<Megaphone size={22} weight="fill" />}>
-              <h3 className="text-white text-[15px] font-semibold">Stay in the loop</h3>
-              <p className="text-[#9a9aa2] text-[13px] leading-relaxed mt-1">
-                Updates, tips, and what’s coming next —{' '}
-                <button onClick={() => openLink(NEWSLETTER_URL, 'newsletter')} className="text-blue-400 hover:text-blue-300 font-medium">
-                  subscribe to the newsletter
-                </button>
-                .
-              </p>
-            </Row>
-
-            <Row icon={<ChartLineUp size={22} weight="fill" />}>
-              <p className="text-[#9a9aa2] text-[13px] leading-relaxed">
-                Anonymous usage &amp; crash data helps us improve the features you use. No code, file
-                paths, or project contents are ever sent.{' '}
-                <button onClick={() => openLink(PRIVACY_URL, 'privacy_policy')} className="text-blue-400 hover:text-blue-300 font-medium">
-                  Privacy Policy
-                </button>
-              </p>
-              <button
-                role="switch"
-                aria-checked={enabled}
-                onClick={() => setEnabled((v) => !v)}
-                className="mt-2.5 inline-flex items-center gap-2 group"
-              >
-                <span
-                  className={`w-[18px] h-[18px] rounded-[5px] flex items-center justify-center border transition-colors ${
-                    enabled ? 'bg-blue-500 border-blue-500' : 'border-white/25 group-hover:border-white/40'
-                  }`}
-                >
-                  {enabled && <Check size={12} weight="bold" className="text-white" />}
-                </span>
-                <span className="text-[13px] text-white/90">Enabled</span>
-              </button>
-            </Row>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30">
+      <div className="w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)]">
+        {/* Header — soft blue wash with the logo tile, like an app icon. */}
+        <div
+          className="flex flex-col items-center pt-9 pb-7"
+          style={{ background: 'radial-gradient(120% 100% at 50% 0%, rgba(59,130,246,0.16), transparent 70%)' }}
+        >
+          <div className="w-16 h-16 rounded-2xl bg-surface-0 border border-subtle shadow-[0_8px_24px_rgba(0,0,0,0.35)] flex items-center justify-center">
+            <CateLogo size={32} className="text-blue-400" />
           </div>
+          <h2 className="mt-5 text-primary text-[22px] font-bold tracking-tight">Welcome to Cate</h2>
+          <p className="mt-1.5 px-10 text-center text-muted text-[12.5px] leading-relaxed">
+            An infinite canvas for your terminals, editors, browsers, and agents.
+          </p>
+        </div>
 
-          <div className="flex justify-center mt-9">
+        {/* Content */}
+        <div className="px-6 pb-6 flex flex-col gap-4">
+          {/* Community asks as two clean buttons. */}
+          <div className="flex gap-2">
             <button
-              onClick={onContinue}
-              disabled={saving}
-              className="px-8 py-2.5 rounded-full bg-blue-500 text-white text-[14px] font-semibold hover:bg-blue-400 transition-colors disabled:opacity-50"
+              onClick={() => openLink(GITHUB_REPO, 'github_star')}
+              className="flex-1 inline-flex items-center justify-center gap-2 h-9 rounded-lg border border-strong bg-surface-0/60 hover:bg-hover text-primary text-[12.5px] font-medium transition-colors"
             >
-              {saving ? 'Saving…' : 'Continue'}
+              <GithubMark size={15} />
+              Star on GitHub
+            </button>
+            <button
+              onClick={() => openLink(NEWSLETTER_URL, 'newsletter')}
+              className="flex-1 inline-flex items-center justify-center gap-2 h-9 rounded-lg border border-strong bg-surface-0/60 hover:bg-hover text-primary text-[12.5px] font-medium transition-colors"
+            >
+              <PaperPlaneTilt size={15} weight="fill" className="text-blue-400" />
+              Newsletter
             </button>
           </div>
+
+          <div className="border-t border-subtle" />
+
+          {/* Consent — a single line the user can toggle. */}
+          <div className="flex items-start gap-3">
+            <button
+              role="switch"
+              aria-checked={enabled}
+              onClick={() => setEnabled((v) => !v)}
+              className="mt-0.5 flex-shrink-0 group"
+              aria-label="Share anonymous usage and crash data"
+            >
+              <span
+                className={`w-[18px] h-[18px] rounded-md flex items-center justify-center border transition-colors ${
+                  enabled ? 'bg-blue-500 border-blue-500' : 'border-strong group-hover:border-[rgba(255,255,255,0.4)]'
+                }`}
+              >
+                {enabled && <Check size={12} weight="bold" className="text-white" />}
+              </span>
+            </button>
+            <button onClick={() => setEnabled((v) => !v)} className="text-left">
+              <span className="text-secondary text-[12px] leading-relaxed">
+                Share anonymous usage &amp; crash data to help improve Cate — never your code, file
+                paths, or project contents.{' '}
+              </span>
+              <span
+                onClick={(e) => { e.stopPropagation(); openLink(PRIVACY_URL, 'privacy_policy') }}
+                className="text-blue-400 hover:text-blue-300 text-[12px] font-medium"
+              >
+                Privacy Policy
+              </span>
+            </button>
+          </div>
+
+          <button
+            onClick={onContinue}
+            disabled={saving}
+            className="mt-1 h-10 rounded-lg bg-blue-500 text-white text-[13.5px] font-semibold hover:bg-blue-400 transition-colors disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Continue'}
+          </button>
         </div>
       </div>
     </div>

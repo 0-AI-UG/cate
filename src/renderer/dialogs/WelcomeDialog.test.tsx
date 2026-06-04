@@ -56,8 +56,8 @@ describe('WelcomeDialog', () => {
   it('shows the welcome + consent on first run', () => {
     act(() => root.render(<WelcomeDialog />))
     expect(host.textContent).toContain('Welcome to Cate')
-    expect(host.textContent).toContain('Support us on GitHub')
-    expect(host.textContent).toContain('Enabled')
+    expect(host.textContent).toContain('Star on GitHub')
+    expect(host.querySelector('[role="switch"]')).not.toBeNull()
   })
 
   it('Continue with the default toggle on enables both telemetry flags', () => {
