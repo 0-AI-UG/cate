@@ -19,6 +19,10 @@ export interface OnboardingStep {
   /** Clip the spotlight to the visible canvas area (between the sidebars),
    *  not the full canvas element which extends edge-to-edge behind them. */
   clipToVisibleCanvas?: boolean
+  /** Hug the target's edges exactly (no outward padding, outline inset inward).
+   *  Use for large container targets (canvas, sidebar) where padding would
+   *  overshoot the real boundary; small targets keep the breathing room. */
+  tight?: boolean
 }
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
@@ -26,6 +30,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: 'canvas',
     target: '[data-canvas-container]',
     clipToVisibleCanvas: true,
+    tight: true,
     title: 'Your infinite canvas',
     body: 'Everything lives here. Drag panels anywhere, two-finger drag to pan, and ⌘ + scroll to zoom in and out.',
   },
@@ -40,6 +45,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'sidebar',
     target: '[data-app-sidebar="left"]',
+    tight: true,
     title: 'Your projects',
     body: 'Switch workspaces, open folders, and connect to remote machines over SSH from the sidebar.',
   },

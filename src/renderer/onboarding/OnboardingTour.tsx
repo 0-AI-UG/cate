@@ -194,11 +194,11 @@ export function OnboardingTour() {
 
   // An anchored step whose target isn't on screen falls back to a centered card.
   const spotlight = current.target ? rect : null
-  // The full-canvas highlight hugs the canvas edge (no outward pad, outline
-  // inset inward) so it never overflows the canvas; other steps get breathing
-  // room around a smaller target.
-  const pad = current.clipToVisibleCanvas ? 0 : SPOTLIGHT_PAD
-  const outlineOffset = current.clipToVisibleCanvas ? -2 : 0
+  // Large container targets (canvas, sidebar) hug their edges exactly — no
+  // outward pad, outline inset inward — so the highlight never overshoots the
+  // real boundary; smaller targets keep breathing room around them.
+  const pad = current.tight ? 0 : SPOTLIGHT_PAD
+  const outlineOffset = current.tight ? -2 : 0
   // Clamp the padded box into the viewport so the full outline is always
   // visible — without this, a target flush against the window edges (e.g. the
   // sidebar) shows only its inner edge as a stray line.
