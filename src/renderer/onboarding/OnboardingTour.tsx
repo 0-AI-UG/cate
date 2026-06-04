@@ -16,6 +16,7 @@ import { ArrowLeft, ArrowRight, X } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { ONBOARDING_STEPS, type OnboardingStep } from './steps'
+import { OnboardingIcon } from './icons'
 
 interface Rect { x: number; y: number; width: number; height: number }
 
@@ -252,7 +253,11 @@ export function OnboardingTour() {
           <X size={14} />
         </button>
 
-        {current.emoji && <div className="text-2xl leading-none">{current.emoji}</div>}
+        {current.icon && (
+          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-blue-500/15 text-blue-400">
+            <OnboardingIcon name={current.icon} size={18} />
+          </div>
+        )}
         <div>
           <h2 className="text-white text-[15px] font-bold leading-tight pr-6">{current.title}</h2>
           <p className="text-[#9a9a9f] text-[12.5px] leading-relaxed mt-1.5">{current.body}</p>
