@@ -60,10 +60,6 @@ const RIPGREP_TRIPLES = {
 }
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(repoRoot, 'dist-companion')
-// GNU tar (the Windows runner's tar) reads the `D:` in an absolute archive path
-// as an rsh host spec ("Cannot connect to D:"). --force-local disables that. Only
-// on win32: macOS/Linux use bsdtar, which rejects the flag and has no drive colon.
-const FORCE_LOCAL = process.platform === 'win32' ? ['--force-local'] : []
 
 const args = process.argv.slice(2)
 const useDocker = args.includes('--docker')
@@ -114,7 +110,11 @@ if (missing.length) throw new Error(`[companion] incomplete stage for ${targetAr
 // --no-xattrs: don't archive extended attributes (macOS keeps re-stamping a
 // com.apple.provenance xattr that otherwise makes GNU tar warn on extraction
 // on the Ubuntu server). Supported by both bsdtar and GNU tar.
-execFileSync('tar', [...FORCE_LOCAL, '--no-xattrs', '-czf', outTar, '-C', stageDir, '.'], { stdio: 'inherit' })
+// Run tar from the archive's own dir and name it by basename: tar reads a
+// `D:`-prefixed absolute path as a remote `host:path` spec ("Cannot connect to
+// D:") — true of the Windows runner's bsdtar AND GNU tar, and bsdtar has no
+// --force-local. A colon-free relative name never trips the remote heuristic.
+execFileSync('tar', ['--no-xattrs', '-czf', path.basename(outTar), '-C', stageDir, '.'], { stdio: 'inherit', cwd: path.dirname(outTar) })
 console.log(`[companion] wrote ${path.relative(repoRoot, outTar)}`)
 
 // --------------------------------------------------------------------------
@@ -373,7 +373,9 @@ function stagePi(outRoot) {
   if (!existsSync(tar)) throw new Error(`pi tarball not found at ${tar}`)
   rmSync(outRoot, { recursive: true, force: true })
   mkdirSync(outRoot, { recursive: true })
-  execFileSync('tar', [...FORCE_LOCAL, '-xzf', tar, '-C', outRoot], { stdio: 'ignore' })
+  // Basename + cwd, not the absolute path — see the packaging tar above (a `D:`
+  // archive path reads as a remote host on the Windows runner's bsdtar).
+  execFileSync('tar', ['-xzf', path.basename(tar), '-C', outRoot], { stdio: 'ignore', cwd: path.dirname(tar) })
   if (!existsSync(path.join(outRoot, 'dist', 'cli.js'))) throw new Error('staged pi missing dist/cli.js')
   console.log(`[companion] staged pi ${piVersion}`)
 }
@@ -392,7 +394,9 @@ function unzipInto(zipPath, destDir) {
   } catch {
     // unzip absent (e.g. Windows runner) — fall through to bsdtar.
   }
-  execFileSync('tar', ['-xf', zipPath, '-C', destDir], { stdio: 'ignore' })
+  // Basename + cwd (the bsdtar fallback would otherwise read `C:\…zip` as a
+  // remote host on Windows — see the packaging tar's note).
+  execFileSync('tar', ['-xf', path.basename(zipPath), '-C', destDir], { stdio: 'ignore', cwd: path.dirname(zipPath) })
 }
 function valueOf(flag) {
   const i = args.indexOf(flag)
