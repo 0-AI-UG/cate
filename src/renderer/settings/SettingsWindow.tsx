@@ -23,6 +23,7 @@ import { SidebarSettings } from './SidebarSettings'
 import { FileExplorerSettings } from './FileExplorerSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
+import { UpdatesSettings } from './UpdatesSettings'
 import { SettingsSearchContext } from './SettingsSearchContext'
 
 const SECTIONS = [
@@ -34,6 +35,7 @@ const SECTIONS = [
   { title: 'Sidebar', component: SidebarSettings },
   { title: 'File Explorer', component: FileExplorerSettings },
   { title: 'Notifications', component: NotificationSettings },
+  { title: 'Updates', component: UpdatesSettings },
   { title: 'Shortcuts', component: ShortcutSettings },
 ] as const
 
