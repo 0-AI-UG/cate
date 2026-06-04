@@ -99,7 +99,7 @@ export function WelcomeDialog() {
               style={{
                 padding: '1px',
                 background:
-                  'linear-gradient(135deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.06) 45%, rgba(255,255,255,0.04) 60%, rgba(255,255,255,0.32) 100%)',
+                  'linear-gradient(135deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.02) 42%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.48) 100%)',
                 WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
                 WebkitMaskComposite: 'xor',
                 maskComposite: 'exclude',
