@@ -14,6 +14,10 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
 
     runs-on: ${{ matrix.os }}
+    # Without this, a hung step (e.g. a test leaving a child process that holds
+    # the step's stdout pipe open) runs until GitHub's 6-hour default. Bound it
+    # so CI fails fast and surfaces the culprit instead of hanging for hours.
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +52,10 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm run test:unit
+        # TEMP DIAGNOSTIC: serial + verbose so the CI log names the exact test
+        # file that hangs on macOS/Windows runners (cannot be reproduced locally).
+        # Revert to `npm run test:unit` once the culprit is identified.
+        run: npx vitest run --no-file-parallelism --reporter=verbose
 
       - name: Electron smoke test (macOS only)
         if: matrix.os == 'macos-latest'
