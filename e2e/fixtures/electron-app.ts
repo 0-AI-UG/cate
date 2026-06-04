@@ -84,12 +84,26 @@ export async function seedTerminal(
   page: Page,
   point: { x: number; y: number } = { x: 200, y: 200 },
 ): Promise<string> {
-  const id = await page.evaluate((p) => window.__cateE2E!.createTerminal(p), point)
+  const hint = await page.evaluate((p) => window.__cateE2E!.createTerminal(p), point)
+  // createTerminal returns the node id only if the canvas store has already
+  // registered the node synchronously; under CI's throttled rAF that can lag,
+  // in which case it returns the panel id instead. Resolve the real node id
+  // from the live store (matching either) so we wait on the right selector.
+  const nodeId = await page
+    .waitForFunction(
+      (h) => {
+        const n = window.__cateE2E!.nodes().find((x) => x.id === h || x.panelId === h)
+        return n ? n.id : null
+      },
+      hint,
+      { timeout: 15_000 },
+    )
+    .then((handle) => handle.jsonValue() as Promise<string>)
   // Wait for the entering animation to settle so opacity/transform are at
   // their final values before tests interact with the node.
-  await page.waitForSelector(`[data-node-id="${id}"]`)
+  await page.waitForSelector(`[data-node-id="${nodeId}"]`)
   await page.waitForTimeout(400)
-  return id
+  return nodeId
 }
 
 export async function seedCanvasPanel(
