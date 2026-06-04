@@ -12,6 +12,7 @@ import { useAutoFocusLargestVisible } from '../hooks/useAutoFocusLargestVisible'
 import { useUIStore, effectiveCanvasTool } from '../stores/uiStore'
 import { canvasToView, viewToCanvas } from '../lib/coordinates'
 import CanvasGrid from './CanvasGrid'
+import CanvasBackgroundImage from './CanvasBackgroundImage'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import GhostPlacementLayer from './GhostPlacementLayer'
@@ -535,6 +536,10 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
+      {/* Optional wallpaper, behind the grid and panels. Rendered before the
+          grid so the grid (same z-index) paints on top of it. */}
+      <CanvasBackgroundImage />
+
       {/* Grid renders in screen-space (outside the world transform) so lines
           land on whole device pixels at every zoom level. */}
       <CanvasGrid

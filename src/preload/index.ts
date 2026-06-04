@@ -83,6 +83,8 @@ import {
   BROWSER_SHORTCUT,
   MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
+  DIALOG_OPEN_IMAGE,
+  CANVAS_READ_BACKGROUND_IMAGE,
   DIALOG_SAVE_FILE,
   DIALOG_CONFIRM_UNSAVED,
   DIALOG_CONFIRM_CLOSE_TERMINAL,
@@ -728,6 +730,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openFolderDialog(): Promise<string | null> {
     return ipcRenderer.invoke(DIALOG_OPEN_FOLDER)
+  },
+
+  openImageDialog(): Promise<string | null> {
+    return ipcRenderer.invoke(DIALOG_OPEN_IMAGE)
+  },
+
+  readCanvasBackgroundImage(filePath: string): Promise<string | null> {
+    return ipcRenderer.invoke(CANVAS_READ_BACKGROUND_IMAGE, filePath)
   },
 
   saveFileDialog(payload?: { defaultName?: string; defaultPath?: string }): Promise<string | null> {

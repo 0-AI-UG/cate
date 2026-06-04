@@ -982,6 +982,14 @@ export interface AppSettings {
   autoFocusLargestVisibleNode: boolean
   /** Background pattern drawn on the canvas. */
   canvasGridStyle: CanvasGridStyle
+  /** Absolute path to an image shown as the canvas wallpaper, behind the grid
+   *  and panels. Empty string = no wallpaper. The layer is automatically dimmed
+   *  on dark themes and lightened on light themes so region titles stay
+   *  readable over it. */
+  canvasBackgroundImagePath: string
+  /** Opacity (0–1) of the canvas wallpaper layer. Lower values keep region
+   *  titles more readable; ignored when no image is set. */
+  canvasBackgroundImageOpacity: number
   /** Snap panels to the canvas grid while dragging and resizing, so windows
    *  align to a uniform lattice. Hold Alt during a same-window drag/resize to
    *  bypass it (the Alt bypass can't apply to drags between windows, since the
@@ -1084,6 +1092,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   zoomSpeed: 1.0,
   autoFocusLargestVisibleNode: false,
   canvasGridStyle: 'lines',
+  canvasBackgroundImagePath: '',
+  canvasBackgroundImageOpacity: 0.4,
   snapToGrid: false,
   placementPicker: true,
 

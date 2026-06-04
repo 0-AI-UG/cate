@@ -381,6 +381,15 @@ export interface ElectronAPI {
   /** Open a native folder picker. Returns the selected path or null if canceled. */
   openFolderDialog(): Promise<string | null>
 
+  /** Open a native image picker for the canvas wallpaper. Returns the selected
+   *  absolute path or null if canceled. */
+  openImageDialog(): Promise<string | null>
+
+  /** Read a canvas-wallpaper image file as a `data:` URL (or null if the path is
+   *  missing, not an image, or too large). Reads in main, so the file may live
+   *  outside the workspace allowed roots. */
+  readCanvasBackgroundImage(filePath: string): Promise<string | null>
+
   /** Open a native Save-As dialog. Returns the chosen path or null if canceled.
    *  defaultName is used as the filename pre-fill, defaultPath as the starting
    *  directory + filename (takes precedence). The returned path is the canonical

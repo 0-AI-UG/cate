@@ -172,6 +172,7 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
+export const DIALOG_OPEN_IMAGE = 'dialog:openImage'
 export const DIALOG_SAVE_FILE = 'dialog:saveFile'
 export const DIALOG_CONFIRM_UNSAVED = 'dialog:confirmUnsaved'
 export const DIALOG_CONFIRM_CLOSE_TERMINAL = 'dialog:confirmCloseTerminal'
@@ -180,6 +181,10 @@ export const DIALOG_CONFIRM_DELETE_REGION = 'dialog:confirmDeleteRegion'
 export const DIALOG_CONFIRM_IMPORT = 'dialog:confirmImport'
 export const DIALOG_CONFIRM_RELOAD_WORKSPACE = 'dialog:confirmReloadWorkspace'
 export const DIALOG_TERMINAL_LINK_OPEN = 'dialog:terminalLinkOpen'
+
+// Canvas wallpaper — read an arbitrary image file as a data URL (the file is
+// usually outside the workspace allowed roots, so it bypasses the fs IPC).
+export const CANVAS_READ_BACKGROUND_IMAGE = 'canvas:readBackgroundImage'
 
 // Panel window: renderer pushes an updated PanelState snapshot to main so
 // the windowRegistry's panel meta (used by session persistence and the

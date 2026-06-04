@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session, nativeTheme } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_TERMINAL, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_OPEN_IMAGE, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_TERMINAL, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, CANVAS_READ_BACKGROUND_IMAGE, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -638,6 +638,53 @@ function registerWindowAndDialogHandlers(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  // Pick an image to use as the canvas wallpaper. Returns the absolute path
+  // (stored in settings); the renderer reads the bytes via
+  // CANVAS_READ_BACKGROUND_IMAGE. No path grant is needed because that reader
+  // runs in main (full fs access) rather than through the sandboxed fs IPC.
+  ipcMain.handle(DIALOG_OPEN_IMAGE, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const result = await dialog.showOpenDialog(win!, {
+      title: 'Choose Canvas Background Image',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'] },
+      ],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  // Read a canvas-wallpaper image as a data URL. Used both right after the user
+  // picks one and on every launch to restore the saved path. Guarded by
+  // extension + size so a hand-edited settings.json can't turn this into an
+  // arbitrary file-to-data-URL exfiltration primitive.
+  ipcMain.handle(CANVAS_READ_BACKGROUND_IMAGE, async (_event, filePath: unknown) => {
+    if (typeof filePath !== 'string' || filePath === '') return null
+    const MIME_BY_EXT: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp',
+      '.avif': 'image/avif',
+    }
+    const ext = path.extname(filePath).toLowerCase()
+    const mime = MIME_BY_EXT[ext]
+    if (!mime) return null
+    try {
+      const stat = await fs.promises.stat(filePath)
+      const MAX_BYTES = 40 * 1024 * 1024 // 40 MB ceiling — keeps a data URL sane.
+      if (!stat.isFile() || stat.size > MAX_BYTES) return null
+      const buf = await fs.promises.readFile(filePath)
+      return `data:${mime};base64,${buf.toString('base64')}`
+    } catch (err) {
+      log.warn('[CANVAS_READ_BACKGROUND_IMAGE] Failed to read %s: %O', filePath, err)
+      return null
+    }
   })
 
   // Native Save-As dialog for untitled editor buffers.

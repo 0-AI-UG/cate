@@ -46,6 +46,8 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   zoomSpeed: 'number',
   autoFocusLargestVisibleNode: 'boolean',
   canvasGridStyle: 'string',
+  canvasBackgroundImagePath: 'string',
+  canvasBackgroundImageOpacity: 'number',
   snapToGrid: 'boolean',
   placementPicker: 'boolean',
   terminalFontFamily: 'string',
