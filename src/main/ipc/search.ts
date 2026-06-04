@@ -88,8 +88,7 @@ export function registerHandlers(): void {
         return searchId
       }
 
-      let handle: SearchHandle | undefined
-      handle = companion.file.searchContent(validRoot, opts, {
+      const handle: SearchHandle | undefined = companion.file.searchContent(validRoot, opts, {
         onBatch: (files) => {
           if (wc.isDestroyed()) return
           // Re-encode each result's absolute path as a companion locator so the
