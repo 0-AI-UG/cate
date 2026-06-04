@@ -31,6 +31,12 @@ export async function launchApp(opts: { perf?: boolean } = {}): Promise<LaunchRe
   const mainWindow = await electronApp.firstWindow()
   await mainWindow.waitForLoadState('domcontentloaded')
   await mainWindow.waitForFunction(() => window.__cateE2E?.ready === true, { timeout: 15_000 })
+  // The harness `ready` flag is set by its own effect the moment e2eHarness
+  // installs — independent of App's async init(), which restores/creates the
+  // workspace and mounts the Canvas. Wait for the Canvas to actually be in the
+  // DOM so specs don't race a not-yet-mounted canvas (activeCanvasPanelId would
+  // otherwise transiently return null right after launch).
+  await mainWindow.waitForSelector('[data-canvas-panel-id]', { timeout: 15_000 })
   return { electronApp, mainWindow }
 }
 

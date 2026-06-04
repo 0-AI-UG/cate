@@ -23,6 +23,7 @@ import { registerHandlers as registerSearchHandlers, stopSearchesForWindow } fro
 import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow, getRunningTerminals } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
 import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot, getSettingSync, setSettingsFromMain } from './store'
+import { flushPendingWritesSync as flushSettingsPendingWritesSync } from './settingsFile'
 import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
@@ -1772,6 +1773,9 @@ app.on('will-quit', () => {
   // we write something if it didn't.
   log.info('will-quit: sync project state save fallback')
   saveProjectStateSync()
+  // Flush any pending debounced settings.json write so a just-changed setting
+  // survives the quit (the async writer wouldn't fire before process exit).
+  flushSettingsPendingWritesSync()
   // Drop per-project locks so a co-running instance can take over immediately
   // (a crash skips this; the next instance reclaims the stale lock by pid).
   releaseAllProjectLocks()

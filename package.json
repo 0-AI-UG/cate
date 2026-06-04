@@ -53,6 +53,14 @@
     "package:win:unsigned": "node scripts/package.mjs --win -c.npmRebuild=false -c.win.signAndEditExecutable=false",
     "package:linux": "node scripts/package.mjs --linux"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "node-pty",
+      "sharp",
+      "esbuild"
+    ]
+  },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.75.4",
     "@earendil-works/pi-ai": "^0.75.5",

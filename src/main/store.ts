@@ -14,6 +14,8 @@ import {
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
   SETTINGS_CHANGED,
+  SETTINGS_OPEN_IN_EDITOR,
+  SETTINGS_RELOADED,
   BOOT_SNAPSHOT_WRITE,
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
@@ -30,6 +32,18 @@ import {
 import { DEFAULT_SETTINGS } from '../shared/types'
 import type { AppSettings, SidebarSession, RemoteProjectEntry } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
+import {
+  loadSettingsSync,
+  getSetting as getSettingFromFile,
+  getAllSettings,
+  setSetting as setSettingInFile,
+  resetSetting as resetSettingInFile,
+  resetAllSettings,
+  ensureSettingsFile,
+  startWatching as startSettingsWatch,
+} from './settingsFile'
+import { grantFileAccess } from './ipc/pathValidation'
+import { recordPersistentGrant } from './grantedPathStore'
 
 /** Push saved-layout names to the native Layouts menu. Imported lazily so the
  *  static module graph (and anything that pulls in ./store, e.g. terminal IPC)
@@ -39,64 +53,70 @@ async function pushLayoutNamesToMenu(names: string[]): Promise<void> {
   setLayoutNames(names)
 }
 
-// ---------------------------------------------------------------------------
-// Settings schema: expected key → expected typeof value (or 'array')
-// ---------------------------------------------------------------------------
-const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
-  defaultShellPath: 'string',
-  warnBeforeQuit: 'boolean',
-  activeThemeId: 'string',
-  systemLightThemeId: 'string',
-  systemDarkThemeId: 'string',
-  customThemes: 'array',
-  editorFontSize: 'number',
-  showMinimap: 'boolean',
-  defaultPanelWidth: 'number',
-  defaultPanelHeight: 'number',
-  zoomSpeed: 'number',
-  autoFocusLargestVisibleNode: 'boolean',
-  canvasGridStyle: 'string',
-  snapToGrid: 'boolean',
-  placementPicker: 'boolean',
-  terminalFontFamily: 'string',
-  terminalFontSize: 'number',
-  terminalScrollback: 'number',
-  terminalScrollSpeed: 'number',
-  terminalContrast: 'number',
-  terminalCursorBlink: 'boolean',
-  terminalOptionIsMeta: 'boolean',
-  autoSuspendIdleTerminals: 'boolean',
-  browserHomepage: 'string',
-  browserSearchEngine: 'string',
-  terminalLinkOpenTarget: 'string',
-  sidebarTintOpacity: 'number',
-  showFileExplorerOnLaunch: 'boolean',
-  fileExclusions: 'array',
-  notificationsEnabled: 'boolean',
-  notifyOnlyWhenUnfocused: 'boolean',
-  crashReportingEnabled: 'boolean',
-  usageAnalyticsEnabled: 'boolean',
-  telemetryConsentDecided: 'boolean',
-  onboardingCompleted: 'boolean',
-}
-
 // Settings that open windows react to live (via onSettingsChanged). The
 // SETTINGS_CHANGED broadcast is scoped to these so routine edits — font size,
 // zoom speed, etc. — don't wake every window/explorer on each change.
 const LIVE_REACTIVE_SETTINGS = new Set<keyof AppSettings>(['fileExclusions'])
 
-/** Safely merge only known, type-correct keys from a parsed object into the settings cache. */
-function mergeValidatedSettings(target: Partial<AppSettings>, source: Record<string, unknown>): void {
-  for (const key of Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>) {
-    if (!(key in source)) continue
-    const val = source[key]
-    const expected = SETTINGS_SCHEMA[key]
-    if (expected === 'array') {
-      if (!Array.isArray(val)) { log.warn('Settings schema mismatch: %s expected array, got %s', key, typeof val); continue }
-    } else {
-      if (typeof val !== expected) { log.warn('Settings schema mismatch: %s expected %s, got %s', key, expected, typeof val); continue }
+/**
+ * Apply the main-process side effects of a single settings change. Shared by
+ * the renderer-driven SETTINGS_SET path and the external-file-edit watcher so a
+ * value changed by hand-editing settings.json behaves exactly like one changed
+ * through the UI (live file-exclusion refresh, Sentry toggle, live broadcast).
+ */
+async function applySettingSideEffect(key: keyof AppSettings, value: unknown): Promise<void> {
+  // Notify all windows so live-reactive settings (e.g. file exclusions) can
+  // update without a relaunch. Scoped to keys that actually have live listeners
+  // so routine setting changes don't churn every window.
+  if (LIVE_REACTIVE_SETTINGS.has(key)) {
+    broadcastToAll(SETTINGS_CHANGED, key, value)
+  }
+  // Rebuild active fs watchers so their ignore globs match the new exclusions
+  // (dynamic import avoids a static store<->filesystem cycle). Also push the new
+  // set to the LOCAL companion daemon, which captured its exclusions once at
+  // launch — without this the daemon's file tree / file-name search wouldn't
+  // honor the change until a restart. Only LOCAL: remote daemons get their
+  // config at connect time (out of scope here). Imports are dynamic to avoid
+  // store<->filesystem and store<->companion cycles.
+  if (key === 'fileExclusions') {
+    try {
+      const { refreshWatcherIgnores } = await import('./ipc/filesystem')
+      refreshWatcherIgnores()
+    } catch (err) {
+      log.warn('Watcher ignore refresh failed: %O', err)
     }
-    ;(target as Record<string, unknown>)[key as string] = val
+    try {
+      const { companions } = await import('./companion/companionManager')
+      const { LOCAL_COMPANION_ID } = await import('./companion/locator')
+      if (companions.has(LOCAL_COMPANION_ID)) {
+        companions.resolve(LOCAL_COMPANION_ID).setExclusions(value as string[]).catch(() => {})
+      }
+    } catch (err) {
+      log.warn('Companion exclusions forward failed: %O', err)
+    }
+  }
+  // Push the idle-suspend toggle to the LOCAL companion daemon, which gated its
+  // idle scanner once at launch — toggling otherwise needs a restart.
+  if (key === 'autoSuspendIdleTerminals') {
+    try {
+      const { companions } = await import('./companion/companionManager')
+      const { LOCAL_COMPANION_ID } = await import('./companion/locator')
+      if (companions.has(LOCAL_COMPANION_ID)) {
+        companions.resolve(LOCAL_COMPANION_ID).setIdleSuspend(value !== false).catch(() => {})
+      }
+    } catch (err) {
+      log.warn('Companion idle-suspend forward failed: %O', err)
+    }
+  }
+  // Live-toggle Sentry when the crash-reporting setting flips, so the change
+  // takes effect without a relaunch.
+  if (key === 'crashReportingEnabled') {
+    try {
+      const { setCrashReportingEnabled } = await import('./sentry')
+      setCrashReportingEnabled(value !== false)
+    } catch (err) {
+      log.warn('Sentry live-toggle failed: %O', err)
+    }
   }
 }
 
@@ -127,11 +147,14 @@ function backupConfigIfCorrupt(): void {
 async function getStore(): Promise<any> {
   if (storeInstance) return storeInstance
   const { default: Store } = await import('electron-store')
+  // electron-store still backs the non-settings keys (recentProjects,
+  // sidebarSession, remoteProjects, layouts). AppSettings now live in their own
+  // settings.json (see ./settingsFile), so they are no longer read/written here.
   // Preserve a corrupt config before clearInvalidConfig wipes it.
   backupConfigIfCorrupt()
   // clearInvalidConfig: a corrupt config.json resets to defaults instead of
-  // throwing on construction — which would otherwise reject every settings
-  // IPC call (settings, recent projects, layouts) for the whole session.
+  // throwing on construction — which would otherwise reject every store IPC
+  // call (recent projects, layouts, sessions) for the whole session.
   // projectName is set explicitly so the store never depends on Electron
   // app-name detection (electron-store still keys the file off the userData
   // cwd, so this doesn't change the config path — it only removes a failure
@@ -142,7 +165,7 @@ async function getStore(): Promise<any> {
   } catch (err) {
     // clearInvalidConfig only covers JSON SyntaxErrors. For anything else
     // (e.g. an unreadable/locked file), move the bad file aside and retry so
-    // settings keep working rather than failing for the entire session.
+    // the store keeps working rather than failing for the entire session.
     log.error('electron-store construction failed; quarantining config and retrying: %O', err)
     try {
       const cfgPath = path.join(app.getPath('userData'), 'config.json')
@@ -152,53 +175,36 @@ async function getStore(): Promise<any> {
     }
     storeInstance = new Store<AppSettings>(opts)
   }
-  // Hydrate sync cache from the freshly loaded store
-  try {
-    Object.assign(settingsCache, storeInstance.store as Partial<AppSettings>)
-  } catch { /* noop */ }
   return storeInstance
 }
 
 // ---------------------------------------------------------------------------
-// Synchronous settings cache
-// Loaded at startup directly from the electron-store JSON file so that the
-// main process can read settings before the async ESM store is initialized
-// (e.g. inside BrowserWindow constructors). Kept in sync on every SETTINGS_SET.
+// Synchronous settings access — settings live in settings.json, loaded
+// synchronously at startup (see ./settingsFile) so the main process can read
+// them before any window is constructed. These thin re-exports keep the
+// historical `./store` import surface for existing callers.
 // ---------------------------------------------------------------------------
-const settingsCache: Partial<AppSettings> = {}
 
-/** Read settings from the on-disk electron-store JSON file (sync). */
+/** Load settings.json synchronously (migrating from the legacy config.json on
+ *  first run). Safe to call once at startup. */
 export function loadSettingsSyncFromDisk(): void {
-  try {
-    const cfgPath = path.join(app.getPath('userData'), 'config.json')
-    if (!fsSync.existsSync(cfgPath)) return
-    const raw = fsSync.readFileSync(cfgPath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      mergeValidatedSettings(settingsCache, parsed as Record<string, unknown>)
-    }
-  } catch (err) {
-    log.warn('Sync settings load failed: %O', err)
-  }
+  loadSettingsSync()
 }
 
 export function getSettingSync<K extends keyof AppSettings>(key: K): AppSettings[K] {
-  return (settingsCache[key] ?? DEFAULT_SETTINGS[key]) as AppSettings[K]
+  return getSettingFromFile(key)
 }
 
-/** Persist a settings patch from the main process — updates the sync cache
- *  immediately and writes through to the on-disk store. Used by main-driven
- *  flows like first-run telemetry consent. */
+/** Persist a settings patch from the main process — updates settings.json
+ *  (the source of truth) and runs each key's side effects. Used by main-driven
+ *  flows like first-run telemetry consent. getSettingSync() reflects the change
+ *  immediately since settingsFile holds the authoritative in-memory copy. */
 export async function setSettingsFromMain(patch: Partial<AppSettings>): Promise<void> {
-  // Update the sync cache first so any immediate getSettingSync() reflects it.
   for (const [k, v] of Object.entries(patch)) {
-    ;(settingsCache as Record<string, unknown>)[k] = v
-  }
-  try {
-    const store = await getStore()
-    for (const [k, v] of Object.entries(patch)) store.set(k, v as never)
-  } catch (err) {
-    log.warn('[settings] setSettingsFromMain write failed: %O', err)
+    const key = k as keyof AppSettings
+    if (setSettingInFile(key, v as never)) {
+      await applySettingSideEffect(key, v)
+    }
   }
 }
 
@@ -273,85 +279,66 @@ export function writeBootSnapshot(partial: Partial<BootSnapshot>): void {
 
 
 export function registerHandlers(): void {
-  // Settings
+  // Settings — backed by settings.json (see ./settingsFile). The file is the
+  // source of truth; these handlers read/write it and fan out side effects.
   ipcMain.handle(SETTINGS_GET, async (_event, key: keyof AppSettings) => {
-    const store = await getStore()
-    return store.get(key)
+    return getSettingFromFile(key)
   })
 
   ipcMain.handle(
     SETTINGS_SET,
     async (_event, key: keyof AppSettings, value: unknown) => {
-      const store = await getStore()
-      store.set(key, value as never)
-      ;(settingsCache as Record<string, unknown>)[key as string] = value
-      // Notify all windows so live-reactive settings (e.g. file exclusions)
-      // can update without a relaunch. Scoped to keys that actually have live
-      // listeners so routine setting changes don't churn every window.
-      if (LIVE_REACTIVE_SETTINGS.has(key)) {
-        broadcastToAll(SETTINGS_CHANGED, key, value)
-      }
-      // Rebuild active fs watchers so their ignore globs match the new
-      // exclusions (dynamic import avoids a static store<->filesystem cycle).
-      // Also push the new set to the LOCAL companion daemon, which captured its
-      // exclusions once at launch — without this the daemon's file tree /
-      // file-name search wouldn't honor the change until a restart. Only LOCAL:
-      // remote daemons get their config at connect time (out of scope here). The
-      // companionManager import is dynamic to avoid a store<->companion cycle.
-      if (key === 'fileExclusions') {
-        try {
-          const { refreshWatcherIgnores } = await import('./ipc/filesystem')
-          refreshWatcherIgnores()
-        } catch (err) {
-          log.warn('Watcher ignore refresh failed: %O', err)
-        }
-        try {
-          const { companions } = await import('./companion/companionManager')
-          const { LOCAL_COMPANION_ID } = await import('./companion/locator')
-          if (companions.has(LOCAL_COMPANION_ID)) {
-            companions.resolve(LOCAL_COMPANION_ID).setExclusions(value as string[]).catch(() => {})
-          }
-        } catch (err) {
-          log.warn('Companion exclusions forward failed: %O', err)
-        }
-      }
-      // Push the idle-suspend toggle to the LOCAL companion daemon, which gated
-      // its idle scanner once at launch — toggling otherwise needs a restart.
-      if (key === 'autoSuspendIdleTerminals') {
-        try {
-          const { companions } = await import('./companion/companionManager')
-          const { LOCAL_COMPANION_ID } = await import('./companion/locator')
-          if (companions.has(LOCAL_COMPANION_ID)) {
-            companions.resolve(LOCAL_COMPANION_ID).setIdleSuspend(value !== false).catch(() => {})
-          }
-        } catch (err) {
-          log.warn('Companion idle-suspend forward failed: %O', err)
-        }
-      }
-      // Live-toggle Sentry when the user flips the crash-reporting setting,
-      // so they don't need to relaunch for the change to take effect.
-      if (key === 'crashReportingEnabled') {
-        try {
-          const { setCrashReportingEnabled } = await import('./sentry')
-          setCrashReportingEnabled(value !== false)
-        } catch (err) {
-          log.warn('Sentry live-toggle failed: %O', err)
-        }
-      }
+      if (!setSettingInFile(key, value as never)) return
+      await applySettingSideEffect(key, value)
     },
   )
 
   ipcMain.handle(SETTINGS_GET_ALL, async () => {
-    const store = await getStore()
-    return store.store
+    return getAllSettings()
   })
 
   ipcMain.handle(SETTINGS_RESET, async (_event, key?: keyof AppSettings) => {
-    const store = await getStore()
     if (key) {
-      store.reset(key)
+      resetSettingInFile(key)
+      await applySettingSideEffect(key, getSettingFromFile(key))
     } else {
-      store.clear()
+      resetAllSettings()
+    }
+  })
+
+  // Grant the calling window read+write access to settings.json and return its
+  // path so the renderer can open it in an editor panel (VS Code's "Open
+  // Settings (JSON)"). The path is computed here in main — never supplied by the
+  // renderer — so this does not widen the renderer's filesystem reach beyond
+  // this one app-owned file. The grant is persisted so a restored editor panel
+  // pointing at settings.json keeps working across launches.
+  ipcMain.handle(SETTINGS_OPEN_IN_EDITOR, async (event) => {
+    const filePath = await ensureSettingsFile()
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return filePath
+    try {
+      const safePath = await grantFileAccess(win.id, filePath)
+      await recordPersistentGrant(safePath)
+      // Grant every currently-open window too, so a panel dragged to another
+      // window keeps access (mirrors the Save-As grant fan-out).
+      for (const other of BrowserWindow.getAllWindows()) {
+        if (other.id === win.id || other.isDestroyed()) continue
+        try { await grantFileAccess(other.id, safePath) } catch { /* best effort */ }
+      }
+      return safePath
+    } catch (err) {
+      log.warn('[SETTINGS_OPEN_IN_EDITOR] grant failed: %O', err)
+      return filePath
+    }
+  })
+
+  // React to external edits of settings.json (user editing the file directly):
+  // broadcast the full settings so renderers merge live, and run the same
+  // per-key side effects as a UI change.
+  startSettingsWatch((next, changedKeys) => {
+    broadcastToAll(SETTINGS_RELOADED, next)
+    for (const key of changedKeys) {
+      void applySettingSideEffect(key, next[key])
     }
   })
 

@@ -91,6 +91,12 @@ export const SETTINGS_SET = 'settings:set'
 export const SETTINGS_GET_ALL = 'settings:getAll'
 export const SETTINGS_RESET = 'settings:reset'
 export const SETTINGS_CHANGED = 'settings:changed' // main -> renderer (broadcast)
+// Grant the calling window access to settings.json and return its path so the
+// renderer can open it in an editor panel (VS Code "Open Settings (JSON)").
+export const SETTINGS_OPEN_IN_EDITOR = 'settings:openInEditor'
+// Broadcast when settings.json was edited externally (the user editing the
+// file directly). Carries the full settings object so renderers merge live.
+export const SETTINGS_RELOADED = 'settings:reloaded' // main -> renderer (broadcast)
 
 // Session
 export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer

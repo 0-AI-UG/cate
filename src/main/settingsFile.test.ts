@@ -1,0 +1,115 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import fs from 'fs'
+import fsp from 'fs/promises'
+import path from 'path'
+import { tmpdir } from 'os'
+
+// settingsFile reads app.getPath('userData'). Point it at a per-test temp dir
+// (mutated in beforeEach) so each case starts from a clean userData folder.
+const dirRef = { current: tmpdir() }
+vi.mock('electron', () => ({
+  app: { getPath: () => dirRef.current },
+}))
+vi.mock('./logger', () => ({
+  default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}))
+// chokidar isn't exercised here; stub it so importing the module is cheap.
+vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
+
+import { DEFAULT_SETTINGS } from '../shared/types'
+
+let counter = 0
+
+// Re-import a fresh copy of the module so its cached state (loaded/current)
+// resets between tests.
+async function freshModule() {
+  vi.resetModules()
+  return import('./settingsFile')
+}
+
+function settingsPath() {
+  return path.join(dirRef.current, 'settings.json')
+}
+
+beforeEach(() => {
+  dirRef.current = path.join(tmpdir(), `cate-settings-test-${process.pid}-${counter++}`)
+  fs.mkdirSync(dirRef.current, { recursive: true })
+})
+
+afterEach(() => {
+  fs.rmSync(dirRef.current, { recursive: true, force: true })
+})
+
+describe('settingsFile', () => {
+  it('seeds settings.json with defaults on first run', async () => {
+    const m = await freshModule()
+    m.loadSettingsSync()
+    expect(fs.existsSync(settingsPath())).toBe(true)
+    const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
+    expect(onDisk.defaultPanelWidth).toBe(DEFAULT_SETTINGS.defaultPanelWidth)
+    expect(m.getSetting('defaultPanelWidth')).toBe(DEFAULT_SETTINGS.defaultPanelWidth)
+  })
+
+  it('migrates valid settings out of the legacy config.json, ignoring junk', async () => {
+    // Legacy electron-store file with one real setting, one wrong-typed setting,
+    // and a non-settings key that must not leak into settings.json.
+    fs.writeFileSync(
+      path.join(dirRef.current, 'config.json'),
+      JSON.stringify({ editorFontSize: 18, zoomSpeed: 'fast', recentProjects: ['/x'] }),
+    )
+    const m = await freshModule()
+    m.loadSettingsSync()
+    expect(m.getSetting('editorFontSize')).toBe(18)
+    // Wrong-typed value rejected → default retained.
+    expect(m.getSetting('zoomSpeed')).toBe(DEFAULT_SETTINGS.zoomSpeed)
+    const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
+    expect(onDisk.editorFontSize).toBe(18)
+    expect('recentProjects' in onDisk).toBe(false)
+  })
+
+  it('loads an existing settings.json over defaults', async () => {
+    fs.writeFileSync(settingsPath(), JSON.stringify({ terminalScrollback: 9000 }))
+    const m = await freshModule()
+    m.loadSettingsSync()
+    expect(m.getSetting('terminalScrollback')).toBe(9000)
+    expect(m.getSetting('showMinimap')).toBe(DEFAULT_SETTINGS.showMinimap)
+  })
+
+  it('validates setSetting and persists on sync flush', async () => {
+    const m = await freshModule()
+    m.loadSettingsSync()
+
+    expect(m.setSetting('warnBeforeQuit', true)).toBe(true)
+    // Wrong type is rejected and leaves the value unchanged.
+    expect(m.setSetting('warnBeforeQuit', 'nope' as never)).toBe(false)
+    expect(m.getSetting('warnBeforeQuit')).toBe(true)
+
+    m.flushPendingWritesSync()
+    const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
+    expect(onDisk.warnBeforeQuit).toBe(true)
+  })
+
+  it('resets a key back to its default', async () => {
+    const m = await freshModule()
+    m.loadSettingsSync()
+    m.setSetting('editorFontSize', 22)
+    expect(m.getSetting('editorFontSize')).toBe(22)
+    m.resetSetting('editorFontSize')
+    expect(m.getSetting('editorFontSize')).toBe(DEFAULT_SETTINGS.editorFontSize)
+  })
+
+  it('ensureSettingsFile creates the file when missing', async () => {
+    const m = await freshModule()
+    m.loadSettingsSync()
+    fs.rmSync(settingsPath(), { force: true })
+    const p = await m.ensureSettingsFile()
+    expect(p).toBe(settingsPath())
+    await expect(fsp.access(p)).resolves.toBeUndefined()
+  })
+
+  it('isSettingsKey distinguishes known keys', async () => {
+    const m = await freshModule()
+    expect(m.isSettingsKey('editorFontSize')).toBe(true)
+    expect(m.isSettingsKey('recentProjects')).toBe(false)
+  })
+})

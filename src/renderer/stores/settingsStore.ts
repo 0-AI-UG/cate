@@ -17,7 +17,25 @@ interface ElectronSettingsAPI {
   settingsSet: (key: string, value: unknown) => Promise<void>
   settingsGetAll: () => Promise<Partial<AppSettings>>
   settingsReset: (key: string) => Promise<void>
+  settingsOpenInEditor?: () => Promise<string>
+  onSettingsReloaded?: (callback: (settings: Partial<AppSettings>) => void) => () => void
 }
+
+// Copy only known AppSettings keys from a source object onto a target patch.
+function pickKnownSettings(source: Partial<AppSettings>): Partial<AppSettings> {
+  const out: Partial<AppSettings> = {}
+  for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[]) {
+    if (key in source && source[key] !== undefined) {
+      ;(out as Record<string, unknown>)[key] = source[key]
+    }
+  }
+  return out
+}
+
+// Subscribe once (per window) to external settings.json edits so the UI tracks
+// hand-edits to the file live. Guarded so repeat loadSettings() calls (e.g. in
+// detached windows) don't stack listeners.
+let reloadSubscribed = false
 
 function getElectronAPI(): ElectronSettingsAPI | null {
   if (
@@ -120,6 +138,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     } catch {
       // Fall back to defaults on error
       set({ _loaded: true })
+    }
+
+    // Track external edits to settings.json (VS Code-style) so the UI updates
+    // live when the file is hand-edited.
+    if (!reloadSubscribed && api.onSettingsReloaded) {
+      reloadSubscribed = true
+      api.onSettingsReloaded((settings) => {
+        set(pickKnownSettings(settings))
+      })
     }
   },
 

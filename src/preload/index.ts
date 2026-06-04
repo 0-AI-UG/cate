@@ -67,6 +67,8 @@ import {
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
   SETTINGS_CHANGED,
+  SETTINGS_OPEN_IN_EDITOR,
+  SETTINGS_RELOADED,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
@@ -699,6 +701,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(SETTINGS_CHANGED, listener)
     return () => {
       ipcRenderer.removeListener(SETTINGS_CHANGED, listener)
+    }
+  },
+
+  settingsOpenInEditor(): Promise<string> {
+    return ipcRenderer.invoke(SETTINGS_OPEN_IN_EDITOR)
+  },
+
+  onSettingsReloaded(callback: (settings: AppSettings) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, settings: AppSettings): void => {
+      callback(settings)
+    }
+    ipcRenderer.on(SETTINGS_RELOADED, listener)
+    return () => {
+      ipcRenderer.removeListener(SETTINGS_RELOADED, listener)
     }
   },
 
