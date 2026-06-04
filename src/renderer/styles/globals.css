@@ -153,6 +153,12 @@
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
+/* Onboarding tour card entrance. */
+@keyframes onboarding-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 @keyframes cate-notif-sweep {
   0%   { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }

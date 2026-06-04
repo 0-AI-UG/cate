@@ -155,6 +155,7 @@ import {
   ANALYTICS_FEEDBACK_ENGAGED,
   ANALYTICS_FEEDBACK_GET_PENDING,
   ANALYTICS_LINK_CLICK,
+  ANALYTICS_TRACK_USAGE,
   TELEMETRY_SET_CONSENT,
   OPEN_EXTERNAL_URL,
   AGENT_CREATE,
@@ -1166,6 +1167,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   setTelemetryConsent(choice: { crashReporting: boolean; usageAnalytics: boolean }): Promise<void> {
     return ipcRenderer.invoke(TELEMETRY_SET_CONSENT, choice)
+  },
+
+  trackFeatureUsed(feature: string, props?: Record<string, string | number | boolean>): void {
+    ipcRenderer.send(ANALYTICS_TRACK_USAGE, { feature, props })
   },
 
   openExternalUrl(url: string): void {

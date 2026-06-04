@@ -316,7 +316,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         right: 'var(--cate-right-sidebar-width, 0px)',
       }}
     >
-      <div ref={menuRef} className="relative pointer-events-auto">
+      <div ref={menuRef} data-onboarding="toolbar" className="relative pointer-events-auto">
         {/* Drop-up menu */}
         {menuOpen && (
           <div

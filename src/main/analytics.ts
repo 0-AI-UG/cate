@@ -29,7 +29,7 @@ import log from './logger'
 import { getSettingSync } from './store'
 import { getCommonContext } from './appContext'
 import { readJsonFile, writeJsonFile, readTextFile, writeTextFile, appendLine, removeFile } from './jsonFileStore'
-import { ANALYTICS_FEEDBACK_PROMPT, ANALYTICS_FEEDBACK_SUBMIT, ANALYTICS_FEEDBACK_DISMISS, ANALYTICS_FEEDBACK_GET_PENDING, ANALYTICS_LINK_CLICK, OPEN_EXTERNAL_URL } from '../shared/ipc-channels'
+import { ANALYTICS_FEEDBACK_PROMPT, ANALYTICS_FEEDBACK_SUBMIT, ANALYTICS_FEEDBACK_DISMISS, ANALYTICS_FEEDBACK_GET_PENDING, ANALYTICS_LINK_CLICK, ANALYTICS_TRACK_USAGE, OPEN_EXTERNAL_URL } from '../shared/ipc-channels'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -208,6 +208,23 @@ function isEnabled(): boolean {
   return getSettingSync('usageAnalyticsEnabled') !== false
 }
 
+/** Keep only a few small primitive props (string/number/boolean), with strings
+ *  clamped short — defends the usage channel against free-form text or paths
+ *  riding along in props. Exported for tests. */
+export function sanitizeUsageProps(raw: unknown): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {}
+  if (!raw || typeof raw !== 'object') return out
+  let n = 0
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (n >= 6) break
+    if (typeof v === 'string') out[k.slice(0, 32)] = v.slice(0, 48)
+    else if (typeof v === 'number' || typeof v === 'boolean') out[k.slice(0, 32)] = v
+    else continue
+    n++
+  }
+  return out
+}
+
 /** Clamp + truncate raw IPC payload from the renderer. Exported for tests. */
 export function sanitizeFeedbackPayload(payload: unknown): { rating: number; comment: string } {
   const p = (payload ?? {}) as { rating?: unknown; comment?: unknown }
@@ -262,6 +279,16 @@ export function initAnalytics(): void {
 
   ipcMain.on(ANALYTICS_LINK_CLICK, (_e, link: string) => {
     void sendEvent('promo_link_clicked', { link })
+  })
+
+  // Anonymous feature-usage signal. The renderer reports a short feature key
+  // (+ optional small primitive props); we clamp it hard so no free-form text
+  // / file paths / project data can ride along. Gated by consent via sendEvent.
+  ipcMain.on(ANALYTICS_TRACK_USAGE, (_e, raw: unknown) => {
+    const payload = (raw ?? {}) as { feature?: unknown; props?: unknown }
+    if (typeof payload.feature !== 'string' || !payload.feature) return
+    const feature = payload.feature.slice(0, 64)
+    void sendEvent('feature_used', { feature, ...sanitizeUsageProps(payload.props) })
   })
 
   ipcMain.on(OPEN_EXTERNAL_URL, (_e, url: string) => {

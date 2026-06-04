@@ -31,6 +31,7 @@ import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
 import { TelemetryConsentDialog } from './dialogs/TelemetryConsentDialog'
+import { OnboardingTour } from './onboarding/OnboardingTour'
 import PerfHud from './ui/PerfHud'
 import { initPerfClient } from './lib/perf/perfClient'
 import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave, saveSession } from './lib/session'
@@ -552,6 +553,7 @@ function MainApp() {
       )}
       <SavedLayoutsDialog />
       <TelemetryConsentDialog />
+      <OnboardingTour />
       <PostUpdateFeedbackDialog />
       <PerfHud />
 

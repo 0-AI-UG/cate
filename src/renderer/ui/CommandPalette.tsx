@@ -20,11 +20,13 @@ import {
   FloppyDisk,
   ArrowsClockwise,
   Trash,
+  GraduationCap,
 } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
 import { CateLogo } from './CateLogo'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useDockStore } from '../stores/dockStore'
 import { findTabStack } from '../stores/dockTreeUtils'
@@ -58,6 +60,7 @@ const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
 const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const DeleteCompanionIcon = () => <Trash size={ICON_SIZE} />
+const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const AgentIcon = () => <CateLogo size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
@@ -217,6 +220,17 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '',
         icon: <SaveIcon />,
         action: () => useUIStore.getState().setShowLayoutsDialog(true),
+      },
+      {
+        id: 'showTutorial',
+        title: 'Show Tutorial',
+        shortcutText: '',
+        icon: <TutorialIcon />,
+        // Replays the first-run guided tour by clearing the completed flag.
+        action: () => {
+          useSettingsStore.getState().setSetting('onboardingCompleted', false)
+          try { window.electronAPI?.trackFeatureUsed?.('onboarding_replayed') } catch { /* noop */ }
+        },
       },
       {
         id: 'reloadWorkspace',

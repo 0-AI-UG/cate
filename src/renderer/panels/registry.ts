@@ -84,43 +84,54 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     icon: Terminal,
     Component: TerminalPanel,
     create: ({ workspaceId, canvasPoint, placement, initialInput }) =>
-      useAppStore.getState().createTerminal(workspaceId, initialInput, canvasPoint, placement) || null,
+      trackCreated('terminal', useAppStore.getState().createTerminal(workspaceId, initialInput, canvasPoint, placement) || null),
   },
   browser: {
     ...PANEL_DEFINITIONS.browser,
     icon: Globe,
     Component: BrowserPanel,
     create: ({ workspaceId, canvasPoint, placement, url }) =>
-      useAppStore.getState().createBrowser(workspaceId, url, canvasPoint, placement) || null,
+      trackCreated('browser', useAppStore.getState().createBrowser(workspaceId, url, canvasPoint, placement) || null),
   },
   editor: {
     ...PANEL_DEFINITIONS.editor,
     icon: FileText,
     Component: EditorPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath }) =>
-      useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null,
+      trackCreated('editor', useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null),
   },
   canvas: {
     ...PANEL_DEFINITIONS.canvas,
     icon: SquaresFour,
     Component: CanvasPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
-      useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null,
+      trackCreated('canvas', useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null),
   },
   agent: {
     ...PANEL_DEFINITIONS.agent,
     icon: CateLogo as unknown as PhosphorIcon,
     Component: AgentPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
-      useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null,
+      trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null),
   },
   document: {
     ...PANEL_DEFINITIONS.document,
     icon: FileDoc,
     Component: DocumentPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath, documentType }) =>
-      useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null,
+      trackCreated('document', useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null),
   },
+}
+
+/** Wrap a create() result with an anonymous usage signal. Lives on the registry
+ *  path (command palette, toolbar, welcome screen) — the user-initiated creation
+ *  surface — so session restore (which calls appStore.createX directly) does not
+ *  inflate the counts. No-ops when the panel wasn't created. */
+function trackCreated(type: PanelType, id: string | null): string | null {
+  if (id) {
+    try { window.electronAPI?.trackFeatureUsed?.('panel_created', { type }) } catch { /* noop */ }
+  }
+  return id
 }
 
 // -----------------------------------------------------------------------------

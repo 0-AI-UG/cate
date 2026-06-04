@@ -77,6 +77,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   crashReportingEnabled: 'boolean',
   usageAnalyticsEnabled: 'boolean',
   telemetryConsentDecided: 'boolean',
+  onboardingCompleted: 'boolean',
 }
 
 // Settings that open windows react to live (via onSettingsChanged). The

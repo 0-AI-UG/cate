@@ -27,7 +27,27 @@ vi.mock('./logger', () => ({
   default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} },
 }))
 
-const { decideUpdateAction, sanitizeFeedbackPayload } = await import('./analytics')
+const { decideUpdateAction, sanitizeFeedbackPayload, sanitizeUsageProps } = await import('./analytics')
+
+describe('sanitizeUsageProps', () => {
+  test('keeps small primitives and drops everything else', () => {
+    const out = sanitizeUsageProps({ type: 'terminal', count: 3, ok: true, nested: { a: 1 }, fn: () => {} })
+    expect(out).toEqual({ type: 'terminal', count: 3, ok: true })
+  })
+
+  test('clamps long strings and caps the number of keys', () => {
+    const long = 'x'.repeat(200)
+    const many: Record<string, string> = {}
+    for (let i = 0; i < 20; i++) many[`k${i}`] = 'v'
+    expect(sanitizeUsageProps({ note: long }).note).toHaveLength(48)
+    expect(Object.keys(sanitizeUsageProps(many)).length).toBe(6)
+  })
+
+  test('returns an empty object for non-object input', () => {
+    expect(sanitizeUsageProps(null)).toEqual({})
+    expect(sanitizeUsageProps('nope')).toEqual({})
+  })
+})
 
 describe('decideUpdateAction', () => {
   test('first launch: emits app_install, persists version, and queues prompt', () => {

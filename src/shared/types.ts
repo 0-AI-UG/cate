@@ -1055,6 +1055,11 @@ export interface AppSettings {
    *  regardless of the two flags above — they only describe the post-consent
    *  state. The first-run consent dialog sets this to true once the user picks. */
   telemetryConsentDecided: boolean
+
+  // Onboarding
+  /** Whether the user has finished (or skipped) the first-run guided tour.
+   *  Set false to replay it. */
+  onboardingCompleted: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -1113,6 +1118,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   crashReportingEnabled: true,
   usageAnalyticsEnabled: true,
   telemetryConsentDecided: false,
+
+  // Onboarding
+  onboardingCompleted: false,
 }
 
 // -----------------------------------------------------------------------------

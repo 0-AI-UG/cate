@@ -714,6 +714,9 @@ export interface ElectronAPI {
   /** Record the first-run telemetry consent decision. Persists the choice and
    *  releases the deferred crash-reporting + analytics init. */
   setTelemetryConsent(choice: { crashReporting: boolean; usageAnalytics: boolean }): Promise<void>
+  /** Report an anonymous feature-usage signal (gated by analytics consent).
+   *  `feature` is a short key; `props` are small primitives, clamped in main. */
+  trackFeatureUsed(feature: string, props?: Record<string, string | number | boolean>): void
   /** Open an external URL in the user's default browser. */
   openExternalUrl(url: string): void
 
