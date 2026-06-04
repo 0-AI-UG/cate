@@ -91,15 +91,15 @@ export function WelcomeDialog() {
             }}
           >
             {/* macOS-style asymmetric highlight border: a 1px gradient ring that's
-                bright on the top edge and fades to nothing toward the bottom. The
-                mask cuts out the centre so only the border shows. */}
+                brightest at the top-left and bottom-right corners and dimmer in
+                between. The mask cuts out the centre so only the border shows. */}
             <span
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 rounded-[18px]"
               style={{
                 padding: '1px',
                 background:
-                  'linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.08) 38%, rgba(255,255,255,0) 70%)',
+                  'linear-gradient(135deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.06) 45%, rgba(255,255,255,0.04) 60%, rgba(255,255,255,0.32) 100%)',
                 WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
                 WebkitMaskComposite: 'xor',
                 maskComposite: 'exclude',
