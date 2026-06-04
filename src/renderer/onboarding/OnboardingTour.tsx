@@ -7,12 +7,12 @@
 // element. Shows once after the telemetry-consent step; replayable by resetting
 // the `onboardingCompleted` setting (see the "Show Tutorial" command).
 //
-// Visual language matches the dark dialogs (PostUpdateFeedbackDialog /
-// TelemetryConsentDialog): #1a1a1e cards, soft borders, rounded corners.
+// Visual language matches the dark dialogs (WelcomeDialog /
+// PostUpdateFeedbackDialog): dark cards, soft borders, blue accent.
 // =============================================================================
 
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
-import { ArrowLeft, ArrowRight, X, GithubLogo, Envelope } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, X } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { ONBOARDING_STEPS } from './steps'
 
@@ -165,13 +165,13 @@ export function OnboardingTour() {
             top: spotlight.y - SPOTLIGHT_PAD,
             width: spotlight.width + SPOTLIGHT_PAD * 2,
             height: spotlight.height + SPOTLIGHT_PAD * 2,
-            boxShadow: '0 0 0 9999px rgba(0,0,0,0.62)',
-            outline: '2px solid rgba(96,165,250,0.9)',
+            boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+            outline: '2px solid rgba(96,165,250,0.95)',
             outlineOffset: 0,
           }}
         />
       ) : (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px]" />
+        <div className="absolute inset-0 bg-black/35" />
       )}
 
       {/* Card */}
@@ -202,28 +202,6 @@ export function OnboardingTour() {
               >
                 {k}
               </kbd>
-            ))}
-          </div>
-        )}
-
-        {current.links && (
-          <div className="flex gap-1.5">
-            {current.links.map((link) => (
-              <button
-                key={link.track}
-                onClick={() => {
-                  try {
-                    window.electronAPI?.trackLinkClick?.(link.track)
-                    window.electronAPI?.openExternalUrl?.(link.url)
-                  } catch { /* noop */ }
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-white text-[12px] font-semibold transition-colors"
-              >
-                {link.icon === 'github'
-                  ? <GithubLogo size={15} weight="fill" />
-                  : <Envelope size={15} weight="fill" className="text-blue-400" />}
-                {link.label}
-              </button>
             ))}
           </div>
         )}

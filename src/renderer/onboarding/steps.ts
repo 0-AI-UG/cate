@@ -16,20 +16,9 @@ export interface OnboardingStep {
   emoji?: string
   /** Optional keycap chips (e.g. ['⌘', 'K']). */
   keys?: string[]
-  /** Optional community links rendered as buttons (e.g. on the final card). */
-  links?: { label: string; url: string; track: string; icon: 'github' | 'newsletter' }[]
 }
 
-const GITHUB_REPO = 'https://github.com/0-AI-UG/cate'
-const NEWSLETTER_URL = 'https://cate.cero-ai.com'
-
 export const ONBOARDING_STEPS: OnboardingStep[] = [
-  {
-    id: 'welcome',
-    emoji: '👋',
-    title: 'Welcome to Cate',
-    body: 'Cate is an infinite canvas for building — terminals, editors, browsers, and AI agents, all floating in one space. Here’s a 30-second tour.',
-  },
   {
     id: 'canvas',
     target: '[data-canvas-container]',
@@ -61,10 +50,6 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: 'done',
     emoji: '🚀',
     title: 'You’re all set',
-    body: 'Build your first layout — and replay this tour anytime from ⌘K → “Show Tutorial”. If Cate’s useful to you, a star or a subscribe goes a long way.',
-    links: [
-      { label: 'Star on GitHub', url: GITHUB_REPO, track: 'github_star', icon: 'github' },
-      { label: 'Newsletter', url: NEWSLETTER_URL, track: 'newsletter', icon: 'newsletter' },
-    ],
+    body: 'Build your first layout — drag panels around, then save and reuse layouts later. Replay this tour anytime from ⌘K → “Show Tutorial”.',
   },
 ]

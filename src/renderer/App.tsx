@@ -30,7 +30,7 @@ import { CompanionLockOverlay } from './ui/CompanionLockOverlay'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
-import { TelemetryConsentDialog } from './dialogs/TelemetryConsentDialog'
+import { WelcomeDialog } from './dialogs/WelcomeDialog'
 import { OnboardingTour } from './onboarding/OnboardingTour'
 import PerfHud from './ui/PerfHud'
 import { initPerfClient } from './lib/perf/perfClient'
@@ -552,7 +552,7 @@ function MainApp() {
         <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
       )}
       <SavedLayoutsDialog />
-      <TelemetryConsentDialog />
+      <WelcomeDialog />
       <OnboardingTour />
       <PostUpdateFeedbackDialog />
       <PerfHud />
