@@ -10,6 +10,7 @@ import { useAppStore, getActiveCanvasOps } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
+import { confirmClosePanels } from '../lib/confirmClosePanels'
 
 // Single-key (no-modifier) tool shortcuts (V, H) — suppressed while typing.
 const TOOL_ACTIONS = new Set<ShortcutAction>(['toolSelect', 'toolHand'])
@@ -112,7 +113,9 @@ export function useShortcuts(): void {
           const focusedNodeId = canvasStore().focusedNodeId
           if (focusedNodeId) {
             const node = canvasStore().nodes[focusedNodeId]
-            if (node) appStore().closePanel(selectedWorkspaceId, node.panelId)
+            if (node && (await confirmClosePanels(selectedWorkspaceId, [node.panelId]))) {
+              appStore().closePanel(selectedWorkspaceId, node.panelId)
+            }
           }
           break
         }
@@ -209,7 +212,9 @@ export function useShortcuts(): void {
           const focusedId = canvasStore().focusedNodeId
           if (focusedId && canvasStore().nodes[focusedId]) {
             const node = canvasStore().nodes[focusedId]
-            appStore().closePanel(selectedWorkspaceId, node.panelId)
+            if (await confirmClosePanels(selectedWorkspaceId, [node.panelId])) {
+              appStore().closePanel(selectedWorkspaceId, node.panelId)
+            }
           }
           break
         }

@@ -386,6 +386,12 @@ export interface ElectronAPI {
    *  detail so the user can see exactly which file on disk is about to change. */
   confirmUnsavedChanges(payload: { fileName?: string; multiple?: boolean; filePath?: string }): Promise<'save' | 'discard' | 'cancel'>
 
+  /** Native confirmation shown when closing a terminal whose PTY is currently
+   *  running a foreground process (a dev server, an editor, an agent like Claude
+   *  or Codex, …). `processName`, when known for a single terminal, is shown so
+   *  the user sees what is about to be killed. Returns 'close' | 'cancel'. */
+  confirmCloseTerminal(payload: { count: number; processName?: string | null }): Promise<'close' | 'cancel'>
+
   /** Native confirmation shown when closing a canvas panel. When the canvas is
    *  not the last and has open panels, returns 'move' | 'delete' | 'cancel'.
    *  Otherwise returns 'close' | 'cancel'. */

@@ -25,6 +25,7 @@ import { DockStoreProvider } from '../stores/DockStoreContext'
 import DockTabStack from '../docking/DockTabStack'
 import DockSplitContainer from '../docking/DockSplitContainer'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
+import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { WorktreePill } from './WorktreePill'
@@ -282,7 +283,10 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     async (panelIds: string[]): Promise<boolean> => {
       const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
       if (!ws) return true
-      return confirmCloseDirtyPanels(panelIds.map((id) => ws.panels[id]))
+      const panels = panelIds.map((id) => ws.panels[id])
+      if (!(await confirmCloseDirtyPanels(panels))) return false
+      if (!(await confirmCloseRunningTerminals(panels))) return false
+      return true
     },
     [wsId],
   )

@@ -46,6 +46,7 @@ import { applyCanvasChildPanels } from './lib/applyCanvasChildPanels'
 import { applyTheme } from './lib/themeManager'
 import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
 import { confirmCloseCanvas } from './lib/confirmCloseCanvas'
+import { confirmCloseRunningTerminals } from './lib/confirmCloseTerminal'
 import { isExternalFileDrag } from './lib/importExternalEntries'
 import pkg from '../../package.json'
 
@@ -450,8 +451,8 @@ function MainApp() {
         useAppStore.getState().closePanel(selectedWorkspaceId, panelId)
         return
       }
-      const ok = await confirmCloseDirtyPanels([panel])
-      if (!ok) return
+      if (!(await confirmCloseDirtyPanels([panel]))) return
+      if (!(await confirmCloseRunningTerminals([panel]))) return
       useAppStore.getState().closePanel(selectedWorkspaceId, panelId)
     },
     [selectedWorkspaceId],

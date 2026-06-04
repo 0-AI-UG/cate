@@ -12,6 +12,7 @@ import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { confirmClosePanels } from '../lib/confirmClosePanels'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
@@ -477,7 +478,8 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     setRenamingPanelId(null)
   }, [panelRenameValue, workspace.id])
 
-  const handleClosePanel = useCallback((panelId: string) => {
+  const handleClosePanel = useCallback(async (panelId: string) => {
+    if (!(await confirmClosePanels(workspace.id, [panelId]))) return
     useAppStore.getState().closePanel(workspace.id, panelId)
   }, [workspace.id])
 

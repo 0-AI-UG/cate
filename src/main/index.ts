@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session, nativeTheme } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_TERMINAL, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -20,7 +20,7 @@ import { companions } from './companion/companionManager'
 import { registerCompanionHandlers } from './ipc/companion'
 import { registerHandlers as registerFilesystemHandlers, stopWatchersForWindow } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
-import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow } from './ipc/shell'
+import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow, getRunningTerminals } from './ipc/shell'
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
 import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot } from './store'
 import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
@@ -612,6 +612,37 @@ function registerWindowAndDialogHandlers(): void {
         noLink: true,
       })
       return result.response === 0 ? 'save' : result.response === 1 ? 'discard' : 'cancel'
+    },
+  )
+
+  // Confirm closing a terminal that's running a foreground process (dev server,
+  // editor, agent, …). Returns 'close' | 'cancel'.
+  ipcMain.handle(
+    DIALOG_CONFIRM_CLOSE_TERMINAL,
+    async (event, payload: { count?: number; processName?: string | null }) => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+      const count = payload?.count ?? 1
+      const name = payload?.processName?.trim()
+      const message =
+        count > 1
+          ? `Close ${count} terminals that are still running?`
+          : name
+            ? `“${name}” is still running. Close this terminal?`
+            : 'This terminal is still running. Close it?'
+      const detail =
+        count > 1
+          ? 'The processes running in these terminals will be terminated.'
+          : 'The process running in this terminal will be terminated.'
+      const result = await dialog.showMessageBox(win!, {
+        type: 'warning',
+        message,
+        detail,
+        buttons: ['Close', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      })
+      return result.response === 0 ? 'close' : 'cancel'
     },
   )
 
@@ -1426,6 +1457,10 @@ app.on('activate', () => {
 // ---------------------------------------------------------------------------
 
 let sessionFlushed = false
+// Set once the user has confirmed (or there was nothing to confirm) that it's OK
+// to quit while terminals are still running a foreground process. Gates the
+// flush/quit sequence below so the confirmation only runs on the first pass.
+let quitConfirmed = false
 const FLUSH_TIMEOUT_MS = 1500
 
 app.on('before-quit', (event) => {
@@ -1433,6 +1468,52 @@ app.on('before-quit', (event) => {
     // Second pass — renderer already saved, let quit proceed to will-quit
     log.info('before-quit: session already flushed, proceeding')
     return
+  }
+
+  // First gate: warn before tearing down terminals that are still running a
+  // foreground process (dev server, editor, agent, …). Mirrors the per-terminal
+  // close confirmation. Deferred async, so we prevent the quit and re-trigger it
+  // once the user confirms.
+  if (!quitConfirmed) {
+    const running = getRunningTerminals()
+    if (running.length > 0) {
+      event.preventDefault()
+      const allWindows = BrowserWindow.getAllWindows()
+      const focusWin =
+        allWindows.find((w) => !w.isDestroyed() && getWindowType(w.id) === 'main') ??
+        allWindows.find((w) => !w.isDestroyed())
+      const count = running.length
+      const name = count === 1 ? running[0].processName?.trim() : undefined
+      const message =
+        count > 1
+          ? `${count} terminals are still running. Quit anyway?`
+          : name
+            ? `“${name}” is still running. Quit anyway?`
+            : 'A terminal is still running. Quit anyway?'
+      void dialog
+        .showMessageBox(focusWin!, {
+          type: 'warning',
+          message,
+          detail:
+            count > 1
+              ? 'The processes running in these terminals will be terminated.'
+              : 'The process running in this terminal will be terminated.',
+          buttons: ['Quit', 'Cancel'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        })
+        .then((result) => {
+          if (result.response === 0) {
+            quitConfirmed = true
+            app.quit() // re-trigger quit; this gate now passes
+          }
+          // Cancel: leave the app running.
+        })
+      return
+    }
+    // Nothing running — skip the confirmation on the re-triggered pass too.
+    quitConfirmed = true
   }
 
   log.info('Before quit, flushing loggers and requesting session save')
