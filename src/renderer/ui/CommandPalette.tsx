@@ -28,8 +28,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
-import { getWorkspaceDockStore } from '../stores/workspaceStores'
-import { findTabStack } from '../stores/dockTreeUtils'
+import { revealPanel } from '../lib/workspace/panelReveal'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 
@@ -428,33 +427,15 @@ export const CommandPalette: React.FC = () => {
     [close],
   )
 
-  // Focus an open panel by id: pan/center the canvas node if it lives on the
-  // canvas, otherwise reveal it in its dock zone. Shared by the "Open Panels"
-  // click + Enter handlers and the panel search results.
+  // Focus an open panel by id via the shared resolver: reveal it in its dock
+  // zone or pan/center its canvas node, using the canonical multi-canvas probe
+  // order. Shared by the "Open Panels" click + Enter handlers and the panel
+  // search results.
   const focusPanelById = useCallback(
     (panelId: string) => {
-      const cs = canvasApi.getState()
-      const node = Object.values(cs.nodes).find((n) => n.panelId === panelId)
-      if (node) {
-        cs.focusAndCenter(node.id)
-        return
-      }
-      const dock = getWorkspaceDockStore(selectedWorkspaceId)?.getState()
-      if (!dock) return
-      const loc = dock.getPanelLocation(panelId)
-      if (loc && loc.type === 'dock') {
-        const zone = dock.zones[loc.zone]
-        if (!zone.visible) dock.toggleZone(loc.zone)
-        if (zone.layout) {
-          const stack = findTabStack(zone.layout, loc.stackId)
-          if (stack) {
-            const idx = stack.panelIds.indexOf(panelId)
-            if (idx >= 0) dock.setActiveTab(loc.stackId, idx)
-          }
-        }
-      }
+      void revealPanel(selectedWorkspaceId, panelId)
     },
-    [canvasApi, selectedWorkspaceId],
+    [selectedWorkspaceId],
   )
 
   const selectSearchResult = useCallback(

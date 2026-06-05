@@ -1,16 +1,12 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
-import type { WorkspaceState, PanelType, PanelLocation, DockLayoutNode } from '../../shared/types'
-import { ALL_ZONES } from '../../shared/types'
+import type { WorkspaceState, PanelType, DockLayoutNode } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
-import { useAppStore, WORKSPACE_COLORS, getWorkspaceCanvasPanelId, ensureCanvasOpsForPanel } from '../stores/appStore'
+import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
-import { useStore } from 'zustand'
-import { useDockStore } from '../stores/dockStore'
-import { getOrCreateWorkspaceDockStore, getWorkspaceDockStore } from '../stores/workspaceStores'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
-import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
+import { revealPanel } from '../lib/workspace/panelReveal'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
@@ -66,44 +62,7 @@ function CompanionDot({ workspace }: { workspace: WorkspaceState }): JSX.Element
 // -----------------------------------------------------------------------------
 
 async function focusWorkspacePanel(workspaceId: string, panelId: string): Promise<void> {
-  const app = useAppStore.getState()
-  if (app.selectedWorkspaceId !== workspaceId) {
-    await app.selectWorkspace(workspaceId)
-  }
-
-  for (let attempt = 0; attempt < 10; attempt++) {
-    if (attempt > 0) await new Promise<void>((r) => setTimeout(r, 50))
-
-    const dock = getOrCreateWorkspaceDockStore(workspaceId).getState()
-    let location: PanelLocation | null = dock.getPanelLocation(panelId) ?? null
-    if (!location) {
-      for (const zoneName of ALL_ZONES) {
-        const zone = dock.zones[zoneName]
-        if (!zone.layout) continue
-        const stack = findStackContainingPanel(zone.layout, panelId)
-        if (stack) { location = { type: 'dock', zone: zoneName, stackId: stack.id }; break }
-      }
-    }
-    if (location?.type === 'dock') {
-      const zone = dock.zones[location.zone]
-      if (!zone.visible) dock.toggleZone(location.zone)
-      if (zone.layout) {
-        const stack = findTabStack(zone.layout, location.stackId)
-        if (stack) {
-          const idx = stack.panelIds.indexOf(panelId)
-          if (idx >= 0) dock.setActiveTab(location.stackId, idx)
-        }
-      }
-      return
-    }
-
-    // Resolve the canvas ops for THIS workspace's canvas panel (not the
-    // global singleton — that may point at a different workspace's store).
-    const canvasPanelId = getWorkspaceCanvasPanelId(workspaceId)
-    const ops = canvasPanelId ? ensureCanvasOpsForPanel(canvasPanelId) : null
-    const nodeId = ops?.storeApi?.getState()?.nodeForPanel(panelId)
-    if (nodeId) { ops!.focusPanelNode(panelId); return }
-  }
+  await revealPanel(workspaceId, panelId, { retry: true })
 }
 
 // Subscribe to every canvas store in a workspace and return the union of
@@ -319,13 +278,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }))
   const agentInfoByPanel = useAgentInfoByPanel(workspace.id)
 
-  // Subscribe to this workspace's OWN dock store for live panel locations (only
-  // meaningful when it's the selected/active workspace). Falls back to the
-  // global default store when this workspace has no live store yet (the value
-  // is ignored for non-selected rows, which read the persisted snapshot).
-  const dockStoreForRow = getWorkspaceDockStore(workspace.id) ?? useDockStore
-  const liveLocations = useStore(dockStoreForRow, (s) => s.panelLocations)
-  const panelLocations = isSelected ? liveLocations : workspace.dockState?.locations
 
   // useWorkspaceList's equality fn ignores `panels`, so subscribe to this
   // workspace's panels separately to keep the tree in sync as panels are
@@ -583,24 +535,21 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const accent = workspace.color || ''
 
   // Partition: canvas panels (parents), free panels (siblings to canvas).
-  // A panel is a canvas child when EITHER the dock store says so OR a canvas
-  // node references it. Canvas nodes are the source of truth for nodes that
-  // were added directly to the canvas (vs. dragged from a dock zone).
-  const isCanvasChild = (id: string) =>
-    panelLocations?.[id]?.type === 'canvas' || canvasPanelIds.has(id)
+  // A panel is a canvas child when a canvas node references it (live canvas
+  // store, or the persisted canvasNodes for a cold-start workspace). Canvas
+  // nodes are the source of truth for canvas residency; the dock tree never
+  // stores a "canvas" location.
+  const isCanvasChild = (id: string) => canvasPanelIds.has(id)
   const canvasPanels = panelList.filter((p) => p.type === 'canvas')
-  const canvasIds = new Set(canvasPanels.map((c) => c.id))
   const childrenByCanvas: Record<string, typeof panelList> = {}
   const orphanCanvasChildren: typeof panelList = []
   const freePanels: typeof panelList = []
   for (const p of panelList) {
     if (p.type === 'canvas') continue
     if (isCanvasChild(p.id)) {
-      const loc = panelLocations?.[p.id]
-      const cid = loc?.type === 'canvas' ? loc.canvasId : ''
-      // Attach to a specific canvas if known; otherwise to the first canvas in
-      // this workspace (canvasId is often empty for the implicit canvas).
-      const target = cid && canvasIds.has(cid) ? cid : canvasPanels[0]?.id
+      // Attach to the first canvas in this workspace (the canvas node store
+      // doesn't expose which canvas panel hosts each child here).
+      const target = canvasPanels[0]?.id
       if (target) (childrenByCanvas[target] ||= []).push(p)
       else orphanCanvasChildren.push(p)
     } else {

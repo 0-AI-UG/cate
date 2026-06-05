@@ -824,7 +824,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Remove from dock/canvas first (less critical — log errors but continue)
     const dockStore = getOrCreateWorkspaceDockStore(workspaceId)
     try {
-      const dockLocation = dockStore.getState().panelLocations[panelId]
+      const dockLocation = dockStore.getState().getPanelLocation(panelId)
       if (dockLocation?.type === 'dock') {
         dockStore.getState().undockPanel(panelId)
       } else {
