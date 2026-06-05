@@ -71,6 +71,20 @@ jobs:
       - name: Generate icons
         run: npm run icons
 
+      # Regenerate the embedded companion + pi version strings (src/companion/
+      # version.ts, piVersion.ts) from package.json / the installed pi BEFORE
+      # building the app. `npm run build` bakes COMPANION_VERSION/PI_VERSION into
+      # the app, and the daemon resolves its tarball by that version
+      # (cate-companion-<COMPANION_VERSION>-<target>.tgz). A release whose version
+      # bump only touched package.json (e.g. a beta tag) otherwise leaves the
+      # committed version.ts stale, so the app looks for the wrong tarball name —
+      # in dev/e2e that means no ripgrep and 0-result content search (which gates
+      # the macOS release), and in the shipped app a missing companion/pi pull.
+      - name: Sync companion + pi versions to package.json
+        run: |
+          npm run build:companion
+          npm run pi:tarball
+
       - name: Build app
         run: npm run build
         env:
