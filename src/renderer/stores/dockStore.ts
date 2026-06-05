@@ -17,6 +17,7 @@ import type {
 } from '../../shared/types'
 import { SIDE_ZONES, ALL_ZONES } from '../../shared/types'
 import { findTabStack, findZoneForStack } from './dockTreeUtils'
+import { clearActiveDockStack } from '../lib/activeSurface'
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -246,10 +247,13 @@ export function createDockStore(initialState?: { zones: WindowDockState; locatio
         newLayout = removePanelFromTree(newLayout, panelId)
       }
 
-      if (target?.type === 'tab' && target.stackId) {
+      // A 'tab' target whose stack no longer exists (e.g. it was closed since the
+      // user last interacted with it) falls through to the default zone-append
+      // below, rather than silently dropping the panel.
+      if (target?.type === 'tab' && target.stackId && findTabStack(newLayout, target.stackId)) {
         // Add to existing tab stack
-        const stack = findTabStack(newLayout, target.stackId)
-        if (stack) {
+        const stack = findTabStack(newLayout, target.stackId)!
+        {
           const insertIndex = target.index ?? stack.panelIds.length
           const newPanelIds = [...stack.panelIds]
           newPanelIds.splice(insertIndex, 0, panelId)
@@ -497,6 +501,7 @@ export function createDockStore(initialState?: { zones: WindowDockState; locatio
   },
 
   collapseStack(stackId) {
+    clearActiveDockStack(stackId)
     set((state) => {
       const zones = { ...state.zones }
       const removedPanelIds: string[] = []

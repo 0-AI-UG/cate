@@ -10,7 +10,7 @@ import { useAppStore, getActiveCanvasOps } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
-import { focusedDockPlacement } from '../lib/focusedDockPlacement'
+import { placementForActiveSurface } from '../lib/activeSurface'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 
@@ -96,22 +96,20 @@ export function useShortcuts(): void {
 
       switch (action as ShortcutAction) {
         case 'newTerminal': {
-          // Capture the focused surface BEFORE any await — ensureWorkspaceFolder
-          // may open a folder dialog and move focus.
-          const placement = focusedDockPlacement()
+          const placement = placementForActiveSurface()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createTerminal(wsId, undefined, undefined, placement)
           break
         }
         case 'newBrowser': {
-          const placement = focusedDockPlacement()
+          const placement = placementForActiveSurface()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createBrowser(wsId, undefined, undefined, placement)
           break
         }
         case 'newEditor':
         case 'newFile': {
-          const placement = focusedDockPlacement()
+          const placement = placementForActiveSurface()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createEditor(wsId, undefined, undefined, placement)
           break

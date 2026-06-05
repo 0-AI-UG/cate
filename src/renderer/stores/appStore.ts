@@ -46,6 +46,7 @@ import {
   allCanvasOps,
   invalidateWorkspaceCanvasCache,
 } from '../lib/workspace/canvasAccess'
+import { setActiveSurface } from '../lib/activeSurface'
 import { LOCAL_COMPANION_ID } from '../../main/companion/locator'
 
 export type { CanvasOperations }
@@ -170,7 +171,11 @@ export type PanelPlacement =
    *  the workspace's primary canvas — correct for session restore and auto
    *  creates, but wrong for an interactive create on a secondary/nested canvas. */
   | { target: 'canvas'; position?: Point; canvasPanelId?: string }
-  | { target: 'dock'; zone: DockZonePosition }
+  /** `stackId` docks the panel as a new tab in a SPECIFIC stack (the one the
+   *  user is working in — e.g. the focused pane of a split). Without it the
+   *  panel lands in the zone's default stack. A stale stackId falls back to the
+   *  zone (dockPanel handles that). */
+  | { target: 'dock'; zone: DockZonePosition; stackId?: string }
   | { target: 'auto' } // default: canvas
   /** No global routing — caller (e.g. canvas-node mini-dock) will place the
    *  panel itself into a private DockStore. The panel is added to the
@@ -345,7 +350,13 @@ function placePanel(
     return
   }
   if (placement?.target === 'dock') {
-    dockStore.getState().dockPanel(panelId, placement.zone)
+    // stackId → drop as a tab in that exact stack (the focused split pane);
+    // otherwise zone-level. dockPanel falls back to the zone if the stack is gone.
+    dockStore.getState().dockPanel(
+      panelId,
+      placement.zone,
+      placement.stackId ? { type: 'tab', stackId: placement.stackId } : undefined,
+    )
     return
   }
   // Default: place on a canvas (target === 'canvas'/'auto'/undefined).
@@ -522,7 +533,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // workspaces even if a restore is still in flight.
     set({ selectedWorkspaceId: id })
     const incomingCanvasPanelId = getWorkspaceCanvasPanelId(id)
-    if (incomingCanvasPanelId) setActiveCanvasPanelId(incomingCanvasPanelId)
+    if (incomingCanvasPanelId) {
+      setActiveCanvasPanelId(incomingCanvasPanelId)
+      // Reset the keyboard-create target to the incoming canvas so a stack the
+      // user last touched in the OTHER workspace can't attract new panels here.
+      setActiveSurface({ kind: 'canvas', canvasPanelId: incomingCanvasPanelId })
+    }
 
     // Reconnect a remote workspace's companion if it isn't live (e.g. after a
     // restart / restore). For a REMOTE workspace we must AWAIT this before the
