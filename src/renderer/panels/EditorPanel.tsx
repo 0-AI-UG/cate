@@ -316,6 +316,7 @@ export default function EditorPanel({
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
   const isDirtyRef = useRef(false)
+  const isRefreshingFromDiskRef = useRef(false)
   const filePathRef = useRef(filePath)
 
   // Only overwrite the ref from the prop when the prop is itself defined.
@@ -565,17 +566,24 @@ export default function EditorPanel({
           rememberModel(filePath, byUri)
         }
       }
-      if (cached && !cached.isDisposed()) {
-        retainModel(filePath)
-        modelRetained = true
-        editor.setModel(cached)
-        applyPendingReveal()
-      } else {
-        const language = detectLanguage(filePath)
-        window.electronAPI
-          .fsReadFile(filePath, workspaceId)
-          .then((content) => {
-            if (cancelled) return
+      const language = detectLanguage(filePath)
+      window.electronAPI
+        .fsReadFile(filePath, workspaceId)
+        .then((content) => {
+          if (cancelled) return
+          if (cached && !cached.isDisposed()) {
+            retainModel(filePath)
+            modelRetained = true
+            editor.setModel(cached)
+            if (cached.getValue() !== content) {
+              isRefreshingFromDiskRef.current = true
+              try {
+                cached.setValue(content)
+              } finally {
+                isRefreshingFromDiskRef.current = false
+              }
+            }
+          } else {
             // Pass the file URI so Monaco indexes the model by it; this
             // enables monaco.editor.getModel(uri) reuse on later opens.
             const model = monaco.editor.createModel(content, language, fileUri)
@@ -584,21 +592,21 @@ export default function EditorPanel({
             retainModel(filePath)
             modelRetained = true
             editor.setModel(model)
-            applyPendingReveal()
-          })
-          .catch((err) => {
-            if (cancelled) return
-            log.error('[EditorPanel] Failed to read file:', err)
-            // No URI here — we don't want a malformed/empty placeholder to
-            // squat on the file URI and be reused as the real model later.
-            const model = monaco.editor.createModel('', language)
-            createdModel = model
-            rememberModel(filePath, model)
-            retainModel(filePath)
-            modelRetained = true
-            editor.setModel(model)
-          })
-      }
+          }
+          applyPendingReveal()
+        })
+        .catch((err) => {
+          if (cancelled) return
+          log.error('[EditorPanel] Failed to read file:', err)
+          // No URI here — we don't want a malformed/empty placeholder to
+          // squat on the file URI and be reused as the real model later.
+          const model = monaco.editor.createModel('', language)
+          createdModel = model
+          rememberModel(filePath, model)
+          retainModel(filePath)
+          modelRetained = true
+          editor.setModel(model)
+        })
     } else {
       const restored = useAppStore.getState().workspaces
         .find((w) => w.id === workspaceId)?.panels[panelId]?.unsavedContent ?? ''
@@ -620,6 +628,7 @@ export default function EditorPanel({
 
     let unsavedSaveTimer: ReturnType<typeof setTimeout> | null = null
     const changeDisposable = editor.onDidChangeModelContent(() => {
+      if (isRefreshingFromDiskRef.current) return
       if (!isDirtyRef.current) {
         isDirtyRef.current = true
         useAppStore.getState().setPanelDirty(workspaceId, panelId, true)

@@ -39,6 +39,15 @@ import {
 // in e2e so their geometry is final immediately (no enter animation).
 const IS_E2E = typeof window !== 'undefined' && window.electronAPI?.isE2E === true
 
+function getCanvasViewportInsets(): { left: number; right: number } {
+  if (typeof document === 'undefined') return { left: 0, right: 0 }
+  const style = document.documentElement.style
+  return {
+    left: parseInt(style.getPropertyValue('--cate-left-sidebar-width')) || 0,
+    right: parseInt(style.getPropertyValue('--cate-right-sidebar-width')) || 0,
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
@@ -826,6 +835,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const state = get()
     const node = state.nodes[nodeId]
     if (!node) return
+
+    const viewportInsets = getCanvasViewportInsets()
+
     const updated = { ...node, zOrder: state.nextZOrder }
     const cs = state.containerSize
     const zoom = state.zoomLevel
@@ -836,8 +848,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       focusEpoch: state.focusEpoch + 1,
     }
     if (cs.width > 0 && cs.height > 0) {
+      const availableW = cs.width - viewportInsets.left - viewportInsets.right
       newState.viewportOffset = {
-        x: cs.width / 2 - (node.origin.x + node.size.width / 2) * zoom,
+        x: viewportInsets.left + availableW / 2 - (node.origin.x + node.size.width / 2) * zoom,
         y: cs.height / 2 - (node.origin.y + node.size.height / 2) * zoom,
       }
     }
@@ -880,12 +893,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       const maxX = Math.max(...rects.map((r) => r.origin.x + r.size.width))
       const maxY = Math.max(...rects.map((r) => r.origin.y + r.size.height))
       const padding = 80
+      const availableW = cs.width - viewportInsets.left - viewportInsets.right
       const contentW = maxX - minX + padding * 2
       const contentH = maxY - minY + padding * 2
-      const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
+      const fitZoom = Math.min(availableW / contentW, cs.height / contentH)
       nextZoom = Math.min(Math.max(Math.min(state.zoomLevel, fitZoom), ZOOM_MIN), ZOOM_MAX)
       nextOffset = {
-        x: (cs.width - contentW * nextZoom) / 2 - (minX - padding) * nextZoom,
+        x: viewportInsets.left + (availableW - contentW * nextZoom) / 2 - (minX - padding) * nextZoom,
         y: (cs.height - contentH * nextZoom) / 2 - (minY - padding) * nextZoom,
       }
     }
@@ -1066,6 +1080,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const cs = state.containerSize
     if (cs.width === 0 || cs.height === 0) return
 
+    // Sidebar overlaps the canvas edge-to-edge. Read the CSS vars published by Sidebar.tsx
+    // so we don't fit content underneath them.
+    const viewportInsets = getCanvasViewportInsets()
+
     const minX = Math.min(...nodeList.map(n => n.origin.x))
     const minY = Math.min(...nodeList.map(n => n.origin.y))
     const maxX = Math.max(...nodeList.map(n => n.origin.x + n.size.width))
@@ -1074,12 +1092,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const padding = 60
     const contentW = maxX - minX + padding * 2
     const contentH = maxY - minY + padding * 2
-    const zoom = Math.min(Math.max(Math.min(cs.width / contentW, cs.height / contentH), ZOOM_MIN), ZOOM_MAX)
+    const availableW = cs.width - viewportInsets.left - viewportInsets.right
+    const zoom = Math.min(Math.max(Math.min(availableW / contentW, cs.height / contentH), ZOOM_MIN), ZOOM_MAX)
 
     set({
       zoomLevel: zoom,
       viewportOffset: {
-        x: (cs.width - contentW * zoom) / 2 - (minX - padding) * zoom,
+        x: viewportInsets.left + (availableW - contentW * zoom) / 2 - (minX - padding) * zoom,
         y: (cs.height - contentH * zoom) / 2 - (minY - padding) * zoom,
       },
     })
@@ -1089,6 +1108,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const state = get()
     const cs = state.containerSize
     if (cs.width === 0 || cs.height === 0) return
+
+    const viewportInsets = getCanvasViewportInsets()
 
     // Target the selection, else the focused node, else fall back to fit-all.
     let target = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
@@ -1110,14 +1131,15 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     const contentW = maxX - minX + padding * 2
     const contentH = maxY - minY + padding * 2
     // Cap a single-node target so we don't over-zoom a small panel.
-    const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
+    const availableW = cs.width - viewportInsets.left - viewportInsets.right
+    const fitZoom = Math.min(availableW / contentW, cs.height / contentH)
     const maxZoom = target.length === 1 ? Math.min(ZOOM_MAX, 1.5) : ZOOM_MAX
     const zoom = Math.min(Math.max(fitZoom, ZOOM_MIN), maxZoom)
 
     set({
       zoomLevel: zoom,
       viewportOffset: {
-        x: (cs.width - contentW * zoom) / 2 - (minX - padding) * zoom,
+        x: viewportInsets.left + (availableW - contentW * zoom) / 2 - (minX - padding) * zoom,
         y: (cs.height - contentH * zoom) / 2 - (minY - padding) * zoom,
       },
     })
