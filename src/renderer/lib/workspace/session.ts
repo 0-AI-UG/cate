@@ -264,16 +264,9 @@ export async function saveSession(): Promise<void> {
         const entry = terminalRegistry.getEntry(snap.panelId)
         if (entry?.ptyId) {
           snap.ptyId = entry.ptyId
-          // Extract xterm visual buffer as plain text (same approach as cross-window transfer)
-          const buffer = entry.terminal.buffer.active
-          const lastRow = buffer.baseY + buffer.cursorY
-          const lines: string[] = []
-          for (let i = 0; i < lastRow; i++) {
-            const line = buffer.getLine(i)
-            if (line) lines.push(line.translateToString(true))
-          }
-          while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-          const content = lines.join('\n')
+          // Exclude the cursor row: scrollback is replayed into a freshly spawned
+          // PTY on restore, which re-sends the prompt line.
+          const content = terminalRegistry.captureScrollback(entry, { excludeCursorRow: true })
           if (content) {
             scrollbackPromises.push(
               window.electronAPI.terminalScrollbackSave(entry.ptyId, content).catch(() => {}),

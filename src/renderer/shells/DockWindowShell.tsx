@@ -227,15 +227,9 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
         if (!entry?.ptyId) continue
         terminalPtyIds[panel.id] = entry.ptyId
 
-        const buffer = entry.terminal.buffer.active
-        const lastRow = buffer.baseY + buffer.cursorY
-        const lines: string[] = []
-        for (let i = 0; i < lastRow; i++) {
-          const line = buffer.getLine(i)
-          if (line) lines.push(line.translateToString(true))
-        }
-        while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-        const content = lines.join('\n')
+        // Exclude the cursor row: scrollback is replayed into a fresh PTY on the
+        // next launch, which re-sends the prompt line.
+        const content = terminalRegistry.captureScrollback(entry, { excludeCursorRow: true })
         if (content) {
           window.electronAPI.terminalScrollbackSave(entry.ptyId, content).catch(() => {})
         }

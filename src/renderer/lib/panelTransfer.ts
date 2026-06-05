@@ -31,28 +31,11 @@ export function createTransferSnapshot(
     const entry = terminalRegistry.getEntry(panel.id)
     if (entry) {
       snapshot.terminalPtyId = entry.ptyId
-
-      // Capture current scrollback content from the xterm buffer.
-      // Only capture up to the cursor row — buffer.length includes empty
-      // viewport rows below the cursor which would create spurious blank
-      // lines in the new terminal, pushing the prompt to the bottom.
-      const terminal = entry.terminal
-      const buffer = terminal.buffer.active
-      // Exclude the cursor row — the PTY will re-send the prompt line
-      // via panelTransferAck, so including it here causes duplication.
-      const lastRow = buffer.baseY + buffer.cursorY
-      const lines: string[] = []
-      for (let i = 0; i < lastRow; i++) {
-        const line = buffer.getLine(i)
-        if (line) {
-          lines.push(line.translateToString(true))
-        }
-      }
-      // Trim any trailing empty lines from the captured content
-      while (lines.length > 0 && lines[lines.length - 1] === '') {
-        lines.pop()
-      }
-      snapshot.terminalScrollback = lines.join('\n')
+      // Exclude the cursor row: the PTY re-sends the prompt line via
+      // panelTransferAck on the receiving side, so including it here duplicates
+      // the prompt and pushes it below blank viewport rows.
+      snapshot.terminalScrollback =
+        terminalRegistry.captureScrollback(entry, { excludeCursorRow: true }) ?? ''
     }
   }
 

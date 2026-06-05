@@ -341,13 +341,10 @@ export const CommandPalette: React.FC = () => {
       for (const panel of terminalPanels) {
         const entry = terminalRegistry.getEntry(panel.id)
         if (!entry) continue
-        const buffer = entry.terminal.buffer.active
-        const last = buffer.baseY + buffer.cursorY
+        const bufferLines = (terminalRegistry.captureScrollback(entry) ?? '').split('\n')
         let matches = 0
-        for (let i = 0; i < last && matches < 5; i++) {
-          const line = buffer.getLine(i)
-          if (!line) continue
-          const text = line.translateToString(true)
+        for (let i = 0; i < bufferLines.length && matches < 5; i++) {
+          const text = bufferLines[i]
           if (text.toLowerCase().includes(q)) {
             matches++
             const n = nodeByPanelId.get(panel.id)
