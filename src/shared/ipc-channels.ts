@@ -98,6 +98,12 @@ export const SETTINGS_OPEN_IN_EDITOR = 'settings:openInEditor'
 // file directly). Carries the full settings object so renderers merge live.
 export const SETTINGS_RELOADED = 'settings:reloaded' // main -> renderer (broadcast)
 
+// UI state — transient cosmetic UI placement (minimap position/size) persisted
+// to <userData>/ui-state.json. Kept out of settings.json so the user-facing
+// settings file stays focused on preferences.
+export const UI_STATE_GET_ALL = 'uiState:getAll' // renderer -> main
+export const UI_STATE_SET = 'uiState:set'        // renderer -> main
+
 // Session
 export const SESSION_FLUSH_SAVE = 'session:flushSave' // main -> renderer
 export const SESSION_FLUSH_SAVE_DONE = 'session:flushSaveDone' // renderer -> main

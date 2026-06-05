@@ -27,7 +27,7 @@ export function applySidebarSession(
   sidebarSession: SidebarSession | null | undefined,
 ): { workspaces: SessionSnapshot[]; selectedWorkspaceIndex: number } {
   // Be defensive about the persisted shape: this value comes straight from
-  // electron-store (untyped JSON) and may be partial or corrupted (crash mid
+  // sidebar.json (untyped JSON) and may be partial or corrupted (crash mid
   // write, a hand-edit, a future schema change). A bad shape must fall back to
   // defaults — never throw, since this runs inside session restore and a throw
   // would abort the whole restore, including the default-workspace fallback.

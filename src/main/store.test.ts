@@ -1,17 +1,12 @@
 // =============================================================================
-// store.ts corruption resilience — a corrupt config.json must NOT break the
-// store IPC surface for the whole session. We verify store.ts's own logic:
-//   1. AppSettings now live in settings.json (see ./settingsFile), so a corrupt
-//      config.json can't affect SETTINGS_GET at all — it still returns defaults.
-//   2. getStore() (reached via a config.json-backed IPC like LAYOUT_LIST)
-//      resolves to defaults instead of rejecting when config.json is invalid
-//      JSON (it passes clearInvalidConfig: true), and preserves the corrupt file
-//      as a `config.json.corrupt-*` backup.
-//
-// electron-store is replaced with a faithful fake that reproduces its
-// clearInvalidConfig contract (reset-to-defaults on a JSON SyntaxError) — the
-// real package's Electron-runtime detection doesn't work under plain vitest,
-// and the behavior under test is store.ts's, not electron-store's internals.
+// store.ts resilience — a corrupt config.json must NOT break the store IPC
+// surface for the whole session. AppSettings live in settings.json and the
+// workspace-state keys live in their own files (see ./workspaceStateStore), so
+// neither is affected by a corrupt legacy config.json:
+//   1. SETTINGS_GET still returns defaults.
+//   2. LAYOUT_LIST (backed by layouts.json) still resolves — to [] — and the
+//      corrupt config.json is preserved as a `config.json.corrupt-*` backup
+//      instead of crashing the migration.
 // =============================================================================
 
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
@@ -37,45 +32,21 @@ vi.mock('./windowRegistry', () => ({ broadcastToAll: vi.fn() }))
 vi.mock('./logger', () => ({
   default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} },
 }))
-// settingsFile starts a chokidar watcher in registerHandlers(); stub it so the
-// test doesn't create a real filesystem watcher on the temp userData dir.
+// settingsFile + jsonStateFile start chokidar watchers; stub it so the test
+// doesn't create real filesystem watchers on the temp userData dir.
 vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
-
-// Faithful electron-store fake: honors clearInvalidConfig like the real one.
-vi.mock('electron-store', () => {
-  class FakeStore {
-    private data: Record<string, any>
-    constructor(opts: any) {
-      let parsed: Record<string, any> = {}
-      if (fs.existsSync(cfgPath)) {
-        try {
-          parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'))
-        } catch (err) {
-          // Real electron-store resets to defaults on SyntaxError when
-          // clearInvalidConfig is set; otherwise it rethrows.
-          if (!opts?.clearInvalidConfig) throw err
-          parsed = {}
-        }
-      }
-      this.data = { ...(opts?.defaults ?? {}), ...parsed }
-    }
-    get(key: string): unknown { return this.data[key] }
-    get store(): Record<string, any> { return this.data }
-  }
-  return { default: FakeStore }
-})
+// ./menu pulls in the auto-updater graph; stub the one function store.ts uses.
+vi.mock('./menu', () => ({ setLayoutNames: vi.fn() }))
 
 const { registerHandlers } = await import('./store')
 const { SETTINGS_GET, LAYOUT_LIST } = await import('../shared/ipc-channels')
 const { DEFAULT_SETTINGS } = await import('../shared/types')
 
 beforeAll(async () => {
-  // Corrupt config.json must exist before the first getStore() call.
+  // A corrupt config.json must be present before registerHandlers() runs the
+  // one-time migration.
   fs.writeFileSync(cfgPath, '{ this is : not valid json,,, ')
   registerHandlers()
-  // Trigger getStore() through a config.json-backed IPC so the corrupt config is
-  // detected, backed up, and reset to defaults.
-  await handlers.get(LAYOUT_LIST)?.({})
 })
 
 afterAll(() => {
@@ -84,20 +55,22 @@ afterAll(() => {
 
 describe('store corruption resilience', () => {
   test('a corrupt config.json keeps the store IPC surface working', async () => {
-    // Settings live in settings.json now → unaffected by a corrupt config.json.
+    // Settings live in settings.json → unaffected by a corrupt config.json.
     const getHandler = handlers.get(SETTINGS_GET)
     expect(getHandler).toBeTypeOf('function')
     expect(await getHandler!({}, 'warnBeforeQuit')).toBe(DEFAULT_SETTINGS.warnBeforeQuit)
-    // A config.json-backed IPC resolves to defaults instead of rejecting.
+    // A workspace-state-backed IPC resolves to defaults instead of rejecting.
     const layoutHandler = handlers.get(LAYOUT_LIST)
     expect(layoutHandler).toBeTypeOf('function')
     expect(await layoutHandler!({})).toEqual([])
   })
 
-  test('the corrupt config is preserved as a .corrupt-* backup', () => {
+  test('the corrupt config is preserved as a .corrupt-* backup and not deleted', () => {
     const backups = fs.readdirSync(userData).filter((f) => f.startsWith('config.json.corrupt-'))
     expect(backups.length).toBeGreaterThanOrEqual(1)
     const preserved = fs.readFileSync(path.join(userData, backups[0]), 'utf-8')
     expect(preserved).toContain('not valid json')
+    // A corrupt config is left in place (migration bails) for support/recovery.
+    expect(fs.existsSync(cfgPath)).toBe(true)
   })
 })

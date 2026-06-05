@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from 'vitest'
 
 // analytics.ts pulls in electron at module load (app/ipcMain/net types) and
-// also pulls in ./store (which dynamic-imports electron-store). Stub both so
-// the test runs in plain node — we only exercise pure functions here.
+// also pulls in ./store. Stub both so the test runs in plain node — we only
+// exercise pure functions here.
 vi.mock('electron', () => ({
   app: { getVersion: () => '0.0.0-test', getLocale: () => 'en', isPackaged: false, getPath: () => '/tmp' },
   ipcMain: { on: vi.fn() },

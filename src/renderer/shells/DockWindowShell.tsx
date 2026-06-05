@@ -20,6 +20,9 @@ import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { isDockEmpty } from './dockEmpty'
 import { shouldCloseDockWindow } from './shouldCloseDockWindow'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
+import { useUIStore } from '../stores/uiStore'
+import { SettingsWindow } from '../settings/SettingsWindow'
 import { applyTheme } from '../lib/themeManager'
 
 import { renderPanelComponent, PANEL_REGISTRY } from '../panels/registry'
@@ -53,11 +56,17 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // window renders with default settings and ignores the user's preferences.
   useEffect(() => {
     useSettingsStore.getState().loadSettings()
+    useUIStateStore.getState().loadUIState()
   }, [])
   const activeThemeId = useSettingsStore((s) => s.activeThemeId)
   const customThemes = useSettingsStore((s) => s.customThemes)
   const systemLightThemeId = useSettingsStore((s) => s.systemLightThemeId)
   const systemDarkThemeId = useSettingsStore((s) => s.systemDarkThemeId)
+  // A detached AgentPanel routes provider sign-in to the main Cate Settings
+  // (Providers); render the settings window here so that button works.
+  const showSettings = useUIStore((s) => s.showSettings)
+  const settingsInitialTab = useUIStore((s) => s.settingsInitialTab)
+  const closeSettings = useUIStore((s) => s.closeSettings)
   useEffect(() => {
     applyTheme(activeThemeId)
   }, [activeThemeId, customThemes, systemLightThemeId, systemDarkThemeId])
@@ -427,6 +436,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
           />
         </div>
         <DragOverlay />
+        <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
       </div>
     </DockStoreProvider>
   )

@@ -3,51 +3,44 @@
 // =============================================================================
 
 import { create } from 'zustand'
+import type { SidebarView, SidebarLayout } from '../../shared/types'
+import { useSettingsStore } from './settingsStore'
 
 // -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
 
-export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'parallelWork' | 'search'
+// SidebarView / SidebarLayout now live in shared/types (they're persisted in
+// settings.json); re-exported here so existing `from '../stores/uiStore'`
+// imports keep working.
+export type { SidebarView, SidebarLayout }
 export type SidebarSide = 'left' | 'right'
 
 /** Active canvas interaction tool (Figma-style). */
 export type CanvasTool = 'select' | 'hand'
 
-export interface SidebarLayout {
-  left: SidebarView[]
-  right: SidebarView[]
-}
-
-const LAYOUT_STORAGE_KEY = 'cate.sidebarLayout.v3'
 const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git', 'parallelWork', 'search']
-const DEFAULT_LAYOUT: SidebarLayout = {
-  left: ['workspaces', 'explorer', 'search'],
-  right: ['git', 'parallelWork'],
+
+/** Filter to known views and ensure every view appears exactly once (missing
+ *  ones appended to the right). Tolerates partial/legacy/hand-edited shapes. */
+export function normalizeSidebarLayout(raw: Partial<SidebarLayout> | null | undefined): SidebarLayout {
+  const left = (raw?.left ?? []).filter((v) => ALL_VIEWS.includes(v))
+  const right = (raw?.right ?? []).filter((v) => ALL_VIEWS.includes(v))
+  const seen = new Set<SidebarView>([...left, ...right])
+  for (const v of ALL_VIEWS) if (!seen.has(v)) right.push(v)
+  return { left, right }
 }
 
+// The sidebar layout is persisted in settings.json (see settingsStore). At
+// store-creation time settings may not be loaded yet, so we seed from whatever
+// the settings store currently holds (defaults until loadSettings resolves) and
+// App re-syncs the loaded value via setState afterwards.
 function loadLayout(): SidebarLayout {
-  try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(LAYOUT_STORAGE_KEY) : null
-    if (!raw) return DEFAULT_LAYOUT
-    const parsed = JSON.parse(raw) as SidebarLayout
-    const left = (parsed.left ?? []).filter((v) => ALL_VIEWS.includes(v))
-    const right = (parsed.right ?? []).filter((v) => ALL_VIEWS.includes(v))
-    // Ensure every view is present exactly once — append missing ones to the right.
-    const seen = new Set<SidebarView>([...left, ...right])
-    for (const v of ALL_VIEWS) if (!seen.has(v)) right.push(v)
-    return { left, right }
-  } catch {
-    return DEFAULT_LAYOUT
-  }
+  return normalizeSidebarLayout(useSettingsStore.getState().sidebarLayout)
 }
 
 function saveLayout(layout: SidebarLayout) {
-  try {
-    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout))
-  } catch {
-    // ignore
-  }
+  useSettingsStore.getState().setSetting('sidebarLayout', layout)
 }
 
 interface UIStoreState {

@@ -1,6 +1,11 @@
 // =============================================================================
-// Settings store and session persistence — backed by electron-store
-// electron-store v10 is ESM-only, so we use dynamic import()
+// Settings store and session persistence.
+//
+// AppSettings live in settings.json (see ./settingsFile). The workspace/session
+// state that used to sit in the opaque electron-store config.json — recent
+// projects, sidebar session, remote workspaces, saved layouts — now lives in
+// dedicated hand-editable JSON files (see ./workspaceStateStore). electron-store
+// is no longer used; config.json is migrated once on startup and removed.
 // =============================================================================
 
 import { ipcMain, app, BrowserWindow, nativeTheme } from 'electron'
@@ -29,7 +34,6 @@ import {
   LAYOUT_LOAD,
   LAYOUT_DELETE,
 } from '../shared/ipc-channels'
-import { DEFAULT_SETTINGS } from '../shared/types'
 import type { AppSettings, SidebarSession, RemoteProjectEntry } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
 import {
@@ -42,6 +46,21 @@ import {
   ensureSettingsFile,
   startWatching as startSettingsWatch,
 } from './settingsFile'
+import {
+  getRecentProjects,
+  addRecentProject,
+  removeRecentProject,
+  getSidebarSession,
+  setSidebarSession,
+  getRemoteProjects,
+  setRemoteProjects,
+  saveLayout,
+  listLayoutNames,
+  loadLayout,
+  deleteLayout,
+  startWatchingWorkspaceState,
+  migrateLegacyConfig,
+} from './workspaceStateStore'
 import { grantFileAccess } from './ipc/pathValidation'
 import { recordPersistentGrant } from './grantedPathStore'
 
@@ -49,8 +68,12 @@ import { recordPersistentGrant } from './grantedPathStore'
  *  static module graph (and anything that pulls in ./store, e.g. terminal IPC)
  *  doesn't drag in ./menu → ./auto-updater at load time. */
 async function pushLayoutNamesToMenu(names: string[]): Promise<void> {
-  const { setLayoutNames } = await import('./menu')
-  setLayoutNames(names)
+  try {
+    const { setLayoutNames } = await import('./menu')
+    setLayoutNames(names)
+  } catch (err) {
+    log.warn('Layout menu update failed: %O', err)
+  }
 }
 
 // Settings that open windows react to live (via onSettingsChanged). The
@@ -108,6 +131,18 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
       log.warn('Companion idle-suspend forward failed: %O', err)
     }
   }
+  // The wallpaper image is copied into managed app data (see DIALOG_OPEN_IMAGE).
+  // Whenever the path changes — a replacement, a clear (''), a reset, or a
+  // hand-edit pointing elsewhere — drop any managed copy that is no longer the
+  // current one so the directory doesn't accumulate orphaned images.
+  if (key === 'canvasBackgroundImagePath') {
+    try {
+      const { pruneCanvasBackgrounds } = await import('./canvasBackgroundStore')
+      pruneCanvasBackgrounds(typeof value === 'string' ? value : '')
+    } catch (err) {
+      log.warn('Canvas background prune failed: %O', err)
+    }
+  }
   // Live-toggle Sentry when the crash-reporting setting flips, so the change
   // takes effect without a relaunch.
   if (key === 'crashReportingEnabled') {
@@ -130,64 +165,6 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
       log.warn('Beta-updates live-toggle failed: %O', err)
     }
   }
-}
-
-// Lazy-loaded store instance (ESM dynamic import)
-let storeInstance: any = null
-
-/** If `config.json` is present but not valid JSON, copy it aside before
- *  electron-store (with `clearInvalidConfig`) silently overwrites it with
- *  defaults — so a user's corrupt settings are preserved for support/recovery
- *  rather than lost. Best-effort; never throws. */
-function backupConfigIfCorrupt(): void {
-  try {
-    const cfgPath = path.join(app.getPath('userData'), 'config.json')
-    if (!fsSync.existsSync(cfgPath)) return
-    const raw = fsSync.readFileSync(cfgPath, 'utf-8')
-    try {
-      JSON.parse(raw)
-    } catch {
-      const backupPath = `${cfgPath}.corrupt-${Date.now()}`
-      fsSync.copyFileSync(cfgPath, backupPath)
-      log.error('config.json is corrupt; backed up to %s and resetting to defaults', backupPath)
-    }
-  } catch (err) {
-    log.warn('Corrupt-config check failed: %O', err)
-  }
-}
-
-async function getStore(): Promise<any> {
-  if (storeInstance) return storeInstance
-  const { default: Store } = await import('electron-store')
-  // electron-store still backs the non-settings keys (recentProjects,
-  // sidebarSession, remoteProjects, layouts). AppSettings now live in their own
-  // settings.json (see ./settingsFile), so they are no longer read/written here.
-  // Preserve a corrupt config before clearInvalidConfig wipes it.
-  backupConfigIfCorrupt()
-  // clearInvalidConfig: a corrupt config.json resets to defaults instead of
-  // throwing on construction — which would otherwise reject every store IPC
-  // call (recent projects, layouts, sessions) for the whole session.
-  // projectName is set explicitly so the store never depends on Electron
-  // app-name detection (electron-store still keys the file off the userData
-  // cwd, so this doesn't change the config path — it only removes a failure
-  // mode in non-standard runtimes/tests).
-  const opts = { defaults: DEFAULT_SETTINGS, clearInvalidConfig: true, projectName: 'cate' }
-  try {
-    storeInstance = new Store<AppSettings>(opts)
-  } catch (err) {
-    // clearInvalidConfig only covers JSON SyntaxErrors. For anything else
-    // (e.g. an unreadable/locked file), move the bad file aside and retry so
-    // the store keeps working rather than failing for the entire session.
-    log.error('electron-store construction failed; quarantining config and retrying: %O', err)
-    try {
-      const cfgPath = path.join(app.getPath('userData'), 'config.json')
-      if (fsSync.existsSync(cfgPath)) fsSync.renameSync(cfgPath, `${cfgPath}.broken-${Date.now()}`)
-    } catch (mvErr) {
-      log.warn('Failed to quarantine config.json: %O', mvErr)
-    }
-    storeInstance = new Store<AppSettings>(opts)
-  }
-  return storeInstance
 }
 
 // ---------------------------------------------------------------------------
@@ -384,86 +361,76 @@ export function registerHandlers(): void {
     }
   })
 
+  // Workspace/session state files (recent projects, sidebar, remote workspaces,
+  // layouts) — migrate the legacy config.json once, then watch the new files for
+  // external edits (re-pushing the native Layouts menu when layouts.json is
+  // hand-edited). Migration runs after settings.json was seeded at startup, so
+  // removing config.json here is safe.
+  migrateLegacyConfig()
+  startWatchingWorkspaceState((names) => { void pushLayoutNamesToMenu(names) })
+
+  // Drop any orphaned managed wallpaper copies (e.g. from a crash mid-replace),
+  // keeping only the one the current setting points at.
+  void import('./canvasBackgroundStore')
+    .then(({ pruneCanvasBackgrounds }) => pruneCanvasBackgrounds(getSettingFromFile('canvasBackgroundImagePath')))
+    .catch((err) => log.warn('Canvas background startup prune failed: %O', err))
+
   // Recent Projects
   ipcMain.handle(RECENT_PROJECTS_GET, async () => {
-    const store = await getStore()
-    return store.get('recentProjects', []) as string[]
+    return getRecentProjects()
   })
 
   ipcMain.handle(RECENT_PROJECTS_ADD, async (_event, projectPath: string) => {
-    const store = await getStore()
-    const existing: string[] = store.get('recentProjects', []) as string[]
-    const filtered = existing.filter((p) => p !== projectPath)
-    const updated = [projectPath, ...filtered].slice(0, 10)
-    store.set('recentProjects', updated)
+    addRecentProject(projectPath)
   })
 
   // Drop a project from the recent list (issue #220): closing a workspace should
   // forget the project so it doesn't reappear on next launch and re-enter the
   // deferred-restore path. Without this the only way to forget a project was to
-  // hand-edit config.json.
+  // hand-edit the recent-projects file.
   ipcMain.handle(RECENT_PROJECTS_REMOVE, async (_event, projectPath: string) => {
-    const store = await getStore()
-    const existing: string[] = store.get('recentProjects', []) as string[]
-    store.set('recentProjects', existing.filter((p) => p !== projectPath))
+    removeRecentProject(projectPath)
   })
 
   // Sidebar session (workspace order + active workspace, keyed by root path)
   ipcMain.handle(SIDEBAR_SESSION_GET, async () => {
-    const store = await getStore()
-    return store.get('sidebarSession', null) as SidebarSession | null
+    return getSidebarSession()
   })
 
   ipcMain.handle(SIDEBAR_SESSION_SET, async (_event, session: SidebarSession) => {
-    const store = await getStore()
-    store.set('sidebarSession', session)
+    setSidebarSession(session)
   })
 
   // Remote projects (cate-companion:// workspaces): full restore snapshot +
   // reconnect info, since their tree lives on a companion and can't use the
   // local .cate/ project-state files.
   ipcMain.handle(REMOTE_PROJECTS_GET, async () => {
-    const store = await getStore()
-    return store.get('remoteProjects', []) as RemoteProjectEntry[]
+    return getRemoteProjects()
   })
 
   ipcMain.handle(REMOTE_PROJECTS_SET, async (_event, entries: RemoteProjectEntry[]) => {
-    const store = await getStore()
-    store.set('remoteProjects', Array.isArray(entries) ? entries : [])
+    setRemoteProjects(entries)
   })
 
   // Layouts
   ipcMain.handle(LAYOUT_SAVE, async (_event, name: string, layout: unknown) => {
-    const store = await getStore()
-    const layouts = (store.get('layouts') as Record<string, unknown>) || {}
-    layouts[name] = layout
-    store.set('layouts', layouts)
-    void pushLayoutNamesToMenu(Object.keys(layouts))
+    const names = saveLayout(name, layout)
+    void pushLayoutNamesToMenu(names)
   })
 
   ipcMain.handle(LAYOUT_LIST, async () => {
-    const store = await getStore()
-    const layouts = (store.get('layouts') as Record<string, unknown>) || {}
-    return Object.keys(layouts)
+    return listLayoutNames()
   })
 
   ipcMain.handle(LAYOUT_LOAD, async (_event, name: string) => {
-    const store = await getStore()
-    const layouts = (store.get('layouts') as Record<string, unknown>) || {}
-    return layouts[name] || null
+    return loadLayout(name)
   })
 
   ipcMain.handle(LAYOUT_DELETE, async (_event, name: string) => {
-    const store = await getStore()
-    const layouts = (store.get('layouts') as Record<string, unknown>) || {}
-    delete layouts[name]
-    store.set('layouts', layouts)
-    void pushLayoutNamesToMenu(Object.keys(layouts))
+    const names = deleteLayout(name)
+    void pushLayoutNamesToMenu(names)
   })
 
   // Seed the native Layouts menu with whatever is already saved.
-  void getStore().then((store) => {
-    const layouts = (store.get('layouts') as Record<string, unknown>) || {}
-    return pushLayoutNamesToMenu(Object.keys(layouts))
-  }).catch(() => { /* menu just stays empty until first save */ })
+  void pushLayoutNamesToMenu(listLayoutNames())
 }

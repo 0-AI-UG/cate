@@ -1,15 +1,15 @@
 // =============================================================================
 // AgentSettingsView — the settings surface that replaces the chat column:
-// providers, the user's agents/prompts/skills files, and the extension
-// marketplace. Reads/writes through electronAPI; opening a file routes to a
-// new editor panel via appStore.
+// the user's agents/prompts/skills files, and the extension marketplace.
+// Reads/writes through electronAPI; opening a file routes to a new editor panel
+// via appStore. Provider sign-in lives in the main Cate Settings (Providers
+// section), not here.
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, FolderOpen, ArrowsClockwise, Trash } from '@phosphor-icons/react'
 import log from '../../renderer/lib/logger'
 import { useAppStore } from '../../renderer/stores/appStore'
-import { ProvidersView } from './ProvidersView'
 import type { AgentSlashCommand } from '../../shared/types'
 
 const TAB_BADGE: Record<'agents' | 'prompts' | 'skills', string> = {
@@ -28,20 +28,16 @@ export function SettingsView({
   commands,
   workspaceId,
   cwd,
-  scopedProviderId,
-  availableModels,
   onBack,
   onRefresh,
 }: {
   commands: AgentSlashCommand[]
   workspaceId: string
   cwd: string
-  scopedProviderId?: string
-  availableModels: Array<{ provider: string; model: string; label?: string }>
   onBack: () => void
   onRefresh: () => void
 }) {
-  const [activeSection, setActiveSection] = useState('providers')
+  const [activeSection, setActiveSection] = useState('agents')
   const scrollRef = useRef<HTMLDivElement>(null)
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
 
@@ -57,7 +53,7 @@ export function SettingsView({
     const container = scrollRef.current
     if (!container) return
     const handler = () => {
-      const ids = ['providers', 'agents', 'prompts', 'skills', 'extensions']
+      const ids = ['agents', 'prompts', 'skills', 'extensions']
       let closest = ids[0]
       let closestDist = Infinity
       for (const id of ids) {
@@ -71,8 +67,6 @@ export function SettingsView({
     container.addEventListener('scroll', handler, { passive: true })
     return () => container.removeEventListener('scroll', handler)
   }, [])
-
-  useEffect(() => { if (scopedProviderId) scrollTo('providers') }, [scopedProviderId, scrollTo])
 
   const [agentFiles, setAgentFiles] = useState<Array<{ name: string; description?: string; path: string }>>([])
   const [promptFiles, setPromptFiles] = useState<Array<{ name: string; description?: string; path: string }>>([])
@@ -131,7 +125,7 @@ export function SettingsView({
 
   const [refreshNonce, setRefreshNonce] = useState(0)
 
-  const sections = ['Providers', 'Agents', 'Prompts', 'Skills', 'Extensions'] as const
+  const sections = ['Agents', 'Prompts', 'Skills', 'Extensions'] as const
 
   const renderSkillSection = (
     kind: 'agents' | 'prompts' | 'skills',
@@ -247,11 +241,6 @@ export function SettingsView({
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto py-4 pr-4 pl-2 min-h-0 space-y-8">
-        <div ref={(el) => { sectionRefs.current['providers'] = el }}>
-          <div className="text-[13px] font-semibold text-primary mb-3">Providers</div>
-          <ProvidersView embedded scopedProviderId={scopedProviderId} availableModels={availableModels} />
-        </div>
-
         <div ref={(el) => { sectionRefs.current['agents'] = el }}>
           <div className="text-[13px] font-semibold text-primary mb-1">Agents</div>
           {renderSkillSection('agents', agentFiles)}

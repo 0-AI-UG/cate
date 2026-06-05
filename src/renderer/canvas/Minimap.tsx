@@ -5,9 +5,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useWorkspacePanels } from '../stores/appStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 
-const MINIMAP_DEFAULT_WIDTH = 200
-const MINIMAP_DEFAULT_HEIGHT = 150
+// Default minimap size lives in DEFAULT_UI_STATE (shared/types); the floating
+// size is restored from ui-state.json.
 const MINIMAP_MIN_WIDTH = 120
 const MINIMAP_MIN_HEIGHT = 90
 const MINIMAP_MAX_WIDTH = 600
@@ -16,22 +17,10 @@ const MINIMAP_PADDING = 10
 const MINIMAP_GAP = 12
 
 type Corner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
-const CORNER_KEY = 'cate.minimap.corner'
-const SIZE_KEY = 'cate.minimap.size'
-const loadCorner = (): Corner => {
-  const v = (typeof localStorage !== 'undefined' && localStorage.getItem(CORNER_KEY)) as Corner | null
-  return v || 'bottom-right'
-}
-const loadSize = (): { w: number; h: number } => {
-  try {
-    const raw = localStorage.getItem(SIZE_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      if (typeof p.w === 'number' && typeof p.h === 'number') return { w: p.w, h: p.h }
-    }
-  } catch {}
-  return { w: MINIMAP_DEFAULT_WIDTH, h: MINIMAP_DEFAULT_HEIGHT }
-}
+// Minimap placement persists in ui-state.json via the UI-state store (loaded on
+// launch, before the canvas mounts). These read the current store value.
+const loadCorner = (): Corner => useUIStateStore.getState().minimapCorner
+const loadSize = (): { w: number; h: number } => useUIStateStore.getState().minimapSize
 
 // Map a panel type to a themed CSS variable so the minimap follows the active
 // theme. Falls back to a generic surface accent for unknown types.
@@ -100,7 +89,7 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
       setSize({ w, h })
       if (sizeDebounceRef.current) clearTimeout(sizeDebounceRef.current)
       sizeDebounceRef.current = setTimeout(() => {
-        try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w, h })) } catch {}
+        useUIStateStore.getState().setUIState('minimapSize', { w, h })
       }, 500)
     }
     const handleUp = () => {
@@ -124,7 +113,7 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
         if (prev === next) return prev
         if (cornerDebounceRef.current) clearTimeout(cornerDebounceRef.current)
         cornerDebounceRef.current = setTimeout(() => {
-          try { localStorage.setItem(CORNER_KEY, next) } catch {}
+          useUIStateStore.getState().setUIState('minimapCorner', next)
         }, 500)
         return next
       })
