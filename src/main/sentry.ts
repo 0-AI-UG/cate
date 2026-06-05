@@ -3,7 +3,7 @@
 //
 // Initialized very early in main. The renderer attaches via @sentry/electron's
 // IPC bridge (see src/renderer/lib/sentry.ts). DSN resolution order:
-//   1. process.env.SENTRY_DSN  — runtime override (e.g. `dev:sentry`)
+//   1. process.env.SENTRY_DSN  — runtime override (set in the dev shell)
 //   2. __SENTRY_DSN__          — value baked at build time from SENTRY_DSN
 // Packaged builds rely on (2) since end users won't have the env var set.
 // When the DSN is empty or the user has opted out, init is a no-op.

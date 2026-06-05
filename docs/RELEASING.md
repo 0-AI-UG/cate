@@ -48,5 +48,6 @@ base64 -i path/to/cert.pfx | tr -d '\n'   # paste the output into the secret
 
 ## Local packaging
 
-`npm run package:mac` / `package:win` / `package:linux` build locally. The
-`package:win:unsigned` variant skips signing for quick local Windows builds.
+`npm run package:mac` / `package:win` / `package:linux` build locally. To skip
+signing for a quick local Windows build, pass electron-builder flags directly,
+e.g. `node scripts/package.mjs --win -c.win.signAndEditExecutable=false`.
