@@ -313,6 +313,10 @@ interface AppStoreActions {
   setWorktreeColor: (wsId: string, worktreeId: string, color: string) => void
   setWorktreeLabel: (wsId: string, worktreeId: string, label: string | undefined) => void
   setPanelWorktreeId: (wsId: string, panelId: string, worktreeId: string | undefined) => void
+  /** Re-spawn a terminal panel's PTY in a new working directory and re-tag its
+   *  worktree. Disposes the live terminal and bumps `ptyEpoch` so TerminalPanel
+   *  re-creates the shell rooted at `cwd`. Used by the worktree chip switcher. */
+  respawnPanelTerminal: (wsId: string, panelId: string, cwd: string, worktreeId: string | undefined) => void
 
   // Cross-window sync: merge metadata from main-process broadcast
   mergeWorkspaceInfos: (infos: WorkspaceInfo[]) => void
@@ -1249,6 +1253,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setPanelWorktreeId(wsId, panelId, worktreeId) {
     setPanelField(set, wsId, panelId, (panel) => ({ ...panel, worktreeId }))
+  },
+
+  respawnPanelTerminal(wsId, panelId, cwd, worktreeId) {
+    // Kill the existing PTY/xterm; TerminalPanel's create effect re-runs when
+    // ptyEpoch changes and spawns a fresh shell at the new cwd.
+    terminalRegistry.dispose(panelId)
+    setPanelField(set, wsId, panelId, (panel) => ({
+      ...panel,
+      cwd,
+      worktreeId,
+      ptyEpoch: (panel.ptyEpoch ?? 0) + 1,
+    }))
   },
 
   closeAllPanels(wsId) {

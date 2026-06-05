@@ -72,6 +72,11 @@ export interface CanvasStoreState {
   focusedNodeId: CanvasNodeId | null
   /** Increments on every focus action — lets panels re-run focus side effects even when focusedNodeId doesn't change. */
   focusEpoch: number
+  /** Per-node active worktree id, published by CanvasNode from its active tab.
+   *  Read by the worktree sludge/lens layers (which live outside the per-node
+   *  dock store and so can't see the active tab directly). `null` = untagged.
+   *  Stale entries for removed nodes are harmless — consumers iterate `nodes`. */
+  nodeActiveWorktreeId: Record<string, string | null>
   nextZOrder: number
   nextCreationIndex: number
   containerSize: Size
@@ -184,6 +189,11 @@ export interface CanvasStoreActions {
 
   zoomToFit: () => void
   zoomToSelection: () => void
+  /** Frame the camera to fit a specific set of nodes (worktree focus lens). */
+  frameNodes: (nodeIds: string[], padding?: number) => void
+
+  /** Publish (or clear) the active-tab worktree for a node. */
+  setNodeActiveWorktree: (nodeId: string, worktreeId: string | null) => void
 
   // Z-order management
   moveToFront: (nodeId: CanvasNodeId) => void
@@ -346,6 +356,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   zoomLevel: ZOOM_DEFAULT,
   focusedNodeId: null,
   focusEpoch: 0,
+  nodeActiveWorktreeId: {},
   nextZOrder: 0,
   nextCreationIndex: 0,
   containerSize: { width: 0, height: 0 },
@@ -1121,6 +1132,43 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
         y: (cs.height - contentH * zoom) / 2 - (minY - padding) * zoom,
       },
     })
+  },
+
+  frameNodes(nodeIds, padding = 80) {
+    const state = get()
+    const cs = state.containerSize
+    if (cs.width === 0 || cs.height === 0) return
+    const target = nodeIds.map((id) => state.nodes[id]).filter(Boolean) as CanvasNodeState[]
+    if (target.length === 0) return
+
+    const minX = Math.min(...target.map((n) => n.origin.x))
+    const minY = Math.min(...target.map((n) => n.origin.y))
+    const maxX = Math.max(...target.map((n) => n.origin.x + n.size.width))
+    const maxY = Math.max(...target.map((n) => n.origin.y + n.size.height))
+
+    const contentW = maxX - minX + padding * 2
+    const contentH = maxY - minY + padding * 2
+    const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
+    // Don't over-zoom a small cluster.
+    const zoom = Math.min(Math.max(fitZoom, ZOOM_MIN), Math.min(ZOOM_MAX, 1.5))
+
+    set({
+      zoomLevel: zoom,
+      viewportOffset: {
+        x: (cs.width - contentW * zoom) / 2 - (minX - padding) * zoom,
+        y: (cs.height - contentH * zoom) / 2 - (minY - padding) * zoom,
+      },
+    })
+  },
+
+  setNodeActiveWorktree(nodeId, worktreeId) {
+    const cur = get().nodeActiveWorktreeId
+    if (cur[nodeId] === worktreeId) return
+    if (worktreeId === null && !(nodeId in cur)) return
+    const next = { ...cur }
+    if (worktreeId === null) delete next[nodeId]
+    else next[nodeId] = worktreeId
+    set({ nodeActiveWorktreeId: next })
   },
 
   togglePin(id) {

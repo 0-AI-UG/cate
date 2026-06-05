@@ -121,6 +121,11 @@ export interface PanelState {
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
    *  no longer overwrite the chosen name. */
   titleUserOverridden?: boolean
+  /** Terminal panels only: bumped to force the PTY to be re-spawned in place
+   *  (e.g. when switching the terminal to another worktree's checkout). The
+   *  registry entry is disposed and `TerminalPanel`'s create effect re-runs at
+   *  the new `cwd`. */
+  ptyEpoch?: number
 }
 
 // -----------------------------------------------------------------------------

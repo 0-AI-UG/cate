@@ -16,6 +16,7 @@ import CanvasBackgroundImage from './CanvasBackgroundImage'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import GhostPlacementLayer from './GhostPlacementLayer'
+import WorktreeHullLayer from './worktreeHull/WorktreeHullLayer'
 import type { Point, PanelType } from '../../shared/types'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
@@ -359,6 +360,8 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       // Only unfocus if clicking directly on the world div, not on a child node
       if (!target.closest('[data-node-id]') && !target.closest('[data-region-id]')) {
         canvasApi.getState().unfocus()
+        // A click on empty canvas also dismisses the worktree focus lens.
+        useUIStore.getState().clearWorktreeLens()
       }
     },
     [],
@@ -601,6 +604,8 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         }}
         onClick={handleWorldClick}
       >
+        {/* Worktree sludge — behind regions, snap guides, and all nodes. */}
+        <WorktreeHullLayer />
         <RegionsLayer />
         <SnapGuides />
         {marqueeRect && (

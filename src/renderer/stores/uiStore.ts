@@ -77,6 +77,12 @@ interface UIStoreState {
   activeRightSidebarView: SidebarView | null
   /** The view currently being dragged between/within sidebars, null when idle */
   draggingView: SidebarView | null
+  /** Worktree being hovered (chip or sidebar row) — transiently highlights all
+   *  its member nodes + sludge. Null when nothing is hovered. */
+  hoveredWorktreeId: string | null
+  /** Worktree the focus lens is locked onto — dims non-members, rings members,
+   *  and (on entry) frames the camera. Null when the lens is off. */
+  focusedWorktreeId: string | null
 }
 
 interface UIStoreActions {
@@ -98,6 +104,12 @@ interface UIStoreActions {
   setActiveRightSidebarView: (view: SidebarView | null) => void
   moveSidebarView: (view: SidebarView, targetSide: SidebarSide, targetIndex: number) => void
   setDraggingView: (view: SidebarView | null) => void
+  /** Highlight (hover) a worktree's member nodes; pass null to clear. */
+  setHoveredWorktree: (id: string | null) => void
+  /** Lock the focus lens onto a worktree (caller frames the camera separately). */
+  focusWorktree: (id: string | null) => void
+  /** Clear both hover highlight and the focus lens. */
+  clearWorktreeLens: () => void
 }
 
 export type UIStore = UIStoreState & UIStoreActions
@@ -123,6 +135,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
   activeLeftSidebarView: 'workspaces',
   activeRightSidebarView: null,
   draggingView: null,
+  hoveredWorktreeId: null,
+  focusedWorktreeId: null,
 
   // --- Actions ---
 
@@ -238,6 +252,21 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setDraggingView(view) {
     set({ draggingView: view })
+  },
+
+  setHoveredWorktree(id) {
+    if (get().hoveredWorktreeId === id) return
+    set({ hoveredWorktreeId: id })
+  },
+
+  focusWorktree(id) {
+    set({ focusedWorktreeId: id })
+  },
+
+  clearWorktreeLens() {
+    const { hoveredWorktreeId, focusedWorktreeId } = get()
+    if (hoveredWorktreeId === null && focusedWorktreeId === null) return
+    set({ hoveredWorktreeId: null, focusedWorktreeId: null })
   },
 
 }))
