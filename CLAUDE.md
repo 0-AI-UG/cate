@@ -31,7 +31,6 @@ Managed via npm (`package.json`):
 - **chokidar** — filesystem watching
 - **simple-git** — git operations
 - **@phosphor-icons/react** — icons
-- **electron-store** — persistent settings
 - **electron-updater** — auto-update (GitHub Releases)
 
 ## Architecture
@@ -80,7 +79,16 @@ Zustand stores in `src/renderer/stores/`:
 - **updateStore** — auto-updater status pushed from main
 - **urlPromptStore** — pending URL-open confirmations from terminals
 
-Session persistence saves/restores workspace state as JSON via electron-store.
+Persisted state is stored as hand-editable JSON files under `userData` (no
+electron-store). `settingsFile.ts` owns `settings.json`; `jsonStateFile.ts` is a
+reusable factory for that same pattern (sync load, in-memory authority, debounced
+atomic write, chokidar external-edit watcher, corrupt-file quarantine).
+`workspaceStateStore.ts` uses it for `recent-projects.json`, `sidebar.json`,
+`remote-workspaces.json`, and `layouts.json` (migrated once from the legacy
+`config.json`, which is then deleted). Per-project canvas/session state lives in
+`<project>/.cate/workspace.json` + `session.json`. AI provider credentials are
+global in `userData/pi-agent/auth.json` (+ `models.json`), mirrored into each
+workspace's `.cate/pi-agent/`.
 
 ### Key Patterns
 

@@ -852,7 +852,7 @@ export interface SessionSnapshot {
   connection?: CompanionConnection
 }
 
-/** One persisted remote workspace (electron-store `remoteProjects`). Remote
+/** One persisted remote workspace (stored in `remote-workspaces.json`). Remote
  *  workspaces can't use the local `.cate/` project-state files (their tree lives
  *  on a companion), so their full restore snapshot + reconnect info is kept here,
  *  keyed by the `cate-companion://` locator. Local workspaces never appear here —
@@ -866,7 +866,7 @@ export interface RemoteProjectEntry {
   snapshot: SessionSnapshot
 }
 
-/** Persisted sidebar arrangement (electron-store `sidebarSession`). Keyed by
+/** Persisted sidebar arrangement (stored in `sidebar.json`). Keyed by
  *  workspace root paths — workspace IDs are runtime UUIDs and can't be persisted.
  *  Separate from `recentProjects` (which stays recency-ordered for the Welcome
  *  page) so manual order and the active workspace survive a restart. */
@@ -1041,6 +1041,15 @@ export const FILE_EXCLUSIONS: string[] = [
   'Pods',
 ]
 
+/** A sidebar view (left/right rail tabs). */
+export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'parallelWork' | 'search'
+
+/** Which sidebar views live in the left vs. right rail. Persisted in settings. */
+export interface SidebarLayout {
+  left: SidebarView[]
+  right: SidebarView[]
+}
+
 export interface AppSettings {
   // General
   defaultShellPath: string
@@ -1159,6 +1168,16 @@ export interface AppSettings {
    *  src/main/auto-updater.ts (autoUpdater.allowPrerelease). Off by default, so
    *  stable users and the public website download are never offered betas. */
   betaUpdatesEnabled: boolean
+
+  // Agent
+  /** The user-pinned default model applied to every new agent chat, or null for
+   *  none. Was renderer localStorage (cate.agent.defaultModel.v1) before. */
+  agentDefaultModel: AgentModelRef | null
+
+  // Layout
+  /** Which sidebar views live in the left vs. right rail. Was renderer
+   *  localStorage (cate.sidebarLayout.v3) before. */
+  sidebarLayout: SidebarLayout
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -1225,6 +1244,39 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // Updates
   betaUpdatesEnabled: false,
+
+  // Agent
+  agentDefaultModel: null,
+
+  // Layout — keep in sync with the sidebar's default arrangement.
+  sidebarLayout: {
+    left: ['workspaces', 'explorer', 'search'],
+    right: ['git', 'parallelWork'],
+  },
+}
+
+// -----------------------------------------------------------------------------
+// UI state — transient, cosmetic per-machine UI placement (minimap position /
+// size). Persisted to `<userData>/ui-state.json` rather than settings.json so
+// the user-facing settings file stays focused on preferences. Was renderer
+// localStorage before.
+// -----------------------------------------------------------------------------
+
+export type CanvasCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+
+export interface UIState {
+  /** Corner the floating minimap is docked in. */
+  minimapCorner: CanvasCorner
+  /** Floating minimap size in px. */
+  minimapSize: { w: number; h: number }
+  /** Corner the minimap toggle button (canvas toolbar) is docked in. */
+  minimapButtonCorner: CanvasCorner
+}
+
+export const DEFAULT_UI_STATE: UIState = {
+  minimapCorner: 'bottom-right',
+  minimapSize: { w: 200, h: 150 },
+  minimapButtonCorner: 'bottom-right',
 }
 
 // -----------------------------------------------------------------------------

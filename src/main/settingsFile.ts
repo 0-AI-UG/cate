@@ -2,13 +2,15 @@
 // settingsFile — owns the user-editable settings.json file.
 //
 // VS Code model: a dedicated `<userData>/settings.json` is the source of truth
-// for AppSettings. It holds ONLY user settings (the other electron-store keys —
-// recentProjects, layouts, remoteProjects, sidebarSession — stay in config.json).
+// for AppSettings. It holds ONLY user settings; the workspace/session state that
+// used to share the legacy config.json (recentProjects, layouts, remoteProjects,
+// sidebarSession) now lives in its own files (see ./workspaceStateStore).
 //
 //   - Loaded synchronously at startup so the main process can read settings
 //     before any window is constructed.
-//   - On first run it is seeded from the legacy electron-store config.json so
-//     existing users keep their settings.
+//   - On first run it is seeded from the legacy config.json so existing users
+//     keep their settings. This runs before ./workspaceStateStore migrates and
+//     deletes config.json, so settings are never lost.
 //   - Writes are debounced + atomic (tmp + rename), pretty-printed so the file
 //     stays comfortably hand-editable.
 //   - A chokidar watcher detects EXTERNAL edits (the user editing the file in an
@@ -71,6 +73,11 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   telemetryConsentDecided: 'boolean',
   onboardingCompleted: 'boolean',
   betaUpdatesEnabled: 'boolean',
+  // Agent / layout — structured values. 'object' accepts a plain object or null;
+  // deeper validation (shape of the model ref / sidebar layout) lives in the
+  // renderer consumers, which already tolerate partial/legacy shapes.
+  agentDefaultModel: 'object',
+  sidebarLayout: 'object',
 }
 
 const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>
@@ -83,6 +90,10 @@ function mergeValidatedSettings(target: Partial<AppSettings>, source: Record<str
     const expected = SETTINGS_SCHEMA[key]
     if (expected === 'array') {
       if (!Array.isArray(val)) { log.warn('Settings schema mismatch: %s expected array, got %s', key, typeof val); continue }
+    } else if (expected === 'object') {
+      // 'object' accepts a plain object or null (a nullable structured value);
+      // arrays are rejected so an array can't masquerade as an object.
+      if (typeof val !== 'object' || Array.isArray(val)) { log.warn('Settings schema mismatch: %s expected object, got %s', key, typeof val); continue }
     } else if (typeof val !== expected) {
       log.warn('Settings schema mismatch: %s expected %s, got %s', key, expected, typeof val); continue
     }
@@ -225,7 +236,11 @@ function scheduleWrite(): void {
 export function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): boolean {
   if (!isSettingsKey(key)) return false
   const expected = SETTINGS_SCHEMA[key]
-  if (expected === 'array' ? !Array.isArray(value) : typeof value !== expected) {
+  const typeOk =
+    expected === 'array' ? Array.isArray(value)
+    : expected === 'object' ? (typeof value === 'object' && !Array.isArray(value))
+    : typeof value === expected
+  if (!typeOk) {
     log.warn('[settingsFile] Rejected set for %s: expected %s', String(key), expected)
     return false
   }

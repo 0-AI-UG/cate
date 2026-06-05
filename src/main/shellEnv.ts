@@ -85,6 +85,30 @@ function parseEnv(raw: string): Record<string, string> | null {
 }
 
 /**
+ * Drop env vars that belong to *this* Electron/electron-vite process and must
+ * not leak into spawned shells, terminals, or the companion daemon:
+ *
+ *  - ELECTRON_* — notably ELECTRON_RUN_AS_NODE, which we inject ourselves for
+ *    the capture spawn (and `env -0` echoes back). If it reaches a child
+ *    Electron process (e.g. a user running `electron-vite dev` in an integrated
+ *    terminal) that process boots as plain Node: `require('electron').app`
+ *    becomes undefined and the app crashes at startup.
+ *  - npm_*    — npm/electron-vite lifecycle vars from the parent `npm run` that
+ *    would otherwise pollute every terminal opened inside dev-mode Cate.
+ *
+ * This mirrors the scrub the pre-companion local PTY path applied at spawn time;
+ * doing it here keeps every consumer (companion, terminals, git, MCP) covered.
+ */
+function sanitizeEnv(env: Record<string, string>): Record<string, string> {
+  const clean: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (key.startsWith('ELECTRON_') || key.startsWith('npm_')) continue
+    clean[key] = value
+  }
+  return clean
+}
+
+/**
  * Initialize the shell environment resolver. Call once at app startup.
  * Safe to call multiple times — only the first call spawns a shell.
  */
@@ -108,5 +132,5 @@ export function initShellEnv(): Promise<Record<string, string>> {
  * Get the resolved shell environment. Returns process.env if not yet resolved.
  */
 export function getShellEnv(): Record<string, string> {
-  return resolvedEnv ?? ({ ...process.env } as Record<string, string>)
+  return sanitizeEnv(resolvedEnv ?? ({ ...process.env } as Record<string, string>))
 }

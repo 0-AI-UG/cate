@@ -29,6 +29,7 @@ import { CateLogo } from '../../renderer/ui/CateLogo'
 import log from '../../renderer/lib/logger'
 import type { PanelProps } from '../../renderer/panels/types'
 import { useAppStore } from '../../renderer/stores/appStore'
+import { useUIStore } from '../../renderer/stores/uiStore'
 import { useStatusStore } from '../../renderer/stores/statusStore'
 import { useAgentStore } from './agentStore'
 import { buildFileMentions, type LineRef } from './agentDrop'
@@ -140,7 +141,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     Array<{ provider: string; model: string; label?: string }>
   >([])
   const [view, setView] = useState<'chat' | 'settings'>('chat')
-  const [settingsScopedTo, setSettingsScopedTo] = useState<string | undefined>(undefined)
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
@@ -528,9 +528,16 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     [openChats],
   )
 
-  const openSettings = useCallback((providerId?: string) => {
-    setSettingsScopedTo(providerId)
+  // The agent panel's own settings (agents / prompts / skills / extensions).
+  const openSettings = useCallback(() => {
     setView('settings')
+  }, [])
+
+  // Provider sign-in now lives in the main Cate Settings (Providers section),
+  // not in the agent panel. Opening it there keeps a single source of truth for
+  // credentials, which are global and shared across all workspaces.
+  const openProviderSettings = useCallback(() => {
+    useUIStore.getState().openSettings('providers')
   }, [])
 
 
@@ -843,7 +850,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
             const open = openChats.find((c) => c.sessionFile === sessionFile)
             if (open) handleCloseChat(open.agentKey)
           }}
-          onOpenSettings={() => openSettings(undefined)}
+          onOpenSettings={() => openSettings()}
           onCollapse={() => setSidebarOpen(false)}
           settingsActive={view === 'settings'}
         />
@@ -882,7 +889,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                   selected={selectedModel}
                   onPick={handlePickModel}
                   onClose={() => setModelPickerOpen(false)}
-                  onManage={() => { setModelPickerOpen(false); openSettings(undefined) }}
+                  onManage={() => { setModelPickerOpen(false); openProviderSettings() }}
                 />
               )}
             </div>
@@ -900,8 +907,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
             commands={commands}
             workspaceId={workspaceId}
             cwd={cwd}
-            scopedProviderId={settingsScopedTo}
-            availableModels={availableModels}
             onBack={() => setView('chat')}
             onRefresh={() => { if (activeAgentKey) void refreshCommands(activeAgentKey) }}
           />
@@ -913,7 +918,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                   Connect <strong>{selectedModel.provider}</strong> to start.
                 </span>
                 <button
-                  onClick={() => openSettings(selectedModel.provider)}
+                  onClick={() => openProviderSettings()}
                   className="px-2 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium shrink-0"
                 >
                   Connect

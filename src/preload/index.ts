@@ -69,6 +69,8 @@ import {
   SETTINGS_CHANGED,
   SETTINGS_OPEN_IN_EDITOR,
   SETTINGS_RELOADED,
+  UI_STATE_GET_ALL,
+  UI_STATE_SET,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
@@ -694,6 +696,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   settingsReset(key?: string): Promise<void> {
     return ipcRenderer.invoke(SETTINGS_RESET, key)
+  },
+
+  uiStateGetAll(): Promise<unknown> {
+    return ipcRenderer.invoke(UI_STATE_GET_ALL)
+  },
+
+  uiStateSet(key: string, value: unknown): Promise<void> {
+    return ipcRenderer.invoke(UI_STATE_SET, key, value)
   },
 
   onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void {

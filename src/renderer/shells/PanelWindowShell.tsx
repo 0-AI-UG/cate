@@ -12,6 +12,9 @@ import { DragOverlay, setupCrossWindowDragListeners, useDragOp } from '../drag'
 import { renderPanelComponent, getPanelDef } from '../panels/registry'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
+import { useUIStore } from '../stores/uiStore'
+import { SettingsWindow } from '../settings/SettingsWindow'
 import { applyTheme } from '../lib/themeManager'
 import { applyCanvasChildPanels } from '../lib/canvas/applyCanvasChildPanels'
 
@@ -29,6 +32,7 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
   // appearance and settings (theme, minimap, canvas grid, etc.).
   useEffect(() => {
     useSettingsStore.getState().loadSettings()
+    useUIStateStore.getState().loadUIState()
   }, [])
   const activeThemeId = useSettingsStore((s) => s.activeThemeId)
   const customThemes = useSettingsStore((s) => s.customThemes)
@@ -138,6 +142,13 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
 
   const { handleDragStart } = useDragOp()
 
+  // A detached AgentPanel routes provider sign-in to the main Cate Settings
+  // (Providers). Render the settings window here too so that button works in
+  // this window rather than being a no-op.
+  const showSettings = useUIStore((s) => s.showSettings)
+  const settingsInitialTab = useUIStore((s) => s.settingsInitialTab)
+  const closeSettings = useUIStore((s) => s.closeSettings)
+
   // If we have panel info from query params but no transfer yet, show a loading state
   const displayPanel = panel
 
@@ -217,6 +228,8 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
           <PanelContent panel={displayPanel} workspaceId={workspaceId ?? ''} />
         </Suspense>
       </div>
+
+      <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
     </div>
   )
 }

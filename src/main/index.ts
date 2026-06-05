@@ -24,7 +24,10 @@ import { registerHandlers as registerShellHandlers, unregisterTerminalsForWindow
 import { registerHandlers as registerGitMonitorHandlers, stopMonitorsForWindow } from './ipc/git-monitor'
 import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, readBootSnapshot, writeBootSnapshot, getSettingSync, setSettingsFromMain } from './store'
 import { flushPendingWritesSync as flushSettingsPendingWritesSync } from './settingsFile'
-import { registerProjectStateHandlers, saveProjectStateSync, runLegacyMigrationIfNeeded } from './projectWorkspaceStore'
+import { flushWorkspaceStateSync } from './workspaceStateStore'
+import { registerUIStateHandlers, flushUIStateSync } from './uiStateStore'
+import { importCanvasBackgroundImage } from './canvasBackgroundStore'
+import { registerProjectStateHandlers, saveProjectStateSync } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
 import { registerAgentHandlers } from '../agent/main/ipcAgent'
@@ -585,6 +588,7 @@ function destroyDragGhostWindow(): void {
  */
 function registerCriticalHandlers(): void {
   registerStoreHandlers()
+  registerUIStateHandlers()
   registerProjectStateHandlers()
   registerWorkspaceHandlers()
   registerFilesystemHandlers()
@@ -644,10 +648,12 @@ function registerWindowAndDialogHandlers(): void {
     return result.filePaths[0]
   })
 
-  // Pick an image to use as the canvas wallpaper. Returns the absolute path
-  // (stored in settings); the renderer reads the bytes via
-  // CANVAS_READ_BACKGROUND_IMAGE. No path grant is needed because that reader
-  // runs in main (full fs access) rather than through the sandboxed fs IPC.
+  // Pick an image to use as the canvas wallpaper. The picked file is COPIED into
+  // managed app data (see ./canvasBackgroundStore) and the managed path is
+  // returned for storage in settings — so the wallpaper survives the source
+  // file moving/being deleted and stays self-contained. The renderer reads the
+  // bytes via CANVAS_READ_BACKGROUND_IMAGE; no path grant is needed because that
+  // reader runs in main (full fs access) rather than through the sandboxed fs IPC.
   ipcMain.handle(DIALOG_OPEN_IMAGE, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
     const result = await dialog.showOpenDialog(win!, {
@@ -658,7 +664,7 @@ function registerWindowAndDialogHandlers(): void {
       ],
     })
     if (result.canceled || result.filePaths.length === 0) return null
-    return result.filePaths[0]
+    return importCanvasBackgroundImage(result.filePaths[0])
   })
 
   // Read a canvas-wallpaper image as a data URL. Used both right after the user
@@ -1653,8 +1659,6 @@ app.whenReady().then(async () => {
   // Install the cate-theme authoring skill into ~/.claude/skills (copy-if-missing).
   void installThemeSkill()
 
-  await runLegacyMigrationIfNeeded()
-
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)
 
@@ -1823,6 +1827,11 @@ app.on('will-quit', () => {
   // Flush any pending debounced settings.json write so a just-changed setting
   // survives the quit (the async writer wouldn't fire before process exit).
   flushSettingsPendingWritesSync()
+  // Same for the workspace-state files (recent projects, sidebar, remote
+  // workspaces, layouts) — flush their debounced writes before the process exits.
+  flushWorkspaceStateSync()
+  // And the ui-state.json file (minimap placement).
+  flushUIStateSync()
   // Drop per-project locks so a co-running instance can take over immediately
   // (a crash skips this; the next instance reclaims the stale lock by pid).
   releaseAllProjectLocks()

@@ -542,6 +542,16 @@ export default function TerminalPanel({
       // selection, which isn't happening during a resize/pan anyway.
       if (document.body.classList.contains('canvas-interacting')) return
 
+      // A middle/right press starts a canvas pan, not an xterm selection. This
+      // capture handler runs before the canvas sets canvas-interacting, so the
+      // guard above can't catch the pan's opening mousedown — we'd rewrite its
+      // clientX/Y while every follow-up move (which lands on the now
+      // pointer-events:none terminal -> canvas) stays raw. The first pan delta
+      // would then be (raw - adjusted) and jump the camera on a zoomed canvas.
+      // xterm only needs adjusted coords for left-button selection, so leave
+      // non-left presses untouched.
+      if (e.type === 'mousedown' && e.button !== 0) return
+
       const effective = zoomLevel / renderScale
       if (Math.abs(effective - 1.0) < 0.001) return
 

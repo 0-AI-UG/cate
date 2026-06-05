@@ -98,61 +98,70 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false, avai
     setExpandedKey((prev) => (prev === key ? null : key))
   }, [])
 
+  const body = (
+    <>
+      <DefaultModelSection models={availableModels ?? []} />
+      <Section label="Sign in">
+        {grouped.oauth.map((p) => {
+          const key = `oauth-${p.id}`
+          return (
+            <ProviderAccordionRow
+              key={key}
+              provider={p}
+              status={statusFor(p.id)}
+              expanded={expandedKey === key}
+              onToggle={() => toggle(key)}
+              onRefresh={refresh}
+            />
+          )
+        })}
+      </Section>
+      <Section label="API key">
+        {grouped.apiKey.map((p) => {
+          const key = `apiKey-${p.id}`
+          return (
+            <ProviderAccordionRow
+              key={key}
+              provider={p}
+              status={statusFor(p.id)}
+              expanded={expandedKey === key}
+              onToggle={() => toggle(key)}
+              onRefresh={refresh}
+            />
+          )
+        })}
+      </Section>
+      <Section label="Custom">
+        <CustomOpenAIRow
+          expanded={expandedKey === 'custom-openai'}
+          onToggle={() => toggle('custom-openai')}
+        />
+      </Section>
+    </>
+  )
+
+  // Embedded in the main Settings window: render as a plain block so it inherits
+  // the section column's width + padding and the page's single scroll — no extra
+  // horizontal inset or nested scroll area like the in-panel (agent) chrome has.
+  if (embedded) {
+    return <div className="space-y-4 text-primary">{body}</div>
+  }
+
   return (
     <div className="flex-1 flex flex-col text-primary min-h-0">
-      {!embedded && (
-        <div className="flex items-center gap-2 px-3 h-9 border-b border-subtle shrink-0">
-          <button
-            onClick={() => onBack?.()}
-            className="p-1 -ml-1 rounded-md text-muted hover:text-primary hover:bg-white/5"
-            title="Back to chat"
-          >
-            <ArrowLeft size={14} />
-          </button>
-          <div className="text-[12px] font-medium text-primary truncate flex-1 min-w-0">Providers</div>
-        </div>
-      )}
+      <div className="flex items-center gap-2 px-3 h-9 border-b border-subtle shrink-0">
+        <button
+          onClick={() => onBack?.()}
+          className="p-1 -ml-1 rounded-md text-muted hover:text-primary hover:bg-white/5"
+          title="Back to chat"
+        >
+          <ArrowLeft size={14} />
+        </button>
+        <div className="text-[12px] font-medium text-primary truncate flex-1 min-w-0">Providers</div>
+      </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="px-3 py-3 space-y-4">
-          <DefaultModelSection models={availableModels ?? []} />
-          <Section label="Sign in">
-            {grouped.oauth.map((p) => {
-              const key = `oauth-${p.id}`
-              return (
-                <ProviderAccordionRow
-                  key={key}
-                  provider={p}
-                  status={statusFor(p.id)}
-                  expanded={expandedKey === key}
-                  onToggle={() => toggle(key)}
-                  onRefresh={refresh}
-                />
-              )
-            })}
-          </Section>
-          <Section label="API key">
-            {grouped.apiKey.map((p) => {
-              const key = `apiKey-${p.id}`
-              return (
-                <ProviderAccordionRow
-                  key={key}
-                  provider={p}
-                  status={statusFor(p.id)}
-                  expanded={expandedKey === key}
-                  onToggle={() => toggle(key)}
-                  onRefresh={refresh}
-                />
-              )
-            })}
-          </Section>
-          <Section label="Custom">
-            <CustomOpenAIRow
-              expanded={expandedKey === 'custom-openai'}
-              onToggle={() => toggle('custom-openai')}
-            />
-          </Section>
-        </div>
+        <div className="px-3 py-3 space-y-4">{body}</div>
       </div>
     </div>
   )
@@ -333,7 +342,7 @@ function CustomOpenAIForm({
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="px-2 mb-1 text-[10px] uppercase tracking-wider text-muted/70 font-semibold">
+      <div className="mb-1 text-[10px] uppercase tracking-wider text-muted/70 font-semibold">
         {label}
       </div>
       <div className="rounded-lg border border-white/5 bg-white/[0.02] overflow-hidden">
@@ -785,7 +794,7 @@ function DefaultModelSection({ models }: { models: Array<{ provider: string; mod
 
   return (
     <div className="space-y-1.5">
-      <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold px-0.5">
+      <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold">
         Default model
       </div>
       <div className="relative">

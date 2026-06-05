@@ -24,24 +24,16 @@ import { CateLogo } from '../ui/CateLogo'
 import Minimap from './Minimap'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { UpdateButton } from './UpdateButton'
 
 // The minimap pill can be docked in any of the four canvas corners. The choice
-// persists across sessions in localStorage.
+// persists across sessions in ui-state.json (via the UI-state store).
 type MinimapCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
-const MINIMAP_CORNER_KEY = 'cate.minimapButton.corner'
-const loadMinimapCorner = (): MinimapCorner => {
-  try {
-    const v = localStorage.getItem(MINIMAP_CORNER_KEY)
-    if (v === 'bottom-right' || v === 'bottom-left' || v === 'top-right' || v === 'top-left') {
-      return v
-    }
-  } catch {}
-  return 'bottom-right'
-}
+const loadMinimapCorner = (): MinimapCorner => useUIStateStore.getState().minimapButtonCorner
 
 interface CanvasToolbarProps {
   canvasPanelId: string
@@ -271,7 +263,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
       if (minimapDidDragRef.current) {
-        try { localStorage.setItem(MINIMAP_CORNER_KEY, nextCorner) } catch {}
+        useUIStateStore.getState().setUIState('minimapButtonCorner', nextCorner)
       }
     }
     window.addEventListener('mousemove', onMove)
