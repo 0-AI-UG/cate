@@ -235,6 +235,24 @@ async function resolveWinNodePtyPrebuild() {
   )
 }
 
+/** Compile node-pty's native binary for the host via node-gyp. Invoked when the
+ *  package manager skipped node-pty's install lifecycle (e.g. bun blocks
+ *  untrusted postinstalls), so build/Release/pty.node is absent. We call the
+ *  vendored node-gyp directly (PM-agnostic) rather than the package's install
+ *  script, which gates on prebuilds. */
+function buildHostNodePty() {
+  const ptyRoot = path.join(repoRoot, 'node_modules', 'node-pty')
+  const nodeGyp = path.join(repoRoot, 'node_modules', 'node-gyp', 'bin', 'node-gyp.js')
+  if (!existsSync(nodeGyp)) {
+    throw new Error(
+      `node-pty native binary missing and node-gyp not found at ${nodeGyp}. ` +
+        'Run your install with node-pty trusted (e.g. `bun pm trust node-pty`) or `npm install`.',
+    )
+  }
+  console.log('[companion] node-pty native missing; building with node-gyp…')
+  execFileSync(process.execPath, [nodeGyp, 'rebuild'], { cwd: ptyRoot, stdio: 'inherit' })
+}
+
 /** Locate pty.node (+ spawn-helper on unix) for the target. */
 async function resolveNativeBinaries() {
   const hostTarget = `${plat(process.platform)}-${process.arch}`
@@ -243,6 +261,11 @@ async function resolveNativeBinaries() {
   if (targetArg === hostTarget) {
     const rel = path.join(repoRoot, 'node_modules', 'node-pty', 'build', 'Release')
     const ptyNode = path.join(rel, 'pty.node')
+    // node-pty's native binary is built by its install lifecycle script, which
+    // some package managers (e.g. bun) skip unless the package is explicitly
+    // trusted. Compile it on demand so the tarball build is self-contained
+    // instead of failing with a missing-binary error.
+    if (!existsSync(ptyNode)) buildHostNodePty()
     if (!existsSync(ptyNode)) throw new Error(`node-pty build/Release/pty.node missing for ${hostTarget}`)
     const spawnHelper = path.join(rel, 'spawn-helper')
     return { ptyNode, spawnHelper: existsSync(spawnHelper) ? spawnHelper : null }
