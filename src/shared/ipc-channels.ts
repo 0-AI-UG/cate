@@ -168,6 +168,12 @@ export const MENU_TRIGGER_ACTION = 'menu:triggerAction'
 /** Load a named saved layout — main sends the layout name and the focused
  *  renderer restores it (replacing the workspace). */
 export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
+/** Create-panel dispatch routed to a *main* window. Sent when a panel-creation
+ *  shortcut/menu item fires from a detached dock/panel window (which has no
+ *  canvas): main forwards it to the workspace's main window so the new panel
+ *  lands on the canvas. Payload carries the action and the originating
+ *  workspace id. */
+export const MENU_CREATE_PANEL = 'menu:createPanel'
 
 /** Browser navigation shortcut (main -> renderer). Sent when a webview guest
  *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the

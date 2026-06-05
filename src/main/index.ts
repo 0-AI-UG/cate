@@ -320,7 +320,7 @@ function createWindow(params?: CateWindowParams): BrowserWindow {
   }
 
   // Track this window in the registry with its type
-  registerWindow(win, windowType)
+  registerWindow(win, windowType, params?.workspaceId)
 
   // Capture ID before window is destroyed (win.id throws after 'closed')
   const windowId = win.id

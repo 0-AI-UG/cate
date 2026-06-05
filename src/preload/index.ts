@@ -82,6 +82,7 @@ import {
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
   MENU_LOAD_LAYOUT,
+  MENU_CREATE_PANEL,
   BROWSER_SHORTCUT,
   MENU_SHOW_CONTEXT,
   DIALOG_OPEN_FOLDER,
@@ -1187,6 +1188,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_e: unknown, name: string): void => { callback(name) }
     ipcRenderer.on(MENU_LOAD_LAYOUT, listener)
     return () => { ipcRenderer.removeListener(MENU_LOAD_LAYOUT, listener) }
+  },
+
+  onMenuCreatePanel(callback: (payload: { action: string; workspaceId?: string }) => void): () => void {
+    const listener = (_e: unknown, payload: { action: string; workspaceId?: string }): void => { callback(payload) }
+    ipcRenderer.on(MENU_CREATE_PANEL, listener)
+    return () => { ipcRenderer.removeListener(MENU_CREATE_PANEL, listener) }
   },
 
   onBrowserShortcut(callback: (action: string) => void): () => void {

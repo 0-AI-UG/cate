@@ -238,6 +238,16 @@ export function useShortcuts(): void {
       runAction(action).catch(() => { /* noop — menu actions are best-effort */ })
     })
 
+    // A panel-creation shortcut fired while a detached dock/panel window was
+    // focused is re-routed here (the main window owns the canvas). Make the
+    // originating workspace active so the new panel is visible, then create it.
+    const unsubscribeCreatePanel = window.electronAPI.onMenuCreatePanel(({ action, workspaceId }) => {
+      if (workspaceId && appStore().getWorkspace(workspaceId) && appStore().selectedWorkspaceId !== workspaceId) {
+        void appStore().selectWorkspace(workspaceId)
+      }
+      runAction(action).catch(() => { /* noop */ })
+    })
+
     // Native "Layouts" menu → load a specific saved layout (replaces workspace).
     const unsubscribeLoadLayout = window.electronAPI.onMenuLoadLayout((name) => {
       import('../lib/layouts')
@@ -487,6 +497,7 @@ export function useShortcuts(): void {
       document.removeEventListener('keyup', handleKeyUp, { capture: true })
       window.removeEventListener('blur', handleBlur)
       unsubscribeMenu()
+      unsubscribeCreatePanel()
       unsubscribeLoadLayout()
     }
   }, [canvasStoreApi])

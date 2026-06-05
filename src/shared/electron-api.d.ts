@@ -708,6 +708,10 @@ export interface ElectronAPI {
   /** Subscribe to "load this saved layout" dispatches from the native Layouts menu. */
   onMenuLoadLayout(callback: (name: string) => void): () => void
 
+  /** Subscribe to panel-creation actions routed to this (main) window from a
+   *  detached dock/panel window, so the new panel lands on the canvas. */
+  onMenuCreatePanel(callback: (payload: import('./types').MenuCreatePanelPayload) => void): () => void
+
   /** Subscribe to browser navigation shortcuts forwarded from a focused webview
    *  guest (Cmd+R/[/]/L) or the Browser menu. */
   onBrowserShortcut(callback: (action: import('./types').BrowserShortcutAction) => void): () => void
