@@ -10,6 +10,7 @@ dist-companion/
 # Build artifacts
 build/
 !build/entitlements.mac.plist
+!build/entitlements.companion.plist
 # src/companion/build/ is hand-authored source (the companion esbuild config used
 # by `build:companion` and the tarball build), NOT a build-output dir — re-include
 # it so a clean checkout / CI can build the companion daemon + its ripgrep.

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the companion's bundled native binaries (node, rg, node-pty's
+  pty.node + spawn-helper), signed before they are packed into the companion
+  tarball. Apple's notarytool recurses into companion-host.tgz and requires every
+  Mach-O to carry a Developer ID + hardened-runtime signature. The bundled `node`
+  additionally needs these so it still runs once hardened: allow-jit /
+  unsigned-executable-memory for V8, and disable-library-validation so it can load
+  pty.node (signed by us, a different team than the Node.js binary's original).
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.disable-executable-page-protection</key>
+    <true/>
+</dict>
+</plist>

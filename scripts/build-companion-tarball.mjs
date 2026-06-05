@@ -100,6 +100,7 @@ await stageNodePty(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', `node${exe}`))
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 stagePi(path.join(stageDir, 'pi'))
+signMacNatives(stageDir)
 
 // Fail loudly if anything the daemon's install-probe requires is missing, rather
 // than shipping a tarball that extracts but never satisfies isInstalled (every
@@ -382,6 +383,43 @@ function stagePi(outRoot) {
   execFileSync('tar', ['-xzf', path.basename(tar), '-C', fwd(path.dirname(tar), outRoot)], { stdio: 'ignore', cwd: path.dirname(tar) })
   if (!existsSync(path.join(outRoot, 'dist', 'cli.js'))) throw new Error('staged pi missing dist/cli.js')
   console.log(`[companion] staged pi ${piVersion}`)
+}
+
+/**
+ * Codesign the bundled darwin Mach-O binaries with a Developer ID + hardened
+ * runtime BEFORE they are tarred. Apple's notarytool recurses into the bundled
+ * companion-host.tgz and rejects unsigned binaries, so node, rg and node-pty's
+ * pty.node/spawn-helper must be signed like the app. node also gets the
+ * companion entitlements (JIT + disable-library-validation) so it still runs and
+ * can load pty.node once hardened. No-op unless we're building a darwin tarball
+ * on a darwin host with CATE_MAC_SIGN_IDENTITY set (see ci-mac-signing-keychain.sh);
+ * when absent the binaries stay unsigned and notarization fails loudly.
+ */
+function signMacNatives(stageDir) {
+  const identity = process.env.CATE_MAC_SIGN_IDENTITY
+  if (process.platform !== 'darwin' || targetPlatform !== 'darwin' || !identity) return
+  const entitlements = path.join(repoRoot, 'build', 'entitlements.companion.plist')
+  const keychain = process.env.CATE_MAC_SIGN_KEYCHAIN
+  const pbDir = path.join('node_modules', 'node-pty', 'prebuilds', targetArg)
+  const binaries = [
+    path.join('runtime', 'bin', 'node'),
+    path.join('runtime', 'bin', 'rg'),
+    path.join(pbDir, 'pty.node'),
+    path.join(pbDir, 'spawn-helper'),
+  ]
+  const keychainArg = keychain ? ['--keychain', keychain] : []
+  for (const rel of binaries) {
+    const file = path.join(stageDir, rel)
+    if (!existsSync(file)) continue
+    execFileSync(
+      'codesign',
+      ['--force', '--timestamp', '--options', 'runtime', '--entitlements', entitlements, ...keychainArg, '--sign', identity, file],
+      { stdio: 'inherit' },
+    )
+    // Verify the seal now so a bad signature fails here, not later in notarytool.
+    execFileSync('codesign', ['--verify', '--strict', file], { stdio: 'inherit' })
+  }
+  console.log(`[companion] signed darwin natives for ${targetArg} (Developer ID ${identity})`)
 }
 
 function plat(p) {

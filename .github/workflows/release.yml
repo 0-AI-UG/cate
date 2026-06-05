@@ -100,10 +100,23 @@ jobs:
         if: runner.os != 'Linux'
         run: npm rebuild node-pty --build-from-source
 
+      # Import the Developer ID cert into a scoped keychain and export the signing
+      # identity, so the next step can codesign the companion's bundled native
+      # binaries. Without this, notarytool rejects the unsigned node-pty/rg Mach-O
+      # inside companion-host.tgz and the macOS release fails to notarize.
+      - name: Set up macOS signing for companion natives
+        if: matrix.platform == 'mac'
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+        run: bash scripts/ci-mac-signing-keychain.sh
+
       # The local workspace runs the companion daemon tarball, shipped inside the
       # installer (electron-builder.yml extraResources → companion-host.tgz). Build
       # this runner's host-target tarball and stage it under the fixed name so the
-      # extraResource exists. Each runner builds only its own host target.
+      # extraResource exists. Each runner builds only its own host target. On macOS
+      # the build script signs the bundled natives via CATE_MAC_SIGN_IDENTITY
+      # (exported above) before packing, so the tarball notarizes inside the app.
       - name: Build + stage host companion tarball
         shell: bash
         run: |
@@ -241,6 +254,16 @@ jobs:
       - name: Compile node-pty from source (mac/win; Linux builds it at install)
         if: runner.os != 'Linux'
         run: npm rebuild node-pty --build-from-source
+
+      # Sign the bundled darwin natives so a mac host that pulls this per-target
+      # tarball from the release runs Developer ID-signed binaries (no Gatekeeper
+      # quarantine block), mirroring the host tarball staged in the app.
+      - name: Set up macOS signing for companion natives
+        if: startsWith(matrix.target, 'darwin-')
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+        run: bash scripts/ci-mac-signing-keychain.sh
 
       - name: Build companion tarball (${{ matrix.target }})
         run: node scripts/build-companion-tarball.mjs --target ${{ matrix.target }} ${{ matrix.docker && '--docker' || '' }}
