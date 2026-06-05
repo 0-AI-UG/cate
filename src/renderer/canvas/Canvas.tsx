@@ -182,6 +182,8 @@ interface CanvasProps {
 const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) => {
   const canvasRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
+  // Debounce handle for de-promoting the world layer after pan/zoom settles.
+  const willChangeResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const canvasApi = useCanvasStoreApi()
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
 
@@ -228,6 +230,19 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       if (!el) return
       el.style.transform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
       el.style.setProperty('--zoom', String(zoom))
+
+      // Promote the world to its own GPU layer for the duration of the gesture so
+      // pan/zoom stays smooth, then de-promote once it settles. While promoted,
+      // Chromium bitmap-scales the layer's cached texture (blurs thin SVG icon
+      // strokes); removing will-change forces a crisp re-raster at the resting
+      // transform. Debounced so it only fires after the user stops interacting.
+      el.style.willChange = 'transform'
+      if (willChangeResetRef.current) clearTimeout(willChangeResetRef.current)
+      willChangeResetRef.current = setTimeout(() => {
+        const node = worldRef.current
+        if (node) node.style.willChange = 'auto'
+        willChangeResetRef.current = null
+      }, 150)
     }
 
     // Apply current state immediately on mount
@@ -240,7 +255,10 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         applyTransform(state.zoomLevel, state.viewportOffset)
       }
     })
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      if (willChangeResetRef.current) clearTimeout(willChangeResetRef.current)
+    }
   }, []) // mount-only
 
   // Auto-focus the node that occupies the most visible viewport area (opt-in).
@@ -578,7 +596,8 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           width: 1,
           height: 1,
           transformOrigin: '0 0',
-          willChange: 'transform',
+          // will-change is toggled imperatively during pan/zoom (see applyTransform)
+          // so the layer de-promotes at rest and re-rasters icons crisply.
         }}
         onClick={handleWorldClick}
       >
