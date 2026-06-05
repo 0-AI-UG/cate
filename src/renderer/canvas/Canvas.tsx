@@ -485,13 +485,16 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         items.push(
           { id: 'new-editor', label: 'New Editor' },
           { id: 'new-browser', label: 'New Browser' },
-          { id: 'new-agent', label: 'New Pi Agent' },
+          { id: 'new-agent', label: 'New Cate agent' },
           { id: 'new-canvas', label: 'New Canvas' },
           { type: 'separator' as const },
         )
       }
       items.push(
         { id: 'new-region', label: 'New Region' },
+        { type: 'separator' as const },
+        { id: 'auto-layout', label: 'Auto Layout' },
+        { id: 'zoom-to-fit', label: 'Zoom to Fit' },
       )
       const id = await window.electronAPI.showContextMenu(items)
       if (cancelled) return
@@ -534,6 +537,12 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
         case 'new-region':
           canvasApi.getState().addRegion('Region', point, { width: 400, height: 300 })
+          break
+        case 'auto-layout':
+          canvasApi.getState().autoLayout()
+          break
+        case 'zoom-to-fit':
+          canvasApi.getState().zoomToFit()
           break
       }
     }

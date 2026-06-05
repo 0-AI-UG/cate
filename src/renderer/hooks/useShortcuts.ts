@@ -13,9 +13,6 @@ import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 
-// Single-key (no-modifier) tool shortcuts (V, H) — suppressed while typing.
-const TOOL_ACTIONS = new Set<ShortcutAction>(['toolSelect', 'toolHand'])
-
 // Cmd+Arrow panel navigation — moves the selection cursor between nodes.
 const NAVIGATE_ACTIONS = new Set<ShortcutAction>([
   'navigateUp', 'navigateDown', 'navigateLeft', 'navigateRight',
@@ -389,11 +386,10 @@ export function useShortcuts(): void {
       // When panel switcher is open, only handle the toggle shortcut
       const ui = useUIStore.getState()
 
-      // Single-key tool shortcuts (V, H) must not fire while typing in a
-      // terminal/editor.
-      if (TOOL_ACTIONS.has(action)) {
-        if (terminalHasFocus || isTextSurfaceFocused()) return
-      }
+      // Tool shortcuts (Select/Hand) are ⌘⇧ combos, so they intentionally fire
+      // even while a terminal/editor is focused — we intercept and preventDefault
+      // before the surface sees the chord. No typing-suppression needed: a bare
+      // letter is never consumed for tool switching.
 
       // Cmd+Arrow navigation / Shift+Arrow panning.
       if (NAVIGATE_ACTIONS.has(action) || PAN_ACTIONS.has(action)) {

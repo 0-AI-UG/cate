@@ -153,7 +153,7 @@ export const CommandPalette: React.FC = () => {
       },
       {
         id: 'newAgent',
-        title: 'New Pi Agent',
+        title: 'New Cate agent',
         shortcutText: '',
         icon: <AgentIcon />,
         action: () => createAgent(selectedWorkspaceId, undefined, dockCenter),

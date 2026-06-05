@@ -665,8 +665,10 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   undo: storedShortcut('z', { command: true }),
   redo: storedShortcut('z', { command: true, shift: true }),
   deleteNode: storedShortcut('Backspace', { command: true }),
-  toolSelect: storedShortcut('v'),
-  toolHand: storedShortcut('h'),
+  // Modifier combos (not bare V/H) so they switch tools even while typing in a
+  // terminal/editor — and ⌘⇧D avoids the macOS ⌘H "Hide Application" clash.
+  toolSelect: storedShortcut('s', { command: true, shift: true }),
+  toolHand: storedShortcut('d', { command: true, shift: true }),
   navigateUp: storedShortcut('↑', { command: true }),
   navigateDown: storedShortcut('↓', { command: true }),
   navigateLeft: storedShortcut('←', { command: true }),
