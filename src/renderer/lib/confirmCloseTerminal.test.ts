@@ -2,14 +2,18 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { PanelState } from '../../shared/types'
 
 // Mock the registry (heavy xterm deps) and status store so we can drive the
-// panelId → ptyId → activity lookup the helper performs.
-const getEntry = vi.fn<(panelId: string) => { ptyId: string } | undefined>()
+// panelId → ptyId → workspace → activity lookup the helper performs. Terminal
+// identity (panelId<->ptyId<->workspaceId) is now owned by the registry bimap.
+const ptyIdForPanel = vi.fn<(panelId: string) => string | null>()
+const ptyWorkspace = { map: {} as Record<string, string> }
 vi.mock('./terminal/terminalRegistry', () => ({
-  terminalRegistry: { getEntry: (id: string) => getEntry(id) },
+  terminalRegistry: {
+    ptyIdForPanel: (id: string) => ptyIdForPanel(id),
+    workspaceIdForPty: (ptyId: string) => ptyWorkspace.map[ptyId],
+  },
 }))
 
 const statusState = {
-  terminalWorkspaceMap: {} as Record<string, string>,
   workspaces: {} as Record<string, { terminalActivity: Record<string, unknown> }>,
 }
 vi.mock('../stores/statusStore', () => ({
@@ -26,9 +30,9 @@ describe('confirmCloseRunningTerminals', () => {
   const confirmCloseTerminal = vi.fn()
 
   beforeEach(() => {
-    getEntry.mockReset()
+    ptyIdForPanel.mockReset()
     confirmCloseTerminal.mockReset()
-    statusState.terminalWorkspaceMap = {}
+    ptyWorkspace.map = {}
     statusState.workspaces = {}
     ;(globalThis as unknown as { window: { electronAPI: unknown } }).window = {
       electronAPI: { confirmCloseTerminal },
@@ -36,8 +40,8 @@ describe('confirmCloseRunningTerminals', () => {
   })
 
   it('proceeds without prompting when no terminal is running', async () => {
-    getEntry.mockReturnValue({ ptyId: 'pty-1' })
-    statusState.terminalWorkspaceMap = { 'pty-1': 'ws-1' }
+    ptyIdForPanel.mockReturnValue('pty-1')
+    ptyWorkspace.map = { 'pty-1': 'ws-1' }
     statusState.workspaces = { 'ws-1': { terminalActivity: { 'pty-1': { type: 'idle' } } } }
 
     const ok = await confirmCloseRunningTerminals([terminalPanel('t1')])
@@ -49,13 +53,13 @@ describe('confirmCloseRunningTerminals', () => {
     const editor = { id: 'e1', type: 'editor', title: 'e1' } as unknown as PanelState
     const ok = await confirmCloseRunningTerminals([editor])
     expect(ok).toBe(true)
-    expect(getEntry).not.toHaveBeenCalled()
+    expect(ptyIdForPanel).not.toHaveBeenCalled()
     expect(confirmCloseTerminal).not.toHaveBeenCalled()
   })
 
   it('prompts with the process name for a single running terminal and honours Close', async () => {
-    getEntry.mockReturnValue({ ptyId: 'pty-1' })
-    statusState.terminalWorkspaceMap = { 'pty-1': 'ws-1' }
+    ptyIdForPanel.mockReturnValue('pty-1')
+    ptyWorkspace.map = { 'pty-1': 'ws-1' }
     statusState.workspaces = {
       'ws-1': { terminalActivity: { 'pty-1': { type: 'running', processName: 'vim' } } },
     }
@@ -67,8 +71,8 @@ describe('confirmCloseRunningTerminals', () => {
   })
 
   it('returns false when the user cancels', async () => {
-    getEntry.mockReturnValue({ ptyId: 'pty-1' })
-    statusState.terminalWorkspaceMap = { 'pty-1': 'ws-1' }
+    ptyIdForPanel.mockReturnValue('pty-1')
+    ptyWorkspace.map = { 'pty-1': 'ws-1' }
     statusState.workspaces = {
       'ws-1': { terminalActivity: { 'pty-1': { type: 'running', processName: 'npm' } } },
     }
@@ -79,8 +83,8 @@ describe('confirmCloseRunningTerminals', () => {
   })
 
   it('passes a null processName when multiple terminals are running', async () => {
-    getEntry.mockImplementation((id: string) => ({ ptyId: `pty-${id}` }))
-    statusState.terminalWorkspaceMap = { 'pty-t1': 'ws-1', 'pty-t2': 'ws-1' }
+    ptyIdForPanel.mockImplementation((id: string) => `pty-${id}`)
+    ptyWorkspace.map = { 'pty-t1': 'ws-1', 'pty-t2': 'ws-1' }
     statusState.workspaces = {
       'ws-1': {
         terminalActivity: {

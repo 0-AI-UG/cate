@@ -26,6 +26,7 @@ import {
   GitPullRequest,
 } from '@phosphor-icons/react'
 import { useAppStore, pickWorktreeColor, WORKTREE_COLOR_PALETTE } from '../stores/appStore'
+import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { WorktreeMeta } from '../../shared/types'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
@@ -607,7 +608,6 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   const createAgent = useAppStore((s) => s.createAgent)
   const addAdditionalRoot = useAppStore((s) => s.addAdditionalRoot)
 
-  const [gitWorktrees, setGitWorktrees] = useState<GitWorktree[]>([])
   const [statusByPath, setStatusByPath] = useState<Record<string, WorktreeStatus>>({})
   const [prByPath, setPrByPath] = useState<Record<string, PrStatus>>({})
   const [prNonce, setPrNonce] = useState(0)
@@ -615,86 +615,97 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [primaryBranch, setPrimaryBranch] = useState<string>('')
-  const [isRepo, setIsRepo] = useState<boolean | null>(null)
+
+  // The live worktree list, repo flag and per-worktree status now come from the
+  // single per-workspace gitStatusStore (one fsWatch + focus + branch-update
+  // loop) instead of this tab's own gitWorktreeList fetch + focus/branch loops.
+  const snapshot = useGitStatusSnapshot(rootPath)
+  const isRepo: boolean | null = rootPath ? snapshot.isRepo : null
+  const gitWorktrees: GitWorktree[] = useMemo(
+    () => snapshot.worktrees.map((w) => ({
+      path: w.path,
+      branch: w.branch,
+      isBare: false,
+      isCurrent: w.isCurrent,
+    })),
+    [snapshot.worktrees],
+  )
+  const primaryBranch = useMemo(
+    () => snapshot.worktrees.find((w) => w.isCurrent)?.branch ?? '',
+    [snapshot.worktrees],
+  )
 
   // ---------------------------------------------------------------------------
-  // Load + sync
+  // Load + sync. `reconcile` now just re-arms the shared git store; the metadata
+  // sync + per-worktree status fetch run reactively off the snapshot below.
   // ---------------------------------------------------------------------------
 
   const reconcile = useCallback(async () => {
     if (!rootPath || !selectedWorkspaceId) return
-    setRefreshing(true)
     setError(null)
-    try {
-      // Parallel branches need a git repo — gate everything on that so we never
-      // fire branch/worktree commands (and log noisy errors) in a plain folder.
-      const repo = await window.electronAPI.gitIsRepo(rootPath).catch(() => false)
-      setIsRepo(repo)
-      if (!repo) return
+    gitStatusStore.refresh(rootPath)
+  }, [rootPath, selectedWorkspaceId])
 
-      const list = await window.electronAPI.gitWorktreeList(rootPath)
-      setGitWorktrees(list)
+  // Reconcile persisted worktree metadata against the live git list (the single
+  // source for path/branch/isPrimary) and fetch each worktree's status. Runs
+  // whenever the shared snapshot changes.
+  useEffect(() => {
+    if (!rootPath || !selectedWorkspaceId || !snapshot.isRepo) return
+    const list = snapshot.worktrees
+    let cancelled = false
+    setRefreshing(true)
 
-      ensurePrimaryWorktree(selectedWorkspaceId)
-
-      const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
-      if (ws) {
-        const existing = ws.worktrees ?? []
-        for (const g of list) {
-          const match = existing.find((w) => w.path === g.path)
-          if (!match) {
-            const meta: WorktreeMeta = {
-              id: `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              path: g.path,
-              branch: g.branch,
-              color: pickWorktreeColor(existing),
-              isPrimary: g.path === ws.rootPath,
-            }
-            upsertWorktree(selectedWorkspaceId, meta)
-          } else if (match.branch !== g.branch) {
-            upsertWorktree(selectedWorkspaceId, { ...match, branch: g.branch })
+    ensurePrimaryWorktree(selectedWorkspaceId)
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
+    if (ws) {
+      const existing = ws.worktrees ?? []
+      for (const g of list) {
+        const match = existing.find((w) => w.path === g.path)
+        if (!match) {
+          const meta: WorktreeMeta = {
+            id: `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            path: g.path,
+            branch: g.branch,
+            color: pickWorktreeColor(existing),
+            isPrimary: g.isPrimary,
           }
+          upsertWorktree(selectedWorkspaceId, meta)
+        } else if (match.branch !== g.branch) {
+          upsertWorktree(selectedWorkspaceId, { ...match, branch: g.branch })
         }
       }
-
-      const statusEntries = await Promise.all(
-        list.map(async (g) => {
-          try {
-            const s = await window.electronAPI.gitWorktreeStatus(g.path)
-            if (!s) return null
-            return [g.path, s] as const
-          } catch {
-            return null
-          }
-        }),
-      )
-      const next: Record<string, WorktreeStatus> = {}
-      for (const e of statusEntries) if (e) next[e[0]] = e[1]
-      setStatusByPath(next)
-
-      const currentEntry = list.find((g) => g.isCurrent)
-      if (currentEntry) setPrimaryBranch(currentEntry.branch)
-    } catch (err: any) {
-      log.warn('[parallel-work] reconcile failed', err)
-      setError(err?.message || 'Failed to load parallel branches')
-    } finally {
-      setRefreshing(false)
     }
-  }, [rootPath, selectedWorkspaceId, ensurePrimaryWorktree, upsertWorktree])
 
-  useEffect(() => { void reconcile() }, [reconcile])
+    void (async () => {
+      try {
+        const statusEntries = await Promise.all(
+          list.map(async (g) => {
+            try {
+              const s = await window.electronAPI.gitWorktreeStatus(g.path)
+              if (!s) return null
+              return [g.path, s] as const
+            } catch {
+              return null
+            }
+          }),
+        )
+        if (cancelled) return
+        const next: Record<string, WorktreeStatus> = {}
+        for (const e of statusEntries) if (e) next[e[0]] = e[1]
+        setStatusByPath(next)
+      } catch (err: any) {
+        if (!cancelled) {
+          log.warn('[parallel-work] status fetch failed', err)
+          setError(err?.message || 'Failed to load parallel branches')
+        }
+      } finally {
+        if (!cancelled) setRefreshing(false)
+      }
+    })()
 
-  useEffect(() => {
-    const onFocus = () => { void reconcile() }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [reconcile])
-
-  useEffect(() => {
-    const off = window.electronAPI.onGitBranchUpdate?.(() => { void reconcile() })
-    return () => { off?.() }
-  }, [reconcile])
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootPath, selectedWorkspaceId, snapshot.revision, snapshot.isRepo, ensurePrimaryWorktree, upsertWorktree])
 
   // ---------------------------------------------------------------------------
   // Derived view state
