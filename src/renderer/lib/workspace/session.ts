@@ -193,8 +193,19 @@ function buildSessionFile(
       ptyId: n.ptyId,
       workingDirectory: n.workingDirectory ?? undefined,
       unsavedContent: n.unsavedContent,
+      worktreeId: n.worktreeId,
     }
   })
+
+  // Worktree tags for dock-zone panels (terminals/agents docked rather than on
+  // the canvas). Their ref lives in the committed workspace.json without a tag,
+  // so the machine-local tag is carried here, keyed by panel id.
+  let dockPanelWorktreeIds: Record<string, string> | undefined
+  for (const p of Object.values(snapshot.dockPanels ?? {})) {
+    if (!p.worktreeId) continue
+    ;(dockPanelWorktreeIds ??= {})[p.id] = p.worktreeId
+  }
+
   return {
     version: 1,
     workspaceId: snapshot.workspaceId,
@@ -202,6 +213,10 @@ function buildSessionFile(
     nodes,
     panelWindows: panelWindows?.length ? panelWindows : undefined,
     dockWindows: dockWindows?.length ? dockWindows : undefined,
+    // Worktree registry is machine-local (gitignored checkouts) — kept here, not
+    // in the committed workspace.json. Paths are absolute, like workingDirectory.
+    worktrees: snapshot.worktrees?.length ? snapshot.worktrees : undefined,
+    dockPanelWorktreeIds,
     // Machine-local reconnect info for a remote workspace (absent ⇒ local).
     connection: snapshot.connection,
   }
@@ -258,6 +273,7 @@ export async function saveSession(): Promise<void> {
           ? panel?.unsavedContent
           : undefined,
         documentType: panel?.documentType,
+        worktreeId: panel?.worktreeId,
       }
     })
 
@@ -344,6 +360,9 @@ export async function saveSession(): Promise<void> {
       regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
       dockState: dockSnapshot,
       dockPanels,
+      // Persist the worktree registry (colors/labels) so they're stable across
+      // restarts instead of re-assigned from the palette on rediscovery.
+      worktrees: workspace.worktrees?.length ? workspace.worktrees : undefined,
       // Carry the remote reconnect info so it survives restart (Finding 2).
       connection: workspace.connection,
     })
@@ -477,6 +496,7 @@ export function projectFilesToSnapshot(
       ptyId: ephemeral?.ptyId,
       workingDirectory: ephemeral?.workingDirectory,
       unsavedContent: ephemeral?.unsavedContent,
+      worktreeId: ephemeral?.worktreeId,
     }
   })
 
@@ -504,6 +524,8 @@ export function projectFilesToSnapshot(
         filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
         url: ref.url,
         proxyUrl: ref.proxyUrl,
+        // Re-attach the machine-local worktree tag (dock terminals/agents).
+        worktreeId: sess?.dockPanelWorktreeIds?.[id],
       }
     }
   }
@@ -518,6 +540,9 @@ export function projectFilesToSnapshot(
     regions: Object.keys(regions).length > 0 ? regions : undefined,
     dockState: ws.dockState,
     dockPanels: snapshotDockPanels,
+    // Restore the persisted worktree registry (absolute paths) so colors/labels
+    // are stable and panel.worktreeId references resolve after restart.
+    worktrees: sess?.worktrees,
     // Restore the machine-local reconnect info (absent ⇒ local). Only the
     // local-disk path carries it here; remote workspaces come straight from the
     // remoteProjects store with their connection already on the snapshot.
@@ -658,6 +683,12 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
   // switch can never redirect a restore into the wrong workspace.
   const appStore = useAppStore.getState()
   const wsId = workspaceId
+
+  // Seed the worktree registry first, so the panels restored below can resolve
+  // their persisted worktreeId, and so the colors/labels here win over anything
+  // a background sync already discovered for the same checkout paths.
+  if (snapshot.worktrees?.length) appStore.hydrateWorktrees(wsId, snapshot.worktrees)
+
   const restoredDockPanelCount = restoreDockPanelsForWorkspace(wsId, snapshot)
   if (restoredDockPanelCount > 0) {
     log.debug(`[session] restored ${restoredDockPanelCount} dock-zone panels for workspace ${wsId}`)
@@ -714,6 +745,9 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
         // every cate-recruit'd terminal comes back as "Terminal 1/2/3..." on
         // reload and the cate CLI can no longer address them by name.
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
+        // Re-tag the worktree this terminal belongs to (the checkout it respawns
+        // in via workingDirectory below), so its tab pill/tint come back correct.
+        if (nodeSnap.worktreeId) appStore.setPanelWorktreeId(wsId, panelId, nodeSnap.worktreeId)
         terminalRestoreData.set(panelId, {
           cwd: nodeSnap.workingDirectory ?? undefined,
           replayFromId: nodeSnap.ptyId ?? nodeSnap.panelId,
@@ -791,6 +825,7 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
       case 'agent': {
         const panelId = appStore.createAgent(wsId, position)
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
+        if (nodeSnap.worktreeId) appStore.setPanelWorktreeId(wsId, panelId, nodeSnap.worktreeId)
         const canvasState = getCanvasState()
         if (canvasState) {
           const newNodeId = canvasState.nodeForPanel(panelId)

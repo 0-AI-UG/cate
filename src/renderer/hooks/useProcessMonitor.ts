@@ -4,6 +4,8 @@ import { useAppStore } from '../stores/appStore'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { noteAgentPresence } from '../lib/agent/agentScreenDetector'
 import { isWorkspaceMonitorReady } from './workspaceMonitorReady'
+import { syncWorktrees } from '../lib/worktreeSync'
+import log from '../lib/logger'
 import type { TerminalActivity } from '../../shared/types'
 
 /** Last agent name we observed per terminal — module-level so we only push a
@@ -86,12 +88,28 @@ export function useProcessMonitor(workspaceId: string): void {
     const api = window.electronAPI
     if (!api?.onGitBranchUpdate) return
     const unsubscribe = api.onGitBranchUpdate(
-      (workspaceId: string, branch: string, isDirty: boolean) => {
-        useStatusStore.getState().setGitInfo(workspaceId, branch, isDirty)
+      (evWorkspaceId: string, branch: string, isDirty: boolean) => {
+        useStatusStore.getState().setGitInfo(evWorkspaceId, branch, isDirty)
+        // Keep worktree metadata in sync without the parallel-work sidebar being
+        // open — it also drives the canvas worktree territories/pills, so a
+        // worktree created outside that tab should still appear. The git monitor's
+        // fs-watcher + adaptive poll already debounce this signal, so we only run
+        // the cheap `git worktree list` reconcile when something actually changed.
+        void syncWorktrees(evWorkspaceId).catch((err) => {
+          log.debug('[worktree-sync] background reconcile failed', err)
+        })
       },
     )
     return () => { unsubscribe() }
   }, [])
+
+  // Initial sync for the active workspace, so worktrees are fresh at app start
+  // (and on workspace switch) even before the first GIT_BRANCH_UPDATE lands.
+  useEffect(() => {
+    void syncWorktrees(workspaceId).catch((err) => {
+      log.debug('[worktree-sync] initial reconcile failed', err)
+    })
+  }, [workspaceId])
 
   // Re-arm whenever this workspace's companion becomes ready. During a
   // background restore the renderer can fire GIT_MONITOR_START before a remote

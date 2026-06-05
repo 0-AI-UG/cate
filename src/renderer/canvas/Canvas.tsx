@@ -16,7 +16,7 @@ import CanvasBackgroundImage from './CanvasBackgroundImage'
 import SnapGuides from './SnapGuides'
 import CanvasRegionComponent from './CanvasRegionComponent'
 import GhostPlacementLayer from './GhostPlacementLayer'
-import WorktreeHullLayer from './worktreeHull/WorktreeHullLayer'
+import { WorktreeTerritoryLayer } from './worktree'
 import type { Point, PanelType } from '../../shared/types'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
@@ -589,6 +589,13 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         containerHeight={containerSize.height}
       />
 
+      {/* Worktree territory — colours the grid dots per worktree. Screen-space
+          (outside the world transform), above the grid, behind all panels. */}
+      <WorktreeTerritoryLayer
+        containerWidth={containerSize.width}
+        containerHeight={containerSize.height}
+      />
+
       {/* World div: transformed to implement pan/zoom */}
       <div
         ref={worldRef}
@@ -604,8 +611,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         }}
         onClick={handleWorldClick}
       >
-        {/* Worktree sludge — behind regions, snap guides, and all nodes. */}
-        <WorktreeHullLayer />
         <RegionsLayer />
         <SnapGuides />
         {marqueeRect && (

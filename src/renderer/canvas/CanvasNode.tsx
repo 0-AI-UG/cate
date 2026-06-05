@@ -28,7 +28,6 @@ import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
-import { WorktreePill } from './WorktreePill'
 
 // When the Hand tool (or Space-hold) is active, a left-press on a node must pan
 // the canvas instead of dragging/resizing the node. These handlers bail out
@@ -397,9 +396,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   const nodeControlButtons = (
     <>
-      {activePanel && wsId && (
-        <WorktreePill panel={activePanel} workspaceId={wsId} />
-      )}
       <GrabButton
         title={node?.isPinned ? 'Unlock' : 'Lock'}
         onClick={(e) => { e.stopPropagation(); handleTogglePin() }}

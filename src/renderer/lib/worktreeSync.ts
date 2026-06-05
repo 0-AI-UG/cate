@@ -1,0 +1,83 @@
+// =============================================================================
+// worktreeSync — keep workspace.worktrees in sync with the actual git worktrees.
+//
+// Extracted from ParallelWorkTab so the reconcile can run *without* the
+// parallel-work sidebar being open. That component only mounts on its own tab,
+// so before this the store (which also drives the canvas worktree territories
+// and pills) only synced when the user opened that tab. useProcessMonitor now
+// calls this on every GIT_BRANCH_UPDATE, so closed-sidebar and background
+// workspaces stay current too.
+//
+// This handles only the cheap list/metadata reconcile (one `git worktree list`).
+// Per-worktree dirty status and `gh` PR lookups stay in ParallelWorkTab — those
+// are expensive and only matter for the sidebar's own display.
+// =============================================================================
+
+import { useAppStore, pickWorktreeColor } from '../stores/appStore'
+import type { WorktreeMeta } from '../../shared/types'
+
+export interface GitWorktree {
+  path: string
+  branch: string
+  isBare: boolean
+  isCurrent: boolean
+}
+
+export interface WorktreeSyncResult {
+  /** Whether the workspace root is a git repo. Non-repos return an empty list. */
+  isRepo: boolean
+  gitWorktrees: GitWorktree[]
+}
+
+function newWorktreeId(): string {
+  return `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+/**
+ * Reconcile the store's worktree metadata for one workspace against the git
+ * worktrees on disk: add newly-discovered worktrees, update branch names that
+ * changed, and ensure the primary worktree exists. It does NOT remove worktrees
+ * that vanished from git — those surface as "orphans" in the sidebar so the user
+ * can decide, matching the prior in-component behavior.
+ *
+ * Returns the git worktree list (and whether the root is a repo) so a foreground
+ * caller can drive its own view state, or null when the workspace has no root.
+ */
+export async function syncWorktrees(workspaceId: string): Promise<WorktreeSyncResult | null> {
+  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  const rootPath = ws?.rootPath
+  if (!ws || !rootPath) return null
+
+  // Gate everything on being a git repo so we never fire branch/worktree
+  // commands (and log noisy errors) in a plain folder.
+  const repo = await window.electronAPI.gitIsRepo(rootPath).catch(() => false)
+  if (!repo) return { isRepo: false, gitWorktrees: [] }
+
+  const list = await window.electronAPI.gitWorktreeList(rootPath)
+
+  const store = useAppStore.getState()
+  store.ensurePrimaryWorktree(workspaceId)
+
+  // Re-read after ensurePrimaryWorktree so we diff against the freshest list.
+  const current = store.workspaces.find((w) => w.id === workspaceId)
+  if (current) {
+    const existing = current.worktrees ?? []
+    for (const g of list) {
+      const match = existing.find((w) => w.path === g.path)
+      if (!match) {
+        const meta: WorktreeMeta = {
+          id: newWorktreeId(),
+          path: g.path,
+          branch: g.branch,
+          color: pickWorktreeColor(existing),
+          isPrimary: g.path === current.rootPath,
+        }
+        store.upsertWorktree(workspaceId, meta)
+      } else if (match.branch !== g.branch) {
+        store.upsertWorktree(workspaceId, { ...match, branch: g.branch })
+      }
+    }
+  }
+
+  return { isRepo: true, gitWorktrees: list }
+}

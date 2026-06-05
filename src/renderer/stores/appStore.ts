@@ -308,6 +308,10 @@ interface AppStoreActions {
 
   // Parallel Work (git worktrees) — see ParallelWorkTab.tsx
   ensurePrimaryWorktree: (wsId: string) => void
+  /** Seed the worktree registry from a persisted session, merging by path so a
+   *  saved color/label/id wins over anything a background sync already
+   *  discovered. Used on restore (see session.ts) to keep colors stable. */
+  hydrateWorktrees: (wsId: string, list: WorktreeMeta[]) => void
   upsertWorktree: (wsId: string, wt: WorktreeMeta) => void
   removeWorktree: (wsId: string, worktreeId: string) => void
   setWorktreeColor: (wsId: string, worktreeId: string, color: string) => void
@@ -1191,6 +1195,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
           isPrimary: true,
         }
         return { ...ws, worktrees: [primary, ...list] }
+      }),
+    }))
+  },
+
+  hydrateWorktrees(wsId, persisted) {
+    if (persisted.length === 0) return
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        // Merge by path so the persisted color/label/id wins over anything a
+        // background sync already created for the same checkout, while keeping
+        // any live worktree the saved session didn't know about.
+        const byPath = new Map((ws.worktrees ?? []).map((w) => [w.path, w]))
+        for (const w of persisted) byPath.set(w.path, w)
+        return { ...ws, worktrees: [...byPath.values()] }
       }),
     }))
   },

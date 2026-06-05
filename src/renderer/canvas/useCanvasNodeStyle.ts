@@ -82,12 +82,6 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       ? ', left 250ms cubic-bezier(0.16, 1, 0.3, 1), top 250ms cubic-bezier(0.16, 1, 0.3, 1), width 250ms cubic-bezier(0.16, 1, 0.3, 1), height 250ms cubic-bezier(0.16, 1, 0.3, 1)'
       : ''
 
-    // Worktree-tagged nodes carry a faint border in their branch color so the
-    // node reads as "belonging" to a worktree even with the sludge behind it.
-    const border = worktreeColor
-      ? `1.5px solid color-mix(in srgb, ${worktreeColor} 50%, var(--border-subtle))`
-      : '1.5px solid var(--border-subtle)'
-
     const baseOpacity = isEntering ? 0 : isExiting ? 0 : isWholeNodeDragSource ? 0 : 1
     // Focus lens: nodes outside the focused worktree recede.
     const opacity = worktreeDim ? baseOpacity * 0.5 : baseOpacity
@@ -101,7 +95,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       zIndex: 1000 + node.zOrder,
       borderRadius: CORNER_RADIUS,
       overflow: 'hidden',
-      border,
+      border: `1.5px solid var(--border-subtle)`,
       boxShadow: boxShadow(isHovered),
       outline: activityOutline(activityState),
       outlineOffset: -1,
@@ -119,7 +113,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       pointerEvents: isExiting || isWholeNodeDragSource ? 'none' : undefined,
       userSelect: 'none',
     }
-  }, [node, isFocused, isSelected, activityState, isAnimatingLayout, isHovered, chromeTint, isWholeNodeDragSource, worktreeColor, worktreeDim])
+  }, [node, isFocused, isSelected, activityState, isAnimatingLayout, isHovered, chromeTint, isWholeNodeDragSource, worktreeDim])
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
     if (!node) return null

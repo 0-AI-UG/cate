@@ -13,6 +13,7 @@
 
 import React, { useCallback, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { ArrowsSplit } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
@@ -92,33 +93,30 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 5,
+        gap: 4,
         height: 18,
-        padding: '0 7px',
+        padding: '0 9px 0 7px',
         borderRadius: 9,
-        backgroundColor: `color-mix(in srgb, ${current.color} 26%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${current.color} ${isFocused ? '90' : '60'}%, transparent)`,
-        boxShadow: isFocused ? `0 0 8px -1px ${current.color}` : 'none',
-        color: 'var(--text-primary)',
+        // Filled, no outline — the chip IS the worktree color. Slightly toned
+        // toward black so white text stays legible across the bright palette.
+        backgroundColor: `color-mix(in srgb, ${current.color} 92%, black)`,
+        border: 'none',
+        boxShadow: isFocused ? `0 0 10px -1px ${current.color}` : 'none',
+        color: '#fff',
         fontSize: 10,
         fontWeight: 600,
         lineHeight: 1,
+        letterSpacing: 0.2,
+        textShadow: '0 1px 1px rgba(0,0,0,0.3)',
         cursor: 'pointer',
         userSelect: 'none',
-        transition: 'border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease',
+        transition: 'box-shadow 150ms ease, background-color 150ms ease, filter 150ms ease',
+        filter: isFocused ? 'brightness(1.12)' : undefined,
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: '50%',
-          backgroundColor: current.color,
-          flexShrink: 0,
-        }}
-      />
-      <span style={{ maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <ArrowsSplit size={11} weight="bold" style={{ flexShrink: 0 }} />
+      <span style={{ maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {labelOf(current)}
       </span>
     </button>

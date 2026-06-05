@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cate · Touched Files Visualizer — 5 Concepts</title>
+<style>
+  :root {
+    /* Cate surface + token palette (from globals.css) */
+    --canvas-bg: #161513;
+    --canvas-bg-alt: #1c1b19;
+    --surface-0: #1d1c1a;
+    --surface-1: #232220;
+    --surface-2: #282724;
+    --surface-3: #2c2b28;
+    --surface-4: #322f2c;
+    --surface-5: #3a3733;
+    --surface-6: #423f3a;
+    --titlebar: #232220;
+
+    --text-primary: #e8e6e3;
+    --text-secondary: #a8a49e;
+    --text-muted: #6b6762;
+    --text-inverse: #141311;
+
+    --focus-blue: #4a9eff;
+    --activity-green: #4dd964;
+    --activity-orange: #ff9f0a;
+
+    --git-added: #4dd964;
+    --git-modified: #ff9f0a;
+    --git-deleted: #ff453a;
+    --git-renamed: #bf5af2;
+
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --border-strong: rgba(255, 255, 255, 0.10);
+    --hover: rgba(255, 255, 255, 0.06);
+    --hover-strong: rgba(255, 255, 255, 0.12);
+
+    --radius-node: 8px;
+    --radius-sm: 4px;
+
+    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    --mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background:
+      radial-gradient(1200px 700px at 70% -10%, #211f1c 0%, transparent 60%),
+      var(--canvas-bg);
+    color: var(--text-primary);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+    font-size: 13px;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ---------- App shell ---------- */
+  .app {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 28px 28px 80px;
+  }
+
+  .masthead { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 20px; flex-wrap: wrap; }
+  .masthead h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .masthead .sub { color: var(--text-secondary); font-size: 12.5px; max-width: 640px; line-height: 1.5; }
+  .brandchip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 11px; color: var(--text-secondary);
+    background: var(--surface-1); border: 1px solid var(--border-subtle);
+    padding: 4px 9px; border-radius: 99px; margin-bottom: 10px;
+  }
+  .brandchip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--activity-green); box-shadow: 0 0 8px var(--activity-green); }
+
+  /* ---------- Concept tabs ---------- */
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+  .tab {
+    appearance: none; cursor: pointer;
+    background: var(--surface-1); color: var(--text-secondary);
+    border: 1px solid var(--border-subtle); border-radius: 99px;
+    padding: 8px 14px; font-family: var(--font); font-size: 12.5px;
+    display: flex; align-items: center; gap: 9px;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  }
+  .tab:hover { background: var(--hover); color: var(--text-primary); }
+  .tab.active { background: var(--surface-3); color: var(--text-primary); border-color: var(--border-strong); }
+  .tab .num {
+    font-size: 10px; width: 18px; height: 18px; border-radius: 50%;
+    display: grid; place-items: center; background: rgba(0,0,0,0.35); color: var(--text-secondary);
+  }
+  .tab.active .num { background: var(--focus-blue); color: var(--text-inverse); font-weight: 600; }
+
+  /* ---------- Window frame (mimics a CanvasNode) ---------- */
+  .window {
+    border-radius: var(--radius-node);
+    border: 1.5px solid var(--border-subtle);
+    background: var(--surface-0);
+    box-shadow: 0 12px 36px -14px rgba(0,0,0,0.45), 0 4px 10px -5px rgba(0,0,0,0.3);
+    overflow: hidden;
+  }
+  .titlebar {
+    height: 30px; background: var(--titlebar);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex; align-items: center; gap: 8px; padding: 0 10px;
+    font-size: 11.5px; color: var(--text-secondary);
+  }
+  .titlebar .lights { display: flex; gap: 6px; margin-right: 4px; }
+  .titlebar .lights i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .titlebar .lights i:nth-child(1){ background:#ff5f57; }
+  .titlebar .lights i:nth-child(2){ background:#febc2e; }
+  .titlebar .lights i:nth-child(3){ background:#28c840; }
+  .titlebar .icon { color: var(--git-modified); display: inline-flex; }
+  .titlebar .title { color: var(--text-primary); font-weight: 500; }
+  .titlebar .spacer { flex: 1; }
+  .titlebar .meta { color: var(--text-muted); font-size: 11px; }
+  .titlebar .gbtn {
+    width: 18px; height: 18px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    color: var(--text-muted); cursor: pointer;
+  }
+  .titlebar .gbtn:hover { background: var(--hover-strong); color: var(--text-primary); }
+
+  /* Toolbar inside window */
+  .toolbar {
+    display: flex; align-items: center; gap: 12px; padding: 9px 12px;
+    border-bottom: 1px solid var(--border-subtle); background: var(--surface-1);
+    flex-wrap: wrap;
+  }
+  .toolbar .group { display: flex; align-items: center; gap: 7px; }
+  .toolbar .lbl { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .seg { display: flex; background: var(--surface-0); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 2px; }
+  .seg button { appearance: none; border: 0; background: transparent; color: var(--text-secondary); font-family: var(--font);
+    font-size: 11.5px; padding: 3px 9px; border-radius: 4px; cursor: pointer; }
+  .seg button.on { background: var(--surface-3); color: var(--text-primary); }
+  .stat { display: inline-flex; align-items: baseline; gap: 5px; }
+  .stat b { font-size: 14px; font-weight: 600; }
+  .stat span { color: var(--text-muted); font-size: 11px; }
+  .add { color: var(--git-added); }
+  .del { color: var(--git-deleted); }
+  .mod { color: var(--git-modified); }
+
+  .stage { padding: 16px; min-height: 440px; }
+
+  .concept { display: none; }
+  .concept.active { display: block; animation: fade 220ms ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .legend { display: flex; align-items: center; gap: 14px; color: var(--text-muted); font-size: 11px; flex-wrap: wrap; }
+  .legend .scale { display: inline-flex; align-items: center; gap: 0; border-radius: 4px; overflow: hidden; }
+  .legend .scale i { width: 16px; height: 10px; display: block; }
+  .legend .gi { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .gi .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  .caption { color: var(--text-muted); font-size: 11.5px; margin: 14px 2px 0; line-height: 1.5; }
+  .caption b { color: var(--text-secondary); font-weight: 500; }
+
+  /* =====================================================
+     CONCEPT 1 — Treemap heatmap
+  ===================================================== */
+  .treemap { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: 58px; gap: 6px; }
+  .tile {
+    position: relative; border-radius: 6px; overflow: hidden; cursor: pointer;
+    border: 1px solid var(--border-subtle); padding: 8px 9px;
+    display: flex; flex-direction: column; justify-content: space-between;
+    transition: transform 140ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 160ms ease, border-color 140ms ease;
+  }
+  .tile:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: 0 8px 20px -8px rgba(0,0,0,0.6); z-index: 2; }
+  .tile .fname { font-size: 11.5px; font-weight: 500; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .fdir { font-size: 9.5px; color: rgba(255,255,255,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .fchurn { font-size: 10px; color: rgba(255,255,255,0.85); font-family: var(--mono); }
+  .tile .pulse { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: 0.9; animation: blink 1.6s infinite; }
+  @keyframes blink { 0%,100%{opacity:0.25;} 50%{opacity:0.95;} }
+
+  /* =====================================================
+     CONCEPT 2 — Activity timeline / river
+  ===================================================== */
+  .timeline { position: relative; }
+  .tl-axis { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 10.5px; padding: 0 4px 8px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 4px; }
+  .tl-row { display: grid; grid-template-columns: 190px 1fr; align-items: center; height: 34px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .tl-row:hover { background: var(--hover); }
+  .tl-label { display: flex; align-items: center; gap: 8px; padding-right: 12px; cursor: pointer; overflow: hidden; }
+  .tl-label .badge { width: 15px; height: 15px; border-radius: 3px; display: grid; place-items: center; font-size: 9px; font-weight: 700; flex: none; color: var(--text-inverse); }
+  .tl-label .nm { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-track { position: relative; height: 100%; }
+  .tl-dot { position: absolute; top: 50%; transform: translate(-50%,-50%); border-radius: 50%; cursor: pointer; transition: transform 120ms ease; }
+  .tl-dot:hover { transform: translate(-50%,-50%) scale(1.35); z-index: 3; }
+  .tl-link { position: absolute; top: 50%; height: 2px; transform: translateY(-50%); border-radius: 2px; opacity: 0.35; }
+  .tl-playhead { position: absolute; top: -6px; bottom: -2px; width: 2px; background: var(--focus-blue); box-shadow: 0 0 10px var(--focus-blue); left: 72%; }
+  .tl-playhead::before { content: ''; position: absolute; top: -3px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--focus-blue); }
+
+  /* =====================================================
+     CONCEPT 3 — Tree + heat bars
+  ===================================================== */
+  .tree { font-family: var(--font); }
+  .tnode { display: grid; grid-template-columns: 1fr 120px 96px; align-items: center; height: 30px; border-radius: 5px; padding: 0 8px; cursor: pointer; }
+  .tnode:hover { background: var(--hover); }
+  .tnode .name { display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tnode .name .tw { color: var(--text-muted); font-family: var(--mono); font-size: 11px; }
+  .tnode .chevron { color: var(--text-muted); width: 12px; display: inline-block; transition: transform 120ms ease; }
+  .tnode.dir .label { color: var(--text-primary); font-weight: 500; }
+  .tnode .badge { width: 15px; height: 15px; border-radius: 3px; display: grid; place-items: center; font-size: 9px; font-weight: 700; color: var(--text-inverse); flex: none; }
+  .tnode .heatbar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.05); overflow: hidden; position: relative; }
+  .tnode .heatbar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; }
+  .tnode .nums { text-align: right; font-family: var(--mono); font-size: 11px; }
+  .indent { display: inline-block; }
+  .folder-ico { color: #E2B855; }
+
+  /* =====================================================
+     CONCEPT 4 — Bubble cluster
+  ===================================================== */
+  .clusters { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+  .cluster {
+    position: relative; border: 1px dashed var(--border-strong); border-radius: 14px;
+    padding: 26px 16px 14px; background: rgba(255,255,255,0.012);
+    min-height: 150px;
+  }
+  .cluster .cl-name { position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--text-secondary); font-family: var(--mono); }
+  .cluster .cl-name .ct { color: var(--text-muted); }
+  .bubbles { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; max-width: 360px; }
+  .bubble {
+    border-radius: 50%; display: grid; place-items: center; cursor: pointer; position: relative;
+    border: 1px solid rgba(255,255,255,0.12); color: #fff; text-align: center;
+    transition: transform 150ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 160ms ease;
+  }
+  .bubble:hover { transform: scale(1.08); box-shadow: 0 6px 22px -6px rgba(0,0,0,0.7); z-index: 2; }
+  .bubble .bn { font-size: 9.5px; line-height: 1.1; max-width: 86%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  .bubble .bc { font-size: 9px; font-family: var(--mono); opacity: 0.85; }
+  .bubble .ring { position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--activity-orange); opacity: 0; }
+  .bubble.active-edit .ring { opacity: 1; animation: pulsering 1.4s infinite; }
+  @keyframes pulsering { 0%{ transform: scale(1); opacity: 0.7;} 100%{ transform: scale(1.25); opacity: 0;} }
+
+  /* =====================================================
+     CONCEPT 5 — Diff minimap deck
+  ===================================================== */
+  .deck { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .card {
+    border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-1);
+    overflow: hidden; cursor: pointer; transition: transform 140ms ease, border-color 140ms ease, box-shadow 160ms ease;
+  }
+  .card:hover { transform: translateY(-3px); border-color: var(--border-strong); box-shadow: 0 10px 26px -10px rgba(0,0,0,0.6); }
+  .card .chead { display: flex; align-items: center; gap: 7px; padding: 8px 9px; border-bottom: 1px solid var(--border-subtle); }
+  .card .chead .badge { width: 15px; height: 15px; border-radius: 3px; display: grid; place-items: center; font-size: 9px; font-weight: 700; color: var(--text-inverse); flex: none; }
+  .card .chead .nm { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .cbody { display: flex; gap: 8px; padding: 9px; }
+  .minimap { width: 26px; flex: none; display: flex; flex-direction: column; gap: 1px; }
+  .minimap i { display: block; height: 3px; border-radius: 1px; background: var(--surface-4); }
+  .minimap i.a { background: var(--git-added); }
+  .minimap i.d { background: var(--git-deleted); }
+  .minimap i.m { background: var(--git-modified); }
+  .card .csum { flex: 1; display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+  .card .csum .ln { font-family: var(--mono); font-size: 10.5px; }
+  .card .barpair { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(255,255,255,0.05); }
+  .card .barpair .pa { background: var(--git-added); }
+  .card .barpair .pd { background: var(--git-deleted); }
+  .card .cfoot { padding: 6px 9px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: 10px; display: flex; justify-content: space-between; }
+
+  /* =====================================================
+     Detail drawer (shared)
+  ===================================================== */
+  .drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); opacity: 0; pointer-events: none; transition: opacity 200ms ease; z-index: 40; }
+  .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 540px; max-width: 92vw;
+    background: var(--surface-0); border-left: 1px solid var(--border-strong);
+    box-shadow: -20px 0 50px -20px rgba(0,0,0,0.7);
+    transform: translateX(100%); transition: transform 240ms cubic-bezier(0.4,0,0.2,1);
+    z-index: 41; display: flex; flex-direction: column;
+  }
+  .drawer.open { transform: none; }
+  .drawer .dhead { padding: 14px 16px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-1); }
+  .drawer .dhead .row1 { display: flex; align-items: center; gap: 9px; }
+  .drawer .dhead .badge { width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: var(--text-inverse); flex: none; }
+  .drawer .dhead .fp { font-family: var(--mono); font-size: 12px; }
+  .drawer .dhead .fp .dir { color: var(--text-muted); }
+  .drawer .dhead .close { margin-left: auto; cursor: pointer; color: var(--text-muted); width: 24px; height: 24px; border-radius: 5px; display: grid; place-items: center; }
+  .drawer .dhead .close:hover { background: var(--hover-strong); color: var(--text-primary); }
+  .drawer .dhead .row2 { display: flex; gap: 16px; margin-top: 10px; color: var(--text-muted); font-size: 11px; }
+  .drawer .dhead .row2 .stat b { font-size: 13px; }
+  .drawer .dbody { flex: 1; overflow: auto; padding: 4px 0 24px; }
+  .hunk { margin: 12px 16px; border: 1px solid var(--border-subtle); border-radius: 7px; overflow: hidden; }
+  .hunk .hh { background: var(--surface-2); color: var(--text-muted); font-family: var(--mono); font-size: 10.5px; padding: 5px 10px; border-bottom: 1px solid var(--border-subtle); }
+  .diffline { display: grid; grid-template-columns: 38px 38px 1fr; font-family: var(--mono); font-size: 11.5px; line-height: 1.7; }
+  .diffline .gut { text-align: right; padding-right: 8px; color: var(--text-muted); opacity: 0.6; user-select: none; }
+  .diffline .code { white-space: pre; padding-left: 8px; overflow-x: auto; }
+  .diffline.add { background: rgba(77,217,100,0.10); }
+  .diffline.add .code { color: #b8f3c2; }
+  .diffline.add .sign { color: var(--git-added); }
+  .diffline.del { background: rgba(255,69,58,0.10); }
+  .diffline.del .code { color: #ffc2bd; }
+  .diffline.del .sign { color: var(--git-deleted); }
+  .diffline .sign { text-align: center; }
+  .timeline-mini { padding: 12px 16px; border-top: 1px solid var(--border-subtle); }
+  .timeline-mini .t { color: var(--text-muted); font-size: 11px; margin-bottom: 8px; }
+  .tmrow { display: flex; align-items: center; gap: 9px; padding: 5px 0; font-size: 11px; color: var(--text-secondary); }
+  .tmrow .tdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .tmrow .tt { color: var(--text-muted); font-family: var(--mono); font-size: 10px; margin-left: auto; }
+
+  .hint { color: var(--text-muted); font-size: 11px; display: inline-flex; align-items: center; gap: 6px; }
+  kbd { background: var(--surface-3); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-family: var(--mono); color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="masthead">
+    <div>
+      <div class="brandchip"><span class="dot"></span> Cate · Panel concept</div>
+      <h1>Visualize Touched Files</h1>
+      <div class="sub">When an agent edits your repo, the changes scroll past invisibly. This panel surfaces <b>what Claude touched</b> — churn intensity, edit order, and line-level diffs — in one interactive view. Five design directions below; click any file to drill down.</div>
+    </div>
+    <div class="hint">Click a tile / file&nbsp; · &nbsp;<kbd>Esc</kbd> closes detail</div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-c="1"><span class="num">1</span> Heatmap Treemap</button>
+    <button class="tab" data-c="2"><span class="num">2</span> Activity River</button>
+    <button class="tab" data-c="3"><span class="num">3</span> Tree + Heat bars</button>
+    <button class="tab" data-c="4"><span class="num">4</span> Bubble Clusters</button>
+    <button class="tab" data-c="5"><span class="num">5</span> Diff Minimap Deck</button>
+  </div>
+
+  <div class="window">
+    <div class="titlebar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <span class="icon">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 0 3-3m-3 3L9 5"/><circle cx="12" cy="15" r="6"/></svg>
+      </span>
+      <span class="title">Touched Files</span>
+      <span class="meta" id="winmeta">· session 3f9a · last edit 4s ago</span>
+      <span class="spacer"></span>
+      <span class="gbtn" title="Refresh">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+      </span>
+      <span class="gbtn" title="Close">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </span>
+    </div>
+
+    <div class="toolbar">
+      <div class="group">
+        <span class="stat add"><b id="s-add">+412</b><span>added</span></span>
+        <span class="stat del"><b id="s-del">−168</b><span>removed</span></span>
+        <span class="stat"><b id="s-files">14</b><span>files</span></span>
+        <span class="stat mod"><b id="s-edits">37</b><span>edits</span></span>
+      </div>
+      <div class="group" style="margin-left:auto">
+        <span class="lbl">Color by</span>
+        <div class="seg" id="colormode">
+          <button class="on" data-m="churn">Churn</button>
+          <button data-m="recency">Recency</button>
+          <button data-m="status">Status</button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="legend" id="legend">
+          <span>less</span>
+          <span class="scale"><i style="background:#2a2723"></i><i style="background:#3f4a2c"></i><i style="background:#5e7a33"></i><i style="background:#7fb83e"></i><i style="background:#a7e84b"></i></span>
+          <span>more</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="stage">
+      <!-- CONCEPT 1 -->
+      <div class="concept active" data-c="1">
+        <div class="treemap" id="treemap"></div>
+        <div class="caption"><b>Treemap heatmap.</b> Tile area ∝ total churn, color ∝ change intensity. The brightest, biggest tiles are where the agent did the most work. Live pulse = touched in the last few seconds. Click any tile for the line-level diff.</div>
+      </div>
+
+      <!-- CONCEPT 2 -->
+      <div class="concept" data-c="2">
+        <div class="timeline">
+          <div class="tl-axis" id="tlaxis"></div>
+          <div id="tlrows"></div>
+          <div class="tl-playhead" id="playhead"></div>
+        </div>
+        <div class="caption"><b>Activity river.</b> Each lane is a file; each dot is one edit, placed on a shared time axis and sized by the lines changed. You can replay the agent's session and watch edits ripple file-to-file. The playhead scrubs through time.</div>
+      </div>
+
+      <!-- CONCEPT 3 -->
+      <div class="concept" data-c="3">
+        <div style="display:grid;grid-template-columns:1fr 120px 96px;padding:0 8px 6px;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border-subtle);margin-bottom:4px;">
+          <span>File</span><span>Heat</span><span style="text-align:right">± lines</span>
+        </div>
+        <div class="tree" id="tree"></div>
+        <div class="caption"><b>Tree + heat bars.</b> The familiar git file tree, augmented: a churn bar and live ± counts per file, folders aggregate their children. Lowest learning curve — it slots into the existing explorer. Click a row to expand the diff inline or in the drawer.</div>
+      </div>
+
+      <!-- CONCEPT 4 -->
+      <div class="concept" data-c="4">
+        <div class="clusters" id="clusters"></div>
+        <div class="caption"><b>Bubble clusters.</b> Files group into directory neighborhoods; bubble size ∝ churn, color ∝ status. Great for spotting <i>where</i> in the architecture an agent concentrated — a whole subsystem lighting up reads at a glance. Orange ring = actively being edited now.</div>
+      </div>
+
+      <!-- CONCEPT 5 -->
+      <div class="concept" data-c="5">
+        <div class="deck" id="deck"></div>
+        <div class="caption"><b>Diff minimap deck.</b> Every touched file is a card with a code-minimap spine — green/red bands show exactly where in the file the edits land, like VS Code's scrollbar overview. Skimmable and information-dense. Click to flip into the full diff.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail drawer -->
+<div class="drawer-backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer">
+  <div class="dhead">
+    <div class="row1">
+      <span class="badge" id="d-badge">M</span>
+      <span class="fp" id="d-path"></span>
+      <span class="close" id="d-close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </span>
+    </div>
+    <div class="row2">
+      <span class="stat add"><b id="d-add">+0</b> added</span>
+      <span class="stat del"><b id="d-del">−0</b> removed</span>
+      <span><b id="d-edits" style="color:var(--git-modified)">0</b> edits this session</span>
+    </div>
+  </div>
+  <div class="dbody" id="d-body"></div>
+</aside>
+
+<script>
+/* ----------------------------------------------------------
+   Mock dataset — files the agent "touched" this session
+---------------------------------------------------------- */
+const FILES = [
+  { path:'src/renderer/panels/TouchedFilesPanel.tsx', status:'A', add:184, del:0,  edits:6, t:[2,6,11,18,33,41] },
+  { path:'src/renderer/stores/canvasStore.ts',        status:'M', add:47,  del:23, edits:5, t:[4,9,16,28,44] },
+  { path:'src/shared/ipc-channels.ts',                status:'M', add:12,  del:2,  edits:2, t:[5,30] },
+  { path:'src/shared/panels.ts',                       status:'M', add:9,   del:1,  edits:1, t:[7] },
+  { path:'src/main/git/diffWatcher.ts',                status:'A', add:96,  del:0,  edits:4, t:[12,20,27,39] },
+  { path:'src/renderer/canvas/CanvasNode.tsx',         status:'M', add:18,  del:31, edits:3, t:[14,25,36] },
+  { path:'src/renderer/lib/coordinates.ts',            status:'M', add:6,   del:4,  edits:1, t:[17] },
+  { path:'src/preload/index.ts',                       status:'M', add:8,   del:0,  edits:2, t:[19,34] },
+  { path:'src/renderer/styles/globals.css',            status:'M', add:24,  del:9,  edits:3, t:[22,31,42] },
+  { path:'src/renderer/panels/GitPanel.tsx',           status:'M', add:3,   del:14, edits:1, t:[24] },
+  { path:'src/shared/types.ts',                        status:'M', add:15,  del:5,  edits:2, t:[26,38] },
+  { path:'src/main/ipc/touchedFiles.ts',               status:'A', add:62,  del:0,  edits:3, t:[29,37,43] },
+  { path:'README.md',                                  status:'M', add:7,   del:0,  edits:1, t:[35] },
+  { path:'src/renderer/panels/FileExplorerPanel.tsx',  status:'D', add:0,   del:46, edits:1, t:[40] },
+];
+
+const STATUS = {
+  A: { color:'var(--git-added)',    label:'Added' },
+  M: { color:'var(--git-modified)', label:'Modified' },
+  D: { color:'var(--git-deleted)',  label:'Deleted' },
+  R: { color:'var(--git-renamed)',  label:'Renamed' },
+};
+
+const churn = f => f.add + f.del;
+const MAXCHURN = Math.max(...FILES.map(churn));
+const MAXT = 45; // session length (s)
+
+// Heat color ramp by intensity 0..1
+function heat(t){
+  const stops = [[42,39,35],[63,74,44],[94,122,51],[127,184,62],[167,232,75]];
+  const x = Math.min(1,Math.max(0,t)) * (stops.length-1);
+  const i = Math.floor(x), f = x-i;
+  const a = stops[i], b = stops[Math.min(stops.length-1,i+1)];
+  const c = a.map((v,k)=> Math.round(v + (b[k]-v)*f));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+function recencyColor(f){
+  const last = Math.max(...f.t)/MAXT;            // 0 old .. 1 fresh
+  return `hsl(${28 + last*0}, ${30+last*55}%, ${20+last*32}%)`;
+}
+function dirOf(p){ const i=p.lastIndexOf('/'); return i<0?'':p.slice(0,i); }
+function baseOf(p){ const i=p.lastIndexOf('/'); return i<0?p:p.slice(i+1); }
+
+let colorMode = 'churn';
+function tileColor(f){
+  if(colorMode==='status') return STATUS[f.status].color;
+  if(colorMode==='recency') return recencyColor(f);
+  return heat(churn(f)/MAXCHURN);
+}
+
+/* ---------- Synthetic per-file diff ---------- */
+function makeDiff(f){
+  const hunks = [];
+  const base = baseOf(f.path).replace(/\.[^.]+$/,'');
+  const n = f.status==='A' ? 2 : f.status==='D' ? 1 : Math.min(3, 1+Math.floor(f.edits/2));
+  let line = 12;
+  for(let h=0; h<n; h++){
+    const rows = [];
+    const ctx = ['  return state;','  const { nodes } = get();','  // sync touched files','export function '+base+'() {','  dispatch(update);'];
+    rows.push({type:'ctx', o:line, n:line, code: ctx[h%ctx.length]});
+    if(f.status!=='A'){
+      const dels = 1 + (h%2);
+      for(let d=0; d<dels; d++) rows.push({type:'del', o:line+1+d, code: ['  const old = legacyTouch();','  return prev;','  this.unused = true;','  emitter.off("change");'][(h+d)%4]});
+    }
+    if(f.status!=='D'){
+      const adds = 2 + (h%2);
+      for(let a=0; a<adds; a++) rows.push({type:'add', n:line+1+a, code: ['  const touched = collectTouched(diff);','  store.markFile(path, { add, del });','  emitter.emit("touched", payload);','  return { ...state, touched };','  watcher.on("change", onTouched);'][(h+a)%5]});
+    }
+    rows.push({type:'ctx', o:line+5, n:line+5, code:'}'});
+    hunks.push({ start: line, rows });
+    line += 30 + h*14;
+  }
+  return hunks;
+}
+
+/* ----------------------------------------------------------
+   Drawer
+---------------------------------------------------------- */
+const drawer = document.getElementById('drawer');
+const backdrop = document.getElementById('backdrop');
+function openFile(f){
+  const st = STATUS[f.status];
+  document.getElementById('d-badge').textContent = f.status;
+  document.getElementById('d-badge').style.background = st.color;
+  document.getElementById('d-path').innerHTML = `<span class="dir">${dirOf(f.path)}/</span>${baseOf(f.path)}`;
+  document.getElementById('d-add').textContent = '+'+f.add;
+  document.getElementById('d-del').textContent = '−'+f.del;
+  document.getElementById('d-edits').textContent = f.edits;
+
+  const body = document.getElementById('d-body');
+  let html = '';
+  makeDiff(f).forEach(h=>{
+    html += `<div class="hunk"><div class="hh">@@ −${h.start},6 +${h.start},8 @@ ${dirOf(f.path)}</div>`;
+    h.rows.forEach(r=>{
+      if(r.type==='ctx') html += `<div class="diffline"><span class="gut">${r.o}</span><span class="gut">${r.n}</span><span class="code"><span class="sign"> </span>${esc(r.code)}</span></div>`;
+      if(r.type==='add') html += `<div class="diffline add"><span class="gut"></span><span class="gut">${r.n}</span><span class="code"><span class="sign">+</span>${esc(r.code)}</span></div>`;
+      if(r.type==='del') html += `<div class="diffline del"><span class="gut">${r.o}</span><span class="gut"></span><span class="code"><span class="sign">−</span>${esc(r.code)}</span></div>`;
+    });
+    html += `</div>`;
+  });
+  // edit timeline mini
+  html += `<div class="timeline-mini"><div class="t">Edit timeline — ${f.edits} touches over this session</div>`;
+  f.t.forEach((tt,i)=>{
+    html += `<div class="tmrow"><span class="tdot" style="background:${heat((i+1)/f.t.length)}"></span> Edit ${i+1} · ${['inserted block','rewrote function','renamed symbol','adjusted imports','added handler','fixed types'][i%6]} <span class="tt">+${tt}s</span></div>`;
+  });
+  html += `</div>`;
+  body.innerHTML = html;
+
+  drawer.classList.add('open');
+  backdrop.classList.add('open');
+}
+function closeDrawer(){ drawer.classList.remove('open'); backdrop.classList.remove('open'); }
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+backdrop.addEventListener('click', closeDrawer);
+document.getElementById('d-close').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeDrawer(); });
+
+/* ----------------------------------------------------------
+   CONCEPT 1 — Treemap
+---------------------------------------------------------- */
+function renderTreemap(){
+  const el = document.getElementById('treemap');
+  el.innerHTML='';
+  const sorted = [...FILES].sort((a,b)=> churn(b)-churn(a));
+  const totalCols = 12;
+  sorted.forEach((f,idx)=>{
+    const c = churn(f);
+    const span = Math.max(2, Math.min(6, Math.round((c/MAXCHURN)*6)+1));
+    const rspan = c > MAXCHURN*0.55 ? 2 : 1;
+    const tile = document.createElement('div');
+    tile.className='tile';
+    tile.style.gridColumn = `span ${span}`;
+    tile.style.gridRow = `span ${rspan}`;
+    const bg = tileColor(f);
+    tile.style.background = `linear-gradient(150deg, ${bg}, ${shade(bg,-18)})`;
+    const fresh = Math.max(...f.t) > MAXT-6;
+    tile.innerHTML = `
+      ${fresh?'<span class="pulse"></span>':''}
+      <div>
+        <div class="fname">${baseOf(f.path)}</div>
+        <div class="fdir">${dirOf(f.path)}</div>
+      </div>
+      <div class="fchurn">+${f.add} −${f.del}</div>`;
+    tile.addEventListener('click', ()=>openFile(f));
+    el.appendChild(tile);
+  });
+}
+function shade(rgb,amt){
+  const m = rgb.match(/\d+/g).map(Number);
+  return `rgb(${m.map(v=>Math.max(0,Math.min(255,v+amt))).join(',')})`;
+}
+
+/* ----------------------------------------------------------
+   CONCEPT 2 — Activity river
+---------------------------------------------------------- */
+function renderTimeline(){
+  const axis = document.getElementById('tlaxis');
+  axis.innerHTML='';
+  for(let s=0;s<=MAXT;s+=9){ const sp=document.createElement('span'); sp.textContent = s+'s'; axis.appendChild(sp); }
+  const rows = document.getElementById('tlrows');
+  rows.innerHTML='';
+  const ordered = [...FILES].sort((a,b)=> Math.min(...a.t)-Math.min(...b.t));
+  ordered.forEach(f=>{
+    const row=document.createElement('div'); row.className='tl-row';
+    const st=STATUS[f.status];
+    row.innerHTML = `<div class="tl-label"><span class="badge" style="background:${st.color}">${f.status}</span><span class="nm" title="${f.path}">${baseOf(f.path)}</span></div><div class="tl-track"></div>`;
+    const track = row.querySelector('.tl-track');
+    // link line spanning first..last
+    const x0 = Math.min(...f.t)/MAXT*100, x1=Math.max(...f.t)/MAXT*100;
+    const link=document.createElement('div'); link.className='tl-link';
+    link.style.left=x0+'%'; link.style.width=(x1-x0)+'%'; link.style.background=st.color;
+    track.appendChild(link);
+    f.t.forEach((tt,i)=>{
+      const d=document.createElement('div'); d.className='tl-dot';
+      const sz = 7 + (i===0?3:0);
+      d.style.width=sz+'px'; d.style.height=sz+'px';
+      d.style.left=(tt/MAXT*100)+'%';
+      d.style.background=st.color;
+      d.style.boxShadow=`0 0 8px ${st.color}66`;
+      d.title=`${baseOf(f.path)} · edit ${i+1} @ +${tt}s`;
+      d.addEventListener('click', ()=>openFile(f));
+      track.appendChild(d);
+    });
+    row.querySelector('.tl-label').addEventListener('click', ()=>openFile(f));
+    rows.appendChild(row);
+  });
+}
+
+/* ----------------------------------------------------------
+   CONCEPT 3 — Tree + heat bars
+---------------------------------------------------------- */
+function renderTree(){
+  const el=document.getElementById('tree'); el.innerHTML='';
+  // group by top-ish directory
+  const groups={};
+  FILES.forEach(f=>{ const d=dirOf(f.path)||'(root)'; (groups[d]=groups[d]||[]).push(f); });
+  Object.keys(groups).sort().forEach(dir=>{
+    const gfiles=groups[dir];
+    const gadd=gfiles.reduce((s,f)=>s+f.add,0), gdel=gfiles.reduce((s,f)=>s+f.del,0);
+    const gc=gadd+gdel;
+    const drow=document.createElement('div'); drow.className='tnode dir';
+    drow.innerHTML=`
+      <div class="name"><span class="chevron">▾</span>
+        <span class="folder-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg></span>
+        <span class="label">${dir}</span><span class="tw">${gfiles.length} files</span></div>
+      <div class="heatbar"><span class="fill" style="width:${Math.round(gc/MAXCHURN*100/1.2)}%;background:${heat(gc/(MAXCHURN*1.6))}"></span></div>
+      <div class="nums"><span class="add">+${gadd}</span> <span class="del">−${gdel}</span></div>`;
+    el.appendChild(drow);
+    gfiles.sort((a,b)=>churn(b)-churn(a)).forEach(f=>{
+      const st=STATUS[f.status]; const c=churn(f);
+      const row=document.createElement('div'); row.className='tnode file';
+      row.innerHTML=`
+        <div class="name"><span class="indent" style="width:18px"></span>
+          <span class="badge" style="background:${st.color}">${f.status}</span>
+          <span style="color:${f.status==='D'?'var(--text-muted)':'var(--text-primary)'};${f.status==='D'?'text-decoration:line-through':''}">${baseOf(f.path)}</span>
+          <span class="tw">·${f.edits}×</span></div>
+        <div class="heatbar"><span class="fill" style="width:${Math.max(8,Math.round(c/MAXCHURN*100))}%;background:${heat(c/MAXCHURN)}"></span></div>
+        <div class="nums"><span class="add">+${f.add}</span> <span class="del">−${f.del}</span></div>`;
+      row.addEventListener('click', ()=>openFile(f));
+      el.appendChild(row);
+    });
+  });
+}
+
+/* ----------------------------------------------------------
+   CONCEPT 4 — Bubble clusters
+---------------------------------------------------------- */
+function renderClusters(){
+  const el=document.getElementById('clusters'); el.innerHTML='';
+  const groups={};
+  FILES.forEach(f=>{ const d=dirOf(f.path)||'(root)'; (groups[d]=groups[d]||[]).push(f); });
+  Object.keys(groups).sort((a,b)=> groups[b].length-groups[a].length).forEach(dir=>{
+    const gfiles=groups[dir];
+    const cl=document.createElement('div'); cl.className='cluster';
+    cl.innerHTML=`<div class="cl-name">${dir} <span class="ct">· ${gfiles.length}</span></div><div class="bubbles"></div>`;
+    const wrap=cl.querySelector('.bubbles');
+    gfiles.forEach(f=>{
+      const c=churn(f);
+      const size = 34 + Math.round(c/MAXCHURN*56);
+      const st=STATUS[f.status];
+      const b=document.createElement('div'); b.className='bubble';
+      const fresh = Math.max(...f.t) > MAXT-6;
+      if(fresh) b.classList.add('active-edit');
+      b.style.width=size+'px'; b.style.height=size+'px';
+      b.style.background=`radial-gradient(circle at 35% 30%, ${shadeVar(st.color,40)}, ${st.color})`;
+      b.innerHTML=`<span class="ring"></span><div class="bn" title="${f.path}">${baseOf(f.path).replace(/\.[^.]+$/,'')}</div>${size>52?`<div class="bc">+${f.add}/−${f.del}</div>`:''}`;
+      b.addEventListener('click', ()=>openFile(f));
+      wrap.appendChild(b);
+    });
+    el.appendChild(cl);
+  });
+}
+function shadeVar(v,amt){
+  const map={'var(--git-added)':[77,217,100],'var(--git-modified)':[255,159,10],'var(--git-deleted)':[255,69,58],'var(--git-renamed)':[191,90,242]};
+  const c=map[v]||[120,120,120];
+  return `rgb(${c.map(x=>Math.min(255,x+amt)).join(',')})`;
+}
+
+/* ----------------------------------------------------------
+   CONCEPT 5 — Diff minimap deck
+---------------------------------------------------------- */
+function renderDeck(){
+  const el=document.getElementById('deck'); el.innerHTML='';
+  [...FILES].sort((a,b)=>churn(b)-churn(a)).forEach(f=>{
+    const st=STATUS[f.status]; const c=churn(f);
+    const card=document.createElement('div'); card.className='card';
+    // minimap rows
+    const rows=24; let mini='';
+    const addRatio=f.add/(c||1);
+    for(let i=0;i<rows;i++){
+      const r=Math.random? null:null; // no random (deterministic): distribute by index
+      const pos=i/rows;
+      let cls='';
+      // cluster changes in pseudo-hunks based on edit count
+      const band = (i*f.edits)%rows;
+      if(pos<addRatio*0.8 && i%3!==0) cls='a';
+      else if(pos>0.7 && f.del>0 && i%2===0) cls='d';
+      else if(i%5===0 && c>20) cls='m';
+      mini+=`<i class="${cls}"></i>`;
+    }
+    const apct=Math.round(addRatio*100), dpct=100-apct;
+    card.innerHTML=`
+      <div class="chead"><span class="badge" style="background:${st.color}">${f.status}</span><span class="nm" title="${f.path}">${baseOf(f.path)}</span></div>
+      <div class="cbody">
+        <div class="minimap">${mini}</div>
+        <div class="csum">
+          <div class="ln add">+${f.add}</div>
+          <div class="ln del">−${f.del}</div>
+          <div class="barpair"><span class="pa" style="width:${apct}%"></span><span class="pd" style="width:${dpct}%"></span></div>
+        </div>
+      </div>
+      <div class="cfoot"><span>${dirOf(f.path).split('/').slice(-1)[0]||'root'}</span><span>${f.edits} edits</span></div>`;
+    card.addEventListener('click', ()=>openFile(f));
+    el.appendChild(card);
+  });
+}
+
+/* ----------------------------------------------------------
+   Tabs + color mode wiring
+---------------------------------------------------------- */
+document.getElementById('tabs').addEventListener('click', e=>{
+  const t=e.target.closest('.tab'); if(!t) return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active', x===t));
+  const c=t.dataset.c;
+  document.querySelectorAll('.concept').forEach(x=>x.classList.toggle('active', x.dataset.c===c));
+});
+
+const legendEl=document.getElementById('legend');
+document.getElementById('colormode').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  colorMode=b.dataset.m;
+  document.querySelectorAll('#colormode button').forEach(x=>x.classList.toggle('on', x===b));
+  if(colorMode==='status'){
+    legendEl.innerHTML = `<span class="gi"><span class="sw" style="background:var(--git-added)"></span>Added</span><span class="gi"><span class="sw" style="background:var(--git-modified)"></span>Modified</span><span class="gi"><span class="sw" style="background:var(--git-deleted)"></span>Deleted</span>`;
+  } else if(colorMode==='recency'){
+    legendEl.innerHTML = `<span>older</span><span class="scale"><i style="background:#2a2723"></i><i style="background:#4a3f2a"></i><i style="background:#7a5a2a"></i><i style="background:#b8842e"></i><i style="background:#ff9f0a"></i></span><span>just now</span>`;
+  } else {
+    legendEl.innerHTML = `<span>less</span><span class="scale"><i style="background:#2a2723"></i><i style="background:#3f4a2c"></i><i style="background:#5e7a33"></i><i style="background:#7fb83e"></i><i style="background:#a7e84b"></i></span><span>more</span>`;
+  }
+  renderTreemap(); renderTree();
+});
+
+// initial render
+renderTreemap();
+renderTimeline();
+renderTree();
+renderClusters();
+renderDeck();
+</script>
+</body>
+</html>
