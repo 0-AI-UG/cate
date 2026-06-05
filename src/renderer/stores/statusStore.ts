@@ -36,7 +36,30 @@ interface StatusStoreState {
   workspaces: Record<string, WorkspaceStatusState>
   /** Timers for auto-clearing commandFinished states. */
   _clearTimers: Record<string, ReturnType<typeof setTimeout>>
-  terminalWorkspaceMap: Record<string, string>
+}
+
+// -----------------------------------------------------------------------------
+// terminal->workspace resolution
+//
+// statusStore no longer keeps a parallel ptyId->workspaceId map; terminal
+// identity (panelId<->ptyId<->workspaceId) is owned by terminalRegistry. To
+// avoid an import cycle (terminalRegistry imports statusStore), the registry
+// installs its resolver here. A fallback covers the rare window before the
+// resolver is wired (e.g. early tests).
+// -----------------------------------------------------------------------------
+
+let workspaceResolver: (ptyId: string) => string | undefined = () => undefined
+
+/** Install the ptyId->workspaceId resolver (called once by terminalRegistry). */
+export function setTerminalWorkspaceResolver(
+  resolver: (ptyId: string) => string | undefined,
+): void {
+  workspaceResolver = resolver
+}
+
+/** Resolve the owning workspace for a ptyId via the registry-owned bimap. */
+export function workspaceIdForTerminal(ptyId: string): string | undefined {
+  return workspaceResolver(ptyId)
 }
 
 interface StatusStoreActions {
@@ -114,7 +137,6 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
   // --- State ---
   workspaces: {},
   _clearTimers: {},
-  terminalWorkspaceMap: {},
 
   // --- Actions ---
 
@@ -356,9 +378,10 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
   },
 
   registerTerminal(terminalId, workspaceId) {
-    set((state) => ({
-      terminalWorkspaceMap: { ...state.terminalWorkspaceMap, [terminalId]: workspaceId },
-    }))
+    // Terminal->workspace identity is owned by terminalRegistry's bimap now;
+    // statusStore only ensures the per-workspace status bucket exists so the
+    // ptyId-keyed sub-maps (activity/agent/ports/cwd) have somewhere to land.
+    get().ensureWorkspace(workspaceId)
   },
 
   unregisterTerminal(terminalId) {
@@ -370,10 +393,11 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
     void import('../lib/agent/agentScreenDetector').then(({ forgetAgentTracker }) => {
       forgetAgentTracker(terminalId)
     })
+    // Resolve the workspace via the registry-owned bimap BEFORE the registry
+    // entry is torn down. (dispose() calls unregisterTerminal before deleting
+    // the entry, so the resolver still answers here.)
+    const workspaceId = workspaceResolver(terminalId)
     set((state) => {
-      const { [terminalId]: _removed, ...remainingMap } = state.terminalWorkspaceMap
-
-      const workspaceId = state.terminalWorkspaceMap[terminalId]
       const updatedWorkspaces = { ...state.workspaces }
       if (workspaceId && updatedWorkspaces[workspaceId]) {
         const ws = updatedWorkspaces[workspaceId]
@@ -393,18 +417,14 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
           agentPresent: remainingAgentPresent,
         }
       }
-
-      return {
-        terminalWorkspaceMap: remainingMap,
-        workspaces: updatedWorkspaces,
-      }
+      return { workspaces: updatedWorkspaces }
     })
   },
 
   setTerminalPorts(terminalId, ports) {
+    const workspaceId = workspaceResolver(terminalId)
+    if (!workspaceId) return
     set((state) => {
-      const workspaceId = state.terminalWorkspaceMap[terminalId]
-      if (!workspaceId) return state
       const ws = state.workspaces[workspaceId] ?? emptyWorkspaceStatus()
       return {
         workspaces: {
@@ -419,9 +439,9 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
   },
 
   setTerminalCwd(terminalId, cwd) {
+    const workspaceId = workspaceResolver(terminalId)
+    if (!workspaceId) return
     set((state) => {
-      const workspaceId = state.terminalWorkspaceMap[terminalId]
-      if (!workspaceId) return state
       const ws = state.workspaces[workspaceId] ?? emptyWorkspaceStatus()
       return {
         workspaces: {

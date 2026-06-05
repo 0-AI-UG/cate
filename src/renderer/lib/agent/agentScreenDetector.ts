@@ -21,18 +21,23 @@
 // presence poll can't keep resetting it.
 // =============================================================================
 
-import { useStatusStore } from '../../stores/statusStore'
+import { useStatusStore, workspaceIdForTerminal } from '../../stores/statusStore'
 import { sendOsNotification } from '../notifications/osNotificationSend'
 import { resolveAgentState, WAITING_SETTLE_MS, BODY_SPINNER_TIMEOUT_MS } from './agentScreenDetectorLogic'
 import type { AgentState } from '../../../shared/types'
 
+// The Tracker holds ONLY spinner/timer/FSM-edge state. The agent name and
+// presence are owned by statusStore (the single home); the tracker reads them
+// from there at commit time rather than caching a second copy that two writers
+// could clobber on the same 1 Hz tick. `present/wasPresent/state` remain here
+// because they are load-bearing FSM edge-detection memory (e.g. resolveAgentState
+// and the running->waiting settle gate).
 interface Tracker {
   present: boolean
   wasPresent: boolean
   titleSpinner: boolean
   bodySpinner: boolean
   state: AgentState
-  agentName: string | null
   /** Pending running→waitingForInput settle, or null when not counting down. */
   settleTimer: ReturnType<typeof setTimeout> | null
   /** Expiry for the body spinner — refreshed on each braille frame. */
@@ -51,7 +56,6 @@ function trackerFor(terminalId: string): Tracker {
       titleSpinner: false,
       bodySpinner: false,
       state: 'notRunning',
-      agentName: null,
       settleTimer: null,
       bodyTimer: null,
     }
@@ -76,11 +80,13 @@ function clearTimers(t: Tracker): void {
 }
 
 function workspaceFor(terminalId: string): string | undefined {
-  return useStatusStore.getState().terminalWorkspaceMap[terminalId]
+  return workspaceIdForTerminal(terminalId)
 }
 
 /** Apply a resolved state to the store + mirror it to other windows. `notify`
- *  fires the OS "needs input" notification; only the settle timer passes true. */
+ *  fires the OS "needs input" notification; only the settle timer passes true.
+ *  The agent name is read from statusStore (its single home) at commit time —
+ *  the tracker no longer caches a parallel copy. */
 function commit(terminalId: string, state: AgentState, notify: boolean): void {
   const t = trackers.get(terminalId)
   if (!t || t.state === state) return
@@ -89,11 +95,12 @@ function commit(terminalId: string, state: AgentState, notify: boolean): void {
 
   t.state = state
   const status = useStatusStore.getState()
-  status.setAgentState(workspaceId, terminalId, state, t.agentName)
+  const agentName = status.workspaces[workspaceId]?.agentName[terminalId] ?? null
+  status.setAgentState(workspaceId, terminalId, state, agentName)
   window.electronAPI?.shellReportAgentScreenState?.(terminalId, state)
 
   if (notify && state === 'waitingForInput') {
-    const displayName = t.agentName ?? 'Agent'
+    const displayName = agentName ?? 'Agent'
     sendOsNotification({
       title: `${displayName} needs input`,
       body: `${displayName} is waiting for your response.`,
@@ -160,14 +167,11 @@ export function noteAgentSpinnerByte(terminalId: string): void {
   recompute(terminalId)
 }
 
-/** Main's process scan reported whether the agent CLI is present. */
-export function noteAgentPresence(
-  terminalId: string,
-  present: boolean,
-  agentName: string | null,
-): void {
+/** Main's process scan reported whether the agent CLI is present. The agent
+ *  name is written to statusStore by the caller (useProcessMonitor); the
+ *  tracker only carries the present/wasPresent FSM edges. */
+export function noteAgentPresence(terminalId: string, present: boolean): void {
   const t = trackerFor(terminalId)
-  if (agentName != null) t.agentName = agentName
   t.wasPresent = t.present
   t.present = present
   recompute(terminalId)
@@ -192,7 +196,7 @@ export function stopAgentScreenDetector(): void {
 
 export function applyRemoteAgentScreenState(terminalId: string, state: AgentState): void {
   const status = useStatusStore.getState()
-  const workspaceId = status.terminalWorkspaceMap[terminalId]
+  const workspaceId = workspaceIdForTerminal(terminalId)
   if (!workspaceId) return
   const agentName = status.workspaces[workspaceId]?.agentName[terminalId] ?? null
   status.setAgentState(workspaceId, terminalId, state, agentName)

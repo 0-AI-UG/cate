@@ -91,5 +91,7 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
     }
 
     return joined
-  }, [snapshot.revision, snapshot.worktrees, meta])
+    // snapshot.worktrees identity changes per applied snapshot (see
+    // gitStatusStore), so it captures every refresh without needing revision.
+  }, [snapshot.worktrees, meta])
 }
