@@ -93,8 +93,11 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
 
   function load(): T {
     if (loaded) return current
-    const p = filePath()
     try {
+      // filePath() is inside the try so a context without electron's `app`
+      // (e.g. a non-electron unit test that reads a setting transitively)
+      // degrades to defaults instead of throwing.
+      const p = filePath()
       if (fsSync.existsSync(p)) {
         const raw = fsSync.readFileSync(p, 'utf-8')
         try {
