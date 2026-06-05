@@ -54,6 +54,15 @@
       "esbuild"
     ]
   },
+  "trustedDependencies": [
+    "@google/genai",
+    "electron",
+    "esbuild",
+    "koffi",
+    "node-pty",
+    "protobufjs",
+    "sharp"
+  ],
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.75.4",
     "@earendil-works/pi-ai": "^0.75.5",
