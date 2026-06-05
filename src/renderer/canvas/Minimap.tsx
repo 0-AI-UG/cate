@@ -4,7 +4,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
-import { useWorkspacePanels } from '../stores/appStore'
+import { useWorkspacePanels, useAppStore } from '../stores/appStore'
+import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { useUIStateStore } from '../stores/uiStateStore'
 
 // Default minimap size lives in DEFAULT_UI_STATE (shared/types); the floating
@@ -52,6 +53,10 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
     (a, b) => a.width === b.width && a.height === b.height,
   )
   const panels = useWorkspacePanels()
+  // Agent logos are keyed by panelId, scoped to the selected workspace — same
+  // scope `useWorkspacePanels()` reads from, so they line up with the nodes.
+  const workspaceId = useAppStore((s) => s.selectedWorkspaceId)
+  const agentInfoByPanel = useAgentInfoByPanel(workspaceId)
   const canvasApi = useCanvasStoreApi()
   const minimapRef = useRef<HTMLDivElement>(null)
   // Ref to the viewport indicator div — updated imperatively on pan
@@ -324,6 +329,11 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
       {nodeList.map((node) => {
         const panel = panels?.[node.panelId]
         const type = panel?.type || 'terminal'
+        const rectW = Math.max(node.size.width * scale, 2)
+        const rectH = Math.max(node.size.height * scale, 2)
+        // Show the agent logo when an agent is open in this panel's terminal.
+        const agentLogo = agentInfoByPanel[node.panelId]?.logo ?? null
+        const iconSize = Math.min(rectW, rectH) - 2
         return (
           <div
             key={node.id}
@@ -336,14 +346,32 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
               position: 'absolute',
               left: toMiniX(node.origin.x),
               top: toMiniY(node.origin.y),
-              width: Math.max(node.size.width * scale, 2),
-              height: Math.max(node.size.height * scale, 2),
+              width: rectW,
+              height: rectH,
               backgroundColor: themedPanelColor(type),
               borderRadius: 1,
               opacity: 1,
               cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
             }}
-          />
+          >
+            {agentLogo && iconSize >= 6 && (
+              <img
+                src={agentLogo}
+                alt=""
+                draggable={false}
+                style={{
+                  width: Math.min(iconSize, 16),
+                  height: Math.min(iconSize, 16),
+                  objectFit: 'contain',
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
+          </div>
         )
       })}
 
