@@ -436,12 +436,18 @@ export interface WorkspaceState {
   rootPathError?: string | null
   isRootPathPending?: boolean
   panels: Record<string, PanelState>
-  // Primary canvas state (current behavior)
+  // PERSISTENCE-ONLY projection of the live per-canvas CanvasStore. The live
+  // store is the single in-memory source of truth; the UI must NOT read these
+  // directly — go through getWorkspaceCanvasSnapshot(workspaceId), which reads
+  // the live store and falls back to this projection only for a never-mounted
+  // (cold-start) workspace. No longer hand-synced on switch (stores survive a
+  // switch); populated by restore/init for the cold-start path.
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
-  // Dock layout state — saved/restored per workspace on switch
+  // PERSISTENCE-ONLY projection of the live per-workspace DockStore. Read via
+  // getWorkspaceDockSnapshot(workspaceId), never directly.
   dockState?: { zones: WindowDockState; locations: Record<string, PanelLocation> }
   // Multi-canvas support (Phase 2+ — unused for now)
   canvases?: Record<string, CanvasSnapshot>

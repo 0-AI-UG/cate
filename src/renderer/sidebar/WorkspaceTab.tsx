@@ -6,6 +6,7 @@ import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
+import { getWorkspaceCanvasSnapshot } from '../lib/workspace/canvasAccess'
 import { revealPanel } from '../lib/workspace/panelReveal'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
@@ -295,23 +296,25 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return ws?.worktrees ?? workspace.worktrees ?? []
   }))
 
-  // Set of panel ids living on this workspace's canvases. Union of:
-  //   (a) live canvas stores (covers the active workspace + any other
-  //       workspace whose canvas was mounted earlier this session — those
-  //       stores stay alive in the registry even after switching away), and
-  //   (b) the workspace's persisted canvasNodes (cold-start fallback before
-  //       any canvas has mounted in this session).
-  // Used regardless of isSelected so active and non-active workspaces apply
-  // the same classification rule.
+  // Set of panel ids living on this workspace's canvases. The reactive hook
+  // covers every live canvas store (the active workspace + any other whose
+  // canvas mounted earlier this session — those stores stay alive in the
+  // registry after switching away). The resolver fills the cold-start gap for a
+  // workspace whose canvas was never mounted (returns its persisted projection).
+  // Used regardless of isSelected so active and non-active workspaces apply the
+  // same classification rule.
   const liveCanvasPanelIds = useWorkspaceCanvasPanelIds(workspace.id)
   const canvasPanelIds = useMemo(() => {
     const ids = new Set<string>(liveCanvasPanelIds)
-    for (const node of Object.values(workspace.canvasNodes ?? {})) {
+    const snapshot = getWorkspaceCanvasSnapshot(workspace.id)
+    for (const node of Object.values(snapshot?.nodes ?? {})) {
       collectPanelIdsFromDockLayout(node.dockLayout, ids)
       if (node.panelId) ids.add(node.panelId)
     }
     return ids
-  }, [liveCanvasPanelIds, workspace.canvasNodes])
+    // liveCanvasPanelIds changes whenever a live store mutates, which re-runs the
+    // resolver too; the cold-start projection is otherwise static.
+  }, [liveCanvasPanelIds, workspace.id])
 
   // Ports in the status store are keyed by ptyId, but panel rows are keyed by
   // panelId. Translate via terminalRegistry so the indicators on the workspace

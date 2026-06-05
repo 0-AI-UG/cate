@@ -17,7 +17,15 @@
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
 import type { CanvasOperations } from '../canvas/canvasBridge'
-import type { DockLayoutNode } from '../../../shared/types'
+import type {
+  DockLayoutNode,
+  CanvasNodeId,
+  CanvasNodeState,
+  CanvasRegion,
+  Point,
+  PanelLocation,
+  WindowDockState,
+} from '../../../shared/types'
 import type { PanelPlacement } from '../../stores/appStore'
 import { ALL_ZONES } from '../../../shared/types'
 import { useAppStore } from '../../stores/appStore'
@@ -166,8 +174,7 @@ function computeWorkspaceCanvasPanelId(workspaceId: string): string | null {
 
   // The workspace's own live dock store is authoritative once created; before
   // that (deferred / never-activated) fall back to the persisted snapshot.
-  const liveDock = getWorkspaceDockStore(workspaceId)
-  const dockSnapshot = liveDock ? liveDock.getState().getSnapshot() : ws.dockState
+  const dockSnapshot = getWorkspaceDockSnapshot(workspaceId)
 
   if (dockSnapshot) {
     const panelIds = new Set<string>()
@@ -214,4 +221,57 @@ export function getWorkspaceCanvasStore(workspaceId: string): StoreApi<CanvasSto
 export function getWorkspaceCanvasOps(workspaceId: string): CanvasOperations | null {
   const canvasPanelId = getWorkspaceCanvasPanelId(workspaceId)
   return canvasPanelId ? ensureCanvasOpsForPanel(canvasPanelId) : null
+}
+
+// -----------------------------------------------------------------------------
+// Live-store snapshot resolvers (Fix 3) — the live per-canvas CanvasStore and
+// per-workspace DockStore are the single in-memory source of truth. The
+// WorkspaceState.canvasNodes/regions/zoom/viewport and dockState fields are
+// persistence-only projections. These resolvers read the live store when it is
+// mounted, falling back to the persisted projection for a never-mounted
+// (background / cold-start) workspace so save still round-trips.
+// -----------------------------------------------------------------------------
+
+export interface WorkspaceCanvasSnapshot {
+  nodes: Record<CanvasNodeId, CanvasNodeState>
+  regions: Record<string, CanvasRegion>
+  zoomLevel: number
+  viewportOffset: Point
+}
+
+/** Live canvas snapshot for a workspace's center canvas, or the persisted
+ *  projection if the canvas has never been mounted this session. */
+export function getWorkspaceCanvasSnapshot(workspaceId: string): WorkspaceCanvasSnapshot | null {
+  const canvasPanelId = getWorkspaceCanvasPanelId(workspaceId)
+  // Only read a LIVE store — don't create one via ensureCanvasOpsForPanel, or a
+  // never-mounted workspace would serialize an empty `{}` over its saved state.
+  const liveOps = canvasPanelId ? getCanvasOpsById(canvasPanelId) : null
+  if (liveOps) {
+    const s = liveOps.storeApi.getState()
+    return {
+      nodes: { ...s.nodes },
+      regions: { ...s.regions },
+      zoomLevel: s.zoomLevel,
+      viewportOffset: { ...s.viewportOffset },
+    }
+  }
+  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  if (!ws) return null
+  return {
+    nodes: { ...(ws.canvasNodes ?? {}) },
+    regions: { ...(ws.regions ?? {}) },
+    zoomLevel: ws.zoomLevel,
+    viewportOffset: ws.viewportOffset,
+  }
+}
+
+/** Live dock snapshot for a workspace, or the persisted projection if the dock
+ *  store has never been activated this session. */
+export function getWorkspaceDockSnapshot(
+  workspaceId: string,
+): { zones: WindowDockState; locations: Record<string, PanelLocation> } | undefined {
+  const liveDock = getWorkspaceDockStore(workspaceId)
+  if (liveDock) return liveDock.getState().getSnapshot()
+  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  return ws?.dockState
 }

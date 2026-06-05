@@ -11,10 +11,11 @@ import {
   getWorkspaceCanvasPanelId,
 } from '../../stores/appStore'
 import { setActivePanel } from '../activePanel'
+import { getOrCreateWorkspaceDockStore } from './dockRegistry'
 import {
-  getOrCreateWorkspaceDockStore,
-  getWorkspaceDockStore,
-} from './dockRegistry'
+  getWorkspaceCanvasSnapshot,
+  getWorkspaceDockSnapshot,
+} from './canvasAccess'
 import { deferredSnapshots, setDeferredRestoreHandler } from './deferredRestore'
 import type { StoreApi } from 'zustand'
 import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
@@ -74,9 +75,8 @@ export const terminalRestoreData = new Map<string, { cwd?: string; replayFromId?
 export { deferredSnapshots }
 
 // Last serialized session payload — used to skip disk writes when nothing
-// actually changed. saveSession() itself mutates the store via
-// syncCanvasToWorkspace, which re-fires the auto-save subscriptions; without
-// this guard those phantom changes produce a save loop every ~1s.
+// actually changed, so the periodic auto-save doesn't rewrite an identical file
+// every ~1s.
 const lastSerializedByRoot = new Map<string, string>()
 // Same idea for the global sidebar arrangement: skip the IPC + electron-store
 // write when order/active-workspace haven't changed since the last save.
@@ -211,13 +211,6 @@ function buildSessionFile(
 // -----------------------------------------------------------------------------
 
 export async function saveSession(): Promise<void> {
-  const appState = useAppStore.getState()
-
-  // Sync current canvas state back to the selected workspace before saving
-  // After this call, workspace.canvasNodes/regions/zoom/viewport are up to date
-  appState.syncCanvasToWorkspace(appState.selectedWorkspaceId)
-
-  // Re-read app state after sync (syncCanvasToWorkspace updates workspace data)
   const updatedState = useAppStore.getState()
 
   const snapshots: SessionSnapshot[] = []
@@ -237,9 +230,13 @@ export async function saveSession(): Promise<void> {
     }
 
     const isSelected = workspace.id === updatedState.selectedWorkspaceId
-    // After syncCanvasToWorkspace, workspace data is always up to date
-    const nodes = workspace.canvasNodes
-    const regions = workspace.regions
+    // Serialize straight from the live canvas store via the resolver — the live
+    // per-canvas store is the single source of truth and survives switch-away,
+    // so no syncCanvasToWorkspace pre-pass is needed. Falls back to the persisted
+    // projection for a workspace whose canvas was never mounted this session.
+    const canvasSnapshot = getWorkspaceCanvasSnapshot(workspace.id)
+    const nodes = canvasSnapshot?.nodes ?? {}
+    const regions = canvasSnapshot?.regions ?? {}
 
     const nodeSnapshots: NodeSnapshot[] = Object.values(nodes).map((node) => {
       const panel = workspace.panels[node.panelId]
@@ -312,8 +309,7 @@ export async function saveSession(): Promise<void> {
 
     // Capture dock state from the workspace's OWN dock store if it has been
     // activated; otherwise from its last-saved snapshot (never-activated).
-    const liveDock = getWorkspaceDockStore(workspace.id)
-    const dockSnapshot = liveDock ? liveDock.getState().getSnapshot() : workspace.dockState ?? undefined
+    const dockSnapshot = getWorkspaceDockSnapshot(workspace.id)
 
     // Collect panels that live in dock zones (not on the canvas).
     // These are panels like canvas that are referenced by the dock layout
@@ -337,8 +333,8 @@ export async function saveSession(): Promise<void> {
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       rootPath: workspace.rootPath || null,
-      zoomLevel: workspace.zoomLevel,
-      viewportOffset: workspace.viewportOffset,
+      zoomLevel: canvasSnapshot?.zoomLevel ?? workspace.zoomLevel,
+      viewportOffset: canvasSnapshot?.viewportOffset ?? workspace.viewportOffset,
       nodes: nodeSnapshots,
       regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
       dockState: dockSnapshot,

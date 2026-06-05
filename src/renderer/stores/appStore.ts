@@ -26,14 +26,12 @@ import type {
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types'
 import { ACCENT_COLORS } from '../../shared/colors'
 import type { StoreApi } from 'zustand'
-import { shouldPreserveExistingCanvas } from './canvasSyncGuard'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { useSettingsStore } from './settingsStore'
 import type { CanvasOperations } from '../lib/canvas/canvasBridge'
 import { releaseCanvasStoreForPanel } from './canvasStore'
 import {
   getOrCreateWorkspaceDockStore,
-  getWorkspaceDockStore,
   releaseWorkspaceDockStore,
 } from '../lib/workspace/dockRegistry'
 import {
@@ -276,9 +274,6 @@ interface AppStoreActions {
   getWorkspace: (id: string) => WorkspaceState | undefined
   selectedWorkspace: () => WorkspaceState | undefined
 
-  // Sync canvas state snapshot back into workspace (call before switching)
-  syncCanvasToWorkspace: (workspaceId: string) => void
-
   // Workspace operations
   setWorkspaceRootPath: (wsId: string, rootPath: string) => Promise<boolean>
   connectRemoteWorkspace: (wsId: string, spec: RemoteConnectSpec) => Promise<boolean>
@@ -513,10 +508,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return
     }
 
-    // Snapshot the outgoing workspace's live stores back into its persisted
-    // fields so it round-trips through save/restore. Each workspace owns its
-    // dock + canvas stores, so nothing is ever copied between workspaces.
-    get().syncCanvasToWorkspace(state.selectedWorkspaceId)
+    // No snapshot-back is needed on switch-away: each workspace owns its dock +
+    // canvas stores and those stores SURVIVE a switch (they're released only on
+    // close/remove). The live stores stay the source of truth and the save path
+    // serializes straight from them via the canvasAccess resolvers.
 
     // Discard outgoing workspace if it was never initialized (no folder
     // picked, not currently picking one). Keeps stray "Add Workspace" rows
@@ -931,37 +926,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   selectedWorkspace() {
     return get().workspaces.find((w) => w.id === get().selectedWorkspaceId)
-  },
-
-  syncCanvasToWorkspace(workspaceId) {
-    const canvasStore = getWorkspaceCanvasStore(workspaceId)
-    const canvasState = canvasStore?.getState()
-    if (!canvasState) return
-
-    // Also snapshot this workspace's OWN dock state so it's saved per workspace.
-    const liveDock = getWorkspaceDockStore(workspaceId)
-    const dockSnapshot = liveDock?.getState().getSnapshot()
-
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        if (shouldPreserveExistingCanvas(
-          Object.keys(canvasState.nodes).length,
-          Object.keys(ws.canvasNodes ?? {}).length,
-        )) {
-          // Keep nodes/regions/viewport intact; only refresh dock state.
-          return { ...ws, dockState: dockSnapshot ?? ws.dockState }
-        }
-        return {
-          ...ws,
-          canvasNodes: { ...canvasState.nodes },
-          regions: { ...canvasState.regions },
-          viewportOffset: { ...canvasState.viewportOffset },
-          zoomLevel: canvasState.zoomLevel,
-          dockState: dockSnapshot ?? ws.dockState,
-        }
-      }),
-    }))
   },
 
   setWorkspaceRootPath(wsId, rootPath) {
