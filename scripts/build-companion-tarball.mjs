@@ -31,7 +31,7 @@
 // (e.g. a Mac) for local end-to-end testing before CI exists.
 // =============================================================================
 
-import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
@@ -119,7 +119,15 @@ if (missing.length) throw new Error(`[companion] incomplete stage for ${targetAr
 // com.apple.provenance xattr that otherwise makes GNU tar warn on extraction
 // on the Ubuntu server). Supported by both bsdtar and GNU tar. Basename + relative
 // -C (cwd = dist) keep Windows drive letters out of tar's path args — see `fwd`.
-execFileSync('tar', ['--no-xattrs', '-czf', path.basename(outTar), '-C', fwd(dist, stageDir), '.'], { stdio: 'inherit', cwd: dist })
+//
+// Write to a temp file then atomically rename into place. The app extracts this
+// exact tarball (dist-companion/) for the LOCAL companion, so a rebuild while
+// Cate is running must never expose a half-written archive — a reader that
+// caught `tar -czf` mid-stream would hit "truncated gzip input" and cache a
+// corrupt install. rename(2) within the same dir is atomic.
+const tmpTar = `${path.basename(outTar)}.partial`
+execFileSync('tar', ['--no-xattrs', '-czf', tmpTar, '-C', fwd(dist, stageDir), '.'], { stdio: 'inherit', cwd: dist })
+renameSync(path.join(dist, tmpTar), outTar)
 console.log(`[companion] wrote ${path.relative(repoRoot, outTar)}`)
 
 // --------------------------------------------------------------------------

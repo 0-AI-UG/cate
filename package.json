@@ -23,6 +23,7 @@
   "scripts": {
     "postinstall": "bash scripts/patch-electron-name.sh",
     "predev": "bash scripts/patch-electron-name.sh",
+    "setup": "bun install && bun run companion:tarball",
     "dev": "electron-vite dev",
     "dev:dialog": "DEV_FORCE_DIALOG=1 electron-vite dev",
     "dev:firststart": "CATE_FRESH_USERDATA=1 electron-vite dev",
