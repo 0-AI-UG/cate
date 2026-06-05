@@ -39,8 +39,10 @@ vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
 vi.mock('./menu', () => ({ setLayoutNames: vi.fn() }))
 
 const { registerHandlers } = await import('./store')
-const { SETTINGS_GET, LAYOUT_LIST } = await import('../shared/ipc-channels')
+const { SETTINGS_GET, SETTINGS_SET, SETTINGS_RESET, LAYOUT_LIST, SETTINGS_RELOADED } = await import('../shared/ipc-channels')
 const { DEFAULT_SETTINGS } = await import('../shared/types')
+const { broadcastToAll } = await import('./windowRegistry')
+const broadcastMock = broadcastToAll as unknown as ReturnType<typeof vi.fn>
 
 beforeAll(async () => {
   // A corrupt config.json must be present before registerHandlers() runs the
@@ -72,5 +74,38 @@ describe('store corruption resilience', () => {
     expect(preserved).toContain('not valid json')
     // A corrupt config is left in place (migration bails) for support/recovery.
     expect(fs.existsSync(cfgPath)).toBe(true)
+  })
+})
+
+describe('SETTINGS_SET / SETTINGS_RESET broadcast', () => {
+  test('SETTINGS_SET broadcasts the full settings as SETTINGS_RELOADED', async () => {
+    broadcastMock.mockClear()
+    const setHandler = handlers.get(SETTINGS_SET)
+    expect(setHandler).toBeTypeOf('function')
+    await setHandler!({}, 'editorFontSize', 19)
+
+    const reloaded = broadcastMock.mock.calls.find((c: unknown[]) => c[0] === SETTINGS_RELOADED)
+    expect(reloaded).toBeTruthy()
+    // The funnel broadcasts the complete settings object (a pure projection),
+    // reflecting the change just written.
+    expect((reloaded![1] as Record<string, unknown>).editorFontSize).toBe(19)
+  })
+
+  test('a rejected SETTINGS_SET (wrong type) does not broadcast', async () => {
+    broadcastMock.mockClear()
+    const setHandler = handlers.get(SETTINGS_SET)
+    await setHandler!({}, 'editorFontSize', 'not-a-number')
+    expect(broadcastMock.mock.calls.some((c: unknown[]) => c[0] === SETTINGS_RELOADED)).toBe(false)
+  })
+
+  test('SETTINGS_RESET broadcasts the full settings as SETTINGS_RELOADED', async () => {
+    broadcastMock.mockClear()
+    const resetHandler = handlers.get(SETTINGS_RESET)
+    expect(resetHandler).toBeTypeOf('function')
+    await resetHandler!({}, 'editorFontSize')
+
+    const reloaded = broadcastMock.mock.calls.find((c: unknown[]) => c[0] === SETTINGS_RELOADED)
+    expect(reloaded).toBeTruthy()
+    expect((reloaded![1] as Record<string, unknown>).editorFontSize).toBe(DEFAULT_SETTINGS.editorFontSize)
   })
 })

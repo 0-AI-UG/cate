@@ -32,9 +32,12 @@ function pickKnownSettings(source: Partial<AppSettings>): Partial<AppSettings> {
   return out
 }
 
-// Subscribe once (per window) to external settings.json edits so the UI tracks
-// hand-edits to the file live. Guarded so repeat loadSettings() calls (e.g. in
-// detached windows) don't stack listeners.
+// Subscribe once (per window) to SETTINGS_RELOADED. Main broadcasts the full
+// settings through one funnel on EVERY change — UI-driven SETTINGS_SET/RESET,
+// main-driven writes, and external hand-edits of settings.json — so this store
+// is a pure projection of the authoritative main file and multi-window copies
+// never drift. Guarded so repeat loadSettings() calls (e.g. in detached windows)
+// don't stack listeners.
 let reloadSubscribed = false
 
 function getElectronAPI(): ElectronSettingsAPI | null {
