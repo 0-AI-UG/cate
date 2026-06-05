@@ -16,6 +16,7 @@ import os from 'os'
 import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
+import { writeTextAtomic } from '../../main/writeJsonAtomic'
 import { LOCAL_COMPANION_ID } from '../../main/companion/locator'
 import type { Companion } from '../../main/companion/types'
 
@@ -79,10 +80,8 @@ function queueSharedWrite(fn: () => Promise<void>): Promise<void> {
 async function ensureSharedAuth(): Promise<void> {
   const shared = sharedAuthPath()
   if (fs.existsSync(shared)) return
-  await fsp.mkdir(path.dirname(shared), { recursive: true, mode: 0o700 })
   const legacy = await readFileOrNull(legacyGlobalAuthPath())
-  await fsp.writeFile(shared, legacy ?? '{}\n', 'utf-8')
-  try { await fsp.chmod(shared, 0o600) } catch { /* no file modes on this platform */ }
+  await writeTextAtomic(shared, legacy ?? '{}\n', { mode: 0o600 })
 }
 
 /** Push the shared auth.json into the host's workspace copy via the companion. */
@@ -121,9 +120,7 @@ async function syncBack(companion: Companion, hostCwd: string): Promise<void> {
     if (wsData == null) return
     const sharedData = await readFileOrNull(sharedAuthPath())
     if (wsData === sharedData) return // echo of our own push, or no real change
-    await fsp.mkdir(path.dirname(sharedAuthPath()), { recursive: true, mode: 0o700 })
-    await fsp.writeFile(sharedAuthPath(), wsData, 'utf-8')
-    try { await fsp.chmod(sharedAuthPath(), 0o600) } catch { /* */ }
+    await writeTextAtomic(sharedAuthPath(), wsData, { mode: 0o600 })
     log.info('[agentDir] synced workspace auth back to shared')
   })
 }
