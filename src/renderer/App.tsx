@@ -12,7 +12,7 @@ import { DockStoreProvider } from './stores/DockStoreContext'
 import { getOrCreateWorkspaceDockStore } from './stores/workspaceStores'
 import { useStore } from 'zustand'
 import { useSettingsStore } from './stores/settingsStore'
-import { useUIStore, normalizeSidebarLayout } from './stores/uiStore'
+import { useUIStore } from './stores/uiStore'
 import { useUIStateStore } from './stores/uiStateStore'
 import { migrateLegacyLocalStorage } from './lib/migrateLegacyLocalStorage'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
@@ -249,10 +249,8 @@ function MainApp() {
       // stores (settings.json / ui-state.json). Centralized in one module.
       migrateLegacyLocalStorage()
 
-      // The sidebar layout is persisted in settings.json but lives as mutable
-      // uiStore state at runtime; uiStore was created before settings loaded, so
-      // seed it from the now-loaded (and possibly just-migrated) value.
-      useUIStore.setState({ sidebarLayout: normalizeSidebarLayout(useSettingsStore.getState().sidebarLayout) })
+      // The sidebar layout lives solely in settingsStore now; components read it
+      // via useSidebarLayout, so there's no uiStore copy to re-seed here.
 
       // Try to restore previous session — only the core (active workspace).
       // Detached panel/dock windows are recreated afterwards so the main

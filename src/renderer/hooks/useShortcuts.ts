@@ -7,7 +7,7 @@ import { useEffect } from 'react'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore, getActiveCanvasOps, placementForActivePanel } from '../stores/appStore'
-import { useUIStore } from '../stores/uiStore'
+import { useUIStore, getSidebarLayout } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
@@ -126,7 +126,7 @@ export function useShortcuts(): void {
           break
         case 'toggleFileExplorer': {
           const ui = useUIStore.getState()
-          const side = ui.sidebarLayout.left.includes('explorer') ? 'left' : 'right'
+          const side = getSidebarLayout().left.includes('explorer') ? 'left' : 'right'
           if (side === 'left') {
             ui.setActiveLeftSidebarView(ui.activeLeftSidebarView === 'explorer' ? null : 'explorer')
           } else {
@@ -136,7 +136,7 @@ export function useShortcuts(): void {
         }
         case 'toggleSearch': {
           const ui = useUIStore.getState()
-          const side = ui.sidebarLayout.left.includes('search') ? 'left' : 'right'
+          const side = getSidebarLayout().left.includes('search') ? 'left' : 'right'
           const active = side === 'left' ? ui.activeLeftSidebarView : ui.activeRightSidebarView
           const next = active === 'search' ? null : 'search'
           if (side === 'left') ui.setActiveLeftSidebarView(next)
