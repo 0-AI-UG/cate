@@ -6,11 +6,10 @@
 import { useEffect } from 'react'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
-import { useAppStore, getActiveCanvasOps } from '../stores/appStore'
+import { useAppStore, getActiveCanvasOps, placementForActivePanel } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
-import { placementForActiveSurface } from '../lib/activeSurface'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 
@@ -55,10 +54,11 @@ export function useShortcuts(): void {
   useEffect(() => {
     const shortcutStore = useShortcutStore.getState
     // Resolve the *active* canvas store at call time rather than binding to the
-    // context store captured on mount. The visible canvas is a per-panel store
-    // (CanvasPanel registers it and marks itself active via setActiveCanvasPanelId);
-    // the App-level context only aliases the legacy singleton, which is usually
-    // NOT the canvas the user is looking at once more than one canvas exists.
+    // context store captured on mount. The visible canvas is a per-panel store;
+    // getActiveCanvasOps derives it from the canonical active panel (see
+    // lib/activePanel + canvasAccess), falling back to the workspace's primary
+    // canvas. The App-level context only aliases the legacy singleton, which is
+    // usually NOT the canvas the user is looking at once more than one exists.
     // Routing every canvas action through the active store keeps keyboard
     // navigation/pan/zoom acting on the canvas actually on screen. Falls back to
     // the context store for single-canvas / detached windows.
@@ -93,20 +93,20 @@ export function useShortcuts(): void {
 
       switch (action as ShortcutAction) {
         case 'newTerminal': {
-          const placement = placementForActiveSurface()
+          const placement = placementForActivePanel()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createTerminal(wsId, undefined, undefined, placement)
           break
         }
         case 'newBrowser': {
-          const placement = placementForActiveSurface()
+          const placement = placementForActivePanel()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createBrowser(wsId, undefined, undefined, placement)
           break
         }
         case 'newEditor':
         case 'newFile': {
-          const placement = placementForActiveSurface()
+          const placement = placementForActivePanel()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createEditor(wsId, undefined, undefined, placement)
           break

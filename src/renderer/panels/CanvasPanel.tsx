@@ -14,13 +14,13 @@ import CanvasToolbar from '../canvas/CanvasToolbar'
 import WelcomePage from '../ui/WelcomePage'
 import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, PanelLocation, WindowDockState } from '../../shared/types'
-import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, setActiveCanvasPanelId, type PanelPlacement } from '../stores/appStore'
+import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, type PanelPlacement } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import { createCanvasOps } from '../lib/canvas/canvasBridge'
-import { setActiveSurface } from '../lib/activeSurface'
+import { setActivePanel } from '../lib/activePanel'
 import { createDockStore, type DockStore } from '../stores/dockStore'
 import {
   registerNodeDockStore,
@@ -205,18 +205,19 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   useEffect(() => {
     const ops = createCanvasOps(store)
     registerCanvasOps(panelId, ops)
-    setActiveCanvasPanelId(panelId)
+    setActivePanel(panelId)
     return () => {
       unregisterCanvasOps(panelId)
     }
   }, [panelId, store])
 
   const handlePointerDown = useCallback(() => {
-    setActiveCanvasPanelId(panelId)
-    // Bubble phase: runs AFTER the containing dock stack's capture handler, so
-    // clicking a canvas docked in the center zone resolves to 'canvas', not the
-    // stack it lives in. Keyboard creates then land on the canvas, as before.
-    setActiveSurface({ kind: 'canvas', canvasPanelId: panelId })
+    // A canvas IS the active panel (it's a center-zone dock tab). Runs on the
+    // bubble phase, AFTER the containing dock stack's capture handler set the
+    // stack's active tab — for the canvas's own stack that's this same canvas
+    // panel, so they agree; clicking a sibling docked pane keeps that pane.
+    // Canvas-type active → placement derives to the default canvas placement.
+    setActivePanel(panelId)
   }, [panelId])
 
   const zoomLevel = useStore(store, (s) => s.zoomLevel)

@@ -17,7 +17,7 @@ import type {
 } from '../../shared/types'
 import { SIDE_ZONES, ALL_ZONES } from '../../shared/types'
 import { findTabStack, findZoneForStack } from './dockTreeUtils'
-import { clearActiveDockStack } from '../lib/activeSurface'
+import { clearActivePanelIfMatches } from '../lib/activePanel'
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -501,7 +501,21 @@ export function createDockStore(initialState?: { zones: WindowDockState; locatio
   },
 
   collapseStack(stackId) {
-    clearActiveDockStack(stackId)
+    // Forget the active panel up front if it lives in the stack being collapsed,
+    // so a gone panel can't keep attracting newly-created panels. Read state
+    // outside the set() reducer to keep the reducer side-effect-free.
+    const collapsing = (() => {
+      for (const pos of ALL_ZONES) {
+        const layout = get().zones[pos].layout
+        if (layout) {
+          const stack = findTabStack(layout, stackId)
+          if (stack) return stack.panelIds
+        }
+      }
+      return [] as string[]
+    })()
+    for (const panelId of collapsing) clearActivePanelIfMatches(panelId)
+
     set((state) => {
       const zones = { ...state.zones }
       const removedPanelIds: string[] = []

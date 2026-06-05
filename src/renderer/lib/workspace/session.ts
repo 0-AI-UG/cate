@@ -9,8 +9,8 @@ import {
   ensureCanvasOpsForPanel,
   getWorkspaceCanvasStore,
   getWorkspaceCanvasPanelId,
-  setActiveCanvasPanelId,
 } from '../../stores/appStore'
+import { setActivePanel } from '../activePanel'
 import {
   getOrCreateWorkspaceDockStore,
   getWorkspaceDockStore,
@@ -678,7 +678,7 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
   const preferredCanvasPanelId = resolveSnapshotCanvasPanelId(snapshot) ?? getWorkspaceCanvasPanelId(wsId)
   if (preferredCanvasPanelId) {
     ensureCanvasOpsForPanel(preferredCanvasPanelId)
-    setActiveCanvasPanelId(preferredCanvasPanelId)
+    setActivePanel(preferredCanvasPanelId)
   }
 
   // The workspace's canvas store, addressed by the snapshot's canvas panel id.

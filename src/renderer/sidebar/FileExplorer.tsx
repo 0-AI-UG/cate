@@ -13,12 +13,10 @@ import { buildGitTreeDecorations, toPosixPath, type GitTree } from './gitStatusD
 import { watchFsRoot } from '../lib/fs/fsWatchManager'
 import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
-import { getWorkspaceDockStore } from '../stores/workspaceStores'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { workspaceDisplayName } from '../lib/fs/displayPath'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
-import type { DockLayoutNode } from '../../shared/types'
 
 // Opening a workspace sets its root path optimistically in the renderer, but
 // main only registers that path as an allowed root once the async workspace
@@ -27,29 +25,6 @@ import type { DockLayoutNode } from '../../shared/types'
 // out that race instead of leaving the tree stuck empty until a manual reload.
 const FS_READ_RETRIES = 5
 const FS_READ_RETRY_DELAY_MS = 120
-
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
-function findActivePanel(node: DockLayoutNode): string | null {
-  if (node.type === 'tabs') return node.panelIds[node.activeIndex] ?? null
-  for (const child of node.children) {
-    const result = findActivePanel(child)
-    if (result) return result
-  }
-  return null
-}
-
-function isCanvasActiveInCenter(): boolean {
-  const appState = useAppStore.getState()
-  const centerLayout = getWorkspaceDockStore(appState.selectedWorkspaceId)?.getState().zones.center.layout
-  if (!centerLayout) return false
-  const activePanelId = findActivePanel(centerLayout)
-  if (!activePanelId) return false
-  const ws = appState.workspaces.find((w) => w.id === appState.selectedWorkspaceId)
-  return ws?.panels[activePanelId]?.type === 'canvas'
-}
 
 // -----------------------------------------------------------------------------
 // Component

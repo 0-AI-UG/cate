@@ -18,8 +18,8 @@ import {
   getWorkspaceCanvasStore,
   getWorkspaceCanvasPanelId,
   ensureCanvasOpsForPanel,
-  setActiveCanvasPanelId,
 } from '../stores/appStore'
+import { setActivePanel } from './activePanel'
 import { useUIStore } from '../stores/uiStore'
 import { openFileAsPanel } from './fs/fileRouting'
 import log from './logger'
@@ -128,7 +128,7 @@ export async function loadLayoutReplacingWorkspace(name: string): Promise<boolea
     const newCanvasId = getWorkspaceCanvasPanelId(wsId)
     if (newCanvasId) {
       ensureCanvasOpsForPanel(newCanvasId)
-      setActiveCanvasPanelId(newCanvasId)
+      setActivePanel(newCanvasId)
     }
 
     recreateNodes(wsId, snap)
@@ -161,7 +161,7 @@ export async function loadLayoutIntoCanvas(
 
     // Route new nodes into this canvas specifically.
     ensureCanvasOpsForPanel(canvasPanelId)
-    setActiveCanvasPanelId(canvasPanelId)
+    setActivePanel(canvasPanelId)
 
     recreateNodes(wsId, snap)
 

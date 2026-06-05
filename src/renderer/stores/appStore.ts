@@ -38,25 +38,24 @@ import {
 } from '../lib/workspace/dockRegistry'
 import {
   ensureCanvasOpsForPanel,
-  getActiveCanvasOps,
   getWorkspaceCanvasOps,
   getWorkspaceCanvasPanelId,
   getWorkspaceCanvasStore,
-  setActiveCanvasPanelId,
   allCanvasOps,
   invalidateWorkspaceCanvasCache,
 } from '../lib/workspace/canvasAccess'
-import { setActiveSurface } from '../lib/activeSurface'
+import { setActivePanel, clearActivePanelIfMatches } from '../lib/activePanel'
 import { LOCAL_COMPANION_ID } from '../../main/companion/locator'
 
 export type { CanvasOperations }
 export {
   ensureCanvasOpsForPanel,
   getActiveCanvasOps,
+  getActiveCanvasPanelId,
   getWorkspaceCanvasPanelId,
   getWorkspaceCanvasStore,
-  setActiveCanvasPanelId,
-}
+  placementForActivePanel,
+} from '../lib/workspace/canvasAccess'
 export {
   registerCanvasOps,
   getCanvasOpsById,
@@ -534,10 +533,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ selectedWorkspaceId: id })
     const incomingCanvasPanelId = getWorkspaceCanvasPanelId(id)
     if (incomingCanvasPanelId) {
-      setActiveCanvasPanelId(incomingCanvasPanelId)
-      // Reset the keyboard-create target to the incoming canvas so a stack the
-      // user last touched in the OTHER workspace can't attract new panels here.
-      setActiveSurface({ kind: 'canvas', canvasPanelId: incomingCanvasPanelId })
+      // Point the canonical active panel at the incoming canvas so canvas
+      // shortcuts route here AND a stack the user last touched in the OTHER
+      // workspace can't attract new panels created in this one.
+      setActivePanel(incomingCanvasPanelId)
     }
 
     // Reconnect a remote workspace's companion if it isn't live (e.g. after a
@@ -850,6 +849,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (error) {
       log.error('Failed to clean up panel location tracking:', error)
     }
+
+    // Drop the canonical active-panel pointer if it was this panel, so a closed
+    // panel can't keep attracting newly-created panels or read as focused.
+    clearActivePanelIfMatches(panelId)
 
     // Remove from workspace panels (always do this to ensure cleanup)
     set((state) => ({
