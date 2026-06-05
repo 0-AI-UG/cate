@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Import the Developer ID Application cert (CSC_LINK / CSC_KEY_PASSWORD) into a
-# dedicated temporary keychain and export its identity hash + keychain path for
-# later steps (CATE_MAC_SIGN_IDENTITY, CATE_MAC_SIGN_KEYCHAIN via $GITHUB_ENV),
-# so build-companion-tarball.mjs can codesign the bundled native binaries (node,
-# rg, node-pty's pty.node + spawn-helper) BEFORE packing them.
+# dedicated temporary keychain, add it to the user search list, and export the
+# identity hash (CATE_MAC_SIGN_IDENTITY via $GITHUB_ENV) so build-companion-
+# tarball.mjs can codesign the bundled native binaries (node, rg, node-pty's
+# pty.node + spawn-helper) BEFORE packing them.
 #
 # Why: Apple's notarytool recurses into companion-host.tgz and rejects unsigned
 # Mach-O ("not signed with a valid Developer ID certificate"), so the daemon
 # binaries must carry a Developer ID + hardened-runtime signature like the app.
 #
-# The keychain is deliberately NOT added to the user search list; the build
-# script passes `--keychain "$CATE_MAC_SIGN_KEYCHAIN"` to codesign instead, so
-# this never collides with the separate keychain electron-builder sets up to
-# sign the app itself during packaging.
+# The keychain is added to the search list so codesign can locate the identity
+# (codesign --keychain alone is unreliable). electron-builder later signs the app
+# with its OWN --keychain, so this extra keychain doesn't make that ambiguous.
 #
 # No-op (exit 0, no identity exported) when MAC_CERTS is absent — the build then
 # stays unsigned and notarization fails loudly, same as before.
@@ -43,6 +42,14 @@ rm -f "$CERT"
 # Let codesign use the imported key without an interactive prompt.
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KPASS" "$KEYCHAIN" >/dev/null
 
+# Add this keychain to the user search list (in front, keeping the existing
+# login keychain) so codesign can locate the identity. `codesign --keychain
+# <path>` alone is unreliable for a keychain not in the search list ("The
+# specified item could not be found in the keychain"), so the build script signs
+# via the search list. electron-builder later signs the app with its OWN
+# `--keychain`, so this extra keychain doesn't make its lookup ambiguous.
+security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed 's/"//g')
+
 IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
   | awk '/Developer ID Application/ {print $2; exit}')"
 if [ -z "$IDENTITY" ]; then
@@ -51,8 +58,5 @@ if [ -z "$IDENTITY" ]; then
   exit 1
 fi
 
-{
-  echo "CATE_MAC_SIGN_IDENTITY=$IDENTITY"
-  echo "CATE_MAC_SIGN_KEYCHAIN=$KEYCHAIN"
-} >> "$GITHUB_ENV"
+echo "CATE_MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
 echo "Companion natives will be signed with Developer ID identity $IDENTITY"

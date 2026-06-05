@@ -399,7 +399,6 @@ function signMacNatives(stageDir) {
   const identity = process.env.CATE_MAC_SIGN_IDENTITY
   if (process.platform !== 'darwin' || targetPlatform !== 'darwin' || !identity) return
   const entitlements = path.join(repoRoot, 'build', 'entitlements.companion.plist')
-  const keychain = process.env.CATE_MAC_SIGN_KEYCHAIN
   const pbDir = path.join('node_modules', 'node-pty', 'prebuilds', targetArg)
   const binaries = [
     path.join('runtime', 'bin', 'node'),
@@ -407,13 +406,14 @@ function signMacNatives(stageDir) {
     path.join(pbDir, 'pty.node'),
     path.join(pbDir, 'spawn-helper'),
   ]
-  const keychainArg = keychain ? ['--keychain', keychain] : []
+  // The identity is found via the keychain search list (ci-mac-signing-keychain.sh
+  // adds the signing keychain to it); codesign --keychain alone is unreliable.
   for (const rel of binaries) {
     const file = path.join(stageDir, rel)
     if (!existsSync(file)) continue
     execFileSync(
       'codesign',
-      ['--force', '--timestamp', '--options', 'runtime', '--entitlements', entitlements, ...keychainArg, '--sign', identity, file],
+      ['--force', '--timestamp', '--options', 'runtime', '--entitlements', entitlements, '--sign', identity, file],
       { stdio: 'inherit' },
     )
     // Verify the seal now so a bad signature fails here, not later in notarytool.
