@@ -243,34 +243,16 @@ async function resolveWinNodePtyPrebuild() {
   )
 }
 
-/** Compile node-pty's native binary for the host via node-gyp. Invoked when the
- *  package manager skipped node-pty's install lifecycle (e.g. bun blocks
- *  untrusted postinstalls), so build/Release/pty.node is absent. We call the
- *  vendored node-gyp directly (PM-agnostic) rather than the package's install
- *  script, which gates on prebuilds. */
-function buildHostNodePty() {
-  const ptyRoot = path.join(repoRoot, 'node_modules', 'node-pty')
-  const nodeGyp = path.join(repoRoot, 'node_modules', 'node-gyp', 'bin', 'node-gyp.js')
-  if (!existsSync(nodeGyp)) {
-    throw new Error(
-      `node-pty native binary missing and node-gyp not found at ${nodeGyp}. ` +
-        'Run your install with node-pty trusted (e.g. `bun pm trust node-pty`) or `npm install`.',
-    )
-  }
-  console.log('[companion] node-pty native missing; building with node-gyp…')
-  execFileSync(process.execPath, [nodeGyp, 'rebuild'], { cwd: ptyRoot, stdio: 'inherit' })
-}
-
 /** Locate pty.node (+ spawn-helper on unix) for the target. */
 async function resolveNativeBinaries() {
   const hostTarget = `${plat(process.platform)}-${process.arch}`
 
   // Native build: use the installed node-pty's host binary. Prefer the host's
-  // own compiled output (build/Release), then the N-API prebuild node-pty ships
-  // for this platform — present after a plain `bun install`, which skips
-  // node-pty's from-source install script (no compiler needed). Only if NEITHER
-  // exists do we compile from source on demand. All three yield an N-API binary
-  // that loads under the daemon's bundled Node.
+  // own compiled output (build/Release, e.g. a from-source `node-gyp rebuild`)
+  // and fall back to the prebuild node-pty ships for this platform. Both are
+  // N-API, so the prebuild runs fine under the daemon's bundled Node — and a
+  // prebuild-only install (e.g. `bun install`, which skips the from-source
+  // path) has no build/Release. Mirrors resolveWinNodePtyPrebuild's fallback.
   if (targetArg === hostTarget) {
     const ptyRoot = path.join(repoRoot, 'node_modules', 'node-pty')
     for (const dir of [
@@ -282,13 +264,10 @@ async function resolveNativeBinaries() {
       const spawnHelper = path.join(dir, 'spawn-helper')
       return { ptyNode, spawnHelper: existsSync(spawnHelper) ? spawnHelper : null }
     }
-    // Neither a compiled binary nor a shipped prebuild — compile from source.
-    buildHostNodePty()
-    const rel = path.join(ptyRoot, 'build', 'Release')
-    const built = path.join(rel, 'pty.node')
-    if (!existsSync(built)) throw new Error(`node-pty build/Release/pty.node missing for ${hostTarget} (after node-gyp rebuild)`)
-    const spawnHelper = path.join(rel, 'spawn-helper')
-    return { ptyNode: built, spawnHelper: existsSync(spawnHelper) ? spawnHelper : null }
+    throw new Error(
+      `node-pty pty.node missing for ${hostTarget} (checked build/Release and ` +
+        `prebuilds/${process.platform}-${process.arch}). Run \`bun install\` / \`npm install\` first.`,
+    )
   }
 
   // Cross build of the linux binary via a linux container (QEMU for arm64).
