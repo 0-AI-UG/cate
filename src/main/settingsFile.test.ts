@@ -113,6 +113,18 @@ describe('settingsFile', () => {
     expect(m.isSettingsKey('recentProjects')).toBe(false)
   })
 
+  it('quarantines a corrupt settings.json and falls back to defaults', async () => {
+    fs.writeFileSync(settingsPath(), '{ not valid json,,, ')
+    const m = await freshModule()
+    m.loadSettingsSync()
+    // Corrupt file → defaults, not a crash.
+    expect(m.getSetting('editorFontSize')).toBe(DEFAULT_SETTINGS.editorFontSize)
+    // The corrupt file is preserved as a .corrupt-* backup for recovery.
+    const backups = fs.readdirSync(dirRef.current).filter((f) => f.startsWith('settings.json.corrupt-'))
+    expect(backups.length).toBeGreaterThanOrEqual(1)
+    expect(fs.readFileSync(path.join(dirRef.current, backups[0]), 'utf-8')).toContain('not valid json')
+  })
+
   it('round-trips the beta-updates opt-in (defaults off)', async () => {
     const m = await freshModule()
     m.loadSettingsSync()

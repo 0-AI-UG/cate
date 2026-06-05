@@ -16,6 +16,7 @@ import fsp from 'fs/promises'
 import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
+import { writeJsonAtomic } from '../../main/writeJsonAtomic'
 import { hostAgentDir, hostJoin } from './agentDir'
 import type { Companion } from '../../main/companion/types'
 import type { CustomOpenAIProvider } from '../../shared/types'
@@ -70,8 +71,9 @@ export async function saveCustomOpenAI(cfg: CustomOpenAIProvider | null): Promis
     }
   }
 
-  await fsp.mkdir(path.dirname(shared), { recursive: true, mode: 0o700 })
-  await fsp.writeFile(shared, JSON.stringify(data, null, 2) + '\n', 'utf-8')
+  // models.json sits beside auth.json under the pi-agent dir, so write it with
+  // the same secret-mode dir (0700) the credentials store uses.
+  await writeJsonAtomic(shared, data, { mode: 0o600 })
 }
 
 /** Mirror the shared models.json into the host's pi-agent dir via the companion

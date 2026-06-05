@@ -25,6 +25,7 @@ import fsSync from 'fs'
 import path from 'path'
 import { watch, type FSWatcher } from 'chokidar'
 import log from './logger'
+import { writeJsonAtomic, writeJsonAtomicSync } from './writeJsonAtomic'
 
 export interface JsonStateFileOptions<T> {
   /** File name under `app.getPath('userData')`. */
@@ -92,8 +93,11 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
 
   function load(): T {
     if (loaded) return current
-    const p = filePath()
     try {
+      // filePath() is inside the try so a context without electron's `app`
+      // (e.g. a non-electron unit test that reads a setting transitively)
+      // degrades to defaults instead of throwing.
+      const p = filePath()
       if (fsSync.existsSync(p)) {
         const raw = fsSync.readFileSync(p, 'utf-8')
         try {
@@ -116,9 +120,7 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
   function writeSync(): void {
     const content = serialize(current)
     try {
-      const p = filePath()
-      fsSync.mkdirSync(path.dirname(p), { recursive: true })
-      fsSync.writeFileSync(p, content, 'utf-8')
+      writeJsonAtomicSync(filePath(), current)
       lastWrittenContent = content
     } catch (err) {
       log.warn('[jsonStateFile] sync write of %s failed: %O', filename, err)
@@ -131,11 +133,7 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
     // Record before the write so a watcher event racing the rename still matches.
     lastWrittenContent = content
     try {
-      const p = filePath()
-      await fs.mkdir(path.dirname(p), { recursive: true })
-      const tmp = p + '.tmp'
-      await fs.writeFile(tmp, content, 'utf-8')
-      await fs.rename(tmp, p)
+      await writeJsonAtomic(filePath(), current)
     } catch (err) {
       log.warn('[jsonStateFile] write of %s failed: %O', filename, err)
     }

@@ -15,6 +15,7 @@ import path from 'path'
 import { app } from 'electron'
 import fs from 'fs/promises'
 import log from './logger'
+import { writeJsonAtomic } from './writeJsonAtomic'
 
 const STORE_FILENAME = 'granted-paths.json'
 
@@ -43,7 +44,7 @@ async function load(): Promise<Set<string>> {
 async function flush(): Promise<void> {
   if (!cache) return
   try {
-    await fs.writeFile(storePath(), JSON.stringify(Array.from(cache)), 'utf-8')
+    await writeJsonAtomic(storePath(), Array.from(cache))
   } catch (err) {
     log.warn('[grantedPathStore] Failed to persist:', err)
   }

@@ -10,9 +10,9 @@
 
 import { ipcMain, app, BrowserWindow, nativeTheme } from 'electron'
 import log from './logger'
-import fs from 'fs/promises'
 import fsSync from 'fs'
 import path from 'path'
+import { writeJsonAtomic } from './writeJsonAtomic'
 import {
   SETTINGS_GET,
   SETTINGS_SET,
@@ -63,6 +63,7 @@ import {
 } from './workspaceStateStore'
 import { grantFileAccess } from './ipc/pathValidation'
 import { recordPersistentGrant } from './grantedPathStore'
+import { computeThemeBootFields } from './themeBootCache'
 
 /** Push saved-layout names to the native Layouts menu. Imported lazily so the
  *  static module graph (and anything that pulls in ./store, e.g. terminal IPC)
@@ -76,22 +77,21 @@ async function pushLayoutNamesToMenu(names: string[]): Promise<void> {
   }
 }
 
-// Settings that open windows react to live (via onSettingsChanged). The
-// SETTINGS_CHANGED broadcast is scoped to these so routine edits — font size,
-// zoom speed, etc. — don't wake every window/explorer on each change.
-const LIVE_REACTIVE_SETTINGS = new Set<keyof AppSettings>(['fileExclusions'])
-
 /**
  * Apply the main-process side effects of a single settings change. Shared by
  * the renderer-driven SETTINGS_SET path and the external-file-edit watcher so a
  * value changed by hand-editing settings.json behaves exactly like one changed
- * through the UI (live file-exclusion refresh, Sentry toggle, live broadcast).
+ * through the UI (live file-exclusion refresh, Sentry toggle, etc.).
+ *
+ * The settingsStore projection is handled separately by `broadcastSettingsReloaded`
+ * (the single SETTINGS_RELOADED funnel); this function only runs the per-key
+ * native/daemon side effects.
  */
 async function applySettingSideEffect(key: keyof AppSettings, value: unknown): Promise<void> {
-  // Notify all windows so live-reactive settings (e.g. file exclusions) can
-  // update without a relaunch. Scoped to keys that actually have live listeners
-  // so routine setting changes don't churn every window.
-  if (LIVE_REACTIVE_SETTINGS.has(key)) {
+  // fileExclusions has one live consumer (the FileExplorer tree) that listens on
+  // the SETTINGS_CHANGED invalidation channel and reloads. Broadcast it directly
+  // (the only key that uses this channel today).
+  if (key === 'fileExclusions') {
     broadcastToAll(SETTINGS_CHANGED, key, value)
   }
   // Rebuild active fs watchers so their ignore globs match the new exclusions
@@ -189,12 +189,17 @@ export function getSettingSync<K extends keyof AppSettings>(key: K): AppSettings
  *  flows like first-run telemetry consent. getSettingSync() reflects the change
  *  immediately since settingsFile holds the authoritative in-memory copy. */
 export async function setSettingsFromMain(patch: Partial<AppSettings>): Promise<void> {
+  let changed = false
   for (const [k, v] of Object.entries(patch)) {
     const key = k as keyof AppSettings
     if (setSettingInFile(key, v as never)) {
       await applySettingSideEffect(key, v)
+      changed = true
     }
   }
+  // Project main-driven changes (e.g. first-run telemetry consent) to every
+  // window's settingsStore through the same funnel.
+  if (changed) broadcastSettingsReloaded()
 }
 
 // ---------------------------------------------------------------------------
@@ -249,11 +254,8 @@ async function flushBootSnapshot(): Promise<void> {
   const next = { ...(readBootSnapshot() ?? {}), ...bootSnapshotPending }
   bootSnapshotPending = null
   try {
-    const p = getBootSnapshotPath()
-    await fs.mkdir(path.dirname(p), { recursive: true })
-    const tmp = p + '.tmp'
-    await fs.writeFile(tmp, JSON.stringify(next), 'utf-8')
-    await fs.rename(tmp, p)
+    // boot.json is read sync at the very first frame, so keep it compact.
+    await writeJsonAtomic(getBootSnapshotPath(), next, { pretty: false })
   } catch (err) {
     log.warn('Boot snapshot write failed: %O', err)
   }
@@ -264,6 +266,39 @@ export function writeBootSnapshot(partial: Partial<BootSnapshot>): void {
   bootSnapshotPending = { ...(bootSnapshotPending ?? {}), ...partial }
   if (bootSnapshotTimer) return
   bootSnapshotTimer = setTimeout(() => { void flushBootSnapshot() }, BOOT_SNAPSHOT_DEBOUNCE_MS)
+}
+
+/**
+ * Rebuild boot.json's theme cache (theme / backgroundColor / appearance) from
+ * the authoritative settings, and apply the appearance to the live app. boot.json
+ * is a pure cache of the active theme — rebuilding it in main whenever settings
+ * change (UI write OR external file edit) keeps it fresh even when the renderer
+ * never gets a chance to push (e.g. a hand-edit of activeThemeId), so the next
+ * cold launch never flashes a stale color. Geometry / lastWorkspaceId in boot.json
+ * are owned elsewhere and preserved by the merge in flushBootSnapshot.
+ */
+function rebuildBootThemeCache(): void {
+  const fields = computeThemeBootFields(getAllSettings())
+  writeBootSnapshot(fields)
+  // Drive the app-wide native appearance immediately so live windows track the
+  // theme's dark/light without waiting for the next launch (NSApplication.appearance
+  // is global, so one assignment covers every window).
+  try {
+    nativeTheme.themeSource = fields.appearance
+  } catch (err) {
+    log.warn('Native appearance update failed: %O', err)
+  }
+}
+
+/**
+ * The single funnel for propagating a settings change to every window. Broadcasts
+ * the full settings as SETTINGS_RELOADED so each window's settingsStore is a pure
+ * projection of the main file (no per-window drift), and rebuilds the boot theme
+ * cache. Called by SETTINGS_SET, SETTINGS_RESET, and the external-edit watcher.
+ */
+function broadcastSettingsReloaded(): void {
+  broadcastToAll(SETTINGS_RELOADED, getAllSettings())
+  rebuildBootThemeCache()
 }
 
 
@@ -279,6 +314,9 @@ export function registerHandlers(): void {
     async (_event, key: keyof AppSettings, value: unknown) => {
       if (!setSettingInFile(key, value as never)) return
       await applySettingSideEffect(key, value)
+      // Single funnel: project the new settings to every window's settingsStore
+      // (so multi-window copies never drift) and refresh the boot theme cache.
+      broadcastSettingsReloaded()
     },
   )
 
@@ -293,6 +331,7 @@ export function registerHandlers(): void {
     } else {
       resetAllSettings()
     }
+    broadcastSettingsReloaded()
   })
 
   // Grant the calling window read+write access to settings.json and return its
@@ -322,13 +361,14 @@ export function registerHandlers(): void {
   })
 
   // React to external edits of settings.json (user editing the file directly):
-  // broadcast the full settings so renderers merge live, and run the same
-  // per-key side effects as a UI change.
-  startSettingsWatch((next, changedKeys) => {
-    broadcastToAll(SETTINGS_RELOADED, next)
+  // run the same per-key side effects as a UI change, then go through the single
+  // funnel so renderers project the new settings and the boot cache refreshes —
+  // exactly like a UI-driven change.
+  startSettingsWatch((_next, changedKeys) => {
     for (const key of changedKeys) {
-      void applySettingSideEffect(key, next[key])
+      void applySettingSideEffect(key, getSettingFromFile(key))
     }
+    broadcastSettingsReloaded()
   })
 
   // Boot snapshot — renderer pushes geometry/theme/etc. updates here. The
