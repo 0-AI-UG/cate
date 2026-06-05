@@ -144,7 +144,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
         const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
         applyCanvasChildPanels(wsId, childPanels ?? {})
         if (childPanels) {
           setPanels((prev) => ({ ...prev, ...childPanels }))
@@ -176,7 +176,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
         const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
         applyCanvasChildPanels(wsId, childPanels ?? {})
         if (childPanels) {
           setPanels((prev) => ({ ...prev, ...childPanels }))

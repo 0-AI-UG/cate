@@ -219,7 +219,6 @@ export interface CanvasStoreActions {
     nodes: Record<CanvasNodeId, CanvasNodeState>,
     viewportOffset: Point,
     zoomLevel: number,
-    focusedNodeId: CanvasNodeId | null,
     regions?: Record<string, CanvasRegion>,
   ) => void
 }

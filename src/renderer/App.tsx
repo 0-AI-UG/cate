@@ -404,7 +404,7 @@ function MainApp() {
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
         const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, null, regions)
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
         applyCanvasChildPanels(wsId, childPanels ?? {})
       }
 

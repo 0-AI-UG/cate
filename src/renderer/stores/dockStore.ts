@@ -177,7 +177,6 @@ interface DockStoreActions {
   // Panel placement
   dockPanel: (panelId: string, zone: DockZonePosition, target?: DockDropTarget) => void
   undockPanel: (panelId: string) => void
-  moveToCanvas: (panelId: string, canvasId: string, canvasNodeId: string) => void
 
   // Tab management within a stack
   moveTab: (panelId: string, fromStackId: string, toStackId: string, index?: number) => void
@@ -378,21 +377,6 @@ export function createDockStore(initialState?: { zones: WindowDockState; locatio
         panelLocations: remainingLocations,
       }
     })
-  },
-
-  moveToCanvas(panelId, canvasId, canvasNodeId) {
-    // First undock if docked
-    const location = get().panelLocations[panelId]
-    if (location?.type === 'dock') {
-      get().undockPanel(panelId)
-    }
-    // Set canvas location
-    set((state) => ({
-      panelLocations: {
-        ...state.panelLocations,
-        [panelId]: { type: 'canvas', canvasId, canvasNodeId },
-      },
-    }))
   },
 
   // --- Tab management ---

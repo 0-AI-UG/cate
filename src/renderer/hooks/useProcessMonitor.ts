@@ -85,11 +85,10 @@ export function useProcessMonitor(workspaceId: string): void {
   useEffect(() => {
     const api = window.electronAPI
     if (!api?.onGitBranchUpdate) return
-    const unsubscribe = api.onGitBranchUpdate(
-      (workspaceId: string, branch: string, isDirty: boolean) => {
-        useStatusStore.getState().setGitInfo(workspaceId, branch, isDirty)
-      },
-    )
+    // GIT_BRANCH_UPDATE is a pure invalidation signal; the real consumers
+    // (e.g. SourceControlView) refetch on it directly. Keep the subscription
+    // wired so the main-process git monitor stays armed, but it has no sink here.
+    const unsubscribe = api.onGitBranchUpdate(() => {})
     return () => { unsubscribe() }
   }, [])
 

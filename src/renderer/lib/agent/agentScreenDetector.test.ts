@@ -107,7 +107,7 @@ describe('coordinator settle timing', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
-    useStatusStore.setState({ workspaces: {}, _clearTimers: {}, terminalWorkspaceMap: {}, gitInfo: {} })
+    useStatusStore.setState({ workspaces: {}, _clearTimers: {}, terminalWorkspaceMap: {} })
     useStatusStore.getState().ensureWorkspace(WS)
     useStatusStore.getState().registerTerminal(PTY, WS)
     startAgentScreenDetector()

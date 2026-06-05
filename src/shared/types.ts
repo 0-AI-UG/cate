@@ -408,7 +408,6 @@ export interface CanvasSnapshot {
   regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
-  focusedNodeId: CanvasNodeId | null
 }
 
 // -----------------------------------------------------------------------------
@@ -442,7 +441,6 @@ export interface WorkspaceState {
   regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
-  focusedNodeId: CanvasNodeId | null
   // Dock layout state — saved/restored per workspace on switch
   dockState?: { zones: WindowDockState; locations: Record<string, PanelLocation> }
   // Multi-canvas support (Phase 2+ — unused for now)
@@ -972,7 +970,6 @@ export interface ProjectSessionFile {
   /** Stable machine-local workspace id, reused across restores so the
    *  main-process workspace list isn't duplicated on renderer reload. */
   workspaceId?: string
-  focusedNodeId: string | null
   nodes: Record<string, ProjectSessionNode>
   /** Detached panel windows (machine-local, not committed). */
   panelWindows?: PanelWindowSnapshot[]

@@ -97,7 +97,6 @@ function createDefaultWorkspace(
     regions: {},
     zoomLevel: ZOOM_DEFAULT,
     viewportOffset: { x: 0, y: 0 },
-    focusedNodeId: null,
   }
 }
 
@@ -959,7 +958,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
           regions: { ...canvasState.regions },
           viewportOffset: { ...canvasState.viewportOffset },
           zoomLevel: canvasState.zoomLevel,
-          focusedNodeId: canvasState.focusedNodeId,
           dockState: dockSnapshot ?? ws.dockState,
         }
       }),
@@ -1144,7 +1142,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       regions: {},
       zoomLevel: ZOOM_DEFAULT,
       viewportOffset: { x: 0, y: 0 },
-      focusedNodeId: null,
     }
     set((state) => ({ workspaces: [...state.workspaces, copy] }))
     syncCreateToMain(copy)
@@ -1345,7 +1342,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
             regions: {},
             zoomLevel: ZOOM_DEFAULT,
             viewportOffset: { x: 0, y: 0 },
-            focusedNodeId: null,
           })
         }
       }

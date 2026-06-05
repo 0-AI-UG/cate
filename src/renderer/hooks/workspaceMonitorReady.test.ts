@@ -18,7 +18,6 @@ function ws(overrides: Partial<WorkspaceState>): WorkspaceState {
     regions: {},
     zoomLevel: 1,
     viewportOffset: { x: 0, y: 0 },
-    focusedNodeId: null,
     ...overrides,
   }
 }

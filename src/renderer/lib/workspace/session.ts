@@ -198,7 +198,6 @@ function buildSessionFile(
   return {
     version: 1,
     workspaceId: snapshot.workspaceId,
-    focusedNodeId: null,
     nodes,
     panelWindows: panelWindows?.length ? panelWindows : undefined,
     dockWindows: dockWindows?.length ? dockWindows : undefined,
