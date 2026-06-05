@@ -275,10 +275,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
     store.getState().animateZoomTo(zoomLevel - 0.1)
   }, [zoomLevel, store])
 
-  const onZoomToFit = useCallback(() => {
-    store.getState().zoomToFit()
-  }, [store])
-
   // Compute the current canvas-space center of the viewport so newly created
   // items appear where the user is currently looking.
   const getViewCenter = useCallback((): Point => {
@@ -303,10 +299,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   const onNewRegion = useCallback(() => {
     store.getState().addRegion('Region', getViewCenter(), { width: 400, height: 300 })
   }, [store, getViewCenter])
-
-  const onAutoLayout = useCallback(() => {
-    store.getState().autoLayout()
-  }, [store])
 
   return (
     <CanvasStoreProvider store={store}>
@@ -351,8 +343,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
             onNewAgent={onNewAgent}
             onNewCanvas={onNewCanvas}
             onNewRegion={onNewRegion}
-            onAutoLayout={onAutoLayout}
-            onZoomToFit={onZoomToFit}
             onZoomIn={onZoomIn}
             onZoomOut={onZoomOut}
           />

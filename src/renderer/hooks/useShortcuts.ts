@@ -14,9 +14,6 @@ import { placementForActiveSurface } from '../lib/activeSurface'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 
-// Single-key (no-modifier) tool shortcuts (V, H) — suppressed while typing.
-const TOOL_ACTIONS = new Set<ShortcutAction>(['toolSelect', 'toolHand'])
-
 // Cmd+Arrow panel navigation — moves the selection cursor between nodes.
 const NAVIGATE_ACTIONS = new Set<ShortcutAction>([
   'navigateUp', 'navigateDown', 'navigateLeft', 'navigateRight',
@@ -373,6 +370,29 @@ export function useShortcuts(): void {
         }
       }
 
+      // Enter — activate (focus) the selected-but-unfocused node. Cmd+Arrow
+      // navigation selects + centres a node without grabbing keyboard focus so
+      // jumps can be chained; Enter is the deliberate "step into this panel"
+      // gesture. Skipped while typing, in a terminal, or when a list/overlay
+      // owns the key, and only fires when exactly one node is selected and it
+      // isn't already focused.
+      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        if (terminalHasFocus || isTextSurfaceFocused()) return
+        if (isKeyNavFocused() || isSidebarKeyNavFocused()) return
+        const uiNow = useUIStore.getState()
+        if (uiNow.showCommandPalette || uiNow.showNodeSwitcher) return
+        const state = canvasStore()
+        if (state.selectedNodeIds.size === 1) {
+          const id = [...state.selectedNodeIds][0]
+          if (id !== state.focusedNodeId && state.nodes[id]) {
+            e.preventDefault()
+            e.stopPropagation()
+            canvasStore().focusNode(id)
+            return
+          }
+        }
+      }
+
       // --- Shortcut matching ---
       const action = shortcutStore().matchEvent(e)
       if (!action) return
@@ -380,11 +400,10 @@ export function useShortcuts(): void {
       // When panel switcher is open, only handle the toggle shortcut
       const ui = useUIStore.getState()
 
-      // Single-key tool shortcuts (V, H) must not fire while typing in a
-      // terminal/editor.
-      if (TOOL_ACTIONS.has(action)) {
-        if (terminalHasFocus || isTextSurfaceFocused()) return
-      }
+      // Tool shortcuts (Select/Hand) are ⌘⇧ combos, so they intentionally fire
+      // even while a terminal/editor is focused — we intercept and preventDefault
+      // before the surface sees the chord. No typing-suppression needed: a bare
+      // letter is never consumed for tool switching.
 
       // Cmd+Arrow navigation / Shift+Arrow panning.
       if (NAVIGATE_ACTIONS.has(action) || PAN_ACTIONS.has(action)) {

@@ -9,10 +9,11 @@ import { createPortal } from 'react-dom'
 
 interface TooltipProps {
   label: string
+  placement?: 'top' | 'bottom'
   children: React.ReactNode
 }
 
-export const Tooltip: React.FC<TooltipProps> = ({ label, children }) => {
+export const Tooltip: React.FC<TooltipProps> = ({ label, placement = 'bottom', children }) => {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -24,7 +25,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, children }) => {
     const el = (host.firstElementChild as HTMLElement | null) ?? host
     const r = el.getBoundingClientRect()
     const left = r.left + r.width / 2
-    const top = r.bottom + 4
+    const top = placement === 'top' ? r.top - 4 : r.bottom + 4
     timer.current = setTimeout(() => setPos({ top, left }), 250)
   }
   const hide = (): void => {
@@ -39,8 +40,12 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, children }) => {
       {pos &&
         createPortal(
           <div
-            className="fixed z-[100] -translate-x-1/2 pointer-events-none px-1.5 py-0.5 rounded bg-surface-2 border border-subtle text-[11px] text-primary whitespace-nowrap shadow-lg"
-            style={{ top: pos.top, left: pos.left }}
+            className="fixed z-[100] pointer-events-none px-1.5 py-0.5 rounded bg-surface-2 border border-subtle text-[11px] text-primary whitespace-nowrap shadow-lg"
+            style={{
+              top: pos.top,
+              left: pos.left,
+              transform: placement === 'top' ? 'translate(-50%, -100%)' : 'translateX(-50%)',
+            }}
           >
             {label}
           </div>,

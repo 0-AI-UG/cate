@@ -694,9 +694,12 @@ describe('canvasStore.nudgeToFree', () => {
 // =============================================================================
 
 describe('canvasStore ghost placement actions', () => {
+  // The ghost picker only kicks in on a non-empty canvas, so seed a background
+  // node by default. Tests that need a blank canvas build their own bare store.
   function setup() {
     const store = createCanvasStore()
     store.getState().setContainerSize({ width: 1000, height: 800 })
+    store.getState().addNode('seed', 'editor', { x: 0, y: 0 }, { width: 200, height: 150 })
     return store
   }
 
@@ -708,6 +711,22 @@ describe('canvasStore ghost placement actions', () => {
     expect(pending).not.toBeNull()
     expect(pending!.panelId).toBe('p1')
     expect(pending!.candidates.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('beginPlacement on an empty canvas skips the picker and drops the panel at the camera centre', () => {
+    const store = createCanvasStore()
+    store.getState().setContainerSize({ width: 1000, height: 800 })
+    const shown = store.getState().beginPlacement('p1', 'terminal')
+    // No ghosts — placed immediately.
+    expect(shown).toBe(true)
+    expect(store.getState().pendingPlacement).toBeNull()
+    const nodes = Object.values(store.getState().nodes)
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].panelId).toBe('p1')
+    // Centred on the viewport (1000x800 at zoom 1, offset 0,0 → canvas centre 500,400).
+    const { origin, size } = nodes[0]
+    expect(origin.x + size.width / 2).toBeCloseTo(500)
+    expect(origin.y + size.height / 2).toBeCloseTo(400)
   })
 
   it('commitPlacement creates one node at the chosen spot+size and clears state', () => {
