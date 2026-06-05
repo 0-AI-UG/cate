@@ -543,14 +543,19 @@ function MainApp() {
     >
       <TitlebarStrip />
       <div className="relative flex-1 min-h-0 min-w-0">
-      {/* Main window shell fills the viewport so the canvas extends edge to
-          edge under the translucent sidebars. The top-level dock tab bar
-          insets itself via CSS vars (--cate-left/right-sidebar-width) so the
-          Canvas tab pill stays next to the sidebar.
+      {/* Layout row: left sidebar | shell | right sidebar. The sidebars are real
+          flex items that push the shell rather than overlaying it; their own
+          outer width (collapsing to 0 when empty) drives the layout. Kept in its
+          own row so the overlay/modal layer below never participates in flex. */}
+      <div className="absolute inset-0 flex flex-row">
+      <div data-app-sidebar="left" className="flex-shrink-0 h-full"><Sidebar /></div>
+
+      {/* Main window shell — fills the space between the two sidebars.
 
           Wrapped in the active workspace's dock store and KEYED by the
           workspace id so the whole dock/canvas subtree remounts on switch and
           reads that workspace's own stores — full per-workspace isolation. */}
+      <div className="relative flex-1 min-h-0 min-w-0">
       <DockStoreProvider store={activeDockStore}>
       <MainWindowShell
         key={selectedWorkspaceId}
@@ -560,17 +565,14 @@ function MainApp() {
       />
       </DockStoreProvider>
 
-      {/* Companion lock: covers the canvas area (z-10, beneath the z-20 sidebars
-          so workspace switching stays live) when the selected remote workspace's
-          companion is down. Renders nothing for local/healthy workspaces. */}
+      {/* Companion lock: covers the canvas area when the selected remote
+          workspace's companion is down. Sits inside the shell wrapper so it
+          never covers the sidebars. Renders nothing for local/healthy ws. */}
       <CompanionLockOverlay />
-
-      {/* Sidebars: absolutely-positioned overlays on top of the shell */}
-      <div className="absolute inset-y-0 left-0 z-20 flex pointer-events-none">
-        <div data-app-sidebar="left" className="pointer-events-auto h-full"><Sidebar /></div>
       </div>
-      <div className="absolute inset-y-0 right-0 z-20 flex pointer-events-none">
-        <div data-app-sidebar="right" className="pointer-events-auto h-full"><RightSidebar /></div>
+
+      {/* Right sidebar — real flex item, pushes the shell from the right. */}
+      <div data-app-sidebar="right" className="flex-shrink-0 h-full"><RightSidebar /></div>
       </div>
 
       {/* Single shared file-drag drop indicator (canvas / dock / agent) */}

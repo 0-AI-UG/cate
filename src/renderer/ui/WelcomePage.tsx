@@ -83,13 +83,7 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
   }, [workspaceId])
 
   return (
-    <div
-      className="absolute top-0 bottom-0 flex items-center justify-center pointer-events-none z-10"
-      style={{
-        left: 'var(--cate-left-sidebar-width, 0px)',
-        right: 'var(--cate-right-sidebar-width, 0px)',
-      }}
-    >
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
       <div className="pointer-events-auto max-w-2xl w-full px-8">
         {/* Header */}
         <div className="flex flex-col items-center mb-10">

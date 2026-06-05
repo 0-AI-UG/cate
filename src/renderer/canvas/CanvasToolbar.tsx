@@ -259,13 +259,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 
   return (
     <>
-    <div
-      className="absolute bottom-4 z-50 flex justify-center pointer-events-none"
-      style={{
-        left: 'var(--cate-left-sidebar-width, 0px)',
-        right: 'var(--cate-right-sidebar-width, 0px)',
-      }}
-    >
+    <div className="absolute inset-x-0 bottom-4 z-50 flex justify-center pointer-events-none">
       <div data-onboarding="toolbar" className="relative pointer-events-auto">
         <div className="rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
           <div className="flex items-center gap-0.5 px-1 py-1">
@@ -340,9 +334,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       className="absolute z-50 flex gap-2"
       style={{
         ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
-        ...(mmRight
-          ? { right: 'calc(1rem + var(--cate-right-sidebar-width, 0px))' }
-          : { left: 'calc(1rem + var(--cate-left-sidebar-width, 0px))' }),
+        ...(mmRight ? { right: '1rem' } : { left: '1rem' }),
         // Keep the pill hard against the docked corner; the UpdateButton sits inboard.
         flexDirection: mmRight ? 'row' : 'row-reverse',
         alignItems: mmBottom ? 'flex-end' : 'flex-start',

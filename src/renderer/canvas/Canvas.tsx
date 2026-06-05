@@ -127,11 +127,10 @@ const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = 
   if (!pending) return null
   const r = canvasRef.current?.getBoundingClientRect()
   if (!r) return null
-  const sb = (side: 'left' | 'right') =>
-    (document.querySelector(`[data-app-sidebar="${side}"]`) as HTMLElement | null)?.getBoundingClientRect()
-  const left = sb('left'); const right = sb('right')
-  const visLeft = left && left.width > 0 ? left.right : r.left
-  const visRight = right && right.width > 0 ? right.left : r.right
+  // The sidebars now push the canvas rather than overlaying it, so the canvas
+  // rect itself is the visible region.
+  const visLeft = r.left
+  const visRight = r.right
   const count = pending.candidates.length
   const armed = pending.freeArmed
 
@@ -299,10 +298,23 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     }
   }, [])
 
-  // Track container size for grid visibility calculations
+  // Track container size for grid visibility, and keep canvas content anchored
+  // to whichever container edge stayed put when the OTHER edge moves — so a
+  // sidebar (or dock split) opening pushes content by its full width instead of
+  // letting it slide under the newly covered edge.
+  //
+  // One symmetric rule, no knowledge of sidebars: the world transform is
+  // anchored to the container's top-left, so a moving LEFT edge already drags
+  // content along; we only need to add the RIGHT edge's movement when the left
+  // edge held still (the right sidebar / a split divider). A window resize moves
+  // the right edge too but should NOT chase content, so we gate on the window
+  // width being unchanged. Pure translations don't change size and never fire.
   useEffect(() => {
     const el = canvasRef.current
     if (!el) return
+
+    let prevRect = el.getBoundingClientRect()
+    let prevWindowWidth = window.innerWidth
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -312,6 +324,16 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         }
         setContainerSize(size)
         canvasApi.getState().setContainerSize(size)
+      }
+      const rect = el.getBoundingClientRect()
+      const windowResized = window.innerWidth !== prevWindowWidth
+      const dLeft = rect.left - prevRect.left
+      const dRight = rect.right - prevRect.right
+      prevRect = rect
+      prevWindowWidth = window.innerWidth
+      if (!windowResized && Math.abs(dLeft) < 0.5 && Math.abs(dRight) > 0.5) {
+        const { viewportOffset } = canvasApi.getState()
+        canvasApi.setState({ viewportOffset: { x: viewportOffset.x + dRight, y: viewportOffset.y } })
       }
     })
 
