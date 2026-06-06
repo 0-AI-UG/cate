@@ -2,6 +2,7 @@
 // UI Store — Zustand state for transient UI overlays and visibility toggles.
 // =============================================================================
 
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { SidebarView, SidebarLayout } from '../../shared/types'
 import { useSettingsStore } from './settingsStore'
@@ -31,16 +32,12 @@ export function normalizeSidebarLayout(raw: Partial<SidebarLayout> | null | unde
   return { left, right }
 }
 
-// The sidebar layout is persisted in settings.json (see settingsStore). At
-// store-creation time settings may not be loaded yet, so we seed from whatever
-// the settings store currently holds (defaults until loadSettings resolves) and
-// App re-syncs the loaded value via setState afterwards.
-function loadLayout(): SidebarLayout {
+// The sidebar layout lives SOLELY in settingsStore (persisted in settings.json).
+// uiStore holds only the transient sidebar state (active views, drag). Read the
+// layout via `getSidebarLayout()` (or the `useSidebarLayout` selector in
+// components) so there is a single source of truth and no hand-sync.
+export function getSidebarLayout(): SidebarLayout {
   return normalizeSidebarLayout(useSettingsStore.getState().sidebarLayout)
-}
-
-function saveLayout(layout: SidebarLayout) {
-  useSettingsStore.getState().setSetting('sidebarLayout', layout)
 }
 
 interface UIStoreState {
@@ -62,8 +59,6 @@ interface UIStoreState {
   activeTool: CanvasTool
   /** True while Spacebar is held — temporarily overrides `activeTool` with Hand. */
   spacePanActive: boolean
-  /** Layout: which views live on which side and in what order */
-  sidebarLayout: SidebarLayout
   /** Active view on the left sidebar, null = collapsed */
   activeLeftSidebarView: SidebarView | null
   /** Active view on the right sidebar, null = collapsed */
@@ -124,7 +119,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   marquee: null,
   activeTool: 'select',
   spacePanActive: false,
-  sidebarLayout: loadLayout(),
   activeLeftSidebarView: 'workspaces',
   activeRightSidebarView: null,
   draggingView: null,
@@ -167,11 +161,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   toggleSidebar() {
     // Toggles the left sidebar between collapsed (null) and the first view on the left.
-    const { activeLeftSidebarView, sidebarLayout } = get()
+    const { activeLeftSidebarView } = get()
     if (activeLeftSidebarView !== null) {
       set({ activeLeftSidebarView: null })
     } else {
-      const first = sidebarLayout.left[0] ?? null
+      const first = getSidebarLayout().left[0] ?? null
       set({ activeLeftSidebarView: first })
     }
   },
@@ -206,9 +200,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   moveSidebarView(view, targetSide, targetIndex) {
     const state = get()
+    // The layout's single home is settingsStore; read + write it there.
+    const current = getSidebarLayout()
     const layout: SidebarLayout = {
-      left: state.sidebarLayout.left.slice(),
-      right: state.sidebarLayout.right.slice(),
+      left: current.left.slice(),
+      right: current.right.slice(),
     }
     // Determine source side and index
     let sourceSide: SidebarSide | null = null
@@ -226,11 +222,14 @@ export const useUIStore = create<UIStore>((set, get) => ({
     insertAt = Math.max(0, Math.min(insertAt, layout[targetSide].length))
     layout[targetSide].splice(insertAt, 0, view)
 
-    saveLayout(layout)
+    // Persist to settingsStore (the single source of truth). The broadcast funnel
+    // projects it back to every window; components read it via useSidebarLayout.
+    useSettingsStore.getState().setSetting('sidebarLayout', layout)
 
-    // Update active views: if the moved view was active on the source, clear it.
-    // Focus it on the target side so the user sees where it landed.
-    const patch: Partial<UIStoreState> = { sidebarLayout: layout }
+    // Update active views (transient, uiStore-owned): if the moved view was
+    // active on the source, clear it; focus it on the target side so the user
+    // sees where it landed.
+    const patch: Partial<UIStoreState> = {}
     if (sourceSide === 'left' && state.activeLeftSidebarView === view) {
       patch.activeLeftSidebarView = null
     }
@@ -240,7 +239,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
     if (targetSide === 'left') patch.activeLeftSidebarView = view
     else patch.activeRightSidebarView = view
 
-    set(patch as UIStoreState)
+    set(patch)
   },
 
   setDraggingView(view) {
@@ -263,6 +262,20 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
 
 }))
+
+/**
+ * Subscribe to the sidebar layout (its single home is settingsStore). Components
+ * use this instead of reading a uiStore copy, so there's no hand-sync and no
+ * stale path when the layout changes via UI, hand-edit, or another window.
+ */
+export function useSidebarLayout(): SidebarLayout {
+  // Select the stable raw field and normalize in a memo: normalizeSidebarLayout
+  // builds a fresh {left,right} every call, so selecting it directly would return
+  // a new reference on every render and, under zustand v5's snapshot identity
+  // check, spin useSyncExternalStore into "Maximum update depth exceeded".
+  const raw = useSettingsStore((s) => s.sidebarLayout)
+  return useMemo(() => normalizeSidebarLayout(raw), [raw])
+}
 
 /**
  * Resolve the tool currently in effect. Space-hold temporarily forces Hand

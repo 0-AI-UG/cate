@@ -6,11 +6,19 @@
 import { useEffect } from 'react'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
-import { useAppStore, getActiveCanvasOps } from '../stores/appStore'
-import { useUIStore } from '../stores/uiStore'
+import {
+  useAppStore,
+  getActiveCanvasOps,
+  getActiveCanvasPanelId,
+  getWorkspaceCanvasStore,
+  placementForActivePanel,
+} from '../stores/appStore'
+import { useUIStore, getSidebarLayout } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
+import { getActivePanelId } from '../lib/activePanel'
+import { resolvePanelById } from '../lib/workspace/panelReveal'
+import { getNodeActivePanelId } from '../panels/nodeDockRegistry'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
-import { placementForActiveSurface } from '../lib/activeSurface'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 
@@ -41,6 +49,46 @@ export async function ensureWorkspaceFolder(workspaceId: string): Promise<string
 }
 
 /**
+ * Whether a terminal panel currently holds input focus, derived from the
+ * canonical active-panel pointer (lib/activePanel). When a terminal is focused,
+ * most keystrokes must pass through to xterm.js, so the shortcut handler uses
+ * this to bail out of non-Cmd shortcuts.
+ *
+ * Primary path: the active panel id resolves to a `terminal` panel → true.
+ * Fallback: the active id is a CANVAS container (a canvas is itself the active
+ * panel when a node was focused only via the canvas), so descend into the
+ * focused node's per-node dock to find its active leaf panel, and check that.
+ * This is what fixes the old `node.panelId` (seed panel) bug — a node holding a
+ * terminal tab beside an editor now reports correctly per the visible tab.
+ *
+ * Exported (and pure — reads only module/store state) so it can be unit-tested.
+ */
+export function computeTerminalHasFocus(): boolean {
+  const activeId = getActivePanelId()
+  if (!activeId) return false
+
+  const activePanel = resolvePanelById(activeId)
+  if (activePanel?.type === 'terminal') return true
+
+  // Canvas container active: the real input-focus panel is the focused node's
+  // active dock leaf. Resolve via the active canvas store's focusedNodeId.
+  if (activePanel?.type === 'canvas') {
+    const canvasPanelId = getActiveCanvasPanelId()
+    if (!canvasPanelId) return false
+    const canvasStore =
+      getActiveCanvasOps()?.storeApi ??
+      getWorkspaceCanvasStore(useAppStore.getState().selectedWorkspaceId)
+    const focusedNodeId = canvasStore?.getState().focusedNodeId
+    if (!focusedNodeId) return false
+    const leafId = getNodeActivePanelId(canvasPanelId, focusedNodeId)
+    if (!leafId) return false
+    return resolvePanelById(leafId)?.type === 'terminal'
+  }
+
+  return false
+}
+
+/**
  * Registers global keyboard shortcut listeners on `document`.
  *
  * Handles:
@@ -55,10 +103,11 @@ export function useShortcuts(): void {
   useEffect(() => {
     const shortcutStore = useShortcutStore.getState
     // Resolve the *active* canvas store at call time rather than binding to the
-    // context store captured on mount. The visible canvas is a per-panel store
-    // (CanvasPanel registers it and marks itself active via setActiveCanvasPanelId);
-    // the App-level context only aliases the legacy singleton, which is usually
-    // NOT the canvas the user is looking at once more than one canvas exists.
+    // context store captured on mount. The visible canvas is a per-panel store;
+    // getActiveCanvasOps derives it from the canonical active panel (see
+    // lib/activePanel + canvasAccess), falling back to the workspace's primary
+    // canvas. The App-level context only aliases the legacy singleton, which is
+    // usually NOT the canvas the user is looking at once more than one exists.
     // Routing every canvas action through the active store keeps keyboard
     // navigation/pan/zoom acting on the canvas actually on screen. Falls back to
     // the context store for single-canvas / detached windows.
@@ -93,20 +142,20 @@ export function useShortcuts(): void {
 
       switch (action as ShortcutAction) {
         case 'newTerminal': {
-          const placement = placementForActiveSurface()
+          const placement = placementForActivePanel()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createTerminal(wsId, undefined, undefined, placement)
           break
         }
         case 'newBrowser': {
-          const placement = placementForActiveSurface()
+          const placement = placementForActivePanel()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createBrowser(wsId, undefined, undefined, placement)
           break
         }
         case 'newEditor':
         case 'newFile': {
-          const placement = placementForActiveSurface()
+          const placement = placementForActivePanel()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
           if (wsId) appStore().createEditor(wsId, undefined, undefined, placement)
           break
@@ -126,7 +175,7 @@ export function useShortcuts(): void {
           break
         case 'toggleFileExplorer': {
           const ui = useUIStore.getState()
-          const side = ui.sidebarLayout.left.includes('explorer') ? 'left' : 'right'
+          const side = getSidebarLayout().left.includes('explorer') ? 'left' : 'right'
           if (side === 'left') {
             ui.setActiveLeftSidebarView(ui.activeLeftSidebarView === 'explorer' ? null : 'explorer')
           } else {
@@ -136,7 +185,7 @@ export function useShortcuts(): void {
         }
         case 'toggleSearch': {
           const ui = useUIStore.getState()
-          const side = ui.sidebarLayout.left.includes('search') ? 'left' : 'right'
+          const side = getSidebarLayout().left.includes('search') ? 'left' : 'right'
           const active = side === 'left' ? ui.activeLeftSidebarView : ui.activeRightSidebarView
           const next = active === 'search' ? null : 'search'
           if (side === 'left') ui.setActiveLeftSidebarView(next)
@@ -261,13 +310,7 @@ export function useShortcuts(): void {
       // When a terminal has focus, most keyboard events must pass through to
       // xterm.js. Only app-level shortcuts (Cmd+<key>, Ctrl+Tab, etc.) should
       // be intercepted; everything else belongs to the terminal.
-      const { selectedWorkspaceId } = appStore()
-      const focusedId = canvasStore().focusedNodeId
-      const focusedNode = focusedId ? canvasStore().nodes[focusedId] : null
-      const focusedPanel = focusedNode
-        ? appStore().workspaces.find(w => w.id === selectedWorkspaceId)?.panels[focusedNode.panelId]
-        : null
-      const terminalHasFocus = focusedPanel?.type === 'terminal'
+      const terminalHasFocus = computeTerminalHasFocus()
 
       // --- Spacebar-hold = temporary Hand tool (pan) ---
       // Hardcoded (a hold, not a tap). Ignored while typing or in a terminal so
@@ -451,7 +494,7 @@ export function useShortcuts(): void {
         const focusedId = canvasStore().focusedNodeId
         const focusedNode = focusedId ? canvasStore().nodes[focusedId] : null
         const focusedPanel = focusedNode
-          ? appStore().workspaces.find(w => w.id === selectedWorkspaceId)?.panels[focusedNode.panelId]
+          ? appStore().workspaces.find(w => w.id === appStore().selectedWorkspaceId)?.panels[focusedNode.panelId]
           : null
         if (focusedPanel?.type === 'browser') return
       }

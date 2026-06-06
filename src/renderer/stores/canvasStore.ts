@@ -77,7 +77,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       ...createArrangeSlice(set, get),
 
       // --- Lifecycle / bulk reset (counterpart to the initial state above) ---
-      loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions) {
+      loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions) {
         // Compute next counters from loaded data
         const nodeList = Object.values(nodes)
         const maxZOrder = nodeList.reduce((max, n) => Math.max(max, n.zOrder), -1)
@@ -94,7 +94,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
           regions: regions ?? {},
           viewportOffset,
           zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
-          focusedNodeId,
+          focusedNodeId: null,
           nextZOrder: maxZOrder + 1,
           nextCreationIndex: maxCreationIndex + 1,
           selectedNodeIds: new Set<string>(),

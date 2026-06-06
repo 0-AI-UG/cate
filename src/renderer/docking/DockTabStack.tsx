@@ -13,7 +13,7 @@ import { DockTabBar } from './DockTabBar'
 import { DockTabContextMenu, SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
 import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
-import { setActiveSurface } from '../lib/activeSurface'
+import { setActivePanel } from '../lib/activePanel'
 import { useDockTabDrag } from './useDockTabDrag'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 
@@ -211,13 +211,20 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     <div
       ref={stackRef}
       className="flex flex-col h-full min-h-0 relative"
-      // Mark this stack as the active surface on any pointer-down inside it (tab
-      // bar OR content), so a panel-create shortcut lands here — even in a split
-      // and even when the click didn't land on a focusable element. Capture phase
-      // so a canvas docked in this stack can override on the bubble phase (see
-      // activeSurface). `localOnly` mini-docks (canvas nodes) opt out.
+      // Mark this stack's active tab as the active panel on any pointer-down
+      // inside it (tab bar OR content), so a panel-create shortcut lands here —
+      // even in a split and even when the click didn't land on a focusable
+      // element. Capture phase so a canvas docked in this stack can re-assert
+      // itself on the bubble phase (CanvasPanel sets the same canvas panel, so
+      // they agree). `localOnly` mini-docks (canvas nodes) opt out — they must
+      // not steal the window-global active panel.
       onPointerDownCapture={
-        localOnly ? undefined : () => setActiveSurface({ kind: 'dock', zone: zoneProp, stackId: stack.id })
+        localOnly
+          ? undefined
+          : () => {
+              const activePanelId = stack.panelIds[stack.activeIndex]
+              if (activePanelId) setActivePanel(activePanelId)
+            }
       }
     >
       {/* Tab bar — VS Code style: dark strip with active tab merging into the

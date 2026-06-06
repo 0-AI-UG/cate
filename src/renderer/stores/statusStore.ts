@@ -10,7 +10,6 @@ import type {
   NodeActivityState,
   AgentState,
   TerminalActivity,
-  GitInfo,
 } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -24,7 +23,6 @@ interface WorkspaceStatusState {
   /** terminalId → whether main's process-tree scan found a known agent CLI. */
   agentPresent: Record<string, boolean>
   nodeActivity: Record<CanvasNodeId, NodeActivityState>
-  terminalTitles: Record<string, string>
   listeningPorts: Record<string, number[]>      // terminalId → ports
   terminalCwd: Record<string, string>            // terminalId → cwd
 }
@@ -38,8 +36,30 @@ interface StatusStoreState {
   workspaces: Record<string, WorkspaceStatusState>
   /** Timers for auto-clearing commandFinished states. */
   _clearTimers: Record<string, ReturnType<typeof setTimeout>>
-  terminalWorkspaceMap: Record<string, string>
-  gitInfo: Record<string, GitInfo>
+}
+
+// -----------------------------------------------------------------------------
+// terminal->workspace resolution
+//
+// statusStore no longer keeps a parallel ptyId->workspaceId map; terminal
+// identity (panelId<->ptyId<->workspaceId) is owned by terminalRegistry. To
+// avoid an import cycle (terminalRegistry imports statusStore), the registry
+// installs its resolver here. A fallback covers the rare window before the
+// resolver is wired (e.g. early tests).
+// -----------------------------------------------------------------------------
+
+let workspaceResolver: (ptyId: string) => string | undefined = () => undefined
+
+/** Install the ptyId->workspaceId resolver (called once by terminalRegistry). */
+export function setTerminalWorkspaceResolver(
+  resolver: (ptyId: string) => string | undefined,
+): void {
+  workspaceResolver = resolver
+}
+
+/** Resolve the owning workspace for a ptyId via the registry-owned bimap. */
+export function workspaceIdForTerminal(ptyId: string): string | undefined {
+  return workspaceResolver(ptyId)
 }
 
 interface StatusStoreActions {
@@ -50,7 +70,6 @@ interface StatusStoreActions {
   setAgentPresent: (workspaceId: string, terminalId: string, present: boolean) => void
   setNodeActivity: (nodeId: CanvasNodeId, state: NodeActivityState) => void
   clearNodeActivity: (nodeId: CanvasNodeId) => void
-  setTerminalTitle: (terminalId: string, title: string) => void
 
   // Derived getters (per workspace)
   statusText: (workspaceId: string) => string
@@ -65,7 +84,6 @@ interface StatusStoreActions {
   unregisterTerminal: (terminalId: string) => void
   setTerminalPorts: (terminalId: string, ports: number[]) => void
   setTerminalCwd: (terminalId: string, cwd: string) => void
-  setGitInfo: (workspaceId: string, branch: string, isDirty: boolean) => void
 }
 
 export type StatusStore = StatusStoreState & StatusStoreActions
@@ -87,7 +105,6 @@ function emptyWorkspaceStatus(): WorkspaceStatusState {
     agentName: {},
     agentPresent: {},
     nodeActivity: {},
-    terminalTitles: {},
     listeningPorts: {},
     terminalCwd: {},
   }
@@ -120,8 +137,6 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
   // --- State ---
   workspaces: {},
   _clearTimers: {},
-  terminalWorkspaceMap: {},
-  gitInfo: {},
 
   // --- Actions ---
 
@@ -275,23 +290,6 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
     set({ workspaces: updatedWorkspaces, _clearTimers: remainingTimers })
   },
 
-  setTerminalTitle(terminalId, title) {
-    // Update terminal title in all workspaces that track this terminal
-    set((state) => {
-      const updatedWorkspaces = { ...state.workspaces }
-      for (const wsId of Object.keys(updatedWorkspaces)) {
-        const ws = updatedWorkspaces[wsId]
-        if (ws.terminalActivity[terminalId] != null) {
-          updatedWorkspaces[wsId] = {
-            ...ws,
-            terminalTitles: { ...ws.terminalTitles, [terminalId]: title },
-          }
-        }
-      }
-      return { workspaces: updatedWorkspaces }
-    })
-  },
-
   // --- Derived getters ---
 
   statusText(workspaceId) {
@@ -380,9 +378,10 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
   },
 
   registerTerminal(terminalId, workspaceId) {
-    set((state) => ({
-      terminalWorkspaceMap: { ...state.terminalWorkspaceMap, [terminalId]: workspaceId },
-    }))
+    // Terminal->workspace identity is owned by terminalRegistry's bimap now;
+    // statusStore only ensures the per-workspace status bucket exists so the
+    // ptyId-keyed sub-maps (activity/agent/ports/cwd) have somewhere to land.
+    get().ensureWorkspace(workspaceId)
   },
 
   unregisterTerminal(terminalId) {
@@ -394,10 +393,11 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
     void import('../lib/agent/agentScreenDetector').then(({ forgetAgentTracker }) => {
       forgetAgentTracker(terminalId)
     })
+    // Resolve the workspace via the registry-owned bimap BEFORE the registry
+    // entry is torn down. (dispose() calls unregisterTerminal before deleting
+    // the entry, so the resolver still answers here.)
+    const workspaceId = workspaceResolver(terminalId)
     set((state) => {
-      const { [terminalId]: _removed, ...remainingMap } = state.terminalWorkspaceMap
-
-      const workspaceId = state.terminalWorkspaceMap[terminalId]
       const updatedWorkspaces = { ...state.workspaces }
       if (workspaceId && updatedWorkspaces[workspaceId]) {
         const ws = updatedWorkspaces[workspaceId]
@@ -407,7 +407,6 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
         const { [terminalId]: _s, ...remainingAgent } = ws.agentState
         const { [terminalId]: _an, ...remainingAgentName } = ws.agentName
         const { [terminalId]: _ap, ...remainingAgentPresent } = ws.agentPresent
-        const { [terminalId]: _t, ...remainingTitles } = ws.terminalTitles
         updatedWorkspaces[workspaceId] = {
           ...ws,
           listeningPorts: remainingPorts,
@@ -416,21 +415,16 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
           agentState: remainingAgent,
           agentName: remainingAgentName,
           agentPresent: remainingAgentPresent,
-          terminalTitles: remainingTitles,
         }
       }
-
-      return {
-        terminalWorkspaceMap: remainingMap,
-        workspaces: updatedWorkspaces,
-      }
+      return { workspaces: updatedWorkspaces }
     })
   },
 
   setTerminalPorts(terminalId, ports) {
+    const workspaceId = workspaceResolver(terminalId)
+    if (!workspaceId) return
     set((state) => {
-      const workspaceId = state.terminalWorkspaceMap[terminalId]
-      if (!workspaceId) return state
       const ws = state.workspaces[workspaceId] ?? emptyWorkspaceStatus()
       return {
         workspaces: {
@@ -445,9 +439,9 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
   },
 
   setTerminalCwd(terminalId, cwd) {
+    const workspaceId = workspaceResolver(terminalId)
+    if (!workspaceId) return
     set((state) => {
-      const workspaceId = state.terminalWorkspaceMap[terminalId]
-      if (!workspaceId) return state
       const ws = state.workspaces[workspaceId] ?? emptyWorkspaceStatus()
       return {
         workspaces: {
@@ -459,12 +453,6 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
         },
       }
     })
-  },
-
-  setGitInfo(workspaceId, branch, isDirty) {
-    set((state) => ({
-      gitInfo: { ...state.gitInfo, [workspaceId]: { branch, isDirty } },
-    }))
   },
 }))
 

@@ -6,7 +6,7 @@ import { SourceControlView } from './SourceControlView'
 import { ParallelWorkTab } from './ParallelWorkTab'
 import { UpdateButton } from './UpdateButton'
 import { useAppStore } from '../stores/appStore'
-import { useUIStore } from '../stores/uiStore'
+import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
 import {
   FolderOpen,
@@ -92,7 +92,7 @@ interface ActivityBarSidebarProps {
 }
 
 const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWidth, minWidth, maxWidth }) => {
-  const layout = useUIStore((s) => s.sidebarLayout)
+  const layout = useSidebarLayout()
   const views = layout[side]
   const activeView = useUIStore((s) => (side === 'left' ? s.activeLeftSidebarView : s.activeRightSidebarView))
   const setActiveView = useUIStore((s) =>

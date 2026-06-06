@@ -9,7 +9,7 @@ import {
   noteAgentPresence,
   noteAgentSpinnerByte,
 } from './agentScreenDetector'
-import { useStatusStore } from '../../stores/statusStore'
+import { useStatusStore, setTerminalWorkspaceResolver } from '../../stores/statusStore'
 
 // Mock the notification sender so the coordinator's import graph stays light
 // (the real module pulls settingsStore → logger, which starts a flush interval
@@ -107,9 +107,14 @@ describe('coordinator settle timing', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
-    useStatusStore.setState({ workspaces: {}, _clearTimers: {}, terminalWorkspaceMap: {}, gitInfo: {} })
+    useStatusStore.setState({ workspaces: {}, _clearTimers: {} })
+    // terminal->workspace identity is owned by terminalRegistry's bimap; stub
+    // the resolver so the detector can map this pty to its workspace.
+    setTerminalWorkspaceResolver((ptyId) => (ptyId === PTY ? WS : undefined))
     useStatusStore.getState().ensureWorkspace(WS)
     useStatusStore.getState().registerTerminal(PTY, WS)
+    // agentName is owned by statusStore now; seed it so commit can read it.
+    useStatusStore.getState().setAgentName(WS, PTY, 'Codex')
     startAgentScreenDetector()
   })
   afterEach(() => {
@@ -122,14 +127,14 @@ describe('coordinator settle timing', () => {
   }
 
   it('the 1 Hz presence poll must not reset the settle timer (regression)', () => {
-    noteAgentPresence(PTY, true, 'Codex')
+    noteAgentPresence(PTY, true)
     noteAgentTitle(PTY, true) // spinner → running
     expect(state()).toBe('running')
 
     noteAgentTitle(PTY, false) // idle title → arm settle (WAITING_SETTLE_MS)
     // Presence re-emits every 1s; WAITING_SETTLE_MS is longer than one poll.
     vi.advanceTimersByTime(1000)
-    noteAgentPresence(PTY, true, 'Codex')
+    noteAgentPresence(PTY, true)
     expect(state()).toBe('running') // still held mid-settle
 
     vi.advanceTimersByTime(1000) // total 2000ms > settle → must have fired
@@ -137,7 +142,7 @@ describe('coordinator settle timing', () => {
   })
 
   it('resuming work before the settle fires keeps it running', () => {
-    noteAgentPresence(PTY, true, 'Codex')
+    noteAgentPresence(PTY, true)
     noteAgentTitle(PTY, true)
     noteAgentTitle(PTY, false) // arm settle
     vi.advanceTimersByTime(1000)
@@ -147,17 +152,17 @@ describe('coordinator settle timing', () => {
   })
 
   it('agent exit during settle resolves to finished, not waitingForInput', () => {
-    noteAgentPresence(PTY, true, 'Codex')
+    noteAgentPresence(PTY, true)
     noteAgentTitle(PTY, true)
     noteAgentTitle(PTY, false) // arm settle
-    noteAgentPresence(PTY, false, 'Codex') // process gone
+    noteAgentPresence(PTY, false) // process gone
     expect(state()).toBe('finished')
     vi.advanceTimersByTime(WAITING_SETTLE_MS)
     expect(state()).not.toBe('waitingForInput')
   })
 
   it('pi-style body spinner drives running with a static title', () => {
-    noteAgentPresence(PTY, true, 'PI Agent')
+    noteAgentPresence(PTY, true)
     // pi never sets a title spinner; its braille frames arrive in the body.
     noteAgentSpinnerByte(PTY)
     expect(state()).toBe('running')

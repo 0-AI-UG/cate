@@ -9,16 +9,14 @@ import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X, Folder, File 
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
 import { isNavKey, resolveTreeNavAction } from './treeKeyboardNav'
-import { buildGitTreeDecorations, toPosixPath, type GitTree } from './gitStatusDecoration'
 import { watchFsRoot } from '../lib/fs/fsWatchManager'
+import { useGitTreeFor } from '../stores/gitStatusStore'
 import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
-import { getWorkspaceDockStore } from '../stores/workspaceStores'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { workspaceDisplayName } from '../lib/fs/displayPath'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
-import type { DockLayoutNode } from '../../shared/types'
 
 // Opening a workspace sets its root path optimistically in the renderer, but
 // main only registers that path as an allowed root once the async workspace
@@ -27,29 +25,6 @@ import type { DockLayoutNode } from '../../shared/types'
 // out that race instead of leaving the tree stuck empty until a manual reload.
 const FS_READ_RETRIES = 5
 const FS_READ_RETRY_DELAY_MS = 120
-
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
-function findActivePanel(node: DockLayoutNode): string | null {
-  if (node.type === 'tabs') return node.panelIds[node.activeIndex] ?? null
-  for (const child of node.children) {
-    const result = findActivePanel(child)
-    if (result) return result
-  }
-  return null
-}
-
-function isCanvasActiveInCenter(): boolean {
-  const appState = useAppStore.getState()
-  const centerLayout = getWorkspaceDockStore(appState.selectedWorkspaceId)?.getState().zones.center.layout
-  if (!centerLayout) return false
-  const activePanelId = findActivePanel(centerLayout)
-  if (!activePanelId) return false
-  const ws = appState.workspaces.find((w) => w.id === appState.selectedWorkspaceId)
-  return ws?.panels[activePanelId]?.type === 'canvas'
-}
 
 // -----------------------------------------------------------------------------
 // Component
@@ -84,7 +59,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [childrenCache, setChildrenCache] = useState<Map<string, FileTreeNodeType[]>>(new Map())
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set())
-  const [gitTree, setGitTree] = useState<GitTree | undefined>(undefined)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
   const [rootCreateValue, setRootCreateValue] = useState('')
@@ -107,6 +81,12 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   useEffect(() => { expandedPathsRef.current = expandedPaths }, [expandedPaths])
 
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
+
+  // Git decorations come from the single per-workspace gitStatusStore (one
+  // fsWatch + focus + branch-update loop shared with the Search view and Source
+  // Control), not a per-Explorer fetch. The store owns the git tint snapshot so
+  // the Explorer can no longer disagree with the other git surfaces.
+  const gitTree = useGitTreeFor(rootPath)
 
   const createTerminal = useAppStore((s) => s.createTerminal)
   const removeWorkspace = useAppStore((s) => s.removeWorkspace)
@@ -300,27 +280,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     try {
       const entries = await window.electronAPI.fsReadDir(dirPath, selectedWorkspaceId)
 
-      // Check git status. We fetch both the tracked-file list and the porcelain
-      // status: the status drives per-file decorations (modified/added/deleted/
-      // untracked) + folder tinting, while the tracked set lets us tell an
-      // untracked-new file (decorated green) from a git-ignored one (dimmed).
-      const isGit = await window.electronAPI.gitIsRepo(dirPath)
-      if (isGit) {
-        const [trackedFiles, status] = await Promise.all([
-          window.electronAPI.gitLsFiles(dirPath),
-          window.electronAPI.gitStatus(dirPath),
-        ])
-        // Both gitLsFiles and gitStatus return paths relative to the repo cwd;
-        // convert to absolute (posix) so lookups match node.path cross-platform.
-        const root = toPosixPath(dirPath)
-        setGitTree({
-          tracked: new Set(trackedFiles.map((p) => `${root}/${p}`)),
-          decorations: buildGitTreeDecorations(status.files, dirPath),
-        })
-      } else {
-        setGitTree(undefined)
-      }
-
+      // Git decorations are owned by gitStatusStore (see useGitTreeFor above);
+      // loadTree only refreshes the on-disk file structure now.
       setNodes(entries)
       // Re-read every expanded folder so the refreshed root read propagates the
       // whole way down the tree (and prune folders that vanished on disk).
@@ -339,7 +300,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       }
       log.warn('[file-explorer] Load tree failed:', err)
       setNodes([])
-      setGitTree(undefined)
       setIsLoading(false)
     }
   }, [refreshExpandedChildren, selectedWorkspaceId])

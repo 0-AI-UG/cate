@@ -6,26 +6,26 @@
 // used to share the legacy config.json (recentProjects, layouts, remoteProjects,
 // sidebarSession) now lives in its own files (see ./workspaceStateStore).
 //
-//   - Loaded synchronously at startup so the main process can read settings
-//     before any window is constructed.
-//   - On first run it is seeded from the legacy config.json so existing users
-//     keep their settings. This runs before ./workspaceStateStore migrates and
-//     deletes config.json, so settings are never lost.
-//   - Writes are debounced + atomic (tmp + rename), pretty-printed so the file
-//     stays comfortably hand-editable.
-//   - A chokidar watcher detects EXTERNAL edits (the user editing the file in an
-//     editor) and reports the changed keys. Our own programmatic writes are
-//     suppressed by content comparison so we never react to our own changes.
+// This is a thin wrapper over ./jsonStateFile (the reusable "JSON file is the
+// source of truth" store that was itself lifted from this module): jsonStateFile
+// provides the synchronous load, debounced atomic writes, external-edit watcher,
+// echo-suppression AND corrupt-file quarantine. settingsFile adds only the two
+// things specific to settings.json:
+//   - First-run seeding from the legacy electron-store config.json. This runs
+//     before ./workspaceStateStore migrates and deletes config.json, so settings
+//     are never lost.
+//   - A changed-keys diff on external edits (the factory reports the whole value;
+//     callers want exactly which keys the user changed so per-key side effects
+//     only fire for what moved).
 // =============================================================================
 
 import { app } from 'electron'
-import fs from 'fs/promises'
 import fsSync from 'fs'
 import path from 'path'
-import { watch, type FSWatcher } from 'chokidar'
 import log from './logger'
 import { DEFAULT_SETTINGS } from '../shared/types'
 import type { AppSettings } from '../shared/types'
+import { createJsonStateFile } from './jsonStateFile'
 
 const SETTINGS_FILENAME = 'settings.json'
 
@@ -83,23 +83,37 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
 
 const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>
 
+/** True if `value` matches the schema type expected for `key`. */
+function valueMatchesSchema(key: keyof AppSettings, value: unknown): boolean {
+  const expected = SETTINGS_SCHEMA[key]
+  if (expected === 'array') return Array.isArray(value)
+  // 'object' accepts a plain object or null; arrays are rejected so an array
+  // can't masquerade as an object.
+  if (expected === 'object') return typeof value === 'object' && !Array.isArray(value)
+  return typeof value === expected
+}
+
 /** Merge only known, type-correct keys from a parsed object into `target`. */
-function mergeValidatedSettings(target: Partial<AppSettings>, source: Record<string, unknown>): void {
+function mergeValidatedSettings(target: AppSettings, source: Record<string, unknown>): void {
   for (const key of SETTINGS_KEYS) {
     if (!(key in source)) continue
     const val = source[key]
-    const expected = SETTINGS_SCHEMA[key]
-    if (expected === 'array') {
-      if (!Array.isArray(val)) { log.warn('Settings schema mismatch: %s expected array, got %s', key, typeof val); continue }
-    } else if (expected === 'object') {
-      // 'object' accepts a plain object or null (a nullable structured value);
-      // arrays are rejected so an array can't masquerade as an object.
-      if (typeof val !== 'object' || Array.isArray(val)) { log.warn('Settings schema mismatch: %s expected object, got %s', key, typeof val); continue }
-    } else if (typeof val !== expected) {
-      log.warn('Settings schema mismatch: %s expected %s, got %s', key, expected, typeof val); continue
+    if (!valueMatchesSchema(key, val)) {
+      log.warn('Settings schema mismatch: %s expected %s, got %s', key, SETTINGS_SCHEMA[key], typeof val)
+      continue
     }
-    ;(target as Record<string, unknown>)[key as string] = val
+    ;(target as unknown as Record<string, unknown>)[key as string] = val
   }
+}
+
+/** The factory's single shape authority: raw parsed JSON → a complete, validated
+ *  AppSettings. Never throws (a malformed hand-edit degrades to defaults). */
+function normalizeSettings(parsed: unknown, defaults: AppSettings): AppSettings {
+  const next: AppSettings = { ...defaults }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    mergeValidatedSettings(next, parsed as Record<string, unknown>)
+  }
+  return next
 }
 
 export function isSettingsKey(key: string): key is keyof AppSettings {
@@ -107,33 +121,23 @@ export function isSettingsKey(key: string): key is keyof AppSettings {
 }
 
 // ---------------------------------------------------------------------------
-// State
+// Backing store
 // ---------------------------------------------------------------------------
 
-// Authoritative in-memory settings: DEFAULT_SETTINGS overlaid with whatever the
-// file holds. Always complete (every key present), so reads never miss a key.
-let current: AppSettings = { ...DEFAULT_SETTINGS }
-let loaded = false
+const store = createJsonStateFile<AppSettings>({
+  filename: SETTINGS_FILENAME,
+  defaults: { ...DEFAULT_SETTINGS },
+  normalize: normalizeSettings,
+})
 
-// The exact string we last wrote to disk. The watcher compares the file's
-// content against this to ignore the change event our own write produces.
-let lastWrittenContent = ''
-
-let watcher: FSWatcher | null = null
-let writeTimer: ReturnType<typeof setTimeout> | null = null
-const WRITE_DEBOUNCE_MS = 150
+let seeded = false
 
 export function getSettingsFilePath(): string {
-  return path.join(app.getPath('userData'), SETTINGS_FILENAME)
+  return store.getPath()
 }
 
 function legacyConfigPath(): string {
   return path.join(app.getPath('userData'), 'config.json')
-}
-
-/** Serialize the current settings as the canonical, hand-editable JSON text. */
-function serialize(settings: AppSettings): string {
-  return JSON.stringify(settings, null, 2) + '\n'
 }
 
 // ---------------------------------------------------------------------------
@@ -146,31 +150,30 @@ function serialize(settings: AppSettings): string {
  * written so it exists for the watcher and for hand-editing. Idempotent.
  */
 export function loadSettingsSync(): void {
-  if (loaded) return
-  const filePath = getSettingsFilePath()
-  try {
-    if (fsSync.existsSync(filePath)) {
-      const raw = fsSync.readFileSync(filePath, 'utf-8')
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        mergeValidatedSettings(current, parsed as Record<string, unknown>)
-      }
-      lastWrittenContent = raw
-      loaded = true
-      return
-    }
-  } catch (err) {
-    log.warn('[settingsFile] Sync load failed, falling back to migration/defaults: %O', err)
+  if (seeded) return
+  seeded = true
+
+  const filePath = store.getPath()
+  // If the file already exists, the factory's load() is authoritative (it also
+  // handles corrupt-file quarantine). First-run seeding only runs when absent.
+  if (fsSync.existsSync(filePath)) {
+    store.load()
+    return
   }
 
-  // First run (or unreadable file): migrate settings out of the legacy
-  // electron-store config.json, then seed settings.json from the result.
+  // First run: migrate settings out of the legacy electron-store config.json,
+  // then seed settings.json from the result.
+  store.load() // primes the factory's in-memory copy with defaults
   try {
     const cfg = legacyConfigPath()
     if (fsSync.existsSync(cfg)) {
       const parsed = JSON.parse(fsSync.readFileSync(cfg, 'utf-8'))
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        mergeValidatedSettings(current, parsed as Record<string, unknown>)
+        store.update((current) => {
+          const merged = { ...current }
+          mergeValidatedSettings(merged, parsed as Record<string, unknown>)
+          return merged
+        })
         log.info('[settingsFile] Migrated settings from legacy config.json')
       }
     }
@@ -178,8 +181,11 @@ export function loadSettingsSync(): void {
     log.warn('[settingsFile] Legacy config migration failed: %O', err)
   }
 
-  loaded = true
-  writeSync()
+  // Seed settings.json synchronously so the file exists for the watcher and for
+  // hand-editing. `set` always schedules a write (even when nothing migrated, so
+  // the defaults land on disk); flush it synchronously here.
+  store.set(store.get())
+  store.flushPendingWritesSync()
 }
 
 // ---------------------------------------------------------------------------
@@ -187,93 +193,42 @@ export function loadSettingsSync(): void {
 // ---------------------------------------------------------------------------
 
 export function getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] {
-  return (current[key] ?? DEFAULT_SETTINGS[key]) as AppSettings[K]
+  return (store.get()[key] ?? DEFAULT_SETTINGS[key]) as AppSettings[K]
 }
 
 export function getAllSettings(): AppSettings {
-  return { ...current }
+  return { ...store.get() }
 }
 
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
 
-/** Write settings.json synchronously (used during first-run seeding). */
-function writeSync(): void {
-  const content = serialize(current)
-  try {
-    const p = getSettingsFilePath()
-    fsSync.mkdirSync(path.dirname(p), { recursive: true })
-    fsSync.writeFileSync(p, content, 'utf-8')
-    lastWrittenContent = content
-  } catch (err) {
-    log.warn('[settingsFile] Sync write failed: %O', err)
-  }
-}
-
-async function flushWrite(): Promise<void> {
-  writeTimer = null
-  const content = serialize(current)
-  // Record before the write so a watcher event racing the rename still matches.
-  lastWrittenContent = content
-  try {
-    const p = getSettingsFilePath()
-    await fs.mkdir(path.dirname(p), { recursive: true })
-    const tmp = p + '.tmp'
-    await fs.writeFile(tmp, content, 'utf-8')
-    await fs.rename(tmp, p)
-  } catch (err) {
-    log.warn('[settingsFile] Write failed: %O', err)
-  }
-}
-
-function scheduleWrite(): void {
-  if (writeTimer) return
-  writeTimer = setTimeout(() => { void flushWrite() }, WRITE_DEBOUNCE_MS)
-}
-
 /** Update one setting, validating its type. No-op (returns false) on a type
  *  mismatch or unknown key. Persists via a debounced atomic write. */
 export function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): boolean {
   if (!isSettingsKey(key)) return false
-  const expected = SETTINGS_SCHEMA[key]
-  const typeOk =
-    expected === 'array' ? Array.isArray(value)
-    : expected === 'object' ? (typeof value === 'object' && !Array.isArray(value))
-    : typeof value === expected
-  if (!typeOk) {
-    log.warn('[settingsFile] Rejected set for %s: expected %s', String(key), expected)
+  if (!valueMatchesSchema(key, value)) {
+    log.warn('[settingsFile] Rejected set for %s: expected %s', String(key), SETTINGS_SCHEMA[key])
     return false
   }
-  current[key] = value
-  scheduleWrite()
+  store.update((current) => ({ ...current, [key]: value }))
   return true
 }
 
 /** Reset one key to its default and persist. */
 export function resetSetting(key: keyof AppSettings): void {
-  // Indexing with a union key widens the assignment target to `never`; the
-  // value is the matching default, so a structured cast is safe.
-  ;(current as unknown as Record<string, unknown>)[key] = DEFAULT_SETTINGS[key]
-  scheduleWrite()
+  store.update((current) => ({ ...current, [key]: DEFAULT_SETTINGS[key] }))
 }
 
 /** Reset every setting to defaults and persist. */
 export function resetAllSettings(): void {
-  current = { ...DEFAULT_SETTINGS }
-  scheduleWrite()
+  store.set({ ...DEFAULT_SETTINGS })
 }
 
-/** Ensure settings.json exists on disk (writing current settings if not), and
- *  return its absolute path. Used before opening the file in an editor. */
+/** Ensure settings.json exists on disk, and return its absolute path. */
 export async function ensureSettingsFile(): Promise<string> {
-  const p = getSettingsFilePath()
-  try {
-    await fs.access(p)
-  } catch {
-    await flushWrite()
-  }
-  return p
+  return store.ensureFile()
 }
 
 // ---------------------------------------------------------------------------
@@ -283,64 +238,30 @@ export async function ensureSettingsFile(): Promise<string> {
 /**
  * Start watching settings.json for EXTERNAL edits. When the user edits the file
  * (e.g. in a Cate editor panel) and saves, `onExternal` fires with the new
- * settings and the list of keys that changed. Our own programmatic writes are
- * filtered out by comparing the on-disk content with what we last wrote.
+ * settings and the list of keys that changed. The factory reports the whole new
+ * value; we diff it against the value we last reported to derive changed keys.
  */
 export function startWatching(
   onExternal: (next: AppSettings, changedKeys: Array<keyof AppSettings>) => void,
 ): void {
-  if (watcher) return
-  const filePath = getSettingsFilePath()
-  watcher = watch(filePath, { ignoreInitial: true })
-
-  const handle = async (): Promise<void> => {
-    let raw: string
-    try {
-      raw = await fs.readFile(filePath, 'utf-8')
-    } catch {
-      return // transient (mid-rename) — the trailing event will settle it
-    }
-    if (raw === lastWrittenContent) return // our own write — ignore the echo
-
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      log.warn('[settingsFile] External edit is not valid JSON — keeping current settings')
-      return
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
-
-    // Build a fresh, fully-defaulted settings object from the file and diff it
-    // against the live state so we report exactly which keys the user changed.
-    const next: AppSettings = { ...DEFAULT_SETTINGS }
-    mergeValidatedSettings(next, parsed as Record<string, unknown>)
+  let lastReported = store.get()
+  store.startWatching((next) => {
     const changed = SETTINGS_KEYS.filter(
-      (k) => JSON.stringify(next[k]) !== JSON.stringify(current[k]),
+      (k) => JSON.stringify(next[k]) !== JSON.stringify(lastReported[k]),
     )
-    lastWrittenContent = raw
+    lastReported = next
     if (changed.length === 0) return
-
-    current = next
     onExternal(getAllSettings(), changed)
-  }
-
-  watcher.on('change', () => { void handle() })
-  watcher.on('add', () => { void handle() })
-  watcher.on('error', (err) => log.warn('[settingsFile] Watcher error: %O', err))
+  })
 }
 
 export function stopWatching(): void {
-  if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; void flushWrite() }
-  if (watcher) { void watcher.close(); watcher = null }
+  store.stopWatching()
 }
 
 /** Synchronously flush a pending debounced write. Called on app quit so a
  *  setting changed in the last 150 ms isn't lost when the process exits before
  *  the async writer fires. */
 export function flushPendingWritesSync(): void {
-  if (!writeTimer) return
-  clearTimeout(writeTimer)
-  writeTimer = null
-  writeSync()
+  store.flushPendingWritesSync()
 }

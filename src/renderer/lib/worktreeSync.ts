@@ -66,7 +66,9 @@ export async function syncWorktrees(workspaceId: string): Promise<WorktreeSyncRe
     // Match on a normalized key, not raw strings: git reports forward-slash
     // paths while rootPath/stored paths use the native separator, so on Windows
     // raw `===` would never match and every worktree would be re-added.
-    const rootKey = pathKey(current.rootPath)
+    // worktrees carry only UI metadata (id/color/label) now; branch/isPrimary are
+    // live git facts joined in at read time (see useWorktrees), so we just need
+    // to ensure a metadata record exists for every git worktree we discover.
     for (const g of list) {
       const gKey = pathKey(g.path)
       const match = existing.find((w) => pathKey(w.path) === gKey)
@@ -74,13 +76,9 @@ export async function syncWorktrees(workspaceId: string): Promise<WorktreeSyncRe
         const meta: WorktreeMeta = {
           id: newWorktreeId(),
           path: g.path,
-          branch: g.branch,
           color: pickWorktreeColor(existing),
-          isPrimary: gKey === rootKey,
         }
         store.upsertWorktree(workspaceId, meta)
-      } else if (match.branch !== g.branch) {
-        store.upsertWorktree(workspaceId, { ...match, branch: g.branch })
       }
     }
   }

@@ -75,6 +75,7 @@ vi.mock('@xterm/addon-search', () => ({
 
 vi.mock('../../stores/statusStore', () => ({
   useStatusStore: { getState: () => ({ registerTerminal: vi.fn(), unregisterTerminal: vi.fn() }) },
+  setTerminalWorkspaceResolver: vi.fn(),
 }))
 vi.mock('../../stores/settingsStore', () => ({
   useSettingsStore: {
@@ -516,5 +517,113 @@ describe('scroll position survives a hide/show (dock tab switch) cycle', () => {
     document.body.removeChild(container)
     document.body.removeChild(container2)
     terminalRegistry.dispose('panel-bottom')
+  })
+})
+
+// ===========================================================================
+// Terminal identity bimap (panelId<->ptyId<->workspaceId) + alive flag.
+// The registry is the single owner of terminal identity; statusStore no longer
+// keeps a parallel ptyId->workspaceId map.
+// ===========================================================================
+describe('terminal identity bimap', () => {
+  it('maps panelId<->ptyId and panelId->workspaceId after getOrCreate', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    terminalCreate.mockResolvedValueOnce('pty-A')
+    await terminalRegistry.getOrCreate('panel-A', { workspaceId: 'ws-A' })
+
+    expect(terminalRegistry.ptyIdForPanel('panel-A')).toBe('pty-A')
+    expect(terminalRegistry.panelIdForPty('pty-A')).toBe('panel-A')
+    expect(terminalRegistry.workspaceIdForPanel('panel-A')).toBe('ws-A')
+    expect(terminalRegistry.workspaceIdForPty('pty-A')).toBe('ws-A')
+
+    terminalRegistry.dispose('panel-A')
+  })
+
+  it('clears both directions on dispose', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    terminalCreate.mockResolvedValueOnce('pty-B')
+    await terminalRegistry.getOrCreate('panel-B', { workspaceId: 'ws-B' })
+    expect(terminalRegistry.panelIdForPty('pty-B')).toBe('panel-B')
+
+    terminalRegistry.dispose('panel-B')
+    expect(terminalRegistry.ptyIdForPanel('panel-B')).toBeNull()
+    expect(terminalRegistry.panelIdForPty('pty-B')).toBeNull()
+    expect(terminalRegistry.workspaceIdForPty('pty-B')).toBeUndefined()
+  })
+
+  it('clears the reverse mapping on release (transfer source) without killing the pty', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    terminalCreate.mockResolvedValueOnce('pty-C')
+    await terminalRegistry.getOrCreate('panel-C', { workspaceId: 'ws-C' })
+    expect(terminalRegistry.panelIdForPty('pty-C')).toBe('panel-C')
+
+    terminalRegistry.release('panel-C')
+    expect(terminalRegistry.panelIdForPty('pty-C')).toBeNull()
+    expect(terminalRegistry.ptyIdForPanel('panel-C')).toBeNull()
+  })
+
+  it('adopts the transferred ptyId on the reconnect path', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    terminalRegistry.setPendingTransfer('panel-D', 'pty-transferred', 'sb')
+    await terminalRegistry.getOrCreate('panel-D', { workspaceId: 'ws-D' })
+
+    expect(terminalRegistry.ptyIdForPanel('panel-D')).toBe('pty-transferred')
+    expect(terminalRegistry.panelIdForPty('pty-transferred')).toBe('panel-D')
+    expect(terminalRegistry.workspaceIdForPty('pty-transferred')).toBe('ws-D')
+
+    terminalRegistry.dispose('panel-D')
+  })
+
+  it('marks the entry not-alive on TERMINAL_EXIT (membership != liveness)', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    // Capture the exit listener so we can fire a synthetic exit.
+    let exitListener: ((id: string, code: number) => void) | undefined
+    ;(window.electronAPI as any).onTerminalExit = vi.fn((cb: (id: string, code: number) => void) => {
+      exitListener = cb
+      return () => {}
+    })
+    terminalCreate.mockResolvedValueOnce('pty-E')
+    await terminalRegistry.getOrCreate('panel-E', { workspaceId: 'ws-E' })
+
+    expect(terminalRegistry.isAlive('panel-E')).toBe(true)
+    exitListener?.('pty-E', 0)
+    // The entry lingers (still registered) but is no longer alive.
+    expect(terminalRegistry.has('panel-E')).toBe(true)
+    expect(terminalRegistry.isAlive('panel-E')).toBe(false)
+
+    terminalRegistry.dispose('panel-E')
+    expect(terminalRegistry.isAlive('panel-E')).toBeUndefined()
+  })
+})
+
+describe('captureScrollback helper', () => {
+  function fakeTerminal(rows: string[], baseY: number, cursorY: number) {
+    return {
+      buffer: {
+        active: {
+          baseY,
+          cursorY,
+          getLine: (i: number) => ({ translateToString: (_t: boolean) => rows[i] ?? '' }),
+        },
+      },
+    } as any
+  }
+
+  it('joins buffer rows and trims trailing blank lines', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    const entry = { terminal: fakeTerminal(['line 1', 'line 2', '', ''], 1, 1) }
+    expect(terminalRegistry.captureScrollback(entry)).toBe('line 1\nline 2')
+  })
+
+  it('short-circuits to a precaptured scrollback string', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    const entry = { terminal: fakeTerminal(['ignored'], 0, 0), scrollback: 'cached' }
+    expect(terminalRegistry.captureScrollback(entry)).toBe('cached')
+  })
+
+  it('returns undefined for an all-blank buffer', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    const entry = { terminal: fakeTerminal(['', ''], 1, 0) }
+    expect(terminalRegistry.captureScrollback(entry)).toBeUndefined()
   })
 })

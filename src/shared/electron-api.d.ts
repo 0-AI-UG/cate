@@ -546,7 +546,7 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   /** Initiate a cross-window panel transfer. Returns new window ID if a window was created. */
-  panelTransfer(snapshot: PanelTransferSnapshot, targetWindowId?: number): Promise<number | void>
+  panelTransfer(snapshot: PanelTransferSnapshot, targetWindowId?: number, workspaceId?: string): Promise<number | void>
 
   /** Acknowledge receipt of a panel transfer (flushes buffered terminal data). */
   panelTransferAck(ptyId?: string): Promise<void>

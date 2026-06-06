@@ -38,7 +38,7 @@ function makeWorkspace(nodes: ProjectCanvasNode[]): ProjectWorkspaceFile {
 }
 
 function makeSession(): ProjectSessionFile {
-  return { version: 1, focusedNodeId: null, nodes: {} }
+  return { version: 1, nodes: {} }
 }
 
 let root: string

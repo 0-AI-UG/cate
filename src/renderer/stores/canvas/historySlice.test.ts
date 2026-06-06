@@ -1,0 +1,143 @@
+// =============================================================================
+// Undo/redo must version selection alongside {nodes, regions}, and restore it
+// filtered to live ids — so after an undo/redo, selectedNodeIds /
+// selectedRegionIds can never point at nodes/regions that don't exist.
+// =============================================================================
+
+import { describe, it, expect } from 'vitest'
+import { createCanvasStore } from '../canvasStore'
+
+// Invariant the whole feature exists to guarantee: every selected id is live.
+function expectSelectionLive(store: ReturnType<typeof createCanvasStore>) {
+  const s = store.getState()
+  for (const id of s.selectedNodeIds) expect(s.nodes[id]).toBeDefined()
+  for (const id of s.selectedRegionIds) expect(s.regions[id]).toBeDefined()
+}
+
+describe('canvas history — selection is versioned and restored filtered to live ids', () => {
+  it('undo of a delete restores the deleted node AND its snapshot-time selection (live only)', () => {
+    const store = createCanvasStore()
+    const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const b = store.getState().addNode('b', 'editor', { x: 200, y: 0 }, { width: 100, height: 80 })
+
+    // Select both, then delete only A (deleteSelection deletes the selection, so
+    // select just A for the delete but keep B selected first to exercise filtering).
+    store.getState().selectNodes([a, b])
+    expect([...store.getState().selectedNodeIds].sort()).toEqual([a, b].sort())
+
+    // Snapshot now has selection {a,b}. Narrow selection to A and delete it.
+    store.getState().selectNodes([a])
+    store.getState().deleteSelection() // pushes history with selection {a}, then removes A
+    store.getState().finalizeRemoveNode(a) // flush the exit animation
+
+    expect(store.getState().nodes[a]).toBeUndefined()
+    expect(store.getState().selectedNodeIds.size).toBe(0) // delete clears selection
+
+    // Undo: A comes back; selection restored to the snapshot ({a}), and A is live.
+    store.getState().undo()
+    expect(store.getState().nodes[a]).toBeDefined()
+    expect([...store.getState().selectedNodeIds]).toEqual([a])
+    expectSelectionLive(store)
+  })
+
+  it('never restores a dangling id: snapshot selection {a,b} but b absent → only a survives', () => {
+    const store = createCanvasStore()
+    const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
+
+    // Hand-craft a history entry whose selection references a node (b) not present
+    // in the entry's nodes map — exactly the corruption this feature prevents.
+    const entryNodes = { ...store.getState().nodes }
+    store.setState({
+      history: [
+        {
+          nodes: entryNodes,
+          regions: {},
+          focusedNodeId: null,
+          selectedNodeIds: new Set([a, 'b-deleted']),
+          selectedRegionIds: new Set<string>(),
+        },
+      ],
+      future: [],
+    })
+
+    store.getState().undo()
+    expect([...store.getState().selectedNodeIds]).toEqual([a]) // b-deleted filtered out
+    expectSelectionLive(store)
+  })
+
+  it('redo re-applies and keeps selection consistent (no dangling ids)', () => {
+    const store = createCanvasStore()
+    const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
+
+    store.getState().selectNodes([a])
+    store.getState().deleteSelection()
+    store.getState().finalizeRemoveNode(a)
+
+    store.getState().undo() // A back, selection {a}
+    expect(store.getState().nodes[a]).toBeDefined()
+    expect([...store.getState().selectedNodeIds]).toEqual([a])
+
+    store.getState().redo() // re-applies the post-delete state (A gone)
+    expect(store.getState().nodes[a]).toBeUndefined()
+    // Redo restores the post-delete snapshot, whose selection was empty.
+    expect(store.getState().selectedNodeIds.size).toBe(0)
+    expectSelectionLive(store)
+  })
+
+  it('clones selection at push time — mutating the live set in place does not corrupt history', () => {
+    const store = createCanvasStore()
+    const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const b = store.getState().addNode('b', 'editor', { x: 200, y: 0 }, { width: 100, height: 80 })
+
+    store.getState().selectNodes([a])
+    store.getState().pushHistory() // snapshot selection {a}
+    const snap = store.getState().history[store.getState().history.length - 1]
+
+    // The snapshot must be a distinct Set, not the live reference: mutating the
+    // current selection set in place must not leak into the recorded entry.
+    expect(snap.selectedNodeIds).not.toBe(store.getState().selectedNodeIds)
+    store.getState().selectedNodeIds.add(b) // mutate live set in place
+    expect([...snap.selectedNodeIds]).toEqual([a])
+
+    store.getState().undo()
+    expect([...store.getState().selectedNodeIds]).toEqual([a])
+    expectSelectionLive(store)
+  })
+
+  it('regions: select a region, delete it, undo restores region + selection (live only)', () => {
+    const store = createCanvasStore()
+    const r = store.getState().addRegion('R', { x: 0, y: 0 }, { width: 400, height: 300 })
+
+    store.getState().selectRegions([r])
+    expect([...store.getState().selectedRegionIds]).toEqual([r])
+
+    store.getState().deleteSelection() // pushes history with region selection {r}, removes region
+    expect(store.getState().regions[r]).toBeUndefined()
+    expect(store.getState().selectedRegionIds.size).toBe(0)
+
+    store.getState().undo()
+    expect(store.getState().regions[r]).toBeDefined()
+    expect([...store.getState().selectedRegionIds]).toEqual([r])
+    expectSelectionLive(store)
+  })
+
+  it('invariant holds across an undo/redo sequence', () => {
+    const store = createCanvasStore()
+    const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
+    store.getState().addNode('b', 'editor', { x: 200, y: 0 }, { width: 100, height: 80 })
+    const r = store.getState().addRegion('R', { x: 0, y: 0 }, { width: 400, height: 300 })
+
+    store.getState().selectNodes([a])
+    store.getState().deleteSelection()
+    store.getState().finalizeRemoveNode(a)
+    store.getState().selectRegions([r])
+    store.getState().deleteSelection()
+
+    // Walk back and forth; the invariant must hold after every step.
+    store.getState().undo(); expectSelectionLive(store)
+    store.getState().undo(); expectSelectionLive(store)
+    store.getState().redo(); expectSelectionLive(store)
+    store.getState().redo(); expectSelectionLive(store)
+    store.getState().undo(); expectSelectionLive(store)
+  })
+})

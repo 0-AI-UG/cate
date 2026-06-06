@@ -1,16 +1,13 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
-import type { WorkspaceState, PanelType, PanelLocation, DockLayoutNode } from '../../shared/types'
-import { ALL_ZONES } from '../../shared/types'
+import type { WorkspaceState, PanelType, DockLayoutNode } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
-import { useAppStore, WORKSPACE_COLORS, getWorkspaceCanvasPanelId, ensureCanvasOpsForPanel } from '../stores/appStore'
+import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
-import { useStore } from 'zustand'
-import { useDockStore } from '../stores/dockStore'
-import { getOrCreateWorkspaceDockStore, getWorkspaceDockStore } from '../stores/workspaceStores'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
-import { findTabStack, findStackContainingPanel } from '../stores/dockTreeUtils'
+import { getWorkspaceCanvasSnapshot, getNodeDockLayout } from '../lib/workspace/canvasAccess'
+import { revealPanel } from '../lib/workspace/panelReveal'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
@@ -66,44 +63,7 @@ function CompanionDot({ workspace }: { workspace: WorkspaceState }): JSX.Element
 // -----------------------------------------------------------------------------
 
 async function focusWorkspacePanel(workspaceId: string, panelId: string): Promise<void> {
-  const app = useAppStore.getState()
-  if (app.selectedWorkspaceId !== workspaceId) {
-    await app.selectWorkspace(workspaceId)
-  }
-
-  for (let attempt = 0; attempt < 10; attempt++) {
-    if (attempt > 0) await new Promise<void>((r) => setTimeout(r, 50))
-
-    const dock = getOrCreateWorkspaceDockStore(workspaceId).getState()
-    let location: PanelLocation | null = dock.getPanelLocation(panelId) ?? null
-    if (!location) {
-      for (const zoneName of ALL_ZONES) {
-        const zone = dock.zones[zoneName]
-        if (!zone.layout) continue
-        const stack = findStackContainingPanel(zone.layout, panelId)
-        if (stack) { location = { type: 'dock', zone: zoneName, stackId: stack.id }; break }
-      }
-    }
-    if (location?.type === 'dock') {
-      const zone = dock.zones[location.zone]
-      if (!zone.visible) dock.toggleZone(location.zone)
-      if (zone.layout) {
-        const stack = findTabStack(zone.layout, location.stackId)
-        if (stack) {
-          const idx = stack.panelIds.indexOf(panelId)
-          if (idx >= 0) dock.setActiveTab(location.stackId, idx)
-        }
-      }
-      return
-    }
-
-    // Resolve the canvas ops for THIS workspace's canvas panel (not the
-    // global singleton — that may point at a different workspace's store).
-    const canvasPanelId = getWorkspaceCanvasPanelId(workspaceId)
-    const ops = canvasPanelId ? ensureCanvasOpsForPanel(canvasPanelId) : null
-    const nodeId = ops?.storeApi?.getState()?.nodeForPanel(panelId)
-    if (nodeId) { ops!.focusPanelNode(panelId); return }
-  }
+  await revealPanel(workspaceId, panelId, { retry: true })
 }
 
 // Subscribe to every canvas store in a workspace and return the union of
@@ -127,19 +87,22 @@ function useWorkspaceCanvasPanelIds(workspaceId: string): Set<string> {
 
   const compute = useCallback(() => {
     const ids = new Set<string>()
-    for (const store of stores) {
-      for (const node of Object.values(store.getState().nodes)) {
+    for (let i = 0; i < stores.length; i++) {
+      const canvasPanelId = canvasPanelIds[i]
+      for (const node of Object.values(stores[i].getState().nodes)) {
         // Each canvas node has its own mini-dock layout; a node may host
         // several tabbed panels. `node.panelId` is only the seed — walk the
         // full layout so additional tabs (e.g. Terminal 2, Terminal 4
         // dragged into the same canvas node) still classify as canvas
-        // children in the sidebar.
-        collectPanelIdsFromDockLayout(node.dockLayout, ids)
+        // children in the sidebar. Read the LIVE per-node DockStore (the
+        // runtime authority) so an open multi-tab node shows all its tabs
+        // immediately; node.dockLayout is only a save-time projection now.
+        collectPanelIdsFromDockLayout(getNodeDockLayout(canvasPanelId, node.id), ids)
         if (node.panelId) ids.add(node.panelId)
       }
     }
     return ids
-  }, [stores])
+  }, [stores, canvasPanelIds])
 
   const [ids, setIds] = useState<Set<string>>(compute)
 
@@ -319,13 +282,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }))
   const agentInfoByPanel = useAgentInfoByPanel(workspace.id)
 
-  // Subscribe to this workspace's OWN dock store for live panel locations (only
-  // meaningful when it's the selected/active workspace). Falls back to the
-  // global default store when this workspace has no live store yet (the value
-  // is ignored for non-selected rows, which read the persisted snapshot).
-  const dockStoreForRow = getWorkspaceDockStore(workspace.id) ?? useDockStore
-  const liveLocations = useStore(dockStoreForRow, (s) => s.panelLocations)
-  const panelLocations = isSelected ? liveLocations : workspace.dockState?.locations
 
   // useWorkspaceList's equality fn ignores `panels`, so subscribe to this
   // workspace's panels separately to keep the tree in sync as panels are
@@ -343,23 +299,25 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return ws?.worktrees ?? workspace.worktrees ?? []
   }))
 
-  // Set of panel ids living on this workspace's canvases. Union of:
-  //   (a) live canvas stores (covers the active workspace + any other
-  //       workspace whose canvas was mounted earlier this session — those
-  //       stores stay alive in the registry even after switching away), and
-  //   (b) the workspace's persisted canvasNodes (cold-start fallback before
-  //       any canvas has mounted in this session).
-  // Used regardless of isSelected so active and non-active workspaces apply
-  // the same classification rule.
+  // Set of panel ids living on this workspace's canvases. The reactive hook
+  // covers every live canvas store (the active workspace + any other whose
+  // canvas mounted earlier this session — those stores stay alive in the
+  // registry after switching away). The resolver fills the cold-start gap for a
+  // workspace whose canvas was never mounted (returns its persisted projection).
+  // Used regardless of isSelected so active and non-active workspaces apply the
+  // same classification rule.
   const liveCanvasPanelIds = useWorkspaceCanvasPanelIds(workspace.id)
   const canvasPanelIds = useMemo(() => {
     const ids = new Set<string>(liveCanvasPanelIds)
-    for (const node of Object.values(workspace.canvasNodes ?? {})) {
+    const snapshot = getWorkspaceCanvasSnapshot(workspace.id)
+    for (const node of Object.values(snapshot?.nodes ?? {})) {
       collectPanelIdsFromDockLayout(node.dockLayout, ids)
       if (node.panelId) ids.add(node.panelId)
     }
     return ids
-  }, [liveCanvasPanelIds, workspace.canvasNodes])
+    // liveCanvasPanelIds changes whenever a live store mutates, which re-runs the
+    // resolver too; the cold-start projection is otherwise static.
+  }, [liveCanvasPanelIds, workspace.id])
 
   // Ports in the status store are keyed by ptyId, but panel rows are keyed by
   // panelId. Translate via terminalRegistry so the indicators on the workspace
@@ -583,24 +541,21 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const accent = workspace.color || ''
 
   // Partition: canvas panels (parents), free panels (siblings to canvas).
-  // A panel is a canvas child when EITHER the dock store says so OR a canvas
-  // node references it. Canvas nodes are the source of truth for nodes that
-  // were added directly to the canvas (vs. dragged from a dock zone).
-  const isCanvasChild = (id: string) =>
-    panelLocations?.[id]?.type === 'canvas' || canvasPanelIds.has(id)
+  // A panel is a canvas child when a canvas node references it (live canvas
+  // store, or the persisted canvasNodes for a cold-start workspace). Canvas
+  // nodes are the source of truth for canvas residency; the dock tree never
+  // stores a "canvas" location.
+  const isCanvasChild = (id: string) => canvasPanelIds.has(id)
   const canvasPanels = panelList.filter((p) => p.type === 'canvas')
-  const canvasIds = new Set(canvasPanels.map((c) => c.id))
   const childrenByCanvas: Record<string, typeof panelList> = {}
   const orphanCanvasChildren: typeof panelList = []
   const freePanels: typeof panelList = []
   for (const p of panelList) {
     if (p.type === 'canvas') continue
     if (isCanvasChild(p.id)) {
-      const loc = panelLocations?.[p.id]
-      const cid = loc?.type === 'canvas' ? loc.canvasId : ''
-      // Attach to a specific canvas if known; otherwise to the first canvas in
-      // this workspace (canvasId is often empty for the implicit canvas).
-      const target = cid && canvasIds.has(cid) ? cid : canvasPanels[0]?.id
+      // Attach to the first canvas in this workspace (the canvas node store
+      // doesn't expose which canvas panel hosts each child here).
+      const target = canvasPanels[0]?.id
       if (target) (childrenByCanvas[target] ||= []).push(p)
       else orphanCanvasChildren.push(p)
     } else {
@@ -615,7 +570,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const worktreeColorFor = (panelId: string): string | undefined => {
     if (!showWorktreeAccent) return undefined
     const wtId = panels[panelId]?.worktreeId
-    const wt = worktrees.find((w) => w.id === wtId) ?? worktrees.find((w) => w.isPrimary)
+    // isPrimary is no longer persisted (it's a live-git fact); the primary
+    // worktree is the record keyed by the workspace's own rootPath.
+    const wt = worktrees.find((w) => w.id === wtId) ?? worktrees.find((w) => w.path === workspace.rootPath)
     return wt?.color
   }
 

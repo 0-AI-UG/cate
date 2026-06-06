@@ -27,37 +27,34 @@ import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types
 import { ACCENT_COLORS } from '../../shared/colors'
 import { pathKey } from '../../shared/pathUtils'
 import type { StoreApi } from 'zustand'
-import { shouldPreserveExistingCanvas } from './canvasSyncGuard'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { useSettingsStore } from './settingsStore'
 import type { CanvasOperations } from '../lib/canvas/canvasBridge'
 import { releaseCanvasStoreForPanel } from './canvasStore'
 import {
   getOrCreateWorkspaceDockStore,
-  getWorkspaceDockStore,
   releaseWorkspaceDockStore,
 } from '../lib/workspace/dockRegistry'
 import {
   ensureCanvasOpsForPanel,
-  getActiveCanvasOps,
   getWorkspaceCanvasOps,
   getWorkspaceCanvasPanelId,
   getWorkspaceCanvasStore,
-  setActiveCanvasPanelId,
   allCanvasOps,
   invalidateWorkspaceCanvasCache,
 } from '../lib/workspace/canvasAccess'
-import { setActiveSurface } from '../lib/activeSurface'
+import { setActivePanel, clearActivePanelIfMatches } from '../lib/activePanel'
 import { LOCAL_COMPANION_ID } from '../../main/companion/locator'
 
 export type { CanvasOperations }
 export {
   ensureCanvasOpsForPanel,
   getActiveCanvasOps,
+  getActiveCanvasPanelId,
   getWorkspaceCanvasPanelId,
   getWorkspaceCanvasStore,
-  setActiveCanvasPanelId,
-}
+  placementForActivePanel,
+} from '../lib/workspace/canvasAccess'
 export {
   registerCanvasOps,
   getCanvasOpsById,
@@ -99,7 +96,6 @@ function createDefaultWorkspace(
     regions: {},
     zoomLevel: ZOOM_DEFAULT,
     viewportOffset: { x: 0, y: 0 },
-    focusedNodeId: null,
   }
 }
 
@@ -274,13 +270,11 @@ interface AppStoreActions {
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
+  removePanelRecord: (workspaceId: string, panelId: string) => void
 
   // Helpers
   getWorkspace: (id: string) => WorkspaceState | undefined
   selectedWorkspace: () => WorkspaceState | undefined
-
-  // Sync canvas state snapshot back into workspace (call before switching)
-  syncCanvasToWorkspace: (workspaceId: string) => void
 
   // Workspace operations
   setWorkspaceRootPath: (wsId: string, rootPath: string) => Promise<boolean>
@@ -524,10 +518,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return
     }
 
-    // Snapshot the outgoing workspace's live stores back into its persisted
-    // fields so it round-trips through save/restore. Each workspace owns its
-    // dock + canvas stores, so nothing is ever copied between workspaces.
-    get().syncCanvasToWorkspace(state.selectedWorkspaceId)
+    // No snapshot-back is needed on switch-away: each workspace owns its dock +
+    // canvas stores and those stores SURVIVE a switch (they're released only on
+    // close/remove). The live stores stay the source of truth and the save path
+    // serializes straight from them via the canvasAccess resolvers.
 
     // Discard outgoing workspace if it was never initialized (no folder
     // picked, not currently picking one). Keeps stray "Add Workspace" rows
@@ -543,10 +537,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ selectedWorkspaceId: id })
     const incomingCanvasPanelId = getWorkspaceCanvasPanelId(id)
     if (incomingCanvasPanelId) {
-      setActiveCanvasPanelId(incomingCanvasPanelId)
-      // Reset the keyboard-create target to the incoming canvas so a stack the
-      // user last touched in the OTHER workspace can't attract new panels here.
-      setActiveSurface({ kind: 'canvas', canvasPanelId: incomingCanvasPanelId })
+      // Point the canonical active panel at the incoming canvas so canvas
+      // shortcuts route here AND a stack the user last touched in the OTHER
+      // workspace can't attract new panels created in this one.
+      setActivePanel(incomingCanvasPanelId)
     }
 
     // Reconnect a remote workspace's companion if it isn't live (e.g. after a
@@ -835,7 +829,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Remove from dock/canvas first (less critical — log errors but continue)
     const dockStore = getOrCreateWorkspaceDockStore(workspaceId)
     try {
-      const dockLocation = dockStore.getState().panelLocations[panelId]
+      const dockLocation = dockStore.getState().getPanelLocation(panelId)
       if (dockLocation?.type === 'dock') {
         dockStore.getState().undockPanel(panelId)
       } else {
@@ -859,6 +853,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (error) {
       log.error('Failed to clean up panel location tracking:', error)
     }
+
+    // Drop the canonical active-panel pointer if it was this panel, so a closed
+    // panel can't keep attracting newly-created panels or read as focused.
+    clearActivePanelIfMatches(panelId)
 
     // Remove from workspace panels (always do this to ensure cleanup)
     set((state) => ({
@@ -930,6 +928,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }))
   },
 
+  // Remove ONLY the panels[panelId] record from a workspace (mirror of
+  // addPanel). Unlike removePanel, this does NOT touch dock/canvas stores or
+  // active-panel tracking — detached shells own their own dock store and undock
+  // there directly, so the full removePanel would target the wrong (workspace)
+  // dock registry and log spurious failures.
+  removePanelRecord(workspaceId, panelId) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        if (!(panelId in ws.panels)) return ws
+        const { [panelId]: _removed, ...remainingPanels } = ws.panels
+        return { ...ws, panels: remainingPanels }
+      }),
+    }))
+  },
+
   // --- Helpers ---
 
   getWorkspace(id) {
@@ -938,38 +952,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   selectedWorkspace() {
     return get().workspaces.find((w) => w.id === get().selectedWorkspaceId)
-  },
-
-  syncCanvasToWorkspace(workspaceId) {
-    const canvasStore = getWorkspaceCanvasStore(workspaceId)
-    const canvasState = canvasStore?.getState()
-    if (!canvasState) return
-
-    // Also snapshot this workspace's OWN dock state so it's saved per workspace.
-    const liveDock = getWorkspaceDockStore(workspaceId)
-    const dockSnapshot = liveDock?.getState().getSnapshot()
-
-    set((state) => ({
-      workspaces: state.workspaces.map((ws) => {
-        if (ws.id !== workspaceId) return ws
-        if (shouldPreserveExistingCanvas(
-          Object.keys(canvasState.nodes).length,
-          Object.keys(ws.canvasNodes ?? {}).length,
-        )) {
-          // Keep nodes/regions/viewport intact; only refresh dock state.
-          return { ...ws, dockState: dockSnapshot ?? ws.dockState }
-        }
-        return {
-          ...ws,
-          canvasNodes: { ...canvasState.nodes },
-          regions: { ...canvasState.regions },
-          viewportOffset: { ...canvasState.viewportOffset },
-          zoomLevel: canvasState.zoomLevel,
-          focusedNodeId: canvasState.focusedNodeId,
-          dockState: dockSnapshot ?? ws.dockState,
-        }
-      }),
-    }))
   },
 
   setWorkspaceRootPath(wsId, rootPath) {
@@ -1150,7 +1132,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       regions: {},
       zoomLevel: ZOOM_DEFAULT,
       viewportOffset: { x: 0, y: 0 },
-      focusedNodeId: null,
     }
     set((state) => ({ workspaces: [...state.workspaces, copy] }))
     syncCreateToMain(copy)
@@ -1201,15 +1182,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       workspaces: state.workspaces.map((ws) => {
         if (ws.id !== wsId) return ws
-        const list = ws.worktrees ?? []
-        if (list.some((w) => w.isPrimary)) return ws
         if (!ws.rootPath) return ws
+        const list = ws.worktrees ?? []
+        // The primary worktree is whichever record is keyed by the workspace's
+        // own rootPath; isPrimary is derived from git at read time, so we only
+        // need a UI-metadata record (id/color) to exist for that path.
+        if (list.some((w) => w.path === ws.rootPath)) return ws
         const primary: WorktreeMeta = {
           id: `wt-primary-${ws.id}`,
           path: ws.rootPath,
-          branch: '',
           color: pickWorktreeColor(list),
-          isPrimary: true,
         }
         return { ...ws, worktrees: [primary, ...list] }
       }),
@@ -1381,7 +1363,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
             regions: {},
             zoomLevel: ZOOM_DEFAULT,
             viewportOffset: { x: 0, y: 0 },
-            focusedNodeId: null,
           })
         }
       }

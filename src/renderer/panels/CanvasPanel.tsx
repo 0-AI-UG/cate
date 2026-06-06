@@ -14,13 +14,13 @@ import CanvasToolbar from '../canvas/CanvasToolbar'
 import WelcomePage from '../ui/WelcomePage'
 import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, PanelLocation, WindowDockState } from '../../shared/types'
-import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, setActiveCanvasPanelId, type PanelPlacement } from '../stores/appStore'
+import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, type PanelPlacement } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import { createCanvasOps } from '../lib/canvas/canvasBridge'
-import { setActiveSurface } from '../lib/activeSurface'
+import { setActivePanel } from '../lib/activePanel'
 import { createDockStore, type DockStore } from '../stores/dockStore'
 import {
   registerNodeDockStore,
@@ -110,7 +110,17 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
   }, [storeKey]) // intentionally omit node.dockLayout — seed only on first creation
 
   // ------------------------------------------------------------------
-  // Persist center layout back to canvasStore; auto-remove on null
+  // Mirror the live per-node DockStore (the runtime editing authority) into
+  // canvasStore.node.dockLayout, and auto-remove the node when its mini-dock
+  // empties out.
+  //
+  // node.dockLayout is the canonical PERSISTED projection of the layout: it is
+  // what history snapshots capture (undo/redo), what off-screen/unmounted nodes
+  // read back through getNodeDockLayout, and what is written to disk. Keeping it
+  // in lock-step with the live store here means it can never drift — readers go
+  // through one resolver (getNodeDockLayout: live while mounted, this projection
+  // otherwise) and the two always agree. (R3's persistence work made this
+  // projection actually round-trip to disk; this keeps it current in memory.)
   // ------------------------------------------------------------------
   useEffect(() => {
     const unsubscribe = dockStoreApi.subscribe((state, prev) => {
@@ -205,18 +215,19 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   useEffect(() => {
     const ops = createCanvasOps(store)
     registerCanvasOps(panelId, ops)
-    setActiveCanvasPanelId(panelId)
+    setActivePanel(panelId)
     return () => {
       unregisterCanvasOps(panelId)
     }
   }, [panelId, store])
 
   const handlePointerDown = useCallback(() => {
-    setActiveCanvasPanelId(panelId)
-    // Bubble phase: runs AFTER the containing dock stack's capture handler, so
-    // clicking a canvas docked in the center zone resolves to 'canvas', not the
-    // stack it lives in. Keyboard creates then land on the canvas, as before.
-    setActiveSurface({ kind: 'canvas', canvasPanelId: panelId })
+    // A canvas IS the active panel (it's a center-zone dock tab). Runs on the
+    // bubble phase, AFTER the containing dock stack's capture handler set the
+    // stack's active tab — for the canvas's own stack that's this same canvas
+    // panel, so they agree; clicking a sibling docked pane keeps that pane.
+    // Canvas-type active → placement derives to the default canvas placement.
+    setActivePanel(panelId)
   }, [panelId])
 
   const zoomLevel = useStore(store, (s) => s.zoomLevel)

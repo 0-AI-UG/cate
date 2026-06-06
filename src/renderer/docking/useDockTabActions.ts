@@ -12,6 +12,7 @@ import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { useAppStore } from '../stores/appStore'
 import type { DockStore } from '../stores/dockStore'
 import { getPanelDef } from '../panels/registry'
+import { setActivePanel } from '../lib/activePanel'
 
 export interface DockTabActionsParams {
   stack: DockTabStackType
@@ -223,8 +224,14 @@ export function useDockTabActions(params: DockTabActionsParams) {
   const handleTabClick = useCallback(
     (index: number) => {
       setActiveTab(stack.id, index)
+      // Make the clicked tab the canonical active panel. The stack's pointer-
+      // down capture already marked the OLD active tab; switching tabs must
+      // re-point it so placement/routing follow the tab the user just selected.
+      // mini-docks (localOnly) never touch the window-global active panel.
+      const panelId = stack.panelIds[index]
+      if (panelId && !localOnly) setActivePanel(panelId)
     },
-    [stack.id, setActiveTab],
+    [stack.id, stack.panelIds, setActiveTab, localOnly],
   )
 
   return {

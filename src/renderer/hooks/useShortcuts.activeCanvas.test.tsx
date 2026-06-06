@@ -6,10 +6,11 @@
 // context on mount, instead of the canvas the user is actually looking at.
 //
 // CanvasPanel gives each canvas its own per-panel store and marks itself the
-// active canvas via setActiveCanvasPanelId. Only the first canvas aliases the
-// legacy singleton; any later canvas gets a fresh store. useShortcuts must
-// resolve the *active* store at dispatch time — otherwise Cmd/Shift+Arrow fire
-// but nothing moves on screen (the symptom from the field report).
+// active panel via setActivePanel; getActiveCanvasOps derives the active canvas
+// from it. Only the first canvas aliases the legacy singleton; any later canvas
+// gets a fresh store. useShortcuts must resolve the *active* store at dispatch
+// time — otherwise Cmd/Shift+Arrow fire but nothing moves on screen (the
+// symptom from the field report).
 // =============================================================================
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -37,8 +38,8 @@ import {
 import {
   registerCanvasOps,
   unregisterCanvasOps,
-  setActiveCanvasPanelId,
 } from '../stores/appStore'
+import { setActivePanel } from '../lib/activePanel'
 import { createCanvasOps } from '../lib/canvas/canvasBridge'
 
 // Tell React this is an act() environment (silences the act warning + flushes effects).
@@ -85,7 +86,7 @@ beforeEach(() => {
   registerCanvasOps(PRIMARY, createCanvasOps(primary))
   registerCanvasOps(ACTIVE, createCanvasOps(active))
   // The user is looking at the second canvas.
-  setActiveCanvasPanelId(ACTIVE)
+  setActivePanel(ACTIVE)
 
   container = document.createElement('div')
   document.body.appendChild(container)

@@ -129,24 +129,23 @@ export interface PanelState {
 }
 
 // -----------------------------------------------------------------------------
-// Worktree metadata — per-workspace registry of git worktrees that Cate is
-// actively managing. The workspace's own rootPath is materialized as the
-// `isPrimary: true` entry on load so the UI can treat them uniformly.
+// Worktree metadata — per-workspace registry of UI-owned facts about the git
+// worktrees Cate manages, keyed by worktree path. This persists ONLY the UI
+// metadata (id/color/label). The live facts (branch / isPrimary / isCurrent)
+// are authoritative from `git worktree list` (owned by gitStatusStore) and are
+// joined onto this metadata at read time by useWorktrees — they are never
+// persisted here, so they can't drift out of sync with the repo.
 // -----------------------------------------------------------------------------
 
 export interface WorktreeMeta {
   /** Stable client id (uuid). */
   id: string
-  /** Absolute filesystem path to the worktree checkout. */
+  /** Absolute filesystem path to the worktree checkout (the join key). */
   path: string
-  /** Branch name checked out in the worktree. */
-  branch: string
   /** Hex color used for the title-bar pill + panel accent border. */
   color: string
   /** Optional friendly label shown in the sidebar in place of the branch. */
   label?: string
-  /** True for the workspace's original rootPath. */
-  isPrimary: boolean
 }
 
 // -----------------------------------------------------------------------------
@@ -413,7 +412,6 @@ export interface CanvasSnapshot {
   regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
-  focusedNodeId: CanvasNodeId | null
 }
 
 // -----------------------------------------------------------------------------
@@ -442,13 +440,18 @@ export interface WorkspaceState {
   rootPathError?: string | null
   isRootPathPending?: boolean
   panels: Record<string, PanelState>
-  // Primary canvas state (current behavior)
+  // PERSISTENCE-ONLY projection of the live per-canvas CanvasStore. The live
+  // store is the single in-memory source of truth; the UI must NOT read these
+  // directly — go through getWorkspaceCanvasSnapshot(workspaceId), which reads
+  // the live store and falls back to this projection only for a never-mounted
+  // (cold-start) workspace. No longer hand-synced on switch (stores survive a
+  // switch); populated by restore/init for the cold-start path.
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
-  focusedNodeId: CanvasNodeId | null
-  // Dock layout state — saved/restored per workspace on switch
+  // PERSISTENCE-ONLY projection of the live per-workspace DockStore. Read via
+  // getWorkspaceDockSnapshot(workspaceId), never directly.
   dockState?: { zones: WindowDockState; locations: Record<string, PanelLocation> }
   // Multi-canvas support (Phase 2+ — unused for now)
   canvases?: Record<string, CanvasSnapshot>
@@ -847,6 +850,11 @@ export interface NodeSnapshot {
   unsavedContent?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
+  /** The canvas node's per-node mini-dock layout (the tab/split tree of panels
+   *  hosted inside this node). Captured on demand from the live per-node
+   *  DockStore at save time so a multi-tab node survives save→restore. Absent on
+   *  legacy sessions ⇒ the node is rebuilt with the default single-tab seed. */
+  dockLayout?: DockLayoutNode | null
   /** Worktree this terminal/agent panel belongs to (see PanelState.worktreeId).
    *  Persisted so the tab pill/tint and canvas territory survive a restart. */
   worktreeId?: string
@@ -984,7 +992,6 @@ export interface ProjectSessionFile {
   /** Stable machine-local workspace id, reused across restores so the
    *  main-process workspace list isn't duplicated on renderer reload. */
   workspaceId?: string
-  focusedNodeId: string | null
   nodes: Record<string, ProjectSessionNode>
   /** Detached panel windows (machine-local, not committed). */
   panelWindows?: PanelWindowSnapshot[]

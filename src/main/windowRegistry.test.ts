@@ -13,6 +13,7 @@ const {
   getActiveMainWindow,
   getWindowWorkspaceId,
   setDockWindowState,
+  setPanelWindowMeta,
 } = await import('./windowRegistry')
 
 interface FakeWin {
@@ -99,7 +100,7 @@ describe('getWindowWorkspaceId', () => {
     expect(getWindowWorkspaceId(dock.id)).toBe('workspace-abc')
   })
 
-  it('falls back to the latest synced dock state', () => {
+  it('dock-state sync sets the window workspace id (single source of truth)', () => {
     const dock = register('dock')
     setDockWindowState(dock.id, {
       dockState: { zones: {} } as never,
@@ -107,6 +108,12 @@ describe('getWindowWorkspaceId', () => {
       workspaceId: 'synced-ws',
     })
     expect(getWindowWorkspaceId(dock.id)).toBe('synced-ws')
+  })
+
+  it('panel-window meta records the workspace id (regression: transferred panels are no longer workspace-less)', () => {
+    const panel = register('panel')
+    setPanelWindowMeta(panel.id, { id: 'p1', type: 'terminal', title: 't' } as never, 'ws-xyz')
+    expect(getWindowWorkspaceId(panel.id)).toBe('ws-xyz')
   })
 
   it('returns undefined for an unknown window', () => {

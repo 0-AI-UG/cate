@@ -9,12 +9,14 @@ import {
   ensureCanvasOpsForPanel,
   getWorkspaceCanvasStore,
   getWorkspaceCanvasPanelId,
-  setActiveCanvasPanelId,
 } from '../../stores/appStore'
+import { setActivePanel } from '../activePanel'
+import { getOrCreateWorkspaceDockStore } from './dockRegistry'
 import {
-  getOrCreateWorkspaceDockStore,
-  getWorkspaceDockStore,
-} from './dockRegistry'
+  getWorkspaceCanvasSnapshot,
+  getWorkspaceDockSnapshot,
+  getNodeDockLayout,
+} from './canvasAccess'
 import { deferredSnapshots, setDeferredRestoreHandler } from './deferredRestore'
 import type { StoreApi } from 'zustand'
 import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
@@ -36,11 +38,13 @@ import type {
   CanvasRegion,
   PanelState,
   RemoteProjectEntry,
+  DockLayoutNode,
 } from '../../../shared/types'
 import { toRelativePath, toAbsolutePath } from '../../../shared/pathUtils'
 import { isLocalLocator } from '../../../main/companion/locator'
 import { deriveSidebarSession, applySidebarSession } from './sidebarSession'
 import { terminalRegistry } from '../terminal/terminalRegistry'
+import { generateId } from '../../stores/canvas/helpers'
 import { mark } from '../perfMarks'
 
 // ---------------------------------------------------------------------------
@@ -74,9 +78,8 @@ export const terminalRestoreData = new Map<string, { cwd?: string; replayFromId?
 export { deferredSnapshots }
 
 // Last serialized session payload — used to skip disk writes when nothing
-// actually changed. saveSession() itself mutates the store via
-// syncCanvasToWorkspace, which re-fires the auto-save subscriptions; without
-// this guard those phantom changes produce a save loop every ~1s.
+// actually changed, so the periodic auto-save doesn't rewrite an identical file
+// every ~1s.
 const lastSerializedByRoot = new Map<string, string>()
 // Same idea for the global sidebar arrangement: skip the IPC + electron-store
 // write when order/active-workspace haven't changed since the last save.
@@ -126,7 +129,7 @@ function resolveSnapshotCanvasPanelId(snapshot: SessionSnapshot): string | null 
 // Project-local state builders (.cate/workspace.json + .cate/session.json)
 // -----------------------------------------------------------------------------
 
-function buildWorkspaceFile(
+export function buildWorkspaceFile(
   snapshot: SessionSnapshot,
   rootPath: string,
   color?: string,
@@ -142,6 +145,7 @@ function buildWorkspaceFile(
     proxyUrl: n.proxyUrl ?? undefined,
     regionId: n.regionId,
     documentType: n.documentType,
+    dockLayout: n.dockLayout,
   }))
 
   const regions: ProjectCanvasRegion[] = snapshot.regions
@@ -209,7 +213,6 @@ function buildSessionFile(
   return {
     version: 1,
     workspaceId: snapshot.workspaceId,
-    focusedNodeId: null,
     nodes,
     panelWindows: panelWindows?.length ? panelWindows : undefined,
     dockWindows: dockWindows?.length ? dockWindows : undefined,
@@ -227,13 +230,6 @@ function buildSessionFile(
 // -----------------------------------------------------------------------------
 
 export async function saveSession(): Promise<void> {
-  const appState = useAppStore.getState()
-
-  // Sync current canvas state back to the selected workspace before saving
-  // After this call, workspace.canvasNodes/regions/zoom/viewport are up to date
-  appState.syncCanvasToWorkspace(appState.selectedWorkspaceId)
-
-  // Re-read app state after sync (syncCanvasToWorkspace updates workspace data)
   const updatedState = useAppStore.getState()
 
   const snapshots: SessionSnapshot[] = []
@@ -253,12 +249,28 @@ export async function saveSession(): Promise<void> {
     }
 
     const isSelected = workspace.id === updatedState.selectedWorkspaceId
-    // After syncCanvasToWorkspace, workspace data is always up to date
-    const nodes = workspace.canvasNodes
-    const regions = workspace.regions
+    // Serialize straight from the live canvas store via the resolver — the live
+    // per-canvas store is the single source of truth and survives switch-away,
+    // so no syncCanvasToWorkspace pre-pass is needed. Falls back to the persisted
+    // projection for a workspace whose canvas was never mounted this session.
+    const canvasSnapshot = getWorkspaceCanvasSnapshot(workspace.id)
+    const nodes = canvasSnapshot?.nodes ?? {}
+    const regions = canvasSnapshot?.regions ?? {}
+
+    // The canvas panel that hosts this workspace's nodes — used to capture each
+    // node's LIVE mini-dock layout on demand (the live per-node DockStore is the
+    // runtime authority; node.dockLayout is only refreshed here at save time).
+    const canvasPanelId = getWorkspaceCanvasPanelId(workspace.id)
 
     const nodeSnapshots: NodeSnapshot[] = Object.values(nodes).map((node) => {
       const panel = workspace.panels[node.panelId]
+      // Capture-on-demand: refresh the node's dockLayout from the live store (or
+      // the persisted projection when the node isn't mounted) so multi-tab nodes
+      // round-trip. Falls back to the node's own projected layout if we couldn't
+      // resolve a canvas panel id.
+      const dockLayout = canvasPanelId
+        ? getNodeDockLayout(canvasPanelId, node.id)
+        : node.dockLayout ?? null
       return {
         panelId: node.panelId,
         panelType: panel?.type ?? 'terminal',
@@ -273,9 +285,25 @@ export async function saveSession(): Promise<void> {
           ? panel?.unsavedContent
           : undefined,
         documentType: panel?.documentType,
+        dockLayout,
         worktreeId: panel?.worktreeId,
       }
     })
+
+    // Every panelId hosted inside a canvas node's mini-dock, beyond the node's
+    // seed panelId. These EXTRA tabbed panels (e.g. a Terminal 2 dragged into a
+    // node that was seeded with Terminal 1) need their own PanelState record +
+    // terminal session captured, or they'd be dropped on restore. Keyed by
+    // panelId → its node's seed panelId so terminal capture can attribute them.
+    const extraNodePanelIds = new Set<string>()
+    for (const snap of nodeSnapshots) {
+      if (!snap.dockLayout) continue
+      const ids: string[] = []
+      collectPanelIdsFromNode(snap.dockLayout, ids)
+      for (const id of ids) {
+        if (id !== snap.panelId) extraNodePanelIds.add(id)
+      }
+    }
 
     // Capture ptyId and save scrollback for all terminal snapshots
     const scrollbackPromises: Promise<void>[] = []
@@ -284,22 +312,32 @@ export async function saveSession(): Promise<void> {
         const entry = terminalRegistry.getEntry(snap.panelId)
         if (entry?.ptyId) {
           snap.ptyId = entry.ptyId
-          // Extract xterm visual buffer as plain text (same approach as cross-window transfer)
-          const buffer = entry.terminal.buffer.active
-          const lastRow = buffer.baseY + buffer.cursorY
-          const lines: string[] = []
-          for (let i = 0; i < lastRow; i++) {
-            const line = buffer.getLine(i)
-            if (line) lines.push(line.translateToString(true))
-          }
-          while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-          const content = lines.join('\n')
+          // Exclude the cursor row: scrollback is replayed into a freshly spawned
+          // PTY on restore, which re-sends the prompt line.
+          const content = terminalRegistry.captureScrollback(entry, { excludeCursorRow: true })
           if (content) {
             scrollbackPromises.push(
               window.electronAPI.terminalScrollbackSave(entry.ptyId, content).catch(() => {}),
             )
           }
         }
+      }
+    }
+    // EXTRA tabbed terminal panels live inside a node's mini-dock but are not
+    // their own NodeSnapshot — capture their scrollback too, keyed by their
+    // (restore-stable) panelId, so a tabbed terminal keeps its session. The
+    // restore path seeds terminalRestoreData with replayFromId = panelId for
+    // these, since dock-record panels keep their original id (unlike seed nodes,
+    // whose panelId is remapped).
+    for (const panelId of extraNodePanelIds) {
+      if (workspace.panels[panelId]?.type !== 'terminal') continue
+      const entry = terminalRegistry.getEntry(panelId)
+      if (!entry?.ptyId) continue
+      const content = terminalRegistry.captureScrollback(entry, { excludeCursorRow: true })
+      if (content) {
+        scrollbackPromises.push(
+          window.electronAPI.terminalScrollbackSave(panelId, content).catch(() => {}),
+        )
       }
     }
     if (scrollbackPromises.length > 0) {
@@ -329,24 +367,32 @@ export async function saveSession(): Promise<void> {
 
     // Capture dock state from the workspace's OWN dock store if it has been
     // activated; otherwise from its last-saved snapshot (never-activated).
-    const liveDock = getWorkspaceDockStore(workspace.id)
-    const dockSnapshot = liveDock ? liveDock.getState().getSnapshot() : workspace.dockState ?? undefined
+    const dockSnapshot = getWorkspaceDockSnapshot(workspace.id)
 
-    // Collect panels that live in dock zones (not on the canvas).
-    // These are panels like canvas that are referenced by the dock layout
-    // but not saved as canvas NodeSnapshots.
-    let dockPanels: Record<string, import('../../../shared/types').PanelState> | undefined
+    // Collect panels that must be persisted as PanelState records (not as their
+    // own canvas NodeSnapshots):
+    //   - dock-zone panels (canvas, etc.) referenced by the dock layout, and
+    //   - EXTRA tabbed panels inside a canvas node's mini-dock (every panel in a
+    //     node's dockLayout beyond its seed panelId) — without these, a node with
+    //     two tabbed panels [A,B] would persist only A (the seed node) and DROP
+    //     B's title/filePath/url on restore.
+    // The node's seed panelIds are excluded (they ride on their NodeSnapshot).
+    const canvasNodePanelIds = new Set(nodeSnapshots.map((n) => n.panelId))
+    const recordIds = new Set<string>()
     if (dockSnapshot) {
-      const dockPanelIds = collectPanelIdsFromDockState(dockSnapshot.zones)
-      // Exclude panels already captured as canvas nodes
-      const canvasNodePanelIds = new Set(nodeSnapshots.map((n) => n.panelId))
-      const dockOnlyIds = dockPanelIds.filter((id) => !canvasNodePanelIds.has(id))
-      if (dockOnlyIds.length > 0) {
-        dockPanels = {}
-        for (const id of dockOnlyIds) {
-          const panel = workspace.panels[id]
-          if (panel) dockPanels[id] = panel
-        }
+      for (const id of collectPanelIdsFromDockState(dockSnapshot.zones)) {
+        if (!canvasNodePanelIds.has(id)) recordIds.add(id)
+      }
+    }
+    for (const id of extraNodePanelIds) {
+      if (!canvasNodePanelIds.has(id)) recordIds.add(id)
+    }
+    let dockPanels: Record<string, import('../../../shared/types').PanelState> | undefined
+    if (recordIds.size > 0) {
+      dockPanels = {}
+      for (const id of recordIds) {
+        const panel = workspace.panels[id]
+        if (panel) dockPanels[id] = panel
       }
     }
 
@@ -354,8 +400,8 @@ export async function saveSession(): Promise<void> {
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       rootPath: workspace.rootPath || null,
-      zoomLevel: workspace.zoomLevel,
-      viewportOffset: workspace.viewportOffset,
+      zoomLevel: canvasSnapshot?.zoomLevel ?? workspace.zoomLevel,
+      viewportOffset: canvasSnapshot?.viewportOffset ?? workspace.viewportOffset,
       nodes: nodeSnapshots,
       regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
       dockState: dockSnapshot,
@@ -493,6 +539,7 @@ export function projectFilesToSnapshot(
       proxyUrl: pn.proxyUrl,
       regionId: pn.regionId,
       documentType: pn.documentType,
+      dockLayout: pn.dockLayout,
       ptyId: ephemeral?.ptyId,
       workingDirectory: ephemeral?.workingDirectory,
       unsavedContent: ephemeral?.unsavedContent,
@@ -709,7 +756,7 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
   const preferredCanvasPanelId = resolveSnapshotCanvasPanelId(snapshot) ?? getWorkspaceCanvasPanelId(wsId)
   if (preferredCanvasPanelId) {
     ensureCanvasOpsForPanel(preferredCanvasPanelId)
-    setActiveCanvasPanelId(preferredCanvasPanelId)
+    setActivePanel(preferredCanvasPanelId)
   }
 
   // The workspace's canvas store, addressed by the snapshot's canvas panel id.
@@ -736,10 +783,15 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
     log.debug(`[session] restoring node ${i + 1}/${snapshot.nodes.length}: ${nodeSnap.panelType} (panelId=${nodeSnap.panelId})`)
     const position = nodeSnap.origin
     const size = nodeSnap.size
+    // The panel id minted for this node's SEED panel (createTerminal/Editor/...
+    // mint fresh ids). Captured so the per-node dock layout can be remapped from
+    // the old seed id to this new one after the node exists.
+    let restoredSeedPanelId: string | null = null
 
     switch (nodeSnap.panelType) {
       case 'terminal': {
         const panelId = appStore.createTerminal(wsId, undefined, position)
+        restoredSeedPanelId = panelId
         // Restore the original title (e.g. "Sage", "Reviewer") instead of the
         // default "Terminal N" that createTerminal auto-assigned. Without this,
         // every cate-recruit'd terminal comes back as "Terminal 1/2/3..." on
@@ -768,6 +820,7 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
       }
       case 'editor': {
         const panelId = appStore.createEditor(wsId, nodeSnap.filePath ?? undefined)
+        restoredSeedPanelId = panelId
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         if (!nodeSnap.filePath && nodeSnap.unsavedContent) {
           appStore.setPanelUnsavedContent(wsId, panelId, nodeSnap.unsavedContent)
@@ -788,6 +841,7 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
       }
       case 'browser': {
         const panelId = appStore.createBrowser(wsId, nodeSnap.url ?? undefined, undefined, undefined, nodeSnap.proxyUrl ?? undefined)
+        restoredSeedPanelId = panelId
         // Browser panels are addressed by their title in `cate portal` — same
         // reason as terminals, the saved name must come back.
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
@@ -807,6 +861,7 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
       }
       case 'document': {
         const panelId = appStore.createDocument(wsId, nodeSnap.filePath ?? undefined, nodeSnap.documentType, position)
+        restoredSeedPanelId = panelId
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         const canvasState = getCanvasState()
         if (canvasState) {
@@ -824,6 +879,7 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
       }
       case 'agent': {
         const panelId = appStore.createAgent(wsId, position)
+        restoredSeedPanelId = panelId
         if (nodeSnap.title) appStore.updatePanelTitle(wsId, panelId, nodeSnap.title)
         if (nodeSnap.worktreeId) appStore.setPanelWorktreeId(wsId, panelId, nodeSnap.worktreeId)
         const canvasState = getCanvasState()
@@ -841,6 +897,32 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
         break
       }
     }
+
+    // Apply the persisted per-node dock layout (multi-tab nodes). The node's
+    // SEED panel id was remapped to a fresh id above; extra tabbed panels were
+    // re-created as dock-record panels (restoreDockPanelsForWorkspace) keeping
+    // their original ids, so the map carries only the seed remap. Writing the
+    // layout BEFORE the node mounts means the per-node DockStore seeds from it
+    // on first mount (CanvasPanel hydrates node.dockLayout into the live store).
+    // No-op for legacy sessions (undefined dockLayout) — the addNode single-tab
+    // seed is kept.
+    if (nodeSnap.dockLayout && restoredSeedPanelId) {
+      const canvasState = getCanvasState()
+      const newNodeId = canvasState?.nodeForPanel(restoredSeedPanelId)
+      if (canvasState && newNodeId) {
+        const panelIdMap = new Map<string, string>([[nodeSnap.panelId, restoredSeedPanelId]])
+        canvasState.setNodeDockLayout(newNodeId, remapNodeDockLayout(nodeSnap.dockLayout, panelIdMap))
+      }
+    }
+  }
+
+  // Seed restore data for EXTRA tabbed terminal panels (created above as dock
+  // records, not as their own nodes). Their scrollback was saved under their
+  // original panelId (preserved across restore), so replayFromId = panelId.
+  for (const panel of Object.values(snapshot.dockPanels ?? {})) {
+    if (panel.type !== 'terminal') continue
+    if (terminalRestoreData.has(panel.id)) continue
+    terminalRestoreData.set(panel.id, { cwd: panel.cwd, replayFromId: panel.id })
   }
 
   const canvasState = getCanvasState()
@@ -989,7 +1071,10 @@ export async function restoreDetachedWindows(session: MultiWorkspaceSession): Pr
           sourceLocation: { type: 'canvas', canvasId: '', canvasNodeId: '' },
           terminalReplayPtyId: pw.panel.type === 'terminal' ? pw.terminalPtyId : undefined,
         }
-        const newWindowId = await window.electronAPI.panelTransfer(snapshot)
+        // Pass the persisted workspaceId so the restored panel window is
+        // registered to its workspace at creation — otherwise it is saved to no
+        // workspace and lost on the next restart.
+        const newWindowId = await window.electronAPI.panelTransfer(snapshot, undefined, pw.workspaceId)
         if (typeof newWindowId === 'number') {
           // Position the new panel window to its saved bounds
           // The main process createWindow positions it, but we passed geometry in the snapshot
@@ -1245,5 +1330,33 @@ function collectPanelIdsFromNode(node: import('../../../shared/types').DockLayou
     for (const child of node.children) {
       collectPanelIdsFromNode(child, ids)
     }
+  }
+}
+
+/**
+ * Deep-clone a persisted per-node dock layout for restore, remapping every
+ * panelId through `panelIdMap` (restore mints NEW panel ids for the seed node;
+ * extra tabbed panels keep their original id, so the map only carries the seed)
+ * and REGENERATING every tab-stack id to avoid colliding with stacks already
+ * live in other nodes. Tree shape + each stack's activeIndex are preserved.
+ * A panelId absent from the map is kept as-is.
+ */
+export function remapNodeDockLayout(
+  layout: DockLayoutNode | null | undefined,
+  panelIdMap: Map<string, string>,
+): DockLayoutNode | null {
+  if (!layout) return null
+  if (layout.type === 'tabs') {
+    return {
+      type: 'tabs',
+      id: generateId(),
+      panelIds: layout.panelIds.map((id) => panelIdMap.get(id) ?? id),
+      activeIndex: layout.activeIndex,
+    }
+  }
+  return {
+    ...layout,
+    id: generateId(),
+    children: layout.children.map((child) => remapNodeDockLayout(child, panelIdMap)!),
   }
 }

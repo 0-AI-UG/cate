@@ -7,6 +7,7 @@
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
 import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, DockLayoutNode } from '../../../shared/types'
+import { findNodeDockStore } from '../../panels/nodeDockRegistry'
 
 // -----------------------------------------------------------------------------
 // Canvas operations callback — the contract createCanvasOps implements, letting
@@ -28,16 +29,8 @@ export interface CanvasOperations {
     nodes: Record<CanvasNodeId, CanvasNodeState>,
     viewportOffset: Point,
     zoomLevel: number,
-    focusedNodeId: CanvasNodeId | null,
     regions?: Record<string, CanvasRegion>,
   ) => void
-  syncCanvasSnapshot: () => {
-    nodes: Record<CanvasNodeId, CanvasNodeState>
-    regions: Record<string, CanvasRegion>
-    viewportOffset: Point
-    zoomLevel: number
-    focusedNodeId: CanvasNodeId | null
-  }
   clearAllNodes: () => void
   focusPanelNode: (panelId: string) => void
   /** Access the underlying store API (needed by session restore) */
@@ -74,7 +67,14 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       if (!nodeId) return
       const node = state.nodes[nodeId]
       if (!node) return
-      const layout = node.dockLayout
+      // The live per-node DockStore is the runtime authority now; node.dockLayout
+      // is only a save-time projection. Read the live layout (this runs when a
+      // panel is interactively closed, so the node's mini-dock is mounted) and
+      // fall back to the projection if the store isn't registered.
+      const liveStore = findNodeDockStore(nodeId)
+      const layout = liveStore
+        ? liveStore.getState().zones.center.layout
+        : node.dockLayout
       if (layout && countLayoutPanels(layout) > 0) return
       state.removeNode(nodeId)
     },
@@ -83,21 +83,9 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       nodes: Record<CanvasNodeId, CanvasNodeState>,
       viewportOffset: Point,
       zoomLevel: number,
-      focusedNodeId: CanvasNodeId | null,
       regions?: Record<string, CanvasRegion>,
     ) {
-      storeApi.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, focusedNodeId, regions)
-    },
-
-    syncCanvasSnapshot() {
-      const s = storeApi.getState()
-      return {
-        nodes: { ...s.nodes },
-        regions: { ...s.regions },
-        viewportOffset: { ...s.viewportOffset },
-        zoomLevel: s.zoomLevel,
-        focusedNodeId: s.focusedNodeId,
-      }
+      storeApi.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
     },
 
     clearAllNodes() {

@@ -52,11 +52,13 @@ function reset() {
 }
 
 const ROOT = '/tmp/wt'
+// worktrees persist only UI metadata (id/path/color/label); branch/isPrimary are
+// live git facts joined in at read time (see useWorktrees), never persisted.
 const WT_X: WorktreeMeta = {
-  id: 'wt-x', path: `${ROOT}/.cate/worktrees/x`, branch: 'feature-x', color: '#11aa55', label: 'X work', isPrimary: false,
+  id: 'wt-x', path: `${ROOT}/.cate/worktrees/x`, color: '#11aa55', label: 'X work',
 }
 const WT_PRIMARY: WorktreeMeta = {
-  id: 'wt-primary-ws', path: ROOT, branch: '', color: '#3366ff', isPrimary: true,
+  id: 'wt-primary-ws', path: ROOT, color: '#3366ff',
 }
 
 /** Editor-node snapshot carrying a persisted worktree registry. Editors don't
@@ -86,7 +88,8 @@ describe('worktree session persistence', () => {
     const x = worktrees.find((w) => w.path === WT_X.path)
     expect(x?.color).toBe('#11aa55')
     expect(x?.label).toBe('X work')
-    expect(worktrees.find((w) => w.isPrimary)?.color).toBe('#3366ff')
+    // The primary worktree is the one keyed by the workspace root path.
+    expect(worktrees.find((w) => w.path === ROOT)?.color).toBe('#3366ff')
   })
 
   it('hydrateWorktrees merges by path so the persisted color wins over a discovered one', () => {
@@ -94,7 +97,7 @@ describe('worktree session persistence', () => {
     // Simulate a background sync that already discovered the same checkout with a
     // fresh palette color + a different (runtime) id, plus an unknown live one.
     useAppStore.getState().upsertWorktree(ws, { ...WT_X, id: 'wt-fresh', color: '#000000', label: undefined })
-    const live: WorktreeMeta = { id: 'wt-live', path: `${ROOT}/.cate/worktrees/live`, branch: 'live', color: '#999999', isPrimary: false }
+    const live: WorktreeMeta = { id: 'wt-live', path: `${ROOT}/.cate/worktrees/live`, color: '#999999' }
     useAppStore.getState().upsertWorktree(ws, live)
 
     useAppStore.getState().hydrateWorktrees(ws, [WT_X])
@@ -117,13 +120,13 @@ describe('worktree session persistence', () => {
     // Background sync discovered the same checkout via git's forward-slash form,
     // lower-cased, with a fresh runtime id + palette color.
     const discovered: WorktreeMeta = {
-      id: 'wt-fresh', path: 'c:/users/me/proj/.cate/worktrees/x', branch: 'feature-x', color: '#000000', isPrimary: false,
+      id: 'wt-fresh', path: 'c:/users/me/proj/.cate/worktrees/x', color: '#000000',
     }
     useAppStore.getState().upsertWorktree('ws-win', discovered)
 
     // Persisted session stored the native-separator form with color/label.
     const persisted: WorktreeMeta = {
-      id: 'wt-x', path: 'C:\\Users\\me\\Proj\\.cate\\worktrees\\x', branch: 'feature-x', color: '#11aa55', label: 'X work', isPrimary: false,
+      id: 'wt-x', path: 'C:\\Users\\me\\Proj\\.cate\\worktrees\\x', color: '#11aa55', label: 'X work',
     }
     useAppStore.getState().hydrateWorktrees('ws-win', [persisted])
 
@@ -148,7 +151,6 @@ describe('worktree session persistence', () => {
     const sessFile: ProjectSessionFile = {
       version: 1,
       workspaceId: 'ws',
-      focusedNodeId: null,
       nodes: {
         't-1': { panelId: 't-1', zOrder: 0, creationIndex: 0, workingDirectory: WT_X.path, worktreeId: 'wt-x' },
       },

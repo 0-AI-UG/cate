@@ -12,7 +12,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { useStatusStore } from '../../stores/statusStore'
+import { useStatusStore, setTerminalWorkspaceResolver } from '../../stores/statusStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { terminalRestoreData, replayTerminalLog } from '../workspace/session'
 import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
@@ -39,7 +39,7 @@ function applyOscTitleIfNoAgent(
   title: string,
 ): void {
   const status = useStatusStore.getState()
-  const wsId = status.terminalWorkspaceMap[ptyId] ?? workspaceId
+  const wsId = workspaceIdForPty(ptyId) ?? workspaceId
   if (status.workspaces[wsId]?.agentName[ptyId]) return
   useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, title)
 }
@@ -314,6 +314,14 @@ export interface RegistryEntry {
   /** Owning workspace — used to route auto-detected URLs to the right browser panel. */
   workspaceId: string
   /**
+   * Whether the underlying PTY is still alive. Set false on TERMINAL_EXIT so
+   * registry membership != liveness: the entry lingers (so its xterm buffer /
+   * scrollback can still be read and so a re-attach shows the "[Process exited]"
+   * line) but callers can tell a self-exited terminal from a live one. Cleared
+   * only by dispose() removing the entry entirely.
+   */
+  alive: boolean
+  /**
    * Set during reconnectTerminal when scrollback + panelTransferAck must be
    * deferred until attach() has opened the fresh xterm into its real
    * container. Without this, the scrollback would be written and PTY data
@@ -335,6 +343,42 @@ interface CreateOpts {
 // ---------------------------------------------------------------------------
 
 const registry = new Map<string, RegistryEntry>()
+
+// ---------------------------------------------------------------------------
+// Terminal identity bimap (single source of truth for panelId<->ptyId).
+//
+// The registry is panelId-keyed and each entry carries its ptyId + workspaceId,
+// so panelId->ptyId / panelId->workspaceId are direct reads. ptyId->panelId is
+// the inverse; rather than the old O(n) scan over every entry (panelIdForPty),
+// keep an explicit reverse index updated only where a ptyId is assigned or
+// cleared (setPtyForPanel / dispose / release). This is the one place the
+// panelId<->ptyId fact lives — statusStore no longer keeps a parallel
+// ptyId->workspaceId map; it resolves through workspaceIdForPty() here.
+//
+// NOTE: this is the RENDERER bimap. Main's terminalOwners / terminalCompanion
+// are distinct facts in a different process and are intentionally NOT folded in.
+// ---------------------------------------------------------------------------
+const ptyToPanel = new Map<string, string>()
+
+// Let statusStore resolve a ptyId's workspace through this bimap instead of
+// keeping a parallel ptyId->workspaceId map. Installed once at module load.
+setTerminalWorkspaceResolver((ptyId: string) => {
+  const panelId = ptyToPanel.get(ptyId)
+  if (!panelId) return undefined
+  return registry.get(panelId)?.workspaceId
+})
+
+/** Record (or clear) the ptyId for a panel and keep the reverse index in sync.
+ *  Pass an empty ptyId to clear (e.g. before a real id is known). */
+function setPtyForPanel(panelId: string, ptyId: string): void {
+  const entry = registry.get(panelId)
+  if (entry) {
+    // Drop any prior reverse mapping for this panel's old ptyId.
+    if (entry.ptyId && entry.ptyId !== ptyId) ptyToPanel.delete(entry.ptyId)
+    entry.ptyId = ptyId
+  }
+  if (ptyId) ptyToPanel.set(ptyId, panelId)
+}
 
 // Transfer data deposited by shell code before TerminalPanel mounts in a new
 // window.  getOrCreate() checks this map and enters reconnect mode if found.
@@ -497,6 +541,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     lastScrollTop: 0,
     hasScrollListener: false,
     workspaceId: opts.workspaceId,
+    alive: true,
   }
 
   // Register entry immediately so concurrent calls return the same object
@@ -535,7 +580,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
       return entry
     }
 
-    entry.ptyId = ptyId
+    setPtyForPanel(panelId, ptyId)
 
     // 6. PTY -> xterm: incoming data
     const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
@@ -546,9 +591,13 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
     })
     cleanupListeners.push(removeDataListener)
 
-    // 7. PTY exit notification
+    // 7. PTY exit notification — mark the entry dead so registry membership no
+    // longer implies a live PTY (the entry lingers so its buffer stays readable
+    // and the exit line is visible until the panel is disposed).
     const removeExitListener = electronAPI.onTerminalExit((id: string, exitCode: number) => {
       if (id === ptyId) {
+        const e = registry.get(panelId)
+        if (e) e.alive = false
         terminal.write(
           `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`,
         )
@@ -686,6 +735,7 @@ async function reconnectTerminal(
     lastScrollTop: 0,
     hasScrollListener: false,
     workspaceId: opts.workspaceId,
+    alive: true,
   }
 
   // Defer scrollback write + panelTransferAck until attach() opens the fresh
@@ -695,6 +745,7 @@ async function reconnectTerminal(
   entry.pendingReconnect = { ptyId, scrollback }
 
   registry.set(panelId, entry)
+  setPtyForPanel(panelId, ptyId)
 
   // 3. Wire up listeners to the EXISTING PTY
   const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
@@ -707,6 +758,8 @@ async function reconnectTerminal(
 
   const removeExitListener = electronAPI.onTerminalExit((id: string, exitCode: number) => {
     if (id === ptyId) {
+      const e = registry.get(panelId)
+      if (e) e.alive = false
       terminal.write(
         `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`,
       )
@@ -788,6 +841,7 @@ function release(panelId: string): void {
   if (!entry) return
 
   registry.delete(panelId)
+  if (entry.ptyId) ptyToPanel.delete(entry.ptyId)
   pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
 
   const { terminal, fitAddon, webglAddon, cleanupListeners } = entry
@@ -1116,6 +1170,7 @@ function dispose(panelId: string): void {
 
   // Remove from registry first so re-entrant calls are no-ops
   registry.delete(panelId)
+  if (entry.ptyId) ptyToPanel.delete(entry.ptyId)
   pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
 
   const { terminal, fitAddon, webglAddon, ptyId, cleanupListeners } = entry
@@ -1195,12 +1250,85 @@ function entries(): Array<[string, RegistryEntry]> {
   return Array.from(registry.entries())
 }
 
-/** Reverse lookup: find panelId by ptyId. */
+/** Reverse lookup: find panelId by ptyId (O(1) via the bimap). */
 function panelIdForPty(ptyId: string): string | null {
-  for (const [panelId, entry] of registry) {
-    if (entry.ptyId === ptyId) return panelId
+  return ptyToPanel.get(ptyId) ?? null
+}
+
+/** Forward lookup: ptyId for a panel, or null if not yet assigned / unknown. */
+function ptyIdForPanel(panelId: string): string | null {
+  const id = registry.get(panelId)?.ptyId
+  return id ? id : null
+}
+
+/** Owning workspace for a ptyId, resolved through the bimap + registry entry.
+ *  This is the single source statusStore + its consumers read instead of a
+ *  parallel ptyId->workspaceId map. */
+function workspaceIdForPty(ptyId: string): string | undefined {
+  const panelId = ptyToPanel.get(ptyId)
+  if (!panelId) return undefined
+  return registry.get(panelId)?.workspaceId
+}
+
+/** Owning workspace for a panelId. */
+function workspaceIdForPanel(panelId: string): string | undefined {
+  return registry.get(panelId)?.workspaceId
+}
+
+/** Whether the PTY behind a panel is still alive (false after TERMINAL_EXIT,
+ *  true while running, undefined when there is no entry). */
+function isAlive(panelId: string): boolean | undefined {
+  return registry.get(panelId)?.alive
+}
+
+export interface CaptureScrollbackOptions {
+  /**
+   * Exclude the cursor row from the capture. Used by the cross-window transfer /
+   * session-persistence paths: the PTY re-sends the prompt line on the receiving
+   * side (panelTransferAck) or on replay, so including the cursor row here would
+   * duplicate the prompt and push it to the bottom behind blank viewport rows.
+   * Defaults to false (include the cursor row), which is what an in-place
+   * follow-output capture wants so it keeps its freshest line.
+   */
+  excludeCursorRow?: boolean
+}
+
+/**
+ * Extract an xterm buffer's scrollback (including the visible viewport) as a
+ * newline-joined string, trimming trailing blank lines. Short-circuits to a
+ * previously-captured `entry.scrollback` if present.
+ *
+ * This is the canonical buffer->string extraction, reused by every call site
+ * that previously hand-rolled the same baseY+cursorY / translateToString(true) /
+ * trailing-trim loop. Pass `excludeCursorRow` for the transfer/persistence
+ * variant that must not duplicate the re-sent prompt line.
+ */
+function captureScrollback(
+  entry: { terminal?: Terminal; scrollback?: string },
+  options: CaptureScrollbackOptions = {},
+): string | undefined {
+  if (typeof entry.scrollback === 'string') return entry.scrollback
+  const terminal = entry.terminal
+  if (!terminal) return undefined
+  try {
+    const buffer = terminal.buffer.active
+    // Capture scrollback + the active viewport (baseY rows of history plus the
+    // cursor row), so a follow-output terminal keeps its freshest lines. The
+    // transfer/persistence variant stops one row short of the cursor.
+    const lastRow = buffer.baseY + buffer.cursorY
+    const endRow = options.excludeCursorRow ? lastRow : lastRow + 1
+    const lines: string[] = []
+    for (let i = 0; i < endRow; i++) {
+      const line = buffer.getLine(i)
+      lines.push(line ? line.translateToString(true) : '')
+    }
+    // Trim trailing blank lines so a freshly-cleared terminal doesn't carry a
+    // wall of empty rows across a transfer / save.
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop()
+    return lines.length > 0 ? lines.join('\n') : undefined
+  } catch {
+    return undefined
   }
-  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -1243,6 +1371,11 @@ export const terminalRegistry = {
   getFailure,
   subscribeFailure,
   panelIdForPty,
+  ptyIdForPanel,
+  workspaceIdForPty,
+  workspaceIdForPanel,
+  isAlive,
+  captureScrollback,
   entries,
   findNext,
   findPrevious,

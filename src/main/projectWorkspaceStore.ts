@@ -207,10 +207,10 @@ export async function saveProjectState(
   // (non-selected) workspace can momentarily serialize an empty canvas; without
   // this guard that empty snapshot clobbers the good workspace.json/session.json
   // and the loss is permanent — the empty file is still structurally "valid", so
-  // the .bak fallback is never consulted on the next load. This mirrors the
-  // renderer's own shouldPreserveExistingCanvas guard (clearing every panel
-  // already doesn't persist as empty for the selected workspace), extended to
-  // the disk boundary so it also covers deferred/non-selected workspaces.
+  // the .bak fallback is never consulted on the next load. The renderer reads
+  // canvas state straight from the live store (the source of truth), so this
+  // disk-boundary guard is the backstop that also covers deferred/non-selected
+  // workspaces serializing a momentarily-empty canvas.
   if (workspace.canvas.nodes.length === 0) {
     const existingCount = workspaceNodeCount(await tryReadJson(workspacePath(rootPath)))
     if (existingCount > 0) {

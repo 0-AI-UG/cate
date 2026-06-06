@@ -12,10 +12,10 @@
 // =============================================================================
 
 import React, { useCallback, useEffect } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { ArrowsSplit } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
+import { useWorktrees } from '../stores/useWorktrees'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import type { PanelState } from '../../shared/types'
 
@@ -26,7 +26,10 @@ interface WorktreePillProps {
 }
 
 export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }) => {
-  const worktrees = useAppStore(useShallow((s) => s.workspaces.find((w) => w.id === workspaceId)?.worktrees ?? []))
+  // Live-git facts (branch/isPrimary) joined with persisted UI metadata
+  // (color/label), the single source shared with the Parallel Work tab.
+  const rootPath = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.rootPath ?? '')
+  const worktrees = useWorktrees(rootPath, workspaceId)
   const setPanelWorktreeId = useAppStore((s) => s.setPanelWorktreeId)
   const setHoveredWorktree = useUIStore((s) => s.setHoveredWorktree)
   const focusWorktree = useUIStore((s) => s.focusWorktree)
@@ -99,9 +102,9 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
         borderRadius: 9,
         // Filled, no outline — the chip IS the worktree color. Slightly toned
         // toward black so white text stays legible across the bright palette.
-        backgroundColor: `color-mix(in srgb, ${current.color} 92%, black)`,
+        backgroundColor: `color-mix(in srgb, ${current.color ?? 'var(--text-muted)'} 92%, black)`,
         border: 'none',
-        boxShadow: isFocused ? `0 0 10px -1px ${current.color}` : 'none',
+        boxShadow: isFocused ? `0 0 10px -1px ${current.color ?? 'var(--text-muted)'}` : 'none',
         color: '#fff',
         fontSize: 10,
         fontWeight: 600,
