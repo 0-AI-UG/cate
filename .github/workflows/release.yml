@@ -125,13 +125,12 @@ jobs:
 
       # Functional + content-search e2e against the real built app and the host
       # companion tarball staged above (so the daemon's ripgrep is present — this
-      # is why e2e lives here, not in the fast PR CI). macOS gates the release
-      # (e2e is validated windowless there). Linux/Windows run for signal but are
-      # non-blocking for now: they're newly enabled here, need a virtual display
-      # (xvfb on linux), and haven't been proven stable on these runners.
+      # is why e2e lives here, not in the fast PR CI). Gates the release on every
+      # platform (Linux runs under xvfb). Previously only macOS was blocking,
+      # which let a cross-platform regression hide behind a green Linux/Windows
+      # step — now any platform's e2e failure fails the release.
       - name: E2E tests (functional + search)
         shell: bash
-        continue-on-error: ${{ matrix.platform != 'mac' }}
         run: |
           if [ "${{ matrix.platform }}" = "linux" ]; then
             sudo apt-get update && sudo apt-get install -y xvfb
