@@ -4,7 +4,6 @@
 // the per-instance ctx so they stay isolated per store.
 // =============================================================================
 
-import type { CanvasNodeState } from '../../../shared/types'
 import { ZOOM_MIN, ZOOM_MAX } from '../../../shared/types'
 import { viewToCanvas as viewToCanvasCoords } from '../../lib/canvas/coordinates'
 import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
@@ -25,7 +24,6 @@ type ViewportActions = Pick<
   | 'viewFrame'
   | 'zoomToFit'
   | 'zoomToSelection'
-  | 'frameNodes'
 >
 
 export function createViewportSlice(set: CanvasSet, get: CanvasGet, ctx: CanvasStoreCtx): ViewportActions {
@@ -245,33 +243,6 @@ export function createViewportSlice(set: CanvasSet, get: CanvasGet, ctx: CanvasS
       const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
       const maxZoom = target.length === 1 ? Math.min(ZOOM_MAX, 1.5) : ZOOM_MAX
       const zoom = Math.min(Math.max(fitZoom, ZOOM_MIN), maxZoom)
-
-      set({
-        zoomLevel: zoom,
-        viewportOffset: {
-          x: (cs.width - contentW * zoom) / 2 - (minX - padding) * zoom,
-          y: (cs.height - contentH * zoom) / 2 - (minY - padding) * zoom,
-        },
-      })
-    },
-
-    frameNodes(nodeIds, padding = 80) {
-      const state = get()
-      const cs = state.containerSize
-      if (cs.width === 0 || cs.height === 0) return
-      const target = nodeIds.map((id) => state.nodes[id]).filter(Boolean) as CanvasNodeState[]
-      if (target.length === 0) return
-
-      const minX = Math.min(...target.map((n) => n.origin.x))
-      const minY = Math.min(...target.map((n) => n.origin.y))
-      const maxX = Math.max(...target.map((n) => n.origin.x + n.size.width))
-      const maxY = Math.max(...target.map((n) => n.origin.y + n.size.height))
-
-      const contentW = maxX - minX + padding * 2
-      const contentH = maxY - minY + padding * 2
-      const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
-      // Don't over-zoom a small cluster.
-      const zoom = Math.min(Math.max(fitZoom, ZOOM_MIN), Math.min(ZOOM_MAX, 1.5))
 
       set({
         zoomLevel: zoom,

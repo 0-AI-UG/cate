@@ -163,8 +163,6 @@ export interface CanvasStoreActions {
 
   zoomToFit: () => void
   zoomToSelection: () => void
-  /** Frame the camera to fit a specific set of nodes (worktree focus lens). */
-  frameNodes: (nodeIds: string[], padding?: number) => void
 
   /** Publish (or clear) the active-tab worktree for a node. */
   setNodeActiveWorktree: (nodeId: string, worktreeId: string | null) => void
