@@ -8,6 +8,7 @@
 
 import { Terminal } from '@xterm/xterm'
 import log from '../logger'
+import { errorMessage } from '../errorMessage'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
@@ -656,13 +657,7 @@ async function getOrCreate(panelId: string, opts: CreateOpts): Promise<RegistryE
   } catch (err) {
     // Tear down the half-built entry so retry() can rebuild from scratch
     // instead of leaving a permanent tombstone with the red error frozen in it.
-    const message =
-      err instanceof Error
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : String(err)
-    failures.set(panelId, message)
+    failures.set(panelId, errorMessage(err, 'Terminal failed to start'))
     if (registry.get(panelId) === entry) {
       registry.delete(panelId)
       try { terminal.dispose() } catch { /* ignore */ }

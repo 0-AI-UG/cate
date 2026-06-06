@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CaretRight } from '@phosphor-icons/react'
 import type { RemoteConnectSpec, SshHostEntry } from '../../shared/types'
+import { btn, inputCls, SEGMENT } from './Modal'
 
 // In-panel connect form (no modal) for a remote SSH server or a WSL distro.
 // Presentational: it builds a RemoteConnectSpec and hands it to `onSubmit`;
@@ -80,9 +81,6 @@ function formatTarget(user?: string, host?: string, port?: string | number): str
   if (!host) return ''
   return `${user ? `${user}@` : ''}${host}${port ? `:${port}` : ''}`
 }
-
-const inputCls =
-  'w-full text-[13px] bg-surface-3 border border-subtle rounded px-2 py-1 outline-none text-primary focus:border-focus-blue'
 
 /** Non-secret fields that can be pre-filled when editing an existing
  *  connection. SSH key/passphrase live in safeStorage and are never echoed
@@ -194,15 +192,11 @@ export function RemoteConnect({
   }
 
   return (
-    <div className="flex flex-col gap-2.5 p-4" onKeyDown={onKeyDown}>
-      {/* Kind toggle */}
-      <div className="flex gap-1 text-[12px]">
+    <div className="flex flex-col gap-3 px-4 py-4" onKeyDown={onKeyDown}>
+      {/* Kind toggle — segmented control */}
+      <div className={SEGMENT.group}>
         {(['server', 'wsl'] as const).map((k) => (
-          <button
-            key={k}
-            className={`px-2 py-1 rounded ${kind === k ? 'bg-surface-3 text-primary' : 'text-muted hover:text-secondary'}`}
-            onClick={() => setKind(k)}
-          >
+          <button key={k} type="button" className={SEGMENT.seg(kind === k)} onClick={() => setKind(k)}>
             {k === 'server' ? 'SSH server' : 'WSL'}
           </button>
         ))}
@@ -211,10 +205,10 @@ export function RemoteConnect({
       {kind === 'server' ? (
         <>
           {sshHosts && sshHosts.length > 0 && (
-            <select className={inputCls} value={savedAlias} onChange={(e) => pickSavedHost(e.target.value)}>
-              <option value="">Saved host…</option>
+            <select className={`${inputCls} cursor-pointer`} value={savedAlias} onChange={(e) => pickSavedHost(e.target.value)}>
+              <option value="" className="bg-surface-5 text-primary">Saved host…</option>
               {sshHosts.map((h) => (
-                <option key={h.alias} value={h.alias}>
+                <option key={h.alias} value={h.alias} className="bg-surface-5 text-primary">
                   {h.alias}
                 </option>
               ))}
@@ -241,7 +235,7 @@ export function RemoteConnect({
 
           <button
             type="button"
-            className="flex items-center gap-1 text-[12px] text-muted hover:text-secondary"
+            className="flex items-center gap-1 self-start text-[12px] text-muted hover:text-secondary transition-colors"
             onClick={() => setAdvancedOpen((o) => !o)}
           >
             <CaretRight size={12} weight="bold" className={`transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
@@ -249,9 +243,9 @@ export function RemoteConnect({
           </button>
 
           {advancedOpen && (
-            <div className="flex flex-col gap-2 pl-3 border-l border-subtle">
-              <label className="flex items-center gap-2 text-[12px] text-secondary">
-                <input type="checkbox" checked={useAgent} onChange={(e) => setUseAgent(e.target.checked)} />
+            <div className="flex flex-col gap-2.5 pl-3 border-l border-subtle">
+              <label className="flex items-center gap-2 text-[12px] text-secondary cursor-pointer">
+                <input type="checkbox" checked={useAgent} onChange={(e) => setUseAgent(e.target.checked)} className="accent-focus-blue" />
                 Use SSH agent
               </label>
               <input
@@ -273,17 +267,17 @@ export function RemoteConnect({
       ) : (
         <>
           {distros === null ? (
-            <div className="text-[12px] text-muted px-2 py-1">Looking for WSL distros…</div>
+            <div className="text-[12px] text-muted px-0.5 py-1">Looking for WSL distros…</div>
           ) : distros.length > 0 ? (
-            <select className={inputCls} value={distro} onChange={(e) => setDistro(e.target.value)} autoFocus>
+            <select className={`${inputCls} cursor-pointer`} value={distro} onChange={(e) => setDistro(e.target.value)} autoFocus>
               {distros.map((d) => (
-                <option key={d} value={d}>
+                <option key={d} value={d} className="bg-surface-5 text-primary">
                   {d}
                 </option>
               ))}
             </select>
           ) : (
-            <div className="text-[12px] text-muted px-2 py-1">No WSL distros found.</div>
+            <div className="text-[12px] text-muted px-0.5 py-1">No WSL distros found.</div>
           )}
           <input
             className={inputCls}
@@ -295,24 +289,20 @@ export function RemoteConnect({
       )}
 
       {error && (
-        <div className="text-[12px] text-red-400 whitespace-pre-wrap break-words max-h-32 overflow-auto rounded bg-red-500/10 border border-red-500/20 px-2 py-1.5">
+        <div className="text-[12px] text-red-400 whitespace-pre-wrap break-words max-h-32 overflow-auto rounded-lg bg-red-500/10 border border-red-500/20 px-2.5 py-2">
           {error}
         </div>
       )}
 
-      <div className="flex items-center gap-2 mt-1">
-        <button
-          className={`px-3 py-1 rounded text-[13px] ${canSubmit ? 'bg-focus-blue text-white hover:opacity-90' : 'bg-surface-3 text-muted cursor-default'}`}
-          onClick={submit}
-          disabled={!canSubmit}
-        >
-          {pending ? 'Connecting…' : 'Connect'}
-        </button>
+      <div className="flex items-center justify-end gap-2 mt-1">
         {onCancel && (
-          <button className="px-2 py-1 rounded text-[13px] text-muted hover:text-secondary" onClick={onCancel}>
+          <button type="button" className={btn.ghost} onClick={onCancel}>
             Cancel
           </button>
         )}
+        <button type="button" className={btn.primary} onClick={submit} disabled={!canSubmit}>
+          {pending ? 'Connecting…' : 'Connect'}
+        </button>
       </div>
     </div>
   )

@@ -15,11 +15,10 @@ import {
 } from '../stores/appStore'
 import { useUIStore, getSidebarLayout } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
-import { getActivePanelId } from '../lib/activePanel'
+import { getActivePanelId, setActivePanel } from '../lib/activePanel'
 import { resolvePanelById } from '../lib/workspace/panelReveal'
 import { getNodeActivePanelId } from '../panels/nodeDockRegistry'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
-import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 
 // Cmd+Arrow panel navigation — moves the selection cursor between nodes.
@@ -327,7 +326,7 @@ export function useShortcuts(): void {
         return
       }
 
-      // --- Selection & region shortcuts (hardcoded) ---
+      // --- Selection shortcuts (hardcoded) ---
 
       // Cmd+A — select all
       if (e.metaKey && !e.shiftKey && e.key === 'a') {
@@ -343,24 +342,12 @@ export function useShortcuts(): void {
         }
       }
 
-      // Cmd+G — arrange selected nodes horizontally and wrap in a region
+      // Cmd+G — tidy the selected nodes into a grid
       if (e.metaKey && !e.shiftKey && e.key === 'g') {
         if (terminalHasFocus) return
         e.preventDefault()
         e.stopPropagation()
-        canvasStore().groupSelectedHorizontal()
-        return
-      }
-
-      // Cmd+Shift+G — dissolve selected regions
-      if (e.metaKey && e.shiftKey && e.key === 'G') {
-        if (terminalHasFocus) return
-        e.preventDefault()
-        e.stopPropagation()
-        const state = canvasStore()
-        for (const regionId of state.selectedRegionIds) {
-          canvasStore().dissolveRegion(regionId)
-        }
+        canvasStore().tidyGridSelected()
         return
       }
 
@@ -386,28 +373,14 @@ export function useShortcuts(): void {
         // when focused, so its own handler can delete the multi-selection.
         if (isSidebarKeyNavFocused()) return
         const state = canvasStore()
-        if (state.selectedNodeIds.size > 0 || state.selectedRegionIds.size > 0) {
+        if (state.selectedNodeIds.size > 0) {
           // Don't delete if a text input is focused
           const active = document.activeElement
           const isEditable = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.getAttribute('contenteditable') === 'true'
           if (!isEditable) {
             e.preventDefault()
             e.stopPropagation()
-            // When any selected region has panels inside, prompt the user
-            // before destroying their work. Shift+Delete still bypasses the
-            // prompt and deletes contents along with the region.
-            const containedPanels = state.selectedRegionIds.size > 0
-              ? Object.values(state.nodes).filter((n) => n.regionId && state.selectedRegionIds.has(n.regionId)).length
-              : 0
-            if (!e.shiftKey && containedPanels > 0) {
-              confirmDeleteRegion(containedPanels).then((choice) => {
-                if (choice === 'cancel') return
-                canvasStore().deleteSelection(choice === 'with-contents')
-              })
-              return
-            }
-            // Shift+Delete deletes region contents too
-            state.deleteSelection(e.shiftKey)
+            state.deleteSelection()
             return
           }
         }
@@ -463,9 +436,14 @@ export function useShortcuts(): void {
         if (!terminalHasFocus && isTextSurfaceFocused()) return
         // Navigating deliberately doesn't activate the destination, so drop
         // keyboard focus out of a focused terminal — otherwise its cursor keeps
-        // capturing input and the next arrow never reaches the canvas.
+        // capturing input and the next arrow never reaches the canvas. Also
+        // repoint the canonical active panel at the canvas itself: the leaf
+        // pointer otherwise stays on the terminal, so computeTerminalHasFocus
+        // keeps reporting a focused terminal and bare-key shortcuts (Enter to
+        // activate the jump target, Delete, Escape) wrongly stand down.
         if (NAVIGATE_ACTIONS.has(action) && terminalHasFocus) {
           ;(document.activeElement as HTMLElement | null)?.blur()
+          setActivePanel(getActiveCanvasPanelId())
         }
       }
       // Context-aware guard: when a real text editor (Monaco, input, textarea,

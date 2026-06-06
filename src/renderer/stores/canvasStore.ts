@@ -23,7 +23,6 @@ import { createViewportSlice } from './canvas/viewportSlice'
 import { createPlacementSlice } from './canvas/placementSlice'
 import { createNavigationSlice } from './canvas/navigationSlice'
 import { createSelectionSlice } from './canvas/selectionSlice'
-import { createRegionsSlice } from './canvas/regionsSlice'
 import { createArrangeSlice } from './canvas/arrangeSlice'
 
 // Re-export the store types so existing importers (`from '.../canvasStore'`)
@@ -48,7 +47,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     return {
       // --- State ---
       nodes: {},
-      regions: {},
       viewportOffset: { x: 0, y: 0 },
       zoomLevel: ZOOM_DEFAULT,
       focusedNodeId: null,
@@ -59,9 +57,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       containerSize: { width: 0, height: 0 },
       snapGuides: { lines: [] },
       selectedNodeIds: new Set<string>(),
-      selectedRegionIds: new Set<string>(),
       suppressAutoFocus: false,
-      dropTargetRegionId: null,
       history: [],
       future: [],
       pendingPlacement: null,
@@ -73,11 +69,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       ...createPlacementSlice(set, get, ctx),
       ...createNavigationSlice(set, get, ctx),
       ...createSelectionSlice(set, get),
-      ...createRegionsSlice(set, get),
       ...createArrangeSlice(set, get),
 
       // --- Lifecycle / bulk reset (counterpart to the initial state above) ---
-      loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions) {
+      loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel) {
         // Compute next counters from loaded data
         const nodeList = Object.values(nodes)
         const maxZOrder = nodeList.reduce((max, n) => Math.max(max, n.zOrder), -1)
@@ -91,14 +86,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 
         set({
           nodes: idleNodes,
-          regions: regions ?? {},
           viewportOffset,
           zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
           focusedNodeId: null,
           nextZOrder: maxZOrder + 1,
           nextCreationIndex: maxCreationIndex + 1,
           selectedNodeIds: new Set<string>(),
-          selectedRegionIds: new Set<string>(),
           history: [],
           future: [],
           pendingPlacement: null,

@@ -197,6 +197,20 @@
   animation: cate-fade-in 0.35s ease-out both;
 }
 
+/* Shared modal entrance — a soft backdrop fade plus a card that rises and
+   settles. Used by the <Modal> primitive (ui/Modal.tsx) so every dialog opens
+   the same way. */
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes modal-card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-backdrop-in { animation: modal-backdrop-in 130ms ease-out both; }
+.modal-card-in { animation: modal-card-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
 /* Awaiting-input indicator — static dot. Used for terminals whose agent has
    stopped and is waiting for the user. Intentionally not animated: a perpetual
    transform/opacity animation here is composited every frame and (when layered

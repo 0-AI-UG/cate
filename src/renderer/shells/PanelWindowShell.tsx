@@ -80,8 +80,8 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
       // Canvas panel: hydrate the per-panel canvas store + child PanelStates.
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
+        const { nodes, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel)
         ensurePanelsInAppStore(wsId, childPanels ?? {})
       }
 

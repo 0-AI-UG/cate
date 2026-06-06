@@ -51,7 +51,6 @@ function fakeCanvasOps(nodes: Record<string, unknown>) {
     storeApi: {
       getState: () => ({
         nodes,
-        regions: {},
         zoomLevel: 2,
         viewportOffset: { x: 5, y: 6 },
         nodeForPanel: (panelId: string) =>
@@ -78,7 +77,6 @@ describe('getWorkspaceCanvasSnapshot', () => {
     setWorkspace({
       // A stale persisted projection that must be ignored in favor of live.
       canvasNodes: { old: { id: 'old', panelId: 'p-old' } },
-      regions: {},
       zoomLevel: 1,
       viewportOffset: { x: 0, y: 0 },
     })
@@ -94,7 +92,6 @@ describe('getWorkspaceCanvasSnapshot', () => {
   it('falls back to the persisted projection for a never-mounted workspace (no empty overwrite)', () => {
     setWorkspace({
       canvasNodes: { saved: { id: 'saved', panelId: 'p-saved' } },
-      regions: { r1: { id: 'r1' } },
       zoomLevel: 1.5,
       viewportOffset: { x: 10, y: 20 },
     })

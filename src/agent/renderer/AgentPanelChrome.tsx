@@ -467,7 +467,7 @@ export function ThinkingLevelPicker({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[10.5px] text-muted/70 hover:text-primary hover:bg-white/5 disabled:opacity-50"
-        title={`Reasoning effort — ${current}`}
+        title={`Reasoning effort: ${current}`}
       >
         <ThinkingBars count={bars} />
       </button>

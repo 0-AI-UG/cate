@@ -443,11 +443,6 @@ export interface ElectronAPI {
   /** Confirm reloading the canvas after workspace.json changed on disk. */
   confirmReloadWorkspace(payload: { name?: string }): Promise<'reload' | 'cancel'>
 
-  /** Native confirmation shown when deleting a region that has panels inside.
-   *  Returns 'with-contents' (delete region + contents), 'region-only' (keep
-   *  contents, just remove the region around them), or 'cancel'. */
-  confirmDeleteRegion(payload: { panelCount: number }): Promise<'with-contents' | 'region-only' | 'cancel'>
-
   /** Native confirmation shown when external files/folders are dropped onto the
    *  file explorer. Returns 'copy' (duplicate into the directory), 'move'
    *  (relocate into the directory, removing the originals), or 'cancel'. */

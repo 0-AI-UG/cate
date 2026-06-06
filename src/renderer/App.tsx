@@ -197,7 +197,7 @@ function MainApp() {
     const name = currentWorkspace?.name?.trim()
     // Treat the default "Workspace" placeholder as no real name, so the title
     // is just "Cate" until the user actually renames the workspace.
-    const title = name && name !== 'Workspace' ? `${name} — Cate` : 'Cate'
+    const title = name && name !== 'Workspace' ? `${name} · Cate` : 'Cate'
     const api = (window as unknown as { electronAPI?: { windowSetTitle?: (t: string) => Promise<void> } }).electronAPI
     api?.windowSetTitle?.(title).catch(() => { /* noop */ })
   }, [currentWorkspace?.name])
@@ -401,8 +401,8 @@ function MainApp() {
       // children + child PanelState records before the panel mounts.
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
+        const { nodes, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel)
         applyCanvasChildPanels(wsId, childPanels ?? {})
       }
 

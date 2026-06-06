@@ -1,7 +1,7 @@
 // =============================================================================
-// Undo/redo must version selection alongside {nodes, regions}, and restore it
-// filtered to live ids — so after an undo/redo, selectedNodeIds /
-// selectedRegionIds can never point at nodes/regions that don't exist.
+// Undo/redo must version selection alongside {nodes}, and restore it
+// filtered to live ids — so after an undo/redo, selectedNodeIds can never
+// point at nodes that don't exist.
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
@@ -11,7 +11,6 @@ import { createCanvasStore } from '../canvasStore'
 function expectSelectionLive(store: ReturnType<typeof createCanvasStore>) {
   const s = store.getState()
   for (const id of s.selectedNodeIds) expect(s.nodes[id]).toBeDefined()
-  for (const id of s.selectedRegionIds) expect(s.regions[id]).toBeDefined()
 }
 
 describe('canvas history — selection is versioned and restored filtered to live ids', () => {
@@ -51,10 +50,8 @@ describe('canvas history — selection is versioned and restored filtered to liv
       history: [
         {
           nodes: entryNodes,
-          regions: {},
           focusedNodeId: null,
           selectedNodeIds: new Set([a, 'b-deleted']),
-          selectedRegionIds: new Set<string>(),
         },
       ],
       future: [],
@@ -104,33 +101,15 @@ describe('canvas history — selection is versioned and restored filtered to liv
     expectSelectionLive(store)
   })
 
-  it('regions: select a region, delete it, undo restores region + selection (live only)', () => {
-    const store = createCanvasStore()
-    const r = store.getState().addRegion('R', { x: 0, y: 0 }, { width: 400, height: 300 })
-
-    store.getState().selectRegions([r])
-    expect([...store.getState().selectedRegionIds]).toEqual([r])
-
-    store.getState().deleteSelection() // pushes history with region selection {r}, removes region
-    expect(store.getState().regions[r]).toBeUndefined()
-    expect(store.getState().selectedRegionIds.size).toBe(0)
-
-    store.getState().undo()
-    expect(store.getState().regions[r]).toBeDefined()
-    expect([...store.getState().selectedRegionIds]).toEqual([r])
-    expectSelectionLive(store)
-  })
-
   it('invariant holds across an undo/redo sequence', () => {
     const store = createCanvasStore()
     const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
-    store.getState().addNode('b', 'editor', { x: 200, y: 0 }, { width: 100, height: 80 })
-    const r = store.getState().addRegion('R', { x: 0, y: 0 }, { width: 400, height: 300 })
+    const b = store.getState().addNode('b', 'editor', { x: 200, y: 0 }, { width: 100, height: 80 })
 
     store.getState().selectNodes([a])
     store.getState().deleteSelection()
     store.getState().finalizeRemoveNode(a)
-    store.getState().selectRegions([r])
+    store.getState().selectNodes([b])
     store.getState().deleteSelection()
 
     // Walk back and forth; the invariant must hold after every step.

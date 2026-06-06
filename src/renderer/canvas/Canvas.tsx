@@ -5,7 +5,7 @@
 
 import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
+import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore, type PanelPlacement } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
 import { useAutoFocusLargestVisible } from '../hooks/useAutoFocusLargestVisible'
@@ -15,7 +15,6 @@ import { canvasToView, viewToCanvas } from '../lib/canvas/coordinates'
 import CanvasGrid from './CanvasGrid'
 import CanvasBackgroundImage from './CanvasBackgroundImage'
 import SnapGuides from './SnapGuides'
-import CanvasRegionComponent from './CanvasRegionComponent'
 import GhostPlacementLayer from './GhostPlacementLayer'
 import { WorktreeTerritoryLayer } from './worktree'
 import type { Point, PanelType } from '../../shared/types'
@@ -68,47 +67,17 @@ function injectCanvasInteractingStyle(): void {
     .canvas-tool-hand [data-resize-overlay] {
       pointer-events: none !important;
     }
-    /* Regions get the same treatment: grab cursor only, and the label + resize
-       brackets stop intercepting so a press on a region pans the canvas. The
-       region body itself keeps pointer-events so its bail-to-pan handler runs. */
-    .canvas-tool-hand [data-region-id],
-    .canvas-tool-hand [data-region-id] *,
-    .canvas-tool-hand [data-region-resize-handle] {
-      cursor: grab !important;
-    }
-    .canvas-tool-hand [data-region-id] *,
-    .canvas-tool-hand [data-region-resize-handle] {
-      pointer-events: none !important;
-    }
     /* During an active hand-pan, show the closed-hand (grabbing) cursor over
        nodes too, matching the canvas background. */
     .canvas-interacting.canvas-tool-hand [data-node-id],
     .canvas-interacting.canvas-tool-hand [data-node-id] *,
     .canvas-interacting.canvas-tool-hand [data-resize-frame-for],
-    .canvas-interacting.canvas-tool-hand [data-resize-frame-for] *,
-    .canvas-interacting.canvas-tool-hand [data-region-id],
-    .canvas-interacting.canvas-tool-hand [data-region-id] *,
-    .canvas-interacting.canvas-tool-hand [data-region-resize-handle] {
+    .canvas-interacting.canvas-tool-hand [data-resize-frame-for] * {
       cursor: grabbing !important;
     }
   `
   document.head.appendChild(style)
 }
-
-const RegionsLayer: React.FC = React.memo(() => {
-  const zoomLevel = useCanvasStoreContext((s) => s.zoomLevel)
-  const regionList = useCanvasStoreContext(
-    (s) => Object.values(s.regions),
-    shallow,
-  )
-  return (
-    <>
-      {regionList.map((region) => (
-        <CanvasRegionComponent key={region.id} region={region} zoomLevel={zoomLevel} />
-      ))}
-    </>
-  )
-})
 
 // A small instruction pill for the placement picker, centred over the visible
 // canvas (the strip between the absolute-overlay sidebars). Body-portalled so it
@@ -382,7 +351,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         return
       }
       // Only unfocus if clicking directly on the world div, not on a child node
-      if (!target.closest('[data-node-id]') && !target.closest('[data-region-id]')) {
+      if (!target.closest('[data-node-id]')) {
         canvasApi.getState().unfocus()
         // A click on empty canvas also dismisses the worktree focus lens.
         useUIStore.getState().clearWorktreeLens()
@@ -536,8 +505,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         )
       }
       items.push(
-        { id: 'new-region', label: 'New Region' },
-        { type: 'separator' as const },
         { id: 'auto-layout', label: 'Auto Layout' },
         { id: 'zoom-to-fit', label: 'Zoom to Fit' },
       )
@@ -558,31 +525,14 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         }
         return
       }
-      // If the click point falls inside a Region that has a defaultCwd,
-      // a "New Terminal" inherits that cwd. Editors/browsers don't.
-      const regions = Object.values(canvasApi.getState().regions)
-      const containingRegion = regions.find(
-        (r) =>
-          point.x >= r.origin.x &&
-          point.x <= r.origin.x + r.size.width &&
-          point.y >= r.origin.y &&
-          point.y <= r.origin.y + r.size.height,
-      )
       switch (id) {
         case 'new-terminal':
-          if (containingRegion?.defaultCwd) {
-            useAppStore.getState().createTerminal(wsId, undefined, point, here(), containingRegion.defaultCwd)
-          } else {
-            onCreateAtPoint?.('terminal', point)
-          }
+          onCreateAtPoint?.('terminal', point)
           break
         case 'new-editor': onCreateAtPoint?.('editor', point); break
         case 'new-browser': onCreateAtPoint?.('browser', point); break
         case 'new-agent': onCreateAtPoint?.('agent', point); break
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
-        case 'new-region':
-          canvasApi.getState().addRegion('Region', point, { width: 400, height: 300 })
-          break
         case 'auto-layout':
           canvasApi.getState().autoLayout()
           break
@@ -647,7 +597,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         }}
         onClick={handleWorldClick}
       >
-        <RegionsLayer />
         <SnapGuides />
         {marqueeRect && (
           <div

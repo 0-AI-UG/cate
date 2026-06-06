@@ -128,7 +128,7 @@ export class CompanionManager {
   private scheduleLocalReconnect(): void {
     if (this.localReconnectTimer) return // a reconnect is already pending
     if (!this.localOpts) return // never came up; nothing to relaunch
-    this.emitStatus(LOCAL_COMPANION_ID, 'connecting', 'Local companion crashed — reconnecting…')
+    this.emitStatus(LOCAL_COMPANION_ID, 'connecting', 'Local companion crashed, reconnecting…')
     this.localReconnectTimer = setTimeout(() => {
       this.localReconnectTimer = null
       // ensureLocalCompanion short-circuits if LOCAL is already registered, never
@@ -296,7 +296,7 @@ export class CompanionManager {
       return { channel, client, hello }
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err)
-      const detail = stderr.trim() ? ` — daemon output: ${stderr.trim().slice(-600)}` : ''
+      const detail = stderr.trim() ? `. Daemon output: ${stderr.trim().slice(-600)}` : ''
       throw new Error(`${base}${detail}`)
     }
   }

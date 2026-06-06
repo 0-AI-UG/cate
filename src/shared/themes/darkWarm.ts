@@ -6,7 +6,7 @@ import { THEME_SCHEMA_VERSION } from '../theme'
 export const darkWarm: Theme = {
   version: THEME_SCHEMA_VERSION,
   id: 'dark-warm',
-  name: 'Dark — Warm',
+  name: 'Dark Warm',
   type: 'dark',
   builtIn: true,
   bootBackground: '#1f1e1c',

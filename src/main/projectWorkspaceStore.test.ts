@@ -33,7 +33,7 @@ function makeWorkspace(nodes: ProjectCanvasNode[]): ProjectWorkspaceFile {
     version: 1,
     name: 'WS',
     color: '',
-    canvas: { nodes, regions: [], zoomLevel: 1, viewportOffset: { x: 0, y: 0 } },
+    canvas: { nodes, zoomLevel: 1, viewportOffset: { x: 0, y: 0 } },
   }
 }
 

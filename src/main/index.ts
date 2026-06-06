@@ -2,7 +2,7 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, screen, webContents, session, nativeTheme } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_OPEN_IMAGE, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_TERMINAL, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_DELETE_REGION, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, CANVAS_READ_BACKGROUND_IMAGE, APP_OPEN_PATH } from '../shared/ipc-channels'
+import { SHELL_SHOW_IN_FOLDER, WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG, CAPTURE_PAGE, DIALOG_OPEN_FOLDER, DIALOG_OPEN_IMAGE, DIALOG_SAVE_FILE, DIALOG_CONFIRM_UNSAVED, DIALOG_CONFIRM_CLOSE_TERMINAL, DIALOG_CONFIRM_CLOSE_CANVAS, DIALOG_CONFIRM_IMPORT, DIALOG_CONFIRM_RELOAD_WORKSPACE, DIALOG_TERMINAL_LINK_OPEN, CANVAS_READ_BACKGROUND_IMAGE, APP_OPEN_PATH } from '../shared/ipc-channels'
 import {
   WINDOW_SET_TITLE,
   PANEL_TRANSFER, PANEL_RECEIVE, PANEL_TRANSFER_ACK,
@@ -151,7 +151,7 @@ async function showCrashLoopDialog(win: BrowserWindow, windowType: string, reaso
       type: 'error',
       title: 'A window keeps crashing',
       message: 'This window’s display process exited unexpectedly several times.',
-      detail: `Reason: ${reason}. Auto-reloading hasn’t recovered it. You can try once more, or close the window — your other windows and saved work are unaffected.`,
+      detail: `Reason: ${reason}. Auto-reloading hasn’t recovered it. You can try once more, or close the window. Your other windows and saved work are unaffected.`,
       buttons: ['Reload', 'Close Window'],
       defaultId: 0,
       cancelId: 1,
@@ -850,23 +850,6 @@ function registerWindowAndDialogHandlers(): void {
       noLink: true,
     })
     return result.response === 0 ? 'move' : result.response === 1 ? 'delete' : 'cancel'
-  })
-
-  // Confirm deletion of a region that contains panels. Lets the user choose
-  // between also deleting the panels inside or just removing the region frame.
-  ipcMain.handle(DIALOG_CONFIRM_DELETE_REGION, async (event, payload: { panelCount: number }) => {
-    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
-    const panelCount = payload?.panelCount ?? 0
-    const result = await dialog.showMessageBox(win!, {
-      type: 'warning',
-      message: 'Delete this region?',
-      detail: `This region contains ${panelCount} ${panelCount === 1 ? 'panel' : 'panels'}. Delete them too, or just remove the region around them?`,
-      buttons: ['Delete Region + Contents', 'Delete Region Only', 'Cancel'],
-      defaultId: 1,
-      cancelId: 2,
-      noLink: true,
-    })
-    return result.response === 0 ? 'with-contents' : result.response === 1 ? 'region-only' : 'cancel'
   })
 
   // Ask whether to copy or move external files/folders dropped onto the file

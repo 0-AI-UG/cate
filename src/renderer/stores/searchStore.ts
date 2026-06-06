@@ -8,6 +8,7 @@
 
 import { create } from 'zustand'
 import type { SearchFileResult } from '../../shared/types'
+import { errorMessage } from '../lib/errorMessage'
 
 export type SearchStatus = 'idle' | 'searching' | 'done'
 
@@ -136,7 +137,7 @@ export const createSearchStore = () =>
 
     finishSearch: (searchId, stats, error) => {
       if (searchId !== get().currentSearchId) return // stale
-      set({ status: 'done', truncated: stats.truncated, error: error ?? null })
+      set({ status: 'done', truncated: stats.truncated, error: error ? errorMessage(error) : null })
     },
 
     clearResults: () =>

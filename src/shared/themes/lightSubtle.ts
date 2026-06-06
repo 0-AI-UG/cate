@@ -6,7 +6,7 @@ import { THEME_SCHEMA_VERSION } from '../theme'
 export const lightSubtle: Theme = {
   version: THEME_SCHEMA_VERSION,
   id: 'light-subtle',
-  name: 'Light — Subtle',
+  name: 'Light Subtle',
   type: 'light',
   builtIn: true,
   bootBackground: '#f4f3f0',

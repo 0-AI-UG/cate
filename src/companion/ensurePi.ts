@@ -29,5 +29,5 @@ export function piCliPath(): string {
  *  verify, not an install — a missing cli.js means a broken/partial provision. */
 export function ensurePiOnHost(): Promise<void> {
   if (existsSync(piCliPath())) return Promise.resolve()
-  return Promise.reject(new Error(`pi runtime missing at ${piCliPath()} — reinstall the companion`))
+  return Promise.reject(new Error(`pi runtime missing at ${piCliPath()}. Reinstall the companion.`))
 }

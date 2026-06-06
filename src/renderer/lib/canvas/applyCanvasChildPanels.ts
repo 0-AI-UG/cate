@@ -48,7 +48,6 @@ export function ensurePanelsInAppStore(
           isRootPathPending: false,
           panels: { ...panels },
           canvasNodes: {},
-          regions: {},
           zoomLevel: 1,
           viewportOffset: { x: 0, y: 0 },
           focusedNodeId: null,

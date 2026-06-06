@@ -24,6 +24,7 @@ import {
 } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
 import { CateLogo } from './CateLogo'
+import { BACKDROP, CARD_SURFACE } from './Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -55,7 +56,6 @@ const FolderOpenIcon = () => <FolderOpen size={ICON_SIZE} />
 const LayersIcon = () => <Stack size={ICON_SIZE} />
 const ZoomResetIcon = () => <MagnifyingGlass size={ICON_SIZE} />
 const ZoomToFitIcon = () => <ArrowsOutSimple size={ICON_SIZE} />
-const RectangleIcon = () => <Square size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
 const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const DeleteCompanionIcon = () => <Trash size={ICON_SIZE} />
@@ -205,13 +205,6 @@ export const CommandPalette: React.FC = () => {
         shortcutText: '⇧⌘L',
         icon: <LayersIcon />,
         action: () => canvasApi.getState().autoLayout(),
-      },
-      {
-        id: 'newRegion',
-        title: 'New Region',
-        shortcutText: '',
-        icon: <RectangleIcon />,
-        action: () => canvasApi.getState().addRegion('Region', { x: 200, y: 200 }, { width: 400, height: 300 }),
       },
       {
         id: 'manageLayouts',
@@ -542,12 +535,12 @@ export const CommandPalette: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 bg-black/30 flex justify-center z-50"
+      className={`fixed inset-0 flex justify-center z-50 ${BACKDROP}`}
       onClick={close}
     >
       <div
         data-onboarding="command-palette"
-        className="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] rounded-xl overflow-hidden flex flex-col self-start bg-surface-2/95 backdrop-blur-xl border border-strong shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
+        className={`w-[600px] max-w-[600px] max-h-[440px] mt-[120px] overflow-hidden flex flex-col self-start ${CARD_SURFACE}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}

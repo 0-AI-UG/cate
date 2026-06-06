@@ -3,6 +3,7 @@ import { CloudWarning, CloudArrowDown, CircleNotch, PlugsConnected } from '@phos
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
+import { BACKDROP, CARD_SURFACE, btn } from './Modal'
 import type { CompanionConnection, RemoteConnectSpec } from '../../shared/types'
 
 // Full-cover lock for the main canvas while the selected remote workspace's
@@ -75,7 +76,7 @@ export function CompanionLockOverlay(): JSX.Element | null {
       localCompanionPhase === 'installing'
     if (!loading) return null
     return (
-      <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-4/80 backdrop-blur-sm select-none">
+      <div className={`modal-backdrop-in absolute inset-0 z-10 flex items-center justify-center select-none ${BACKDROP}`}>
         <CircleNotch size={24} className="text-muted animate-spin" />
       </div>
     )
@@ -128,18 +129,18 @@ export function CompanionLockOverlay(): JSX.Element | null {
 
   return (
     <>
-      <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-4/80 backdrop-blur-sm select-none">
-        <div className="w-[300px] max-w-[90%] flex flex-col items-center gap-2.5 rounded-lg border border-subtle bg-surface-3 px-5 py-6 shadow-xl">
+      <div className={`modal-backdrop-in absolute inset-0 z-10 flex items-center justify-center select-none ${BACKDROP}`}>
+        <div className={`modal-card-in w-[300px] max-w-[90%] flex flex-col items-center gap-3 px-6 py-7 ${CARD_SURFACE}`}>
           {view.icon === 'spin' ? (
-            <CircleNotch size={22} className="text-muted animate-spin" />
+            <CircleNotch size={24} className="text-muted animate-spin" />
           ) : view.icon === 'install' ? (
-            <CloudArrowDown size={22} weight="fill" className="text-focus-blue animate-pulse" />
+            <CloudArrowDown size={24} weight="fill" className="text-focus-blue animate-pulse" />
           ) : (
-            <CloudWarning size={22} weight="fill" className="text-red-400" />
+            <CloudWarning size={24} weight="fill" className="text-red-400" />
           )}
 
           <div className="text-[13px] font-medium text-primary text-center">{view.title}</div>
-          {label && <div className="-mt-1.5 text-[11px] text-muted">{label}</div>}
+          {label && <div className="-mt-2 text-[11px] text-muted">{label}</div>}
 
           {runtime.error && (
             <div className="w-full text-center text-[11px] text-muted whitespace-pre-wrap break-words max-h-20 overflow-auto">
@@ -150,10 +151,7 @@ export function CompanionLockOverlay(): JSX.Element | null {
           {!isBusy && (
             <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
               {view.primary && (
-                <button
-                  className="px-3 py-1.5 rounded text-[13px] bg-focus-blue text-white hover:opacity-90 inline-flex items-center gap-1.5"
-                  onClick={view.primary.onClick}
-                >
+                <button className={btn.primary} onClick={view.primary.onClick}>
                   {view.primary.icon === 'install' ? (
                     <CloudArrowDown size={14} weight="bold" />
                   ) : (
@@ -163,16 +161,13 @@ export function CompanionLockOverlay(): JSX.Element | null {
                 </button>
               )}
               {view.edit && (
-                <button
-                  className="px-3 py-1.5 rounded text-[13px] bg-surface-2 text-secondary hover:text-primary border border-subtle"
-                  onClick={() => setEditing(true)}
-                >
+                <button className={btn.secondary} onClick={() => setEditing(true)}>
                   Edit
                 </button>
               )}
               {view.del && (
                 <button
-                  className="px-3 py-1.5 rounded text-[13px] text-muted hover:text-red-400"
+                  className={btn.danger}
                   onClick={onDelete}
                   title="Delete the daemon from the host so you can do a clean install"
                 >

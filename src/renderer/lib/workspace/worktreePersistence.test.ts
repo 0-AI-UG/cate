@@ -142,7 +142,6 @@ describe('worktree session persistence', () => {
       color: '',
       canvas: {
         nodes: [{ panelId: 't-1', panelType: 'terminal', title: 'shell', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 } }],
-        regions: [],
         zoomLevel: 1,
         viewportOffset: { x: 0, y: 0 },
       },

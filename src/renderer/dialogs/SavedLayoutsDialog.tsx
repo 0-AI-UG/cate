@@ -6,6 +6,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react'
 import { FloppyDisk, Trash, FolderOpen, SquaresFour } from '@phosphor-icons/react'
+import { BACKDROP, CARD_SURFACE } from '../ui/Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import {
@@ -107,11 +108,11 @@ export function SavedLayoutsDialog() {
 
   return (
     <div
-      className="fixed inset-0 bg-black/30 flex justify-center z-50"
+      className={`fixed inset-0 flex justify-center z-50 ${BACKDROP}`}
       onClick={close}
     >
       <div
-        className="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] rounded-xl overflow-hidden flex flex-col self-start bg-surface-2/95 backdrop-blur-xl border border-strong shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
+        className={`w-[600px] max-w-[600px] max-h-[440px] mt-[120px] overflow-hidden flex flex-col self-start ${CARD_SURFACE}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Save input — mirrors the palette's search-bar treatment */}

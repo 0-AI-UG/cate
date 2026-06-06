@@ -6,7 +6,7 @@
 
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
-import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, DockLayoutNode } from '../../../shared/types'
+import type { PanelType, Point, CanvasNodeId, CanvasNodeState, DockLayoutNode } from '../../../shared/types'
 import { findNodeDockStore } from '../../panels/nodeDockRegistry'
 
 // -----------------------------------------------------------------------------
@@ -29,7 +29,6 @@ export interface CanvasOperations {
     nodes: Record<CanvasNodeId, CanvasNodeState>,
     viewportOffset: Point,
     zoomLevel: number,
-    regions?: Record<string, CanvasRegion>,
   ) => void
   clearAllNodes: () => void
   focusPanelNode: (panelId: string) => void
@@ -83,9 +82,8 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       nodes: Record<CanvasNodeId, CanvasNodeState>,
       viewportOffset: Point,
       zoomLevel: number,
-      regions?: Record<string, CanvasRegion>,
     ) {
-      storeApi.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
+      storeApi.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel)
     },
 
     clearAllNodes() {
