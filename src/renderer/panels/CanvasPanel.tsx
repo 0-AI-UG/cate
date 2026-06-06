@@ -110,12 +110,17 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
   }, [storeKey]) // intentionally omit node.dockLayout — seed only on first creation
 
   // ------------------------------------------------------------------
-  // Auto-remove the canvas node when its mini-dock empties out. The live
-  // per-node DockStore is now the single runtime authority for the layout, so
-  // we no longer mirror every change back into canvasStore.dockLayout — that
-  // field is a capture-on-demand persistence projection refreshed at save time
-  // (see lib/workspace/session.ts). We only watch for the layout going null
-  // (last tab closed) so the empty node is torn down.
+  // Mirror the live per-node DockStore (the runtime editing authority) into
+  // canvasStore.node.dockLayout, and auto-remove the node when its mini-dock
+  // empties out.
+  //
+  // node.dockLayout is the canonical PERSISTED projection of the layout: it is
+  // what history snapshots capture (undo/redo), what off-screen/unmounted nodes
+  // read back through getNodeDockLayout, and what is written to disk. Keeping it
+  // in lock-step with the live store here means it can never drift — readers go
+  // through one resolver (getNodeDockLayout: live while mounted, this projection
+  // otherwise) and the two always agree. (R3's persistence work made this
+  // projection actually round-trip to disk; this keeps it current in memory.)
   // ------------------------------------------------------------------
   useEffect(() => {
     const unsubscribe = dockStoreApi.subscribe((state, prev) => {
@@ -125,6 +130,8 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
 
       if (layout === null) {
         canvasStoreApi.getState().removeNode(nodeId)
+      } else {
+        canvasStoreApi.getState().setNodeDockLayout(nodeId, layout)
       }
     })
     return unsubscribe

@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 // =============================================================================
-// Tests for the per-node dock-layout "live store is the authority, node.dockLayout
-// is a save-time projection" refactor (Option B).
+// Tests for the per-node dock-layout refactor: the live per-node DockStore is
+// the runtime editing authority; canvasStore.node.dockLayout is its canonical
+// PERSISTED projection, kept in lock-step so the two never drift.
 //
 // Covers:
 //   1. getNodeDockLayout prefers the live per-node DockStore over the projection,
 //      and falls back to node.dockLayout when no live store is registered.
-//   2. Demotion: driving the live store's center layout does NOT mutate the
-//      canvas store's node.dockLayout on its own (no sync-back subscription).
-//   3. Auto-removal preserved: the kept subscription still removes the node when
-//      the live layout becomes null.
+//   2. Sync-back: the CanvasPanel subscription mirrors live center-layout changes
+//      into canvasStore.node.dockLayout (so history/off-screen reads stay fresh).
+//   3. Auto-removal: the same subscription removes the node when the live layout
+//      becomes null.
 //   4. remapNodeDockLayout: panelIds remapped, stack/split ids regenerated,
 //      activeIndex + tree shape preserved.
 // =============================================================================
@@ -90,10 +91,9 @@ describe('getNodeDockLayout', () => {
   })
 })
 
-describe('demotion — no sync-back', () => {
-  it('driving the live store does NOT mutate canvas node.dockLayout', () => {
+describe('sync-back keeps the projection current', () => {
+  it('mirrors live center-layout changes into canvas node.dockLayout', () => {
     const canvas = getOrCreateCanvasStoreForPanel(CANVAS)
-    const seed = tabs(['A'])
     canvas.setState({
       nodes: {
         [NODE]: {
@@ -104,7 +104,7 @@ describe('demotion — no sync-back', () => {
           zOrder: 0,
           creationIndex: 0,
           animationState: 'idle',
-          dockLayout: seed,
+          dockLayout: tabs(['A']),
         } as any,
       },
     } as any)
@@ -112,14 +112,26 @@ describe('demotion — no sync-back', () => {
     const live = makeDockStore(tabs(['A']))
     registerNodeDockStore(CANVAS, NODE, live)
 
+    // Reproduce the CanvasPanel subscription: mirror non-null changes into the
+    // projection, remove the node on null.
+    const unsubscribe = live.subscribe((state, prev) => {
+      const layout = state.zones.center.layout
+      if (layout === prev.zones.center.layout) return
+      if (layout === null) canvas.getState().removeNode(NODE)
+      else canvas.getState().setNodeDockLayout(NODE, layout)
+    })
+
     // Mutate the live store's center layout to [A, B].
     live.setState((s) => ({
       zones: { ...s.zones, center: { ...s.zones.center, layout: tabs(['A', 'B']) } },
     }))
+    unsubscribe()
 
-    // The canvas store's projection is unchanged (no subscription writes it).
-    expect(canvas.getState().nodes[NODE].dockLayout).toBe(seed)
-    // But the resolver reflects the live value.
+    // The projection now matches the live layout — no drift.
+    expect((canvas.getState().nodes[NODE].dockLayout as any).panelIds).toEqual(['A', 'B'])
+    // And the resolver agrees (live while mounted, projection otherwise).
+    expect((getNodeDockLayout(CANVAS, NODE) as any).panelIds).toEqual(['A', 'B'])
+    unregisterNodeDockStore(CANVAS, NODE)
     expect((getNodeDockLayout(CANVAS, NODE) as any).panelIds).toEqual(['A', 'B'])
   })
 })
