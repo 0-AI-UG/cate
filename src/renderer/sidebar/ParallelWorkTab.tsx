@@ -509,7 +509,7 @@ const WorktreeCard: React.FC<{
     >
       <div
         className="flex items-center gap-1.5 h-8 px-2 hover:bg-hover transition-colors cursor-pointer"
-        style={isLensFocused ? { boxShadow: `inset 2px 0 0 0 ${worktree.color}`, backgroundColor: `color-mix(in srgb, ${worktree.color} 10%, transparent)` } : undefined}
+        style={isLensFocused ? { backgroundColor: `color-mix(in srgb, ${worktree.color} 14%, transparent)` } : undefined}
         onClick={handleRowClick}
         onContextMenu={(e) => { e.preventDefault(); void handleMenu() }}
       >
