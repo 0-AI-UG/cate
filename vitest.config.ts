@@ -11,6 +11,13 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': path.resolve(__dirname, 'src/shared'),
+      // The real electron-log BLOCKS at module eval under vitest (it wires up
+      // Electron IPC that never resolves), so any test whose import graph reaches
+      // the logger would hang the worker — and CI. Route both entry points to an
+      // inert stub. Production builds use electron-vite's config, not this one.
+      'electron-log/renderer': path.resolve(__dirname, 'src/test/electronLogStub.ts'),
+      'electron-log/main': path.resolve(__dirname, 'src/test/electronLogStub.ts'),
+      'electron-log': path.resolve(__dirname, 'src/test/electronLogStub.ts'),
     },
   },
   test: {
