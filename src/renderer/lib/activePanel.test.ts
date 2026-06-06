@@ -4,7 +4,7 @@
 // after the two parallel globals were folded into one activePanelId.
 // =============================================================================
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // Heavy renderer modules whose import-time side effects explode under jsdom,
 // pulled in transitively via appStore. Mirrors the hook tests.
@@ -26,6 +26,12 @@ import { getOrCreateWorkspaceDockStore } from './workspace/dockRegistry'
 import { registerCanvasOps, unregisterCanvasOps } from '../stores/appStore'
 import { createCanvasOps } from './canvas/canvasBridge'
 import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../stores/canvasStore'
+import {
+  getNodeActivePanelId,
+  registerNodeDockStore,
+  unregisterNodeDockStore,
+} from '../panels/nodeDockRegistry'
+import { createDockStore } from '../stores/dockStore'
 
 beforeEach(() => {
   setActivePanel(null)
@@ -95,5 +101,47 @@ describe('placementForActivePanel', () => {
 
     unregisterCanvasOps(canvasId)
     releaseCanvasStoreForPanel(canvasId)
+  })
+})
+
+describe('getNodeActivePanelId', () => {
+  const CANVAS = 'canvas-node-active'
+  const NODE = 'node-1'
+  const TERM = 'term-1'
+  const EDITOR = 'editor-1'
+
+  afterEach(() => {
+    unregisterNodeDockStore(CANVAS, NODE)
+  })
+
+  it('returns the active tab of the node center stack, following setActiveTab', () => {
+    const store = createDockStore()
+    // Seed a center tab stack with [term, editor].
+    store.getState().dockPanel(TERM, 'center')
+    store.getState().dockPanel(EDITOR, 'center')
+    registerNodeDockStore(CANVAS, NODE, store)
+
+    const stackId = store.getState().zones.center.layout!.type === 'tabs'
+      ? (store.getState().zones.center.layout as any).id
+      : ''
+
+    // Active tab is the editor (last appended → activeIndex points at it).
+    expect(getNodeActivePanelId(CANVAS, NODE)).toBe(EDITOR)
+
+    // Switch active tab to the terminal.
+    store.getState().setActiveTab(stackId, 0)
+    expect(getNodeActivePanelId(CANVAS, NODE)).toBe(TERM)
+
+    // Back to the editor.
+    store.getState().setActiveTab(stackId, 1)
+    expect(getNodeActivePanelId(CANVAS, NODE)).toBe(EDITOR)
+  })
+
+  it('returns null for an unknown node / empty layout', () => {
+    expect(getNodeActivePanelId('no-canvas', 'no-node')).toBeNull()
+
+    const empty = createDockStore()
+    registerNodeDockStore(CANVAS, NODE, empty)
+    expect(getNodeActivePanelId(CANVAS, NODE)).toBeNull()
   })
 })

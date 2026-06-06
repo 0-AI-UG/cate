@@ -20,7 +20,20 @@ import {
 import { useAppStore } from '../../stores/appStore'
 import { setActivePanel } from '../activePanel'
 import { findTabStack } from '../../stores/dockTreeUtils'
-import type { DockZonePosition } from '../../../shared/types'
+import type { DockZonePosition, PanelState } from '../../../shared/types'
+
+/**
+ * Resolve a panel record by id from the active workspace's panels. Mirrors the
+ * ad-hoc `resolvePanel` in DockTabStack/CanvasNode: look it up in the selected
+ * workspace's `panels` map. Works in detached panel/dock windows too, where only
+ * a stub workspace exists (seeded by applyCanvasChildPanels) — that stub is the
+ * selected workspace there. Returns undefined for an unknown id.
+ */
+export function resolvePanelById(panelId: string): PanelState | undefined {
+  const state = useAppStore.getState()
+  const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
+  return ws?.panels[panelId]
+}
 
 export type ResolvedPanelLocation =
   | { kind: 'dock'; zone: DockZonePosition; stackId: string }
