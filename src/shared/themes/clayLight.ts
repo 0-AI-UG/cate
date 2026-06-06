@@ -5,7 +5,7 @@ import { THEME_SCHEMA_VERSION } from '../theme'
 export const clayLight: Theme = {
   version: THEME_SCHEMA_VERSION,
   id: 'clay-light',
-  name: 'Clay — Light',
+  name: 'Clay Light',
   type: 'light',
   builtIn: true,
   author: 'wyddy7',

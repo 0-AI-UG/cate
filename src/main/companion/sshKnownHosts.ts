@@ -93,7 +93,7 @@ export async function verifyAndPinHostKey(id: string, fingerprint: string): Prom
     throw new Error(
       `Host key verification failed for ${id}: the server's SSH key has changed since you ` +
         `first connected (expected ${pinned}, got ${fingerprint}). This can mean the server was ` +
-        `legitimately rebuilt — or that the connection is being intercepted. If you trust the ` +
+        `legitimately rebuilt, or that the connection is being intercepted. If you trust the ` +
         `change, delete the companion and reconnect to accept the new key.`,
     )
   }

@@ -40,10 +40,6 @@ function makeMockCanvasState() {
   return {
     nodes: {} as Record<
       string,
-      { id: string; origin: { x: number; y: number }; size: { width: number; height: number }; regionId?: string }
-    >,
-    regions: {} as Record<
-      string,
       { id: string; origin: { x: number; y: number }; size: { width: number; height: number } }
     >,
     moveNode: vi.fn((_id: string, _origin: { x: number; y: number }) => {
@@ -56,18 +52,14 @@ function makeMockCanvasState() {
     resizeNode: vi.fn(),
     focusNode: vi.fn(),
     finalizeRemoveNode: vi.fn(),
-    setNodeRegion: vi.fn(),
   }
 }
 
 function createMockCanvasStore(): MockCanvas {
   const state = makeMockCanvasState()
-  // Re-bind moveNode to mutate local node entries (for region containment).
+  // Re-bind moveNode to mutate local node entries.
   state.moveNode = vi.fn((id: string, origin: { x: number; y: number }) => {
     if (state.nodes[id]) state.nodes[id].origin = origin
-  })
-  state.setNodeRegion = vi.fn((id: string, regionId?: string) => {
-    if (state.nodes[id]) state.nodes[id].regionId = regionId
   })
   const store = {
     getState() {
@@ -140,17 +132,12 @@ beforeEach(() => {
 // -----------------------------------------------------------------------------
 
 describe('commitDrop — canvas-reposition', () => {
-  it('calls moveNode(nodeId, origin) and runs region containment', async () => {
+  it('calls moveNode(nodeId, origin)', async () => {
     const c = createMockCanvasStore()
     c.state.nodes['node-1'] = {
       id: 'node-1',
       origin: { x: 0, y: 0 },
       size: { width: 100, height: 100 },
-    }
-    c.state.regions['region-1'] = {
-      id: 'region-1',
-      origin: { x: 90, y: 90 },
-      size: { width: 200, height: 200 },
     }
     const source: DragSource = {
       panelId: 'panel-1',
@@ -164,38 +151,6 @@ describe('commitDrop — canvas-reposition', () => {
     }
     await commitDrop(source, target, panel, defaultCtx())
     expect(c.state.moveNode).toHaveBeenCalledWith('node-1', { x: 100, y: 100 })
-    // Region overlap: node at (100,100) size 100×100 covers (100..200, 100..200),
-    // region is (90..290, 90..290). Overlap = 100×100 = 10000 = 100% of node.
-    expect(c.state.setNodeRegion).toHaveBeenCalledWith('node-1', 'region-1')
-  })
-
-  it('does not assign a region when overlap <= 50%', async () => {
-    const c = createMockCanvasStore()
-    c.state.nodes['node-1'] = {
-      id: 'node-1',
-      origin: { x: 0, y: 0 },
-      size: { width: 100, height: 100 },
-    }
-    c.state.regions['region-1'] = {
-      id: 'region-1',
-      origin: { x: 80, y: 80 },
-      size: { width: 100, height: 100 },
-    }
-    const source: DragSource = {
-      panelId: 'panel-1',
-      origin: { kind: 'canvas-node', canvasStoreApi: c.store, nodeId: 'node-1' },
-    }
-    const target: DropTarget = {
-      kind: 'canvas-reposition',
-      canvasStoreApi: c.store,
-      nodeId: 'node-1',
-      origin: { x: 0, y: 0 },
-    }
-    await commitDrop(source, target, panel, defaultCtx())
-    // Overlap = 20×20 = 400; node area = 10000; ratio = 4% — no region change.
-    // setNodeRegion is only called when bestRegion !== current regionId,
-    // and current is undefined → bestRegion is undefined → no call.
-    expect(c.state.setNodeRegion).not.toHaveBeenCalled()
   })
 })
 

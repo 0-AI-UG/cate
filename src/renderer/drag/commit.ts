@@ -6,10 +6,8 @@
 // effects.
 // =============================================================================
 
-import type { StoreApi } from 'zustand'
 import type { PanelTransferSnapshot, PanelType, DockDropTarget } from '../../shared/types'
 import type { DragSource, DropTarget } from './types'
-import type { CanvasStore } from '../stores/canvasStore'
 import { findZoneForStack } from '../stores/dockTreeUtils'
 import { getDefaultSession } from './session'
 
@@ -43,7 +41,6 @@ export async function commitDrop(
   switch (target.kind) {
     case 'canvas-reposition': {
       target.canvasStoreApi.getState().moveNode(target.nodeId, target.origin)
-      applyRegionContainment(target.canvasStoreApi, target.nodeId)
       return
     }
 
@@ -127,43 +124,6 @@ export async function commitDrop(
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-
-/** Region containment: if the dropped node's bbox overlaps a region by >50%,
- *  assign that region. */
-function applyRegionContainment(
-  canvasStoreApi: StoreApi<CanvasStore>,
-  nodeId: string,
-): void {
-  const state = canvasStoreApi.getState()
-  const node = state.nodes[nodeId]
-  if (!node) return
-  let bestRegion: string | undefined
-  for (const region of Object.values(state.regions)) {
-    const overlapX = Math.max(
-      0,
-      Math.min(
-        node.origin.x + node.size.width,
-        region.origin.x + region.size.width,
-      ) - Math.max(node.origin.x, region.origin.x),
-    )
-    const overlapY = Math.max(
-      0,
-      Math.min(
-        node.origin.y + node.size.height,
-        region.origin.y + region.size.height,
-      ) - Math.max(node.origin.y, region.origin.y),
-    )
-    const overlapArea = overlapX * overlapY
-    const nodeArea = node.size.width * node.size.height
-    if (nodeArea > 0 && overlapArea / nodeArea > 0.5) {
-      bestRegion = region.id
-      break
-    }
-  }
-  if (bestRegion !== node.regionId) {
-    state.setNodeRegion(nodeId, bestRegion)
-  }
-}
 
 function removeFromSource(
   source: DragSource,

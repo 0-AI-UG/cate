@@ -8,7 +8,6 @@ import type { StoreApi } from 'zustand'
 import type {
   CanvasNodeId,
   CanvasNodeState,
-  CanvasRegion,
   DockLayoutNode,
   Point,
   Rect,
@@ -40,7 +39,6 @@ export interface PendingPlacement {
 
 export interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
-  regions: Record<string, CanvasRegion>
   viewportOffset: Point
   zoomLevel: number
   focusedNodeId: CanvasNodeId | null
@@ -62,15 +60,12 @@ export interface CanvasStoreState {
     }>
   }
   selectedNodeIds: Set<string>
-  selectedRegionIds: Set<string>
   /** When true, the auto-focus-largest-visible hook stands down. Set while the
    *  user is moving the canvas by keyboard (Cmd+Arrow jump / Shift+Arrow pan)
    *  so those movements don't auto-activate whatever scrolls into view; cleared
    *  by any explicit focus, manual pan, or zoom. */
   suppressAutoFocus: boolean
-  /** Region currently being hovered as a drop target during a node drag. */
-  dropTargetRegionId: string | null
-  /** Undo history — snapshots of {nodes, regions}. */
+  /** Undo history — snapshots of {nodes}. */
   history: CanvasHistoryEntry[]
   /** Redo stack — populated when undo() is called. */
   future: CanvasHistoryEntry[]
@@ -80,10 +75,8 @@ export interface CanvasStoreState {
 
 export interface CanvasHistoryEntry {
   nodes: Record<CanvasNodeId, CanvasNodeState>
-  regions: Record<string, CanvasRegion>
   focusedNodeId: CanvasNodeId | null
   selectedNodeIds: Set<string>
-  selectedRegionIds: Set<string>
 }
 
 export interface CanvasStoreActions {
@@ -188,30 +181,14 @@ export interface CanvasStoreActions {
 
   // Selection
   selectNodes: (ids: string[], additive?: boolean) => void
-  selectRegions: (ids: string[], additive?: boolean) => void
   clearSelection: () => void
   selectAll: () => void
   toggleNodeSelection: (id: string) => void
-  toggleRegionSelection: (id: string) => void
-  deleteSelection: (includeRegionContents?: boolean) => void
+  deleteSelection: () => void
 
-  // Region management
-  addRegion: (label: string, origin: Point, size: Size, color?: string) => string
-  removeRegion: (id: string) => void
-  moveRegion: (id: string, origin: Point) => void
-  resizeRegion: (id: string, size: Size, origin?: Point) => void
-  renameRegion: (id: string, label: string) => void
-  updateRegionColor: (id: string, color: string) => void
-  setRegionDefaultCwd: (id: string, defaultCwd: string | undefined) => void
-
-  // Containment
-  setNodeRegion: (nodeId: string, regionId: string | undefined) => void
-  getNodesInRegion: (regionId: string) => CanvasNodeState[]
-  groupSelectedIntoRegion: () => string | null
-  groupSelectedHorizontal: () => string | null
+  // Bulk arrangement of the current selection
   stackSelected: (axis: 'row' | 'column', gap?: number) => void
   tidyGridSelected: (gap?: number) => void
-  dissolveRegion: (regionId: string) => void
 
   // Per-node dock layout — replaces split/stack actions. Each canvas node owns
   // a tree (rendered via the dock primitives) that lives here as serialised
@@ -229,7 +206,6 @@ export interface CanvasStoreActions {
     nodes: Record<CanvasNodeId, CanvasNodeState>,
     viewportOffset: Point,
     zoomLevel: number,
-    regions?: Record<string, CanvasRegion>,
   ) => void
 }
 

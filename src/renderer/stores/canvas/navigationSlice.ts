@@ -73,7 +73,6 @@ export function createNavigationSlice(set: CanvasSet, get: CanvasGet, ctx: Canva
         nodes: { ...state.nodes, [best.id]: { ...best, zOrder: state.nextZOrder } },
         nextZOrder: state.nextZOrder + 1,
         selectedNodeIds: new Set([best.id]),
-        selectedRegionIds: new Set<string>(),
         focusedNodeId: null,
         // Don't let auto-focus-largest re-activate a node as we pan to centre.
         suppressAutoFocus: true,

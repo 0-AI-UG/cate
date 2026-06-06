@@ -167,7 +167,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const focusNode = useCanvasStoreContext((s) => s.focusNode)
   const removeNode = useCanvasStoreContext((s) => s.removeNode)
   const toggleMaximize = useCanvasStoreContext((s) => s.toggleMaximize)
-  const isSelected = useCanvasStoreContext((s) => s.selectedNodeIds.has(nodeId))
   const isDockDragging = useDragStore((s) => s.isDragging)
   const { hidden: isWholeNodeDragSource } = useDragSourceVisibility(nodeId)
 
@@ -554,7 +553,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const { containerStyle, glowStyle } = useCanvasNodeStyle({
     node,
     isFocused,
-    isSelected,
     activityState,
     isAnimatingLayout,
     isHovered,

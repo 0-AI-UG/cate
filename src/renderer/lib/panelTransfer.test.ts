@@ -41,10 +41,10 @@ describe('createTransferSnapshot — editor content survival', () => {
 
 // Regression: detaching a canvas-type panel into its own window used to land
 // on an empty canvas because the snapshot carried no children. Verify the
-// snapshot now captures nodes / regions / viewport so the receiving window
+// snapshot now captures nodes / viewport so the receiving window
 // can hydrate before first paint.
 describe('createTransferSnapshot — canvas children survival', () => {
-  it('captures the canvas store nodes + regions + viewport for canvas panels', () => {
+  it('captures the canvas store nodes + viewport for canvas panels', () => {
     const panel: PanelState = {
       id: 'panel-canvas-1',
       type: 'canvas',

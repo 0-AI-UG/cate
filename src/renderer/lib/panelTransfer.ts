@@ -57,9 +57,9 @@ export function createTransferSnapshot(
     }
   }
 
-  // Canvas-specific: capture child nodes + regions + viewport AND the PanelState
-  // record for each child panel. Without the PanelStates the receiving window
-  // can't resolve child panel types/titles and renders generic "Panel" stubs.
+  // Canvas-specific: capture child nodes + viewport AND the PanelState record
+  // for each child panel. Without the PanelStates the receiving window can't
+  // resolve child panel types/titles and renders generic "Panel" stubs.
   if (panel.type === 'canvas') {
     const store = getOrCreateCanvasStoreForPanel(panel.id)
     const state = store.getState()
@@ -72,7 +72,6 @@ export function createTransferSnapshot(
     }
     snapshot.canvasState = {
       nodes: { ...state.nodes },
-      regions: { ...state.regions },
       viewportOffset: { ...state.viewportOffset },
       zoomLevel: state.zoomLevel,
       childPanels,

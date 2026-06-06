@@ -35,9 +35,9 @@ function CompanionDot({ workspace }: { workspace: WorkspaceState }): JSX.Element
   const title =
     status === 'installing' ? 'Installing companion…'
     : status === 'connecting' ? 'Connecting to companion…'
-    : status === 'disconnected' ? `Companion disconnected${error ? `: ${error}` : ''} — click to reconnect`
-    : status === 'missing' ? `Companion not installed${error ? `: ${error}` : ''} — click to install`
-    : `Companion not reachable${error ? `: ${error}` : ''} — click to retry`
+    : status === 'disconnected' ? `Companion disconnected${error ? `: ${error}` : ''}. Click to reconnect.`
+    : status === 'missing' ? `Companion not installed${error ? `: ${error}` : ''}. Click to install.`
+    : `Companion not reachable${error ? `: ${error}` : ''}. Click to retry.`
 
   const onClick = (e: React.MouseEvent): void => {
     e.stopPropagation()

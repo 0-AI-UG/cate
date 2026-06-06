@@ -286,30 +286,10 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
     store.getState().animateZoomTo(zoomLevel - 0.1)
   }, [zoomLevel, store])
 
-  // Compute the current canvas-space center of the viewport so newly created
-  // items appear where the user is currently looking.
-  const getViewCenter = useCallback((): Point => {
-    const s = store.getState()
-    const zoom = s.zoomLevel
-    const offset = s.viewportOffset
-    // Try to read the canvas container size from the DOM
-    const el = document.querySelector('[data-canvas-container]') as HTMLElement | null
-    const w = el?.clientWidth ?? 800
-    const h = el?.clientHeight ?? 600
-    return {
-      x: (w / 2) / zoom - offset.x / zoom,
-      y: (h / 2) / zoom - offset.y / zoom,
-    }
-  }, [store])
-
   const onNewCanvas = useCallback(async () => {
     const wsId = await ensureWorkspaceFolder(workspaceId)
     if (wsId) useAppStore.getState().createCanvas(wsId)
   }, [workspaceId])
-
-  const onNewRegion = useCallback(() => {
-    store.getState().addRegion('Region', getViewCenter(), { width: 400, height: 300 })
-  }, [store, getViewCenter])
 
   return (
     <CanvasStoreProvider store={store}>
@@ -353,7 +333,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
             onNewEditor={onNewEditor}
             onNewAgent={onNewAgent}
             onNewCanvas={onNewCanvas}
-            onNewRegion={onNewRegion}
             onZoomIn={onZoomIn}
             onZoomOut={onZoomOut}
           />

@@ -11,6 +11,7 @@ import { SquaresFour, X } from '@phosphor-icons/react'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useUIStore } from '../stores/uiStore'
 import { listLayouts, loadLayoutIntoCanvas } from '../lib/layouts'
+import { CARD_SURFACE } from '../ui/Modal'
 import log from '../lib/logger'
 
 export function EmptyCanvasOverlay({
@@ -57,7 +58,7 @@ export function EmptyCanvasOverlay({
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-      <div className="pointer-events-auto w-[360px] max-w-[90%] rounded-xl bg-surface-2/95 backdrop-blur-xl border border-strong shadow-[0_16px_48px_rgba(0,0,0,0.45)] overflow-hidden">
+      <div className={`pointer-events-auto w-[360px] max-w-[90%] overflow-hidden ${CARD_SURFACE}`}>
         <div className="flex items-center justify-between pl-3.5 pr-2 pt-2 pb-1">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
             Start from a layout

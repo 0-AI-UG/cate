@@ -57,28 +57,11 @@ export interface CanvasNodeState {
    *  the main dock zones. */
   dockLayout?: DockLayoutNode | null
   animationState?: 'entering' | 'exiting' | 'idle'
-  regionId?: string
 }
 
 /** Computed helper — mirrors the Swift `isMaximized` computed property. */
 export function isMaximized(node: CanvasNodeState): boolean {
   return node.preMaximizeOrigin != null
-}
-
-// -----------------------------------------------------------------------------
-// Canvas region (group container)
-// -----------------------------------------------------------------------------
-
-export interface CanvasRegion {
-  id: string
-  origin: Point
-  size: Size
-  label: string
-  color: string
-  zOrder: number
-  /** Default working directory for terminals spawned inside this region.
-   *  Falls back to the workspace's primary `rootPath` when unset. */
-  defaultCwd?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -330,7 +313,7 @@ export interface PanelTransferSnapshot {
     canGoForward: boolean
   }
 
-  // Canvas-specific — child nodes/regions/viewport for nested canvas panels.
+  // Canvas-specific — child nodes/viewport for nested canvas panels.
   // Without this, detaching a canvas panel to a new window would land with an
   // empty store (fresh per-process), losing every panel inside it.
   //
@@ -339,7 +322,6 @@ export interface PanelTransferSnapshot {
   // child panel types/titles and falls back to a generic "Panel" stub.
   canvasState?: {
     nodes: Record<CanvasNodeId, CanvasNodeState>
-    regions: Record<string, CanvasRegion>
     viewportOffset: Point
     zoomLevel: number
     childPanels: Record<string, PanelState>
@@ -409,7 +391,6 @@ export type DockDropTarget =
 export interface CanvasSnapshot {
   id: string
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
-  regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
 }
@@ -447,7 +428,6 @@ export interface WorkspaceState {
   // (cold-start) workspace. No longer hand-synced on switch (stores survive a
   // switch); populated by restore/init for the cold-start path.
   canvasNodes: Record<CanvasNodeId, CanvasNodeState>
-  regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
   // PERSISTENCE-ONLY projection of the live per-workspace DockStore. Read via
@@ -845,7 +825,6 @@ export interface NodeSnapshot {
   filePath?: string | null
   workingDirectory?: string | null
   ptyId?: string
-  regionId?: string
   /** Unsaved scratch-editor content, restored on load. */
   unsavedContent?: string
   /** Document panels only: sub-type discriminator for the viewer. */
@@ -867,7 +846,6 @@ export interface SessionSnapshot {
   viewportOffset: Point
   zoomLevel: number
   nodes: NodeSnapshot[]
-  regions?: Record<string, CanvasRegion>
   /** Dock zone layout state — added in Phase 5. Missing = empty dock (migration). */
   dockState?: DockStateSnapshot
   /** Panels that live in dock zones (canvas, etc.) — not on the canvas. */
@@ -942,7 +920,6 @@ export interface ProjectWorkspaceFile {
   color: string
   canvas: {
     nodes: ProjectCanvasNode[]
-    regions: ProjectCanvasRegion[]
     zoomLevel: number
     viewportOffset: Point
   }
@@ -960,18 +937,8 @@ export interface ProjectCanvasNode {
   url?: string
   /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
   proxyUrl?: string
-  regionId?: string
   documentType?: 'pdf' | 'docx' | 'image'
   dockLayout?: DockLayoutNode | null
-}
-
-export interface ProjectCanvasRegion {
-  id: string
-  origin: Point
-  size: Size
-  label: string
-  color: string
-  zOrder: number
 }
 
 export interface ProjectPanelRef {
@@ -1034,12 +1001,6 @@ export interface LayoutSnapshot {
     panelType: PanelType
     origin: Point
     size: Size
-  }>
-  regions: Array<{
-    origin: Point
-    size: Size
-    label: string
-    color: string
   }>
 }
 
@@ -1119,10 +1080,10 @@ export interface AppSettings {
   canvasGridStyle: CanvasGridStyle
   /** Absolute path to an image shown as the canvas wallpaper, behind the grid
    *  and panels. Empty string = no wallpaper. The layer is automatically dimmed
-   *  on dark themes and lightened on light themes so region titles stay
+   *  on dark themes and lightened on light themes so panel titles stay
    *  readable over it. */
   canvasBackgroundImagePath: string
-  /** Opacity (0–1) of the canvas wallpaper layer. Lower values keep region
+  /** Opacity (0–1) of the canvas wallpaper layer. Lower values keep panel
    *  titles more readable; ignored when no image is set. */
   canvasBackgroundImageOpacity: number
   /** Snap panels to the canvas grid while dragging and resizing, so windows

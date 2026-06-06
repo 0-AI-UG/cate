@@ -1,6 +1,6 @@
 // =============================================================================
-// History slice — undo/redo snapshots of {nodes, regions, focusedNodeId,
-// selectedNodeIds, selectedRegionIds}.
+// History slice — undo/redo snapshots of {nodes, focusedNodeId,
+// selectedNodeIds}.
 // =============================================================================
 
 import type { CanvasGet, CanvasSet, CanvasHistoryEntry, CanvasStoreActions } from './storeTypes'
@@ -12,29 +12,23 @@ type HistoryActions = Pick<CanvasStoreActions, 'pushHistory' | 'undo' | 'redo' |
 // already-recorded history.
 function snapshot(state: {
   nodes: CanvasHistoryEntry['nodes']
-  regions: CanvasHistoryEntry['regions']
   focusedNodeId: CanvasHistoryEntry['focusedNodeId']
   selectedNodeIds: Set<string>
-  selectedRegionIds: Set<string>
 }): CanvasHistoryEntry {
   return {
     nodes: state.nodes,
-    regions: state.regions,
     focusedNodeId: state.focusedNodeId,
     selectedNodeIds: new Set(state.selectedNodeIds),
-    selectedRegionIds: new Set(state.selectedRegionIds),
   }
 }
 
-// Restore an entry, intersecting its selection with its own nodes/regions so no
+// Restore an entry, intersecting its selection with its own nodes so no
 // dangling ids (e.g. nodes that were deleted in the undone step) survive.
 function restore(entry: CanvasHistoryEntry) {
   return {
     nodes: entry.nodes,
-    regions: entry.regions,
     focusedNodeId: entry.focusedNodeId,
     selectedNodeIds: new Set([...entry.selectedNodeIds].filter((id) => entry.nodes[id])),
-    selectedRegionIds: new Set([...entry.selectedRegionIds].filter((id) => entry.regions[id])),
   }
 }
 

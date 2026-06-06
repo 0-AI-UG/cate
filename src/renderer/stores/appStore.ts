@@ -93,7 +93,6 @@ function createDefaultWorkspace(
     isRootPathPending: false,
     panels: {},
     canvasNodes: {},
-    regions: {},
     zoomLevel: ZOOM_DEFAULT,
     viewportOffset: { x: 0, y: 0 },
   }
@@ -1129,7 +1128,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       rootPath: ws.rootPath,
       panels: {},
       canvasNodes: {},
-      regions: {},
       zoomLevel: ZOOM_DEFAULT,
       viewportOffset: { x: 0, y: 0 },
     }
@@ -1360,7 +1358,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
             isRootPathPending: false,
             panels: {},
             canvasNodes: {},
-            regions: {},
             zoomLevel: ZOOM_DEFAULT,
             viewportOffset: { x: 0, y: 0 },
           })

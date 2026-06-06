@@ -14,10 +14,6 @@ const SHADOW_UNFOCUSED = `0 12px 36px -14px rgba(0,0,0,0.28), 0 4px 10px -5px rg
 const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 0 18px rgba(255,255,255,0.015)`
 // Active/focused pane: a very faint bright (white) halo — no blue tint.
 const FOCUS_GLOW = `0 0 20px 1px rgba(255,255,255,0.025), 0 0 8px rgba(255,255,255,0.02)`
-// Selected-but-not-activated pane (e.g. jumped to via Cmd+Arrow): a crisp
-// accent outline ring so it's clearly "this is the current node" without the
-// active-pane halo. Distinct from the focus glow above.
-const SELECTION_RING = `0 0 0 2px var(--focus-blue), 0 0 14px -2px var(--focus-blue)`
 
 function boxShadow(hovered: boolean): string {
   if (hovered) return SHADOW_HOVERED
@@ -39,7 +35,6 @@ function activityOutline(activity: NodeActivityState | undefined): string {
 interface StyleArgs {
   node: CanvasNodeState | undefined
   isFocused: boolean
-  isSelected: boolean
   activityState: NodeActivityState | undefined
   isAnimatingLayout: boolean
   isHovered: boolean
@@ -58,7 +53,6 @@ export function useCanvasNodeStyle(args: StyleArgs) {
   const {
     node,
     isFocused,
-    isSelected,
     activityState,
     isAnimatingLayout,
     isHovered,
@@ -113,11 +107,11 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       pointerEvents: isExiting || isWholeNodeDragSource ? 'none' : undefined,
       userSelect: 'none',
     }
-  }, [node, isFocused, isSelected, activityState, isAnimatingLayout, isHovered, chromeTint, isWholeNodeDragSource, worktreeDim])
+  }, [node, isFocused, activityState, isAnimatingLayout, isHovered, chromeTint, isWholeNodeDragSource, worktreeDim])
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
     if (!node) return null
-    if (!(isFocused || isSelected || worktreeHighlight)) return null
+    if (!(isFocused || worktreeHighlight)) return null
     // Hide the focus glow while the node is the drag source — the source node
     // itself is hidden (containerStyle.opacity = 0 above) and the glow would
     // otherwise float at the node's original origin while the ghost moves.
@@ -136,19 +130,17 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       zIndex: 999,
       borderRadius: CORNER_RADIUS,
       // Worktree highlight (hover/lens) → colored ring in the branch color;
-      // else focused/active → soft halo; else selected-only → outline ring.
+      // else focused/active → soft halo.
       boxShadow:
         worktreeHighlight && worktreeColor
           ? `0 0 0 2px ${worktreeColor}, 0 0 18px -2px ${worktreeColor}`
-          : isFocused
-            ? FOCUS_GLOW
-            : SELECTION_RING,
+          : FOCUS_GLOW,
       pointerEvents: 'none',
       transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
       opacity: isEntering || isExiting ? 0 : 1,
       transition: `${layoutTransition}transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, box-shadow 200ms ease`,
     }
-  }, [node, isFocused, isSelected, isAnimatingLayout, isWholeNodeDragSource, worktreeHighlight, worktreeColor])
+  }, [node, isFocused, isAnimatingLayout, isWholeNodeDragSource, worktreeHighlight, worktreeColor])
 
   return { containerStyle, glowStyle }
 }

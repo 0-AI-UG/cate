@@ -290,7 +290,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
                   isActive ? 'text-primary' : 'text-muted hover:text-secondary'
                 }`}
                 onClick={() => handleIconClick(view)}
-                title={isActive ? `${meta.title} — click to collapse` : meta.title}
+                title={isActive ? `${meta.title}. Click to collapse.` : meta.title}
               >
                 <Icon size={16} className="pointer-events-none" />
               </div>

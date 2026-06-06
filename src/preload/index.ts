@@ -93,7 +93,6 @@ import {
   DIALOG_CONFIRM_CLOSE_TERMINAL,
   DIALOG_CONFIRM_CLOSE_CANVAS,
   DIALOG_CONFIRM_RELOAD_WORKSPACE,
-  DIALOG_CONFIRM_DELETE_REGION,
   DIALOG_CONFIRM_IMPORT,
   DIALOG_TERMINAL_LINK_OPEN,
   RECENT_PROJECTS_GET,
@@ -807,10 +806,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   confirmReloadWorkspace(payload: { name?: string }): Promise<'reload' | 'cancel'> {
     return ipcRenderer.invoke(DIALOG_CONFIRM_RELOAD_WORKSPACE, payload)
-  },
-
-  confirmDeleteRegion(payload: { panelCount: number }): Promise<'with-contents' | 'region-only' | 'cancel'> {
-    return ipcRenderer.invoke(DIALOG_CONFIRM_DELETE_REGION, payload)
   },
 
   confirmImportEntries(payload: { count: number; destName: string }): Promise<'copy' | 'move' | 'cancel'> {

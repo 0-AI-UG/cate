@@ -1,12 +1,11 @@
-import { useEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { CloudArrowUp } from '@phosphor-icons/react'
 import type { RemoteConnectSpec } from '../../shared/types'
+import { Modal } from '../ui/Modal'
 import { RemoteConnect, type RemoteConnectInitial } from '../ui/RemoteConnect'
 
-// Centered popup wrapper for the remote-connect form. Matches the app's modal
-// idiom (fixed backdrop + centered card), portaled to document.body so it
-// overlays everything regardless of where it's opened from. Closes on Escape
-// or a backdrop click.
+// Centered popup wrapper for the remote-connect form. Uses the shared <Modal>
+// primitive (portal + glass card + header + esc/backdrop close), so it matches
+// every other dialog in the app. The form itself lives in <RemoteConnect>.
 export function RemoteConnectDialog({
   onSubmit,
   onClose,
@@ -20,32 +19,15 @@ export function RemoteConnectDialog({
   error?: string | null
   initial?: RemoteConnectInitial
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      onClick={onClose}
+  return (
+    <Modal
+      onClose={onClose}
+      width={380}
+      icon={<CloudArrowUp size={16} weight="fill" className="text-focus-blue" />}
+      title={initial ? 'Edit connection' : 'Connect to remote'}
+      dismissable={!pending}
     >
-      <div
-        className="w-[340px] max-h-[85vh] overflow-auto bg-surface-2 rounded-xl border border-subtle shadow-[0_24px_64px_rgba(0,0,0,0.55)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-4 pt-3.5 text-[13px] font-medium text-primary">
-          {initial ? 'Edit connection' : 'Connect to remote'}
-        </div>
-        <RemoteConnect onSubmit={onSubmit} onCancel={onClose} pending={pending} error={error} initial={initial} />
-      </div>
-    </div>,
-    document.body,
+      <RemoteConnect onSubmit={onSubmit} onCancel={onClose} pending={pending} error={error} initial={initial} />
+    </Modal>
   )
 }

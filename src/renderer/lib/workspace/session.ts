@@ -32,10 +32,8 @@ import type {
   ProjectWorkspaceFile,
   ProjectSessionFile,
   ProjectCanvasNode,
-  ProjectCanvasRegion,
   ProjectPanelRef,
   ProjectSessionNode,
-  CanvasRegion,
   PanelState,
   RemoteProjectEntry,
   DockLayoutNode,
@@ -143,21 +141,9 @@ export function buildWorkspaceFile(
     filePath: n.filePath ? toRelativePath(n.filePath, rootPath) : undefined,
     url: n.url ?? undefined,
     proxyUrl: n.proxyUrl ?? undefined,
-    regionId: n.regionId,
     documentType: n.documentType,
     dockLayout: n.dockLayout,
   }))
-
-  const regions: ProjectCanvasRegion[] = snapshot.regions
-    ? Object.values(snapshot.regions).map((r) => ({
-        id: r.id,
-        origin: r.origin,
-        size: r.size,
-        label: r.label,
-        color: r.color,
-        zOrder: r.zOrder,
-      }))
-    : []
 
   let dockPanels: Record<string, ProjectPanelRef> | undefined
   if (snapshot.dockPanels) {
@@ -177,7 +163,7 @@ export function buildWorkspaceFile(
     version: 1,
     name: snapshot.workspaceName,
     color: color ?? '',
-    canvas: { nodes, regions, zoomLevel: snapshot.zoomLevel, viewportOffset: snapshot.viewportOffset },
+    canvas: { nodes, zoomLevel: snapshot.zoomLevel, viewportOffset: snapshot.viewportOffset },
     dockState: snapshot.dockState,
     dockPanels,
   }
@@ -255,7 +241,6 @@ export async function saveSession(): Promise<void> {
     // projection for a workspace whose canvas was never mounted this session.
     const canvasSnapshot = getWorkspaceCanvasSnapshot(workspace.id)
     const nodes = canvasSnapshot?.nodes ?? {}
-    const regions = canvasSnapshot?.regions ?? {}
 
     // The canvas panel that hosts this workspace's nodes — used to capture each
     // node's LIVE mini-dock layout on demand (the live per-node DockStore is the
@@ -280,7 +265,6 @@ export async function saveSession(): Promise<void> {
         filePath: panel?.filePath ?? undefined,
         url: panel?.url ?? undefined,
         proxyUrl: panel?.proxyUrl ?? undefined,
-        regionId: node.regionId ?? undefined,
         unsavedContent: panel?.type === 'editor' && !panel?.filePath
           ? panel?.unsavedContent
           : undefined,
@@ -403,7 +387,6 @@ export async function saveSession(): Promise<void> {
       zoomLevel: canvasSnapshot?.zoomLevel ?? workspace.zoomLevel,
       viewportOffset: canvasSnapshot?.viewportOffset ?? workspace.viewportOffset,
       nodes: nodeSnapshots,
-      regions: Object.keys(regions).length > 0 ? { ...regions } : undefined,
       dockState: dockSnapshot,
       dockPanels,
       // Persist the worktree registry (colors/labels) so they're stable across
@@ -537,7 +520,6 @@ export function projectFilesToSnapshot(
       filePath: pn.filePath ? toAbsolutePath(pn.filePath, rootPath) : undefined,
       url: pn.url,
       proxyUrl: pn.proxyUrl,
-      regionId: pn.regionId,
       documentType: pn.documentType,
       dockLayout: pn.dockLayout,
       ptyId: ephemeral?.ptyId,
@@ -546,18 +528,6 @@ export function projectFilesToSnapshot(
       worktreeId: ephemeral?.worktreeId,
     }
   })
-
-  const regions: Record<string, CanvasRegion> = {}
-  for (const r of ws.canvas.regions) {
-    regions[r.id] = {
-      id: r.id,
-      origin: r.origin,
-      size: r.size,
-      label: r.label,
-      color: r.color,
-      zOrder: r.zOrder,
-    }
-  }
 
   let snapshotDockPanels: Record<string, PanelState> | undefined
   if (ws.dockPanels) {
@@ -584,7 +554,6 @@ export function projectFilesToSnapshot(
     zoomLevel: ws.canvas.zoomLevel,
     viewportOffset: ws.canvas.viewportOffset,
     nodes,
-    regions: Object.keys(regions).length > 0 ? regions : undefined,
     dockState: ws.dockState,
     dockPanels: snapshotDockPanels,
     // Restore the persisted worktree registry (absolute paths) so colors/labels
@@ -768,16 +737,6 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
   log.debug(`[session] restoring workspace ${wsId}: ${snapshot.nodes.length} nodes`)
   const t0 = performance.now()
 
-  // Restore regions first and build old→new ID mapping
-  const regionIdMap = new Map<string, string>()
-  const cs = getCanvasState()
-  if (snapshot.regions && cs) {
-    for (const region of Object.values(snapshot.regions)) {
-      const newId = cs.addRegion(region.label, region.origin, region.size, region.color)
-      regionIdMap.set(region.id, newId)
-    }
-  }
-
   for (let i = 0; i < snapshot.nodes.length; i++) {
     const nodeSnap = snapshot.nodes[i]
     log.debug(`[session] restoring node ${i + 1}/${snapshot.nodes.length}: ${nodeSnap.panelType} (panelId=${nodeSnap.panelId})`)
@@ -810,10 +769,6 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
           if (newNodeId) {
             canvasState.moveNode(newNodeId, position)
             canvasState.resizeNode(newNodeId, size)
-            if (nodeSnap.regionId) {
-              const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
-              if (mappedRegionId) canvasState.setNodeRegion(newNodeId, mappedRegionId)
-            }
           }
         }
         break
@@ -831,10 +786,6 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
           if (newNodeId) {
             canvasState.moveNode(newNodeId, position)
             canvasState.resizeNode(newNodeId, size)
-            if (nodeSnap.regionId) {
-              const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
-              if (mappedRegionId) canvasState.setNodeRegion(newNodeId, mappedRegionId)
-            }
           }
         }
         break
@@ -851,10 +802,6 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
           if (newNodeId) {
             canvasState.moveNode(newNodeId, position)
             canvasState.resizeNode(newNodeId, size)
-            if (nodeSnap.regionId) {
-              const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
-              if (mappedRegionId) canvasState.setNodeRegion(newNodeId, mappedRegionId)
-            }
           }
         }
         break
@@ -869,10 +816,6 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
           if (newNodeId) {
             canvasState.moveNode(newNodeId, position)
             canvasState.resizeNode(newNodeId, size)
-            if (nodeSnap.regionId) {
-              const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
-              if (mappedRegionId) canvasState.setNodeRegion(newNodeId, mappedRegionId)
-            }
           }
         }
         break
@@ -888,10 +831,6 @@ export async function restoreSession(snapshot: SessionSnapshot, workspaceId: str
           if (newNodeId) {
             canvasState.moveNode(newNodeId, position)
             canvasState.resizeNode(newNodeId, size)
-            if (nodeSnap.regionId) {
-              const mappedRegionId = regionIdMap.get(nodeSnap.regionId)
-              if (mappedRegionId) canvasState.setNodeRegion(newNodeId, mappedRegionId)
-            }
           }
         }
         break

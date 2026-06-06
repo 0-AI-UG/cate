@@ -48,8 +48,8 @@ export const UpdateButton: React.FC = () => {
         ? 'Click to restart and install the update'
         : status.state === 'manual'
           ? 'Open release page to download manually'
-          : 'Update available — click to download'
-  const title = isBeta ? `Beta build ${status.version || ''} — ${baseTitle}`.trim() : baseTitle
+          : 'Update available. Click to download.'
+  const title = isBeta ? `${`Beta build ${status.version || ''}`.trim()}. ${baseTitle}` : baseTitle
 
   const isDownloading = status.state === 'downloading'
 

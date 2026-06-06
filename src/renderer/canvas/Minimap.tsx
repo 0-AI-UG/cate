@@ -43,7 +43,6 @@ interface MinimapProps {
 
 const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
   const nodeList = useCanvasStoreContext((s) => Object.values(s.nodes), shallow)
-  const regionList = useCanvasStoreContext((s) => Object.values(s.regions), shallow)
   // NOTE: viewportOffset is intentionally NOT subscribed via React here.
   // The viewport rect div is updated imperatively via canvasApi.subscribe
   // so panning never triggers a Minimap re-render.
@@ -179,24 +178,12 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
 
   const contentBounds = useMemo(() => {
     if (nodeList.length === 0) return null
-    const minX = Math.min(
-      ...nodeList.map(n => n.origin.x),
-      ...(regionList.length > 0 ? regionList.map(r => r.origin.x) : []),
-    )
-    const minY = Math.min(
-      ...nodeList.map(n => n.origin.y),
-      ...(regionList.length > 0 ? regionList.map(r => r.origin.y) : []),
-    )
-    const maxX = Math.max(
-      ...nodeList.map(n => n.origin.x + n.size.width),
-      ...(regionList.length > 0 ? regionList.map(r => r.origin.x + r.size.width) : []),
-    )
-    const maxY = Math.max(
-      ...nodeList.map(n => n.origin.y + n.size.height),
-      ...(regionList.length > 0 ? regionList.map(r => r.origin.y + r.size.height) : []),
-    )
+    const minX = Math.min(...nodeList.map(n => n.origin.x))
+    const minY = Math.min(...nodeList.map(n => n.origin.y))
+    const maxX = Math.max(...nodeList.map(n => n.origin.x + n.size.width))
+    const maxY = Math.max(...nodeList.map(n => n.origin.y + n.size.height))
     return { minX, minY, maxX, maxY }
-  }, [nodeList, regionList])
+  }, [nodeList])
 
   if (!contentBounds) return null
 
@@ -307,23 +294,6 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
           }}
         >⠿</div>
       )}
-
-      {/* Region rectangles */}
-      {regionList.map((region) => (
-        <div
-          key={`region-${region.id}`}
-          style={{
-            position: 'absolute',
-            left: toMiniX(region.origin.x),
-            top: toMiniY(region.origin.y),
-            width: Math.max(region.size.width * scale, 3),
-            height: Math.max(region.size.height * scale, 3),
-            border: `1px solid ${region.color.replace(/[\d.]+\)$/, '0.5)')}`,
-            borderRadius: 1,
-            backgroundColor: region.color.replace(/[\d.]+\)$/, '0.15)'),
-          }}
-        />
-      ))}
 
       {/* Node rectangles */}
       {nodeList.map((node) => {

@@ -21,7 +21,6 @@ import type {
   DockLayoutNode,
   CanvasNodeId,
   CanvasNodeState,
-  CanvasRegion,
   Point,
   PanelLocation,
   WindowDockState,
@@ -235,7 +234,6 @@ export function getWorkspaceCanvasOps(workspaceId: string): CanvasOperations | n
 
 export interface WorkspaceCanvasSnapshot {
   nodes: Record<CanvasNodeId, CanvasNodeState>
-  regions: Record<string, CanvasRegion>
   zoomLevel: number
   viewportOffset: Point
 }
@@ -251,7 +249,6 @@ export function getWorkspaceCanvasSnapshot(workspaceId: string): WorkspaceCanvas
     const s = liveOps.storeApi.getState()
     return {
       nodes: { ...s.nodes },
-      regions: { ...s.regions },
       zoomLevel: s.zoomLevel,
       viewportOffset: { ...s.viewportOffset },
     }
@@ -260,7 +257,6 @@ export function getWorkspaceCanvasSnapshot(workspaceId: string): WorkspaceCanvas
   if (!ws) return null
   return {
     nodes: { ...(ws.canvasNodes ?? {}) },
-    regions: { ...(ws.regions ?? {}) },
     zoomLevel: ws.zoomLevel,
     viewportOffset: ws.viewportOffset,
   }

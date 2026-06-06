@@ -391,11 +391,10 @@ export function useCanvasInteraction(
           return
         }
 
-        // Left-click on canvas background (not on a node/region) => marquee selection or clear
+        // Left-click on canvas background (not on a node) => marquee selection or clear
         const target = e.target as HTMLElement
         const isOnNode = target.closest('[data-node-id]') !== null
-        const isOnRegion = target.closest('[data-region-id]') !== null
-        if (!isOnNode && !isOnRegion) {
+        if (!isOnNode) {
           const rect = canvasRef.current?.getBoundingClientRect()
           if (!rect) return
           const { zoomLevel, viewportOffset } = canvasStoreApi.getState()
@@ -461,22 +460,16 @@ export function useCanvasInteraction(
             const mw = Math.abs(endCanvasX - startCanvasX)
             const mh = Math.abs(endCanvasY - startCanvasY)
 
-            const { nodes, regions } = canvasStoreApi.getState()
+            const { nodes } = canvasStoreApi.getState()
 
             const hitNodeIds = Object.values(nodes)
               .filter((n) => rectsIntersect(mx, my, mw, mh, n.origin.x, n.origin.y, n.size.width, n.size.height))
               .map((n) => n.id)
 
-            const hitRegionIds = Object.values(regions)
-              .filter((rg) => rectsIntersect(mx, my, mw, mh, rg.origin.x, rg.origin.y, rg.size.width, rg.size.height))
-              .map((rg) => rg.id)
-
-            // Must select both atomically — selectRegions overwrites selectedNodeIds
             if (!shiftHeld) {
               canvasStoreApi.getState().clearSelection()
             }
             canvasStoreApi.getState().selectNodes(hitNodeIds, true)
-            canvasStoreApi.getState().selectRegions(hitRegionIds, true)
           }
 
           window.addEventListener('mousemove', handleMarqueeMove)
@@ -531,7 +524,7 @@ export function useCanvasInteraction(
         // — but only if the click landed on empty canvas (not on a node).
         if (!rightClickDidDrag.current && rightClickStart.current) {
           const target = e.target as HTMLElement
-          const isOnInteractive = target.closest('[data-node-id]') !== null || target.closest('[data-region-id]') !== null || target.closest('[data-annotation-id]') !== null
+          const isOnInteractive = target.closest('[data-node-id]') !== null || target.closest('[data-annotation-id]') !== null
           if (!isOnInteractive) {
             const rect = canvasRef.current?.getBoundingClientRect()
             if (rect) {

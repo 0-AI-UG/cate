@@ -11,7 +11,6 @@ import {
   FileText,
   Minus,
   Plus,
-  Square,
   MapTrifold,
   Cursor,
   Hand,
@@ -40,7 +39,6 @@ interface CanvasToolbarProps {
   onNewEditor: () => void
   onNewAgent: () => void
   onNewCanvas: () => void
-  onNewRegion: () => void
   onZoomIn: () => void
   onZoomOut: () => void
 }
@@ -127,7 +125,7 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
           onClick()
         }}
         onMouseDown={handleMouseDown}
-        title="Terminal — click for recommendations, or drag onto the canvas"
+        title="Terminal. Click for recommendations, or drag onto the canvas."
         size="panel"
       >
         <Terminal size={18} />
@@ -193,7 +191,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onNewEditor,
   onNewAgent,
   onNewCanvas,
-  onNewRegion,
   onZoomIn,
   onZoomOut,
 }) => {
@@ -272,7 +269,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             </ModeButton>
             <ModeButton
               onClick={() => setActiveTool('hand')}
-              title={`Hand tool — pan (${handKey})`}
+              title={`Hand tool for panning (${handKey})`}
               active={activeTool === 'hand'}
             >
               <Hand size={18} />
@@ -291,11 +288,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             </ToolbarButton>
             <ToolbarButton onClick={onNewAgent} title="Cate agent" size="panel">
               <CateLogo size={18} />
-            </ToolbarButton>
-
-            {/* Add Region */}
-            <ToolbarButton onClick={onNewRegion} title="Add Region" size="panel">
-              <Square size={18} />
             </ToolbarButton>
 
             {/* Divider */}

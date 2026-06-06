@@ -136,8 +136,8 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // real types/titles instead of "Panel".
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
+        const { nodes, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel)
         ensurePanelsInAppStore(wsId, childPanels ?? {})
       }
 
@@ -162,8 +162,8 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // Canvas panel: hydrate before mount so children are visible immediately.
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
+        const { nodes, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
+        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel)
         ensurePanelsInAppStore(wsId, childPanels ?? {})
       }
 

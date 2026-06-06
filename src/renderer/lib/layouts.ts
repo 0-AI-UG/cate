@@ -32,21 +32,13 @@ interface LayoutNode {
   url?: string
 }
 
-interface LayoutRegion {
-  origin: Point
-  size: { width: number; height: number }
-  label: string
-  color?: string
-}
-
 export interface LayoutSnapshot {
   nodes: LayoutNode[]
-  regions: LayoutRegion[]
   zoomLevel: number
   viewportOffset: Point
 }
 
-/** Capture the current canvas arrangement (panels + regions) as a snapshot. */
+/** Capture the current canvas arrangement (panels) as a snapshot. */
 export function buildLayoutSnapshot(canvasApi: StoreApi<CanvasStore>): LayoutSnapshot {
   const state = canvasApi.getState()
   const appState = useAppStore.getState()
@@ -62,9 +54,6 @@ export function buildLayoutSnapshot(canvasApi: StoreApi<CanvasStore>): LayoutSna
         url: panel?.url,
       }
     }),
-    regions: Object.values(state.regions).map((r) => ({
-      origin: r.origin, size: r.size, label: r.label, color: r.color,
-    })),
     zoomLevel: state.zoomLevel,
     viewportOffset: state.viewportOffset,
   }
@@ -109,7 +98,7 @@ function recreateNodes(wsId: string, snap: LayoutSnapshot): void {
 /**
  * Replace the entire active workspace with the named layout. Mirrors the
  * original dialog behavior: wipe every panel, recreate the center canvas, then
- * rebuild nodes + regions and zoom to fit.
+ * rebuild nodes and zoom to fit.
  */
 export async function loadLayoutReplacingWorkspace(name: string): Promise<boolean> {
   try {
@@ -134,9 +123,6 @@ export async function loadLayoutReplacingWorkspace(name: string): Promise<boolea
     recreateNodes(wsId, snap)
 
     const freshCanvas = getWorkspaceCanvasStore(wsId)
-    for (const region of snap.regions ?? []) {
-      freshCanvas?.getState().addRegion(region.label, region.origin, region.size, region.color)
-    }
     freshCanvas?.getState().zoomToFit()
     return true
   } catch (err) {
@@ -165,9 +151,6 @@ export async function loadLayoutIntoCanvas(
 
     recreateNodes(wsId, snap)
 
-    for (const region of snap.regions ?? []) {
-      canvasApi.getState().addRegion(region.label, region.origin, region.size, region.color)
-    }
     canvasApi.getState().zoomToFit()
     return true
   } catch (err) {

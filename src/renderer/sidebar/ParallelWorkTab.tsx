@@ -355,7 +355,7 @@ const CreateForm: React.FC<{
                     <button
                       key={p.number}
                       onClick={() => { setSelectedPr(p); setPickerOpen(false) }}
-                      title={p.isFork ? `${p.headRefName} — fork by ${p.author}` : p.headRefName}
+                      title={p.isFork ? `${p.headRefName}, fork by ${p.author}` : p.headRefName}
                       className={`w-full flex items-center gap-1.5 px-2 py-1 text-[12px] hover:bg-hover transition-colors ${
                         selectedPr?.number === p.number ? 'bg-hover' : ''
                       }`}
@@ -408,7 +408,7 @@ const SpawnAction: React.FC<{
       )
     }}
     onClick={(e) => { e.stopPropagation(); onLaunch() }}
-    title={`${title} — click to open here, or drag onto the canvas`}
+    title={`${title}. Click to open here, or drag onto the canvas.`}
     className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-surface-4 cursor-grab active:cursor-grabbing transition-colors"
   >
     {icon}
@@ -863,7 +863,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       if (!rootPath || wt.isPrimary) return
       const target = primaryLabel
       if (!wt.branch || !target) {
-        setError('Could not resolve the base branch — open Source Control once to refresh.')
+        setError('Could not resolve the base branch. Open Source Control once to refresh.')
         return
       }
       const ok = window.confirm(`Merge ${wt.branch} into ${target}?`)
@@ -893,7 +893,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
         if (!result.ok) {
           setError(
             result.conflict
-              ? `Conflicts updating from ${target} — open a terminal here to resolve them.`
+              ? `Conflicts updating from ${target}. Open a terminal here to resolve them.`
               : `Update from ${target}: ${result.message}`,
           )
         } else {
