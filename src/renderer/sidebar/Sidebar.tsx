@@ -4,6 +4,7 @@ import { FileExplorer } from './FileExplorer'
 import { SearchView } from './SearchView'
 import { SourceControlView } from './SourceControlView'
 import { ParallelWorkTab } from './ParallelWorkTab'
+import { UpdateButton } from './UpdateButton'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
@@ -132,18 +133,6 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const [isResizing, setIsResizing] = useState(false)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
-
-  // Publish current total sidebar width to a CSS variable so the dock tab bar
-  // can inset itself and keep the tab pills next to (not under) the sidebar.
-  const totalWidth =
-    isEmpty && !dragRevealed ? 0 : isExpanded ? BAR_WIDTH + width : BAR_WIDTH
-  useEffect(() => {
-    const cssVar = side === 'left' ? '--cate-left-sidebar-width' : '--cate-right-sidebar-width'
-    document.documentElement.style.setProperty(cssVar, `${totalWidth}px`)
-    return () => {
-      document.documentElement.style.setProperty(cssVar, '0px')
-    }
-  }, [side, totalWidth])
 
   // Drop indicator: index where the drop would land. Mirrored in a ref so the
   // drop handler reads the latest value (state updates from dragOver may not
@@ -336,6 +325,13 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
           >
             <Gear size={16} className="pointer-events-none" />
           </button>
+        </div>
+      )}
+      {/* Update affordance — pinned to the bottom of the right activity bar.
+          Renders nothing unless an update is actionable. */}
+      {side === 'right' && (
+        <div className="mt-auto flex flex-col items-center pb-2 w-full">
+          <UpdateButton />
         </div>
       )}
     </div>

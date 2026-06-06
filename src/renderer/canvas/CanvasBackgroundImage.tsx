@@ -18,6 +18,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
+import { getBuiltinWallpaper } from '../lib/builtinWallpapers'
 
 const READABILITY = {
   dark: { filter: 'brightness(0.6) saturate(0.9)', scrim: 'rgba(0, 0, 0, 0.35)' },
@@ -37,6 +38,13 @@ const CanvasBackgroundImage: React.FC = () => {
   useEffect(() => {
     if (!path) {
       setDataUrl(null)
+      return
+    }
+    // Built-in wallpapers are bundled assets — use the asset URL directly rather
+    // than reading bytes from disk through main.
+    const builtin = getBuiltinWallpaper(path)
+    if (builtin) {
+      setDataUrl(builtin.url)
       return
     }
     let cancelled = false

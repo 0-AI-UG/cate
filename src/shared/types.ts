@@ -121,6 +121,11 @@ export interface PanelState {
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
    *  no longer overwrite the chosen name. */
   titleUserOverridden?: boolean
+  /** Terminal panels only: bumped to force the PTY to be re-spawned in place
+   *  (e.g. when switching the terminal to another worktree's checkout). The
+   *  registry entry is disposed and `TerminalPanel`'s create effect re-runs at
+   *  the new `cwd`. */
+  ptyEpoch?: number
 }
 
 // -----------------------------------------------------------------------------
@@ -850,6 +855,9 @@ export interface NodeSnapshot {
    *  DockStore at save time so a multi-tab node survives save→restore. Absent on
    *  legacy sessions ⇒ the node is rebuilt with the default single-tab seed. */
   dockLayout?: DockLayoutNode | null
+  /** Worktree this terminal/agent panel belongs to (see PanelState.worktreeId).
+   *  Persisted so the tab pill/tint and canvas territory survive a restart. */
+  worktreeId?: string
 }
 
 export interface SessionSnapshot {
@@ -864,6 +872,10 @@ export interface SessionSnapshot {
   dockState?: DockStateSnapshot
   /** Panels that live in dock zones (canvas, etc.) — not on the canvas. */
   dockPanels?: Record<string, PanelState>
+  /** Git worktree registry (with per-worktree color/label). Persisted so colors
+   *  stay stable across restarts instead of being re-assigned round-robin from
+   *  the palette, and so panel.worktreeId references still resolve. */
+  worktrees?: WorktreeMeta[]
   /** Resolved companion connection for a remote/WSL workspace (absent ⇒ local).
    *  Persisted so the companion can be reconnected on restore before any
    *  fs/git/terminal op runs. Mirrors WorkspaceState.connection. */
@@ -985,6 +997,16 @@ export interface ProjectSessionFile {
   panelWindows?: PanelWindowSnapshot[]
   /** Detached dock windows (machine-local, not committed). */
   dockWindows?: DetachedDockWindowSnapshot[]
+  /** Git worktree registry (id/path/branch/color/label). Machine-local because
+   *  the checkouts under `.cate/worktrees` are gitignored and personal — kept
+   *  here (not in committed workspace.json) so colors/labels survive a restart.
+   *  Paths are absolute, matching `ProjectSessionNode.workingDirectory`. */
+  worktrees?: WorktreeMeta[]
+  /** Worktree tags for panels that live in dock zones (not canvas nodes), keyed
+   *  by panel id. Canvas nodes carry their tag on `ProjectSessionNode.worktreeId`;
+   *  dock panels are referenced from the committed workspace.json (ProjectPanelRef),
+   *  which we keep free of machine-local worktree ids — so their tag lives here. */
+  dockPanelWorktreeIds?: Record<string, string>
   /** Resolved companion connection for THIS workspace on THIS machine. Machine-
    *  local on purpose — a server/wsl choice is the opener's, not the repo's, so
    *  it lives here and never in the VCS-committed workspace.json. Absent ⇒ local. */
@@ -998,6 +1020,9 @@ export interface ProjectSessionNode {
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
+  /** Worktree this terminal/agent panel is tagged with. Machine-local (worktree
+   *  ids are runtime uuids), so it lives in session.json, not workspace.json. */
+  worktreeId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -1110,6 +1135,9 @@ export interface AppSettings {
    *  among numbered spots / click anywhere. When off, the best spot is chosen
    *  automatically and the panel is placed immediately. */
   placementPicker: boolean
+  /** Paint the soft per-worktree "territory" backgrounds behind panels when a
+   *  workspace has multiple git worktrees. Off hides the visualization. */
+  showWorktreeTerritory: boolean
 
   // Terminal
   terminalFontFamily: string
@@ -1223,6 +1251,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   canvasBackgroundImageOpacity: 0.4,
   snapToGrid: false,
   placementPicker: true,
+  showWorktreeTerritory: true,
 
   // Terminal
   terminalFontFamily: '',

@@ -4,6 +4,8 @@ import { useAppStore } from '../stores/appStore'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { noteAgentPresence } from '../lib/agent/agentScreenDetector'
 import { isWorkspaceMonitorReady } from './workspaceMonitorReady'
+import { syncWorktrees } from '../lib/worktreeSync'
+import log from '../lib/logger'
 import type { TerminalActivity } from '../../shared/types'
 
 /** Retained for the statusStore.unregisterTerminal wiring. The per-terminal
@@ -85,12 +87,28 @@ export function useProcessMonitor(workspaceId: string): void {
   useEffect(() => {
     const api = window.electronAPI
     if (!api?.onGitBranchUpdate) return
-    // GIT_BRANCH_UPDATE is a pure invalidation signal; the real consumers
-    // (e.g. SourceControlView) refetch on it directly. Keep the subscription
-    // wired so the main-process git monitor stays armed, but it has no sink here.
-    const unsubscribe = api.onGitBranchUpdate(() => {})
+    // GIT_BRANCH_UPDATE is a pure invalidation signal; the live git facts
+    // (branch/ahead/behind/worktree list) are refetched by gitStatusStore, which
+    // owns its own GIT_BRANCH_UPDATE subscription. Here we only reconcile the
+    // UI-owned worktree metadata in appStore so a worktree created without the
+    // parallel-work sidebar open still gets an id/color and shows up on the
+    // canvas (territories/pills). The git monitor debounces this signal, so the
+    // cheap `git worktree list` reconcile runs only when something changed.
+    const unsubscribe = api.onGitBranchUpdate((evWorkspaceId: string) => {
+      void syncWorktrees(evWorkspaceId).catch((err) => {
+        log.debug('[worktree-sync] background reconcile failed', err)
+      })
+    })
     return () => { unsubscribe() }
   }, [])
+
+  // Initial sync for the active workspace, so worktrees are fresh at app start
+  // (and on workspace switch) even before the first GIT_BRANCH_UPDATE lands.
+  useEffect(() => {
+    void syncWorktrees(workspaceId).catch((err) => {
+      log.debug('[worktree-sync] initial reconcile failed', err)
+    })
+  }, [workspaceId])
 
   // Re-arm whenever this workspace's companion becomes ready. During a
   // background restore the renderer can fire GIT_MONITOR_START before a remote

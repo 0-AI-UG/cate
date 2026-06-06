@@ -94,6 +94,11 @@ export default function TerminalPanel({
   const panelCwd = useAppStore(
     (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.cwd,
   )
+  // Bumped by respawnPanelTerminal() to force a fresh PTY at a new cwd (worktree
+  // switch). Folded into the lifecycle effect deps below so it re-creates.
+  const ptyEpoch = useAppStore(
+    (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.ptyEpoch ?? 0,
+  )
   const workspaceRoot = workspaces.find((w) => w.id === workspaceId)?.rootPath
   // Prefer an explicit per-panel cwd (drag-drop folder, worktree, etc.).
   const rootPath = panelCwd || workspaceRoot
@@ -338,7 +343,7 @@ export default function TerminalPanel({
 
       detachAndDisconnect()
     }
-  }, [panelId, workspaceId, nodeId, initialInput, retryKey])
+  }, [panelId, workspaceId, nodeId, initialInput, retryKey, ptyEpoch])
 
   // -------------------------------------------------------------------------
   // Focus xterm when this node becomes the focused node

@@ -95,15 +95,13 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
   )
 
   const renderNode = useCallback(
-    (node: DockLayoutNode, leftEdge = false, rightEdge = false): React.ReactNode => {
+    (node: DockLayoutNode): React.ReactNode => {
       if (node.type === 'tabs') {
         return (
           <DockTabStack
             key={node.id}
             stack={node}
             zone={position}
-            leftEdge={leftEdge}
-            rightEdge={rightEdge}
             renderPanel={renderPanel}
             getPanelTitle={getPanelTitle}
             onClosePanel={onClosePanel}
@@ -118,8 +116,6 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
         <DockSplitContainer
           key={node.id}
           node={node}
-          leftEdge={leftEdge}
-          rightEdge={rightEdge}
           renderNode={renderNode}
         />
       )
@@ -149,7 +145,7 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
-      {zone.layout ? renderNode(zone.layout, true, true) : (
+      {zone.layout ? renderNode(zone.layout) : (
         // Empty center zone — show background
         isCenter && <div className="w-full h-full" />
       )}

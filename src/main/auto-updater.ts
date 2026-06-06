@@ -215,9 +215,35 @@ async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function initAutoUpdater(): void {
+  // Dev-only: surface the update drawer without a real release. Set
+  // CATE_SIMULATE_UPDATE_BUTTON to `available` (default), `downloaded`, or
+  // `manual` to seed that state; the download action then animates a fake
+  // progress run to `downloaded`. See the `dev:update:button` script.
+  const sim = !app.isPackaged ? (process.env.CATE_SIMULATE_UPDATE_BUTTON || '').toLowerCase() : ''
+  const simEnabled = sim !== ''
+  const simState: 'available' | 'downloaded' | 'manual' =
+    sim === 'downloaded' ? 'downloaded' : sim === 'manual' ? 'manual' : 'available'
+  const SIM_VERSION = '99.0.0'
+  const SIM_RELEASE_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
+
   // Wire renderer-initiated actions regardless of dev/packaged so the UI never
   // races against handler registration.
   ipcMain.on(UPDATE_DOWNLOAD, () => {
+    if (simEnabled) {
+      log.info('[sim-update] download requested — simulating progress')
+      broadcastStatus({ state: 'downloading', version: SIM_VERSION, percent: 0 })
+      let pct = 0
+      const timer = setInterval(() => {
+        pct += 7
+        if (pct >= 100) {
+          clearInterval(timer)
+          broadcastStatus({ state: 'downloaded', version: SIM_VERSION })
+        } else {
+          broadcastStatus({ state: 'downloading', version: SIM_VERSION, percent: pct })
+        }
+      }, 250)
+      return
+    }
     if (!app.isPackaged) return
     log.info('[auto-updater] Renderer requested download')
     const version = currentStatus.state === 'available' ? currentStatus.version : undefined
@@ -248,6 +274,14 @@ export function initAutoUpdater(): void {
   })
 
   ipcMain.on(UPDATE_INSTALL, async () => {
+    if (simEnabled) {
+      // Can't truly quit & relaunch a dev process, so confirm the click is wired
+      // by clearing the update — the same end-state a real restart-into-new-
+      // version produces (button disappears).
+      log.info('[sim-update] install requested — clearing update (real build would quit & relaunch)')
+      broadcastStatus({ state: 'idle' })
+      return
+    }
     if (!app.isPackaged) return
     log.info('[auto-updater] Renderer requested install')
     const version = currentStatus.state === 'downloaded' ? currentStatus.version : undefined
@@ -270,6 +304,28 @@ export function initAutoUpdater(): void {
   })
 
   ipcMain.handle('update:getStatus', () => currentStatus)
+
+  // Dev-only update-button simulation: seed an actionable state shortly after
+  // launch (once the renderer's status listener is mounted) so the drawer
+  // appears. Download/install are handled by the sim branches above.
+  if (simEnabled) {
+    log.info('[sim-update] update-button simulation active (%s)', simState)
+    setTimeout(() => {
+      if (simState === 'manual') {
+        broadcastStatus({ state: 'manual', version: SIM_VERSION, releaseUrl: SIM_RELEASE_URL })
+      } else if (simState === 'downloaded') {
+        broadcastStatus({ state: 'downloaded', version: SIM_VERSION })
+      } else {
+        broadcastStatus({
+          state: 'available',
+          version: SIM_VERSION,
+          canAutoInstall: true,
+          releaseUrl: SIM_RELEASE_URL,
+        })
+      }
+    }, 1200)
+    return
+  }
 
   // Don't check for updates in dev mode
   if (!app.isPackaged) return

@@ -46,6 +46,11 @@ export interface CanvasStoreState {
   focusedNodeId: CanvasNodeId | null
   /** Increments on every focus action — lets panels re-run focus side effects even when focusedNodeId doesn't change. */
   focusEpoch: number
+  /** Per-node active worktree id, published by CanvasNode from its active tab.
+   *  Read by the worktree sludge/lens layers (which live outside the per-node
+   *  dock store and so can't see the active tab directly). `null` = untagged.
+   *  Stale entries for removed nodes are harmless — consumers iterate `nodes`. */
+  nodeActiveWorktreeId: Record<string, string | null>
   nextZOrder: number
   nextCreationIndex: number
   containerSize: Size
@@ -160,6 +165,9 @@ export interface CanvasStoreActions {
 
   zoomToFit: () => void
   zoomToSelection: () => void
+
+  /** Publish (or clear) the active-tab worktree for a node. */
+  setNodeActiveWorktree: (nodeId: string, worktreeId: string | null) => void
 
   // Z-order management
   moveToFront: (nodeId: CanvasNodeId) => void

@@ -53,6 +53,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       zoomLevel: ZOOM_DEFAULT,
       focusedNodeId: null,
       focusEpoch: 0,
+      nodeActiveWorktreeId: {},
       nextZOrder: 0,
       nextCreationIndex: 0,
       containerSize: { width: 0, height: 0 },

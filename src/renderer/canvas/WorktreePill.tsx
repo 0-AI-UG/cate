@@ -1,15 +1,22 @@
 // =============================================================================
-// WorktreePill — compact title-bar control that shows which "parallel branch"
-// a terminal or agent panel is associated with. Click to switch.
+// WorktreePill — the title-bar "worktree chip": shows which parallel branch a
+// terminal or agent panel belongs to, color-filled in the worktree's color.
 //
-// Hidden unless the workspace has 2+ worktrees; otherwise it would just be
-// chrome noise on the most common (single-branch) flow.
+//   • Hover  → highlights every node in that worktree (ring + sludge boost).
+//   • Click  → menu: focus the worktree on canvas, or switch this panel to
+//              another worktree. Switching a TERMINAL opens a fresh PTY in the
+//              new checkout (a terminal IS a checkout); agents are re-tagged.
+//
+// Hidden unless the workspace has 2+ worktrees — otherwise it's just chrome
+// noise on the common single-branch flow.
 // =============================================================================
 
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect } from 'react'
+import { ArrowsSplit } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
+import { useUIStore } from '../stores/uiStore'
 import { useWorktrees } from '../stores/useWorktrees'
-import { terminalRegistry } from '../lib/terminal/terminalRegistry'
+import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import type { PanelState } from '../../shared/types'
 
 interface WorktreePillProps {
@@ -24,75 +31,96 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
   const rootPath = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.rootPath ?? '')
   const worktrees = useWorktrees(rootPath, workspaceId)
   const setPanelWorktreeId = useAppStore((s) => s.setPanelWorktreeId)
+  const setHoveredWorktree = useUIStore((s) => s.setHoveredWorktree)
+  const focusWorktree = useUIStore((s) => s.focusWorktree)
+  const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
 
   const current = worktrees.find((w) => w.id === panel.worktreeId) ?? worktrees.find((w) => w.isPrimary)
+  const currentId = current?.id
+
+  const labelOf = (w: { label?: string; branch?: string; isPrimary?: boolean }) =>
+    w.label || w.branch || (w.isPrimary ? 'main' : '(detached)')
+
+  // Clear the hover highlight if this chip unmounts while hovered.
+  useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
 
   const handleClick = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!window.electronAPI || !current) return
-    const items = worktrees.map((w) => ({
-      id: w.id,
-      label: (w.label || w.branch || (w.isPrimary ? 'main' : '(detached)')) + (w.id === current.id ? '  ✓' : ''),
-    }))
+    const isFocused = focusedWorktreeId === current.id
+    const items = [
+      { id: '__focus', label: isFocused ? 'Clear focus' : `Focus “${labelOf(current)}” on canvas` },
+      { type: 'separator' as const },
+      ...worktrees.map((w) => ({
+        id: w.id,
+        label: labelOf(w) + (w.id === current.id ? '  ✓' : ''),
+      })),
+    ]
     const choice = await window.electronAPI.showContextMenu(items)
-    if (!choice || choice === current.id) return
+    if (!choice) return
+
+    if (choice === '__focus') {
+      focusWorktree(isFocused ? null : current.id)
+      return
+    }
+    if (choice === current.id) return
     const target = worktrees.find((w) => w.id === choice)
     if (!target) return
 
-    setPanelWorktreeId(workspaceId, panel.id, target.id)
-
-    // For terminals, also `cd` into the new path so the shell follows the
-    // visual change. Keeps history intact.
     if (panel.type === 'terminal') {
-      const entry = terminalRegistry.getEntry(panel.id)
-      if (entry?.ptyId) {
-        // Escape single quotes by closing/reopening the quoted segment.
-        const safe = target.path.replace(/'/g, `'\\''`)
-        window.electronAPI.terminalWrite(entry.ptyId, ` cd '${safe}'\r`)
-      }
+      // A terminal is bound to a checkout — switching means a fresh shell in the
+      // new path. Warn first if a foreground process is running.
+      const ok = await confirmCloseRunningTerminals([panel])
+      if (!ok) return
+      useAppStore.getState().respawnPanelTerminal(workspaceId, panel.id, target.path, target.id)
+    } else {
+      // Agent panels: re-tag only — pi's cwd is fixed at spawn. The sidebar's
+      // "open agent here" starts a fresh agent in a worktree.
+      setPanelWorktreeId(workspaceId, panel.id, target.id)
     }
-    // For agent panels we only update the tag — the pi process's cwd is set
-    // at spawn time, so a true switch would require teardown. The sidebar's
-    // "open agent here" button is the right way to start fresh in a worktree.
-  }, [worktrees, current, panel, workspaceId, setPanelWorktreeId])
+  }, [worktrees, current, focusedWorktreeId, panel, workspaceId, setPanelWorktreeId, focusWorktree])
 
   // Only relevant for terminal/agent panels in workspaces with 2+ worktrees.
   if (panel.type !== 'terminal' && panel.type !== 'agent') return null
   if (worktrees.length < 2 || !current) return null
 
+  const isFocused = focusedWorktreeId === currentId
+
   return (
     <button
       type="button"
       onClick={handleClick}
+      onMouseEnter={() => currentId && setHoveredWorktree(currentId)}
+      onMouseLeave={() => setHoveredWorktree(null)}
       title={`Worktree: ${current.branch || current.path}`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         gap: 4,
         height: 18,
-        padding: '0 6px',
+        padding: '0 9px 0 7px',
         borderRadius: 9,
-        backgroundColor: `color-mix(in srgb, ${current.color ?? 'var(--text-muted)'} 18%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${current.color ?? 'var(--text-muted)'} 45%, transparent)`,
-        color: 'var(--text-secondary)',
+        // Filled, no outline — the chip IS the worktree color. Slightly toned
+        // toward black so white text stays legible across the bright palette.
+        backgroundColor: `color-mix(in srgb, ${current.color ?? 'var(--text-muted)'} 92%, black)`,
+        border: 'none',
+        boxShadow: isFocused ? `0 0 10px -1px ${current.color ?? 'var(--text-muted)'}` : 'none',
+        color: '#fff',
         fontSize: 10,
+        fontWeight: 600,
         lineHeight: 1,
+        letterSpacing: 0.2,
+        textShadow: '0 1px 1px rgba(0,0,0,0.3)',
         cursor: 'pointer',
         userSelect: 'none',
+        transition: 'box-shadow 150ms ease, background-color 150ms ease, filter 150ms ease',
+        filter: isFocused ? 'brightness(1.12)' : undefined,
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          backgroundColor: current.color ?? 'var(--text-muted)',
-          flexShrink: 0,
-        }}
-      />
-      <span style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {current.label || current.branch || (current.isPrimary ? 'main' : 'wt')}
+      <ArrowsSplit size={11} weight="bold" style={{ flexShrink: 0 }} />
+      <span style={{ maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {labelOf(current)}
       </span>
     </button>
   )

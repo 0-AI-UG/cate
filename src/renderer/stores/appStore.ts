@@ -25,6 +25,7 @@ import type {
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types'
 import { ACCENT_COLORS } from '../../shared/colors'
+import { pathKey } from '../../shared/pathUtils'
 import type { StoreApi } from 'zustand'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { useSettingsStore } from './settingsStore'
@@ -307,11 +308,19 @@ interface AppStoreActions {
 
   // Parallel Work (git worktrees) — see ParallelWorkTab.tsx
   ensurePrimaryWorktree: (wsId: string) => void
+  /** Seed the worktree registry from a persisted session, merging by path so a
+   *  saved color/label/id wins over anything a background sync already
+   *  discovered. Used on restore (see session.ts) to keep colors stable. */
+  hydrateWorktrees: (wsId: string, list: WorktreeMeta[]) => void
   upsertWorktree: (wsId: string, wt: WorktreeMeta) => void
   removeWorktree: (wsId: string, worktreeId: string) => void
   setWorktreeColor: (wsId: string, worktreeId: string, color: string) => void
   setWorktreeLabel: (wsId: string, worktreeId: string, label: string | undefined) => void
   setPanelWorktreeId: (wsId: string, panelId: string, worktreeId: string | undefined) => void
+  /** Re-spawn a terminal panel's PTY in a new working directory and re-tag its
+   *  worktree. Disposes the live terminal and bumps `ptyEpoch` so TerminalPanel
+   *  re-creates the shell rooted at `cwd`. Used by the worktree chip switcher. */
+  respawnPanelTerminal: (wsId: string, panelId: string, cwd: string, worktreeId: string | undefined) => void
 
   // Cross-window sync: merge metadata from main-process broadcast
   mergeWorkspaceInfos: (infos: WorkspaceInfo[]) => void
@@ -1189,6 +1198,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }))
   },
 
+  hydrateWorktrees(wsId, persisted) {
+    if (persisted.length === 0) return
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== wsId) return ws
+        // Merge by path so the persisted color/label/id wins over anything a
+        // background sync already created for the same checkout, while keeping
+        // any live worktree the saved session didn't know about. Key on the
+        // normalized path so a separator/case mismatch (forward-slash git paths
+        // vs native-separator stored paths on Windows) can't split one checkout
+        // into two entries and defeat the precedence.
+        const byPath = new Map((ws.worktrees ?? []).map((w) => [pathKey(w.path), w]))
+        for (const w of persisted) byPath.set(pathKey(w.path), w)
+        return { ...ws, worktrees: [...byPath.values()] }
+      }),
+    }))
+  },
+
   upsertWorktree(wsId, wt) {
     set((state) => ({
       workspaces: state.workspaces.map((ws) => {
@@ -1247,6 +1274,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setPanelWorktreeId(wsId, panelId, worktreeId) {
     setPanelField(set, wsId, panelId, (panel) => ({ ...panel, worktreeId }))
+  },
+
+  respawnPanelTerminal(wsId, panelId, cwd, worktreeId) {
+    // Kill the existing PTY/xterm; TerminalPanel's create effect re-runs when
+    // ptyEpoch changes and spawns a fresh shell at the new cwd.
+    terminalRegistry.dispose(panelId)
+    setPanelField(set, wsId, panelId, (panel) => ({
+      ...panel,
+      cwd,
+      worktreeId,
+      ptyEpoch: (panel.ptyEpoch ?? 0) + 1,
+    }))
   },
 
   closeAllPanels(wsId) {

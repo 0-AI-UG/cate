@@ -24,6 +24,7 @@ type NodesActions = Pick<
   | 'moveToFront'
   | 'moveToBack'
   | 'togglePin'
+  | 'setNodeActiveWorktree'
   | 'setNodeDockLayout'
   | 'nodeForPanel'
   | 'sortedNodesByCreationOrder'
@@ -310,6 +311,16 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
           nodes: { ...state.nodes, [id]: { ...node, isPinned: !node.isPinned } },
         }
       })
+    },
+
+    setNodeActiveWorktree(nodeId, worktreeId) {
+      const cur = get().nodeActiveWorktreeId
+      if (cur[nodeId] === worktreeId) return
+      if (worktreeId === null && !(nodeId in cur)) return
+      const next = { ...cur }
+      if (worktreeId === null) delete next[nodeId]
+      else next[nodeId] = worktreeId
+      set({ nodeActiveWorktreeId: next })
     },
 
     setNodeDockLayout(nodeId, layout) {

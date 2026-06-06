@@ -30,7 +30,6 @@ import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
-import { WorktreePill } from './WorktreePill'
 
 // When the Hand tool (or Space-hold) is active, a left-press on a node must pan
 // the canvas instead of dragging/resizing the node. These handlers bail out
@@ -362,11 +361,34 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     return currentWorkspace?.panels[id] ?? primaryPanel
   }, [layout, currentWorkspace, primaryPanel])
 
+  // --- Worktree identity: follows the ACTIVE tab --------------------------
+  // The node adopts whichever tab is open. Gated on 2+ worktrees (matching the
+  // chip) so single-branch flows show no tint/sludge.
+  const worktrees = currentWorkspace?.worktrees ?? []
+  const wtEnabled = worktrees.length >= 2
+  const activeWorktreeId = wtEnabled ? activePanel?.worktreeId ?? null : null
+  const worktreeColor = activeWorktreeId
+    ? worktrees.find((w) => w.id === activeWorktreeId)?.color ?? null
+    : null
+  const hoveredWorktreeId = useUIStore((s) => s.hoveredWorktreeId)
+  const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
+  const worktreeHighlight =
+    !!activeWorktreeId &&
+    (hoveredWorktreeId === activeWorktreeId || focusedWorktreeId === activeWorktreeId)
+  const worktreeDim = !!focusedWorktreeId && activeWorktreeId !== focusedWorktreeId
+
+  // Publish the active-tab worktree for the global sludge/lens layers, which
+  // live outside this node's dock store and can't read its active tab directly.
+  useEffect(() => {
+    canvasApi.getState().setNodeActiveWorktree(nodeId, activeWorktreeId)
+  }, [nodeId, activeWorktreeId, canvasApi])
+  // Clear only on unmount (not on every change) so the sludge never flickers.
+  useEffect(() => {
+    return () => canvasApi.getState().setNodeActiveWorktree(nodeId, null)
+  }, [nodeId, canvasApi])
+
   const nodeControlButtons = (
     <>
-      {activePanel && wsId && (
-        <WorktreePill panel={activePanel} workspaceId={wsId} />
-      )}
       <GrabButton
         title={node?.isPinned ? 'Unlock' : 'Lock'}
         onClick={(e) => { e.stopPropagation(); handleTogglePin() }}
@@ -538,6 +560,9 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     isHovered,
     chromeTint,
     isWholeNodeDragSource,
+    worktreeColor,
+    worktreeHighlight,
+    worktreeDim,
   })
 
   if (!node) return null

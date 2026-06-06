@@ -52,6 +52,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   canvasBackgroundImageOpacity: 'number',
   snapToGrid: 'boolean',
   placementPicker: 'boolean',
+  showWorktreeTerritory: 'boolean',
   terminalFontFamily: 'string',
   terminalFontSize: 'number',
   terminalScrollback: 'number',

@@ -28,6 +28,7 @@ import {
 import { useAppStore, pickWorktreeColor, WORKTREE_COLOR_PALETTE } from '../stores/appStore'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
+import { useUIStore } from '../stores/uiStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { WorktreeMeta } from '../../shared/types'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
@@ -41,7 +42,7 @@ import log from '../lib/logger'
  *  The worktree-add handler drops a `*` .gitignore in that folder so the
  *  checkouts never show up as untracked noise in the parent repo. */
 function worktreePathFor(repoRoot: string, branch: string): string {
-  const trimmed = repoRoot.replace(/\/+$/, '')
+  const trimmed = repoRoot.replace(/[/\\]+$/, '')
   const slug = branch.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'wt'
   return `${trimmed}/.cate/worktrees/${slug}`
 }
@@ -445,6 +446,24 @@ const WorktreeCard: React.FC<{
   const [recoloring, setRecoloring] = useState(false)
   const st = humanStatus(status, primaryLabel)
 
+  // Worktree focus lens: hover highlights this branch's nodes on the canvas;
+  // clicking the row locks the lens (and frames the camera). Clicking again
+  // (or empty canvas) clears it.
+  const setHoveredWorktree = useUIStore((s) => s.setHoveredWorktree)
+  const focusWorktree = useUIStore((s) => s.focusWorktree)
+  const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
+  const isLensFocused = focusedWorktreeId === worktree.id
+  useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
+
+  const handleRowClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Ignore clicks on the inline buttons / rename input.
+      if ((e.target as HTMLElement).closest('button, input')) return
+      focusWorktree(isLensFocused ? null : worktree.id)
+    },
+    [focusWorktree, isLensFocused, worktree.id],
+  )
+
   const commitRename = useCallback(() => {
     setRenaming(false)
     const next = renameValue.trim()
@@ -482,9 +501,16 @@ const WorktreeCard: React.FC<{
   }, [pr, isPrimary, primaryLabel, label, cb])
 
   return (
-    <div className="group/row" title={worktree.path}>
+    <div
+      className="group/row"
+      title={worktree.path}
+      onMouseEnter={() => setHoveredWorktree(worktree.id)}
+      onMouseLeave={() => setHoveredWorktree(null)}
+    >
       <div
-        className="flex items-center gap-1.5 h-8 px-2 hover:bg-hover transition-colors"
+        className="flex items-center gap-1.5 h-8 px-2 hover:bg-hover transition-colors cursor-pointer"
+        style={isLensFocused ? { boxShadow: `inset 2px 0 0 0 ${worktree.color}`, backgroundColor: `color-mix(in srgb, ${worktree.color} 10%, transparent)` } : undefined}
+        onClick={handleRowClick}
         onContextMenu={(e) => { e.preventDefault(); void handleMenu() }}
       >
         <button
