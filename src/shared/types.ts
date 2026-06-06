@@ -1118,6 +1118,9 @@ export interface AppSettings {
    *  among numbered spots / click anywhere. When off, the best spot is chosen
    *  automatically and the panel is placed immediately. */
   placementPicker: boolean
+  /** Paint the soft per-worktree "territory" backgrounds behind panels when a
+   *  workspace has multiple git worktrees. Off hides the visualization. */
+  showWorktreeTerritory: boolean
 
   // Terminal
   terminalFontFamily: string
@@ -1231,6 +1234,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   canvasBackgroundImageOpacity: 0.4,
   snapToGrid: false,
   placementPicker: true,
+  showWorktreeTerritory: true,
 
   // Terminal
   terminalFontFamily: '',

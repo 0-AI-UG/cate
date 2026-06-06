@@ -47,6 +47,12 @@ export const CONNECT_MAX_GAP = 520
  *  bridge grows/shrinks with the gap instead of popping on/off. */
 export const CONNECT_FALLOFF = 360
 
+/** Colour blend distance (canvas-space px) between DIFFERENT worktrees. Each
+ *  pixel of the fused territory is coloured by the nearest worktree; within this
+ *  distance of the seam the two worktree colours blend smoothly (no gap, no hard
+ *  edge). Smaller = sharper colour change, larger = wider, softer merge. */
+export const COLOR_BLEND = 55
+
 // --- terrace outlines -------------------------------------------------------
 /** Inner terrace ring distance as a fraction of REACH. The inner ring sits at
  *  REACH·INNER_RING_FRAC and the outer ring at REACH, so the outer terrace band
@@ -62,3 +68,18 @@ export const OUTLINE_ALPHA = 0.4
 export const WARP_AMP = 18
 /** Domain-warp frequency — lower = larger, gentler undulations. */
 export const WARP_FREQ = 0.006
+
+// --- WebGL renderer limits (territoryGL) ------------------------------------
+/** Max worktree groups the shader blends per pixel (uniform color array size). */
+export const MAX_GROUPS = 8
+/** Max primitives (panels + capsule bridges) the geometry data texture holds.
+ *  Beyond this, the farthest bridges are dropped (panels are never dropped). */
+export const MAX_PRIMITIVES = 1024
+/** Pocket-mask sampling step (canvas-space px). Coarser than FIELD_CELL — the
+ *  enclosed-pocket topology it captures is large-scale, so this only needs to be
+ *  fine enough to resolve which gaps are sealed. The grid is also capped to
+ *  POCKET_MAX_DIM cells per side, raising the effective step for spread layouts. */
+export const POCKET_CELL = 8
+/** Hard cap on pocket-mask grid dimension (cells per side) to bound CPU cost and
+ *  texture size when worktrees are spread far apart. */
+export const POCKET_MAX_DIM = 512

@@ -10,6 +10,7 @@ import { useAppStore, type PanelPlacement } from '../stores/appStore'
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction'
 import { useAutoFocusLargestVisible } from '../hooks/useAutoFocusLargestVisible'
 import { useUIStore, effectiveCanvasTool } from '../stores/uiStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { canvasToView, viewToCanvas } from '../lib/canvas/coordinates'
 import CanvasGrid from './CanvasGrid'
 import CanvasBackgroundImage from './CanvasBackgroundImage'
@@ -201,6 +202,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
   // overrides to 'grabbing' during an active pan and hands control back on release).
   const handToolActive = useUIStore((s) => effectiveCanvasTool(s) === 'hand')
   const idleCursor = handToolActive ? 'grab' : 'default'
+  const showWorktreeTerritory = useSettingsStore((s) => s.showWorktreeTerritory)
 
   // While the Hand tool is active, neutralize interactive panel content so a
   // left-press anywhere pans the canvas (see the .canvas-tool-hand CSS rules).
@@ -590,11 +592,14 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       />
 
       {/* Worktree territory — colours the grid dots per worktree. Screen-space
-          (outside the world transform), above the grid, behind all panels. */}
-      <WorktreeTerritoryLayer
-        containerWidth={containerSize.width}
-        containerHeight={containerSize.height}
-      />
+          (outside the world transform), above the grid, behind all panels.
+          Opt-out via Settings → Canvas → Worktree territories. */}
+      {showWorktreeTerritory && (
+        <WorktreeTerritoryLayer
+          containerWidth={containerSize.width}
+          containerHeight={containerSize.height}
+        />
+      )}
 
       {/* World div: transformed to implement pan/zoom */}
       <div

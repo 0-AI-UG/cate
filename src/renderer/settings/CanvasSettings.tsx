@@ -45,6 +45,15 @@ export function CanvasSettings() {
           onChange={(v) => store.setSetting('placementPicker', v)}
         />
       </SettingRow>
+      <SettingRow
+        label="Worktree territories"
+        description="Paint soft colored backgrounds grouping panels by git worktree (shown when a workspace has multiple worktrees)."
+      >
+        <Toggle
+          checked={store.showWorktreeTerritory}
+          onChange={(v) => store.setSetting('showWorktreeTerritory', v)}
+        />
+      </SettingRow>
       <SettingRow label="Canvas background">
         <Select
           value={store.canvasGridStyle}

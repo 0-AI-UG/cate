@@ -1,29 +1,40 @@
 // =============================================================================
 // territoryRenderer — the pure drawing routine for the worktree "terrace
 // territory". Framework-free: given a 2D context, the current view, and the
-// worktree groups (colour + canvas-space panel rects), it paints each
-// worktree's territory as two distinct, stacked elevation shelves.
+// worktree groups (colour + canvas-space panel rects), it paints ONE fused
+// territory shared by all worktrees, coloured per-pixel by the nearest worktree.
 //
 // Technique (all screen-space, bounded by the viewport — no SVG filter, no
-// tile-memory blowup): build a signed-distance field to each worktree's
-// rounded, smoothly-merged panels — plus an MST of center-to-center capsule
-// "bridges" (fading out with the panel gap) so nearby same-worktree panels fuse
-// into one blob — with a static domain warp for organic edges. Then fill TWO
-// EXCLUSIVE terrace shelves with crisp marching-squares polygons: an inner disk
-// (brighter) and an outer annulus (carved out so it isn't behind the inner one,
-// dimmer), each with its own gentle inward fade. Stroke the two shelf edges as
-// thin crisp contours, then punch the panels out so the territory reads as a
-// halo BEHIND them. Kept separate from React so it's unit-testable.
+// tile-memory blowup): build a signed-distance field per worktree to its
+// rounded, smoothly-merged panels — plus capsule "bridges" (fading out with the
+// panel gap) so nearby same-worktree panels fuse. The worktrees INTERACT: the
+// territory shape is their union (so they connect, no avoidance gap), the colour
+// is a soft per-pixel blend weighted by nearness. The shape is drawn as two
+// DISTINCT terrace shelves (crisp vector clips) with smooth colour, then thin
+// contour outlines and a panel punch-out so it reads as a halo BEHIND the panels.
+//
+// Performance: the per-cell SDF/colour work is computed in ONE fused pass that
+// (a) skips cells outside every panel's reach (the empty gaps between spread
+// windows cost only a cheap bbox test), (b) evaluates each panel/bridge only for
+// cells inside its own reach box, and (c) skips the colour blend where one
+// worktree clearly dominates. The redundant pan recompute is avoided a level up
+// (WorktreeTerritoryLayer caches the raster and blits it while panning).
 // =============================================================================
 
 import {
-  FIELD_CELL, REACH, INTENSITY, OUTER_LEVEL, CORNER, PANEL_CORNER, SMINK,
-  CONNECT_RADIUS, CONNECT_MAX_GAP, CONNECT_FALLOFF,
+  FIELD_CELL, REACH, OUTER_REACH_SCALE, INTENSITY, OUTER_LEVEL, CORNER, PANEL_CORNER, SMINK,
+  CONNECT_RADIUS, CONNECT_MAX_GAP, CONNECT_FALLOFF, COLOR_BLEND,
   INNER_RING_FRAC, OUTLINE_WIDTH, OUTLINE_ALPHA, WARP_AMP, WARP_FREQ,
 } from './territoryConfig'
 
 export interface TerritoryRect { x: number; y: number; w: number; h: number }
-export interface TerritoryGroup { color: string; rects: TerritoryRect[] }
+export interface TerritoryGroup {
+  color: string
+  rects: TerritoryRect[]
+  /** Opacity multiplier for the focus lens (1 = full, 0.5 = dimmed non-focused
+   *  worktree). Consumed by the WebGL renderer; ignored by the CPU fallback. */
+  dim?: number
+}
 export interface TerritoryView {
   /** CSS px size of the canvas (the ctx is already DPR-transformed). */
   width: number
@@ -32,6 +43,9 @@ export interface TerritoryView {
   offsetX: number
   offsetY: number
 }
+
+/** Inclusive screen-cell bounds. */
+interface Box { gx0: number; gy0: number; gx1: number; gy1: number }
 
 // --- value noise (static; gives the organic domain warp) -------------------
 function hash(x: number, y: number): number {
@@ -45,10 +59,9 @@ function vnoise(x: number, y: number): number {
   const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1)
   return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v
 }
+// Two octaves — enough wobble for organic edges, cheaper than three.
 function fbm(x: number, y: number): number {
-  let s = 0, a = 0.5, f = 1
-  for (let i = 0; i < 3; i++) { s += a * vnoise(x * f, y * f); f *= 2; a *= 0.5 }
-  return s
+  return 0.5 * vnoise(x, y) + 0.25 * vnoise(x * 2, y * 2)
 }
 
 // Signed distance to a rounded rectangle (negative inside).
@@ -80,29 +93,6 @@ function sdSegment(px: number, py: number, ax: number, ay: number, bx: number, b
   return Math.sqrt(dx * dx + dy * dy) - r
 }
 
-/** Minimum spanning tree over panel centers (Prim's) → the connection lines
- *  that join every same-worktree panel without criss-crossing. Flat [a,b,...]. */
-function mstEdges(cx: Float64Array, cy: Float64Array): number[] {
-  const n = cx.length
-  const edges: number[] = []
-  if (n < 2) return edges
-  const used = new Set<number>([0])
-  while (used.size < n) {
-    let bi = -1, bj = -1, bd = Infinity
-    for (const i of used) {
-      for (let j = 0; j < n; j++) {
-        if (used.has(j)) continue
-        const dx = cx[i] - cx[j], dy = cy[i] - cy[j], d = dx * dx + dy * dy
-        if (d < bd) { bd = d; bi = i; bj = j }
-      }
-    }
-    if (bj < 0) break
-    edges.push(bi, bj)
-    used.add(bj)
-  }
-  return edges
-}
-
 function hexToRgb(hex: string): [number, number, number] {
   let h = hex.trim().replace('#', '')
   if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2]
@@ -110,30 +100,66 @@ function hexToRgb(hex: string): [number, number, number] {
   if (Number.isNaN(n)) return [255, 255, 255]
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
-function mixWhite([r, g, b]: [number, number, number], t: number): string {
-  return `rgb(${Math.round(r + (255 - r) * t)},${Math.round(g + (255 - g) * t)},${Math.round(b + (255 - b) * t)})`
+
+// --- reused scratch (avoid per-frame allocation on the rebuild/drag path) ---
+let _combined = new Float32Array(0)
+function ensureCombined(n: number): Float32Array {
+  if (_combined.length < n) _combined = new Float32Array(n)
+  return _combined
+}
+let _oc: HTMLCanvasElement | null = null
+let _octx: CanvasRenderingContext2D | null = null
+function offscreen(w: number, h: number): CanvasRenderingContext2D {
+  if (!_oc) { _oc = document.createElement('canvas'); _octx = _oc.getContext('2d') }
+  if (_oc.width !== w || _oc.height !== h) { _oc.width = w; _oc.height = h }
+  return _octx!
 }
 
-// Fill the region where `field < thr` as crisp marching-squares polygons
-// (smooth piecewise-linear band edges, NO bilinear bleed). Uses the current
-// fillStyle / globalAlpha / compositeOperation.
-function fillBelow(
-  ctx: CanvasRenderingContext2D,
-  field: Float32Array,
-  cols: number,
-  rows: number,
-  thr: number,
-): void {
-  const C = FIELD_CELL
-  for (let gy = 0; gy < rows - 1; gy++) {
-    for (let gx = 0; gx < cols - 1; gx++) {
+/** Fill enclosed pockets: any cell ABOVE `thr` that can't reach the box border
+ *  through other above-thr cells is background trapped inside the territory.
+ *  Push it just below `thr` (to `fillVal`) so the territory fills it. */
+function fillEnclosed(field: Float32Array, cols: number, thr: number, fillVal: number, b: Box): void {
+  const { gx0, gy0, gx1, gy1 } = b
+  const bw = gx1 - gx0 + 1, bh = gy1 - gy0 + 1
+  const outside = new Uint8Array(bw * bh)
+  const stack: number[] = []
+  const seed = (gx: number, gy: number) => {
+    const li = (gy - gy0) * bw + (gx - gx0)
+    if (!outside[li] && field[gy * cols + gx] >= thr) { outside[li] = 1; stack.push(li) }
+  }
+  for (let gx = gx0; gx <= gx1; gx++) { seed(gx, gy0); seed(gx, gy1) }
+  for (let gy = gy0; gy <= gy1; gy++) { seed(gx0, gy); seed(gx1, gy) }
+  while (stack.length) {
+    const li = stack.pop()!
+    const lx = li % bw, ly = (li - lx) / bw
+    const gx = gx0 + lx, gy = gy0 + ly
+    if (lx > 0) seed(gx - 1, gy)
+    if (lx < bw - 1) seed(gx + 1, gy)
+    if (ly > 0) seed(gx, gy - 1)
+    if (ly < bh - 1) seed(gx, gy + 1)
+  }
+  for (let gy = gy0; gy <= gy1; gy++) {
+    for (let gx = gx0; gx <= gx1; gx++) {
+      const li = (gy - gy0) * bw + (gx - gx0)
+      const i = gy * cols + gx
+      if (!outside[li] && field[i] >= thr) field[i] = fillVal
+    }
+  }
+}
+
+/** Clip the context to the region `field < thr` (crisp marching-squares
+ *  polygons) within box `b`. */
+function clipBelow(ctx: CanvasRenderingContext2D, field: Float32Array, cols: number, thr: number, b: Box, C: number): void {
+  ctx.beginPath()
+  for (let gy = b.gy0; gy < b.gy1; gy++) {
+    for (let gx = b.gx0; gx < b.gx1; gx++) {
       const i = gy * cols + gx
       const tl = field[i], tr = field[i + 1], br = field[i + cols + 1], bl = field[i + cols]
       const n = (tl < thr ? 1 : 0) + (tr < thr ? 1 : 0) + (br < thr ? 1 : 0) + (bl < thr ? 1 : 0)
       if (n === 0) continue
       const x0 = gx * C, y0 = gy * C, x1 = x0 + C, y1 = y0 + C
-      if (n === 4) { ctx.fillRect(x0, y0, C, C); continue }
-      const T = (a: number, b: number) => (thr - a) / (b - a)
+      if (n === 4) { ctx.rect(x0, y0, C, C); continue }
+      const T = (a: number, bb: number) => (thr - a) / (bb - a)
       const pts: number[] = []
       if (tl < thr) pts.push(x0, y0)
       if ((tl < thr) !== (tr < thr)) pts.push(x0 + C * T(tl, tr), y0)
@@ -144,54 +170,34 @@ function fillBelow(
       if (bl < thr) pts.push(x0, y1)
       if ((bl < thr) !== (tl < thr)) pts.push(x0, y0 + C * T(tl, bl))
       if (pts.length < 6) continue
-      ctx.beginPath()
       ctx.moveTo(pts[0], pts[1])
       for (let k = 2; k < pts.length; k += 2) ctx.lineTo(pts[k], pts[k + 1])
       ctx.closePath()
-      ctx.fill()
     }
   }
+  ctx.clip()
 }
 
-/** One terrace shelf: a single flat crisp fill of the region `field < outer` at
- *  colour `color`, opacity `base`. The caller carves/sequences shelves so they
- *  are two distinct bands, not stacked into one fade. */
-function fillShelf(
-  ctx: CanvasRenderingContext2D,
-  field: Float32Array,
-  cols: number,
-  rows: number,
-  color: string,
-  outer: number,
-  base: number,
-): void {
-  ctx.fillStyle = color
-  ctx.globalAlpha = base
-  fillBelow(ctx, field, cols, rows, outer)
-  ctx.globalAlpha = 1
-}
-
-/** Stroke the iso-distance contour `field == thr` as a crisp thin line
- *  (marching-squares isolines). One worktree colour, one terrace edge. */
+/** Stroke the iso-distance contour `field == thr` as a crisp thin line within `b`. */
 function strokeContour(
   ctx: CanvasRenderingContext2D,
   field: Float32Array,
   cols: number,
-  rows: number,
   thr: number,
   color: string,
   alpha: number,
   lw: number,
+  b: Box,
+  C: number,
 ): void {
-  const C = FIELD_CELL
   ctx.strokeStyle = color
   ctx.globalAlpha = alpha
   ctx.lineWidth = lw
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
   ctx.beginPath()
-  for (let gy = 0; gy < rows - 1; gy++) {
-    for (let gx = 0; gx < cols - 1; gx++) {
+  for (let gy = b.gy0; gy < b.gy1; gy++) {
+    for (let gx = b.gx0; gx < b.gx1; gx++) {
       const i = gy * cols + gx
       const tl = field[i], tr = field[i + 1], br = field[i + cols + 1], bl = field[i + cols]
       let c = 0
@@ -201,7 +207,7 @@ function strokeContour(
       if (bl > thr) c |= 1
       if (c === 0 || c === 15) continue
       const x0 = gx * C, y0 = gy * C
-      const T = (a: number, b: number) => (thr - a) / (b - a)
+      const T = (a: number, bb: number) => (thr - a) / (bb - a)
       const TP: [number, number] = [x0 + C * T(tl, tr), y0]
       const RP: [number, number] = [x0 + C, y0 + C * T(tr, br)]
       const BP: [number, number] = [x0 + C * T(bl, br), y0 + C]
@@ -229,6 +235,16 @@ function strokeContour(
   ctx.globalAlpha = 1
 }
 
+interface GroupData {
+  m: number
+  rects: TerritoryRect[]
+  cx: Float64Array
+  cy: Float64Array
+  pbox: Box[]            // per-panel reach box (screen cells)
+  ea: number[]; eb: number[]; er: number[]
+  ebox: Box[]            // per-bridge reach box (screen cells)
+}
+
 /**
  * Paint the worktree terraces. Clears the canvas first. Safe with empty groups.
  * `ctx` must already be DPR-transformed (draw in CSS px). Static — no animation.
@@ -237,85 +253,186 @@ export function drawTerritory(
   ctx: CanvasRenderingContext2D,
   view: TerritoryView,
   groups: TerritoryGroup[],
+  cellScale = 1,
 ): void {
   const { width, height, zoom, offsetX, offsetY } = view
   ctx.clearRect(0, 0, width, height)
   if (groups.length === 0 || zoom <= 0) return
+  if (typeof document === 'undefined') return
 
-  const cols = Math.ceil(width / FIELD_CELL) + 1
-  const rows = Math.ceil(height / FIELD_CELL) + 1
-
-  // Domain-warped world coords per cell, computed ONCE and shared by all colours.
+  // Field sampling step. A coarser cell (cellScale > 1) trades edge crispness for
+  // ~cellScale² less work — used for the live, lower-quality rebuild during drag.
+  const cell = FIELD_CELL * cellScale
+  const cols = Math.ceil(width / cell) + 1
+  const rows = Math.ceil(height / cell) + 1
   const N = cols * rows
-  const nx = new Float32Array(N)
-  const ny = new Float32Array(N)
-  for (let gy = 0; gy < rows; gy++) {
-    for (let gx = 0; gx < cols; gx++) {
-      const i = gy * cols + gx
-      const wx = (gx * FIELD_CELL - offsetX) / zoom
-      const wy = (gy * FIELD_CELL - offsetY) / zoom
-      nx[i] = wx + (fbm(wx * WARP_FREQ, wy * WARP_FREQ) - 0.5) * 2 * WARP_AMP
-      ny[i] = wy + (fbm(wx * WARP_FREQ + 31.4, wy * WARP_FREQ) - 0.5) * 2 * WARP_AMP
-    }
-  }
 
-  const field = new Float32Array(N)
   const innerRing = REACH * INNER_RING_FRAC
+  const outerReach = REACH * OUTER_REACH_SCALE
+  const G = groups.length
+  const rgbs = groups.map((g) => hexToRgb(g.color))
 
-  for (const g of groups) {
+  // Overall bbox: panels' world extent expanded by the reach (+ warp), clamped.
+  let wx0 = Infinity, wy0 = Infinity, wx1 = -Infinity, wy1 = -Infinity
+  for (const g of groups) for (const rc of g.rects) {
+    if (rc.x < wx0) wx0 = rc.x
+    if (rc.y < wy0) wy0 = rc.y
+    if (rc.x + rc.w > wx1) wx1 = rc.x + rc.w
+    if (rc.y + rc.h > wy1) wy1 = rc.y + rc.h
+  }
+  if (!isFinite(wx0)) return
+  const reach = outerReach + WARP_AMP
+  const pad = 2
+  const box: Box = {
+    gx0: Math.max(0, Math.floor(((wx0 - reach) * zoom + offsetX) / cell) - pad),
+    gy0: Math.max(0, Math.floor(((wy0 - reach) * zoom + offsetY) / cell) - pad),
+    gx1: Math.min(cols - 1, Math.ceil(((wx1 + reach) * zoom + offsetX) / cell) + pad),
+    gy1: Math.min(rows - 1, Math.ceil(((wy1 + reach) * zoom + offsetY) / cell) + pad),
+  }
+  if (box.gx0 >= box.gx1 || box.gy0 >= box.gy1) return
+
+  // Screen-cell box for a world rectangle, clamped to the overall bbox.
+  const cellBox = (a: number, b: number, c: number, d: number): Box => ({
+    gx0: Math.max(box.gx0, Math.floor((a * zoom + offsetX) / cell)),
+    gy0: Math.max(box.gy0, Math.floor((b * zoom + offsetY) / cell)),
+    gx1: Math.min(box.gx1, Math.ceil((c * zoom + offsetX) / cell)),
+    gy1: Math.min(box.gy1, Math.ceil((d * zoom + offsetY) / cell)),
+  })
+
+  // Per-group: panel reach boxes + bridges (with their own reach boxes). A
+  // primitive only affects cells within (reach + SMINK) of it.
+  const Rp = outerReach + SMINK + WARP_AMP
+  const gdata: GroupData[] = groups.map((g) => {
     const m = g.rects.length
-    if (m === 0) continue
     const cx = new Float64Array(m), cy = new Float64Array(m)
-    for (let r = 0; r < m; r++) { cx[r] = g.rects[r].x + g.rects[r].w / 2; cy[r] = g.rects[r].y + g.rects[r].h / 2 }
-    // MST over panel centers → connection bridges. Each bridge's capsule radius
-    // fades smoothly with the panels' gap — full when close, receding all the
-    // way to -REACH (core AND halo retract) as the gap nears CONNECT_MAX_GAP —
-    // so a connection grows/shrinks continuously instead of snapping on/off.
-    const ea: number[] = [], eb: number[] = [], er: number[] = []
+    const pbox: Box[] = []
+    for (let r = 0; r < m; r++) {
+      const rc = g.rects[r]
+      cx[r] = rc.x + rc.w / 2; cy[r] = rc.y + rc.h / 2
+      pbox.push(cellBox(rc.x - Rp, rc.y - Rp, rc.x + rc.w + Rp, rc.y + rc.h + Rp))
+    }
+    const ea: number[] = [], eb: number[] = [], er: number[] = [], ebox: Box[] = []
     const fadeStart = CONNECT_MAX_GAP - CONNECT_FALLOFF
-    const mst = mstEdges(cx, cy)
-    for (let e = 0; e < mst.length; e += 2) {
-      const a = mst[e], b = mst[e + 1]
-      const gap = rectGap(g.rects[a], g.rects[b])
-      if (gap >= CONNECT_MAX_GAP) continue
-      let w = 1
-      if (gap > fadeStart) { const t = 1 - (gap - fadeStart) / CONNECT_FALLOFF; w = t * t * (3 - 2 * t) }
-      ea.push(a); eb.push(b); er.push(CONNECT_RADIUS * w - REACH * (1 - w))
-    }
-
-    for (let i = 0; i < N; i++) {
-      const px = nx[i], py = ny[i]
-      let d = 1e9
-      for (let r = 0; r < m; r++) {
-        const rc = g.rects[r]
-        d = smin(d, sdRoundRect(px, py, rc.x, rc.y, rc.w, rc.h, CORNER), SMINK)
+    for (let a = 0; a < m; a++) {
+      for (let b = a + 1; b < m; b++) {
+        const gap = rectGap(g.rects[a], g.rects[b])
+        if (gap >= CONNECT_MAX_GAP) continue
+        let w = 1
+        if (gap > fadeStart) { const t = 1 - (gap - fadeStart) / CONNECT_FALLOFF; w = t * t * (3 - 2 * t) }
+        const rad = CONNECT_RADIUS * w - outerReach * (1 - w)
+        const cullR = rad + outerReach + SMINK + WARP_AMP
+        if (cullR <= 0) continue // bridge so faded it can't reach the terrace
+        ea.push(a); eb.push(b); er.push(rad)
+        ebox.push(cellBox(
+          Math.min(cx[a], cx[b]) - cullR, Math.min(cy[a], cy[b]) - cullR,
+          Math.max(cx[a], cx[b]) + cullR, Math.max(cy[a], cy[b]) + cullR,
+        ))
       }
-      for (let e = 0; e < ea.length; e++) {
-        d = smin(d, sdSegment(px, py, cx[ea[e]], cy[ea[e]], cx[eb[e]], cy[eb[e]], er[e]), SMINK)
-      }
-      field[i] = d
     }
+    return { m, rects: g.rects, cx, cy, pbox, ea, eb, er, ebox }
+  })
 
-    // Two DISTINCT shelves, each its own fill:
-    // 1) outer annulus first, 2) carve the inner disk out of it (so it isn't
-    //    behind the inner shelf), 3) inner disk on top — brighter.
-    fillShelf(ctx, field, cols, rows, g.color, REACH, INTENSITY * OUTER_LEVEL)
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.globalAlpha = 1
-    ctx.fillStyle = '#000'
-    fillBelow(ctx, field, cols, rows, innerRing)
-    ctx.globalCompositeOperation = 'source-over'
-    fillShelf(ctx, field, cols, rows, g.color, innerRing, INTENSITY)
+  const combined = ensureCombined(N)
+  const outerA = INTENSITY * OUTER_LEVEL
+  const innerExtra = (INTENSITY - outerA) / (1 - outerA)
+  const line = 'rgb(206,217,236)'
 
-    // Crisp thin terrace edges — inner ring brighter, outer ring fades out.
-    const line = mixWhite(hexToRgb(g.color), 0.35)
-    strokeContour(ctx, field, cols, rows, innerRing, line, OUTLINE_ALPHA, OUTLINE_WIDTH)
-    strokeContour(ctx, field, cols, rows, REACH, line, OUTLINE_ALPHA * 0.5, OUTLINE_WIDTH)
+  const multi = G > 1
+  const bw = box.gx1 - box.gx0 + 1, bh = box.gy1 - box.gy0 + 1
+  const octx = multi ? offscreen(bw, bh) : null
+  const img = octx ? octx.createImageData(bw, bh) : null
+  const data = img ? img.data : null
+  const invK = 1 / COLOR_BLEND
+  const cutoff = 4 * COLOR_BLEND // beyond this gap the further worktree's weight is ~0
+  const dgs = new Float64Array(G)
+  const inBox = (b: Box, gx: number, gy: number) => gx >= b.gx0 && gx <= b.gx1 && gy >= b.gy0 && gy <= b.gy1
+
+  // --- Fused pass: activity cull → warp → per-group field → colour -----------
+  for (let gy = box.gy0; gy <= box.gy1; gy++) {
+    for (let gx = box.gx0; gx <= box.gx1; gx++) {
+      const i = gy * cols + gx
+
+      // Active = inside some primitive's reach box (cheap, no warp/sqrt).
+      let active = false
+      for (let gi = 0; gi < G && !active; gi++) {
+        const gd = gdata[gi]
+        for (let r = 0; r < gd.m; r++) if (inBox(gd.pbox[r], gx, gy)) { active = true; break }
+        if (active) break
+        for (let e = 0; e < gd.ea.length; e++) if (inBox(gd.ebox[e], gx, gy)) { active = true; break }
+      }
+      if (!active) {
+        combined[i] = 1e9
+        if (data) data[((gy - box.gy0) * bw + (gx - box.gx0)) * 4 + 3] = 0
+        continue
+      }
+
+      const wx = (gx * cell - offsetX) / zoom
+      const wy = (gy * cell - offsetY) / zoom
+      const px = wx + (fbm(wx * WARP_FREQ, wy * WARP_FREQ) - 0.5) * 2 * WARP_AMP
+      const py = wy + (fbm(wx * WARP_FREQ + 31.4, wy * WARP_FREQ) - 0.5) * 2 * WARP_AMP
+
+      let mn = 1e9, mn2 = 1e9, arg = 0
+      for (let gi = 0; gi < G; gi++) {
+        const gd = gdata[gi]
+        let dg = 1e9
+        for (let r = 0; r < gd.m; r++) {
+          if (!inBox(gd.pbox[r], gx, gy)) continue
+          const rc = gd.rects[r]
+          dg = smin(dg, sdRoundRect(px, py, rc.x, rc.y, rc.w, rc.h, CORNER), SMINK)
+        }
+        for (let e = 0; e < gd.ea.length; e++) {
+          if (!inBox(gd.ebox[e], gx, gy)) continue
+          const a = gd.ea[e], b = gd.eb[e]
+          dg = smin(dg, sdSegment(px, py, gd.cx[a], gd.cy[a], gd.cx[b], gd.cy[b], gd.er[e]), SMINK)
+        }
+        dgs[gi] = dg
+        if (dg < mn) { mn2 = mn; mn = dg; arg = gi } else if (dg < mn2) { mn2 = dg }
+      }
+      combined[i] = mn
+
+      if (data) {
+        const o = ((gy - box.gy0) * bw + (gx - box.gx0)) * 4
+        if (mn >= outerReach) { data[o + 3] = 0; continue }
+        let rr: number, gg: number, bb: number
+        if (mn2 - mn > cutoff) {
+          const c = rgbs[arg]; rr = c[0]; gg = c[1]; bb = c[2]
+        } else {
+          let ws = 0; rr = 0; gg = 0; bb = 0
+          for (let gi = 0; gi < G; gi++) {
+            const wgt = Math.exp(-(dgs[gi] - mn) * invK)
+            ws += wgt; rr += wgt * rgbs[gi][0]; gg += wgt * rgbs[gi][1]; bb += wgt * rgbs[gi][2]
+          }
+          rr /= ws; gg /= ws; bb /= ws
+        }
+        data[o] = rr; data[o + 1] = gg; data[o + 2] = bb; data[o + 3] = 255
+      }
+    }
   }
 
-  // Punch the panels out so the territory reads as a halo BEHIND opaque panels,
-  // never tinting their bodies — robust to panel chrome opacity and DOM
-  // stacking. Panels are clean screen-space rects (world rect × zoom + offset).
+  fillEnclosed(combined, cols, outerReach, (innerRing + outerReach) / 2, box)
+
+  // --- Draw two crisp terrace shelves ----------------------------------------
+  if (octx && data) {
+    octx.putImageData(img!, 0, 0)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    const dxp = box.gx0 * cell - cell / 2, dyp = box.gy0 * cell - cell / 2
+    const dw = bw * cell, dh = bh * cell
+    const drawColor = () => ctx.drawImage(_oc!, 0, 0, bw, bh, dxp, dyp, dw, dh)
+    ctx.save(); clipBelow(ctx, combined, cols, outerReach, box, cell); ctx.globalAlpha = outerA; drawColor(); ctx.restore()
+    ctx.save(); clipBelow(ctx, combined, cols, innerRing, box, cell); ctx.globalAlpha = innerExtra; drawColor(); ctx.restore()
+  } else {
+    // Single worktree → solid colour fills (no per-pixel blend needed).
+    ctx.fillStyle = groups[0].color
+    ctx.save(); clipBelow(ctx, combined, cols, outerReach, box, cell); ctx.globalAlpha = outerA; ctx.fillRect(0, 0, width, height); ctx.restore()
+    ctx.save(); clipBelow(ctx, combined, cols, innerRing, box, cell); ctx.globalAlpha = innerExtra; ctx.fillRect(0, 0, width, height); ctx.restore()
+  }
+  ctx.globalAlpha = 1
+
+  strokeContour(ctx, combined, cols, innerRing, line, OUTLINE_ALPHA, OUTLINE_WIDTH, box, cell)
+  strokeContour(ctx, combined, cols, outerReach, line, OUTLINE_ALPHA * 0.5, OUTLINE_WIDTH, box, cell)
+
+  // Punch the panels out so the territory reads as a halo BEHIND opaque panels.
   ctx.globalCompositeOperation = 'destination-out'
   ctx.fillStyle = '#000'
   ctx.globalAlpha = 1
