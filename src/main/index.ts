@@ -1739,6 +1739,15 @@ app.on('before-quit', (event) => {
   // foreground process (dev server, editor, agent, …). Mirrors the per-terminal
   // close confirmation. Deferred async, so we prevent the quit and re-trigger it
   // once the user confirms.
+  //
+  // Exception: an update install in flight. The user already explicitly chose
+  // "Update & Restart"; quitAndInstall() has triggered this quit so it can
+  // relaunch the new version. Surfacing the running-terminal dialog here would
+  // intercept that quit (event.preventDefault) and the app would never restart.
+  // will-quit is already update-aware (isInstallingUpdate guard); mirror that.
+  if (!quitConfirmed && isInstallingUpdate()) {
+    quitConfirmed = true
+  }
   if (!quitConfirmed) {
     const running = getRunningTerminals()
     if (running.length > 0) {
