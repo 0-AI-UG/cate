@@ -4,6 +4,7 @@ import { FileExplorer } from './FileExplorer'
 import { SearchView } from './SearchView'
 import { SourceControlView } from './SourceControlView'
 import { ParallelWorkTab } from './ParallelWorkTab'
+import { UpdateButton } from './UpdateButton'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
@@ -324,6 +325,13 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
           >
             <Gear size={16} className="pointer-events-none" />
           </button>
+        </div>
+      )}
+      {/* Update affordance — pinned to the bottom of the right activity bar.
+          Renders nothing unless an update is actionable. */}
+      {side === 'right' && (
+        <div className="mt-auto flex flex-col items-center pb-2 w-full">
+          <UpdateButton />
         </div>
       )}
     </div>
