@@ -77,14 +77,12 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       setPanels(payload.panels)
       setWsId(payload.workspaceId)
 
-      // Restore dock state
+      // Restore dock state. Panel locations are derived from the zones tree on
+      // demand (dockStore.getPanelLocation), so there's nothing to rebuild.
       dockStore.getState().restoreSnapshot({
         zones: payload.dockState,
         locations: {},
       })
-
-      // Rebuild panel locations from the dock state
-      rebuildLocations(dockStore, payload.panels)
       setReady(true)
     })
 
@@ -436,38 +434,3 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   )
 }
 
-// =============================================================================
-// Helpers
-// =============================================================================
-
-
-/** Rebuild panel locations in the dock store from the dock state */
-function rebuildLocations(
-  dockStore: ReturnType<typeof createDockStore>,
-  panels: Record<string, PanelState>,
-): void {
-  const state = dockStore.getState()
-  for (const panelId of Object.keys(panels)) {
-    // Find the stack that contains this panel
-    for (const zone of ['center', 'left', 'right', 'bottom'] as const) {
-      const layout = state.zones[zone].layout
-      if (!layout) continue
-      const stackId = findStackForPanel(layout, panelId)
-      if (stackId) {
-        state.setPanelLocation(panelId, { type: 'dock', zone, stackId })
-        break
-      }
-    }
-  }
-}
-
-function findStackForPanel(node: import('../../shared/types').DockLayoutNode, panelId: string): string | null {
-  if (node.type === 'tabs') {
-    return node.panelIds.includes(panelId) ? node.id : null
-  }
-  for (const child of node.children) {
-    const found = findStackForPanel(child, panelId)
-    if (found) return found
-  }
-  return null
-}
