@@ -31,7 +31,7 @@
 // (e.g. a Mac) for local end-to-end testing before CI exists.
 // =============================================================================
 
-import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
@@ -119,7 +119,15 @@ if (missing.length) throw new Error(`[companion] incomplete stage for ${targetAr
 // com.apple.provenance xattr that otherwise makes GNU tar warn on extraction
 // on the Ubuntu server). Supported by both bsdtar and GNU tar. Basename + relative
 // -C (cwd = dist) keep Windows drive letters out of tar's path args — see `fwd`.
-execFileSync('tar', ['--no-xattrs', '-czf', path.basename(outTar), '-C', fwd(dist, stageDir), '.'], { stdio: 'inherit', cwd: dist })
+//
+// Write to a temp file then atomically rename into place. The app extracts this
+// exact tarball (dist-companion/) for the LOCAL companion, so a rebuild while
+// Cate is running must never expose a half-written archive — a reader that
+// caught `tar -czf` mid-stream would hit "truncated gzip input" and cache a
+// corrupt install. rename(2) within the same dir is atomic.
+const tmpTar = `${path.basename(outTar)}.partial`
+execFileSync('tar', ['--no-xattrs', '-czf', tmpTar, '-C', fwd(dist, stageDir), '.'], { stdio: 'inherit', cwd: dist })
+renameSync(path.join(dist, tmpTar), outTar)
 console.log(`[companion] wrote ${path.relative(repoRoot, outTar)}`)
 
 // --------------------------------------------------------------------------
@@ -239,13 +247,27 @@ async function resolveWinNodePtyPrebuild() {
 async function resolveNativeBinaries() {
   const hostTarget = `${plat(process.platform)}-${process.arch}`
 
-  // Native build: the installed node-pty was compiled for the host.
+  // Native build: use the installed node-pty's host binary. Prefer the host's
+  // own compiled output (build/Release, e.g. a from-source `node-gyp rebuild`)
+  // and fall back to the prebuild node-pty ships for this platform. Both are
+  // N-API, so the prebuild runs fine under the daemon's bundled Node — and a
+  // prebuild-only install (e.g. `bun install`, which skips the from-source
+  // path) has no build/Release. Mirrors resolveWinNodePtyPrebuild's fallback.
   if (targetArg === hostTarget) {
-    const rel = path.join(repoRoot, 'node_modules', 'node-pty', 'build', 'Release')
-    const ptyNode = path.join(rel, 'pty.node')
-    if (!existsSync(ptyNode)) throw new Error(`node-pty build/Release/pty.node missing for ${hostTarget}`)
-    const spawnHelper = path.join(rel, 'spawn-helper')
-    return { ptyNode, spawnHelper: existsSync(spawnHelper) ? spawnHelper : null }
+    const ptyRoot = path.join(repoRoot, 'node_modules', 'node-pty')
+    for (const dir of [
+      path.join(ptyRoot, 'build', 'Release'),
+      path.join(ptyRoot, 'prebuilds', `${process.platform}-${process.arch}`),
+    ]) {
+      const ptyNode = path.join(dir, 'pty.node')
+      if (!existsSync(ptyNode)) continue
+      const spawnHelper = path.join(dir, 'spawn-helper')
+      return { ptyNode, spawnHelper: existsSync(spawnHelper) ? spawnHelper : null }
+    }
+    throw new Error(
+      `node-pty pty.node missing for ${hostTarget} (checked build/Release and ` +
+        `prebuilds/${process.platform}-${process.arch}). Run \`bun install\` / \`npm install\` first.`,
+    )
   }
 
   // Cross build of the linux binary via a linux container (QEMU for arm64).

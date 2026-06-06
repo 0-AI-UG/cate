@@ -3,19 +3,39 @@
 // =============================================================================
 
 import { BrowserWindow, Menu, shell, app } from 'electron'
-import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, MENU_LOAD_LAYOUT, BROWSER_SHORTCUT } from '../shared/ipc-channels'
+import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, MENU_LOAD_LAYOUT, MENU_CREATE_PANEL, BROWSER_SHORTCUT } from '../shared/ipc-channels'
 import type { MenuActionId, BrowserShortcutAction } from '../shared/types'
 import { checkForUpdatesManually } from './auto-updater'
-import { listPanelWindows, getWindow, getWindowType } from './windowRegistry'
+import { listPanelWindows, getWindow, getWindowType, getActiveMainWindow, getWindowWorkspaceId, focusWindow } from './windowRegistry'
+
+/** Panel-creation actions. These add a panel to the workspace's canvas, so they
+ *  have nowhere to go in a detached dock/panel window (no canvas there) —
+ *  `dispatch` re-routes them to the main window. */
+const PANEL_CREATE_ACTIONS = new Set<MenuActionId>(['newTerminal', 'newEditor', 'newBrowser', 'newFile'])
 
 /** Dispatch a renderer-side menu action to the focused window. Items in the
  *  template use this as their click handler — the renderer's useShortcuts hook
  *  listens for MENU_TRIGGER_ACTION and runs the matching action through the
- *  same code path as the keyboard shortcut. */
+ *  same code path as the keyboard shortcut.
+ *
+ *  Exception: a panel-creation action fired while a detached dock/panel window
+ *  is focused has nowhere to put the new panel. Route it to the workspace's
+ *  main window (which owns the canvas) and bring that window forward so the new
+ *  panel is visible. Without this, New Terminal/Editor/Browser silently do
+ *  nothing whenever focus is outside a main window. */
 function dispatch(action: MenuActionId): () => void {
   return (): void => {
     const win = BrowserWindow.getFocusedWindow()
-    if (win) win.webContents.send(MENU_TRIGGER_ACTION, action)
+    if (!win) return
+    if (PANEL_CREATE_ACTIONS.has(action) && getWindowType(win.id) !== 'main') {
+      const mainWin = getActiveMainWindow()
+      if (mainWin) {
+        mainWin.webContents.send(MENU_CREATE_PANEL, { action, workspaceId: getWindowWorkspaceId(win.id) })
+        focusWindow(mainWin)
+        return
+      }
+    }
+    win.webContents.send(MENU_TRIGGER_ACTION, action)
   }
 }
 

@@ -57,6 +57,15 @@ cpSync(piSrc, stage, {
     return rel !== 'docs' && rel !== 'examples'
   },
 })
+// Stage pi's runtime dependency closure. pi's own node_modules only holds deps
+// the installer chose to nest; a hoisting package manager (bun, and npm when
+// there's no version conflict) lifts the rest to the ROOT node_modules. Copying
+// just pi's nested node_modules therefore misses hoisted deps — e.g. `undici`,
+// which pi imports as a bare external at runtime (dist/core/http-dispatcher).
+// Resolve each declared dependency from wherever Node would find it (nested,
+// then up to the root) and copy it in, recursing through its own deps. Skip the
+// pruned native/TUI-only packages so they (and their subtrees) never get pulled.
+stageDepClosure(piSrc, stage)
 for (const dep of PRUNE_DEPS) {
   rmSync(path.join(stage, 'node_modules', dep), { recursive: true, force: true })
 }
@@ -100,6 +109,61 @@ execFileSync('tar', ['--no-xattrs', '-czf', path.basename(outTar), '-C', fwd(dis
 console.log(`[pi] wrote ${path.relative(repoRoot, outTar)} (staged ${stagedSize} MB)`)
 
 // --------------------------------------------------------------------------
+
+/** Resolve a package's directory the way Node would for `require(name)` from
+ *  `fromDir`: check fromDir/node_modules/name, then walk up the tree. Returns
+ *  null if not installed anywhere above fromDir. */
+function resolvePkgDir(name, fromDir) {
+  let dir = fromDir
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', name)
+    if (existsSync(path.join(candidate, 'package.json'))) return candidate
+    const parent = path.dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
+/** Copy the runtime dependency closure of the package at `pkgRoot` into
+ *  `stageRoot/node_modules`, flattened. Resolution walks up from each consumer
+ *  so it works whether deps are nested (npm-with-conflict) or hoisted to the
+ *  root (bun). Deduped by package name — fine for a hoisted single-version tree.
+ *  Native/TUI-only packages in PRUNE_DEPS are skipped along with their subtrees. */
+function stageDepClosure(pkgRoot, stageRoot) {
+  const isPruned = (name) => PRUNE_DEPS.some((p) => name === p || name.startsWith(`${p}/`))
+  const seen = new Set()
+  const missing = []
+  // Seed with the root package's direct dependencies.
+  const queue = Object.keys(readDeps(pkgRoot)).map((name) => ({ name, fromDir: pkgRoot }))
+  while (queue.length) {
+    const { name, fromDir } = queue.shift()
+    if (seen.has(name) || isPruned(name)) continue
+    seen.add(name)
+    const src = resolvePkgDir(name, fromDir)
+    if (!src) { missing.push(name); continue }
+    const dest = path.join(stageRoot, 'node_modules', name)
+    if (!existsSync(dest)) {
+      mkdirSync(path.dirname(dest), { recursive: true })
+      cpSync(src, dest, { recursive: true, dereference: true })
+    }
+    for (const dep of Object.keys(readDeps(src))) queue.push({ name: dep, fromDir: src })
+  }
+  console.log(`[pi] staged dependency closure (${seen.size - missing.length} packages)`)
+  if (missing.length) {
+    // Optional/peer deps absent from the install are expected (e.g. the pruned
+    // natives' optional peers); warn but don't fail — rpc mode doesn't load them.
+    console.warn(`[pi] ${missing.length} declared dep(s) not installed, skipped: ${missing.slice(0, 12).join(', ')}`)
+  }
+}
+
+/** A package's runtime `dependencies` map (empty object when none). */
+function readDeps(pkgDir) {
+  try {
+    return JSON.parse(readFileSync(path.join(pkgDir, 'package.json'), 'utf-8')).dependencies ?? {}
+  } catch {
+    return {}
+  }
+}
 
 /** Generate src/companion/piVersion.ts so client + daemon agree on which
  *  cate-pi tarball to pull (mirrors version.ts for the companion). */

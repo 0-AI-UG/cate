@@ -569,6 +569,14 @@ export type ShortcutAction =
  *  binding. */
 export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace' | 'manageLayouts'
 
+/** Payload for MENU_CREATE_PANEL — a panel-creation action routed to a main
+ *  window from a detached dock/panel window, plus the originating workspace so
+ *  the panel is created in (and the main window switches to) the right one. */
+export interface MenuCreatePanelPayload {
+  action: MenuActionId
+  workspaceId?: string
+}
+
 /** Browser-panel navigation actions. These are panel-scoped (handled by the
  *  focused BrowserPanel) rather than global shortcuts, so they don't collide
  *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
@@ -670,8 +678,10 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   undo: storedShortcut('z', { command: true }),
   redo: storedShortcut('z', { command: true, shift: true }),
   deleteNode: storedShortcut('Backspace', { command: true }),
-  toolSelect: storedShortcut('v'),
-  toolHand: storedShortcut('h'),
+  // Modifier combos (not bare V/H) so they switch tools even while typing in a
+  // terminal/editor — and ⌘⇧D avoids the macOS ⌘H "Hide Application" clash.
+  toolSelect: storedShortcut('s', { command: true, shift: true }),
+  toolHand: storedShortcut('d', { command: true, shift: true }),
   navigateUp: storedShortcut('↑', { command: true }),
   navigateDown: storedShortcut('↓', { command: true }),
   navigateLeft: storedShortcut('←', { command: true }),

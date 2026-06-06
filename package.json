@@ -23,8 +23,8 @@
   "scripts": {
     "postinstall": "bash scripts/patch-electron-name.sh",
     "predev": "bash scripts/patch-electron-name.sh",
+    "setup": "bun install && bun run companion:tarball",
     "dev": "electron-vite dev",
-    "dev:sentry": "SENTRY_DSN='https://any@analytics.cero-ai.com/1' electron-vite dev",
     "dev:dialog": "DEV_FORCE_DIALOG=1 electron-vite dev",
     "dev:firststart": "CATE_FRESH_USERDATA=1 electron-vite dev",
     "dev:update:major": "CATE_SIMULATE_UPDATE=major electron-vite dev",
@@ -35,22 +35,16 @@
     "build:companion": "node src/companion/build/esbuild.config.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
     "test": "vitest run",
-    "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:ci": "E2E_SKIP_PERF=1 playwright test",
-    "test:e2e:debug": "playwright test --debug",
     "test:smoke:electron": "node scripts/run-electron-smoke.mjs",
-    "preview": "electron-vite preview",
     "icons": "node scripts/generate-icons.js",
     "companion:tarball": "node scripts/build-companion-tarball.mjs",
     "pi:tarball": "node scripts/build-pi-tarball.mjs",
     "package": "node scripts/package.mjs",
     "package:mac": "node scripts/package.mjs --mac",
     "package:win": "node scripts/package.mjs --win",
-    "package:win:dir": "node scripts/package.mjs --win --dir -c.npmRebuild=false -c.win.signAndEditExecutable=false",
-    "package:win:unsigned": "node scripts/package.mjs --win -c.npmRebuild=false -c.win.signAndEditExecutable=false",
     "package:linux": "node scripts/package.mjs --linux"
   },
   "pnpm": {
@@ -61,6 +55,15 @@
       "esbuild"
     ]
   },
+  "trustedDependencies": [
+    "@google/genai",
+    "electron",
+    "esbuild",
+    "koffi",
+    "node-pty",
+    "protobufjs",
+    "sharp"
+  ],
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.75.4",
     "@earendil-works/pi-ai": "^0.75.5",

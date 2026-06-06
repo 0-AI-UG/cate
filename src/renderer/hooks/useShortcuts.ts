@@ -10,11 +10,9 @@ import { useAppStore, getActiveCanvasOps } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
+import { placementForActiveSurface } from '../lib/activeSurface'
 import { confirmDeleteRegion } from '../lib/confirmDeleteRegion'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
-
-// Single-key (no-modifier) tool shortcuts (V, H) — suppressed while typing.
-const TOOL_ACTIONS = new Set<ShortcutAction>(['toolSelect', 'toolHand'])
 
 // Cmd+Arrow panel navigation — moves the selection cursor between nodes.
 const NAVIGATE_ACTIONS = new Set<ShortcutAction>([
@@ -95,19 +93,22 @@ export function useShortcuts(): void {
 
       switch (action as ShortcutAction) {
         case 'newTerminal': {
+          const placement = placementForActiveSurface()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-          if (wsId) appStore().createTerminal(wsId)
+          if (wsId) appStore().createTerminal(wsId, undefined, undefined, placement)
           break
         }
         case 'newBrowser': {
+          const placement = placementForActiveSurface()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-          if (wsId) appStore().createBrowser(wsId)
+          if (wsId) appStore().createBrowser(wsId, undefined, undefined, placement)
           break
         }
         case 'newEditor':
         case 'newFile': {
+          const placement = placementForActiveSurface()
           const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-          if (wsId) appStore().createEditor(wsId)
+          if (wsId) appStore().createEditor(wsId, undefined, undefined, placement)
           break
         }
         case 'closePanel': {
@@ -238,6 +239,16 @@ export function useShortcuts(): void {
       runAction(action).catch(() => { /* noop — menu actions are best-effort */ })
     })
 
+    // A panel-creation shortcut fired while a detached dock/panel window was
+    // focused is re-routed here (the main window owns the canvas). Make the
+    // originating workspace active so the new panel is visible, then create it.
+    const unsubscribeCreatePanel = window.electronAPI.onMenuCreatePanel(({ action, workspaceId }) => {
+      if (workspaceId && appStore().getWorkspace(workspaceId) && appStore().selectedWorkspaceId !== workspaceId) {
+        void appStore().selectWorkspace(workspaceId)
+      }
+      runAction(action).catch(() => { /* noop */ })
+    })
+
     // Native "Layouts" menu → load a specific saved layout (replaces workspace).
     const unsubscribeLoadLayout = window.electronAPI.onMenuLoadLayout((name) => {
       import('../lib/layouts')
@@ -359,6 +370,29 @@ export function useShortcuts(): void {
         }
       }
 
+      // Enter — activate (focus) the selected-but-unfocused node. Cmd+Arrow
+      // navigation selects + centres a node without grabbing keyboard focus so
+      // jumps can be chained; Enter is the deliberate "step into this panel"
+      // gesture. Skipped while typing, in a terminal, or when a list/overlay
+      // owns the key, and only fires when exactly one node is selected and it
+      // isn't already focused.
+      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        if (terminalHasFocus || isTextSurfaceFocused()) return
+        if (isKeyNavFocused() || isSidebarKeyNavFocused()) return
+        const uiNow = useUIStore.getState()
+        if (uiNow.showCommandPalette || uiNow.showNodeSwitcher) return
+        const state = canvasStore()
+        if (state.selectedNodeIds.size === 1) {
+          const id = [...state.selectedNodeIds][0]
+          if (id !== state.focusedNodeId && state.nodes[id]) {
+            e.preventDefault()
+            e.stopPropagation()
+            canvasStore().focusNode(id)
+            return
+          }
+        }
+      }
+
       // --- Shortcut matching ---
       const action = shortcutStore().matchEvent(e)
       if (!action) return
@@ -366,11 +400,10 @@ export function useShortcuts(): void {
       // When panel switcher is open, only handle the toggle shortcut
       const ui = useUIStore.getState()
 
-      // Single-key tool shortcuts (V, H) must not fire while typing in a
-      // terminal/editor.
-      if (TOOL_ACTIONS.has(action)) {
-        if (terminalHasFocus || isTextSurfaceFocused()) return
-      }
+      // Tool shortcuts (Select/Hand) are ⌘⇧ combos, so they intentionally fire
+      // even while a terminal/editor is focused — we intercept and preventDefault
+      // before the surface sees the chord. No typing-suppression needed: a bare
+      // letter is never consumed for tool switching.
 
       // Cmd+Arrow navigation / Shift+Arrow panning.
       if (NAVIGATE_ACTIONS.has(action) || PAN_ACTIONS.has(action)) {
@@ -487,6 +520,7 @@ export function useShortcuts(): void {
       document.removeEventListener('keyup', handleKeyUp, { capture: true })
       window.removeEventListener('blur', handleBlur)
       unsubscribeMenu()
+      unsubscribeCreatePanel()
       unsubscribeLoadLayout()
     }
   }, [canvasStoreApi])

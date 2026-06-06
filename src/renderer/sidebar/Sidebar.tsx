@@ -133,18 +133,6 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
 
-  // Publish current total sidebar width to a CSS variable so the dock tab bar
-  // can inset itself and keep the tab pills next to (not under) the sidebar.
-  const totalWidth =
-    isEmpty && !dragRevealed ? 0 : isExpanded ? BAR_WIDTH + width : BAR_WIDTH
-  useEffect(() => {
-    const cssVar = side === 'left' ? '--cate-left-sidebar-width' : '--cate-right-sidebar-width'
-    document.documentElement.style.setProperty(cssVar, `${totalWidth}px`)
-    return () => {
-      document.documentElement.style.setProperty(cssVar, '0px')
-    }
-  }, [side, totalWidth])
-
   // Drop indicator: index where the drop would land. Mirrored in a ref so the
   // drop handler reads the latest value (state updates from dragOver may not
   // have flushed by the time drop fires).

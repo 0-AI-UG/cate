@@ -52,7 +52,7 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm run test:unit
+        run: npm run test
 
       - name: Electron smoke test (macOS only)
         if: matrix.os == 'macos-latest'

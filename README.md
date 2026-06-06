@@ -72,29 +72,33 @@ Download a prebuilt release. Don't build from source for daily use.
 For contributors. Use the release above otherwise.
 
 **Prerequisites:**
-- [Node.js](https://nodejs.org/) 20 or 22 LTS (see `.nvmrc`). Node 23+ fails: `node-pty` has no prebuilds and native compilation breaks.
-- npm >= 9
-- Python 3 and a C++ compiler for `node-pty`:
-  - macOS: `xcode-select --install`
+- [Bun](https://bun.sh) — package manager and script runner.
+- [Node.js](https://nodejs.org/) 20 or 22 LTS (see `.nvmrc`) on your PATH. The build scripts run under it; the companion daemon bundles its own Node 22.
+- **Linux only:** `node-pty` ships prebuilt binaries for macOS and Windows, but not Linux, so it compiles from source there. Install Python 3 and a C++ toolchain:
   - Debian/Ubuntu: `sudo apt install build-essential python3`
   - Fedora/RHEL: `sudo dnf install @development-tools gcc-c++ make python3`
   - Arch: `sudo pacman -S base-devel python`
-  - Windows: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload
+
+Fresh clone — one command sets everything up (installs dependencies and builds the local companion daemon):
 
 ```bash
 git clone https://github.com/0-AI-UG/cate.git
 cd cate
-npm install
-
-npm run dev          # dev server with hot reload
-npm run typecheck
-npm test             # unit tests (vitest)
-npm run test:e2e     # Playwright integration tests
-npm run build        # production build
-npm run package      # package for distribution (:mac, :win, :linux)
+bun run setup
 ```
 
-Packaged binaries land in `release/`.
+Then:
+
+```bash
+bun run dev          # dev server with hot reload
+bun run typecheck
+bun run test         # unit tests (vitest)
+bun run test:e2e     # Playwright integration tests
+bun run build        # production build
+bun run package      # package for distribution (:mac, :win, :linux)
+```
+
+Packaged binaries land in `release/`. The companion daemon is rebuilt by `bun run companion:tarball` (re-run it after changing anything under `src/companion/`).
 
 ## Architecture
 

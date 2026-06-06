@@ -20,6 +20,7 @@ import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import { createCanvasOps } from '../lib/canvas/canvasBridge'
+import { setActiveSurface } from '../lib/activeSurface'
 import { createDockStore, type DockStore } from '../stores/dockStore'
 import {
   registerNodeDockStore,
@@ -212,6 +213,10 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
 
   const handlePointerDown = useCallback(() => {
     setActiveCanvasPanelId(panelId)
+    // Bubble phase: runs AFTER the containing dock stack's capture handler, so
+    // clicking a canvas docked in the center zone resolves to 'canvas', not the
+    // stack it lives in. Keyboard creates then land on the canvas, as before.
+    setActiveSurface({ kind: 'canvas', canvasPanelId: panelId })
   }, [panelId])
 
   const zoomLevel = useStore(store, (s) => s.zoomLevel)
@@ -270,10 +275,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
     store.getState().animateZoomTo(zoomLevel - 0.1)
   }, [zoomLevel, store])
 
-  const onZoomToFit = useCallback(() => {
-    store.getState().zoomToFit()
-  }, [store])
-
   // Compute the current canvas-space center of the viewport so newly created
   // items appear where the user is currently looking.
   const getViewCenter = useCallback((): Point => {
@@ -298,10 +299,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   const onNewRegion = useCallback(() => {
     store.getState().addRegion('Region', getViewCenter(), { width: 400, height: 300 })
   }, [store, getViewCenter])
-
-  const onAutoLayout = useCallback(() => {
-    store.getState().autoLayout()
-  }, [store])
 
   return (
     <CanvasStoreProvider store={store}>
@@ -346,8 +343,6 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
             onNewAgent={onNewAgent}
             onNewCanvas={onNewCanvas}
             onNewRegion={onNewRegion}
-            onAutoLayout={onAutoLayout}
-            onZoomToFit={onZoomToFit}
             onZoomIn={onZoomIn}
             onZoomOut={onZoomOut}
           />

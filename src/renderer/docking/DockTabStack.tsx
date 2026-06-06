@@ -13,6 +13,7 @@ import { DockTabBar } from './DockTabBar'
 import { DockTabContextMenu, SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
 import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
+import { setActiveSurface } from '../lib/activeSurface'
 import { useDockTabDrag } from './useDockTabDrag'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 
@@ -43,14 +44,12 @@ interface DockTabStackProps {
   localOnly?: boolean
   /** When true, render a slimmer tab bar (used by canvas-node mini-docks). */
   compact?: boolean
-  leftEdge?: boolean
-  rightEdge?: boolean
   /** When true, this stack's drop-zone returns a null rect so it can't be
    *  hit-tested as a target. */
   dropDisabled?: boolean
 }
 
-export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact, leftEdge, rightEdge, dropDisabled }: DockTabStackProps) {
+export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact, dropDisabled }: DockTabStackProps) {
   const dockStoreApi = useDockStoreApi()
   const stackRef = useRef<HTMLDivElement>(null)
 
@@ -209,7 +208,18 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
   }, [showTabPlaceholder, dragSource, stack.id, stack.panelIds])
 
   return (
-    <div ref={stackRef} className="flex flex-col h-full min-h-0 relative">
+    <div
+      ref={stackRef}
+      className="flex flex-col h-full min-h-0 relative"
+      // Mark this stack as the active surface on any pointer-down inside it (tab
+      // bar OR content), so a panel-create shortcut lands here — even in a split
+      // and even when the click didn't land on a focusable element. Capture phase
+      // so a canvas docked in this stack can override on the bubble phase (see
+      // activeSurface). `localOnly` mini-docks (canvas nodes) opt out.
+      onPointerDownCapture={
+        localOnly ? undefined : () => setActiveSurface({ kind: 'dock', zone: zoneProp, stackId: stack.id })
+      }
+    >
       {/* Tab bar — VS Code style: dark strip with active tab merging into the
           content area below via a top accent border. */}
       <div
@@ -217,12 +227,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         style={{
           backgroundColor: 'var(--node-chrome-bg, var(--surface-1))',
           ...(onTabBarMouseDown ? { cursor: 'grab' } : null),
-          ...(zoneProp === 'center' && leftEdge
-            ? { marginLeft: 'var(--cate-left-sidebar-width, 0px)' }
-            : null),
-          ...(zoneProp === 'center' && rightEdge
-            ? { marginRight: 'var(--cate-right-sidebar-width, 0px)' }
-            : null),
         }}
         onContextMenu={onEmptyContextMenu}
         onMouseDown={(e) => {
@@ -314,17 +318,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       </div>
 
       {/* Active panel content */}
-      <div
-        className="flex-1 min-h-0 overflow-hidden"
-        style={{
-          ...(zoneProp === 'center' && leftEdge && activePanel?.type !== 'canvas'
-            ? { marginLeft: 'var(--cate-left-sidebar-width, 0px)' }
-            : null),
-          ...(zoneProp === 'center' && rightEdge && activePanel?.type !== 'canvas'
-            ? { marginRight: 'var(--cate-right-sidebar-width, 0px)' }
-            : null),
-        }}
-      >
+      <div className="flex-1 min-h-0 overflow-hidden">
         {activePanelId ? renderPanel(activePanelId) : (
           <div className="flex items-center justify-center h-full text-muted text-sm">
             No panel

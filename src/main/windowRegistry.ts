@@ -29,18 +29,62 @@ const panelWindowMeta = new Map<number, { panel: PanelState; workspaceId?: strin
 /** Dock window state — synced periodically from renderer for session persistence. */
 const dockWindowState = new Map<number, { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> }>()
 
+/** Workspace a window was opened for (known at creation for dock/panel windows). */
+const windowWorkspaceId = new Map<number, string>()
+
+/** The id of the most recently focused main window — the default target for
+ *  app-level actions (e.g. panel creation) routed from a detached window. */
+let lastFocusedMainWindowId: number | null = null
+
 /**
  * Register a BrowserWindow. Automatically unregisters on close.
  */
-export function registerWindow(win: BrowserWindow, type: CateWindowType = 'main'): void {
+export function registerWindow(win: BrowserWindow, type: CateWindowType = 'main', workspaceId?: string): void {
   windows.set(win.id, win)
   windowTypes.set(win.id, type)
+  if (workspaceId) windowWorkspaceId.set(win.id, workspaceId)
+  // Newest main window becomes the default target until another is focused.
+  if (type === 'main') lastFocusedMainWindowId = win.id
+  win.on('focus', () => {
+    if (windowTypes.get(win.id) === 'main') lastFocusedMainWindowId = win.id
+  })
   win.on('closed', () => {
     windows.delete(win.id)
     windowTypes.delete(win.id)
     panelWindowMeta.delete(win.id)
     dockWindowState.delete(win.id)
+    windowWorkspaceId.delete(win.id)
+    if (lastFocusedMainWindowId === win.id) lastFocusedMainWindowId = null
   })
+}
+
+/**
+ * The main window that should receive app-level actions routed from a detached
+ * window — the last-focused one, falling back to any live main window.
+ */
+export function getActiveMainWindow(): BrowserWindow | undefined {
+  if (lastFocusedMainWindowId != null) {
+    const win = windows.get(lastFocusedMainWindowId)
+    if (win && !win.isDestroyed()) return win
+  }
+  for (const [id, type] of windowTypes.entries()) {
+    if (type !== 'main') continue
+    const win = windows.get(id)
+    if (win && !win.isDestroyed()) return win
+  }
+  return undefined
+}
+
+/**
+ * The workspace a window belongs to. Known at creation for dock/panel windows;
+ * falls back to the latest synced dock state / panel metadata.
+ */
+export function getWindowWorkspaceId(windowId: number): string | undefined {
+  const direct = windowWorkspaceId.get(windowId)
+  if (direct) return direct
+  const dock = dockWindowState.get(windowId)
+  if (dock?.workspaceId) return dock.workspaceId
+  return panelWindowMeta.get(windowId)?.workspaceId
 }
 
 /**

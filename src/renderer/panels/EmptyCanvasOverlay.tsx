@@ -56,13 +56,7 @@ export function EmptyCanvasOverlay({
   if (!visible) return null
 
   return (
-    <div
-      className="absolute top-0 bottom-0 flex items-center justify-center pointer-events-none z-10"
-      style={{
-        left: 'var(--cate-left-sidebar-width, 0px)',
-        right: 'var(--cate-right-sidebar-width, 0px)',
-      }}
-    >
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
       <div className="pointer-events-auto w-[360px] max-w-[90%] rounded-xl bg-surface-2/95 backdrop-blur-xl border border-strong shadow-[0_16px_48px_rgba(0,0,0,0.45)] overflow-hidden">
         <div className="flex items-center justify-between pl-3.5 pr-2 pt-2 pb-1">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
