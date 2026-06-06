@@ -389,19 +389,14 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
         // that anything underneath changes (a major sustained WindowServer cost
         // given the canvas/terminals behind it). A near-opaque tint reads as the
         // same frosted surface without the per-frame compositing.
-        backgroundColor:
-          side === 'right'
-            ? 'color-mix(in srgb, var(--surface-0) 96%, transparent)'
-            : 'color-mix(in srgb, var(--surface-1) 96%, transparent)',
+        backgroundColor: 'color-mix(in srgb, var(--surface-1) 96%, transparent)',
       }}
     >
       {/* Opaque top strip — matches the dock tab bar height (36px) so the
-          sidebar chrome lines up with the canvas tab bar. The right sidebar
-          uses a darker shade to stand out against the tab-bar chrome it sits
-          beside. */}
+          sidebar chrome lines up with the canvas tab bar. */}
       <div
         className="pointer-events-none absolute top-0 left-0 right-0 h-9"
-        style={{ backgroundColor: side === 'right' ? 'var(--surface-0)' : 'var(--surface-1)' }}
+        style={{ backgroundColor: 'var(--surface-1)' }}
       />
       {side === 'left' ? (
         <>
