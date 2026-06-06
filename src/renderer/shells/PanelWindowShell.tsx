@@ -16,7 +16,8 @@ import { useUIStateStore } from '../stores/uiStateStore'
 import { useUIStore } from '../stores/uiStore'
 import { SettingsWindow } from '../settings/SettingsWindow'
 import { applyTheme } from '../lib/themeManager'
-import { applyCanvasChildPanels } from '../lib/canvas/applyCanvasChildPanels'
+import { ensurePanelsInAppStore } from '../lib/canvas/applyCanvasChildPanels'
+import { useAppStore } from '../stores/appStore'
 
 interface PanelWindowShellProps {
   panelType?: string
@@ -25,8 +26,29 @@ interface PanelWindowShellProps {
 }
 
 export default function PanelWindowShell({ panelType, panelId, workspaceId }: PanelWindowShellProps) {
-  const [panel, setPanel] = useState<PanelState | null>(null)
+  // Effective in-window workspace id for appStore. Main may launch a panel
+  // window with no workspaceId, but ensurePanelsInAppStore no-ops on '' — which
+  // would leave the panel unpopulated and the window stuck on "Loading". Fall
+  // back to a stable process-local id used consistently for the appStore stub
+  // AND the panel component (so its field writes land in the same workspace).
+  // It stays in-window: panelWindowSyncMeta still reports the real prop
+  // workspaceId, which main preserves (it keeps the creation-time id when the
+  // caller passes none).
+  const wsId = workspaceId || 'detached-panel-window'
   const [receivedSnapshot, setReceivedSnapshot] = useState<PanelTransferSnapshot | null>(null)
+  // The transferred panel's id, captured when the snapshot arrives so we can
+  // select the live panel record from appStore by id.
+  const [livePanelId, setLivePanelId] = useState<string | null>(null)
+
+  // appStore is this window's single source of truth: the transferred panel is
+  // merged into a stub workspace, and the panel component writes its live
+  // url/isDirty/filePath edits straight there. We select FROM appStore so those
+  // edits are reflected here AND read by panelWindowSyncMeta on demand.
+  const panel = useAppStore((s) =>
+    livePanelId
+      ? s.workspaces.find((w) => w.id === wsId)?.panels[livePanelId] ?? null
+      : null,
+  )
 
   // Hydrate settings + apply theme so this window mirrors the main app's
   // appearance and settings (theme, minimap, canvas grid, etc.).
@@ -60,34 +82,34 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
         const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
         store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
-        applyCanvasChildPanels(workspaceId ?? '', childPanels ?? {})
+        ensurePanelsInAppStore(wsId, childPanels ?? {})
       }
 
-      setPanel(snapshot.panel)
+      ensurePanelsInAppStore(wsId, { [snapshot.panel.id]: snapshot.panel })
+      setLivePanelId(snapshot.panel.id)
       setReceivedSnapshot(snapshot)
     })
 
     return cleanup
   }, [])
 
-  // Editor Save-As inside this detached panel window updates appStore in the
-  // renderer, but our local `panel` state — and the main-process window
-  // registry meta the session snapshot reads from — are both independent.
-  // Mirror filePath/title/isDirty here AND push the snapshot to main so the
-  // saved scratch buffer is treated as a real file on restart.
+  // Editor Save-As inside this detached panel window already wrote the new
+  // filePath/title and cleared isDirty straight into appStore (EditorPanel
+  // calls updatePanelFilePath / setPanelDirty), which IS our source of truth.
+  // We only push the fresh panel record to main so its window-registry meta —
+  // which the session snapshot reads from — updates immediately rather than
+  // waiting for the next transfer; otherwise the saved scratch buffer would be
+  // restored as Untitled.
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ panelId: string; filePath: string; title: string }>
       const detail = ce.detail
       if (!detail?.panelId) return
-      setPanel((prev) => {
-        if (!prev || prev.id !== detail.panelId) return prev
-        const next = { ...prev, filePath: detail.filePath, title: detail.title, isDirty: false }
-        // Fire-and-forget — failure here only delays the meta update to
-        // the next transfer, not data loss (the file itself is on disk).
-        window.electronAPI.panelWindowSyncMeta?.({ panel: next, workspaceId }).catch(() => {})
-        return next
-      })
+      const current = useAppStore.getState().workspaces.find((w) => w.id === wsId)?.panels[detail.panelId]
+      if (!current) return
+      // Fire-and-forget — failure here only delays the meta update to the next
+      // transfer, not data loss (the file itself is on disk).
+      window.electronAPI.panelWindowSyncMeta?.({ panel: current, workspaceId }).catch(() => {})
     }
     window.addEventListener('editor:panel-saved-as', handler)
     return () => window.removeEventListener('editor:panel-saved-as', handler)
@@ -219,7 +241,7 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
       {/* Panel content */}
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         <Suspense fallback={<div className="w-full h-full bg-surface-4 flex items-center justify-center text-muted text-sm">Loading...</div>}>
-          <PanelContent panel={displayPanel} workspaceId={workspaceId ?? ''} />
+          <PanelContent panel={displayPanel} workspaceId={wsId} />
         </Suspense>
       </div>
 

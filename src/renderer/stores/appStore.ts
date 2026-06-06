@@ -269,6 +269,7 @@ interface AppStoreActions {
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
+  removePanelRecord: (workspaceId: string, panelId: string) => void
 
   // Helpers
   getWorkspace: (id: string) => WorkspaceState | undefined
@@ -915,6 +916,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ? { ...ws, panels: { ...ws.panels, [panel.id]: panel } }
           : ws,
       ),
+    }))
+  },
+
+  // Remove ONLY the panels[panelId] record from a workspace (mirror of
+  // addPanel). Unlike removePanel, this does NOT touch dock/canvas stores or
+  // active-panel tracking — detached shells own their own dock store and undock
+  // there directly, so the full removePanel would target the wrong (workspace)
+  // dock registry and log spurious failures.
+  removePanelRecord(workspaceId, panelId) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        if (!(panelId in ws.panels)) return ws
+        const { [panelId]: _removed, ...remainingPanels } = ws.panels
+        return { ...ws, panels: remainingPanels }
+      }),
     }))
   },
 

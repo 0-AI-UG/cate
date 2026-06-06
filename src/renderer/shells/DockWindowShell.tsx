@@ -14,7 +14,8 @@ import { DragOverlay, setupCrossWindowDragListeners } from '../drag'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { terminalRestoreData } from '../lib/workspace/session'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
-import { applyCanvasChildPanels } from '../lib/canvas/applyCanvasChildPanels'
+import { ensurePanelsInAppStore } from '../lib/canvas/applyCanvasChildPanels'
+import { useAppStore } from '../stores/appStore'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { isDockEmpty } from './dockEmpty'
@@ -32,24 +33,29 @@ interface DockWindowShellProps {
   workspaceId?: string
 }
 
+// Stable empty map so the appStore selector returns the same reference while a
+// workspace is absent — avoids re-render churn and effect re-runs from a fresh
+// `{}` each render.
+const EMPTY: Record<string, PanelState> = {}
+
 export default function DockWindowShell({ workspaceId: initialWorkspaceId }: DockWindowShellProps) {
-  const [panels, setPanels] = useState<Record<string, PanelState>>({})
-  // panelsRef shadows `panels` synchronously so callers that need to push
-  // metadata to main immediately (e.g. an editor:panel-saved-as handler)
-  // can read the freshly-computed map BEFORE React commits the state and
-  // re-runs the periodic-sync effect that would otherwise refresh
-  // syncNowRef's closure.
-  const panelsRef = useRef<Record<string, PanelState>>({})
   const [wsId, setWsId] = useState(initialWorkspaceId ?? '')
   const [ready, setReady] = useState(false)
   const dockStore = useMemo(() => createDockStore(), [])
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hadPanelsRef = useRef(false)
 
-  // Keep panelsRef in lock-step with the React state for the common path —
-  // any synchronous updater that needs to ship its own new map updates the
-  // ref inside its callback so the next syncNow can see it.
-  panelsRef.current = panels
+  // The detached window's own appStore is the single in-window source of truth
+  // for panels: transferred panels are merged into a stub workspace (see
+  // ensurePanelsInAppStore), and panel components write their live url/isDirty/
+  // filePath edits straight into it. We render FROM this selector rather than a
+  // local React copy, so those live edits show up here AND in session capture.
+  const panels = useAppStore((s) => s.workspaces.find((w) => w.id === wsId)?.panels ?? EMPTY)
+
+  // wsId mirror so syncNow (and other callbacks) can read the current id
+  // without re-closing over stale state.
+  const wsIdRef = useRef(wsId)
+  wsIdRef.current = wsId
 
   // Hydrate settings + apply theme so the detached window mirrors the main
   // app's appearance (theme, minimap, canvas grid, etc.). Without this the
@@ -74,8 +80,14 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // Listen for DOCK_WINDOW_INIT from main process
   useEffect(() => {
     const cleanup = window.electronAPI.onDockWindowInit((payload: DockWindowInitPayload) => {
-      setPanels(payload.panels)
-      setWsId(payload.workspaceId)
+      // Main may create a dock window with an empty workspaceId (index.ts uses
+      // `workspaceId ?? ''`). Fall back to a stable process-local id so the
+      // appStore stub is actually created — otherwise ensurePanelsInAppStore
+      // no-ops on '' and the window renders blank. The id is internal: it's
+      // never sent back to main (dockWindowSyncState carries only zones/panels).
+      const effectiveWs = payload.workspaceId || 'detached-dock-window'
+      ensurePanelsInAppStore(effectiveWs, payload.panels)
+      setWsId(effectiveWs)
 
       // Restore dock state. Panel locations are derived from the zones tree on
       // demand (dockStore.getPanelLocation), so there's nothing to rebuild.
@@ -89,32 +101,15 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     return cleanup
   }, [dockStore])
 
-  // Editor Save-As inside this window updates the global appStore in the
-  // detached renderer, but this shell maintains its own local `panels`
-  // map (the source of truth for periodic session sync and close prompts).
-  // Mirror the change so a saved scratch buffer becomes a real file in the
-  // session record instead of being restored as Untitled on next launch.
+  // Editor Save-As inside this window already wrote the new filePath/title and
+  // cleared isDirty straight into appStore (EditorPanel calls updatePanelFilePath
+  // / setPanelDirty), which IS our source of truth — no local mirror needed.
+  // We only force an immediate sync so a quit before the next 5s tick still
+  // persists the saved file instead of a stale Untitled scratch buffer.
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ panelId: string; filePath: string; title: string }>
-      const { panelId, filePath, title } = ce.detail || ({} as never)
-      if (!panelId) return
-      // Mutate panelsRef synchronously alongside the React state update so
-      // syncNow reads the post-Save-As snapshot regardless of whether the
-      // periodic-sync effect has re-run yet. Without this, a setTimeout-
-      // driven sync could still ship the pre-save map because React's
-      // commit-then-effect cycle had not yet refreshed syncNowRef.
-      setPanels((prev) => {
-        const p = prev[panelId]
-        if (!p) return prev
-        const updated = { ...p, filePath, title, isDirty: false }
-        const next = { ...prev, [panelId]: updated }
-        panelsRef.current = next
-        return next
-      })
-      // Now ship the new state to main. Without this, a quit before the
-      // next 5s tick would persist the panel as untitled and a restart
-      // would restore a stale scratch buffer instead of the saved file.
+      if (!ce.detail?.panelId) return
       syncNowRef.current()
     }
     window.addEventListener('editor:panel-saved-as', handler)
@@ -136,23 +131,17 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // Canvas panel: hydrate the per-panel canvas store BEFORE rendering, so
       // child nodes/regions are present on first paint. Without this the new
       // window mounts an empty canvas and writes that empty state back to
-      // session persistence on the next sync. Also seed both local `panels`
-      // and useAppStore with the child PanelState records so the canvas's
-      // child nodes resolve to their real types/titles instead of "Panel".
+      // session persistence on the next sync. Also seed useAppStore with the
+      // child PanelState records so the canvas's child nodes resolve to their
+      // real types/titles instead of "Panel".
       if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
         const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
         store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
-        applyCanvasChildPanels(wsId, childPanels ?? {})
-        if (childPanels) {
-          setPanels((prev) => ({ ...prev, ...childPanels }))
-        }
+        ensurePanelsInAppStore(wsId, childPanels ?? {})
       }
 
-      setPanels((prev) => ({
-        ...prev,
-        [snapshot.panel.id]: snapshot.panel,
-      }))
+      ensurePanelsInAppStore(wsId, { [snapshot.panel.id]: snapshot.panel })
     })
 
     return cleanup
@@ -175,16 +164,10 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
         const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
         const { nodes, regions, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
         store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel, regions)
-        applyCanvasChildPanels(wsId, childPanels ?? {})
-        if (childPanels) {
-          setPanels((prev) => ({ ...prev, ...childPanels }))
-        }
+        ensurePanelsInAppStore(wsId, childPanels ?? {})
       }
 
-      setPanels((prev) => ({
-        ...prev,
-        [snapshot.panel.id]: snapshot.panel,
-      }))
+      ensurePanelsInAppStore(wsId, { [snapshot.panel.id]: snapshot.panel })
 
       if (target.kind === 'dock') {
         const dockTarget = target.target
@@ -211,10 +194,12 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   const syncNowRef = useRef<() => void>(() => {})
   useEffect(() => {
     const syncNow = () => {
-      // Read panels from the ref, not the closure: callers that mutate the
-      // map (e.g. the Save-As handler) update panelsRef synchronously and
-      // then invoke syncNow, expecting the freshly-written entries.
-      const currentPanels = panelsRef.current
+      // Read panels straight from appStore at call time (not a closed-over
+      // value) so the freshest live edits — url, isDirty, filePath written by
+      // panel components — are always captured. wsId is read via a ref so this
+      // closure never goes stale even though the effect doesn't depend on it.
+      const currentPanels =
+        useAppStore.getState().workspaces.find((w) => w.id === wsIdRef.current)?.panels ?? {}
 
       // Capture per-terminal ptyIds + persist their scrollback so the next
       // launch can replay it into a freshly spawned PTY.
@@ -270,7 +255,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       window.removeEventListener('focus', handleFocus)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [dockStore, panels])
+  }, [dockStore])
 
   // Render panel content inside canvas nodes (used by CanvasPanel's renderPanelContent)
   const renderPanelContent = useCallback(
@@ -325,13 +310,13 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     async (panelId: string) => {
       if (!(await confirmCloseDirtyPanels([panels[panelId]]))) return
       if (!(await confirmCloseRunningTerminals([panels[panelId]]))) return
+      // Undock from THIS shell's own dock store, then drop only the panel
+      // record from appStore (removePanelRecord — not removePanel, which would
+      // target the workspace dock registry this shell doesn't use).
       dockStore.getState().undockPanel(panelId)
-      setPanels((prev) => {
-        const { [panelId]: _removed, ...rest } = prev
-        return rest
-      })
-
       const panel = panels[panelId]
+      useAppStore.getState().removePanelRecord(wsId, panelId)
+
       if (panel?.type === 'terminal') {
         window.electronAPI.terminalKill(panelId).catch((err) => log.warn('[dock-window] Terminal kill failed:', err))
       }
@@ -340,21 +325,15 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
         window.close()
       }
     },
-    [dockStore, panels],
+    [dockStore, panels, wsId],
   )
 
   const handlePanelRenamed = useCallback(
     (panelId: string, title: string) => {
-      setPanels((prev) => {
-        const p = prev[panelId]
-        if (!p) return prev
-        const next = { ...prev, [panelId]: { ...p, title } }
-        panelsRef.current = next
-        return next
-      })
+      useAppStore.getState().renamePanelByUser(wsId, panelId, title)
       syncNowRef.current()
     },
-    [],
+    [wsId],
   )
 
   const handlePanelRemoved = useCallback(
