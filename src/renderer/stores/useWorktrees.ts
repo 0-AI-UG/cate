@@ -11,13 +11,9 @@
 // UI metadata (id/color/label) keyed by path. This hook joins the two so every
 // consumer derives the same view from one source.
 //
-// NOTE for the integrator: appStore.worktrees still denormalizes branch and
-// isPrimary (appStore is owned by another track). The join below treats the
-// LIVE git facts as authoritative for branch/isPrimary/isCurrent and uses the
-// persisted record only for id/color/label, so the denormalized fields are no
-// longer load-bearing at read time. A follow-up on the appStore track should
-// drop branch/isPrimary from WorktreeMeta and persist only UI metadata keyed by
-// path.
+// appStore.worktrees persists ONLY UI metadata (id/color/label) keyed by path;
+// the live git facts (branch/isPrimary/isCurrent) come from gitStatusStore and
+// are joined on here at read time, so they can never drift from the repo.
 // =============================================================================
 
 import { useMemo } from 'react'
@@ -51,9 +47,10 @@ export interface JoinedWorktree {
  *  (persisted non-primary worktrees whose checkout no longer exists). */
 export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorktree[] {
   const snapshot = useGitStatusSnapshot(rootPath)
-  const meta = useAppStore(
-    (s) => s.workspaces.find((w) => w.id === workspaceId)?.worktrees,
-  )
+  const workspace = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId))
+  const meta = workspace?.worktrees
+  // The primary worktree is the one keyed by the workspace's own rootPath.
+  const primaryPath = workspace?.rootPath ?? rootPath
 
   return useMemo(() => {
     const metaByPath = new Map<string, WorktreeMeta>()
@@ -66,7 +63,7 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
       return {
         id: m?.id ?? g.path,
         path: g.path,
-        branch: g.branch || m?.branch || '',
+        branch: g.branch || '',
         isPrimary: g.isPrimary,
         isCurrent: g.isCurrent,
         color: m?.color,
@@ -75,13 +72,15 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
       }
     })
 
-    // Orphans: persisted non-primary metadata whose live worktree is gone.
+    // Orphans: persisted metadata whose live worktree is gone. The primary path
+    // is never an orphan even if git hasn't reported it yet (e.g. before the
+    // first snapshot lands), so it's identified by path, not a persisted flag.
     for (const m of meta ?? []) {
-      if (seen.has(m.path) || m.isPrimary) continue
+      if (seen.has(m.path) || m.path === primaryPath) continue
       joined.push({
         id: m.id,
         path: m.path,
-        branch: m.branch,
+        branch: '',
         isPrimary: false,
         isCurrent: false,
         color: m.color,
@@ -93,5 +92,5 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
     return joined
     // snapshot.worktrees identity changes per applied snapshot (see
     // gitStatusStore), so it captures every refresh without needing revision.
-  }, [snapshot.worktrees, meta])
+  }, [snapshot.worktrees, meta, primaryPath])
 }

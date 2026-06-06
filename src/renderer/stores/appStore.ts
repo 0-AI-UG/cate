@@ -1156,15 +1156,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       workspaces: state.workspaces.map((ws) => {
         if (ws.id !== wsId) return ws
-        const list = ws.worktrees ?? []
-        if (list.some((w) => w.isPrimary)) return ws
         if (!ws.rootPath) return ws
+        const list = ws.worktrees ?? []
+        // The primary worktree is whichever record is keyed by the workspace's
+        // own rootPath; isPrimary is derived from git at read time, so we only
+        // need a UI-metadata record (id/color) to exist for that path.
+        if (list.some((w) => w.path === ws.rootPath)) return ws
         const primary: WorktreeMeta = {
           id: `wt-primary-${ws.id}`,
           path: ws.rootPath,
-          branch: '',
           color: pickWorktreeColor(list),
-          isPrimary: true,
         }
         return { ...ws, worktrees: [primary, ...list] }
       }),

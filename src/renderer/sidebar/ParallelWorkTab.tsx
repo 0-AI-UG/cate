@@ -27,6 +27,7 @@ import {
 } from '@phosphor-icons/react'
 import { useAppStore, pickWorktreeColor, WORKTREE_COLOR_PALETTE } from '../stores/appStore'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
+import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { WorktreeMeta } from '../../shared/types'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
@@ -53,13 +54,6 @@ function toBranchName(input: string): string {
     .replace(/\s+/g, '-')
     .replace(/[^\w./-]+/g, '')
     .replace(/^-+|-+$/g, '')
-}
-
-interface GitWorktree {
-  path: string
-  branch: string
-  isBare: boolean
-  isCurrent: boolean
 }
 
 interface WorktreeStatus {
@@ -438,7 +432,7 @@ interface CardCallbacks {
 }
 
 const WorktreeCard: React.FC<{
-  worktree: WorktreeMeta
+  worktree: JoinedWorktree
   status?: WorktreeStatus
   pr?: PrStatus
   primaryLabel: string
@@ -598,7 +592,6 @@ interface ParallelWorkTabProps {
 
 export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) => {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
-  const workspace = useAppStore((s) => s.workspaces.find((w) => w.id === s.selectedWorkspaceId))
   const ensurePrimaryWorktree = useAppStore((s) => s.ensurePrimaryWorktree)
   const upsertWorktree = useAppStore((s) => s.upsertWorktree)
   const removeWorktree = useAppStore((s) => s.removeWorktree)
@@ -621,15 +614,6 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   // loop) instead of this tab's own gitWorktreeList fetch + focus/branch loops.
   const snapshot = useGitStatusSnapshot(rootPath)
   const isRepo: boolean | null = rootPath ? snapshot.isRepo : null
-  const gitWorktrees: GitWorktree[] = useMemo(
-    () => snapshot.worktrees.map((w) => ({
-      path: w.path,
-      branch: w.branch,
-      isBare: false,
-      isCurrent: w.isCurrent,
-    })),
-    [snapshot.worktrees],
-  )
   const primaryBranch = useMemo(
     () => snapshot.worktrees.find((w) => w.isCurrent)?.branch ?? '',
     [snapshot.worktrees],
@@ -659,20 +643,15 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
     const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
     if (ws) {
       const existing = ws.worktrees ?? []
+      // Persist only UI metadata (id/color) for any git worktree we haven't seen
+      // before; branch/isPrimary/isCurrent come from live git via useWorktrees.
       for (const g of list) {
-        const match = existing.find((w) => w.path === g.path)
-        if (!match) {
-          const meta: WorktreeMeta = {
-            id: `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            path: g.path,
-            branch: g.branch,
-            color: pickWorktreeColor(existing),
-            isPrimary: g.isPrimary,
-          }
-          upsertWorktree(selectedWorkspaceId, meta)
-        } else if (match.branch !== g.branch) {
-          upsertWorktree(selectedWorkspaceId, { ...match, branch: g.branch })
-        }
+        if (existing.some((w) => w.path === g.path)) continue
+        upsertWorktree(selectedWorkspaceId, {
+          id: `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          path: g.path,
+          color: pickWorktreeColor(existing),
+        })
       }
     }
 
@@ -711,15 +690,17 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   // Derived view state
   // ---------------------------------------------------------------------------
 
-  const worktrees = workspace?.worktrees ?? []
-  const gitPaths = useMemo(() => new Set(gitWorktrees.map((g) => g.path)), [gitWorktrees])
-  const orphans = worktrees.filter((w) => !w.isPrimary && !gitPaths.has(w.path))
-  const live = worktrees.filter((w) => w.isPrimary || gitPaths.has(w.path))
+  // One joined view: live git facts (path/branch/isPrimary/isCurrent) from the
+  // shared gitStatusStore joined with the persisted UI metadata (id/color/label).
+  // `live` are present in git; `orphans` are persisted metadata git no longer lists.
+  const joined = useWorktrees(rootPath, selectedWorkspaceId)
+  const live = useMemo(() => joined.filter((w) => !w.isOrphan), [joined])
+  const orphans = useMemo(() => joined.filter((w) => w.isOrphan), [joined])
 
   const primaryLabel = useMemo(() => {
-    const primary = worktrees.find((w) => w.isPrimary)
+    const primary = joined.find((w) => w.isPrimary)
     return primaryBranch || primary?.branch || 'main'
-  }, [worktrees, primaryBranch])
+  }, [joined, primaryBranch])
 
   // PR status — fetched only when the branch set changes (or after a PR action),
   // not on every window focus, since each lookup shells out to `gh`.
@@ -770,11 +751,9 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       const meta: WorktreeMeta = {
         id: `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         path: targetPath,
-        branch,
         // Keep the friendly name when it differs from the slugged branch.
         label: rawName.trim() !== branch ? rawName.trim() : undefined,
         color: pickWorktreeColor(ws?.worktrees ?? []),
-        isPrimary: false,
       }
       upsertWorktree(selectedWorkspaceId, meta)
       addAdditionalRoot(selectedWorkspaceId, targetPath)
@@ -797,10 +776,8 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       const meta: WorktreeMeta = {
         id: `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         path: res.path,
-        branch: res.branch,
         label: `#${pr.number} ${pr.headRefName}`,
         color: pickWorktreeColor(ws?.worktrees ?? []),
-        isPrimary: false,
       }
       upsertWorktree(selectedWorkspaceId, meta)
       addAdditionalRoot(selectedWorkspaceId, res.path)
@@ -812,7 +789,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   )
 
   const handleLaunch = useCallback(
-    (wt: WorktreeMeta, type: 'terminal' | 'agent') => {
+    (wt: JoinedWorktree, type: 'terminal' | 'agent') => {
       if (!selectedWorkspaceId) return
       const panelId =
         type === 'terminal'
@@ -824,7 +801,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   )
 
   const handleDelete = useCallback(
-    async (wt: WorktreeMeta) => {
+    async (wt: JoinedWorktree) => {
       if (!rootPath || !selectedWorkspaceId || wt.isPrimary) return
       const label = wt.label || wt.branch || wt.path
       const status = statusByPath[wt.path]
@@ -856,7 +833,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   )
 
   const handleMerge = useCallback(
-    async (wt: WorktreeMeta) => {
+    async (wt: JoinedWorktree) => {
       if (!rootPath || wt.isPrimary) return
       const target = primaryLabel
       if (!wt.branch || !target) {
@@ -882,7 +859,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   )
 
   const handleUpdateFromMain = useCallback(
-    async (wt: WorktreeMeta) => {
+    async (wt: JoinedWorktree) => {
       if (wt.isPrimary || !wt.branch) return
       const target = primaryLabel
       try {
@@ -905,7 +882,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
     [primaryLabel, reconcile],
   )
 
-  const handlePublish = useCallback(async (wt: WorktreeMeta) => {
+  const handlePublish = useCallback(async (wt: JoinedWorktree) => {
     if (!wt.branch) return
     setError(null)
     setNotice(`Publishing ${wt.branch}…`)
@@ -919,7 +896,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
     }
   }, [reconcile])
 
-  const handleCreatePR = useCallback(async (wt: WorktreeMeta) => {
+  const handleCreatePR = useCallback(async (wt: JoinedWorktree) => {
     if (!wt.branch) return
     setError(null)
     setNotice(`Opening a pull request for ${wt.branch}…`)
@@ -968,7 +945,8 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       const livePaths = new Set(list.map((g) => g.path))
       const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
       for (const w of ws?.worktrees ?? []) {
-        if (!w.isPrimary && !livePaths.has(w.path)) removeWorktree(selectedWorkspaceId, w.id)
+        // Never prune the primary record (keyed by the workspace rootPath).
+        if (w.path !== rootPath && !livePaths.has(w.path)) removeWorktree(selectedWorkspaceId, w.id)
       }
       void reconcile()
     } catch (err: any) {
@@ -977,7 +955,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   }, [rootPath, selectedWorkspaceId, removeWorktree, reconcile])
 
   const makeCallbacks = useCallback(
-    (wt: WorktreeMeta): CardCallbacks => ({
+    (wt: JoinedWorktree): CardCallbacks => ({
       onLaunch: (type) => handleLaunch(wt, type),
       onPublish: () => handlePublish(wt),
       onCreatePR: () => handleCreatePR(wt),

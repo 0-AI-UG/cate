@@ -567,7 +567,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const worktreeColorFor = (panelId: string): string | undefined => {
     if (!showWorktreeAccent) return undefined
     const wtId = panels[panelId]?.worktreeId
-    const wt = worktrees.find((w) => w.id === wtId) ?? worktrees.find((w) => w.isPrimary)
+    // isPrimary is no longer persisted (it's a live-git fact); the primary
+    // worktree is the record keyed by the workspace's own rootPath.
+    const wt = worktrees.find((w) => w.id === wtId) ?? worktrees.find((w) => w.path === workspace.rootPath)
     return wt?.color
   }
 

@@ -30,7 +30,9 @@ function useWorktreeColorByPanel(): Record<string, string> {
     for (const ws of s.workspaces) {
       const worktrees = ws.worktrees ?? []
       if (worktrees.length < 2) continue
-      const primary = worktrees.find((w) => w.isPrimary)
+      // isPrimary is a live-git fact, no longer persisted; the primary record is
+      // the one keyed by the workspace's own rootPath.
+      const primary = worktrees.find((w) => w.path === ws.rootPath)
       for (const panel of Object.values(ws.panels)) {
         if (panel.type !== 'terminal' && panel.type !== 'agent') continue
         const wt = worktrees.find((w) => w.id === panel.worktreeId) ?? primary

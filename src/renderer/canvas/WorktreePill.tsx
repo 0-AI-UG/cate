@@ -7,8 +7,8 @@
 // =============================================================================
 
 import React, { useCallback } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../stores/appStore'
+import { useWorktrees } from '../stores/useWorktrees'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import type { PanelState } from '../../shared/types'
 
@@ -19,7 +19,10 @@ interface WorktreePillProps {
 }
 
 export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }) => {
-  const worktrees = useAppStore(useShallow((s) => s.workspaces.find((w) => w.id === workspaceId)?.worktrees ?? []))
+  // Live-git facts (branch/isPrimary) joined with persisted UI metadata
+  // (color/label), the single source shared with the Parallel Work tab.
+  const rootPath = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.rootPath ?? '')
+  const worktrees = useWorktrees(rootPath, workspaceId)
   const setPanelWorktreeId = useAppStore((s) => s.setPanelWorktreeId)
 
   const current = worktrees.find((w) => w.id === panel.worktreeId) ?? worktrees.find((w) => w.isPrimary)
@@ -69,8 +72,8 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
         height: 18,
         padding: '0 6px',
         borderRadius: 9,
-        backgroundColor: `color-mix(in srgb, ${current.color} 18%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${current.color} 45%, transparent)`,
+        backgroundColor: `color-mix(in srgb, ${current.color ?? 'var(--text-muted)'} 18%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${current.color ?? 'var(--text-muted)'} 45%, transparent)`,
         color: 'var(--text-secondary)',
         fontSize: 10,
         lineHeight: 1,
@@ -84,7 +87,7 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
           width: 6,
           height: 6,
           borderRadius: '50%',
-          backgroundColor: current.color,
+          backgroundColor: current.color ?? 'var(--text-muted)',
           flexShrink: 0,
         }}
       />

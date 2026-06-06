@@ -124,24 +124,23 @@ export interface PanelState {
 }
 
 // -----------------------------------------------------------------------------
-// Worktree metadata — per-workspace registry of git worktrees that Cate is
-// actively managing. The workspace's own rootPath is materialized as the
-// `isPrimary: true` entry on load so the UI can treat them uniformly.
+// Worktree metadata — per-workspace registry of UI-owned facts about the git
+// worktrees Cate manages, keyed by worktree path. This persists ONLY the UI
+// metadata (id/color/label). The live facts (branch / isPrimary / isCurrent)
+// are authoritative from `git worktree list` (owned by gitStatusStore) and are
+// joined onto this metadata at read time by useWorktrees — they are never
+// persisted here, so they can't drift out of sync with the repo.
 // -----------------------------------------------------------------------------
 
 export interface WorktreeMeta {
   /** Stable client id (uuid). */
   id: string
-  /** Absolute filesystem path to the worktree checkout. */
+  /** Absolute filesystem path to the worktree checkout (the join key). */
   path: string
-  /** Branch name checked out in the worktree. */
-  branch: string
   /** Hex color used for the title-bar pill + panel accent border. */
   color: string
   /** Optional friendly label shown in the sidebar in place of the branch. */
   label?: string
-  /** True for the workspace's original rootPath. */
-  isPrimary: boolean
 }
 
 // -----------------------------------------------------------------------------
