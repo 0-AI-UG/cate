@@ -77,6 +77,8 @@ export interface CanvasHistoryEntry {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   regions: Record<string, CanvasRegion>
   focusedNodeId: CanvasNodeId | null
+  selectedNodeIds: Set<string>
+  selectedRegionIds: Set<string>
 }
 
 export interface CanvasStoreActions {
