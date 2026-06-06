@@ -1,16 +1,13 @@
 // =============================================================================
 // worktreeSync — keep workspace.worktrees in sync with the actual git worktrees.
 //
-// Extracted from ParallelWorkTab so the reconcile can run *without* the
-// parallel-work sidebar being open. That component only mounts on its own tab,
-// so before this the store (which also drives the canvas worktree territories
-// and pills) only synced when the user opened that tab. useProcessMonitor now
-// calls this on every GIT_BRANCH_UPDATE, so closed-sidebar and background
-// workspaces stay current too.
+// useProcessMonitor calls this on workspace mount and every GIT_BRANCH_UPDATE,
+// so the store (which drives the canvas worktree territories + pills) stays
+// current for every workspace without any worktree UI being open.
 //
 // This handles only the cheap list/metadata reconcile (one `git worktree list`).
-// Per-worktree dirty status and `gh` PR lookups stay in ParallelWorkTab — those
-// are expensive and only matter for the sidebar's own display.
+// Per-worktree dirty status and `gh` PR lookups live in useWorktreeStatuses —
+// those are expensive and only fetched while the toolbar drop-up is open.
 // =============================================================================
 
 import { useAppStore, pickWorktreeColor } from '../stores/appStore'

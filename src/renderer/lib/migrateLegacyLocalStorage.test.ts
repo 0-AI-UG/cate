@@ -41,7 +41,7 @@ describe('migrateLegacyLocalStorage', () => {
     // sidebarLayout is normalized — missing views appended to the right.
     expect(settingsSet).toHaveBeenCalledWith('sidebarLayout', {
       left: ['workspaces'],
-      right: ['git', 'explorer', 'parallelWork', 'search'],
+      right: ['git', 'explorer', 'search'],
     })
     expect(uiSet).toHaveBeenCalledWith('minimapCorner', 'top-left')
     expect(uiSet).toHaveBeenCalledWith('minimapButtonCorner', 'bottom-left')

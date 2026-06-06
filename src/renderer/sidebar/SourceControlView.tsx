@@ -19,7 +19,6 @@ import {
   Check,
 } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
-import { useUIStore } from '../stores/uiStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
@@ -785,24 +784,12 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           ))}
         </Section>
 
-        {/* Worktrees — read-only mirror; manage in Parallel Work tab. */}
+        {/* Worktrees — read-only mirror; manage from the canvas toolbar's
+            parallel-worktrees drop-up. */}
         <Section
           title="Worktrees"
           count={worktrees.filter((wt) => !wt.isOrphan).length}
           defaultOpen={false}
-          actions={
-            <button
-              className="text-[10px] text-muted hover:text-primary px-1 py-0.5 rounded hover:bg-hover"
-              onClick={(e) => {
-                e.stopPropagation()
-                useUIStore.getState().setActiveLeftSidebarView('parallelWork')
-                useUIStore.getState().setActiveRightSidebarView('parallelWork')
-              }}
-              title="Open Parallel Work tab"
-            >
-              Manage →
-            </button>
-          }
         >
           {worktrees.filter((wt) => !wt.isOrphan).map((wt) => (
             <div

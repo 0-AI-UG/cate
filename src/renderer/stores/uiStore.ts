@@ -20,7 +20,7 @@ export type SidebarSide = 'left' | 'right'
 /** Active canvas interaction tool (Figma-style). */
 export type CanvasTool = 'select' | 'hand'
 
-const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git', 'parallelWork', 'search']
+const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git', 'search']
 
 /** Filter to known views and ensure every view appears exactly once (missing
  *  ones appended to the right). Tolerates partial/legacy/hand-edited shapes. */
