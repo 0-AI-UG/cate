@@ -22,7 +22,7 @@ export const FIELD_CELL = 6
 export const REACH = 70
 /** Outer terrace reach as a multiple of REACH. The outer terrace's outer radius
  *  is REACH·OUTER_REACH_SCALE, so it overhangs the inner terrace more. */
-export const OUTER_REACH_SCALE = 1.28
+export const OUTER_REACH_SCALE = 1.14
 /** Peak fill opacity of the INNER terrace shelf (right at the panels). Subtle. */
 export const INTENSITY = 0.22
 /** Base opacity of the OUTER shelf as a fraction of the inner shelf — the step
