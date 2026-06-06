@@ -25,6 +25,7 @@ import type {
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types'
 import { ACCENT_COLORS } from '../../shared/colors'
+import { pathKey } from '../../shared/pathUtils'
 import type { StoreApi } from 'zustand'
 import { shouldPreserveExistingCanvas } from './canvasSyncGuard'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
@@ -1222,9 +1223,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
         if (ws.id !== wsId) return ws
         // Merge by path so the persisted color/label/id wins over anything a
         // background sync already created for the same checkout, while keeping
-        // any live worktree the saved session didn't know about.
-        const byPath = new Map((ws.worktrees ?? []).map((w) => [w.path, w]))
-        for (const w of persisted) byPath.set(w.path, w)
+        // any live worktree the saved session didn't know about. Key on the
+        // normalized path so a separator/case mismatch (forward-slash git paths
+        // vs native-separator stored paths on Windows) can't split one checkout
+        // into two entries and defeat the precedence.
+        const byPath = new Map((ws.worktrees ?? []).map((w) => [pathKey(w.path), w]))
+        for (const w of persisted) byPath.set(pathKey(w.path), w)
         return { ...ws, worktrees: [...byPath.values()] }
       }),
     }))

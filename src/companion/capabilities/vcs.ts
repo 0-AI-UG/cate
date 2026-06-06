@@ -199,7 +199,10 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
     },
     async worktreeList(cwd) {
       try {
-        const raw = await simpleGit(validateCwd(cwd)).raw(['worktree', 'list', '--porcelain'])
+        // Normalize CRLF first: Git for Windows can emit \r\n depending on the
+        // user's core.autocrlf/eol config, and a trailing \r would otherwise
+        // ride along on every parsed path/branch and break later path matching.
+        const raw = (await simpleGit(validateCwd(cwd)).raw(['worktree', 'list', '--porcelain'])).replace(/\r\n/g, '\n')
         const worktrees = []
         for (const block of raw.trim().split('\n\n')) {
           let wtPath = '', branch = '', isBare = false

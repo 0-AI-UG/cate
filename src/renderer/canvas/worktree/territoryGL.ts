@@ -267,6 +267,16 @@ export function createTerritoryGL(canvas: HTMLCanvasElement): TerritoryGL | null
   })
   if (!gl) return null
 
+  // WebGL2 guarantees highp in the vertex shader but NOT the fragment shader.
+  // The field math (world coords, warp, SDFs) genuinely needs fragment highp —
+  // mediump banding would corrupt the geometry — so a GPU without it must take
+  // the CPU path rather than render garbage. (precision === 0 means absent.)
+  const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)
+  if (!hp || hp.precision === 0) {
+    console.warn('[territoryGL] no fragment highp float; falling back to CPU')
+    return null
+  }
+
   const vs = compile(gl, gl.VERTEX_SHADER, VERT_SRC)
   const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG_SRC)
   if (!vs || !fs) return null

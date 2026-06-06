@@ -108,6 +108,30 @@ describe('worktree session persistence', () => {
     expect(worktrees.some((w) => w.id === 'wt-live')).toBe(true)
   })
 
+  it('hydrateWorktrees merges Windows paths that differ only by separator/case', () => {
+    // On Windows git reports forward-slash paths (C:/proj) while the picker /
+    // stored paths use native backslashes (C:\Proj). Raw string equality would
+    // split one checkout into two; the normalized key must collapse them.
+    const winRoot = 'C:\\Users\\me\\Proj'
+    const ws = useAppStore.getState().addWorkspace('WT', winRoot, 'ws-win')
+    // Background sync discovered the same checkout via git's forward-slash form,
+    // lower-cased, with a fresh runtime id + palette color.
+    const discovered: WorktreeMeta = {
+      id: 'wt-fresh', path: 'c:/users/me/proj/.cate/worktrees/x', branch: 'feature-x', color: '#000000', isPrimary: false,
+    }
+    useAppStore.getState().upsertWorktree('ws-win', discovered)
+
+    // Persisted session stored the native-separator form with color/label.
+    const persisted: WorktreeMeta = {
+      id: 'wt-x', path: 'C:\\Users\\me\\Proj\\.cate\\worktrees\\x', branch: 'feature-x', color: '#11aa55', label: 'X work', isPrimary: false,
+    }
+    useAppStore.getState().hydrateWorktrees('ws-win', [persisted])
+
+    const worktrees = useAppStore.getState().workspaces.find((w) => w.id === 'ws-win')!.worktrees ?? []
+    expect(worktrees).toHaveLength(1)
+    expect(worktrees[0]).toMatchObject({ id: 'wt-x', color: '#11aa55', label: 'X work' })
+  })
+
   it('projectFilesToSnapshot round-trips worktrees and per-node worktreeId from session.json', () => {
     const wsFile: ProjectWorkspaceFile = {
       version: 1,

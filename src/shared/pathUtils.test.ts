@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { toAbsolutePath, toRelativePath } from './pathUtils'
+import { toAbsolutePath, toRelativePath, pathKey } from './pathUtils'
 
 describe('toAbsolutePath', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -32,6 +32,28 @@ describe('toAbsolutePath', () => {
     expect(() => toAbsolutePath('src/a.ts', '/Users/x/proj')).not.toThrow()
     expect(toAbsolutePath('src/a.ts', '/Users/x/proj')).toBe('/Users/x/proj/src/a.ts')
   })
+})
+
+describe('pathKey', () => {
+  it('keeps a POSIX path case-sensitive and unchanged (minus trailing slash)', () => {
+    expect(pathKey('/Users/X/Proj')).toBe('/Users/X/Proj')
+    expect(pathKey('/Users/X/Proj/')).toBe('/Users/X/Proj')
+  })
+
+  it('makes a Windows backslash path and the git forward-slash form compare equal', () => {
+    expect(pathKey('C:\\Users\\me\\Proj')).toBe(pathKey('C:/Users/me/proj'))
+  })
+
+  it('lower-cases Windows paths (case-insensitive filesystem)', () => {
+    expect(pathKey('C:\\Proj\\X')).toBe('c:/proj/x')
+  })
+
+  it('does not depend on the Node `process` global (renderer-safe)', () => {
+    vi.stubGlobal('process', undefined)
+    expect(() => pathKey('C:\\proj')).not.toThrow()
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
 })
 
 describe('toRelativePath', () => {

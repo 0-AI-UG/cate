@@ -14,6 +14,7 @@
 // =============================================================================
 
 import { useAppStore, pickWorktreeColor } from '../stores/appStore'
+import { pathKey } from '../../shared/pathUtils'
 import type { WorktreeMeta } from '../../shared/types'
 
 export interface GitWorktree {
@@ -62,15 +63,20 @@ export async function syncWorktrees(workspaceId: string): Promise<WorktreeSyncRe
   const current = store.workspaces.find((w) => w.id === workspaceId)
   if (current) {
     const existing = current.worktrees ?? []
+    // Match on a normalized key, not raw strings: git reports forward-slash
+    // paths while rootPath/stored paths use the native separator, so on Windows
+    // raw `===` would never match and every worktree would be re-added.
+    const rootKey = pathKey(current.rootPath)
     for (const g of list) {
-      const match = existing.find((w) => w.path === g.path)
+      const gKey = pathKey(g.path)
+      const match = existing.find((w) => pathKey(w.path) === gKey)
       if (!match) {
         const meta: WorktreeMeta = {
           id: newWorktreeId(),
           path: g.path,
           branch: g.branch,
           color: pickWorktreeColor(existing),
-          isPrimary: g.path === current.rootPath,
+          isPrimary: gKey === rootKey,
         }
         store.upsertWorktree(workspaceId, meta)
       } else if (match.branch !== g.branch) {

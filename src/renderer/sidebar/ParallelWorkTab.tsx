@@ -30,6 +30,7 @@ import { useUIStore } from '../stores/uiStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { syncWorktrees, type GitWorktree } from '../lib/worktreeSync'
 import type { WorktreeMeta } from '../../shared/types'
+import { pathKey } from '../../shared/pathUtils'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import log from '../lib/logger'
 
@@ -41,7 +42,7 @@ import log from '../lib/logger'
  *  The worktree-add handler drops a `*` .gitignore in that folder so the
  *  checkouts never show up as untracked noise in the parent repo. */
 function worktreePathFor(repoRoot: string, branch: string): string {
-  const trimmed = repoRoot.replace(/\/+$/, '')
+  const trimmed = repoRoot.replace(/[/\\]+$/, '')
   const slug = branch.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'wt'
   return `${trimmed}/.cate/worktrees/${slug}`
 }
@@ -701,9 +702,12 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
   // ---------------------------------------------------------------------------
 
   const worktrees = workspace?.worktrees ?? []
-  const gitPaths = useMemo(() => new Set(gitWorktrees.map((g) => g.path)), [gitWorktrees])
-  const orphans = worktrees.filter((w) => !w.isPrimary && !gitPaths.has(w.path))
-  const live = worktrees.filter((w) => w.isPrimary || gitPaths.has(w.path))
+  // Normalized keys: git reports forward-slash paths, stored worktrees use the
+  // native separator, so on Windows a raw Set lookup would mark every live
+  // worktree as an orphan.
+  const gitPaths = useMemo(() => new Set(gitWorktrees.map((g) => pathKey(g.path))), [gitWorktrees])
+  const orphans = worktrees.filter((w) => !w.isPrimary && !gitPaths.has(pathKey(w.path)))
+  const live = worktrees.filter((w) => w.isPrimary || gitPaths.has(pathKey(w.path)))
 
   const primaryLabel = useMemo(() => {
     const primary = worktrees.find((w) => w.isPrimary)

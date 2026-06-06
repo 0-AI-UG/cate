@@ -14,7 +14,7 @@
 // `cate.territory.backend` = 'gl' | 'cpu'.
 // =============================================================================
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useCanvasStoreApi } from '../../stores/CanvasStoreContext'
 import { useUIStore } from '../../stores/uiStore'
 import { useDragStore } from '../../drag'
@@ -33,6 +33,11 @@ type Backend = 'gl' | 'cpu'
 /** Coarser field cell for the CPU fallback while a gesture moves (the GL path
  *  needs no such trick — it is full-res every frame). */
 const CPU_GESTURE_CELL_SCALE = 2
+
+/** Max times we remount a fresh GL canvas to recover from context loss before
+ *  giving up and staying on CPU — so a permanently-gone GPU settles instead of
+ *  thrashing lost→remount→lost forever. */
+const GL_MAX_RECOVERIES = 3
 
 /** Enclosed-pocket fill (CPU fillEnclosed) is a non-local flood fill that cannot
  *  be reconciled with per-pixel shader rendering: a discrete mask boundary lands
@@ -111,6 +116,11 @@ const WorktreeTerritoryLayer: React.FC<Props> = ({ containerWidth, containerHeig
 
   const glCanvasRef = useRef<HTMLCanvasElement>(null)
   const cpuCanvasRef = useRef<HTMLCanvasElement>(null)
+  // Bumping glEpoch swaps in a brand-new <canvas> element (via React key) to
+  // recover a usable GL context after a loss — re-acquiring on the same canvas
+  // is unreliable. glRecoveriesRef bounds how many times we'll try.
+  const [glEpoch, setGlEpoch] = useState(0)
+  const glRecoveriesRef = useRef(0)
   const groupsRef = useRef<WorktreeGroup[]>(groups)
   groupsRef.current = groups
   // Live container size, read from refs so the renderer effect needn't depend on
@@ -200,17 +210,29 @@ const WorktreeTerritoryLayer: React.FC<Props> = ({ containerWidth, containerHeig
     applyVisibility()
     sizeActive()
 
-    // Mirror the xterm WebGL context-loss handling: drop GL, fall back to CPU,
-    // re-init on restore.
+    // Context-loss handling: drop GL and fall back to CPU immediately so the
+    // territory keeps rendering. Then try to get back onto the GPU by remounting
+    // a fresh <canvas> (bumping glEpoch) — a new element yields a new context,
+    // whereas re-acquiring webgl2 on the just-lost canvas often keeps returning
+    // a dead one. Bounded by GL_MAX_RECOVERIES so a permanently-lost GPU stays
+    // on CPU instead of looping. A browser-driven restore on the same canvas
+    // (webglcontextrestored) is also honored as a fast path and resets the count.
     const glCanvas = glCanvasRef.current
     if (glCanvas) {
       glCanvas.addEventListener('webglcontextlost', (e) => {
         e.preventDefault()
         fallbackToCPU()
+        if (forcedBackend() !== 'cpu' && glRecoveriesRef.current < GL_MAX_RECOVERIES) {
+          glRecoveriesRef.current += 1
+          setGlEpoch((n) => n + 1)
+        }
       }, { signal: abort.signal })
       glCanvas.addEventListener('webglcontextrestored', () => {
         if (forcedBackend() === 'cpu') return
-        if (initGL()) { applyVisibility(); dirtyRef.current = true; ensureRef.current() }
+        if (initGL()) {
+          glRecoveriesRef.current = 0
+          applyVisibility(); dirtyRef.current = true; ensureRef.current()
+        }
       }, { signal: abort.signal })
     }
 
@@ -287,7 +309,7 @@ const WorktreeTerritoryLayer: React.FC<Props> = ({ containerWidth, containerHeig
       if (glRef.current) { glRef.current.dispose(); glRef.current = null }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasApi])
+  }, [canvasApi, glEpoch])
 
   // Membership changes (React state) → repaint.
   useEffect(() => { dirtyRef.current = true; ensureRef.current() }, [groups])
@@ -295,7 +317,7 @@ const WorktreeTerritoryLayer: React.FC<Props> = ({ containerWidth, containerHeig
   const style: React.CSSProperties = { position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 0 }
   return (
     <>
-      <canvas ref={glCanvasRef} aria-hidden data-worktree-territory style={style} />
+      <canvas key={glEpoch} ref={glCanvasRef} aria-hidden data-worktree-territory style={style} />
       <canvas ref={cpuCanvasRef} aria-hidden data-worktree-territory-cpu style={{ ...style, display: 'none' }} />
     </>
   )
