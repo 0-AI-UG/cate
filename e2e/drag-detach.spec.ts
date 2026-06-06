@@ -41,18 +41,20 @@ test('drag past the window edge detaches into a new panel window', async () => {
   await page.mouse.down()
   await page.mouse.move(grab!.x + 100, grab!.y, { steps: 10 })
   await page.mouse.move(innerSize.w + 50, grab!.y, { steps: 20 })
-  // Hold briefly so the cross-window watchdog notices we're outside.
-  await page.waitForTimeout(150)
+  // Hold so the cross-window watchdog registers that we're outside. A loaded CI
+  // runner needs more than a couple of frames here, so don't shave this.
+  await page.waitForTimeout(300)
   await page.mouse.up()
 
-  // A new window should appear. Detach is async (IPC + window creation).
-  await page.waitForTimeout(800)
-  const finalCount = app.windows().length
-  expect(finalCount).toBeGreaterThan(initialWindowCount)
+  // A new window should appear. Detach is async (IPC roundtrip + native window
+  // creation), and that chain can take well over a second on a busy runner, so
+  // poll for the window instead of racing a fixed sleep.
+  await expect
+    .poll(() => app.windows().length, { timeout: 8000 })
+    .toBeGreaterThan(initialWindowCount)
 
   // The source canvas-node should be removed on successful detach.
-  const sourceStill = await page.$(`[data-node-id="${nodeId}"]`)
-  expect(sourceStill).toBeNull()
+  await page.waitForSelector(`[data-node-id="${nodeId}"]`, { state: 'detached', timeout: 4000 })
 })
 
 test('release without leaving the window does not detach', async () => {
