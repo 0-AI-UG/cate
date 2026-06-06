@@ -36,11 +36,16 @@ test('drag past the window edge detaches into a new panel window', async () => {
   }))
 
   // Drag PAST the right edge so the controller flips into cross-window mode,
-  // then release outside the window to trigger detach.
+  // then release outside the window to trigger detach. Detach only fires if the
+  // LAST move the renderer processes is outside the window. Interpolated steps
+  // across the edge get coalesced/dropped under CI load, so the final registered
+  // position can land back inside and no detach happens. Instead arm with a small
+  // move, then jump to firmly outside in a SINGLE discrete event — that one move
+  // crosses the boundary and is the last thing resolved before release.
   await page.mouse.move(grab!.x, grab!.y)
   await page.mouse.down()
   await page.mouse.move(grab!.x + 100, grab!.y, { steps: 10 })
-  await page.mouse.move(innerSize.w + 50, grab!.y, { steps: 20 })
+  await page.mouse.move(innerSize.w + 120, grab!.y)
   // Hold so the cross-window watchdog registers that we're outside. A loaded CI
   // runner needs more than a couple of frames here, so don't shave this.
   await page.waitForTimeout(300)
@@ -50,7 +55,7 @@ test('drag past the window edge detaches into a new panel window', async () => {
   // creation), and that chain can take well over a second on a busy runner, so
   // poll for the window instead of racing a fixed sleep.
   await expect
-    .poll(() => app.windows().length, { timeout: 8000 })
+    .poll(() => app.windows().length, { timeout: 12000 })
     .toBeGreaterThan(initialWindowCount)
 
   // The source canvas-node should be removed on successful detach.
