@@ -1011,7 +1011,7 @@ function registerWindowAndDialogHandlers(): void {
   })
 
   // Panel transfer protocol
-  ipcMain.handle(PANEL_TRANSFER, async (event, snapshot: PanelTransferSnapshot, targetWindowId?: number) => {
+  ipcMain.handle(PANEL_TRANSFER, async (event, snapshot: PanelTransferSnapshot, targetWindowId?: number, workspaceId?: string) => {
     // Begin terminal buffering if this is a terminal transfer
     if (snapshot.terminalPtyId) {
       beginTerminalTransfer(snapshot.terminalPtyId, targetWindowId ?? -1)
@@ -1020,24 +1020,27 @@ function registerWindowAndDialogHandlers(): void {
     if (targetWindowId) {
       // Transfer to existing window
       sendToWindow(targetWindowId, PANEL_RECEIVE, snapshot)
-      // Track panel metadata for the target window
-      setPanelWindowMeta(targetWindowId, snapshot.panel, undefined)
+      // Track panel metadata for the target window (keep its existing workspace
+      // id unless the caller supplied one)
+      setPanelWindowMeta(targetWindowId, snapshot.panel, workspaceId)
     } else {
       // Refuse creating a new panel window while any Cate window is in
       // macOS native fullscreen — the new window would land in a separate
       // Space and appear as an empty black page. Caller should fall back to
       // keeping the panel in the source window.
       if (anyWindowFullscreen()) return null
-      // Create a new panel window and send the transfer there
+      // Create a new panel window and send the transfer there. Pass the source
+      // workspaceId so the window is registered to it at creation — otherwise it
+      // is persisted to no workspace and lost on the next restart.
       const newWin = createWindow({
         type: 'panel',
         panelType: snapshot.panel.type,
         panelId: snapshot.panel.id,
-        workspaceId: undefined,
+        workspaceId,
       })
 
       // Track panel metadata
-      setPanelWindowMeta(newWin.id, snapshot.panel, undefined)
+      setPanelWindowMeta(newWin.id, snapshot.panel, workspaceId)
 
       // Position at saved geometry if available
       if (snapshot.geometry) {

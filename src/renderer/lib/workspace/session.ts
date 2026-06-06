@@ -942,7 +942,10 @@ export async function restoreDetachedWindows(session: MultiWorkspaceSession): Pr
           sourceLocation: { type: 'canvas', canvasId: '', canvasNodeId: '' },
           terminalReplayPtyId: pw.panel.type === 'terminal' ? pw.terminalPtyId : undefined,
         }
-        const newWindowId = await window.electronAPI.panelTransfer(snapshot)
+        // Pass the persisted workspaceId so the restored panel window is
+        // registered to its workspace at creation — otherwise it is saved to no
+        // workspace and lost on the next restart.
+        const newWindowId = await window.electronAPI.panelTransfer(snapshot, undefined, pw.workspaceId)
         if (typeof newWindowId === 'number') {
           // Position the new panel window to its saved bounds
           // The main process createWindow positions it, but we passed geometry in the snapshot

@@ -24,12 +24,16 @@ const windows = new Map<number, BrowserWindow>()
 const windowTypes = new Map<number, CateWindowType>()
 
 /** Panel metadata for panel windows (set after transfer). */
-const panelWindowMeta = new Map<number, { panel: PanelState; workspaceId?: string; terminalPtyId?: string }>()
+const panelWindowMeta = new Map<number, { panel: PanelState; terminalPtyId?: string }>()
 
 /** Dock window state — synced periodically from renderer for session persistence. */
-const dockWindowState = new Map<number, { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> }>()
+const dockWindowState = new Map<number, { dockState: DockStateSnapshot; panels: Record<string, PanelState>; terminalPtyIds?: Record<string, string> }>()
 
-/** Workspace a window was opened for (known at creation for dock/panel windows). */
+/** Workspace a window was opened for — the SINGLE source of truth. Set at
+ *  creation (registerWindow) for every detached path, and refreshed by the
+ *  panel/dock sync setters below. (Previously workspaceId was also duplicated
+ *  on panelWindowMeta + dockWindowState with a 3-way fallback that let a
+ *  PANEL_TRANSFER window with no id be persisted to no workspace and lost.) */
 const windowWorkspaceId = new Map<number, string>()
 
 /** The id of the most recently focused main window — the default target for
@@ -80,18 +84,17 @@ export function getActiveMainWindow(): BrowserWindow | undefined {
  * falls back to the latest synced dock state / panel metadata.
  */
 export function getWindowWorkspaceId(windowId: number): string | undefined {
-  const direct = windowWorkspaceId.get(windowId)
-  if (direct) return direct
-  const dock = dockWindowState.get(windowId)
-  if (dock?.workspaceId) return dock.workspaceId
-  return panelWindowMeta.get(windowId)?.workspaceId
+  return windowWorkspaceId.get(windowId)
 }
 
 /**
- * Store panel metadata for a panel window (called after transfer).
+ * Store panel metadata for a panel window (called after transfer). When a
+ * workspaceId is known (creation, Save-As resync) it updates the single
+ * windowWorkspaceId map so the window can never end up workspace-less.
  */
 export function setPanelWindowMeta(windowId: number, panel: PanelState, workspaceId?: string): void {
-  panelWindowMeta.set(windowId, { panel, workspaceId })
+  panelWindowMeta.set(windowId, { panel })
+  if (workspaceId) windowWorkspaceId.set(windowId, workspaceId)
 }
 
 /**
@@ -201,7 +204,7 @@ export function listPanelWindows(): Array<{ windowId: number; panel: PanelState;
     result.push({
       windowId: id,
       panel: meta.panel,
-      workspaceId: meta.workspaceId,
+      workspaceId: windowWorkspaceId.get(id),
       bounds,
       terminalPtyId: meta.terminalPtyId,
     })
@@ -220,7 +223,9 @@ export function setDockWindowState(
   windowId: number,
   state: { dockState: DockStateSnapshot; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string> },
 ): void {
-  dockWindowState.set(windowId, state)
+  const { workspaceId, ...rest } = state
+  dockWindowState.set(windowId, rest)
+  if (workspaceId) windowWorkspaceId.set(windowId, workspaceId)
 }
 
 /**
@@ -252,6 +257,7 @@ export function listDockWindows(): Array<{
     result.push({
       windowId: id,
       ...state,
+      workspaceId: windowWorkspaceId.get(id) ?? '',
       bounds,
     })
   }
