@@ -25,7 +25,6 @@ import { useUIStateStore } from '../stores/uiStateStore'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
-import { UpdateButton } from './UpdateButton'
 import { Tooltip } from '../sidebar/Tooltip'
 
 // The minimap pill can be docked in any of the four canvas corners. The choice
@@ -335,12 +334,10 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       style={{
         ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
         ...(mmRight ? { right: '1rem' } : { left: '1rem' }),
-        // Keep the pill hard against the docked corner; the UpdateButton sits inboard.
         flexDirection: mmRight ? 'row' : 'row-reverse',
         alignItems: mmBottom ? 'flex-end' : 'flex-start',
       }}
     >
-      <UpdateButton />
       <div
         data-testid="minimap-toggle"
         className="relative overflow-hidden border border-subtle shadow-[0_8px_24px_-6px_var(--shadow-node)]"

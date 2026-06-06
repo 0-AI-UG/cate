@@ -1,12 +1,19 @@
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, Toggle, NumberInput, Slider, Select } from './SettingsComponents'
 import type { CanvasGridStyle } from '../../shared/types'
+import {
+  BUILTIN_WALLPAPERS,
+  builtinWallpaperPath,
+  getBuiltinWallpaper,
+} from '../lib/builtinWallpapers'
 
 export function CanvasSettings() {
   const store = useSettingsStore()
 
   const bgImagePath = store.canvasBackgroundImagePath
-  const bgImageName = bgImagePath ? bgImagePath.split(/[\\/]/).pop() : ''
+  const activeBuiltin = getBuiltinWallpaper(bgImagePath)
+  const isCustomImage = !!bgImagePath && !activeBuiltin
+  const customImageName = isCustomImage ? bgImagePath.split(/[\\/]/).pop() : ''
 
   const chooseBackgroundImage = async () => {
     const picked = await window.electronAPI.openImageDialog()
@@ -67,23 +74,30 @@ export function CanvasSettings() {
       </SettingRow>
       <SettingRow
         label="Background image"
-        description={bgImageName || 'Shown behind the canvas, auto-adjusted to keep titles readable.'}
+        description={
+          customImageName || 'Shown behind the canvas, auto-adjusted to keep titles readable.'
+        }
       >
-        <div className="flex items-center gap-2">
-          {bgImagePath && (
-            <button
-              onClick={() => store.setSetting('canvasBackgroundImagePath', '')}
-              className="px-2.5 py-1 text-sm rounded-md text-muted hover:text-primary transition-colors"
-            >
-              Clear
-            </button>
-          )}
-          <button
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <WallpaperSwatch
+            selected={!bgImagePath}
+            onClick={() => store.setSetting('canvasBackgroundImagePath', '')}
+            label="None"
+          />
+          {BUILTIN_WALLPAPERS.map((wp) => (
+            <WallpaperSwatch
+              key={wp.id}
+              selected={activeBuiltin?.id === wp.id}
+              onClick={() => store.setSetting('canvasBackgroundImagePath', builtinWallpaperPath(wp.id))}
+              label={wp.name}
+              imageUrl={wp.url}
+            />
+          ))}
+          <WallpaperSwatch
+            selected={isCustomImage}
             onClick={chooseBackgroundImage}
-            className="px-3 py-1 text-sm rounded-md bg-surface-5 border border-subtle text-primary hover:bg-surface-6 transition-colors"
-          >
-            {bgImagePath ? 'Change…' : 'Choose…'}
-          </button>
+            label={isCustomImage ? 'Custom' : 'Choose…'}
+          />
         </div>
       </SettingRow>
       {bgImagePath && (
@@ -107,5 +121,49 @@ export function CanvasSettings() {
         <NumberInput value={store.defaultPanelHeight} onChange={(v) => store.setSetting('defaultPanelHeight', v)} min={200} max={900} step={50} />
       </SettingRow>
     </div>
+  )
+}
+
+// A small clickable preview tile for picking a wallpaper. `imageUrl` renders the
+// wallpaper itself; without it the tile is a labelled placeholder ("None" /
+// "Choose…" / "Custom"). The selected tile gets an accent ring.
+function WallpaperSwatch({
+  selected,
+  onClick,
+  label,
+  imageUrl,
+}: {
+  selected: boolean
+  onClick: () => void
+  label: string
+  imageUrl?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-pressed={selected}
+      className={`relative h-12 w-20 shrink-0 overflow-hidden rounded-md border text-xs transition-colors ${
+        selected
+          ? 'border-focus-blue ring-2 ring-focus-blue'
+          : 'border-subtle hover:border-strong'
+      } ${imageUrl ? '' : 'bg-surface-5 text-muted hover:text-primary'}`}
+      style={
+        imageUrl
+          ? {
+              backgroundImage: `url("${imageUrl}")`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }
+          : undefined
+      }
+    >
+      {!imageUrl && (
+        <span className="flex h-full w-full items-center justify-center px-1 text-center">
+          {label}
+        </span>
+      )}
+    </button>
   )
 }
