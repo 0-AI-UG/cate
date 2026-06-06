@@ -845,6 +845,11 @@ export interface NodeSnapshot {
   unsavedContent?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
+  /** The canvas node's per-node mini-dock layout (the tab/split tree of panels
+   *  hosted inside this node). Captured on demand from the live per-node
+   *  DockStore at save time so a multi-tab node survives save→restore. Absent on
+   *  legacy sessions ⇒ the node is rebuilt with the default single-tab seed. */
+  dockLayout?: DockLayoutNode | null
 }
 
 export interface SessionSnapshot {

@@ -78,6 +78,20 @@ export function getNodeActivePanelId(canvasPanelId: string, nodeId: string): str
   return activeLeafPanelId(store.getState().zones.center.layout)
 }
 
+/** The LIVE center-zone dock layout for a canvas node, read straight from its
+ *  registered per-node DockStore (the single runtime authority). Returns the
+ *  layout when the node's store is mounted/registered, or `undefined` when it is
+ *  not — distinct from `null`, which means "mounted but empty". Callers that need
+ *  a persisted fallback should treat `undefined` as "ask the projection". */
+export function getLiveNodeDockLayout(
+  canvasPanelId: string,
+  nodeId: string,
+): DockLayoutNode | null | undefined {
+  const store = getNodeDockStore(canvasPanelId, nodeId)
+  if (!store) return undefined
+  return store.getState().zones.center.layout
+}
+
 /** Reverse lookup — given a DockStore, return the canvas-node id it backs
  *  (or null if the store isn't a per-canvas-node mini-dock). Lets drop handlers
  *  recognise drags that originated inside a canvas node and treat them as a

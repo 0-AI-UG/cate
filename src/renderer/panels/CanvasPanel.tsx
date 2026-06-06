@@ -110,7 +110,12 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
   }, [storeKey]) // intentionally omit node.dockLayout — seed only on first creation
 
   // ------------------------------------------------------------------
-  // Persist center layout back to canvasStore; auto-remove on null
+  // Auto-remove the canvas node when its mini-dock empties out. The live
+  // per-node DockStore is now the single runtime authority for the layout, so
+  // we no longer mirror every change back into canvasStore.dockLayout — that
+  // field is a capture-on-demand persistence projection refreshed at save time
+  // (see lib/workspace/session.ts). We only watch for the layout going null
+  // (last tab closed) so the empty node is torn down.
   // ------------------------------------------------------------------
   useEffect(() => {
     const unsubscribe = dockStoreApi.subscribe((state, prev) => {
@@ -120,8 +125,6 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
 
       if (layout === null) {
         canvasStoreApi.getState().removeNode(nodeId)
-      } else {
-        canvasStoreApi.getState().setNodeDockLayout(nodeId, layout)
       }
     })
     return unsubscribe

@@ -7,6 +7,7 @@
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
 import type { PanelType, Point, CanvasNodeId, CanvasNodeState, CanvasRegion, DockLayoutNode } from '../../../shared/types'
+import { findNodeDockStore } from '../../panels/nodeDockRegistry'
 
 // -----------------------------------------------------------------------------
 // Canvas operations callback — the contract createCanvasOps implements, letting
@@ -66,7 +67,14 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       if (!nodeId) return
       const node = state.nodes[nodeId]
       if (!node) return
-      const layout = node.dockLayout
+      // The live per-node DockStore is the runtime authority now; node.dockLayout
+      // is only a save-time projection. Read the live layout (this runs when a
+      // panel is interactively closed, so the node's mini-dock is mounted) and
+      // fall back to the projection if the store isn't registered.
+      const liveStore = findNodeDockStore(nodeId)
+      const layout = liveStore
+        ? liveStore.getState().zones.center.layout
+        : node.dockLayout
       if (layout && countLayoutPanels(layout) > 0) return
       state.removeNode(nodeId)
     },

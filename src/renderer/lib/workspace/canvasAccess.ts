@@ -33,6 +33,7 @@ import { createCanvasOps } from '../canvas/canvasBridge'
 import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
 import { getWorkspaceDockStore } from './dockRegistry'
 import { getActivePanelId } from '../activePanel'
+import { getLiveNodeDockLayout } from '../../panels/nodeDockRegistry'
 
 // Registry for multi-canvas support — maps canvas panel IDs to their operations.
 // Each canvas panel belongs to exactly one workspace, so resolving ops by panel
@@ -263,6 +264,17 @@ export function getWorkspaceCanvasSnapshot(workspaceId: string): WorkspaceCanvas
     zoomLevel: ws.zoomLevel,
     viewportOffset: ws.viewportOffset,
   }
+}
+
+/** Resolve a canvas node's center dock layout, preferring the LIVE per-node
+ *  DockStore (the single runtime authority) and falling back to the persisted
+ *  `node.dockLayout` projection when the node's store isn't mounted (e.g. a
+ *  viewport-culled off-screen node, or a background workspace whose canvas was
+ *  never mounted this session). Returns `null` when neither yields a layout. */
+export function getNodeDockLayout(canvasPanelId: string, nodeId: string): DockLayoutNode | null {
+  const live = getLiveNodeDockLayout(canvasPanelId, nodeId)
+  if (live !== undefined) return live
+  return getOrCreateCanvasStoreForPanel(canvasPanelId).getState().nodes[nodeId]?.dockLayout ?? null
 }
 
 /** Live dock snapshot for a workspace, or the persisted projection if the dock

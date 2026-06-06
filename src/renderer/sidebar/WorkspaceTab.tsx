@@ -6,7 +6,7 @@ import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
-import { getWorkspaceCanvasSnapshot } from '../lib/workspace/canvasAccess'
+import { getWorkspaceCanvasSnapshot, getNodeDockLayout } from '../lib/workspace/canvasAccess'
 import { revealPanel } from '../lib/workspace/panelReveal'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
@@ -87,19 +87,22 @@ function useWorkspaceCanvasPanelIds(workspaceId: string): Set<string> {
 
   const compute = useCallback(() => {
     const ids = new Set<string>()
-    for (const store of stores) {
-      for (const node of Object.values(store.getState().nodes)) {
+    for (let i = 0; i < stores.length; i++) {
+      const canvasPanelId = canvasPanelIds[i]
+      for (const node of Object.values(stores[i].getState().nodes)) {
         // Each canvas node has its own mini-dock layout; a node may host
         // several tabbed panels. `node.panelId` is only the seed — walk the
         // full layout so additional tabs (e.g. Terminal 2, Terminal 4
         // dragged into the same canvas node) still classify as canvas
-        // children in the sidebar.
-        collectPanelIdsFromDockLayout(node.dockLayout, ids)
+        // children in the sidebar. Read the LIVE per-node DockStore (the
+        // runtime authority) so an open multi-tab node shows all its tabs
+        // immediately; node.dockLayout is only a save-time projection now.
+        collectPanelIdsFromDockLayout(getNodeDockLayout(canvasPanelId, node.id), ids)
         if (node.panelId) ids.add(node.panelId)
       }
     }
     return ids
-  }, [stores])
+  }, [stores, canvasPanelIds])
 
   const [ids, setIds] = useState<Set<string>>(compute)
 
