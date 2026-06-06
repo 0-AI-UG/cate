@@ -35,7 +35,8 @@ function vnoise(x: number, y: number): number {
   return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v
 }
 function fbm(x: number, y: number): number {
-  return 0.5 * vnoise(x, y) + 0.25 * vnoise(x * 2, y * 2)
+  // Large flowing base + a subtle finer octave — keep in sync with territoryRenderer.ts / territoryGL.ts.
+  return vnoise(x, y) * 0.82 + vnoise(x * 2.3 + 11.7, y * 2.3 + 5.1) * 0.18
 }
 
 // --- signed distance primitives ---------------------------------------------
@@ -72,9 +73,39 @@ export function hexToRgb(hex: string): [number, number, number] {
 }
 
 // --- connection bridges (same fade logic as territoryRenderer.ts:309-325) ----
-export interface Bridge { a: number; b: number; radius: number }
+export interface Bridge { a: number; b: number; radius: number; ax: number; ay: number; bx: number; by: number }
+/** Fit a capsule that fuses two same-worktree panels by filling ONLY the gap and
+ *  the panels' interiors — never reaching their outer edges, so a connection never
+ *  domes the far top/bottom (or left/right) the way a center-to-center capsule did.
+ *  Returns [ax, ay, bx, by, radius]:
+ *   - endpoints sit at each panel's FACING (inner) edge along the connection axis,
+ *     so the capsule spans the gap and its caps bulge inward into the panels;
+ *   - radius is capped to the panels' half-extent PERPENDICULAR to the axis (stay
+ *     flush with the sides) and to their full extent ALONG the axis (so a cap can't
+ *     poke out the far edge of a shallow panel).
+ *  Keep in sync with territoryRenderer.ts:bridgeCapsule. */
+export function bridgeCapsule(a: TerritoryRect, b: TerritoryRect, r: number): [number, number, number, number, number] {
+  const acx = a.x + a.w / 2, acy = a.y + a.h / 2
+  const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2
+  const dx = bcx - acx, dy = bcy - acy
+  const dist = Math.sqrt(dx * dx + dy * dy)
+  if (dist < 1e-6) return [acx, acy, bcx, bcy, Math.min(r, a.w / 2, a.h / 2, b.w / 2, b.h / 2)]
+  const ux = dx / dist, uy = dy / dist
+  // Half-extent of each box along the axis and perpendicular to it.
+  const axA = Math.abs(ux) * a.w / 2 + Math.abs(uy) * a.h / 2
+  const axB = Math.abs(ux) * b.w / 2 + Math.abs(uy) * b.h / 2
+  const perpA = Math.abs(uy) * a.w / 2 + Math.abs(ux) * a.h / 2
+  const perpB = Math.abs(uy) * b.w / 2 + Math.abs(ux) * b.h / 2
+  const rr = Math.min(r, perpA, perpB, 2 * axA, 2 * axB)
+  // Endpoints at the FACING edges (centers shifted toward each other by their
+  // along-axis half-extent); collapse to the midpoint if the panels overlap.
+  let sa = axA
+  let sb = dist - axB
+  if (sa > sb) { const mid = (sa + sb) / 2; sa = mid; sb = mid }
+  return [acx + ux * sa, acy + uy * sa, acx + ux * sb, acy + uy * sb, rr]
+}
 /** Same-worktree panel pairs near enough to fuse, as fading capsule bridges.
- *  Endpoints are panel centers (resolved by the caller from `rects`). */
+ *  Endpoints are clamped so the cap never overshoots either panel. */
 export function buildBridges(rects: TerritoryRect[]): Bridge[] {
   const m = rects.length
   const out: Bridge[] = []
@@ -88,7 +119,8 @@ export function buildBridges(rects: TerritoryRect[]): Bridge[] {
       const rad = CONNECT_RADIUS * w - OUTER_REACH * (1 - w)
       const cullR = rad + OUTER_REACH + SMINK + WARP_AMP
       if (cullR <= 0) continue
-      out.push({ a, b, radius: rad })
+      const [ax, ay, bx, by, rr] = bridgeCapsule(rects[a], rects[b], rad)
+      out.push({ a, b, radius: rr, ax, ay, bx, by })
     }
   }
   return out
@@ -128,7 +160,7 @@ export function sampleCombined(wx: number, wy: number, geom: GroupGeom[]): numbe
     }
     for (let e = 0; e < g.bridges.length; e++) {
       const br = g.bridges[e]
-      dg = smin(dg, sdSegment(px, py, g.cx[br.a], g.cy[br.a], g.cx[br.b], g.cy[br.b], br.radius), SMINK)
+      dg = smin(dg, sdSegment(px, py, br.ax, br.ay, br.bx, br.by, br.radius), SMINK)
     }
     if (dg < mn) mn = dg
   }
@@ -200,11 +232,9 @@ export function buildPrimitives(groups: TerritoryGroup[]): BuiltPrimitives {
     const bridges = buildBridges(rects)
     for (const br of bridges) {
       if (count >= MAX_PRIMITIVES) break
-      const ax = rects[br.a].x + rects[br.a].w / 2, ay = rects[br.a].y + rects[br.a].h / 2
-      const bx = rects[br.b].x + rects[br.b].w / 2, by = rects[br.b].y + rects[br.b].h / 2
       const o = count * 8
-      data[o] = ax - ox; data[o + 1] = ay - oy
-      data[o + 2] = bx - ox; data[o + 3] = by - oy
+      data[o] = br.ax - ox; data[o + 1] = br.ay - oy
+      data[o + 2] = br.bx - ox; data[o + 3] = br.by - oy
       data[o + 4] = br.radius; data[o + 5] = gi; data[o + 6] = 1; data[o + 7] = 0
       count++
     }

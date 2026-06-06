@@ -96,7 +96,10 @@ float vnoise(float x, float y){
   return a * (1.0 - u) * (1.0 - v) + b * u * (1.0 - v) + c * (1.0 - u) * v + d * u * v;
 }
 float fbm(float x, float y){
-  return 0.5 * vnoise(x, y) + 0.25 * vnoise(x * 2.0, y * 2.0);
+  // Large flowing base + a subtle finer octave for organic, non-uniform edges
+  // (low weight so it adds life without the old tight wobble). Keep in sync with
+  // territoryRenderer.ts / territoryGeometry.ts.
+  return vnoise(x, y) * 0.82 + vnoise(x * 2.3 + 11.7, y * 2.3 + 5.1) * 0.18;
 }
 
 // --- signed distance fields --------------------------------------------------

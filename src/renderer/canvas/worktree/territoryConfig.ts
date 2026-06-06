@@ -16,8 +16,10 @@
 export const FIELD_CELL = 6
 /** How far (canvas-space px) the territory reaches beyond the base shape — the
  *  base reach used for the inner terrace. The outer terrace extends further
- *  (see OUTER_REACH_SCALE). */
-export const REACH = 130
+ *  (see OUTER_REACH_SCALE). Doubles as the corner radius of the offset, so larger
+ *  values balloon the short top/bottom edges into domes; kept tight so the
+ *  territory hugs the panels' rectangle. */
+export const REACH = 90
 /** Outer terrace reach as a multiple of REACH. The outer terrace's outer radius
  *  is REACH·OUTER_REACH_SCALE, so it overhangs the inner terrace more. */
 export const OUTER_REACH_SCALE = 1.4
@@ -31,12 +33,16 @@ export const CORNER = 18
 /** Corner radius (canvas-space px) used when punching panels out of the
  *  territory so it reads as a halo behind them. Match CanvasNode's CORNER_RADIUS. */
 export const PANEL_CORNER = 8
-/** Smooth-merge radius (canvas-space px) — how organically shapes fuse. */
-export const SMINK = 90
+/** Smooth-merge radius (canvas-space px) — how organically shapes fuse. Smaller
+ *  = tighter fusion with less of a rounded bulge ballooning out where two nearby
+ *  panels meet. */
+export const SMINK = 55
 /** Half-width (canvas-space px) of the center-to-center connection capsules.
  *  Set near a panel's half-width so a connection reads as one fused blob
- *  ("fudge"), not a thin pipe between panels. */
-export const CONNECT_RADIUS = 280
+ *  ("fudge"), not a thin pipe between panels. Kept a touch under a panel's
+ *  half-width so the territory waists slightly between stacked panels instead of
+ *  ballooning into one fat rounded blob. */
+export const CONNECT_RADIUS = 210
 /** Max edge-to-edge gap (canvas-space px) between two same-worktree panels for
  *  them to fuse. Beyond this, no bridge — panels stay separate territory islands.
  *  The outer terrace stays connected nearly to this gap; the inner terrace lets
@@ -64,10 +70,13 @@ export const OUTLINE_WIDTH = 1
 export const OUTLINE_ALPHA = 0.4
 
 // --- domain warp (organic, smooth, static) ----------------------------------
-/** Domain-warp amplitude (canvas-space px) — lower = smoother, calmer edges. */
-export const WARP_AMP = 18
-/** Domain-warp frequency — lower = larger, gentler undulations. */
-export const WARP_FREQ = 0.006
+/** Domain-warp amplitude (canvas-space px) — how far the flowing curves push the
+ *  territory edge in/out. Enough to break a lone panel's halo out of a perfectly
+ *  round blob into an organic sweep, without high-frequency wobble. */
+export const WARP_AMP = 32
+/** Domain-warp frequency — lower = larger, gentler, more flowing undulations.
+ *  Wavelength ≈ 1/FREQ canvas px, so this spans roughly a panel-width per wave. */
+export const WARP_FREQ = 0.0022
 
 // --- WebGL renderer limits (territoryGL) ------------------------------------
 /** Max worktree groups the shader blends per pixel (uniform color array size). */
