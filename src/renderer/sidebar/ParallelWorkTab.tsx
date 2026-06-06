@@ -33,6 +33,7 @@ import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeade
 import type { WorktreeMeta } from '../../shared/types'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import log from '../lib/logger'
+import { errorMessage } from '../lib/errorMessage'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -220,7 +221,7 @@ const CreateForm: React.FC<{
         await onSubmit(name.trim(), baseRef || undefined)
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to create')
+      setError(errorMessage(err, 'Failed to create'))
     } finally {
       setBusy(false)
     }
@@ -701,7 +702,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       } catch (err: any) {
         if (!cancelled) {
           log.warn('[parallel-work] status fetch failed', err)
-          setError(err?.message || 'Failed to load parallel branches')
+          setError(errorMessage(err, 'Failed to load parallel branches'))
         }
       } finally {
         if (!cancelled) setRefreshing(false)
@@ -846,13 +847,13 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
           try {
             await window.electronAPI.gitBranchDelete(rootPath, wt.branch, true)
           } catch (err: any) {
-            setError(`Removed, but branch ${wt.branch} could not be deleted: ${err?.message || err}`)
+            setError(`Removed, but branch ${wt.branch} could not be deleted: ${errorMessage(err)}`)
           }
         }
         removeWorktree(selectedWorkspaceId, wt.id)
         void reconcile()
       } catch (err: any) {
-        setError(err?.message || 'Discard failed')
+        setError(errorMessage(err, 'Discard failed'))
       }
     },
     [rootPath, selectedWorkspaceId, removeWorktree, reconcile, statusByPath],
@@ -871,14 +872,14 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       try {
         const result = await window.electronAPI.gitWorktreeMergeTo(rootPath, wt.branch, target)
         if (!result.ok) {
-          setError(`Merge ${wt.branch} → ${target}: ${result.message}`)
+          setError(`Merge ${wt.branch} → ${target}: ${errorMessage(result.message)}`)
         } else {
           setError(null)
           setNotice(`Merged ${wt.branch} into ${target}`)
           void reconcile()
         }
       } catch (err: any) {
-        setError(err?.message || 'Merge failed')
+        setError(errorMessage(err, 'Merge failed'))
       }
     },
     [rootPath, primaryLabel, reconcile],
@@ -894,7 +895,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
           setError(
             result.conflict
               ? `Conflicts updating from ${target}. Open a terminal here to resolve them.`
-              : `Update from ${target}: ${result.message}`,
+              : `Update from ${target}: ${errorMessage(result.message)}`,
           )
         } else {
           setError(null)
@@ -902,7 +903,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
           void reconcile()
         }
       } catch (err: any) {
-        setError(err?.message || 'Update failed')
+        setError(errorMessage(err, 'Update failed'))
       }
     },
     [primaryLabel, reconcile],
@@ -918,7 +919,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       void reconcile()
     } catch (err: any) {
       setNotice(null)
-      setError(`Publish failed: ${err?.message || err}`)
+      setError(`Publish failed: ${errorMessage(err)}`)
     }
   }, [reconcile])
 
@@ -940,11 +941,11 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
         setPrNonce((n) => n + 1)
       } else {
         setNotice(null)
-        setError(res.message)
+        setError(errorMessage(res.message))
       }
     } catch (err: any) {
       setNotice(null)
-      setError(`Could not create pull request: ${err?.message || err}`)
+      setError(`Could not create pull request: ${errorMessage(err)}`)
     }
   }, [])
 
@@ -955,7 +956,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       await window.electronAPI.gitInit(rootPath)
       await reconcile()
     } catch (err: any) {
-      setError(`Could not initialize git: ${err?.message || err}`)
+      setError(`Could not initialize git: ${errorMessage(err)}`)
     }
   }, [rootPath, reconcile])
 
@@ -976,7 +977,7 @@ export const ParallelWorkTab: React.FC<ParallelWorkTabProps> = ({ rootPath }) =>
       }
       void reconcile()
     } catch (err: any) {
-      setError(err?.message || 'Cleanup failed')
+      setError(errorMessage(err, 'Cleanup failed'))
     }
   }, [rootPath, selectedWorkspaceId, removeWorktree, reconcile])
 

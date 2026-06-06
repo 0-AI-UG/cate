@@ -8,6 +8,7 @@ import { create } from 'zustand'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { shallow } from 'zustand/shallow'
 import log from '../lib/logger'
+import { errorMessage } from '../lib/errorMessage'
 import type {
   WorkspaceState,
   WorkspaceInfo,
@@ -975,7 +976,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }))
     return syncUpdateToMain(wsId, { rootPath, name: desiredName }).then((result) => {
       if (!result?.ok) {
-        const message = result?.error?.message ?? 'Failed to update workspace root'
+        const message = errorMessage(result?.error, 'Failed to update workspace root')
         set((state) => ({
           workspaces: state.workspaces.map((candidate) => (
             candidate.id === wsId
@@ -999,9 +1000,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setWorkspaceCompanionPhase(wsId, phase, error) {
+    const clean = error == null ? null : errorMessage(error)
     set((state) => ({
       workspaces: state.workspaces.map((c) =>
-        c.id === wsId ? { ...c, companion: { phase, ...(error != null ? { error } : {}) } } : c,
+        c.id === wsId ? { ...c, companion: { phase, ...(clean != null ? { error: clean } : {}) } } : c,
       ),
     }))
   },

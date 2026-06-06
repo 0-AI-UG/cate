@@ -5,6 +5,7 @@ import { SettingRow, Select, NumberInput, SearchableBlock } from './SettingsComp
 import type { Theme } from '../../shared/types'
 import { validateTheme } from '../../shared/theme'
 import { BASE_DARK, BASE_LIGHT, BUILT_IN_THEMES } from '../../shared/themes'
+import { errorMessage } from '../lib/errorMessage'
 
 const SKILL_GUIDE_URL = 'https://github.com/0-AI-UG/cate/blob/main/skills/cate-theme/SKILL.md'
 
@@ -69,12 +70,12 @@ export function AppearanceSettings() {
           if (valid.length === 0) return
           store.setSetting('customThemes', [...customThemes, ...valid])
         } catch (err) {
-          setImportError(err instanceof Error ? err.message : 'Failed to parse JSON')
+          setImportError(errorMessage(err, 'Failed to parse JSON'))
         }
       }
       input.click()
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Import failed')
+      setImportError(errorMessage(err, 'Import failed'))
     }
   }
 

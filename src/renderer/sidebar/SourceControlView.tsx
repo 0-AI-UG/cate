@@ -23,6 +23,7 @@ import { useUIStore } from '../stores/uiStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
+import { errorMessage } from '../lib/errorMessage'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -233,7 +234,7 @@ const BranchPicker: React.FC<{
       setIsOpen(false)
       onSwitch()
     } catch (err: any) {
-      setError(err?.message || 'Checkout failed')
+      setError(errorMessage(err, 'Checkout failed'))
     }
   }, [rootPath, onSwitch])
 
@@ -245,7 +246,7 @@ const BranchPicker: React.FC<{
       setIsOpen(false)
       onSwitch()
     } catch (err: any) {
-      setError(err?.message || 'Create failed')
+      setError(errorMessage(err, 'Create failed'))
     }
   }, [rootPath, newBranchName, onSwitch])
 
@@ -257,7 +258,7 @@ const BranchPicker: React.FC<{
       await window.electronAPI.gitBranchDelete(rootPath, name)
       loadBranches()
     } catch (err: any) {
-      setError(err?.message || 'Delete failed')
+      setError(errorMessage(err, 'Delete failed'))
     }
   }, [rootPath, currentBranch, loadBranches])
 
@@ -458,7 +459,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       await window.electronAPI.gitDiscardFile(rootPath, filePath)
       refresh()
     } catch (err: any) {
-      setActionError(err?.message || 'Discard failed')
+      setActionError(errorMessage(err, 'Discard failed'))
     }
   }, [rootPath, refresh])
 
@@ -485,7 +486,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       setCommitMessage('')
       refresh()
     } catch (err: any) {
-      setActionError(err?.message || 'Commit failed')
+      setActionError(errorMessage(err, 'Commit failed'))
     } finally {
       setCommitting(false)
     }
@@ -499,7 +500,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       await window.electronAPI.gitPush(rootPath)
       refresh()
     } catch (err: any) {
-      setActionError(err?.message || 'Push failed')
+      setActionError(errorMessage(err, 'Push failed'))
     } finally {
       setPushing(false)
     }
@@ -513,7 +514,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       await window.electronAPI.gitPull(rootPath)
       refresh()
     } catch (err: any) {
-      setActionError(err?.message || 'Pull failed')
+      setActionError(errorMessage(err, 'Pull failed'))
     } finally {
       setPulling(false)
     }
@@ -527,7 +528,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       await window.electronAPI.gitFetch(rootPath)
       refresh()
     } catch (err: any) {
-      setActionError(err?.message || 'Fetch failed')
+      setActionError(errorMessage(err, 'Fetch failed'))
     } finally {
       setFetching(false)
     }
@@ -539,7 +540,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       await window.electronAPI.gitStash(rootPath)
       refresh()
     } catch (err: any) {
-      setActionError(err?.message || 'Stash failed')
+      setActionError(errorMessage(err, 'Stash failed'))
     }
   }, [rootPath, refresh])
 
@@ -549,7 +550,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       await window.electronAPI.gitStashPop(rootPath)
       refresh()
     } catch (err: any) {
-      setActionError(err?.message || 'Stash pop failed')
+      setActionError(errorMessage(err, 'Stash pop failed'))
     }
   }, [rootPath, refresh])
 

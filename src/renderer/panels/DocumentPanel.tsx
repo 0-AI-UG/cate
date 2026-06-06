@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import type { PanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
 import { ArrowLeft, ArrowRight, Minus, Plus } from '@phosphor-icons/react'
+import { errorMessage } from '../lib/errorMessage'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -217,7 +218,7 @@ function DocxViewer({ data }: { data: Uint8Array }) {
       mammoth.convertToHtml({ arrayBuffer: (data.buffer as ArrayBuffer).slice(data.byteOffset, data.byteOffset + data.byteLength) }).then((result) => {
         if (!cancelled) setHtml(result.value)
       }).catch((err) => {
-        if (!cancelled) setError(String(err))
+        if (!cancelled) setError(errorMessage(err, 'Failed to render document'))
       })
     })
     return () => { cancelled = true }
@@ -300,7 +301,7 @@ export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
       }
     }).catch((err) => {
       if (!cancelled) {
-        setError(String(err))
+        setError(errorMessage(err, 'Failed to load file'))
         setLoading(false)
       }
     })
