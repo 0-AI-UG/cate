@@ -125,19 +125,27 @@ jobs:
 
       # Functional + content-search e2e against the real built app and the host
       # companion tarball staged above (so the daemon's ripgrep is present — this
-      # is why e2e lives here, not in the fast PR CI). macOS gates the release
-      # (e2e is validated windowless there). Linux/Windows run for signal but are
-      # non-blocking for now: they're newly enabled here, need a virtual display
-      # (xvfb on linux), and haven't been proven stable on these runners.
+      # is why e2e lives here, not in the fast PR CI). Gates the release on macOS
+      # and Linux (Linux under xvfb). Windows is excluded: its headless runner
+      # doesn't deliver synthetic-mouse drags to the never-shown window, so every
+      # drag spec hangs regardless of throttling switches — a runner limitation,
+      # not a product bug (the same specs pass on mac + Linux). Windows still
+      # builds + packages; it just skips e2e.
+      # E2E_SKIP_PERF is set here rather than inline in the npm script: npm runs
+      # scripts through cmd.exe on Windows, where `VAR=1 cmd` is a syntax error.
+      # Setting it at the step level (inherited by Git Bash on all runners) and
+      # invoking playwright directly keeps this cross-platform.
       - name: E2E tests (functional + search)
+        if: matrix.platform != 'win'
         shell: bash
-        continue-on-error: ${{ matrix.platform != 'mac' }}
+        env:
+          E2E_SKIP_PERF: '1'
         run: |
           if [ "${{ matrix.platform }}" = "linux" ]; then
             sudo apt-get update && sudo apt-get install -y xvfb
-            xvfb-run -a npm run test:e2e:ci
+            xvfb-run -a npx playwright test
           else
-            npm run test:e2e:ci
+            npx playwright test
           fi
 
       - name: Package (macOS)

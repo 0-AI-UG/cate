@@ -16,6 +16,11 @@ let page: Page
 
 test.beforeEach(async () => {
   ;({ electronApp: app, mainWindow: page } = await launchApp())
+  // Collapse the left sidebar. It's a real flex item that PUSHES the canvas now
+  // (#295), stealing ~260px of width — enough that a node seeded at canvas x=700
+  // has its centre fall off the right window edge, so a drop aimed there misses
+  // the mini-dock. Collapsing restores the wide canvas these geometry tests need.
+  await page.evaluate(() => window.__cateE2E!.setActiveLeftSidebarView(null))
   await resetViewport(page)
 })
 test.afterEach(async () => closeApp(app))

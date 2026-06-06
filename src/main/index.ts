@@ -1436,6 +1436,19 @@ if (!app.isPackaged && (process.env.CATE_SIMULATE_UPDATE === 'major' || process.
 // In E2E mode, use a fresh tmpdir per launch so Playwright runs are isolated
 // from each other and from local dev state. The harness sets CATE_E2E=1.
 if (process.env.CATE_E2E === '1') {
+  // The e2e window is never shown, so Chromium throttles it. Per-window
+  // backgroundThrottling:false isn't enough on Windows: its native occlusion
+  // detection marks a never-mapped window as occluded and freezes the
+  // compositor — and with it the rAF loop that applies node-drag transforms —
+  // so every drag spec times out on the Windows runner while no-op specs pass.
+  // These switches (no-ops on macOS/Linux, where the symptom doesn't occur)
+  // disable that occlusion freeze and renderer/timer backgrounding. Must run
+  // before app-ready, which this module-level block does.
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+
   const fs = require('fs') as typeof import('fs')
   const os = require('os') as typeof import('os')
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))

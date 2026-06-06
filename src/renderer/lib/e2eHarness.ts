@@ -60,6 +60,10 @@ declare global {
       setWorkspaceRoot(rootPath: string): Promise<boolean>
       /** Activate a sidebar view (e.g. 'search') on the left activity bar. */
       openSidebarView(view: SidebarView): void
+      /** Set (or clear, with null) the active left sidebar view. Passing null
+       *  collapses the sidebar panel — used by canvas geometry tests that need
+       *  the full-width canvas the pushed sidebar would otherwise shrink. */
+      setActiveLeftSidebarView(view: SidebarView | null): void
       /** File paths of currently-open editor panels (for open-at-match asserts). */
       editorPaths(): string[]
       /** Serializable snapshot of the search store (query, options, results). */
@@ -189,6 +193,10 @@ export function installE2EHarness(): void {
     return useAppStore.getState().setWorkspaceRootPath(wsId, rootPath)
   }
 
+  const setActiveLeftSidebarView = (view: SidebarView | null): void => {
+    useUIStore.getState().setActiveLeftSidebarView(view)
+  }
+
   const openSidebarView = (view: SidebarView): void => {
     useUIStore.getState().setActiveLeftSidebarView(view)
   }
@@ -258,6 +266,7 @@ export function installE2EHarness(): void {
     writeTerminal,
     setWorkspaceRoot,
     openSidebarView,
+    setActiveLeftSidebarView,
     editorPaths,
     getSearchSnapshot,
     lastEditorReveal,
