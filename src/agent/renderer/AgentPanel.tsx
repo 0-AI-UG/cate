@@ -863,7 +863,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
           {!sidebarOpen && (
             <button
               onClick={() => setSidebarOpen(true)}
-              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-white/5"
+              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
               title="Open sidebar"
             >
               <SidebarIcon size={14} />
@@ -875,7 +875,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
               <button
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => { setModelPickerOpen((v) => { if (!v) void refreshModels(); return !v }) }}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] text-primary hover:bg-white/5"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] text-primary hover:bg-hover"
               >
                 <CateLogo size={12} className="text-agent-light" />
                 <span className="truncate max-w-[220px]">

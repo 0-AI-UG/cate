@@ -63,18 +63,30 @@ export type DragSource = {
       }
 }
 
+/** Screen-px rectangle for the snapped drag ghost, attached to canvas targets
+ *  only when snap-to-grid is active so the overlay can preview the landing
+ *  position on the grid instead of free-tracking the cursor. */
+export interface GhostRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export type DropTarget =
   | {
       kind: 'canvas-reposition'
       canvasStoreApi: StoreApi<CanvasStore>
       nodeId: string
       origin: Point
+      ghostRect?: GhostRect
     }
   | {
       kind: 'canvas-add'
       canvasStoreApi: StoreApi<CanvasStore>
       origin: Point
       size: Size
+      ghostRect?: GhostRect
     }
   | {
       kind: 'dock-split'

@@ -238,7 +238,7 @@ export function ChatThread({ messages, pendingApprovals, onApproval, running, fo
         onClick={() => { scrollToBottom(true); setAtBottom(true) }}
         title="Scroll to bottom"
         aria-label="Scroll to bottom"
-        className="absolute bottom-3 right-3 z-10 p-2 rounded-full bg-surface-2 border border-white/10 text-muted hover:text-primary shadow-lg cate-fade-in"
+        className="absolute bottom-3 right-3 z-10 p-2 rounded-full bg-surface-2 border border-strong text-muted hover:text-primary shadow-lg cate-fade-in"
       >
         <ArrowDown size={14} weight="bold" />
       </button>
@@ -251,20 +251,20 @@ function RetryIndicator({ state, onAbort }: { state: RetryState; onAbort?: () =>
   if (state.active) {
     const delay = state.delayMs != null ? `${Math.round(state.delayMs / 1000)}s` : '…'
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[12px]">
-        <ArrowClockwise size={13} className="text-amber-400 animate-spin shrink-0" />
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning-tint border border-warning text-[12px]">
+        <ArrowClockwise size={13} className="text-warning animate-spin shrink-0" />
         <div className="flex-1 min-w-0">
-          <span className="text-amber-200">
+          <span className="text-warning">
             Retrying ({state.attempt ?? '?'}/{state.maxAttempts ?? '?'}) in {delay}
           </span>
           {state.errorMessage && (
-            <div className="text-[11px] text-amber-200/60 mt-0.5 truncate">{state.errorMessage}</div>
+            <div className="text-[11px] text-warning opacity-70 mt-0.5 truncate">{state.errorMessage}</div>
           )}
         </div>
         {onAbort && (
           <button
             onClick={onAbort}
-            className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-amber-200 text-[11px] shrink-0"
+            className="px-2 py-0.5 rounded-md bg-hover hover:bg-hover-strong text-warning text-[11px] shrink-0"
           >
             Abort
           </button>
@@ -273,9 +273,9 @@ function RetryIndicator({ state, onAbort }: { state: RetryState; onAbort?: () =>
     )
   }
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[12px]">
-      <WarningCircle size={13} weight="fill" className="text-red-400 shrink-0" />
-      <span className="text-red-300">
+    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-danger-tint border border-danger text-[12px]">
+      <WarningCircle size={13} weight="fill" className="text-danger shrink-0" />
+      <span className="text-danger">
         Retries exhausted{state.finalError ? `: ${state.finalError.length > 120 ? state.finalError.slice(0, 120) + '…' : state.finalError}` : ''}
       </span>
     </div>
@@ -317,14 +317,14 @@ function MessageRow({
   if (msg.type === 'user') {
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="max-w-[85%] px-3.5 py-2 rounded-2xl rounded-br-md bg-white/[0.08] text-primary text-[13px] whitespace-pre-wrap break-words select-text cursor-text">
+        <div className="max-w-[85%] px-3.5 py-2 rounded-2xl rounded-br-md bg-hover-strong text-primary text-[13px] whitespace-pre-wrap break-words select-text cursor-text">
           {msg.text}
         </div>
         <div className="flex items-center gap-0.5 text-muted">
           <button
             onClick={() => { void navigator.clipboard.writeText(msg.text) }}
             title="Copy message"
-            className="p-1 rounded-md hover:text-primary hover:bg-white/10"
+            className="p-1 rounded-md hover:text-primary hover:bg-hover-strong"
           >
             <Copy size={11} />
           </button>
@@ -348,12 +348,12 @@ function MessageRow({
             <button
               onClick={() => { void navigator.clipboard.writeText(msg.text) }}
               title="Copy message"
-              className="p-1 rounded-md hover:text-primary hover:bg-white/10"
+              className="p-1 rounded-md hover:text-primary hover:bg-hover-strong"
             >
               <Copy size={11} />
             </button>
             {(msg.model || msg.createdAt) && (
-              <span className="text-[10.5px] text-zinc-500 ml-1">
+              <span className="text-[10.5px] text-muted ml-1">
                 {msg.model}
                 {msg.model && msg.createdAt ? ' · ' : ''}
                 {msg.createdAt ? formatTime(msg.createdAt) : ''}
@@ -367,9 +367,9 @@ function MessageRow({
   if (msg.type === 'system') {
     const tone =
       msg.kind === 'error'
-        ? 'text-red-300'
+        ? 'text-danger'
         : msg.kind === 'warning'
-        ? 'text-amber-300'
+        ? 'text-warning'
         : 'text-muted'
     return <div className={`text-center text-[11px] italic ${tone}`}>{msg.text}</div>
   }
@@ -445,7 +445,7 @@ function Markdown({ text }: { text: string }) {
               {children}
             </blockquote>
           ),
-          hr: () => <hr className="border-white/10 my-2" />,
+          hr: () => <hr className="border-strong my-2" />,
           strong: ({ children }) => <strong className="font-semibold text-primary">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
           code: ({ className, children, ...props }) => {
@@ -458,26 +458,26 @@ function Markdown({ text }: { text: string }) {
               )
             }
             return (
-              <code className="font-mono text-[11.5px] px-1 py-[1px] rounded bg-black/30 text-agent-light" {...props}>
+              <code className="font-mono text-[11.5px] px-1 py-[1px] rounded bg-surface-0 text-agent-light" {...props}>
                 {children}
               </code>
             )
           },
           pre: ({ children }) => (
-            <pre className="rounded-md bg-black/40 border border-white/10 px-3 py-2 overflow-x-auto text-[11.5px] leading-snug">
+            <pre className="rounded-md bg-surface-0 border border-strong px-3 py-2 overflow-x-auto text-[11.5px] leading-snug">
               {children}
             </pre>
           ),
           table: ({ children }) => (
             <div className="overflow-x-auto">
-              <table className="min-w-full text-[12px] border border-white/10 rounded-md">{children}</table>
+              <table className="min-w-full text-[12px] border border-strong rounded-md">{children}</table>
             </div>
           ),
           th: ({ children }) => (
-            <th className="text-left px-2 py-1 border-b border-white/10 bg-white/[0.04] font-medium">{children}</th>
+            <th className="text-left px-2 py-1 border-b border-strong bg-hover font-medium">{children}</th>
           ),
           td: ({ children }) => (
-            <td className="px-2 py-1 border-b border-white/5 align-top">{children}</td>
+            <td className="px-2 py-1 border-b border-subtle align-top">{children}</td>
           ),
         }}
       >
@@ -649,7 +649,7 @@ function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
               {isRunning && <span className="inline-block w-[2px] h-[1em] align-middle bg-primary/80 ml-0.5 animate-pulse" />}
             </pre>
             {msg.error && (
-              <pre className="text-rose-300/90 whitespace-pre-wrap break-words">
+              <pre className="text-danger whitespace-pre-wrap break-words">
                 {msg.error}
               </pre>
             )}
@@ -694,7 +694,7 @@ function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
             </pre>
           )}
           {msg.error && (
-            <pre className="text-[11px] text-rose-300/90 whitespace-pre-wrap break-words font-mono leading-snug">
+            <pre className="text-[11px] text-danger whitespace-pre-wrap break-words font-mono leading-snug">
               {msg.error}
             </pre>
           )}
@@ -769,7 +769,7 @@ function SubagentCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean })
             results.map((r, i) => <SubagentResultRow key={i} result={r} parentRunning={running} />)
           )}
           {msg.error && (
-            <pre className="text-[11px] text-rose-300/90 whitespace-pre-wrap break-words font-mono leading-snug">
+            <pre className="text-[11px] text-danger whitespace-pre-wrap break-words font-mono leading-snug">
               {msg.error}
             </pre>
           )}
@@ -821,7 +821,7 @@ function SubagentResultRow({
             onClick={(e) => e.stopPropagation()}
           >
             <Info size={11} className="text-muted hover:text-primary/70 cursor-help" />
-            <span className="absolute bottom-full right-0 mb-1 hidden group-hover/info:block whitespace-nowrap text-[10px] text-primary/90 font-mono bg-surface-2 border border-white/10 rounded px-1.5 py-1 shadow-lg z-10">
+            <span className="absolute bottom-full right-0 mb-1 hidden group-hover/info:block whitespace-nowrap text-[10px] text-primary/90 font-mono bg-surface-2 border border-strong rounded px-1.5 py-1 shadow-lg z-10">
               {usageBits.join(' · ')}{result.model ? ` · ${result.model}` : ''}
             </span>
           </span>
@@ -848,7 +848,7 @@ function SubagentResultRow({
             return null
           })}
           {result.errorMessage && (
-            <pre className="text-[11px] text-rose-300/90 whitespace-pre-wrap break-words font-mono leading-snug">
+            <pre className="text-[11px] text-danger whitespace-pre-wrap break-words font-mono leading-snug">
               {result.errorMessage}
             </pre>
           )}
@@ -1027,20 +1027,20 @@ function PlanReadyCard({
           disabled={!!effectiveLocked}
           rows={2}
           placeholder="Refine: type the changes you want…"
-          className="w-full rounded-md bg-black/20 border border-agent/20 focus:border-agent-light/60 outline-none px-2.5 py-2 text-[12px] text-primary placeholder:text-muted resize-none disabled:opacity-50"
+          className="w-full rounded-md bg-surface-0 border border-agent/20 focus:border-agent-light/60 outline-none px-2.5 py-2 text-[12px] text-primary placeholder:text-muted resize-none disabled:opacity-50"
         />
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleRefine}
             disabled={!!effectiveLocked || refineText.trim().length === 0}
-            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-agent/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white/5"
+            className="px-2.5 py-1 rounded-md bg-hover hover:bg-agent/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-[var(--surface-hover)]"
           >
             {lockLabel('Refine plan', 'refine')}
           </button>
           <button
             onClick={handleClear}
             disabled={!!effectiveLocked}
-            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-agent/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-white/5"
+            className="px-2.5 py-1 rounded-md bg-hover hover:bg-agent/20 text-primary text-[11.5px] font-medium disabled:opacity-50 disabled:cursor-default disabled:hover:bg-[var(--surface-hover)]"
           >
             {lockLabel('Clear context & implement', 'clear')}
           </button>
@@ -1148,23 +1148,23 @@ function DiffView({ diff }: { diff: DiffInfo }) {
             key={i}
             className={`flex ${
               l.kind === 'add'
-                ? 'bg-emerald-500/[0.08]'
+                ? 'bg-diff-add'
                 : l.kind === 'del'
-                ? 'bg-rose-500/[0.08]'
+                ? 'bg-diff-del'
                 : ''
             }`}
           >
             <span className="w-5 text-right pr-1.5 select-none text-muted/30 shrink-0">{ln}</span>
             <span className={`w-3 text-center select-none shrink-0 ${
-              l.kind === 'add' ? 'text-emerald-400/70' : l.kind === 'del' ? 'text-rose-400/70' : 'text-transparent'
+              l.kind === 'add' ? 'text-diff-add' : l.kind === 'del' ? 'text-diff-del' : 'text-transparent'
             }`}>
               {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}
             </span>
             <span className={`whitespace-pre-wrap break-words flex-1 pr-2 ${
               l.kind === 'add'
-                ? 'text-emerald-300/90'
+                ? 'text-diff-add'
                 : l.kind === 'del'
-                ? 'text-rose-300/70 line-through decoration-rose-400/20'
+                ? 'text-diff-del line-through'
                 : 'text-primary/50'
             }`}>{l.text || ' '}</span>
           </div>
@@ -1193,7 +1193,7 @@ function ApprovalCard({
           Allow <strong className="font-mono">{req.toolName}</strong>?
         </span>
       </div>
-      <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono max-h-[160px] overflow-auto bg-black/20 rounded p-2 select-text cursor-text">
+      <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono max-h-[160px] overflow-auto bg-surface-0 rounded p-2 select-text cursor-text">
         {prettyArgs(req.args)}
       </pre>
       <div className="flex items-center gap-2">
@@ -1205,7 +1205,7 @@ function ApprovalCard({
         </button>
         <button
           onClick={() => onDecide('deny')}
-          className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[11px] font-medium"
+          className="px-2.5 py-1 rounded-md bg-hover hover:bg-hover-strong text-primary text-[11px] font-medium"
         >
           Deny
         </button>

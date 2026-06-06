@@ -372,6 +372,21 @@ export function useCanvasInteraction(
         document.body.classList.add('canvas-interacting')
         e.preventDefault()
       } else if (e.button === 0) {
+        // During deferred ghost placement: a left-click that misses every ghost
+        // cancels placement (same as Esc), as long as free mode isn't armed —
+        // armed mode owns its own full-canvas surface and commits on click.
+        // Handled here on mousedown because empty canvas background never reaches
+        // the 1x1 world div that hosts the click-to-cancel fallback.
+        const placement = canvasStoreApi.getState().pendingPlacement
+        if (placement && !placement.freeArmed) {
+          const t = e.target as HTMLElement
+          if (!t.closest('[data-ghost-candidate]') && !t.closest('[data-placement-surface]')) {
+            canvasStoreApi.getState().cancelPlacement()
+            e.preventDefault()
+            return
+          }
+        }
+
         // Hand tool (or Space-hold): left-drag pans the canvas, even when the
         // press lands on a node (nodes let the event bubble here under Hand).
         // No context menu, no inertia, no marquee — just a straight pan.

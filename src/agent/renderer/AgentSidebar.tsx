@@ -45,11 +45,11 @@ export function AgentSidebar({
   const grouped = useMemo(() => groupChats(chats), [chats])
 
   return (
-    <div className="w-[200px] shrink-0 flex flex-col border-r border-subtle bg-black/15 min-h-0">
+    <div className="w-[200px] shrink-0 flex flex-col border-r border-subtle bg-surface-0 min-h-0">
       <div className="flex items-center gap-1 px-2 h-10 border-b border-subtle shrink-0">
         <button
           onClick={onCollapse}
-          className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-white/5"
+          className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
           title="Collapse sidebar"
         >
           <SidebarIcon size={14} />
@@ -65,7 +65,7 @@ export function AgentSidebar({
       </div>
 
       <div className="px-2 pt-2 pb-2 shrink-0">
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/20 border border-white/5">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-0 border border-subtle">
           <MagnifyingGlass size={11} className="text-muted shrink-0" />
           <input
             value={search}
@@ -106,8 +106,8 @@ export function AgentSidebar({
           onClick={onOpenSettings}
           className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[12px] ${
             settingsActive
-              ? 'bg-white/10 text-primary'
-              : 'text-muted hover:bg-white/5 hover:text-primary'
+              ? 'bg-hover-strong text-primary'
+              : 'text-muted hover:bg-hover hover:text-primary'
           }`}
         >
           <Gear size={12} />
@@ -132,7 +132,7 @@ function ChatRow({
   return (
     <div
       className={`group flex items-center gap-1 px-1 rounded-md ${
-        active ? 'bg-white/10' : 'hover:bg-white/5'
+        active ? 'bg-hover-strong' : 'hover:bg-hover'
       }`}
     >
       <button
@@ -145,7 +145,7 @@ function ChatRow({
       </button>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete() }}
-        className="p-1 rounded-md text-muted hover:text-primary hover:bg-white/10 opacity-0 group-hover:opacity-100"
+        className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong opacity-0 group-hover:opacity-100"
         title="Delete chat"
       >
         <Trash size={10} />

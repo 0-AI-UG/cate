@@ -515,11 +515,12 @@ describe('resolveDrop — canvas surface', () => {
     })
   })
 
-  it('snap=true rounds the reposition origin to the grid (ghost still free-tracks)', () => {
-    // The committed origin snaps to the grid; the ghost free-tracks the cursor
-    // during the drag (see Overlay), so no snapped preview rect is attached.
-    // Expectations derive from snapToGrid so they stay correct if the grid size
-    // changes. zoom=1, offset=0, container at (0,0) → raw origin is cursor - grab.
+  it('snap=true rounds the reposition origin to the grid and previews the snapped cell', () => {
+    // The committed origin snaps to the grid; with snap on, resolveDrop also
+    // attaches a screen-px ghostRect so the overlay previews the snapped landing
+    // cell. Expectations derive from snapToGrid so they stay correct if the grid
+    // size changes. zoom=1, offset=0, container at (0,0) → raw origin is
+    // cursor - grab, and the snapped screen rect is just the snapped origin.
     const cursor = { x: 300, y: 200 }
     const grabOffset = { x: 50, y: 25 }
     const rawOrigin = { x: cursor.x - grabOffset.x, y: cursor.y - grabOffset.y }
@@ -544,10 +545,16 @@ describe('resolveDrop — canvas surface', () => {
       canvasStoreApi: CANVAS_STORE_A,
       nodeId: 'node-A',
       origin,
+      ghostRect: {
+        left: origin.x,
+        top: origin.y,
+        width: ghostSize.width,
+        height: ghostSize.height,
+      },
     })
   })
 
-  it('snap=true snaps canvas-add origin (no snapped ghost rect attached)', () => {
+  it('snap=true snaps canvas-add origin and previews the snapped cell at the canvas zoom', () => {
     // zoom=2, offset {30,40}, container at {10,20}, grab 0.
     // cursor → canvas: ((300-10)-30)/2, ((200-20)-40)/2 = (130, 70) before snap.
     const zoom = 2
@@ -577,6 +584,13 @@ describe('resolveDrop — canvas surface', () => {
       canvasStoreApi: zoomed,
       origin,
       size: ghostSize,
+      // screen rect = containerRect + (origin * zoom + offset), sized at zoom.
+      ghostRect: {
+        left: containerRect.left + origin.x * zoom + offset.x,
+        top: containerRect.top + origin.y * zoom + offset.y,
+        width: ghostSize.width * zoom,
+        height: ghostSize.height * zoom,
+      },
     })
   })
 

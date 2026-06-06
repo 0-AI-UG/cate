@@ -54,7 +54,7 @@ export function QueueBadges({
         <span
           key={`f${i}`}
           title={s}
-          className="px-1.5 py-0.5 rounded bg-white/10 text-primary/80 max-w-[200px] truncate"
+          className="px-1.5 py-0.5 rounded bg-hover-strong text-primary/80 max-w-[200px] truncate"
         >
           after: {s}
         </span>
@@ -73,9 +73,9 @@ export function ExtensionStatusBar({ entries }: { entries: ExtensionStatusEntry[
   const visible = entries.filter((e) => e.key !== 'plan-mode')
   if (visible.length === 0) return null
   return (
-    <div className="flex flex-wrap gap-2 px-3 py-1 border-t border-white/5 bg-black/15 text-[11px] text-muted">
+    <div className="flex flex-wrap gap-2 px-3 py-1 border-t border-subtle bg-surface-0 text-[11px] text-muted">
       {visible.map((e) => (
-        <span key={e.key} className="px-1.5 py-0.5 rounded bg-white/5 font-mono">
+        <span key={e.key} className="px-1.5 py-0.5 rounded bg-hover font-mono">
           {e.text}
         </span>
       ))}
@@ -93,7 +93,7 @@ export function ExtensionWidget({
   const filtered = widgets.filter((w) => w.placement === placement)
   if (filtered.length === 0) return null
   return (
-    <div className="px-3 py-1.5 space-y-2 text-[11.5px] text-primary/90 border-t border-white/5 bg-black/15">
+    <div className="px-3 py-1.5 space-y-2 text-[11.5px] text-primary/90 border-t border-subtle bg-surface-0">
       {filtered.map((w) => (
         <div key={w.key} className="font-mono whitespace-pre">
           {w.lines.join('\n')}
@@ -145,7 +145,7 @@ export function ExtensionDialog({
             <button
               key={opt}
               onClick={() => onRespond({ id: request.id, value: opt })}
-              className="w-full text-left px-3 py-1.5 rounded-md bg-white/5 hover:bg-agent/30 text-primary text-[12px]"
+              className="w-full text-left px-3 py-1.5 rounded-md bg-hover hover:bg-agent/30 text-primary text-[12px]"
             >
               {opt}
             </button>
@@ -161,7 +161,7 @@ export function ExtensionDialog({
         <div className="flex items-center gap-2 justify-end">
           <button
             onClick={() => onRespond({ id: request.id, confirmed: false })}
-            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[12px]"
+            className="px-2.5 py-1 rounded-md bg-hover hover:bg-hover-strong text-primary text-[12px]"
           >
             No
           </button>
@@ -191,13 +191,13 @@ export function ExtensionDialog({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={String(request.placeholder ?? '')}
-            className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60"
+            className="w-full bg-surface-3 border border-strong rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60"
           />
           <div className="flex items-center gap-2 justify-end">
             <button
               type="button"
               onClick={() => onRespond({ id: request.id, cancelled: true })}
-              className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[12px]"
+              className="px-2.5 py-1 rounded-md bg-hover hover:bg-hover-strong text-primary text-[12px]"
             >
               Cancel
             </button>
@@ -221,12 +221,12 @@ export function ExtensionDialog({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           rows={8}
-          className="w-full bg-surface-3 border border-white/10 rounded-md px-2 py-2 text-[12px] text-primary outline-none focus:border-agent/60 font-mono resize-y"
+          className="w-full bg-surface-3 border border-strong rounded-md px-2 py-2 text-[12px] text-primary outline-none focus:border-agent/60 font-mono resize-y"
         />
         <div className="flex items-center gap-2 justify-end mt-2">
           <button
             onClick={() => onRespond({ id: request.id, cancelled: true })}
-            className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[12px]"
+            className="px-2.5 py-1 rounded-md bg-hover hover:bg-hover-strong text-primary text-[12px]"
           >
             Cancel
           </button>
@@ -336,7 +336,7 @@ export function ImageAttachButton({ onPick }: { onPick: (img: AgentImageAttachme
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-white/5"
+        className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
         title="Attach image"
       >
         <ImageIcon size={13} />
@@ -466,7 +466,7 @@ export function ThinkingLevelPicker({
         ref={btnRef}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[10.5px] text-muted/70 hover:text-primary hover:bg-white/5 disabled:opacity-50"
+        className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[10.5px] text-muted/70 hover:text-primary hover:bg-hover disabled:opacity-50"
         title={`Reasoning effort: ${current}`}
       >
         <ThinkingBars count={bars} />
@@ -474,16 +474,16 @@ export function ThinkingLevelPicker({
       {open && pos && portalTarget && createPortal(
         <div
           ref={popoverRef}
-          className="absolute w-[160px] rounded-lg border border-white/10 bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_rgba(0,0,0,0.45)] z-[9999] overflow-hidden"
+          className="absolute w-[160px] rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-[9999] overflow-hidden"
           style={{ top: pos.top, left: pos.left, transform: 'translateY(-100%)' }}
         >
-          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-muted/70 border-b border-white/5">Thinking level</div>
+          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-muted/70 border-b border-subtle">Thinking level</div>
           {THINKING_LEVELS.map((lv) => (
             <button
               key={lv}
               onClick={() => { setOpen(false); onChange(lv) }}
               className={`w-full flex items-center justify-between px-3 py-1.5 text-[12px] capitalize ${
-                lv === current ? 'bg-white/10 text-primary' : 'text-primary hover:bg-white/5'
+                lv === current ? 'bg-hover-strong text-primary' : 'text-primary hover:bg-hover'
               }`}
             >
               <span>{lv}</span>

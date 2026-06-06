@@ -19,8 +19,8 @@ const TAB_BADGE: Record<'agents' | 'prompts' | 'skills', string> = {
 }
 
 const TAB_BADGE_COLOR: Record<'agents' | 'prompts' | 'skills', string> = {
-  agents: 'text-muted bg-white/5',
-  prompts: 'text-muted bg-white/5',
+  agents: 'text-muted bg-hover',
+  prompts: 'text-muted bg-hover',
   skills: 'text-agent-light bg-agent/10',
 }
 
@@ -143,13 +143,13 @@ export function SettingsView({
         )}
         <button
           onClick={() => window.electronAPI.agentOpenSkillsFolder(cwd, kind).catch(() => {})}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-primary text-[12px]"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-hover hover:bg-hover-strong text-primary text-[12px]"
         >
           <FolderOpen size={11} /> Open folder
         </button>
       </div>
       {creating === kind && (
-        <div className="rounded-lg bg-white/[0.03] p-2 flex items-center gap-2 mt-2">
+        <div className="rounded-lg bg-hover p-2 flex items-center gap-2 mt-2">
           <input
             autoFocus
             value={newName}
@@ -159,7 +159,7 @@ export function SettingsView({
               if (e.key === 'Escape') { setCreating(null); setNewName(''); setError(null) }
             }}
             placeholder={`${kind.slice(0, -1)} name`}
-            className="flex-1 bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60 font-mono"
+            className="flex-1 bg-surface-3 border border-strong rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60 font-mono"
           />
           <button
             onClick={() => handleCreate(kind)}
@@ -177,7 +177,7 @@ export function SettingsView({
         </div>
       )}
       {creating === kind && error && <div className="text-[12px] text-primary mt-1">{error}</div>}
-      <div className="rounded-lg bg-white/[0.02] overflow-hidden mt-2">
+      <div className="rounded-lg bg-hover overflow-hidden mt-2">
         {files.length === 0 && (kind !== 'skills' || packageSkills.length === 0) ? (
           <div className="px-3 py-4 text-center text-[12px] text-muted">
             No {kind} yet.
@@ -203,7 +203,7 @@ export function SettingsView({
                 name={c.name}
                 description={c.description}
                 badge="Built-in"
-                badgeClass="text-muted bg-white/5"
+                badgeClass="text-muted bg-hover"
                 filePath={c.path}
                 deletable={false}
                 onOpen={() => handleOpen(c.path)}
@@ -230,7 +230,7 @@ export function SettingsView({
               onClick={() => scrollTo(id)}
               className={`text-left px-2 py-1 rounded-md text-[12px] ${
                 activeSection === id
-                  ? 'text-primary bg-white/10'
+                  ? 'text-primary bg-hover-strong'
                   : 'text-muted hover:text-primary'
               }`}
             >
@@ -261,7 +261,7 @@ export function SettingsView({
             <div className="text-[13px] font-semibold text-primary">Extensions</div>
             <button
               onClick={() => setRefreshNonce((n) => n + 1)}
-              className="p-1 rounded-md text-muted hover:text-primary hover:bg-white/5"
+              className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover"
               title="Refresh"
             >
               <ArrowsClockwise size={12} />
@@ -414,7 +414,7 @@ function ExtensionsTab({ cwd, refreshNonce = 0 }: { cwd: string; refreshNonce?: 
   return (
     <div className="space-y-4">
       {error && (
-        <div className="rounded-md border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100 whitespace-pre-wrap break-words">
+        <div className="rounded-md border border-danger bg-danger-tint px-3 py-2 text-[12px] text-primary whitespace-pre-wrap break-words">
           {error}
         </div>
       )}
@@ -423,7 +423,7 @@ function ExtensionsTab({ cwd, refreshNonce = 0 }: { cwd: string; refreshNonce?: 
         <div className="flex items-center justify-between mb-1.5">
           <div className="text-[11px] uppercase tracking-wider text-muted">Installed</div>
         </div>
-        <div className="rounded-lg bg-white/[0.02] overflow-hidden">
+        <div className="rounded-lg bg-hover overflow-hidden">
           {installed.length === 0 ? (
             <div className="px-3 py-6 text-center text-[12px] text-muted">
               No extensions installed.
@@ -464,7 +464,7 @@ function ExtensionsTab({ cwd, refreshNonce = 0 }: { cwd: string; refreshNonce?: 
                 setSort(e.target.value as MarketplaceSortValue)
                 setPage(1)
               }}
-              className="bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60"
+              className="bg-surface-3 border border-strong rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60"
             >
               <option value="downloads">Most downloads</option>
               <option value="recent">Recently published</option>
@@ -474,11 +474,11 @@ function ExtensionsTab({ cwd, refreshNonce = 0 }: { cwd: string; refreshNonce?: 
               value={queryInput}
               onChange={(e) => setQueryInput(e.target.value)}
               placeholder="Search..."
-              className="bg-surface-3 border border-white/10 rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60 w-[180px]"
+              className="bg-surface-3 border border-strong rounded-md px-2 py-1 text-[12px] text-primary outline-none focus:border-agent/60 w-[180px]"
             />
           </div>
         </div>
-        <div className="rounded-lg bg-white/[0.02] overflow-hidden">
+        <div className="rounded-lg bg-hover overflow-hidden">
           {!loaded ? (
             <div className="px-3 py-6 text-center text-[12px] text-muted">Loading…</div>
           ) : filtered.length === 0 ? (
@@ -512,7 +512,7 @@ function ExtensionsTab({ cwd, refreshNonce = 0 }: { cwd: string; refreshNonce?: 
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={browseLoading || page <= 1}
-              className="px-2 py-1 rounded-md bg-white/5 hover:bg-agent/20 hover:text-primary disabled:opacity-40 disabled:cursor-default disabled:hover:bg-white/5 disabled:hover:text-muted"
+              className="px-2 py-1 rounded-md bg-hover hover:bg-agent/20 hover:text-primary disabled:opacity-40 disabled:cursor-default disabled:hover:bg-[var(--surface-hover)] disabled:hover:text-muted"
             >
               « Prev
             </button>
@@ -522,7 +522,7 @@ function ExtensionsTab({ cwd, refreshNonce = 0 }: { cwd: string; refreshNonce?: 
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={browseLoading || page >= totalPages}
-              className="px-2 py-1 rounded-md bg-white/5 hover:bg-agent/20 hover:text-primary disabled:opacity-40 disabled:cursor-default disabled:hover:bg-white/5 disabled:hover:text-muted"
+              className="px-2 py-1 rounded-md bg-hover hover:bg-agent/20 hover:text-primary disabled:opacity-40 disabled:cursor-default disabled:hover:bg-[var(--surface-hover)] disabled:hover:text-muted"
             >
               Next »
             </button>
@@ -560,10 +560,10 @@ function ExtensionRow({
     actionTone === 'primary'
       ? 'bg-agent hover:bg-agent-light text-white'
       : actionTone === 'danger'
-      ? 'bg-white/5 hover:bg-rose-500/30 text-rose-100'
-      : 'bg-white/5 text-muted'
+      ? 'bg-hover hover:bg-danger-tint text-danger'
+      : 'bg-hover text-muted'
   return (
-    <div className="flex items-start gap-2 px-3 py-2 border-b border-white/5 last:border-0 hover:bg-white/[0.04]">
+    <div className="flex items-start gap-2 px-3 py-2 border-b border-subtle last:border-0 hover:bg-hover">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[12.5px] text-primary font-mono truncate">{name}</span>
@@ -626,7 +626,7 @@ function SkillRow({
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="group flex items-center gap-2 px-3 py-2 border-b border-white/5 last:border-0 hover:bg-white/[0.04]"
+      className="group flex items-center gap-2 px-3 py-2 border-b border-subtle last:border-0 hover:bg-hover"
     >
       <button
         onClick={onOpen}
@@ -646,7 +646,7 @@ function SkillRow({
       {hovered && deletable && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="p-1 rounded-md text-muted hover:text-primary hover:bg-white/10"
+          className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong"
           title="Delete"
         >
           <Trash size={11} />

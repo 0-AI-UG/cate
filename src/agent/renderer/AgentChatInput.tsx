@@ -152,7 +152,7 @@ export function ChatInput({
         className={`relative rounded-2xl border bg-surface-3 transition-colors ${
           dragOver
             ? 'border-agent-light ring-2 ring-agent-light/40'
-            : 'border-white/10 focus-within:border-agent/50'
+            : 'border-strong focus-within:border-agent/50'
         }`}
       >
         {popupOpen && (
@@ -218,7 +218,7 @@ export function ChatInput({
             className={`p-1.5 rounded-md ${
               planModeActive
                 ? 'bg-agent/25 text-primary'
-                : 'text-primary/80 hover:bg-white/5'
+                : 'text-primary/80 hover:bg-hover'
             }`}
             title="Plan mode: agent investigates with parallel scouts, proposes a plan, then waits for your approval."
           >
@@ -261,7 +261,7 @@ export function ChatInput({
             <button
               onClick={onSubmit}
               disabled={!canSend}
-              className="p-1.5 rounded-full bg-agent hover:bg-agent-light disabled:bg-white/10 disabled:text-muted text-white"
+              className="p-1.5 rounded-full bg-agent hover:bg-agent-light disabled:bg-[var(--surface-hover-strong)] disabled:text-muted text-white"
               title="Send"
             >
               <PaperPlaneRight size={12} weight="fill" />
@@ -319,7 +319,7 @@ function CompactButton({
         ref={btnRef}
         onClick={() => setOpen((v) => !v)}
         disabled={compactionActive}
-        className={`p-1.5 rounded-md hover:bg-white/5 disabled:opacity-50 ${
+        className={`p-1.5 rounded-md hover:bg-hover disabled:opacity-50 ${
           autoCompactionEnabled ? 'text-primary/80' : 'text-muted/50'
         }`}
         title="Compact context"
@@ -329,24 +329,24 @@ function CompactButton({
       {open && pos && portalTarget && createPortal(
         <div
           ref={popoverRef}
-          className="absolute w-[200px] rounded-lg border border-white/10 bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_rgba(0,0,0,0.45)] z-[9999] overflow-hidden"
+          className="absolute w-[200px] rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-[9999] overflow-hidden"
           style={{ top: pos.top, left: pos.left, transform: 'translateY(-100%)' }}
         >
           <button
             onClick={() => { setOpen(false); onManualCompact() }}
             disabled={compactionActive}
-            className="w-full text-left px-3 py-2 text-[12px] text-primary hover:bg-white/5 disabled:opacity-50"
+            className="w-full text-left px-3 py-2 text-[12px] text-primary hover:bg-hover disabled:opacity-50"
           >
             Compact now
           </button>
-          <div className="border-t border-white/5">
+          <div className="border-t border-subtle">
             <button
               onClick={() => onToggleAutoCompaction()}
-              className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-primary hover:bg-white/5"
+              className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-primary hover:bg-hover"
             >
               <span>Auto-compact</span>
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                autoCompactionEnabled ? 'bg-agent/20 text-agent-light' : 'bg-white/5 text-muted'
+                autoCompactionEnabled ? 'bg-agent/20 text-agent-light' : 'bg-hover text-muted'
               }`}>
                 {autoCompactionEnabled ? 'on' : 'off'}
               </span>
@@ -367,7 +367,7 @@ function ContextRing({ percent, size = 14, stroke = 1.5 }: { percent: number; si
   const r = (size - stroke) / 2
   const circ = 2 * Math.PI * r
   const filled = circ * (Math.min(percent, 100) / 100)
-  const color = percent > 85 ? '#f87171' : percent > 65 ? '#fbbf24' : 'currentColor'
+  const color = percent > 85 ? 'var(--git-deleted)' : percent > 65 ? 'var(--activity-orange)' : 'currentColor'
   return (
     <svg width={size} height={size} className="shrink-0 -rotate-90">
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} className="opacity-20" />
@@ -419,21 +419,21 @@ function StatsChip({
     pctRounded == null
       ? 'text-muted/70'
       : pctRounded > 85
-      ? 'text-red-300'
+      ? 'text-danger'
       : pctRounded > 65
-      ? 'text-amber-300'
+      ? 'text-warning'
       : 'text-muted/70'
   const fmtCost = (c: number) =>
     c >= 1 ? `$${c.toFixed(2)}` : c >= 0.01 ? `$${c.toFixed(3)}` : `$${c.toFixed(4)}`
   const barPct = pctRounded ?? 0
-  const barColor = barPct > 85 ? 'bg-red-400' : barPct > 65 ? 'bg-amber-400' : 'bg-agent-light'
+  const barColor = barPct > 85 ? 'bg-danger' : barPct > 65 ? 'bg-warning' : 'bg-agent-light'
   return (
     <>
       <button
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-mono ${tone} hover:bg-white/5`}
+        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-mono ${tone} hover:bg-hover`}
         title="Conversation stats"
       >
         {pctRounded != null ? <ContextRing percent={pctRounded} /> : <span>-</span>}
@@ -441,10 +441,10 @@ function StatsChip({
       {open && pos && portalTarget && createPortal(
         <div
           ref={popoverRef}
-          className="absolute w-[260px] rounded-lg border border-white/10 bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_rgba(0,0,0,0.45)] z-[9999] text-[11.5px] text-primary font-mono"
+          className="absolute w-[260px] rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-[9999] text-[11.5px] text-primary font-mono"
           style={{ top: pos.top, left: pos.left, transform: 'translateY(-100%)' }}
         >
-          <div className="px-3 pt-3 pb-2 border-b border-white/5">
+          <div className="px-3 pt-3 pb-2 border-b border-subtle">
             <div className="flex justify-between items-baseline mb-1.5">
               <span className="text-muted text-[10px] uppercase tracking-wider font-semibold">Context window</span>
               <span>
@@ -452,11 +452,11 @@ function StatsChip({
                 {ctxWindow ? <span className="text-muted"> / {formatTokensShort(ctxWindow)}</span> : ''}
               </span>
             </div>
-            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-1.5 rounded-full bg-hover-strong overflow-hidden">
               <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${barPct}%` }} />
             </div>
           </div>
-          <div className="px-3 pt-2 pb-2 border-b border-white/5 space-y-1">
+          <div className="px-3 pt-2 pb-2 border-b border-subtle space-y-1">
             <div className="text-muted text-[10px] uppercase tracking-wider font-semibold mb-1">Billed tokens</div>
             <div className="flex justify-between gap-3">
               <span className="text-muted">Input</span>
@@ -504,8 +504,8 @@ const SOURCE_LABEL: Record<AgentSlashCommand['source'], string> = {
 
 const SOURCE_COLOR: Record<AgentSlashCommand['source'], string> = {
   skill: 'text-agent-light bg-agent/10',
-  prompt: 'text-muted bg-white/5',
-  extension: 'text-muted bg-white/5',
+  prompt: 'text-muted bg-hover',
+  extension: 'text-muted bg-hover',
 }
 
 function SlashPopup({
@@ -520,7 +520,7 @@ function SlashPopup({
   onHover: (idx: number) => void
 }) {
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-1.5 max-h-[240px] overflow-y-auto rounded-xl border border-white/10 bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_rgba(0,0,0,0.45)] z-20">
+    <div className="absolute bottom-full left-0 right-0 mb-1.5 max-h-[240px] overflow-y-auto rounded-xl border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20">
       {commands.map((cmd, i) => {
         const active = i === selectedIdx
         return (
@@ -529,7 +529,7 @@ function SlashPopup({
             onMouseEnter={() => onHover(i)}
             onMouseDown={(e) => { e.preventDefault(); onPick(cmd) }}
             className={`w-full text-left px-3 py-2 flex items-start gap-2 ${
-              active ? 'bg-white/10' : 'hover:bg-white/5'
+              active ? 'bg-hover-strong' : 'hover:bg-hover'
             }`}
           >
             <span className={`shrink-0 mt-[1px] px-1.5 py-[1px] rounded text-[9px] uppercase tracking-wider font-semibold ${SOURCE_COLOR[cmd.source]}`}>

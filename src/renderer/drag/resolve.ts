@@ -21,6 +21,7 @@ import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { findNodeIdForDockStore } from '../panels/nodeDockRegistry'
 import { getDefaultSession } from './session'
 import { cursorToCanvasOrigin } from './geometry'
+import { canvasToView } from '../lib/canvas/coordinates'
 import { findTabStackAcrossZones } from '../stores/dockTreeUtils'
 import { snapToGrid, CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { WindowDockState } from '../../shared/types'
@@ -205,10 +206,14 @@ function resolveCanvasHit(
     state.viewportOffset,
     grab,
   )
-  // Snap the committed origin to the grid when snap-to-grid is active. The ghost
-  // still free-tracks the cursor during the drag (see Overlay) — the panel moves
-  // freely and only snaps to the grid on release.
+  // Snap the committed origin to the grid when snap-to-grid is active. When
+  // snapping, also compute the screen-px rect for the snapped landing position so
+  // the overlay can preview it (the ghost previews the grid cell the panel will
+  // land in rather than free-tracking the cursor 1:1).
   const origin = snap ? snapToGrid(rawOrigin, CANVAS_GRID_SIZE) : rawOrigin
+  const ghostRect = snap
+    ? snappedGhostScreenRect(origin, rect, state.zoomLevel, state.viewportOffset, ghostSize)
+    : undefined
 
   // Source is a canvas-node already on this canvas → reposition (move existing).
   if (source.origin.kind === 'canvas-node' && source.origin.canvasStoreApi === canvasStoreApi) {
@@ -217,6 +222,7 @@ function resolveCanvasHit(
       canvasStoreApi: source.origin.canvasStoreApi,
       nodeId: source.origin.nodeId,
       origin,
+      ghostRect,
     }
   }
 
@@ -230,5 +236,25 @@ function resolveCanvasHit(
     canvasStoreApi,
     origin,
     size: ghostSize,
+    ghostRect,
+  }
+}
+
+/** Screen-px rect for a canvas-space origin + ghost size, given the canvas
+ *  container's client rect and its zoom/pan. Used to preview the snapped landing
+ *  position during a snap-to-grid drag. */
+function snappedGhostScreenRect(
+  origin: Point,
+  containerRect: DOMRect,
+  zoom: number,
+  viewportOffset: Point,
+  ghostSize: Size,
+): { left: number; top: number; width: number; height: number } {
+  const view = canvasToView(origin, zoom, viewportOffset)
+  return {
+    left: containerRect.left + view.x,
+    top: containerRect.top + view.y,
+    width: ghostSize.width * zoom,
+    height: ghostSize.height * zoom,
   }
 }

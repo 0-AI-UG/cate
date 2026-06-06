@@ -75,10 +75,10 @@ export function ModelPicker({
   return (
     <div
       ref={wrapRef}
-      className="absolute top-full left-0 mt-1 w-[280px] max-h-[360px] flex flex-col rounded-lg border border-white/10 bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_rgba(0,0,0,0.45)] z-20"
+      className="absolute top-full left-0 mt-1 w-[280px] max-h-[360px] flex flex-col rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20"
     >
-      <div className="px-2 py-2 border-b border-white/10 shrink-0">
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/20 border border-white/5">
+      <div className="px-2 py-2 border-b border-strong shrink-0">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-0 border border-subtle">
           <MagnifyingGlass size={11} className="text-muted shrink-0" />
           <input
             ref={searchRef}
@@ -118,7 +118,7 @@ export function ModelPicker({
                     key={`${m.provider}:${m.model}`}
                     onClick={() => onPick(m)}
                     className={`w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2 ${
-                      isSelected ? 'bg-white/10 text-primary' : 'text-primary hover:bg-white/5'
+                      isSelected ? 'bg-hover-strong text-primary' : 'text-primary hover:bg-hover'
                     }`}
                   >
                     <span className="truncate flex-1">{m.label ?? m.model}</span>
@@ -131,10 +131,10 @@ export function ModelPicker({
         })
       )}
       </div>
-      <div className="border-t border-white/10 shrink-0">
+      <div className="border-t border-strong shrink-0">
         <button
           onClick={onManage}
-          className="w-full text-left px-3 py-1.5 text-[12px] text-agent-light hover:bg-white/5"
+          className="w-full text-left px-3 py-1.5 text-[12px] text-agent-light hover:bg-hover"
         >
           Manage providers…
         </button>

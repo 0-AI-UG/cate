@@ -87,6 +87,31 @@
   .placeholder\:text-muted::placeholder { color: var(--text-muted); }
   .placeholder\:text-secondary::placeholder { color: var(--text-secondary); }
 
+  /* Opacity variants for the hand-written text-color utilities. Tailwind's
+     `/NN` alpha modifier only works on real palette colors, not these custom
+     classes — without these rules a class like `text-muted/70` matches NOTHING,
+     so the element sets no color and inherits its parent's (an SVG fill or icon
+     then renders white regardless of theme). color-mix toward transparent
+     reproduces the intended alpha while tracking the active theme. */
+  .text-primary\/50 { color: color-mix(in srgb, var(--text-primary) 50%, transparent); }
+  .text-primary\/70 { color: color-mix(in srgb, var(--text-primary) 70%, transparent); }
+  .text-primary\/75 { color: color-mix(in srgb, var(--text-primary) 75%, transparent); }
+  .text-primary\/80 { color: color-mix(in srgb, var(--text-primary) 80%, transparent); }
+  .text-primary\/85 { color: color-mix(in srgb, var(--text-primary) 85%, transparent); }
+  .text-primary\/90 { color: color-mix(in srgb, var(--text-primary) 90%, transparent); }
+  .hover\:text-primary\/70:hover { color: color-mix(in srgb, var(--text-primary) 70%, transparent); }
+  .text-secondary\/70 { color: color-mix(in srgb, var(--text-secondary) 70%, transparent); }
+  .text-muted\/30 { color: color-mix(in srgb, var(--text-muted) 30%, transparent); }
+  .text-muted\/40 { color: color-mix(in srgb, var(--text-muted) 40%, transparent); }
+  .text-muted\/50 { color: color-mix(in srgb, var(--text-muted) 50%, transparent); }
+  .text-muted\/60 { color: color-mix(in srgb, var(--text-muted) 60%, transparent); }
+  .text-muted\/70 { color: color-mix(in srgb, var(--text-muted) 70%, transparent); }
+  .text-muted\/80 { color: color-mix(in srgb, var(--text-muted) 80%, transparent); }
+
+  /* `bg-primary` = the primary text color as a fill (used by the blink cursor). */
+  .bg-primary { background-color: var(--text-primary); }
+  .bg-primary\/80 { background-color: color-mix(in srgb, var(--text-primary) 80%, transparent); }
+
   .bg-hover { background-color: var(--surface-hover); }
   .bg-hover-strong { background-color: var(--surface-hover-strong); }
 
@@ -97,6 +122,26 @@
   .hover\:bg-hover-strong:hover { background-color: var(--surface-hover-strong); }
   .active\:bg-hover-strong:active { background-color: var(--surface-hover-strong); }
   .group:hover .group-hover\:bg-hover { background-color: var(--surface-hover); }
+
+  /* Semantic status colors. Agent error/warning UI maps onto the theme's
+     palette (the canonical red/orange) instead of fixed Tailwind shades, so it
+     tracks the active theme — including light themes. */
+  .text-danger { color: var(--git-deleted); }
+  .text-warning { color: var(--activity-orange); }
+  .hover\:text-danger:hover { color: var(--git-deleted); }
+  .bg-danger { background-color: var(--git-deleted); }
+  .bg-warning { background-color: var(--activity-orange); }
+  .bg-danger-tint { background-color: color-mix(in srgb, var(--git-deleted) 14%, transparent); }
+  .bg-warning-tint { background-color: color-mix(in srgb, var(--activity-orange) 14%, transparent); }
+  .hover\:bg-danger-tint:hover { background-color: color-mix(in srgb, var(--git-deleted) 26%, transparent); }
+  .border-danger { border-color: color-mix(in srgb, var(--git-deleted) 36%, transparent); }
+  .border-warning { border-color: color-mix(in srgb, var(--activity-orange) 30%, transparent); }
+
+  /* Inline diff add/remove rows — themed via the git add/delete colors. */
+  .bg-diff-add { background-color: color-mix(in srgb, var(--git-added) 12%, transparent); }
+  .bg-diff-del { background-color: color-mix(in srgb, var(--git-deleted) 12%, transparent); }
+  .text-diff-add { color: var(--git-added); }
+  .text-diff-del { color: var(--git-deleted); }
 }
 
 @layer base {
