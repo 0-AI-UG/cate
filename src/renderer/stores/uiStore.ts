@@ -2,6 +2,7 @@
 // UI Store — Zustand state for transient UI overlays and visibility toggles.
 // =============================================================================
 
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { SidebarView, SidebarLayout } from '../../shared/types'
 import { useSettingsStore } from './settingsStore'
@@ -239,7 +240,12 @@ export const useUIStore = create<UIStore>((set, get) => ({
  * stale path when the layout changes via UI, hand-edit, or another window.
  */
 export function useSidebarLayout(): SidebarLayout {
-  return useSettingsStore((s) => normalizeSidebarLayout(s.sidebarLayout))
+  // Select the stable raw field and normalize in a memo: normalizeSidebarLayout
+  // builds a fresh {left,right} every call, so selecting it directly would return
+  // a new reference on every render and, under zustand v5's snapshot identity
+  // check, spin useSyncExternalStore into "Maximum update depth exceeded".
+  const raw = useSettingsStore((s) => s.sidebarLayout)
+  return useMemo(() => normalizeSidebarLayout(raw), [raw])
 }
 
 /**
