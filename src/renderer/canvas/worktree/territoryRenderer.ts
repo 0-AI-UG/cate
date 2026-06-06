@@ -59,9 +59,11 @@ function vnoise(x: number, y: number): number {
   const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1)
   return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v
 }
-// Two octaves — enough wobble for organic edges, cheaper than three.
+// Large flowing base + a subtle finer octave for organic, non-uniform edges (low
+// weight so it adds life without the old tight wobble). Keep in sync with
+// territoryGL.ts / territoryGeometry.ts.
 function fbm(x: number, y: number): number {
-  return 0.5 * vnoise(x, y) + 0.25 * vnoise(x * 2, y * 2)
+  return vnoise(x, y) * 0.82 + vnoise(x * 2.3 + 11.7, y * 2.3 + 5.1) * 0.18
 }
 
 // Signed distance to a rounded rectangle (negative inside).
@@ -83,6 +85,28 @@ function rectGap(a: TerritoryRect, b: TerritoryRect): number {
   const dx = Math.max(a.x - (b.x + b.w), b.x - (a.x + a.w), 0)
   const dy = Math.max(a.y - (b.y + b.h), b.y - (a.y + a.h), 0)
   return Math.sqrt(dx * dx + dy * dy)
+}
+// Fit a capsule that fuses two panels by filling only the gap + their interiors,
+// never reaching the outer edges — so a connection never domes the far top/bottom.
+// Endpoints sit at the panels' FACING edges; radius is capped to the perpendicular
+// half-extent (flush sides) and full along-axis extent (cap can't poke out the far
+// edge). Returns [ax, ay, bx, by, radius]. Sync with territoryGeometry.ts.
+function bridgeCapsule(a: TerritoryRect, b: TerritoryRect, r: number): [number, number, number, number, number] {
+  const acx = a.x + a.w / 2, acy = a.y + a.h / 2
+  const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2
+  const dx = bcx - acx, dy = bcy - acy
+  const dist = Math.sqrt(dx * dx + dy * dy)
+  if (dist < 1e-6) return [acx, acy, bcx, bcy, Math.min(r, a.w / 2, a.h / 2, b.w / 2, b.h / 2)]
+  const ux = dx / dist, uy = dy / dist
+  const axA = Math.abs(ux) * a.w / 2 + Math.abs(uy) * a.h / 2
+  const axB = Math.abs(ux) * b.w / 2 + Math.abs(uy) * b.h / 2
+  const perpA = Math.abs(uy) * a.w / 2 + Math.abs(ux) * a.h / 2
+  const perpB = Math.abs(uy) * b.w / 2 + Math.abs(ux) * b.h / 2
+  const rr = Math.min(r, perpA, perpB, 2 * axA, 2 * axB)
+  let sa = axA
+  let sb = dist - axB
+  if (sa > sb) { const mid = (sa + sb) / 2; sa = mid; sb = mid }
+  return [acx + ux * sa, acy + uy * sa, acx + ux * sb, acy + uy * sb, rr]
 }
 // Signed distance to a capsule (line segment a→b with radius r).
 function sdSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number, r: number): number {
@@ -242,6 +266,7 @@ interface GroupData {
   cy: Float64Array
   pbox: Box[]            // per-panel reach box (screen cells)
   ea: number[]; eb: number[]; er: number[]
+  eax: number[]; eay: number[]; ebx: number[]; eby: number[] // clamped capsule endpoints
   ebox: Box[]            // per-bridge reach box (screen cells)
 }
 
@@ -312,6 +337,7 @@ export function drawTerritory(
       pbox.push(cellBox(rc.x - Rp, rc.y - Rp, rc.x + rc.w + Rp, rc.y + rc.h + Rp))
     }
     const ea: number[] = [], eb: number[] = [], er: number[] = [], ebox: Box[] = []
+    const eax: number[] = [], eay: number[] = [], ebx: number[] = [], eby: number[] = []
     const fadeStart = CONNECT_MAX_GAP - CONNECT_FALLOFF
     for (let a = 0; a < m; a++) {
       for (let b = a + 1; b < m; b++) {
@@ -322,14 +348,16 @@ export function drawTerritory(
         const rad = CONNECT_RADIUS * w - outerReach * (1 - w)
         const cullR = rad + outerReach + SMINK + WARP_AMP
         if (cullR <= 0) continue // bridge so faded it can't reach the terrace
-        ea.push(a); eb.push(b); er.push(rad)
+        const [bax, bay, bbx, bby, brr] = bridgeCapsule(g.rects[a], g.rects[b], rad)
+        ea.push(a); eb.push(b); er.push(brr)
+        eax.push(bax); eay.push(bay); ebx.push(bbx); eby.push(bby)
         ebox.push(cellBox(
           Math.min(cx[a], cx[b]) - cullR, Math.min(cy[a], cy[b]) - cullR,
           Math.max(cx[a], cx[b]) + cullR, Math.max(cy[a], cy[b]) + cullR,
         ))
       }
     }
-    return { m, rects: g.rects, cx, cy, pbox, ea, eb, er, ebox }
+    return { m, rects: g.rects, cx, cy, pbox, ea, eb, er, eax, eay, ebx, eby, ebox }
   })
 
   const combined = ensureCombined(N)
@@ -382,8 +410,7 @@ export function drawTerritory(
         }
         for (let e = 0; e < gd.ea.length; e++) {
           if (!inBox(gd.ebox[e], gx, gy)) continue
-          const a = gd.ea[e], b = gd.eb[e]
-          dg = smin(dg, sdSegment(px, py, gd.cx[a], gd.cy[a], gd.cx[b], gd.cy[b], gd.er[e]), SMINK)
+          dg = smin(dg, sdSegment(px, py, gd.eax[e], gd.eay[e], gd.ebx[e], gd.eby[e], gd.er[e]), SMINK)
         }
         dgs[gi] = dg
         if (dg < mn) { mn2 = mn; mn = dg; arg = gi } else if (dg < mn2) { mn2 = dg }
