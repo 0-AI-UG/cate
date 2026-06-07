@@ -137,11 +137,17 @@ async function main() {
   if (deduped.length !== skills.length) {
     console.log(`Deduped ${skills.length - deduped.length} duplicate id(s)`)
   }
+  // Quality floor: drop entries with no frontmatter description. They carry no
+  // signal for search and read as broken rows, so keep the catalog selective.
+  const curated = deduped.filter((s) => s.description && s.description.trim())
+  if (curated.length !== deduped.length) {
+    console.log(`Dropped ${deduped.length - curated.length} entr(ies) with no description`)
+  }
   // Stable order so the committed index has minimal diffs.
-  deduped.sort((a, b) => a.id.localeCompare(b.id))
-  const index = { generatedAt: new Date().toISOString(), skills: deduped }
+  curated.sort((a, b) => a.id.localeCompare(b.id))
+  const index = { generatedAt: new Date().toISOString(), skills: curated }
   await writeFile(INDEX_PATH, `${JSON.stringify(index, null, 2)}\n`)
-  console.log(`Wrote ${skills.length} skill(s) to ${INDEX_PATH}`)
+  console.log(`Wrote ${curated.length} skill(s) to ${INDEX_PATH}`)
 }
 
 main().catch((err) => {
