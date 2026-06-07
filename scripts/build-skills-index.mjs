@@ -124,9 +124,22 @@ async function main() {
       console.error(`${src.repo}: ${err.message}`)
     }
   }
+  // The same skill can appear at two paths in a repo (e.g. a second copy whose
+  // SKILL.md has empty frontmatter), and since the id is repo+name it collides.
+  // Keep one entry per id — prefer the one that actually carries a description —
+  // so the catalog has no duplicate ids (which otherwise break list rendering).
+  const byId = new Map()
+  for (const s of skills) {
+    const prev = byId.get(s.id)
+    if (!prev || (!prev.description && s.description)) byId.set(s.id, s)
+  }
+  const deduped = [...byId.values()]
+  if (deduped.length !== skills.length) {
+    console.log(`Deduped ${skills.length - deduped.length} duplicate id(s)`)
+  }
   // Stable order so the committed index has minimal diffs.
-  skills.sort((a, b) => a.id.localeCompare(b.id))
-  const index = { generatedAt: new Date().toISOString(), skills }
+  deduped.sort((a, b) => a.id.localeCompare(b.id))
+  const index = { generatedAt: new Date().toISOString(), skills: deduped }
   await writeFile(INDEX_PATH, `${JSON.stringify(index, null, 2)}\n`)
   console.log(`Wrote ${skills.length} skill(s) to ${INDEX_PATH}`)
 }
