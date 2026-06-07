@@ -28,6 +28,7 @@ import {
   Check,
   CircleNotch,
   CaretDown,
+  LinkSimple,
 } from '@phosphor-icons/react'
 import { BACKDROP, CARD_SURFACE } from '../ui/Modal'
 import { useUIStore } from '../stores/uiStore'
@@ -48,6 +49,17 @@ function matches(entry: SkillEntry, terms: string[]): boolean {
   if (terms.length === 0) return true
   const hay = `${entry.name} ${entry.description}`.toLowerCase()
   return terms.every((t) => hay.includes(t))
+}
+
+// GitHub URL for a skill's source folder, or null for stubs with no source
+// (e.g. a locally installed skill we know nothing else about).
+function sourceUrl(entry: SkillEntry): string | null {
+  const { repo, ref, path } = entry.source
+  if (!repo) return null
+  const branch = ref || 'main'
+  return path
+    ? `https://github.com/${repo}/tree/${branch}/${path}`
+    : `https://github.com/${repo}/tree/${branch}`
 }
 
 function savedToEntry(s: SavedSkill): SkillEntry {
@@ -315,6 +327,19 @@ function SkillRow({
   const installRef = useRef<HTMLButtonElement>(null)
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null)
   const [saveBusy, setSaveBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const link = sourceUrl(entry)
+
+  const copyLink = async () => {
+    if (!link) return
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch {
+      /* clipboard blocked — ignore */
+    }
+  }
 
   const openMenu = () => {
     const r = installRef.current?.getBoundingClientRect()
@@ -374,6 +399,16 @@ function SkillRow({
         </div>
         {entry.description && <div className="text-[11px] text-muted truncate">{entry.description}</div>}
       </div>
+
+      {link && (
+        <button
+          onClick={() => void copyLink()}
+          title={copied ? 'Copied!' : 'Copy link to skill'}
+          className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-secondary opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+        >
+          {copied ? <Check size={14} className="text-emerald-400" /> : <LinkSimple size={14} />}
+        </button>
+      )}
 
       <button
         ref={installRef}
