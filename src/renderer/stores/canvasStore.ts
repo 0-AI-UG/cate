@@ -1312,36 +1312,67 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       ? state.containerSize.height / state.zoomLevel
       : 1000
 
-    // Nodes-only path: uniform-size grid.
-    // Panels are given a comfortable readable minimum size; the canvas zoom
-    // adjusts to show them all (like Figma / Miro). Shrinking panels to fit
-    // the viewport makes text unreadably small — the zoom should move instead.
+    // Nodes-only path: preserve existing panel sizes, rearrange positions only.
+    // Panels below the readable minimum get bumped up; larger ones stay as-is.
+    // Zoom is capped at 1.0 — never zoom IN (panels are most readable at 100%).
     if (regionList.length === 0) {
-      const gap = 16
+      const gap = 20
+      const MIN_W = 500
+      const MIN_H = 360
       const n = nodeList.length
       const aspect = containerWidth / Math.max(containerHeight, 1)
       const cols = Math.max(1, Math.round(Math.sqrt(n * aspect)))
-      const rows = Math.ceil(n / cols)
-      // 560 × 400: wide enough for a readable editor/terminal/browser.
-      // If the viewport is large enough to give more space, use that instead.
-      const cellW = Math.max(560, (containerWidth - gap * (cols + 1)) / cols)
-      const cellH = Math.max(400, (containerHeight - gap * (rows + 1)) / rows)
+      const numRows = Math.ceil(n / cols)
+
       get().pushHistory()
+
+      // Upscale panels below the readable minimum; keep larger ones as-is.
+      const sized = nodeList.map(node => ({
+        id: node.id,
+        width: Math.max(MIN_W, node.size.width),
+        height: Math.max(MIN_H, node.size.height),
+      }))
+
+      // Column width = widest panel in that column; row height = tallest in that row.
+      const colWidths: number[] = Array.from({ length: cols }, (_, c) =>
+        Math.max(...sized.filter((_, i) => i % cols === c).map(s => s.width))
+      )
+      const rowHeights: number[] = Array.from({ length: numRows }, (_, r) =>
+        Math.max(...sized.filter((_, i) => Math.floor(i / cols) === r).map(s => s.height))
+      )
+
+      const xOffsets: number[] = [gap]
+      for (let c = 0; c < cols - 1; c++) xOffsets[c + 1] = xOffsets[c] + colWidths[c] + gap
+      const yOffsets: number[] = [gap]
+      for (let r = 0; r < numRows - 1; r++) yOffsets[r + 1] = yOffsets[r] + rowHeights[r] + gap
+
       const updatedNodes = { ...state.nodes }
-      nodeList.forEach((node, i) => {
+      sized.forEach((s, i) => {
         const col = i % cols
         const row = Math.floor(i / cols)
-        updatedNodes[node.id] = {
-          ...updatedNodes[node.id],
-          origin: {
-            x: gap + col * (cellW + gap),
-            y: gap + row * (cellH + gap),
-          },
-          size: { width: cellW, height: cellH },
+        updatedNodes[s.id] = {
+          ...updatedNodes[s.id],
+          origin: { x: xOffsets[col], y: yOffsets[row] },
+          size: { width: s.width, height: s.height },
         }
       })
       set({ nodes: updatedNodes })
-      get().zoomToFit()
+
+      const totalW = xOffsets[cols - 1] + colWidths[cols - 1] + gap
+      const totalH = yOffsets[numRows - 1] + rowHeights[numRows - 1] + gap
+      const viewportInsets = getCanvasViewportInsets()
+      const cs = state.containerSize
+      const avW = (cs.width > 0 ? cs.width : 1440) - viewportInsets.left - viewportInsets.right
+      const avH = cs.height > 0 ? cs.height : 900
+      const fitZoom = Math.min(avW / totalW, avH / totalH)
+      const zoom = Math.min(1.0, Math.max(ZOOM_MIN, fitZoom))
+      set({
+        zoomLevel: zoom,
+        viewportOffset: {
+          x: viewportInsets.left + (avW - totalW * zoom) / 2,
+          y: (avH - totalH * zoom) / 2,
+        },
+      })
       return
     }
 
@@ -1382,30 +1413,47 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       (a, b) => a.creationIndex - b.creationIndex,
     )
     if (nodeList.length === 0) return
-    const containerWidth = state.containerSize.width > 0
-      ? state.containerSize.width / state.zoomLevel
-      : 1600
-    const containerHeight = state.containerSize.height > 0
-      ? state.containerSize.height / state.zoomLevel
-      : 1000
     const cols = 2
     const rows = Math.ceil(nodeList.length / cols)
-    const gap = 16
-    const cellW = Math.max(560, (containerWidth - gap * (cols + 1)) / cols)
-    const cellH = Math.max(400, (containerHeight - gap * (rows + 1)) / rows)
+    const gap = 20
+    const MIN_W = 500
+    const MIN_H = 360
+    // Upscale panels below minimum; keep larger ones as-is.
+    const sized = nodeList.map(node => ({
+      id: node.id,
+      width: Math.max(MIN_W, node.size.width),
+      height: Math.max(MIN_H, node.size.height),
+    }))
+    const colWidths: number[] = Array.from({ length: cols }, (_, c) =>
+      Math.max(...sized.filter((_, i) => i % cols === c).map(s => s.width))
+    )
+    const rowHeights: number[] = Array.from({ length: rows }, (_, r) =>
+      Math.max(...sized.filter((_, i) => Math.floor(i / cols) === r).map(s => s.height))
+    )
+    const xOffsets: number[] = [gap]
+    for (let c = 0; c < cols - 1; c++) xOffsets[c + 1] = xOffsets[c] + colWidths[c] + gap
+    const yOffsets: number[] = [gap]
+    for (let r = 0; r < rows - 1; r++) yOffsets[r + 1] = yOffsets[r] + rowHeights[r] + gap
     get().pushHistory()
     const updatedNodes = { ...state.nodes }
-    nodeList.forEach((node, i) => {
+    sized.forEach((s, i) => {
       const col = i % cols
       const row = Math.floor(i / cols)
-      updatedNodes[node.id] = {
-        ...updatedNodes[node.id],
-        origin: { x: gap + col * (cellW + gap), y: gap + row * (cellH + gap) },
-        size: { width: cellW, height: cellH },
+      updatedNodes[s.id] = {
+        ...updatedNodes[s.id],
+        origin: { x: xOffsets[col], y: yOffsets[row] },
+        size: { width: s.width, height: s.height },
       }
     })
     set({ nodes: updatedNodes })
-    get().zoomToFit()
+    const totalW = xOffsets[cols - 1] + colWidths[cols - 1] + gap
+    const totalH = yOffsets[rows - 1] + rowHeights[rows - 1] + gap
+    const viewportInsets = getCanvasViewportInsets()
+    const cs = state.containerSize
+    const avW = (cs.width > 0 ? cs.width : 1440) - viewportInsets.left - viewportInsets.right
+    const avH = cs.height > 0 ? cs.height : 900
+    const zoom = Math.min(1.0, Math.max(ZOOM_MIN, Math.min(avW / totalW, avH / totalH)))
+    set({ zoomLevel: zoom, viewportOffset: { x: viewportInsets.left + (avW - totalW * zoom) / 2, y: (avH - totalH * zoom) / 2 } })
   },
 
   layoutRows() {
@@ -1414,30 +1462,46 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       (a, b) => a.creationIndex - b.creationIndex,
     )
     if (nodeList.length === 0) return
-    const containerWidth = state.containerSize.width > 0
-      ? state.containerSize.width / state.zoomLevel
-      : 1600
-    const containerHeight = state.containerSize.height > 0
-      ? state.containerSize.height / state.zoomLevel
-      : 1000
     const rows = 2
     const cols = Math.ceil(nodeList.length / rows)
-    const gap = 16
-    const cellW = Math.max(560, (containerWidth - gap * (cols + 1)) / cols)
-    const cellH = Math.max(400, (containerHeight - gap * (rows + 1)) / rows)
+    const gap = 20
+    const MIN_W = 500
+    const MIN_H = 360
+    const sized = nodeList.map(node => ({
+      id: node.id,
+      width: Math.max(MIN_W, node.size.width),
+      height: Math.max(MIN_H, node.size.height),
+    }))
+    const colWidths: number[] = Array.from({ length: cols }, (_, c) =>
+      Math.max(...sized.filter((_, i) => i % cols === c).map(s => s.width))
+    )
+    const rowHeights: number[] = Array.from({ length: rows }, (_, r) =>
+      Math.max(...sized.filter((_, i) => Math.floor(i / cols) === r).map(s => s.height))
+    )
+    const xOffsets: number[] = [gap]
+    for (let c = 0; c < cols - 1; c++) xOffsets[c + 1] = xOffsets[c] + colWidths[c] + gap
+    const yOffsets: number[] = [gap]
+    for (let r = 0; r < rows - 1; r++) yOffsets[r + 1] = yOffsets[r] + rowHeights[r] + gap
     get().pushHistory()
     const updatedNodes = { ...state.nodes }
-    nodeList.forEach((node, i) => {
+    sized.forEach((s, i) => {
       const col = i % cols
       const row = Math.floor(i / cols)
-      updatedNodes[node.id] = {
-        ...updatedNodes[node.id],
-        origin: { x: gap + col * (cellW + gap), y: gap + row * (cellH + gap) },
-        size: { width: cellW, height: cellH },
+      updatedNodes[s.id] = {
+        ...updatedNodes[s.id],
+        origin: { x: xOffsets[col], y: yOffsets[row] },
+        size: { width: s.width, height: s.height },
       }
     })
     set({ nodes: updatedNodes })
-    get().zoomToFit()
+    const totalW = xOffsets[cols - 1] + colWidths[cols - 1] + gap
+    const totalH = yOffsets[rows - 1] + rowHeights[rows - 1] + gap
+    const viewportInsets = getCanvasViewportInsets()
+    const cs = state.containerSize
+    const avW = (cs.width > 0 ? cs.width : 1440) - viewportInsets.left - viewportInsets.right
+    const avH = cs.height > 0 ? cs.height : 900
+    const zoom = Math.min(1.0, Math.max(ZOOM_MIN, Math.min(avW / totalW, avH / totalH)))
+    set({ zoomLevel: zoom, viewportOffset: { x: viewportInsets.left + (avW - totalW * zoom) / 2, y: (avH - totalH * zoom) / 2 } })
   },
 
   addRegion(label, origin, size, color) {
