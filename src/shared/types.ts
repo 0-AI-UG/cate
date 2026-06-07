@@ -485,20 +485,35 @@ export function storedShortcut(
   }
 }
 
-/** Mirrors StoredShortcut.displayString from Swift. */
+/** Platform-aware shortcut display string.
+ *  macOS: ⌃⌥⇧⌘ symbols. Windows/Linux: Ctrl, Alt, Shift labels.
+ *  On Windows, both `command` and `control` map to Ctrl — they're
+ *  coalesced so they only appear once. */
 export function displayString(s: StoredShortcut): string {
   const parts: string[] = []
-  if (s.control) parts.push('\u2303') // ⌃
-  if (s.option) parts.push('\u2325')  // ⌥
-  if (s.shift) parts.push('\u21E7')   // ⇧
-  if (s.command) parts.push('\u2318') // ⌘
+
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    typeof navigator.platform === 'string' &&
+    navigator.platform.toLowerCase().includes('mac')
+
+  if (isMac) {
+    if (s.control) parts.push('⌃') // ⌃
+    if (s.option) parts.push('⌥')  // ⌥
+    if (s.shift) parts.push('⇧')   // ⇧
+    if (s.command) parts.push('⌘') // ⌘
+  } else {
+    if (s.command || s.control) parts.push('Ctrl')
+    if (s.option) parts.push('Alt')
+    if (s.shift) parts.push('Shift')
+  }
   let keyText: string
   switch (s.key) {
     case '\t':
       keyText = 'TAB'
       break
     case '\r':
-      keyText = '\u21A9' // ↩
+      keyText = '↩' // ↩
       break
     case ' ':
       keyText = 'SPACE'
@@ -507,7 +522,7 @@ export function displayString(s: StoredShortcut): string {
       keyText = s.key.toUpperCase()
   }
   parts.push(keyText)
-  return parts.join('')
+  return isMac ? parts.join('') : parts.join('+')
 }
 
 // All shortcut actions. Keep ShortcutAction, SHORTCUT_ACTIONS,

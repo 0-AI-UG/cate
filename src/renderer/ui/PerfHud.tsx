@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { PerfSnapshot } from '../../shared/types'
+import { isMac } from '../../shared/platform'
 import {
   PERF_ENABLED,
   getRenderCounts,
@@ -92,7 +93,7 @@ export default function PerfHud(): JSX.Element | null {
       <div
         className="fixed bottom-2 left-2 z-[10000] px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-emerald-300 pointer-events-none select-none"
       >
-        perf ⌘⌥P
+        perf {isMac ? '⌘⌥P' : 'Ctrl+Alt+P'}
       </div>
     )
   }
@@ -105,7 +106,7 @@ export default function PerfHud(): JSX.Element | null {
     >
       <div className="flex items-center justify-between mb-1 text-zinc-400">
         <span className="font-semibold tracking-wide text-zinc-300">CATE PERF</span>
-        <span>⌘⌥P to hide</span>
+        <span>{isMac ? '⌘⌥P' : 'Ctrl+Alt+P'} to hide</span>
       </div>
 
       {/* Renderer */}

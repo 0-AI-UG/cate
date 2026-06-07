@@ -69,7 +69,7 @@ export function ShortcutRecorder({ action, currentShortcut, onRecord }: Shortcut
         e.stopPropagation()
         setIsRecording(true)
       }}
-      className={`min-w-[80px] px-2 py-1 text-xs rounded-md border transition-colors text-center ${
+      className={`min-w-[110px] px-2 py-1 text-xs rounded-md border transition-colors text-center whitespace-nowrap ${
         isRecording
           ? 'bg-focus-blue/20 border-focus-blue/50 text-focus-blue animate-pulse'
           : 'bg-surface-5 border-subtle text-primary hover:bg-hover'

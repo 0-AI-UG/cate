@@ -8,17 +8,6 @@ import type { ShortcutAction, StoredShortcut } from '../../shared/types'
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
-// Modifier state
-// -----------------------------------------------------------------------------
-
-interface ModifierState {
-  command: boolean
-  shift: boolean
-  option: boolean
-  control: boolean
-}
-
-// -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
 
@@ -97,24 +86,28 @@ export const useShortcutStore = create<ShortcutStore>((set, get) => ({
   matchEvent(e: KeyboardEvent): ShortcutAction | null {
     const { shortcuts } = get()
     const eventKey = normaliseKey(e)
-    const eventMods: ModifierState = {
-      command: e.metaKey,
-      shift: e.shiftKey,
-      option: e.altKey,
-      control: e.ctrlKey,
-    }
+    // On macOS the primary modifier is Cmd (metaKey); on Windows/Linux
+    // it's Ctrl (ctrlKey). Match permissively: on non-Mac, Ctrl satisfies
+    // both `command` and `control` so a stored `command:true` (macOS ⌘)
+    // works with Ctrl and a stored `control:true` (macOS ⌃) also works
+    // with Ctrl, with no ambiguity since they use different letters.
+    const isMac =
+      typeof navigator !== 'undefined' &&
+      typeof navigator.platform === 'string' &&
+      navigator.platform.toLowerCase().includes('mac')
+    const cmdPressed = isMac ? e.metaKey : e.ctrlKey
+    const ctrlPressed = e.ctrlKey
 
     for (const action of SHORTCUT_ACTIONS) {
       const stored = shortcuts[action]
       if (
-        stored.key === eventKey &&
-        stored.command === eventMods.command &&
-        stored.shift === eventMods.shift &&
-        stored.option === eventMods.option &&
-        stored.control === eventMods.control
-      ) {
-        return action
-      }
+        stored.key !== eventKey ||
+        stored.shift !== e.shiftKey ||
+        stored.option !== e.altKey
+      ) continue
+      if (stored.command && !cmdPressed) continue
+      if (stored.control && !ctrlPressed) continue
+      return action
     }
 
     return null

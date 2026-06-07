@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import log from '../lib/logger'
 import { useAppStore } from '../stores/appStore'
+import { useShortcutStore } from '../stores/shortcutStore'
+import { displayString } from '../../shared/types'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import {
   Terminal,
@@ -22,6 +24,7 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
   const [recentProjects, setRecentProjects] = useState<string[]>([])
   const [showRemote, setShowRemote] = useState(false)
   const [remotePending, setRemotePending] = useState(false)
+  const shortcuts = useShortcutStore((s) => s.shortcuts)
   const [remoteError, setRemoteError] = useState<string | null>(null)
 
   const connectRemote = useCallback(
@@ -119,19 +122,19 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
               <ActionItem
                 icon={<Terminal size={16} />}
                 label="New Terminal"
-                shortcut="⌘T"
+                shortcut={displayString(shortcuts.newTerminal)}
                 onClick={newTerminal}
               />
               <ActionItem
                 icon={<FileCode size={16} />}
                 label="New Editor"
-                shortcut="⌘⇧E"
+                shortcut={displayString(shortcuts.newEditor)}
                 onClick={newEditor}
               />
               <ActionItem
                 icon={<Globe size={16} />}
                 label="New Browser"
-                shortcut="⌘⇧B"
+                shortcut={displayString(shortcuts.newBrowser)}
                 onClick={newBrowser}
               />
             </div>
@@ -184,12 +187,12 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
             Keyboard Shortcuts
           </h2>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-            <ShortcutRow keys="⌘T" label="New Terminal" />
-            <ShortcutRow keys="⌘⇧B" label="New Browser" />
-            <ShortcutRow keys="⌘⇧E" label="New Editor" />
-            <ShortcutRow keys="⌘K" label="Command Palette" />
-            <ShortcutRow keys="⌘\" label="Toggle Sidebar" />
-            <ShortcutRow keys="⌘0" label="Reset Zoom" />
+            <ShortcutRow keys={displayString(shortcuts.newTerminal)} label="New Terminal" />
+            <ShortcutRow keys={displayString(shortcuts.newBrowser)} label="New Browser" />
+            <ShortcutRow keys={displayString(shortcuts.newEditor)} label="New Editor" />
+            <ShortcutRow keys={displayString(shortcuts.commandPalette)} label="Command Palette" />
+            <ShortcutRow keys={displayString(shortcuts.toggleSidebar)} label="Toggle Sidebar" />
+            <ShortcutRow keys={displayString(shortcuts.zoomReset)} label="Reset Zoom" />
           </div>
         </div>
       </div>
@@ -236,7 +239,7 @@ function ActionItem({
 function ShortcutRow({ keys, label }: { keys: string; label: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-secondary font-mono w-10 text-right">
+      <span className="text-xs text-secondary font-mono text-right shrink-0 min-w-[7rem]">
         {keys}
       </span>
       <span className="text-xs text-muted">{label}</span>

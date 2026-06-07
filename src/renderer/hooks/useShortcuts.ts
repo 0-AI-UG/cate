@@ -305,6 +305,15 @@ export function useShortcuts(): void {
     })
 
     function handleKeyDown(e: KeyboardEvent) {
+      // On macOS the primary modifier is Cmd (metaKey); on Windows/Linux
+      // it's Ctrl (ctrlKey). Use primaryMod() instead of e.metaKey so
+      // Ctrl+A / Ctrl+G / Ctrl+Backspace work on both platforms.
+      const isMac =
+        typeof navigator !== 'undefined' &&
+        typeof navigator.platform === 'string' &&
+        navigator.platform.toLowerCase().includes('mac')
+      const primaryMod = (e: KeyboardEvent) => isMac ? e.metaKey : e.ctrlKey
+
       // --- Detect whether a terminal panel is focused ---
       // When a terminal has focus, most keyboard events must pass through to
       // xterm.js. Only app-level shortcuts (Cmd+<key>, Ctrl+Tab, etc.) should
@@ -329,7 +338,7 @@ export function useShortcuts(): void {
       // --- Selection shortcuts (hardcoded) ---
 
       // Cmd+A — select all
-      if (e.metaKey && !e.shiftKey && e.key === 'a') {
+      if (primaryMod(e) && !e.shiftKey && e.key === 'a') {
         // Don't select-all if a text input/editor/terminal is focused
         if (terminalHasFocus) return
         const active = document.activeElement
@@ -343,7 +352,7 @@ export function useShortcuts(): void {
       }
 
       // Cmd+G — tidy the selected nodes into a grid
-      if (e.metaKey && !e.shiftKey && e.key === 'g') {
+      if (primaryMod(e) && !e.shiftKey && e.key === 'g') {
         if (terminalHasFocus) return
         e.preventDefault()
         e.stopPropagation()
@@ -367,7 +376,7 @@ export function useShortcuts(): void {
       // Delete/Backspace — delete selection
       // Skip when Cmd is held so Cmd+Backspace routes to the `deleteNode`
       // shortcut below (which deletes the currently focused panel).
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !primaryMod(e)) {
         if (terminalHasFocus) return
         // The sidebar (workspace list / file explorer) owns Delete/Backspace
         // when focused, so its own handler can delete the multi-selection.

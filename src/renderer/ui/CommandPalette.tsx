@@ -23,6 +23,8 @@ import {
   GraduationCap,
 } from '@phosphor-icons/react'
 import type { PanelType } from '../../shared/types'
+import { displayString } from '../../shared/types'
+import { useShortcutStore } from '../stores/shortcutStore'
 import { CateLogo } from './CateLogo'
 import { BACKDROP, CARD_SURFACE } from './Modal'
 import { useUIStore } from '../stores/uiStore'
@@ -97,6 +99,7 @@ export const CommandPalette: React.FC = () => {
   const createAgent = useAppStore((s) => s.createAgent)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const setActiveRightSidebarView = useUIStore((s) => s.setActiveRightSidebarView)
+  const shortcuts = useShortcutStore((s) => s.shortcuts)
   const canvasApi = useCanvasStoreApi()
   const setZoom = useCanvasStoreContext((s) => s.setZoom)
 
@@ -132,21 +135,21 @@ export const CommandPalette: React.FC = () => {
       {
         id: 'newTerminal',
         title: 'New Terminal',
-        shortcutText: '⌘T',
+        shortcutText: displayString(shortcuts.newTerminal),
         icon: <TerminalIcon />,
         action: () => createTerminal(selectedWorkspaceId, undefined, undefined, dockCenter),
       },
       {
         id: 'newBrowser',
         title: 'New Browser',
-        shortcutText: '⌘⇧B',
+        shortcutText: displayString(shortcuts.newBrowser),
         icon: <GlobeIcon />,
         action: () => createBrowser(selectedWorkspaceId, undefined, undefined, dockCenter),
       },
       {
         id: 'newEditor',
         title: 'New Editor',
-        shortcutText: '⌘⇧E',
+        shortcutText: displayString(shortcuts.newEditor),
         icon: <FileTextIcon />,
         action: () => createEditor(selectedWorkspaceId, undefined, undefined, dockCenter),
       },
@@ -167,42 +170,42 @@ export const CommandPalette: React.FC = () => {
       {
         id: 'toggleSidebar',
         title: 'Toggle Sidebar',
-        shortcutText: '⌘\\',
+        shortcutText: displayString(shortcuts.toggleSidebar),
         icon: <SidebarIcon />,
         action: () => toggleSidebar(),
       },
       {
         id: 'toggleFileExplorer',
         title: 'Toggle File Explorer',
-        shortcutText: '⌘⇧X',
+        shortcutText: displayString(shortcuts.toggleFileExplorer),
         icon: <FolderOpenIcon />,
         action: () => { setActiveRightSidebarView('explorer') },
       },
       {
         id: 'nodeSwitcher',
         title: 'Switch Panel',
-        shortcutText: '⌃Space',
+        shortcutText: displayString(shortcuts.nodeSwitcher),
         icon: <LayersIcon />,
         action: () => setShowNodeSwitcher(true),
       },
       {
         id: 'zoomReset',
         title: 'Reset Zoom',
-        shortcutText: '⌘0',
+        shortcutText: displayString(shortcuts.zoomReset),
         icon: <ZoomResetIcon />,
         action: () => setZoom(1.0),
       },
       {
         id: 'zoomToFit',
         title: 'Zoom to Fit',
-        shortcutText: '⌘1',
+        shortcutText: displayString(shortcuts.zoomToFit),
         icon: <ZoomToFitIcon />,
         action: () => canvasApi.getState().zoomToFit(),
       },
       {
         id: 'autoLayout',
         title: 'Auto-Layout Canvas',
-        shortcutText: '⇧⌘L',
+        shortcutText: displayString(shortcuts.autoLayout),
         icon: <LayersIcon />,
         action: () => canvasApi.getState().autoLayout(),
       },
@@ -706,17 +709,25 @@ const SectionHeader: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
 const Separator: React.FC = () => <div className="mx-3.5 my-1 border-t border-subtle" />
 
-// Render a shortcut string (e.g. "⌘⇧B", "⌃Space") as individual keycaps.
+// Render a shortcut string as individual keycaps.
+// macOS: single-character symbols (e.g. "⌘⇧B"), split per character.
+// Windows: "+"-delimited labels (e.g. "Ctrl+Shift+B").
 const Shortcut: React.FC<{ text: string }> = ({ text }) => {
   if (!text) return null
   const mods = new Set(['⌘', '⌥', '⌃', '⇧'])
-  const keys: string[] = []
-  let rest = ''
-  for (const ch of text) {
-    if (mods.has(ch)) keys.push(ch)
-    else rest += ch
-  }
-  if (rest) keys.push(rest)
+  const isMacLabel = [...text].some((ch) => mods.has(ch))
+  const keys: string[] = isMacLabel
+    ? (() => {
+        const k: string[] = []
+        let rest = ''
+        for (const ch of text) {
+          if (mods.has(ch)) k.push(ch)
+          else rest += ch
+        }
+        if (rest) k.push(rest)
+        return k
+      })()
+    : text.split('+')
   return (
     <span className="flex items-center gap-1 shrink-0">
       {keys.map((k, i) => (
