@@ -387,7 +387,7 @@ function SkillRow({
         <button
           onClick={() => window.electronAPI?.openExternalUrl(link)}
           title="Open skill on GitHub"
-          className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-secondary opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+          className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-secondary"
         >
           <ArrowSquareOut size={14} />
         </button>
