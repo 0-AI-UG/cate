@@ -1,6 +1,14 @@
 {
   "version": 1,
   "sources": [
-    { "id": "anthropic-skills", "repo": "anthropics/skills", "path": "" }
+    { "id": "anthropic-skills", "repo": "anthropics/skills", "path": "" },
+    { "id": "superpowers", "repo": "obra/superpowers", "path": "skills" },
+    { "id": "mattpocock-skills", "repo": "mattpocock/skills", "path": "skills" },
+    { "id": "addyosmani-agent-skills", "repo": "addyosmani/agent-skills", "path": "skills" },
+    { "id": "alirezarezvani-claude-skills", "repo": "alirezarezvani/claude-skills", "path": "" },
+    { "id": "coreyhaines-marketing-skills", "repo": "coreyhaines31/marketingskills", "path": "skills" },
+    { "id": "academic-research-skills", "repo": "Imbad0202/academic-research-skills", "path": "" },
+    { "id": "daymade-claude-code-skills", "repo": "daymade/claude-code-skills", "path": "" },
+    { "id": "glebis-claude-skills", "repo": "glebis/claude-skills", "path": "" }
   ]
 }
