@@ -40,9 +40,25 @@ interface ActiveRemote {
   snapshot: PanelTransferSnapshot
   runtime: RuntimeState
   onDrop: RemoteDropHandler | undefined
+  /** Id of the drag session this window is tracking, from the DRAG_UPDATE that
+   *  STARTed it. A targeted DRAG_END only ends THIS drag when ids match. */
+  dragId: string | null
 }
 
 let activeRemote: ActiveRemote | null = null
+
+/** True when a targeted DRAG_END (carrying `payloadDragId`) must be IGNORED
+ *  because it ends a DIFFERENT drag than the one this window is tracking. A
+ *  payload with no id is a legacy/global end and is never ignored; with no
+ *  active drag there is nothing to end anyway. Pure + exported for testing. */
+export function shouldIgnoreDragEnd(
+  activeDragId: string | null | undefined,
+  payloadDragId: string | null | undefined,
+): boolean {
+  if (payloadDragId == null) return false
+  if (activeDragId == null) return false
+  return activeDragId !== payloadDragId
+}
 
 function buildRemoteSource(snapshot: PanelTransferSnapshot): DragSource {
   return {
@@ -127,7 +143,7 @@ export function setupCrossWindowDragListeners(
   const cleanups: (() => void)[] = []
 
   cleanups.push(
-    window.electronAPI.onCrossWindowDragUpdate((screenPos: Point, snapshot: PanelTransferSnapshot) => {
+    window.electronAPI.onCrossWindowDragUpdate((screenPos: Point, snapshot: PanelTransferSnapshot, dragId?: string) => {
       const localX = screenPos.x - window.screenX
       const localY = screenPos.y - window.screenY
       const inside =
@@ -143,6 +159,7 @@ export function setupCrossWindowDragListeners(
           snapshot,
           runtime: runtimeInitial,
           onDrop,
+          dragId: dragId ?? null,
         }
         step(activeRemote, {
           type: 'START',
@@ -189,9 +206,12 @@ export function setupCrossWindowDragListeners(
   )
 
   cleanups.push(
-    window.electronAPI.onDragEnd(() => {
+    window.electronAPI.onDragEnd((dragId?: string) => {
       const active = activeRemote
       if (!active) return
+      // Ignore a DRAG_END that ends a DIFFERENT drag — e.g. a detach completing
+      // in another window must not force-cancel THIS window's active drag.
+      if (shouldIgnoreDragEnd(active.dragId, dragId)) return
       activeRemote = null
       // END emits a 'commit' effect iff a target is set; runRemoteEffects
       // handles the IPC claim + onDrop callback.

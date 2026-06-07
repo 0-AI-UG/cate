@@ -260,6 +260,10 @@ export const WINDOW_FULLSCREEN_STATE = 'window:fullscreenState' // main -> rende
 export const DOCK_WINDOW_INIT = 'dock:windowInit'           // main -> renderer
 export const DOCK_WINDOW_SYNC_STATE = 'dock:windowSyncState' // renderer -> main
 export const DOCK_WINDOWS_LIST = 'dock:windowsList'          // renderer -> main
+export const DOCK_WINDOW_RESTORE = 'dock:windowRestore'      // renderer -> main
+// Final awaited sync from a dock window before quit reads listDockWindows().
+export const DOCK_WINDOW_FLUSH_SYNC = 'dock:windowFlushSync' // main -> renderer
+export const DOCK_WINDOW_FLUSH_SYNC_DONE = 'dock:windowFlushSyncDone' // renderer -> main
 
 // Cross-window drag coordination
 export const CROSS_WINDOW_DRAG_START = 'crossDrag:start'       // renderer -> main
@@ -314,7 +318,7 @@ export const AGENT_BASH = 'agent:bash'                         // renderer -> ma
 export const AGENT_ABORT_BASH = 'agent:abortBash'
 export const AGENT_SET_STEERING_MODE = 'agent:setSteeringMode'
 export const AGENT_SET_FOLLOW_UP_MODE = 'agent:setFollowUpMode'
-export const AGENT_GET_AVAILABLE_MODELS = 'agent:getAvailableModels'
+export const AGENT_LIST_MODELS = 'agent:listModels'
 export const AGENT_UI_RESPONSE = 'agent:uiResponse'            // renderer -> main (reply to extension_ui_request)
 
 // Disk-backed pi sessions (~/.pi/agent/sessions/<encoded-cwd>/*.jsonl)
@@ -332,12 +336,29 @@ export const AGENT_MARKETPLACE_UNINSTALL = 'agent:marketplaceUninstall'   // ren
 export const AGENT_CUSTOM_MODELS_GET = 'agent:customModelsGet'   // renderer -> main
 export const AGENT_CUSTOM_MODELS_SAVE = 'agent:customModelsSave' // renderer -> main
 
+// Skills (cross-agent skill manager)
+export const SKILLS_GET_INDEX = 'skills:getIndex'             // renderer -> main (merged catalog)
+export const SKILLS_REFRESH = 'skills:refresh'               // renderer -> main (bust caches)
+export const SKILLS_GET_PREVIEW = 'skills:getPreview'         // renderer -> main (fetch SKILL.md body)
+export const SKILLS_INSTALL = 'skills:install'               // renderer -> main
+export const SKILLS_UNINSTALL = 'skills:uninstall'           // renderer -> main
+export const SKILLS_LIST_INSTALLED = 'skills:listInstalled'   // renderer -> main (workspace manifest)
+export const SKILLS_LIST_SAVED = 'skills:listSaved'           // renderer -> main (userData library)
+export const SKILLS_SAVE = 'skills:save'                     // renderer -> main (fetch + cache to library)
+export const SKILLS_UNSAVE = 'skills:unsave'                 // renderer -> main (drop from library)
+export const SKILLS_LIST_SOURCES = 'skills:listSources'       // renderer -> main
+export const SKILLS_ADD_SOURCE = 'skills:addSource'           // renderer -> main
+export const SKILLS_REMOVE_SOURCE = 'skills:removeSource'     // renderer -> main
+export const SKILLS_GET_TOKEN = 'skills:getToken'             // renderer -> main
+export const SKILLS_SET_TOKEN = 'skills:setToken'             // renderer -> main
+
 // Pi auth / providers
 export const AUTH_LIST_PROVIDERS = 'auth:listProviders'
 export const AUTH_STATUS = 'auth:status'
 export const AUTH_OAUTH_START = 'auth:oauthStart'
 export const AUTH_OAUTH_PROMPT_REPLY = 'auth:oauthPromptReply' // renderer -> main
 export const AUTH_OAUTH_EVENT = 'auth:oauthEvent'              // main -> renderer
+export const AUTH_CHANGED = 'auth:changed'                    // main -> renderer (broadcast)
 export const AUTH_SAVE_API_KEY = 'auth:saveApiKey'
 export const AUTH_DELETE = 'auth:delete'
 

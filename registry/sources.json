@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "sources": [
+    { "id": "anthropic-skills", "repo": "anthropics/skills", "path": "" }
+  ]
+}

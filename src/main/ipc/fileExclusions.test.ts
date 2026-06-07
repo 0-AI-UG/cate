@@ -93,7 +93,8 @@ describe('file exclusions across explorer + search', () => {
 
   test('search skips excluded folders and same-named files', async () => {
     exclusions = ['node_modules']
-    const found = relPaths(await search(root, 'alpha'))
+    // Name-only search: 'txt' matches keep.txt and src/app.txt by name.
+    const found = relPaths(await search(root, 'txt'))
     expect(found).toEqual(['keep.txt', 'src/app.txt'])
     // Nothing under node_modules/, and not the src/node_modules file either.
     expect(found.some((p) => p.includes('node_modules'))).toBe(false)
@@ -102,11 +103,11 @@ describe('file exclusions across explorer + search', () => {
   test('exclusions are read live: editing the list takes effect on the next call', async () => {
     exclusions = []
     expect(names(await readDir(root))).toContain('node_modules')
-    expect(relPaths(await search(root, 'alpha'))).toContain('node_modules/pkg.txt')
+    expect(relPaths(await search(root, 'txt'))).toContain('node_modules/pkg.txt')
 
     // User edits the setting at runtime — no relaunch.
     exclusions = ['node_modules']
     expect(names(await readDir(root))).not.toContain('node_modules')
-    expect(relPaths(await search(root, 'alpha')).some((p) => p.includes('node_modules'))).toBe(false)
+    expect(relPaths(await search(root, 'txt')).some((p) => p.includes('node_modules'))).toBe(false)
   })
 })

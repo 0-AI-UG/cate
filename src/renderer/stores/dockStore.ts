@@ -18,6 +18,7 @@ import type {
 import { SIDE_ZONES, ALL_ZONES } from '../../shared/types'
 import { findTabStack, findZoneForStack, findStackContainingPanel } from './dockTreeUtils'
 import { clearActivePanelIfMatches } from '../lib/activePanel'
+import { generateId } from './canvas/helpers'
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -30,10 +31,6 @@ const MIN_ZONE_SIZE = 120
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-
-function generateId(): string {
-  return crypto.randomUUID()
-}
 
 function createEmptyZone(position: DockZonePosition): DockZoneState {
   const isBottom = position === 'bottom'
@@ -186,11 +183,7 @@ interface DockStoreActions {
   collapseStack: (stackId: string) => void
 
   // Location tracking — the dock location of a panel is DERIVED from the zones
-  // tree, not stored. getPanelLocation computes it on demand. set/remove are
-  // retained as no-ops only for cross-window callers (DockWindowShell) that
-  // still invoke them; the tree is the single source of truth.
-  setPanelLocation: (panelId: string, location: PanelLocation) => void
-  removePanelLocation: (panelId: string) => void
+  // tree, not stored. getPanelLocation computes it on demand.
   getPanelLocation: (panelId: string) => PanelLocation | undefined
 
   // Serialization
@@ -517,11 +510,6 @@ export function createDockStore(initialState?: { zones: WindowDockState; locatio
   },
 
   // --- Location tracking ---
-
-  // No-ops: dock locations are derived from the zones tree, not stored. Kept
-  // only because cross-window code (DockWindowShell) still calls them.
-  setPanelLocation() {},
-  removePanelLocation() {},
 
   getPanelLocation(panelId) {
     const zones = get().zones

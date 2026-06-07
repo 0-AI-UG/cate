@@ -18,6 +18,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getWorkspaceCanvasSnapshot,
+  getCanvasSnapshotForPanel,
+  getWorkspaceCanvasPanelIds,
   getWorkspaceDockSnapshot,
   registerCanvasOps,
   unregisterCanvasOps,
@@ -32,14 +34,15 @@ import { useAppStore } from '../../stores/appStore'
 
 const WS = 'ws-snap'
 const CANVAS = 'canvas-panel-1'
+const CANVAS2 = 'canvas-panel-2'
 
-function setWorkspace(extra: Record<string, unknown>) {
+function setWorkspace(extra: Record<string, unknown>, panels?: Record<string, unknown>) {
   useAppStore.setState({
     workspaces: [
       {
         id: WS,
         rootPath: '/repo',
-        panels: { [CANVAS]: { id: CANVAS, type: 'canvas', title: 'Canvas' } },
+        panels: panels ?? { [CANVAS]: { id: CANVAS, type: 'canvas', title: 'Canvas' } },
         ...extra,
       } as any,
     ],
@@ -66,6 +69,7 @@ beforeEach(() => {
 
 afterEach(() => {
   unregisterCanvasOps(CANVAS)
+  unregisterCanvasOps(CANVAS2)
   invalidateWorkspaceCanvasCache(WS)
   releaseWorkspaceDockStore(WS)
   useAppStore.setState({ workspaces: [] } as any)
@@ -91,9 +95,14 @@ describe('getWorkspaceCanvasSnapshot', () => {
 
   it('falls back to the persisted projection for a never-mounted workspace (no empty overwrite)', () => {
     setWorkspace({
-      canvasNodes: { saved: { id: 'saved', panelId: 'p-saved' } },
-      zoomLevel: 1.5,
-      viewportOffset: { x: 10, y: 20 },
+      canvases: {
+        [CANVAS]: {
+          id: CANVAS,
+          canvasNodes: { saved: { id: 'saved', panelId: 'p-saved' } },
+          zoomLevel: 1.5,
+          viewportOffset: { x: 10, y: 20 },
+        },
+      },
     })
     // No ops registered for CANVAS.
     const snap = getWorkspaceCanvasSnapshot(WS)
@@ -106,6 +115,62 @@ describe('getWorkspaceCanvasSnapshot', () => {
 
   it('returns null for an unknown workspace', () => {
     expect(getWorkspaceCanvasSnapshot('nope')).toBeNull()
+  })
+})
+
+describe('getCanvasSnapshotForPanel (multi-canvas)', () => {
+  const twoCanvasPanels = {
+    [CANVAS]: { id: CANVAS, type: 'canvas', title: 'Primary' },
+    [CANVAS2]: { id: CANVAS2, type: 'canvas', title: 'Secondary' },
+  }
+
+  it('reads the LIVE store for a specific canvas panel when mounted', () => {
+    setWorkspace({ canvasNodes: {}, zoomLevel: 1, viewportOffset: { x: 0, y: 0 } }, twoCanvasPanels)
+    registerCanvasOps(CANVAS2, fakeCanvasOps({ s1: { id: 's1', panelId: 'p-sec' } }))
+
+    const snap = getCanvasSnapshotForPanel(CANVAS2)
+    expect(Object.keys(snap!.nodes)).toEqual(['s1'])
+    expect(snap!.zoomLevel).toBe(2)
+    expect(snap!.viewportOffset).toEqual({ x: 5, y: 6 })
+  })
+
+  it('falls back to the persisted ws.canvases entry when not mounted', () => {
+    setWorkspace(
+      {
+        canvasNodes: { prim: { id: 'prim', panelId: 'p-prim' } },
+        zoomLevel: 1,
+        viewportOffset: { x: 0, y: 0 },
+        canvases: {
+          [CANVAS2]: {
+            id: CANVAS2,
+            canvasNodes: { sec: { id: 'sec', panelId: 'p-sec' } },
+            zoomLevel: 3,
+            viewportOffset: { x: 7, y: 8 },
+          },
+        },
+      },
+      twoCanvasPanels,
+    )
+
+    const snap = getCanvasSnapshotForPanel(CANVAS2)
+    expect(Object.keys(snap!.nodes)).toEqual(['sec'])
+    expect(snap!.zoomLevel).toBe(3)
+    expect(snap!.viewportOffset).toEqual({ x: 7, y: 8 })
+    // Critical: a never-mounted secondary canvas must NOT get a live store.
+    expect(getCanvasOpsById(CANVAS2)).toBeNull()
+  })
+
+  it('a never-mounted canvas with no canvases entry resolves to empty (primary and secondary alike)', () => {
+    setWorkspace({}, twoCanvasPanels)
+    // No canvases map and neither mounted ⇒ empty nodes for BOTH. The primary is
+    // no longer special-cased with a legacy top-level projection.
+    expect(getCanvasSnapshotForPanel(CANVAS)!.nodes).toEqual({})
+    expect(getCanvasSnapshotForPanel(CANVAS2)!.nodes).toEqual({})
+  })
+
+  it('lists every canvas panel id in the workspace', () => {
+    setWorkspace({}, twoCanvasPanels)
+    expect(getWorkspaceCanvasPanelIds(WS).sort()).toEqual([CANVAS, CANVAS2].sort())
   })
 })
 

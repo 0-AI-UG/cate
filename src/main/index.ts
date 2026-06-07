@@ -9,7 +9,8 @@ import {
   PANEL_WINDOWS_LIST, PANEL_WINDOW_DOCK_BACK, PANEL_WINDOW_SYNC_PTY, PANEL_WINDOW_SYNC_META,
   DRAG_START, DRAG_DETACH, DRAG_END,
   WINDOW_FULLSCREEN_STATE,
-  DOCK_WINDOW_INIT, DOCK_WINDOW_SYNC_STATE, DOCK_WINDOWS_LIST,
+  DOCK_WINDOW_INIT, DOCK_WINDOW_SYNC_STATE, DOCK_WINDOWS_LIST, DOCK_WINDOW_RESTORE,
+  DOCK_WINDOW_FLUSH_SYNC, DOCK_WINDOW_FLUSH_SYNC_DONE,
   CROSS_WINDOW_DRAG_START, CROSS_WINDOW_DRAG_UPDATE, CROSS_WINDOW_DRAG_DROP, CROSS_WINDOW_DRAG_CANCEL, CROSS_WINDOW_DRAG_RESOLVE,
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
@@ -31,6 +32,7 @@ import { registerProjectStateHandlers, saveProjectStateSync } from './projectWor
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
 import { registerAgentHandlers } from '../agent/main/ipcAgent'
+import { registerSkillHandlers } from '../skills/main/ipcSkills'
 import { registerAuthHandlers } from '../agent/main/ipcAuth'
 import { authManager } from '../agent/main/authManager'
 import { AgentManager } from '../agent/main/agentManager'
@@ -38,7 +40,8 @@ import { AgentManager } from '../agent/main/agentManager'
 // Shared singletons for pi agent + auth.
 const agentManager = new AgentManager(authManager)
 import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './ipc/drag'
-import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows, focusWindow } from './windowRegistry'
+import { registerWindow, getWindowType, sendToWindow, broadcastToAll, broadcastToAllExcept, setPanelWindowMeta, setPanelWindowTerminalPtyId, listPanelWindows, getWindow, setDockWindowState, listDockWindows, listDockWindowIds, focusWindow, getWindowWorkspaceId, getActiveMainWindow } from './windowRegistry'
+import { flushDockWindowsBeforeQuit } from './dockWindowFlush'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { addAllowedRoot, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow, grantFileAccess, validatePath } from './ipc/pathValidation'
 import { isLocalLocator } from './companion/locator'
@@ -51,7 +54,7 @@ import { initSentry, captureMainException, captureMainMessage, flushSentry } fro
 import { initAnalytics, trackAppStart, checkAndReportUpdate, hasRunBefore, devSimulateUpdateFrom } from './analytics'
 import { TELEMETRY_SET_CONSENT } from '../shared/ipc-channels'
 import { beginTerminalTransfer, acknowledgeTerminalTransfer, handleCrossWindowDropTerminalTransfer } from './ipc/terminal'
-import type { CateWindowParams, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
+import type { CanvasLayoutSnapshot, CateWindowParams, DetachedDockWindowSnapshot, DockLayoutNode, DockWindowInitPayload, PanelState, PanelTransferSnapshot, WindowDockState } from '../shared/types'
 import { disableRendererSandbox, disableTrustScoping } from './featureFlags'
 import { getSharedPanelDef } from '../shared/panels'
 import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
@@ -66,6 +69,9 @@ import {
   cancelCrossWindowDrag,
   claimCrossWindowDrop,
   resolveCrossWindowDrag,
+  recordClaim,
+  lookupClaim,
+  pruneClaims,
   decideDetach,
   clampGhostSize,
   ghostPosition,
@@ -73,6 +79,7 @@ import {
   CROSS_WINDOW_POLL_MS,
   CROSS_WINDOW_CLAIM_WAIT_MS,
   type CrossWindowDragState,
+  type ClaimRecord,
   type GhostHostWindow,
 } from './dragLogic'
 
@@ -613,6 +620,7 @@ function registerDeferredHandlers(): void {
   registerNotificationHandlers()
   registerAuthHandlers(authManager)
   registerAgentHandlers(authManager, agentManager)
+  registerSkillHandlers()
   registerCompanionHandlers()
 }
 
@@ -828,9 +836,11 @@ function registerWindowAndDialogHandlers(): void {
       const result = await dialog.showMessageBox(win!, {
         type: 'warning',
         message: 'Close this canvas?',
-        detail: isLast
-          ? 'This is the only canvas in the workspace.'
-          : 'This canvas has no open panels.',
+        detail: panelCount > 0
+          ? `Closing it will also close its ${panelCount} open ${panelCount === 1 ? 'panel' : 'panels'}.`
+          : isLast
+            ? 'This is the only canvas in the workspace.'
+            : 'This canvas has no open panels.',
         buttons: ['Close', 'Cancel'],
         defaultId: 0,
         cancelId: 1,
@@ -983,6 +993,13 @@ function registerWindowAndDialogHandlers(): void {
     }
   })
 
+  // Id of the most recently started cross-window drag. Declared up here (above
+  // DRAG_DETACH, which references it) but owned by the cross-window section
+  // below. Survives the live-state null-out so RESOLVE can look up the claim
+  // record by id even when DROP cleared crossWindowDragState before the
+  // resolver was armed. Only one drag is in flight at a time (single cursor).
+  let lastCrossWindowDragId: string | null = null
+
   // Renderer-driven title sync — used so each native macOS tab shows the
   // active workspace name instead of the generic app title.
   ipcMain.handle(WINDOW_SET_TITLE, async (event, title: string) => {
@@ -1014,16 +1031,29 @@ function registerWindowAndDialogHandlers(): void {
       if (anyWindowFullscreen()) return null
       // Create a new panel window and send the transfer there. Pass the source
       // workspaceId so the window is registered to it at creation — otherwise it
-      // is persisted to no workspace and lost on the next restart.
+      // is persisted to no workspace and lost on the next restart. The caller
+      // SHOULD supply one, but guard against a falsy value: fall back to the
+      // sender window's workspace, then the active main window's.
+      const senderId = BrowserWindow.fromWebContents(event.sender)?.id
+      const resolvedWorkspaceId =
+        workspaceId ||
+        (senderId != null ? getWindowWorkspaceId(senderId) : undefined) ||
+        (() => {
+          const main = getActiveMainWindow()
+          return main ? getWindowWorkspaceId(main.id) : undefined
+        })()
+      if (!resolvedWorkspaceId) {
+        log.warn('PANEL_TRANSFER: creating panel window with no workspace id — it may be lost on restart', { panelId: snapshot.panel.id })
+      }
       const newWin = createWindow({
         type: 'panel',
         panelType: snapshot.panel.type,
         panelId: snapshot.panel.id,
-        workspaceId,
+        workspaceId: resolvedWorkspaceId,
       })
 
       // Track panel metadata
-      setPanelWindowMeta(newWin.id, snapshot.panel, workspaceId)
+      setPanelWindowMeta(newWin.id, snapshot.panel, resolvedWorkspaceId)
 
       // Position at saved geometry if available
       if (snapshot.geometry) {
@@ -1077,13 +1107,42 @@ function registerWindowAndDialogHandlers(): void {
     setPanelWindowMeta(win.id, payload.panel, payload.workspaceId)
   })
 
-  // Double-click panel window title bar → close the panel window and signal main window to dock
-  ipcMain.handle(PANEL_WINDOW_DOCK_BACK, async (event) => {
+  // Double-click panel window title bar → re-integrate the panel into the main
+  // window, then close the panel window. The panel's record was already removed
+  // from the main workspace at detach time, so the renderer sends a full
+  // snapshot (live panel + canvas/terminal state) the main window uses to
+  // reconstruct it. We also arm the terminal-ownership transfer HOME — exactly
+  // like a cross-window drop — so the live PTY (and any canvas child PTYs)
+  // follow the panel back instead of dying with the window.
+  ipcMain.handle(PANEL_WINDOW_DOCK_BACK, async (event, snapshot?: PanelTransferSnapshot) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
-    // Broadcast to main window(s) that this panel should be re-docked
-    broadcastToAll(PANEL_WINDOW_DOCK_BACK, win.id)
-    // Close the panel window
+
+    const mainWin = getActiveMainWindow()
+
+    // Arm terminal transfer back to the main window so reconnectTerminal's
+    // panelTransferAck on the receiving side finds a pending transfer (ack is a
+    // no-op without a prior begin).
+    if (mainWin && snapshot) {
+      if (snapshot.terminalPtyId) {
+        handleCrossWindowDropTerminalTransfer(snapshot.terminalPtyId, mainWin.id)
+      }
+      for (const t of Object.values(snapshot.canvasState?.childTerminals ?? {})) {
+        if (t.ptyId) handleCrossWindowDropTerminalTransfer(t.ptyId, mainWin.id)
+      }
+    }
+
+    // Tell the main window to re-add the panel (App.tsx re-integrates it). Send
+    // ONLY to the main window so a second panel window doesn't try to claim it.
+    if (mainWin) {
+      sendToWindow(mainWin.id, PANEL_WINDOW_DOCK_BACK, { panelWindowId: win.id, snapshot })
+    } else {
+      // No main window to dock into — fall back to broadcasting the id so any
+      // listener can react (and at minimum the window still closes below).
+      broadcastToAll(PANEL_WINDOW_DOCK_BACK, { panelWindowId: win.id, snapshot })
+    }
+
+    // Close the panel window once the snapshot is on its way home.
     win.close()
   })
 
@@ -1121,9 +1180,16 @@ function registerWindowAndDialogHandlers(): void {
     })
     if (decision.kind === 'refuse') return null
 
-    // Begin terminal buffering if applicable
+    // Begin terminal buffering if applicable. For a canvas, each child terminal
+    // is its own PTY that must transfer too — buffer them all so no output is
+    // lost between detach and the new window reconnecting.
     if (snapshot.terminalPtyId) {
       beginTerminalTransfer(snapshot.terminalPtyId, -1)
+    }
+    for (const t of Object.values(snapshot.canvasState?.childTerminals ?? {})) {
+      // Only LIVE transfer entries (ptyId) have a running PTY to buffer; restore
+      // entries (replayPtyId) spawn fresh in the new window, so skip them.
+      if (t.ptyId) beginTerminalTransfer(t.ptyId, -1)
     }
 
     const newWin = createWindow({
@@ -1136,6 +1202,9 @@ function registerWindowAndDialogHandlers(): void {
     // Update terminal transfer target now that we have the window ID
     if (snapshot.terminalPtyId) {
       beginTerminalTransfer(snapshot.terminalPtyId, newWin.id)
+    }
+    for (const t of Object.values(snapshot.canvasState?.childTerminals ?? {})) {
+      if (t.ptyId) beginTerminalTransfer(t.ptyId, newWin.id)
     }
 
     newWin.setBounds({
@@ -1150,6 +1219,7 @@ function registerWindowAndDialogHandlers(): void {
       panels: { [snapshot.panel.id]: snapshot.panel },
       dockState: buildSinglePanelDockState(snapshot.panel.id),
       workspaceId: workspaceId ?? '',
+      rootPath: snapshot.rootPath,
     }
 
     // Send the init payload + transfer snapshot once the window is ready
@@ -1163,7 +1233,11 @@ function registerWindowAndDialogHandlers(): void {
     })
 
     cleanupDragTempFile()
-    broadcastToAll(DRAG_END)
+    // End only the just-finished cross-window drag (if any) in other windows —
+    // a window tracking a DIFFERENT active drag must not be force-ended here.
+    // (DRAG_DETACH is the fallback when no window claimed the cross-window drop,
+    // so the relevant remote drag is the last-started one.)
+    broadcastToAll(DRAG_END, lastCrossWindowDragId ?? undefined)
 
     return newWin.id
   })
@@ -1184,12 +1258,45 @@ function registerWindowAndDialogHandlers(): void {
   ipcMain.handle(DOCK_WINDOW_SYNC_STATE, async (event, state: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
-    setDockWindowState(win.id, state as { dockState: any; panels: Record<string, PanelState>; workspaceId: string })
+    setDockWindowState(win.id, state as { dockState: any; panels: Record<string, PanelState>; workspaceId: string; terminalPtyIds?: Record<string, string>; canvasStates?: Record<string, CanvasLayoutSnapshot> })
   })
 
   // List all dock windows with state and bounds
   ipcMain.handle(DOCK_WINDOWS_LIST, async () => {
     return listDockWindows()
+  })
+
+  // Session restore of a detached dock window — rebuilds the FULL window (every
+  // top-level tab + their terminal-replay / canvas-children hydration) from its
+  // persisted snapshot, rather than synthesizing a single tab via DRAG_DETACH.
+  // PTYs are dead on restore (terminals replay scrollback), so no terminal
+  // buffering is needed and bounds come straight from the snapshot.
+  ipcMain.handle(DOCK_WINDOW_RESTORE, async (
+    _event,
+    payload: DetachedDockWindowSnapshot & { initPayload: DockWindowInitPayload },
+  ) => {
+    const { initPayload, bounds, workspaceId } = payload
+    const topLevelIds = collectTopLevelPanelIds(initPayload.dockState)
+    const firstId = topLevelIds[0]
+    if (!firstId) return null
+    const firstPanel = initPayload.panels[firstId]
+    if (!firstPanel) return null
+
+    const newWin = createWindow({
+      type: 'dock',
+      panelType: firstPanel.type,
+      panelId: firstPanel.id,
+      workspaceId: workspaceId || undefined,
+    })
+
+    if (bounds) newWin.setBounds(bounds)
+
+    newWin.webContents.once('did-finish-load', () => {
+      sendToWindow(newWin.id, DOCK_WINDOW_INIT, initPayload)
+      revealWindow(newWin, { focus: false })
+    })
+
+    return newWin.id
   })
 
   // Cross-window drag coordination — `crossWindowDragState` is the pure state
@@ -1201,6 +1308,12 @@ function registerWindowAndDialogHandlers(): void {
   // Used by CROSS_WINDOW_DRAG_RESOLVE to detect if a target window claimed the
   // drop before the claim-wait timer fires.
   let crossWindowDropClaimedResolve: (() => void) | null = null
+
+  // Claim outcomes keyed by dragId — survive the live-state teardown so a late
+  // RESOLVE (one arriving after DROP already cleared crossWindowDragState
+  // because no resolver was pending) still reads claimed=true rather than
+  // inferring false from a nulled pointer. Pruned to the claim-wait window.
+  let crossWindowClaims: Map<string, ClaimRecord> = new Map()
 
   const stopPollTimer = (): void => {
     if (pollTimer) {
@@ -1220,10 +1333,12 @@ function registerWindowAndDialogHandlers(): void {
 
     const cursor = screen.getCursorScreenPoint()
     crossWindowDragState = startCrossWindowDrag({
+      dragId: crypto.randomUUID(),
       sourceWindowId: win.id,
       snapshot,
       cursor,
     })
+    lastCrossWindowDragId = crossWindowDragState.dragId
 
     // Create the native drag ghost window — size to match the source panel
     // (canvas-space size; clamped inside createDragGhostWindow).
@@ -1257,7 +1372,7 @@ function registerWindowAndDialogHandlers(): void {
         }
       }
 
-      broadcastToAllExcept(crossWindowDragState.sourceWindowId, CROSS_WINDOW_DRAG_UPDATE, pos, crossWindowDragState.snapshot)
+      broadcastToAllExcept(crossWindowDragState.sourceWindowId, CROSS_WINDOW_DRAG_UPDATE, pos, crossWindowDragState.snapshot, crossWindowDragState.dragId)
     }, CROSS_WINDOW_POLL_MS)
   })
 
@@ -1267,18 +1382,33 @@ function registerWindowAndDialogHandlers(): void {
       // Mark the state as claimed (pure transition). The resolver below reads
       // `claimed` to decide whether to tell the source to remove its node.
       crossWindowDragState = claimCrossWindowDrop(crossWindowDragState, Date.now())
+      // Record the claim keyed by dragId so a RESOLVE that arrives AFTER this
+      // DROP clears the live state (the no-resolver branch below) still sees
+      // claimed=true — preventing a duplicate detach. Pruned on every write.
+      const now = Date.now()
+      crossWindowClaims = pruneClaims(crossWindowClaims, now, CROSS_WINDOW_CLAIM_WAIT_MS)
+      crossWindowClaims = recordClaim(crossWindowClaims, crossWindowDragState!.dragId, true, now)
       // Arm terminal-ownership transfer to the target (receiver) window — the
       // receiver's reconnectTerminal will panelTransferAck after wiring its
       // listeners, and ack is a no-op without a prior begin.
       const targetWin = BrowserWindow.fromWebContents(event.sender)
-      if (targetWin && crossWindowDragState!.snapshot.terminalPtyId) {
-        handleCrossWindowDropTerminalTransfer(
-          crossWindowDragState!.snapshot.terminalPtyId,
-          targetWin.id,
-        )
+      if (targetWin) {
+        if (crossWindowDragState!.snapshot.terminalPtyId) {
+          handleCrossWindowDropTerminalTransfer(
+            crossWindowDragState!.snapshot.terminalPtyId,
+            targetWin.id,
+          )
+        }
+        // A canvas carries its child terminals — arm each live PTY for the
+        // receiver. (Cross-window drag is always a live transfer, so every entry
+        // has a ptyId; the guard satisfies the now-optional type.)
+        for (const t of Object.values(crossWindowDragState!.snapshot.canvasState?.childTerminals ?? {})) {
+          if (t.ptyId) handleCrossWindowDropTerminalTransfer(t.ptyId, targetWin.id)
+        }
       }
-      // Notify source window to remove the panel
-      sendToWindow(crossWindowDragState!.sourceWindowId, DRAG_END)
+      // Notify source window to remove the panel (carry the dragId so an
+      // unrelated active drag in that window isn't force-ended).
+      sendToWindow(crossWindowDragState!.sourceWindowId, DRAG_END, crossWindowDragState!.dragId)
     }
     destroyDragGhostWindow()
 
@@ -1288,8 +1418,11 @@ function registerWindowAndDialogHandlers(): void {
     if (crossWindowDropClaimedResolve) {
       crossWindowDropClaimedResolve()
     } else {
-      // No resolve in flight — clear state directly so a future resolve
-      // (which would arrive after the source mouseup) returns unclaimed.
+      // No resolve in flight — clear the LIVE state directly. The claim is
+      // preserved in crossWindowClaims (recorded above, keyed by dragId), so a
+      // RESOLVE arriving after this still reads claimed=true rather than
+      // inferring false from the nulled pointer (which would duplicate the
+      // panel via a fallback detach).
       crossWindowDragState = cancelCrossWindowDrag(crossWindowDragState)
     }
   })
@@ -1297,9 +1430,10 @@ function registerWindowAndDialogHandlers(): void {
   ipcMain.handle(CROSS_WINDOW_DRAG_CANCEL, async () => {
     if (!crossWindowDragState) return
     stopPollTimer()
+    const dragId = crossWindowDragState.dragId
     crossWindowDragState = cancelCrossWindowDrag(crossWindowDragState)
     destroyDragGhostWindow()
-    broadcastToAll(DRAG_END)
+    broadcastToAll(DRAG_END, dragId)
   })
 
   // Resolve cross-window drag on mouseup from source window.
@@ -1307,9 +1441,21 @@ function registerWindowAndDialogHandlers(): void {
   // CROSS_WINDOW_DRAG_DROP, then returns whether the drop was claimed. If not,
   // source falls back to DRAG_DETACH.
   ipcMain.handle(CROSS_WINDOW_DRAG_RESOLVE, async () => {
-    if (!crossWindowDragState) return { claimed: false }
+    // The live state may already be gone if a DROP landed (and cleared it)
+    // before this RESOLVE arrived. In that case the claim outcome lives in the
+    // dragId-keyed record, NOT in the (nulled) pointer — read it there so a
+    // just-completed claim isn't misread as unclaimed (which would duplicate
+    // the panel via a fallback detach).
+    if (!crossWindowDragState) {
+      const dragId = lastCrossWindowDragId
+      const claimed = dragId
+        ? lookupClaim(crossWindowClaims, dragId, Date.now(), CROSS_WINDOW_CLAIM_WAIT_MS)
+        : false
+      return { claimed }
+    }
 
     const sourceId = crossWindowDragState.sourceWindowId
+    const dragId = crossWindowDragState.dragId
 
     // Stop polling but keep the state alive so DROP can still claim it within
     // the short wait window below.
@@ -1319,17 +1465,24 @@ function registerWindowAndDialogHandlers(): void {
 
     destroyDragGhostWindow()
 
-    // Broadcast DRAG_END to non-source windows so target windows check their drop targets
-    broadcastToAllExcept(sourceId, DRAG_END)
+    // Broadcast DRAG_END to non-source windows so target windows check their
+    // drop targets. The dragId lets each window force-end only ITS OWN remote
+    // drag (a window with an unrelated active drag ignores this).
+    broadcastToAllExcept(sourceId, DRAG_END, dragId)
 
     // Wait briefly for a target window to call CROSS_WINDOW_DRAG_DROP.
     return new Promise<{ claimed: boolean }>((resolve) => {
       const finish = (now: number): void => {
         crossWindowDropClaimedResolve = null
-        void now
-        const decision = resolveCrossWindowDrag(crossWindowDragState)
+        // Decide from the live state if present, else fall back to the claim
+        // record (covers a DROP that cleared the pointer between arming and
+        // firing the resolver).
+        const liveDecision = resolveCrossWindowDrag(crossWindowDragState)
+        const claimed =
+          liveDecision.claimed ||
+          lookupClaim(crossWindowClaims, dragId, now, CROSS_WINDOW_CLAIM_WAIT_MS)
         crossWindowDragState = cancelCrossWindowDrag(crossWindowDragState)
-        resolve({ claimed: decision.claimed })
+        resolve({ claimed })
       }
 
       const timeout = setTimeout(() => finish(Date.now()), CROSS_WINDOW_CLAIM_WAIT_MS)
@@ -1347,6 +1500,18 @@ function registerWindowAndDialogHandlers(): void {
 // =============================================================================
 
 /** Build a WindowDockState with a single panel in the center zone */
+/** Collect every panelId referenced by a WindowDockState's zone layout trees. */
+function collectTopLevelPanelIds(zones: WindowDockState): string[] {
+  const ids: string[] = []
+  const walk = (node: DockLayoutNode | null): void => {
+    if (!node) return
+    if (node.type === 'tabs') ids.push(...node.panelIds)
+    else for (const child of node.children) walk(child)
+  }
+  for (const zone of Object.values(zones)) walk(zone.layout)
+  return ids
+}
+
 function buildSinglePanelDockState(panelId: string): WindowDockState {
   const stackId = crypto.randomUUID()
   return {
@@ -1727,6 +1892,10 @@ let sessionFlushed = false
 // flush/quit sequence below so the confirmation only runs on the first pass.
 let quitConfirmed = false
 const FLUSH_TIMEOUT_MS = 1500
+// Bound the pre-quit dock-window sync so an unresponsive detached window can't
+// stall quit. Kept short relative to FLUSH_TIMEOUT_MS — it runs BEFORE the main
+// renderer's session flush, so dock sync + session save share the quit budget.
+const DOCK_FLUSH_TIMEOUT_MS = 600
 
 app.on('before-quit', (event) => {
   if (sessionFlushed) {
@@ -1823,7 +1992,30 @@ app.on('before-quit', (event) => {
     }
   }, FLUSH_TIMEOUT_MS)
 
-  mainWin.webContents.send(SESSION_FLUSH_SAVE)
+  // FINAL, AWAITED sync from every dock window FIRST, so the main renderer's
+  // session flush (which reads listDockWindows() / main's cached dock state)
+  // sees the freshest dock layout + terminal/canvas state instead of stale data
+  // from the last 5s tick. Bounded by DOCK_FLUSH_TIMEOUT_MS so an unresponsive
+  // dock window can't delay quit. Runs before SESSION_FLUSH_SAVE either way.
+  const dockWindowIds = listDockWindowIds()
+  flushDockWindowsBeforeQuit({
+    windowIds: dockWindowIds,
+    requestSync: (id) => sendToWindow(id, DOCK_WINDOW_FLUSH_SYNC),
+    subscribeAck: (handler) => {
+      const listener = (e: Electron.IpcMainEvent) => {
+        const win = BrowserWindow.fromWebContents(e.sender)
+        if (win) handler(win.id)
+      }
+      ipcMain.on(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
+      return () => ipcMain.removeListener(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
+    },
+    timeoutMs: DOCK_FLUSH_TIMEOUT_MS,
+  })
+    .catch(() => {})
+    .finally(() => {
+      if (sessionFlushed) return
+      mainWin.webContents.send(SESSION_FLUSH_SAVE)
+    })
 })
 
 app.on('will-quit', () => {

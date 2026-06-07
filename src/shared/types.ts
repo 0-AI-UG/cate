@@ -271,6 +271,25 @@ export interface DockWindowInitPayload {
   panels: Record<string, PanelState>
   dockState: WindowDockState
   workspaceId: string
+  /** Owning workspace's project root, so the detached window's stub workspace
+   *  can resolve a cwd for newly-created terminals instead of re-prompting. */
+  rootPath?: string
+  /** Session-restore only: per top-level terminal panelId → the (now-dead) ptyId
+   *  whose saved scrollback log should be replayed into the freshly-spawned PTY.
+   *  Absent for a fresh live single-panel detach (which uses PANEL_RECEIVE). */
+  terminalReplayPtyIds?: Record<string, string>
+  /** Session-restore only: per top-level canvas panelId → its reconstructed
+   *  canvas hydration (nodes/viewport + child panels + child terminal replay
+   *  hints), so EVERY canvas tab restores its children rather than only the
+   *  first. Absent for a fresh live detach. */
+  canvasStates?: Record<string, PanelTransferSnapshot['canvasState']>
+}
+
+/** A single detached canvas panel's persisted layout (nodes + viewport). */
+export interface CanvasLayoutSnapshot {
+  nodes: Record<CanvasNodeId, CanvasNodeState>
+  viewportOffset: Point
+  zoomLevel: number
 }
 
 /** Snapshot of a detached dock window for session persistence */
@@ -281,6 +300,10 @@ export interface DetachedDockWindowSnapshot {
   workspaceId: string
   /** Map of terminal panelId → ptyId, so the scrollback log can be replayed on restore. */
   terminalPtyIds?: Record<string, string>
+  /** Per-canvas-panel layout snapshots (nodes + viewport), keyed by canvas panelId,
+   *  so a detached canvas window restores its children instead of landing empty.
+   *  Optional for back-compat with session files written before this existed. */
+  canvasStates?: Record<string, CanvasLayoutSnapshot>
 }
 
 // -----------------------------------------------------------------------------
@@ -291,6 +314,11 @@ export interface PanelTransferSnapshot {
   panel: PanelState
   geometry: { origin: Point; size: Size }
   sourceLocation: PanelLocation
+
+  /** Owning workspace's project root. Carried so a detached window's stub
+   *  workspace inherits the cwd context (new terminals resolve to the project
+   *  folder instead of re-prompting). */
+  rootPath?: string
 
   // Terminal-specific
   terminalPtyId?: string
@@ -318,13 +346,24 @@ export interface PanelTransferSnapshot {
   // empty store (fresh per-process), losing every panel inside it.
   //
   // `childPanels` carries the PanelState records for every panel referenced
-  // by the canvas's nodes. Without these the receiving window can't resolve
-  // child panel types/titles and falls back to a generic "Panel" stub.
+  // by the canvas's nodes (including tabbed panels inside a node's mini-dock).
+  // Without these the receiving window can't resolve child panel types/titles
+  // and falls back to a generic "Panel" stub.
+  //
+  // `childTerminals` carries each child terminal's restore hint, keyed by child
+  // panel id, in one of two mutually-exclusive modes:
+  //   • LIVE transfer (`ptyId` + `scrollback`): the receiving window RECONNECTS
+  //     to the still-running process — the same live transfer a top-level
+  //     terminal gets via `terminalPtyId`.
+  //   • RESTORE / cold start (`replayPtyId`): the original PTY is dead, so the
+  //     receiver spawns a FRESH PTY and replays that dead PTY's saved scrollback
+  //     log — mirroring the main canvas's terminalRestoreData replay path.
   canvasState?: {
     nodes: Record<CanvasNodeId, CanvasNodeState>
     viewportOffset: Point
     zoomLevel: number
     childPanels: Record<string, PanelState>
+    childTerminals?: Record<string, { ptyId?: string; scrollback?: string; replayPtyId?: string }>
   }
 }
 
@@ -421,19 +460,14 @@ export interface WorkspaceState {
   rootPathError?: string | null
   isRootPathPending?: boolean
   panels: Record<string, PanelState>
-  // PERSISTENCE-ONLY projection of the live per-canvas CanvasStore. The live
-  // store is the single in-memory source of truth; the UI must NOT read these
-  // directly — go through getWorkspaceCanvasSnapshot(workspaceId), which reads
-  // the live store and falls back to this projection only for a never-mounted
-  // (cold-start) workspace. No longer hand-synced on switch (stores survive a
-  // switch); populated by restore/init for the cold-start path.
-  canvasNodes: Record<CanvasNodeId, CanvasNodeState>
-  zoomLevel: number
-  viewportOffset: Point
   // PERSISTENCE-ONLY projection of the live per-workspace DockStore. Read via
   // getWorkspaceDockSnapshot(workspaceId), never directly.
   dockState?: { zones: WindowDockState; locations: Record<string, PanelLocation> }
-  // Multi-canvas support (Phase 2+ — unused for now)
+  // PERSISTENCE-ONLY per-canvas projection, keyed by canvas panel id. A workspace
+  // can host several canvas panels; each canvas's live CanvasStore projects into
+  // this map at save time, and a never-mounted (cold-start) canvas restores from
+  // it — the single source for canvas geometry, primary and secondary alike.
+  // Read via getCanvasSnapshotForPanel(canvasPanelId), never directly.
   canvases?: Record<string, CanvasSnapshot>
   activeCanvasId?: string
 }
@@ -714,19 +748,13 @@ export interface FileSearchResult {
   /** Path relative to the search root, with forward slashes. */
   relativePath: string
   isDirectory: boolean
-  /** True when the entry's name itself matched the query. */
+  /** Always true — the quick finder matches file names only. Kept for callers. */
   nameMatch: boolean
-  /** First line of the file containing the query (only set for content matches). */
-  contentPreview?: string
-  /** 1-based line number of the first content match. */
-  contentLine?: number
 }
 
 export interface FileSearchOptions {
   /** Hard cap on the number of results returned (default 200). */
   maxResults?: number
-  /** Skip files larger than this many bytes for content search (default 1 MB). */
-  maxFileBytes?: number
 }
 
 // -----------------------------------------------------------------------------
@@ -813,43 +841,28 @@ export interface SearchDoneEvent {
 // Session persistence
 // -----------------------------------------------------------------------------
 
-export interface NodeSnapshot {
-  panelId: string
-  panelType: string // PanelType raw value
-  origin: Point
-  size: Size
-  title: string
-  url?: string | null
-  /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
-  proxyUrl?: string | null
-  filePath?: string | null
-  workingDirectory?: string | null
-  ptyId?: string
-  /** Unsaved scratch-editor content, restored on load. */
-  unsavedContent?: string
-  /** Document panels only: sub-type discriminator for the viewer. */
-  documentType?: 'pdf' | 'docx' | 'image'
-  /** The canvas node's per-node mini-dock layout (the tab/split tree of panels
-   *  hosted inside this node). Captured on demand from the live per-node
-   *  DockStore at save time so a multi-tab node survives save→restore. Absent on
-   *  legacy sessions ⇒ the node is rebuilt with the default single-tab seed. */
-  dockLayout?: DockLayoutNode | null
-  /** Worktree this terminal/agent panel belongs to (see PanelState.worktreeId).
-   *  Persisted so the tab pill/tint and canvas territory survive a restart. */
-  worktreeId?: string
-}
-
+/** In-memory workspace snapshot — the single bridge between the live stores and
+ *  the on-disk project files. Every canvas (primary and secondary alike) is just
+ *  an entry in `canvases`; every placed panel is a record in `panels`. There is
+ *  no special "primary nodes" list — the primary canvas is whichever canvas panel
+ *  the dock layout puts in the center zone. */
 export interface SessionSnapshot {
   workspaceId?: string
   workspaceName: string
   rootPath: string | null
-  viewportOffset: Point
-  zoomLevel: number
-  nodes: NodeSnapshot[]
-  /** Dock zone layout state — added in Phase 5. Missing = empty dock (migration). */
+  /** Dock zone layout state. Missing = empty dock. */
   dockState?: DockStateSnapshot
-  /** Panels that live in dock zones (canvas, etc.) — not on the canvas. */
-  dockPanels?: Record<string, PanelState>
+  /** Every placed panel's record, keyed by panel id — dock-zone panels AND every
+   *  canvas's child panels (including each canvas panel itself). Geometry lives
+   *  in `canvases`; this carries type/title/filePath/url/etc. */
+  panels?: Record<string, PanelState>
+  /** Every canvas's geometry (nodes + viewport + zoom), keyed by canvas panel id,
+   *  including the primary/center canvas. */
+  canvases?: Record<string, CanvasSnapshot>
+  /** Machine-local terminal respawn directories, keyed by panel id. Carries the
+   *  live working directory so a restored terminal respawns where it was rather
+   *  than at the workspace root. Sourced from / saved to session.json. */
+  terminalCwds?: Record<string, string>
   /** Git worktree registry (with per-worktree color/label). Persisted so colors
    *  stay stable across restarts instead of being re-assigned round-robin from
    *  the palette, and so panel.worktreeId references still resolve. */
@@ -918,27 +931,16 @@ export interface ProjectWorkspaceFile {
   version: 1
   name: string
   color: string
-  canvas: {
-    nodes: ProjectCanvasNode[]
-    zoomLevel: number
-    viewportOffset: Point
-  }
   dockState?: DockStateSnapshot
-  dockPanels?: Record<string, ProjectPanelRef>
-}
-
-export interface ProjectCanvasNode {
-  panelId: string
-  panelType: string
-  title: string
-  origin: Point
-  size: Size
-  filePath?: string
-  url?: string
-  /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
-  proxyUrl?: string
-  documentType?: 'pdf' | 'docx' | 'image'
-  dockLayout?: DockLayoutNode | null
+  /** Every placed panel's shareable metadata, keyed by panel id — dock-zone
+   *  panels AND every canvas's child panels (each canvas panel itself included).
+   *  Geometry lives in `canvases`; machine-local facts (worktree tag, working
+   *  directory, unsaved scratch content) live in session.json. */
+  panels?: Record<string, ProjectPanelRef>
+  /** Every canvas's node geometry + viewport, keyed by canvas panel id, including
+   *  the primary/center canvas. The primary canvas is identified at restore time
+   *  from the dock layout (center zone), not a dedicated field. */
+  canvases?: Record<string, CanvasSnapshot>
 }
 
 export interface ProjectPanelRef {
@@ -948,6 +950,8 @@ export interface ProjectPanelRef {
   url?: string
   /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
   proxyUrl?: string
+  /** Document panels only: sub-type discriminator for the viewer. */
+  documentType?: 'pdf' | 'docx' | 'image'
 }
 
 // -----------------------------------------------------------------------------
@@ -959,7 +963,11 @@ export interface ProjectSessionFile {
   /** Stable machine-local workspace id, reused across restores so the
    *  main-process workspace list isn't duplicated on renderer reload. */
   workspaceId?: string
-  nodes: Record<string, ProjectSessionNode>
+  /** Machine-local per-panel facts, keyed by panel id — for every panel in
+   *  workspace.json `panels` (canvas children + dock). Carries the worktree tag,
+   *  terminal working directory, and unsaved scratch content kept out of the
+   *  committed file. */
+  panels: Record<string, ProjectSessionPanel>
   /** Detached panel windows (machine-local, not committed). */
   panelWindows?: PanelWindowSnapshot[]
   /** Detached dock windows (machine-local, not committed). */
@@ -967,23 +975,16 @@ export interface ProjectSessionFile {
   /** Git worktree registry (id/path/branch/color/label). Machine-local because
    *  the checkouts under `.cate/worktrees` are gitignored and personal — kept
    *  here (not in committed workspace.json) so colors/labels survive a restart.
-   *  Paths are absolute, matching `ProjectSessionNode.workingDirectory`. */
+   *  Paths are absolute, matching `ProjectSessionPanel.workingDirectory`. */
   worktrees?: WorktreeMeta[]
-  /** Worktree tags for panels that live in dock zones (not canvas nodes), keyed
-   *  by panel id. Canvas nodes carry their tag on `ProjectSessionNode.worktreeId`;
-   *  dock panels are referenced from the committed workspace.json (ProjectPanelRef),
-   *  which we keep free of machine-local worktree ids — so their tag lives here. */
-  dockPanelWorktreeIds?: Record<string, string>
   /** Resolved companion connection for THIS workspace on THIS machine. Machine-
    *  local on purpose — a server/wsl choice is the opener's, not the repo's, so
    *  it lives here and never in the VCS-committed workspace.json. Absent ⇒ local. */
   connection?: CompanionConnection
 }
 
-export interface ProjectSessionNode {
+export interface ProjectSessionPanel {
   panelId: string
-  zOrder: number
-  creationIndex: number
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
@@ -1367,6 +1368,18 @@ export interface CustomOpenAIProvider {
 export interface AgentModelRef {
   provider: string
   model: string
+}
+
+/** A selectable model, derived session-independently from the connected
+ *  providers in auth.json (plus the custom OpenAI endpoint in models.json). */
+export interface AgentModelDescriptor {
+  provider: string
+  /** Model id passed to pi (e.g. `claude-sonnet-4-6`). */
+  id: string
+  /** Human label for the picker (pi's model name, falling back to the id). */
+  label: string
+  contextWindow: number
+  reasoning: boolean
 }
 
 /** Slash command exposed by pi — a skill, prompt template, or extension cmd. */

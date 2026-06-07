@@ -6,7 +6,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, Suspense, useMemo } from 'react'
 import log from '../lib/logger'
-import type { DockWindowInitPayload, PanelState, PanelTransferSnapshot } from '../../shared/types'
+import type { CanvasLayoutSnapshot, DockWindowInitPayload, PanelState, PanelTransferSnapshot } from '../../shared/types'
 import { createDockStore } from '../stores/dockStore'
 import { DockStoreProvider } from '../stores/DockStoreContext'
 import DockZone from '../docking/DockZone'
@@ -15,6 +15,7 @@ import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { terminalRestoreData } from '../lib/workspace/session'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { ensurePanelsInAppStore } from '../lib/canvas/applyCanvasChildPanels'
+import { hydrateReceivedPanel, hydrateCanvasState } from '../lib/panelTransfer'
 import { useAppStore } from '../stores/appStore'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
@@ -86,7 +87,24 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // no-ops on '' and the window renders blank. The id is internal: it's
       // never sent back to main (dockWindowSyncState carries only zones/panels).
       const effectiveWs = payload.workspaceId || 'detached-dock-window'
-      ensurePanelsInAppStore(effectiveWs, payload.panels)
+      ensurePanelsInAppStore(effectiveWs, payload.panels, payload.rootPath)
+
+      // Session restore: seed scrollback replay for EVERY top-level terminal tab
+      // and hydrate EVERY top-level canvas tab's children BEFORE the panels
+      // mount. (A fresh live single-panel detach carries no replay/canvas data
+      // here — it arrives via PANEL_RECEIVE instead.)
+      if (payload.terminalReplayPtyIds) {
+        for (const [panelId, ptyId] of Object.entries(payload.terminalReplayPtyIds)) {
+          terminalRestoreData.set(panelId, { replayFromId: ptyId })
+        }
+      }
+      if (payload.canvasStates) {
+        for (const [canvasPanelId, canvasState] of Object.entries(payload.canvasStates)) {
+          if (!canvasState) continue
+          hydrateCanvasState(canvasPanelId, effectiveWs, canvasState)
+        }
+      }
+
       setWsId(effectiveWs)
 
       // Restore dock state. Panel locations are derived from the zones tree on
@@ -119,29 +137,12 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // Listen for incoming panel transfers (drag from other windows)
   useEffect(() => {
     const cleanup = window.electronAPI.onPanelReceive((snapshot: PanelTransferSnapshot) => {
-      // Deposit transfer data BEFORE setting state (which triggers TerminalPanel mount)
-      if (snapshot.terminalPtyId) {
-        terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
-        // ACK is deferred to terminalRegistry.reconnectTerminal() after listeners are wired
-      } else if (snapshot.terminalReplayPtyId && snapshot.panel.type === 'terminal') {
-        // Session restore: spawn fresh PTY but replay the saved scrollback log
-        terminalRestoreData.set(snapshot.panel.id, { replayFromId: snapshot.terminalReplayPtyId })
-      }
-
-      // Canvas panel: hydrate the per-panel canvas store BEFORE rendering, so
-      // child nodes/regions are present on first paint. Without this the new
-      // window mounts an empty canvas and writes that empty state back to
-      // session persistence on the next sync. Also seed useAppStore with the
-      // child PanelState records so the canvas's child nodes resolve to their
-      // real types/titles instead of "Panel".
-      if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
-        const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel)
-        ensurePanelsInAppStore(wsId, childPanels ?? {})
-      }
-
-      ensurePanelsInAppStore(wsId, { [snapshot.panel.id]: snapshot.panel })
+      // Deposit PTY hand-off + hydrate canvas children BEFORE the panel mounts —
+      // otherwise the window paints an empty canvas / a fresh shell and syncs
+      // that empty state back to persistence. (ACK is deferred to
+      // reconnectTerminal() after listeners are wired.)
+      hydrateReceivedPanel(wsId, snapshot)
+      ensurePanelsInAppStore(wsId, { [snapshot.panel.id]: snapshot.panel }, snapshot.rootPath)
     })
 
     return cleanup
@@ -154,20 +155,9 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // canvas panel onto a canvas target.
       if (snapshot.panel.type === 'canvas' && target.kind !== 'dock') return
 
-      // PTY transfer MUST be deposited before any state set that mounts TerminalPanel.
-      if (snapshot.terminalPtyId) {
-        terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
-      }
-
-      // Canvas panel: hydrate before mount so children are visible immediately.
-      if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
-        const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel)
-        ensurePanelsInAppStore(wsId, childPanels ?? {})
-      }
-
-      ensurePanelsInAppStore(wsId, { [snapshot.panel.id]: snapshot.panel })
+      // Deposit PTY hand-off + hydrate canvas children BEFORE the panel mounts.
+      hydrateReceivedPanel(wsId, snapshot)
+      ensurePanelsInAppStore(wsId, { [snapshot.panel.id]: snapshot.panel }, snapshot.rootPath)
 
       if (target.kind === 'dock') {
         const dockTarget = target.target
@@ -218,11 +208,27 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
         }
       }
 
+      // Capture each canvas panel's layout (nodes + viewport) so a detached
+      // canvas window restores its children on the next launch instead of
+      // landing empty. The per-canvas store is process-local and otherwise
+      // never persisted for detached windows.
+      const canvasStates: Record<string, CanvasLayoutSnapshot> = {}
+      for (const panel of Object.values(currentPanels)) {
+        if (panel.type !== 'canvas') continue
+        const cs = getOrCreateCanvasStoreForPanel(panel.id).getState()
+        canvasStates[panel.id] = {
+          nodes: cs.nodes,
+          viewportOffset: cs.viewportOffset,
+          zoomLevel: cs.zoomLevel,
+        }
+      }
+
       const snapshot = dockStore.getState().getSnapshot()
       window.electronAPI.dockWindowSyncState({
         ...snapshot,
         panels: currentPanels,
         terminalPtyIds,
+        canvasStates,
       })
     }
     // Expose the latest syncNow via a ref so callers outside this effect
@@ -256,6 +262,17 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [dockStore])
+
+  // Pre-quit: main requests a FINAL sync before it reads listDockWindows() for
+  // the session file. Sync synchronously (fire the IPC) then ACK so main's cached
+  // dock state isn't stale from the last 5s tick.
+  useEffect(() => {
+    const cleanup = window.electronAPI.onDockWindowFlushSync(() => {
+      syncNowRef.current()
+      window.electronAPI.dockWindowFlushSyncDone()
+    })
+    return cleanup
+  }, [])
 
   // Render panel content inside canvas nodes (used by CanvasPanel's renderPanelContent)
   const renderPanelContent = useCallback(

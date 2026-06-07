@@ -242,6 +242,24 @@
   animation: cate-fade-in 0.35s ease-out both;
 }
 
+/* Skill install progress — an indeterminate left-to-right fill on an agent pill
+   while a skill downloads/installs. The pill sets position:relative;overflow:hidden
+   and renders <span class="skill-fill"> behind its label. Fills, fades, repeats
+   (the fade avoids a hard snap back to empty on loop). */
+@keyframes skill-fill {
+  0%   { transform: scaleX(0);   opacity: .9; }
+  70%  { transform: scaleX(1);   opacity: .9; }
+  100% { transform: scaleX(1);   opacity: 0;  }
+}
+.skill-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: var(--accent, #5b8cff);
+  animation: skill-fill 1.15s ease-in-out infinite;
+  pointer-events: none;
+}
+
 /* Shared modal entrance — a soft backdrop fade plus a card that rises and
    settles. Used by the <Modal> primitive (ui/Modal.tsx) so every dialog opens
    the same way. */

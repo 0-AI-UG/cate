@@ -41,6 +41,11 @@ const DEFAULT_GRAB_OFFSET: Point = { x: 12, y: 12 }
 // -----------------------------------------------------------------------------
 
 export interface CrossWindowDragState {
+  /** Stable id for this drag session — rides along every DRAG_UPDATE/DRAG_END
+   *  broadcast so a window only force-ends ITS OWN remote drag, and so a late
+   *  RESOLVE can look up this drag's claim outcome after the live state pointer
+   *  has been cleared (the claim record is keyed by this id). */
+  dragId: string
   sourceWindowId: number
   snapshot: PanelTransferSnapshot
   cursor: Point
@@ -53,11 +58,13 @@ export interface CrossWindowDragState {
 
 /** Begin a cross-window drag. Returns the initial state. */
 export function startCrossWindowDrag(args: {
+  dragId: string
   sourceWindowId: number
   snapshot: PanelTransferSnapshot
   cursor: Point
 }): CrossWindowDragState {
   return {
+    dragId: args.dragId,
     sourceWindowId: args.sourceWindowId,
     snapshot: args.snapshot,
     cursor: { x: args.cursor.x, y: args.cursor.y },
@@ -108,6 +115,62 @@ export function resolveCrossWindowDrag(
   if (!state) return { claimed: false, removeFromSource: false }
   if (state.claimed) return { claimed: true, removeFromSource: true }
   return { claimed: false, removeFromSource: false }
+}
+
+// -----------------------------------------------------------------------------
+// Claim record — decouples the "was this drop claimed?" outcome from the live
+// `crossWindowDragState` pointer. The DROP handler may clear the live state
+// before the source's RESOLVE arrives (when no resolver is pending yet); a
+// later RESOLVE would then read null and wrongly infer claimed=false, causing
+// the source to fall back to dragDetach and DUPLICATE the panel. Keyed by
+// dragId, a short-lived record survives the live-state teardown so the late
+// RESOLVE observes the real outcome.
+// -----------------------------------------------------------------------------
+
+export interface ClaimRecord {
+  claimed: boolean
+  /** ms timestamp of when the claim was recorded. */
+  at: number
+}
+
+/** Record a drop claim for a drag session. Pure: returns a new record map. */
+export function recordClaim(
+  records: ReadonlyMap<string, ClaimRecord>,
+  dragId: string,
+  claimed: boolean,
+  at: number,
+): Map<string, ClaimRecord> {
+  const next = new Map(records)
+  next.set(dragId, { claimed, at })
+  return next
+}
+
+/** Look up whether a drag was claimed, honoring only records newer than
+ *  `windowMs`. A missing or stale record reads as unclaimed. */
+export function lookupClaim(
+  records: ReadonlyMap<string, ClaimRecord>,
+  dragId: string,
+  now: number,
+  windowMs: number,
+): boolean {
+  const rec = records.get(dragId)
+  if (!rec) return false
+  if (now - rec.at > windowMs) return false
+  return rec.claimed
+}
+
+/** Drop records older than `windowMs` so the map can't grow unbounded across
+ *  many drags. Pure: returns a new map. */
+export function pruneClaims(
+  records: ReadonlyMap<string, ClaimRecord>,
+  now: number,
+  windowMs: number,
+): Map<string, ClaimRecord> {
+  const next = new Map<string, ClaimRecord>()
+  for (const [id, rec] of records) {
+    if (now - rec.at <= windowMs) next.set(id, rec)
+  }
+  return next
 }
 
 // -----------------------------------------------------------------------------

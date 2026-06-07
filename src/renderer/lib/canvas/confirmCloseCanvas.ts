@@ -61,7 +61,17 @@ export async function confirmCloseCanvas(
   })
 
   if (choice === 'cancel') return false
-  if (choice === 'close') return true // last or empty canvas — plain close
+
+  if (choice === 'close') {
+    // Last or empty canvas. Close any panels it contains too — they live ON
+    // this canvas, so letting them outlive it leaves orphans that render as
+    // ghost rows in the sidebar and aren't shown on any canvas. (Empty canvas
+    // → `contained` is empty → no-op.)
+    for (const { panelId } of contained) {
+      try { appState.closePanel(workspaceId, panelId) } catch { /* continue */ }
+    }
+    return true
+  }
 
   if (choice === 'delete') {
     // Close every panel living on this canvas. The canvas panel itself will be

@@ -2,10 +2,8 @@
 // Settings store and session persistence.
 //
 // AppSettings live in settings.json (see ./settingsFile). The workspace/session
-// state that used to sit in the opaque electron-store config.json — recent
-// projects, sidebar session, remote workspaces, saved layouts — now lives in
-// dedicated hand-editable JSON files (see ./workspaceStateStore). electron-store
-// is no longer used; config.json is migrated once on startup and removed.
+// state — recent projects, sidebar session, remote workspaces, saved layouts —
+// lives in dedicated hand-editable JSON files (see ./workspaceStateStore).
 // =============================================================================
 
 import { ipcMain, app, BrowserWindow, nativeTheme } from 'electron'
@@ -59,7 +57,6 @@ import {
   loadLayout,
   deleteLayout,
   startWatchingWorkspaceState,
-  migrateLegacyConfig,
 } from './workspaceStateStore'
 import { grantFileAccess } from './ipc/pathValidation'
 import { recordPersistentGrant } from './grantedPathStore'
@@ -174,8 +171,7 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
 // historical `./store` import surface for existing callers.
 // ---------------------------------------------------------------------------
 
-/** Load settings.json synchronously (migrating from the legacy config.json on
- *  first run). Safe to call once at startup. */
+/** Load settings.json synchronously. Safe to call once at startup. */
 export function loadSettingsSyncFromDisk(): void {
   loadSettingsSync()
 }
@@ -402,11 +398,8 @@ export function registerHandlers(): void {
   })
 
   // Workspace/session state files (recent projects, sidebar, remote workspaces,
-  // layouts) — migrate the legacy config.json once, then watch the new files for
-  // external edits (re-pushing the native Layouts menu when layouts.json is
-  // hand-edited). Migration runs after settings.json was seeded at startup, so
-  // removing config.json here is safe.
-  migrateLegacyConfig()
+  // layouts) — watch the files for external edits, re-pushing the native Layouts
+  // menu when layouts.json is hand-edited.
   startWatchingWorkspaceState((names) => { void pushLayoutNamesToMenu(names) })
 
   // Drop any orphaned managed wallpaper copies (e.g. from a crash mid-replace),

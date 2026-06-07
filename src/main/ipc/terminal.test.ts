@@ -11,7 +11,7 @@
 // beginTerminalTransfer / acknowledgeTerminalTransfer pair against the real
 // owner map exported from terminal.ts.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('node-pty', () => ({
   spawn: vi.fn(),
@@ -38,6 +38,7 @@ vi.mock('../windowRegistry', () => {
       sent.push({ windowId, channel, args })
     },
     windowFromEvent: () => null,
+    onWindowClosed: () => {},
     __sent: sent,
   }
 })
@@ -90,6 +91,64 @@ describe('cross-window drop terminal ownership transfer', () => {
     const ptyId = 'pty-no-begin'
     reassignTerminalWindow(ptyId, 100)
     acknowledgeTerminalTransfer(ptyId)
+    expect(getTerminalOwner(ptyId)).toBe(100)
+  })
+})
+
+describe('terminal transfer robustness', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // Regression: begin is called twice during detach (-1 placeholder, then the
+  // real window id). The first call's 5s fallback timer must be CLEARED so it
+  // can't fire mid-transfer and revert ownership to the source. On a slow ack
+  // (> 5s) the fallback must complete to the TARGET, not the source.
+  it('re-begin clears the stale timer; the fallback completes to the target, not the source', async () => {
+    const { beginTerminalTransfer, acknowledgeTerminalTransfer, reassignTerminalWindow, getTerminalOwner } =
+      await import('./terminal')
+
+    const ptyId = 'pty-rebegin'
+    reassignTerminalWindow(ptyId, 100) // source
+    beginTerminalTransfer(ptyId, -1) // placeholder
+    beginTerminalTransfer(ptyId, 200) // real target
+
+    vi.advanceTimersByTime(5000) // fallback fires (ack hasn't arrived yet)
+    expect(getTerminalOwner(ptyId)).toBe(200) // completed to target, NOT reverted to 100
+
+    acknowledgeTerminalTransfer(ptyId) // late ack is a harmless no-op
+    expect(getTerminalOwner(ptyId)).toBe(200)
+  })
+
+  // Source window closes mid-transfer → ownership follows the panel to the target.
+  it('completes a transfer to the target when the source window closes', async () => {
+    const { beginTerminalTransfer, handleWindowClosedTerminalTransfers, reassignTerminalWindow, getTerminalOwner } =
+      await import('./terminal')
+
+    const ptyId = 'pty-src-close'
+    reassignTerminalWindow(ptyId, 100) // source owner
+    beginTerminalTransfer(ptyId, 200) // target
+    handleWindowClosedTerminalTransfers(100) // source window gone
+
+    expect(getTerminalOwner(ptyId)).toBe(200)
+  })
+
+  // Target window dies before acking → abandon the transfer, owner unchanged.
+  it('abandons a transfer when the target window closes (owner stays at source)', async () => {
+    const { beginTerminalTransfer, handleWindowClosedTerminalTransfers, acknowledgeTerminalTransfer, reassignTerminalWindow, getTerminalOwner } =
+      await import('./terminal')
+
+    const ptyId = 'pty-tgt-close'
+    reassignTerminalWindow(ptyId, 100)
+    beginTerminalTransfer(ptyId, 200)
+    handleWindowClosedTerminalTransfers(200) // target window gone
+
+    expect(getTerminalOwner(ptyId)).toBe(100)
+    acknowledgeTerminalTransfer(ptyId) // state already gone → no-op
     expect(getTerminalOwner(ptyId)).toBe(100)
   })
 })

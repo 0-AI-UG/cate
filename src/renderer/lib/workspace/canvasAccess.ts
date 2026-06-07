@@ -23,10 +23,11 @@ import type {
   CanvasNodeState,
   Point,
   PanelLocation,
+  DockZonePosition,
   WindowDockState,
 } from '../../../shared/types'
 import type { PanelPlacement } from '../../stores/appStore'
-import { ALL_ZONES } from '../../../shared/types'
+import { ALL_ZONES, ZOOM_DEFAULT } from '../../../shared/types'
 import { useAppStore } from '../../stores/appStore'
 import { createCanvasOps } from '../canvas/canvasBridge'
 import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
@@ -128,11 +129,6 @@ export function placementForActivePanel(): PanelPlacement | undefined {
   return undefined
 }
 
-/** Iterate all registered CanvasOperations (used to find a panel across canvases). */
-export function allCanvasOps(): IterableIterator<CanvasOperations> {
-  return canvasOpsRegistry.values()
-}
-
 /** Drop the cached primary-canvas entry for a workspace (on workspace removal),
  *  and tear down its dock-store invalidation subscription so the released store
  *  isn't retained and a recycled id re-subscribes to its fresh store. */
@@ -211,6 +207,16 @@ export function getWorkspaceCanvasPanelId(workspaceId: string): string | null {
   return resolved
 }
 
+/** Every canvas-type panel id in a workspace (the primary + any secondaries).
+ *  Used by per-canvas save/restore and the cold-start sidebar attribution. */
+export function getWorkspaceCanvasPanelIds(workspaceId: string): string[] {
+  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  if (!ws) return []
+  return Object.values(ws.panels)
+    .filter((p) => p.type === 'canvas')
+    .map((p) => p.id)
+}
+
 export function getWorkspaceCanvasStore(workspaceId: string): StoreApi<CanvasStore> | null {
   const panelId = getWorkspaceCanvasPanelId(workspaceId)
   if (panelId) return ensureCanvasOpsForPanel(panelId).storeApi
@@ -226,10 +232,10 @@ export function getWorkspaceCanvasOps(workspaceId: string): CanvasOperations | n
 // -----------------------------------------------------------------------------
 // Live-store snapshot resolvers (Fix 3) — the live per-canvas CanvasStore and
 // per-workspace DockStore are the single in-memory source of truth. The
-// WorkspaceState.canvasNodes/regions/zoom/viewport and dockState fields are
-// persistence-only projections. These resolvers read the live store when it is
-// mounted, falling back to the persisted projection for a never-mounted
-// (background / cold-start) workspace so save still round-trips.
+// persisted WorkspaceState.canvases and dockState fields are persistence-only
+// projections. These resolvers read the live store when it is mounted, falling
+// back to the persisted projection for a never-mounted (background / cold-start)
+// workspace so save still round-trips.
 // -----------------------------------------------------------------------------
 
 export interface WorkspaceCanvasSnapshot {
@@ -238,13 +244,15 @@ export interface WorkspaceCanvasSnapshot {
   viewportOffset: Point
 }
 
-/** Live canvas snapshot for a workspace's center canvas, or the persisted
- *  projection if the canvas has never been mounted this session. */
-export function getWorkspaceCanvasSnapshot(workspaceId: string): WorkspaceCanvasSnapshot | null {
-  const canvasPanelId = getWorkspaceCanvasPanelId(workspaceId)
-  // Only read a LIVE store — don't create one via ensureCanvasOpsForPanel, or a
-  // never-mounted workspace would serialize an empty `{}` over its saved state.
-  const liveOps = canvasPanelId ? getCanvasOpsById(canvasPanelId) : null
+/** Snapshot for a SPECIFIC canvas panel (multi-canvas support). Reads the LIVE
+ *  per-panel CanvasStore when it's mounted; otherwise falls back to the persisted
+ *  `ws.canvases[canvasPanelId]` projection.
+ *
+ *  As with getWorkspaceCanvasSnapshot, this only reads a LIVE store — it never
+ *  creates one for an unmounted canvas, so a never-mounted secondary canvas can't
+ *  serialize an empty `{}` over its saved state. */
+export function getCanvasSnapshotForPanel(canvasPanelId: string): WorkspaceCanvasSnapshot | null {
+  const liveOps = getCanvasOpsById(canvasPanelId)
   if (liveOps) {
     const s = liveOps.storeApi.getState()
     return {
@@ -253,13 +261,39 @@ export function getWorkspaceCanvasSnapshot(workspaceId: string): WorkspaceCanvas
       viewportOffset: { ...s.viewportOffset },
     }
   }
-  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  // Find the workspace that owns this canvas panel to read its persisted
+  // projection. A canvas panel belongs to exactly one workspace.
+  const ws = useAppStore
+    .getState()
+    .workspaces.find((w) => w.panels[canvasPanelId]?.type === 'canvas')
   if (!ws) return null
-  return {
-    nodes: { ...(ws.canvasNodes ?? {}) },
-    zoomLevel: ws.zoomLevel,
-    viewportOffset: ws.viewportOffset,
+
+  // `canvases` is the single persisted projection for EVERY canvas (primary and
+  // secondary alike) of a never-mounted workspace.
+  const persisted = ws.canvases?.[canvasPanelId]
+  if (persisted) {
+    return {
+      nodes: { ...persisted.canvasNodes },
+      zoomLevel: persisted.zoomLevel,
+      viewportOffset: { ...persisted.viewportOffset },
+    }
   }
+  return { nodes: {}, zoomLevel: ZOOM_DEFAULT, viewportOffset: { x: 0, y: 0 } }
+}
+
+/** Live canvas snapshot for a workspace's center (primary) canvas, or the
+ *  persisted projection if the canvas has never been mounted this session.
+ *  Implemented in terms of the per-canvas resolver. */
+export function getWorkspaceCanvasSnapshot(workspaceId: string): WorkspaceCanvasSnapshot | null {
+  const canvasPanelId = getWorkspaceCanvasPanelId(workspaceId)
+  if (!canvasPanelId) {
+    // No canvas panel at all — return an empty snapshot for a known workspace so
+    // save round-trips, null for an unknown one.
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+    if (!ws) return null
+    return { nodes: {}, zoomLevel: ZOOM_DEFAULT, viewportOffset: { x: 0, y: 0 } }
+  }
+  return getCanvasSnapshotForPanel(canvasPanelId)
 }
 
 /** Resolve a canvas node's center dock layout, preferring the LIVE per-node
@@ -282,4 +316,53 @@ export function getWorkspaceDockSnapshot(
   if (liveDock) return liveDock.getState().getSnapshot()
   const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
   return ws?.dockState
+}
+
+// -----------------------------------------------------------------------------
+// Panel location facade — the ONE probe that answers "where does panel X live in
+// workspace W?", joining the three stores (dock tree + every canvas of the
+// workspace) behind a single fixed probe order. Lives here, the lowest module
+// that already owns dock + canvas + appStore access, so both panelReveal
+// (read/reveal) and appStore.closePanel (remove) consume the same probe instead
+// of each re-deriving it with a subtly different order/scope.
+// -----------------------------------------------------------------------------
+
+export type ResolvedPanelLocation =
+  | { kind: 'dock'; zone: DockZonePosition; stackId: string }
+  | { kind: 'canvas'; canvasPanelId: string }
+
+/**
+ * Locate a panel within a workspace. Fixed probe order:
+ *   1. the workspace dock store (live tree, derived location)
+ *   2. any canvas panel of the workspace (nodeForPanel)
+ * Returns null if the panel is not currently placed anywhere.
+ */
+export function resolvePanelLocation(
+  workspaceId: string,
+  panelId: string,
+): ResolvedPanelLocation | null {
+  const dock = getWorkspaceDockStore(workspaceId)?.getState()
+  const dockLocation = dock?.getPanelLocation(panelId)
+  if (dockLocation?.type === 'dock') {
+    return { kind: 'dock', zone: dockLocation.zone, stackId: dockLocation.stackId }
+  }
+
+  // Scan every canvas panel in the workspace (a workspace may host several
+  // canvases; the primary one is preferred but we check all).
+  const primary = getWorkspaceCanvasPanelId(workspaceId)
+  const candidateCanvasIds = new Set<string>()
+  if (primary) candidateCanvasIds.add(primary)
+  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  if (ws) {
+    for (const p of Object.values(ws.panels)) {
+      if (p.type === 'canvas') candidateCanvasIds.add(p.id)
+    }
+  }
+  for (const canvasPanelId of candidateCanvasIds) {
+    const ops = getCanvasOpsById(canvasPanelId) ?? ensureCanvasOpsForPanel(canvasPanelId)
+    if (ops.storeApi.getState().nodeForPanel(panelId)) {
+      return { kind: 'canvas', canvasPanelId }
+    }
+  }
+  return null
 }

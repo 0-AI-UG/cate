@@ -66,6 +66,59 @@ describe('ensurePanelsInAppStore', () => {
   })
 })
 
+// Regression: a detached canvas window seeded a stub workspace with an empty
+// rootPath, so a newly-created terminal there had no cwd and re-prompted for a
+// folder. The transfer now carries the source workspace root.
+describe('ensurePanelsInAppStore — rootPath threading', () => {
+  const ws = () => useAppStore.getState().workspaces.find((w) => w.id === WS)
+
+  it('seeds the stub workspace rootPath from the transfer', () => {
+    ensurePanelsInAppStore(WS, { c1: { id: 'c1', type: 'canvas', title: 'Canvas', isDirty: false } }, '/repo')
+    expect(ws()?.rootPath).toBe('/repo')
+  })
+
+  it('backfills rootPath onto an existing stub that had none (children arrive later)', () => {
+    ensurePanelsInAppStore(WS, { c1: { id: 'c1', type: 'canvas', title: 'Canvas', isDirty: false } })
+    expect(ws()?.rootPath).toBe('')
+    ensurePanelsInAppStore(WS, { t1: { id: 't1', type: 'terminal', title: 'zsh', isDirty: false } }, '/repo')
+    expect(ws()?.rootPath).toBe('/repo')
+  })
+
+  it('never clobbers an already-resolved rootPath', () => {
+    ensurePanelsInAppStore(WS, { c1: { id: 'c1', type: 'canvas', title: 'Canvas', isDirty: false } }, '/repo')
+    ensurePanelsInAppStore(WS, { t1: { id: 't1', type: 'terminal', title: 'zsh', isDirty: false } }, '/other')
+    expect(ws()?.rootPath).toBe('/repo')
+  })
+
+  it('backfills rootPath with no panels (canvas children deferred)', () => {
+    ensurePanelsInAppStore(WS, { c1: { id: 'c1', type: 'canvas', title: 'Canvas', isDirty: false } })
+    ensurePanelsInAppStore(WS, {}, '/repo')
+    expect(ws()?.rootPath).toBe('/repo')
+  })
+})
+
+// Regression: creating a stub for workspace X must SELECT X, never keep a stale
+// selectedWorkspaceId left by an earlier/bootstrapped workspace (the old `||`
+// kept the stale id, keying the detached window off the wrong workspace).
+describe('ensurePanelsInAppStore — stub selection', () => {
+  it('selects the newly created stub even when selectedWorkspaceId is already set', () => {
+    useAppStore.setState({ workspaces: [], selectedWorkspaceId: 'some-other-ws' })
+    ensurePanelsInAppStore(WS, { a: { id: 'a', type: 'terminal', title: 'a', isDirty: false } })
+    expect(useAppStore.getState().selectedWorkspaceId).toBe(WS)
+  })
+
+  it('initializes the stub with WorkspaceState defaults (empty worktrees, no extras)', () => {
+    ensurePanelsInAppStore(WS, { a: { id: 'a', type: 'terminal', title: 'a', isDirty: false } })
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === WS)!
+    expect(ws.worktrees).toEqual([])
+    expect(ws.connection).toBeUndefined()
+    expect(ws.companion).toBeUndefined()
+    expect(ws.additionalRoots).toBeUndefined()
+    // The old stub leaked a non-WorkspaceState `focusedNodeId` field via `as any`.
+    expect('focusedNodeId' in ws).toBe(false)
+  })
+})
+
 describe('detached-window source of truth — live edits land + are captured', () => {
   it('updatePanelUrl on the stub workspace is what a sync read would capture (no mirror event)', () => {
     // Init: populate appStore as the shell does on onDockWindowInit.

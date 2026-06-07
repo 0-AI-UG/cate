@@ -53,16 +53,19 @@ The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions 
 
 ### Panel System
 
-Panel definitions are centralised in `src/shared/panels.ts`. Renderer components live in `src/renderer/panels/`:
+Panel definitions are centralised in `src/shared/panels.ts`. The detachable panel
+types (`PanelType` in `src/shared/types.ts`) are: terminal, browser, editor,
+canvas, agent, document. Renderer components live in `src/renderer/panels/`:
 - **EditorPanel** — Monaco Editor with syntax highlighting
 - **TerminalPanel** — xterm.js terminal with WebGL renderer, backed by node-pty
 - **BrowserPanel** — embedded webview (file:// allowed for local HTML)
 - **CanvasPanel** — nested canvas
-- **GitPanel** — staged/unstaged diff + commit UI
-- **FileExplorerPanel** — git-aware file tree
-- **ProjectListPanel** — recent projects switcher
 - **DocumentPanel** — PDF / docx preview
 - **AgentPanel** — Claude-Code agent thread (sidebar + dock)
+
+The file tree (`src/renderer/sidebar/FileExplorer.tsx`) and recent-projects
+switcher (`src/renderer/sidebar/ProjectList.tsx`) are **sidebar** components, not
+detachable panels.
 
 Each panel can be wrapped in a `CanvasNode` (`src/renderer/canvas/CanvasNode.tsx`) — title bar, drag, resize, close — or live inside a dock zone via `DockTabStack` (`src/renderer/docking/`). Detached panel/dock windows have their own shells (`src/renderer/shells/PanelWindowShell.tsx`, `DockWindowShell.tsx`) with local panels state synced back to main for session persistence.
 
@@ -84,9 +87,8 @@ electron-store). `settingsFile.ts` owns `settings.json`; `jsonStateFile.ts` is a
 reusable factory for that same pattern (sync load, in-memory authority, debounced
 atomic write, chokidar external-edit watcher, corrupt-file quarantine).
 `workspaceStateStore.ts` uses it for `recent-projects.json`, `sidebar.json`,
-`remote-workspaces.json`, and `layouts.json` (migrated once from the legacy
-`config.json`, which is then deleted). Per-project canvas/session state lives in
-`<project>/.cate/workspace.json` + `session.json`. AI provider credentials are
+`remote-workspaces.json`, and `layouts.json`. Per-project canvas/session state
+lives in `<project>/.cate/workspace.json` + `session.json`. AI provider credentials are
 global in `userData/pi-agent/auth.json` (+ `models.json`), mirrored into each
 workspace's `.cate/pi-agent/`.
 

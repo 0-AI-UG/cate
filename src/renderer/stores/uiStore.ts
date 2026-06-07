@@ -44,6 +44,7 @@ interface UIStoreState {
   showNodeSwitcher: boolean
   showCommandPalette: boolean
   showLayoutsDialog: boolean
+  showSkillsDialog: boolean
   /** Bumped whenever a saved layout is created/deleted, so open surfaces
    *  (dialog, empty-canvas overlay) can re-list. */
   layoutsVersion: number
@@ -77,6 +78,7 @@ interface UIStoreActions {
   setShowNodeSwitcher: (show: boolean) => void
   setShowCommandPalette: (show: boolean) => void
   setShowLayoutsDialog: (show: boolean) => void
+  setShowSkillsDialog: (show: boolean) => void
   bumpLayoutsVersion: () => void
   setMinimapOpen: (open: boolean) => void
   toggleMinimapOpen: () => void
@@ -111,6 +113,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showNodeSwitcher: false,
   showCommandPalette: false,
   showLayoutsDialog: false,
+  showSkillsDialog: false,
   layoutsVersion: 0,
   minimapOpen: false,
   showSettings: false,
@@ -137,6 +140,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setShowLayoutsDialog(show) {
     set({ showLayoutsDialog: show })
+  },
+
+  setShowSkillsDialog(show) {
+    set({ showSkillsDialog: show })
   },
 
   bumpLayoutsVersion() {

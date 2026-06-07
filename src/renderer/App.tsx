@@ -6,15 +6,14 @@
 import React, { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import log from './lib/logger'
 import { useAppStore, useSelectedWorkspace, setupWorkspaceSync, getWorkspaceCanvasStore } from './stores/appStore'
-import { useCanvasStore, getOrCreateCanvasStoreForPanel } from './stores/canvasStore'
+import { useCanvasStore } from './stores/canvasStore'
 import { CanvasStoreProvider } from './stores/CanvasStoreContext'
 import { DockStoreProvider } from './stores/DockStoreContext'
-import { getOrCreateWorkspaceDockStore } from './stores/workspaceStores'
+import { getOrCreateWorkspaceDockStore } from './lib/workspace/dockRegistry'
 import { useStore } from 'zustand'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
 import { useUIStateStore } from './stores/uiStateStore'
-import { migrateLegacyLocalStorage } from './lib/migrateLegacyLocalStorage'
 import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useUpdateStore, type UpdateStatus } from './stores/updateStore'
@@ -34,6 +33,7 @@ import { CommandPalette } from './ui/CommandPalette'
 import { CompanionLockOverlay } from './ui/CompanionLockOverlay'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { SavedLayoutsDialog } from './dialogs/SavedLayoutsDialog'
+import { SkillsDialog } from './dialogs/SkillsDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
 import { WelcomeDialog } from './dialogs/WelcomeDialog'
 import { OnboardingTour } from './onboarding/OnboardingTour'
@@ -48,12 +48,9 @@ import DockWindowShell from './shells/DockWindowShell'
 import TitlebarStrip from './shells/TitlebarStrip'
 import { WindowTypeContext } from './stores/WindowTypeContext'
 import { setupCrossWindowDragListeners } from './drag'
-import { terminalRegistry } from './lib/terminal/terminalRegistry'
-import { applyCanvasChildPanels } from './lib/canvas/applyCanvasChildPanels'
+import { hydrateReceivedPanel } from './lib/panelTransfer'
 import { applyTheme } from './lib/themeManager'
-import { confirmCloseDirtyPanels } from './lib/confirmCloseDirty'
-import { confirmCloseCanvas } from './lib/canvas/confirmCloseCanvas'
-import { confirmCloseRunningTerminals } from './lib/confirmCloseTerminal'
+import { closePanelWithConfirm } from './lib/closePanelWithConfirm'
 import { isExternalFileDrag } from './lib/fs/importExternalEntries'
 import pkg from '../../package.json'
 
@@ -246,10 +243,6 @@ function MainApp() {
       await useUIStateStore.getState().loadUIState()
       log.info('Settings loaded')
 
-      // One-time migration of legacy renderer localStorage prefs into the JSON
-      // stores (settings.json / ui-state.json). Centralized in one module.
-      migrateLegacyLocalStorage()
-
       // The sidebar layout lives solely in settingsStore now; components read it
       // via useSidebarLayout, so there's no uiStore copy to re-seed here.
 
@@ -373,12 +366,25 @@ function MainApp() {
   // Panel window dock-back (double-click title bar)
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    return window.electronAPI.onPanelWindowDockBack((_panelWindowId: number) => {
-      // The panel window is being closed and wants to dock back.
-      // For now, we don't have enough context to re-dock the specific panel,
-      // since the panel window closes itself. The panel was already removed
-      // from the main window when it was detached. This is a UX hook for
-      // future enhancement where we'd track the source location.
+    return window.electronAPI.onPanelWindowDockBack(({ snapshot }) => {
+      // The detached panel window asked to dock back. Its record was removed
+      // from this workspace at detach time, so we reconstruct it from the
+      // snapshot the panel window sent — mirroring the cross-window DROP
+      // re-integration: deposit any PTY transfer, hydrate canvas children, add
+      // the panel, then dock it into the center zone.
+      if (!snapshot) return
+
+      const wsId = useAppStore.getState().selectedWorkspaceId
+
+      // Deposit the PTY hand-off (so the terminal reconnects to the live PTY main
+      // armed home, not a fresh shell) + hydrate canvas children, before mount.
+      hydrateReceivedPanel(wsId, snapshot)
+
+      useAppStore.getState().addPanel(wsId, snapshot.panel)
+
+      // Dock into the active workspace's center zone.
+      const dockStore = wsId ? getOrCreateWorkspaceDockStore(wsId) : useDockStore
+      dockStore.getState().dockPanel(snapshot.panel.id, 'center')
     })
   }, [])
 
@@ -391,21 +397,10 @@ function MainApp() {
       // canvas panel onto a canvas target. The source window stays as-is.
       if (snapshot.panel.type === 'canvas' && target.kind !== 'dock') return
 
-      // PTY transfer MUST be deposited before any state set that mounts TerminalPanel.
-      if (snapshot.terminalPtyId) {
-        terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
-      }
-
       const wsId = useAppStore.getState().selectedWorkspaceId
 
-      // Canvas panel: hydrate the per-panel canvas store with the snapshot's
-      // children + child PanelState records before the panel mounts.
-      if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
-        const store = getOrCreateCanvasStoreForPanel(snapshot.panel.id)
-        const { nodes, viewportOffset, zoomLevel, childPanels } = snapshot.canvasState
-        store.getState().loadWorkspaceCanvas(nodes, viewportOffset, zoomLevel)
-        applyCanvasChildPanels(wsId, childPanels ?? {})
-      }
+      // Deposit PTY hand-off + hydrate canvas children before the panel mounts.
+      hydrateReceivedPanel(wsId, snapshot)
 
       useAppStore.getState().addPanel(wsId, snapshot.panel)
 
@@ -465,19 +460,10 @@ function MainApp() {
 
   const handleDockClosePanel = useCallback(
     async (panelId: string) => {
-      const ws = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId)
-      const panel = ws?.panels[panelId]
-      // Canvas panels get their own confirmation flow (move/delete/cancel),
-      // because they may contain many child panels the user cares about.
-      if (panel?.type === 'canvas') {
-        const proceed = await confirmCloseCanvas(selectedWorkspaceId, panelId)
-        if (!proceed) return
-        useAppStore.getState().closePanel(selectedWorkspaceId, panelId)
-        return
-      }
-      if (!(await confirmCloseDirtyPanels([panel]))) return
-      if (!(await confirmCloseRunningTerminals([panel]))) return
-      useAppStore.getState().closePanel(selectedWorkspaceId, panelId)
+      // Canvas panels get their own move/delete/cancel flow; everything else
+      // runs the dirty/running gates. Centralised in closePanelWithConfirm so
+      // the dock tab and the sidebar row behave identically.
+      await closePanelWithConfirm(selectedWorkspaceId, panelId)
     },
     [selectedWorkspaceId],
   )
@@ -584,6 +570,7 @@ function MainApp() {
         <SettingsWindow isOpen={showSettings} onClose={closeSettings} initialTab={settingsInitialTab ?? undefined} />
       )}
       <SavedLayoutsDialog />
+      <SkillsDialog />
       <WelcomeDialog />
       <OnboardingTour />
       <PostUpdateFeedbackDialog />

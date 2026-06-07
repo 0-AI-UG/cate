@@ -2,26 +2,20 @@
 // settingsFile — owns the user-editable settings.json file.
 //
 // VS Code model: a dedicated `<userData>/settings.json` is the source of truth
-// for AppSettings. It holds ONLY user settings; the workspace/session state that
-// used to share the legacy config.json (recentProjects, layouts, remoteProjects,
-// sidebarSession) now lives in its own files (see ./workspaceStateStore).
+// for AppSettings. It holds ONLY user settings; the workspace/session state
+// (recentProjects, layouts, remoteProjects, sidebarSession) lives in its own
+// files (see ./workspaceStateStore).
 //
 // This is a thin wrapper over ./jsonStateFile (the reusable "JSON file is the
 // source of truth" store that was itself lifted from this module): jsonStateFile
 // provides the synchronous load, debounced atomic writes, external-edit watcher,
-// echo-suppression AND corrupt-file quarantine. settingsFile adds only the two
-// things specific to settings.json:
-//   - First-run seeding from the legacy electron-store config.json. This runs
-//     before ./workspaceStateStore migrates and deletes config.json, so settings
-//     are never lost.
-//   - A changed-keys diff on external edits (the factory reports the whole value;
-//     callers want exactly which keys the user changed so per-key side effects
-//     only fire for what moved).
+// echo-suppression AND corrupt-file quarantine. settingsFile adds only a
+// changed-keys diff on external edits (the factory reports the whole value;
+// callers want exactly which keys the user changed so per-key side effects only
+// fire for what moved).
 // =============================================================================
 
-import { app } from 'electron'
 import fsSync from 'fs'
-import path from 'path'
 import log from './logger'
 import { DEFAULT_SETTINGS } from '../shared/types'
 import type { AppSettings } from '../shared/types'
@@ -136,18 +130,14 @@ export function getSettingsFilePath(): string {
   return store.getPath()
 }
 
-function legacyConfigPath(): string {
-  return path.join(app.getPath('userData'), 'config.json')
-}
-
 // ---------------------------------------------------------------------------
 // Load (synchronous — runs at startup before any window is created)
 // ---------------------------------------------------------------------------
 
 /**
  * Load settings synchronously from settings.json. On first run (file absent)
- * the legacy electron-store config.json is migrated in and settings.json is
- * written so it exists for the watcher and for hand-editing. Idempotent.
+ * settings.json is seeded with defaults so it exists for the watcher and for
+ * hand-editing. Idempotent.
  */
 export function loadSettingsSync(): void {
   if (seeded) return
@@ -161,29 +151,10 @@ export function loadSettingsSync(): void {
     return
   }
 
-  // First run: migrate settings out of the legacy electron-store config.json,
-  // then seed settings.json from the result.
-  store.load() // primes the factory's in-memory copy with defaults
-  try {
-    const cfg = legacyConfigPath()
-    if (fsSync.existsSync(cfg)) {
-      const parsed = JSON.parse(fsSync.readFileSync(cfg, 'utf-8'))
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        store.update((current) => {
-          const merged = { ...current }
-          mergeValidatedSettings(merged, parsed as Record<string, unknown>)
-          return merged
-        })
-        log.info('[settingsFile] Migrated settings from legacy config.json')
-      }
-    }
-  } catch (err) {
-    log.warn('[settingsFile] Legacy config migration failed: %O', err)
-  }
-
-  // Seed settings.json synchronously so the file exists for the watcher and for
-  // hand-editing. `set` always schedules a write (even when nothing migrated, so
-  // the defaults land on disk); flush it synchronously here.
+  // First run: prime the factory's in-memory copy with defaults and seed
+  // settings.json synchronously so the file exists for the watcher and for
+  // hand-editing. `set` always schedules a write; flush it synchronously here.
+  store.load()
   store.set(store.get())
   store.flushPendingWritesSync()
 }

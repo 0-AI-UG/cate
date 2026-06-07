@@ -16,29 +16,37 @@ vi.mock('./windowRegistry', () => ({ broadcastToAll: vi.fn() }))
 vi.mock('./cateGitignore', () => ({ ensureCateGitignore: vi.fn(async () => {}) }))
 
 import { saveProjectState, loadProjectState } from './projectWorkspaceStore'
-import type { ProjectWorkspaceFile, ProjectSessionFile, ProjectCanvasNode } from '../shared/types'
+import type { ProjectWorkspaceFile, ProjectSessionFile, CanvasNodeState } from '../shared/types'
 
-function makeNode(panelId: string): ProjectCanvasNode {
+function makeNode(panelId: string): CanvasNodeState {
   return {
+    id: `node-${panelId}`,
     panelId,
-    panelType: 'terminal',
-    title: panelId,
     origin: { x: 0, y: 0 },
     size: { width: 100, height: 100 },
+    zOrder: 0,
+    creationIndex: 0,
   }
 }
 
-function makeWorkspace(nodes: ProjectCanvasNode[]): ProjectWorkspaceFile {
+function makeWorkspace(nodes: CanvasNodeState[]): ProjectWorkspaceFile {
+  const canvasNodes: Record<string, CanvasNodeState> = {}
+  for (const n of nodes) canvasNodes[n.id] = n
   return {
     version: 1,
     name: 'WS',
     color: '',
-    canvas: { nodes, zoomLevel: 1, viewportOffset: { x: 0, y: 0 } },
+    canvases: { cv: { id: 'cv', canvasNodes, zoomLevel: 1, viewportOffset: { x: 0, y: 0 } } },
   }
 }
 
 function makeSession(): ProjectSessionFile {
-  return { version: 1, nodes: {} }
+  return { version: 1, panels: {} }
+}
+
+/** Total canvas nodes across every canvas — what the #220 guard compares. */
+function nodeCount(ws: ProjectWorkspaceFile): number {
+  return Object.values(ws.canvases ?? {}).reduce((n, c) => n + Object.keys(c.canvasNodes).length, 0)
 }
 
 let root: string
@@ -59,29 +67,25 @@ async function readWorkspaceJson(rootPath: string): Promise<ProjectWorkspaceFile
 describe('saveProjectState — issue #220 empty-overwrite guard', () => {
   it('persists a non-empty canvas normally', async () => {
     await saveProjectState(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
-    const onDisk = await readWorkspaceJson(root)
-    expect(onDisk.canvas.nodes).toHaveLength(2)
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
   })
 
   it('refuses to overwrite a non-empty canvas with an empty one', async () => {
     await saveProjectState(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
     // A racey activation save serializes an empty canvas — must be rejected.
     await saveProjectState(root, makeWorkspace([]), makeSession())
-    const onDisk = await readWorkspaceJson(root)
-    expect(onDisk.canvas.nodes).toHaveLength(2)
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
   })
 
   it('allows an empty canvas when nothing (or only empty) is on disk', async () => {
     await saveProjectState(root, makeWorkspace([]), makeSession())
-    const onDisk = await readWorkspaceJson(root)
-    expect(onDisk.canvas.nodes).toHaveLength(0)
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(0)
   })
 
   it('still allows shrinking a non-empty canvas to a smaller non-empty one', async () => {
     await saveProjectState(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
     await saveProjectState(root, makeWorkspace([makeNode('a')]), makeSession())
-    const onDisk = await readWorkspaceJson(root)
-    expect(onDisk.canvas.nodes).toHaveLength(1)
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(1)
   })
 })
 
@@ -98,7 +102,7 @@ describe('loadProjectState — issue #220 prefer-richer fallback', () => {
 
     const loaded = await loadProjectState(root)
     expect(loaded).not.toBeNull()
-    expect(loaded!.workspace.canvas.nodes).toHaveLength(2)
+    expect(nodeCount(loaded!.workspace)).toBe(2)
   })
 
   it('uses the primary file when it is the richest', async () => {
@@ -110,6 +114,6 @@ describe('loadProjectState — issue #220 prefer-richer fallback', () => {
     await fs.writeFile(path.join(cateDir, 'session.json'), JSON.stringify(makeSession()), 'utf-8')
 
     const loaded = await loadProjectState(root)
-    expect(loaded!.workspace.canvas.nodes).toHaveLength(3)
+    expect(nodeCount(loaded!.workspace)).toBe(3)
   })
 })

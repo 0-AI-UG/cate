@@ -2,93 +2,84 @@
 // =============================================================================
 // Session round-trip regression: a canvas node whose mini-dock hosts two tabbed
 // panels [A, B] must survive buildWorkspaceFile -> projectFilesToSnapshot with
-// BOTH panel records intact and the layout tree preserved (modulo regenerated
-// stack ids done later at restore). B must NOT be dropped.
+// BOTH panel records intact and the node's dockLayout tree preserved.
 //
-// This is the core bug the refactor fixes: node.dockLayout was never persisted,
-// so only the seed panel (A) round-tripped and B silently vanished on restart.
+// Under the unified canvas model, node geometry + dockLayout live in
+// `canvases[id].canvasNodes` and every placed panel (A and B alike) is a record
+// in `panels`. There is no separate primary-canvas node list to drop B from.
 // =============================================================================
 
 import { describe, expect, it } from 'vitest'
 import type { SessionSnapshot, DockLayoutNode, PanelState } from '../../../shared/types'
-import { buildWorkspaceFile, projectFilesToSnapshot, remapNodeDockLayout } from './session'
+import { buildWorkspaceFile, projectFilesToSnapshot } from './session'
 
 function twoTabLayout(): DockLayoutNode {
   return { type: 'tabs', id: 'stack-AB', panelIds: ['A', 'B'], activeIndex: 1 }
 }
 
 function makeSnapshot(): SessionSnapshot {
-  const dockPanels: Record<string, PanelState> = {
-    // The EXTRA tabbed panel (B) is persisted as a dock-record PanelState — the
-    // seed panel (A) rides on its NodeSnapshot.
+  const panels: Record<string, PanelState> = {
+    A: { id: 'A', type: 'terminal', title: 'Terminal A', isDirty: false },
     B: { id: 'B', type: 'terminal', title: 'Terminal B', isDirty: false },
   }
   return {
     workspaceId: 'ws-1',
     workspaceName: 'Test',
     rootPath: '/repo',
-    zoomLevel: 1,
-    viewportOffset: { x: 0, y: 0 },
-    nodes: [
-      {
-        panelId: 'A',
-        panelType: 'terminal',
-        title: 'Terminal A',
-        origin: { x: 10, y: 20 },
-        size: { width: 400, height: 300 },
-        dockLayout: twoTabLayout(),
+    panels,
+    canvases: {
+      cv: {
+        id: 'cv',
+        canvasNodes: {
+          'node-A': {
+            id: 'node-A',
+            panelId: 'A',
+            origin: { x: 10, y: 20 },
+            size: { width: 400, height: 300 },
+            zOrder: 0,
+            creationIndex: 0,
+            dockLayout: twoTabLayout(),
+          },
+        },
+        zoomLevel: 1,
+        viewportOffset: { x: 0, y: 0 },
       },
-    ],
-    dockPanels,
+    },
   }
 }
 
 describe('session dock-layout round-trip', () => {
   it('persists node.dockLayout through buildWorkspaceFile', () => {
     const ws = buildWorkspaceFile(makeSnapshot(), '/repo')
-    expect(ws.canvas.nodes).toHaveLength(1)
-    const node = ws.canvas.nodes[0]
-    expect(node.dockLayout).toEqual(twoTabLayout())
-    // The extra panel B survives as a dock-record ref.
-    expect(ws.dockPanels?.B?.type).toBe('terminal')
+    const node = ws.canvases?.cv.canvasNodes['node-A']
+    expect(node?.dockLayout).toEqual(twoTabLayout())
+    // Both panels survive as records.
+    expect(ws.panels?.A?.type).toBe('terminal')
+    expect(ws.panels?.B?.type).toBe('terminal')
   })
 
   it('round-trips dockLayout + both panel records (B not dropped)', () => {
     const ws = buildWorkspaceFile(makeSnapshot(), '/repo')
     const snap = projectFilesToSnapshot(ws, null, '/repo')
 
-    // Seed node A still present with its two-tab layout.
-    const nodeA = snap.nodes.find((n) => n.panelId === 'A')
+    // Node A still present with its two-tab layout.
+    const nodeA = snap.canvases?.cv.canvasNodes['node-A']
     expect(nodeA).toBeDefined()
     expect(nodeA!.dockLayout).toEqual(twoTabLayout())
-    expect((nodeA!.dockLayout as any).panelIds).toEqual(['A', 'B'])
+    expect((nodeA!.dockLayout as DockLayoutNode & { panelIds: string[] }).panelIds).toEqual(['A', 'B'])
 
-    // Extra panel B survives as a dockPanels record (not as its own node).
-    expect(snap.dockPanels?.B).toBeDefined()
-    expect(snap.dockPanels?.B.title).toBe('Terminal B')
-    expect(snap.nodes.find((n) => n.panelId === 'B')).toBeUndefined()
+    // Both panel records survive (A is the node's seed, B is its tabbed sibling).
+    expect(snap.panels?.A).toBeDefined()
+    expect(snap.panels?.B).toBeDefined()
+    expect(snap.panels?.B.title).toBe('Terminal B')
   })
 
-  it('legacy session (no dockLayout) round-trips without crashing', () => {
+  it('legacy node (no dockLayout) round-trips without crashing', () => {
     const legacy = makeSnapshot()
-    legacy.nodes[0].dockLayout = undefined
+    legacy.canvases!.cv.canvasNodes['node-A'].dockLayout = null
     const ws = buildWorkspaceFile(legacy, '/repo')
-    expect(ws.canvas.nodes[0].dockLayout).toBeUndefined()
+    expect(ws.canvases?.cv.canvasNodes['node-A'].dockLayout).toBeNull()
     const snap = projectFilesToSnapshot(ws, null, '/repo')
-    expect(snap.nodes[0].dockLayout).toBeUndefined()
-  })
-
-  it('restore remap mints fresh stack ids while preserving the panel set', () => {
-    const ws = buildWorkspaceFile(makeSnapshot(), '/repo')
-    const snap = projectFilesToSnapshot(ws, null, '/repo')
-    const nodeA = snap.nodes.find((n) => n.panelId === 'A')!
-    // Simulate restore: the seed panel A is remapped to a fresh id; B keeps its id.
-    const map = new Map<string, string>([['A', 'A-new']])
-    const remapped = remapNodeDockLayout(nodeA.dockLayout, map)!
-    expect(remapped.type).toBe('tabs')
-    expect((remapped as any).panelIds).toEqual(['A-new', 'B'])
-    expect((remapped as any).activeIndex).toBe(1)
-    // Stack id regenerated (no collision with other nodes' stacks).
-    expect((remapped as any).id).not.toBe('stack-AB')
+    expect(snap.canvases?.cv.canvasNodes['node-A'].dockLayout).toBeNull()
   })
 })

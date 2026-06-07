@@ -138,11 +138,6 @@ export class PiRpcClient {
   async setModel(provider: string, modelId: string): Promise<{ provider: string; id: string }> {
     return this.data(await this.send({ type: 'set_model', provider, modelId }))
   }
-  async getAvailableModels(): Promise<Array<{ provider: string; id: string; contextWindow: number; reasoning: boolean }>> {
-    return this.data<{ models: Array<{ provider: string; id: string; contextWindow: number; reasoning: boolean }> }>(
-      await this.send({ type: 'get_available_models' }),
-    ).models
-  }
   async setThinkingLevel(level: string): Promise<void> { await this.send({ type: 'set_thinking_level', level }) }
   async setSteeringMode(mode: 'all' | 'one-at-a-time'): Promise<void> { await this.send({ type: 'set_steering_mode', mode }) }
   async setFollowUpMode(mode: 'all' | 'one-at-a-time'): Promise<void> { await this.send({ type: 'set_follow_up_mode', mode }) }

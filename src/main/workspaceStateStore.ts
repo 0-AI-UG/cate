@@ -1,23 +1,13 @@
 // =============================================================================
-// workspaceStateStore — the four pieces of workspace/session state that used to
-// live in the opaque electron-store `config.json`, now each in its own
-// hand-editable JSON file under `<userData>/` via ./jsonStateFile:
+// workspaceStateStore — the four pieces of workspace/session state, each in its
+// own hand-editable JSON file under `<userData>/` via ./jsonStateFile:
 //
 //   recent-projects.json   { projects: string[] }            recency-ordered list
 //   sidebar.json           { session: SidebarSession|null }  sidebar order + active
 //   remote-workspaces.json { workspaces: RemoteProjectEntry[] } cate-companion:// restore snapshots
 //   layouts.json           { layouts: Record<string, unknown> } named saved canvas layouts
-//
-// On first launch after the migration lands, the legacy config.json is read
-// once, any missing file is seeded from it, and config.json is deleted. The
-// per-key presence check makes migration idempotent; a corrupt/unparseable
-// config.json is quarantined and left in place for support rather than deleted.
 // =============================================================================
 
-import { app } from 'electron'
-import fs from 'fs'
-import path from 'path'
-import log from './logger'
 import { createJsonStateFile } from './jsonStateFile'
 import type { SidebarSession, RemoteProjectEntry } from '../shared/types'
 
@@ -162,76 +152,4 @@ export function flushWorkspaceStateSync(): void {
   sidebarStore.flushPendingWritesSync()
   remoteWorkspacesStore.flushPendingWritesSync()
   layoutsStore.flushPendingWritesSync()
-}
-
-// ---------------------------------------------------------------------------
-// One-time migration from the legacy electron-store config.json.
-// ---------------------------------------------------------------------------
-
-function legacyConfigPath(): string {
-  return path.join(app.getPath('userData'), 'config.json')
-}
-
-/**
- * Migrate the four workspace-state keys out of the legacy config.json into their
- * dedicated files, then delete config.json. Idempotent (per-file presence check)
- * and corrupt-safe (an unparseable config.json is quarantined and left in place).
- * Must run AFTER settingsFile.loadSettingsSync(), which also reads config.json
- * (for settings keys) on its own first run.
- */
-export function migrateLegacyConfig(): void {
-  const cfgPath = legacyConfigPath()
-  let raw: string
-  try {
-    if (!fs.existsSync(cfgPath)) return
-    raw = fs.readFileSync(cfgPath, 'utf-8')
-  } catch (err) {
-    log.warn('[workspaceStateStore] reading legacy config.json failed: %O', err)
-    return
-  }
-
-  let parsed: Record<string, unknown>
-  try {
-    const p = JSON.parse(raw)
-    if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('not an object')
-    parsed = p as Record<string, unknown>
-  } catch {
-    // Corrupt: preserve for support and bail without deleting.
-    try {
-      fs.copyFileSync(cfgPath, `${cfgPath}.corrupt-${Date.now()}`)
-    } catch { /* best effort */ }
-    log.error('[workspaceStateStore] legacy config.json is corrupt; skipping migration (preserved a backup)')
-    return
-  }
-
-  // Seed only files that don't exist yet, so re-running never clobbers state the
-  // user has already changed under the new files.
-  const userData = app.getPath('userData')
-  const exists = (name: string): boolean => fs.existsSync(path.join(userData, name))
-
-  if (!exists('recent-projects.json') && Array.isArray(parsed.recentProjects)) {
-    recentProjectsStore.set({
-      projects: (parsed.recentProjects as unknown[]).filter((p): p is string => typeof p === 'string'),
-    })
-  }
-  if (!exists('sidebar.json') && parsed.sidebarSession && typeof parsed.sidebarSession === 'object') {
-    setSidebarSession(parsed.sidebarSession as SidebarSession)
-  }
-  if (!exists('remote-workspaces.json') && Array.isArray(parsed.remoteProjects)) {
-    setRemoteProjects(parsed.remoteProjects as RemoteProjectEntry[])
-  }
-  if (!exists('layouts.json') && parsed.layouts && typeof parsed.layouts === 'object' && !Array.isArray(parsed.layouts)) {
-    layoutsStore.set({ layouts: parsed.layouts as Record<string, unknown> })
-  }
-
-  // Flush the seeded files to disk synchronously, then remove config.json so the
-  // migration never runs again. settings.json was already seeded earlier in
-  // startup (settingsFile), so deleting config.json here is safe.
-  flushWorkspaceStateSync()
-  try {
-    fs.unlinkSync(cfgPath)
-    log.info('[workspaceStateStore] migrated config.json to discrete state files and removed it')
-  } catch (err) {
-    log.warn('[workspaceStateStore] removing legacy config.json failed: %O', err)
-  }
 }

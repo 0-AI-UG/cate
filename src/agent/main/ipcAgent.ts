@@ -40,7 +40,7 @@ import {
   AGENT_ABORT_BASH,
   AGENT_SET_STEERING_MODE,
   AGENT_SET_FOLLOW_UP_MODE,
-  AGENT_GET_AVAILABLE_MODELS,
+  AGENT_LIST_MODELS,
   AGENT_UI_RESPONSE,
   AGENT_LIST_SESSIONS,
   AGENT_LOAD_SESSION_MESSAGES,
@@ -87,7 +87,7 @@ function trackMessageSent(kind: 'prompt' | 'steer' | 'follow_up', text: string, 
   })
 }
 
-export function registerAgentHandlers(_authManager: AuthManager, agentManager: AgentManager): void {
+export function registerAgentHandlers(authManager: AuthManager, agentManager: AgentManager): void {
   ipcMain.handle(AGENT_CREATE, async (event, options: AgentCreateOptions) => {
     try {
       await agentManager.create(options, event.sender)
@@ -255,11 +255,11 @@ export function registerAgentHandlers(_authManager: AuthManager, agentManager: A
     },
   )
 
-  ipcMain.handle(AGENT_GET_AVAILABLE_MODELS, async (_event, panelId: string) => {
+  ipcMain.handle(AGENT_LIST_MODELS, async () => {
     try {
-      return await agentManager.getAvailableModels(panelId)
+      return await authManager.listAvailableModels()
     } catch (err) {
-      log.warn('[ipc.agent] getAvailableModels failed: %O', err)
+      log.warn('[ipc.agent] listModels failed: %O', err)
       return []
     }
   })

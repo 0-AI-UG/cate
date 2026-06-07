@@ -26,7 +26,7 @@ vi.mock('../../lib/logger', () => ({
 }))
 
 import { renderDragScene, type SceneApi } from './harness'
-import { setupCrossWindowDragListeners } from '../crossWindow'
+import { setupCrossWindowDragListeners, shouldIgnoreDragEnd } from '../crossWindow'
 import { useDragStore } from '../store'
 import { registerDropZone } from '../registry'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
@@ -61,8 +61,8 @@ function electronStub(): ElectronStub {
  *  + the unsubscribe + a setter for the onDragEnd handler. */
 function attachBridge(onDrop?: Parameters<typeof setupCrossWindowDragListeners>[0]) {
   const stub = electronStub()
-  let updateHandler: ((p: Point, s: PanelTransferSnapshot) => void) | null = null
-  let endHandler: (() => void) | null = null
+  let updateHandler: ((p: Point, s: PanelTransferSnapshot, dragId?: string) => void) | null = null
+  let endHandler: ((dragId?: string) => void) | null = null
   stub.onCrossWindowDragUpdate.mockImplementation((h: never) => {
     updateHandler = h as never
     return () => {}
@@ -73,13 +73,13 @@ function attachBridge(onDrop?: Parameters<typeof setupCrossWindowDragListeners>[
   })
   const cleanup = setupCrossWindowDragListeners(onDrop)
   return {
-    fireUpdate(screen: Point, snap: PanelTransferSnapshot) {
+    fireUpdate(screen: Point, snap: PanelTransferSnapshot, dragId?: string) {
       if (!updateHandler) throw new Error('onCrossWindowDragUpdate handler not registered')
-      updateHandler(screen, snap)
+      updateHandler(screen, snap, dragId)
     },
-    fireDragEnd() {
+    fireDragEnd(dragId?: string) {
       if (!endHandler) throw new Error('onDragEnd handler not registered')
-      endHandler()
+      endHandler(dragId)
     },
     cleanup,
   }
@@ -394,5 +394,60 @@ describe('cross-window — remote drag', () => {
     expect(useDragStore.getState().isDragging).toBe(true)
     bridge.cleanup()
     expect(useDragStore.getState().isDragging).toBe(false)
+  })
+
+  it('DRAG_END with a NON-matching dragId is ignored (unrelated drag stays live)', () => {
+    const bridge = attachBridge()
+    Object.defineProperty(window, 'screenX', { value: 0, configurable: true })
+    Object.defineProperty(window, 'screenY', { value: 0, configurable: true })
+
+    // This window tracks drag "mine".
+    bridge.fireUpdate({ x: 400, y: 300 }, makeSnapshot(), 'mine')
+    expect(useDragStore.getState().isDragging).toBe(true)
+
+    // A DRAG_END for an UNRELATED drag must NOT end this one.
+    bridge.fireDragEnd('other')
+    expect(useDragStore.getState().isDragging).toBe(true)
+
+    // The matching DRAG_END ends it.
+    bridge.fireDragEnd('mine')
+    expect(useDragStore.getState().isDragging).toBe(false)
+
+    bridge.cleanup()
+  })
+
+  it('DRAG_END with no dragId (legacy/global) still ends the active drag', () => {
+    const bridge = attachBridge()
+    Object.defineProperty(window, 'screenX', { value: 0, configurable: true })
+    Object.defineProperty(window, 'screenY', { value: 0, configurable: true })
+
+    bridge.fireUpdate({ x: 400, y: 300 }, makeSnapshot(), 'mine')
+    expect(useDragStore.getState().isDragging).toBe(true)
+    bridge.fireDragEnd(undefined)
+    expect(useDragStore.getState().isDragging).toBe(false)
+
+    bridge.cleanup()
+  })
+})
+
+// -----------------------------------------------------------------------------
+// shouldIgnoreDragEnd — the pure ignore-unless-matching-id rule behind the
+// targeted DRAG_END handling above.
+// -----------------------------------------------------------------------------
+
+describe('shouldIgnoreDragEnd', () => {
+  it('ignores when ids differ', () => {
+    expect(shouldIgnoreDragEnd('a', 'b')).toBe(true)
+  })
+  it('does not ignore when ids match', () => {
+    expect(shouldIgnoreDragEnd('a', 'a')).toBe(false)
+  })
+  it('does not ignore a payload with no id (legacy/global end)', () => {
+    expect(shouldIgnoreDragEnd('a', undefined)).toBe(false)
+    expect(shouldIgnoreDragEnd('a', null)).toBe(false)
+  })
+  it('does not ignore when there is no active drag id', () => {
+    expect(shouldIgnoreDragEnd(null, 'b')).toBe(false)
+    expect(shouldIgnoreDragEnd(undefined, 'b')).toBe(false)
   })
 })

@@ -1,0 +1,42 @@
+name: Build skills index
+
+on:
+  schedule:
+    - cron: '17 6 * * *' # daily
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'registry/sources.json'
+      - 'scripts/build-skills-index.mjs'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: skills-index
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Crawl sources and rebuild index
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/build-skills-index.mjs
+      - name: Commit updated index
+        run: |
+          if [ -n "$(git status --porcelain registry/skills-index.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add registry/skills-index.json
+            git commit -m "chore(skills): rebuild skills index"
+            git push
+          else
+            echo "No changes to skills index."
+          fi

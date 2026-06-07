@@ -137,8 +137,15 @@ async function tryReadJson<T>(filePath: string): Promise<T | null> {
 // richness of two candidate files / an incoming write vs. what's on disk.
 function workspaceNodeCount(data: unknown): number {
   if (!isValidWorkspace(data)) return -1
-  const nodes = (data as ProjectWorkspaceFile).canvas?.nodes
-  return Array.isArray(nodes) ? nodes.length : -1
+  // Total canvas nodes across every canvas (primary + secondary). The richness
+  // comparison only cares about the aggregate count, not which canvas owns them.
+  const canvases = (data as ProjectWorkspaceFile).canvases
+  if (!canvases) return 0
+  let count = 0
+  for (const canvas of Object.values(canvases)) {
+    count += Object.keys(canvas.canvasNodes ?? {}).length
+  }
+  return count
 }
 
 // True when writing `incomingNodeCount` nodes over the workspace.json at
@@ -188,13 +195,15 @@ async function readWorkspaceWithFallback(filePath: string): Promise<ProjectWorks
 function isValidWorkspace(data: unknown): data is ProjectWorkspaceFile {
   if (!data || typeof data !== 'object') return false
   const obj = data as Record<string, unknown>
-  return obj.version === 1 && obj.canvas != null && typeof obj.canvas === 'object'
+  // workspace.json carries the shareable name/color; session.json does not —
+  // that's what tells the two version-1 files apart.
+  return obj.version === 1 && typeof obj.name === 'string' && typeof obj.color === 'string'
 }
 
 function isValidSession(data: unknown): data is ProjectSessionFile {
   if (!data || typeof data !== 'object') return false
   const obj = data as Record<string, unknown>
-  return obj.version === 1 && obj.nodes != null
+  return obj.version === 1 && obj.panels != null
 }
 
 export async function saveProjectState(
@@ -211,7 +220,7 @@ export async function saveProjectState(
   // canvas state straight from the live store (the source of truth), so this
   // disk-boundary guard is the backstop that also covers deferred/non-selected
   // workspaces serializing a momentarily-empty canvas.
-  if (workspace.canvas.nodes.length === 0) {
+  if (workspaceNodeCount(workspace) <= 0) {
     const existingCount = workspaceNodeCount(await tryReadJson(workspacePath(rootPath)))
     if (existingCount > 0) {
       log.warn(

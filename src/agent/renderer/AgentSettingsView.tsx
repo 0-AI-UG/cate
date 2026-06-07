@@ -12,26 +12,26 @@ import log from '../../renderer/lib/logger'
 import { useAppStore } from '../../renderer/stores/appStore'
 import type { AgentSlashCommand } from '../../shared/types'
 
-const TAB_BADGE: Record<'agents' | 'prompts' | 'skills', string> = {
+// Skills moved to the dedicated cross-agent Skills sidebar view; this settings
+// surface keeps the per-agent Agents/Prompts/Extensions only.
+const TAB_BADGE: Record<'agents' | 'prompts', string> = {
   agents: 'Subagent',
   prompts: 'Prompt',
-  skills: 'Skill',
 }
 
-const TAB_BADGE_COLOR: Record<'agents' | 'prompts' | 'skills', string> = {
+const TAB_BADGE_COLOR: Record<'agents' | 'prompts', string> = {
   agents: 'text-muted bg-hover',
   prompts: 'text-muted bg-hover',
-  skills: 'text-agent-light bg-agent/10',
 }
 
 export function SettingsView({
-  commands,
   workspaceId,
   cwd,
   onBack,
   onRefresh,
 }: {
-  commands: AgentSlashCommand[]
+  /** Still accepted from AgentPanel; skills (the only consumer) moved out. */
+  commands?: AgentSlashCommand[]
   workspaceId: string
   cwd: string
   onBack: () => void
@@ -53,7 +53,7 @@ export function SettingsView({
     const container = scrollRef.current
     if (!container) return
     const handler = () => {
-      const ids = ['agents', 'prompts', 'skills', 'extensions']
+      const ids = ['agents', 'prompts', 'extensions']
       let closest = ids[0]
       let closestDist = Infinity
       for (const id of ids) {
@@ -70,30 +70,23 @@ export function SettingsView({
 
   const [agentFiles, setAgentFiles] = useState<Array<{ name: string; description?: string; path: string }>>([])
   const [promptFiles, setPromptFiles] = useState<Array<{ name: string; description?: string; path: string }>>([])
-  const [skillFiles, setSkillFiles] = useState<Array<{ name: string; description?: string; path: string }>>([])
-  const [creating, setCreating] = useState<'agents' | 'prompts' | 'skills' | null>(null)
+  const [creating, setCreating] = useState<'agents' | 'prompts' | null>(null)
   const [newName, setNewName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const refreshAllFiles = useCallback(async () => {
     try {
-      const [a, p, s] = await Promise.all([
+      const [a, p] = await Promise.all([
         window.electronAPI.agentListSkillFiles(cwd, 'agents'),
         window.electronAPI.agentListSkillFiles(cwd, 'prompts'),
-        window.electronAPI.agentListSkillFiles(cwd, 'skills'),
       ])
-      setAgentFiles(a); setPromptFiles(p); setSkillFiles(s)
+      setAgentFiles(a); setPromptFiles(p)
     } catch (err) { log.warn('[SettingsView] list failed', err) }
   }, [cwd])
 
   useEffect(() => { void refreshAllFiles() }, [refreshAllFiles])
 
-  const packageSkills = useMemo(
-    () => commands.filter((c) => c.source === 'skill' && !c.editable),
-    [commands],
-  )
-
-  const handleCreate = async (kind: 'agents' | 'prompts' | 'skills'): Promise<void> => {
+  const handleCreate = async (kind: 'agents' | 'prompts'): Promise<void> => {
     setError(null)
     try {
       const created = await window.electronAPI.agentCreateSkill(cwd, kind, newName)
@@ -125,10 +118,10 @@ export function SettingsView({
 
   const [refreshNonce, setRefreshNonce] = useState(0)
 
-  const sections = ['Agents', 'Prompts', 'Skills', 'Extensions'] as const
+  const sections = ['Agents', 'Prompts', 'Extensions'] as const
 
   const renderSkillSection = (
-    kind: 'agents' | 'prompts' | 'skills',
+    kind: 'agents' | 'prompts',
     files: Array<{ name: string; description?: string; path: string }>,
   ) => (
     <>
@@ -178,7 +171,7 @@ export function SettingsView({
       )}
       {creating === kind && error && <div className="text-[12px] text-primary mt-1">{error}</div>}
       <div className="rounded-lg bg-hover overflow-hidden mt-2">
-        {files.length === 0 && (kind !== 'skills' || packageSkills.length === 0) ? (
+        {files.length === 0 ? (
           <div className="px-3 py-4 text-center text-[12px] text-muted">
             No {kind} yet.
           </div>
@@ -195,19 +188,6 @@ export function SettingsView({
                 deletable={true}
                 onOpen={() => handleOpen(f.path)}
                 onDelete={() => handleDelete(kind, f.path)}
-              />
-            ))}
-            {kind === 'skills' && packageSkills.map((c) => (
-              <SkillRow
-                key={`pkg-${c.name}-${c.path ?? ''}`}
-                name={c.name}
-                description={c.description}
-                badge="Built-in"
-                badgeClass="text-muted bg-hover"
-                filePath={c.path}
-                deletable={false}
-                onOpen={() => handleOpen(c.path)}
-                onDelete={() => {}}
               />
             ))}
           </>
@@ -249,11 +229,6 @@ export function SettingsView({
         <div ref={(el) => { sectionRefs.current['prompts'] = el }}>
           <div className="text-[13px] font-semibold text-primary mb-1">Prompts</div>
           {renderSkillSection('prompts', promptFiles)}
-        </div>
-
-        <div ref={(el) => { sectionRefs.current['skills'] = el }}>
-          <div className="text-[13px] font-semibold text-primary mb-1">Skills</div>
-          {renderSkillSection('skills', skillFiles)}
         </div>
 
         <div ref={(el) => { sectionRefs.current['extensions'] = el }}>

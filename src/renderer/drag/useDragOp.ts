@@ -24,6 +24,7 @@ import { createTransferSnapshot } from '../lib/panelTransfer'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { prepareTerminalRemount } from './terminalRemount'
 import { useAppStore } from '../stores/appStore'
+import { removeDetachedPanelRecords } from '../lib/canvas/removeDetachedPanelRecords'
 import { useSettingsStore } from '../stores/settingsStore'
 
 const DEAD_ZONE_PX = 4
@@ -252,11 +253,12 @@ function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null 
 
   // For canvas-type panels, the snapshot needs each child's PanelState so the
   // receiving window can render real child panels instead of "Panel" stubs.
-  const resolveChildPanel = (childId: string) => {
-    const app = useAppStore.getState()
-    const ws = app.workspaces.find((w) => w.id === app.selectedWorkspaceId)
-    return ws?.panels[childId]
-  }
+  const app = useAppStore.getState()
+  const sourceWs = app.workspaces.find((w) => w.id === app.selectedWorkspaceId)
+  const resolveChildPanel = (childId: string) => sourceWs?.panels[childId]
+  // Carry the source workspace root so the detached window inherits a cwd for
+  // new terminals (otherwise its stub workspace has none and re-prompts).
+  const rootPath = sourceWs?.rootPath || undefined
 
   if (spec.kind === 'canvas-node') {
     const node = spec.canvasStoreApi.getState().nodes[spec.nodeId]
@@ -265,7 +267,7 @@ function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null 
       panel,
       { type: 'canvas', canvasId: '', canvasNodeId: spec.nodeId },
       { origin: node.origin, size: node.size },
-      { resolveChildPanel },
+      { resolveChildPanel, workspaceRootPath: rootPath },
     )
   }
 
@@ -278,7 +280,7 @@ function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null 
       panel,
       { type: 'detached', windowId: 0 },
       { origin: { x: 0, y: 0 }, size },
-      { resolveChildPanel },
+      { resolveChildPanel, workspaceRootPath: rootPath },
     )
   }
 
@@ -288,7 +290,7 @@ function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null 
     panel,
     { type: 'dock', zone: spec.zone, stackId: spec.stackId },
     { origin: { x: 0, y: 0 }, size },
-    { resolveChildPanel },
+    { resolveChildPanel, workspaceRootPath: rootPath },
   )
 }
 
@@ -333,25 +335,30 @@ function runEffects(prevActive: ActiveDispatch, next: RuntimeState) {
             return window.electronAPI.dragDetach(snapshot, workspaceId)
           },
           buildSnapshot: () => buildSnapshotFor(prevActive.spec),
-          workspaceId: useAppStore.getState().selectedWorkspaceId,
+          workspaceId: resolveOwningWorkspaceId(prevActive.ownerWorkspaceId),
           onRemovedFromCanvas: (panelId, panelType) => {
             if (panelType === 'terminal') terminalRegistry.release(panelId)
+            const wsId = resolveOwningWorkspaceId(prevActive.ownerWorkspaceId)
             // If the user just detached the workspace's only canvas, spawn a
             // fresh empty one so they don't end up staring at an empty dock.
             // The detached window keeps the contents that were carried via
             // PanelTransferSnapshot.canvasState.
             if (panelType === 'canvas') {
               const app = useAppStore.getState()
-              const ws = app.workspaces.find((w) => w.id === app.selectedWorkspaceId)
+              const ws = app.workspaces.find((w) => w.id === wsId)
               if (ws) {
                 const remainingCanvases = Object.values(ws.panels).filter(
                   (p) => p.type === 'canvas' && p.id !== panelId,
                 )
                 if (remainingCanvases.length === 0) {
-                  app.createCanvas(app.selectedWorkspaceId)
+                  app.createCanvas(wsId)
                 }
               }
             }
+            // The panel now lives in the detached window — drop it (and a
+            // canvas's children) from this workspace so the overview lists only
+            // what's actually here. The receive side re-adds it on drop-back.
+            removeDetachedPanelRecords(wsId, panelId, panelType)
           },
           prepareLocalRemount: (panelId, panelType) => {
             prepareTerminalRemount(panelId, panelType, terminalRegistry)
@@ -366,6 +373,16 @@ function runEffects(prevActive: ActiveDispatch, next: RuntimeState) {
         break
     }
   }
+}
+
+/** Resolve the workspace id that owns the dragged panel. In a main window this
+ *  is the live selection. In a detached PANEL window selectedWorkspaceId is the
+ *  in-window stub id (and may be '' before a panel is ensured), so callers pass
+ *  the shell's effective id (`workspaceId || 'detached-panel-window'`) which we
+ *  prefer over the (possibly empty/stub) store value. */
+function resolveOwningWorkspaceId(override?: string): string {
+  if (override) return override
+  return useAppStore.getState().selectedWorkspaceId
 }
 
 /** Reduce + publish state + run effects. Returns the updated runtime state. */
@@ -479,10 +496,11 @@ function onBlur() {
 
 export type { DragOpSourceSpec } from './types'
 
-export function useDragOp(): {
+export function useDragOp(opts?: { workspaceId?: string }): {
   handleDragStart: (e: React.MouseEvent, spec: DragOpSourceSpec) => void
   wasDragged: { current: boolean }
 } {
+  const ownerWorkspaceId = opts?.workspaceId
   const handleDragStart = useCallback((e: React.MouseEvent, spec: DragOpSourceSpec) => {
     const session = getDefaultSession()
     if (session.active) return
@@ -525,9 +543,10 @@ export function useDragOp(): {
       ghostSize,
       ghostZoom,
       runtime: runtimeInitial,
+      ownerWorkspaceId,
     }
     attachListeners()
-  }, [])
+  }, [ownerWorkspaceId])
 
   return { handleDragStart, wasDragged: getDefaultSession().wasDragged }
 }

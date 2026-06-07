@@ -1,12 +1,7 @@
 // =============================================================================
-// store.ts resilience — a corrupt config.json must NOT break the store IPC
-// surface for the whole session. AppSettings live in settings.json and the
-// workspace-state keys live in their own files (see ./workspaceStateStore), so
-// neither is affected by a corrupt legacy config.json:
-//   1. SETTINGS_GET still returns defaults.
-//   2. LAYOUT_LIST (backed by layouts.json) still resolves — to [] — and the
-//      corrupt config.json is preserved as a `config.json.corrupt-*` backup
-//      instead of crashing the migration.
+// store.ts — SETTINGS_SET / SETTINGS_RESET broadcast the full settings as
+// SETTINGS_RELOADED. AppSettings live in settings.json and the workspace-state
+// keys live in their own files (see ./workspaceStateStore).
 // =============================================================================
 
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
@@ -15,7 +10,6 @@ import os from 'os'
 import path from 'path'
 
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-store-test-'))
-const cfgPath = path.join(userData, 'config.json')
 
 const handlers = new Map<string, (...args: any[]) => any>()
 vi.mock('electron', () => {
@@ -39,42 +33,17 @@ vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
 vi.mock('./menu', () => ({ setLayoutNames: vi.fn() }))
 
 const { registerHandlers } = await import('./store')
-const { SETTINGS_GET, SETTINGS_SET, SETTINGS_RESET, LAYOUT_LIST, SETTINGS_RELOADED } = await import('../shared/ipc-channels')
+const { SETTINGS_SET, SETTINGS_RESET, SETTINGS_RELOADED } = await import('../shared/ipc-channels')
 const { DEFAULT_SETTINGS } = await import('../shared/types')
 const { broadcastToAll } = await import('./windowRegistry')
 const broadcastMock = broadcastToAll as unknown as ReturnType<typeof vi.fn>
 
 beforeAll(async () => {
-  // A corrupt config.json must be present before registerHandlers() runs the
-  // one-time migration.
-  fs.writeFileSync(cfgPath, '{ this is : not valid json,,, ')
   registerHandlers()
 })
 
 afterAll(() => {
   try { fs.rmSync(userData, { recursive: true, force: true }) } catch { /* noop */ }
-})
-
-describe('store corruption resilience', () => {
-  test('a corrupt config.json keeps the store IPC surface working', async () => {
-    // Settings live in settings.json → unaffected by a corrupt config.json.
-    const getHandler = handlers.get(SETTINGS_GET)
-    expect(getHandler).toBeTypeOf('function')
-    expect(await getHandler!({}, 'warnBeforeQuit')).toBe(DEFAULT_SETTINGS.warnBeforeQuit)
-    // A workspace-state-backed IPC resolves to defaults instead of rejecting.
-    const layoutHandler = handlers.get(LAYOUT_LIST)
-    expect(layoutHandler).toBeTypeOf('function')
-    expect(await layoutHandler!({})).toEqual([])
-  })
-
-  test('the corrupt config is preserved as a .corrupt-* backup and not deleted', () => {
-    const backups = fs.readdirSync(userData).filter((f) => f.startsWith('config.json.corrupt-'))
-    expect(backups.length).toBeGreaterThanOrEqual(1)
-    const preserved = fs.readFileSync(path.join(userData, backups[0]), 'utf-8')
-    expect(preserved).toContain('not valid json')
-    // A corrupt config is left in place (migration bails) for support/recovery.
-    expect(fs.existsSync(cfgPath)).toBe(true)
-  })
 })
 
 describe('SETTINGS_SET / SETTINGS_RESET broadcast', () => {

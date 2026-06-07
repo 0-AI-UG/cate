@@ -27,6 +27,11 @@ export interface ActiveDispatch {
   ghostSize: Size
   ghostZoom: number
   runtime: RuntimeState
+  /** Workspace id that owns the dragged panel. Set by useDragOp from the host's
+   *  effective workspace id — in a detached PANEL window this is the shell's
+   *  `workspaceId || 'detached-panel-window'`, not the (possibly '') store
+   *  selection, so source cleanup targets the right workspace. */
+  ownerWorkspaceId?: string
 }
 
 interface CanvasStoreEntry {

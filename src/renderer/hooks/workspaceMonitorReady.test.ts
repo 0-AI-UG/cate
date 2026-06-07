@@ -14,9 +14,6 @@ function ws(overrides: Partial<WorkspaceState>): WorkspaceState {
     color: '',
     rootPath: '/repo',
     panels: {},
-    canvasNodes: {},
-    zoomLevel: 1,
-    viewportOffset: { x: 0, y: 0 },
     ...overrides,
   }
 }

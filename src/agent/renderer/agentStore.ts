@@ -18,6 +18,7 @@ import { create } from 'zustand'
 import log from '../../renderer/lib/logger'
 import type {
   AgentExtensionUIRequest,
+  AgentImageAttachment,
   AgentModelRef,
   AgentSessionStats,
   AgentThinkingLevel,
@@ -208,6 +209,12 @@ export interface PanelAgentState {
   /** Optional session display name (mirrors pi's `set_session_name`). */
   sessionName?: string
   sessionFile?: string
+
+  /** Unsent composer contents for this chat. Kept per-slice so switching
+   *  between open chats preserves each chat's in-progress message + images
+   *  rather than sharing one draft across all of them. */
+  draft: string
+  draftImages: AgentImageAttachment[]
 }
 
 interface AgentStoreState {
@@ -239,6 +246,8 @@ interface AgentStoreActions {
   setAutoCompactionEnabled: (panelId: string, enabled: boolean) => void
   setAutoRetryEnabled: (panelId: string, enabled: boolean) => void
   setSessionMeta: (panelId: string, meta: { sessionName?: string; sessionFile?: string }) => void
+  setDraft: (panelId: string, draft: string) => void
+  setDraftImages: (panelId: string, images: AgentImageAttachment[]) => void
   setCompaction: (panelId: string, next: Partial<CompactionState>) => void
   setRetry: (panelId: string, next: Partial<RetryState>) => void
   setQueues: (panelId: string, steering: string[], followUp: string[]) => void
@@ -283,6 +292,8 @@ function emptyPanel(): PanelAgentState {
     extensionStatuses: [],
     extensionWidgets: [],
     uiRequests: [],
+    draft: '',
+    draftImages: [],
   }
 }
 
@@ -524,6 +535,16 @@ export const useAgentStore = create<AgentStore>((set) => ({
         sessionFile: meta.sessionFile ?? p.sessionFile,
       })),
     )
+  },
+
+  setDraft(panelId, draft) {
+    set((state) =>
+      withPanel(state, panelId, (p) => (p.draft === draft ? p : { ...p, draft })),
+    )
+  },
+
+  setDraftImages(panelId, images) {
+    set((state) => withPanel(state, panelId, (p) => ({ ...p, draftImages: images })))
   },
 
   setCompaction(panelId, next) {

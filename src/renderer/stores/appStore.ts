@@ -24,7 +24,7 @@ import type {
   CompanionConnection,
   CompanionPhase,
 } from '../../shared/types'
-import { PANEL_DEFAULT_SIZES, ZOOM_DEFAULT, ALL_ZONES } from '../../shared/types'
+import { PANEL_DEFAULT_SIZES, ALL_ZONES } from '../../shared/types'
 import { ACCENT_COLORS } from '../../shared/colors'
 import { pathKey } from '../../shared/pathUtils'
 import type { StoreApi } from 'zustand'
@@ -32,6 +32,7 @@ import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { useSettingsStore } from './settingsStore'
 import type { CanvasOperations } from '../lib/canvas/canvasBridge'
 import { releaseCanvasStoreForPanel } from './canvasStore'
+import { generateId } from './canvas/helpers'
 import {
   getOrCreateWorkspaceDockStore,
   releaseWorkspaceDockStore,
@@ -41,10 +42,12 @@ import {
   getWorkspaceCanvasOps,
   getWorkspaceCanvasPanelId,
   getWorkspaceCanvasStore,
-  allCanvasOps,
+  getCanvasOpsById,
+  resolvePanelLocation,
   invalidateWorkspaceCanvasCache,
 } from '../lib/workspace/canvasAccess'
 import { setActivePanel, clearActivePanelIfMatches } from '../lib/activePanel'
+import { recordRecentFile } from '../lib/fs/recentFiles'
 import { LOCAL_COMPANION_ID } from '../../main/companion/locator'
 
 export type { CanvasOperations }
@@ -69,10 +72,6 @@ import { workspaceDisplayName } from '../lib/fs/displayPath'
 // Helpers
 // -----------------------------------------------------------------------------
 
-function generateId(): string {
-  return crypto.randomUUID()
-}
-
 /** Workspace accent colors — re-exported from the shared accent palette. */
 export const WORKSPACE_COLORS = ACCENT_COLORS
 
@@ -93,9 +92,6 @@ function createDefaultWorkspace(
     rootPathError: null,
     isRootPathPending: false,
     panels: {},
-    canvasNodes: {},
-    zoomLevel: ZOOM_DEFAULT,
-    viewportOffset: { x: 0, y: 0 },
   }
 }
 
@@ -753,6 +749,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   createEditor(workspaceId, filePath?, position?, placement?) {
     const panelId = generateId()
+    if (filePath) recordRecentFile(workspaceId, filePath)
     const fileName = filePath ? filePath.split('/').pop() ?? 'Untitled' : 'Untitled'
     const panel: PanelState = {
       id: panelId,
@@ -766,6 +763,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   createDocument(workspaceId, filePath?, documentType?, position?, placement?) {
     const panelId = generateId()
+    if (filePath) recordRecentFile(workspaceId, filePath)
     const fileName = filePath ? filePath.split('/').pop() ?? 'Document' : 'Document'
     const panel: PanelState = {
       id: panelId,
@@ -826,32 +824,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
       releaseCanvasStoreForPanel(panelId)
     }
 
-    // Remove from dock/canvas first (less critical — log errors but continue)
+    // Remove from dock/canvas first (less critical — log errors but continue).
+    // resolvePanelLocation is the canonical probe (dock tree, then every canvas
+    // of the workspace) shared with panelReveal — so close removes the panel from
+    // exactly where reveal/focus would have found it, no parallel probe to drift.
     const dockStore = getOrCreateWorkspaceDockStore(workspaceId)
     try {
-      const dockLocation = dockStore.getState().getPanelLocation(panelId)
-      if (dockLocation?.type === 'dock') {
+      const location = resolvePanelLocation(workspaceId, panelId)
+      if (location?.kind === 'dock') {
         dockStore.getState().undockPanel(panelId)
-      } else {
-        // Try all registered canvas stores (panel could be on any canvas,
-        // including a nested one). Workspace-agnostic: removes wherever found.
-        for (const ops of allCanvasOps()) {
-          const nodeId = ops.storeApi.getState().nodeForPanel(panelId)
-          if (nodeId) {
-            ops.removeNodeForPanel(panelId)
-            break
-          }
-        }
+      } else if (location?.kind === 'canvas') {
+        getCanvasOpsById(location.canvasPanelId)?.removeNodeForPanel(panelId)
       }
     } catch (error) {
       log.error('Failed to remove panel from dock/canvas during close:', error)
-    }
-
-    // Clean up location tracking
-    try {
-      dockStore.getState().removePanelLocation(panelId)
-    } catch (error) {
-      log.error('Failed to clean up panel location tracking:', error)
     }
 
     // Drop the canonical active-panel pointer if it was this panel, so a closed
@@ -1129,9 +1115,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       color: ws.color,
       rootPath: ws.rootPath,
       panels: {},
-      canvasNodes: {},
-      zoomLevel: ZOOM_DEFAULT,
-      viewportOffset: { x: 0, y: 0 },
     }
     set((state) => ({ workspaces: [...state.workspaces, copy] }))
     syncCreateToMain(copy)
@@ -1303,7 +1286,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     set((state) => ({
       workspaces: state.workspaces.map((w) =>
-        w.id === wsId ? { ...w, panels: {}, canvasNodes: {} } : w,
+        w.id === wsId ? { ...w, panels: {} } : w,
       ),
     }))
 
@@ -1359,9 +1342,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
             rootPathError: null,
             isRootPathPending: false,
             panels: {},
-            canvasNodes: {},
-            zoomLevel: ZOOM_DEFAULT,
-            viewportOffset: { x: 0, y: 0 },
           })
         }
       }

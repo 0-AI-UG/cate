@@ -11,8 +11,6 @@
 //      into canvasStore.node.dockLayout (so history/off-screen reads stay fresh).
 //   3. Auto-removal: the same subscription removes the node when the live layout
 //      becomes null.
-//   4. remapNodeDockLayout: panelIds remapped, stack/split ids regenerated,
-//      activeIndex + tree shape preserved.
 // =============================================================================
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -25,7 +23,6 @@ import {
 } from '../../panels/nodeDockRegistry'
 import { getNodeDockLayout } from '../../lib/workspace/canvasAccess'
 import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../canvasStore'
-import { remapNodeDockLayout } from '../../lib/workspace/session'
 import type { StoreApi } from 'zustand'
 
 const CANVAS = 'canvas-panel-ndl'
@@ -175,45 +172,5 @@ describe('auto-removal subscription (the kept behavior)', () => {
     }))
     unsubscribe()
     expect(removed).toBeNull()
-  })
-})
-
-describe('remapNodeDockLayout', () => {
-  it('remaps panelIds, regenerates stack ids, preserves activeIndex + shape', () => {
-    const layout: DockLayoutNode = {
-      type: 'split',
-      id: 'split-1',
-      direction: 'horizontal',
-      ratios: [0.5, 0.5],
-      children: [
-        { type: 'tabs', id: 'stack-1', panelIds: ['old-seed', 'extra-1'], activeIndex: 1 },
-        { type: 'tabs', id: 'stack-2', panelIds: ['extra-2'], activeIndex: 0 },
-      ],
-    }
-    const map = new Map<string, string>([['old-seed', 'new-seed']])
-    const out = remapNodeDockLayout(layout, map)!
-
-    expect(out.type).toBe('split')
-    const split = out as Extract<DockLayoutNode, { type: 'split' }>
-    // Split + stack ids regenerated (differ from input).
-    expect(split.id).not.toBe('split-1')
-    expect(split.direction).toBe('horizontal')
-    expect(split.ratios).toEqual([0.5, 0.5])
-    expect(split.children).toHaveLength(2)
-
-    const s1 = split.children[0] as Extract<DockLayoutNode, { type: 'tabs' }>
-    expect(s1.id).not.toBe('stack-1')
-    // Seed remapped; extra panel id (not in map) kept as-is.
-    expect(s1.panelIds).toEqual(['new-seed', 'extra-1'])
-    expect(s1.activeIndex).toBe(1)
-
-    const s2 = split.children[1] as Extract<DockLayoutNode, { type: 'tabs' }>
-    expect(s2.id).not.toBe('stack-2')
-    expect(s2.panelIds).toEqual(['extra-2'])
-  })
-
-  it('returns null for null/undefined input (legacy migration safety)', () => {
-    expect(remapNodeDockLayout(null, new Map())).toBeNull()
-    expect(remapNodeDockLayout(undefined, new Map())).toBeNull()
   })
 })

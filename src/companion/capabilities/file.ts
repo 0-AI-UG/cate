@@ -110,15 +110,6 @@ export async function readDir(dirPath: string, exclusions: Set<string>): Promise
   return [...dirs, ...files]
 }
 
-const BINARY_EXTENSIONS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'icns', 'tiff', 'avif',
-  'pdf', 'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'jar', 'war',
-  'mp3', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'wav', 'flac', 'ogg', 'm4a',
-  'woff', 'woff2', 'ttf', 'otf', 'eot',
-  'so', 'dylib', 'dll', 'exe', 'bin', 'o', 'a', 'class', 'wasm',
-  'sqlite', 'db', 'lock', 'pack', 'idx',
-])
-
 export async function searchFiles(
   rootPath: string,
   query: string,
@@ -126,33 +117,26 @@ export async function searchFiles(
   opts: FileSearchOptions = {},
 ): Promise<FileSearchResult[]> {
   const maxResults = opts.maxResults ?? 200
-  const maxFileBytes = opts.maxFileBytes ?? 1024 * 1024
   const lowerQuery = query.toLowerCase()
   const allowDotFiles = query.startsWith('.')
-  // Name and content matches accumulate into separate buckets, each with its own
-  // budget. This is what keeps in-file search alive: with a single shared cap, a
-  // query matching many file names fills the whole result limit during the cheap
-  // name pass, the walk short-circuits before recursing into deep directories,
-  // and content search silently returns nothing. Independent budgets let the walk
-  // keep reading file contents even once the name bucket is full.
-  const nameResults: FileSearchResult[] = []
-  const contentResults: FileSearchResult[] = []
-  const seenPaths = new Set<string>()
-  const budgetsFull = () =>
-    nameResults.length >= maxResults && contentResults.length >= maxResults
-
-  const walk = async (dir: string): Promise<boolean> => {
+  // Name-only search: the quick file finder behind Cmd+K matches file *names*,
+  // never contents. (In-file content search is the separate ripgrep-backed
+  // Search view — see runRipgrepSearch in ../search/engine.ts.) An empty query
+  // matches everything, letting the palette list a sample of the workspace's
+  // files when nothing is typed.
+  const results: FileSearchResult[] = []
+  const walk = async (dir: string): Promise<void> => {
+    if (results.length >= maxResults) return
     let entries: string[]
     try {
       entries = await fs.readdir(dir)
     } catch {
-      return true
+      return
     }
 
     const subdirs: string[] = []
-    const filesAtLevel: { full: string; name: string; ext: string; size: number }[] = []
-
     for (const entry of entries) {
+      if (results.length >= maxResults) break
       if (exclusions.has(entry)) continue
       if (!allowDotFiles && entry.startsWith('.')) continue
       const full = path.join(dir, entry)
@@ -165,79 +149,21 @@ export async function searchFiles(
       if (stat.isSymbolicLink()) continue
 
       const isDirectory = stat.isDirectory()
-      const nameMatches = entry.toLowerCase().includes(lowerQuery)
-      if (nameMatches && nameResults.length < maxResults && !seenPaths.has(full)) {
-        seenPaths.add(full)
+      if (entry.toLowerCase().includes(lowerQuery)) {
         const relativePath = path.relative(rootPath, full).split(path.sep).join('/')
-        nameResults.push({ name: entry, path: full, relativePath, isDirectory, nameMatch: true })
+        results.push({ name: entry, path: full, relativePath, isDirectory, nameMatch: true })
       }
-
-      if (isDirectory) {
-        subdirs.push(full)
-      } else {
-        const ext = path.extname(entry).replace(/^\./, '').toLowerCase()
-        filesAtLevel.push({ full, name: entry, ext, size: stat.size })
-      }
-    }
-
-    for (const f of filesAtLevel) {
-      if (contentResults.length >= maxResults) break
-      if (seenPaths.has(f.full)) continue
-      if (f.size === 0 || f.size > maxFileBytes) continue
-      if (BINARY_EXTENSIONS.has(f.ext)) continue
-      let buf: Buffer
-      try {
-        buf = await fs.readFile(f.full)
-      } catch {
-        continue
-      }
-      const sniffEnd = Math.min(buf.length, 8192)
-      let isBinary = false
-      for (let i = 0; i < sniffEnd; i++) {
-        if (buf[i] === 0) { isBinary = true; break }
-      }
-      if (isBinary) continue
-
-      const text = buf.toString('utf-8')
-      const idx = text.toLowerCase().indexOf(lowerQuery)
-      if (idx === -1) continue
-
-      const before = text.slice(0, idx)
-      const lineStart = before.lastIndexOf('\n') + 1
-      const lineEndRel = text.indexOf('\n', idx)
-      const lineEnd = lineEndRel === -1 ? text.length : lineEndRel
-      const line = text.slice(lineStart, lineEnd).trim().slice(0, 200)
-      const lineNumber = (text.slice(0, lineStart).match(/\n/g)?.length ?? 0) + 1
-      const relativePath = path.relative(rootPath, f.full).split(path.sep).join('/')
-      seenPaths.add(f.full)
-      contentResults.push({
-        name: f.name, path: f.full, relativePath,
-        isDirectory: false, nameMatch: false,
-        contentPreview: line, contentLine: lineNumber,
-      })
+      if (isDirectory) subdirs.push(full)
     }
 
     for (const sub of subdirs) {
-      if (budgetsFull()) return false
-      const cont = await walk(sub)
-      if (!cont) return false
+      if (results.length >= maxResults) return
+      await walk(sub)
     }
-    return true
   }
 
   await walk(rootPath)
-
-  // Merge the buckets into a single capped list. Name matches rank first, but
-  // content matches keep a reserved share of the cap so a flood of name matches
-  // can't crowd them out entirely — the whole point of also searching contents.
-  const reserve = Math.min(contentResults.length, Math.floor(maxResults / 2))
-  const keepName = Math.min(nameResults.length, maxResults - reserve)
-  const keepContent = Math.min(contentResults.length, maxResults - keepName)
-  const results = [...nameResults.slice(0, keepName), ...contentResults.slice(0, keepContent)]
-  results.sort((a, b) => {
-    if (a.nameMatch !== b.nameMatch) return a.nameMatch ? -1 : 1
-    return a.relativePath.length - b.relativePath.length
-  })
+  results.sort((a, b) => a.relativePath.length - b.relativePath.length)
   return results
 }
 

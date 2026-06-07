@@ -68,11 +68,19 @@ function snapshotWithWorktrees(): SessionSnapshot {
     workspaceId: 'ws',
     workspaceName: 'restored',
     rootPath: ROOT,
-    zoomLevel: 1,
-    viewportOffset: { x: 0, y: 0 },
-    nodes: [
-      { panelId: 'ed-1', panelType: 'editor', title: 'file.ts', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, filePath: `${ROOT}/file.ts` },
-    ],
+    panels: {
+      'ed-1': { id: 'ed-1', type: 'editor', title: 'file.ts', isDirty: false, filePath: `${ROOT}/file.ts` },
+    },
+    canvases: {
+      cv: {
+        id: 'cv',
+        canvasNodes: {
+          'node-ed-1': { id: 'node-ed-1', panelId: 'ed-1', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
+        },
+        zoomLevel: 1,
+        viewportOffset: { x: 0, y: 0 },
+      },
+    },
     worktrees: [WT_PRIMARY, WT_X],
   }
 }
@@ -135,32 +143,42 @@ describe('worktree session persistence', () => {
     expect(worktrees[0]).toMatchObject({ id: 'wt-x', color: '#11aa55', label: 'X work' })
   })
 
-  it('projectFilesToSnapshot round-trips worktrees and per-node worktreeId from session.json', () => {
+  it('projectFilesToSnapshot round-trips worktrees and per-panel worktreeId from session.json', () => {
     const wsFile: ProjectWorkspaceFile = {
       version: 1,
       name: 'WT',
       color: '',
-      canvas: {
-        nodes: [{ panelId: 't-1', panelType: 'terminal', title: 'shell', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 } }],
-        zoomLevel: 1,
-        viewportOffset: { x: 0, y: 0 },
+      panels: {
+        't-1': { type: 'terminal', title: 'shell' },
+        'dt-1': { type: 'terminal', title: 'docked shell' },
       },
-      dockPanels: { 'dt-1': { type: 'terminal', title: 'docked shell' } },
+      canvases: {
+        cv: {
+          id: 'cv',
+          canvasNodes: {
+            'node-t-1': { id: 'node-t-1', panelId: 't-1', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
+          },
+          zoomLevel: 1,
+          viewportOffset: { x: 0, y: 0 },
+        },
+      },
     }
     const sessFile: ProjectSessionFile = {
       version: 1,
       workspaceId: 'ws',
-      nodes: {
-        't-1': { panelId: 't-1', zOrder: 0, creationIndex: 0, workingDirectory: WT_X.path, worktreeId: 'wt-x' },
+      panels: {
+        't-1': { panelId: 't-1', workingDirectory: WT_X.path, worktreeId: 'wt-x' },
+        'dt-1': { panelId: 'dt-1', worktreeId: 'wt-x' },
       },
       worktrees: [WT_PRIMARY, WT_X],
-      dockPanelWorktreeIds: { 'dt-1': 'wt-x' },
     }
 
     const snap = projectFilesToSnapshot(wsFile, sessFile, ROOT)
-    expect(snap.nodes[0].worktreeId).toBe('wt-x')
+    expect(snap.panels?.['t-1']?.worktreeId).toBe('wt-x')
     expect(snap.worktrees).toEqual([WT_PRIMARY, WT_X])
-    // Dock-zone terminal's worktree tag is re-attached from the side map.
-    expect(snap.dockPanels?.['dt-1']?.worktreeId).toBe('wt-x')
+    // Dock-zone terminal's worktree tag is re-attached from session.json.
+    expect(snap.panels?.['dt-1']?.worktreeId).toBe('wt-x')
+    // The terminal's working directory is carried for respawn.
+    expect(snap.terminalCwds?.['t-1']).toBe(WT_X.path)
   })
 })

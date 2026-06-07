@@ -133,6 +133,9 @@ import {
   DRAG_END,
   DOCK_WINDOW_INIT,
   DOCK_WINDOW_SYNC_STATE,
+  DOCK_WINDOW_RESTORE,
+  DOCK_WINDOW_FLUSH_SYNC,
+  DOCK_WINDOW_FLUSH_SYNC_DONE,
   DOCK_WINDOWS_LIST,
   CROSS_WINDOW_DRAG_START,
   CROSS_WINDOW_DRAG_UPDATE,
@@ -205,7 +208,7 @@ import {
   AGENT_ABORT_BASH,
   AGENT_SET_STEERING_MODE,
   AGENT_SET_FOLLOW_UP_MODE,
-  AGENT_GET_AVAILABLE_MODELS,
+  AGENT_LIST_MODELS,
   AGENT_UI_RESPONSE,
   AGENT_LIST_SESSIONS,
   AGENT_LOAD_SESSION_MESSAGES,
@@ -216,11 +219,26 @@ import {
   AGENT_MARKETPLACE_UNINSTALL,
   AGENT_CUSTOM_MODELS_GET,
   AGENT_CUSTOM_MODELS_SAVE,
+  SKILLS_GET_INDEX,
+  SKILLS_REFRESH,
+  SKILLS_GET_PREVIEW,
+  SKILLS_INSTALL,
+  SKILLS_UNINSTALL,
+  SKILLS_LIST_INSTALLED,
+  SKILLS_LIST_SAVED,
+  SKILLS_SAVE,
+  SKILLS_UNSAVE,
+  SKILLS_LIST_SOURCES,
+  SKILLS_ADD_SOURCE,
+  SKILLS_REMOVE_SOURCE,
+  SKILLS_GET_TOKEN,
+  SKILLS_SET_TOKEN,
   AUTH_LIST_PROVIDERS,
   AUTH_STATUS,
   AUTH_OAUTH_START,
   AUTH_OAUTH_PROMPT_REPLY,
   AUTH_OAUTH_EVENT,
+  AUTH_CHANGED,
   AUTH_SAVE_API_KEY,
   AUTH_DELETE,
   PERF_GET,
@@ -972,13 +990,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(PANEL_WINDOW_SYNC_META, payload)
   },
 
-  panelWindowDockBack(): Promise<void> {
-    return ipcRenderer.invoke(PANEL_WINDOW_DOCK_BACK)
+  panelWindowDockBack(snapshot?: unknown): Promise<void> {
+    return ipcRenderer.invoke(PANEL_WINDOW_DOCK_BACK, snapshot)
   },
 
-  onPanelWindowDockBack(callback: (panelWindowId: number) => void): () => void {
-    const listener = (_event: Electron.IpcRendererEvent, panelWindowId: number): void => {
-      callback(panelWindowId)
+  onPanelWindowDockBack(callback: (payload: { panelWindowId: number; snapshot?: unknown }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { panelWindowId: number; snapshot?: unknown }): void => {
+      callback(payload)
     }
     ipcRenderer.on(PANEL_WINDOW_DOCK_BACK, listener)
     return () => { ipcRenderer.removeListener(PANEL_WINDOW_DOCK_BACK, listener) }
@@ -1004,8 +1022,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return fullscreenLiveCheck()
   },
 
-  onDragEnd(callback: () => void): () => void {
-    const listener = (): void => { callback() }
+  onDragEnd(callback: (dragId?: string) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, dragId?: string): void => { callback(dragId) }
     ipcRenderer.on(DRAG_END, listener)
     return () => { ipcRenderer.removeListener(DRAG_END, listener) }
   },
@@ -1057,6 +1075,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(DOCK_WINDOWS_LIST)
   },
 
+  dockWindowRestore(payload: unknown): Promise<number | null> {
+    return ipcRenderer.invoke(DOCK_WINDOW_RESTORE, payload)
+  },
+
+  onDockWindowFlushSync(callback: () => void): () => void {
+    const listener = (): void => { callback() }
+    ipcRenderer.on(DOCK_WINDOW_FLUSH_SYNC, listener)
+    return () => { ipcRenderer.removeListener(DOCK_WINDOW_FLUSH_SYNC, listener) }
+  },
+
+  dockWindowFlushSyncDone(): void {
+    ipcRenderer.send(DOCK_WINDOW_FLUSH_SYNC_DONE)
+  },
+
   // ---------------------------------------------------------------------------
   // Cross-window drag coordination
   // ---------------------------------------------------------------------------
@@ -1065,9 +1097,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(CROSS_WINDOW_DRAG_START, snapshot, screenPos)
   },
 
-  onCrossWindowDragUpdate(callback: (screenPos: unknown, snapshot: unknown) => void): () => void {
-    const listener = (_event: Electron.IpcRendererEvent, screenPos: unknown, snapshot: unknown): void => {
-      callback(screenPos, snapshot)
+  onCrossWindowDragUpdate(callback: (screenPos: unknown, snapshot: unknown, dragId?: unknown) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, screenPos: unknown, snapshot: unknown, dragId?: unknown): void => {
+      callback(screenPos, snapshot, dragId)
     }
     ipcRenderer.on(CROSS_WINDOW_DRAG_UPDATE, listener)
     return () => { ipcRenderer.removeListener(CROSS_WINDOW_DRAG_UPDATE, listener) }
@@ -1357,8 +1389,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(AGENT_SET_FOLLOW_UP_MODE, panelId, mode)
   },
 
-  agentGetAvailableModels(panelId: string): Promise<unknown[]> {
-    return ipcRenderer.invoke(AGENT_GET_AVAILABLE_MODELS, panelId)
+  agentListModels(): Promise<unknown[]> {
+    return ipcRenderer.invoke(AGENT_LIST_MODELS)
   },
 
   agentUiResponse(panelId: string, response: unknown): void {
@@ -1435,6 +1467,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(AGENT_MARKETPLACE_UNINSTALL, cwd, name)
   },
 
+  // ---------------------------------------------------------------------------
+  // Cross-agent skills
+  // ---------------------------------------------------------------------------
+
+  skillsGetIndex(): Promise<unknown[]> {
+    return ipcRenderer.invoke(SKILLS_GET_INDEX)
+  },
+  skillsRefresh(): Promise<unknown[]> {
+    return ipcRenderer.invoke(SKILLS_REFRESH)
+  },
+  skillsGetPreview(entry: unknown): Promise<string> {
+    return ipcRenderer.invoke(SKILLS_GET_PREVIEW, entry)
+  },
+  skillsInstall(entry: unknown, targetId: string, cwd: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installed?: unknown }> {
+    return ipcRenderer.invoke(SKILLS_INSTALL, entry, targetId, cwd)
+  },
+  skillsUninstall(skillId: string, name: string, targetId: string, cwd: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(SKILLS_UNINSTALL, skillId, name, targetId, cwd)
+  },
+  skillsListInstalled(cwd: string): Promise<unknown[]> {
+    return ipcRenderer.invoke(SKILLS_LIST_INSTALLED, cwd)
+  },
+  skillsListSaved(): Promise<unknown[]> {
+    return ipcRenderer.invoke(SKILLS_LIST_SAVED)
+  },
+  skillsSave(entry: unknown): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(SKILLS_SAVE, entry)
+  },
+  skillsUnsave(skillId: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke(SKILLS_UNSAVE, skillId)
+  },
+  skillsListSources(): Promise<unknown[]> {
+    return ipcRenderer.invoke(SKILLS_LIST_SOURCES)
+  },
+  skillsAddSource(repo: string, opts?: { ref?: string; path?: string }): Promise<{ ok: boolean; error?: string; source?: unknown }> {
+    return ipcRenderer.invoke(SKILLS_ADD_SOURCE, repo, opts)
+  },
+  skillsRemoveSource(id: string): Promise<{ ok: boolean }> {
+    return ipcRenderer.invoke(SKILLS_REMOVE_SOURCE, id)
+  },
+  skillsGetToken(): Promise<{ hasToken: boolean }> {
+    return ipcRenderer.invoke(SKILLS_GET_TOKEN)
+  },
+  skillsSetToken(token: string | null): Promise<{ ok: boolean }> {
+    return ipcRenderer.invoke(SKILLS_SET_TOKEN, token)
+  },
+
   onAgentEvent(callback: (envelope: unknown) => void): () => void {
     const listener = (_e: Electron.IpcRendererEvent, envelope: unknown): void => { callback(envelope) }
     ipcRenderer.on(AGENT_EVENT, listener)
@@ -1481,6 +1560,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     ipcRenderer.on(AUTH_OAUTH_EVENT, listener)
     return () => { ipcRenderer.removeListener(AUTH_OAUTH_EVENT, listener) }
+  },
+
+  onAuthChanged(callback: () => void): () => void {
+    const listener = (): void => { callback() }
+    ipcRenderer.on(AUTH_CHANGED, listener)
+    return () => { ipcRenderer.removeListener(AUTH_CHANGED, listener) }
   },
 
   authSaveApiKey(providerId: string, apiKey: string): Promise<void> {

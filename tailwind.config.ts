@@ -5,6 +5,7 @@ export default {
     './index.html',
     './src/renderer/**/*.{ts,tsx}',
     './src/agent/renderer/**/*.{ts,tsx}',
+    './src/skills/renderer/**/*.{ts,tsx}',
   ],
   darkMode: 'class',
   theme: {

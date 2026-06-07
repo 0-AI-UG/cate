@@ -11,16 +11,10 @@ describe('hydrateSessionTrust', () => {
         {
           workspaceName: 'Good',
           rootPath: '/good',
-          viewportOffset: { x: 0, y: 0 },
-          zoomLevel: 1,
-          nodes: [],
         },
         {
           workspaceName: 'Bad',
           rootPath: '/bad',
-          viewportOffset: { x: 0, y: 0 },
-          zoomLevel: 1,
-          nodes: [],
         },
       ],
     }

@@ -50,23 +50,6 @@ describe('settingsFile', () => {
     expect(m.getSetting('defaultPanelWidth')).toBe(DEFAULT_SETTINGS.defaultPanelWidth)
   })
 
-  it('migrates valid settings out of the legacy config.json, ignoring junk', async () => {
-    // Legacy electron-store file with one real setting, one wrong-typed setting,
-    // and a non-settings key that must not leak into settings.json.
-    fs.writeFileSync(
-      path.join(dirRef.current, 'config.json'),
-      JSON.stringify({ editorFontSize: 18, zoomSpeed: 'fast', recentProjects: ['/x'] }),
-    )
-    const m = await freshModule()
-    m.loadSettingsSync()
-    expect(m.getSetting('editorFontSize')).toBe(18)
-    // Wrong-typed value rejected → default retained.
-    expect(m.getSetting('zoomSpeed')).toBe(DEFAULT_SETTINGS.zoomSpeed)
-    const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
-    expect(onDisk.editorFontSize).toBe(18)
-    expect('recentProjects' in onDisk).toBe(false)
-  })
-
   it('loads an existing settings.json over defaults', async () => {
     fs.writeFileSync(settingsPath(), JSON.stringify({ terminalScrollback: 9000 }))
     const m = await freshModule()

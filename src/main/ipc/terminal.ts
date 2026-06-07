@@ -27,7 +27,7 @@ import {
   TERMINAL_SET_VISIBILITY,
 } from '../../shared/ipc-channels'
 import { getOrCreateLogger, removeLogger, flushAll as flushAllLoggers, disposeAll as disposeAllLoggers } from './terminalLogger'
-import { sendToWindow, windowFromEvent } from '../windowRegistry'
+import { sendToWindow, windowFromEvent, onWindowClosed } from '../windowRegistry'
 import { countTerminalData } from '../perf/perfMonitor'
 import { parseLocator, type CompanionId } from '../companion/locator'
 import { companions } from '../companion/companionManager'
@@ -67,34 +67,63 @@ interface TerminalTransferState {
   buffer: Buffer[]
   bufferSize: number
   targetWindowId: number
+  /** Fallback timer (cleared on ack / re-begin / completion). */
+  timer: ReturnType<typeof setTimeout>
 }
 
 const transferStates = new Map<string, TerminalTransferState>()
 const MAX_TRANSFER_BUFFER = 64 * 1024
 const TRANSFER_TIMEOUT_MS = 5000
 
+/** Hand ownership to `targetWindowId`, flush the buffered output there, and end
+ *  the transfer. Used by both the explicit ack and the fallback paths. The
+ *  source's view is already gone by the time we transfer (detach releases the
+ *  source xterm), so output always follows the panel to the target. */
+function completeTerminalTransfer(ptyId: string, targetWindowId: number): void {
+  const state = transferStates.get(ptyId)
+  if (!state) return
+  clearTimeout(state.timer)
+  transferStates.delete(ptyId)
+  terminalOwners.set(ptyId, targetWindowId)
+  for (const chunk of state.buffer) {
+    try { sendToWindow(targetWindowId, TERMINAL_DATA, ptyId, chunk.toString()) } catch { /* target gone */ }
+  }
+}
+
 export function beginTerminalTransfer(ptyId: string, targetWindowId: number): void {
-  transferStates.set(ptyId, { buffer: [], bufferSize: 0, targetWindowId })
-  setTimeout(() => {
-    const state = transferStates.get(ptyId)
-    if (!state) return
-    const ownerWindowId = terminalOwners.get(ptyId)
-    if (ownerWindowId != null) {
-      try {
-        for (const chunk of state.buffer) sendToWindow(ownerWindowId, TERMINAL_DATA, ptyId, chunk.toString())
-      } catch { /* owner destroyed */ }
-    }
-    transferStates.delete(ptyId)
-  }, TRANSFER_TIMEOUT_MS)
+  // Re-begin is normal: detach buffers with a -1 placeholder, then re-points at
+  // the real window id once it exists. Carry the buffer forward and CLEAR the
+  // previous timer — otherwise a stale 5s timeout fires mid-transfer and tears
+  // down the live state, and the second begin would drop already-buffered bytes.
+  const existing = transferStates.get(ptyId)
+  if (existing) clearTimeout(existing.timer)
+  const timer = setTimeout(() => completeTerminalTransfer(ptyId, targetWindowId), TRANSFER_TIMEOUT_MS)
+  transferStates.set(ptyId, {
+    buffer: existing?.buffer ?? [],
+    bufferSize: existing?.bufferSize ?? 0,
+    targetWindowId,
+    timer,
+  })
 }
 
 export function acknowledgeTerminalTransfer(ptyId: string): void {
   const state = transferStates.get(ptyId)
   if (!state) return
-  const { targetWindowId, buffer } = state
-  terminalOwners.set(ptyId, targetWindowId)
-  for (const chunk of buffer) sendToWindow(targetWindowId, TERMINAL_DATA, ptyId, chunk.toString())
-  transferStates.delete(ptyId)
+  completeTerminalTransfer(ptyId, state.targetWindowId)
+}
+
+/** A window was destroyed. Any transfer whose SOURCE was that window is
+ *  completed to its target now (the running PTY follows the panel instead of
+ *  pointing at a dead owner); any transfer whose TARGET died is abandoned. */
+export function handleWindowClosedTerminalTransfers(windowId: number): void {
+  for (const [ptyId, state] of [...transferStates]) {
+    if (state.targetWindowId === windowId) {
+      clearTimeout(state.timer)
+      transferStates.delete(ptyId)
+    } else if (terminalOwners.get(ptyId) === windowId) {
+      completeTerminalTransfer(ptyId, state.targetWindowId)
+    }
+  }
 }
 
 export function getTerminalOwner(terminalId: string): number | undefined {
@@ -207,6 +236,10 @@ function killTerminal(id: string): void {
 }
 
 export function registerHandlers(): void {
+  // Complete/abandon in-flight terminal transfers when a window closes so a
+  // running PTY's ownership follows the panel instead of orphaning on a dead window.
+  onWindowClosed(handleWindowClosedTerminalTransfers)
+
   ipcMain.handle(
     TERMINAL_CREATE,
     async (event, options: { cols: number; rows: number; cwd?: string; shell?: string }): Promise<string> => {

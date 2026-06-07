@@ -19,6 +19,8 @@ import fsp from 'fs/promises'
 import path from 'path'
 import {
   findEnvKeys,
+  getModels,
+  type KnownProvider,
   type OAuthCredentials,
   type OAuthLoginCallbacks,
 } from '@earendil-works/pi-ai'
@@ -27,6 +29,7 @@ import { sharedAuthPath } from './agentDir'
 import { readCustomOpenAI } from './customModels'
 import log from '../../main/logger'
 import type {
+  AgentModelDescriptor,
   AuthProviderDescriptor,
   AuthProviderStatus,
   OAuthFlowEvent,
@@ -203,6 +206,49 @@ export class AuthManager {
     })
 
     return result
+  }
+
+  /** The models the user can pick right now, derived purely from persisted
+   *  state — connected providers in auth.json (or env keys) crossed with pi's
+   *  static model catalog, plus the custom OpenAI endpoint's models from
+   *  models.json. No running pi session required, so the same list backs the
+   *  agent panel's picker and the Settings → Providers default-model dropdown. */
+  async listAvailableModels(): Promise<AgentModelDescriptor[]> {
+    const statuses = await this.status()
+    const connected = new Set(statuses.filter((s) => s.connected).map((s) => s.id))
+
+    const out: AgentModelDescriptor[] = []
+    const seen = new Set<string>() // `${provider}:${id}` — OAuth + API-key share ids
+
+    for (const providerId of connected) {
+      if (providerId === 'custom-openai') continue
+      // getModels indexes a static catalog and returns [] for unknown ids, so
+      // the cast is safe even for providers pi doesn't recognise.
+      for (const m of getModels(providerId as KnownProvider)) {
+        const key = `${m.provider}:${m.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push({
+          provider: m.provider,
+          id: m.id,
+          label: m.name ?? m.id,
+          contextWindow: m.contextWindow ?? 0,
+          reasoning: m.reasoning ?? false,
+        })
+      }
+    }
+
+    if (connected.has('custom-openai')) {
+      const custom = await readCustomOpenAI()
+      for (const id of custom?.models ?? []) {
+        const key = `custom-openai:${id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push({ provider: 'custom-openai', id, label: id, contextWindow: 0, reasoning: false })
+      }
+    }
+
+    return out
   }
 
   // -------------------------------------------------------------------------

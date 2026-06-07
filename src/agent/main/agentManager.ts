@@ -32,7 +32,8 @@ import type {
   AgentSlashCommand,
   AgentThinkingLevel,
 } from '../../shared/types'
-import { AGENT_EVENT } from '../../shared/ipc-channels'
+import { AGENT_EVENT, AUTH_CHANGED } from '../../shared/ipc-channels'
+import { broadcastToAll } from '../../main/windowRegistry'
 import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
 import { hostAgentDir, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace } from './agentDir'
@@ -71,17 +72,29 @@ export class AgentManager {
   constructor(authManager: AuthManager) {
     this.authManager = authManager
     // When the user changes credentials in cate's UI, mirror the shared
-    // auth.json into every open workspace so their pi processes see it.
-    authManager.setOnChange(() => this.syncAuthToOpenSessions())
+    // auth.json into every open workspace so their pi processes see it, then
+    // tell every renderer so model pickers / provider status refresh without a
+    // panel reload (the OAuth `done` event only reaches the window that started
+    // the flow).
+    authManager.setOnChange(() => { void this.handleAuthChanged() })
+  }
+
+  private async handleAuthChanged(): Promise<void> {
+    // Mirror FIRST so a renderer re-querying available models sees pi pick up
+    // the fresh credentials, then broadcast.
+    await this.syncAuthToOpenSessions()
+    broadcastToAll(AUTH_CHANGED)
   }
 
   /** Push the shared auth.json into every live session's workspace dir. */
-  private syncAuthToOpenSessions(): void {
-    for (const session of this.sessions.values()) {
-      void pushSharedToWorkspace(session.companion, session.cwd).catch((err) => {
-        log.warn('[agentManager] auth sync failed for %s: %O', session.panelId, err)
-      })
-    }
+  private async syncAuthToOpenSessions(): Promise<void> {
+    await Promise.all(
+      Array.from(this.sessions.values()).map((session) =>
+        pushSharedToWorkspace(session.companion, session.cwd).catch((err) => {
+          log.warn('[agentManager] auth sync failed for %s: %O', session.panelId, err)
+        }),
+      ),
+    )
   }
 
   /** Re-mirror the shared models.json into every open workspace, so the custom
@@ -292,18 +305,6 @@ export class AgentManager {
     await session.client.setThinkingLevel(level)
   }
 
-  async getAvailableModels(
-    panelId: string,
-  ): Promise<Array<{ provider: string; id: string; contextWindow: number; reasoning: boolean }>> {
-    const session = this.sessions.get(panelId)
-    if (!session) return []
-    try {
-      return await session.client.getAvailableModels()
-    } catch (err) {
-      log.warn('[agentManager] getAvailableModels failed for %s: %O', panelId, err)
-      return []
-    }
-  }
 
   // ---------------------------------------------------------------------------
   // Compaction / retry

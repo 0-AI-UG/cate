@@ -120,6 +120,30 @@ describe('revealPanel', () => {
     expect(getActivePanelId()).toBe(CHILD)
   })
 
+  // Regression: revealing a child of a canvas that is NOT the active center tab
+  // used to focus the node but leave the other canvas on screen, so the click
+  // did nothing visible. Revealing the child must bring its hosting canvas's own
+  // dock tab to the front first.
+  it('brings the hosting canvas tab to front when a different canvas is active', async () => {
+    registerCanvasContaining(CHILD)
+    const dock = getOrCreateWorkspaceDockStore(WS)
+    // Two canvases share the center stack; the OTHER one is active (docked last).
+    dock.getState().dockPanel(CANVAS, 'center')
+    dock.getState().dockPanel('canvas-other', 'center')
+    const stackId = (dock.getState().zones.center.layout as any).id as string
+    expect((dock.getState().zones.center.layout as any).panelIds).toEqual([CANVAS, 'canvas-other'])
+    expect((dock.getState().zones.center.layout as any).activeIndex).toBe(1) // canvas-other
+
+    const ok = await revealPanel(WS, CHILD)
+    expect(ok).toBe(true)
+    expect(focusSpy).toHaveBeenCalledWith(CHILD)
+    // The hosting canvas tab (CANVAS, index 0) is now the active center tab.
+    const stack = dock.getState().zones.center.layout as any
+    expect(stack.panelIds[stack.activeIndex]).toBe(CANVAS)
+    expect(stackId).toBeTypeOf('string')
+    expect(getActivePanelId()).toBe(CHILD)
+  })
+
   it('returns false (non-retry) when the panel cannot be located', async () => {
     registerCanvasContaining(CHILD)
     expect(await revealPanel(WS, 'ghost')).toBe(false)

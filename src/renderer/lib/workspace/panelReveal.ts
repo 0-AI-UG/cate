@@ -13,14 +13,19 @@
 
 import { getWorkspaceDockStore } from './dockRegistry'
 import {
-  getWorkspaceCanvasPanelId,
   ensureCanvasOpsForPanel,
-  getCanvasOpsById,
+  resolvePanelLocation,
+  type ResolvedPanelLocation,
 } from './canvasAccess'
 import { useAppStore } from '../../stores/appStore'
 import { setActivePanel } from '../activePanel'
 import { findTabStack } from '../../stores/dockTreeUtils'
 import type { DockZonePosition, PanelState } from '../../../shared/types'
+
+// The location facade now lives in canvasAccess (the lowest module owning dock +
+// canvas access) so appStore.closePanel can share it without a cycle. Re-exported
+// here for existing callers/tests that import it from the reveal module.
+export { resolvePanelLocation, type ResolvedPanelLocation }
 
 /**
  * Resolve a panel record by id from the active workspace's panels. Mirrors the
@@ -35,44 +40,26 @@ export function resolvePanelById(panelId: string): PanelState | undefined {
   return ws?.panels[panelId]
 }
 
-export type ResolvedPanelLocation =
-  | { kind: 'dock'; zone: DockZonePosition; stackId: string }
-  | { kind: 'canvas'; canvasPanelId: string }
-
-/**
- * Locate a panel within a workspace. Fixed probe order:
- *   1. the workspace dock store (live tree, derived location)
- *   2. any canvas panel of the workspace (nodeForPanel)
- * Returns null if the panel is not currently placed anywhere.
- */
-export function resolvePanelLocation(
+/** Bring a panel's dock tab to the front: show its zone and select its tab.
+ *  Returns false only when the workspace has no live dock store. */
+function revealDockTab(
   workspaceId: string,
   panelId: string,
-): ResolvedPanelLocation | null {
+  zone: DockZonePosition,
+  stackId: string,
+): boolean {
   const dock = getWorkspaceDockStore(workspaceId)?.getState()
-  const dockLocation = dock?.getPanelLocation(panelId)
-  if (dockLocation?.type === 'dock') {
-    return { kind: 'dock', zone: dockLocation.zone, stackId: dockLocation.stackId }
-  }
-
-  // Scan every canvas panel in the workspace (a workspace may host several
-  // canvases; the primary one is preferred but we check all).
-  const primary = getWorkspaceCanvasPanelId(workspaceId)
-  const candidateCanvasIds = new Set<string>()
-  if (primary) candidateCanvasIds.add(primary)
-  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-  if (ws) {
-    for (const p of Object.values(ws.panels)) {
-      if (p.type === 'canvas') candidateCanvasIds.add(p.id)
+  if (!dock) return false
+  const z = dock.zones[zone]
+  if (!z.visible) dock.toggleZone(zone)
+  if (z.layout) {
+    const stack = findTabStack(z.layout, stackId)
+    if (stack) {
+      const idx = stack.panelIds.indexOf(panelId)
+      if (idx >= 0) dock.setActiveTab(stackId, idx)
     }
   }
-  for (const canvasPanelId of candidateCanvasIds) {
-    const ops = getCanvasOpsById(canvasPanelId) ?? ensureCanvasOpsForPanel(canvasPanelId)
-    if (ops.storeApi.getState().nodeForPanel(panelId)) {
-      return { kind: 'canvas', canvasPanelId }
-    }
-  }
-  return null
+  return true
 }
 
 function revealOnce(workspaceId: string, panelId: string): boolean {
@@ -80,18 +67,17 @@ function revealOnce(workspaceId: string, panelId: string): boolean {
   if (!location) return false
 
   if (location.kind === 'dock') {
-    const dock = getWorkspaceDockStore(workspaceId)?.getState()
-    if (!dock) return false
-    const zone = dock.zones[location.zone]
-    if (!zone.visible) dock.toggleZone(location.zone)
-    if (zone.layout) {
-      const stack = findTabStack(zone.layout, location.stackId)
-      if (stack) {
-        const idx = stack.panelIds.indexOf(panelId)
-        if (idx >= 0) dock.setActiveTab(location.stackId, idx)
-      }
-    }
+    if (!revealDockTab(workspaceId, panelId, location.zone, location.stackId)) return false
   } else {
+    // The hosting canvas is itself a (center-zone) dock tab. Focusing the node
+    // alone won't switch the on-screen canvas when a DIFFERENT canvas tab is
+    // active — so bring the canvas panel's own tab to the front first, then
+    // focus the node inside it. (Clicking the canvas row worked already because
+    // it took the dock branch above; a child one level down skipped this step.)
+    const canvasLoc = resolvePanelLocation(workspaceId, location.canvasPanelId)
+    if (canvasLoc?.kind === 'dock') {
+      revealDockTab(workspaceId, location.canvasPanelId, canvasLoc.zone, canvasLoc.stackId)
+    }
     ensureCanvasOpsForPanel(location.canvasPanelId).focusPanelNode(panelId)
   }
 

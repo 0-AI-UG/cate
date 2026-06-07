@@ -42,29 +42,36 @@ beforeEach(() => {
 })
 
 import { useAppStore, getWorkspaceCanvasStore } from './appStore'
-import { getWorkspaceDockStore, getOrCreateWorkspaceDockStore } from './workspaceStores'
+import { getOrCreateCanvasStoreForPanel } from './canvasStore'
+import { getWorkspaceDockStore, getOrCreateWorkspaceDockStore } from '../lib/workspace/dockRegistry'
 import { restoreSession } from '../lib/workspace/session'
-import type { SessionSnapshot } from '../../shared/types'
+import type { SessionSnapshot, CanvasSnapshot } from '../../shared/types'
 
 /** A minimal one-editor snapshot whose canvas lives in the center dock zone. */
 function makeSnapshot(canvasPanelId: string, rootPath: string): SessionSnapshot {
   return {
     workspaceName: 'restored',
     rootPath,
-    zoomLevel: 1,
-    viewportOffset: { x: 0, y: 0 },
-    nodes: [
-      {
-        panelId: 'ed-1',
-        panelType: 'editor',
-        title: 'file.ts',
-        origin: { x: 10, y: 10 },
-        size: { width: 200, height: 150 },
-        filePath: `${rootPath}/file.ts`,
-      },
-    ],
-    dockPanels: {
+    panels: {
       [canvasPanelId]: { id: canvasPanelId, type: 'canvas', title: 'Canvas', isDirty: false },
+      'ed-1': { id: 'ed-1', type: 'editor', title: 'file.ts', isDirty: false, filePath: `${rootPath}/file.ts` },
+    },
+    canvases: {
+      [canvasPanelId]: {
+        id: canvasPanelId,
+        canvasNodes: {
+          'node-ed-1': {
+            id: 'node-ed-1',
+            panelId: 'ed-1',
+            origin: { x: 10, y: 10 },
+            size: { width: 200, height: 150 },
+            zOrder: 0,
+            creationIndex: 0,
+          },
+        },
+        zoomLevel: 1,
+        viewportOffset: { x: 0, y: 0 },
+      },
     },
     dockState: {
       zones: {
@@ -162,6 +169,93 @@ describe('per-workspace dock isolation', () => {
 
     // A's dock store never gained B's canvas panel.
     expect(dockPanelIds(a)).not.toContain('cv-b')
+  })
+
+  it('restoreSession hydrates a SECONDARY canvas store from snapshot.canvases', async () => {
+    const w = useAppStore.getState().addWorkspace('Multi', '/tmp/multi', 'ws-multi')
+
+    const primaryCanvas = 'cv-primary'
+    const secondaryCanvas = 'cv-secondary'
+    const secChildTerm = 'sec-term'
+
+    const secCanvas: CanvasSnapshot = {
+      id: secondaryCanvas,
+      canvasNodes: {
+        'sec-node': {
+          id: 'sec-node',
+          panelId: secChildTerm,
+          origin: { x: 30, y: 40 },
+          size: { width: 250, height: 180 },
+          zOrder: 0,
+          creationIndex: 0,
+        },
+      },
+      zoomLevel: 1.75,
+      viewportOffset: { x: 9, y: 8 },
+    }
+
+    const snapshot: SessionSnapshot = {
+      workspaceName: 'Multi',
+      rootPath: '/tmp/multi',
+      panels: {
+        [primaryCanvas]: { id: primaryCanvas, type: 'canvas', title: 'Primary', isDirty: false },
+        [secondaryCanvas]: { id: secondaryCanvas, type: 'canvas', title: 'Secondary', isDirty: false },
+        // Primary canvas's child editor + the secondary canvas's child terminal.
+        'prim-ed': { id: 'prim-ed', type: 'editor', title: 'prim.ts', isDirty: false, filePath: '/tmp/multi/prim.ts' },
+        [secChildTerm]: { id: secChildTerm, type: 'terminal', title: 'Sec Term', isDirty: false },
+      },
+      dockState: {
+        zones: {
+          left: { position: 'left', visible: false, size: 260, layout: null },
+          right: { position: 'right', visible: false, size: 260, layout: null },
+          bottom: { position: 'bottom', visible: false, size: 240, layout: null },
+          center: {
+            position: 'center',
+            visible: true,
+            size: 0,
+            // Primary first so it resolves as the primary canvas.
+            layout: { type: 'tabs', id: 'stk', panelIds: [primaryCanvas, secondaryCanvas], activeIndex: 0 },
+          },
+        },
+        locations: {},
+      },
+      canvases: {
+        [primaryCanvas]: {
+          id: primaryCanvas,
+          canvasNodes: {
+            'prim-node': {
+              id: 'prim-node',
+              panelId: 'prim-ed',
+              origin: { x: 0, y: 0 },
+              size: { width: 200, height: 150 },
+              zOrder: 0,
+              creationIndex: 0,
+            },
+          },
+          zoomLevel: 1,
+          viewportOffset: { x: 0, y: 0 },
+        },
+        [secondaryCanvas]: secCanvas,
+      },
+    }
+
+    await restoreSession(snapshot, w)
+
+    // The SECONDARY canvas's own store is hydrated directly from snapshot.canvases
+    // (original panel ids preserved), not lumped into the primary.
+    const secStore = getOrCreateCanvasStoreForPanel(secondaryCanvas).getState()
+    expect(Object.keys(secStore.nodes)).toEqual(['sec-node'])
+    expect(secStore.nodes['sec-node'].panelId).toBe(secChildTerm)
+    expect(secStore.zoomLevel).toBe(1.75)
+    expect(secStore.viewportOffset).toEqual({ x: 9, y: 8 })
+
+    // The secondary child's PanelState record exists in the workspace.
+    const ws = useAppStore.getState().workspaces.find((x) => x.id === w)!
+    expect(ws.panels[secChildTerm]?.type).toBe('terminal')
+
+    // The primary canvas store did NOT absorb the secondary's node.
+    const primStore = getOrCreateCanvasStoreForPanel(primaryCanvas).getState()
+    expect(Object.values(primStore.nodes).some((n) => n.panelId === secChildTerm)).toBe(false)
   })
 
   it('panels recorded on a workspace stay scoped to that workspace', () => {

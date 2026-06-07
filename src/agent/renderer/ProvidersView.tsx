@@ -44,31 +44,44 @@ interface ProvidersViewProps {
   scopedProviderId?: string
   /** When true, render without the outer header (parent owns navigation). */
   embedded?: boolean
-  /** Models from the Pi runtime session, used for the default model picker. */
-  availableModels?: Array<{ provider: string; model: string; label?: string }>
 }
 
-export function ProvidersView({ onBack, scopedProviderId, embedded = false, availableModels }: ProvidersViewProps) {
+export function ProvidersView({ onBack, scopedProviderId, embedded = false }: ProvidersViewProps) {
   const [providers, setProviders] = useState<AuthProviderDescriptor[]>([])
   const [statuses, setStatuses] = useState<AuthProviderStatus[]>([])
+  // Selectable models for the default-model picker — derived from the connected
+  // providers in auth.json, so it works here without an agent session running.
+  const [models, setModels] = useState<Array<{ provider: string; model: string; label?: string }>>([])
   // Accordion: at most one provider expanded at a time. Keyed by `${kind}-${id}`
   // because the same provider id can appear as both an OAuth and an API-key entry.
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const [pList, sList] = await Promise.all([
+      const [pList, sList, mList] = await Promise.all([
         window.electronAPI.authListProviders(),
         window.electronAPI.authStatus(),
+        window.electronAPI.agentListModels(),
       ])
       setProviders(pList)
       setStatuses(sList)
+      setModels(mList.map((m) => ({ provider: m.provider, model: m.id, label: m.label })))
     } catch (err) {
       log.warn('[ProvidersView] refresh failed', err)
     }
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
+
+  // Credentials can change in another window (or via a background token
+  // refresh). Re-pull provider status + the model list when the main process
+  // broadcasts a change so neither the Connected/Disconnected state nor the
+  // default-model picker goes stale.
+  useEffect(() => {
+    if (!window.electronAPI?.onAuthChanged) return
+    const unsub = window.electronAPI.onAuthChanged(() => { void refresh() })
+    return unsub
+  }, [refresh])
 
   useEffect(() => {
     if (!scopedProviderId) return
@@ -100,7 +113,7 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false, avai
 
   const body = (
     <>
-      <DefaultModelSection models={availableModels ?? []} />
+      <DefaultModelSection models={models} />
       <Section label="Sign in">
         {grouped.oauth.map((p) => {
           const key = `oauth-${p.id}`
