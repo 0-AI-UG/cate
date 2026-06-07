@@ -6,6 +6,12 @@
     { "id": "mattpocock-skills", "repo": "mattpocock/skills", "path": "skills" },
     { "id": "addyosmani-agent-skills", "repo": "addyosmani/agent-skills", "path": "skills" },
     { "id": "coreyhaines-marketing-skills", "repo": "coreyhaines31/marketingskills", "path": "skills" },
-    { "id": "academic-research-skills", "repo": "Imbad0202/academic-research-skills", "path": "" }
+    { "id": "academic-research-skills", "repo": "Imbad0202/academic-research-skills", "path": "" },
+    { "id": "vercel-agent-skills", "repo": "vercel-labs/agent-skills", "path": "skills" },
+    { "id": "obsidian-skills", "repo": "kepano/obsidian-skills", "path": "skills" },
+    { "id": "dev-browser", "repo": "SawyerHood/dev-browser", "path": "skills" },
+    { "id": "webgpu-threejs", "repo": "dgreenheck/webgpu-claude-skill", "path": "skills" },
+    { "id": "last30days", "repo": "mvanhorn/last30days-skill", "path": "skills" },
+    { "id": "second-brain-skills", "repo": "coleam00/second-brain-skills", "path": ".claude/skills" }
   ]
 }
