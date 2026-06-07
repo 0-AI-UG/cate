@@ -38,8 +38,12 @@ export function flushDockWindowsBeforeQuit(opts: {
     requestSync,
     subscribeAck,
     timeoutMs,
-    setTimeoutFn = setTimeout,
-    clearTimeoutFn = clearTimeout,
+    // Wrap the globals (rather than defaulting straight to them) so the binding
+    // adopts this interface's exact signature instead of the global overloads'
+    // wider `number | NodeJS.Timeout` return, which varies by @types/node version
+    // and broke the `timer` assignment below on CI.
+    setTimeoutFn = (fn, ms) => setTimeout(fn, ms),
+    clearTimeoutFn = (handle) => clearTimeout(handle),
   } = opts
 
   // Nothing to wait for — resolve immediately so quit isn't delayed.
