@@ -32,7 +32,7 @@ import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useUIStore } from '../stores/uiStore'
-import { useAppStore, WORKTREE_COLOR_PALETTE } from '../stores/appStore'
+import { useAppStore, getWorktreeColorPalette } from '../stores/appStore'
 import { useParallelWork, runWorktreeContextMenu, type CardCallbacks } from '../stores/useParallelWork'
 import { useWorktreeStatuses, humanStatus, type PrStatus } from '../stores/useWorktreeStatuses'
 
@@ -532,7 +532,7 @@ const WorktreeRow: React.FC<{
 
       {recoloring && (
         <div className="flex items-center gap-1.5 flex-wrap mt-1 pl-5 pr-1">
-          {WORKTREE_COLOR_PALETTE.map((c) => (
+          {getWorktreeColorPalette().map((c) => (
             <button
               key={c}
               onClick={(e) => { e.stopPropagation(); cb.onRecolor(c); setRecoloring(false) }}

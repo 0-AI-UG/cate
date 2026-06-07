@@ -85,8 +85,8 @@ function injectCanvasInteractingStyle(): void {
 const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <kbd style={{
     display: 'inline-block', minWidth: 18, padding: '1px 5px', margin: '0 1px',
-    borderRadius: 5, background: 'rgba(255,255,255,0.14)',
-    border: '1px solid rgba(255,255,255,0.12)', borderBottomWidth: 2,
+    borderRadius: 5, background: 'var(--surface-4)', color: 'var(--text-primary)',
+    border: '1px solid var(--border-strong)', borderBottomWidth: 2,
     fontSize: 11, fontWeight: 600, textAlign: 'center', lineHeight: '16px',
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   }}>{children}</kbd>
@@ -112,10 +112,10 @@ const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = 
         position: 'fixed', left: (visLeft + visRight) / 2, top: r.top + 16, transform: 'translateX(-50%)',
         zIndex: 2147483000, display: 'flex', alignItems: 'center', gap: 14,
         padding: '9px 9px 9px 16px', borderRadius: 999,
-        background: 'rgba(20, 24, 32, 0.95)', border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 10px 30px rgba(0,0,0,0.5)', color: 'rgba(255,255,255,0.92)',
+        // Match the bottom toolbar so the bar adapts to the active theme.
+        background: 'var(--surface-0)', border: '1px solid var(--border-subtle)',
+        boxShadow: '0 8px 24px -6px var(--shadow-node)', color: 'var(--text-primary)',
         fontSize: 13, fontWeight: 500, fontFamily: 'system-ui, -apple-system, sans-serif',
-        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
         animation: 'ghostHintIn 200ms ease both', userSelect: 'none', whiteSpace: 'nowrap',
       }}>
         <span>
@@ -129,8 +129,8 @@ const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = 
           onClick={() => api.getState().cancelPlacement()}
           style={{
             display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999,
-            border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.9)', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
+            border: 'none', cursor: 'pointer', background: 'var(--surface-hover-strong)',
+            color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
           }}
         >
           Cancel <Kbd>Esc</Kbd>

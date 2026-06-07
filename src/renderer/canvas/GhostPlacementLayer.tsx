@@ -15,7 +15,11 @@
 import React, { useEffect, useRef } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 
-const ACCENT = '74, 158, 255'
+// Theme accent — ghosts track the active theme's --focus-blue rather than a
+// hardcoded blue, so they recolor with the IDE theme. color-mix gives us a
+// per-stop alpha (the same technique the dock drop-target ghosts use in
+// DockTabBar). `accent(100)` is the solid accent.
+const accent = (pct: number) => `color-mix(in srgb, var(--focus-blue) ${pct}%, transparent)`
 
 let stylesInjected = false
 function injectStyles() {
@@ -128,9 +132,9 @@ const GhostPlacementLayer: React.FC = () => {
             position: 'absolute',
             left: free.point.x, top: free.point.y,
             width: free.size.width, height: free.size.height,
-            border: `1.5px dashed rgba(${ACCENT}, 0.7)`,
+            border: `1.5px dashed ${accent(70)}`,
             borderRadius: 8,
-            background: `rgba(${ACCENT}, 0.08)`,
+            background: accent(8),
             zIndex: 49000,
             pointerEvents: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -158,11 +162,11 @@ const GhostPlacementLayer: React.FC = () => {
               position: 'absolute',
               left: c.point.x, top: c.point.y,
               width: c.size.width, height: c.size.height,
-              border: `${isBest ? 2.5 : 1.5}px solid rgba(${ACCENT}, ${hovered || isBest ? 0.95 : 0.6})`,
+              border: `${isBest ? 2.5 : 1.5}px solid ${accent(hovered || isBest ? 95 : 60)}`,
               borderRadius: 8,
-              background: `rgba(${ACCENT}, ${hovered ? 0.2 : isBest ? 0.13 : 0.08})`,
+              background: accent(hovered ? 20 : isBest ? 13 : 8),
               boxShadow: hovered
-                ? `0 12px 32px rgba(0,0,0,0.4), 0 0 0 4px rgba(${ACCENT}, 0.18)`
+                ? `0 12px 32px rgba(0,0,0,0.4), 0 0 0 4px ${accent(18)}`
                 : isBest ? '0 8px 24px rgba(0,0,0,0.32)' : undefined,
               cursor: 'pointer',
               pointerEvents: 'auto',
@@ -184,7 +188,7 @@ const GhostPlacementLayer: React.FC = () => {
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 42, height: 42, borderRadius: 21,
-                  background: `rgba(${ACCENT}, ${hovered || isBest ? 1 : 0.85})`,
+                  background: accent(hovered || isBest ? 100 : 85),
                   color: '#fff', fontWeight: 700, fontSize: 19,
                   fontFamily: 'system-ui, -apple-system, sans-serif',
                   boxShadow: '0 3px 10px rgba(0,0,0,0.35)',
@@ -193,7 +197,7 @@ const GhostPlacementLayer: React.FC = () => {
                 {i + 1}
               </div>
               {isBest && (
-                <div style={{ padding: '2px 8px', borderRadius: 6, background: `rgba(${ACCENT}, 0.95)`,
+                <div style={{ padding: '2px 8px', borderRadius: 6, background: accent(95),
                   color: '#fff', fontSize: 10.5, fontWeight: 600, letterSpacing: 0.3,
                   fontFamily: 'system-ui, -apple-system, sans-serif', textTransform: 'uppercase' }}>
                   Best
