@@ -17,7 +17,6 @@ import { useUIStateStore } from './stores/uiStateStore'
 import { migrateLegacyLocalStorage } from './lib/migrateLegacyLocalStorage'
 import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
-import { useUpdateStore, type UpdateStatus } from './stores/updateStore'
 import { useShortcuts } from './hooks/useShortcuts'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
 import {
@@ -329,19 +328,6 @@ function MainApp() {
       else openSettings()
     })
   }, [openSettings, closeSettings])
-
-  // ---------------------------------------------------------------------------
-  // Auto-updater status — push from main, surfaced as a subtle in-app pill.
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    const setStatus = useUpdateStore.getState().setStatus
-    window.electronAPI.updateGetStatus?.().then((s: unknown) => {
-      if (s && typeof s === 'object') setStatus(s as UpdateStatus)
-    }).catch(() => {})
-    return window.electronAPI.onUpdateStatus((status: unknown) => {
-      setStatus(status as UpdateStatus)
-    })
-  }, [])
 
   // ---------------------------------------------------------------------------
   // OS-forwarded folder opens — dock drop / "Open With Cate"

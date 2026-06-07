@@ -161,10 +161,6 @@ import {
   BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
-  UPDATE_STATUS,
-  UPDATE_INSTALL,
-  UPDATE_DOWNLOAD,
-  UPDATE_OPEN_RELEASE,
   ANALYTICS_FEEDBACK_PROMPT,
   ANALYTICS_FEEDBACK_SUBMIT,
   ANALYTICS_FEEDBACK_DISMISS,
@@ -1244,24 +1240,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(BROWSER_SHORTCUT, listener)
     return () => { ipcRenderer.removeListener(BROWSER_SHORTCUT, listener) }
   },
-
-  // ---------------------------------------------------------------------------
-  // Auto-updater
-  // ---------------------------------------------------------------------------
-
-  onUpdateStatus(callback: (status: unknown) => void): () => void {
-    const listener = (_e: Electron.IpcRendererEvent, status: unknown): void => callback(status)
-    ipcRenderer.on(UPDATE_STATUS, listener)
-    return () => { ipcRenderer.removeListener(UPDATE_STATUS, listener) }
-  },
-
-  updateGetStatus(): Promise<unknown> {
-    return ipcRenderer.invoke('update:getStatus')
-  },
-
-  updateDownload(): void { ipcRenderer.send(UPDATE_DOWNLOAD) },
-  updateInstall(): void { ipcRenderer.send(UPDATE_INSTALL) },
-  updateOpenRelease(url?: string): void { ipcRenderer.send(UPDATE_OPEN_RELEASE, url) },
 
   // ---------------------------------------------------------------------------
   // Analytics — post-update feedback prompt

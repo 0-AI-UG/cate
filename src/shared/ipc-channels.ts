@@ -130,12 +130,6 @@ export const BOOT_SNAPSHOT_WRITE = 'boot:snapshotWrite' // renderer -> main
  *  via OS "Open With..."). Renderer opens it as a new workspace. */
 export const APP_OPEN_PATH = 'app:openPath'
 
-// Auto-updater (main -> renderer for status; renderer -> main for actions)
-export const UPDATE_STATUS = 'update:status'
-export const UPDATE_INSTALL = 'update:install'
-export const UPDATE_DOWNLOAD = 'update:download'
-export const UPDATE_OPEN_RELEASE = 'update:openRelease'
-
 // Analytics — post-update feedback prompt
 // Main -> renderer: show the modal. Payload: { fromVersion, toVersion }
 export const ANALYTICS_FEEDBACK_PROMPT = 'analytics:feedbackPrompt'

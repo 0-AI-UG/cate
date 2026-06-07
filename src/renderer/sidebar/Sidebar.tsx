@@ -3,8 +3,6 @@ import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SearchView } from './SearchView'
 import { SourceControlView } from './SourceControlView'
-import { UpdateButton } from './UpdateButton'
-import { useUpdateStore } from '../stores/updateStore'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
@@ -109,17 +107,6 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const isExpanded = activeView !== null
   const isEmpty = views.length === 0
 
-  // The update affordance lives in the right activity bar. When the user has
-  // moved every view to the other side, the right sidebar would normally
-  // collapse to width 0 and hide the button — so keep the bar open (just the
-  // 40px activity strip) whenever an update is actionable, even with no views.
-  const updateState = useUpdateStore((s) => s.status.state)
-  const hasActionableUpdate =
-    side === 'right' &&
-    (updateState === 'available' ||
-      updateState === 'downloading' ||
-      updateState === 'downloaded' ||
-      updateState === 'manual')
   // When empty, the sidebar is hidden. During a drag, if the cursor enters
   // this side's half of the window, we reveal it so the user can drop here.
   const [dragRevealed, setDragRevealed] = useState(false)
@@ -335,13 +322,6 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
           </button>
         </div>
       )}
-      {/* Update affordance — pinned to the bottom of the right activity bar.
-          Renders nothing unless an update is actionable. */}
-      {side === 'right' && (
-        <div className="mt-auto flex flex-col items-center pb-2 w-full">
-          <UpdateButton />
-        </div>
-      )}
     </div>
   )
 
@@ -388,9 +368,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
       style={{
         width:
           isEmpty && !dragRevealed
-            ? hasActionableUpdate
-              ? BAR_WIDTH
-              : 0
+            ? 0
             : isExpanded
               ? BAR_WIDTH + width
               : BAR_WIDTH,

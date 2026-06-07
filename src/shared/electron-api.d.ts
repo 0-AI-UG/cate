@@ -741,21 +741,6 @@ export interface ElectronAPI {
   orchRegisterPortalWc(payload: { panelId: string; webContentsId: number; alive: boolean }): void
 
   // -------------------------------------------------------------------------
-  // Auto-updater
-  // -------------------------------------------------------------------------
-
-  /** Subscribe to update-status broadcasts from the main process. */
-  onUpdateStatus(callback: (status: unknown) => void): () => void
-  /** Fetch the current update status (e.g. on window mount). */
-  updateGetStatus(): Promise<unknown>
-  /** Start downloading the available update (electron-updater path only). */
-  updateDownload(): void
-  /** Apply the downloaded update and restart the app. */
-  updateInstall(): void
-  /** Open the GitHub release page when auto-install is unavailable. */
-  updateOpenRelease(url?: string): void
-
-  // -------------------------------------------------------------------------
   // Analytics — post-update feedback prompt
   // -------------------------------------------------------------------------
 

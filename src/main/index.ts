@@ -47,7 +47,7 @@ import { listPersistentGrants, recordPersistentGrant } from './grantedPathStore'
 import { buildApplicationMenu, rebuildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv, getShellEnv } from './shellEnv'
 import { currentExclusionSet } from './ipc/filesystem'
-import { initAutoUpdater, isInstallingUpdate } from './auto-updater'
+import { initAutoUpdater, isUpdatePendingInstall } from './auto-updater'
 import { initSentry, captureMainException, captureMainMessage, flushSentry } from './sentry'
 import { initAnalytics, trackAppStart, checkAndReportUpdate, hasRunBefore, devSimulateUpdateFrom } from './analytics'
 import { TELEMETRY_SET_CONSENT } from '../shared/ipc-channels'
@@ -1777,14 +1777,9 @@ app.on('before-quit', (event) => {
   // close confirmation. Deferred async, so we prevent the quit and re-trigger it
   // once the user confirms.
   //
-  // Exception: an update install in flight. The user already explicitly chose
-  // "Update & Restart"; quitAndInstall() has triggered this quit so it can
-  // relaunch the new version. Surfacing the running-terminal dialog here would
-  // intercept that quit (event.preventDefault) and the app would never restart.
-  // will-quit is already update-aware (isInstallingUpdate guard); mirror that.
-  if (!quitConfirmed && isInstallingUpdate()) {
-    quitConfirmed = true
-  }
+  // Note: updates install on a NORMAL quit (electron-updater autoInstallOnAppQuit),
+  // so there's no special update case here — the user is quitting deliberately and
+  // the normal terminal-confirmation applies. will-quit handles the install hook.
   if (!quitConfirmed) {
     const running = getRunningTerminals()
     if (running.length > 0) {
@@ -1889,14 +1884,13 @@ app.on('will-quit', () => {
   // Tear down any remote/WSL companion connections (kills their daemons /
   // closes SSH). Fire-and-forget — quit must not block on a remote socket.
   void companions.disposeAll()
-  // When an update install is in flight, DO NOT reallyExit — that bypasses
-  // Electron's relaunch hook (queued by autoUpdater.quitAndInstall(_, true)).
-  // We need the natural quit path to run so the updater can launch the new
-  // version. The PTY/SIGABRT risk we guard against below is only a problem
-  // when many native handles are still alive; the updater install path takes
-  // over the process shortly anyway, so a plain return is safe here.
-  if (isInstallingUpdate()) {
-    log.info('will-quit: update install in progress, deferring to Electron relaunch')
+  // An update has been downloaded and is queued to install on quit. DO NOT
+  // reallyExit — electron-updater's install-on-quit hook runs on the 'quit'
+  // event (which fires AFTER will-quit), so reallyExit (libc exit()) would kill
+  // the process first and the update would never apply. Let the natural quit
+  // path run; the installer takes over the process shortly.
+  if (isUpdatePendingInstall()) {
+    log.info('will-quit: update staged, yielding to electron-updater install-on-quit')
     return
   }
   // Force immediate exit to bypass node::FreeEnvironment → CleanupHandles →
