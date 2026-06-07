@@ -1312,18 +1312,20 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       ? state.containerSize.height / state.zoomLevel
       : 1000
 
-    // Nodes-only path: uniform-size grid sized to the viewport.
+    // Nodes-only path: uniform-size grid.
+    // Panels are given a comfortable readable minimum size; the canvas zoom
+    // adjusts to show them all (like Figma / Miro). Shrinking panels to fit
+    // the viewport makes text unreadably small — the zoom should move instead.
     if (regionList.length === 0) {
-      const gap = 6
+      const gap = 16
       const n = nodeList.length
       const aspect = containerWidth / Math.max(containerHeight, 1)
       const cols = Math.max(1, Math.round(Math.sqrt(n * aspect)))
       const rows = Math.ceil(n / cols)
-      const cellW = Math.max(
-        240,
-        (containerWidth - gap * (cols + 1)) / cols,
-      )
-      const cellH = Math.max(160, (containerHeight - gap * (rows + 1)) / rows)
+      // 560 × 400: wide enough for a readable editor/terminal/browser.
+      // If the viewport is large enough to give more space, use that instead.
+      const cellW = Math.max(560, (containerWidth - gap * (cols + 1)) / cols)
+      const cellH = Math.max(400, (containerHeight - gap * (rows + 1)) / rows)
       get().pushHistory()
       const updatedNodes = { ...state.nodes }
       nodeList.forEach((node, i) => {
@@ -1388,9 +1390,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       : 1000
     const cols = 2
     const rows = Math.ceil(nodeList.length / cols)
-    const gap = 6
-    const cellW = Math.max(240, (containerWidth - gap * (cols + 1)) / cols)
-    const cellH = Math.max(160, (containerHeight - gap * (rows + 1)) / rows)
+    const gap = 16
+    const cellW = Math.max(560, (containerWidth - gap * (cols + 1)) / cols)
+    const cellH = Math.max(400, (containerHeight - gap * (rows + 1)) / rows)
     get().pushHistory()
     const updatedNodes = { ...state.nodes }
     nodeList.forEach((node, i) => {
@@ -1420,9 +1422,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       : 1000
     const rows = 2
     const cols = Math.ceil(nodeList.length / rows)
-    const gap = 6
-    const cellW = Math.max(240, (containerWidth - gap * (cols + 1)) / cols)
-    const cellH = Math.max(160, (containerHeight - gap * (rows + 1)) / rows)
+    const gap = 16
+    const cellW = Math.max(560, (containerWidth - gap * (cols + 1)) / cols)
+    const cellH = Math.max(400, (containerHeight - gap * (rows + 1)) / rows)
     get().pushHistory()
     const updatedNodes = { ...state.nodes }
     nodeList.forEach((node, i) => {
