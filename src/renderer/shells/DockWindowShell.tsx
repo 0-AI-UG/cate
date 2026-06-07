@@ -24,10 +24,13 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStateStore } from '../stores/uiStateStore'
 import { useUIStore } from '../stores/uiStore'
 import { SettingsWindow } from '../settings/SettingsWindow'
+import WindowControls from './WindowControls'
 import { applyTheme } from '../lib/themeManager'
 
 import { renderPanelComponent, PANEL_REGISTRY } from '../panels/registry'
 const CanvasPanel = PANEL_REGISTRY.canvas.Component
+
+const IS_MAC = navigator.userAgent.includes('Mac')
 
 interface DockWindowShellProps {
   workspaceId?: string
@@ -377,22 +380,31 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
   return (
     <DockStoreProvider store={dockStore}>
-      <div className="dock-window-root h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
-        {/* Reserve 78px on the left of the top tab bar for the macOS traffic
-            lights and make it the window drag region. Override inside any
-            canvas-node ([data-node-id]) so nested mini-dock tab bars don't
-            inherit the indent or become drag handles. */}
+      <div className="dock-window-root relative h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
+        {/* Make the top tab bar the window drag region. On macOS reserve 78px on
+            the left for the traffic lights; on Windows/Linux reserve 132px on the
+            right for our custom WindowControls overlay (below). Override inside any
+            canvas-node ([data-node-id]) so nested mini-dock tab bars don't inherit
+            the indent or become drag handles. */}
         <style>{`
           .dock-window-root .dock-tab-bar {
-            padding-left: 78px;
+            ${IS_MAC ? 'padding-left: 78px;' : 'padding-right: 132px;'}
             -webkit-app-region: drag;
           }
           .dock-window-root .dock-tab-bar > * { -webkit-app-region: no-drag; }
           .dock-window-root [data-node-id] .dock-tab-bar {
             padding-left: 0;
+            padding-right: 0;
             -webkit-app-region: no-drag;
           }
         `}</style>
+        {/* Frameless Windows/Linux: custom window controls pinned to the top-right,
+            over the tab bar's reserved right padding. */}
+        {!IS_MAC && (
+          <div className="absolute top-0 right-0 z-30 h-9">
+            <WindowControls />
+          </div>
+        )}
         {/* Full content area — center zone only */}
         <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
           <DockZone

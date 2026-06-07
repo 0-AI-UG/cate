@@ -3,20 +3,21 @@
 //
 // Backed by the main-process electron-store (window.electronAPI.layout*). Used
 // by SavedLayoutsDialog, the empty-canvas overlay, the native Layouts menu, and
-// useShortcuts. Two restore modes:
-//   • loadLayoutReplacingWorkspace — wipes the whole workspace and rebuilds it
-//     from the snapshot (dialog / native-menu pick).
-//   • loadLayoutIntoCanvas — populates one specific (empty) canvas without
-//     touching the rest of the workspace (empty-canvas overlay).
+// useShortcuts. A layout always loads into ONE canvas, replacing that canvas's
+// contents (other canvases and dock panels are left untouched):
+//   • loadLayoutIntoActiveCanvas — targets the active canvas, resolved from the
+//     canonical active panel (dialog / native-menu pick).
+//   • loadLayoutIntoCanvas — targets one explicit canvas (empty-canvas overlay).
+// Both clear the target canvas first, then rebuild the saved nodes onto it.
 // =============================================================================
 
 import type { StoreApi } from 'zustand'
 import type { Point } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
+import type { PanelPlacement } from '../stores/appStore'
 import {
   useAppStore,
-  getWorkspaceCanvasStore,
-  getWorkspaceCanvasPanelId,
+  getActiveCanvasPanelId,
   ensureCanvasOpsForPanel,
 } from '../stores/appStore'
 import { setActivePanel } from './activePanel'
@@ -82,57 +83,75 @@ async function fetchSnapshot(name: string): Promise<LayoutSnapshot | null> {
   return (snap as LayoutSnapshot | null) ?? null
 }
 
-/** Recreate a snapshot's panels into whichever canvas is currently active. */
-function recreateNodes(wsId: string, snap: LayoutSnapshot): void {
+/** Recreate a snapshot's panels onto a SPECIFIC canvas. Pins each create to
+ *  `canvasPanelId` (so nodes land on the target canvas, not the workspace's
+ *  primary one) and to the saved size (so geometry — and, because the placement
+ *  search keys off size, position — is reproduced exactly). */
+function recreateNodes(wsId: string, canvasPanelId: string, snap: LayoutSnapshot): void {
   const app = useAppStore.getState()
   for (const node of snap.nodes ?? []) {
+    const placement: PanelPlacement = {
+      target: 'canvas',
+      canvasPanelId,
+      position: node.origin,
+      size: node.size,
+    }
     switch (node.panelType) {
-      case 'terminal': app.createTerminal(wsId, undefined, node.origin); break
+      case 'terminal': app.createTerminal(wsId, undefined, node.origin, placement); break
+      case 'agent':    app.createAgent(wsId, node.origin, placement); break
+      case 'browser':  app.createBrowser(wsId, node.url, node.origin, placement); break
       case 'document':
-      case 'editor':   openFileAsPanel(wsId, node.filePath ?? '', node.origin); break
-      case 'browser':  app.createBrowser(wsId, node.url, node.origin); break
+      case 'editor':
+        if (node.filePath) openFileAsPanel(wsId, node.filePath, node.origin, placement)
+        break
     }
   }
 }
 
+/** Replace one canvas's contents with the snapshot: clear it, rebuild the saved
+ *  nodes onto it, and zoom to fit. Shared by both public load entry points. */
+function applyLayoutToCanvas(
+  wsId: string,
+  canvasPanelId: string,
+  canvasApi: StoreApi<CanvasStore>,
+  snap: LayoutSnapshot,
+): void {
+  const app = useAppStore.getState()
+  app.clearCanvas(wsId, canvasPanelId)
+  // The React CanvasPanel that registers ops / marks the canvas active may not
+  // be mounted (a just-opened canvas, or a background restore). Register + mark
+  // active synchronously so create* calls resolve to this canvas.
+  ensureCanvasOpsForPanel(canvasPanelId)
+  setActivePanel(canvasPanelId)
+  recreateNodes(wsId, canvasPanelId, snap)
+  canvasApi.getState().zoomToFit()
+}
+
 /**
- * Replace the entire active workspace with the named layout. Mirrors the
- * original dialog behavior: wipe every panel, recreate the center canvas, then
- * rebuild nodes and zoom to fit.
+ * Load the named layout into the ACTIVE canvas (resolved from the canonical
+ * active panel, falling back to the workspace's primary canvas), replacing that
+ * canvas's contents. Used by the manager dialog and the native Layouts menu.
  */
-export async function loadLayoutReplacingWorkspace(name: string): Promise<boolean> {
+export async function loadLayoutIntoActiveCanvas(name: string): Promise<boolean> {
   try {
     const snap = await fetchSnapshot(name)
     if (!snap) return false
 
     const wsId = useAppStore.getState().selectedWorkspaceId
-    const app = useAppStore.getState()
-    app.closeAllPanels(wsId)
-    // closeAllPanels wipes every panel — including the 'canvas' host panel that
-    // owns the dock center zone. Recreate it before adding nodes.
-    app.ensureCenterCanvas(wsId)
-    // The React CanvasPanel that would register the canvas store + mark it
-    // active hasn't mounted yet. Register synchronously so create* calls below
-    // resolve to the *new* canvas, not the disposed one.
-    const newCanvasId = getWorkspaceCanvasPanelId(wsId)
-    if (newCanvasId) {
-      ensureCanvasOpsForPanel(newCanvasId)
-      setActivePanel(newCanvasId)
-    }
+    const canvasPanelId = getActiveCanvasPanelId()
+    if (!canvasPanelId) return false
 
-    recreateNodes(wsId, snap)
-
-    const freshCanvas = getWorkspaceCanvasStore(wsId)
-    freshCanvas?.getState().zoomToFit()
+    const ops = ensureCanvasOpsForPanel(canvasPanelId)
+    applyLayoutToCanvas(wsId, canvasPanelId, ops.storeApi, snap)
     return true
   } catch (err) {
-    log.error('[layouts] load (replace) failed', err)
+    log.error('[layouts] load (active canvas) failed', err)
     return false
   }
 }
 
 /**
- * Populate one specific (typically empty) canvas with the named layout without
+ * Load the named layout into one specific canvas, replacing its contents without
  * disturbing the rest of the workspace. Used by the empty-canvas overlay.
  */
 export async function loadLayoutIntoCanvas(
@@ -145,13 +164,7 @@ export async function loadLayoutIntoCanvas(
     const snap = await fetchSnapshot(name)
     if (!snap) return false
 
-    // Route new nodes into this canvas specifically.
-    ensureCanvasOpsForPanel(canvasPanelId)
-    setActivePanel(canvasPanelId)
-
-    recreateNodes(wsId, snap)
-
-    canvasApi.getState().zoomToFit()
+    applyLayoutToCanvas(wsId, canvasPanelId, canvasApi, snap)
     return true
   } catch (err) {
     log.error('[layouts] load (into canvas) failed', err)

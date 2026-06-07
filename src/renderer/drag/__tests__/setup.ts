@@ -48,5 +48,11 @@ function createElectronAPIStub() {
     isMainWindowFullscreen: vi.fn().mockReturnValue(false),
     onCrossWindowDragUpdate: vi.fn(() => () => {}),
     onDragEnd: vi.fn(() => () => {}),
+    // Custom window controls (frameless Windows/Linux chrome).
+    windowMinimize: vi.fn().mockResolvedValue(undefined),
+    windowToggleMaximize: vi.fn().mockResolvedValue(undefined),
+    windowClose: vi.fn().mockResolvedValue(undefined),
+    isWindowMaximized: vi.fn().mockReturnValue(false),
+    onWindowMaximizeChange: vi.fn(() => () => {}),
   } as unknown as Window['electronAPI']
 }
