@@ -297,10 +297,10 @@ export function useShortcuts(): void {
       runAction(action).catch(() => { /* noop */ })
     })
 
-    // Native "Layouts" menu → load a specific saved layout (replaces workspace).
+    // Native "Layouts" menu → load a saved layout into the active canvas.
     const unsubscribeLoadLayout = window.electronAPI.onMenuLoadLayout((name) => {
       import('../lib/layouts')
-        .then((m) => m.loadLayoutReplacingWorkspace(name))
+        .then((m) => m.loadLayoutIntoActiveCanvas(name))
         .catch(() => { /* best-effort */ })
     })
 

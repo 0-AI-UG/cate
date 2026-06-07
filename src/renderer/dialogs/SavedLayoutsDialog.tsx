@@ -13,7 +13,7 @@ import {
   listLayouts,
   saveLayout,
   deleteLayout,
-  loadLayoutReplacingWorkspace,
+  loadLayoutIntoActiveCanvas,
 } from '../lib/layouts'
 import log from '../lib/logger'
 
@@ -72,7 +72,7 @@ export function SavedLayoutsDialog() {
   const handleLoad = useCallback(async (name: string) => {
     setBusy(true); setError(null)
     try {
-      const ok = await loadLayoutReplacingWorkspace(name)
+      const ok = await loadLayoutIntoActiveCanvas(name)
       if (ok) close()
       else setError('Layout not found')
     } finally {

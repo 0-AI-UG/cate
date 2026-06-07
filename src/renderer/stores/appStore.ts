@@ -166,8 +166,10 @@ export type PanelPlacement =
   /** `canvasPanelId` pins the create to a SPECIFIC canvas (the one the toolbar /
    *  right-click menu / drop originated from). Without it, placement routes to
    *  the workspace's primary canvas — correct for session restore and auto
-   *  creates, but wrong for an interactive create on a secondary/nested canvas. */
-  | { target: 'canvas'; position?: Point; canvasPanelId?: string }
+   *  creates, but wrong for an interactive create on a secondary/nested canvas.
+   *  `size` pins the node's size (used by layout restore to reproduce the saved
+   *  geometry exactly); without it the panel type's default size is used. */
+  | { target: 'canvas'; position?: Point; canvasPanelId?: string; size?: Size }
   /** `stackId` docks the panel as a new tab in a SPECIFIC stack (the one the
    *  user is working in — e.g. the focused pane of a split). Without it the
    *  panel lands in the zone's default stack. A stale stackId falls back to the
@@ -302,6 +304,10 @@ interface AppStoreActions {
   renameWorkspace: (wsId: string, name: string) => void
   duplicateWorkspace: (wsId: string) => string
   closeAllPanels: (wsId: string) => void
+  /** Remove every panel currently living on one canvas (dispose terminals, drop
+   *  their records, empty the canvas store) without touching the rest of the
+   *  workspace. Used by layout restore to replace a single canvas's contents. */
+  clearCanvas: (wsId: string, canvasPanelId: string) => void
   reorderWorkspaces: (fromIndex: number, toIndex: number) => void
   addAdditionalRoot: (wsId: string, rootPath: string) => void
   removeAdditionalRoot: (wsId: string, rootPath: string) => void
@@ -372,6 +378,7 @@ function placePanel(
   const ops = pinnedCanvasId ? ensureCanvasOpsForPanel(pinnedCanvasId) : getWorkspaceCanvasOps(workspaceId)
   if (!ops) return
   const canvasPosition = placement?.target === 'canvas' ? placement.position ?? position : position
+  const canvasSize = placement?.target === 'canvas' ? placement.size : undefined
   // Ambiguous create (no explicit position) on the active workspace: when the
   // recommendation picker is enabled, show ghost candidates and let the user
   // choose where the node lands (deferred until commit; onGhostCancel rolls the
@@ -382,7 +389,7 @@ function placePanel(
     const shown = ops.beginPlacement(panelId, panelType, onGhostCancel)
     if (shown) return
   }
-  ops.addNodeAndFocus(panelId, panelType, canvasPosition)
+  ops.addNodeAndFocus(panelId, panelType, canvasPosition, canvasSize)
 }
 
 type AppSet = StoreApi<AppStore>['setState']
@@ -1316,6 +1323,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // fresh canvas panel for the center zone.
     getOrCreateWorkspaceDockStore(wsId).getState().restoreSnapshot(createCleanDockSnapshot())
     get().ensureCenterCanvas(wsId)
+  },
+
+  clearCanvas(wsId, canvasPanelId) {
+    const ops = ensureCanvasOpsForPanel(canvasPanelId)
+    const storeApi = ops.storeApi
+    const state = storeApi.getState()
+    const panelIds = Object.values(state.nodes).map((n) => n.panelId)
+    if (panelIds.length === 0) return
+
+    // Empty the canvas store in one synchronous step (no per-node exit
+    // animation, which would otherwise leave the old nodes mid-transition).
+    storeApi.getState().loadWorkspaceCanvas({}, state.viewportOffset, state.zoomLevel)
+
+    // Dispose terminals and drop the now-orphaned panel records.
+    const ws = get().workspaces.find((w) => w.id === wsId)
+    for (const pid of panelIds) {
+      if (ws?.panels[pid]?.type === 'terminal') terminalRegistry.dispose(pid)
+    }
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => {
+        if (w.id !== wsId) return w
+        const panels = { ...w.panels }
+        for (const pid of panelIds) delete panels[pid]
+        return { ...w, panels }
+      }),
+    }))
   },
 
   // --- Cross-window sync ---
