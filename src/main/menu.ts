@@ -11,7 +11,7 @@ import { listPanelWindows, getWindow, getWindowType, getActiveMainWindow, getWin
 /** Panel-creation actions. These add a panel to the workspace's canvas, so they
  *  have nowhere to go in a detached dock/panel window (no canvas there) —
  *  `dispatch` re-routes them to the main window. */
-const PANEL_CREATE_ACTIONS = new Set<MenuActionId>(['newTerminal', 'newEditor', 'newBrowser', 'newFile'])
+const PANEL_CREATE_ACTIONS = new Set<MenuActionId>(['newTerminal', 'newEditor', 'newBrowser', 'newFile', 'newAgent', 'newCanvas'])
 
 /** Dispatch a renderer-side menu action to the focused window. Items in the
  *  template use this as their click handler — the renderer's useShortcuts hook
@@ -146,6 +146,8 @@ export function buildApplicationMenu(): void {
         { label: 'New Editor', accelerator: 'CmdOrCtrl+Shift+E', click: dispatch('newEditor') },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: dispatch('newTerminal') },
         { label: 'New Browser', accelerator: 'CmdOrCtrl+Shift+B', click: dispatch('newBrowser') },
+        { label: 'New Cate Agent', accelerator: 'CmdOrCtrl+Shift+A', click: dispatch('newAgent') },
+        { label: 'New Canvas', accelerator: 'CmdOrCtrl+Shift+C', click: dispatch('newCanvas') },
         { type: 'separator' },
         { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },
         { label: 'Reload Workspace from Disk', click: dispatch('reloadWorkspace') },

@@ -550,6 +550,8 @@ export type ShortcutAction =
   | 'newTerminal'
   | 'newBrowser'
   | 'newEditor'
+  | 'newAgent'
+  | 'newCanvas'
   | 'newFile'
   | 'closePanel'
   | 'toggleSidebar'
@@ -603,6 +605,8 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
   'newBrowser',
   'newEditor',
+  'newAgent',
+  'newCanvas',
   'newFile',
   'closePanel',
   'toggleSidebar',
@@ -639,6 +643,8 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   newTerminal: 'New Terminal',
   newBrowser: 'New Browser',
   newEditor: 'New Editor',
+  newAgent: 'New Cate Agent',
+  newCanvas: 'New Canvas',
   newFile: 'New File',
   closePanel: 'Close Panel',
   toggleSidebar: 'Toggle Sidebar',
@@ -675,6 +681,8 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   newTerminal: storedShortcut('t', { command: true }),
   newBrowser: storedShortcut('b', { command: true, shift: true }),
   newEditor: storedShortcut('e', { command: true, shift: true }),
+  newAgent: storedShortcut('a', { command: true, shift: true }),
+  newCanvas: storedShortcut('c', { command: true, shift: true }),
   newFile: storedShortcut('n', { command: true }),
   closePanel: storedShortcut('w', { command: true }),
   toggleSidebar: storedShortcut('b', { command: true }),

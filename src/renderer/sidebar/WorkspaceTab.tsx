@@ -1,18 +1,16 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
-import type { WorkspaceState, PanelType, DockLayoutNode } from '../../shared/types'
+import type { WorkspaceState, PanelType, PanelState } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
-import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
-import { getCanvasSnapshotForPanel, getNodeDockLayout, getWorkspaceCanvasPanelIds, getWorkspaceDockSnapshot } from '../lib/workspace/canvasAccess'
 import { revealPanel } from '../lib/workspace/panelReveal'
+import { useWorkspacePanelTree } from '../lib/workspace/useWorkspacePanelTree'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { closePanelWithConfirm } from '../lib/closePanelWithConfirm'
-import { partitionWorkspacePanels, buildColdStartCanvasChildOwners } from './partitionWorkspacePanels'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
@@ -65,75 +63,6 @@ function CompanionDot({ workspace }: { workspace: WorkspaceState }): JSX.Element
 
 async function focusWorkspacePanel(workspaceId: string, panelId: string): Promise<void> {
   await revealPanel(workspaceId, panelId, { retry: true })
-}
-
-// Subscribe to every canvas store in a workspace and return a map of
-// canvas-child panel id -> the canvas panel id that hosts it. A workspace can
-// host multiple canvas panels, and the legacy singleton `useCanvasStore` only
-// mirrors whichever canvas mounted first — so we scan ALL canvas panels in the
-// workspace. We record WHICH canvas owns each child (not merely THAT it lives
-// on some canvas), so the sidebar nests each child under its own canvas instead
-// of collapsing them all under the first one.
-function useWorkspaceCanvasChildOwners(workspaceId: string): Map<string, string> {
-  const canvasPanelIds = useAppStore(useShallow((s) => {
-    const ws = s.workspaces.find((w) => w.id === workspaceId)
-    if (!ws) return [] as string[]
-    return Object.values(ws.panels)
-      .filter((p) => p.type === 'canvas')
-      .map((p) => p.id)
-  }))
-
-  const stores = useMemo(
-    () => canvasPanelIds.map((id) => getOrCreateCanvasStoreForPanel(id)),
-    [canvasPanelIds],
-  )
-
-  const compute = useCallback(() => {
-    const owners = new Map<string, string>()
-    for (let i = 0; i < stores.length; i++) {
-      const canvasPanelId = canvasPanelIds[i]
-      for (const node of Object.values(stores[i].getState().nodes)) {
-        // Each canvas node has its own mini-dock layout; a node may host
-        // several tabbed panels. `node.panelId` is only the seed — walk the
-        // full layout so additional tabs (e.g. Terminal 2, Terminal 4
-        // dragged into the same canvas node) still classify as children of
-        // this canvas. Read the LIVE per-node DockStore (the runtime
-        // authority) so an open multi-tab node shows all its tabs immediately;
-        // node.dockLayout is only a save-time projection now.
-        const ids = new Set<string>()
-        collectPanelIdsFromDockLayout(getNodeDockLayout(canvasPanelId, node.id), ids)
-        if (node.panelId) ids.add(node.panelId)
-        for (const id of ids) owners.set(id, canvasPanelId)
-      }
-    }
-    return owners
-  }, [stores, canvasPanelIds])
-
-  const [owners, setOwners] = useState<Map<string, string>>(compute)
-
-  useEffect(() => {
-    // Recompute immediately on store-set change so we don't render one frame
-    // of stale ids after switching workspaces.
-    setOwners(compute())
-    const unsubs = stores.map((s) => s.subscribe(() => setOwners(compute())))
-    return () => {
-      for (const fn of unsubs) fn()
-    }
-  }, [stores, compute])
-
-  return owners
-}
-
-function collectPanelIdsFromDockLayout(
-  layout: DockLayoutNode | null | undefined,
-  out: Set<string>,
-): void {
-  if (!layout) return
-  if (layout.type === 'tabs') {
-    for (const id of layout.panelIds) out.add(id)
-    return
-  }
-  for (const child of layout.children) collectPanelIdsFromDockLayout(child, out)
 }
 
 export interface PanelRenameProps {
@@ -288,13 +217,12 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const agentInfoByPanel = useAgentInfoByPanel(workspace.id)
 
 
-  // useWorkspaceList's equality fn ignores `panels`, so subscribe to this
-  // workspace's panels separately to keep the tree in sync as panels are
-  // added/removed/renamed.
-  const panels = useAppStore(useShallow((s) => {
-    const ws = s.workspaces.find((w) => w.id === workspace.id)
-    return ws?.panels ?? workspace.panels
-  }))
+  // The shared panel tree: ws.panels joined against every canvas store + the
+  // dock store, multi-canvas/dock-aware and ghost-filtered. The Cmd+K palette
+  // reads the exact same source (see useWorkspacePanelTree), so the overview and
+  // the palette can never disagree about which panels exist or where they live.
+  const { panels, canvasPanels, childrenByCanvas, orphanCanvasChildren, freePanels } =
+    useWorkspacePanelTree(workspace.id)
 
   // worktrees ignored by useWorkspaceList's equality fn → workspace.worktrees
   // is stale. Subscribe directly so the per-row accent updates as worktrees
@@ -304,34 +232,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return ws?.worktrees ?? workspace.worktrees ?? []
   }))
 
-  // Set of panel ids living on this workspace's canvases. The reactive hook
-  // covers every live canvas store (the active workspace + any other whose
-  // canvas mounted earlier this session — those stores stay alive in the
-  // registry after switching away). The resolver fills the cold-start gap for a
-  // workspace whose canvas was never mounted (returns its persisted projection).
-  // Used regardless of isSelected so active and non-active workspaces apply the
-  // same classification rule.
-  const liveCanvasChildOwners = useWorkspaceCanvasChildOwners(workspace.id)
-  const canvasChildOwners = useMemo(() => {
-    const owners = new Map<string, string>(liveCanvasChildOwners)
-    // Cold-start fallback: a workspace whose canvases were never mounted this
-    // session have no live store, so fill ownership from the per-canvas persisted
-    // projection. Iterate EVERY canvas panel (not just the primary) via
-    // getCanvasSnapshotForPanel so a never-mounted SECONDARY canvas's children
-    // are attributed to it, not lumped under the primary. The live owners (from
-    // any mounted canvas) take precedence — buildColdStartCanvasChildOwners only
-    // fills ids not already owned, and we seed it with the live map.
-    const coldOwners = buildColdStartCanvasChildOwners(
-      getWorkspaceCanvasPanelIds(workspace.id).map((canvasPanelId) => ({
-        canvasPanelId,
-        nodes: Object.values(getCanvasSnapshotForPanel(canvasPanelId)?.nodes ?? {}),
-      })),
-    )
-    for (const [id, owner] of coldOwners) if (!owners.has(id)) owners.set(id, owner)
-    return owners
-    // liveCanvasChildOwners changes whenever a live store mutates, which re-runs
-    // the resolver too; the cold-start projection is otherwise static.
-  }, [liveCanvasChildOwners, workspace.id])
 
   // Ports in the status store are keyed by ptyId, but panel rows are keyed by
   // panelId. Translate via terminalRegistry so the indicators on the workspace
@@ -489,17 +389,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
 
   const panelCount = Object.keys(panels).length
 
-  // Sorted panel list grouped by type
-  const panelList = useMemo(() => {
-    const TYPE_ORDER: Record<string, number> = { canvas: 0, terminal: 1, editor: 2, browser: 3 }
-    return Object.values(panels).slice().sort((a, b) => {
-      const ta = TYPE_ORDER[a.type] ?? 99
-      const tb = TYPE_ORDER[b.type] ?? 99
-      if (ta !== tb) return ta - tb
-      return (a.title || '').localeCompare(b.title || '')
-    })
-  }, [panels])
-
   const handlePanelClick = useCallback(async (e: React.MouseEvent, panelId: string) => {
     e.stopPropagation()
     await focusWorkspacePanel(workspace.id, panelId)
@@ -555,18 +444,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const hasColor = !!workspace.color
   const accent = workspace.color || ''
 
-  // Partition the tree (see partitionWorkspacePanels): canvas panels host their
-  // children (keyed by the canvas that actually owns each), docked panels render
-  // as free siblings. The dock-placed id set lets us drop ghosts — panels still
-  // in workspace.panels but referenced by no canvas or dock (e.g. left behind by
-  // an interrupted close, or a panel whose canvas went away). Read live (snapshot
-  // resolver), falling back to the persisted projection; null = unknown (cold
-  // start), in which case we don't filter so a real panel is never hidden.
-  const dockSnapshot = getWorkspaceDockSnapshot(workspace.id)
-  const dockPlacedIds = dockSnapshot ? new Set(Object.keys(dockSnapshot.locations)) : null
-  const { canvasPanels, childrenByCanvas, orphanCanvasChildren, freePanels } =
-    partitionWorkspacePanels(panelList, canvasChildOwners, dockPlacedIds)
-
   // Worktree color resolver: only meaningful when the workspace has 2+
   // worktrees (matches WorktreePill's visibility rule — single-branch
   // workspaces would just get noisy with monochrome dots).
@@ -580,7 +457,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return wt?.color
   }
 
-  const renderPanelRow = (p: typeof panelList[number], indent = false) => {
+  const renderPanelRow = (p: PanelState, indent = false) => {
     const label = p.title || p.filePath?.split('/').pop() || p.url || p.type
     const isRenaming = renamingPanelId === p.id
     const rename: PanelRenameProps = {
