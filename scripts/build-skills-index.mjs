@@ -137,11 +137,17 @@ async function main() {
   if (deduped.length !== skills.length) {
     console.log(`Deduped ${skills.length - deduped.length} duplicate id(s)`)
   }
-  // Quality floor: drop entries with no frontmatter description. They carry no
-  // signal for search and read as broken rows, so keep the catalog selective.
-  const curated = deduped.filter((s) => s.description && s.description.trim())
-  if (curated.length !== deduped.length) {
-    console.log(`Dropped ${deduped.length - curated.length} entr(ies) with no description`)
+  // Quality floor: drop entries with no frontmatter description (no search
+  // signal, render as broken rows) and from repos under MIN_STARS. Keeps the
+  // catalog selective — only well-adopted, documented skills ship.
+  const MIN_STARS = 10_000
+  const described = deduped.filter((s) => s.description && s.description.trim())
+  if (described.length !== deduped.length) {
+    console.log(`Dropped ${deduped.length - described.length} entr(ies) with no description`)
+  }
+  const curated = described.filter((s) => (s.stars ?? 0) >= MIN_STARS)
+  if (curated.length !== described.length) {
+    console.log(`Dropped ${described.length - curated.length} entr(ies) under ${MIN_STARS} stars`)
   }
   // Stable order so the committed index has minimal diffs.
   curated.sort((a, b) => a.id.localeCompare(b.id))

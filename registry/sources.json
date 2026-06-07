@@ -9,9 +9,12 @@
     { "id": "academic-research-skills", "repo": "Imbad0202/academic-research-skills", "path": "" },
     { "id": "vercel-agent-skills", "repo": "vercel-labs/agent-skills", "path": "skills" },
     { "id": "obsidian-skills", "repo": "kepano/obsidian-skills", "path": "skills" },
-    { "id": "dev-browser", "repo": "SawyerHood/dev-browser", "path": "skills" },
-    { "id": "webgpu-threejs", "repo": "dgreenheck/webgpu-claude-skill", "path": "skills" },
     { "id": "last30days", "repo": "mvanhorn/last30days-skill", "path": "skills" },
-    { "id": "second-brain-skills", "repo": "coleam00/second-brain-skills", "path": ".claude/skills" }
+    { "id": "ui-ux-pro-max", "repo": "nextlevelbuilder/ui-ux-pro-max-skill", "path": ".claude/skills" },
+    { "id": "caveman", "repo": "JuliusBrussee/caveman", "path": ".agents/skills" },
+    { "id": "career-ops", "repo": "santifer/career-ops", "path": ".agents/skills" },
+    { "id": "taste-skill", "repo": "Leonxlnx/taste-skill", "path": "skills" },
+    { "id": "humanizer", "repo": "blader/humanizer", "path": "" },
+    { "id": "notebooklm", "repo": "teng-lin/notebooklm-py", "path": "" }
   ]
 }

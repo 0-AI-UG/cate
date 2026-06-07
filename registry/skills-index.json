@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-07T21:34:15.002Z",
+  "generatedAt": "2026-06-07T21:40:32.251Z",
   "skills": [
     {
       "id": "academic-research-skills/academic-paper",
@@ -12,7 +12,7 @@
         "ref": "main",
         "path": "academic-paper"
       },
-      "stars": 28512,
+      "stars": 28514,
       "updatedAt": "2026-06-07T16:16:50Z",
       "provenance": "curated",
       "sourceId": "academic-research-skills"
@@ -28,7 +28,7 @@
         "ref": "main",
         "path": "academic-paper-reviewer"
       },
-      "stars": 28512,
+      "stars": 28514,
       "updatedAt": "2026-06-07T16:16:50Z",
       "provenance": "curated",
       "sourceId": "academic-research-skills"
@@ -44,7 +44,7 @@
         "ref": "main",
         "path": "academic-pipeline"
       },
-      "stars": 28512,
+      "stars": 28514,
       "updatedAt": "2026-06-07T16:16:50Z",
       "provenance": "curated",
       "sourceId": "academic-research-skills"
@@ -60,7 +60,7 @@
         "ref": "main",
         "path": "deep-research"
       },
-      "stars": 28512,
+      "stars": 28514,
       "updatedAt": "2026-06-07T16:16:50Z",
       "provenance": "curated",
       "sourceId": "academic-research-skills"
@@ -76,7 +76,7 @@
         "ref": "main",
         "path": "skills/api-and-interface-design"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -92,7 +92,7 @@
         "ref": "main",
         "path": "skills/browser-testing-with-devtools"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -108,7 +108,7 @@
         "ref": "main",
         "path": "skills/ci-cd-and-automation"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -124,7 +124,7 @@
         "ref": "main",
         "path": "skills/code-review-and-quality"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -140,7 +140,7 @@
         "ref": "main",
         "path": "skills/code-simplification"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -156,7 +156,7 @@
         "ref": "main",
         "path": "skills/context-engineering"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -172,7 +172,7 @@
         "ref": "main",
         "path": "skills/debugging-and-error-recovery"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -188,7 +188,7 @@
         "ref": "main",
         "path": "skills/deprecation-and-migration"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -204,7 +204,7 @@
         "ref": "main",
         "path": "skills/documentation-and-adrs"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -220,7 +220,7 @@
         "ref": "main",
         "path": "skills/doubt-driven-development"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -236,7 +236,7 @@
         "ref": "main",
         "path": "skills/frontend-ui-engineering"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -252,7 +252,7 @@
         "ref": "main",
         "path": "skills/git-workflow-and-versioning"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -268,7 +268,7 @@
         "ref": "main",
         "path": "skills/idea-refine"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -284,7 +284,7 @@
         "ref": "main",
         "path": "skills/incremental-implementation"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -300,7 +300,7 @@
         "ref": "main",
         "path": "skills/interview-me"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -316,7 +316,7 @@
         "ref": "main",
         "path": "skills/performance-optimization"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -332,7 +332,7 @@
         "ref": "main",
         "path": "skills/planning-and-task-breakdown"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -348,7 +348,7 @@
         "ref": "main",
         "path": "skills/security-and-hardening"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -364,7 +364,7 @@
         "ref": "main",
         "path": "skills/shipping-and-launch"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -380,7 +380,7 @@
         "ref": "main",
         "path": "skills/source-driven-development"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -396,7 +396,7 @@
         "ref": "main",
         "path": "skills/spec-driven-development"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -412,7 +412,7 @@
         "ref": "main",
         "path": "skills/test-driven-development"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -428,7 +428,7 @@
         "ref": "main",
         "path": "skills/using-agent-skills"
       },
-      "stars": 48925,
+      "stars": 48926,
       "updatedAt": "2026-06-07T18:36:32Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
@@ -444,7 +444,7 @@
         "ref": "main",
         "path": "skills/algorithmic-art"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -460,7 +460,7 @@
         "ref": "main",
         "path": "skills/brand-guidelines"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -476,7 +476,7 @@
         "ref": "main",
         "path": "skills/canvas-design"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -492,7 +492,7 @@
         "ref": "main",
         "path": "skills/claude-api"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -508,7 +508,7 @@
         "ref": "main",
         "path": "skills/doc-coauthoring"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -524,7 +524,7 @@
         "ref": "main",
         "path": "skills/docx"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -540,7 +540,7 @@
         "ref": "main",
         "path": "skills/frontend-design"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -556,7 +556,7 @@
         "ref": "main",
         "path": "skills/internal-comms"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -572,7 +572,7 @@
         "ref": "main",
         "path": "skills/mcp-builder"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -588,7 +588,7 @@
         "ref": "main",
         "path": "skills/pdf"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -604,7 +604,7 @@
         "ref": "main",
         "path": "skills/pptx"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -620,7 +620,7 @@
         "ref": "main",
         "path": "skills/skill-creator"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -636,7 +636,7 @@
         "ref": "main",
         "path": "skills/slack-gif-creator"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -652,7 +652,7 @@
         "ref": "main",
         "path": "template"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -668,7 +668,7 @@
         "ref": "main",
         "path": "skills/theme-factory"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -684,7 +684,7 @@
         "ref": "main",
         "path": "skills/web-artifacts-builder"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -700,7 +700,7 @@
         "ref": "main",
         "path": "skills/webapp-testing"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -716,10 +716,42 @@
         "ref": "main",
         "path": "skills/xlsx"
       },
-      "stars": 147555,
+      "stars": 147556,
       "updatedAt": "2026-06-07T20:21:35Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
+    },
+    {
+      "id": "career-ops/career-ops",
+      "name": "career-ops",
+      "description": "AI job search command center -- evaluate offers, generate CVs, scan portals, track applications",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "santifer/career-ops",
+        "ref": "main",
+        "path": ".agents/skills/career-ops"
+      },
+      "stars": 49798,
+      "updatedAt": "2026-06-07T17:25:27Z",
+      "provenance": "curated",
+      "sourceId": "career-ops"
+    },
+    {
+      "id": "caveman/cavecrew",
+      "name": "cavecrew",
+      "description": ">",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "JuliusBrussee/caveman",
+        "ref": "main",
+        "path": ".agents/skills/cavecrew"
+      },
+      "stars": 69753,
+      "updatedAt": "2026-05-20T10:44:54Z",
+      "provenance": "curated",
+      "sourceId": "caveman"
     },
     {
       "id": "coreyhaines-marketing-skills/ab-testing",
@@ -1410,20 +1442,20 @@
       "sourceId": "coreyhaines-marketing-skills"
     },
     {
-      "id": "dev-browser/dev-browser",
-      "name": "dev-browser",
-      "description": "Browser automation with persistent page state. Use when users ask to navigate websites, fill forms, take screenshots, extract web data, test web apps, or automate browser workflows. Trigger phrases include \"go to [url]\", \"click on\", \"fill out the form\", \"take a screenshot\", \"scrape\", \"automate\", \"test the website\", \"log into\", or any browser interaction request.",
+      "id": "humanizer/humanizer",
+      "name": "humanizer",
+      "description": "|",
       "tags": [],
       "format": "skill-md",
       "source": {
-        "repo": "SawyerHood/dev-browser",
+        "repo": "blader/humanizer",
         "ref": "main",
-        "path": "skills/dev-browser"
+        "path": ""
       },
-      "stars": 6223,
-      "updatedAt": "2026-06-05T18:37:05Z",
+      "stars": 22786,
+      "updatedAt": "2026-05-27T02:55:25Z",
       "provenance": "curated",
-      "sourceId": "dev-browser"
+      "sourceId": "humanizer"
     },
     {
       "id": "last30days/last30days",
@@ -1436,7 +1468,7 @@
         "ref": "main",
         "path": "skills/last30days"
       },
-      "stars": 30619,
+      "stars": 30629,
       "updatedAt": "2026-06-06T16:58:08Z",
       "provenance": "curated",
       "sourceId": "last30days"
@@ -1452,7 +1484,7 @@
         "ref": "main",
         "path": "skills/productivity/caveman"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1468,7 +1500,7 @@
         "ref": "main",
         "path": "skills/deprecated/design-an-interface"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1484,7 +1516,7 @@
         "ref": "main",
         "path": "skills/engineering/diagnose"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1500,7 +1532,7 @@
         "ref": "main",
         "path": "skills/personal/edit-article"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1516,7 +1548,7 @@
         "ref": "main",
         "path": "skills/misc/git-guardrails-claude-code"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1532,7 +1564,7 @@
         "ref": "main",
         "path": "skills/productivity/grill-me"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1548,7 +1580,7 @@
         "ref": "main",
         "path": "skills/engineering/grill-with-docs"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1564,7 +1596,7 @@
         "ref": "main",
         "path": "skills/productivity/handoff"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1580,7 +1612,7 @@
         "ref": "main",
         "path": "skills/engineering/improve-codebase-architecture"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1596,7 +1628,7 @@
         "ref": "main",
         "path": "skills/misc/migrate-to-shoehorn"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1612,7 +1644,7 @@
         "ref": "main",
         "path": "skills/personal/obsidian-vault"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1628,7 +1660,7 @@
         "ref": "main",
         "path": "skills/engineering/prototype"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1644,7 +1676,7 @@
         "ref": "main",
         "path": "skills/deprecated/qa"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1660,7 +1692,7 @@
         "ref": "main",
         "path": "skills/deprecated/request-refactor-plan"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1676,7 +1708,7 @@
         "ref": "main",
         "path": "skills/in-progress/review"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1692,7 +1724,7 @@
         "ref": "main",
         "path": "skills/misc/scaffold-exercises"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1708,7 +1740,7 @@
         "ref": "main",
         "path": "skills/engineering/setup-matt-pocock-skills"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1724,7 +1756,7 @@
         "ref": "main",
         "path": "skills/misc/setup-pre-commit"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1740,7 +1772,7 @@
         "ref": "main",
         "path": "skills/engineering/tdd"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1756,7 +1788,7 @@
         "ref": "main",
         "path": "skills/in-progress/teach"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1772,7 +1804,7 @@
         "ref": "main",
         "path": "skills/engineering/to-issues"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1788,7 +1820,7 @@
         "ref": "main",
         "path": "skills/engineering/to-prd"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1804,7 +1836,7 @@
         "ref": "main",
         "path": "skills/engineering/triage"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1820,7 +1852,7 @@
         "ref": "main",
         "path": "skills/deprecated/ubiquitous-language"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1836,7 +1868,7 @@
         "ref": "main",
         "path": "skills/productivity/write-a-skill"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1852,7 +1884,7 @@
         "ref": "main",
         "path": "skills/in-progress/writing-beats"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1868,7 +1900,7 @@
         "ref": "main",
         "path": "skills/in-progress/writing-fragments"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1884,7 +1916,7 @@
         "ref": "main",
         "path": "skills/in-progress/writing-shape"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
@@ -1900,10 +1932,26 @@
         "ref": "main",
         "path": "skills/engineering/zoom-out"
       },
-      "stars": 120320,
+      "stars": 120321,
       "updatedAt": "2026-06-07T17:44:50Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
+    },
+    {
+      "id": "notebooklm/notebooklm",
+      "name": "notebooklm",
+      "description": "Complete API for Google NotebookLM - full programmatic access including features not in the web UI. Create notebooks, add sources, generate all artifact types, download in multiple formats. Activates on explicit /notebooklm or intent like \"create a podcast about X",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "teng-lin/notebooklm-py",
+        "ref": "main",
+        "path": ""
+      },
+      "stars": 16067,
+      "updatedAt": "2026-06-07T18:12:36Z",
+      "provenance": "curated",
+      "sourceId": "notebooklm"
     },
     {
       "id": "obsidian-skills/defuddle",
@@ -1986,86 +2034,6 @@
       "sourceId": "obsidian-skills"
     },
     {
-      "id": "second-brain-skills/brand-voice-generator",
-      "name": "brand-voice-generator",
-      "description": "|",
-      "tags": [],
-      "format": "skill-md",
-      "source": {
-        "repo": "coleam00/second-brain-skills",
-        "ref": "main",
-        "path": ".claude/skills/brand-voice-generator"
-      },
-      "stars": 759,
-      "updatedAt": "2026-01-24T15:50:47Z",
-      "provenance": "curated",
-      "sourceId": "second-brain-skills"
-    },
-    {
-      "id": "second-brain-skills/mcp-client",
-      "name": "mcp-client",
-      "description": "Universal MCP client for connecting to any MCP server with progressive disclosure. Wraps MCP servers as skills to avoid context window bloat from tool definitions. Use when interacting with external MCP servers (Zapier, Sequential Thinking, GitHub, filesystem, etc.), listing available tools, or executing MCP tool calls. Triggers on requests like \"connect to Zapier\", \"use MCP server\", \"list MCP tools\", \"call Zapier action\", \"use sequential thinking\", or any MCP server interaction.",
-      "tags": [],
-      "format": "skill-md",
-      "source": {
-        "repo": "coleam00/second-brain-skills",
-        "ref": "main",
-        "path": ".claude/skills/mcp-client"
-      },
-      "stars": 759,
-      "updatedAt": "2026-01-24T15:50:47Z",
-      "provenance": "curated",
-      "sourceId": "second-brain-skills"
-    },
-    {
-      "id": "second-brain-skills/pptx-generator",
-      "name": "pptx-generator",
-      "description": "|",
-      "tags": [],
-      "format": "skill-md",
-      "source": {
-        "repo": "coleam00/second-brain-skills",
-        "ref": "main",
-        "path": ".claude/skills/pptx-generator"
-      },
-      "stars": 759,
-      "updatedAt": "2026-01-24T15:50:47Z",
-      "provenance": "curated",
-      "sourceId": "second-brain-skills"
-    },
-    {
-      "id": "second-brain-skills/skill-creator",
-      "name": "skill-creator",
-      "description": "Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.",
-      "tags": [],
-      "format": "skill-md",
-      "source": {
-        "repo": "coleam00/second-brain-skills",
-        "ref": "main",
-        "path": ".claude/skills/skill-creator"
-      },
-      "stars": 759,
-      "updatedAt": "2026-01-24T15:50:47Z",
-      "provenance": "curated",
-      "sourceId": "second-brain-skills"
-    },
-    {
-      "id": "second-brain-skills/sop-creator",
-      "name": "sop-creator",
-      "description": "Create runbooks, playbooks, and technical documentation for engineering teams. Use when the user wants to document a process, create a runbook, build operational docs, or formalize any repeatable technical procedure. Triggers on requests like \"create a runbook for...\", \"document this process\", \"write a playbook\", or any technical documentation request.",
-      "tags": [],
-      "format": "skill-md",
-      "source": {
-        "repo": "coleam00/second-brain-skills",
-        "ref": "main",
-        "path": ".claude/skills/sop-creator"
-      },
-      "stars": 759,
-      "updatedAt": "2026-01-24T15:50:47Z",
-      "provenance": "curated",
-      "sourceId": "second-brain-skills"
-    },
-    {
       "id": "superpowers/brainstorming",
       "name": "brainstorming",
       "description": "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.",
@@ -2076,7 +2044,7 @@
         "ref": "main",
         "path": "skills/brainstorming"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2092,7 +2060,7 @@
         "ref": "main",
         "path": "skills/dispatching-parallel-agents"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2108,7 +2076,7 @@
         "ref": "main",
         "path": "skills/executing-plans"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2124,7 +2092,7 @@
         "ref": "main",
         "path": "skills/finishing-a-development-branch"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2140,7 +2108,7 @@
         "ref": "main",
         "path": "skills/receiving-code-review"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2156,7 +2124,7 @@
         "ref": "main",
         "path": "skills/requesting-code-review"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2172,7 +2140,7 @@
         "ref": "main",
         "path": "skills/subagent-driven-development"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2188,7 +2156,7 @@
         "ref": "main",
         "path": "skills/systematic-debugging"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2204,7 +2172,7 @@
         "ref": "main",
         "path": "skills/test-driven-development"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2220,7 +2188,7 @@
         "ref": "main",
         "path": "skills/using-git-worktrees"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2236,7 +2204,7 @@
         "ref": "main",
         "path": "skills/using-superpowers"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2252,7 +2220,7 @@
         "ref": "main",
         "path": "skills/verification-before-completion"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2268,7 +2236,7 @@
         "ref": "main",
         "path": "skills/writing-plans"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
@@ -2284,10 +2252,330 @@
         "ref": "main",
         "path": "skills/writing-skills"
       },
-      "stars": 220343,
+      "stars": 220345,
       "updatedAt": "2026-06-03T05:46:02Z",
       "provenance": "curated",
       "sourceId": "superpowers"
+    },
+    {
+      "id": "taste-skill/brandkit",
+      "name": "brandkit",
+      "description": "Premium brand-kit image generation skill for creating high-end brand-guidelines boards, logo systems, identity decks, and visual-world presentations. Trained for minimalist, cinematic, editorial, dark-tech, luxury, cultural, security, gaming, developer-tool, and consumer-app brand systems. Optimized for intentional logo concepting, refined composition, sparse typography, strong symbolic meaning, premium mockups, art-directed imagery, and flexible grid layouts.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/brandkit"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/design-taste-frontend",
+      "name": "design-taste-frontend",
+      "description": "Anti-slop frontend skill for landing pages, portfolios, and redesigns. The agent reads the brief, infers the right design direction, and ships interfaces that do not look templated. Real design systems when applicable, audit-first on redesigns, strict pre-flight check.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/taste-skill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/design-taste-frontend-v1",
+      "name": "design-taste-frontend-v1",
+      "description": "The original v1 taste-skill, preserved for projects depending on its exact behavior. The current default is `design-taste-frontend` (v2 experimental), which is a substantial rewrite. Use this v1 install name only if you need exact backward compatibility.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/taste-skill-v1"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/full-output-enforcement",
+      "name": "full-output-enforcement",
+      "description": "Overrides default LLM truncation behavior. Enforces complete code generation, bans placeholder patterns, and handles token-limit splits cleanly. Apply to any task requiring exhaustive, unabridged output.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/output-skill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/gpt-taste",
+      "name": "gpt-taste",
+      "description": "Elite UX/UI & Advanced GSAP Motion Engineer. Enforces Python-driven true randomization for layout variance, strict AIDA page structure, wide editorial typography (bans 6-line wraps), gapless bento grids, strict GSAP ScrollTriggers (pinning, stacking, scrubbing), inline micro-images, and massive section spacing.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/gpt-tasteskill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/high-end-visual-design",
+      "name": "high-end-visual-design",
+      "description": "Teaches the AI to design like a high-end agency. Defines the exact fonts, spacing, shadows, card structures, and animations that make a website feel expensive. Blocks all the common defaults that make AI designs look cheap or generic.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/soft-skill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/image-to-code",
+      "name": "image-to-code",
+      "description": "Elite website image-to-code skill for Codex. For visually important web tasks, it must first generate the design image(s) itself, deeply analyze them, then implement the website to match them as closely as possible. In Codex, it must prefer large, readable, section-specific images instead of tiny compressed boards, generate fresh standalone images for sections or detail views instead of cropping old ones, avoid lazy under-generation, avoid cards-inside-cards-inside-cards UI, and keep the hero clean, spacious, readable, and visible on a small laptop.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/image-to-code-skill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/imagegen-frontend-mobile",
+      "name": "imagegen-frontend-mobile",
+      "description": "Elite mobile app image-generation skill for creating premium, app-native screen concepts and flows. Designed for iOS, Android, and cross-platform mobile products. Prioritizes clean hierarchy, comfortably readable text, strong multi-screen consistency, controlled color palettes, non-generic creative direction, textured surfaces, image-led composition, tasteful custom iconography, and clean phone mockup framing. By default, screens should be shown inside a subtle premium iPhone or similar phone mockup with a visible frame, while the main focus stays on the app content itself. This skill generates images only. It does not write code.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/imagegen-frontend-mobile"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/imagegen-frontend-web",
+      "name": "imagegen-frontend-web",
+      "description": "Elite frontend image-direction skill for generating premium, conversion-aware website design references. CRITICAL OUTPUT RULE — generate ONE separate horizontal image FOR EVERY section. A landing page with 8 sections produces 8 images. Never compress multiple sections into one image. Enforces composition variety (not always left-text / right-image), background-image freedom, varied CTAs, varied hero scales (giant / mid / mini minimalist), narrative concept spine, second-read moments, and a single consistent palette across all images. Optimized for landing pages, marketing sites, and product comps that developers or coding models can accurately recreate.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/imagegen-frontend-web"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/industrial-brutalist-ui",
+      "name": "industrial-brutalist-ui",
+      "description": "Raw mechanical interfaces fusing Swiss typographic print with military terminal aesthetics. Rigid grids, extreme type scale contrast, utilitarian color, analog degradation effects. For data-heavy dashboards, portfolios, or editorial sites that need to feel like declassified blueprints.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/brutalist-skill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/minimalist-ui",
+      "name": "minimalist-ui",
+      "description": "Clean editorial-style interfaces. Warm monochrome palette, typographic contrast, flat bento grids, muted pastels. No gradients, no heavy shadows.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/minimalist-skill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/redesign-existing-projects",
+      "name": "redesign-existing-projects",
+      "description": "Upgrades existing websites and apps to premium quality. Audits current design, identifies generic AI patterns, and applies high-end design standards without breaking functionality. Works with any CSS framework or vanilla CSS.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/redesign-skill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "taste-skill/stitch-design-taste",
+      "name": "stitch-design-taste",
+      "description": "Semantic Design System Skill for Google Stitch. Generates agent-friendly DESIGN.md files that enforce premium, anti-generic UI standards — strict typography, calibrated color, asymmetric layouts, perpetual micro-motion, and hardware-accelerated performance.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "Leonxlnx/taste-skill",
+        "ref": "main",
+        "path": "skills/stitch-skill"
+      },
+      "stars": 36458,
+      "updatedAt": "2026-05-26T19:31:39Z",
+      "provenance": "curated",
+      "sourceId": "taste-skill"
+    },
+    {
+      "id": "ui-ux-pro-max/ckm-banner-design",
+      "name": "ckm:banner-design",
+      "description": "Design banners for social media, ads, website heroes, creative assets, and print. Multiple art direction options with AI-generated visuals. Actions: design, create, generate banner. Platforms: Facebook, Twitter/X, LinkedIn, YouTube, Instagram, Google Display, website hero, print. Styles: minimalist, gradient, bold typography, photo-based, illustrated, geometric, retro, glassmorphism, 3D, neon, duotone, editorial, collage. Uses ui-ux-pro-max, frontend-design, ai-artist, ai-multimodal skills.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "ref": "main",
+        "path": ".claude/skills/banner-design"
+      },
+      "stars": 88489,
+      "updatedAt": "2026-04-03T05:08:19Z",
+      "provenance": "curated",
+      "sourceId": "ui-ux-pro-max"
+    },
+    {
+      "id": "ui-ux-pro-max/ckm-brand",
+      "name": "ckm:brand",
+      "description": "Brand voice, visual identity, messaging frameworks, asset management, brand consistency. Activate for branded content, tone of voice, marketing assets, brand compliance, style guides.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "ref": "main",
+        "path": ".claude/skills/brand"
+      },
+      "stars": 88489,
+      "updatedAt": "2026-04-03T05:08:19Z",
+      "provenance": "curated",
+      "sourceId": "ui-ux-pro-max"
+    },
+    {
+      "id": "ui-ux-pro-max/ckm-design",
+      "name": "ckm:design",
+      "description": "Comprehensive design skill: brand identity, design tokens, UI styling, logo generation (55 styles, Gemini AI), corporate identity program (50 deliverables, CIP mockups), HTML presentations (Chart.js), banner design (22 styles, social/ads/web/print), icon design (15 styles, SVG, Gemini 3.1 Pro), social photos (HTML→screenshot, multi-platform). Actions: design logo, create CIP, generate mockups, build slides, design banner, generate icon, create social photos, social media images, brand identity, design system. Platforms: Facebook, Twitter, LinkedIn, YouTube, Instagram, Pinterest, TikTok, Threads, Google Ads.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "ref": "main",
+        "path": ".claude/skills/design"
+      },
+      "stars": 88489,
+      "updatedAt": "2026-04-03T05:08:19Z",
+      "provenance": "curated",
+      "sourceId": "ui-ux-pro-max"
+    },
+    {
+      "id": "ui-ux-pro-max/ckm-design-system",
+      "name": "ckm:design-system",
+      "description": "Token architecture, component specifications, and slide generation. Three-layer tokens (primitive→semantic→component), CSS variables, spacing/typography scales, component specs, strategic slide creation. Use for design tokens, systematic design, brand-compliant presentations.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "ref": "main",
+        "path": ".claude/skills/design-system"
+      },
+      "stars": 88489,
+      "updatedAt": "2026-04-03T05:08:19Z",
+      "provenance": "curated",
+      "sourceId": "ui-ux-pro-max"
+    },
+    {
+      "id": "ui-ux-pro-max/ckm-slides",
+      "name": "ckm:slides",
+      "description": "Create strategic HTML presentations with Chart.js, design tokens, responsive layouts, copywriting formulas, and contextual slide strategies.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "ref": "main",
+        "path": ".claude/skills/slides"
+      },
+      "stars": 88489,
+      "updatedAt": "2026-04-03T05:08:19Z",
+      "provenance": "curated",
+      "sourceId": "ui-ux-pro-max"
+    },
+    {
+      "id": "ui-ux-pro-max/ckm-ui-styling",
+      "name": "ckm:ui-styling",
+      "description": "Create beautiful, accessible user interfaces with shadcn/ui components (built on Radix UI + Tailwind), Tailwind CSS utility-first styling, and canvas-based visual designs. Use when building user interfaces, implementing design systems, creating responsive layouts, adding accessible components (dialogs, dropdowns, forms, tables), customizing themes and colors, implementing dark mode, generating visual designs and posters, or establishing consistent styling patterns across applications.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "ref": "main",
+        "path": ".claude/skills/ui-styling"
+      },
+      "stars": 88489,
+      "updatedAt": "2026-04-03T05:08:19Z",
+      "provenance": "curated",
+      "sourceId": "ui-ux-pro-max"
+    },
+    {
+      "id": "ui-ux-pro-max/ui-ux-pro-max",
+      "name": "ui-ux-pro-max",
+      "description": "UI/UX design intelligence for web and mobile. Includes 50+ styles, 161 color palettes, 57 font pairings, 161 product types, 99 UX guidelines, and 25 chart types across 10 stacks (React, Next.js, Vue, Svelte, SwiftUI, React Native, Flutter, Tailwind, shadcn/ui, and HTML/CSS). Actions: plan, build, create, design, implement, review, fix, improve, optimize, enhance, refactor, and check UI/UX code. Projects: website, landing page, dashboard, admin panel, e-commerce, SaaS, portfolio, blog, and mobile app. Elements: button, modal, navbar, sidebar, card, table, form, and chart. Styles: glassmorphism, claymorphism, minimalism, brutalism, neumorphism, bento grid, dark mode, responsive, skeuomorphism, and flat design. Topics: color systems, accessibility, animation, layout, typography, font pairing, spacing, interaction states, shadow, and gradient. Integrations: shadcn/ui MCP for component search and examples.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "ref": "main",
+        "path": ".claude/skills/ui-ux-pro-max"
+      },
+      "stars": 88489,
+      "updatedAt": "2026-04-03T05:08:19Z",
+      "provenance": "curated",
+      "sourceId": "ui-ux-pro-max"
     },
     {
       "id": "vercel-agent-skills/deploy-to-vercel",
@@ -2400,22 +2688,6 @@
       "updatedAt": "2026-06-03T17:03:05Z",
       "provenance": "curated",
       "sourceId": "vercel-agent-skills"
-    },
-    {
-      "id": "webgpu-threejs/webgpu-threejs-tsl",
-      "name": "webgpu-threejs-tsl",
-      "description": "Comprehensive guide for developing WebGPU-enabled Three.js applications using TSL (Three.js Shading Language). Covers WebGPU renderer setup, TSL syntax and node materials, compute shaders, post-processing effects, and WGSL integration. Use this skill when working with Three.js WebGPU, TSL shaders, node materials, or GPU compute in Three.js.",
-      "tags": [],
-      "format": "skill-md",
-      "source": {
-        "repo": "dgreenheck/webgpu-claude-skill",
-        "ref": "main",
-        "path": "skills/webgpu-threejs-tsl"
-      },
-      "stars": 981,
-      "updatedAt": "2026-04-10T14:28:23Z",
-      "provenance": "curated",
-      "sourceId": "webgpu-threejs"
     }
   ]
 }
