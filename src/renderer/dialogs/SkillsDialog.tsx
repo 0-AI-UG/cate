@@ -374,11 +374,6 @@ function SkillRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="text-[12.5px] font-mono text-primary truncate">{entry.name}</span>
-          {installed && (
-            <span className="shrink-0 text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
-              Installed
-            </span>
-          )}
           {typeof entry.stars === 'number' && entry.stars > 0 && (
             <span className="shrink-0 text-[10px] text-muted tabular-nums">
               {entry.stars > 999 ? `${Math.round(entry.stars / 1000)}k` : entry.stars}★
