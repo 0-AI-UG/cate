@@ -27,3 +27,17 @@ export function extractAgentTitleSegment(raw: string): string {
   }
   return trimmed
 }
+
+// A plain shell with no detected agent lets its OSC title drive the tab name.
+// On macOS/Linux that title is usually just the folder name, but Windows shells
+// (PowerShell, cmd) set it to the full working directory — "C:\Users\foo\proj" —
+// which makes the tab show the entire path. Collapse a bare absolute path to its
+// final segment so Windows matches the POSIX behavior; anything that isn't an
+// absolute path (agent status lines, custom titles) is returned untouched.
+const ABSOLUTE_PATH_PREFIX = /^([a-zA-Z]:[\\/]|\\\\|\/)/
+
+export function shellTitleBasename(title: string): string {
+  const trimmed = title.trim()
+  if (!ABSOLUTE_PATH_PREFIX.test(trimmed)) return title
+  return trimmed.split(/[\\/]/).filter(Boolean).pop() ?? title
+}

@@ -17,7 +17,7 @@ import { useStatusStore, setTerminalWorkspaceResolver } from '../../stores/statu
 import { useSettingsStore } from '../../stores/settingsStore'
 import { terminalRestoreData, replayTerminalLog } from '../workspace/session'
 import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
-import { extractAgentTitleSegment } from '../agent/agentTitleParser'
+import { extractAgentTitleSegment, shellTitleBasename } from '../agent/agentTitleParser'
 import { titleIndicatesRunning, outputShowsBodySpinner } from '../agent/agentSpinner'
 import { noteAgentTitle, noteAgentSpinnerByte } from '../agent/agentScreenDetector'
 import { openTerminalUrl } from './terminalUrlOpen'
@@ -42,7 +42,8 @@ function applyOscTitleIfNoAgent(
   const status = useStatusStore.getState()
   const wsId = workspaceIdForPty(ptyId) ?? workspaceId
   if (status.workspaces[wsId]?.agentName[ptyId]) return
-  useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, title)
+  // Plain Windows shells set the OSC title to the full cwd; show just the folder.
+  useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, shellTitleBasename(title))
 }
 
 /** Read the configured scrollback limit, clamped to a sane range. */

@@ -11,7 +11,7 @@ import {
   Folder,
   CloudArrowUp,
 } from '@phosphor-icons/react'
-import { abbreviateLocalPath } from '../lib/fs/displayPath'
+import { abbreviateLocalPath, workspaceDisplayName } from '../lib/fs/displayPath'
 import { parseLocator, LOCAL_COMPANION_ID } from '../../main/companion/locator'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
@@ -146,8 +146,11 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
               <div className="flex flex-col gap-0.5">
                 {recentProjects.map((projectPath) => {
                   const { companionId, path: decodedPath } = parseLocator(projectPath)
-                  const name = decodedPath.split('/').filter(Boolean).pop() ?? projectPath
-                  const parentPath = decodedPath.split('/').slice(0, -1).join('/')
+                  // Local paths are OS-native — split on `\` too so Windows paths
+                  // ("C:\Users\foo\proj") don't render as one long segment.
+                  const sep = companionId === LOCAL_COMPANION_ID ? /[\\/]/ : /\//
+                  const name = workspaceDisplayName(projectPath) || projectPath
+                  const parentPath = decodedPath.split(sep).slice(0, -1).join('/')
                   const parent = companionId === LOCAL_COMPANION_ID
                     ? abbreviateLocalPath(parentPath)
                     : `${companionId}:${parentPath}`

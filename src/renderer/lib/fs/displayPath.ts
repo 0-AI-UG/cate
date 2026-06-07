@@ -8,7 +8,7 @@
 // These helpers decode the locator first so both local and remote paths render
 // cleanly. LOCAL output is byte-identical to the old split-based logic.
 
-import { parseLocator } from '../../../main/companion/locator'
+import { LOCAL_COMPANION_ID, parseLocator } from '../../../main/companion/locator'
 
 /** Abbreviate a macOS home-dir path to `~/...`, matching WelcomePage's legacy
  *  behavior exactly. */
@@ -24,10 +24,15 @@ export function abbreviateLocalPath(fullPath: string): string {
 
 /**
  * Basename for display. Decodes the locator and returns the last non-empty path
- * segment, for local OR remote. For a local path this is identical to
- * `raw.split('/').filter(Boolean).pop()`.
+ * segment, for local OR remote.
+ *
+ * Local paths are OS-native, so on Windows the separator is `\` — splitting only
+ * on `/` would leave the whole `C:\Users\foo\proj` string as the "folder name".
+ * Remote paths are always POSIX, where `\` is a legal filename character, so we
+ * only treat `\` as a separator for local locators.
  */
 export function workspaceDisplayName(locator: string): string {
-  const { path } = parseLocator(locator)
-  return path.split('/').filter(Boolean).pop() ?? ''
+  const { companionId, path } = parseLocator(locator)
+  const sep = companionId === LOCAL_COMPANION_ID ? /[\\/]/ : /\//
+  return path.split(sep).filter(Boolean).pop() ?? ''
 }
