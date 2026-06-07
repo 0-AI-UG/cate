@@ -190,7 +190,7 @@ export function DockTabBar(props: DockTabBarProps) {
             panelId={panelId}
             className={`
               group relative flex items-center gap-1.5 whitespace-nowrap
-              cursor-grab select-none min-w-0 flex-1 max-w-[200px]
+              cursor-grab select-none min-w-0 shrink max-w-[200px]
               ${compact ? 'pl-2 pr-1.5 text-[11px]' : 'pl-3 pr-2 text-xs'}
               ${isActive ? 'text-secondary font-medium' : 'text-muted hover:text-secondary'}
             `}
