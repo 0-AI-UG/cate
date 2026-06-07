@@ -194,9 +194,13 @@ export function SkillsDialog() {
 
   const empty = installedRows.length === 0 && savedRows.length === 0 && browseRows.length === 0
 
+  // Key on id + path, not id alone: a repo can expose the same skill name at two
+  // paths, which collide to one id. Duplicate React keys break list diffing, so
+  // stale rows stay mounted when the query filters the list down — making search
+  // look like it ignores the query. id + path uniquely locates a SKILL.md.
   const renderRow = (entry: SkillEntry, installedRow: boolean) => (
     <SkillRow
-      key={entry.id}
+      key={`${entry.id}#${entry.source.path}`}
       entry={entry}
       installed={installedRow}
       saved={savedIds.has(entry.id)}
