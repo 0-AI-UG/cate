@@ -235,6 +235,13 @@ export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notificatio
 
 // Window management
 export const WINDOW_SET_TITLE = 'window:setTitle'
+// Custom window controls (frameless Windows/Linux chrome). Each is per-window —
+// the handler resolves the calling window from the IPC event sender.
+export const WINDOW_MINIMIZE = 'window:minimize'              // renderer -> main
+export const WINDOW_TOGGLE_MAXIMIZE = 'window:toggleMaximize' // renderer -> main
+export const WINDOW_CLOSE = 'window:close'                    // renderer -> main
+export const WINDOW_IS_MAXIMIZED = 'window:isMaximized'       // renderer -> main (sync pull)
+export const WINDOW_MAXIMIZE_STATE = 'window:maximizeState'   // main -> renderer (push)
 
 // Panel transfer (cross-window)
 export const PANEL_TRANSFER = 'panel:transfer'
