@@ -884,6 +884,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 
     // Zoom out so every recommendation (plus the focused node for context) is
     // visible at once. Only ever zoom OUT — never further in.
+    const viewportInsets = getCanvasViewportInsets()
     let nextZoom = state.zoomLevel
     let nextOffset = state.viewportOffset
     const cs = state.containerSize

@@ -786,9 +786,14 @@ export default function EditorPanel({
     const needsPreview = isMarkdown && (markdownViewMode === 'preview' || markdownViewMode === 'split')
     liveMarkdownSyncRef.current = needsPreview
     if (needsPreview) {
+      // Prefer the already-loaded model content; fall back to a direct file read
+      // when the model is absent or still empty (Monaco mounts before the async
+      // fsReadFile completes, so the default model has '' and setModel() later
+      // does NOT fire onDidChangeModelContent — we'd get a blank preview).
       const model = editorRef.current?.getModel()
-      if (model && !model.isDisposed()) {
-        setMarkdownContent(model.getValue())
+      const modelContent = (model && !model.isDisposed()) ? model.getValue() : null
+      if (modelContent) {
+        setMarkdownContent(modelContent)
       } else if (filePath) {
         window.electronAPI.fsReadFile(filePath, workspaceId).then(setMarkdownContent).catch(() => {})
       }

@@ -365,7 +365,10 @@ function placePanel(
   // panel back). When the setting is off — or for a background restore — fall
   // through and auto-place in the best spot. Explicit-position paths (drag-drop,
   // session restore, right-click "new here") always skip the picker.
-  if (isActiveWorkspace && canvasPosition == null && onGhostCancel && useSettingsStore.getState().placementPicker) {
+  // Only show the placement picker for explicit canvas-targeted creates (e.g.
+  // toolbar button on a specific canvas). File opens from the sidebar and other
+  // auto-routed creates use undefined/auto placement and should auto-place.
+  if (isActiveWorkspace && canvasPosition == null && onGhostCancel && placement?.target === 'canvas' && useSettingsStore.getState().placementPicker) {
     const shown = ops.beginPlacement(panelId, panelType, onGhostCancel)
     if (shown) return
   }
