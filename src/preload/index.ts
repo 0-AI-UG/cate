@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 
 // Phase 0 perf marker — capture preload entry as early as possible.
 try { performance.mark('preload-start') } catch { /* noop */ }
@@ -289,6 +289,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Pull the latest main-process resource snapshot (null until first sample). */
   perfGetSnapshot(): Promise<unknown> {
     return ipcRenderer.invoke(PERF_GET)
+  },
+
+  /** Set this window's UI zoom factor (Cate chrome only — webview content keeps
+   *  its own zoom). Applied per-renderer; each window calls this on mount and
+   *  whenever the uiScale setting changes. */
+  setUiScale(scale: number): void {
+    const clamped = Math.min(2, Math.max(0.5, Number.isFinite(scale) ? scale : 1))
+    webFrame.setZoomFactor(clamped)
   },
   // ---------------------------------------------------------------------------
   // Terminal

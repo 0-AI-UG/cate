@@ -16,6 +16,7 @@ import { useUIStore } from '../stores/uiStore'
 import { SettingsWindow } from '../settings/SettingsWindow'
 import WindowControls from './WindowControls'
 import { applyTheme } from '../lib/themeManager'
+import { applyUiScale } from '../lib/uiScale'
 import { ensurePanelsInAppStore } from '../lib/canvas/applyCanvasChildPanels'
 import { useAppStore } from '../stores/appStore'
 
@@ -65,6 +66,10 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
   useEffect(() => {
     applyTheme(activeThemeId)
   }, [activeThemeId, customThemes, systemLightThemeId, systemDarkThemeId])
+  const uiScale = useSettingsStore((s) => s.uiScale)
+  useEffect(() => {
+    applyUiScale(uiScale)
+  }, [uiScale])
 
   // Listen for incoming panel transfers from the main process
   useEffect(() => {

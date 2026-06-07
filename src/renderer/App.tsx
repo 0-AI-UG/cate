@@ -49,6 +49,7 @@ import { WindowTypeContext } from './stores/WindowTypeContext'
 import { setupCrossWindowDragListeners } from './drag'
 import { hydrateReceivedPanel } from './lib/panelTransfer'
 import { applyTheme } from './lib/themeManager'
+import { applyUiScale } from './lib/uiScale'
 import { closePanelWithConfirm } from './lib/closePanelWithConfirm'
 import { isExternalFileDrag } from './lib/fs/importExternalEntries'
 import pkg from '../../package.json'
@@ -153,6 +154,12 @@ function MainApp() {
   useEffect(() => {
     applyTheme(activeThemeId)
   }, [activeThemeId, customThemes, systemLightThemeId, systemDarkThemeId])
+
+  // Global UI scale — re-apply whenever the setting changes (and on mount).
+  const uiScale = useSettingsStore((s) => s.uiScale)
+  useEffect(() => {
+    applyUiScale(uiScale)
+  }, [uiScale])
 
   // E2E test harness — exposes window.__cateE2E only when launched by Playwright.
   useEffect(() => {

@@ -25,6 +25,9 @@ export interface ElectronAPI {
   /** Pull the latest main-process resource snapshot (null until first sample). */
   perfGetSnapshot(): Promise<PerfSnapshot | null>
 
+  /** Set this window's UI zoom factor (Cate chrome only). Clamped to 0.5–2.0. */
+  setUiScale(scale: number): void
+
   // ---------------------------------------------------------------------------
   // Terminal
   // ---------------------------------------------------------------------------

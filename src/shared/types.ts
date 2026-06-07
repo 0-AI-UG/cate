@@ -1068,6 +1068,11 @@ export interface AppSettings {
   /** User-imported / agent-authored unified themes. */
   customThemes: Theme[]
   editorFontSize: number
+  /** Global UI zoom for Cate's own chrome (panels, sidebars, editor, terminal),
+   *  applied via webFrame.setZoomFactor in every window. 1.0 = 100%. Does not
+   *  affect web pages shown in browser panels (those keep their own zoom).
+   *  Range 0.5–2.0. */
+  uiScale: number
 
   // Canvas
   showMinimap: boolean
@@ -1201,6 +1206,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemDarkThemeId: 'dark-cold',
   customThemes: [],
   editorFontSize: 12,
+  uiScale: 1.0,
 
   // Canvas
   showMinimap: true,

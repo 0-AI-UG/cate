@@ -303,16 +303,18 @@ export function useCanvasInteraction(
         }
       }
 
-      // --- Physical mouse wheel over empty canvas / unfocused panel: zoom ---
-      // Exception: while the Hand tool (or Space-hold) is active, a mouse wheel
-      // scrolls/pans the canvas instead of zooming — falls through to the pan
-      // path below.
-      if (mouse && effectiveCanvasTool(useUIStore.getState()) !== 'hand') {
-        applyWheelZoom(e, true)
+      // --- Scroll over empty canvas / unfocused panel: tool decides ---
+      // In the Select (click) tool, a plain scroll zooms — for both a physical
+      // mouse wheel and a trackpad two-finger scroll (Miro-style). In the Hand
+      // (drag) tool, or while Space is held, it falls through to the pan path
+      // below instead. The `mouse` flag only picks the zoom feel: discrete
+      // notch vs. continuous delta-proportional.
+      if (effectiveCanvasTool(useUIStore.getState()) !== 'hand') {
+        applyWheelZoom(e, mouse)
         return
       }
 
-      // --- Otherwise: trackpad two-finger scroll pans the canvas ---
+      // --- Hand tool: scroll pans the canvas ---
       // Apply canvas-interacting class so iframes/webviews/monaco/xterm don't
       // eat hit-testing while panning. Remove it ~150ms after the wheel goes quiet.
       e.stopPropagation()

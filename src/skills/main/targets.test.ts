@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { describe, it, expect, vi } from 'vitest'
 
 // targets.ts → agentDir.ts imports `app` from electron. Stub it (only getPath is
@@ -10,12 +11,14 @@ describe('skillsRootDir', () => {
   const cwd = '/home/u/proj'
 
   it('maps each target to its workspace-relative skills dir (local)', () => {
-    expect(skillsRootDir('claude-code', 'local', cwd)).toBe('/home/u/proj/.claude/skills')
-    expect(skillsRootDir('cate-agent', 'local', cwd)).toBe('/home/u/proj/.cate/pi-agent/skills')
-    expect(skillsRootDir('pi-native', 'local', cwd)).toBe('/home/u/proj/.agents/skills')
-    expect(skillsRootDir('opencode', 'local', cwd)).toBe('/home/u/proj/.opencode/skills')
-    expect(skillsRootDir('codex', 'local', cwd)).toBe('/home/u/proj/.codex/skills')
-    expect(skillsRootDir('antigravity', 'local', cwd)).toBe('/home/u/proj/.agent/skills')
+    // Local paths use native separators, so build the expected value with
+    // path.join to keep this assertion correct on Windows too.
+    expect(skillsRootDir('claude-code', 'local', cwd)).toBe(path.join(cwd, '.claude', 'skills'))
+    expect(skillsRootDir('cate-agent', 'local', cwd)).toBe(path.join(cwd, '.cate', 'pi-agent', 'skills'))
+    expect(skillsRootDir('pi-native', 'local', cwd)).toBe(path.join(cwd, '.agents', 'skills'))
+    expect(skillsRootDir('opencode', 'local', cwd)).toBe(path.join(cwd, '.opencode', 'skills'))
+    expect(skillsRootDir('codex', 'local', cwd)).toBe(path.join(cwd, '.codex', 'skills'))
+    expect(skillsRootDir('antigravity', 'local', cwd)).toBe(path.join(cwd, '.agent', 'skills'))
   })
 
   it('uses POSIX joins for a remote companion', () => {

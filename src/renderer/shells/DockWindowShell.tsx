@@ -27,6 +27,7 @@ import { useUIStore } from '../stores/uiStore'
 import { SettingsWindow } from '../settings/SettingsWindow'
 import WindowControls from './WindowControls'
 import { applyTheme } from '../lib/themeManager'
+import { applyUiScale } from '../lib/uiScale'
 
 import { renderPanelComponent, PANEL_REGISTRY } from '../panels/registry'
 const CanvasPanel = PANEL_REGISTRY.canvas.Component
@@ -80,6 +81,10 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   useEffect(() => {
     applyTheme(activeThemeId)
   }, [activeThemeId, customThemes, systemLightThemeId, systemDarkThemeId])
+  const uiScale = useSettingsStore((s) => s.uiScale)
+  useEffect(() => {
+    applyUiScale(uiScale)
+  }, [uiScale])
 
   // Listen for DOCK_WINDOW_INIT from main process
   useEffect(() => {
