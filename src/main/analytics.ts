@@ -224,9 +224,7 @@ async function sendEvent(name: string, props?: Record<string, unknown>): Promise
 // ---------------------------------------------------------------------------
 
 function isEnabled(): boolean {
-  // Nothing is sent until the user has made a first-run telemetry choice.
-  if (getSettingSync('telemetryConsentDecided') !== true) return false
-  return getSettingSync('usageAnalyticsEnabled') !== false
+  return false
 }
 
 /** Keep only a few small primitive props (string/number/boolean), with strings

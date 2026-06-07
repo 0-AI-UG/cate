@@ -26,6 +26,9 @@ export function getDocumentType(filePath: string): DocumentType | null {
   return DOCUMENT_EXTENSIONS[ext] ?? null
 }
 
+const HTML_EXTENSIONS = new Set(['.html', '.htm'])
+const MARKDOWN_EXTENSIONS = new Set(['.md', '.mdx', '.markdown'])
+
 export function openFileAsPanel(
   workspaceId: string,
   filePath: string,
@@ -33,9 +36,17 @@ export function openFileAsPanel(
   placement?: PanelPlacement,
 ): string {
   const store = useAppStore.getState()
+  const dotIndex = filePath.lastIndexOf('.')
+  const ext = dotIndex !== -1 ? filePath.slice(dotIndex).toLowerCase() : ''
   const docType = getDocumentType(filePath)
   if (docType) {
     return store.createDocument(workspaceId, filePath, docType, position, placement)
+  }
+  if (HTML_EXTENSIONS.has(ext)) {
+    return store.createBrowser(workspaceId, `file://${filePath}`, position, placement)
+  }
+  if (MARKDOWN_EXTENSIONS.has(ext)) {
+    return store.createEditor(workspaceId, filePath, position, placement, { markdownPreview: true })
   }
   return store.createEditor(workspaceId, filePath, position, placement)
 }

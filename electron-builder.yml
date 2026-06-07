@@ -168,28 +168,22 @@ extraResources:
   - from: dist-companion/companion-host.tgz
     to: companion-host.tgz
 publish:
-  provider: github
-  owner: 0-AI-UG
-  repo: cate
-  releaseType: release
+  provider: generic
+  url: http://localhost
 mac:
   icon: build/icon.icns
   category: public.app-category.developer-tools
-  hardenedRuntime: true
+  hardenedRuntime: false
   gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
-  notarize: true
+  identity: null
   extendInfo:
     NSMicrophoneUsageDescription: Cate needs microphone access so terminal-based tools (like Claude Code) can record audio for voice input.
   target:
     - target: dmg
       arch:
-        - x64
         - arm64
     - target: zip
       arch:
-        - x64
         - arm64
 win:
   icon: build/icon.ico

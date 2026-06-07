@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Plus, X, ArrowCounterClockwise } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { DEFAULT_SETTINGS } from '../../shared/types'
-import { SearchableBlock } from './SettingsComponents'
+import { SearchableBlock, SettingRow } from './SettingsComponents'
+import { useTranslation } from '../hooks/useTranslation'
 
 function sameAsDefault(list: string[]): boolean {
   const defaults = DEFAULT_SETTINGS.fileExclusions
@@ -13,7 +14,9 @@ function sameAsDefault(list: string[]): boolean {
 
 export function FileExplorerSettings() {
   const store = useSettingsStore()
+  const { t } = useTranslation()
   const folders = store.fileExclusions ?? []
+  const fileOpenMode = store.fileOpenMode ?? 'dock'
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -21,17 +24,17 @@ export function FileExplorerSettings() {
     const name = draft.trim()
     if (!name) return
     if (name.includes('/') || name.includes('\\')) {
-      setError('Enter a single folder or file name, not a path.')
+      setError(t('fileExplorer.error.path'))
       return
     }
     // Names are matched literally by the explorer/search and turned into globs
     // for the watcher; reject glob metacharacters so all three surfaces agree.
     if (/[*?[\]{}()!]/.test(name)) {
-      setError('Names cannot contain wildcard characters like * ? [ ] { } ( ) !.')
+      setError(t('fileExplorer.error.glob'))
       return
     }
     if (folders.includes(name)) {
-      setError(`"${name}" is already excluded.`)
+      setError(`"${name}" ${t('fileExplorer.error.duplicate')}`)
       return
     }
     store.setSetting('fileExclusions', [...folders, name])
@@ -49,11 +52,24 @@ export function FileExplorerSettings() {
   }
 
   return (
+    <>
+    <SettingRow
+      label={t('fileExplorer.openMode')}
+      description={t('fileExplorer.openMode.desc')}
+    >
+      <select
+        value={fileOpenMode}
+        onChange={(e) => store.setSetting('fileOpenMode', e.target.value as 'canvas' | 'dock')}
+        className="bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary focus:border-focus-blue focus:outline-none"
+      >
+        <option value="dock">{t('fileExplorer.openMode.dock')}</option>
+        <option value="canvas">{t('fileExplorer.openMode.canvas')}</option>
+      </select>
+    </SettingRow>
     <SearchableBlock keywords="file explorer exclusions hidden ignore folders gitignore exclude">
     <div className="flex flex-col gap-1">
       <p className="text-xs text-muted mb-3">
-        Names hidden from the explorer, search, and file watching, in every
-        project.
+        {t('fileExplorer.exclusions')}
       </p>
 
       <div className="flex gap-1.5">
@@ -67,7 +83,7 @@ export function FileExplorerSettings() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') add()
           }}
-          placeholder="Add a name, e.g. dist"
+          placeholder={t('fileExplorer.addPlaceholder')}
           className="flex-1 bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary placeholder:text-muted focus:border-focus-blue focus:outline-none"
         />
         <button
@@ -75,7 +91,7 @@ export function FileExplorerSettings() {
           className="flex items-center gap-1 px-2.5 py-1 text-[12px] rounded text-secondary hover:text-primary bg-surface-2 hover:bg-hover border border-subtle"
         >
           <Plus size={12} />
-          Add
+          {t('fileExplorer.add')}
         </button>
       </div>
 
@@ -84,7 +100,7 @@ export function FileExplorerSettings() {
       <div className="flex flex-wrap gap-1.5 mt-3">
         {folders.length === 0 ? (
           <div className="text-[11px] text-muted italic px-0.5 py-1">
-            No exclusions. Every file and folder is shown.
+            {t('fileExplorer.noExclusions')}
           </div>
         ) : (
           folders.map((name) => (
@@ -112,10 +128,11 @@ export function FileExplorerSettings() {
           className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded text-secondary hover:text-primary bg-surface-2 hover:bg-hover border border-subtle disabled:opacity-40 disabled:cursor-default disabled:hover:bg-surface-2 disabled:hover:text-secondary"
         >
           <ArrowCounterClockwise size={11} />
-          Restore defaults
+          {t('fileExplorer.restoreDefaults')}
         </button>
       </div>
     </div>
     </SearchableBlock>
+    </>
   )
 }

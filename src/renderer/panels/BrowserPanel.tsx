@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck, ArrowUp, ArrowDown, X } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
@@ -67,6 +67,8 @@ interface WebviewElement extends HTMLElement {
   getURL(): string
   getTitle(): string
   getWebContentsId(): number
+  findInPage(text: string, options?: { forward?: boolean; findNext?: boolean }): number
+  stopFindInPage(action: 'clearSelection' | 'keepSelection' | 'activateSelection'): void
   addEventListener(type: string, listener: (event: any) => void): void
   removeEventListener(type: string, listener: (event: any) => void): void
 }
@@ -122,7 +124,15 @@ export default function BrowserPanel({
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  // Briefly true after loading stops so the progress bar can animate to 100% and fade.
+  const [loadingComplete, setLoadingComplete] = useState(false)
+  const loadingCompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Find-in-page state
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findMatches, setFindMatches] = useState<{ active: number; total: number } | null>(null)
+  const findInputRef = useRef<HTMLInputElement | null>(null)
   // Distinct from loadError: the guest *renderer process* died (OOM / GPU
   // fault / native crash), not merely a failed navigation. Needs a reload to
   // respawn the renderer, so it gets its own overlay + recovery affordance.
@@ -323,12 +333,59 @@ export default function BrowserPanel({
     }
   }, [])
 
+  // -------------------------------------------------------------------------
+  // Find-in-page helpers
+  // -------------------------------------------------------------------------
+
+  const executeFindInPage = useCallback((query: string, forward: boolean = true) => {
+    const webview = webviewRef.current
+    if (!webview || !query.trim()) return
+    webview.findInPage(query, { forward, findNext: true })
+  }, [])
+
+  const closeFindBar = useCallback(() => {
+    const webview = webviewRef.current
+    webview?.stopFindInPage('clearSelection')
+    setFindOpen(false)
+    setFindQuery('')
+    setFindMatches(null)
+  }, [])
+
+  const handleFindKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      executeFindInPage(findQuery, !e.shiftKey)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      closeFindBar()
+    }
+  }, [findQuery, executeFindInPage, closeFindBar])
+
+  const handleFindQueryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const q = e.target.value
+    setFindQuery(q)
+    if (!q.trim()) {
+      setFindMatches(null)
+      webviewRef.current?.stopFindInPage('clearSelection')
+      return
+    }
+    webviewRef.current?.findInPage(q, { forward: true, findNext: false })
+  }, [])
+
   // Map a key event that lands on the panel chrome (e.g. the URL bar) to a
   // browser action. The webview-guest case is handled in the main process via
   // before-input-event (see webSecurity.ts), which forwards through
   // onBrowserShortcut below. Using e.code keeps this layout-independent.
   const handleChromeKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!(e.metaKey || e.ctrlKey)) return
+    // Cmd/Ctrl+F — open find bar
+    if (e.code === 'KeyF' && !e.shiftKey) {
+      e.preventDefault()
+      setFindOpen(true)
+      // Focus the find input on next frame so the bar has rendered
+      requestAnimationFrame(() => { findInputRef.current?.focus() })
+      return
+    }
     let action: BrowserShortcutAction | null = null
     switch (e.code) {
       case 'KeyR':
@@ -444,6 +501,13 @@ export default function BrowserPanel({
 
     const onDidStopLoading = () => {
       setIsLoading(false)
+      // Trigger the complete animation (85% → 100% + fade), then clean up.
+      if (loadingCompleteTimerRef.current) clearTimeout(loadingCompleteTimerRef.current)
+      setLoadingComplete(true)
+      loadingCompleteTimerRef.current = setTimeout(() => {
+        setLoadingComplete(false)
+        loadingCompleteTimerRef.current = null
+      }, 600)
     }
 
     const onWillNavigate = (event: any) => {
@@ -462,8 +526,13 @@ export default function BrowserPanel({
       event.preventDefault()
       const url = event.url ?? event.detail?.url
       if (url) {
-        console.log('[BrowserPanel] Blocked new-window for URL:', url)
+        useAppStore.getState().createBrowser(workspaceId, url)
       }
+    }
+
+    const onFoundInPage = (event: any) => {
+      const result = event.result ?? event
+      setFindMatches({ active: result.activeMatchOrdinal ?? 0, total: result.matches ?? 0 })
     }
 
     // Register with the portal registry once the guest webContents is live.
@@ -485,6 +554,7 @@ export default function BrowserPanel({
     webview.addEventListener('new-window', onNewWindow)
     webview.addEventListener('render-process-gone', onRenderProcessGone)
     webview.addEventListener('crashed', onCrashed)
+    webview.addEventListener('found-in-page', onFoundInPage)
 
     return () => {
       try { portalRegistry.unregister(panelId) } catch { /* ignore */ }
@@ -499,6 +569,7 @@ export default function BrowserPanel({
       webview.removeEventListener('new-window', onNewWindow)
       webview.removeEventListener('render-process-gone', onRenderProcessGone)
       webview.removeEventListener('crashed', onCrashed)
+      webview.removeEventListener('found-in-page', onFoundInPage)
     }
     // `partition` + `proxyReady` are deps so the listeners re-bind to the fresh
     // <webview> element after a proxy change remounts it (key={partition} +
@@ -510,7 +581,21 @@ export default function BrowserPanel({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="flex flex-col w-full h-full" onKeyDown={handleChromeKeyDown}>
+    <div className="flex flex-col w-full h-full relative" onKeyDown={handleChromeKeyDown}>
+      {/* Loading progress bar — absolutely positioned at the very top of the panel */}
+      {(isLoading || loadingComplete) && (
+        <div className="absolute top-0 left-0 right-0 z-50 h-0.5 overflow-hidden">
+          <div
+            className="h-full bg-[var(--color-focus-blue)]"
+            style={{
+              animation: loadingComplete
+                ? 'browser-progress-complete 0.6s ease-out forwards'
+                : 'browser-progress-fill 8s ease-out forwards',
+            }}
+          />
+        </div>
+      )}
+
       {/* URL bar */}
       <div className="h-10 flex items-center gap-2 px-2 bg-surface-4 border-b border-subtle shrink-0">
         {/* Navigation pill */}
@@ -540,6 +625,21 @@ export default function BrowserPanel({
           >
             <ArrowClockwise size={13} className={isLoading ? 'animate-spin' : ''} />
           </button>
+        </div>
+
+        {/* Localhost quick-access port buttons */}
+        <div className="flex items-center gap-0.5 overflow-hidden shrink-0">
+          <div className="w-px h-3.5 bg-subtle mr-1" />
+          {([3000, 5173, 8080, 8000, 4000] as const).map((port) => (
+            <button
+              key={port}
+              onClick={() => navigateTo(`http://localhost:${port}`)}
+              className="px-1.5 py-0.5 text-[11px] rounded-full text-muted hover:text-primary hover:bg-hover transition-colors shrink-0"
+              title={`http://localhost:${port}`}
+            >
+              {port}
+            </button>
+          ))}
         </div>
 
         {/* URL input */}
@@ -659,6 +759,49 @@ export default function BrowserPanel({
             onCancel={() => setProxyDialogOpen(false)}
             onSave={applyProxy}
           />
+        )}
+
+        {/* Find-in-page bar */}
+        {findOpen && (
+          <div className="absolute bottom-0 right-0 z-20 flex items-center gap-1.5 px-2 py-1.5 bg-surface-4 border border-subtle rounded-tl-lg shadow-lg">
+            <input
+              ref={findInputRef}
+              type="text"
+              value={findQuery}
+              onChange={handleFindQueryChange}
+              onKeyDown={handleFindKeyDown}
+              className="w-44 h-6 px-2 text-xs bg-surface-5 border border-subtle rounded text-primary outline-none focus:border-strong placeholder:text-muted transition-colors"
+              placeholder="Find in page…"
+            />
+            {findMatches && (
+              <span className="text-[11px] text-muted whitespace-nowrap">
+                {findMatches.total === 0 ? 'No results' : `${findMatches.active} of ${findMatches.total}`}
+              </span>
+            )}
+            <button
+              onClick={() => executeFindInPage(findQuery, false)}
+              disabled={!findQuery.trim()}
+              className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-primary disabled:opacity-30 transition-colors"
+              title="Previous match (Shift+Enter)"
+            >
+              <ArrowUp size={11} />
+            </button>
+            <button
+              onClick={() => executeFindInPage(findQuery, true)}
+              disabled={!findQuery.trim()}
+              className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-primary disabled:opacity-30 transition-colors"
+              title="Next match (Enter)"
+            >
+              <ArrowDown size={11} />
+            </button>
+            <button
+              onClick={closeFindBar}
+              className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-muted hover:text-primary transition-colors"
+              title="Close (Escape)"
+            >
+              <X size={11} />
+            </button>
+          </div>
         )}
       </div>
     </div>

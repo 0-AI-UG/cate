@@ -205,7 +205,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     const paths = selectedPaths.has(node.path) && selectedPaths.size > 1
       ? [...selectedPaths]
       : [node.path]
-    onFileOpen(paths, 'dock')
+    onFileOpen(paths)
   }, [node, selectedPaths, onFileOpen])
 
   // Forward declarations are filled in below; handleContextMenu uses them via refs
@@ -255,7 +255,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 
     const id = await window.electronAPI.showContextMenu(items)
     switch (id) {
-      case 'open': onFileOpen(pathsToOpen, 'dock'); break
+      case 'open': onFileOpen(pathsToOpen); break
       case 'open-on-canvas': onFileOpen(pathsToOpen, 'canvas'); break
       case 'new-file': startCreate('file'); break
       case 'new-folder': startCreate('folder'); break

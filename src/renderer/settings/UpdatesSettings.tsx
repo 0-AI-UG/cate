@@ -1,14 +1,16 @@
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, Toggle } from './SettingsComponents'
+import { useTranslation } from '../hooks/useTranslation'
 
 export function UpdatesSettings() {
   const store = useSettingsStore()
+  const { t } = useTranslation()
 
   return (
     <div className="flex flex-col gap-1">
       <SettingRow
-        label="Receive beta builds"
-        description="Get early access to staged, pre-release versions. Betas may be less stable. They never affect the public download, and turning this off won't downgrade a beta you've already installed — you'll move to stable once it catches up."
+        label={t('updates.beta')}
+        description={t('updates.beta.desc')}
       >
         <Toggle
           checked={store.betaUpdatesEnabled}

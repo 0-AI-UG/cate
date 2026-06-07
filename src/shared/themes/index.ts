@@ -21,12 +21,14 @@ import { oneLight } from './oneLight'
 import { clayLight } from './clayLight'
 import { clayDark } from './clayDark'
 import { intellijLight } from './intellijLight'
+import { materialDark } from './materialDark'
 
 export { BASE_DARK, BASE_LIGHT } from './base'
 
 /** Shipped themes, in catalog order. Dark Cold leads as the standard theme. */
 export const BUILT_IN_THEMES: Theme[] = [
   darkCold,
+  materialDark,
   darkWarm,
   lightSubtle,
   dracula,

@@ -79,17 +79,7 @@ function actuallyInit(): void {
 }
 
 export function initSentry(): void {
-  // Hold off entirely until the user has made a first-run telemetry choice —
-  // nothing is captured or sent before consent.
-  if (!getSettingSync('telemetryConsentDecided')) {
-    log.info('[sentry] deferred — awaiting first-run consent')
-    return
-  }
-  if (!getSettingSync('crashReportingEnabled')) {
-    log.info('[sentry] disabled by user setting')
-    return
-  }
-  actuallyInit()
+  log.info('[sentry] disabled for personal build')
 }
 
 /**

@@ -104,6 +104,10 @@ export interface PanelState {
    *  instead of the source. Kept per-panel (not local component state) because
    *  a single EditorPanel mount is reused across dock tabs. */
   markdownPreview?: boolean
+  /** Markdown files only: how to render the panel.
+   *  'source' = editor only, 'split' = editor + preview, 'preview' = preview only.
+   *  When set, takes precedence over the legacy `markdownPreview` boolean. */
+  markdownViewMode?: 'source' | 'split' | 'preview'
   /** Unsaved buffer content for scratch (no-filePath) editors. Persisted so
    *  content survives canvas switches and app restarts. */
   unsavedContent?: string
@@ -545,6 +549,8 @@ export type ShortcutAction =
   | 'zoomToFit'
   | 'zoomToSelection'
   | 'autoLayout'
+  | 'layoutColumns'
+  | 'layoutRows'
   | 'undo'
   | 'redo'
   | 'deleteNode'
@@ -590,6 +596,8 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'zoomToFit',
   'zoomToSelection',
   'autoLayout',
+  'layoutColumns',
+  'layoutRows',
   'undo',
   'redo',
   'deleteNode',
@@ -626,6 +634,8 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   zoomToFit: 'Zoom to Fit',
   zoomToSelection: 'Zoom to Selection',
   autoLayout: 'Auto Layout Canvas',
+  layoutColumns: 'Layout: 2 Columns',
+  layoutRows: 'Layout: 2 Rows',
   undo: 'Undo',
   redo: 'Redo',
   deleteNode: 'Delete Focused Panel',
@@ -662,6 +672,8 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   zoomToFit: storedShortcut('1', { command: true }),
   zoomToSelection: storedShortcut('2', { command: true }),
   autoLayout: storedShortcut('l', { command: true, shift: true }),
+  layoutColumns: storedShortcut('3', { command: true }),
+  layoutRows: storedShortcut('4', { command: true }),
   undo: storedShortcut('z', { command: true }),
   redo: storedShortcut('z', { command: true, shift: true }),
   deleteNode: storedShortcut('Backspace', { command: true }),
@@ -1043,6 +1055,7 @@ export const FILE_EXCLUSIONS: string[] = [
 
 export interface AppSettings {
   // General
+  language: 'en' | 'ko'
   defaultShellPath: string
   warnBeforeQuit: boolean
 
@@ -1084,6 +1097,9 @@ export interface AppSettings {
    *  among numbered spots / click anywhere. When off, the best spot is chosen
    *  automatically and the panel is placed immediately. */
   placementPicker: boolean
+  /** Layout used by the Auto Layout shortcut (Cmd+Shift+L) and menu item.
+   *  'grid' = adaptive grid, 'columns' = 2 equal columns, 'rows' = 2 equal rows. */
+  defaultLayoutMode: 'grid' | 'columns' | 'rows'
 
   // Terminal
   terminalFontFamily: string
@@ -1131,6 +1147,9 @@ export interface AppSettings {
   // File Explorer
   /** Folder/file names hidden in the file explorer, file search, and watcher. */
   fileExclusions: string[]
+  /** Where files open when double-clicked in the file explorer.
+   *  'canvas' = floating canvas panel, 'dock' = dock tab (default). */
+  fileOpenMode: 'canvas' | 'dock'
 
   // Notifications (OS-level only)
   notificationsEnabled: boolean
@@ -1163,6 +1182,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   // General
+  language: 'ko',
   // Empty string = auto-detect from $SHELL / platform fallback chain at spawn
   // time (see src/main/shellResolver.ts). Avoids hardcoding /bin/zsh on Linux,
   // where it commonly isn't installed.
@@ -1187,6 +1207,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   canvasBackgroundImageOpacity: 0.4,
   snapToGrid: false,
   placementPicker: true,
+  defaultLayoutMode: 'grid',
 
   // Terminal
   terminalFontFamily: '',
@@ -1209,6 +1230,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // File Explorer
   fileExclusions: [...FILE_EXCLUSIONS],
+  fileOpenMode: 'dock',
 
   // Notifications (OS-level only)
   notificationsEnabled: true,

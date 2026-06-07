@@ -23,6 +23,7 @@ import {
   PANEL_DEFAULT_SIZES,
 } from '../../shared/types'
 import { autoLayoutAll as computeAutoLayoutAll } from '../canvas/layoutEngine'
+import { useSettingsStore } from './settingsStore'
 import { viewToCanvas as viewToCanvasCoords } from '../lib/canvas/coordinates'
 import { REGION_FILL_COLORS } from '../../shared/colors'
 import { perfCount } from '../lib/perf/perfClient'
@@ -210,6 +211,8 @@ export interface CanvasStoreActions {
   clearSnapGuides: () => void
 
   autoLayout: () => void
+  layoutColumns: () => void
+  layoutRows: () => void
 
   // Selection
   selectNodes: (ids: string[], additive?: boolean) => void
@@ -1287,6 +1290,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
   },
 
   autoLayout() {
+    const mode = useSettingsStore.getState().defaultLayoutMode ?? 'grid'
+    if (mode === 'columns') { get().layoutColumns(); return }
+    if (mode === 'rows') { get().layoutRows(); return }
     const state = get()
     const nodeList = Object.values(state.nodes).sort(
       (a, b) => a.creationIndex - b.creationIndex,
@@ -1368,6 +1374,70 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     })
 
     // Zoom to fit after layout
+    get().zoomToFit()
+  },
+
+  layoutColumns() {
+    const state = get()
+    const nodeList = Object.values(state.nodes).sort(
+      (a, b) => a.creationIndex - b.creationIndex,
+    )
+    if (nodeList.length === 0) return
+    const containerWidth = state.containerSize.width > 0
+      ? state.containerSize.width / state.zoomLevel
+      : 1600
+    const containerHeight = state.containerSize.height > 0
+      ? state.containerSize.height / state.zoomLevel
+      : 1000
+    const cols = 2
+    const rows = Math.ceil(nodeList.length / cols)
+    const gap = 6
+    const cellW = Math.max(240, (containerWidth - gap * (cols + 1)) / cols)
+    const cellH = Math.max(160, (containerHeight - gap * (rows + 1)) / rows)
+    get().pushHistory()
+    const updatedNodes = { ...state.nodes }
+    nodeList.forEach((node, i) => {
+      const col = i % cols
+      const row = Math.floor(i / cols)
+      updatedNodes[node.id] = {
+        ...updatedNodes[node.id],
+        origin: { x: gap + col * (cellW + gap), y: gap + row * (cellH + gap) },
+        size: { width: cellW, height: cellH },
+      }
+    })
+    set({ nodes: updatedNodes })
+    get().zoomToFit()
+  },
+
+  layoutRows() {
+    const state = get()
+    const nodeList = Object.values(state.nodes).sort(
+      (a, b) => a.creationIndex - b.creationIndex,
+    )
+    if (nodeList.length === 0) return
+    const containerWidth = state.containerSize.width > 0
+      ? state.containerSize.width / state.zoomLevel
+      : 1600
+    const containerHeight = state.containerSize.height > 0
+      ? state.containerSize.height / state.zoomLevel
+      : 1000
+    const rows = 2
+    const cols = Math.ceil(nodeList.length / rows)
+    const gap = 6
+    const cellW = Math.max(240, (containerWidth - gap * (cols + 1)) / cols)
+    const cellH = Math.max(160, (containerHeight - gap * (rows + 1)) / rows)
+    get().pushHistory()
+    const updatedNodes = { ...state.nodes }
+    nodeList.forEach((node, i) => {
+      const col = i % cols
+      const row = Math.floor(i / cols)
+      updatedNodes[node.id] = {
+        ...updatedNodes[node.id],
+        origin: { x: gap + col * (cellW + gap), y: gap + row * (cellH + gap) },
+        size: { width: cellW, height: cellH },
+      }
+    })
+    set({ nodes: updatedNodes })
     get().zoomToFit()
   },
 

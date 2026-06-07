@@ -199,6 +199,12 @@ export function buildApplicationMenu(): void {
       submenu: [
         { label: 'Save Current Canvas…', click: dispatch('manageLayouts') },
         { label: 'Manage Layouts…', click: dispatch('manageLayouts') },
+        { type: 'separator' as const },
+        { label: 'Auto Layout', accelerator: 'CmdOrCtrl+Shift+L', click: dispatch('autoLayout') },
+        { label: 'Zoom to Fit', accelerator: 'CmdOrCtrl+1', click: dispatch('zoomToFit'), visible: false, acceleratorWorksWhenHidden: true },
+        { type: 'separator' as const },
+        { label: '2 Columns', accelerator: 'CmdOrCtrl+3', click: dispatch('layoutColumns') },
+        { label: '2 Rows', accelerator: 'CmdOrCtrl+4', click: dispatch('layoutRows') },
         ...(layoutNames.length > 0
           ? [
               { type: 'separator' as const },

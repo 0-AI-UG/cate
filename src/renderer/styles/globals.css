@@ -157,6 +157,17 @@
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
+/* Browser panel loading progress bar */
+@keyframes browser-progress-fill {
+  0%   { width: 0%; }
+  100% { width: 85%; }
+}
+@keyframes browser-progress-complete {
+  0%   { width: 85%; opacity: 1; }
+  30%  { width: 100%; opacity: 1; }
+  100% { width: 100%; opacity: 0; }
+}
+
 /* Onboarding tour card entrance. */
 @keyframes onboarding-card-in {
   from { opacity: 0; transform: translateY(6px) scale(0.98); }

@@ -14,6 +14,7 @@ import { watchFsRoot } from '../lib/fs/fsWatchManager'
 import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { getWorkspaceDockStore } from '../stores/workspaceStores'
+import { useSettingsStore } from '../stores/settingsStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { workspaceDisplayName } from '../lib/fs/displayPath'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
@@ -107,6 +108,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   useEffect(() => { expandedPathsRef.current = expandedPaths }, [expandedPaths])
 
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
+  const fileOpenMode = useSettingsStore((s) => s.fileOpenMode) ?? 'dock'
 
   const createTerminal = useAppStore((s) => s.createTerminal)
   const removeWorkspace = useAppStore((s) => s.removeWorkspace)
@@ -477,11 +479,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
 
   const handleFileOpen = useCallback(
     (filePaths: string[], mode?: 'dock' | 'canvas') => {
-      // Resolve mode: explicit > infer from active center panel
-      // Default: always open as a dock tab in the center zone (alongside the
-      // canvas tab). Opening as a floating canvas node requires an explicit
-      // 'canvas' mode from the context menu.
-      const resolved = mode ?? 'dock'
+      // Resolve mode: explicit arg > user setting > 'dock'
+      const resolved = mode ?? fileOpenMode
       const placement = resolved === 'canvas'
         ? undefined
         : { target: 'dock' as const, zone: 'center' as const }
@@ -489,7 +488,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         openFileAsPanel(selectedWorkspaceId, filePath, undefined, placement)
       }
     },
-    [selectedWorkspaceId],
+    [selectedWorkspaceId, fileOpenMode],
   )
 
   const handleReload = useCallback(() => {
@@ -547,7 +546,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       case 'expand': void expand(action.path); break
       case 'collapse': collapse(action.path); break
       case 'toggle': toggleExpand(action.path); break
-      case 'open': handleFileOpen([action.path], 'dock'); break
+      case 'open': handleFileOpen([action.path]); break
     }
   }, [
     selectedPaths, deletePaths, flatRows,

@@ -10,7 +10,7 @@
 // =============================================================================
 
 import { X, MagnifyingGlass, BracketsCurly } from '@phosphor-icons/react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import log from '../lib/logger'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
@@ -25,23 +25,23 @@ import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
 import { SettingsSearchContext } from './SettingsSearchContext'
+import { useTranslation } from '../hooks/useTranslation'
+import type { StringKey } from '../i18n/strings'
 
-const SECTIONS = [
-  { title: 'General', component: GeneralSettings },
-  { title: 'Appearance', component: AppearanceSettings },
-  { title: 'Canvas', component: CanvasSettings },
-  { title: 'Terminal', component: TerminalSettings },
-  { title: 'Browser', component: BrowserSettings },
-  { title: 'Sidebar', component: SidebarSettings },
-  { title: 'File Explorer', component: FileExplorerSettings },
-  { title: 'Notifications', component: NotificationSettings },
-  { title: 'Updates', component: UpdatesSettings },
-  { title: 'Shortcuts', component: ShortcutSettings },
-] as const
+const SECTIONS: { titleKey: StringKey; id: string; component: React.ComponentType }[] = [
+  { titleKey: 'settings.section.general', id: 'general', component: GeneralSettings },
+  { titleKey: 'settings.section.appearance', id: 'appearance', component: AppearanceSettings },
+  { titleKey: 'settings.section.canvas', id: 'canvas', component: CanvasSettings },
+  { titleKey: 'settings.section.terminal', id: 'terminal', component: TerminalSettings },
+  { titleKey: 'settings.section.browser', id: 'browser', component: BrowserSettings },
+  { titleKey: 'settings.section.sidebar', id: 'sidebar', component: SidebarSettings },
+  { titleKey: 'settings.section.fileExplorer', id: 'file-explorer', component: FileExplorerSettings },
+  { titleKey: 'settings.section.notifications', id: 'notifications', component: NotificationSettings },
+  { titleKey: 'settings.section.updates', id: 'updates', component: UpdatesSettings },
+  { titleKey: 'settings.section.shortcuts', id: 'shortcuts', component: ShortcutSettings },
+]
 
-// DOM id for a section. Slugify spaces (e.g. "File Explorer") so the result is
-// a valid CSS selector for querySelector/scrollIntoView.
-const sectionId = (title: string): string => `settings-section-${title.toLowerCase().replace(/\s+/g, '-')}`
+const sectionId = (id: string): string => `settings-section-${id}`
 
 interface SettingsWindowProps {
   isOpen: boolean
@@ -51,11 +51,12 @@ interface SettingsWindowProps {
 }
 
 export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowProps) {
+  const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [rawQuery, setRawQuery] = useState('')
-  const [activeId, setActiveId] = useState<string>(SECTIONS[0].title.toLowerCase())
+  const [activeId, setActiveId] = useState<string>(SECTIONS[0].id)
   const [visibleSections, setVisibleSections] = useState<Set<string>>(
-    () => new Set(SECTIONS.map((s) => s.title.toLowerCase())),
+    () => new Set(SECTIONS.map((s) => s.id)),
   )
 
   const query = rawQuery.trim().toLowerCase()
@@ -64,7 +65,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
   useEffect(() => {
     if (!isOpen) return
     setRawQuery('')
-    const target = (initialTab ?? SECTIONS[0].title).toLowerCase()
+    const target = initialTab ?? SECTIONS[0].id
     setActiveId(target)
     requestAnimationFrame(() => {
       scrollRef.current?.querySelector(`#${sectionId(target)}`)?.scrollIntoView({ block: 'start', behavior: 'auto' })
@@ -72,23 +73,23 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
   }, [isOpen, initialTab])
 
   // Match scan — after each query change, determine which sections still have
-  // visible content. A section shows when there's no query, when its title
-  // matches, or when it contains at least one visible row/block ([data-srow]).
+  // visible content. A section shows when there's no query, when its translated
+  // title matches, or when it contains at least one visible row/block ([data-srow]).
   useLayoutEffect(() => {
     if (!isOpen) return
     const root = scrollRef.current
     if (!root) return
     const next = new Set<string>()
-    for (const { title } of SECTIONS) {
-      const id = title.toLowerCase()
+    for (const { titleKey, id } of SECTIONS) {
+      const title = t(titleKey)
       if (query === '' || title.toLowerCase().includes(query)) {
         next.add(id)
         continue
       }
-      if (root.querySelector(`#${sectionId(title)} [data-srow]`)) next.add(id)
+      if (root.querySelector(`#${sectionId(id)} [data-srow]`)) next.add(id)
     }
     setVisibleSections(next)
-  }, [query, isOpen])
+  }, [query, isOpen, t])
 
   // Scroll-spy — highlight the section whose top sits at/above the fold.
   useEffect(() => {
@@ -143,7 +144,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
     setActiveId(id)
   }
 
-  const navSections = SECTIONS.filter(({ title }) => query === '' || visibleSections.has(title.toLowerCase()))
+  const navSections = SECTIONS.filter(({ id }) => query === '' || visibleSections.has(id))
 
   return (
     <div
@@ -156,7 +157,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0 border-b border-subtle bg-surface-0/40">
-          <h2 className="text-lg font-semibold text-primary">Settings</h2>
+          <h2 className="text-lg font-semibold text-primary">{t('settings.title')}</h2>
           <div className="flex items-center gap-1.5">
             <button
               onClick={openSettingsJson}
@@ -195,24 +196,23 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
                       setRawQuery('')
                     }
                   }}
-                  placeholder="Search settings…"
+                  placeholder={t('settings.search')}
                   className="w-full bg-surface-5 border border-subtle rounded-md pl-7 pr-2 py-1 text-sm text-primary placeholder:text-muted focus:border-focus-blue focus:outline-none"
                 />
               </div>
             </div>
             <nav className="flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-0.5">
-              {navSections.map(({ title }) => {
-                const id = title.toLowerCase()
+              {navSections.map(({ titleKey, id }) => {
                 const active = id === activeId
                 return (
                   <button
-                    key={title}
+                    key={id}
                     onClick={() => jumpTo(id)}
                     className={`text-left px-2.5 py-1.5 rounded-md text-sm transition-colors ${
                       active ? 'bg-surface-3 text-primary' : 'text-secondary hover:bg-hover hover:text-primary'
                     }`}
                   >
-                    {title}
+                    {t(titleKey)}
                   </button>
                 )
               })}
@@ -225,12 +225,12 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
           {/* Scrollable sections */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
             <div className="flex flex-col gap-6">
-              {SECTIONS.map(({ title, component: Component }) => {
-                const id = title.toLowerCase()
+              {SECTIONS.map(({ titleKey, id, component: Component }) => {
+                const title = t(titleKey)
                 const sectionMatched = query !== '' && title.toLowerCase().includes(query)
                 const hidden = query !== '' && !visibleSections.has(id)
                 return (
-                  <section key={title} id={sectionId(title)} data-section-id={id} hidden={hidden}>
+                  <section key={id} id={sectionId(id)} data-section-id={id} hidden={hidden}>
                     <h3 className="text-sm font-semibold text-primary mb-2">
                       {title}
                     </h3>
@@ -242,7 +242,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
               })}
               {query !== '' && visibleSections.size === 0 && (
                 <div className="py-10 text-center text-sm text-muted">
-                  No settings match “{rawQuery.trim()}”.
+                  No settings match &ldquo;{rawQuery.trim()}&rdquo;.
                 </div>
               )}
             </div>

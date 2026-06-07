@@ -239,7 +239,7 @@ interface AppStoreActions {
   // Panel creation — each adds a PanelState to the workspace AND places it
   createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement, cwd?: string) => string
   createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement, proxyUrl?: string) => string
-  createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
+  createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement, opts?: { markdownPreview?: boolean }) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
@@ -266,6 +266,7 @@ interface AppStoreActions {
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
+  setMarkdownViewMode: (workspaceId: string, panelId: string, mode: 'source' | 'split' | 'preview') => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
 
@@ -727,7 +728,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
 
-  createEditor(workspaceId, filePath?, position?, placement?) {
+  createEditor(workspaceId, filePath?, position?, placement?, opts?) {
     const panelId = generateId()
     const fileName = filePath ? filePath.split('/').pop() ?? 'Untitled' : 'Untitled'
     const panel: PanelState = {
@@ -736,6 +737,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       title: fileName,
       isDirty: false,
       filePath,
+      ...(opts?.markdownPreview ? { markdownPreview: true } : {}),
     }
     return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
   },
@@ -881,6 +883,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return {
           ...ws,
           panels: { ...ws.panels, [panelId]: { ...panel, markdownPreview: preview } },
+        }
+      }),
+    }))
+  },
+
+  setMarkdownViewMode(workspaceId, panelId, mode) {
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => {
+        if (ws.id !== workspaceId) return ws
+        const panel = ws.panels[panelId]
+        if (!panel) return ws
+        return {
+          ...ws,
+          panels: { ...ws.panels, [panelId]: { ...panel, markdownViewMode: mode } },
         }
       }),
     }))

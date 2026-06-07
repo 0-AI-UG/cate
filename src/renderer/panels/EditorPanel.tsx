@@ -318,6 +318,9 @@ export default function EditorPanel({
   const isDirtyRef = useRef(false)
   const isRefreshingFromDiskRef = useRef(false)
   const filePathRef = useRef(filePath)
+  // Tracks whether the markdown preview pane is visible so the Monaco
+  // onDidChangeModelContent handler (created once) can push live updates.
+  const liveMarkdownSyncRef = useRef(false)
 
   // Only overwrite the ref from the prop when the prop is itself defined.
   // In detached/dock windows the shell keeps its own local `panels` state
@@ -338,13 +341,19 @@ export default function EditorPanel({
   // from one markdown file to the next. Keying it by panelId also keeps each
   // tab's choice independent across canvas switches.
   const markdownPreview = !!ws?.panels[panelId]?.markdownPreview
-  const setMarkdownPreview = useCallback(
-    (next: boolean) =>
-      useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, next),
+  // markdownViewMode supersedes the legacy markdownPreview boolean.
+  // Derive it from the stored value, falling back to the legacy boolean so
+  // existing panels that only have markdownPreview set continue to work.
+  const storedViewMode = ws?.panels[panelId]?.markdownViewMode
+  const markdownViewMode: 'source' | 'split' | 'preview' = storedViewMode
+    ?? (markdownPreview ? 'preview' : 'source')
+  const setMarkdownViewMode = useCallback(
+    (mode: 'source' | 'split' | 'preview') =>
+      useAppStore.getState().setMarkdownViewMode(workspaceId, panelId, mode),
     [workspaceId, panelId],
   )
   const rootPath = ws?.rootPath
-  const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
+  const isMarkdown = !!filePath && /\.(md|mdx|markdown)$/i.test(filePath)
 
   // ---------------------------------------------------------------------------
   // Save handler (regular editor only)
@@ -641,6 +650,12 @@ export default function EditorPanel({
         }
       }
 
+      // Push live content to the markdown preview pane (split / preview mode).
+      if (liveMarkdownSyncRef.current) {
+        const value = editor.getModel()?.getValue() ?? ''
+        setMarkdownContent(value)
+      }
+
       // Persist scratch-editor content to the store (debounced) so it
       // survives canvas/workspace switches and app restarts.
       if (!filePathRef.current) {
@@ -676,6 +691,51 @@ export default function EditorPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath, workspaceId, diffMode])
+
+  // ---------------------------------------------------------------------------
+  // Live reload: watch the file on disk and refresh the editor when it changes
+  // externally (only when there are no unsaved changes).
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!filePath) return
+    // Skip remote/companion files — they have their own sync mechanism
+    if (filePath.startsWith('cate-companion://')) return
+
+    const lastSep = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+    const dirPath = lastSep > 0 ? filePath.slice(0, lastSep) : filePath
+
+    window.electronAPI.fsWatchStart(dirPath, workspaceId)
+
+    const unsubscribe = window.electronAPI.onFsWatchEvent((event) => {
+      if (event.type !== 'update') return
+      if (event.path !== filePath) return
+      if (isDirtyRef.current) return
+
+      window.electronAPI.fsReadFile(filePath, workspaceId).then((content) => {
+        if (isDirtyRef.current) return
+        const editor = editorRef.current
+        const model = editor?.getModel()
+        if (model && !model.isDisposed() && model.getValue() !== content) {
+          isRefreshingFromDiskRef.current = true
+          try {
+            model.setValue(content)
+          } finally {
+            isRefreshingFromDiskRef.current = false
+          }
+        }
+        // Also update markdown preview content
+        if (isMarkdown) {
+          setMarkdownContent(content)
+        }
+      }).catch(() => { /* ignore read errors */ })
+    })
+
+    return () => {
+      unsubscribe()
+      window.electronAPI.fsWatchStop(dirPath, workspaceId)
+    }
+  }, [filePath, workspaceId, isMarkdown])
 
   // ---------------------------------------------------------------------------
   // Listen for save-file custom event
@@ -719,23 +779,27 @@ export default function EditorPanel({
   }, [])
 
   // ---------------------------------------------------------------------------
-  // Sync markdown content when preview is toggled on
+  // Sync markdown content when preview is toggled on (preview or split mode)
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (markdownPreview && isMarkdown) {
+    const needsPreview = isMarkdown && (markdownViewMode === 'preview' || markdownViewMode === 'split')
+    liveMarkdownSyncRef.current = needsPreview
+    if (needsPreview) {
       const model = editorRef.current?.getModel()
       if (model && !model.isDisposed()) {
         setMarkdownContent(model.getValue())
       } else if (filePath) {
         window.electronAPI.fsReadFile(filePath, workspaceId).then(setMarkdownContent).catch(() => {})
       }
-    } else {
-      // Re-layout Monaco after unhiding — dimensions may have changed while hidden
+    }
+    // Re-layout Monaco whenever the container dimensions change (switching
+    // modes changes the flex layout, so Monaco needs a fresh measurement).
+    requestAnimationFrame(() => {
       editorRef.current?.layout()
       diffEditorRef.current?.layout()
-    }
-  }, [markdownPreview, isMarkdown, filePath, workspaceId])
+    })
+  }, [markdownViewMode, isMarkdown, filePath, workspaceId])
 
   // ---------------------------------------------------------------------------
   // Watch app theme changes and update Monaco theme
@@ -753,25 +817,60 @@ export default function EditorPanel({
   // Render
   // ---------------------------------------------------------------------------
 
+  const showEditor = !isMarkdown || markdownViewMode === 'source' || markdownViewMode === 'split'
+  const showPreview = isMarkdown && (markdownViewMode === 'preview' || markdownViewMode === 'split')
+  const isSplit = isMarkdown && markdownViewMode === 'split'
+
   return (
-    <div className="w-full h-full relative">
+    <div className="w-full h-full relative flex flex-col">
       {isMarkdown && !diffMode && (
-        <button
-          onClick={() => setMarkdownPreview(!markdownPreview)}
-          className={`absolute top-2 right-5 z-10 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-            markdownPreview
-              ? 'bg-agent/15 text-agent hover:bg-agent/25'
-              : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
-          }`}
-          title={markdownPreview ? 'Show source' : 'Preview markdown'}
-        >
-          {markdownPreview ? 'Source' : 'Preview'}
-        </button>
+        <div className="absolute top-2 right-5 z-10 flex items-center gap-0.5 bg-surface-3 rounded p-0.5">
+          <button
+            onClick={() => setMarkdownViewMode('source')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              markdownViewMode === 'source'
+                ? 'bg-surface-4 text-primary'
+                : 'text-secondary hover:text-primary'
+            }`}
+            title="Source only"
+          >
+            Source
+          </button>
+          <button
+            onClick={() => setMarkdownViewMode('split')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              markdownViewMode === 'split'
+                ? 'bg-surface-4 text-primary'
+                : 'text-secondary hover:text-primary'
+            }`}
+            title="Split view"
+          >
+            Split
+          </button>
+          <button
+            onClick={() => setMarkdownViewMode('preview')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              markdownViewMode === 'preview'
+                ? 'bg-surface-4 text-primary'
+                : 'text-secondary hover:text-primary'
+            }`}
+            title="Preview only"
+          >
+            Preview
+          </button>
+        </div>
       )}
-      {markdownPreview && isMarkdown && (
-        <MarkdownPreview content={markdownContent} />
-      )}
-      <div ref={containerRef} className={`w-full h-full ${markdownPreview && isMarkdown ? 'hidden' : ''}`} />
+      <div className={`flex-1 min-h-0 flex flex-row ${isSplit ? '' : 'relative'}`}>
+        <div ref={containerRef} className={`${isSplit ? 'flex-1 min-w-0' : 'w-full h-full'} ${!showEditor ? 'hidden' : ''}`} />
+        {isSplit && (
+          <div className="w-px bg-subtle shrink-0" />
+        )}
+        {showPreview && (
+          <div className={isSplit ? 'flex-1 min-w-0 overflow-y-auto' : 'absolute inset-0 overflow-auto'}>
+            <MarkdownPreview content={markdownContent} />
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -782,7 +881,7 @@ export default function EditorPanel({
 
 function MarkdownPreview({ content }: { content: string }) {
   return (
-    <div className="absolute inset-0 overflow-auto px-6 py-4">
+    <div className="px-6 py-4">
       <div className="max-w-3xl mx-auto prose-markdown space-y-3 text-[13px] text-primary leading-relaxed">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}

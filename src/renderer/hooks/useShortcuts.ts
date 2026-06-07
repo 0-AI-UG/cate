@@ -213,6 +213,12 @@ export function useShortcuts(): void {
         case 'autoLayout':
           canvasStore().autoLayout()
           break
+        case 'layoutColumns':
+          canvasStore().layoutColumns()
+          break
+        case 'layoutRows':
+          canvasStore().layoutRows()
+          break
         case 'undo':
           canvasStore().undo()
           break

@@ -33,6 +33,7 @@ const SETTINGS_FILENAME = 'settings.json'
 // shared with the on-disk merge so a malformed hand-edit can't poison state.
 // ---------------------------------------------------------------------------
 const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
+  language: 'string',
   defaultShellPath: 'string',
   warnBeforeQuit: 'boolean',
   activeThemeId: 'string',
@@ -64,6 +65,8 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',
   fileExclusions: 'array',
+  fileOpenMode: 'string',
+  defaultLayoutMode: 'string',
   notificationsEnabled: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',
   crashReportingEnabled: 'boolean',

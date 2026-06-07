@@ -1,15 +1,27 @@
 import { useSettingsStore } from '../stores/settingsStore'
-import { SettingRow, Toggle, TextInput } from './SettingsComponents'
+import { SettingRow, Toggle, TextInput, Select } from './SettingsComponents'
+import { useTranslation } from '../hooks/useTranslation'
 
 export function GeneralSettings() {
   const store = useSettingsStore()
+  const { t } = useTranslation()
 
   return (
     <div className="flex flex-col gap-1">
-      <SettingRow label="Default shell path" description="Leave blank to auto-detect ($SHELL, then a platform default).">
+      <SettingRow label={t('general.language')} description={t('general.language.desc')}>
+        <Select
+          value={store.language ?? 'en'}
+          onChange={(v) => store.setSetting('language', v as 'en' | 'ko')}
+          options={[
+            { value: 'en', label: 'English' },
+            { value: 'ko', label: '한국어' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow label={t('general.shell')} description={t('general.shell.desc')}>
         <TextInput value={store.defaultShellPath} onChange={(v) => store.setSetting('defaultShellPath', v)} placeholder="Auto-detect" />
       </SettingRow>
-      <SettingRow label="Warn before quit" description="Show confirmation dialog on Cmd+Q">
+      <SettingRow label={t('general.warnQuit')} description={t('general.warnQuit.desc')}>
         <Toggle checked={store.warnBeforeQuit} onChange={(v) => store.setSetting('warnBeforeQuit', v)} />
       </SettingRow>
       <SettingRow
