@@ -239,6 +239,7 @@ export interface CanvasStoreActions {
   groupSelectedHorizontal: () => string | null
   stackSelected: (axis: 'row' | 'column', gap?: number) => void
   tidyGridSelected: (gap?: number) => void
+  alignSelected: (axis: 'left' | 'right' | 'top' | 'bottom' | 'center-x' | 'center-y') => void
   dissolveRegion: (regionId: string) => void
 
   // Per-node dock layout — replaces split/stack actions. Each canvas node owns
@@ -588,9 +589,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
     } else {
       // Save current geometry and maximize to fill visible canvas area
       const cs = state.containerSize
-      const topLeft = get().viewToCanvas({ x: 0, y: 0 })
+      const insets = getCanvasViewportInsets()
+      const topLeft = get().viewToCanvas({ x: insets.left, y: 0 })
       const bottomRight = get().viewToCanvas({
-        x: cs.width || viewportSize.width,
+        x: (cs.width || viewportSize.width) - insets.right,
         y: cs.height || viewportSize.height,
       })
       const padding = 20 / state.zoomLevel
@@ -1321,13 +1323,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
         240,
         (containerWidth - gap * (cols + 1)) / cols,
       )
-      // Cap cell height by a panel-friendly aspect (≈ 4:3) so tall viewports
-      // don't stretch panels vertically.
-      const maxCellH = cellW * 0.72
-      const cellH = Math.min(
-        maxCellH,
-        Math.max(160, (containerHeight - gap * (rows + 1)) / rows),
-      )
+      const cellH = Math.max(160, (containerHeight - gap * (rows + 1)) / rows)
       get().pushHistory()
       const updatedNodes = { ...state.nodes }
       nodeList.forEach((node, i) => {
@@ -1693,6 +1689,33 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
           origin: { x: startX + col * (cellW + gap), y: startY + row * (cellH + gap) },
         }
       })
+      return { nodes: next }
+    })
+  },
+
+  alignSelected(axis) {
+    get().pushHistory()
+    set((state) => {
+      const selected = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+      if (selected.length < 2) return state
+      const minX = Math.min(...selected.map((n) => n.origin.x))
+      const minY = Math.min(...selected.map((n) => n.origin.y))
+      const maxX = Math.max(...selected.map((n) => n.origin.x + n.size.width))
+      const maxY = Math.max(...selected.map((n) => n.origin.y + n.size.height))
+      const centerX = (minX + maxX) / 2
+      const centerY = (minY + maxY) / 2
+      const next = { ...state.nodes }
+      for (const n of selected) {
+        let x = n.origin.x
+        let y = n.origin.y
+        if (axis === 'left') x = minX
+        else if (axis === 'right') x = maxX - n.size.width
+        else if (axis === 'top') y = minY
+        else if (axis === 'bottom') y = maxY - n.size.height
+        else if (axis === 'center-x') x = centerX - n.size.width / 2
+        else if (axis === 'center-y') y = centerY - n.size.height / 2
+        next[n.id] = { ...n, origin: { x, y } }
+      }
       return { nodes: next }
     })
   },

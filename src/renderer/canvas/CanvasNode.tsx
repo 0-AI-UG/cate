@@ -486,6 +486,16 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         { id: 'back', label: 'Move to Back' },
         { type: 'separator' },
         { id: 'close', label: 'Close', accelerator: 'Cmd+W' },
+        { type: 'separator' as const },
+        {
+          label: 'Resize to',
+          submenu: [
+            { id: 'resize-sm', label: 'Small  (400 × 300)' },
+            { id: 'resize-md', label: 'Medium (640 × 480)' },
+            { id: 'resize-lg', label: 'Large  (900 × 640)' },
+            { id: 'resize-wide', label: 'Wide  (1200 × 700)' },
+          ],
+        },
       ])
       switch (id) {
         case 'maximize': handleToggleMaximize(); break
@@ -493,6 +503,10 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         case 'front': canvasApi.getState().moveToFront(nodeId); break
         case 'back': canvasApi.getState().moveToBack(nodeId); break
         case 'close': handleClose(); break
+        case 'resize-sm': canvasApi.getState().resizeNode(nodeId, { width: 400, height: 300 }); break
+        case 'resize-md': canvasApi.getState().resizeNode(nodeId, { width: 640, height: 480 }); break
+        case 'resize-lg': canvasApi.getState().resizeNode(nodeId, { width: 900, height: 640 }); break
+        case 'resize-wide': canvasApi.getState().resizeNode(nodeId, { width: 1200, height: 700 }); break
       }
     },
     [maximized, node?.isPinned, handleToggleMaximize, handleTogglePin, handleClose, canvasApi, nodeId],

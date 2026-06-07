@@ -492,7 +492,37 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       }
       items.push(
         { id: 'new-region', label: 'New Region' },
+        { type: 'separator' as const },
+        {
+          label: 'Layout',
+          submenu: [
+            { id: 'layout-grid', label: 'Auto Layout (Grid)' },
+            { id: 'layout-columns', label: '2 Columns' },
+            { id: 'layout-rows', label: '2 Rows' },
+            { type: 'separator' as const },
+            { id: 'zoom-to-fit', label: 'Zoom to Fit' },
+          ],
+        },
       )
+      const nSelected = canvasApi.getState().selectedNodeIds.size
+      if (nSelected >= 2) {
+        items.push({
+          label: 'Align Selected',
+          submenu: [
+            { id: 'align-left', label: 'Align Left Edges' },
+            { id: 'align-center-x', label: 'Center Horizontally' },
+            { id: 'align-right', label: 'Align Right Edges' },
+            { type: 'separator' as const },
+            { id: 'align-top', label: 'Align Top Edges' },
+            { id: 'align-center-y', label: 'Center Vertically' },
+            { id: 'align-bottom', label: 'Align Bottom Edges' },
+            { type: 'separator' as const },
+            { id: 'stack-row', label: 'Stack in a Row' },
+            { id: 'stack-col', label: 'Stack in a Column' },
+            { id: 'tidy-grid', label: 'Tidy Grid' },
+          ],
+        })
+      }
       const id = await window.electronAPI.showContextMenu(items)
       if (cancelled) return
       closeCanvasContextMenu()
@@ -535,6 +565,19 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         case 'new-region':
           canvasApi.getState().addRegion('Region', point, { width: 400, height: 300 })
           break
+        case 'layout-grid': canvasApi.getState().autoLayout(); break
+        case 'layout-columns': canvasApi.getState().layoutColumns(); break
+        case 'layout-rows': canvasApi.getState().layoutRows(); break
+        case 'zoom-to-fit': canvasApi.getState().zoomToFit(); break
+        case 'align-left': canvasApi.getState().alignSelected('left'); break
+        case 'align-right': canvasApi.getState().alignSelected('right'); break
+        case 'align-top': canvasApi.getState().alignSelected('top'); break
+        case 'align-bottom': canvasApi.getState().alignSelected('bottom'); break
+        case 'align-center-x': canvasApi.getState().alignSelected('center-x'); break
+        case 'align-center-y': canvasApi.getState().alignSelected('center-y'); break
+        case 'stack-row': canvasApi.getState().stackSelected('row'); break
+        case 'stack-col': canvasApi.getState().stackSelected('column'); break
+        case 'tidy-grid': canvasApi.getState().tidyGridSelected(); break
       }
     }
     void buildAndShow()
