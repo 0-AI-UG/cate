@@ -28,7 +28,7 @@ import {
   Check,
   CircleNotch,
   CaretDown,
-  LinkSimple,
+  ArrowSquareOut,
 } from '@phosphor-icons/react'
 import { BACKDROP, CARD_SURFACE } from '../ui/Modal'
 import { useUIStore } from '../stores/uiStore'
@@ -327,19 +327,7 @@ function SkillRow({
   const installRef = useRef<HTMLButtonElement>(null)
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null)
   const [saveBusy, setSaveBusy] = useState(false)
-  const [copied, setCopied] = useState(false)
   const link = sourceUrl(entry)
-
-  const copyLink = async () => {
-    if (!link) return
-    try {
-      await navigator.clipboard.writeText(link)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch {
-      /* clipboard blocked — ignore */
-    }
-  }
 
   const openMenu = () => {
     const r = installRef.current?.getBoundingClientRect()
@@ -402,11 +390,11 @@ function SkillRow({
 
       {link && (
         <button
-          onClick={() => void copyLink()}
-          title={copied ? 'Copied!' : 'Copy link to skill'}
+          onClick={() => window.electronAPI?.openExternalUrl(link)}
+          title="Open skill on GitHub"
           className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-secondary opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
         >
-          {copied ? <Check size={14} className="text-emerald-400" /> : <LinkSimple size={14} />}
+          <ArrowSquareOut size={14} />
         </button>
       )}
 
