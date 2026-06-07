@@ -15,9 +15,12 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStateStore } from '../stores/uiStateStore'
 import { useUIStore } from '../stores/uiStore'
 import { SettingsWindow } from '../settings/SettingsWindow'
+import WindowControls from './WindowControls'
 import { applyTheme } from '../lib/themeManager'
 import { ensurePanelsInAppStore } from '../lib/canvas/applyCanvasChildPanels'
 import { useAppStore } from '../stores/appStore'
+
+const IS_MAC = navigator.userAgent.includes('Mac')
 
 interface PanelWindowShellProps {
   panelType?: string
@@ -226,14 +229,20 @@ export default function PanelWindowShell({ panelType, panelId, workspaceId }: Pa
           <PanelTypeIcon type={displayPanel.type} />
         </div>
         <span className="text-xs text-secondary truncate flex-1 min-w-0">{displayPanel.title}</span>
-        <button
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-muted hover:text-primary transition-colors"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          onClick={handleClose}
-          title="Close"
-        >
-          <X size={10} />
-        </button>
+        {IS_MAC ? (
+          // macOS has no native controls on this hidden-titlebar window, so keep
+          // an app-level close. Windows/Linux gets full controls below.
+          <button
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-muted hover:text-primary transition-colors"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            onClick={handleClose}
+            title="Close"
+          >
+            <X size={10} />
+          </button>
+        ) : (
+          <WindowControls />
+        )}
       </div>
 
       <DragOverlay />

@@ -15,6 +15,7 @@ import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
 import { useUIStateStore } from './stores/uiStateStore'
 import { migrateLegacyLocalStorage } from './lib/migrateLegacyLocalStorage'
+import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useUpdateStore, type UpdateStatus } from './stores/updateStore'
 import { useShortcuts } from './hooks/useShortcuts'
@@ -351,7 +352,7 @@ function MainApp() {
         const stat = await window.electronAPI.fsStat(filePath)
         if (!stat.isDirectory) return
         const app = useAppStore.getState()
-        const folderName = filePath.split('/').filter(Boolean).pop() ?? 'Workspace'
+        const folderName = workspaceDisplayName(filePath) || 'Workspace'
         // If the only workspace is the untouched default (no root, empty
         // panels), reuse it rather than stacking a second empty workspace.
         const existing = app.workspaces.find((w) => w.rootPath === filePath)

@@ -120,6 +120,11 @@ import {
   NOTIFY_OS,
   NOTIFY_ACTION,
   WINDOW_SET_TITLE,
+  WINDOW_MINIMIZE,
+  WINDOW_TOGGLE_MAXIMIZE,
+  WINDOW_CLOSE,
+  WINDOW_IS_MAXIMIZED,
+  WINDOW_MAXIMIZE_STATE,
   PANEL_TRANSFER,
   PANEL_RECEIVE,
   PANEL_TRANSFER_ACK,
@@ -243,6 +248,23 @@ function fullscreenLiveCheck(): boolean {
     return cachedFullscreen
   } catch {
     return cachedFullscreen
+  }
+}
+
+// This window's own maximize state, pushed by main on maximize/unmaximize. Cached
+// so the custom window controls can render synchronously on first paint, with a
+// `sendSync` pull as the authoritative fallback (mirrors the fullscreen pattern).
+let cachedMaximized = false
+ipcRenderer.on(WINDOW_MAXIMIZE_STATE, (_event, value: boolean) => {
+  cachedMaximized = Boolean(value)
+})
+function maximizedLiveCheck(): boolean {
+  try {
+    const v = ipcRenderer.sendSync(WINDOW_IS_MAXIMIZED)
+    cachedMaximized = Boolean(v)
+    return cachedMaximized
+  } catch {
+    return cachedMaximized
   }
 }
 
@@ -1002,6 +1024,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *  call this on every mousemove — that's fine at ~60 Hz. */
   isMainWindowFullscreen(): boolean {
     return fullscreenLiveCheck()
+  },
+
+  // Custom window controls (frameless Windows/Linux chrome). Each acts on the
+  // calling window. No-ops visually on macOS, where native chrome is used.
+  windowMinimize(): Promise<void> {
+    return ipcRenderer.invoke(WINDOW_MINIMIZE)
+  },
+  windowToggleMaximize(): Promise<void> {
+    return ipcRenderer.invoke(WINDOW_TOGGLE_MAXIMIZE)
+  },
+  windowClose(): Promise<void> {
+    return ipcRenderer.invoke(WINDOW_CLOSE)
+  },
+  /** Is the calling window currently maximized? Uses the cached push value and
+   *  falls back to a sync IPC for the authoritative answer. */
+  isWindowMaximized(): boolean {
+    return maximizedLiveCheck()
+  },
+  /** Subscribe to this window's maximize-state changes. Fires with the new
+   *  boolean whenever the window is maximized or restored. */
+  onWindowMaximizeChange(callback: (isMaximized: boolean) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: boolean): void => {
+      callback(Boolean(value))
+    }
+    ipcRenderer.on(WINDOW_MAXIMIZE_STATE, listener)
+    return () => { ipcRenderer.removeListener(WINDOW_MAXIMIZE_STATE, listener) }
   },
 
   onDragEnd(callback: () => void): () => void {

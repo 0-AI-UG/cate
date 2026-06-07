@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractAgentTitleSegment } from './agentTitleParser'
+import { extractAgentTitleSegment, shellTitleBasename } from './agentTitleParser'
 
 describe('extractAgentTitleSegment', () => {
   it('returns the middle segment of a 4-segment claude/iTerm title', () => {
@@ -32,5 +32,31 @@ describe('extractAgentTitleSegment', () => {
   it('returns empty for empty input', () => {
     expect(extractAgentTitleSegment('')).toBe('')
     expect(extractAgentTitleSegment('   ')).toBe('')
+  })
+})
+
+describe('shellTitleBasename', () => {
+  it('collapses a Windows cwd title to the folder name', () => {
+    expect(shellTitleBasename('C:\\Users\\foo\\myproject')).toBe('myproject')
+  })
+
+  it('collapses a POSIX cwd title to the folder name', () => {
+    expect(shellTitleBasename('/Users/foo/myproject')).toBe('myproject')
+  })
+
+  it('collapses a UNC path to the final segment', () => {
+    expect(shellTitleBasename('\\\\server\\share\\proj')).toBe('proj')
+  })
+
+  it('leaves a non-path title unchanged', () => {
+    expect(shellTitleBasename('✳ Claude Code')).toBe('✳ Claude Code')
+  })
+
+  it('leaves a relative title containing a slash unchanged', () => {
+    expect(shellTitleBasename('bun ‹ src/index.ts')).toBe('bun ‹ src/index.ts')
+  })
+
+  it('returns empty input unchanged', () => {
+    expect(shellTitleBasename('')).toBe('')
   })
 })
