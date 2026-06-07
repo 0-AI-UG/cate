@@ -537,6 +537,24 @@ export interface ElectronAPI {
   // Window management
   // ---------------------------------------------------------------------------
 
+  /** Minimize the calling window. Used by the custom window controls on the
+   *  frameless Windows/Linux chrome. */
+  windowMinimize(): Promise<void>
+
+  /** Toggle maximize/restore on the calling window. */
+  windowToggleMaximize(): Promise<void>
+
+  /** Close the calling window. */
+  windowClose(): Promise<void>
+
+  /** Synchronous cached check: is the calling window maximized? Backs the
+   *  maximize/restore glyph swap in the custom window controls. */
+  isWindowMaximized(): boolean
+
+  /** Subscribe to the calling window's maximize-state changes. Fires with the
+   *  new boolean whenever the window is maximized or restored. */
+  onWindowMaximizeChange(callback: (isMaximized: boolean) => void): () => void
+
   // ---------------------------------------------------------------------------
   // Panel transfer (cross-window)
   // ---------------------------------------------------------------------------
@@ -740,21 +758,6 @@ export interface ElectronAPI {
   /** Push a (panelId, webContentsId, alive) tuple to main so it can build a
    *  webContents → portal-panel reverse map for popup parent resolution. */
   orchRegisterPortalWc(payload: { panelId: string; webContentsId: number; alive: boolean }): void
-
-  // -------------------------------------------------------------------------
-  // Auto-updater
-  // -------------------------------------------------------------------------
-
-  /** Subscribe to update-status broadcasts from the main process. */
-  onUpdateStatus(callback: (status: unknown) => void): () => void
-  /** Fetch the current update status (e.g. on window mount). */
-  updateGetStatus(): Promise<unknown>
-  /** Start downloading the available update (electron-updater path only). */
-  updateDownload(): void
-  /** Apply the downloaded update and restart the app. */
-  updateInstall(): void
-  /** Open the GitHub release page when auto-install is unavailable. */
-  updateOpenRelease(url?: string): void
 
   // -------------------------------------------------------------------------
   // Analytics — post-update feedback prompt

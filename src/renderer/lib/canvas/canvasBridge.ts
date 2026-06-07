@@ -6,7 +6,7 @@
 
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
-import type { PanelType, Point, CanvasNodeId, CanvasNodeState, DockLayoutNode } from '../../../shared/types'
+import type { PanelType, Point, Size, CanvasNodeId, CanvasNodeState, DockLayoutNode } from '../../../shared/types'
 import { findNodeDockStore } from '../../panels/nodeDockRegistry'
 
 // -----------------------------------------------------------------------------
@@ -16,7 +16,7 @@ import { findNodeDockStore } from '../../panels/nodeDockRegistry'
 // -----------------------------------------------------------------------------
 
 export interface CanvasOperations {
-  addNodeAndFocus: (panelId: string, panelType: PanelType, position?: Point) => void
+  addNodeAndFocus: (panelId: string, panelType: PanelType, position?: Point, size?: Size) => void
   /** Begin interactive ghost placement. Returns true if ghosts are shown (the
    *  caller must NOT also place the node). `onCancelled` rolls the panel back. */
   beginPlacement: (
@@ -47,8 +47,8 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
   return {
     storeApi,
 
-    addNodeAndFocus(panelId: string, panelType: PanelType, position?: Point) {
-      const nodeId = storeApi.getState().addNode(panelId, panelType, position)
+    addNodeAndFocus(panelId: string, panelType: PanelType, position?: Point, size?: Size) {
+      const nodeId = storeApi.getState().addNode(panelId, panelType, position, size)
       storeApi.getState().focusAndCenter(nodeId)
     },
 

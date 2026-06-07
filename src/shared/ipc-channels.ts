@@ -130,12 +130,6 @@ export const BOOT_SNAPSHOT_WRITE = 'boot:snapshotWrite' // renderer -> main
  *  via OS "Open With..."). Renderer opens it as a new workspace. */
 export const APP_OPEN_PATH = 'app:openPath'
 
-// Auto-updater (main -> renderer for status; renderer -> main for actions)
-export const UPDATE_STATUS = 'update:status'
-export const UPDATE_INSTALL = 'update:install'
-export const UPDATE_DOWNLOAD = 'update:download'
-export const UPDATE_OPEN_RELEASE = 'update:openRelease'
-
 // Analytics — post-update feedback prompt
 // Main -> renderer: show the modal. Payload: { fromVersion, toVersion }
 export const ANALYTICS_FEEDBACK_PROMPT = 'analytics:feedbackPrompt'
@@ -235,6 +229,13 @@ export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notificatio
 
 // Window management
 export const WINDOW_SET_TITLE = 'window:setTitle'
+// Custom window controls (frameless Windows/Linux chrome). Each is per-window —
+// the handler resolves the calling window from the IPC event sender.
+export const WINDOW_MINIMIZE = 'window:minimize'              // renderer -> main
+export const WINDOW_TOGGLE_MAXIMIZE = 'window:toggleMaximize' // renderer -> main
+export const WINDOW_CLOSE = 'window:close'                    // renderer -> main
+export const WINDOW_IS_MAXIMIZED = 'window:isMaximized'       // renderer -> main (sync pull)
+export const WINDOW_MAXIMIZE_STATE = 'window:maximizeState'   // main -> renderer (push)
 
 // Panel transfer (cross-window)
 export const PANEL_TRANSFER = 'panel:transfer'

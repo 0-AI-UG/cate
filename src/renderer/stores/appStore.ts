@@ -26,6 +26,8 @@ import type {
 } from '../../shared/types'
 import { PANEL_DEFAULT_SIZES, ALL_ZONES } from '../../shared/types'
 import { ACCENT_COLORS } from '../../shared/colors'
+import { BASE_DARK, BASE_LIGHT } from '../../shared/themes'
+import { getActiveTheme } from '../lib/themeManager'
 import { pathKey } from '../../shared/pathUtils'
 import type { StoreApi } from 'zustand'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
@@ -162,8 +164,10 @@ export type PanelPlacement =
   /** `canvasPanelId` pins the create to a SPECIFIC canvas (the one the toolbar /
    *  right-click menu / drop originated from). Without it, placement routes to
    *  the workspace's primary canvas — correct for session restore and auto
-   *  creates, but wrong for an interactive create on a secondary/nested canvas. */
-  | { target: 'canvas'; position?: Point; canvasPanelId?: string }
+   *  creates, but wrong for an interactive create on a secondary/nested canvas.
+   *  `size` pins the node's size (used by layout restore to reproduce the saved
+   *  geometry exactly); without it the panel type's default size is used. */
+  | { target: 'canvas'; position?: Point; canvasPanelId?: string; size?: Size }
   /** `stackId` docks the panel as a new tab in a SPECIFIC stack (the one the
    *  user is working in — e.g. the focused pane of a split). Without it the
    *  panel lands in the zone's default stack. A stale stackId falls back to the
@@ -176,28 +180,94 @@ export type PanelPlacement =
   | { target: 'none' }
 
 // -----------------------------------------------------------------------------
-// Worktree colors — fixed palette assigned round-robin to new worktrees.
-// Picked to be visually distinct in both light and dark themes.
+// Worktree colors — a multi-color palette derived from the ACTIVE theme rather
+// than a fixed hardcoded set, so the swatches look native to whatever theme is
+// loaded. Source is the theme's terminal ANSI palette (a rich, vivid, multi-hue
+// set every theme defines, and — unlike the git/panel app colors — not tied to
+// other UI meaning).
+//
+// The theme accent (--focus-blue) is excluded DYNAMICALLY: we drop whichever
+// ANSI hue is closest to it, so a worktree color is never confused with focus/
+// selection chrome. The accent isn't always blue — in a red-accented theme it's
+// the red entry that drops, in a green-accented one the green entry, etc.
+//
+// Picked colors are resolved to concrete #rrggbb and stored on the worktree, so
+// they keep working in the canvas territory renderer (which parses hex) and a
+// worktree keeps its color across later theme switches.
 // -----------------------------------------------------------------------------
 
-export const WORKTREE_COLOR_PALETTE: string[] = [
-  '#3b82f6', // blue
-  '#10b981', // emerald
-  '#f59e0b', // amber
-  '#ec4899', // pink
-  '#8b5cf6', // violet
-  '#14b8a6', // teal
-  '#ef4444', // red
-  '#84cc16', // lime
-  '#06b6d4', // cyan
-  '#f97316', // orange
-]
+/** Vivid ANSI hue slots, ordered rainbow-ish (base + brighter shade per hue).
+ *  Blacks/whites/grays are omitted. Blue is kept here on purpose — only the hue
+ *  closest to the *actual* accent is dropped below, so in a non-blue-accent
+ *  theme blue stays available (and in the usual blue-accent themes it drops). */
+const WORKTREE_ANSI_KEYS = [
+  'red', 'brightRed',
+  'yellow', 'brightYellow',
+  'green', 'brightGreen',
+  'cyan', 'brightCyan',
+  'blue', 'brightBlue',
+  'magenta', 'brightMagenta',
+] as const
+
+/** Squared-RGB distance below which a hue is treated as "the accent" (dropped). */
+const ACCENT_EXCLUDE_DIST2 = 10000
+/** Squared-RGB distance below which two hues are treated as duplicates. */
+const DUP_EXCLUDE_DIST2 = 800
+
+/** Safety net if a theme somehow yields too few usable hues (no blue). */
+const FALLBACK_WORKTREE_COLORS = ['#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444']
+
+/** Parse #rgb / #rrggbb / #rrggbbaa or rgb()/rgba() into [r,g,b], else null. */
+function parseRgb(color: string): [number, number, number] | null {
+  const s = color.trim()
+  const hex = /^#?([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(s)
+  if (hex) {
+    let h = hex[1]
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2]
+    const n = parseInt(h.slice(0, 6), 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  }
+  const rgb = /^rgba?\(\s*(\d+)\D+(\d+)\D+(\d+)/i.exec(s)
+  if (rgb) return [Number(rgb[1]) & 255, Number(rgb[2]) & 255, Number(rgb[3]) & 255]
+  return null
+}
+
+function toHex([r, g, b]: [number, number, number]): string {
+  return '#' + [r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')
+}
+
+function dist2(a: [number, number, number], b: [number, number, number]): number {
+  const dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2]
+  return dr * dr + dg * dg + db * db
+}
+
+/** The current theme's worktree color palette: vivid ANSI hues, accent-hue and
+ *  near-duplicates removed, resolved to concrete #rrggbb. Reflects the active
+ *  theme each time it's called (cheap — call at pick / when rendering swatches). */
+export function getWorktreeColorPalette(): string[] {
+  const theme = getActiveTheme()
+  const base = theme.type === 'light' ? BASE_LIGHT : BASE_DARK
+  const accent = parseRgb(theme.app['focus-blue'] ?? base['focus-blue'])
+
+  const out: string[] = []
+  const chosen: [number, number, number][] = []
+  for (const key of WORKTREE_ANSI_KEYS) {
+    const rgb = parseRgb(theme.terminal[key])
+    if (!rgb) continue
+    if (accent && dist2(rgb, accent) < ACCENT_EXCLUDE_DIST2) continue
+    if (chosen.some((c) => dist2(c, rgb) < DUP_EXCLUDE_DIST2)) continue
+    chosen.push(rgb)
+    out.push(toHex(rgb))
+  }
+  return out.length >= 3 ? out : FALLBACK_WORKTREE_COLORS
+}
 
 export function pickWorktreeColor(existing: { color: string }[]): string {
+  const palette = getWorktreeColorPalette()
   const used = new Set(existing.map((w) => w.color))
-  for (const c of WORKTREE_COLOR_PALETTE) if (!used.has(c)) return c
+  for (const c of palette) if (!used.has(c)) return c
   // Wrap around if more worktrees than palette entries.
-  return WORKTREE_COLOR_PALETTE[existing.length % WORKTREE_COLOR_PALETTE.length]
+  return palette[existing.length % palette.length]
 }
 
 /** A fully-reset dock layout: all side zones hidden, an empty visible center.
@@ -298,6 +368,10 @@ interface AppStoreActions {
   renameWorkspace: (wsId: string, name: string) => void
   duplicateWorkspace: (wsId: string) => string
   closeAllPanels: (wsId: string) => void
+  /** Remove every panel currently living on one canvas (dispose terminals, drop
+   *  their records, empty the canvas store) without touching the rest of the
+   *  workspace. Used by layout restore to replace a single canvas's contents. */
+  clearCanvas: (wsId: string, canvasPanelId: string) => void
   reorderWorkspaces: (fromIndex: number, toIndex: number) => void
   addAdditionalRoot: (wsId: string, rootPath: string) => void
   removeAdditionalRoot: (wsId: string, rootPath: string) => void
@@ -368,6 +442,7 @@ function placePanel(
   const ops = pinnedCanvasId ? ensureCanvasOpsForPanel(pinnedCanvasId) : getWorkspaceCanvasOps(workspaceId)
   if (!ops) return
   const canvasPosition = placement?.target === 'canvas' ? placement.position ?? position : position
+  const canvasSize = placement?.target === 'canvas' ? placement.size : undefined
   // Ambiguous create (no explicit position) on the active workspace: when the
   // recommendation picker is enabled, show ghost candidates and let the user
   // choose where the node lands (deferred until commit; onGhostCancel rolls the
@@ -378,7 +453,7 @@ function placePanel(
     const shown = ops.beginPlacement(panelId, panelType, onGhostCancel)
     if (shown) return
   }
-  ops.addNodeAndFocus(panelId, panelType, canvasPosition)
+  ops.addNodeAndFocus(panelId, panelType, canvasPosition, canvasSize)
 }
 
 type AppSet = StoreApi<AppStore>['setState']
@@ -1299,6 +1374,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // fresh canvas panel for the center zone.
     getOrCreateWorkspaceDockStore(wsId).getState().restoreSnapshot(createCleanDockSnapshot())
     get().ensureCenterCanvas(wsId)
+  },
+
+  clearCanvas(wsId, canvasPanelId) {
+    const ops = ensureCanvasOpsForPanel(canvasPanelId)
+    const storeApi = ops.storeApi
+    const state = storeApi.getState()
+    const panelIds = Object.values(state.nodes).map((n) => n.panelId)
+    if (panelIds.length === 0) return
+
+    // Empty the canvas store in one synchronous step (no per-node exit
+    // animation, which would otherwise leave the old nodes mid-transition).
+    storeApi.getState().loadWorkspaceCanvas({}, state.viewportOffset, state.zoomLevel)
+
+    // Dispose terminals and drop the now-orphaned panel records.
+    const ws = get().workspaces.find((w) => w.id === wsId)
+    for (const pid of panelIds) {
+      if (ws?.panels[pid]?.type === 'terminal') terminalRegistry.dispose(pid)
+    }
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => {
+        if (w.id !== wsId) return w
+        const panels = { ...w.panels }
+        for (const pid of panelIds) delete panels[pid]
+        return { ...w, panels }
+      }),
+    }))
   },
 
   // --- Cross-window sync ---

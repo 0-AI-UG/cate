@@ -120,6 +120,11 @@ import {
   NOTIFY_OS,
   NOTIFY_ACTION,
   WINDOW_SET_TITLE,
+  WINDOW_MINIMIZE,
+  WINDOW_TOGGLE_MAXIMIZE,
+  WINDOW_CLOSE,
+  WINDOW_IS_MAXIMIZED,
+  WINDOW_MAXIMIZE_STATE,
   PANEL_TRANSFER,
   PANEL_RECEIVE,
   PANEL_TRANSFER_ACK,
@@ -159,10 +164,6 @@ import {
   BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
   CAPTURE_PAGE,
-  UPDATE_STATUS,
-  UPDATE_INSTALL,
-  UPDATE_DOWNLOAD,
-  UPDATE_OPEN_RELEASE,
   ANALYTICS_FEEDBACK_PROMPT,
   ANALYTICS_FEEDBACK_SUBMIT,
   ANALYTICS_FEEDBACK_DISMISS,
@@ -261,6 +262,23 @@ function fullscreenLiveCheck(): boolean {
     return cachedFullscreen
   } catch {
     return cachedFullscreen
+  }
+}
+
+// This window's own maximize state, pushed by main on maximize/unmaximize. Cached
+// so the custom window controls can render synchronously on first paint, with a
+// `sendSync` pull as the authoritative fallback (mirrors the fullscreen pattern).
+let cachedMaximized = false
+ipcRenderer.on(WINDOW_MAXIMIZE_STATE, (_event, value: boolean) => {
+  cachedMaximized = Boolean(value)
+})
+function maximizedLiveCheck(): boolean {
+  try {
+    const v = ipcRenderer.sendSync(WINDOW_IS_MAXIMIZED)
+    cachedMaximized = Boolean(v)
+    return cachedMaximized
+  } catch {
+    return cachedMaximized
   }
 }
 
@@ -1022,6 +1040,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return fullscreenLiveCheck()
   },
 
+  // Custom window controls (frameless Windows/Linux chrome). Each acts on the
+  // calling window. No-ops visually on macOS, where native chrome is used.
+  windowMinimize(): Promise<void> {
+    return ipcRenderer.invoke(WINDOW_MINIMIZE)
+  },
+  windowToggleMaximize(): Promise<void> {
+    return ipcRenderer.invoke(WINDOW_TOGGLE_MAXIMIZE)
+  },
+  windowClose(): Promise<void> {
+    return ipcRenderer.invoke(WINDOW_CLOSE)
+  },
+  /** Is the calling window currently maximized? Uses the cached push value and
+   *  falls back to a sync IPC for the authoritative answer. */
+  isWindowMaximized(): boolean {
+    return maximizedLiveCheck()
+  },
+  /** Subscribe to this window's maximize-state changes. Fires with the new
+   *  boolean whenever the window is maximized or restored. */
+  onWindowMaximizeChange(callback: (isMaximized: boolean) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, value: boolean): void => {
+      callback(Boolean(value))
+    }
+    ipcRenderer.on(WINDOW_MAXIMIZE_STATE, listener)
+    return () => { ipcRenderer.removeListener(WINDOW_MAXIMIZE_STATE, listener) }
+  },
+
   onDragEnd(callback: (dragId?: string) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, dragId?: string): void => { callback(dragId) }
     ipcRenderer.on(DRAG_END, listener)
@@ -1228,24 +1272,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(BROWSER_SHORTCUT, listener)
     return () => { ipcRenderer.removeListener(BROWSER_SHORTCUT, listener) }
   },
-
-  // ---------------------------------------------------------------------------
-  // Auto-updater
-  // ---------------------------------------------------------------------------
-
-  onUpdateStatus(callback: (status: unknown) => void): () => void {
-    const listener = (_e: Electron.IpcRendererEvent, status: unknown): void => callback(status)
-    ipcRenderer.on(UPDATE_STATUS, listener)
-    return () => { ipcRenderer.removeListener(UPDATE_STATUS, listener) }
-  },
-
-  updateGetStatus(): Promise<unknown> {
-    return ipcRenderer.invoke('update:getStatus')
-  },
-
-  updateDownload(): void { ipcRenderer.send(UPDATE_DOWNLOAD) },
-  updateInstall(): void { ipcRenderer.send(UPDATE_INSTALL) },
-  updateOpenRelease(url?: string): void { ipcRenderer.send(UPDATE_OPEN_RELEASE, url) },
 
   // ---------------------------------------------------------------------------
   // Analytics — post-update feedback prompt

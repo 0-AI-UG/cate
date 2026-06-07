@@ -1,451 +1,127 @@
 // =============================================================================
-// Auto-updater — checks for new releases on GitHub and installs updates.
-// Uses electron-updater natively; when the native updater is unavailable, the
-// fallback path only performs version discovery and manual release-page routing.
-// It intentionally does not mount, spawn, or replace downloaded assets unless
-// a verified installer path is added in the future.
+// Auto-updater — stock electron-updater, no custom UI.
 //
-// UI: status is pushed to the renderer via UPDATE_STATUS. The renderer renders
-// a subtle in-app affordance (no native popups). Renderer dispatches
-// UPDATE_DOWNLOAD / UPDATE_INSTALL / UPDATE_OPEN_RELEASE back.
+// Behaviour (the library's defaults):
+//   • autoDownload         — a found update downloads in the background
+//   • autoInstallOnAppQuit — the downloaded update installs the next time the
+//                            app quits normally; the user reopens on the new
+//                            version. No in-app button, no forced restart.
+//   • checkForUpdatesAndNotify — shows the native OS notification when an update
+//                            has downloaded and is ready to install.
+//
+// Two things the defaults DON'T handle, which we must:
+//   1. macOS App Translocation / not-in-/Applications: quitAndInstall silently
+//      cannot replace the bundle from there, so we (a) disable self-update when
+//      ineligible — never download a ~600MB asset that can't apply — and (b)
+//      prompt the user to move Cate into /Applications when an update exists,
+//      which is the only way they get unstuck. See canSelfUpdate().
+//   2. The app's will-quit fast-path calls process.reallyExit(0), which would
+//      bypass electron-updater's on-quit installer. src/main/index.ts reads
+//      isUpdatePendingInstall() and skips reallyExit when an update is staged so
+//      the install actually runs. (This was a silent killer of the default path.)
 // =============================================================================
 
-import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron'
+import { app, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import log from './logger'
-import { flushAllLoggers } from './ipc/terminal'
-import {
-  SESSION_FLUSH_SAVE,
-  SESSION_FLUSH_SAVE_DONE,
-  UPDATE_STATUS,
-  UPDATE_INSTALL,
-  UPDATE_DOWNLOAD,
-  UPDATE_OPEN_RELEASE,
-} from '../shared/ipc-channels'
-import { getWindowType } from './windowRegistry'
-import { sendEvent } from './analytics'
 import { getSettingSync } from './store'
-import { compareSemver, isPrereleaseVersion } from './semver'
+import { canSelfUpdate } from './updateInstaller'
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
+/** True once an update has finished downloading and is queued to install on the
+ *  next quit. Read by the will-quit handler in src/main/index.ts so it does NOT
+ *  process.reallyExit(0) — that would bypass electron-updater's install-on-quit
+ *  hook and the update would never apply. */
+let updatePendingInstall = false
+export function isUpdatePendingInstall(): boolean { return updatePendingInstall }
 
-const GITHUB_OWNER = '0-AI-UG'
-const GITHUB_REPO = 'cate'
-const API_LATEST_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
-// Full release list (newest first), including pre-releases — used by the
-// fallback path when the beta channel is opted into, since /releases/latest
-// excludes pre-releases by design.
-const API_RELEASES_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=30`
+/** Prompt-once-per-launch guard so the move-to-/Applications dialog doesn't nag
+ *  on every 15-minute poll. Reset on an explicit "Check for Updates…". */
+let movePrompted = false
 
-autoUpdater.autoDownload = false
-autoUpdater.autoInstallOnAppQuit = false
-
-/** True after the user clicked "Update & Restart". The will-quit handler in
- *  src/main/index.ts reads this to skip its `process.reallyExit(0)` fallback —
- *  reallyExit bypasses Electron's relaunch hooks, so the app would install
- *  the update but never come back up. With this flag set, we let Electron's
- *  natural quit path complete so the updater's relaunch fires. */
-let updateInstalling = false
-export function isInstallingUpdate(): boolean { return updateInstalling }
-
-// ---------------------------------------------------------------------------
-// Update status broadcast
-// ---------------------------------------------------------------------------
-
-type UpdateStatus =
-  | { state: 'idle' }
-  | { state: 'checking' }
-  | { state: 'available'; version: string; canAutoInstall: boolean; releaseUrl?: string; prerelease?: boolean }
-  | { state: 'downloading'; version: string; percent?: number; prerelease?: boolean }
-  | { state: 'downloaded'; version: string; prerelease?: boolean }
-  | { state: 'manual'; version: string; releaseUrl: string; prerelease?: boolean }
-  | { state: 'error'; message: string }
-
-let currentStatus: UpdateStatus = { state: 'idle' }
-let latestReleaseUrl: string | null = null
-
-function broadcastStatus(status: UpdateStatus): void {
-  currentStatus = status
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(UPDATE_STATUS, status)
+function promptMoveToApplications(version: string): void {
+  if (movePrompted) return
+  movePrompted = true
+  const choice = dialog.showMessageBoxSync({
+    type: 'info',
+    buttons: ['Move to Applications', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+    message: version ? `Update available (v${version})` : 'Update available',
+    detail:
+      'Cate can’t update itself because it’s running from outside the Applications folder ' +
+      '(macOS blocks self-updates there). Move Cate to Applications to enable automatic updates. ' +
+      'Your settings and sessions are preserved.',
+  })
+  if (choice === 0) {
+    try {
+      app.moveToApplicationsFolder() // moves the bundle and relaunches
+    } catch (err) {
+      log.error('[auto-updater] moveToApplicationsFolder failed: %O', err)
     }
   }
 }
 
-// ---------------------------------------------------------------------------
-// Pre-update session flush — ask the renderer to persist session state before
-// the app restarts for an update. Returns a promise that resolves once the
-// renderer ACKs (or after a 3s timeout if the renderer is unresponsive).
-// ---------------------------------------------------------------------------
-
-function flushSessionBeforeUpdate(): Promise<void> {
-  return new Promise<void>((resolve) => {
-    flushAllLoggers()
-    const allWindows = BrowserWindow.getAllWindows()
-    const mainWin = allWindows.find((w) => !w.isDestroyed() && getWindowType(w.id) === 'main')
-    if (!mainWin) {
-      resolve()
-      return
-    }
-    const timeout = setTimeout(() => {
-      log.warn('[auto-updater] Session flush timed out, proceeding with update')
-      resolve()
-    }, 3000)
-    ipcMain.once(SESSION_FLUSH_SAVE_DONE, () => {
-      clearTimeout(timeout)
-      log.info('[auto-updater] Session flush confirmed before update')
-      resolve()
-    })
-    mainWin.webContents.send(SESSION_FLUSH_SAVE)
+/** Run a check. When eligible, AndNotify downloads (autoDownload) and shows the
+ *  native "ready to install" notification; when ineligible we only check so the
+ *  update-available handler can offer the move-to-/Applications path. */
+function runCheck(eligible: boolean): Promise<unknown> {
+  const p = eligible ? autoUpdater.checkForUpdatesAndNotify() : autoUpdater.checkForUpdates()
+  return p.catch((err) => {
+    log.warn('[auto-updater] check failed: %O', err)
+    return null
   })
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-let isManualCheck = false
-let fallbackInProgress = false
-
-// ---------------------------------------------------------------------------
-// Fallback update check via GitHub Releases API
-// ---------------------------------------------------------------------------
-
-interface GitHubRelease {
-  tag_name: string
-  html_url: string
-  prerelease?: boolean
-  draft?: boolean
-  assets: { name: string; browser_download_url: string }[]
-}
-
-async function fallbackCheckForUpdate(manual: boolean): Promise<void> {
-  if (fallbackInProgress) return
-  fallbackInProgress = true
-
-  // When the user has opted into beta builds we must consult the full release
-  // list — /releases/latest excludes pre-releases — and pick the newest entry,
-  // pre-release or not, by semver.
-  const includePrereleases = autoUpdater.allowPrerelease === true
-
-  try {
-    log.info('[fallback-updater] Checking GitHub releases API… (betas: %s)', includePrereleases)
-
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15000)
-    const res = await fetch(includePrereleases ? API_RELEASES_URL : API_LATEST_URL, {
-      signal: controller.signal,
-      headers: { 'User-Agent': `Cate/${app.getVersion()}`, Accept: 'application/vnd.github.v3+json' },
-    })
-    clearTimeout(timeout)
-
-    if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`)
-
-    let chosen: GitHubRelease | null
-    if (includePrereleases) {
-      const list = (await res.json()) as GitHubRelease[]
-      // Drop drafts, then pick the highest version (pre-releases included).
-      chosen = list
-        .filter((r) => !r.draft)
-        .reduce<GitHubRelease | null>(
-          (best, r) => (best === null || compareSemver(r.tag_name, best.tag_name) > 0 ? r : best),
-          null,
-        )
-    } else {
-      chosen = (await res.json()) as GitHubRelease
-    }
-
-    if (!chosen) {
-      broadcastStatus({ state: 'idle' })
-      return
-    }
-
-    const latestVersion = chosen.tag_name
-    const currentVersion = app.getVersion()
-    log.info('[fallback-updater] Latest: %s  Current: v%s', latestVersion, currentVersion)
-
-    if (compareSemver(latestVersion, currentVersion) <= 0) {
-      if (manual) {
-        // Surface "no updates" only for manual checks via a single quiet dialog.
-        const win = BrowserWindow.getFocusedWindow()
-        dialog.showMessageBox({
-          ...(win ? { parentWindow: win } : {}),
-          type: 'info',
-          title: 'No Updates',
-          message: 'You are running the latest version of Cate.',
-        })
-      }
-      broadcastStatus({ state: 'idle' })
-      return
-    }
-
-    latestReleaseUrl = chosen.html_url
-    // Try native auto-update download first — the initial check may have
-    // errored (e.g. provider mismatch) but downloadUpdate can still succeed.
-    broadcastStatus({
-      state: 'available',
-      version: latestVersion.replace(/^v/, ''),
-      canAutoInstall: true,
-      releaseUrl: chosen.html_url,
-      prerelease: chosen.prerelease === true || isPrereleaseVersion(latestVersion),
-    })
-  } catch (err: any) {
-    log.error('[fallback-updater] Error:', err)
-    if (manual) {
-      const win = BrowserWindow.getFocusedWindow()
-      dialog.showMessageBox({
-        ...(win ? { parentWindow: win } : {}),
-        type: 'error',
-        title: 'Update Check Failed',
-        message: 'Could not check for updates.',
-        detail: err.message || 'Please check your internet connection.',
-      })
-    }
-    broadcastStatus({ state: 'error', message: err?.message || 'Update check failed' })
-  } finally {
-    fallbackInProgress = false
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+const CHECK_INTERVAL_MS = 15 * 60 * 1000
 
 export function initAutoUpdater(): void {
-  // Dev-only: surface the update drawer without a real release. Set
-  // CATE_SIMULATE_UPDATE_BUTTON to `available` (default), `downloaded`, or
-  // `manual` to seed that state; the download action then animates a fake
-  // progress run to `downloaded`. See the `dev:update:button` script.
-  const sim = !app.isPackaged ? (process.env.CATE_SIMULATE_UPDATE_BUTTON || '').toLowerCase() : ''
-  const simEnabled = sim !== ''
-  const simState: 'available' | 'downloaded' | 'manual' =
-    sim === 'downloaded' ? 'downloaded' : sim === 'manual' ? 'manual' : 'available'
-  const SIM_VERSION = '99.0.0'
-  const SIM_RELEASE_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
-
-  // Wire renderer-initiated actions regardless of dev/packaged so the UI never
-  // races against handler registration.
-  ipcMain.on(UPDATE_DOWNLOAD, () => {
-    if (simEnabled) {
-      log.info('[sim-update] download requested — simulating progress')
-      broadcastStatus({ state: 'downloading', version: SIM_VERSION, percent: 0 })
-      let pct = 0
-      const timer = setInterval(() => {
-        pct += 7
-        if (pct >= 100) {
-          clearInterval(timer)
-          broadcastStatus({ state: 'downloaded', version: SIM_VERSION })
-        } else {
-          broadcastStatus({ state: 'downloading', version: SIM_VERSION, percent: pct })
-        }
-      }, 250)
-      return
-    }
-    if (!app.isPackaged) return
-    log.info('[auto-updater] Renderer requested download')
-    const version = currentStatus.state === 'available' ? currentStatus.version : undefined
-    const releaseUrl = currentStatus.state === 'available' ? currentStatus.releaseUrl : latestReleaseUrl
-    const prerelease = currentStatus.state === 'available' ? currentStatus.prerelease : undefined
-    void sendEvent('update_download_clicked', { version: version ?? null })
-    broadcastStatus({ state: 'downloading', version: version ?? '', prerelease })
-    autoUpdater.downloadUpdate().catch((err) => {
-      log.warn('[auto-updater] downloadUpdate failed, retrying with fresh check:', err)
-      // The native updater may not have update info cached (e.g. initial check
-      // failed and the update was found via the GitHub API fallback). Re-run the
-      // check with autoDownload so the download starts once the update is found.
-      autoUpdater.autoDownload = true
-      autoUpdater.checkForUpdates()
-        .catch((err2: any) => {
-          log.error('[auto-updater] Retry check also failed, falling back to manual:', err2)
-          autoUpdater.autoDownload = false
-          if (releaseUrl && version) {
-            broadcastStatus({ state: 'manual', version, releaseUrl, prerelease })
-          } else {
-            broadcastStatus({ state: 'error', message: err2?.message || 'Download failed' })
-          }
-        })
-        .finally(() => {
-          autoUpdater.autoDownload = false
-        })
-    })
-  })
-
-  ipcMain.on(UPDATE_INSTALL, async () => {
-    if (simEnabled) {
-      // Can't truly quit & relaunch a dev process, so confirm the click is wired
-      // by clearing the update — the same end-state a real restart-into-new-
-      // version produces (button disappears).
-      log.info('[sim-update] install requested — clearing update (real build would quit & relaunch)')
-      broadcastStatus({ state: 'idle' })
-      return
-    }
-    if (!app.isPackaged) return
-    log.info('[auto-updater] Renderer requested install')
-    const version = currentStatus.state === 'downloaded' ? currentStatus.version : undefined
-    void sendEvent('update_install_clicked', { version: version ?? null })
-    updateInstalling = true
-    await flushSessionBeforeUpdate()
-    // (isSilent=false, isForceRunAfter=true) — force relaunch after install
-    // on every platform. The default `isForceRunAfter=false` makes Win/Linux
-    // exit without coming back up after the install completes.
-    autoUpdater.quitAndInstall(false, true)
-  })
-
-  ipcMain.on(UPDATE_OPEN_RELEASE, (_e, url?: string) => {
-    const target = url || latestReleaseUrl
-    if (target) {
-      const version = currentStatus.state === 'manual' ? currentStatus.version : undefined
-      void sendEvent('update_manual_open_clicked', { version: version ?? null })
-      shell.openExternal(target)
-    }
-  })
-
-  ipcMain.handle('update:getStatus', () => currentStatus)
-
-  // Dev-only update-button simulation: seed an actionable state shortly after
-  // launch (once the renderer's status listener is mounted) so the drawer
-  // appears. Download/install are handled by the sim branches above.
-  if (simEnabled) {
-    log.info('[sim-update] update-button simulation active (%s)', simState)
-    setTimeout(() => {
-      if (simState === 'manual') {
-        broadcastStatus({ state: 'manual', version: SIM_VERSION, releaseUrl: SIM_RELEASE_URL })
-      } else if (simState === 'downloaded') {
-        broadcastStatus({ state: 'downloaded', version: SIM_VERSION })
-      } else {
-        broadcastStatus({
-          state: 'available',
-          version: SIM_VERSION,
-          canAutoInstall: true,
-          releaseUrl: SIM_RELEASE_URL,
-        })
-      }
-    }, 1200)
-    return
-  }
-
-  // Don't check for updates in dev mode
   if (!app.isPackaged) return
 
-  // Honor the beta opt-in: when on, the updater also considers GitHub
-  // pre-releases (e.g. v1.2.0-beta.1). Off by default so stable users never see
-  // staged builds. Re-applied live via setBetaUpdatesEnabled when the toggle
-  // flips (see src/main/store.ts → applySettingSideEffect).
+  // Honor the beta opt-in (Settings → Updates). Re-applied live via
+  // setBetaUpdatesEnabled when the toggle flips.
   autoUpdater.allowPrerelease = getSettingSync('betaUpdatesEnabled') === true
 
-  log.info('Auto-updater initialized (betas: %s)', autoUpdater.allowPrerelease)
-
-  autoUpdater.on('update-available', (info) => {
-    log.info('Update available: v%s', info.version)
-    if (currentStatus.state === 'downloading') return
-    broadcastStatus({
-      state: 'available',
-      version: String(info.version),
-      canAutoInstall: true,
-      prerelease: isPrereleaseVersion(String(info.version)),
-    })
-  })
-
-  autoUpdater.on('update-not-available', () => {
-    log.info('No updates available')
-    if (currentStatus.state === 'downloading') return
-    if (isManualCheck) {
-      isManualCheck = false
-      const win = BrowserWindow.getFocusedWindow()
-      dialog.showMessageBox({
-        ...(win ? { parentWindow: win } : {}),
-        type: 'info',
-        title: 'No Updates',
-        message: 'You are running the latest version of Cate.',
-      })
-    }
-    broadcastStatus({ state: 'idle' })
-  })
-
-  autoUpdater.on('download-progress', (progress) => {
-    const cur = currentStatus
-    const version = cur.state === 'downloading' || cur.state === 'available' || cur.state === 'downloaded'
-      ? cur.version
-      : ''
-    const prerelease = cur.state === 'downloading' || cur.state === 'available' || cur.state === 'downloaded'
-      ? cur.prerelease
-      : undefined
-    broadcastStatus({
-      state: 'downloading',
-      version,
-      percent: typeof progress?.percent === 'number' ? progress.percent : undefined,
-      prerelease,
-    })
-  })
-
   autoUpdater.on('update-downloaded', (info) => {
-    log.info('Update downloaded, ready to install')
-    broadcastStatus({
-      state: 'downloaded',
-      version: String(info?.version ?? ''),
-      prerelease: isPrereleaseVersion(String(info?.version ?? '')),
-    })
+    updatePendingInstall = true
+    log.info('[auto-updater] Update downloaded: v%s — will install on quit', String(info?.version ?? ''))
   })
-
-  autoUpdater.on('checking-for-update', () => {
-    log.info('Checking for updates...')
-    if (currentStatus.state === 'idle') broadcastStatus({ state: 'checking' })
-  })
-
   autoUpdater.on('error', (err) => {
-    log.error('Auto-updater error:', err)
-    if (currentStatus.state === 'downloading') return
-    // Native auto-update failed (e.g. no code signing) — try fallback
-    const wasManual = isManualCheck
-    isManualCheck = false
-    fallbackCheckForUpdate(wasManual)
+    log.error('[auto-updater] error: %O', err)
   })
 
-  // Check on launch (after a short delay to not block startup)
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((err) => {
-      log.warn('[auto-updater] Startup check threw, trying fallback:', err)
-      fallbackCheckForUpdate(false)
-    })
-  }, 5000)
+  const eligible = canSelfUpdate()
+  autoUpdater.autoDownload = eligible
+  autoUpdater.autoInstallOnAppQuit = eligible
 
-  // Check every 15 minutes
-  setInterval(
-    () => {
-      autoUpdater.checkForUpdates().catch((err) => {
-        log.warn('[auto-updater] Periodic check threw, trying fallback:', err)
-        fallbackCheckForUpdate(false)
-      })
-    },
-    15 * 60 * 1000,
-  )
+  if (!eligible) {
+    // macOS, running translocated / outside /Applications. Don't download what
+    // can't install; instead, when an update actually exists, offer the move.
+    autoUpdater.on('update-available', (info) => promptMoveToApplications(String(info?.version ?? '')))
+    log.info('[auto-updater] self-update unavailable from current location (will prompt to move on update)')
+  } else {
+    log.info('[auto-updater] initialized (betas: %s)', autoUpdater.allowPrerelease)
+  }
+
+  // Check on launch (slightly delayed so it doesn't compete with cold start) and
+  // every 15 minutes thereafter.
+  setTimeout(() => void runCheck(eligible), 5000)
+  setInterval(() => void runCheck(eligible), CHECK_INTERVAL_MS)
 }
 
+/** Wired to the "Check for Updates…" menu items. Re-allows the move prompt since
+ *  the user explicitly asked. No "you're up to date" dialog by design (zero
+ *  custom UI) — a pending update surfaces via the OS notification / move prompt. */
 export function checkForUpdatesManually(): void {
-  isManualCheck = true
-  autoUpdater.checkForUpdates().catch((err) => {
-    log.warn('[auto-updater] Manual check threw, trying fallback:', err)
-    isManualCheck = false
-    fallbackCheckForUpdate(true)
-  })
+  if (!app.isPackaged) return
+  movePrompted = false
+  void runCheck(canSelfUpdate())
 }
 
-/** React to the beta-updates opt-in flipping. Re-points the updater channel
- *  (allowPrerelease) and re-checks immediately so turning betas on surfaces an
- *  available staged build without waiting for the 15-minute poll. Called from
- *  the settings side-effect path (UI toggle AND hand-edited settings.json).
- *  No-op until the app is packaged, since checks don't run in dev. */
+/** React to the beta-updates opt-in flipping (UI toggle or hand-edited
+ *  settings.json): re-point the channel and re-check immediately. */
 export function setBetaUpdatesEnabled(enabled: boolean): void {
   autoUpdater.allowPrerelease = enabled
   log.info('[auto-updater] Beta updates %s', enabled ? 'enabled' : 'disabled')
   if (!app.isPackaged) return
-  // A fresh check on the new channel. Don't surface a "no updates" dialog — this
-  // is a background reaction to a settings change, not a manual check.
-  autoUpdater.checkForUpdates().catch((err) => {
-    log.warn('[auto-updater] Re-check after beta toggle threw, trying fallback:', err)
-    fallbackCheckForUpdate(false)
-  })
+  void runCheck(canSelfUpdate())
 }
