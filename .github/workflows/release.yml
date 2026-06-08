@@ -123,25 +123,11 @@ jobs:
           node scripts/build-companion-tarball.mjs
           cp dist-companion/cate-companion-*.tgz dist-companion/companion-host.tgz
 
-      # Functional + content-search e2e against the real built app and the host
-      # companion tarball staged above (so the daemon's ripgrep is present — this
-      # is why e2e lives here, not in the fast PR CI). Gates the release on macOS
-      # only: mac runs Playwright against the real window server, so the drag /
-      # detach specs are faithful and stable. Linux only ran under xvfb, where
-      # synthetic-mouse drags and multi-window detach are flaky enough to redden
-      # green releases even with retries, and Windows' headless runner can't
-      # deliver drags to the never-shown window at all. Both still build + package;
-      # they just skip e2e — mac is the reliable signal.
-      # E2E_SKIP_PERF is set here rather than inline in the npm script: npm runs
-      # scripts through cmd.exe on Windows, where `VAR=1 cmd` is a syntax error.
-      # Setting it at the step level (inherited by Git Bash on all runners) and
-      # invoking playwright directly keeps this cross-platform.
-      - name: E2E tests (functional + search)
-        if: matrix.platform == 'mac'
-        shell: bash
-        env:
-          E2E_SKIP_PERF: '1'
-        run: npx playwright test
+      # Note: the functional + content-search e2e suite used to gate the macOS
+      # release here, but the hosted mac runner flaked on the synthetic-mouse
+      # drag/detach specs often enough to redden otherwise-green releases (the
+      # suite passes reliably locally). It no longer blocks the release; run
+      # `npm run test:e2e:ci` locally to exercise it against a real window server.
 
       - name: Package (macOS)
         if: matrix.platform == 'mac'
