@@ -160,6 +160,7 @@ import {
   COMPANION_INSTALL,
   COMPANION_STATUS,
   COMPANION_LOCAL_STATUS,
+  COMPANION_PICK_SSH_KEY,
   WEBVIEW_SCREENSHOT,
   BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
@@ -1195,6 +1196,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   companionSshHosts(): Promise<unknown[]> {
     return ipcRenderer.invoke(COMPANION_SSH_HOSTS)
+  },
+  companionPickSshKey(): Promise<string | null> {
+    return ipcRenderer.invoke(COMPANION_PICK_SSH_KEY)
   },
   companionInstall(connection: unknown): Promise<unknown> {
     return ipcRenderer.invoke(COMPANION_INSTALL, connection)
