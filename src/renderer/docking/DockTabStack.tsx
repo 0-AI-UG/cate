@@ -10,6 +10,7 @@ import type { DockTabStack as DockTabStackType, PanelState, PanelType } from '..
 import { useAppStore } from '../stores/appStore'
 import { Columns, Plus } from '@phosphor-icons/react'
 import { DockTabBar } from './DockTabBar'
+import { WorktreePill } from '../canvas/WorktreePill'
 import { DockTabContextMenu, SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
 import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
@@ -325,10 +326,18 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       </div>
 
       {/* Active panel content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden relative">
         {activePanelId ? renderPanel(activePanelId) : (
           <div className="flex items-center justify-center h-full text-muted text-sm">
             No panel
+          </div>
+        )}
+        {/* Worktree chip — overlaid on the panel's top-right rather than crammed
+            into the tab strip (where it starved the title). Self-hides for
+            non-terminal/agent panels and single-worktree workspaces. */}
+        {activePanel && effectiveWorkspaceId && (
+          <div className="absolute top-1.5 right-1.5 z-10">
+            <WorktreePill panel={activePanel} workspaceId={effectiveWorkspaceId} />
           </div>
         )}
       </div>

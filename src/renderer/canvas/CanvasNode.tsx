@@ -365,10 +365,18 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   // chip) so single-branch flows show no tint/sludge.
   const worktrees = currentWorkspace?.worktrees ?? []
   const wtEnabled = worktrees.length >= 2
-  const activeWorktreeId = wtEnabled ? activePanel?.worktreeId ?? null : null
-  const worktreeColor = activeWorktreeId
-    ? worktrees.find((w) => w.id === activeWorktreeId)?.color ?? null
-    : null
+  // Resolve the active tab's worktree. A terminal/agent panel with no explicit
+  // tag belongs to the PRIMARY worktree (the record keyed by the workspace root),
+  // so the main checkout gets the same tint / terrace / focus-lens as the others
+  // — mirroring the WorktreePill + tab-title fallback. Non-terminal panels stay
+  // untagged (no territory).
+  const primaryWorktree = worktrees.find((w) => w.path === currentWorkspace?.rootPath)
+  const isWorktreePanel = activePanel?.type === 'terminal' || activePanel?.type === 'agent'
+  const activeWorktree = wtEnabled
+    ? worktrees.find((w) => w.id === activePanel?.worktreeId) ?? (isWorktreePanel ? primaryWorktree : undefined)
+    : undefined
+  const activeWorktreeId = activeWorktree?.id ?? null
+  const worktreeColor = activeWorktree?.color ?? null
   const hoveredWorktreeId = useUIStore((s) => s.hoveredWorktreeId)
   const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
   const worktreeHighlight =

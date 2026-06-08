@@ -196,17 +196,18 @@ export type PanelPlacement =
 // worktree keeps its color across later theme switches.
 // -----------------------------------------------------------------------------
 
-/** Vivid ANSI hue slots, ordered rainbow-ish (base + brighter shade per hue).
- *  Blacks/whites/grays are omitted. Blue is kept here on purpose — only the hue
- *  closest to the *actual* accent is dropped below, so in a non-blue-accent
- *  theme blue stays available (and in the usual blue-accent themes it drops). */
+/** Vivid ANSI hue slots, ordered so the first picks are calm, distinct hues.
+ *  The PRIMARY worktree takes slot 0 (pickWorktreeColor on an empty list), so it
+ *  must not be an alarming red — green reads as "main/ok". Red is pushed last so
+ *  it only appears once a workspace has many worktrees. Blacks/whites/grays are
+ *  omitted. Blue is kept here on purpose — only the hue closest to the *actual*
+ *  accent is dropped below, so in a non-blue-accent theme blue stays available
+ *  (and in the usual blue-accent themes it drops). */
 const WORKTREE_ANSI_KEYS = [
-  'red', 'brightRed',
-  'yellow', 'brightYellow',
-  'green', 'brightGreen',
-  'cyan', 'brightCyan',
+  'green', 'cyan', 'magenta', 'yellow',
+  'brightGreen', 'brightCyan', 'brightMagenta', 'brightYellow',
   'blue', 'brightBlue',
-  'magenta', 'brightMagenta',
+  'red', 'brightRed',
 ] as const
 
 /** Squared-RGB distance below which a hue is treated as "the accent" (dropped). */

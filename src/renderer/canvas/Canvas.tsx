@@ -552,7 +552,15 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       data-canvas-panel-id={panelId}
       data-filedrop="canvas"
       data-filedrop-id={panelId}
-      className="relative w-full h-full overflow-hidden bg-canvas-bg"
+      // overflow-clip, not overflow-hidden: the canvas pans via the world
+      // transform and must never become a scroll container. `hidden` clips
+      // visually but still allows *programmatic* scrolling — when a panel's
+      // content overflows the viewport (e.g. an xterm helper-textarea/cursor at
+      // the far right when typing to the end of a line), the browser auto-scrolls
+      // it into view, shifting the grid + wallpaper left and exposing a blank
+      // bg-canvas-bg strip on the right. `clip` is not a scroll container, so
+      // focus/scrollIntoView can't move it.
+      className="relative w-full h-full overflow-clip bg-canvas-bg"
       style={{ cursor: idleCursor }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
