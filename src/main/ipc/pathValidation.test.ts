@@ -105,6 +105,35 @@ describe('pathValidation', () => {
     await expect(validatePathStrict(targetPath, 1)).rejects.toThrow(/outside allowed directories/)
   })
 
+  // Paths that don't exist yet must validate (not error as "Access denied") so a
+  // first-run worktree can list its empty pi-agent sessions dir and mkdir the
+  // extensions tree. Resolving the nearest existing ancestor still blocks symlink
+  // escapes — the regression that motivated the realpath check in the first place.
+  describe('not-yet-created paths', () => {
+    test('validatePathStrict resolves a deep missing path under the root (the sessions case)', async () => {
+      // Mirrors pi-agent/sessions/<encoded-cwd>: none of these segments exist yet.
+      const missing = path.join(rootDir, '.cate', 'pi-agent', 'sessions', '--encoded--')
+      await expect(validatePathStrict(missing)).resolves.toBe(await fs.realpath(rootDir) + missing.slice(rootDir.length))
+    })
+
+    test('validatePathForCreation allows a target whose parent chain is missing (the extensions case)', async () => {
+      const dest = path.join(rootDir, '.cate', 'pi-agent', 'extensions', 'subagent')
+      await expect(validatePathForCreation(dest)).resolves.toContain(
+        path.join('.cate', 'pi-agent', 'extensions', 'subagent'),
+      )
+    })
+
+    test('still rejects a symlink that escapes the root, even for a missing leaf', async () => {
+      // An existing symlink inside the root points outside it; a not-yet-created
+      // child under that symlink must resolve through it and be denied.
+      const link = path.join(rootDir, 'escape')
+      await fs.symlink(outsideDir, link)
+      await expect(validatePathStrict(path.join(link, 'new-file.txt'))).rejects.toThrow(
+        /outside allowed directories/,
+      )
+    })
+  })
+
   // Phase 1 threads a per-workspace `scopeId` through the validators and records
   // roots per scope, but does NOT yet restrict access by scope — the check stays a
   // union of every scope's roots (strict enforcement is deferred to Phase 3). These
