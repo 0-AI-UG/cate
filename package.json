@@ -27,7 +27,7 @@
     "dev": "electron-vite dev",
     "dev:dialog": "DEV_FORCE_DIALOG=1 electron-vite dev",
     "dev:firststart": "CATE_FRESH_USERDATA=1 electron-vite dev",
-    "dev:update:button": "CATE_SIMULATE_UPDATE_BUTTON=available electron-vite dev",
+    "dev:update": "node scripts/dev-update.mjs",
     "dev:update:major": "CATE_SIMULATE_UPDATE=major electron-vite dev",
     "dev:update:minor": "CATE_SIMULATE_UPDATE=minor electron-vite dev",
     "dev:update:patch": "CATE_SIMULATE_UPDATE=patch electron-vite dev",
