@@ -98,6 +98,39 @@ function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
   return false
 }
 
+/**
+ * Resolve a path to its real (symlink-free) form, tolerating a target that
+ * does not exist yet. `fs.realpath` throws ENOENT for a missing path, but
+ * several callers legitimately validate before creation: a fresh
+ * `pi-agent/sessions/<cwd>` dir that `readDir` should report as empty, or a
+ * `mkdir` destination whose parent chain doesn't exist yet. For those we
+ * realpath the nearest EXISTING ancestor and re-append the missing tail.
+ *
+ * This keeps the symlink-escape protection intact: every segment that actually
+ * exists is resolved (a symlink can only exist if its segment exists), so a
+ * symlink pointing outside an allowed root still resolves and gets rejected.
+ * Only not-yet-created segments — which cannot be symlinks — stay literal.
+ * Non-ENOENT errors (e.g. EACCES) are rethrown so genuine access failures keep
+ * surfacing as access errors rather than being mistaken for "doesn't exist".
+ */
+async function realpathAllowingMissing(targetPath: string): Promise<string> {
+  const resolved = path.resolve(targetPath)
+  const missing: string[] = []
+  let cur = resolved
+  for (;;) {
+    try {
+      const real = await fs.realpath(cur)
+      return missing.length ? path.join(real, ...missing) : real
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
+    const parent = path.dirname(cur)
+    if (parent === cur) return resolved // reached the fs root with nothing existing
+    missing.unshift(path.basename(cur))
+    cur = parent
+  }
+}
+
 async function normalizeCreationTarget(filePath: string): Promise<string> {
   const parentDir = path.dirname(path.resolve(filePath))
   const baseName = path.basename(filePath)
@@ -108,7 +141,7 @@ async function normalizeCreationTarget(filePath: string): Promise<string> {
 
   let realParent: string
   try {
-    realParent = await fs.realpath(parentDir)
+    realParent = await realpathAllowingMissing(parentDir)
   } catch (err) {
     throw new Error(`Access denied: cannot resolve real path for parent "${parentDir}": ${err}`)
   }
@@ -219,7 +252,7 @@ export async function validatePathStrict(filePath: string, ownerWindowId?: numbe
 
   let real: string
   try {
-    real = await fs.realpath(filePath)
+    real = await realpathAllowingMissing(filePath)
   } catch (err) {
     throw new Error(`Access denied: cannot resolve real path for "${filePath}": ${err}`)
   }
