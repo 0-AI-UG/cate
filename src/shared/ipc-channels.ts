@@ -182,6 +182,14 @@ export const BROWSER_SET_PROXY = 'browser:setProxy'
 // Native context menu (renderer -> main)
 export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
+/** Frameless menu bar (renderer -> main). On Windows/Linux the native menu bar
+ *  is gone (frame:false), so the custom title bar draws the top-level labels and
+ *  these channels reuse the live application menu as the single source of truth:
+ *  one returns the ordered top-level labels, the other pops a top-level item's
+ *  native submenu at a screen-relative point below its label. */
+export const MENU_GET_BAR_ITEMS = 'menu:getBarItems'
+export const MENU_POPUP_BAR_ITEM = 'menu:popupBarItem'
+
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
 export const DIALOG_OPEN_IMAGE = 'dialog:openImage'

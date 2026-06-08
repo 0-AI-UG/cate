@@ -758,6 +758,14 @@ export interface ElectronAPI {
   /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
   showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>
 
+  /** Ordered top-level labels of the application menu. Backs the custom menu bar
+   *  drawn in the frameless Windows/Linux title bar. */
+  getAppMenuBarItems(): Promise<string[]>
+
+  /** Pop the native submenu of top-level menu `index` at window-relative (x, y),
+   *  anchored below its label in the title-bar menu bar. */
+  popupAppMenu(index: number, x: number, y: number): Promise<void>
+
   // ---------------------------------------------------------------------------
   // Orchestrator (cate CLI graph sync)
   // ---------------------------------------------------------------------------

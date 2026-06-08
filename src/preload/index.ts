@@ -85,6 +85,8 @@ import {
   MENU_CREATE_PANEL,
   BROWSER_SHORTCUT,
   MENU_SHOW_CONTEXT,
+  MENU_GET_BAR_ITEMS,
+  MENU_POPUP_BAR_ITEM,
   DIALOG_OPEN_FOLDER,
   DIALOG_OPEN_IMAGE,
   CANVAS_READ_BACKGROUND_IMAGE,
@@ -1253,6 +1255,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   showContextMenu(items: unknown): Promise<string | null> {
     return ipcRenderer.invoke(MENU_SHOW_CONTEXT, items)
+  },
+
+  /** Ordered top-level labels of the application menu, for the frameless
+   *  Windows/Linux title-bar menu bar. */
+  getAppMenuBarItems(): Promise<string[]> {
+    return ipcRenderer.invoke(MENU_GET_BAR_ITEMS)
+  },
+
+  /** Pop the native submenu of top-level item `index` at window-relative (x, y)
+   *  — directly below its label in the title bar. */
+  popupAppMenu(index: number, x: number, y: number): Promise<void> {
+    return ipcRenderer.invoke(MENU_POPUP_BAR_ITEM, { index, x, y })
   },
 
   onMenuOpenSettings(callback: () => void): () => void {

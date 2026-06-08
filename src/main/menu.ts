@@ -77,6 +77,27 @@ export function rebuildApplicationMenu(): void {
   buildApplicationMenu()
 }
 
+// The live application menu, kept so the frameless Windows/Linux title bar can
+// render its top-level labels and pop the matching native submenus. Reassigned
+// on every buildApplicationMenu() so dynamic submenus (layout names, open panel
+// windows) stay current without the renderer re-fetching anything.
+let currentMenu: Electron.Menu | null = null
+
+/** Ordered top-level menu labels (App, File, Edit, …) for the custom menu bar.
+ *  Empty until the first buildApplicationMenu(). */
+export function getMenuBarLabels(): string[] {
+  if (!currentMenu) return []
+  return currentMenu.items.map((item) => item.label)
+}
+
+/** Pop the native submenu of top-level item `index` for `win`, anchored at the
+ *  window-relative point (x, y) — directly below its label in the title bar.
+ *  Always reads the live menu, so dynamic submenus are fresh. */
+export function popupMenuBarItem(index: number, win: BrowserWindow, x: number, y: number): void {
+  const item = currentMenu?.items[index]
+  if (item?.submenu) item.submenu.popup({ window: win, x, y })
+}
+
 export function buildApplicationMenu(): void {
   // Collect panel window entries for the Window menu
   const panelWindowItems: Electron.MenuItemConstructorOptions[] = []
@@ -307,4 +328,5 @@ export function buildApplicationMenu(): void {
 
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
+  currentMenu = menu
 }
