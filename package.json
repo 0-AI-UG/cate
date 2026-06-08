@@ -1,6 +1,6 @@
 {
   "name": "cate",
-  "version": "1.2.4",
+  "version": "1.2.5-beta.1",
   "productName": "Cate",
   "description": "An infinite zoomable canvas IDE",
   "license": "MIT",
