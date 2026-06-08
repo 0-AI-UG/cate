@@ -35,7 +35,12 @@ async function loadParseKey(): Promise<
   const spec = 'ssh2'
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mod = (await import(spec)) as any
-  return mod.utils.parseKey
+  // ssh2 is CommonJS. `utils` is not a statically-detected named export, so under
+  // Node's native ESM↔CJS interop (the packaged app) `mod.utils` is undefined and
+  // only `mod.default.utils` is populated. Vite/vitest hoists it, which is why this
+  // passed tests but threw "reading 'parseKey'" in the build. See issue #335.
+  const utils = mod.utils ?? mod.default?.utils
+  return utils.parseKey
 }
 
 /**
