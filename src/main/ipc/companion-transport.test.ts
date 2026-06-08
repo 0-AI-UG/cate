@@ -27,9 +27,20 @@ vi.mock('../companion/sshSecretStore', () => ({
   deleteSshSecret: vi.fn(async () => {}),
 }))
 
+import { mkdtempSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { generateKeyPairSync } from 'crypto'
 import { buildTransport, listWslDistros } from './companion'
 import { SshTransport } from '../companion/transports/sshTransport'
 import { WslTransport } from '../companion/transports/wslTransport'
+
+// A supported (PEM RSA) private key for the key-reading branch of buildTransport.
+const rsaPem = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+}).privateKey
 
 const origPlatform = process.platform
 function setPlatform(p: NodeJS.Platform): void {
@@ -126,5 +137,40 @@ describe('buildTransport', () => {
     })
     expect(t).toBeInstanceOf(SshTransport)
     expect(t.kind).toBe('server')
+  })
+
+  test('reads a key from a QUOTED path (strips the quotes — #335)', async () => {
+    setPlatform('darwin')
+    const dir = mkdtempSync(join(tmpdir(), 'cate-key-'))
+    const keyFile = join(dir, 'id_rsa')
+    writeFileSync(keyFile, rsaPem)
+    const t = await buildTransport('srv_q', {
+      kind: 'server',
+      host: 'h',
+      user: 'u',
+      remotePath: '/p',
+      auth: { keyPath: `"${keyFile}"`, useAgent: false },
+    })
+    expect(t).toBeInstanceOf(SshTransport)
+  })
+
+  test('rejects a PuTTY .ppk key with a clear message (#333)', async () => {
+    setPlatform('darwin')
+    const dir = mkdtempSync(join(tmpdir(), 'cate-key-'))
+    const keyFile = join(dir, 'mykey.ppk')
+    writeFileSync(keyFile, 'PuTTY-User-Key-File-2: ssh-rsa\nEncryption: none\n')
+    await expect(
+      buildTransport('srv_ppk', { kind: 'server', host: 'h', user: 'u', remotePath: '/p', auth: { keyPath: keyFile } }),
+    ).rejects.toThrow(/PuTTY .ppk/)
+  })
+
+  test('gives a clear error when the key file is missing (#335)', async () => {
+    setPlatform('darwin')
+    await expect(
+      buildTransport('srv_missing', {
+        kind: 'server', host: 'h', user: 'u', remotePath: '/p',
+        auth: { keyPath: '/no/such/key', useAgent: false },
+      }),
+    ).rejects.toThrow(/Couldn't read the SSH private key.*file not found/)
   })
 })

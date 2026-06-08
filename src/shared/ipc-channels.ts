@@ -182,6 +182,14 @@ export const BROWSER_SET_PROXY = 'browser:setProxy'
 // Native context menu (renderer -> main)
 export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
+/** Frameless menu bar (renderer -> main). On Windows/Linux the native menu bar
+ *  is gone (frame:false), so the custom title bar draws the top-level labels and
+ *  these channels reuse the live application menu as the single source of truth:
+ *  one returns the ordered top-level labels, the other pops a top-level item's
+ *  native submenu at a screen-relative point below its label. */
+export const MENU_GET_BAR_ITEMS = 'menu:getBarItems'
+export const MENU_POPUP_BAR_ITEM = 'menu:popupBarItem'
+
 // Dialog
 export const DIALOG_OPEN_FOLDER = 'dialog:openFolder'
 export const DIALOG_OPEN_IMAGE = 'dialog:openImage'
@@ -379,6 +387,7 @@ export const COMPANION_INSTALL = 'companion:install'       // renderer -> main (
 export const COMPANION_DELETE = 'companion:delete'         // renderer -> main (rm -rf the host install, keep saved auth)
 export const COMPANION_STATUS = 'companion:status'         // main -> renderer (broadcast)
 export const COMPANION_LOCAL_STATUS = 'companion:local-status' // renderer -> main (current LOCAL phase, seeds the loading blocker)
+export const COMPANION_PICK_SSH_KEY = 'companion:pick-ssh-key' // renderer -> main (native file picker for an SSH private key)
 
 
 // Performance profiler (only active under CATE_PERF=1)

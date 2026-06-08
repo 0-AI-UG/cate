@@ -85,6 +85,8 @@ import {
   MENU_CREATE_PANEL,
   BROWSER_SHORTCUT,
   MENU_SHOW_CONTEXT,
+  MENU_GET_BAR_ITEMS,
+  MENU_POPUP_BAR_ITEM,
   DIALOG_OPEN_FOLDER,
   DIALOG_OPEN_IMAGE,
   CANVAS_READ_BACKGROUND_IMAGE,
@@ -160,6 +162,7 @@ import {
   COMPANION_INSTALL,
   COMPANION_STATUS,
   COMPANION_LOCAL_STATUS,
+  COMPANION_PICK_SSH_KEY,
   WEBVIEW_SCREENSHOT,
   BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
@@ -1196,6 +1199,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   companionSshHosts(): Promise<unknown[]> {
     return ipcRenderer.invoke(COMPANION_SSH_HOSTS)
   },
+  companionPickSshKey(): Promise<string | null> {
+    return ipcRenderer.invoke(COMPANION_PICK_SSH_KEY)
+  },
   companionInstall(connection: unknown): Promise<unknown> {
     return ipcRenderer.invoke(COMPANION_INSTALL, connection)
   },
@@ -1249,6 +1255,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   showContextMenu(items: unknown): Promise<string | null> {
     return ipcRenderer.invoke(MENU_SHOW_CONTEXT, items)
+  },
+
+  /** Ordered top-level labels of the application menu, for the frameless
+   *  Windows/Linux title-bar menu bar. */
+  getAppMenuBarItems(): Promise<string[]> {
+    return ipcRenderer.invoke(MENU_GET_BAR_ITEMS)
+  },
+
+  /** Pop the native submenu of top-level item `index` at window-relative (x, y)
+   *  — directly below its label in the title bar. */
+  popupAppMenu(index: number, x: number, y: number): Promise<void> {
+    return ipcRenderer.invoke(MENU_POPUP_BAR_ITEM, { index, x, y })
   },
 
   onMenuOpenSettings(callback: () => void): () => void {

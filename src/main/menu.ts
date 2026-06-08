@@ -11,7 +11,7 @@ import { listPanelWindows, getWindow, getWindowType, getActiveMainWindow, getWin
 /** Panel-creation actions. These add a panel to the workspace's canvas, so they
  *  have nowhere to go in a detached dock/panel window (no canvas there) —
  *  `dispatch` re-routes them to the main window. */
-const PANEL_CREATE_ACTIONS = new Set<MenuActionId>(['newTerminal', 'newEditor', 'newBrowser', 'newFile'])
+const PANEL_CREATE_ACTIONS = new Set<MenuActionId>(['newTerminal', 'newEditor', 'newBrowser', 'newFile', 'newAgent', 'newCanvas'])
 
 /** Dispatch a renderer-side menu action to the focused window. Items in the
  *  template use this as their click handler — the renderer's useShortcuts hook
@@ -75,6 +75,27 @@ export function setNewMainWindowFn(fn: () => BrowserWindow): void {
 /** Rebuild the application menu (call when panel windows open/close). */
 export function rebuildApplicationMenu(): void {
   buildApplicationMenu()
+}
+
+// The live application menu, kept so the frameless Windows/Linux title bar can
+// render its top-level labels and pop the matching native submenus. Reassigned
+// on every buildApplicationMenu() so dynamic submenus (layout names, open panel
+// windows) stay current without the renderer re-fetching anything.
+let currentMenu: Electron.Menu | null = null
+
+/** Ordered top-level menu labels (App, File, Edit, …) for the custom menu bar.
+ *  Empty until the first buildApplicationMenu(). */
+export function getMenuBarLabels(): string[] {
+  if (!currentMenu) return []
+  return currentMenu.items.map((item) => item.label)
+}
+
+/** Pop the native submenu of top-level item `index` for `win`, anchored at the
+ *  window-relative point (x, y) — directly below its label in the title bar.
+ *  Always reads the live menu, so dynamic submenus are fresh. */
+export function popupMenuBarItem(index: number, win: BrowserWindow, x: number, y: number): void {
+  const item = currentMenu?.items[index]
+  if (item?.submenu) item.submenu.popup({ window: win, x, y })
 }
 
 export function buildApplicationMenu(): void {
@@ -146,6 +167,8 @@ export function buildApplicationMenu(): void {
         { label: 'New Editor', accelerator: 'CmdOrCtrl+Shift+E', click: dispatch('newEditor') },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: dispatch('newTerminal') },
         { label: 'New Browser', accelerator: 'CmdOrCtrl+Shift+B', click: dispatch('newBrowser') },
+        { label: 'New Cate Agent', accelerator: 'CmdOrCtrl+Shift+A', click: dispatch('newAgent') },
+        { label: 'New Canvas', accelerator: 'CmdOrCtrl+Shift+C', click: dispatch('newCanvas') },
         { type: 'separator' },
         { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },
         { label: 'Reload Workspace from Disk', click: dispatch('reloadWorkspace') },
@@ -305,4 +328,5 @@ export function buildApplicationMenu(): void {
 
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
+  currentMenu = menu
 }

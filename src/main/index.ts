@@ -2093,3 +2093,14 @@ app.on('will-quit', () => {
   // disposal, process group kills) is already done above.
   ;(process as unknown as { reallyExit(code: number): never }).reallyExit(0)
 })
+
+// Field-diagnostic trace for the install handoff. When an update is staged we
+// return early from will-quit (above) so electron-updater's install-on-quit hook
+// can run on the 'quit' event. Logging here confirms the quit event actually
+// fired — the missing signal behind past "downloaded but never installed"
+// reports. (No-op when no update is staged.)
+app.on('quit', () => {
+  if (isUpdatePendingInstall()) {
+    log.info('quit: event fired with update staged — electron-updater install-on-quit should now run')
+  }
+})

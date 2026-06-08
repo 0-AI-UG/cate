@@ -702,6 +702,10 @@ export interface ElectronAPI {
   /** Connectable host aliases from the user's ~/.ssh/config ([] if none). */
   companionSshHosts(): Promise<SshHostEntry[]>
 
+  /** Open a native file picker for an SSH private key. Returns the chosen
+   *  absolute path, or null if the dialog was cancelled. */
+  companionPickSshKey(): Promise<string | null>
+
   /** Explicit clean install of a remote companion's daemon (wipes the host
    *  install dir, re-pulls/pushes the bundle, then connects). The only call that
    *  installs — probes (connect/ensure) never do. */
@@ -753,6 +757,14 @@ export interface ElectronAPI {
 
   /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
   showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>
+
+  /** Ordered top-level labels of the application menu. Backs the custom menu bar
+   *  drawn in the frameless Windows/Linux title bar. */
+  getAppMenuBarItems(): Promise<string[]>
+
+  /** Pop the native submenu of top-level menu `index` at window-relative (x, y),
+   *  anchored below its label in the title-bar menu bar. */
+  popupAppMenu(index: number, x: number, y: number): Promise<void>
 
   // ---------------------------------------------------------------------------
   // Orchestrator (cate CLI graph sync)

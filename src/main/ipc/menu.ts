@@ -4,7 +4,8 @@
 // =============================================================================
 
 import { BrowserWindow, Menu, ipcMain, type MenuItemConstructorOptions } from 'electron'
-import { MENU_SHOW_CONTEXT } from '../../shared/ipc-channels'
+import { MENU_SHOW_CONTEXT, MENU_GET_BAR_ITEMS, MENU_POPUP_BAR_ITEM } from '../../shared/ipc-channels'
+import { getMenuBarLabels, popupMenuBarItem } from '../menu'
 
 interface ContextMenuTemplateItem {
   id?: string
@@ -57,6 +58,20 @@ export function registerHandlers(): void {
           callback: () => resolve(chosen),
         })
       })
+    },
+  )
+
+  // Custom menu bar (frameless Windows/Linux title bar). The renderer draws the
+  // top-level labels; clicking one pops the live application menu's matching
+  // native submenu — so menu.ts stays the single source of truth.
+  ipcMain.handle(MENU_GET_BAR_ITEMS, () => getMenuBarLabels())
+
+  ipcMain.handle(
+    MENU_POPUP_BAR_ITEM,
+    (event, payload: { index: number; x: number; y: number }) => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win) return
+      popupMenuBarItem(payload.index, win, Math.round(payload.x), Math.round(payload.y))
     },
   )
 }
