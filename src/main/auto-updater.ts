@@ -167,6 +167,11 @@ function wireUpdaterEvents(eligible: boolean): void {
   })
 
   autoUpdater.on('update-not-available', (info) => {
+    // This check found nothing, so a later `error` is a transient check failure,
+    // not a known-update-failed-to-apply — drop the session's available-version
+    // marker so the error handler stays silent (a still-staged install is
+    // tracked separately via updatePendingInstall, which it also honors).
+    availableVersion = null
     log.info('[auto-updater] no update available (current v%s)', String(info?.version ?? app.getVersion()))
   })
 
@@ -183,7 +188,18 @@ function wireUpdaterEvents(eligible: boolean): void {
   autoUpdater.on('update-downloaded', (info) => {
     const version = String(info?.version ?? '')
     updatePendingInstall = true
-    if (persistInstallState) updateStateStore.set({ pendingVersion: version || null, attempts: 0 })
+    if (persistInstallState) {
+      // Preserve the failed-attempt count when re-staging the SAME version. A
+      // silent install failure re-downloads the same update every launch, so
+      // zeroing attempts here would reset the install-loop detector before it
+      // could ever reach MAX_INSTALL_ATTEMPTS — making the give-up → manual-
+      // fallback path unreachable in exactly the trap it exists to catch. Only a
+      // genuinely new version (different from what's recorded) starts over at 0.
+      const staged = version || null
+      const prev = updateStateStore.get()
+      const attempts = prev.pendingVersion === staged ? prev.attempts : 0
+      updateStateStore.set({ pendingVersion: staged, attempts })
+    }
     log.info('[auto-updater] update downloaded: v%s — will install on quit', version)
     track('update_downloaded', { version: version || null })
   })
@@ -196,10 +212,10 @@ function wireUpdaterEvents(eligible: boolean): void {
     // signature" — a signing/staging failure, the classic trapped-user cause),
     // the staged install won't apply: drop the pending flag so quit takes the
     // normal path, and offer the reliable manual download. A bare check error
-    // (no update found this session) stays silent.
-    if (availableVersion) {
+    // (no update found, nothing staged this session) stays silent.
+    if (availableVersion || updatePendingInstall) {
       updatePendingInstall = false
-      void promptManualReinstall(availableVersion, { offerMove: !eligible })
+      void promptManualReinstall(availableVersion ?? '', { offerMove: !eligible })
     }
   })
 }

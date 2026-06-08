@@ -220,6 +220,22 @@ describe('initAutoUpdater — event telemetry', () => {
     expect(h.sendEvent).toHaveBeenCalledWith('update_downloaded', expect.objectContaining({ version: '1.2.3' }))
     expect(h.cell.value).toEqual({ pendingVersion: '1.2.3', attempts: 0 })
   })
+
+  it('on update-downloaded: preserves attempts when re-staging the same version', async () => {
+    await initAndGet()
+    // A silent install failure re-downloads the same version next launch — the
+    // accumulated failure count must survive so the loop detector can progress.
+    h.cell.value = { pendingVersion: '1.2.3', attempts: 1 }
+    h.autoUpdater.emit('update-downloaded', { version: '1.2.3' })
+    expect(h.cell.value).toEqual({ pendingVersion: '1.2.3', attempts: 1 })
+  })
+
+  it('on update-downloaded: resets attempts for a genuinely new version', async () => {
+    await initAndGet()
+    h.cell.value = { pendingVersion: '1.2.3', attempts: 1 }
+    h.autoUpdater.emit('update-downloaded', { version: '2.0.0' })
+    expect(h.cell.value).toEqual({ pendingVersion: '2.0.0', attempts: 0 })
+  })
 })
 
 describe('install-loop detection on launch', () => {
@@ -248,6 +264,37 @@ describe('install-loop detection on launch', () => {
     initAutoUpdater()
     expect(h.dialog.showMessageBox).not.toHaveBeenCalled()
     expect(h.cell.value).toEqual({ pendingVersion: '1.2.3', attempts: 1 })
+  })
+
+  it('reaches the manual fallback across launches despite re-downloading each launch', async () => {
+    // Regression: the silent-install-failure loop re-downloads the same version
+    // every launch. If update-downloaded zeroed the attempt counter, the give-up
+    // path would be unreachable. Drive the real launch → re-download → launch loop.
+    h.app.getVersion.mockReturnValue('1.2.2') // the install never advances
+
+    const launch = async () => {
+      h.autoUpdater.removeAllListeners() // fresh process: only this launch's handlers
+      const { initAutoUpdater } = await loadModule()
+      initAutoUpdater()
+    }
+
+    // Launch 1: update downloads and stages.
+    await launch()
+    h.autoUpdater.emit('update-downloaded', { version: '1.2.3' })
+    expect(h.cell.value).toEqual({ pendingVersion: '1.2.3', attempts: 0 })
+
+    // Launch 2: install silently failed → retry (no prompt); the updater then
+    // re-downloads the SAME version, which must NOT reset the attempt counter.
+    await launch()
+    expect(h.cell.value).toEqual({ pendingVersion: '1.2.3', attempts: 1 })
+    expect(h.dialog.showMessageBox).not.toHaveBeenCalled()
+    h.autoUpdater.emit('update-downloaded', { version: '1.2.3' })
+    expect(h.cell.value).toEqual({ pendingVersion: '1.2.3', attempts: 1 })
+
+    // Launch 3: still on the old version → counter hits the cap → manual fallback.
+    await launch()
+    expect(h.sendEvent).toHaveBeenCalledWith('update_install_failed_repeatedly', expect.anything())
+    expect(h.dialog.showMessageBox).toHaveBeenCalled()
   })
 })
 
