@@ -14,7 +14,6 @@ import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 import { useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
-import { WorktreePill } from '../canvas/WorktreePill'
 import { isMiddleClick } from '../lib/mouse'
 
 const AWAIT_COLOR = '#c08a5a'
@@ -270,14 +269,6 @@ export function DockTabBar(props: DockTabBarProps) {
             {agentInfoByPanel[panelId]?.state === 'waitingForInput' && (
               <span className="cate-await-indicator shrink-0" aria-label="awaiting input">
                 <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
-              </span>
-            )}
-            {/* Worktree chip lives in the active tab (it used to sit in the node's
-                trailing controls). Self-hides for non-terminal/agent panels and
-                single-worktree workspaces, so it only shows where meaningful. */}
-            {isActive && panel && workspaceId && (
-              <span className="shrink-0">
-                <WorktreePill panel={panel} workspaceId={workspaceId} />
               </span>
             )}
             {onClosePanel && (

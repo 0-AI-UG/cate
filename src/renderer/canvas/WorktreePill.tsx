@@ -98,6 +98,7 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
         alignItems: 'center',
         gap: 4,
         height: 18,
+        maxWidth: 220,
         padding: '0 9px 0 7px',
         borderRadius: 9,
         // Filled, no outline — the chip IS the worktree color. Slightly toned
@@ -119,7 +120,7 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
       onMouseDown={(e) => e.stopPropagation()}
     >
       <ArrowsSplit size={11} weight="bold" style={{ flexShrink: 0 }} />
-      <span style={{ maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {labelOf(current)}
       </span>
     </button>
