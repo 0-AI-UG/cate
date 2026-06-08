@@ -248,12 +248,25 @@ export function RemoteConnect({
                 <input type="checkbox" checked={useAgent} onChange={(e) => setUseAgent(e.target.checked)} className="accent-focus-blue" />
                 Use SSH agent
               </label>
-              <input
-                className={inputCls}
-                value={keyPath}
-                onChange={(e) => setKeyPath(e.target.value)}
-                placeholder="Private key path"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  className={`${inputCls} flex-1 min-w-0`}
+                  value={keyPath}
+                  onChange={(e) => setKeyPath(e.target.value)}
+                  placeholder="Private key path"
+                />
+                <button
+                  type="button"
+                  className={btn.ghost}
+                  onClick={() => {
+                    void window.electronAPI.companionPickSshKey().then((p) => {
+                      if (p) setKeyPath(p)
+                    })
+                  }}
+                >
+                  Browse…
+                </button>
+              </div>
               <input
                 className={inputCls}
                 type="password"

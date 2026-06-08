@@ -15,9 +15,11 @@
 // Either way the install is cached by version+target on the host (.ok marker),
 // so reconnects are instant.
 //
-// STATUS: implemented but NOT runtime-verified in this sandbox (needs a real
-// server). Requires the `ssh2` package (installed); the import is dynamic to
-// keep the build resilient.
+// STATUS: runtime-verified against a real server via the opt-in live harness
+// (sshLive.itest.ts) — connect/hold, concurrent-connect dedup, and force
+// reinstall all behave, with the remote daemon exiting cleanly on teardown.
+// Requires the `ssh2` package (installed); the import is dynamic to keep the
+// build resilient.
 // =============================================================================
 
 import log from '../../logger'

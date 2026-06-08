@@ -380,8 +380,14 @@ export class CompanionManager {
     const { channel, client, hello } = attempt
     const companion = new RemoteCompanion(id, client)
     const conn: Connection = { transport, channel, client, companion }
-    channel.onClose(() => {
+    channel.onClose(({ code }) => {
       client.dispose('Companion connection closed')
+      // A *live* drop is the interesting one; an intentional teardown already
+      // logged its own reason. Always record the close (with exit/disconnect
+      // code) so a reconnect loop is visible in main.log — previously only
+      // `connected` was logged, so a flapping connection looked healthy. The
+      // `live=` flag tells a reader whether this was the active transport.
+      log.info('[companion] disconnected %s (%s) code=%s live=%s', id, transport.kind, code ?? 'unknown', this.connections.get(id) === conn)
       // Only report a *drop* if this is still the live connection. An
       // intentional teardown (disposeConnection during reinstall/remove)
       // removes it first and drives the phase itself — a late close event from
@@ -425,6 +431,14 @@ export class CompanionManager {
    *  keeps the phase main-driven instead of having the client assume it. */
   reportConnected(id: CompanionId): void {
     if (this.companions.has(id)) this.emitStatus(id, 'connected')
+  }
+
+  /** Emit a phase for an id that has no in-flight connect — used by the IPC layer
+   *  when a connect can't even be ATTEMPTED (e.g. the SSH key file is missing or
+   *  an unsupported format), so the renderer shows the real reason instead of a
+   *  bare "failed to connect". doConnect owns the phase once a connect starts. */
+  report(id: CompanionId, phase: CompanionPhase, message?: string): void {
+    this.emitStatus(id, phase, message)
   }
 
   /** Tear down a remote connection and unregister it. */

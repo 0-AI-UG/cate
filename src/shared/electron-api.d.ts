@@ -702,6 +702,10 @@ export interface ElectronAPI {
   /** Connectable host aliases from the user's ~/.ssh/config ([] if none). */
   companionSshHosts(): Promise<SshHostEntry[]>
 
+  /** Open a native file picker for an SSH private key. Returns the chosen
+   *  absolute path, or null if the dialog was cancelled. */
+  companionPickSshKey(): Promise<string | null>
+
   /** Explicit clean install of a remote companion's daemon (wipes the host
    *  install dir, re-pulls/pushes the bundle, then connects). The only call that
    *  installs — probes (connect/ensure) never do. */
