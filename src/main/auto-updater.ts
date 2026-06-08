@@ -272,6 +272,15 @@ export function initAutoUpdater(): void {
   autoUpdater.autoDownload = eligible
   autoUpdater.autoInstallOnAppQuit = eligible
 
+  // Always download the full zip — never the blockmap-based differential. On
+  // macOS a differential download intermittently assembled a corrupt zip whose
+  // extracted bundle was missing files (the "ditto: …/Electron Framework: No
+  // such file or directory" install failure that dropped users into the manual
+  // fallback). The full download is a little more bandwidth but it's the
+  // reliable path; the Squirrel.Mac swap is fragile enough without feeding it a
+  // mis-assembled archive.
+  autoUpdater.disableDifferentialDownload = true
+
   wireUpdaterEvents(eligible)
 
   if (eligible) {
