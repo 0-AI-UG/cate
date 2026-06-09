@@ -21,20 +21,20 @@
 ---
 
 <p align="center">
-  <img src="assets/demo.gif" alt="Cate demo" width="900" />
+  <img src="assets/demo-canvas.gif" alt="Cate demo" width="900" />
 </p>
 
-Cate is a desktop IDE built on an infinite canvas. Instead of stacking windows and tabs, you spread editors, terminals, browsers, documents, and AI agents across freeform space and arrange them however you think about the project. Float panels on the canvas, dock them into tabs and splits, or detach them into their own OS windows — and Cate restores everything when you reopen the folder. It's not a window manager (tiling WMs like Hyprland, Niri, and GlazeWM arrange OS windows for everything you run); Cate arranges the tools for a single project, closer to Figma than to a WM.
+Cate is a desktop IDE built on an infinite canvas. Spread editors, terminals, browsers, docs, and AI agents across freeform space instead of stacking windows and tabs. Float them, dock them into tabs and splits, or detach them into their own OS windows, and Cate restores the whole layout when you reopen the folder.
 
-**Getting started:** open a folder and it becomes a workspace. Right-click the canvas to add panels, press `Cmd+K` for the command palette, and drag panels onto the dock to build tabs and splits. No config files.
+**Getting started:** open a folder and it becomes a workspace. Right-click to add panels, press `Cmd+K` for the command palette, drag panels onto the dock to build tabs and splits. No config files.
 
 ## What's inside
 
-- **Canvas & layout** — zoom and pan an infinite canvas; dock panels into tabs and splits across four zones; detach panels into separate windows; save named layouts; keep several projects open and restore them on restart.
-- **Editors & terminals** — Monaco editors with syntax highlighting, multi-cursor, find/replace, diffs, and Markdown preview; native xterm.js terminals backed by `node-pty` with shell auto-detection; document panels for PDFs, DOCX, and images.
-- **Git** — git-aware file tree with live watching, plus a source-control sidebar for staging, branches, worktrees, history, and inline diffs. Full-text project search.
-- **AI agents** — in-app coding agent (Pi) with chat threads and per-chat model memory. Connect Anthropic, OpenAI Codex, GitHub Copilot, Gemini, OpenRouter, Groq, Mistral, DeepSeek, and more via OAuth or API key. Install extensions from the marketplace.
-- **Navigation** — canvas-wide search across files, terminal scrollback, and panel titles; command palette; panel-to-panel keyboard navigation.
+- **Canvas & layout:** infinite zoom and pan, docking into tabs and splits across four zones, detachable windows, saved layouts, and multi-project session restore.
+- **Editors & terminals:** Monaco editors with syntax highlighting, multi-cursor, diffs, and Markdown preview; native xterm.js terminals via `node-pty`; document panels for PDFs, DOCX, and images.
+- **Git:** git-aware file tree with live watching, plus a source-control sidebar for staging, branches, worktrees, history, and inline diffs. Full-text search.
+- **AI agents:** in-app coding agent (Pi) with chat threads and per-chat model memory. Connect Anthropic, OpenAI Codex, GitHub Copilot, Gemini, OpenRouter, Groq, Mistral, DeepSeek, and more via OAuth or API key.
+- **Navigation:** canvas-wide search across files, terminal scrollback, and panel titles; command palette; panel-to-panel keyboard navigation.
 
 ## Keyboard shortcuts
 
@@ -82,14 +82,14 @@ Download a prebuilt release. Don't build from source for daily use.
 For contributors. Use the release above otherwise.
 
 **Prerequisites:**
-- [Bun](https://bun.sh) — package manager and script runner.
+- [Bun](https://bun.sh): package manager and script runner.
 - [Node.js](https://nodejs.org/) 20 or 22 LTS (see `.nvmrc`) on your PATH. The build scripts run under it; the companion daemon bundles its own Node 22.
 - **Linux only:** `node-pty` ships prebuilt binaries for macOS and Windows, but not Linux, so it compiles from source there. Install Python 3 and a C++ toolchain:
   - Debian/Ubuntu: `sudo apt install build-essential python3`
   - Fedora/RHEL: `sudo dnf install @development-tools gcc-c++ make python3`
   - Arch: `sudo pacman -S base-devel python`
 
-Fresh clone — one command sets everything up (installs dependencies and builds the local companion daemon):
+Fresh clone, one command sets everything up (installs dependencies and builds the local companion daemon):
 
 ```bash
 git clone https://github.com/0-AI-UG/cate.git
