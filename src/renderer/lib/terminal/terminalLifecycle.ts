@@ -276,6 +276,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     cleanupListeners,
     lastScrollTop: 0,
     hasScrollListener: false,
+    hasVisibilityListener: false,
     workspaceId: opts.workspaceId,
     alive: true,
   }
@@ -375,6 +376,7 @@ export async function reconnectTerminal(
     cleanupListeners,
     lastScrollTop: 0,
     hasScrollListener: false,
+    hasVisibilityListener: false,
     workspaceId: opts.workspaceId,
     alive: true,
   }
@@ -409,10 +411,16 @@ export function finalizeReconnect(panelId: string): void {
   const { ptyId, scrollback } = entry.pendingReconnect
   entry.pendingReconnect = undefined
 
-  if (scrollback) {
-    entry.terminal.write(scrollback + '\r\n')
-  }
   const { electronAPI } = window
+
+  if (scrollback) {
+    // captureScrollback joins rows with bare '\n'. Writing that to xterm
+    // line-feeds WITHOUT a carriage return, so each row starts at the previous
+    // row's end column — the staircase that scattered detached `ls`/grid output.
+    // Normalize to '\r\n' so every row returns to column 0, matching how the
+    // session-restore path (replayTerminalLog) already replays its lines.
+    entry.terminal.write(scrollback.replace(/\r?\n/g, '\r\n') + '\r\n')
+  }
   electronAPI
     .panelTransferAck(ptyId)
     .catch((err) => log.warn('[terminal] Transfer ack failed:', err))

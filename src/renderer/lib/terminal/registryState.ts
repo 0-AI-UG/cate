@@ -38,6 +38,15 @@ export interface RegistryEntry {
   savedViewport?: { line: number; atBottom: boolean }
   /** True once a scroll listener has been attached — prevents duplicates across re-attach cycles. */
   hasScrollListener: boolean
+  /**
+   * True once a document visibilitychange listener has been attached. The
+   * WebGL renderer's drawing buffer comes up blank (preserveDrawingBuffer is
+   * false) whenever the window paints fresh — a detached window revealed after
+   * being created hidden, or any window restored from minimized. The listener
+   * forces an atlas rebuild + redraw on the visible transition so the terminal
+   * doesn't stay blank/garbled. Flagged so re-attach cycles don't stack copies.
+   */
+  hasVisibilityListener: boolean
   /** Owning workspace — used to route auto-detected URLs to the right browser panel. */
   workspaceId: string
   /**

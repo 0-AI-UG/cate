@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-06-09
+
+Bug-fix release for terminals detached into their own window.
+
+### Fixed
+
+- **Detached terminals no longer render blank or grey**: the GPU renderer now rebuilds and repaints once the new window is actually shown, instead of staying empty until the next output.
+- **Detached terminal scrollback keeps its formatting**: replayed history is written with proper line breaks, so multi-column output (like `ls`) lines up again instead of cascading down the screen.
+
 ## [1.1.1] - 2026-06-01
 
 Polish release: grid snapping on the canvas, steadier sidebar and window handling, a big batch of new editor themes, and opt-in usage analytics for agent messages.

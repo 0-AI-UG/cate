@@ -43,9 +43,26 @@ export function captureScrollback(
     const lastRow = buffer.baseY + buffer.cursorY
     const endRow = options.excludeCursorRow ? lastRow : lastRow + 1
     const lines: string[] = []
+    let current = ''
     for (let i = 0; i < endRow; i++) {
       const line = buffer.getLine(i)
-      lines.push(line ? line.translateToString(true) : '')
+      // A logical line wider than the terminal is stored as several buffer rows;
+      // xterm flags every continuation row `isWrapped`. If the NEXT row
+      // continues this one, this segment is not the end of its logical line:
+      // keep its FULL width (no trailing-space trim — those spaces are real
+      // inter-column padding, e.g. `ls`/`git status`) and don't break the line.
+      // Coalescing the wrapped rows back into one logical line lets the
+      // destination terminal re-wrap at ITS own width on replay. Joining each
+      // buffer row with a hard '\n' (the old behaviour) instead bakes the SOURCE
+      // window's wrap points in; a narrower target then wraps each segment AGAIN,
+      // scattering multi-column output across the panel.
+      const next = buffer.getLine(i + 1)
+      const continues = i + 1 < endRow && next != null && next.isWrapped
+      current += line ? line.translateToString(!continues) : ''
+      if (!continues) {
+        lines.push(current)
+        current = ''
+      }
     }
     // Trim trailing blank lines so a freshly-cleared terminal doesn't carry a
     // wall of empty rows across a transfer / save.

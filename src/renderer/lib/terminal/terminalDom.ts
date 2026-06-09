@@ -11,6 +11,30 @@ import { registry, has, type RegistryEntry } from './registryState'
 import { finalizeReconnect } from './terminalLifecycle'
 
 /**
+ * Force the WebGL renderer to rebuild its glyph atlas and redraw every cell.
+ *
+ * A detached window is created hidden (show:false) and only revealed on
+ * ready-to-show. The WebGL renderer initializes while the window is still
+ * hidden, so its glyph atlas is built against whatever devicePixelRatio the
+ * not-yet-composited window reports and its drawing buffer is never painted.
+ * Once the window is shown a stale atlas yields garbled text (wrong cell
+ * metrics) and a quiet terminal stays blank (the buffer comes up empty and,
+ * with preserveDrawingBuffer:false, nothing redraws it). clearTextureAtlas()
+ * rebuilds the atlas at the now-correct DPR; refresh() repaints into the live
+ * buffer. No-op (besides a cheap refresh) on the canvas renderer fallback.
+ */
+function forceWebglRepaint(panelId: string): void {
+  const entry = registry.get(panelId)
+  if (!entry) return
+  try {
+    entry.webglAddon?.clearTextureAtlas()
+    entry.terminal.refresh(0, entry.terminal.rows - 1)
+  } catch {
+    /* renderer mid-dispose — ignore */
+  }
+}
+
+/**
  * Calls fitAddon.fit() and corrects for sub-pixel overflow.
  *
  * FitAddon calculates rows from getComputedStyle height, which can be
@@ -125,6 +149,22 @@ export function attach(panelId: string, container: HTMLDivElement): void {
     }
   }
 
+  // Repaint when the window becomes visible. A detached window is created
+  // hidden (show:false) and revealed on ready-to-show; if the WebGL renderer
+  // initialized while the window was still hidden, its drawing buffer never
+  // painted and its atlas was built against a stale DPR — leaving the terminal
+  // blank or garbled until something forces a redraw. The same blank-buffer
+  // race happens on minimize/restore. Force an atlas rebuild + refresh on every
+  // visible transition. Registered once per entry (survives re-attach cycles).
+  if (!entry.hasVisibilityListener) {
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') forceWebglRepaint(panelId)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    entry.cleanupListeners.push(() => document.removeEventListener('visibilitychange', onVisible))
+    entry.hasVisibilityListener = true
+  }
+
   // Force layout reflow so the browser has calculated the new container size
   // before we resize the terminal / WebGL canvas.
   void container.offsetHeight
@@ -192,6 +232,18 @@ export function attach(panelId: string, container: HTMLDivElement): void {
         terminal.scrollToBottom()
       }
     } catch { /* ignore */ }
+
+    // Rebuild the WebGL atlas + redraw now that we have run post-show with a
+    // real container size, then again on the next two frames. A detached
+    // window opens hidden and only paints once shown; its renderer initialized
+    // while hidden against a stale DPR/size, so the first paint can be blank or
+    // garbled until the atlas is rebuilt at the live DPR. The extra frames
+    // cover a window still settling its size/DPR on the first painted frame.
+    forceWebglRepaint(panelId)
+    requestAnimationFrame(() => {
+      forceWebglRepaint(panelId)
+      requestAnimationFrame(() => forceWebglRepaint(panelId))
+    })
 
     // Now that the xterm is sized to its real container, replay captured
     // scrollback and release the main-side PTY buffer. Order matters:
