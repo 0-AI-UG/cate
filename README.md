@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="assets/cate-logo.svg" alt="Cate" width="140" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/cate-logo.svg" />
+    <img src="assets/cate-logo-light.svg" alt="Cate" width="140" />
+  </picture>
 </p>
-
-<h1 align="center">Cate</h1>
 
 <p align="center">
   <a href="README.md">English</a> | <a href="README.fr.md">Français</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.de.md">Deutsch</a>
