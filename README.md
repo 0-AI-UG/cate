@@ -43,9 +43,6 @@ Download a prebuilt release. Don't build from source for daily use.
 
 > **Linux:** on Steam Deck or read-only-root distros, use the `tar.gz` build. If the AppImage won't launch, try `./Cate.AppImage --no-sandbox`.
 
-> [!TIP]
-> If Cate is useful to you, [**star the repo**](https://github.com/0-AI-UG/cate) to help others find it.
-
 ## What's inside
 
 - **Canvas & layout:** infinite zoom and pan, docking into tabs and splits across four zones, detachable windows, saved layouts, and multi-project session restore.
