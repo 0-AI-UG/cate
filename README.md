@@ -39,10 +39,6 @@ Download a prebuilt release. Don't build from source for daily use.
 | Windows | NSIS installer, ZIP (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
 | Linux | AppImage, DEB, `tar.gz` (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
 
-> **macOS:** release builds are notarized. Unsigned local builds may need `xattr -cr /Applications/Cate.app`.
-
-> **Linux:** on Steam Deck or read-only-root distros, use the `tar.gz` build. If the AppImage won't launch, try `./Cate.AppImage --no-sandbox`.
-
 ## What's inside
 
 - **Canvas & layout:** infinite zoom and pan, docking into tabs and splits across four zones, detachable windows, saved layouts, and multi-project session restore.
