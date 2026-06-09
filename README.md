@@ -29,6 +29,23 @@ Cate is a desktop IDE built on an infinite canvas. Spread editors, terminals, br
 
 **Getting started:** open a folder and it becomes a workspace. Right-click to add panels, press `Cmd+K` for the command palette, drag panels onto the dock to build tabs and splits. No config files.
 
+## Install
+
+Download a prebuilt release. Don't build from source for daily use.
+
+| Platform | Formats | Link |
+|----------|---------|------|
+| macOS | DMG, ZIP (`arm64`, `x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
+| Windows | NSIS installer, ZIP (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
+| Linux | AppImage, DEB, `tar.gz` (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
+
+> **macOS:** release builds are notarized. Unsigned local builds may need `xattr -cr /Applications/Cate.app`.
+
+> **Linux:** on Steam Deck or read-only-root distros, use the `tar.gz` build. If the AppImage won't launch, try `./Cate.AppImage --no-sandbox`.
+
+> [!TIP]
+> If Cate is useful to you, [**star the repo**](https://github.com/0-AI-UG/cate) to help others find it.
+
 ## What's inside
 
 - **Canvas & layout:** infinite zoom and pan, docking into tabs and splits across four zones, detachable windows, saved layouts, and multi-project session restore.
@@ -63,20 +80,6 @@ macOS shown below; on Windows/Linux use `Ctrl` in place of `Cmd`.
 | Undo / redo | `Cmd+Z` / `Cmd+Shift+Z` |
 
 Every shortcut is rebindable in Settings.
-
-## Install
-
-Download a prebuilt release. Don't build from source for daily use.
-
-| Platform | Formats | Link |
-|----------|---------|------|
-| macOS | DMG, ZIP (`arm64`, `x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
-| Windows | NSIS installer, ZIP (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
-| Linux | AppImage, DEB, `tar.gz` (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
-
-> **macOS:** release builds are notarized. Unsigned local builds may need `xattr -cr /Applications/Cate.app`.
-
-> **Linux:** on Steam Deck or read-only-root distros, use the `tar.gz` build. If the AppImage won't launch, try `./Cate.AppImage --no-sandbox`.
 
 ## Build from source
 
