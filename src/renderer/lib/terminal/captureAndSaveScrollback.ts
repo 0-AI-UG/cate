@@ -2,11 +2,10 @@
 // captureAndSaveScrollback — the shared "snapshot a terminal's buffer and
 // persist it" step used by session capture and both detached-window shells.
 //
-// The cursor row is always excluded: scrollback is replayed into a freshly
-// spawned PTY on the next launch (or on the receiving side of a transfer),
-// which re-sends the prompt line, so including the cursor row would duplicate
-// it. When the buffer has no content there is nothing to save and the call is
-// skipped.
+// The buffer is serialized (text + styling + cursor) so a restored terminal
+// keeps its exact look; replayTerminalLog writes the saved string verbatim into
+// the fresh xterm on the next launch. When the buffer has no content there is
+// nothing to save and the call is skipped.
 //
 // The save KEY differs by caller — session capture keys scrollback by the
 // restore-stable panel id, while the detached-window shells key by the live
@@ -18,10 +17,10 @@
 import { terminalRegistry } from './terminalRegistry'
 
 export function captureAndSaveScrollback(
-  entry: Parameters<typeof terminalRegistry.captureScrollback>[0],
+  entry: Parameters<typeof terminalRegistry.serializeTerminalState>[0],
   saveKey: string,
 ): Promise<void> | undefined {
-  const content = terminalRegistry.captureScrollback(entry, { excludeCursorRow: true })
+  const content = terminalRegistry.serializeTerminalState(entry)
   if (!content) return undefined
   return window.electronAPI.terminalScrollbackSave(saveKey, content).catch(() => {})
 }

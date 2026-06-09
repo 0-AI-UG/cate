@@ -1,6 +1,6 @@
 {
   "name": "cate",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "productName": "Cate",
   "description": "An infinite zoomable canvas IDE",
   "license": "MIT",
@@ -73,6 +73,7 @@
     "@types/ssh2": "^1.15.5",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-serialize": "^0.13.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",

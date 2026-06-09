@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { prepareTerminalRemount } from '../terminalRemount'
 
-// Faithful stand-in for terminalRegistry.captureScrollback's short-circuit on a
-// pre-captured scrollback string (the only path these tests exercise).
-function captureScrollback(entry?: { scrollback?: string }) {
+// Stand-in for terminalRegistry.serializeTerminalState — these tests drive the
+// captured string via the fixture entry's `scrollback` field.
+function serialize(entry?: { scrollback?: string }) {
   return typeof entry?.scrollback === 'string' ? entry.scrollback : undefined
 }
 
@@ -11,7 +11,7 @@ function makeRegistry(entry?: { ptyId: string; scrollback?: string }) {
   return {
     getEntry: vi.fn(() => entry),
     setPendingTransfer: vi.fn(),
-    captureScrollback: vi.fn((e?: { scrollback?: string }) => captureScrollback(e)),
+    serializeTerminalState: vi.fn((e?: unknown) => serialize(e as { scrollback?: string })),
   }
 }
 
@@ -54,7 +54,7 @@ describe('prepareTerminalRemount (regression: same-window terminal drag spawns f
       setPendingTransfer: (id: string, ptyId: string, scrollback?: string) => {
         pending.set(id, { ptyId, scrollback })
       },
-      captureScrollback: (e?: { scrollback?: string }) => captureScrollback(e),
+      serializeTerminalState: (e?: unknown) => serialize(e as { scrollback?: string }),
       getOrCreate: (id: string) => {
         const existing = entries.get(id)
         if (existing) { pending.delete(id); return existing }

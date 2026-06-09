@@ -24,7 +24,7 @@ import {
 } from './terminalLifecycle'
 import { attach, detach, fit, restoreScroll } from './terminalDom'
 import { findNext, findPrevious, clearSearch } from './terminalSearch'
-import { captureScrollback } from './scrollbackCapture'
+import { serializeTerminalState } from './scrollbackCapture'
 import {
   getEntry,
   has,
@@ -39,7 +39,6 @@ import {
 } from './registryState'
 
 export type { RegistryEntry } from './registryState'
-export type { CaptureScrollbackOptions } from './scrollbackCapture'
 export { clampScrollSensitivity, clampContrastRatio } from './terminalSettings'
 export { isTerminalPasteChord, isTerminalCopyChord } from './terminalInput'
 
@@ -66,7 +65,7 @@ export const terminalRegistry = {
   workspaceIdForPty,
   workspaceIdForPanel,
   isAlive,
-  captureScrollback,
+  serializeTerminalState,
   entries,
   findNext,
   findPrevious,

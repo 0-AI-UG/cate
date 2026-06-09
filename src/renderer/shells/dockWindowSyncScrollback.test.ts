@@ -14,14 +14,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../lib/terminal/terminalRegistry', async () => {
-  // Use the REAL captureScrollback (buffer->string extraction) so the helper
-  // produces genuine content; only getEntry is stubbed to our fake entries.
-  const { captureScrollback } = await import('../lib/terminal/scrollbackCapture')
+  // Use the REAL serializeTerminalState so the helper produces genuine content;
+  // only getEntry is stubbed to our fake entries (each carries a fake serialize
+  // addon).
+  const { serializeTerminalState } = await import('../lib/terminal/scrollbackCapture')
   return {
     terminalRegistry: {
       getEntry: (panelId: string) =>
-        entries.get(panelId) as { ptyId: string; terminal: unknown } | undefined,
-      captureScrollback,
+        entries.get(panelId) as { ptyId: string } | undefined,
+      serializeTerminalState,
     },
   }
 })
@@ -31,21 +32,13 @@ vi.mock('../lib/terminal/terminalRegistry', async () => {
 import { captureTerminalScrollbacks } from './dockWindowSyncScrollback'
 import type { PanelState } from '../../shared/types'
 
-const entries = new Map<string, { ptyId: string; terminal: unknown }>()
+const entries = new Map<string, { ptyId: string; serializeAddon: { serialize: () => string } }>()
 
-// A minimal fake terminal whose buffer captureScrollback can read.
-function fakeTerminalEntry(ptyId: string, line: string) {
+// A minimal fake entry whose serialize addon returns the given content.
+function fakeTerminalEntry(ptyId: string, content: string) {
   return {
     ptyId,
-    terminal: {
-      buffer: {
-        active: {
-          baseY: 0,
-          cursorY: 1,
-          getLine: (i: number) => ({ translateToString: (_t: boolean) => (i === 0 ? line : '') }),
-        },
-      },
-    },
+    serializeAddon: { serialize: () => content },
   }
 }
 

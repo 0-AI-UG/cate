@@ -45,11 +45,9 @@ export function createTransferSnapshot(
     const entry = terminalRegistry.getEntry(panel.id)
     if (entry) {
       snapshot.terminalPtyId = entry.ptyId
-      // Exclude the cursor row: the PTY re-sends the prompt line via
-      // panelTransferAck on the receiving side, so including it here duplicates
-      // the prompt and pushes it below blank viewport rows.
-      snapshot.terminalScrollback =
-        terminalRegistry.captureScrollback(entry, { excludeCursorRow: true }) ?? ''
+      // Serialize the buffer (text + styling + cursor) so the receiving window
+      // reconstructs the terminal verbatim, colors and all.
+      snapshot.terminalScrollback = terminalRegistry.serializeTerminalState(entry) ?? ''
     }
   }
 
@@ -97,7 +95,7 @@ export function createTransferSnapshot(
         if (entry?.ptyId) {
           childTerminals[childId] = {
             ptyId: entry.ptyId,
-            scrollback: terminalRegistry.captureScrollback(entry, { excludeCursorRow: true }) ?? '',
+            scrollback: terminalRegistry.serializeTerminalState(entry) ?? '',
           }
         }
       }

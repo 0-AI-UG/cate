@@ -1,17 +1,16 @@
 import type { PanelType } from '../../shared/types'
+import type { SerializeAddon } from '@xterm/addon-serialize'
 
 interface RegistryEntryLike {
   ptyId: string
   scrollback?: string
+  serializeAddon?: SerializeAddon | null
 }
 
 export interface TerminalRegistryLike {
   getEntry(panelId: string): RegistryEntryLike | undefined
   setPendingTransfer(panelId: string, ptyId: string, scrollback?: string): void
-  captureScrollback(
-    entry: { scrollback?: string },
-    options?: { excludeCursorRow?: boolean },
-  ): string | undefined
+  serializeTerminalState(entry: { serializeAddon?: SerializeAddon | null }): string | undefined
 }
 
 export function prepareTerminalRemount(
@@ -22,8 +21,9 @@ export function prepareTerminalRemount(
   if (panelType !== 'terminal') return false
   const entry = registry.getEntry(panelId)
   if (!entry) return false
-  // Exclude the cursor row: the receiving terminal re-sends the prompt on remount.
-  const scrollback = registry.captureScrollback(entry, { excludeCursorRow: true })
+  // Serialize the buffer (text + styling + cursor) so the rebuilt xterm restores
+  // verbatim.
+  const scrollback = registry.serializeTerminalState(entry)
   registry.setPendingTransfer(panelId, entry.ptyId, scrollback)
   return true
 }

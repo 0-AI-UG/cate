@@ -312,13 +312,11 @@ export async function replayTerminalLog(panelId: string): Promise<void> {
     return
   }
 
-  // Write scrollback content as plain text lines
-  const lines = logData.split('\n')
-  for (const line of lines) {
-    entry.terminal.write(line + '\r\n')
-  }
-  // Dim separator between restored content and new session
-  entry.terminal.write('\x1b[90m--- restored session ---\x1b[0m\r\n')
+  // logData is a SerializeAddon string (serializeTerminalState): escape sequences
+  // that restore the saved buffer — text, styling, wrapping — verbatim. The fresh
+  // shell's prompt then prints below the dim separator.
+  entry.terminal.write(logData)
+  entry.terminal.write('\r\n\x1b[90m--- restored session ---\x1b[0m\r\n')
 
   terminalRestoreData.delete(panelId)
 }

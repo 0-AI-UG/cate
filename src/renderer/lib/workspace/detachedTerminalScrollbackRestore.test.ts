@@ -89,6 +89,9 @@ vi.mock('@xterm/addon-webgl', () => ({
 vi.mock('@xterm/addon-search', () => ({
   SearchAddon: class { findNext() { return false } findPrevious() { return false } clearDecorations() {} },
 }))
+vi.mock('@xterm/addon-serialize', () => ({
+  SerializeAddon: class { activate() {} serialize() { return '' } dispose() {} },
+}))
 
 vi.mock('../../stores/statusStore', () => ({
   useStatusStore: { getState: () => ({ registerTerminal: vi.fn(), unregisterTerminal: vi.fn() }) },
@@ -148,20 +151,11 @@ beforeEach(() => {
   })
 })
 
-// Build a fake registry entry that captureScrollback can read — a buffer with
-// two visible rows of `ls` output and a prompt on the cursor row.
+// Build a fake registry entry whose serialize addon returns a saved buffer —
+// two visible rows of `ls` output and a prompt — as serializeTerminalState reads.
 function fakeEntryWithLsOutput() {
-  const rows = ['$ ls', 'file-a.txt  file-b.txt', '$ ']
   return {
-    terminal: {
-      buffer: {
-        active: {
-          baseY: 0,
-          cursorY: 2, // cursor on the prompt row (row index 2)
-          getLine: (i: number) => ({ translateToString: (_t: boolean) => rows[i] ?? '' }),
-        },
-      },
-    },
+    serializeAddon: { serialize: () => '$ ls\r\nfile-a.txt  file-b.txt\r\n$ ' },
   } as any
 }
 

@@ -11,6 +11,7 @@ import type { Terminal } from '@xterm/xterm'
 import type { FitAddon } from '@xterm/addon-fit'
 import type { WebglAddon } from '@xterm/addon-webgl'
 import type { SearchAddon } from '@xterm/addon-search'
+import type { SerializeAddon } from '@xterm/addon-serialize'
 import { setTerminalWorkspaceResolver } from '../../stores/statusStore'
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,12 @@ export interface RegistryEntry {
   fitAddon: FitAddon
   webglAddon: WebglAddon | null
   searchAddon: SearchAddon
+  /** Serializes the buffer (text + styling + cursor + modes) into a string that
+   *  restores the terminal verbatim when written to a fresh xterm. Used by the
+   *  cross-window transfer path so a detached terminal keeps its colors and
+   *  exact frame, not just plain text. Created once with the terminal and never
+   *  recreated, so (unlike webglAddon) it is non-null for a live entry. */
+  serializeAddon: SerializeAddon
   ptyId: string
   /** Cleanup functions for IPC listeners and xterm disposables. */
   cleanupListeners: Array<() => void>

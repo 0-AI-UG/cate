@@ -8,14 +8,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Controllable terminal registry: getEntry drives which children look like live
-// terminals; captureScrollback / setPendingTransfer are spied.
+// terminals; serializeTerminalState / setPendingTransfer are spied.
 const entries: Record<string, { ptyId: string }> = {}
-const captureScrollback = vi.fn(() => 'SCROLLBACK')
+const serializeTerminalState = vi.fn<() => string | undefined>(() => 'SCROLLBACK')
 const setPendingTransfer = vi.fn()
 vi.mock('./terminal/terminalRegistry', () => ({
   terminalRegistry: {
     getEntry: (id: string) => entries[id],
-    captureScrollback: (...a: unknown[]) => captureScrollback(...(a as [])),
+    serializeTerminalState: (...a: unknown[]) => serializeTerminalState(...(a as [])),
     setPendingTransfer: (...a: unknown[]) => setPendingTransfer(...(a as [])),
   },
 }))
@@ -33,7 +33,8 @@ import type { PanelState } from '../../shared/types'
 
 beforeEach(() => {
   for (const k of Object.keys(entries)) delete entries[k]
-  captureScrollback.mockClear()
+  serializeTerminalState.mockClear()
+  serializeTerminalState.mockReturnValue('SCROLLBACK')
   setPendingTransfer.mockClear()
   getNodeDockLayout.mockReturnValue(null)
 })
@@ -125,6 +126,24 @@ describe('createTransferSnapshot — canvas children survival', () => {
       ptyId: 'pty-99',
       scrollback: 'SCROLLBACK',
     })
+  })
+
+  // The serialized buffer (styling included) rides along as the child scrollback.
+  it('captures the serialized child buffer into childTerminals.scrollback', () => {
+    serializeTerminalState.mockReturnValue('SERIALIZED\x1b[0m')
+    const panel: PanelState = { id: 'canvas-z', type: 'canvas', title: 'C', isDirty: false }
+    const store = getOrCreateCanvasStoreForPanel(panel.id)
+    store.getState().addNode('term-child', 'terminal', { x: 0, y: 0 }, { width: 300, height: 200 })
+    entries['term-child'] = { ptyId: 'pty-1' }
+
+    const snapshot = createTransferSnapshot(
+      panel,
+      { type: 'canvas', canvasId: 'c', canvasNodeId: 'n' },
+      { origin: { x: 0, y: 0 }, size: { width: 800, height: 600 } },
+      { resolveChildPanel: (id) => ({ id, type: 'terminal', title: 't', isDirty: false }) },
+    )
+
+    expect(snapshot.canvasState?.childTerminals?.['term-child']?.scrollback).toBe('SERIALIZED\x1b[0m')
   })
 
   // Tabbed children (non-seed panels in a node's mini-dock) must transfer too.

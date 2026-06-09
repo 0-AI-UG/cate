@@ -1,73 +1,38 @@
 // =============================================================================
-// scrollbackCapture — the canonical xterm buffer->string extraction reused by
-// every call site that previously hand-rolled the baseY+cursorY /
-// translateToString(true) / trailing-trim loop.
+// scrollbackCapture — the single capture+replay path for a terminal's buffer.
+//
+// Capture uses xterm's SerializeAddon: it turns the buffer into a string of
+// escape sequences that restores the text, ANSI styling, wrapping and cursor
+// position verbatim when written to a fresh xterm. Both consumers go through
+// here — the live cross-window transfer (panelTransfer / terminalRemount) and
+// session/detached-window persistence (captureAndSaveScrollback) — so a detached
+// or restored terminal keeps its exact look, colors included, instead of the
+// plain monochrome dump the old translateToString() approach produced.
 // =============================================================================
 
-import type { Terminal } from '@xterm/xterm'
-
-export interface CaptureScrollbackOptions {
-  /**
-   * Exclude the cursor row from the capture. Used by the cross-window transfer /
-   * session-persistence paths: the PTY re-sends the prompt line on the receiving
-   * side (panelTransferAck) or on replay, so including the cursor row here would
-   * duplicate the prompt and push it to the bottom behind blank viewport rows.
-   * Defaults to false (include the cursor row), which is what an in-place
-   * follow-output capture wants so it keeps its freshest line.
-   */
-  excludeCursorRow?: boolean
-}
+import type { SerializeAddon } from '@xterm/addon-serialize'
 
 /**
- * Extract an xterm buffer's scrollback (including the visible viewport) as a
- * newline-joined string, trimming trailing blank lines. Short-circuits to a
- * previously-captured `entry.scrollback` if present.
+ * Serialize a terminal's buffer into a replayable string (text + styling +
+ * wrapping + cursor), or undefined when there's nothing to capture.
  *
- * This is the canonical buffer->string extraction, reused by every call site
- * that previously hand-rolled the same baseY+cursorY / translateToString(true) /
- * trailing-trim loop. Pass `excludeCursorRow` for the transfer/persistence
- * variant that must not duplicate the re-sent prompt line.
+ * The buffer xterm keeps is already bounded by its `scrollback` option, so all
+ * available rows are serialized. The alt buffer and terminal modes are
+ * EXCLUDED: a captured frame is replayed both into a live reconnect AND, on the
+ * next launch, into a freshly-spawned shell. Restoring a dead full-screen app's
+ * alternate screen / modes there would trap the new shell in the alt buffer with
+ * stale content. In-place renderers (Claude Code, plain shells) live on the
+ * normal buffer, so they are captured fully; only a live `vim`/`htop` transfer
+ * loses its frame and repaints from the SIGWINCH the reconnect sends anyway.
  */
-export function captureScrollback(
-  entry: { terminal?: Terminal; scrollback?: string },
-  options: CaptureScrollbackOptions = {},
+export function serializeTerminalState(
+  entry: { serializeAddon?: SerializeAddon | null },
 ): string | undefined {
-  if (typeof entry.scrollback === 'string') return entry.scrollback
-  const terminal = entry.terminal
-  if (!terminal) return undefined
+  const addon = entry.serializeAddon
+  if (!addon) return undefined
   try {
-    const buffer = terminal.buffer.active
-    // Capture scrollback + the active viewport (baseY rows of history plus the
-    // cursor row), so a follow-output terminal keeps its freshest lines. The
-    // transfer/persistence variant stops one row short of the cursor.
-    const lastRow = buffer.baseY + buffer.cursorY
-    const endRow = options.excludeCursorRow ? lastRow : lastRow + 1
-    const lines: string[] = []
-    let current = ''
-    for (let i = 0; i < endRow; i++) {
-      const line = buffer.getLine(i)
-      // A logical line wider than the terminal is stored as several buffer rows;
-      // xterm flags every continuation row `isWrapped`. If the NEXT row
-      // continues this one, this segment is not the end of its logical line:
-      // keep its FULL width (no trailing-space trim — those spaces are real
-      // inter-column padding, e.g. `ls`/`git status`) and don't break the line.
-      // Coalescing the wrapped rows back into one logical line lets the
-      // destination terminal re-wrap at ITS own width on replay. Joining each
-      // buffer row with a hard '\n' (the old behaviour) instead bakes the SOURCE
-      // window's wrap points in; a narrower target then wraps each segment AGAIN,
-      // scattering multi-column output across the panel.
-      const next = buffer.getLine(i + 1)
-      const continues = i + 1 < endRow && next != null && next.isWrapped
-      current += line ? line.translateToString(!continues) : ''
-      if (!continues) {
-        lines.push(current)
-        current = ''
-      }
-    }
-    // Trim trailing blank lines so a freshly-cleared terminal doesn't carry a
-    // wall of empty rows across a transfer / save.
-    while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop()
-    return lines.length > 0 ? lines.join('\n') : undefined
+    const out = addon.serialize({ excludeModes: true, excludeAltBuffer: true })
+    return out.length > 0 ? out : undefined
   } catch {
     return undefined
   }

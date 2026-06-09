@@ -9,6 +9,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import type { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
+import { SerializeAddon } from '@xterm/addon-serialize'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import log from '../logger'
 import { errorMessage } from '../errorMessage'
@@ -81,6 +82,7 @@ interface ConfiguredTerminal {
   terminal: Terminal
   fitAddon: FitAddon
   searchAddon: SearchAddon
+  serializeAddon: SerializeAddon
   webglAddon: WebglAddon | null
   cleanupListeners: Array<() => void>
 }
@@ -120,6 +122,11 @@ export function createAndConfigureXtermTerminal(opts: CreateOpts): ConfiguredTer
   const searchAddon = new SearchAddon()
   terminal.loadAddon(searchAddon)
 
+  // SerializeAddon — snapshots the buffer (text + styling + cursor + modes) as a
+  // replayable string for cross-window transfer (see serializeTerminalState).
+  const serializeAddon = new SerializeAddon()
+  terminal.loadAddon(serializeAddon)
+
   // WebLinksAddon — underline URLs on hover; Cmd/Ctrl+Click opens them
   // (see createTerminalLinkHandler). Disposed with the terminal.
   terminal.loadAddon(new WebLinksAddon(createTerminalLinkHandler(opts.workspaceId)))
@@ -137,7 +144,7 @@ export function createAndConfigureXtermTerminal(opts: CreateOpts): ConfiguredTer
 
   const webglAddon: WebglAddon | null = null
 
-  return { terminal, fitAddon, searchAddon, webglAddon, cleanupListeners }
+  return { terminal, fitAddon, searchAddon, serializeAddon, webglAddon, cleanupListeners }
 }
 
 /**
@@ -258,7 +265,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
   //       reconnectTerminal via createAndConfigureXtermTerminal). The file-link
   //       disposable is already pushed onto cleanupListeners. terminal.open()
   //       is deferred to attach(); webglAddon starts null.
-  const { terminal, fitAddon, searchAddon, webglAddon, cleanupListeners } =
+  const { terminal, fitAddon, searchAddon, serializeAddon, webglAddon, cleanupListeners } =
     createAndConfigureXtermTerminal(opts)
 
   // Skip fitting against the temp div — its arbitrary 800×600 size produces
@@ -272,6 +279,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     fitAddon,
     webglAddon,
     searchAddon,
+    serializeAddon,
     ptyId: '', // filled below
     cleanupListeners,
     lastScrollTop: 0,
@@ -364,7 +372,7 @@ export async function reconnectTerminal(
   //    getOrCreate via createAndConfigureXtermTerminal). The file-link
   //    disposable is already pushed onto cleanupListeners; terminal.open() is
   //    deferred to attach(); webglAddon starts null.
-  const { terminal, fitAddon, searchAddon, webglAddon, cleanupListeners } =
+  const { terminal, fitAddon, searchAddon, serializeAddon, webglAddon, cleanupListeners } =
     createAndConfigureXtermTerminal(opts)
 
   const entry: RegistryEntry = {
@@ -372,6 +380,7 @@ export async function reconnectTerminal(
     fitAddon,
     webglAddon,
     searchAddon,
+    serializeAddon,
     ptyId,
     cleanupListeners,
     lastScrollTop: 0,
@@ -413,17 +422,44 @@ export function finalizeReconnect(panelId: string): void {
 
   const { electronAPI } = window
 
+  // Resync the live PTY winsize to this window AND force the program to repaint.
+  //
+  // Ownership transfers across windows but winsize does not, so the PTY still
+  // carries the SOURCE window's cols/rows; the only thing that resizes it is
+  // xterm's onResize, which fires only when the grid changes from its 80x24
+  // reconnect default. Two problems follow: commands run after the detach (a
+  // fresh `ls`) format for the stale width, and an in-place TUI renderer (Claude
+  // Code/Ink, vim, htop) only repaints its whole frame on SIGWINCH — so with no
+  // resize it keeps doing incremental updates against a buffer that no longer
+  // matches, leaving a half-drawn frame until the user resizes the window by hand.
+  //
+  // Nudge the winsize: one row short now, then the real fitted size a beat later.
+  // The two values always differ, so the kernel always delivers a SIGWINCH and
+  // the program fully redraws at the correct final size. They're spaced apart
+  // because a rapid double-resize can land the second redraw on a row the first
+  // invalidated, clipping the bottom line.
+  const { cols, rows } = entry.terminal
+  electronAPI.terminalResize(ptyId, cols, Math.max(1, rows - 1))
+
   if (scrollback) {
-    // captureScrollback joins rows with bare '\n'. Writing that to xterm
-    // line-feeds WITHOUT a carriage return, so each row starts at the previous
-    // row's end column — the staircase that scattered detached `ls`/grid output.
-    // Normalize to '\r\n' so every row returns to column 0, matching how the
-    // session-restore path (replayTerminalLog) already replays its lines.
-    entry.terminal.write(scrollback.replace(/\r?\n/g, '\r\n') + '\r\n')
+    // Scrollback is a SerializeAddon string (serializeTerminalState): escape
+    // sequences that restore the buffer's text, styling, wrapping and cursor
+    // position when written verbatim.
+    entry.terminal.write(scrollback)
   }
   electronAPI
     .panelTransferAck(ptyId)
     .catch((err) => log.warn('[terminal] Transfer ack failed:', err))
+
+  // Settle to the real size once the program has finished redrawing from the
+  // short-row SIGWINCH above. Re-read the live entry: the window may have been
+  // resized (or the panel disposed) during the delay.
+  setTimeout(() => {
+    const e = registry.get(panelId)
+    if (e?.ptyId === ptyId) {
+      electronAPI.terminalResize(ptyId, e.terminal.cols, e.terminal.rows)
+    }
+  }, 150)
 }
 
 /**
@@ -457,7 +493,7 @@ export function release(panelId: string): void {
  * Does NOT touch the registry maps or kill the PTY — callers own that.
  */
 function teardownEntry(entry: RegistryEntry): void {
-  const { terminal, fitAddon, webglAddon, cleanupListeners } = entry
+  const { terminal, fitAddon, serializeAddon, webglAddon, cleanupListeners } = entry
 
   // Remove all IPC listeners and xterm disposables
   for (const cleanup of cleanupListeners) {
@@ -481,6 +517,8 @@ function teardownEntry(entry: RegistryEntry): void {
   if (typeof (fitAddon as unknown as { dispose?: () => void }).dispose === 'function') {
     try { (fitAddon as unknown as { dispose: () => void }).dispose() } catch { /* ignore */ }
   }
+
+  try { serializeAddon.dispose() } catch { /* ignore */ }
 
   try { terminal.dispose() } catch { /* ignore */ }
 }

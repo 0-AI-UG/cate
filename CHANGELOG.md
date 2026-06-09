@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-06-09
+
+### Fixed
+
+- **Terminals keep their exact look across windows and restarts**: a terminal dragged into its own window — or reopened on the next launch — now restores its full buffer with colors and styling intact (not a plain grey dump), resizes to the new window so commands like `ls` use the right width, and prompts a full-screen program (Claude Code, vim, htop) to redraw its whole frame instead of showing a half-drawn one until you resize the window by hand.
+
 ## [1.2.6] - 2026-06-09
 
 Bug-fix release for terminals detached into their own window.
