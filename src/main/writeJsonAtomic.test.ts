@@ -109,4 +109,28 @@ describe('writeJsonAtomic', () => {
     expect(seen.size).toBe(5) // five distinct tmp paths, none equal to <file>.tmp
     expect([...seen].some((f) => f === p + '.tmp')).toBe(false)
   })
+
+  it('retries transient EPERM renames on win32 (concurrent replace race)', async () => {
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    const realRename = fs.promises.rename.bind(fs.promises)
+    let failuresLeft = 2
+    const spy = vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (failuresLeft-- > 0) {
+        const err = new Error('EPERM: operation not permitted, rename') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+      return realRename(from, to)
+    })
+    try {
+      const p = path.join(dir, 'retry.json')
+      await writeJsonAtomic(p, { ok: 1 })
+      expect(JSON.parse(fs.readFileSync(p, 'utf-8'))).toEqual({ ok: 1 })
+      expect(spy).toHaveBeenCalledTimes(3)
+    } finally {
+      spy.mockRestore()
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+  })
 })

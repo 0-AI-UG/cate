@@ -31,6 +31,45 @@ function uniqueTmpPath(filePath: string): string {
   return `${filePath}.${process.pid}.${tmpSeq}.tmp`
 }
 
+// On Windows, renaming over an existing file is not atomic with respect to
+// other replacements of the same destination: MoveFileEx(REPLACE_EXISTING)
+// fails with a transient EPERM when it races another rename onto the target
+// (or an antivirus/indexer briefly holds the file open). POSIX rename has no
+// such failure mode, so the retry is win32-only to keep real permission
+// errors fast everywhere else. Bounded backoff: 20+40+...+200ms ≈ 1.1s max.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
+const RENAME_MAX_RETRIES = 10
+const RENAME_RETRY_STEP_MS = 20
+
+function isRetryableRename(err: unknown, attempt: number): boolean {
+  if (process.platform !== 'win32' || attempt >= RENAME_MAX_RETRIES) return false
+  const code = (err as NodeJS.ErrnoException).code
+  return code !== undefined && RENAME_RETRY_CODES.has(code)
+}
+
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fsp.rename(from, to)
+    } catch (err) {
+      if (!isRetryableRename(err, attempt)) throw err
+      await new Promise((r) => setTimeout(r, RENAME_RETRY_STEP_MS * (attempt + 1)))
+    }
+  }
+}
+
+function renameWithRetrySync(from: string, to: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return fs.renameSync(from, to)
+    } catch (err) {
+      if (!isRetryableRename(err, attempt)) throw err
+      // Blocking sleep: this path only runs at quit-time flushes on win32.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RENAME_RETRY_STEP_MS * (attempt + 1))
+    }
+  }
+}
+
 export interface WriteJsonAtomicOptions {
   /** File mode for the written file (e.g. 0o600 for secrets). The parent dir is
    *  created with 0o700 when a secret mode is requested. */
@@ -61,7 +100,7 @@ export async function writeTextAtomic(
   await fsp.mkdir(path.dirname(filePath), { recursive: true, ...(dirMode !== undefined ? { mode: dirMode } : {}) })
   try {
     await fsp.writeFile(tmp, text, 'utf-8')
-    await fsp.rename(tmp, filePath)
+    await renameWithRetry(tmp, filePath)
     if (mode !== undefined) {
       try { await fsp.chmod(filePath, mode) } catch { /* no file modes on this platform */ }
     }
@@ -83,7 +122,7 @@ export function writeTextAtomicSync(
   fs.mkdirSync(path.dirname(filePath), { recursive: true, ...(dirMode !== undefined ? { mode: dirMode } : {}) })
   try {
     fs.writeFileSync(tmp, text, 'utf-8')
-    fs.renameSync(tmp, filePath)
+    renameWithRetrySync(tmp, filePath)
     if (mode !== undefined) {
       try { fs.chmodSync(filePath, mode) } catch { /* no file modes on this platform */ }
     }
