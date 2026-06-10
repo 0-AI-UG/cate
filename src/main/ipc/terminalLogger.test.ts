@@ -38,11 +38,17 @@ beforeEach(() => {
   h.userDataDir = fs.mkdtempSync(path.join(tmpdir(), 'cate-termlog-'))
 })
 
-afterEach(() => {
+afterEach(async () => {
   // Tear down loggers FIRST (stops timers, closes streams) before removing the
   // directory they write into.
   disposeAll()
-  fs.rmSync(h.userDataDir, { recursive: true, force: true })
+  // closeStream() ends the write stream without awaiting the fd release; on
+  // Windows the still-open handle makes rmSync fail (ENOTEMPTY/EBUSY), so
+  // retry until the close has actually landed.
+  await vi.waitFor(() => fs.rmSync(h.userDataDir, { recursive: true, force: true }), {
+    timeout: 3000,
+    interval: 20,
+  })
 })
 
 // ===========================================================================
