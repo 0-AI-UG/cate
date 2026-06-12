@@ -813,30 +813,39 @@ export default function EditorPanel({
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="w-full h-full relative">
+    <div className="w-full h-full flex flex-col">
+      {/* Markdown header strip — the Source/Preview toggle lives in its own
+          row instead of floating over the first line of content (#370). */}
       {isMarkdown && !diffMode && (
-        <button
-          onClick={() => setMarkdownPreview(!markdownPreview)}
-          className={`absolute top-2 right-5 z-10 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-            markdownPreview
-              ? 'bg-agent/15 text-agent hover:bg-agent/25'
-              : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
-          }`}
-          title={markdownPreview ? 'Show source' : 'Preview markdown'}
+        <div
+          className="flex items-center justify-end shrink-0 px-1.5 py-1 border-b border-subtle"
+          style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}
         >
-          {markdownPreview ? 'Source' : 'Preview'}
-        </button>
-      )}
-      {markdownPreview && isMarkdown && (
-        <MarkdownPreview content={markdownContent} />
-      )}
-      {loadError && !diffMode && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 bg-surface-1 px-6 text-center">
-          <div className="text-[13px] font-medium text-primary">Couldn’t open this file</div>
-          <div className="text-[12px] text-secondary break-all">{loadError}</div>
+          <button
+            onClick={() => setMarkdownPreview(!markdownPreview)}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              markdownPreview
+                ? 'bg-agent/15 text-agent hover:bg-agent/25'
+                : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
+            }`}
+            title={markdownPreview ? 'Show source' : 'Preview markdown'}
+          >
+            {markdownPreview ? 'Source' : 'Preview'}
+          </button>
         </div>
       )}
-      <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
+      <div className="flex-1 min-h-0 relative">
+        {markdownPreview && isMarkdown && (
+          <MarkdownPreview content={markdownContent} />
+        )}
+        {loadError && !diffMode && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 bg-surface-1 px-6 text-center">
+            <div className="text-[13px] font-medium text-primary">Couldn’t open this file</div>
+            <div className="text-[12px] text-secondary break-all">{loadError}</div>
+          </div>
+        )}
+        <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
+      </div>
     </div>
   )
 }
