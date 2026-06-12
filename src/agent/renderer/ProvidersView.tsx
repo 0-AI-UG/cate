@@ -36,7 +36,18 @@ import type {
   CustomOpenAIProvider,
   OAuthFlowEvent,
 } from '../../shared/types'
-import { loadDefaultModel, saveDefaultModel } from './agentModelPrefs'
+import {
+  loadDefaultModel,
+  saveDefaultModel,
+  loadPetObserverModel,
+  savePetObserverModel,
+  loadPetExecutorModel,
+  savePetExecutorModel,
+  loadPetExecutorAgentId,
+  savePetExecutorAgentId,
+  clearModelPrefsForProvider,
+} from './agentModelPrefs'
+import { AGENTS } from '../../shared/agents'
 
 interface ProvidersViewProps {
   /** Called when the user pops past the list (returns to chat). Ignored when embedded. */
@@ -115,6 +126,7 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false }: Pr
   const body = (
     <>
       <DefaultModelSection models={models} />
+      <PetModelsSection models={models} />
       <Section label="Sign in">
         {grouped.oauth.map((p) => {
           const key = `oauth-${p.id}`
@@ -266,6 +278,7 @@ function CustomOpenAIForm({
     setSaving(true); setError(null)
     try {
       await window.electronAPI.agentCustomModelsSave(null)
+      clearModelPrefsForProvider('custom-openai')
       onSaved(null)
       setBaseUrl(''); setApiKey(''); setModels(''); setSavedAt(null)
     } catch (err) {
@@ -531,6 +544,7 @@ function OAuthForm({
   const handleDisconnect = useCallback(async () => {
     try {
       await window.electronAPI.authDelete(provider.id)
+      clearModelPrefsForProvider(provider.id)
       setPhase({ type: 'idle' })
       await onRefresh()
     } catch (err) {
@@ -762,6 +776,7 @@ function ApiKeyForm({
   const handleDisconnect = useCallback(async () => {
     try {
       await window.electronAPI.authDelete(provider.id)
+      clearModelPrefsForProvider(provider.id)
       setSavedAt(null)
       await onRefresh()
     } catch (err) {
@@ -824,10 +839,108 @@ function DefaultModelSection({ models }: { models: Array<{ provider: string; mod
   }, [])
 
   return (
-    <div className="space-y-1.5">
+    <ModelPrefRow
+      label="Default model"
+      models={models}
+      current={current}
+      open={open}
+      setOpen={setOpen}
+      onPick={handlePick}
+      noneLabel="First available"
+    />
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Canvas Pet model section — the observer and executor each run on a model the
+// user pins here. When unset, both fall back to the global Default model (then
+// pi's first-available) in petSession.ts, so "Default model" is the None state.
+// -----------------------------------------------------------------------------
+
+type PickModels = Array<{ provider: string; model: string; label?: string }>
+
+function PetModelsSection({ models }: { models: PickModels }) {
+  const [observer, setObserver] = useState<AgentModelRef | null>(() => loadPetObserverModel())
+  const [executor, setExecutor] = useState<AgentModelRef | null>(() => loadPetExecutorModel())
+  const [agentId, setAgentId] = useState<string>(() => loadPetExecutorAgentId())
+  const [openKey, setOpenKey] = useState<'observer' | 'executor' | null>(null)
+
+  const pickFor = (
+    save: (m: AgentModelRef | null) => void,
+    set: (m: AgentModelRef | null) => void,
+  ) => (m: { provider: string; model: string } | null) => {
+    const next = m ? { provider: m.provider, model: m.model } : null
+    save(next)
+    set(next)
+    setOpenKey(null)
+  }
+
+  return (
+    <div className="space-y-2">
       <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold">
-        Default model
+        Canvas Pet models
       </div>
+      <ModelPrefRow
+        label="Suggests tasks"
+        models={models}
+        current={observer}
+        open={openKey === 'observer'}
+        setOpen={(v) => setOpenKey((typeof v === 'function' ? v(openKey === 'observer') : v) ? 'observer' : null)}
+        onPick={pickFor(savePetObserverModel, setObserver)}
+        noneLabel="Default model"
+      />
+      <ModelPrefRow
+        label="Runs tasks"
+        models={models}
+        current={executor}
+        open={openKey === 'executor'}
+        setOpen={(v) => setOpenKey((typeof v === 'function' ? v(openKey === 'executor') : v) ? 'executor' : null)}
+        onPick={pickFor(savePetExecutorModel, setExecutor)}
+        noneLabel="Default model"
+      />
+      <div className="space-y-1.5">
+        <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold">Coding agent</div>
+        <select
+          value={agentId}
+          onChange={(e) => { setAgentId(e.target.value); savePetExecutorAgentId(e.target.value) }}
+          className="w-full bg-hover border border-strong rounded-md px-2 py-1.5 text-[12.5px] text-primary outline-none focus:border-agent-light/50"
+        >
+          <option value="">Let the executor choose</option>
+          {AGENTS.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.displayName}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  )
+}
+
+// Shared model-picker row used by the default + pet model selectors.
+function ModelPrefRow({
+  label,
+  sublabel,
+  models,
+  current,
+  open,
+  setOpen,
+  onPick,
+  noneLabel,
+}: {
+  label: string
+  sublabel?: string
+  models: PickModels
+  current: AgentModelRef | null
+  open: boolean
+  setOpen: (v: boolean | ((prev: boolean) => boolean)) => void
+  onPick: (m: { provider: string; model: string } | null) => void
+  noneLabel: string
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold">{label}</div>
+      {sublabel && <div className="text-[11px] text-muted -mt-1">{sublabel}</div>}
       <div className="relative">
         <button
           onClick={() => setOpen((v) => !v)}
@@ -837,7 +950,7 @@ function DefaultModelSection({ models }: { models: Array<{ provider: string; mod
           <span className="truncate flex-1 text-left">
             {current
               ? (models.find((m) => m.provider === current.provider && m.model === current.model)?.label ?? current.model)
-              : 'First available'}
+              : noneLabel}
           </span>
           <CaretDown size={10} className="text-muted shrink-0" />
         </button>
@@ -845,11 +958,11 @@ function DefaultModelSection({ models }: { models: Array<{ provider: string; mod
           <ModelPickerDropdown
             models={models}
             selected={current}
-            onPick={handlePick}
+            onPick={onPick}
             onClose={() => setOpen(false)}
             className="w-full max-h-[320px]"
             allowNone
-            noneLabel="First available"
+            noneLabel={noneLabel}
           />
         )}
       </div>

@@ -31,6 +31,10 @@ export interface AgentDef {
   id: AgentId
   /** Label shown in panel titles / tooltips. */
   displayName: string
+  /** The CLI command that launches this agent in a terminal — usually the same
+   *  as the detected process name, but not always (Antigravity installs as
+   *  `agy`, Cursor's agent as `cursor-agent`). Used by the Canvas Pet executor. */
+  command: string
   /** True when a shell child process with this (already-lowercased) name means
    *  this agent is the one running in that terminal. */
   matchProcess: (procName: string) => boolean
@@ -40,16 +44,22 @@ export const AGENTS: readonly AgentDef[] = [
   {
     id: 'claude-code',
     displayName: 'Claude Code',
+    command: 'claude',
     matchProcess: (n) => n === 'claude' || n === 'claude-code' || n.startsWith('claude'),
   },
-  { id: 'codex', displayName: 'Codex', matchProcess: (n) => n === 'codex' },
+  { id: 'codex', displayName: 'Codex', command: 'codex', matchProcess: (n) => n === 'codex' },
   // Antigravity's CLI installs as `agy` (`antigravity` is the GUI IDE).
-  { id: 'antigravity', displayName: 'Antigravity', matchProcess: (n) => n === 'agy' },
-  { id: 'cursor', displayName: 'Cursor', matchProcess: (n) => n === 'cursor' || n === 'cursor-agent' },
-  { id: 'opencode', displayName: 'OpenCode', matchProcess: (n) => n === 'opencode' },
+  { id: 'antigravity', displayName: 'Antigravity', command: 'agy', matchProcess: (n) => n === 'agy' },
+  { id: 'cursor', displayName: 'Cursor', command: 'cursor-agent', matchProcess: (n) => n === 'cursor' || n === 'cursor-agent' },
+  { id: 'opencode', displayName: 'OpenCode', command: 'opencode', matchProcess: (n) => n === 'opencode' },
   // @earendil-works/pi-coding-agent — runs as the `pi` binary.
-  { id: 'pi', displayName: 'PI Agent', matchProcess: (n) => n === 'pi' },
+  { id: 'pi', displayName: 'PI Agent', command: 'pi', matchProcess: (n) => n === 'pi' },
 ]
+
+/** The launch command for an agent id, or null if the id is unknown/empty. */
+export function launchCommandForAgent(id: string): string | null {
+  return AGENTS.find((a) => a.id === id)?.command ?? null
+}
 
 /** Display name of the agent whose process name matches, or null if none.
  *  Matching is case-insensitive (the name is lowercased before the rules run). */

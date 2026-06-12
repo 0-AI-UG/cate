@@ -25,6 +25,7 @@ import {
   COMPANION_SSH_HOSTS,
   COMPANION_STATUS,
   COMPANION_LOCAL_STATUS,
+  COMPANION_RETRY_LOCAL,
   COMPANION_PICK_SSH_KEY,
 } from '../../shared/ipc-channels'
 import { companions, CompanionManager } from '../companion/companionManager'
@@ -344,6 +345,18 @@ export function registerCompanionHandlers(): void {
   // before a window subscribes to the COMPANION_STATUS broadcast.
   ipcMain.handle(COMPANION_LOCAL_STATUS, async () => {
     return companions.localStatus()
+  })
+
+  // Relaunch the built-in LOCAL daemon after a failed startup connect or crash —
+  // the renderer's Retry path (terminal create failure / lock overlay). Without
+  // this, a single failed local connect left the workspace dead until app
+  // restart: nothing re-ran ensureLocalCompanion and COMPANION_ENSURE rejects
+  // local connections. Resolves once the connect settles; phases stream to the
+  // renderer via COMPANION_STATUS as usual.
+  ipcMain.handle(COMPANION_RETRY_LOCAL, async (): Promise<{ ok: boolean; error?: string }> => {
+    const res = await companions.retryLocal()
+    if (!res.ok) log.warn('[companion:retry-local] %s', res.error ?? 'failed')
+    return res
   })
 
   ipcMain.handle(COMPANION_WSL_DISTROS, async () => {

@@ -406,6 +406,18 @@ export interface ElectronAPI {
     session: import('./types').ProjectSessionFile | null
   } | null>
 
+  /** Load the per-workspace todo list from .cate/todos.json (empty if absent). */
+  projectTodosLoad(rootPath: string): Promise<import('./types').Todo[]>
+
+  /** Persist the whole per-workspace todo list to .cate/todos.json. */
+  projectTodosSave(rootPath: string, todos: import('./types').Todo[]): Promise<void>
+
+  /** Load per-workspace Canvas Pet enablement from .cate/pet.json. */
+  projectPetLoad(rootPath: string): Promise<import('./types').ProjectPetFile>
+
+  /** Persist per-workspace Canvas Pet enablement to .cate/pet.json. */
+  projectPetSave(rootPath: string, state: import('./types').ProjectPetFile): Promise<void>
+
   // ---------------------------------------------------------------------------
   // App
   // ---------------------------------------------------------------------------
@@ -726,6 +738,11 @@ export interface ElectronAPI {
    *  startup loading blocker, since the local connect can finish (or fail) before
    *  a window subscribes to the COMPANION_STATUS broadcast. */
   companionLocalStatus(): Promise<{ phase: CompanionPhase; message?: string }>
+
+  /** Relaunch the built-in LOCAL companion daemon after a failed connect — the
+   *  recovery behind Retry buttons (a failed startup connect is otherwise dead
+   *  until app restart). Resolves once the connect settles; no-op when live. */
+  companionRetryLocal(): Promise<{ ok: boolean; error?: string }>
 
   /** Names of WSL distros installed on this host ([] on non-Windows / no WSL). */
   companionWslDistros(): Promise<string[]>

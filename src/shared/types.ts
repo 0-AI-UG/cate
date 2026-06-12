@@ -1047,6 +1047,75 @@ export interface ProjectSessionPanel {
 }
 
 // -----------------------------------------------------------------------------
+// Canvas Pet — per-workspace todos (.cate/todos.json)
+//
+// The shared task list both the user and (later) the pet read/write. Phase 1
+// only exercises the `user` origin and the `pending`/`done` statuses via the
+// Tasks sidebar; the richer fields (plan, worktree, terminals) are defined now
+// so the executor/observer phases slot in without a file-format migration.
+// -----------------------------------------------------------------------------
+
+/** Who created the todo. `pet` todos are proposed by the observer; `user` todos
+ *  are typed into the Tasks sidebar. */
+export type TodoOrigin = 'user' | 'pet'
+
+/** Todo lifecycle. `suggested` awaits the approve gate; `review` awaits the
+ *  land gate. Manual todos start at `pending` and toggle to `done`. */
+export type TodoStatus = 'suggested' | 'pending' | 'in_progress' | 'review' | 'done' | 'failed'
+
+export interface TodoPlanStep {
+  title: string
+  done?: boolean
+}
+
+export interface Todo {
+  id: string
+  title: string
+  origin: TodoOrigin
+  status: TodoStatus
+  /** Unix ms when the todo was created. */
+  createdAt: number
+  /** Unix ms when the todo last changed status (e.g. completed). */
+  updatedAt?: number
+  /** Executor-authored decomposition (later phases). */
+  plan?: TodoPlanStep[]
+  /** Isolated worktree the executor runs this todo in (later phases). */
+  worktreeId?: string
+  /** Branch created off HEAD for this todo (later phases). */
+  branch?: string
+  /** Canvas node ids of the terminals spawned for this todo (later phases). */
+  terminalNodeIds?: string[]
+  /** Free-form note — observer rationale for a suggestion, or a failure reason. */
+  note?: string
+}
+
+export interface ProjectTodosFile {
+  version: 1
+  todos: Todo[]
+}
+
+/** Which headless brain a pet session drives. Passed to the cate-pet-tools
+ *  extension via `CATE_PET_ROLE` so it registers the matching tool subset. */
+export type PetRole = 'observer' | 'executor'
+
+/** The pet's coarse runtime state, surfaced in the Tasks header + avatar. */
+export type PetActivity =
+  | 'off' // not summoned
+  | 'resting' // summoned, nothing to do
+  | 'observing' // observer taking a look at user activity
+  | 'working' // executor running a todo
+  | 'paused' // summoned but held by the user
+
+/** Persisted per-workspace pet enablement (.cate/pet.json). Machine-local. */
+export interface ProjectPetFile {
+  version: 1
+  /** Whether the pet has been summoned for this workspace. */
+  enabled: boolean
+  /** Whether the user has paused the pet (observer holds, no new executors). */
+  paused: boolean
+}
+
+// -----------------------------------------------------------------------------
 // Layout snapshot (saved canvas arrangements)
 // -----------------------------------------------------------------------------
 
@@ -1099,7 +1168,7 @@ export const FILE_EXCLUSIONS: string[] = [
 ]
 
 /** A sidebar view (left/right rail tabs). */
-export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'search'
+export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'search' | 'tasks'
 
 /** Which sidebar views live in the left vs. right rail. Persisted in settings. */
 export interface SidebarLayout {
@@ -1239,6 +1308,16 @@ export interface AppSettings {
    *  none. Was renderer localStorage (cate.agent.defaultModel.v1) before. */
   agentDefaultModel: AgentModelRef | null
 
+  // Canvas Pet — the models the two headless pet brains run on. null falls back
+  // to a sensible default (observer → a cheap model / agentDefaultModel; executor
+  // → agentDefaultModel). Chosen by the user in Settings → Providers.
+  petObserverModel: AgentModelRef | null
+  petExecutorModel: AgentModelRef | null
+  /** The coding agent the executor (a pure orchestrator) launches in a terminal
+   *  to do the actual work — an AgentId from src/shared/agents.ts. Empty ⇒ the
+   *  executor picks an installed one itself. */
+  petExecutorAgentId: string
+
   // Layout
   /** Which sidebar views live in the left vs. right rail. Was renderer
    *  localStorage (cate.sidebarLayout.v3) before. */
@@ -1315,6 +1394,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Agent
   agentDefaultModel: null,
 
+  // Canvas Pet
+  petObserverModel: null,
+  petExecutorModel: null,
+  petExecutorAgentId: '',
+
   // Layout — keep in sync with the sidebar's default arrangement.
   sidebarLayout: {
     left: ['workspaces', 'explorer', 'search'],
@@ -1338,12 +1422,16 @@ export interface UIState {
   minimapSize: { w: number; h: number }
   /** Corner the minimap toggle button (canvas toolbar) is docked in. */
   minimapButtonCorner: CanvasCorner
+  /** Corner the resting Canvas Pet avatar is docked in. */
+  petCorner: CanvasCorner
 }
 
 export const DEFAULT_UI_STATE: UIState = {
   minimapCorner: 'bottom-right',
   minimapSize: { w: 200, h: 150 },
   minimapButtonCorner: 'bottom-right',
+  // Pet rests opposite the minimap's default so they don't start stacked.
+  petCorner: 'bottom-left',
 }
 
 // -----------------------------------------------------------------------------
@@ -1464,6 +1552,14 @@ export interface AgentCreateOptions {
   /** Resume an existing pi session file (jsonl). When set, pi will load it
    *  on start instead of creating a fresh session. */
   sessionFile?: string
+  /** Extra environment variables merged into the pi process env. Used by the
+   *  Canvas Pet to pass `CATE_PET_ROLE` so the cate-pet-tools extension knows
+   *  which tool subset to register for this (headless) session. */
+  env?: Record<string, string>
+  /** Which per-workspace pi dir this session uses. `'pet'` isolates the Canvas
+   *  Pet's headless sessions in `.cate/pi-agent-pet` so their transcripts never
+   *  appear in the agent panel's session list. Defaults to `'default'`. */
+  agentDir?: 'default' | 'pet'
 }
 
 /** Pi agent events forwarded from main to renderer. We keep the shape loose
