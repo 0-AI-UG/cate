@@ -68,6 +68,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   crashReportingEnabled: 'boolean',
   usageAnalyticsEnabled: 'boolean',
   telemetryConsentDecided: 'boolean',
+  telemetryNoticeAcknowledgedVersion: 'number',
   onboardingCompleted: 'boolean',
   betaUpdatesEnabled: 'boolean',
   // Agent / layout — structured values. 'object' accepts a plain object or null;
