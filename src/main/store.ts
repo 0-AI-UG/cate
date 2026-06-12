@@ -141,16 +141,6 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
       log.warn('Canvas background prune failed: %O', err)
     }
   }
-  // Live-toggle Sentry when the crash-reporting setting flips, so the change
-  // takes effect without a relaunch.
-  if (key === 'crashReportingEnabled') {
-    try {
-      const { setCrashReportingEnabled } = await import('./sentry')
-      setCrashReportingEnabled(value !== false)
-    } catch (err) {
-      log.warn('Sentry live-toggle failed: %O', err)
-    }
-  }
   // Re-point the auto-updater channel when the beta opt-in flips, and re-check
   // immediately. Dynamic import keeps ./auto-updater (and electron-updater) out
   // of ./store's static graph — auto-updater imports ./store, so a static import
