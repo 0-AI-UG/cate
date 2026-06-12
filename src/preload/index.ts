@@ -178,7 +178,7 @@ import {
   ANALYTICS_FEEDBACK_GET_PENDING,
   ANALYTICS_LINK_CLICK,
   ANALYTICS_TRACK_USAGE,
-  TELEMETRY_SET_CONSENT,
+  TELEMETRY_ACKNOWLEDGE_NOTICE,
   OPEN_EXTERNAL_URL,
   AGENT_CREATE,
   AGENT_PROMPT,
@@ -478,7 +478,7 @@ const invokeForwarders = {
   // Analytics feedback
   submitFeedback: makeInvoker<'submitFeedback'>(ANALYTICS_FEEDBACK_SUBMIT),
   getPendingFeedback: makeInvoker<'getPendingFeedback'>(ANALYTICS_FEEDBACK_GET_PENDING),
-  setTelemetryConsent: makeInvoker<'setTelemetryConsent'>(TELEMETRY_SET_CONSENT),
+  acknowledgeTelemetryNotice: makeInvoker<'acknowledgeTelemetryNotice'>(TELEMETRY_ACKNOWLEDGE_NOTICE),
 
   // Pi agent
   agentCreate: makeInvoker<'agentCreate'>(AGENT_CREATE),

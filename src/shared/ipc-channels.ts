@@ -151,9 +151,8 @@ export const ANALYTICS_FEEDBACK_DISMISS = 'analytics:feedbackDismiss'
 export const ANALYTICS_FEEDBACK_GET_PENDING = 'analytics:feedbackGetPending'
 // Renderer -> main: track a promo link click (Product Hunt, GitHub, newsletter).
 export const ANALYTICS_LINK_CLICK = 'analytics:linkClick'
-// Renderer -> main: first-run telemetry consent decision.
-// Payload: { crashReporting: boolean, usageAnalytics: boolean }
-export const TELEMETRY_SET_CONSENT = 'telemetry:setConsent'
+// Renderer -> main: user dismissed the telemetry notice (WelcomeDialog). No payload.
+export const TELEMETRY_ACKNOWLEDGE_NOTICE = 'telemetry:acknowledgeNotice'
 // Renderer -> main: a feature was used (anonymous usage signal). Payload:
 // { feature: string, props?: Record<string, string|number|boolean> }
 export const ANALYTICS_TRACK_USAGE = 'analytics:trackUsage'
