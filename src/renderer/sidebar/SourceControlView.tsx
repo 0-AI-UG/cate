@@ -20,6 +20,7 @@ import {
 } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
+import { Tooltip } from './Tooltip'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { errorMessage } from '../lib/errorMessage'
@@ -160,31 +161,37 @@ const FileEntry: React.FC<{
       </span>
       <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
         {onDiscard && (
-          <button
-            className="p-0.5 rounded hover:bg-hover text-muted hover:text-red-400"
-            onClick={(e) => { e.stopPropagation(); onDiscard() }}
-            title="Discard Changes"
-          >
-            <ArrowUUpLeft size={13} />
-          </button>
+          <Tooltip label="Discard changes">
+            <button
+              className="p-0.5 rounded hover:bg-hover text-muted hover:text-red-400"
+              onClick={(e) => { e.stopPropagation(); onDiscard() }}
+              aria-label="Discard changes"
+            >
+              <ArrowUUpLeft size={13} />
+            </button>
+          </Tooltip>
         )}
         {onStage && (
-          <button
-            className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
-            onClick={(e) => { e.stopPropagation(); onStage() }}
-            title="Stage"
-          >
-            <Plus size={13} />
-          </button>
+          <Tooltip label="Stage file">
+            <button
+              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+              onClick={(e) => { e.stopPropagation(); onStage() }}
+              aria-label="Stage file"
+            >
+              <Plus size={13} />
+            </button>
+          </Tooltip>
         )}
         {onUnstage && (
-          <button
-            className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
-            onClick={(e) => { e.stopPropagation(); onUnstage() }}
-            title="Unstage"
-          >
-            <Minus size={13} />
-          </button>
+          <Tooltip label="Unstage file">
+            <button
+              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+              onClick={(e) => { e.stopPropagation(); onUnstage() }}
+              aria-label="Unstage file"
+            >
+              <Minus size={13} />
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>
@@ -298,8 +305,12 @@ const BranchPicker: React.FC<{
                   placeholder="New branch name..."
                   autoFocus
                 />
-                <button onClick={handleCreate} className="p-0.5 rounded hover:bg-hover text-green-400/70"><Check size={13} /></button>
-                <button onClick={() => setCreating(false)} className="p-0.5 rounded hover:bg-hover text-muted"><X size={13} /></button>
+                <Tooltip label="Create branch">
+                  <button onClick={handleCreate} aria-label="Create branch" className="p-0.5 rounded hover:bg-hover text-green-400/70"><Check size={13} /></button>
+                </Tooltip>
+                <Tooltip label="Cancel">
+                  <button onClick={() => setCreating(false)} aria-label="Cancel" className="p-0.5 rounded hover:bg-hover text-muted"><X size={13} /></button>
+                </Tooltip>
               </div>
             ) : (
               <div className="flex gap-1">
@@ -309,13 +320,15 @@ const BranchPicker: React.FC<{
                   className="flex-1 min-w-0 bg-surface-5 border border-subtle rounded px-2 py-1 text-[11px] text-primary placeholder:text-muted focus:outline-none focus:border-subtle"
                   placeholder="Filter branches..."
                 />
-                <button
-                  onClick={() => setCreating(true)}
-                  className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
-                  title="Create branch"
-                >
-                  <Plus size={13} />
-                </button>
+                <Tooltip label="New branch">
+                  <button
+                    onClick={() => setCreating(true)}
+                    className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+                    aria-label="New branch"
+                  >
+                    <Plus size={13} />
+                  </button>
+                </Tooltip>
               </div>
             )}
           </div>
@@ -335,13 +348,15 @@ const BranchPicker: React.FC<{
               <span className="truncate flex-1 min-w-0">{b.name}</span>
               {b.current && <span className="text-[9px] text-green-400/60 flex-shrink-0">current</span>}
               {!b.current && (
-                <button
-                  className="hidden group-hover:block p-0.5 rounded hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
-                  onClick={(e) => handleDelete(b.name, e)}
-                  title="Delete branch"
-                >
-                  <Trash size={10} />
-                </button>
+                <Tooltip label="Delete branch">
+                  <button
+                    className="hidden group-hover:block p-0.5 rounded hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
+                    onClick={(e) => handleDelete(b.name, e)}
+                    aria-label="Delete branch"
+                  >
+                    <Trash size={10} />
+                  </button>
+                </Tooltip>
               )}
             </div>
           ))}
@@ -612,18 +627,26 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
         subtitle={branchSubtitle}
         actions={
           <>
-            <SidebarHeaderButton onClick={fetch_} title="Fetch" disabled={fetching} spinning={fetching}>
-              <Download size={12} />
-            </SidebarHeaderButton>
-            <SidebarHeaderButton onClick={pull} title="Pull" disabled={pulling}>
-              <ArrowDown size={12} />
-            </SidebarHeaderButton>
-            <SidebarHeaderButton onClick={push} title="Push" disabled={pushing}>
-              <ArrowUp size={12} />
-            </SidebarHeaderButton>
-            <SidebarHeaderButton onClick={refresh} title="Refresh" spinning={loading}>
-              <ArrowClockwise size={12} />
-            </SidebarHeaderButton>
+            <Tooltip label="Fetch from remote">
+              <SidebarHeaderButton onClick={fetch_} aria-label="Fetch from remote" disabled={fetching} spinning={fetching}>
+                <Download size={12} />
+              </SidebarHeaderButton>
+            </Tooltip>
+            <Tooltip label="Pull from remote">
+              <SidebarHeaderButton onClick={pull} aria-label="Pull from remote" disabled={pulling}>
+                <ArrowDown size={12} />
+              </SidebarHeaderButton>
+            </Tooltip>
+            <Tooltip label="Push to remote">
+              <SidebarHeaderButton onClick={push} aria-label="Push to remote" disabled={pushing}>
+                <ArrowUp size={12} />
+              </SidebarHeaderButton>
+            </Tooltip>
+            <Tooltip label="Refresh status">
+              <SidebarHeaderButton onClick={refresh} aria-label="Refresh status" spinning={loading}>
+                <ArrowClockwise size={12} />
+              </SidebarHeaderButton>
+            </Tooltip>
           </>
         }
       />
@@ -632,9 +655,11 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       {actionError && (
         <div className="flex items-center gap-1 px-2 py-1 bg-red-500/[0.1] text-red-400/80 text-[11px] flex-shrink-0">
           <span className="flex-1 truncate">{actionError}</span>
-          <button onClick={() => setActionError(null)} className="p-0.5 hover:bg-hover rounded">
-            <X size={12} />
-          </button>
+          <Tooltip label="Dismiss">
+            <button onClick={() => setActionError(null)} aria-label="Dismiss" className="p-0.5 hover:bg-hover rounded">
+              <X size={12} />
+            </button>
+          </Tooltip>
         </div>
       )}
 
@@ -662,20 +687,24 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           >
             {committing ? 'Committing...' : 'Commit'}
           </button>
-          <button
-            className="px-2 py-1 rounded text-[11px] transition-colors bg-surface-5 hover:bg-hover text-secondary"
-            onClick={stash}
-            title="Stash"
-          >
-            <Archive size={13} />
-          </button>
-          <button
-            className="px-2 py-1 rounded text-[11px] transition-colors bg-surface-5 hover:bg-hover text-secondary"
-            onClick={stashPop}
-            title="Stash Pop"
-          >
-            <BoxArrowUp size={13} />
-          </button>
+          <Tooltip label="Stash changes" placement="top">
+            <button
+              className="px-2 py-1 rounded text-[11px] transition-colors bg-surface-5 hover:bg-hover text-secondary"
+              onClick={stash}
+              aria-label="Stash changes"
+            >
+              <Archive size={13} />
+            </button>
+          </Tooltip>
+          <Tooltip label="Pop latest stash" placement="top">
+            <button
+              className="px-2 py-1 rounded text-[11px] transition-colors bg-surface-5 hover:bg-hover text-secondary"
+              onClick={stashPop}
+              aria-label="Pop latest stash"
+            >
+              <BoxArrowUp size={13} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -686,13 +715,15 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           title="Staged Changes"
           count={stagedFiles.length}
           actions={
-            <button
-              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
-              onClick={() => unstageAll(stagedFiles)}
-              title="Unstage All"
-            >
-              <Minus size={13} />
-            </button>
+            <Tooltip label="Unstage all">
+              <button
+                className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+                onClick={() => unstageAll(stagedFiles)}
+                aria-label="Unstage all"
+              >
+                <Minus size={13} />
+              </button>
+            </Tooltip>
           }
         >
           {stagedFiles.map((f) => (
@@ -711,13 +742,15 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           title="Changes"
           count={changedFiles.length}
           actions={
-            <button
-              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
-              onClick={() => stageAll(changedFiles)}
-              title="Stage All"
-            >
-              <Plus size={13} />
-            </button>
+            <Tooltip label="Stage all">
+              <button
+                className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+                onClick={() => stageAll(changedFiles)}
+                aria-label="Stage all"
+              >
+                <Plus size={13} />
+              </button>
+            </Tooltip>
           }
         >
           {changedFiles.map((f) => (
@@ -738,13 +771,15 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           count={untrackedFiles.length}
           defaultOpen={false}
           actions={
-            <button
-              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
-              onClick={() => stageAll(untrackedFiles)}
-              title="Stage All"
-            >
-              <Plus size={13} />
-            </button>
+            <Tooltip label="Stage all">
+              <button
+                className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+                onClick={() => stageAll(untrackedFiles)}
+                aria-label="Stage all"
+              >
+                <Plus size={13} />
+              </button>
+            </Tooltip>
           }
         >
           {untrackedFiles.map((f) => (
