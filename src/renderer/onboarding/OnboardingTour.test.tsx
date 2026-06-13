@@ -15,6 +15,7 @@ vi.mock('../lib/logger', () => ({
 import { OnboardingTour } from './OnboardingTour'
 import { ONBOARDING_STEPS } from './steps'
 import { useSettingsStore } from '../stores/settingsStore'
+import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 
 let host: HTMLDivElement
 let root: Root
@@ -41,7 +42,7 @@ beforeEach(() => {
     trackFeatureUsed: vi.fn(),
   }
   // Fresh, consented, not-yet-onboarded state.
-  useSettingsStore.setState({ _loaded: true, telemetryConsentDecided: true, onboardingCompleted: false } as never)
+  useSettingsStore.setState({ _loaded: true, telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION, onboardingCompleted: false } as never)
 })
 
 afterEach(() => {
@@ -51,8 +52,8 @@ afterEach(() => {
 })
 
 describe('OnboardingTour', () => {
-  it('stays hidden until the telemetry consent choice is made', () => {
-    setState({ telemetryConsentDecided: false })
+  it('stays hidden until the telemetry notice is acknowledged', () => {
+    setState({ telemetryNoticeAcknowledgedVersion: 0 })
     act(() => root.render(<OnboardingTour />))
     expect(host.textContent).toBe('')
   })
