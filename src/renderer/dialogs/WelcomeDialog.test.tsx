@@ -1,7 +1,7 @@
 // =============================================================================
-// WelcomeDialog — first-run welcome + consent. Shows only until the choice is
-// made; Continue persists the single enable/disable choice to both telemetry
-// flags and records the consent decision.
+// WelcomeDialog — first-run welcome + telemetry notice. Shows until the current
+// TELEMETRY_NOTICE_VERSION is acknowledged; Continue records the acknowledgement
+// (informational only — there is no opt-in/opt-out choice).
 // =============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,10 +14,11 @@ vi.mock('../lib/logger', () => ({
 
 import { WelcomeDialog } from './WelcomeDialog'
 import { useSettingsStore } from '../stores/settingsStore'
+import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 
 let host: HTMLDivElement
 let root: Root
-const setConsent = vi.fn(() => Promise.resolve())
+const acknowledge = vi.fn(() => Promise.resolve())
 
 function clickButton(match: (b: HTMLButtonElement) => boolean): void {
   const btn = [...host.querySelectorAll('button')].find(match as (b: Element) => boolean) as HTMLButtonElement
@@ -29,15 +30,15 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
-  setConsent.mockClear()
+  acknowledge.mockClear()
   ;(window as unknown as { electronAPI: Record<string, unknown> }).electronAPI = {
     ...(window as unknown as { electronAPI?: Record<string, unknown> }).electronAPI,
     settingsSet: vi.fn(() => Promise.resolve()),
-    setTelemetryConsent: setConsent,
+    acknowledgeTelemetryNotice: acknowledge,
     trackLinkClick: vi.fn(),
     openExternalUrl: vi.fn(),
   }
-  useSettingsStore.setState({ _loaded: true, telemetryConsentDecided: false } as never)
+  useSettingsStore.setState({ _loaded: true, telemetryNoticeAcknowledgedVersion: 0 } as never)
 })
 
 afterEach(() => {
@@ -47,42 +48,27 @@ afterEach(() => {
 })
 
 describe('WelcomeDialog', () => {
-  it('is hidden once a consent choice has been recorded', () => {
-    useSettingsStore.setState({ telemetryConsentDecided: true } as never)
+  it('is hidden once the current notice version is acknowledged', () => {
+    useSettingsStore.setState({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION } as never)
     act(() => root.render(<WelcomeDialog />))
     expect(host.textContent).toBe('')
   })
 
-  it('shows the welcome + consent on first run', () => {
+  it('shows for users below the current notice version (fresh install or update)', () => {
     act(() => root.render(<WelcomeDialog />))
     expect(host.textContent).toContain('Welcome to Cate')
-    expect(host.textContent).toContain('Star on GitHub')
-    expect(host.querySelector('[role="switch"]')).not.toBeNull()
+    expect(host.textContent).toContain('Privacy Policy')
+    // No opt-in choice anymore.
+    expect(host.querySelector('[role="switch"]')).toBeNull()
   })
 
-  it('Continue with the default toggle on enables both telemetry flags', () => {
+  it('Continue acknowledges the notice and dismisses after the fade', () => {
     vi.useFakeTimers()
     act(() => root.render(<WelcomeDialog />))
     clickButton((b) => b.textContent?.trim() === 'Continue')
-    // The consent is persisted over IPC immediately…
-    expect(setConsent).toHaveBeenCalledWith({ crashReporting: true, usageAnalytics: true })
-    // …and the local store reflects it after the fade-out delay.
+    expect(acknowledge).toHaveBeenCalledTimes(1)
     act(() => { vi.advanceTimersByTime(350) })
-    const s = useSettingsStore.getState()
-    expect(s.telemetryConsentDecided).toBe(true)
-    expect(s.crashReportingEnabled).toBe(true)
-    expect(s.usageAnalyticsEnabled).toBe(true)
-    vi.useRealTimers()
-  })
-
-  it('toggling Enabled off then Continue declines both flags', () => {
-    vi.useFakeTimers()
-    act(() => root.render(<WelcomeDialog />))
-    clickButton((b) => b.getAttribute('role') === 'switch')
-    clickButton((b) => b.textContent?.trim() === 'Continue')
-    expect(setConsent).toHaveBeenCalledWith({ crashReporting: false, usageAnalytics: false })
-    act(() => { vi.advanceTimersByTime(350) })
-    expect(useSettingsStore.getState().usageAnalyticsEnabled).toBe(false)
+    expect(useSettingsStore.getState().telemetryNoticeAcknowledgedVersion).toBe(TELEMETRY_NOTICE_VERSION)
     vi.useRealTimers()
   })
 })
