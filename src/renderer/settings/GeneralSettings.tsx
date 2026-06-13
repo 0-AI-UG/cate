@@ -13,16 +13,16 @@ export function GeneralSettings() {
         <Toggle checked={store.warnBeforeQuit} onChange={(v) => store.setSetting('warnBeforeQuit', v)} />
       </SettingRow>
       <SettingRow
-        label="Send crash reports"
-        description="Anonymously report unhandled errors to help us fix bugs."
+        label="Privacy"
+        description="Cate collects anonymous usage data and crash reports to improve the app. No file paths, project names, or personal data."
       >
-        <Toggle checked={store.crashReportingEnabled} onChange={(v) => store.setSetting('crashReportingEnabled', v)} />
-      </SettingRow>
-      <SettingRow
-        label="Send anonymous usage data"
-        description="App version, OS, and update events only. No file paths, project names, or personal data."
-      >
-        <Toggle checked={store.usageAnalyticsEnabled} onChange={(v) => store.setSetting('usageAnalyticsEnabled', v)} />
+        <button
+          type="button"
+          onClick={() => window.electronAPI?.openExternalUrl('https://cate.cero-ai.com/privacy')}
+          className="text-blue-400 hover:text-blue-300 text-[12px] font-medium whitespace-nowrap"
+        >
+          Privacy Policy
+        </button>
       </SettingRow>
     </div>
   )
