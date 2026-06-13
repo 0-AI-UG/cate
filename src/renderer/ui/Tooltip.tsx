@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 
 interface TooltipProps {
   label: string
-  placement?: 'top' | 'bottom'
+  placement?: 'top' | 'bottom' | 'right'
   children: React.ReactNode
 }
 
@@ -24,8 +24,9 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, placement = 'bottom', c
     const host = e.currentTarget as HTMLElement
     const el = (host.firstElementChild as HTMLElement | null) ?? host
     const r = el.getBoundingClientRect()
-    const left = r.left + r.width / 2
-    const top = placement === 'top' ? r.top - 4 : r.bottom + 4
+    const left = placement === 'right' ? r.right + 6 : r.left + r.width / 2
+    const top =
+      placement === 'top' ? r.top - 4 : placement === 'right' ? r.top + r.height / 2 : r.bottom + 4
     timer.current = setTimeout(() => setPos({ top, left }), 250)
   }
   const hide = (): void => {
@@ -44,7 +45,12 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, placement = 'bottom', c
             style={{
               top: pos.top,
               left: pos.left,
-              transform: placement === 'top' ? 'translate(-50%, -100%)' : 'translateX(-50%)',
+              transform:
+                placement === 'top'
+                  ? 'translate(-50%, -100%)'
+                  : placement === 'right'
+                    ? 'translateY(-50%)'
+                    : 'translateX(-50%)',
             }}
           >
             {label}

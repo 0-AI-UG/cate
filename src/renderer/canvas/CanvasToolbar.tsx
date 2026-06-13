@@ -25,7 +25,7 @@ import { useUIStateStore } from '../stores/uiStateStore'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
-import { Tooltip } from '../sidebar/Tooltip'
+import { Tooltip } from '../ui/Tooltip'
 
 // The minimap pill can be docked in any of the four canvas corners. The choice
 // persists across sessions in ui-state.json (via the UI-state store).

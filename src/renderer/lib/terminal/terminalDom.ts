@@ -56,7 +56,12 @@ function forceWebglRepaint(): void {
  * xterm's scrollbar doesn't account for the clipping, so
  * scrollToBottom() leaves content invisible.
  */
-function safeFit(terminal: Terminal, fitAddon: FitAddon, container: HTMLElement): void {
+function safeFit(
+  terminal: Terminal,
+  fitAddon: FitAddon,
+  container: HTMLElement,
+  opts?: { preserveGrid?: boolean },
+): void {
   // Coalesce into a single terminal.resize() call so the PTY only receives one
   // SIGWINCH per fit. Two rapid resizes confuse TUI agents (claude code, vim,
   // htop) which redraw their full frame on each SIGWINCH — the second redraw
@@ -73,14 +78,30 @@ function safeFit(terminal: Terminal, fitAddon: FitAddon, container: HTMLElement)
   // height which can round up past the actual visible (overflow:hidden) area.
   // Probe the cell height by reading any existing row, falling back to a
   // single-resize-then-measure if the terminal hasn't been opened yet.
+  // Fractional rect heights, not offsetHeight: the integer rounding of
+  // offsetHeight made this guard intermittently shave a row near exact
+  // cell-multiple heights — a silent rows-change that leaks a duplicate TUI
+  // frame into scrollback (see preserveGrid below).
   const xtermEl = (terminal as unknown as { element?: HTMLElement }).element
   if (xtermEl) {
-    const cellHeight = xtermEl.offsetHeight > 0 && terminal.rows > 0
-      ? xtermEl.offsetHeight / terminal.rows
-      : 0
-    if (cellHeight > 0 && rows * cellHeight > container.offsetHeight + 0.5) {
+    const xtermHeight = xtermEl.getBoundingClientRect().height
+    const cellHeight = xtermHeight > 0 && terminal.rows > 0 ? xtermHeight / terminal.rows : 0
+    if (cellHeight > 0 && rows * cellHeight > container.getBoundingClientRect().height + 0.5) {
       rows = Math.max(1, rows - 1)
     }
+  }
+
+  // A renderScale/fontSize swap keeps the visual size constant by construction,
+  // so any ±1 delta here is ceil/parseInt quantization noise (the WebGL
+  // renderer ceils cell px, FitAddon truncates the box px — cell(k·fs) is not
+  // k·cell(fs)). Resizing would SIGWINCH the PTY, and Ink-style TUIs (Claude
+  // Code) leak a duplicate frame into scrollback on every rows change while
+  // their frame is taller than the viewport (anthropics/claude-code#46981).
+  // Pin the grid instead; a sub-cell box/grid mismatch is hidden by the
+  // container's overflow:hidden.
+  if (opts?.preserveGrid) {
+    if (Math.abs(rows - terminal.rows) === 1) rows = terminal.rows
+    if (Math.abs(cols - terminal.cols) === 1) cols = terminal.cols
   }
 
   if (cols !== terminal.cols || rows !== terminal.rows) {
@@ -268,8 +289,12 @@ export function attach(panelId: string, container: HTMLDivElement): void {
 /**
  * Safely fit the terminal to its current container, correcting for
  * sub-pixel overflow. No-op if the terminal is not attached to a container.
+ *
+ * `preserveGrid` is for fits where the on-screen size is unchanged by
+ * construction (render-scale/fontSize swaps): ±1 col/row deltas are treated as
+ * quantization noise and discarded so the PTY never sees a phantom SIGWINCH.
  */
-export function fit(panelId: string): void {
+export function fit(panelId: string, opts?: { preserveGrid?: boolean }): void {
   const entry = registry.get(panelId)
   if (!entry) return
 
@@ -278,7 +303,7 @@ export function fit(panelId: string): void {
   const container = el?.parentElement
   if (!el || !container) return
 
-  safeFit(terminal, fitAddon, container)
+  safeFit(terminal, fitAddon, container, opts)
 }
 
 /**

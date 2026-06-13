@@ -29,6 +29,7 @@ import { CateLogo } from '../../renderer/ui/CateLogo'
 import { ModelPickerDropdown } from './ModelPicker'
 import log from '../../renderer/lib/logger'
 import { errorMessage as toErrorMessage } from '../../renderer/lib/errorMessage'
+import { Tooltip } from '../../renderer/ui/Tooltip'
 import type {
   AgentModelRef,
   AuthProviderDescriptor,
@@ -164,13 +165,15 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false }: Pr
   return (
     <div className="flex-1 flex flex-col text-primary min-h-0">
       <div className="flex items-center gap-2 px-3 h-9 border-b border-subtle shrink-0">
-        <button
-          onClick={() => onBack?.()}
-          className="p-1 -ml-1 rounded-md text-muted hover:text-primary hover:bg-hover"
-          title="Back to chat"
-        >
-          <ArrowLeft size={14} />
-        </button>
+        <Tooltip label="Back to chat">
+          <button
+            onClick={() => onBack?.()}
+            className="p-1 -ml-1 rounded-md text-muted hover:text-primary hover:bg-hover"
+            aria-label="Back to chat"
+          >
+            <ArrowLeft size={14} />
+          </button>
+        </Tooltip>
         <div className="text-[12px] font-medium text-primary truncate flex-1 min-w-0">Providers</div>
       </div>
 
@@ -360,14 +363,16 @@ function SecretInput({
         placeholder={placeholder}
         className="w-full bg-surface-3 border border-strong rounded-md pl-2 pr-8 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono"
       />
-      <button
-        type="button"
-        onClick={() => setReveal((r) => !r)}
-        className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-muted hover:text-primary"
-        title={reveal ? 'Hide' : 'Show'}
-      >
-        {reveal ? <EyeSlash size={14} /> : <Eye size={14} />}
-      </button>
+      <Tooltip label={reveal ? 'Hide' : 'Show'}>
+        <button
+          type="button"
+          onClick={() => setReveal((r) => !r)}
+          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-muted hover:text-primary"
+          aria-label={reveal ? 'Hide' : 'Show'}
+        >
+          {reveal ? <EyeSlash size={14} /> : <Eye size={14} />}
+        </button>
+      </Tooltip>
     </div>
   )
 }
@@ -582,13 +587,15 @@ function OAuthForm({
             <code className="flex-1 text-center font-mono text-[18px] tracking-[0.3em] py-2 rounded-md bg-surface-0 text-primary">
               {phase.userCode}
             </code>
-            <button
-              onClick={() => { try { navigator.clipboard.writeText(phase.userCode) } catch { /* */ } }}
-              className="p-2 rounded-md bg-hover hover:bg-hover-strong text-primary"
-              title="Copy code"
-            >
-              <Copy size={12} />
-            </button>
+            <Tooltip label="Copy code">
+              <button
+                onClick={() => { try { navigator.clipboard.writeText(phase.userCode) } catch { /* */ } }}
+                className="p-2 rounded-md bg-hover hover:bg-hover-strong text-primary"
+                aria-label="Copy code"
+              >
+                <Copy size={12} />
+              </button>
+            </Tooltip>
           </div>
           {phase.expiresInSeconds != null && (
             <div className="text-[11px] text-muted">

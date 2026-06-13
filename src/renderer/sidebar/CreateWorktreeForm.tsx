@@ -9,6 +9,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Tooltip } from '../ui/Tooltip'
 import {
   GitBranch,
   Check,
@@ -168,21 +169,25 @@ export const CreateWorktreeForm: React.FC<{
             className="flex-1 min-w-0 text-[14px] bg-transparent outline-none text-primary placeholder:text-muted"
           />
         )}
-        <button
-          onClick={submit}
-          disabled={!canSubmit || busy}
-          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-          title={selectedPr ? 'Check out pull request' : 'Start'}
-        >
-          <Check size={14} weight="bold" />
-        </button>
-        <button
-          onClick={onCancel}
-          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-hover transition-colors"
-          title="Cancel"
-        >
-          <X size={14} weight="bold" />
-        </button>
+        <Tooltip label={selectedPr ? 'Check out pull request' : 'Start'}>
+          <button
+            onClick={submit}
+            disabled={!canSubmit || busy}
+            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            aria-label={selectedPr ? 'Check out pull request' : 'Start'}
+          >
+            <Check size={14} weight="bold" />
+          </button>
+        </Tooltip>
+        <Tooltip label="Cancel">
+          <button
+            onClick={onCancel}
+            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-hover transition-colors"
+            aria-label="Cancel"
+          >
+            <X size={14} weight="bold" />
+          </button>
+        </Tooltip>
       </div>
       <div className={`relative ${flat ? 'px-1' : 'px-2'} pt-1 pb-1`} ref={pickerRef}>
         <button

@@ -572,6 +572,8 @@ export function storedShortcut(
 
 /** Mirrors StoredShortcut.displayString from Swift. */
 export function displayString(s: StoredShortcut): string {
+  // An empty key means the binding is disabled (see clearShortcut).
+  if (!s.key) return 'None'
   const parts: string[] = []
   if (s.control) parts.push('\u2303') // ⌃
   if (s.option) parts.push('\u2325')  // ⌥
@@ -739,11 +741,13 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
   undo: storedShortcut('z', { command: true }),
   redo: storedShortcut('z', { command: true, shift: true }),
   deleteNode: storedShortcut('Backspace', { command: true }),
-  // ⇧Space toggles the tool from anywhere — including a focused terminal, editor,
-  // or input — by being intercepted before the surface sees it. (Plain Space also
-  // toggles, but only when the canvas is focused, since a bare key must still type
-  // a space while you're typing.)
-  toggleTool: storedShortcut(' ', { shift: true }),
+  // ⌃Space toggles the tool from anywhere — including a focused terminal,
+  // editor, or input — by being intercepted before the surface sees it. (Plain
+  // Space also toggles, but only when the canvas is focused.) Used to be
+  // ⇧Space, but Shift is still held when the space after `:` `(` `?` `!` lands,
+  // so normal typing kept triggering it and the space never reached the
+  // terminal (issue #371).
+  toggleTool: storedShortcut(' ', { control: true }),
   navigateUp: storedShortcut('↑', { command: true }),
   navigateDown: storedShortcut('↓', { command: true }),
   navigateLeft: storedShortcut('←', { command: true }),
@@ -1121,6 +1125,9 @@ export interface AppSettings {
   /** User-imported / agent-authored unified themes. */
   customThemes: Theme[]
   editorFontSize: number
+  /** CSS font-family for Monaco editor panels. Empty string = built-in default
+   *  stack (Menlo, Monaco, "Courier New", monospace). */
+  editorFontFamily: string
   /** Global UI zoom for Cate's own chrome (panels, sidebars, editor, terminal),
    *  applied via webFrame.setZoomFactor in every window. 1.0 = 100%. Does not
    *  affect web pages shown in browser panels (those keep their own zoom).
@@ -1234,6 +1241,12 @@ export interface AppSettings {
    *  stable users and the public website download are never offered betas. */
   betaUpdatesEnabled: boolean
 
+  // Shortcuts
+  /** User keyboard-shortcut overrides, keyed by action. Only bindings that
+   *  differ from DEFAULT_SHORTCUTS are stored; an entry with an empty key
+   *  means the shortcut is disabled. */
+  customShortcuts: Partial<Record<ShortcutAction, StoredShortcut>>
+
   // Agent
   /** The user-pinned default model applied to every new agent chat, or null for
    *  none. Was renderer localStorage (cate.agent.defaultModel.v1) before. */
@@ -1259,6 +1272,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemDarkThemeId: 'dark-cold',
   customThemes: [],
   editorFontSize: 12,
+  editorFontFamily: '',
   uiScale: 1.0,
 
   // Canvas
@@ -1311,6 +1325,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // Updates
   betaUpdatesEnabled: false,
+
+  // Shortcuts
+  customShortcuts: {},
 
   // Agent
   agentDefaultModel: null,

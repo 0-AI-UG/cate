@@ -18,6 +18,7 @@ import {
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import pkg from '../../../package.json'
+import { Tooltip } from '../ui/Tooltip'
 
 // ---------------------------------------------------------------------------
 // View metadata — icon + title for each possible sidebar view
@@ -307,30 +308,36 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
         <div className="mt-auto flex flex-col items-center pb-1 w-full">
           {/* The standalone ⌘K search icon was removed now that the dedicated
               Search view exists; ⌘K still opens the command palette via keyboard. */}
-          <button
-            type="button"
-            className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
-            onClick={() => useUIStore.getState().setShowSkillsDialog(true)}
-            title="Skills"
-          >
-            <PuzzlePiece size={16} className="pointer-events-none" />
-          </button>
-          <button
-            type="button"
-            className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
-            onClick={() => useUIStore.getState().setShowLayoutsDialog(true)}
-            title="Saved Layouts"
-          >
-            <FloppyDisk size={16} className="pointer-events-none" />
-          </button>
-          <button
-            type="button"
-            className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
-            onClick={() => useUIStore.getState().openSettings()}
-            title="Settings"
-          >
-            <Gear size={16} className="pointer-events-none" />
-          </button>
+          <Tooltip label="Skills" placement="right">
+            <button
+              type="button"
+              className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+              onClick={() => useUIStore.getState().setShowSkillsDialog(true)}
+              aria-label="Skills"
+            >
+              <PuzzlePiece size={16} className="pointer-events-none" />
+            </button>
+          </Tooltip>
+          <Tooltip label="Saved Layouts" placement="right">
+            <button
+              type="button"
+              className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+              onClick={() => useUIStore.getState().setShowLayoutsDialog(true)}
+              aria-label="Saved Layouts"
+            >
+              <FloppyDisk size={16} className="pointer-events-none" />
+            </button>
+          </Tooltip>
+          <Tooltip label="Settings" placement="right">
+            <button
+              type="button"
+              className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+              onClick={() => useUIStore.getState().openSettings()}
+              aria-label="Settings"
+            >
+              <Gear size={16} className="pointer-events-none" />
+            </button>
+          </Tooltip>
         </div>
       )}
     </div>

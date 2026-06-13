@@ -27,7 +27,7 @@ import {
   GitPullRequest,
 } from '@phosphor-icons/react'
 import { CateLogo } from '../ui/CateLogo'
-import { Tooltip } from '../sidebar/Tooltip'
+import { Tooltip } from '../ui/Tooltip'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
@@ -364,19 +364,21 @@ const SpawnButton: React.FC<{
   worktreeId: string
   onClick: () => void
 }> = ({ icon, title, panelType, cwd, worktreeId, onClick }) => (
-  <div
-    role="button"
-    draggable
-    onDragStart={(e) => {
-      e.dataTransfer.effectAllowed = 'copy'
-      e.dataTransfer.setData('application/cate-spawn', JSON.stringify({ panelType, cwd, worktreeId }))
-    }}
-    onClick={(e) => { e.stopPropagation(); onClick() }}
-    title={`${title} — click to open here, or drag onto the canvas`}
-    className="w-5 h-5 flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-surface-5 cursor-grab active:cursor-grabbing transition-colors"
-  >
-    {icon}
-  </div>
+  <Tooltip label={`${title} — click to open here, or drag onto the canvas`}>
+    <div
+      role="button"
+      aria-label={title}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'copy'
+        e.dataTransfer.setData('application/cate-spawn', JSON.stringify({ panelType, cwd, worktreeId }))
+      }}
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      className="w-5 h-5 flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-surface-5 cursor-grab active:cursor-grabbing transition-colors"
+    >
+      {icon}
+    </div>
+  </Tooltip>
 )
 
 // ---------------------------------------------------------------------------
@@ -440,13 +442,15 @@ const WorktreeRow: React.FC<{
     >
       {/* Line 1 — name + actions */}
       <div className="flex items-center gap-1.5">
-        <button
-          onClick={(e) => { e.stopPropagation(); setRecoloring((v) => !v) }}
-          title="Change color"
-          className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded-full hover:scale-110 transition-transform"
-        >
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-        </button>
+        <Tooltip label="Change color">
+          <button
+            onClick={(e) => { e.stopPropagation(); setRecoloring((v) => !v) }}
+            aria-label="Change color"
+            className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded-full hover:scale-110 transition-transform"
+          >
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+          </button>
+        </Tooltip>
 
         {renaming ? (
           <input
@@ -494,13 +498,15 @@ const WorktreeRow: React.FC<{
               worktreeId={wt.id}
               onClick={() => onLaunch('agent')}
             />
-            <button
-              onClick={(e) => { e.stopPropagation(); void openMenu() }}
-              title="More actions"
-              className="w-5 h-5 flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-surface-5 transition-colors"
-            >
-              <DotsThree size={14} weight="bold" />
-            </button>
+            <Tooltip label="More actions">
+              <button
+                onClick={(e) => { e.stopPropagation(); void openMenu() }}
+                aria-label="More actions"
+                className="w-5 h-5 flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-surface-5 transition-colors"
+              >
+                <DotsThree size={14} weight="bold" />
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>

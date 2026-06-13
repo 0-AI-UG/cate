@@ -17,6 +17,7 @@ import {
 } from '../lib/layouts'
 import log from '../lib/logger'
 import { useEscapeKey } from '../lib/hooks/useEscapeKey'
+import { Tooltip } from '../ui/Tooltip'
 
 export function SavedLayoutsDialog() {
   const show = useUIStore((s) => s.showLayoutsDialog)
@@ -174,14 +175,16 @@ export function SavedLayoutsDialog() {
                         <FolderOpen size={12} />
                         Load
                       </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(name) }}
-                        disabled={busy}
-                        className="p-1.5 rounded-md text-muted hover:text-red-400 hover:bg-red-600/10"
-                        title="Delete"
-                      >
-                        <Trash size={12} />
-                      </button>
+                      <Tooltip label="Delete">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(name) }}
+                          disabled={busy}
+                          className="p-1.5 rounded-md text-muted hover:text-red-400 hover:bg-red-600/10"
+                          aria-label="Delete"
+                        >
+                          <Trash size={12} />
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
                 )

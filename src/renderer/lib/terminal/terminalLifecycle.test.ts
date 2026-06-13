@@ -354,8 +354,10 @@ describe('adopt path — pending transfer reconnects without spawning', () => {
 
       LC.finalizeReconnect('panel-fin')
 
-      // SIGWINCH nudge: one row short of the fitted size (80x24 fake default).
-      expect(terminalResize).toHaveBeenCalledWith('pty-fin', 80, 23)
+      // SIGWINCH nudge: one COLUMN short of the fitted size (80x24 fake
+      // default). Cols, not rows — a rows change makes Ink TUIs leak a
+      // duplicate frame into scrollback when their frame fills the viewport.
+      expect(terminalResize).toHaveBeenCalledWith('pty-fin', 79, 24)
       expect(terminalInstances[0].writes).toContain('SB')
       expect(panelTransferAck).toHaveBeenCalledTimes(1)
       expect(panelTransferAck).toHaveBeenCalledWith('pty-fin')

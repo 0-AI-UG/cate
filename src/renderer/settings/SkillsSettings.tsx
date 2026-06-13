@@ -11,6 +11,7 @@ import { GithubLogo, Plus, Trash } from '@phosphor-icons/react'
 import { SettingRow, SearchableBlock, SecondaryButton, TextInput } from './SettingsComponents'
 import { errorMessage } from '../lib/errorMessage'
 import type { SkillSource } from '../../shared/skills'
+import { Tooltip } from '../ui/Tooltip'
 
 const api = () => window.electronAPI
 
@@ -103,13 +104,15 @@ export function SkillsSettings() {
                 <GithubLogo size={14} className="text-muted shrink-0" />
                 <span className="flex-1 min-w-0 text-[12px] text-primary font-mono truncate">{s.repo}</span>
                 {s.path && <span className="text-[11px] text-muted font-mono truncate">/{s.path}</span>}
-                <button
-                  onClick={() => void remove(s.id)}
-                  className="shrink-0 p-0.5 rounded text-muted opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
-                  title="Remove"
-                >
-                  <Trash size={12} />
-                </button>
+                <Tooltip label="Remove">
+                  <button
+                    onClick={() => void remove(s.id)}
+                    className="shrink-0 p-0.5 rounded text-muted opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
+                    aria-label="Remove"
+                  >
+                    <Trash size={12} />
+                  </button>
+                </Tooltip>
               </div>
             ))}
           </div>
