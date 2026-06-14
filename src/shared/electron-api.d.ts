@@ -824,9 +824,10 @@ export interface ElectronAPI {
   getPendingFeedback(): Promise<{ fromVersion: string; toVersion: string } | null>
   /** Track a promo link click (e.g. product_hunt, github_star, newsletter). */
   trackLinkClick(link: string): void
-  /** Record the first-run telemetry consent decision. Persists the choice and
-   *  releases the deferred crash-reporting + analytics init. */
-  setTelemetryConsent(choice: { crashReporting: boolean; usageAnalytics: boolean }): Promise<void>
+  /** Record that the telemetry notice (WelcomeDialog) was acknowledged for the
+   *  current TELEMETRY_NOTICE_VERSION. Informational only — telemetry is always
+   *  on in packaged builds and does not depend on this. */
+  acknowledgeTelemetryNotice(): Promise<void>
   /** Report an anonymous feature-usage signal (gated by analytics consent).
    *  `feature` is a short key; `props` are small primitives, clamped in main. */
   trackFeatureUsed(feature: string, props?: Record<string, string | number | boolean>): void

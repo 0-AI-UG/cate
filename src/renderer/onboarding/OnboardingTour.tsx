@@ -16,6 +16,7 @@ import { ArrowLeft, ArrowRight, X } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { ONBOARDING_STEPS, type OnboardingStep } from './steps'
+import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 import doneHeader from '../assets/done-header.jpg'
 
 interface Rect { x: number; y: number; width: number; height: number }
@@ -133,7 +134,7 @@ function clampBox(rect: Rect, pad: number): { left: number; top: number; width: 
 
 export function OnboardingTour() {
   const loaded = useSettingsStore((s) => s._loaded)
-  const consentDecided = useSettingsStore((s) => s.telemetryConsentDecided)
+  const noticeAcknowledgedVersion = useSettingsStore((s) => s.telemetryNoticeAcknowledgedVersion)
   const completed = useSettingsStore((s) => s.onboardingCompleted)
   const setSetting = useSettingsStore((s) => s.setSetting)
   const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
@@ -141,9 +142,9 @@ export function OnboardingTour() {
   const [step, setStep] = useState(0)
   const [rect, setRect] = useState<Rect | null>(null)
 
-  // Show only after settings load AND the consent choice is made (so consent
-  // goes first), and only until the tour is completed/skipped.
-  const active = loaded && consentDecided && !completed
+  // Show only after settings load AND the telemetry notice was acknowledged
+  // (so the notice goes first), and only until the tour is completed/skipped.
+  const active = loaded && noticeAcknowledgedVersion >= TELEMETRY_NOTICE_VERSION && !completed
 
   const current = ONBOARDING_STEPS[step]
 

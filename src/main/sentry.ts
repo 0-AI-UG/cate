@@ -6,13 +6,12 @@
 //   1. process.env.SENTRY_DSN  — runtime override (set in the dev shell)
 //   2. __SENTRY_DSN__          — value baked at build time from SENTRY_DSN
 // Packaged builds rely on (2) since end users won't have the env var set.
-// When the DSN is empty or the user has opted out, init is a no-op.
+// When the DSN is empty, init is a no-op.
 // =============================================================================
 
 import { app } from 'electron'
 import * as Sentry from '@sentry/electron/main'
 import log from './logger'
-import { getSettingSync } from './store'
 import { getCommonContext } from './appContext'
 
 declare const __SENTRY_DSN__: string
@@ -79,39 +78,14 @@ function actuallyInit(): void {
 }
 
 export function initSentry(): void {
-  // Hold off entirely until the user has made a first-run telemetry choice —
-  // nothing is captured or sent before consent.
-  if (!getSettingSync('telemetryConsentDecided')) {
-    log.info('[sentry] deferred — awaiting first-run consent')
-    return
-  }
-  if (!getSettingSync('crashReportingEnabled')) {
-    log.info('[sentry] disabled by user setting')
+  // Telemetry is always on in packaged builds (no opt-out). In dev, init only
+  // when a DSN was explicitly provided via the environment (opt-in for
+  // debugging the Sentry pipeline itself).
+  if (!app.isPackaged && !process.env.SENTRY_DSN) {
+    log.info('[sentry] dev build without SENTRY_DSN; skipping init')
     return
   }
   actuallyInit()
-}
-
-/**
- * Apply a live change to the crash-reporting toggle. Called by store.ts when
- * the user flips the setting in Settings → General — flushes & closes the
- * Sentry client on opt-out, re-initializes on opt-in. No app restart needed.
- */
-export function setCrashReportingEnabled(enabled: boolean): void {
-  if (enabled) {
-    actuallyInit()
-    return
-  }
-  if (!initialized) return
-  try {
-    // close() returns a promise that resolves once buffered events flush.
-    // We don't await — best-effort, the user opted out.
-    void Sentry.close(2000)
-  } catch (err) {
-    log.warn('[sentry] close failed: %s', err instanceof Error ? err.message : String(err))
-  }
-  initialized = false
-  log.info('[sentry] disabled at runtime')
 }
 
 /** Capture an uncaughtException in the main process. Best-effort: returns

@@ -33,6 +33,7 @@ import { initAnalytics, devSimulateUpdateFrom, hasRunBefore } from './analytics'
 import { disableTrustScoping } from './featureFlags'
 import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
 import { PERF_GET } from '../shared/ipc-channels'
+import { TELEMETRY_NOTICE_VERSION } from '../shared/types'
 import { installWebContentsSecurity } from './webSecurity'
 import { installProxyAuthHandler } from './browserProxy'
 import { installThemeSkill } from './installThemeSkill'
@@ -47,7 +48,7 @@ import { registerDockWindowHandlers } from './ipc/dockWindows'
 import { registerWindowPanelHandlers } from './ipc/windowPanels'
 import { registerDragHandlers } from './ipc/dragHandlers'
 import { setMainWindowReady, flushPendingOpenPaths, registerOpenFileHandler } from './lifecycle/openPath'
-import { fireStartupTelemetry, registerTelemetryConsentHandler } from './lifecycle/telemetry'
+import { fireStartupTelemetry, registerTelemetryNoticeHandler } from './lifecycle/telemetry'
 import { registerLifecycleHandlers } from './lifecycle/shutdown'
 
 // NOTE: runSmokeAssertions only ever runs when CATE_SMOKE_TEST=1. The 1200 ms
@@ -144,8 +145,8 @@ if (!app.isPackaged) {
 
 // First-start simulation (`npm run dev:firststart`). Point userData at a
 // dedicated dir that's wiped on every launch, so the app boots exactly like a
-// brand-new install: telemetry-consent prompt + onboarding tour, empty session,
-// no recent projects or saved window geometry. Dev-only; never in a packaged app.
+// brand-new install: telemetry notice + onboarding tour, empty session, no
+// recent projects or saved window geometry. Dev-only; never in a packaged app.
 if (!app.isPackaged && process.env.CATE_FRESH_USERDATA === '1') {
   const fs = require('fs') as typeof import('fs')
   const dir = path.join(app.getPath('userData'), 'FirstStart')
@@ -158,9 +159,12 @@ if (!app.isPackaged && process.env.CATE_FRESH_USERDATA === '1') {
 // Dev-only: simulate launching right after an update at a given level
 // (major / minor / patch). Uses its own wiped userData dir, then seeds the
 // analytics state so `checkAndReportUpdate` sees a version bump from a synthetic
-// previous version. The grandfather block below then treats it as an existing
-// (already-onboarded, already-consented) user, so only the post-update feedback
-// dialog can appear — major/minor show it, patch shows nothing. See dev:update:*.
+// previous version. The grandfather block below marks it as an existing
+// (already-onboarded) user, so the onboarding tour stays hidden — but the
+// telemetry notice still appears, because the simulated profile hasn't
+// acknowledged the current TELEMETRY_NOTICE_VERSION (exactly like a real user
+// updating into this release). On major/minor bumps the post-update feedback
+// dialog appears alongside it; a patch bump shows the notice only. See dev:update:*.
 if (!app.isPackaged && (process.env.CATE_SIMULATE_UPDATE === 'major' || process.env.CATE_SIMULATE_UPDATE === 'minor' || process.env.CATE_SIMULATE_UPDATE === 'patch')) {
   const level = process.env.CATE_SIMULATE_UPDATE
   const fs = require('fs') as typeof import('fs')
@@ -210,44 +214,32 @@ log.info('Cate v%s starting (electron %s, node %s, platform %s)', app.getVersion
 // them before the async electron-store finishes initializing.
 loadSettingsSyncFromDisk()
 
-// Scope the WHOLE first-run experience (telemetry-consent screen + onboarding
-// tour) to genuine first installs. Anyone who has launched Cate before (incl.
-// users upgrading from a pre-onboarding / pre-consent build) is marked as past
-// it, so an update shows ONLY the post-update feedback dialog — never the tour
-// and never the consent screen. Telemetry stays OFF for these grandfathered
-// users (they never opted in); they can enable it from Settings. Runs long
-// before the renderer queries settings, so there's no show/hide race.
+// Scope the onboarding tour to genuine first installs. Anyone who has launched
+// Cate before is marked past it, so an update never replays the tour. The
+// telemetry notice (WelcomeDialog) intentionally has NO such clause — every
+// user whose acknowledged notice version is below TELEMETRY_NOTICE_VERSION
+// sees it once, updaters included.
 if (hasRunBefore()) {
   if (!getSettingSync('onboardingCompleted')) {
     void setSettingsFromMain({ onboardingCompleted: true })
   }
-  if (!getSettingSync('telemetryConsentDecided')) {
-    void setSettingsFromMain({
-      telemetryConsentDecided: true,
-      crashReportingEnabled: false,
-      usageAnalyticsEnabled: false,
-    })
-  }
 }
 
 // Under Playwright the profile is a fresh tmpdir, which would otherwise trigger
-// the first-run consent + onboarding takeover and cover the canvas the specs
+// the telemetry notice + onboarding takeover and cover the canvas the specs
 // drive. Mark both as already handled so e2e starts on a clean canvas. Runs
 // before the renderer queries settings, so the dialogs never flash.
 if (IS_E2E) {
-  void setSettingsFromMain({ telemetryConsentDecided: true, onboardingCompleted: true })
+  void setSettingsFromMain({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION, onboardingCompleted: true })
 }
 
-// Initialize Sentry as early as possible — after settings load (so the opt-out
-// is honored) but before any IPC handlers or windows. No-op if DSN unset or
-// the user has disabled crash reporting.
+// Initialize Sentry as early as possible — before any IPC handlers or windows.
+// Always on in packaged builds; no-op in dev unless SENTRY_DSN is set.
 initSentry()
 initAnalytics()
 
-// First-run telemetry consent from the renderer. Persists the choice, applies it
-// live (Sentry on/off without restart), and releases the previously-deferred
-// startup analytics.
-registerTelemetryConsentHandler()
+// Telemetry-notice acknowledgement from the renderer (WelcomeDialog).
+registerTelemetryNoticeHandler()
 
 // Provide the menu module a way to spawn additional main windows without
 // importing this file (which would create a circular dependency).
@@ -361,8 +353,7 @@ app.whenReady().then(async () => {
     log.info('Deferred IPC handlers registered')
     initAutoUpdater()
     // Detect a version change since last launch and emit an app_updated event
-    // before app_start, so the upgrade path lands in analytics in order. Held
-    // back on first run until the user accepts/declines telemetry consent.
+    // before app_start, so the upgrade path lands in analytics in order.
     fireStartupTelemetry(mainWin)
     if (process.env.CATE_SMOKE_TEST === '1') {
       runSmokeAssertions(mainWin)

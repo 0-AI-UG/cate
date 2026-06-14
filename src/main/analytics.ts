@@ -1,8 +1,7 @@
 // =============================================================================
 // Analytics — anonymous product telemetry posted to cero-analytics'
-// /api/app-events endpoint. Gated by a first-run consent decision
-// (`telemetryConsentDecided`) AND the `usageAnalyticsEnabled` toggle — nothing
-// is sent until the user has explicitly chosen (see isEnabled()).
+// /api/app-events endpoint. Events send only from packaged builds — telemetry
+// is always on there; dev/E2E builds never send (see isEnabled()).
 //
 // What we send:
 //   - app_start                : version, platform, arch, locale, electron version
@@ -26,7 +25,6 @@
 
 import { app, BrowserWindow, ipcMain, net, shell } from 'electron'
 import log from './logger'
-import { getSettingSync } from './store'
 import { getCommonContext } from './appContext'
 import { readJsonFile, writeJsonFile, readTextFile, writeTextFile, appendLine, removeFile } from './jsonFileStore'
 import { ANALYTICS_FEEDBACK_PROMPT, ANALYTICS_FEEDBACK_SUBMIT, ANALYTICS_FEEDBACK_DISMISS, ANALYTICS_FEEDBACK_GET_PENDING, ANALYTICS_LINK_CLICK, ANALYTICS_TRACK_USAGE, OPEN_EXTERNAL_URL } from '../shared/ipc-channels'
@@ -201,7 +199,7 @@ async function flushPending(): Promise<void> {
 
 async function sendEvent(name: string, props?: Record<string, unknown>): Promise<boolean> {
   if (!isEnabled()) {
-    log.info('[analytics] %s skipped (usageAnalyticsEnabled=false)', name)
+    log.info('[analytics] %s skipped (unpackaged build)', name)
     return false
   }
   const payload = buildPayload(name, props)
@@ -224,9 +222,10 @@ async function sendEvent(name: string, props?: Record<string, unknown>): Promise
 // ---------------------------------------------------------------------------
 
 function isEnabled(): boolean {
-  // Nothing is sent until the user has made a first-run telemetry choice.
-  if (getSettingSync('telemetryConsentDecided') !== true) return false
-  return getSettingSync('usageAnalyticsEnabled') !== false
+  // Telemetry is always on in packaged builds (no settings gate, no opt-out).
+  // Dev and E2E builds (unpackaged) never send. The informational telemetry
+  // notice (WelcomeDialog) is not a gate — it only records acknowledgement.
+  return app.isPackaged
 }
 
 /** Keep only a few small primitive props (string/number/boolean), with strings
@@ -304,7 +303,7 @@ export function initAnalytics(): void {
 
   // Anonymous feature-usage signal. The renderer reports a short feature key
   // (+ optional small primitive props); we clamp it hard so no free-form text
-  // / file paths / project data can ride along. Gated by consent via sendEvent.
+  // / file paths / project data can ride along. Gated by isEnabled via sendEvent.
   ipcMain.on(ANALYTICS_TRACK_USAGE, (_e, raw: unknown) => {
     const payload = (raw ?? {}) as { feature?: unknown; props?: unknown }
     if (typeof payload.feature !== 'string' || !payload.feature) return

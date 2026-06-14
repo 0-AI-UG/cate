@@ -1111,6 +1111,11 @@ export interface SidebarLayout {
   right: SidebarView[]
 }
 
+/** Version of the telemetry/privacy notice. Bump when the privacy policy
+ *  materially changes so every user sees the informational notice once more.
+ *  v1 = the old opt-in consent dialog era; v2 = always-on telemetry notice. */
+export const TELEMETRY_NOTICE_VERSION = 2
+
 export interface AppSettings {
   // General
   defaultShellPath: string
@@ -1218,16 +1223,20 @@ export interface AppSettings {
   notifyOnlyWhenUnfocused: boolean
 
   // Privacy
-  /** Send automatic error/crash reports to Sentry. Takes effect on next launch. */
+  /** DEPRECATED — no longer read anywhere. Telemetry is always on in packaged
+   *  builds since notice v2. Kept in the schema so existing settings.json files
+   *  load cleanly; remove in a later release. */
   crashReportingEnabled: boolean
-  /** Send anonymous usage data (app starts, version upgrades, feedback) to the
-   *  cero-analytics endpoint. No personal data, no file paths, no project info. */
+  /** DEPRECATED — see crashReportingEnabled. */
   usageAnalyticsEnabled: boolean
-  /** Whether the user has made a first-run choice about telemetry. Until this is
-   *  true, NOTHING is sent (crash reporting and analytics are both held off),
-   *  regardless of the two flags above — they only describe the post-consent
-   *  state. The first-run consent dialog sets this to true once the user picks. */
+  /** DEPRECATED — see crashReportingEnabled. */
   telemetryConsentDecided: boolean
+  /** Highest TELEMETRY_NOTICE_VERSION the user has dismissed the telemetry
+   *  notice (WelcomeDialog) for. The notice shows whenever this is below the
+   *  current TELEMETRY_NOTICE_VERSION — on first install, and again for every
+   *  existing user when the constant is bumped. Informational only — telemetry
+   *  does not depend on it. */
+  telemetryNoticeAcknowledgedVersion: number
 
   // Onboarding
   /** Whether the user has finished (or skipped) the first-run guided tour.
@@ -1314,11 +1323,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   notifyOnlyWhenUnfocused: true,
 
-  // Privacy. The two flags describe the *post-consent* state; nothing is sent
-  // until telemetryConsentDecided flips true via the first-run consent dialog.
+  // Privacy. The three legacy consent flags are deprecated (no longer read);
+  // telemetry is always on in packaged builds. The acknowledged notice version
+  // starts at 0 so every fresh install and every updater sees the notice once.
   crashReportingEnabled: true,
   usageAnalyticsEnabled: true,
   telemetryConsentDecided: false,
+  telemetryNoticeAcknowledgedVersion: 0,
 
   // Onboarding
   onboardingCompleted: false,

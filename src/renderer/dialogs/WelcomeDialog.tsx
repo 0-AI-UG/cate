@@ -1,20 +1,22 @@
 // =============================================================================
-// WelcomeDialog — first-run welcome + telemetry consent, in one screen.
+// WelcomeDialog — first-run welcome + telemetry notice, in one screen.
 //
-// Shown once, in the main window, on a (plain) first-run canvas before the
-// guided tour. Combines the community asks with the privacy choice: nothing is
-// sent until the user clicks Continue (the main process holds Sentry + analytics
-// off until `telemetryConsentDecided` flips true). Uses the app's surface tokens
-// + radius (matching the ⌘K palette) and the blue accent, with a logo header.
+// Shown once per TELEMETRY_NOTICE_VERSION, in the main window, on a (plain)
+// first-run canvas before the guided tour — so fresh installs see it once, and
+// existing users see it once more whenever the notice version is bumped (e.g.
+// the v2 switch to always-on telemetry). Purely informational: there is no
+// opt-in choice, just a privacy-policy link. Uses the app's surface tokens +
+// radius (matching the ⌘K palette) and the blue accent, with a logo header.
 // =============================================================================
 
 import { useState } from 'react'
-import { EnvelopeSimple, Check } from '@phosphor-icons/react'
+import { EnvelopeSimple } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { CateLogo } from '../ui/CateLogo'
 import log from '../lib/logger'
 import headerImg from '../assets/welcome-header.jpg'
 import { AnimatedDotGrid } from './AnimatedDotGrid'
+import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 
 const GITHUB_REPO = 'https://github.com/0-AI-UG/cate'
 const NEWSLETTER_URL = 'https://cate.cero-ai.com'
@@ -37,35 +39,30 @@ function GithubMark({ size = 17 }: { size?: number }) {
 }
 
 export function WelcomeDialog() {
-  const decided = useSettingsStore((s) => s.telemetryConsentDecided)
+  const acknowledgedVersion = useSettingsStore((s) => s.telemetryNoticeAcknowledgedVersion)
   const loaded = useSettingsStore((s) => s._loaded)
 
-  const [enabled, setEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [exiting, setExiting] = useState(false)
 
-  if (!loaded || decided) return null
+  if (!loaded || acknowledgedVersion >= TELEMETRY_NOTICE_VERSION) return null
 
   const onContinue = (): void => {
     if (saving) return
     setSaving(true)
     setExiting(true)
-    // Persist now (fire-and-forget; doesn't touch the local `decided` gate that
-    // keeps this dialog mounted). Single switch covers crash + usage.
+    // Persist now (fire-and-forget; doesn't touch the local store gate that
+    // keeps this dialog mounted).
     try {
-      void window.electronAPI.setTelemetryConsent({ crashReporting: enabled, usageAnalytics: enabled })
+      void window.electronAPI.acknowledgeTelemetryNotice()
     } catch (err) {
-      log.warn('[telemetry] consent save failed:', err)
+      log.warn('[telemetry] notice acknowledgement failed:', err)
     }
     // Let the fade-out play before flipping the local setting — that unmounts
     // this dialog and hands off to the tour (which fades in on its own), so the
     // transition is a soft dissolve rather than a harsh cut.
     window.setTimeout(() => {
-      useSettingsStore.setState({
-        telemetryConsentDecided: true,
-        crashReportingEnabled: enabled,
-        usageAnalyticsEnabled: enabled,
-      })
+      useSettingsStore.setState({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION })
     }, 320)
   }
 
@@ -151,33 +148,17 @@ export function WelcomeDialog() {
 
           <div className="border-t border-subtle" />
 
-          {/* Consent — a single centered line the user can toggle. */}
-          <div className="flex items-center justify-center gap-2.5">
+          {/* Telemetry notice — informational only, no choice. */}
+          <p className="text-center text-[12px] text-secondary leading-relaxed">
+            Cate collects anonymous usage data and crash reports to improve the app.{' '}
             <button
-              role="switch"
-              aria-checked={enabled}
-              onClick={() => setEnabled((v) => !v)}
-              className="flex-shrink-0 group"
-              aria-label="Share anonymous usage and crash data"
+              type="button"
+              onClick={() => openLink(PRIVACY_URL, 'privacy_policy')}
+              className="text-blue-400 hover:text-blue-300 font-medium"
             >
-              <span
-                className={`w-[18px] h-[18px] rounded-md flex items-center justify-center border transition-colors ${
-                  enabled ? 'bg-blue-500 border-blue-500' : 'border-strong group-hover:border-[rgba(255,255,255,0.4)]'
-                }`}
-              >
-                {enabled && <Check size={12} weight="bold" className="text-white" />}
-              </span>
+              Privacy Policy
             </button>
-            <button onClick={() => setEnabled((v) => !v)} className="text-left whitespace-nowrap">
-              <span className="text-secondary text-[12px]">Share anonymous usage data.{' '}</span>
-              <span
-                onClick={(e) => { e.stopPropagation(); openLink(PRIVACY_URL, 'privacy_policy') }}
-                className="text-blue-400 hover:text-blue-300 text-[12px] font-medium"
-              >
-                Privacy Policy
-              </span>
-            </button>
-          </div>
+          </p>
 
           <button
             onClick={onContinue}
