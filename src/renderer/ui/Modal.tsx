@@ -20,6 +20,7 @@
 import { useEffect, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from '@phosphor-icons/react'
+import { Tooltip } from './Tooltip'
 
 /** Dimmed, blurred backdrop shared by every full-screen modal. */
 export const BACKDROP = 'bg-black/50 backdrop-blur-sm'
@@ -130,14 +131,16 @@ export function ModalCard({
           <span className="flex-1 text-[15px] font-semibold text-primary truncate">{title}</span>
           {headerActions}
           {close && onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex items-center justify-center w-6 h-6 -mr-1 rounded-md text-secondary hover:text-primary hover:bg-hover transition-colors"
-              title="Close (Esc)"
-            >
-              <X size={14} />
-            </button>
+            <Tooltip label="Close (Esc)">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex items-center justify-center w-6 h-6 -mr-1 rounded-md text-secondary hover:text-primary hover:bg-hover transition-colors"
+                aria-label="Close"
+              >
+                <X size={14} />
+              </button>
+            </Tooltip>
           )}
         </div>
       )}

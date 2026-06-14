@@ -37,6 +37,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   systemDarkThemeId: 'string',
   customThemes: 'array',
   editorFontSize: 'number',
+  editorFontFamily: 'string',
   uiScale: 'number',
   showMinimap: 'boolean',
   defaultPanelWidth: 'number',
@@ -78,6 +79,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   petExecutorModel: 'object',
   petExecutorAgentId: 'string',
   sidebarLayout: 'object',
+  customShortcuts: 'object',
 }
 
 const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>

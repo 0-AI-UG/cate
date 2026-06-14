@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React from 'react'
+import { Tooltip } from '../ui/Tooltip'
 
 interface SidebarSectionHeaderProps {
   title: string
@@ -38,14 +39,20 @@ export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ titl
   )
 }
 
-/** Standard icon button styling for header actions. */
+/** Standard icon button styling for header actions. A `title` renders as the
+ *  portal Tooltip (native title tooltips are flaky in Electron) plus an
+ *  aria-label, instead of being passed through to the DOM. */
 export const SidebarHeaderButton: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { spinning?: boolean }
-> = ({ children, className = '', spinning, ...rest }) => (
-  <button
-    {...rest}
-    className={`flex items-center justify-center w-[22px] h-[22px] my-1 rounded text-secondary hover:text-primary hover:bg-hover transition-colors disabled:opacity-30 ${className}`}
-  >
-    <span className={spinning ? 'inline-flex opacity-60' : 'inline-flex'}>{children}</span>
-  </button>
-)
+> = ({ children, className = '', spinning, title, ...rest }) => {
+  const button = (
+    <button
+      aria-label={title}
+      {...rest}
+      className={`flex items-center justify-center w-[22px] h-[22px] my-1 rounded text-secondary hover:text-primary hover:bg-hover transition-colors disabled:opacity-30 ${className}`}
+    >
+      <span className={spinning ? 'inline-flex opacity-60' : 'inline-flex'}>{children}</span>
+    </button>
+  )
+  return title ? <Tooltip label={title}>{button}</Tooltip> : button
+}

@@ -18,6 +18,7 @@ import {
 import type { AgentMessage, RetryState } from './agentStore'
 import { MessageRow } from './ChatMessageRow'
 import { LoadingIndicator } from './ChatMarkdown'
+import { Tooltip } from '../../renderer/ui/Tooltip'
 
 // Per-conversation scroll memory — survives the dock-tab unmount/remount cycle.
 // Transient UI state, intentionally module-level (not persisted to disk/store).
@@ -210,14 +211,15 @@ export function ChatThread({ messages, running, forkMap, onFork, onEditResend, o
       )}
     </div>
     {!atBottom && (
-      <button
-        onClick={() => { scrollToBottom(true); setAtBottom(true) }}
-        title="Scroll to bottom"
-        aria-label="Scroll to bottom"
-        className="absolute bottom-3 right-3 z-10 p-2 rounded-full bg-surface-2 border border-strong text-muted hover:text-primary shadow-lg cate-fade-in"
-      >
-        <ArrowDown size={14} weight="bold" />
-      </button>
+      <Tooltip label="Scroll to bottom" placement="top">
+        <button
+          onClick={() => { scrollToBottom(true); setAtBottom(true) }}
+          aria-label="Scroll to bottom"
+          className="absolute bottom-3 right-3 z-10 p-2 rounded-full bg-surface-2 border border-strong text-muted hover:text-primary shadow-lg cate-fade-in"
+        >
+          <ArrowDown size={14} weight="bold" />
+        </button>
+      </Tooltip>
     )}
     </div>
   )

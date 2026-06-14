@@ -11,7 +11,7 @@
 // noise on the common single-branch flow.
 // =============================================================================
 
-import React, { useCallback, useEffect } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { ArrowsSplit } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
@@ -37,6 +37,10 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
 
   const current = worktrees.find((w) => w.id === panel.worktreeId) ?? worktrees.find((w) => w.isPrimary)
   const currentId = current?.id
+
+  // Collapsed (icon-only) until hovered, so the overlay covers as little of the
+  // panel content as possible (#370); hovering grows it to the full title.
+  const [hovered, setHovered] = useState(false)
 
   const labelOf = (w: { label?: string; branch?: string; isPrimary?: boolean }) =>
     w.label || w.branch || (w.isPrimary ? 'main' : '(detached)')
@@ -90,16 +94,22 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
     <button
       type="button"
       onClick={handleClick}
-      onMouseEnter={() => currentId && setHoveredWorktree(currentId)}
-      onMouseLeave={() => setHoveredWorktree(null)}
+      onMouseEnter={() => {
+        setHovered(true)
+        if (currentId) setHoveredWorktree(currentId)
+      }}
+      onMouseLeave={() => {
+        setHovered(false)
+        setHoveredWorktree(null)
+      }}
       title={`Worktree: ${current.branch || current.path}`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: hovered ? 4 : 0,
         height: 18,
         maxWidth: 220,
-        padding: '0 9px 0 7px',
+        padding: hovered ? '0 9px 0 7px' : '0 4px',
         borderRadius: 9,
         // Filled, no outline — the chip IS the worktree color. Slightly toned
         // toward black so white text stays legible across the bright palette.
@@ -114,13 +124,23 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
         textShadow: '0 1px 1px rgba(0,0,0,0.3)',
         cursor: 'pointer',
         userSelect: 'none',
-        transition: 'box-shadow 150ms ease, background-color 150ms ease, filter 150ms ease',
+        transition:
+          'box-shadow 150ms ease, background-color 150ms ease, filter 150ms ease, gap 150ms ease, padding 150ms ease',
         filter: isFocused ? 'brightness(1.12)' : undefined,
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <ArrowsSplit size={11} weight="bold" style={{ flexShrink: 0 }} />
-      <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span
+        style={{
+          maxWidth: hovered ? 180 : 0,
+          opacity: hovered ? 1 : 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          transition: 'max-width 150ms ease, opacity 150ms ease',
+        }}
+      >
         {labelOf(current)}
       </span>
     </button>

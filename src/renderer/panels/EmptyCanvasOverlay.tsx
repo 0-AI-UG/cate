@@ -12,6 +12,7 @@ import type { CanvasStore } from '../stores/canvasStore'
 import { useUIStore } from '../stores/uiStore'
 import { listLayouts, loadLayoutIntoCanvas } from '../lib/layouts'
 import { CARD_SURFACE } from '../ui/Modal'
+import { Tooltip } from '../ui/Tooltip'
 import log from '../lib/logger'
 
 export function EmptyCanvasOverlay({
@@ -63,14 +64,16 @@ export function EmptyCanvasOverlay({
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
             Start from a layout
           </span>
-          <button
-            type="button"
-            onClick={() => setDismissed(true)}
-            className="flex items-center justify-center w-5 h-5 rounded text-muted hover:text-secondary hover:bg-white/5"
-            title="Close (Esc)"
-          >
-            <X size={13} />
-          </button>
+          <Tooltip label="Close (Esc)">
+            <button
+              type="button"
+              onClick={() => setDismissed(true)}
+              className="flex items-center justify-center w-5 h-5 rounded text-muted hover:text-secondary hover:bg-white/5"
+              aria-label="Close"
+            >
+              <X size={13} />
+            </button>
+          </Tooltip>
         </div>
         <div className="pb-1.5 max-h-[260px] overflow-y-auto">
           {names.map((name) => (

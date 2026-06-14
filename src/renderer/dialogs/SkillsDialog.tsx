@@ -36,6 +36,7 @@ import { useAppStore } from '../stores/appStore'
 import log from '../lib/logger'
 import { errorMessage } from '../lib/errorMessage'
 import { useEscapeKey } from '../lib/hooks/useEscapeKey'
+import { Tooltip } from '../ui/Tooltip'
 import {
   SKILL_TARGETS,
   type InstalledSkill,
@@ -346,10 +347,11 @@ function SkillRow({
 
   return (
     <div className="group flex items-center gap-2 mx-1.5 px-2 py-1.5 rounded-md hover:bg-surface-5/60">
+      <Tooltip label={saved ? 'Saved — click to remove from your library' : 'Save to your library (cached for reuse)'}>
       <button
         onClick={() => void toggleSave()}
         disabled={saveBusy}
-        title={saved ? 'Saved — click to remove from your library' : 'Save to your library (cached for reuse)'}
+        aria-label={saved ? 'Remove from your library' : 'Save to your library'}
         className="shrink-0 w-6 h-6 flex items-center justify-center rounded disabled:opacity-50"
       >
         {saveBusy ? (
@@ -362,6 +364,7 @@ function SkillRow({
           />
         )}
       </button>
+      </Tooltip>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
@@ -376,13 +379,15 @@ function SkillRow({
       </div>
 
       {link && (
-        <button
-          onClick={() => window.electronAPI?.openExternalUrl(link)}
-          title="Open skill on GitHub"
-          className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-secondary"
-        >
-          <ArrowSquareOut size={14} />
-        </button>
+        <Tooltip label="Open skill on GitHub">
+          <button
+            onClick={() => window.electronAPI?.openExternalUrl(link)}
+            aria-label="Open skill on GitHub"
+            className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-secondary"
+          >
+            <ArrowSquareOut size={14} />
+          </button>
+        </Tooltip>
       )}
 
       <button
@@ -520,14 +525,16 @@ function IconBtn({
   onClick: () => void
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className="flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-primary hover:bg-white/5 transition-colors"
-    >
-      {children}
-    </button>
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        onClick={onClick}
+        className="flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-primary hover:bg-white/5 transition-colors"
+      >
+        {children}
+      </button>
+    </Tooltip>
   )
 }
 

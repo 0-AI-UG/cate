@@ -26,6 +26,7 @@ import { DockStoreProvider } from '../stores/DockStoreContext'
 import DockTabStack from '../docking/DockTabStack'
 import { activeLeafPanelId } from '../panels/nodeDockRegistry'
 import { setActivePanel } from '../lib/activePanel'
+import { Tooltip } from '../ui/Tooltip'
 import DockSplitContainer from '../docking/DockSplitContainer'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
@@ -115,15 +116,17 @@ function GrabButton({
 }) {
   const baseColor = color ?? 'var(--text-secondary)'
   return (
-    <button
-      data-grab-button
-      title={title}
-      onClick={onClick}
-      className="flex items-center justify-center w-[18px] h-[18px] rounded text-secondary hover:text-primary hover:bg-hover"
-      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: baseColor }}
-    >
-      {children}
-    </button>
+    <Tooltip label={title}>
+      <button
+        data-grab-button
+        aria-label={title}
+        onClick={onClick}
+        className="flex items-center justify-center w-[18px] h-[18px] rounded text-secondary hover:text-primary hover:bg-hover"
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: baseColor }}
+      >
+        {children}
+      </button>
+    </Tooltip>
   )
 }
 

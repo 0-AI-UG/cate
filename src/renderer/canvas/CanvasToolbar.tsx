@@ -26,7 +26,7 @@ import { cornerFromPoint, nextFreeCorner } from '../lib/canvasCorners'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
-import { Tooltip } from '../sidebar/Tooltip'
+import { Tooltip } from '../ui/Tooltip'
 
 interface CanvasToolbarProps {
   canvasPanelId: string

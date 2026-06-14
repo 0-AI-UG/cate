@@ -16,6 +16,7 @@ import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { portalRegistry } from '../lib/portalRegistry'
 import { isUrl, normalizeUrl } from './browserUrl'
 import { pageLoadErrorFrom } from './browserLoadError'
+import { Tooltip } from '../ui/Tooltip'
 
 // -----------------------------------------------------------------------------
 // Type declarations for Electron's <webview> element
@@ -526,31 +527,37 @@ export default function BrowserPanel({
       <div className="h-10 flex items-center gap-2 px-2 bg-surface-4 border-b border-subtle shrink-0">
         {/* Navigation pill */}
         <div className="flex items-center h-7 rounded-full border border-subtle bg-surface-5 overflow-hidden">
-          <button
-            onClick={handleGoBack}
-            disabled={!canGoBack}
-            className="w-7 h-7 flex items-center justify-center hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-primary transition-colors"
-            title="Back"
-          >
-            <ArrowLeft size={13} />
-          </button>
+          <Tooltip label="Back">
+            <button
+              onClick={handleGoBack}
+              disabled={!canGoBack}
+              className="w-7 h-7 flex items-center justify-center hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-primary transition-colors"
+              aria-label="Back"
+            >
+              <ArrowLeft size={13} />
+            </button>
+          </Tooltip>
           <div className="w-px h-3.5 bg-subtle" />
-          <button
-            onClick={handleGoForward}
-            disabled={!canGoForward}
-            className="w-7 h-7 flex items-center justify-center hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-primary transition-colors"
-            title="Forward"
-          >
-            <ArrowRight size={13} />
-          </button>
+          <Tooltip label="Forward">
+            <button
+              onClick={handleGoForward}
+              disabled={!canGoForward}
+              className="w-7 h-7 flex items-center justify-center hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-primary transition-colors"
+              aria-label="Forward"
+            >
+              <ArrowRight size={13} />
+            </button>
+          </Tooltip>
           <div className="w-px h-3.5 bg-subtle" />
-          <button
-            onClick={handleReload}
-            className="w-7 h-7 flex items-center justify-center hover:bg-hover text-primary transition-colors"
-            title="Reload"
-          >
-            <ArrowClockwise size={13} className={isLoading ? 'animate-spin' : ''} />
-          </button>
+          <Tooltip label="Reload">
+            <button
+              onClick={handleReload}
+              className="w-7 h-7 flex items-center justify-center hover:bg-hover text-primary transition-colors"
+              aria-label="Reload"
+            >
+              <ArrowClockwise size={13} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+          </Tooltip>
         </div>
 
         {/* URL input */}
@@ -568,27 +575,31 @@ export default function BrowserPanel({
         </div>
 
         {/* Proxy tool — left-click configures, right-click offers clear. */}
-        <button
-          onClick={openProxyDialog}
-          onContextMenu={handleProxyContextMenu}
-          className={`w-7 h-7 flex items-center justify-center rounded-full border transition-colors ${
-            activeProxy
-              ? 'border-agent bg-agent/15 text-agent hover:bg-agent/25'
-              : 'border-subtle bg-surface-5 hover:bg-hover text-primary'
-          }`}
-          title={activeProxy ? `Proxy: ${activeProxy}` : 'Configure proxy'}
-        >
-          <ShieldCheck size={13} weight={activeProxy ? 'fill' : 'regular'} />
-        </button>
+        <Tooltip label={activeProxy ? `Proxy: ${activeProxy}` : 'Configure proxy'}>
+          <button
+            onClick={openProxyDialog}
+            onContextMenu={handleProxyContextMenu}
+            className={`w-7 h-7 flex items-center justify-center rounded-full border transition-colors ${
+              activeProxy
+                ? 'border-agent bg-agent/15 text-agent hover:bg-agent/25'
+                : 'border-subtle bg-surface-5 hover:bg-hover text-primary'
+            }`}
+            aria-label={activeProxy ? `Proxy: ${activeProxy}` : 'Configure proxy'}
+          >
+            <ShieldCheck size={13} weight={activeProxy ? 'fill' : 'regular'} />
+          </button>
+        </Tooltip>
 
         {/* Screenshot tool */}
-        <button
-          onClick={handleScreenshot}
-          className="w-7 h-7 flex items-center justify-center rounded-full border border-subtle bg-surface-5 hover:bg-hover text-primary transition-colors"
-          title="Screenshot"
-        >
-          <Camera size={13} />
-        </button>
+        <Tooltip label="Screenshot">
+          <button
+            onClick={handleScreenshot}
+            className="w-7 h-7 flex items-center justify-center rounded-full border border-subtle bg-surface-5 hover:bg-hover text-primary transition-colors"
+            aria-label="Screenshot"
+          >
+            <Camera size={13} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Webview + overlays container */}

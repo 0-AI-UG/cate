@@ -9,6 +9,7 @@
 
 import { memo, useState } from 'react'
 import { Copy } from '@phosphor-icons/react'
+import { Tooltip } from '../../renderer/ui/Tooltip'
 import { useRenderCount } from '../../renderer/lib/perf/perfClient'
 import type { AgentMessage } from './agentStore'
 import { Markdown, CursorBlink } from './ChatMarkdown'
@@ -51,13 +52,15 @@ export const MessageRow = memo(function MessageRow({
           {msg.text}
         </div>
         <div className="flex items-center gap-0.5 text-muted">
-          <button
-            onClick={() => { void navigator.clipboard.writeText(msg.text) }}
-            title="Copy message"
-            className="p-1 rounded-md hover:text-primary hover:bg-hover-strong"
-          >
-            <Copy size={11} />
-          </button>
+          <Tooltip label="Copy message">
+            <button
+              onClick={() => { void navigator.clipboard.writeText(msg.text) }}
+              aria-label="Copy message"
+              className="p-1 rounded-md hover:text-primary hover:bg-hover-strong"
+            >
+              <Copy size={11} />
+            </button>
+          </Tooltip>
           {msg.createdAt && (
             <span className="text-[10.5px] text-muted/70 ml-1">{formatTime(msg.createdAt)}</span>
           )}
@@ -75,13 +78,15 @@ export const MessageRow = memo(function MessageRow({
         </div>
         {!msg.streaming && showModelTag && msg.stopReason === 'stop' && !(agentRunning && isCurrentTurn) && (
           <div className="flex items-center gap-0.5 text-muted">
-            <button
-              onClick={() => { void navigator.clipboard.writeText(msg.text) }}
-              title="Copy message"
-              className="p-1 rounded-md hover:text-primary hover:bg-hover-strong"
-            >
-              <Copy size={11} />
-            </button>
+            <Tooltip label="Copy message">
+              <button
+                onClick={() => { void navigator.clipboard.writeText(msg.text) }}
+                aria-label="Copy message"
+                className="p-1 rounded-md hover:text-primary hover:bg-hover-strong"
+              >
+                <Copy size={11} />
+              </button>
+            </Tooltip>
             {(msg.model || msg.createdAt) && (
               <span className="text-[10.5px] text-muted ml-1">
                 {msg.model}
