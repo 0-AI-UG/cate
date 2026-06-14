@@ -185,6 +185,18 @@ describe('initAutoUpdater — event telemetry', () => {
     expect(h.sendEvent).toHaveBeenCalledWith('update_check_started', expect.anything())
   })
 
+  it('emits update_check_started only once per session despite the 15-min poll', async () => {
+    // The updater checks on launch and every 15 minutes thereafter. Tracking
+    // every check turns this into an uptime heartbeat that swamps real
+    // user-action events in analytics — collapse it to once per process.
+    await initAndGet()
+    h.autoUpdater.emit('checking-for-update')
+    h.autoUpdater.emit('checking-for-update')
+    h.autoUpdater.emit('checking-for-update')
+    const calls = h.sendEvent.mock.calls.filter((c) => c[0] === 'update_check_started')
+    expect(calls.length).toBe(1)
+  })
+
   it('emits update_available with the version', async () => {
     await initAndGet()
     h.autoUpdater.emit('update-available', { version: '1.2.3' })

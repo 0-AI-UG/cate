@@ -74,6 +74,13 @@ let manualPrompted = false
  *  0/25/50/75/100% milestones instead of on every progress tick. */
 let lastProgressBucket = -1
 
+/** Whether we've already tracked an `update_check_started` this session. The
+ *  updater checks on launch AND every 15 minutes, so tracking every check turns
+ *  the event into an uptime heartbeat that swamps real user-action events in
+ *  analytics. Collapse it to once per process — enough to count "sessions that
+ *  checked" without the 15-minute noise. */
+let checkStartedTracked = false
+
 /** Version of the update found this session (set on update-available), so an
  *  `error` event can tell "a known update failed to apply" (→ offer the manual
  *  download) apart from a transient check failure (→ stay silent). */
@@ -185,7 +192,10 @@ function runCheck(eligible: boolean): Promise<unknown> {
 function wireUpdaterEvents(eligible: boolean): void {
   autoUpdater.on('checking-for-update', () => {
     log.info('[auto-updater] checking for update')
-    track('update_check_started')
+    if (!checkStartedTracked) {
+      checkStartedTracked = true
+      track('update_check_started')
+    }
     pushStatus({ state: 'checking', version: availableVersion })
   })
 
