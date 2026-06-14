@@ -20,6 +20,7 @@ import {
   X,
 } from '@phosphor-icons/react'
 import { CateLogo } from '../../renderer/ui/CateLogo'
+import { Tooltip } from '../../renderer/ui/Tooltip'
 import type {
   AgentExtensionUIRequest,
   AgentImageAttachment,
@@ -537,14 +538,16 @@ export function ImageAttachButton({ onPick }: { onPick: (img: AgentImageAttachme
           if (inputRef.current) inputRef.current.value = ''
         }}
       />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
-        title="Attach image"
-      >
-        <ImageIcon size={13} />
-      </button>
+      <Tooltip label="Attach image" placement="top">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
+          aria-label="Attach image"
+        >
+          <ImageIcon size={13} />
+        </button>
+      </Tooltip>
     </>
   )
 }
@@ -755,15 +758,17 @@ export function ThinkingLevelPicker({
   const bars = THINKING_BARS[current]
   return (
     <>
-      <button
-        ref={btnRef}
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[10.5px] text-muted/70 hover:text-primary hover:bg-hover disabled:opacity-50"
-        title={`Reasoning effort: ${current}`}
-      >
-        <ThinkingBars count={bars} />
-      </button>
+      <Tooltip label={`Reasoning effort: ${current}`} placement="top">
+        <button
+          ref={btnRef}
+          disabled={disabled}
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[10.5px] text-muted/70 hover:text-primary hover:bg-hover disabled:opacity-50"
+          aria-label={`Reasoning effort: ${current}`}
+        >
+          <ThinkingBars count={bars} />
+        </button>
+      </Tooltip>
       {open && (
         <NodePopover
           popoverRef={popoverRef}

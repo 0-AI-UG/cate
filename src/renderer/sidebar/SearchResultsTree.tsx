@@ -14,6 +14,7 @@ import { useSearchStore, lineKey } from '../stores/searchStore'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
+import { Tooltip } from '../ui/Tooltip'
 
 // Uniform row height (px). Both the file-header and code-line rows are forced to
 // this height so the windowed (virtualized) list can map scrollTop <-> row index
@@ -295,16 +296,18 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
                     <span className="text-secondary text-[10px] tabular-nums rounded-full bg-surface-6 px-1.5 leading-4 group-hover:hidden">
                       {count}
                     </span>
-                    <button
-                      className="hidden group-hover:flex text-muted hover:text-primary"
-                      title="Dismiss file"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        dismissFile(file.path)
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
+                    <Tooltip label="Dismiss file">
+                      <button
+                        className="hidden group-hover:flex text-muted hover:text-primary"
+                        aria-label="Dismiss file"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          dismissFile(file.path)
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </Tooltip>
                   </span>
                 </div>
               )
@@ -342,16 +345,18 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
                   <Highlighted text={full.text} ranges={full.ranges} />
                 </span>
                 {!isContext && (
-                  <button
-                    className="ml-auto hidden group-hover:flex flex-shrink-0 text-muted hover:text-primary"
-                    title="Dismiss match"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      dismissLine(file.path, ln.line)
-                    }}
-                  >
-                    <X size={12} />
-                  </button>
+                  <Tooltip label="Dismiss match">
+                    <button
+                      className="ml-auto hidden group-hover:flex flex-shrink-0 text-muted hover:text-primary"
+                      aria-label="Dismiss match"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        dismissLine(file.path, ln.line)
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             )

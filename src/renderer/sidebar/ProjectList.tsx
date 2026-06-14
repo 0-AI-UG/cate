@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { Plus } from '@phosphor-icons/react'
+import { CaretDoubleDown, CaretDoubleUp, Plus } from '@phosphor-icons/react'
 import { useAppStore, useWorkspaceList } from '../stores/appStore'
 import { WorkspaceTab } from './WorkspaceTab'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
@@ -13,6 +13,9 @@ export const ProjectList: React.FC = () => {
   const removeWorkspace = useAppStore((s) => s.removeWorkspace)
 
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
+  // Workspace expansion lives here (not in each WorkspaceTab) so the header
+  // toggle can expand/collapse every row at once (#375).
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const lastClickedIndexRef = useRef<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -94,6 +97,22 @@ export const ProjectList: React.FC = () => {
     return true
   }, [multiSelected, handleBulkDelete])
 
+  const toggleExpanded = useCallback((wsId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(wsId)) next.delete(wsId)
+      else next.add(wsId)
+      return next
+    })
+  }, [])
+
+  const allExpanded =
+    workspaces.length > 0 && workspaces.every((w) => expandedIds.has(w.id))
+
+  const handleToggleAll = useCallback(() => {
+    setExpandedIds(allExpanded ? new Set() : new Set(workspaces.map((w) => w.id)))
+  }, [allExpanded, workspaces])
+
   const handleNewWorkspace = useCallback(() => {
     const existing = useAppStore.getState().workspaces.find((w) => !w.rootPath)
     const wsId = existing ? existing.id : addWorkspace()
@@ -119,9 +138,18 @@ export const ProjectList: React.FC = () => {
       <SidebarSectionHeader
         title="Workspace"
         actions={
-          <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
-            <Plus size={14} weight="bold" />
-          </SidebarHeaderButton>
+          <>
+            <SidebarHeaderButton
+              onClick={handleToggleAll}
+              title={allExpanded ? 'Collapse All' : 'Expand All'}
+              disabled={workspaces.length === 0}
+            >
+              {allExpanded ? <CaretDoubleUp size={14} /> : <CaretDoubleDown size={14} />}
+            </SidebarHeaderButton>
+            <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
+              <Plus size={14} weight="bold" />
+            </SidebarHeaderButton>
+          </>
         }
       />
 
@@ -177,6 +205,8 @@ export const ProjectList: React.FC = () => {
                   workspace={ws}
                   isSelected={ws.id === selectedWorkspaceId}
                   isMultiSelected={multiSelected.has(ws.id)}
+                  isExpanded={expandedIds.has(ws.id)}
+                  onToggleExpand={() => toggleExpanded(ws.id)}
                   onClick={(e) => handleWorkspaceClick(index, ws.id, e)}
                   onClose={() => removeWorkspace(ws.id, true)}
                   onBulkContextMenu={(e) => handleBulkContextMenu(e, ws.id)}

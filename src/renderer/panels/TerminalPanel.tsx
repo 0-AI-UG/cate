@@ -464,7 +464,16 @@ export default function TerminalPanel({
       // Mutating options.fontSize triggers xterm's internal renderer refresh,
       // which rebuilds the WebGL glyph atlas at the new resolution.
       entry.terminal.options.fontSize = terminalBaseFontSize * renderScale
-      terminalRegistry.fit(panelId)
+      // preserveGrid: the box and the cell grew by the same factor, so the
+      // grid must not change — but ceil/parseInt quantization flips rows by
+      // ±1 across scale steps, and each phantom SIGWINCH makes a TUI like
+      // Claude Code stack a duplicate frame into scrollback (doubled content
+      // that only a large vertical resize clears).
+      terminalRegistry.fit(panelId, { preserveGrid: true })
+      // The render box's layout size legitimately changed by the scale factor;
+      // sync the ResizeObserver's last-fit size so its debounced plain fit()
+      // doesn't run right after this and un-pin the grid.
+      lastFitSizeRef.current = { w: renderBox.clientWidth, h: renderBox.clientHeight }
 
       if (wasAtBottom) entry.terminal.scrollToBottom()
     } catch {

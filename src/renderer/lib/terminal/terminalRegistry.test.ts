@@ -76,8 +76,11 @@ vi.mock('@xterm/xterm', () => {
   return { Terminal: FakeTerminal }
 })
 
+// Mutable so individual tests can simulate FitAddon proposing a different grid
+// (e.g. the ±1 row quantization flip across render-scale steps).
+const fitProposal = { cols: 80, rows: 24 }
 vi.mock('@xterm/addon-fit', () => ({
-  FitAddon: class { proposeDimensions() { return { cols: 80, rows: 24 } } fit() {} dispose() {} },
+  FitAddon: class { proposeDimensions() { return { ...fitProposal } } fit() {} dispose() {} },
 }))
 vi.mock('@xterm/addon-webgl', () => ({
   WebglAddon: class { onContextLoss() {} dispose() {} },
@@ -121,6 +124,8 @@ const panelTransferAck = vi.fn(async (_id: string) => undefined as undefined)
 const shellRegisterTerminal = vi.fn(async () => undefined)
 
 beforeEach(() => {
+  fitProposal.cols = 80
+  fitProposal.rows = 24
   settingsState.terminalFontFamily = ''
   settingsState.terminalFontSize = 0
   settingsState.terminalScrollback = 2000
@@ -175,6 +180,38 @@ describe('terminal font settings', () => {
     expect(entry.terminal.options.fontSize).toBe(16)
 
     terminalRegistry.dispose('panel-font-custom')
+  })
+})
+
+describe('fit() preserveGrid', () => {
+  // Render-scale steps swap fontSize and counter-scale the box, so the visual
+  // size is unchanged — but cell-px rounding makes FitAddon propose ±1 row.
+  // That phantom SIGWINCH makes Ink TUIs (Claude Code) stack a duplicate frame
+  // into scrollback. preserveGrid must discard ±1 deltas and keep real ones.
+  it('discards ±1 quantization deltas but applies real grid changes', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    const entry = await terminalRegistry.getOrCreate('panel-grid', { workspaceId: 'ws-1' })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    ;(entry.terminal as unknown as { open: (c: HTMLElement) => void }).open(container)
+    expect(entry.terminal.rows).toBe(24)
+
+    // ±1 proposal with preserveGrid: pinned, no resize.
+    fitProposal.rows = 23
+    terminalRegistry.fit('panel-grid', { preserveGrid: true })
+    expect(entry.terminal.rows).toBe(24)
+
+    // Same proposal via a plain fit (a real container resize): applied.
+    terminalRegistry.fit('panel-grid')
+    expect(entry.terminal.rows).toBe(23)
+
+    // A multi-row change passes through even with preserveGrid.
+    fitProposal.rows = 30
+    terminalRegistry.fit('panel-grid', { preserveGrid: true })
+    expect(entry.terminal.rows).toBe(30)
+
+    terminalRegistry.dispose('panel-grid')
+    container.remove()
   })
 })
 

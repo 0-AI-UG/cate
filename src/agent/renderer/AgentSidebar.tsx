@@ -15,6 +15,7 @@ import {
   X,
 } from '@phosphor-icons/react'
 import type { AgentSessionListEntry } from '../../shared/types'
+import { Tooltip } from '../../renderer/ui/Tooltip'
 
 export function AgentSidebar({
   chats,
@@ -48,21 +49,25 @@ export function AgentSidebar({
   return (
     <div className="w-[200px] shrink-0 flex flex-col border-r border-subtle bg-surface-0 min-h-0">
       <div className="flex items-center gap-1 px-2 h-10 border-b border-subtle shrink-0">
-        <button
-          onClick={onCollapse}
-          className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
-          title="Collapse sidebar"
-        >
-          <SidebarIcon size={14} />
-        </button>
+        <Tooltip label="Collapse sidebar">
+          <button
+            onClick={onCollapse}
+            className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
+            aria-label="Collapse sidebar"
+          >
+            <SidebarIcon size={14} />
+          </button>
+        </Tooltip>
         <div className="flex-1" />
-        <button
-          onClick={onNewChat}
-          className="p-1.5 rounded-md text-agent-light hover:text-primary hover:bg-agent/20"
-          title="New chat"
-        >
-          <Plus size={14} />
-        </button>
+        <Tooltip label="New chat">
+          <button
+            onClick={onNewChat}
+            className="p-1.5 rounded-md text-agent-light hover:text-primary hover:bg-agent/20"
+            aria-label="New chat"
+          >
+            <Plus size={14} />
+          </button>
+        </Tooltip>
       </div>
 
       <div className="px-2 pt-2 pb-2 shrink-0">
@@ -157,21 +162,25 @@ function ChatRow({
         )}
       </button>
       {live && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onClose() }}
-          className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong opacity-0 group-hover:opacity-100"
-          title="Close chat (keep on disk)"
-        >
-          <X size={10} />
-        </button>
+        <Tooltip label="Close chat (keep on disk)">
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose() }}
+            className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong opacity-0 group-hover:opacity-100"
+            aria-label="Close chat (keep on disk)"
+          >
+            <X size={10} />
+          </button>
+        </Tooltip>
       )}
-      <button
-        onClick={(e) => { e.stopPropagation(); onDelete() }}
-        className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong opacity-0 group-hover:opacity-100"
-        title="Delete chat"
-      >
-        <Trash size={10} />
-      </button>
+      <Tooltip label="Delete chat">
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong opacity-0 group-hover:opacity-100"
+          aria-label="Delete chat"
+        >
+          <Trash size={10} />
+        </button>
+      </Tooltip>
     </div>
   )
 }

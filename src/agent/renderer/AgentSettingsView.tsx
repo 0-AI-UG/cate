@@ -15,6 +15,7 @@ import { Plus, FolderOpen, Trash } from '@phosphor-icons/react'
 import log from '../../renderer/lib/logger'
 import { errorMessage as toErrorMessage } from '../../renderer/lib/errorMessage'
 import { openFileAsPanel } from '../../renderer/lib/fs/fileRouting'
+import { Tooltip } from '../../renderer/ui/Tooltip'
 
 const TAB_BADGE: Record<'agents' | 'prompts', string> = {
   agents: 'Subagent',
@@ -280,13 +281,15 @@ function SkillRow({
         </div>
       </button>
       {hovered && deletable && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong"
-          title="Delete"
-        >
-          <Trash size={11} />
-        </button>
+        <Tooltip label="Delete">
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong"
+            aria-label="Delete"
+          >
+            <Trash size={11} />
+          </button>
+        </Tooltip>
       )}
     </div>
   )

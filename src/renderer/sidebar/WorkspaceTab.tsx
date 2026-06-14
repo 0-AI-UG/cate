@@ -20,6 +20,7 @@ import { getAgentLogo } from '../lib/agent/agentLogos'
 import { workspaceDisplayName } from '../lib/fs/displayPath'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { InlineEditInput } from './InlineEditInput'
+import { Tooltip } from '../ui/Tooltip'
 
 // -----------------------------------------------------------------------------
 // Companion status dot — surfaces a remote workspace's connection state in the
@@ -208,6 +209,9 @@ interface WorkspaceTabProps {
   workspace: WorkspaceState
   isSelected: boolean
   isMultiSelected?: boolean
+  /** Expansion is owned by ProjectList so its header can expand/collapse all. */
+  isExpanded: boolean
+  onToggleExpand: () => void
   onClick: (e?: React.MouseEvent) => void
   onClose: () => void
   onBulkContextMenu?: (e: React.MouseEvent) => Promise<boolean>
@@ -217,6 +221,8 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   workspace,
   isSelected,
   isMultiSelected = false,
+  isExpanded,
+  onToggleExpand,
   onClick,
   onClose,
   onBulkContextMenu,
@@ -280,7 +286,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return out
   }, [portsByPty])
 
-  const [isExpanded, setIsExpanded] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [isContextActive, setIsContextActive] = useState(false)
@@ -628,7 +633,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-muted hover:text-primary focus:outline-none"
           onClick={(e) => {
             e.stopPropagation()
-            if (treeCount > 0) setIsExpanded((v) => !v)
+            if (treeCount > 0) onToggleExpand()
           }}
           title={treeCount > 0 ? (isExpanded ? 'Collapse' : 'Expand') : undefined}
           disabled={treeCount === 0}
@@ -683,13 +688,15 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         )}
 
         {/* Hover actions: dots menu (rename happens via clicking the title) */}
-        <button
-          className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-80 hover:!opacity-100 text-secondary hover:text-primary transition-opacity focus:outline-none"
-          onClick={(e) => { e.stopPropagation(); handleContextMenu(e) }}
-          title="More actions"
-        >
-          <DotsThree size={14} weight="bold" />
-        </button>
+        <Tooltip label="More actions">
+          <button
+            className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-80 hover:!opacity-100 text-secondary hover:text-primary transition-opacity focus:outline-none"
+            onClick={(e) => { e.stopPropagation(); handleContextMenu(e) }}
+            aria-label="More actions"
+          >
+            <DotsThree size={14} weight="bold" />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Tree of canvases + panels (when expanded) */}

@@ -438,13 +438,17 @@ export function finalizeReconnect(panelId: string): void {
   // resize it keeps doing incremental updates against a buffer that no longer
   // matches, leaving a half-drawn frame until the user resizes the window by hand.
   //
-  // Nudge the winsize: one row short now, then the real fitted size a beat later.
-  // The two values always differ, so the kernel always delivers a SIGWINCH and
-  // the program fully redraws at the correct final size. They're spaced apart
-  // because a rapid double-resize can land the second redraw on a row the first
-  // invalidated, clipping the bottom line.
+  // Nudge the winsize: one column short now, then the real fitted size a beat
+  // later. The two values always differ, so the kernel always delivers a
+  // SIGWINCH and the program fully redraws at the correct final size. They're
+  // spaced apart because a rapid double-resize can land the second redraw on a
+  // row the first invalidated, clipping the bottom line. The nudge is on COLS,
+  // not rows: an Ink-style TUI (Claude Code) whose frame is taller than the
+  // viewport leaks a duplicate frame into scrollback on every rows change
+  // (cursor-up saturates at the viewport top, so the old frame isn't erased) —
+  // a cols-only nudge forces the same full repaint without touching that axis.
   const { cols, rows } = entry.terminal
-  electronAPI.terminalResize(ptyId, cols, Math.max(1, rows - 1))
+  electronAPI.terminalResize(ptyId, Math.max(1, cols - 1), rows)
 
   if (scrollback) {
     // Scrollback is a SerializeAddon string (serializeTerminalState): escape

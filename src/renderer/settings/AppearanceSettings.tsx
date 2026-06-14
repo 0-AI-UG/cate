@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Check, Trash, Upload, DownloadSimple, Sparkle } from '@phosphor-icons/react'
+import { Tooltip } from '../ui/Tooltip'
 import { useSettingsStore } from '../stores/settingsStore'
-import { SettingRow, Select, NumberInput, SearchableBlock, SecondaryButton } from './SettingsComponents'
+import { SettingRow, Select, NumberInput, TextInput, SearchableBlock, SecondaryButton } from './SettingsComponents'
 import type { Theme } from '../../shared/types'
 import { validateTheme } from '../../shared/theme'
 import { BASE_DARK, BASE_LIGHT, BUILT_IN_THEMES } from '../../shared/themes'
@@ -184,6 +185,14 @@ export function AppearanceSettings() {
       <SettingRow label="Editor font size">
         <NumberInput value={store.editorFontSize} onChange={(v) => store.setSetting('editorFontSize', v)} min={8} max={32} step={1} />
       </SettingRow>
+
+      <SettingRow label="Editor font family" description="Blank = default (Menlo, Monaco)">
+        <TextInput
+          value={store.editorFontFamily}
+          onChange={(v) => store.setSetting('editorFontFamily', v)}
+          placeholder="e.g., JetBrains Mono"
+        />
+      </SettingRow>
     </div>
   )
 }
@@ -249,21 +258,25 @@ function ThemeCard({
       <div className="flex items-center justify-between min-w-0">
         <span className="text-[12px] text-primary truncate">{theme.name}</span>
         <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={(e) => { e.stopPropagation(); onExport() }}
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-primary transition-opacity"
-            title="Export theme"
-          >
-            <DownloadSimple size={12} />
-          </button>
-          {onDelete ? (
+          <Tooltip label="Export theme">
             <button
-              onClick={(e) => { e.stopPropagation(); onDelete() }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-red-400 transition-opacity"
-              title="Remove theme"
+              onClick={(e) => { e.stopPropagation(); onExport() }}
+              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-primary transition-opacity"
+              aria-label="Export theme"
             >
-              <Trash size={12} />
+              <DownloadSimple size={12} />
             </button>
+          </Tooltip>
+          {onDelete ? (
+            <Tooltip label="Remove theme">
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete() }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-red-400 transition-opacity"
+                aria-label="Remove theme"
+              >
+                <Trash size={12} />
+              </button>
+            </Tooltip>
           ) : (
             <span className="text-[10px] text-muted">built-in</span>
           )}

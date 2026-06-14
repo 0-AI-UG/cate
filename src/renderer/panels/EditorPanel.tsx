@@ -4,6 +4,8 @@
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Check, Copy } from '@phosphor-icons/react'
 import { useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
@@ -33,6 +35,18 @@ import {
   isLoadFailed,
 } from '../lib/editor/modelCache'
 import { watchFsRoot } from '../lib/fs/fsWatchManager'
+import { Tooltip } from '../ui/Tooltip'
+
+// -----------------------------------------------------------------------------
+// Editor font
+// -----------------------------------------------------------------------------
+
+const EDITOR_DEFAULT_FONT_FAMILY = 'Menlo, Monaco, "Courier New", monospace'
+
+/** The editorFontFamily setting, with blank falling back to the default stack. */
+function resolveEditorFontFamily(setting: string): string {
+  return setting.trim() || EDITOR_DEFAULT_FONT_FAMILY
+}
 
 // -----------------------------------------------------------------------------
 // Monaco worker setup for Electron (Vite bundler)
@@ -409,6 +423,7 @@ export default function EditorPanel({
     applyMonacoTheme(getActiveTheme())
     monaco.editor.setTheme(CATE_MONACO_THEME)
     const fontSize = useSettingsStore.getState().editorFontSize
+    const fontFamily = resolveEditorFontFamily(useSettingsStore.getState().editorFontFamily)
 
     // =======================================================================
     // DIFF MODE — Monaco diff editor
@@ -416,7 +431,7 @@ export default function EditorPanel({
     if (diffMode && filePath && rootPath) {
       const diffEditor = monaco.editor.createDiffEditor(containerRef.current, {
         theme: CATE_MONACO_THEME,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        fontFamily,
         fontSize: fontSize || 12,
         automaticLayout: false,
         readOnly: true,
@@ -489,7 +504,7 @@ export default function EditorPanel({
     // =======================================================================
     const editor = monaco.editor.create(containerRef.current, {
       theme: CATE_MONACO_THEME,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily,
       fontSize: fontSize || 12,
       minimap: { enabled: false },
       automaticLayout: false,
@@ -684,7 +699,7 @@ export default function EditorPanel({
   }, [save, panelId])
 
   // ---------------------------------------------------------------------------
-  // Watch settings changes: editor font size
+  // Watch settings changes: editor font size / family
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
@@ -696,6 +711,14 @@ export default function EditorPanel({
         if (diffEditorRef.current) {
           diffEditorRef.current.updateOptions({ fontSize: state.editorFontSize })
         }
+      }
+      if (state.editorFontFamily !== prevState.editorFontFamily) {
+        const fontFamily = resolveEditorFontFamily(state.editorFontFamily)
+        editorRef.current?.updateOptions({ fontFamily })
+        diffEditorRef.current?.updateOptions({ fontFamily })
+        // Cached glyph metrics belong to the old font; without this, layout
+        // (cursor position, selection width) stays measured for the old face.
+        monaco.editor.remeasureFonts()
       }
     })
     return unsub
@@ -791,30 +814,39 @@ export default function EditorPanel({
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="w-full h-full relative">
+    <div className="w-full h-full flex flex-col">
+      {/* Markdown header strip — the Source/Preview toggle lives in its own
+          row instead of floating over the first line of content (#370). */}
       {isMarkdown && !diffMode && (
-        <button
-          onClick={() => setMarkdownPreview(!markdownPreview)}
-          className={`absolute top-2 right-5 z-10 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-            markdownPreview
-              ? 'bg-agent/15 text-agent hover:bg-agent/25'
-              : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
-          }`}
-          title={markdownPreview ? 'Show source' : 'Preview markdown'}
+        <div
+          className="flex items-center justify-end shrink-0 px-1.5 py-1 border-b border-subtle"
+          style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}
         >
-          {markdownPreview ? 'Source' : 'Preview'}
-        </button>
-      )}
-      {markdownPreview && isMarkdown && (
-        <MarkdownPreview content={markdownContent} />
-      )}
-      {loadError && !diffMode && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 bg-surface-1 px-6 text-center">
-          <div className="text-[13px] font-medium text-primary">Couldn’t open this file</div>
-          <div className="text-[12px] text-secondary break-all">{loadError}</div>
+          <button
+            onClick={() => setMarkdownPreview(!markdownPreview)}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              markdownPreview
+                ? 'bg-agent/15 text-agent hover:bg-agent/25'
+                : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
+            }`}
+            title={markdownPreview ? 'Show source' : 'Preview markdown'}
+          >
+            {markdownPreview ? 'Source' : 'Preview'}
+          </button>
         </div>
       )}
-      <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
+      <div className="flex-1 min-h-0 relative">
+        {markdownPreview && isMarkdown && (
+          <MarkdownPreview content={markdownContent} />
+        )}
+        {loadError && !diffMode && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 bg-surface-1 px-6 text-center">
+            <div className="text-[13px] font-medium text-primary">Couldn’t open this file</div>
+            <div className="text-[12px] text-secondary break-all">{loadError}</div>
+          </div>
+        )}
+        <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
+      </div>
     </div>
   )
 }
@@ -822,6 +854,38 @@ export default function EditorPanel({
 // -----------------------------------------------------------------------------
 // Markdown preview renderer
 // -----------------------------------------------------------------------------
+
+/** Fenced code block with a hover copy button, matching the agent chat's
+ *  "Copy code" affordance (#373). */
+function MarkdownCodeBlock({ children }: { children: ReactNode }) {
+  const preRef = useRef<HTMLPreElement>(null)
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="relative group my-3">
+      <pre
+        ref={preRef}
+        className="rounded-md bg-surface-3 border border-subtle px-4 py-3 overflow-x-auto text-[12px] leading-snug"
+      >
+        {children}
+      </pre>
+      <Tooltip label="Copy code">
+        <button
+          onClick={() => {
+            void navigator.clipboard.writeText(preRef.current?.textContent ?? '')
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 1200)
+          }}
+          aria-label="Copy code"
+          className={`absolute top-1.5 right-1.5 p-1 rounded-md bg-surface-3 text-muted transition-opacity hover:text-primary hover:bg-hover-strong ${
+            copied ? 'opacity-100 text-primary' : 'opacity-0 group-hover:opacity-100'
+          }`}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+      </Tooltip>
+    </div>
+  )
+}
 
 function MarkdownPreview({ content }: { content: string }) {
   return (
@@ -867,11 +931,7 @@ function MarkdownPreview({ content }: { content: string }) {
                 </code>
               )
             },
-            pre: ({ children }) => (
-              <pre className="rounded-md bg-surface-3 border border-subtle px-4 py-3 overflow-x-auto text-[12px] leading-snug my-3">
-                {children}
-              </pre>
-            ),
+            pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
             table: ({ children }) => (
               <div className="overflow-x-auto my-3">
                 <table className="min-w-full text-[12px] border border-subtle rounded-md">{children}</table>
