@@ -145,8 +145,8 @@ if (!app.isPackaged) {
 
 // First-start simulation (`npm run dev:firststart`). Point userData at a
 // dedicated dir that's wiped on every launch, so the app boots exactly like a
-// brand-new install: telemetry-consent prompt + onboarding tour, empty session,
-// no recent projects or saved window geometry. Dev-only; never in a packaged app.
+// brand-new install: telemetry notice + onboarding tour, empty session, no
+// recent projects or saved window geometry. Dev-only; never in a packaged app.
 if (!app.isPackaged && process.env.CATE_FRESH_USERDATA === '1') {
   const fs = require('fs') as typeof import('fs')
   const dir = path.join(app.getPath('userData'), 'FirstStart')
@@ -159,9 +159,12 @@ if (!app.isPackaged && process.env.CATE_FRESH_USERDATA === '1') {
 // Dev-only: simulate launching right after an update at a given level
 // (major / minor / patch). Uses its own wiped userData dir, then seeds the
 // analytics state so `checkAndReportUpdate` sees a version bump from a synthetic
-// previous version. The grandfather block below then treats it as an existing
-// (already-onboarded, already-consented) user, so only the post-update feedback
-// dialog can appear — major/minor show it, patch shows nothing. See dev:update:*.
+// previous version. The grandfather block below marks it as an existing
+// (already-onboarded) user, so the onboarding tour stays hidden — but the
+// telemetry notice still appears, because the simulated profile hasn't
+// acknowledged the current TELEMETRY_NOTICE_VERSION (exactly like a real user
+// updating into this release). On major/minor bumps the post-update feedback
+// dialog appears alongside it; a patch bump shows the notice only. See dev:update:*.
 if (!app.isPackaged && (process.env.CATE_SIMULATE_UPDATE === 'major' || process.env.CATE_SIMULATE_UPDATE === 'minor' || process.env.CATE_SIMULATE_UPDATE === 'patch')) {
   const level = process.env.CATE_SIMULATE_UPDATE
   const fs = require('fs') as typeof import('fs')
