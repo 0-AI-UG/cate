@@ -27,7 +27,7 @@ vi.mock('./logger', () => ({
   default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} },
 }))
 
-const { decideUpdateAction, sanitizeFeedbackPayload, sanitizeUsageProps } = await import('./analytics')
+const { decideUpdateAction, decideCensusAction, sanitizeFeedbackPayload, sanitizeUsageProps } = await import('./analytics')
 
 describe('sanitizeUsageProps', () => {
   test('keeps small primitives and drops everything else', () => {
@@ -158,6 +158,38 @@ describe('decideUpdateAction', () => {
     const action = decideUpdateAction('1.1.0', state)
     if (action.kind !== 'version_changed') throw new Error('expected version_changed')
     expect((action.nextState as Record<string, unknown>).futureField).toBe('preserve me')
+  })
+})
+
+describe('decideCensusAction', () => {
+  test('previously-silent install (lastSeenVersion set, no prior install-id): backfills once', () => {
+    const action = decideCensusAction({ lastSeenVersion: '1.0.0' }, false)
+    expect(action.kind).toBe('backfill')
+    if (action.kind !== 'backfill') return
+    expect(action.fromVersion).toBe('1.0.0')
+    expect(action.nextState).toEqual({ lastSeenVersion: '1.0.0', censusSent: true })
+  })
+
+  test('genuinely-new install (no lastSeenVersion): no backfill — app_install covers it', () => {
+    expect(decideCensusAction({}, false).kind).toBe('none')
+  })
+
+  test('install that already sent telemetry (install-id pre-existed): no backfill', () => {
+    expect(decideCensusAction({ lastSeenVersion: '1.0.0' }, true).kind).toBe('none')
+  })
+
+  test('census already sent: never re-fires, even if other conditions hold', () => {
+    expect(decideCensusAction({ lastSeenVersion: '1.0.0', censusSent: true }, false).kind).toBe('none')
+  })
+
+  test('preserves unrelated state fields when marking censusSent', () => {
+    const action = decideCensusAction(
+      { lastSeenVersion: '1.0.0', pendingFeedbackForVersion: '1.0.0' },
+      false,
+    )
+    if (action.kind !== 'backfill') throw new Error('expected backfill')
+    expect(action.nextState.pendingFeedbackForVersion).toBe('1.0.0')
+    expect(action.nextState.censusSent).toBe(true)
   })
 })
 
