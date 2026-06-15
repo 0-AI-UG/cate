@@ -76,13 +76,10 @@ export const CateAgentInputBar: React.FC<{
         onClick={send}
         disabled={!text.trim()}
         aria-label="Send"
-        style={{
-          WebkitTapHighlightColor: 'transparent',
-          boxShadow: '0 0 0 2px color-mix(in srgb, var(--surface-5) 60%, transparent)',
-        }}
-        className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100 disabled:opacity-30"
+        style={{ WebkitTapHighlightColor: 'transparent' }}
+        className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100 disabled:opacity-30"
       >
-        <ArrowUp size={16} weight="bold" />
+        <ArrowUp size={15} weight="bold" />
       </button>
     </div>
   )
