@@ -24,23 +24,25 @@ import {
   Terminal as TerminalIcon,
   CircleNotch,
 } from '@phosphor-icons/react'
-import { useAppStore } from '../stores/appStore'
 import { useTodosStore } from '../stores/todosStore'
 import { useCateAgentWs } from './cateAgentStore'
 import { cateAgentController } from './cateAgentController'
 import { mergeTodo, openPrTodo, discardTodo } from './cateAgentReviewActions'
 import { revealPanel } from '../lib/workspace/panelReveal'
-import type { Todo, WorktreeMeta } from '../../shared/types'
+import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
+import type { Todo } from '../../shared/types'
 
 // Actionable statuses shown as job cards, in display order. done/discarded are
 // history and omitted from this transient surface.
 const JOB_STATUSES: Todo['status'][] = ['in_progress', 'review', 'suggested', 'pending', 'failed']
 
+const wtTitle = (wt: JoinedWorktree): string => wt.label || wt.branch || wt.path.split(/[/\\]/).pop() || 'worktree'
+
 export const CateAgentFeedback: React.FC<{ workspaceId: string; rootPath: string }> = ({ workspaceId, rootPath }) => {
   const wsId = workspaceId
   const cateAgent = useCateAgentWs(wsId)
   const todos = useTodosStore((s) => s.todosByRoot[rootPath])
-  const worktrees = useAppStore((s) => s.workspaces.find((w) => w.id === wsId)?.worktrees) ?? []
+  const worktrees = useWorktrees(rootPath, wsId)
 
   const jobs = (todos ?? [])
     .filter((t) => JOB_STATUSES.includes(t.status))
@@ -70,7 +72,7 @@ const StatusGlyph: React.FC<{ status: Todo['status'] }> = ({ status }) => {
   }
 }
 
-const JobCard: React.FC<{ job: Todo; wsId: string; rootPath: string; worktrees: WorktreeMeta[] }> = ({
+const JobCard: React.FC<{ job: Todo; wsId: string; rootPath: string; worktrees: JoinedWorktree[] }> = ({
   job,
   wsId,
   rootPath,
@@ -82,6 +84,7 @@ const JobCard: React.FC<{ job: Todo; wsId: string; rootPath: string; worktrees: 
   const [draft, setDraft] = React.useState(job.title)
 
   const worktree = job.worktreeId ? worktrees.find((w) => w.id === job.worktreeId) : undefined
+  const wtColor = worktree?.color ?? 'var(--surface-5)'
   const terminals = job.terminalNodeIds ?? []
   const title = job.topic || job.title
   const running = job.status === 'in_progress'
@@ -117,12 +120,15 @@ const JobCard: React.FC<{ job: Todo; wsId: string; rootPath: string; worktrees: 
         </div>
         {worktree && (
           <span
-            className="flex-shrink-0 mt-[1px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-mono text-secondary"
-            style={{ backgroundColor: `${worktree.color}22`, border: `1px solid ${worktree.color}66` }}
-            title={job.branch}
+            className="flex-shrink-0 mt-[1px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-mono text-secondary max-w-[160px]"
+            style={{
+              backgroundColor: `color-mix(in srgb, ${wtColor} 18%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${wtColor} 45%, transparent)`,
+            }}
+            title={worktree.branch || worktree.path}
           >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: worktree.color }} />
-            {worktree.label || job.branch || 'worktree'}
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: wtColor }} />
+            <span className="truncate">{wtTitle(worktree)}</span>
           </span>
         )}
       </div>
