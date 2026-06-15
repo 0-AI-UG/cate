@@ -504,11 +504,12 @@ export default function EditorPanel({
         retainModel(filePath)
         modelRetained = true
         editor.setModel(cached)
-        // Best-effort baseline from the warm model (assumed to mirror disk). If
-        // the file changed on disk while this panel was closed, the save guard
-        // catches the divergence on the next save.
-        sync.noteLoaded(cached.getValue())
         applyPendingReveal()
+        // The warm model may be stale: nothing kept it current while this panel
+        // was closed. Reconcile with disk — a clean buffer silently catches up, a
+        // buffer with unsaved edits raises a conflict instead of being clobbered.
+        // (resyncFromDisk recovers the real disk baseline from the model cache.)
+        void sync.resyncFromDisk()
       } else {
         const language = detectLanguage(filePath)
         const targetPath = filePath

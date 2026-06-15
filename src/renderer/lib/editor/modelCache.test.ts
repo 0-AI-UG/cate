@@ -10,6 +10,8 @@ import {
   markLoadFailed,
   clearLoadFailed,
   isLoadFailed,
+  rememberBaseline,
+  getBaseline,
   __resetModelCacheForTest,
   type ModelLike,
 } from './modelCache'
@@ -169,6 +171,38 @@ describe('modelCache — resolveLoadedModel (duplicate-URI race)', () => {
     const fresh = makeModel()
     const m = resolveLoadedModel(() => stale, () => fresh)
     expect(m).toBe(fresh)
+  })
+})
+
+describe('modelCache — disk baseline', () => {
+  it('remembers and returns the disk baseline for a path', () => {
+    expect(getBaseline('/a.ts')).toBeUndefined()
+    rememberBaseline('/a.ts', 'on disk')
+    expect(getBaseline('/a.ts')).toBe('on disk')
+  })
+
+  it('keeps baselines independent per path and overwrites in place', () => {
+    rememberBaseline('/a.ts', 'A')
+    rememberBaseline('/b.ts', 'B')
+    rememberBaseline('/a.ts', 'A2')
+    expect(getBaseline('/a.ts')).toBe('A2')
+    expect(getBaseline('/b.ts')).toBe('B')
+  })
+
+  it('drops the baseline when its model is evicted from the cache', () => {
+    const m = makeModel()
+    rememberModel('/keep.ts', m)
+    rememberBaseline('/keep.ts', 'disk')
+    // Overflow the cache so /keep.ts (unretained, oldest) is evicted.
+    for (let i = 0; i <= MODEL_CACHE_LIMIT; i++) rememberModel(`/f${i}.ts`, makeModel())
+    expect(getCachedModel('/keep.ts')).toBeUndefined()
+    expect(getBaseline('/keep.ts')).toBeUndefined()
+  })
+
+  it('is cleared by the test reset helper', () => {
+    rememberBaseline('/a.ts', 'x')
+    __resetModelCacheForTest()
+    expect(getBaseline('/a.ts')).toBeUndefined()
   })
 })
 

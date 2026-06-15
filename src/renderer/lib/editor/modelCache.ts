@@ -20,6 +20,11 @@ export const MODEL_CACHE_LIMIT = 20
 const modelCache = new Map<string, ModelLike>()
 // Counts how many mounted EditorPanel instances are actively using a cached model.
 const modelRefCount = new Map<string, number>()
+// Disk content each cached model was last synced with (its sync baseline). Kept
+// alongside the model so that when a panel reopens and reattaches a warm model,
+// useFileSync can tell unsaved edits (buffer ≠ baseline) apart from a stale-but-
+// clean buffer — and reconcile with disk without clobbering unsaved work.
+const modelBaseline = new Map<string, string>()
 // File paths whose buffer failed to load (read error) or hasn't successfully
 // loaded yet. save() consults this to refuse writing an empty/placeholder buffer
 // back over the real file.
@@ -58,6 +63,7 @@ export function rememberModel(filePath: string, model: ModelLike): void {
     if ((modelRefCount.get(key) ?? 0) > 0) continue
     const model = modelCache.get(key)
     modelCache.delete(key)
+    modelBaseline.delete(key)
     if (model && !model.isDisposed()) {
       try { model.dispose() } catch { /* noop */ }
     }
@@ -83,6 +89,19 @@ export function releaseModel(filePath: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Disk baseline — the on-disk content a cached model was last synced with. Set
+// on load and after every save; recovered on reopen to classify dirty vs stale.
+// ---------------------------------------------------------------------------
+
+export function rememberBaseline(filePath: string, content: string): void {
+  modelBaseline.set(filePath, content)
+}
+
+export function getBaseline(filePath: string): string | undefined {
+  return modelBaseline.get(filePath)
+}
+
+// ---------------------------------------------------------------------------
 // Load-state guard — a buffer that failed to read (or never loaded) must never
 // be written back to disk, or Cmd+S from the empty error buffer would truncate
 // the file.
@@ -104,5 +123,6 @@ export function isLoadFailed(filePath: string): boolean {
 export function __resetModelCacheForTest(): void {
   modelCache.clear()
   modelRefCount.clear()
+  modelBaseline.clear()
   loadFailedPaths.clear()
 }

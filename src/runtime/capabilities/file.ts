@@ -64,22 +64,47 @@ export async function mkdirEntry(safePath: string): Promise<void> {
 /**
  * Build a chokidar `ignored` predicate for a watcher rooted at `rootPath`.
  * chokidar v4 dropped glob support, so this must be a function, not glob
- * strings. A path is ignored when any segment BELOW the watch root is hidden
- * (leading dot) or is in `excluded` — matching readDir/searchFiles, which drop
- * any entry whose basename is in the set. Only the part below the root is
- * judged so a dotted or excluded segment in the root's own absolute path
- * (e.g. a workspace under ~/.config) doesn't silence the whole tree. Returning
- * true for a directory stops chokidar from descending into it, which keeps a
- * recursive watch cheap even with huge excluded trees. Shared by the local
- * watcher pool (main/ipc/filesystem.ts) and the daemon's watch capability.
+ * strings. Only the part BELOW the watch root is judged so a dotted or excluded
+ * segment in the root's own absolute path (e.g. a workspace under ~/.config)
+ * doesn't silence the whole tree.
+ *
+ * A path is ignored when, below the root: any segment is in `excluded`, OR any
+ * ANCESTOR directory is hidden (leading dot), OR the leaf itself is a hidden
+ * DIRECTORY. Hidden *files* (`.gitignore`, `.env`, `.prettierrc`) are NOT
+ * ignored — a file the user explicitly opens in an editor must still receive
+ * live change events through this one shared watcher (the editor and the file
+ * tree share it). Pruning hidden directories keeps `.git`, `.cache` and our own
+ * `.cate` state dir out of the watch, so a recursive watch stays cheap and the
+ * app's own session writes don't echo back as external changes.
+ *
+ * The file-vs-directory call uses chokidar v4's `stats` argument (it invokes
+ * `ignored(path, stats)`). chokidar asks once before stat-ing (stats absent) and
+ * again with stats; when stats are absent we DON'T ignore the leaf, so chokidar
+ * proceeds to stat it and re-asks — a hidden directory is still pruned on that
+ * second call. Returning true for a directory stops chokidar descending into it.
+ * Shared by the local watcher pool (main/ipc/filesystem.ts) and the daemon's
+ * watch capability (runtime/capabilities/index.ts).
  */
-export function createFsIgnoreMatcher(rootPath: string, excluded: ReadonlySet<string>): (filePath: string) => boolean {
-  return (filePath: string) => {
+export function createFsIgnoreMatcher(
+  rootPath: string,
+  excluded: ReadonlySet<string>,
+): (filePath: string, stats?: { isDirectory(): boolean }) => boolean {
+  return (filePath: string, stats?: { isDirectory(): boolean }) => {
     if (filePath.length <= rootPath.length || !filePath.startsWith(rootPath)) return false
     const sep = filePath.charCodeAt(rootPath.length)
     if (sep !== 47 /* '/' */ && sep !== 92 /* '\\' */) return false
-    for (const segment of filePath.slice(rootPath.length + 1).split(/[/\\]/)) {
-      if (segment.charCodeAt(0) === 46 /* '.' */ || excluded.has(segment)) return true
+    const segments = filePath.slice(rootPath.length + 1).split(/[/\\]/)
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]
+      if (excluded.has(segment)) return true
+      if (segment.charCodeAt(0) === 46 /* '.' */) {
+        // An ancestor dotted segment is necessarily a directory → prune it.
+        if (i < segments.length - 1) return true
+        // The leaf: prune only if it's a directory (.git, .cache, .cate). A
+        // hidden file stays watched. Stats absent → defer (don't ignore);
+        // chokidar re-asks with stats and we prune the directory then.
+        if (stats?.isDirectory()) return true
+      }
     }
     return false
   }
