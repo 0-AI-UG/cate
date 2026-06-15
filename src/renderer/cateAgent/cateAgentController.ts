@@ -36,6 +36,7 @@ import {
 import { loadCateAgentExecutorAgentCommand } from '../../agent/renderer/agentModelPrefs'
 import { useCateAgentStore } from './cateAgentStore'
 import { useTodosStore } from '../stores/todosStore'
+import { generateId } from '../stores/canvas/helpers'
 import { workspaceIdForTerminal } from '../stores/statusStore'
 import { gitStatusStore } from '../stores/gitStatusStore'
 import log from '../lib/logger'
@@ -258,26 +259,30 @@ class CateAgentController implements CateAgentBridgeHost {
     void this.observe(wsId, r)
   }
 
-  /** Handle a free-form user prompt typed into the toolbar input bar. Summons the
-   *  Cate Agent if needed, echoes the user's message into the feed, then prompts
-   *  the always-on observer session with the request + current workspace context.
-   *  The observer can `remark` (→ feed) and `propose_todo` (→ suggested todos the
-   *  user approves in the feedback panel). */
+  /** Handle a free-form user prompt typed into the toolbar input bar. The chat
+   *  drives the EXECUTOR directly: the request becomes a todo that runs
+   *  immediately (no approval gate), spinning up the orchestrator just like an
+   *  approved todo would. The autonomous observer is unaffected — it keeps
+   *  observing and proposing suggestions on its own loop. */
   async prompt(wsId: string, rootPath: string, text: string): Promise<void> {
     const trimmed = text.trim()
     if (!trimmed) return
     this.start()
     useCateAgentStore.getState().appendFeed(wsId, 'user', trimmed)
-    const enabled = useCateAgentStore.getState().get(wsId).enabled
-    if (!enabled) await this.summon(wsId, rootPath)
-    const r = this.ws.get(wsId)
-    if (!r?.observerPanelId) {
-      useCateAgentStore.getState().appendFeed(wsId, 'error', 'Cate Agent could not start (check provider sign-in).')
-      return
+    await useTodosStore.getState().loadTodos(rootPath)
+    const now = Date.now()
+    const todo: Todo = {
+      id: generateId(),
+      title: trimmed,
+      origin: 'user',
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
     }
-    const context = await buildObserveContext(wsId, r.rootPath)
-    const ask = `The user asked: "${trimmed}". Respond with a short remark, and propose_todo for any concrete work you would take on (the user approves todos before anything runs).`
-    void promptCateAgent(r.observerPanelId, `${ask}\n\n${context}`)
+    useTodosStore.getState().upsertTodo(rootPath, todo)
+    // runTodo summons the Cate Agent if it isn't enabled yet, then starts (or
+    // queues) the executor for this todo.
+    await this.runTodo(wsId, rootPath, todo.id)
   }
 
   /** Take one observe turn: snapshot the workspace and prompt the observer with

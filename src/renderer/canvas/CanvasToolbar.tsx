@@ -283,9 +283,13 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
               onClick={toggleAgentInput}
             />
             {/* Content zone: the tools always render and define the toolbar's
-                width; the input bar fades in over them when open, so toggling
-                never changes the toolbar's width. */}
-            <div className="relative flex items-center gap-0.5 ml-1.5">
+                base width; the input bar fades in over them when open. Opening
+                grows the zone slightly (animated padding) so the input is a bit
+                wider than the toolbar, then collapses back on close. */}
+            <div
+              className="relative flex items-center gap-0.5 ml-1.5 transition-[padding] duration-200 ease-out"
+              style={{ paddingRight: inputOpen ? 96 : 0 }}
+            >
               <div
                 className={`flex items-center gap-0.5 transition-opacity duration-150 ${
                   inputOpen ? 'pointer-events-none opacity-0' : 'opacity-100'
