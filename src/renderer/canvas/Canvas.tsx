@@ -17,6 +17,7 @@ import CanvasBackgroundImage from './CanvasBackgroundImage'
 import SnapGuides from './SnapGuides'
 import GhostPlacementLayer from './GhostPlacementLayer'
 import { WorktreeTerritoryLayer } from './worktree'
+import { PetWorldAvatar } from '../pet/PetAvatar'
 import type { Point, PanelType } from '../../shared/types'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
@@ -624,6 +625,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         )}
         {children}
         <GhostPlacementLayer />
+        <PetWorldAvatar />
       </div>
 
       <PlacementHint canvasRef={canvasRef} />

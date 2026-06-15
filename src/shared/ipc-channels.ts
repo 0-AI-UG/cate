@@ -118,6 +118,14 @@ export const WORKSPACE_EXTERNAL_EDIT = 'project:externalEdit' // main -> rendere
 // the current in-app layout overwrites the external edit.
 export const WORKSPACE_EXTERNAL_EDIT_DISMISS = 'project:externalEditDismiss' // renderer -> main
 
+// Per-workspace todo list (.cate/todos.json) — the Canvas Pet's shared task store.
+export const PROJECT_TODOS_LOAD = 'project:todosLoad' // renderer -> main
+export const PROJECT_TODOS_SAVE = 'project:todosSave' // renderer -> main
+
+// Per-workspace Canvas Pet enablement (.cate/pet.json).
+export const PROJECT_PET_LOAD = 'project:petLoad' // renderer -> main
+export const PROJECT_PET_SAVE = 'project:petSave' // renderer -> main
+
 // Boot snapshot — a tiny JSON file (geometry, theme, last workspace id, native
 // tabs flag) written by the renderer whenever the relevant settings change.
 // Read synchronously at launch by the main process to construct the
@@ -377,6 +385,7 @@ export const COMPANION_INSTALL = 'companion:install'       // renderer -> main (
 export const COMPANION_DELETE = 'companion:delete'         // renderer -> main (rm -rf the host install, keep saved auth)
 export const COMPANION_STATUS = 'companion:status'         // main -> renderer (broadcast)
 export const COMPANION_LOCAL_STATUS = 'companion:local-status' // renderer -> main (current LOCAL phase, seeds the loading blocker)
+export const COMPANION_RETRY_LOCAL = 'companion:retry-local' // renderer -> main (relaunch the built-in LOCAL daemon after a failed connect)
 export const COMPANION_PICK_SSH_KEY = 'companion:pick-ssh-key' // renderer -> main (native file picker for an SSH private key)
 
 
