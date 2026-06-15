@@ -14,6 +14,7 @@ import React from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ArrowsSplit } from '@phosphor-icons/react'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
+import { Tooltip } from '../ui/Tooltip'
 
 export type WorktreeTarget = 'new' | 'root' | string
 const ACCENT = 'rgb(var(--agent-rgb))'
@@ -31,7 +32,6 @@ export const CateAgentWorktreeSelect: React.FC<{
   const others = worktrees.filter((w) => !w.isPrimary)
 
   const [open, setOpen] = React.useState(false)
-  const [hovered, setHovered] = React.useState(false)
   const btnRef = React.useRef<HTMLButtonElement>(null)
   const menuRef = React.useRef<HTMLDivElement>(null)
   const [pos, setPos] = React.useState<{ left: number; bottom: number } | null>(null)
@@ -45,7 +45,6 @@ export const CateAgentWorktreeSelect: React.FC<{
         : 'No worktree'
       : 'New worktree'
   const color = selectedWt?.color ?? (value === 'root' ? primary?.color ?? MUTED : ACCENT)
-  const expanded = hovered || open
 
   React.useEffect(() => {
     if (!open) return
@@ -69,39 +68,24 @@ export const CateAgentWorktreeSelect: React.FC<{
 
   return (
     <>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={toggle}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        aria-label={`Run in worktree: ${title}`}
-        style={{
-          WebkitTapHighlightColor: 'transparent',
-          backgroundColor: `color-mix(in srgb, ${color} 20%, transparent)`,
-          border: `1px solid color-mix(in srgb, ${color} 45%, transparent)`,
-          // Collapsed: a fixed 28px circle (just the icon). Expanded: auto width
-          // with padding + the name. Height stays constant so it never shifts.
-          height: 28,
-          width: expanded ? undefined : 28,
-          gap: expanded ? 6 : 0,
-          padding: expanded ? '0 10px 0 8px' : 0,
-          transition: 'gap 150ms ease, padding 150ms ease',
-        }}
-        className="flex-shrink-0 inline-flex items-center justify-center rounded-full text-xs text-secondary overflow-hidden"
-      >
-        <ArrowsSplit size={13} weight="bold" style={{ color, flexShrink: 0 }} />
-        <span
-          className="truncate"
+      {/* Fixed 28px circle in the worktree color; the name shows as a tooltip on
+          hover (no inline expand — that reflows the input row and flickers). */}
+      <Tooltip label={title} placement="top">
+        <button
+          ref={btnRef}
+          type="button"
+          onClick={toggle}
+          aria-label={`Run in worktree: ${title}`}
           style={{
-            maxWidth: expanded ? 150 : 0,
-            opacity: expanded ? 1 : 0,
-            transition: 'max-width 150ms ease, opacity 150ms ease',
+            WebkitTapHighlightColor: 'transparent',
+            backgroundColor: `color-mix(in srgb, ${color} 20%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${color} 45%, transparent)`,
           }}
+          className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full"
         >
-          {title}
-        </span>
-      </button>
+          <ArrowsSplit size={13} weight="bold" style={{ color }} />
+        </button>
+      </Tooltip>
       {open &&
         pos &&
         createPortal(
