@@ -27,7 +27,6 @@ export const CateAgentWorktreeSelect: React.FC<{
 }> = ({ workspaceId, value, onChange }) => {
   const worktrees = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.worktrees) ?? []
   const [open, setOpen] = React.useState(false)
-  const [hovered, setHovered] = React.useState(false)
   const btnRef = React.useRef<HTMLButtonElement>(null)
   const menuRef = React.useRef<HTMLDivElement>(null)
   const [pos, setPos] = React.useState<{ left: number; bottom: number } | null>(null)
@@ -59,49 +58,22 @@ export const CateAgentWorktreeSelect: React.FC<{
 
   return (
     <>
-      {/* Filled chip in the worktree color, matching the terminal WorktreePill:
-          just the icon, expanding on hover to reveal the name. */}
+      {/* Worktree pill — same size/position as before, with the worktree-fork
+          icon and title, tinted in the worktree color. */}
       <button
         ref={btnRef}
         type="button"
         onClick={toggle}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
         aria-label={`Run in worktree: ${title}`}
         style={{
           WebkitTapHighlightColor: 'transparent',
-          display: 'inline-flex',
-          alignItems: 'center',
-          flexShrink: 0,
-          gap: hovered ? 4 : 0,
-          height: 18,
-          maxWidth: 200,
-          padding: hovered ? '0 9px 0 7px' : '0 4px',
-          borderRadius: 9,
-          backgroundColor: `color-mix(in srgb, ${dot} 92%, black)`,
-          color: '#fff',
-          fontSize: 10,
-          fontWeight: 600,
-          lineHeight: 1,
-          letterSpacing: 0.2,
-          textShadow: '0 1px 1px rgba(0,0,0,0.3)',
-          transition: 'gap 150ms ease, padding 150ms ease, filter 150ms ease',
-          filter: open ? 'brightness(1.12)' : undefined,
+          backgroundColor: `color-mix(in srgb, ${dot} 20%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${dot} 45%, transparent)`,
         }}
+        className="flex-shrink-0 inline-flex items-center gap-1.5 max-w-[160px] rounded-full px-2 py-1 text-xs text-secondary"
       >
-        <ArrowsSplit size={11} weight="bold" style={{ flexShrink: 0 }} />
-        <span
-          style={{
-            maxWidth: hovered ? 160 : 0,
-            opacity: hovered ? 1 : 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            transition: 'max-width 150ms ease, opacity 150ms ease',
-          }}
-        >
-          {title}
-        </span>
+        <ArrowsSplit size={12} weight="bold" className="flex-shrink-0" style={{ color: dot }} />
+        <span className="truncate">{title}</span>
       </button>
       {open &&
         pos &&
