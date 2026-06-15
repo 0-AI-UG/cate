@@ -1,6 +1,6 @@
 // =============================================================================
 // Tests for isWorkspaceMonitorReady — gates GIT_MONITOR_START so a remote
-// workspace only arms its git monitor once its companion is connected.
+// workspace only arms its git monitor once its runtime is connected.
 // =============================================================================
 
 import { describe, expect, it } from 'vitest'
@@ -37,32 +37,32 @@ describe('isWorkspaceMonitorReady', () => {
 
   it('is false for a remote workspace that is still connecting', () => {
     const w = ws({
-      rootPath: 'cate-companion://abc/repo',
-      connection: { kind: 'wsl', companionId: 'abc', distro: 'Ubuntu', distroPath: '/repo' },
-      companion: { phase: 'connecting' },
+      rootPath: 'cate-runtime://abc/repo',
+      connection: { kind: 'wsl', runtimeId: 'abc', distro: 'Ubuntu', distroPath: '/repo' },
+      runtime: { phase: 'connecting' },
     })
     expect(isWorkspaceMonitorReady(w)).toBe(false)
   })
 
   it('is false for a remote workspace with no status yet', () => {
     const w = ws({
-      rootPath: 'cate-companion://abc/repo',
-      connection: { kind: 'wsl', companionId: 'abc', distro: 'Ubuntu', distroPath: '/repo' },
+      rootPath: 'cate-runtime://abc/repo',
+      connection: { kind: 'wsl', runtimeId: 'abc', distro: 'Ubuntu', distroPath: '/repo' },
     })
     expect(isWorkspaceMonitorReady(w)).toBe(false)
   })
 
-  it('is true once the remote companion is connected', () => {
+  it('is true once the remote runtime is connected', () => {
     const w = ws({
-      rootPath: 'cate-companion://abc/repo',
+      rootPath: 'cate-runtime://abc/repo',
       connection: {
         kind: 'server',
-        companionId: 'abc',
+        runtimeId: 'abc',
         host: 'h',
         user: 'u',
         remotePath: '/repo',
       },
-      companion: { phase: 'connected' },
+      runtime: { phase: 'connected' },
     })
     expect(isWorkspaceMonitorReady(w)).toBe(true)
   })

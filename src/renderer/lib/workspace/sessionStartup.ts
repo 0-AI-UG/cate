@@ -72,12 +72,12 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
     if (i === selectedIdx) {
       const isRemote = !!snapshot.connection && snapshot.connection.kind !== 'local'
       if (isRemote) {
-        // Remote workspace: do NOT block app startup on the companion connect.
+        // Remote workspace: do NOT block app startup on the runtime connect.
         // selectWorkspace sets the selection + 'connecting' phase synchronously
         // (before its first await), so the sidebar shows this workspace
         // immediately. Defer the snapshot so selectWorkspace's deferred-restore
-        // branch replays it AFTER the companion is live (terminals/fs reads can't
-        // race an unregistered companion) — the same path non-selected workspaces
+        // branch replays it AFTER the runtime is live (terminals/fs reads can't
+        // race an unregistered runtime) — the same path non-selected workspaces
         // use, and it keeps the runtime hydrate-on-open hook from double-restoring.
         deferredSnapshots.set(wsId, snapshot)
         void appStore

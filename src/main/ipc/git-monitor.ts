@@ -10,9 +10,9 @@ import {
   GIT_MONITOR_STOP,
 } from '../../shared/ipc-channels'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
-import { parseLocator } from '../companion/locator'
-import { companions } from '../companion/companionManager'
-import type { Companion } from '../companion/types'
+import { parseLocator } from '../runtime/locator'
+import { runtimes } from '../runtime/runtimeManager'
+import type { Runtime } from '../runtime/types'
 
 // Adaptive polling: start fast right after a detected change, back off
 // exponentially while nothing changes, cap at 30s. Reset to MIN on any
@@ -25,8 +25,8 @@ interface MonitorEntry {
   ownerWindowId: number
   rootPath: string
   workspaceId: string
-  /** Companion hosting this workspace (local or remote); polled for status. */
-  companion: Companion
+  /** Runtime hosting this workspace (local or remote); polled for status. */
+  runtime: Runtime
   /** Next delay to schedule after the current poll completes (ms). */
   nextDelayMs: number
   /** Incremented on every poll start; a poll whose epoch is stale (a newer
@@ -34,7 +34,7 @@ interface MonitorEntry {
    *  replaces the old execFile AbortController, which only abort()-ed local
    *  child processes that no longer exist on this path. */
   pollEpoch: number
-  /** Unsubscribe fn from the companion file watcher, if wired. */
+  /** Unsubscribe fn from the runtime file watcher, if wired. */
   unsubscribeFs: (() => void) | null
   /** Coalesce fs-watcher bursts into at most one immediate poll. */
   fsKickPending: boolean
@@ -83,22 +83,22 @@ async function tick(entry: MonitorEntry): Promise<void> {
 }
 
 /**
- * Run one git poll via the workspace's companion. For the local companion this
+ * Run one git poll via the workspace's runtime. For the local runtime this
  * is byte-identical to the old raw-git poll (same `git branch/status/for-each-ref`
- * commands, run by the unified vcs capability); for a remote companion the
+ * commands, run by the unified vcs capability); for a remote runtime the
  * commands run on the daemon host, so the sidebar reflects the remote repo.
  * Returns true iff observable state changed (and a GIT_BRANCH_UPDATE was sent),
  * which drives the adaptive interval reset.
  */
 async function pollGitStatus(entry: MonitorEntry): Promise<boolean> {
-  const { ownerWindowId, workspaceId, rootPath, companion } = entry
+  const { ownerWindowId, workspaceId, rootPath, runtime } = entry
 
   // A newer poll (or teardown) supersedes this one: bump the epoch, and discard
   // our own result if it changes again before we resolve.
   const epoch = ++entry.pollEpoch
 
   try {
-    const { branch, dirty: isDirty, branches } = await companion.vcs.monitorStatus(rootPath)
+    const { branch, dirty: isDirty, branches } = await runtime.vcs.monitorStatus(rootPath)
 
     // Stale: a fresher poll started, or the monitor was torn down/restarted.
     if (entry.pollEpoch !== epoch || !activeMonitors.has(workspaceId)) return false
@@ -195,16 +195,16 @@ export function registerHandlers(): void {
     // here during session restore (renderer requests monitoring before the
     // workspace root has been registered as an allowed root), so treat a
     // validation failure as "don't start monitoring" instead of a hard error.
-    // Resolve the target companion off the locator, then validate. For the
-    // local companion this is identical to the previous validateCwd(rootPath).
-    // The poll itself routes through companion.vcs.monitorStatus, so a remote
+    // Resolve the target runtime off the locator, then validate. For the
+    // local runtime this is identical to the previous validateCwd(rootPath).
+    // The poll itself routes through runtime.vcs.monitorStatus, so a remote
     // workspace's branch/dirty indicator reflects the remote repo.
-    const { companionId, path: rootP } = parseLocator(rootPath)
-    let companion: ReturnType<typeof companions.resolve>
+    const { runtimeId, path: rootP } = parseLocator(rootPath)
+    let runtime: ReturnType<typeof runtimes.resolve>
     let validRoot: string
     try {
-      companion = companions.resolve(companionId)
-      validRoot = companion.validateCwd(rootP, undefined, workspaceId)
+      runtime = runtimes.resolve(runtimeId)
+      validRoot = runtime.validateCwd(rootP, undefined, workspaceId)
     } catch (err) {
       log.warn(
         '[git-monitor] skipping monitor for workspace %s: %s',
@@ -228,18 +228,18 @@ export function registerHandlers(): void {
       ownerWindowId,
       rootPath: validRoot,
       workspaceId,
-      companion,
+      runtime,
       nextDelayMs: POLL_INTERVAL_MIN_MS,
       pollEpoch: 0,
       unsubscribeFs: null,
       fsKickPending: false,
     }
 
-    // Wire fs-watcher events from the companion file watcher to trigger an
+    // Wire fs-watcher events from the runtime file watcher to trigger an
     // immediate poll. The periodic timer becomes a safety net for changes
     // the watcher may miss (e.g. atomic renames on some filesystems, or repo
     // mutations that happen before any watcher root covers this path).
-    entry.unsubscribeFs = companion.file.watch(validRoot, () => {
+    entry.unsubscribeFs = runtime.file.watch(validRoot, () => {
       if (!anyWindowFocused) return
       if (entry.fsKickPending) return
       entry.fsKickPending = true

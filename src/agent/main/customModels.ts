@@ -18,7 +18,7 @@ import { app } from 'electron'
 import log from '../../main/logger'
 import { writeJsonAtomic } from '../../main/writeJsonAtomic'
 import { hostAgentDir, hostJoin, PI_AGENT_DIR } from './agentDir'
-import type { Companion } from '../../main/companion/types'
+import type { Runtime } from '../../main/runtime/types'
 import type { CustomOpenAIProvider } from '../../shared/types'
 
 const PROVIDER_ID = 'custom-openai'
@@ -75,16 +75,16 @@ export async function saveCustomOpenAI(cfg: CustomOpenAIProvider | null): Promis
   await writeJsonAtomic(shared, data, { mode: 0o600 })
 }
 
-/** Mirror the shared models.json into the host's pi-agent dir via the companion
+/** Mirror the shared models.json into the host's pi-agent dir via the runtime
  *  (works local + remote). No-op when the shared file doesn't exist. */
-export async function mirrorModelsToWorkspace(companion: Companion, hostCwd: string): Promise<void> {
+export async function mirrorModelsToWorkspace(runtime: Runtime, hostCwd: string): Promise<void> {
   const data = await readJson(sharedModelsPath())
   if (data == null) return
-  const dir = hostAgentDir(companion.id, hostCwd)
-  const dest = hostJoin(companion.id, dir, 'models.json')
+  const dir = hostAgentDir(runtime.id, hostCwd)
+  const dest = hostJoin(runtime.id, dir, 'models.json')
   try {
-    await companion.file.mkdir(dir)
-    await companion.file.writeFile(dest, JSON.stringify(data, null, 2) + '\n')
+    await runtime.file.mkdir(dir)
+    await runtime.file.writeFile(dest, JSON.stringify(data, null, 2) + '\n')
   } catch (err) {
     log.warn('[customModels] mirror to %s failed: %O', dest, err)
   }

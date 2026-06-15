@@ -4,8 +4,8 @@ import path from 'path'
 import log from '../logger'
 import { wrapHandler } from './handlerError'
 import { validatePath, grantFileAccess } from './pathValidation'
-import { isLocalLocator } from '../companion/locator'
-import { forwardFileGrant } from '../companion/companionManager'
+import { isLocalLocator } from '../runtime/locator'
+import { forwardFileGrant } from '../runtime/runtimeManager'
 import { recordPersistentGrant } from '../grantedPathStore'
 import { importCanvasBackgroundImage } from '../canvasBackgroundStore'
 import { windowFromEvent } from '../windowRegistry'
@@ -26,7 +26,7 @@ import {
 export function registerDialogHandlers(): void {
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, wrapHandler('[SHELL_SHOW_IN_FOLDER]', async (_event, filePath: string) => {
-    // A remote (cate-companion://) path has no representation on this machine —
+    // A remote (cate-runtime://) path has no representation on this machine —
     // there is nothing local to reveal. Return a structured result instead of
     // throwing so the renderer can quietly ignore/disable the action.
     if (!isLocalLocator(filePath)) {
@@ -115,7 +115,7 @@ export function registerDialogHandlers(): void {
     if (win) {
       try {
         const safePath = await grantFileAccess(win.id, result.filePath)
-        // Mirror the grant into the owning companion (the LOCAL daemon owns this
+        // Mirror the grant into the owning runtime (the LOCAL daemon owns this
         // host-absolute path) so the initial write + later reloads validate there.
         forwardFileGrant(safePath, win.id)
         // Persist the approval so future windows (and future app launches)

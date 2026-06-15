@@ -589,7 +589,7 @@ export async function readFileAsImage(file: File): Promise<AgentImageAttachment 
 }
 
 /** Read an image FILE PATH (Cate Explorer drag, or an external OS path) as an
- *  attachment. Reads through the companion-aware filesystem IPC so it works for
+ *  attachment. Reads through the runtime-aware filesystem IPC so it works for
  *  remote workspaces; returns null for non-image paths or unreadable files. */
 export async function readPathAsImage(
   path: string,

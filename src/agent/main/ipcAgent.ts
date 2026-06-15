@@ -36,8 +36,8 @@ import {
 } from '../../shared/ipc-channels'
 import { deleteSession, listSessions, loadSessionTranscript } from './sessionFiles'
 import { hostAgentDir, hostJoin } from './agentDir'
-import { parseLocator, formatLocator, LOCAL_COMPANION_ID } from '../../main/companion/locator'
-import { companions } from '../../main/companion/companionManager'
+import { parseLocator, formatLocator, LOCAL_RUNTIME_ID } from '../../main/runtime/locator'
+import { runtimes } from '../../main/runtime/runtimeManager'
 import { readCustomOpenAI, saveCustomOpenAI } from './customModels'
 import log from '../../main/logger'
 import { sendEvent } from '../../main/analytics'
@@ -222,42 +222,42 @@ export function registerAgentHandlers(authManager: AuthManager, agentManager: Ag
 
   // The target is a HOST path (already parseLocator'd); the dir is the host
   // pi-agent dir. We compare on the host's own separators.
-  const isUserAgentHostPath = (companionId: string, hostCwd: string, hostTarget: string): boolean => {
-    const sep = companionId === LOCAL_COMPANION_ID ? path.sep : '/'
-    const root = hostAgentDir(companionId, hostCwd) + sep
+  const isUserAgentHostPath = (runtimeId: string, hostCwd: string, hostTarget: string): boolean => {
+    const sep = runtimeId === LOCAL_RUNTIME_ID ? path.sep : '/'
+    const root = hostAgentDir(runtimeId, hostCwd) + sep
     return hostTarget.startsWith(root)
   }
 
   ipcMain.handle(AGENT_OPEN_SKILLS_FOLDER, async (_event, cwd: string, kind: 'agents' | 'prompts') => {
-    const { companionId, path: hostCwd } = parseLocator(cwd)
+    const { runtimeId, path: hostCwd } = parseLocator(cwd)
     // Revealing a folder in the OS file manager only makes sense for the local
     // machine — a remote host's path doesn't exist on this disk.
-    if (companionId !== LOCAL_COMPANION_ID) {
+    if (runtimeId !== LOCAL_RUNTIME_ID) {
       return { ok: false, error: 'Opening the agent folder is not supported for remote workspaces' }
     }
-    const dir = path.join(hostAgentDir(companionId, hostCwd), kind)
+    const dir = path.join(hostAgentDir(runtimeId, hostCwd), kind)
     try { await fs.mkdir(dir, { recursive: true }) } catch { /* */ }
     await shell.openPath(dir)
     return { ok: true }
   })
 
   ipcMain.handle(AGENT_LIST_SKILL_FILES, async (_event, cwd: string, kind: 'agents' | 'prompts') => {
-    const { companionId, path: hostCwd } = parseLocator(cwd)
-    let companion
-    try { companion = companions.resolve(companionId) }
+    const { runtimeId, path: hostCwd } = parseLocator(cwd)
+    let runtime
+    try { runtime = runtimes.resolve(runtimeId) }
     catch (err) { log.warn('[ipc.agent] listSkillFiles resolve failed: %O', err); return [] }
-    const dir = hostJoin(companionId, hostAgentDir(companionId, hostCwd), kind)
-    try { await companion.file.mkdir(dir) } catch { /* */ }
+    const dir = hostJoin(runtimeId, hostAgentDir(runtimeId, hostCwd), kind)
+    try { await runtime.file.mkdir(dir) } catch { /* */ }
     // readDir returns FileTreeNode[] and yields [] for a missing dir.
-    const nodes = await companion.file.readDir(dir)
+    const nodes = await runtime.file.readDir(dir)
     const out: Array<{ name: string; description?: string; path: string }> = []
     for (const e of nodes) {
       if (e.isDirectory || !e.name.endsWith('.md')) continue
-      const hostFilePath = hostJoin(companionId, dir, e.name)
+      const hostFilePath = hostJoin(runtimeId, dir, e.name)
       let name = e.name.replace(/\.md$/, '')
       let description: string | undefined
       try {
-        const text = await companion.file.readFile(hostFilePath)
+        const text = await runtime.file.readFile(hostFilePath)
         if (text.startsWith('---')) {
           const end = text.indexOf('\n---', 3)
           if (end > 0) {
@@ -272,9 +272,9 @@ export function registerAgentHandlers(authManager: AuthManager, agentManager: Ag
           }
         }
       } catch { /* */ }
-      // Re-encode as a locator so the renderer opens it via the companion-aware
-      // filesystem IPC against the right host. No-op for the local companion.
-      out.push({ name, description, path: formatLocator({ companionId, path: hostFilePath }) })
+      // Re-encode as a locator so the renderer opens it via the runtime-aware
+      // filesystem IPC against the right host. No-op for the local runtime.
+      out.push({ name, description, path: formatLocator({ runtimeId, path: hostFilePath }) })
     }
     return out.sort((a, b) => a.name.localeCompare(b.name))
   })
@@ -282,23 +282,23 @@ export function registerAgentHandlers(authManager: AuthManager, agentManager: Ag
   ipcMain.handle(AGENT_OPEN_SKILL_FILE, async (_event, filePath: string) => {
     if (!filePath) return
     // Reveal-in-OS only applies to local files; remote paths aren't on this disk.
-    const { companionId, path: hostPath } = parseLocator(filePath)
-    if (companionId !== LOCAL_COMPANION_ID) return
+    const { runtimeId, path: hostPath } = parseLocator(filePath)
+    if (runtimeId !== LOCAL_RUNTIME_ID) return
     await shell.openPath(hostPath)
   })
 
   ipcMain.handle(AGENT_DELETE_SKILL_FILE, async (_event, cwd: string, filePath: string) => {
-    const { companionId: cwdCompanion, path: hostCwd } = parseLocator(cwd)
-    const { companionId: fileCompanion, path: hostFilePath } = parseLocator(filePath)
+    const { runtimeId: cwdRuntime, path: hostCwd } = parseLocator(cwd)
+    const { runtimeId: fileRuntime, path: hostFilePath } = parseLocator(filePath)
     if (
       !filePath ||
-      fileCompanion !== cwdCompanion ||
-      !isUserAgentHostPath(cwdCompanion, hostCwd, hostFilePath)
+      fileRuntime !== cwdRuntime ||
+      !isUserAgentHostPath(cwdRuntime, hostCwd, hostFilePath)
     ) {
       throw new Error("Refusing to delete file outside the workspace's pi-agent dir")
     }
-    const companion = companions.resolve(cwdCompanion)
-    await companion.file.remove(hostFilePath)
+    const runtime = runtimes.resolve(cwdRuntime)
+    await runtime.file.remove(hostFilePath)
   })
 
   ipcMain.handle(
@@ -306,13 +306,13 @@ export function registerAgentHandlers(authManager: AuthManager, agentManager: Ag
     async (_event, cwd: string, kind: 'agents' | 'prompts', name: string) => {
       const safe = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
       if (!safe) throw new Error('Invalid name')
-      const { companionId, path: hostCwd } = parseLocator(cwd)
-      const companion = companions.resolve(companionId)
-      const dir = hostJoin(companionId, hostAgentDir(companionId, hostCwd), kind)
-      await companion.file.mkdir(dir)
-      const target = hostJoin(companionId, dir, `${safe}.md`)
+      const { runtimeId, path: hostCwd } = parseLocator(cwd)
+      const runtime = runtimes.resolve(runtimeId)
+      const dir = hostJoin(runtimeId, hostAgentDir(runtimeId, hostCwd), kind)
+      await runtime.file.mkdir(dir)
+      const target = hostJoin(runtimeId, dir, `${safe}.md`)
       try {
-        await companion.file.stat(target)
+        await runtime.file.stat(target)
         throw new Error(`${safe}.md already exists`)
       } catch (err) {
         // stat throws when the target doesn't exist (the happy path). Only the
@@ -322,10 +322,10 @@ export function registerAgentHandlers(authManager: AuthManager, agentManager: Ag
       const template = kind === 'agents'
         ? `---\nname: ${safe}\ndescription: Briefly describe what this subagent does\ntools: read, grep, find, ls, bash\n---\n\nYou are ${safe}. Describe its responsibilities and how it should respond.\n`
         : `---\nname: ${safe}\ndescription: Briefly describe this prompt\n---\n\nWrite the prompt body here. Use {{argument}} placeholders if needed.\n`
-      await companion.file.writeFile(target, template)
+      await runtime.file.writeFile(target, template)
       // Return a locator so the renderer can open the freshly-created file on
       // the right host.
-      return formatLocator({ companionId, path: target })
+      return formatLocator({ runtimeId, path: target })
     },
   )
 

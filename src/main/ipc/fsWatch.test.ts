@@ -30,10 +30,10 @@ vi.mock('../store', () => ({
 const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_WATCH_START, FS_WATCH_STOP, FS_WATCH_EVENT } = await import('../../shared/ipc-channels')
-const { registerTestLocalCompanion } = await import('../companion/testLocalCompanion')
+const { registerTestLocalRuntime } = await import('../runtime/testLocalRuntime')
 
 registerHandlers()
-registerTestLocalCompanion()
+registerTestLocalRuntime()
 const watchStart = handlers.get(FS_WATCH_START)!
 const watchStop = handlers.get(FS_WATCH_STOP)!
 const fakeEvent = { sender: {} } as unknown

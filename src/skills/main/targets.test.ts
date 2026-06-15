@@ -21,7 +21,7 @@ describe('skillsRootDir', () => {
     expect(skillsRootDir('antigravity', 'local', cwd)).toBe(path.join(cwd, '.agent', 'skills'))
   })
 
-  it('uses POSIX joins for a remote companion', () => {
+  it('uses POSIX joins for a remote runtime', () => {
     expect(skillsRootDir('claude-code', 'srv_1', '/srv/work')).toBe('/srv/work/.claude/skills')
   })
 })

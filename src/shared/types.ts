@@ -136,29 +136,29 @@ export interface WorktreeMeta {
 // -----------------------------------------------------------------------------
 
 /**
- * Where a workspace's files physically live, and how the companion that hosts
+ * Where a workspace's files physically live, and how the runtime that hosts
  * its terminal/fs/git operations is reached. Absent ⇒ `{ kind: 'local' }` (the
  * migration default for every workspace that predates remote support). Secrets
  * (SSH passphrases/keys) NEVER live here — they are stored encrypted via
- * Electron safeStorage, keyed by companionId.
+ * Electron safeStorage, keyed by runtimeId.
  */
-export type CompanionConnection =
+export type RuntimeConnection =
   | { kind: 'local' }
   | {
       kind: 'server'
       /** Routing key; matches the authority in this workspace's rootPath URI. */
-      companionId: string
+      runtimeId: string
       host: string
       user: string
       port?: number
-      /** Companion-absolute root on the server. */
+      /** Runtime-absolute root on the server. */
       remotePath: string
     }
   | {
       kind: 'wsl'
-      companionId: string
+      runtimeId: string
       distro: string
-      /** Companion-absolute root inside the distro. */
+      /** Runtime-absolute root inside the distro. */
       distroPath: string
     }
 
@@ -166,14 +166,14 @@ export interface WorkspaceInfo {
   id: string
   name: string
   color: string
-  /** Locator string: a bare absolute path for local, a `cate-companion://`
-   *  URI otherwise. See src/main/companion/locator.ts. */
+  /** Locator string: a bare absolute path for local, a `cate-runtime://`
+   *  URI otherwise. See src/main/runtime/locator.ts. */
   rootPath: string
   /** Defaults to { kind: 'local' } when absent (migration rule). */
-  connection?: CompanionConnection
+  connection?: RuntimeConnection
 }
 
-/** What the connect UI sends to main to establish a remote companion. SSH auth
+/** What the connect UI sends to main to establish a remote runtime. SSH auth
  *  secrets are passed once to be stored encrypted (safeStorage); they are not
  *  echoed back. */
 export type RemoteConnectSpec =
@@ -187,8 +187,8 @@ export type RemoteConnectSpec =
     }
   | { kind: 'wsl'; distro: string; distroPath: string }
 
-export type CompanionConnectResult =
-  | { ok: true; companionId: string; rootPath: string; connection: CompanionConnection }
+export type RuntimeConnectResult =
+  | { ok: true; runtimeId: string; rootPath: string; connection: RuntimeConnection }
   | { ok: false; error: string }
 
 /** A connectable host alias parsed from the user's ~/.ssh/config. Wildcard
@@ -203,10 +203,10 @@ export interface SshHostEntry {
 }
 
 /**
- * Canonical lifecycle phase of a remote companion. Emitted by the main process
- * (CompanionManager) and projected onto the owning workspace, where it is the
+ * Canonical lifecycle phase of a remote runtime. Emitted by the main process
+ * (RuntimeManager) and projected onto the owning workspace, where it is the
  * single source of truth the UI derives its runtime status from. Local
- * workspaces have no phase (absent ⇒ no companion).
+ * workspaces have no phase (absent ⇒ no runtime).
  *
  *  - `installing`   — bootstrapping the daemon bundle onto the host (pull/push + extract)
  *  - `connecting`   — launching the daemon + protocol/version handshake
@@ -215,7 +215,7 @@ export interface SshHostEntry {
  *  - `unreachable`  — connect/launch/handshake failed (bad host/auth/network); retry or edit
  *  - `missing`      — the daemon bundle isn't installed / install failed; needs (re)install
  */
-export type CompanionPhase =
+export type RuntimePhase =
   | 'installing'
   | 'connecting'
   | 'connected'
@@ -223,20 +223,20 @@ export type CompanionPhase =
   | 'unreachable'
   | 'missing'
 
-/** Live connection state pushed to the renderer (COMPANION_STATUS). */
-export interface CompanionStatusEvent {
-  companionId: string
-  phase: CompanionPhase
+/** Live connection state pushed to the renderer (RUNTIME_STATUS). */
+export interface RuntimeStatusEvent {
+  runtimeId: string
+  phase: RuntimePhase
   message?: string
 }
 
-/** The canonical companion runtime state stored on a remote workspace. Written
- *  by exactly one path in the renderer (the COMPANION_STATUS subscription, plus
- *  the optimistic seed during the initial connect before companionId is bound).
- *  Absent ⇒ local workspace, or a remote workspace whose companion hasn't been
+/** The canonical runtime runtime state stored on a remote workspace. Written
+ *  by exactly one path in the renderer (the RUNTIME_STATUS subscription, plus
+ *  the optimistic seed during the initial connect before runtimeId is bound).
+ *  Absent ⇒ local workspace, or a remote workspace whose runtime hasn't been
  *  contacted yet this session. */
-export interface CompanionRuntime {
-  phase: CompanionPhase
+export interface RuntimeStatus {
+  phase: RuntimePhase
   /** Human-readable failure reason for unreachable/missing/disconnected. */
   error?: string
 }
@@ -494,14 +494,14 @@ export interface WorkspaceState {
   name: string
   color: string
   rootPath: string
-  /** Companion connection for a remote/WSL workspace (absent ⇒ local). Mirrors
+  /** Runtime connection for a remote/WSL workspace (absent ⇒ local). Mirrors
    *  WorkspaceInfo.connection; drives reconnect-on-restore. */
-  connection?: CompanionConnection
-  /** Canonical companion runtime state for a remote workspace (set from
-   *  COMPANION_STATUS, seeded during initial connect). The single source of
+  connection?: RuntimeConnection
+  /** Canonical runtime runtime state for a remote workspace (set from
+   *  RUNTIME_STATUS, seeded during initial connect). The single source of
    *  truth the UI derives editability + the lock overlay from. Absent ⇒ local,
    *  or remote-not-yet-contacted. See lib/workspaceRuntime.ts. */
-  companion?: CompanionRuntime
+  runtime?: RuntimeStatus
   /** Additional project roots opened alongside the primary `rootPath`.
    *  Used to keep multiple repos in one canvas. Order is user-controlled. */
   additionalRoots?: string[]
@@ -916,22 +916,22 @@ export interface SessionSnapshot {
    *  stay stable across restarts instead of being re-assigned round-robin from
    *  the palette, and so panel.worktreeId references still resolve. */
   worktrees?: WorktreeMeta[]
-  /** Resolved companion connection for a remote/WSL workspace (absent ⇒ local).
-   *  Persisted so the companion can be reconnected on restore before any
+  /** Resolved runtime connection for a remote/WSL workspace (absent ⇒ local).
+   *  Persisted so the runtime can be reconnected on restore before any
    *  fs/git/terminal op runs. Mirrors WorkspaceState.connection. */
-  connection?: CompanionConnection
+  connection?: RuntimeConnection
 }
 
 /** One persisted remote workspace (stored in `remote-workspaces.json`). Remote
  *  workspaces can't use the local `.cate/` project-state files (their tree lives
- *  on a companion), so their full restore snapshot + reconnect info is kept here,
- *  keyed by the `cate-companion://` locator. Local workspaces never appear here —
+ *  on a runtime), so their full restore snapshot + reconnect info is kept here,
+ *  keyed by the `cate-runtime://` locator. Local workspaces never appear here —
  *  they round-trip through recentProjects + `.cate/` as before. */
 export interface RemoteProjectEntry {
-  /** The `cate-companion://` locator string (this workspace's rootPath). */
+  /** The `cate-runtime://` locator string (this workspace's rootPath). */
   locator: string
-  /** Reconnect info, used by ensureWorkspaceCompanion on restore. */
-  connection: CompanionConnection
+  /** Reconnect info, used by ensureWorkspaceRuntime on restore. */
+  connection: RuntimeConnection
   /** Full session snapshot to rebuild the canvas/panels on restore. */
   snapshot: SessionSnapshot
 }
@@ -1034,10 +1034,10 @@ export interface ProjectSessionFile {
    *  here (not in committed workspace.json) so colors/labels survive a restart.
    *  Paths are absolute, matching `ProjectSessionPanel.workingDirectory`. */
   worktrees?: WorktreeMeta[]
-  /** Resolved companion connection for THIS workspace on THIS machine. Machine-
+  /** Resolved runtime connection for THIS workspace on THIS machine. Machine-
    *  local on purpose — a server/wsl choice is the opener's, not the repo's, so
    *  it lives here and never in the VCS-committed workspace.json. Absent ⇒ local. */
-  connection?: CompanionConnection
+  connection?: RuntimeConnection
 }
 
 export interface ProjectSessionPanel {

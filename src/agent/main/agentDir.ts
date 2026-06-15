@@ -1,12 +1,12 @@
 // =============================================================================
 // agentDir — per-workspace home for the pi coding agent, seeded THROUGH the
-// companion so it works whether the workspace is local or on a remote host.
+// runtime so it works whether the workspace is local or on a remote host.
 //
 // Pi resolves its config dir (extensions, sessions, settings.json, auth.json)
 // from PI_CODING_AGENT_DIR; we point it per-workspace at <cwd>/.cate/pi-agent on
 // whichever host pi runs. Provider logins aren't project-specific, so a single
 // shared auth.json lives in cate's userData (always local) and is mirrored into
-// each workspace's dir via companion.file (local fs for the local companion, or
+// each workspace's dir via runtime.file (local fs for the local runtime, or
 // the daemon for a remote one) with a copy-on-spawn + watch-and-copy-back scheme.
 // =============================================================================
 
@@ -17,28 +17,28 @@ import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
 import { writeTextAtomic } from '../../main/writeJsonAtomic'
-import { LOCAL_COMPANION_ID } from '../../main/companion/locator'
+import { LOCAL_RUNTIME_ID } from '../../main/runtime/locator'
 import { sharedAuthWriteQueue } from './writeQueue'
-import type { Companion } from '../../main/companion/types'
+import type { Runtime } from '../../main/runtime/types'
 
 const CATE_DIR = '.cate'
 export const PI_AGENT_DIR = 'pi-agent'
 
 /** Per-workspace pi config dir on the LOCAL machine (native path). Used by the
- *  local skill-file IPC; companion-aware code uses hostAgentDir(). */
+ *  local skill-file IPC; runtime-aware code uses hostAgentDir(). */
 export function agentDirFor(cwd: string): string {
   return path.join(cwd, CATE_DIR, PI_AGENT_DIR)
 }
 
 /** Per-workspace pi config dir on the host that runs pi. Remote hosts are POSIX,
  *  the local machine uses native separators. */
-export function hostAgentDir(companionId: string, hostCwd: string): string {
-  const join = companionId === LOCAL_COMPANION_ID ? path.join : path.posix.join
+export function hostAgentDir(runtimeId: string, hostCwd: string): string {
+  const join = runtimeId === LOCAL_RUNTIME_ID ? path.join : path.posix.join
   return join(hostCwd, CATE_DIR, PI_AGENT_DIR)
 }
 
-export function hostJoin(companionId: string, ...segs: string[]): string {
-  return (companionId === LOCAL_COMPANION_ID ? path.join : path.posix.join)(...segs)
+export function hostJoin(runtimeId: string, ...segs: string[]): string {
+  return (runtimeId === LOCAL_RUNTIME_ID ? path.join : path.posix.join)(...segs)
 }
 
 /** Pi maps a host cwd (e.g. `/Users/anton/Dev/cate`) to a sessions subdir named
@@ -51,8 +51,8 @@ export function encodeHostCwdForSessions(hostCwd: string): string {
 }
 
 /** Per-workspace pi sessions dir on the host that runs pi. */
-export function hostSessionsDir(companionId: string, hostCwd: string): string {
-  return hostJoin(companionId, hostAgentDir(companionId, hostCwd), 'sessions', encodeHostCwdForSessions(hostCwd))
+export function hostSessionsDir(runtimeId: string, hostCwd: string): string {
+  return hostJoin(runtimeId, hostAgentDir(runtimeId, hostCwd), 'sessions', encodeHostCwdForSessions(hostCwd))
 }
 
 /** The single shared auth.json — source of truth for provider credentials. */
@@ -77,41 +77,41 @@ async function ensureSharedAuth(): Promise<void> {
   await writeTextAtomic(shared, legacy ?? '{}\n', { mode: 0o600 })
 }
 
-/** Push the shared auth.json into the host's workspace copy via the companion. */
-async function pushAuthToHost(companion: Companion, hostCwd: string): Promise<void> {
+/** Push the shared auth.json into the host's workspace copy via the runtime. */
+async function pushAuthToHost(runtime: Runtime, hostCwd: string): Promise<void> {
   const data = await readFileOrNull(sharedAuthPath())
   if (data == null) return
-  const dir = hostAgentDir(companion.id, hostCwd)
-  await companion.file.mkdir(dir)
-  await companion.file.writeFile(hostJoin(companion.id, dir, 'auth.json'), data)
+  const dir = hostAgentDir(runtime.id, hostCwd)
+  await runtime.file.mkdir(dir)
+  await runtime.file.writeFile(hostJoin(runtime.id, dir, 'auth.json'), data)
 }
 
 /** Create the host's pi-agent dir, seed auth.json, and keep .cate out of VCS. */
-export async function prepareAgentDir(companion: Companion, hostCwd: string): Promise<void> {
+export async function prepareAgentDir(runtime: Runtime, hostCwd: string): Promise<void> {
   await ensureSharedAuth()
-  await companion.file.mkdir(hostAgentDir(companion.id, hostCwd))
-  await pushAuthToHost(companion, hostCwd)
+  await runtime.file.mkdir(hostAgentDir(runtime.id, hostCwd))
+  await pushAuthToHost(runtime, hostCwd)
   // .cate/.gitignore ignores everything but workspace.json (best-effort).
-  const gi = hostJoin(companion.id, hostCwd, CATE_DIR, '.gitignore')
+  const gi = hostJoin(runtime.id, hostCwd, CATE_DIR, '.gitignore')
   try {
-    await companion.file.stat(gi)
+    await runtime.file.stat(gi)
   } catch {
-    try { await companion.file.writeFile(gi, '*\n!workspace.json\n') } catch { /* best effort */ }
+    try { await runtime.file.writeFile(gi, '*\n!workspace.json\n') } catch { /* best effort */ }
   }
 }
 
 /** Push the shared auth into the host copy (cate UI changed credentials). */
-export async function pushSharedToWorkspace(companion: Companion, hostCwd: string): Promise<void> {
-  await pushAuthToHost(companion, hostCwd)
+export async function pushSharedToWorkspace(runtime: Runtime, hostCwd: string): Promise<void> {
+  await pushAuthToHost(runtime, hostCwd)
 }
 
-async function syncBack(companion: Companion, hostCwd: string): Promise<void> {
+async function syncBack(runtime: Runtime, hostCwd: string): Promise<void> {
   // Shared queue with authManager so two workspaces refreshing tokens (or a
   // UI-driven credential write) can't interleave on the shared auth.json.
   await sharedAuthWriteQueue(async () => {
-    const authPath = hostJoin(companion.id, hostAgentDir(companion.id, hostCwd), 'auth.json')
+    const authPath = hostJoin(runtime.id, hostAgentDir(runtime.id, hostCwd), 'auth.json')
     let wsData: string | null
-    try { wsData = await companion.file.readFile(authPath) } catch { return }
+    try { wsData = await runtime.file.readFile(authPath) } catch { return }
     if (wsData == null) return
     const sharedData = await readFileOrNull(sharedAuthPath())
     if (wsData === sharedData) return // echo of our own push, or no real change
@@ -122,11 +122,11 @@ async function syncBack(companion: Companion, hostCwd: string): Promise<void> {
 
 /** Watch the host's auth.json; when pi rewrites it (OAuth refresh) copy back to
  *  the shared file. Returns a disposer. */
-export function watchWorkspaceAuth(companion: Companion, hostCwd: string): () => void {
-  const authPath = hostJoin(companion.id, hostAgentDir(companion.id, hostCwd), 'auth.json')
+export function watchWorkspaceAuth(runtime: Runtime, hostCwd: string): () => void {
+  const authPath = hostJoin(runtime.id, hostAgentDir(runtime.id, hostCwd), 'auth.json')
   let unsub: (() => void) | null = null
   try {
-    unsub = companion.file.watch(authPath, () => { void syncBack(companion, hostCwd) })
+    unsub = runtime.file.watch(authPath, () => { void syncBack(runtime, hostCwd) })
   } catch (err) {
     log.warn('[agentDir] failed to watch %s: %O', authPath, err)
   }

@@ -80,13 +80,13 @@ For contributors. Use the release above otherwise.
 
 **Prerequisites:**
 - [Bun](https://bun.sh): package manager and script runner.
-- [Node.js](https://nodejs.org/) 20 or 22 LTS (see `.nvmrc`) on your PATH. The build scripts run under it; the companion daemon bundles its own Node 22.
+- [Node.js](https://nodejs.org/) 20 or 22 LTS (see `.nvmrc`) on your PATH. The build scripts run under it; the runtime daemon bundles its own Node 22.
 - **Linux only:** `node-pty` ships prebuilt binaries for macOS and Windows, but not Linux, so it compiles from source there. Install Python 3 and a C++ toolchain:
   - Debian/Ubuntu: `sudo apt install build-essential python3`
   - Fedora/RHEL: `sudo dnf install @development-tools gcc-c++ make python3`
   - Arch: `sudo pacman -S base-devel python`
 
-Fresh clone, one command sets everything up (installs dependencies and builds the local companion daemon):
+Fresh clone, one command sets everything up (installs dependencies and builds the local runtime daemon):
 
 ```bash
 git clone https://github.com/0-AI-UG/cate.git
@@ -105,7 +105,7 @@ bun run build        # production build
 bun run package      # package for distribution (:mac, :win, :linux)
 ```
 
-Packaged binaries land in `release/`. The companion daemon is rebuilt by `bun run companion:tarball` (re-run it after changing anything under `src/companion/`).
+Packaged binaries land in `release/`. The runtime daemon is rebuilt by `bun run runtime:tarball` (re-run it after changing anything under `src/runtime/`).
 
 ## Architecture
 

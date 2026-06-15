@@ -1,5 +1,5 @@
 // =============================================================================
-// App Store — remote workspace + companion lifecycle slice.
+// App Store — remote workspace + runtime lifecycle slice.
 // =============================================================================
 
 import log from '../../lib/logger'
@@ -16,12 +16,12 @@ type RemoteSliceActions = Pick<
   AppStoreActions,
   | 'setWorkspaceRootPath'
   | 'connectRemoteWorkspace'
-  | 'ensureWorkspaceCompanion'
-  | 'retryCompanion'
-  | 'installCompanion'
-  | 'deleteCompanion'
-  | 'setWorkspaceCompanionPhase'
-  | 'setLocalCompanionPhase'
+  | 'ensureWorkspaceRuntime'
+  | 'retryRuntime'
+  | 'installRuntime'
+  | 'deleteRuntime'
+  | 'setWorkspaceRuntimePhase'
+  | 'setLocalRuntimePhase'
 >
 
 export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions {
@@ -90,17 +90,17 @@ export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions 
       })
     },
 
-    setWorkspaceCompanionPhase(wsId, phase, error) {
+    setWorkspaceRuntimePhase(wsId, phase, error) {
       const clean = error == null ? null : errorMessage(error)
       set((state) => ({
         workspaces: state.workspaces.map((c) =>
-          c.id === wsId ? { ...c, companion: { phase, ...(clean != null ? { error: clean } : {}) } } : c,
+          c.id === wsId ? { ...c, runtime: { phase, ...(clean != null ? { error: clean } : {}) } } : c,
         ),
       }))
     },
 
-    setLocalCompanionPhase(phase) {
-      set({ localCompanionPhase: phase })
+    setLocalRuntimePhase(phase) {
+      set({ localRuntimePhase: phase })
     },
 
     async connectRemoteWorkspace(wsId, spec) {
@@ -108,20 +108,20 @@ export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions 
       if (!ws) return false
       let res
       try {
-        res = await window.electronAPI.companionConnect(spec)
+        res = await window.electronAPI.runtimeConnect(spec)
       } catch (err) {
-        log.warn('[companion] connect failed:', err instanceof Error ? err.message : String(err))
+        log.warn('[runtime] connect failed:', err instanceof Error ? err.message : String(err))
         return false
       }
       if (!res?.ok) {
-        log.warn('[companion] connect failed:', res?.error ?? 'unknown')
+        log.warn('[runtime] connect failed:', res?.error ?? 'unknown')
         return false
       }
 
       const label = spec.kind === 'wsl' ? `${spec.distro}` : `${spec.user}@${spec.host}`
       const desiredName = ws.name === 'Workspace' ? label : ws.name
-      // Store rootPath + connection FIRST so the probe's COMPANION_STATUS phases
-      // (keyed by companionId) can match this workspace.
+      // Store rootPath + connection FIRST so the probe's RUNTIME_STATUS phases
+      // (keyed by runtimeId) can match this workspace.
       set((state) => ({
         workspaces: state.workspaces.map((c) =>
           c.id === wsId ? { ...c, rootPath: res!.rootPath, name: desiredName } : c,
@@ -133,7 +133,7 @@ export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions 
         connection: res.connection,
       })
       if (!result?.ok) {
-        log.warn('[companion] register failed:', result?.error?.message ?? 'unknown')
+        log.warn('[runtime] register failed:', result?.error?.message ?? 'unknown')
         return false
       }
       set((state) => ({
@@ -142,55 +142,55 @@ export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions 
       // Probe to drive the phase. Main reports connected / missing / unreachable;
       // we never set the phase ourselves. (A fresh remote with no daemon lands in
       // 'missing' → the canvas lock offers Install.)
-      await get().ensureWorkspaceCompanion(wsId)
-      // Companion is live now, so its .cate/ (next to the remote repo) is
+      await get().ensureWorkspaceRuntime(wsId)
+      // Runtime is live now, so its .cate/ (next to the remote repo) is
       // readable: load any saved layout for a reconnected workspace. Awaited so a
       // caller that then spawns a terminal does so only after the restore.
       await hydrateWorkspaceFromDisk(wsId)
       return true
     },
 
-    async ensureWorkspaceCompanion(wsId) {
+    async ensureWorkspaceRuntime(wsId) {
       const ws = get().workspaces.find((w) => w.id === wsId)
       if (!ws?.connection || ws.connection.kind === 'local') return true
       // Probe only. The phase (connecting → connected | missing | unreachable) is
-      // emitted by the main process and lands via the COMPANION_STATUS broadcast.
-      // No client-side phase logic. Returns whether the companion is now live.
+      // emitted by the main process and lands via the RUNTIME_STATUS broadcast.
+      // No client-side phase logic. Returns whether the runtime is now live.
       try {
-        const res = await window.electronAPI.companionEnsure(ws.connection)
+        const res = await window.electronAPI.runtimeEnsure(ws.connection)
         return !!res?.ok
       } catch (err) {
-        log.warn('[companion] ensure failed:', err instanceof Error ? err.message : String(err))
+        log.warn('[runtime] ensure failed:', err instanceof Error ? err.message : String(err))
         return false
       }
     },
 
     // The lock overlay's "Retry"/"Reconnect" — re-probe the existing connection.
-    async retryCompanion(wsId) {
-      return get().ensureWorkspaceCompanion(wsId)
+    async retryRuntime(wsId) {
+      return get().ensureWorkspaceRuntime(wsId)
     },
 
-    async installCompanion(wsId) {
+    async installRuntime(wsId) {
       const ws = get().workspaces.find((w) => w.id === wsId)
       if (!ws?.connection || ws.connection.kind === 'local') return false
       try {
-        const res = await window.electronAPI.companionInstall(ws.connection)
+        const res = await window.electronAPI.runtimeInstall(ws.connection)
         return !!res?.ok
       } catch (err) {
-        log.warn('[companion] install failed:', err instanceof Error ? err.message : String(err))
+        log.warn('[runtime] install failed:', err instanceof Error ? err.message : String(err))
         return false
       }
     },
 
-    async deleteCompanion(wsId) {
+    async deleteRuntime(wsId) {
       const ws = get().workspaces.find((w) => w.id === wsId)
       if (!ws?.connection || ws.connection.kind === 'local') return false
       try {
         // Main rm -rf's the host install and drives the phase to 'missing'.
-        const res = await window.electronAPI.companionDelete(ws.connection)
+        const res = await window.electronAPI.runtimeDelete(ws.connection)
         return !!res?.ok
       } catch (err) {
-        log.warn('[companion] delete failed:', err instanceof Error ? err.message : String(err))
+        log.warn('[runtime] delete failed:', err instanceof Error ? err.message : String(err))
         return false
       }
     },

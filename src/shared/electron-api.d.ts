@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentModelDescriptor, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CanvasLayoutSnapshot, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, CompanionConnectResult, CompanionStatusEvent, CompanionConnection, CompanionPhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentModelDescriptor, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CanvasLayoutSnapshot, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 
 /** Lifecycle state of the auto-updater, surfaced to the renderer for the
@@ -488,10 +488,10 @@ export interface ElectronAPI {
   /** Persist the sidebar arrangement (workspace order + active workspace). */
   sidebarSessionSet(session: SidebarSession): Promise<void>
 
-  /** Get persisted remote-workspace restore entries (cate-companion:// only). */
+  /** Get persisted remote-workspace restore entries (cate-runtime:// only). */
   remoteProjectsGet(): Promise<RemoteProjectEntry[]>
 
-  /** Persist remote-workspace restore entries (cate-companion:// only). */
+  /** Persist remote-workspace restore entries (cate-runtime:// only). */
   remoteProjectsSet(entries: RemoteProjectEntry[]): Promise<void>
 
   // ---------------------------------------------------------------------------
@@ -708,47 +708,47 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   /** Create a new workspace in the main process. */
-  workspaceCreate(options?: { name?: string; rootPath?: string; id?: string; connection?: CompanionConnection }): Promise<WorkspaceMutationResult>
+  workspaceCreate(options?: { name?: string; rootPath?: string; id?: string; connection?: RuntimeConnection }): Promise<WorkspaceMutationResult>
 
-  /** Connect to a remote (SSH) or WSL companion. Returns the locator rootPath +
+  /** Connect to a remote (SSH) or WSL runtime. Returns the locator rootPath +
    *  connection record to create the workspace with. */
-  companionConnect(spec: RemoteConnectSpec): Promise<CompanionConnectResult>
+  runtimeConnect(spec: RemoteConnectSpec): Promise<RuntimeConnectResult>
 
   /** Re-establish a connection from a stored connection record (session restore
    *  / reconnect). Auth comes from the encrypted secret store. No-op if already
    *  connected. */
-  companionEnsure(connection: CompanionConnection): Promise<CompanionConnectResult>
+  runtimeEnsure(connection: RuntimeConnection): Promise<RuntimeConnectResult>
 
-  /** Ids of currently-connected remote/WSL companions. */
-  companionList(): Promise<string[]>
+  /** Ids of currently-connected remote/WSL runtimes. */
+  runtimeList(): Promise<string[]>
 
-  /** Current connection phase of the built-in LOCAL companion — a seed for the
+  /** Current connection phase of the built-in LOCAL runtime — a seed for the
    *  startup loading blocker, since the local connect can finish (or fail) before
-   *  a window subscribes to the COMPANION_STATUS broadcast. */
-  companionLocalStatus(): Promise<{ phase: CompanionPhase; message?: string }>
+   *  a window subscribes to the RUNTIME_STATUS broadcast. */
+  runtimeLocalStatus(): Promise<{ phase: RuntimePhase; message?: string }>
 
   /** Names of WSL distros installed on this host ([] on non-Windows / no WSL). */
-  companionWslDistros(): Promise<string[]>
+  runtimeWslDistros(): Promise<string[]>
 
   /** Connectable host aliases from the user's ~/.ssh/config ([] if none). */
-  companionSshHosts(): Promise<SshHostEntry[]>
+  runtimeSshHosts(): Promise<SshHostEntry[]>
 
   /** Open a native file picker for an SSH private key. Returns the chosen
    *  absolute path, or null if the dialog was cancelled. */
-  companionPickSshKey(): Promise<string | null>
+  runtimePickSshKey(): Promise<string | null>
 
-  /** Explicit clean install of a remote companion's daemon (wipes the host
+  /** Explicit clean install of a remote runtime's daemon (wipes the host
    *  install dir, re-pulls/pushes the bundle, then connects). The only call that
    *  installs — probes (connect/ensure) never do. */
-  companionInstall(connection: CompanionConnection): Promise<CompanionConnectResult>
+  runtimeInstall(connection: RuntimeConnection): Promise<RuntimeConnectResult>
 
-  /** Literally delete a companion: stop its daemon and rm -rf the host install,
+  /** Literally delete a runtime: stop its daemon and rm -rf the host install,
    *  keeping the saved auth. Drops the workspace to `missing`; recover via
    *  Install. */
-  companionDelete(connection: CompanionConnection): Promise<{ ok: boolean; error?: string }>
+  runtimeDelete(connection: RuntimeConnection): Promise<{ ok: boolean; error?: string }>
 
-  /** Subscribe to companion connection status (main -> renderer). */
-  onCompanionStatus(callback: (event: CompanionStatusEvent) => void): () => void
+  /** Subscribe to runtime connection status (main -> renderer). */
+  onRuntimeStatus(callback: (event: RuntimeStatusEvent) => void): () => void
 
   /** Update workspace metadata in the main process. */
   workspaceUpdate(id: string, changes: Partial<Omit<WorkspaceInfo, 'id'>>): Promise<WorkspaceMutationResult>

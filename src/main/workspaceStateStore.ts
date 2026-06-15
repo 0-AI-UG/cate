@@ -4,15 +4,28 @@
 //
 //   recent-projects.json   { projects: string[] }            recency-ordered list
 //   sidebar.json           { session: SidebarSession|null }  sidebar order + active
-//   remote-workspaces.json { workspaces: RemoteProjectEntry[] } cate-companion:// restore snapshots
+//   remote-workspaces.json { workspaces: RemoteProjectEntry[] } cate-runtime:// restore snapshots
 //   layouts.json           { layouts: Record<string, unknown> } named saved canvas layouts
 // =============================================================================
 
 import { createJsonStateFile } from './jsonStateFile'
 import { isPlainObject } from './jsonUtils'
+import log from './logger'
 import type { SidebarSession, RemoteProjectEntry } from '../shared/types'
 
 const MAX_RECENT_PROJECTS = 10
+
+// Legacy URI scheme from before the companion→runtime rename. Remote workspaces
+// saved by an older build carry `cate-companion://` locators that the current
+// `parseLocator` no longer recognizes (it would silently treat them as bare
+// local paths). We drop those stale entries on load and log a notice telling the
+// user to re-add the connection — there is no automatic migration. This is the
+// only place the old scheme string still appears intentionally.
+const LEGACY_RUNTIME_SCHEME = 'cate-companion://'
+
+function isLegacyRemoteEntry(w: RemoteProjectEntry): boolean {
+  return typeof w.locator === 'string' && w.locator.startsWith(LEGACY_RUNTIME_SCHEME)
+}
 
 // ---------------------------------------------------------------------------
 // File shapes + stores. Each top-level value is an object (never a bare array)
@@ -59,9 +72,21 @@ const remoteWorkspacesStore = createJsonStateFile<RemoteWorkspacesFile>({
     const o = asObject(parsed)
     // Keep entry validation light: the renderer's restore path is already
     // defensive about partial/legacy snapshots. We only guarantee the array shape.
-    const workspaces = Array.isArray(o.workspaces)
+    const all = Array.isArray(o.workspaces)
       ? (o.workspaces.filter((w) => w && typeof w === 'object') as RemoteProjectEntry[])
       : defaults.workspaces
+    const legacy = all.filter(isLegacyRemoteEntry)
+    if (legacy.length > 0) {
+      const names = legacy.map((w) => w.locator).join(', ')
+      log.warn(
+        '[workspaceState] dropping %d remote workspace(s) saved by an older version ' +
+          '(legacy %s locator); please re-add the connection: %s',
+        legacy.length,
+        LEGACY_RUNTIME_SCHEME,
+        names,
+      )
+    }
+    const workspaces = all.filter((w) => !isLegacyRemoteEntry(w))
     return { workspaces }
   },
 })

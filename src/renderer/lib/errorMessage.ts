@@ -3,7 +3,7 @@
 // string fit for the UI.
 //
 // Errors that cross Electron's IPC boundary arrive wrapped:
-//   "Error invoking remote method 'git:init': Error: No companion registered…"
+//   "Error invoking remote method 'git:init': Error: No runtime registered…"
 // and internal errors often carry jargon the user can't act on. This strips the
 // IPC plumbing and maps known technical messages to friendly equivalents so we
 // never surface raw errors like that screenshot again.
@@ -18,8 +18,8 @@ const ERROR_NAME_PREFIX = /^(?:[A-Z][a-zA-Z]*Error|Error):\s*/
 // the cleaned message; first hit wins.
 const FRIENDLY: ReadonlyArray<{ match: RegExp; message: string }> = [
   {
-    match: /No companion registered for id/i,
-    message: 'The companion isn’t connected on this host yet. Install it and try again.',
+    match: /No runtime registered for id/i,
+    message: 'The runtime isn’t connected on this host yet. Install it and try again.',
   },
   {
     match: /ENOENT|no such file or directory/i,

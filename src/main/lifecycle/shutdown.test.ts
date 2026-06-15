@@ -24,7 +24,7 @@ vi.mock('../projectWorkspaceStore', () => ({ saveProjectStateSync: () => {} }))
 vi.mock('../workspaceStateStore', () => ({ flushWorkspaceStateSync: () => {} }))
 vi.mock('../uiStateStore', () => ({ flushUIStateSync: () => {} }))
 vi.mock('../projectLock', () => ({ releaseAllProjectLocks: () => {} }))
-vi.mock('../companion/companionManager', () => ({ companions: { disposeAll: () => Promise.resolve() } }))
+vi.mock('../runtime/runtimeManager', () => ({ runtimes: { disposeAll: () => Promise.resolve() } }))
 vi.mock('../auto-updater', () => ({ isUpdatePendingInstall: () => false }))
 
 const { decideQuitPrompt } = await import('./shutdown')

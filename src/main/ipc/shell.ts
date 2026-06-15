@@ -2,7 +2,7 @@
 // Shell / Process Monitor IPC handlers
 // Walks the process tree to detect agent CLIs (Claude, Codex, etc.), dev-server
 // ports, and working directory. The actual ps/lsof scans run inside each
-// terminal's companion ProcessHost (local OR remote daemon) — this module owns
+// terminal's runtime ProcessHost (local OR remote daemon) — this module owns
 // only the polling cadence, the owner-window routing, and the cross-scan
 // carry-across that keeps tab names from flickering. For a LOCAL terminal the
 // behaviour is byte-identical to before (the local ProcessHost runs the same
@@ -19,9 +19,9 @@ import {
   SHELL_CWD_UPDATE,
   SHELL_AGENT_SCREEN_STATE,
 } from '../../shared/ipc-channels'
-import { getCompanionForTerminal } from './terminal'
+import { getRuntimeForTerminal } from './terminal'
 import { sendToWindow, windowFromEvent, broadcastToAll } from '../windowRegistry'
-import type { Companion, PtyActivity } from '../companion/types'
+import type { Runtime, PtyActivity } from '../runtime/types'
 import type { TerminalActivity } from '../../shared/types'
 
 interface TerminalRegistration {
@@ -65,7 +65,7 @@ export function getRunningTerminals(): Array<{ processName: string | null }> {
 // and agent "needs input" detection is driven by PTY title/spinner events in
 // the renderer (event-based, not this scan), so a few extra seconds of presence
 // latency costs nothing while the scan rate — the real background-CPU/battery
-// drain — drops ~5×. (Each cycle forks one `ps` snapshot per companion.)
+// drain — drops ~5×. (Each cycle forks one `ps` snapshot per runtime.)
 const ACTIVITY_POLL_FOCUSED_MS = 1000
 const ACTIVITY_POLL_UNFOCUSED_MS = 5000
 let pollInterval: ReturnType<typeof setInterval> | null = null
@@ -121,44 +121,44 @@ function installFocusHooks(): void {
 }
 
 /**
- * Group the currently-registered terminal ids by the companion that hosts them.
- * Terminals whose companion can no longer be resolved are dropped from the scan
+ * Group the currently-registered terminal ids by the runtime that hosts them.
+ * Terminals whose runtime can no longer be resolved are dropped from the scan
  * (they'll be cleaned up by the terminal exit / unregister path).
  */
-function groupByCompanion(): Map<Companion, string[]> {
-  const groups = new Map<Companion, string[]>()
+function groupByRuntime(): Map<Runtime, string[]> {
+  const groups = new Map<Runtime, string[]>()
   for (const terminalId of registeredTerminals.keys()) {
-    const companion = getCompanionForTerminal(terminalId)
-    if (!companion) continue
-    const ids = groups.get(companion)
+    const runtime = getRuntimeForTerminal(terminalId)
+    if (!runtime) continue
+    const ids = groups.get(runtime)
     if (ids) ids.push(terminalId)
-    else groups.set(companion, [terminalId])
+    else groups.set(runtime, [terminalId])
   }
   return groups
 }
 
 /**
- * Fast scan (1s focused / 5s unfocused): per-companion process-tree scan for
+ * Fast scan (1s focused / 5s unfocused): per-runtime process-tree scan for
  * agent activity. Emits SHELL_ACTIVITY_UPDATE to each terminal's owning window.
  */
 async function runActivityScan(): Promise<void> {
   if (pollBusy) return
   pollBusy = true
   try {
-    const groups = groupByCompanion()
+    const groups = groupByRuntime()
     if (groups.size === 0) return
 
     await Promise.all(
-      Array.from(groups.entries()).map(async ([companion, ids]) => {
+      Array.from(groups.entries()).map(async ([runtime, ids]) => {
         // The daemon's scanActivity skips SIGSTOP-suspended ptys internally (their
         // process tree is frozen and can't change until resumed), so no client-side
-        // filter is needed here — scan all ids the companion hosts.
+        // filter is needed here — scan all ids the runtime hosts.
         const toScan = ids
         if (toScan.length === 0) return
 
         let results: Record<string, PtyActivity> = {}
         try {
-          results = await companion.process.scanActivity(toScan)
+          results = await runtime.process.scanActivity(toScan)
         } catch (err) {
           log.debug('[shell] scanActivity failed: %s', err instanceof Error ? err.message : String(err))
           return
@@ -195,17 +195,17 @@ async function runSlowScan(): Promise<void> {
   if (slowPollBusy) return
   slowPollBusy = true
   try {
-    const groups = groupByCompanion()
+    const groups = groupByRuntime()
     if (groups.size === 0) return
 
     await Promise.all(
-      Array.from(groups.entries()).map(async ([companion, ids]) => {
+      Array.from(groups.entries()).map(async ([runtime, ids]) => {
         // --- CWD updates — focus-gated ---
         if (anyWindowFocused) {
           await Promise.all(
             ids.map(async (terminalId) => {
               try {
-                const cwd = await companion.process.getCwd(terminalId)
+                const cwd = await runtime.process.getCwd(terminalId)
                 const info = registeredTerminals.get(terminalId)
                 if (cwd && info) sendToWindow(info.ownerWindowId, SHELL_CWD_UPDATE, terminalId, cwd)
               } catch { /* ignore */ }
@@ -218,7 +218,7 @@ async function runSlowScan(): Promise<void> {
         //     the app is backgrounded. ---
         let portMap: Record<string, number[]> = {}
         try {
-          portMap = await companion.process.scanPorts(ids)
+          portMap = await runtime.process.scanPorts(ids)
         } catch (err) {
           log.debug('[shell] scanPorts failed: %s', err instanceof Error ? err.message : String(err))
         }
@@ -292,12 +292,12 @@ export function registerHandlers(): void {
     SHELL_REGISTER_TERMINAL,
     async (event, terminalId: string, _pid?: number) => {
       // The scans are now keyed by the pty id and run inside the terminal's
-      // companion ProcessHost (which owns the pid), so we no longer need a local
-      // pid here — only that the terminal resolves to a companion. (The legacy
+      // runtime ProcessHost (which owns the pid), so we no longer need a local
+      // pid here — only that the terminal resolves to a runtime. (The legacy
       // `pid` arg is accepted but unused.)
-      const companion = getCompanionForTerminal(terminalId)
-      if (!companion) {
-        log.warn(`[shell] No companion found for terminal ${terminalId}`)
+      const runtime = getRuntimeForTerminal(terminalId)
+      if (!runtime) {
+        log.warn(`[shell] No runtime found for terminal ${terminalId}`)
         return
       }
 

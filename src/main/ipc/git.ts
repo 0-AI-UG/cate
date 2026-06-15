@@ -1,18 +1,18 @@
 // =============================================================================
-// Git IPC handlers — thin routers over the resolved companion's VcsHost.
+// Git IPC handlers — thin routers over the resolved runtime's VcsHost.
 //
 // The git logic itself lives in ONE place: the electron-free factory
-// `createVcsCapability` (src/companion/capabilities/vcs.ts). Every companion
+// `createVcsCapability` (src/runtime/capabilities/vcs.ts). Every runtime
 // (the local daemon and remote daemons) builds its vcs from that factory. The
 // handlers below parse the locator off the cwd-like argument, resolve the target
-// companion, and delegate to `companion.vcs.<op>` — they contain no git logic.
+// runtime, and delegate to `runtime.vcs.<op>` — they contain no git logic.
 // =============================================================================
 
 import { ipcMain } from 'electron'
-import { parseLocator, formatLocator } from '../companion/locator'
-import type { VcsHost } from '../companion/types'
-import { resolveLocator } from '../companion/companionManager'
-import { createVcsCapability } from '../../companion/capabilities/vcs'
+import { parseLocator, formatLocator } from '../runtime/locator'
+import type { VcsHost } from '../runtime/types'
+import { resolveLocator } from '../runtime/runtimeManager'
+import { createVcsCapability } from '../../runtime/capabilities/vcs'
 import { getShellEnv } from '../shellEnv'
 import {
   GIT_IS_REPO,
@@ -49,7 +49,7 @@ import {
 } from '../../shared/ipc-channels'
 
 // The single vcs implementation, wired with the resolved login-shell env so
-// git/gh see the full PATH — matching how every companion daemon builds it.
+// git/gh see the full PATH — matching how every runtime daemon builds it.
 const localVcs = createVcsCapability({ env: getShellEnv })
 
 /**
@@ -63,31 +63,31 @@ export async function createBranch(cwd: string, branchName: string, startPoint?:
 
 // =============================================================================
 // IPC handlers — thin routers: parse the locator off the cwd-like argument,
-// resolve the target companion, delegate to its VcsHost.
+// resolve the target runtime, delegate to its VcsHost.
 // =============================================================================
 
 /** Resolve the VcsHost for a cwd-bearing locator, returning it plus the decoded
- *  path and the companion id (needed to re-encode any path returned to the UI). */
-function vcsFor(locator: string): { vcs: VcsHost; path: string; companionId: string } {
-  const { companion, path, companionId } = resolveLocator(locator)
-  return { vcs: companion.vcs, path, companionId }
+ *  path and the runtime id (needed to re-encode any path returned to the UI). */
+function vcsFor(locator: string): { vcs: VcsHost; path: string; runtimeId: string } {
+  const { runtime, path, runtimeId } = resolveLocator(locator)
+  return { vcs: runtime.vcs, path, runtimeId }
 }
 
 /** Decode a worktree-path argument (a locator built by the renderer from the
- *  workspace root) into a companion-absolute path, asserting it targets the same
- *  companion as its repo. Without this the raw `cate-companion://…` URI reaches
+ *  workspace root) into a runtime-absolute path, asserting it targets the same
+ *  runtime as its repo. Without this the raw `cate-runtime://…` URI reaches
  *  the daemon and `git worktree add` runs against a literal-scheme directory. */
-export function worktreeTargetPath(repoCompanionId: string, targetLocator: string): string {
-  const { companionId, path: p } = parseLocator(targetLocator)
-  if (companionId !== repoCompanionId) {
-    throw new Error('Worktree path must be on the same companion as its repository')
+export function worktreeTargetPath(repoRuntimeId: string, targetLocator: string): string {
+  const { runtimeId, path: p } = parseLocator(targetLocator)
+  if (runtimeId !== repoRuntimeId) {
+    throw new Error('Worktree path must be on the same runtime as its repository')
   }
   return p
 }
 
 /**
  * Register an exact pass-through git handler: parse the locator off the first
- * arg, resolve the companion's VcsHost, and delegate to `vcs[op](path, ...rest)`,
+ * arg, resolve the runtime's VcsHost, and delegate to `vcs[op](path, ...rest)`,
  * forwarding every trailing argument verbatim. `op` is constrained to a
  * `VcsHost` method name so a typo fails at compile time. Use only for handlers
  * whose body is exactly `const { vcs, path } = vcsFor(arg); return vcs.op(path, ...rest)`
@@ -132,12 +132,12 @@ export function registerHandlers(): void {
   route(GIT_PR_STATUS, 'prStatus')
   route(GIT_PR_LIST, 'prList')
 
-  // Hand-written: these re-encode/decode the locator (companionId + formatLocator
+  // Hand-written: these re-encode/decode the locator (runtimeId + formatLocator
   // / worktreeTargetPath) and so are NOT exact pass-throughs.
   ipcMain.handle(GIT_WORKTREE_LIST, async (_event, cwd: string) => {
-    const { vcs, path, companionId } = vcsFor(cwd)
+    const { vcs, path, runtimeId } = vcsFor(cwd)
     const worktrees = await vcs.worktreeList(path)
-    return worktrees.map((w) => ({ ...w, path: formatLocator({ companionId, path: w.path }) }))
+    return worktrees.map((w) => ({ ...w, path: formatLocator({ runtimeId, path: w.path }) }))
   })
 
   ipcMain.handle(
@@ -149,28 +149,28 @@ export function registerHandlers(): void {
       targetPath: string,
       options?: { createBranch?: boolean; baseRef?: string },
     ) => {
-      const { vcs, path, companionId } = vcsFor(repoCwd)
-      const target = worktreeTargetPath(companionId, targetPath)
+      const { vcs, path, runtimeId } = vcsFor(repoCwd)
+      const target = worktreeTargetPath(runtimeId, targetPath)
       const res = await vcs.worktreeAdd(path, branch, target, options)
-      return { ...res, path: formatLocator({ companionId, path: res.path }) }
+      return { ...res, path: formatLocator({ runtimeId, path: res.path }) }
     },
   )
 
   ipcMain.handle(
     GIT_WORKTREE_ADD_FROM_PR,
     async (_event, repoCwd: string, prNumber: number, targetPath: string) => {
-      const { vcs, path, companionId } = vcsFor(repoCwd)
-      const target = worktreeTargetPath(companionId, targetPath)
+      const { vcs, path, runtimeId } = vcsFor(repoCwd)
+      const target = worktreeTargetPath(runtimeId, targetPath)
       const res = await vcs.worktreeAddFromPr(path, prNumber, target)
-      return { ...res, path: formatLocator({ companionId, path: res.path }) }
+      return { ...res, path: formatLocator({ runtimeId, path: res.path }) }
     },
   )
 
   ipcMain.handle(
     GIT_WORKTREE_REMOVE,
     async (_event, repoCwd: string, worktreePath: string, options?: { force?: boolean }) => {
-      const { vcs, path, companionId } = vcsFor(repoCwd)
-      return vcs.worktreeRemove(path, worktreeTargetPath(companionId, worktreePath), options)
+      const { vcs, path, runtimeId } = vcsFor(repoCwd)
+      return vcs.worktreeRemove(path, worktreeTargetPath(runtimeId, worktreePath), options)
     },
   )
 }

@@ -8,9 +8,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('electron', () => ({}))
 vi.mock('../../main/windowRegistry', () => ({ broadcastToAll: vi.fn() }))
-vi.mock('../../main/companion/companionManager', () => ({ companions: { resolve: vi.fn() } }))
-vi.mock('../../main/companion/locator', () => ({
-  parseLocator: vi.fn(() => ({ companionId: 'local', path: '/ws' })),
+vi.mock('../../main/runtime/runtimeManager', () => ({ runtimes: { resolve: vi.fn() } }))
+vi.mock('../../main/runtime/locator', () => ({
+  parseLocator: vi.fn(() => ({ runtimeId: 'local', path: '/ws' })),
 }))
 vi.mock('./piRpcClient', () => ({ PiRpcClient: vi.fn() }))
 vi.mock('./installSubagents', () => ({ installSubagentExtension: vi.fn() }))

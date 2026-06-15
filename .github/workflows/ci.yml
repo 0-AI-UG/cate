@@ -59,8 +59,8 @@ jobs:
         run: npm run test:smoke:electron
 
       # NOTE: the Playwright e2e suite is intentionally NOT run here. The content-
-      # search specs drive the real local companion daemon, whose ripgrep ships in
-      # the companion tarball — building that tarball (node-pty compile + node/rg
+      # search specs drive the real local runtime daemon, whose ripgrep ships in
+      # the runtime tarball — building that tarball (node-pty compile + node/rg
       # download + pi bundle) adds ~5min to every PR. The release workflow builds
       # the tarball anyway, so e2e runs there instead (see release.yml). Keep this
       # PR gate fast: build + typecheck + lint + unit + smoke.

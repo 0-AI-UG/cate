@@ -13,8 +13,8 @@ import type {
   DockZonePosition,
   WorktreeMeta,
   RemoteConnectSpec,
-  CompanionConnection,
-  CompanionPhase,
+  RuntimeConnection,
+  RuntimePhase,
 } from '../../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -47,10 +47,10 @@ export type PanelPlacement =
 export interface AppStoreState {
   workspaces: WorkspaceState[]
   selectedWorkspaceId: string
-  /** Phase of the built-in LOCAL companion daemon (a process-wide singleton, so
+  /** Phase of the built-in LOCAL runtime daemon (a process-wide singleton, so
    *  it's global rather than per-workspace). Drives the local loading blocker.
    *  `null` until seeded at init. */
-  localCompanionPhase: CompanionPhase | null
+  localRuntimePhase: RuntimePhase | null
   /** Per-workspace reload counter. Bumped when a workspace's layout is rebuilt
    *  from disk (reload / hydrate), so the main shell can remount and respawn its
    *  terminals cleanly. Defaults to 0 for any workspace not present here. */
@@ -59,7 +59,7 @@ export interface AppStoreState {
 
 export interface AppStoreActions {
   // Workspace management
-  addWorkspace: (name?: string, rootPath?: string, id?: string, connection?: CompanionConnection) => string
+  addWorkspace: (name?: string, rootPath?: string, id?: string, connection?: RuntimeConnection) => string
   selectWorkspace: (id: string) => Promise<void>
   removeWorkspace: (id: string, forgetRecent?: boolean) => void
 
@@ -104,25 +104,25 @@ export interface AppStoreActions {
   // Workspace operations
   setWorkspaceRootPath: (wsId: string, rootPath: string) => Promise<boolean>
   connectRemoteWorkspace: (wsId: string, spec: RemoteConnectSpec) => Promise<boolean>
-  ensureWorkspaceCompanion: (wsId: string) => Promise<boolean>
-  /** Cheap relaunch of an existing connection (companion:ensure) — for a
-   *  disconnected/unreachable companion whose connection record is intact. */
-  retryCompanion: (wsId: string) => Promise<boolean>
-  /** Explicit clean install of the companion daemon, then connect. The entry
+  ensureWorkspaceRuntime: (wsId: string) => Promise<boolean>
+  /** Cheap relaunch of an existing connection (runtime:ensure) — for a
+   *  disconnected/unreachable runtime whose connection record is intact. */
+  retryRuntime: (wsId: string) => Promise<boolean>
+  /** Explicit clean install of the runtime daemon, then connect. The entry
    *  action of the `missing` phase — the only action that installs. */
-  installCompanion: (wsId: string) => Promise<boolean>
-  /** Literally delete the companion: stop the daemon + rm -rf the host install
+  installRuntime: (wsId: string) => Promise<boolean>
+  /** Literally delete the runtime: stop the daemon + rm -rf the host install
    *  (keeps saved auth). Main drives the workspace to `missing`; the user
    *  recovers via Install. */
-  deleteCompanion: (wsId: string) => Promise<boolean>
-  /** The single writer of a workspace's companion phase. Called ONLY by the
-   *  COMPANION_STATUS broadcast — the main process is the sole authority for the
+  deleteRuntime: (wsId: string) => Promise<boolean>
+  /** The single writer of a workspace's runtime phase. Called ONLY by the
+   *  RUNTIME_STATUS broadcast — the main process is the sole authority for the
    *  phase (it probes the connection step by step). The connect/ensure/install/
    *  delete actions never set it themselves. */
-  setWorkspaceCompanionPhase: (wsId: string, phase: CompanionPhase, error?: string | null) => void
-  /** Set the global LOCAL companion phase (drives the local loading blocker).
-   *  Written by the COMPANION_STATUS handler for LOCAL events + the init seed. */
-  setLocalCompanionPhase: (phase: CompanionPhase) => void
+  setWorkspaceRuntimePhase: (wsId: string, phase: RuntimePhase, error?: string | null) => void
+  /** Set the global LOCAL runtime phase (drives the local loading blocker).
+   *  Written by the RUNTIME_STATUS handler for LOCAL events + the init seed. */
+  setLocalRuntimePhase: (phase: RuntimePhase) => void
   setWorkspaceColor: (wsId: string, color: string) => void
   renameWorkspace: (wsId: string, name: string) => void
   duplicateWorkspace: (wsId: string) => string

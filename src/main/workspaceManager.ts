@@ -19,9 +19,9 @@ import { broadcastToAll, windowFromEvent, closeWindowsForWorkspace } from './win
 import { addAllowedRoot, removeAllowedRoot } from './ipc/pathValidation'
 import { resolveTrustedWorkspaceRoot } from './workspaceRoots'
 import { acquireProjectLock, releaseProjectLock } from './projectLock'
-import { isLocalLocator, parseLocator } from './companion/locator'
-import { companions } from './companion/companionManager'
-import type { CompanionConnection } from '../shared/types'
+import { isLocalLocator, parseLocator } from './runtime/locator'
+import { runtimes } from './runtime/runtimeManager'
+import type { RuntimeConnection } from '../shared/types'
 
 // In-memory workspace list — authoritative source of truth
 const workspaces: Map<string, WorkspaceInfo> = new Map()
@@ -76,19 +76,19 @@ function dropProjectLock(rootPath: string, exceptId?: string): void {
 }
 
 // -----------------------------------------------------------------------------
-// Companion root forwarding — the main process keeps its own allowed-root set
-// (file grants), but the companion that OWNS this workspace runs its own
+// Runtime root forwarding — the main process keeps its own allowed-root set
+// (file grants), but the runtime that OWNS this workspace runs its own
 // authoritative path check. When local runs as a daemon (or the root lives on a
-// remote/WSL companion), forward the root change there too. Best-effort: a
-// not-yet-connected companion is skipped, and a rejected RPC never breaks
+// remote/WSL runtime), forward the root change there too. Best-effort: a
+// not-yet-connected runtime is skipped, and a rejected RPC never breaks
 // workspace open/close.
 // -----------------------------------------------------------------------------
 
 function forwardAllowedRoot(rootPath: string, op: 'add' | 'remove', scopeId: string): void {
-  const { companionId, path } = parseLocator(rootPath)
-  if (!path || !companions.has(companionId)) return
-  const companion = companions.resolve(companionId)
-  const result = op === 'add' ? companion.addAllowedRoot(path, scopeId) : companion.removeAllowedRoot(path, scopeId)
+  const { runtimeId, path } = parseLocator(rootPath)
+  if (!path || !runtimes.has(runtimeId)) return
+  const runtime = runtimes.resolve(runtimeId)
+  const result = op === 'add' ? runtime.addAllowedRoot(path, scopeId) : runtime.removeAllowedRoot(path, scopeId)
   result.catch(() => { /* best-effort: never break workspace lifecycle */ })
 }
 
@@ -104,7 +104,7 @@ async function createWorkspace(
   name?: string,
   rootPath?: string,
   id?: string,
-  connection?: CompanionConnection,
+  connection?: RuntimeConnection,
 ): Promise<WorkspaceMutationResult> {
   // Validate caller-supplied id; fall back to a fresh UUID if invalid.
   const resolvedId = id && isValidWorkspaceId(id) ? id : generateId()
@@ -116,7 +116,7 @@ async function createWorkspace(
   const remote = !!rootPath && !isLocalLocator(rootPath)
   if (rootPath) {
     if (remote) {
-      // Remote/WSL: rootPath is a cate-companion:// locator. The daemon validates
+      // Remote/WSL: rootPath is a cate-runtime:// locator. The daemon validates
       // its own filesystem, so we don't realpath/lock/allow-root it locally.
       trustedRoot = rootPath
     } else {
@@ -263,7 +263,7 @@ export function registerWorkspaceHandlers(): void {
   // Create a new workspace
   ipcMain.handle(
     WORKSPACE_CREATE,
-    async (event, options?: { name?: string; rootPath?: string; id?: string; connection?: CompanionConnection }) => {
+    async (event, options?: { name?: string; rootPath?: string; id?: string; connection?: RuntimeConnection }) => {
       const result = await createWorkspace(options?.name, options?.rootPath, options?.id, options?.connection)
       if (!result.ok) return result
       const win = windowFromEvent(event)

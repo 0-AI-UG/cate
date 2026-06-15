@@ -20,7 +20,7 @@ import { Sidebar, RightSidebar } from './sidebar/Sidebar'
 import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
 import { PanelSuspense } from './panels/PanelSuspense'
 const CanvasPanel = PANEL_REGISTRY.canvas.Component
-import { CompanionLockOverlay } from './ui/CompanionLockOverlay'
+import { RuntimeLockOverlay } from './ui/RuntimeLockOverlay'
 import WindowChrome from './shells/WindowChrome'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
 import { UpdateReadyDialog } from './dialogs/UpdateReadyDialog'
@@ -432,10 +432,10 @@ function MainApp() {
       />
       </DockStoreProvider>
 
-      {/* Companion lock: covers the canvas area when the selected remote
-          workspace's companion is down. Sits inside the shell wrapper so it
+      {/* Runtime lock: covers the canvas area when the selected remote
+          workspace's runtime is down. Sits inside the shell wrapper so it
           never covers the sidebars. Renders nothing for local/healthy ws. */}
-      <CompanionLockOverlay />
+      <RuntimeLockOverlay />
       </div>
 
       {/* Right sidebar — real flex item, pushes the shell from the right. */}

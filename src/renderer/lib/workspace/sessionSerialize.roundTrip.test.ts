@@ -80,7 +80,7 @@ function buildSnapshot(): { snapshot: SessionSnapshot; canvasSnapshot: CanvasSna
     worktrees: [{ id: 'wt-1', path: WORKTREE_PATH, color: '#ff5555', label: 'fix-login' }],
     connection: {
       kind: 'server',
-      companionId: 'comp-1',
+      runtimeId: 'comp-1',
       host: 'devbox',
       user: 'anton',
       remotePath: '/srv/my-repo',

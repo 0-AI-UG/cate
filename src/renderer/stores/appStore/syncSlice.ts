@@ -25,8 +25,8 @@ export function createSyncSlice(set: AppSet, _get: AppGet): SyncSliceActions {
               existing.name !== info.name ||
               existing.color !== info.color ||
               existing.rootPath !== info.rootPath ||
-              (existing.connection && existing.connection.kind !== 'local' ? existing.connection.companionId : undefined) !==
-                (info.connection && info.connection.kind !== 'local' ? info.connection.companionId : undefined)
+              (existing.connection && existing.connection.kind !== 'local' ? existing.connection.runtimeId : undefined) !==
+                (info.connection && info.connection.kind !== 'local' ? info.connection.runtimeId : undefined)
             ) {
             existingMap.set(info.id, {
               ...existing,

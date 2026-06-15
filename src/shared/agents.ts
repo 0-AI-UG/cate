@@ -2,7 +2,7 @@
 // Coding agents Cate recognizes — the single source of truth for the agents we
 // detect running inside a terminal. Add a new agent HERE (id, display name, and
 // the process name(s) its CLI runs as) and it flows everywhere that matters:
-//   • detection — src/companion/capabilities/process.ts matches a terminal's
+//   • detection — src/runtime/capabilities/process.ts matches a terminal's
 //     child process name against `matchProcess` to label/decorate the panel.
 //   • logo — src/renderer/lib/agent/agentLogos.ts maps this `id` to an SVG. That
 //     file holds the one unavoidable renderer-only asset import; adding an agent

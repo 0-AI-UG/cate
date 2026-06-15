@@ -1,14 +1,14 @@
 // Renderer-safe, locator-aware display helpers.
 //
 // Workspace roots and file paths are LOCATOR strings (see
-// src/main/companion/locator.ts): a bare absolute path is local; a
-// `cate-companion://<companionId>/<percent-encoded-posix-path>` URI is remote.
+// src/main/runtime/locator.ts): a bare absolute path is local; a
+// `cate-runtime://<runtimeId>/<percent-encoded-posix-path>` URI is remote.
 // Naively splitting the raw locator on `/` leaks the scheme and percent-
-// encoding into the UI ("cate-companion:", "%20", the companion id segment).
+// encoding into the UI ("cate-runtime:", "%20", the runtime id segment).
 // These helpers decode the locator first so both local and remote paths render
 // cleanly. LOCAL output is byte-identical to the old split-based logic.
 
-import { LOCAL_COMPANION_ID, parseLocator } from '../../../main/companion/locator'
+import { LOCAL_RUNTIME_ID, parseLocator } from '../../../main/runtime/locator'
 
 /** Abbreviate a macOS home-dir path to `~/...`, matching WelcomePage's legacy
  *  behavior exactly. */
@@ -32,7 +32,7 @@ export function abbreviateLocalPath(fullPath: string): string {
  * only treat `\` as a separator for local locators.
  */
 export function workspaceDisplayName(locator: string): string {
-  const { companionId, path } = parseLocator(locator)
-  const sep = companionId === LOCAL_COMPANION_ID ? /[\\/]/ : /\//
+  const { runtimeId, path } = parseLocator(locator)
+  const sep = runtimeId === LOCAL_RUNTIME_ID ? /[\\/]/ : /\//
   return path.split(sep).filter(Boolean).pop() ?? ''
 }

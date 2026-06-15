@@ -216,7 +216,7 @@ export const SIDEBAR_SESSION_GET = 'sidebar-session:get'
 export const SIDEBAR_SESSION_SET = 'sidebar-session:set'
 
 // Remote projects (persisted restore snapshots + reconnect info for
-// cate-companion:// workspaces, which can't use the local .cate/ files)
+// cate-runtime:// workspaces, which can't use the local .cate/ files)
 export const REMOTE_PROJECTS_GET = 'remote-projects:get'
 export const REMOTE_PROJECTS_SET = 'remote-projects:set'
 
@@ -367,17 +367,17 @@ export const WORKSPACE_UPDATE = 'workspace:update'
 export const WORKSPACE_REMOVE = 'workspace:remove'
 export const WORKSPACE_CHANGED = 'workspace:changed' // main -> renderer (broadcast)
 
-// Companion connections (remote / WSL backends)
-export const COMPANION_CONNECT = 'companion:connect'       // renderer -> main
-export const COMPANION_ENSURE = 'companion:ensure'         // renderer -> main (reconnect from a stored connection)
-export const COMPANION_LIST = 'companion:list'             // renderer -> main
-export const COMPANION_WSL_DISTROS = 'companion:wsl-distros' // renderer -> main (list installed WSL distros)
-export const COMPANION_SSH_HOSTS = 'companion:ssh-hosts'   // renderer -> main (host aliases from ~/.ssh/config)
-export const COMPANION_INSTALL = 'companion:install'       // renderer -> main (explicit clean install + connect)
-export const COMPANION_DELETE = 'companion:delete'         // renderer -> main (rm -rf the host install, keep saved auth)
-export const COMPANION_STATUS = 'companion:status'         // main -> renderer (broadcast)
-export const COMPANION_LOCAL_STATUS = 'companion:local-status' // renderer -> main (current LOCAL phase, seeds the loading blocker)
-export const COMPANION_PICK_SSH_KEY = 'companion:pick-ssh-key' // renderer -> main (native file picker for an SSH private key)
+// Runtime connections (remote / WSL backends)
+export const RUNTIME_CONNECT = 'runtime:connect'       // renderer -> main
+export const RUNTIME_ENSURE = 'runtime:ensure'         // renderer -> main (reconnect from a stored connection)
+export const RUNTIME_LIST = 'runtime:list'             // renderer -> main
+export const RUNTIME_WSL_DISTROS = 'runtime:wsl-distros' // renderer -> main (list installed WSL distros)
+export const RUNTIME_SSH_HOSTS = 'runtime:ssh-hosts'   // renderer -> main (host aliases from ~/.ssh/config)
+export const RUNTIME_INSTALL = 'runtime:install'       // renderer -> main (explicit clean install + connect)
+export const RUNTIME_DELETE = 'runtime:delete'         // renderer -> main (rm -rf the host install, keep saved auth)
+export const RUNTIME_STATUS = 'runtime:status'         // main -> renderer (broadcast)
+export const RUNTIME_LOCAL_STATUS = 'runtime:local-status' // renderer -> main (current LOCAL phase, seeds the loading blocker)
+export const RUNTIME_PICK_SSH_KEY = 'runtime:pick-ssh-key' // renderer -> main (native file picker for an SSH private key)
 
 
 // Performance profiler (only active under CATE_PERF=1)

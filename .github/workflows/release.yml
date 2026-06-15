@@ -34,11 +34,11 @@ jobs:
           fi
 
   release:
-    # Depends on `companion` too: the macOS app embeds BOTH the arm64 and the
-    # Intel (darwin-x64) companion daemon, and the x64 one can only be built on
-    # an Intel runner (the `companion` job's macos-13 target). The mac app job
+    # Depends on `runtime` too: the macOS app embeds BOTH the arm64 and the
+    # Intel (darwin-x64) runtime daemon, and the x64 one can only be built on
+    # an Intel runner (the `runtime` job's macos-13 target). The mac app job
     # pulls that published tarball below before packaging.
-    needs: [create-release, companion]
+    needs: [create-release, runtime]
     strategy:
       fail-fast: false
       matrix:
@@ -75,18 +75,18 @@ jobs:
       - name: Generate icons
         run: npm run icons
 
-      # Regenerate the embedded companion + pi version strings (src/companion/
+      # Regenerate the embedded runtime + pi version strings (src/runtime/
       # version.ts, piVersion.ts) from package.json / the installed pi BEFORE
-      # building the app. `npm run build` bakes COMPANION_VERSION/PI_VERSION into
+      # building the app. `npm run build` bakes RUNTIME_VERSION/PI_VERSION into
       # the app, and the daemon resolves its tarball by that version
-      # (cate-companion-<COMPANION_VERSION>-<target>.tgz). A release whose version
+      # (cate-runtime-<RUNTIME_VERSION>-<target>.tgz). A release whose version
       # bump only touched package.json (e.g. a beta tag) otherwise leaves the
       # committed version.ts stale, so the app looks for the wrong tarball name —
       # in dev/e2e that means no ripgrep and 0-result content search (which gates
-      # the macOS release), and in the shipped app a missing companion/pi pull.
-      - name: Sync companion + pi versions to package.json
+      # the macOS release), and in the shipped app a missing runtime/pi pull.
+      - name: Sync runtime + pi versions to package.json
         run: |
-          npm run build:companion
+          npm run build:runtime
           npm run pi:tarball
 
       - name: Build app
@@ -94,7 +94,7 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
-      # The companion tarball stages node-pty's native binary from build/Release.
+      # The runtime tarball stages node-pty's native binary from build/Release.
       # On macOS/Windows `npm install` satisfies node-pty from a shipped prebuild
       # and never populates build/Release, so compile from source here. On Linux
       # node-pty ships NO prebuild, so `npm install` already built it from source
@@ -105,48 +105,48 @@ jobs:
         run: npm rebuild node-pty --build-from-source
 
       # Import the Developer ID cert into a scoped keychain and export the signing
-      # identity, so the next step can codesign the companion's bundled native
+      # identity, so the next step can codesign the runtime's bundled native
       # binaries. Without this, notarytool rejects the unsigned node-pty/rg Mach-O
-      # inside companion-host.tgz and the macOS release fails to notarize.
-      - name: Set up macOS signing for companion natives
+      # inside runtime-host.tgz and the macOS release fails to notarize.
+      - name: Set up macOS signing for runtime natives
         if: matrix.platform == 'mac'
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
         run: bash scripts/ci-mac-signing-keychain.sh
 
-      # The local workspace runs the companion daemon tarball, shipped inside the
-      # installer (electron-builder.yml extraResources → companion-host.tgz). Build
+      # The local workspace runs the runtime daemon tarball, shipped inside the
+      # installer (electron-builder.yml extraResources → runtime-host.tgz). Build
       # this runner's host-target tarball and stage it under the fixed name so the
       # extraResource exists. Each runner builds only its own host target. On macOS
       # the build script signs the bundled natives via CATE_MAC_SIGN_IDENTITY
       # (exported above) before packing, so the tarball notarizes inside the app.
-      - name: Build + stage host companion tarball
+      - name: Build + stage host runtime tarball
         shell: bash
         run: |
-          node scripts/build-companion-tarball.mjs
-          cp dist-companion/cate-companion-*.tgz dist-companion/companion-host.tgz
+          node scripts/build-runtime-tarball.mjs
+          cp dist-runtime/cate-runtime-*.tgz dist-runtime/runtime-host.tgz
 
       # A single macOS .app can run on either CPU (x64 natively on Intel, arm64
       # on Apple Silicon, x64 under Rosetta), and the LOCAL workspace runs the
-      # companion daemon whose bundled node + node-pty are arch-specific — an
+      # runtime daemon whose bundled node + node-pty are arch-specific — an
       # arm64 daemon simply cannot exec on an Intel Mac, so the terminal panel
       # never opens (#384). The app therefore ships BOTH arches and picks one at
-      # runtime (shippedCompanionTarball() → companion-host-<arch>.tgz). The host
+      # runtime (shippedRuntimeTarball() → runtime-host-<arch>.tgz). The host
       # tarball staged above is darwin-arm64 (macos-latest is Apple Silicon); the
       # Intel one can only be built on an Intel runner, so pull the darwin-x64
-      # tarball the `companion` job published to this release.
-      - name: Stage both macOS companion arches (Intel + Apple Silicon)
+      # tarball the `runtime` job published to this release.
+      - name: Stage both macOS runtime arches (Intel + Apple Silicon)
         if: matrix.platform == 'mac'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          cp dist-companion/companion-host.tgz dist-companion/companion-host-arm64.tgz
+          cp dist-runtime/runtime-host.tgz dist-runtime/runtime-host-arm64.tgz
           gh release download "$TAG_NAME" --repo "${{ github.repository }}" \
-            --pattern 'cate-companion-*-darwin-x64.tgz' --dir dist-companion --clobber
-          cp dist-companion/cate-companion-*-darwin-x64.tgz dist-companion/companion-host-x64.tgz
+            --pattern 'cate-runtime-*-darwin-x64.tgz' --dir dist-runtime --clobber
+          cp dist-runtime/cate-runtime-*-darwin-x64.tgz dist-runtime/runtime-host-x64.tgz
 
       # Note: the functional + content-search e2e suite used to gate the macOS
       # release here, but the hosted mac runner flaked on the synthetic-mouse
@@ -213,12 +213,12 @@ jobs:
             --repo "${{ github.repository }}" \
             --clobber
 
-  # Per-target cate-companion daemon tarballs. Built on the matching runner so
+  # Per-target cate-runtime daemon tarballs. Built on the matching runner so
   # node-pty's native binary is correct for the target; linux-arm64 is cross-
   # built in a QEMU-emulated container (--docker). Uploaded to the same release
   # so a connecting host can pull its tarball straight from the release URL
-  # (see src/main/companion/companionArtifacts.ts).
-  companion:
+  # (see src/main/runtime/runtimeArtifacts.ts).
+  runtime:
     needs: create-release
     strategy:
       fail-fast: false
@@ -232,7 +232,7 @@ jobs:
           - os: macos-latest
             target: darwin-arm64
           # Intel macOS. node-pty's native binary can't be cross-built for x64
-          # from an Apple Silicon host (build-companion-tarball.mjs refuses), so
+          # from an Apple Silicon host (build-runtime-tarball.mjs refuses), so
           # this must run on an Intel runner. macos-13 is GitHub's last hosted
           # Intel image — if it's retired, this needs a self-hosted Intel runner
           # or Intel support has to be dropped.
@@ -279,23 +279,23 @@ jobs:
       # Sign the bundled darwin natives so a mac host that pulls this per-target
       # tarball from the release runs Developer ID-signed binaries (no Gatekeeper
       # quarantine block), mirroring the host tarball staged in the app.
-      - name: Set up macOS signing for companion natives
+      - name: Set up macOS signing for runtime natives
         if: startsWith(matrix.target, 'darwin-')
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
         run: bash scripts/ci-mac-signing-keychain.sh
 
-      - name: Build companion tarball (${{ matrix.target }})
-        run: node scripts/build-companion-tarball.mjs --target ${{ matrix.target }} ${{ matrix.docker && '--docker' || '' }}
+      - name: Build runtime tarball (${{ matrix.target }})
+        run: node scripts/build-runtime-tarball.mjs --target ${{ matrix.target }} ${{ matrix.docker && '--docker' || '' }}
 
-      - name: Upload companion tarball
+      - name: Upload runtime tarball
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release upload "$TAG_NAME" dist-companion/cate-companion-*-${{ matrix.target }}.tgz \
+          gh release upload "$TAG_NAME" dist-runtime/cate-runtime-*-${{ matrix.target }}.tgz \
             --repo "${{ github.repository }}" \
             --clobber
 
@@ -322,12 +322,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release upload "$TAG_NAME" dist-companion/cate-pi-*.tgz \
+          gh release upload "$TAG_NAME" dist-runtime/cate-pi-*.tgz \
             --repo "${{ github.repository }}" \
             --clobber
 
   publish-release:
-    needs: [release, companion, pi]
+    needs: [release, runtime, pi]
     runs-on: ubuntu-latest
     steps:
       - name: Publish release (remove draft)

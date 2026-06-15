@@ -73,7 +73,7 @@ export function ensurePanelsInAppStore(
       panels: { ...panels },
       // Seed the worktree registry from the transfer so worktree pills/tab tints
       // resolve in this detached window; empty when none were carried (matches
-      // createDefaultWorkspace's shape). connection/companion/additionalRoots are
+      // createDefaultWorkspace's shape). connection/runtime/additionalRoots are
       // left undefined (the type permits it).
       worktrees: worktrees ?? [],
     }

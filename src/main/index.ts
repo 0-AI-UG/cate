@@ -2,8 +2,8 @@ import log from './logger'
 import { app, BrowserWindow, ipcMain, session } from 'electron'
 import path from 'path'
 import { registerHandlers as registerTerminalHandlers } from './ipc/terminal'
-import { companions } from './companion/companionManager'
-import { registerCompanionHandlers } from './ipc/companion'
+import { runtimes } from './runtime/runtimeManager'
+import { registerRuntimeHandlers } from './ipc/runtime'
 import { registerHandlers as registerFilesystemHandlers } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerSearchHandlers } from './ipc/search'
@@ -121,7 +121,7 @@ function registerDeferredHandlers(): void {
   registerAuthHandlers(authManager)
   registerAgentHandlers(authManager, agentManager)
   registerSkillHandlers()
-  registerCompanionHandlers()
+  registerRuntimeHandlers()
 }
 
 // =============================================================================
@@ -246,9 +246,9 @@ registerTelemetryNoticeHandler()
 setNewMainWindowFn(() => createWindow({ type: 'main' }))
 
 // ---------------------------------------------------------------------------
-// Crash / signal teardown. Local terminals run in the companion daemon
+// Crash / signal teardown. Local terminals run in the runtime daemon
 // subprocess: when this main process dies its stdin closes, and the daemon's
-// `process.stdin.on('close')` handler (src/companion/index.ts) group-kills its
+// `process.stdin.on('close')` handler (src/runtime/index.ts) group-kills its
 // ptys and exits — so dev servers/watchers don't survive as zombies. No
 // in-process PTY cleanup is needed here anymore.
 // ---------------------------------------------------------------------------
@@ -286,13 +286,13 @@ app.whenReady().then(async () => {
   await initShellEnv()
   log.info('Shell environment resolved')
 
-  // Bring the local workspace online: provision + launch the host-target companion
+  // Bring the local workspace online: provision + launch the host-target runtime
   // tarball as a local daemon, the same path remote hosts use. Done after the shell
   // env so the daemon inherits the full PATH for git/terminals. This registers a
-  // DeferredCompanion SYNCHRONOUSLY (resolve(LOCAL) works immediately) and connects
+  // DeferredRuntime SYNCHRONOUSLY (resolve(LOCAL) works immediately) and connects
   // the daemon in the background, so first-run tarball provisioning never blocks
   // the window paint — early IPC ops queue behind the deferred's `ready`.
-  companions.ensureLocalCompanion({
+  runtimes.ensureLocalRuntime({
     root: app.getPath('home'),
     exclusions: [...currentExclusionSet()],
     env: getShellEnv(),

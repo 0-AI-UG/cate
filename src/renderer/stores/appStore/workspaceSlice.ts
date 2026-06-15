@@ -92,14 +92,14 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
       if (state.selectedWorkspaceId === id) {
         // Already selected — normally a no-op. But addWorkspace auto-selects the
         // first workspace on restore, so the restore's selectWorkspace(firstId)
-        // would otherwise skip the companion connect entirely, leaving a remote
+        // would otherwise skip the runtime connect entirely, leaving a remote
         // workspace stuck with no phase (a permanent "connecting" lock) and every
-        // companion op failing with "No companion registered". Kick off the
+        // runtime op failing with "No runtime registered". Kick off the
         // connect here so the restore's awaited selectWorkspace still resolves
-        // only once the companion is live.
+        // only once the runtime is live.
         const current = state.workspaces.find((w) => w.id === id)
-        if (current?.connection && current.connection.kind !== 'local' && !current.companion) {
-          await get().ensureWorkspaceCompanion(id)
+        if (current?.connection && current.connection.kind !== 'local' && !current.runtime) {
+          await get().ensureWorkspaceRuntime(id)
         }
         // A startup-deferred snapshot restores here too: addWorkspace auto-selects
         // the first workspace, so the selected (e.g. remote) workspace's
@@ -145,16 +145,16 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
         setActivePanel(incomingCanvasPanelId)
       }
 
-      // Reconnect a remote workspace's companion if it isn't live (e.g. after a
+      // Reconnect a remote workspace's runtime if it isn't live (e.g. after a
       // restart / restore). For a REMOTE workspace we must AWAIT this before the
       // deferred restore below, because that creates terminals and reads files
-      // that route through the companion — racing the async reconnect would hit
-      // an unregistered companion and throw. Local workspaces stay synchronous.
+      // that route through the runtime — racing the async reconnect would hit
+      // an unregistered runtime and throw. Local workspaces stay synchronous.
       const incoming = get().workspaces.find((w) => w.id === id)
       if (incoming?.connection && incoming.connection.kind !== 'local') {
-        const ok = await get().ensureWorkspaceCompanion(id)
+        const ok = await get().ensureWorkspaceRuntime(id)
         if (!ok) {
-          log.warn('[companion] reconnect failed for workspace %s; restore will surface the error', id)
+          log.warn('[runtime] reconnect failed for workspace %s; restore will surface the error', id)
         }
       }
 
@@ -174,8 +174,8 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
       } else if (Object.keys(get().workspaces.find((w) => w.id === id)?.panels ?? {}).length === 0) {
         // Opening a never-activated workspace that has a rootPath — the
         // close-then-reopen path (onOpenPath addWorkspace(name, rootPath) → select).
-        // Load its saved .cate/ layout. Runs after the companion reconnect above so
-        // a remote read can't race an unregistered companion. The zero-panel gate
+        // Load its saved .cate/ layout. Runs after the runtime reconnect above so
+        // a remote read can't race an unregistered runtime. The zero-panel gate
         // keeps a plain switch-back from reloading a workspace cleared via Close
         // Panels. Guarded + idempotent inside the helper.
         await hydrateWorkspaceFromDisk(id)

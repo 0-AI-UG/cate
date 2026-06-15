@@ -19,7 +19,7 @@ import {
   forwardFileGrant,
   forwardClearFileGrantsForWindow,
   forwardClearScopedWriteAllowancesForWindow,
-} from '../companion/companionManager'
+} from '../runtime/runtimeManager'
 import { listPersistentGrants } from '../grantedPathStore'
 import { rebuildApplicationMenu } from '../menu'
 import { disableRendererSandbox } from '../featureFlags'
@@ -150,7 +150,7 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
         // exact path; it does not widen access elsewhere.
         try {
           await grantFileAccess(windowId, filePath)
-          // Mirror the grant into the owning companion's authoritative map so a
+          // Mirror the grant into the owning runtime's authoritative map so a
           // restored out-of-root editor can read/save against the daemon.
           forwardFileGrant(filePath, windowId)
         } catch (err) {
@@ -190,7 +190,7 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     stopSearchesForWindow(windowId)
     clearScopedWriteAllowancesForWindow(windowId)
     clearFileGrantsForWindow(windowId)
-    // Forward the clears to every registered companion (the daemon keeps its own
+    // Forward the clears to every registered runtime (the daemon keeps its own
     // grant maps; a window close has no locator, so fan out to all hosts).
     forwardClearScopedWriteAllowancesForWindow(windowId)
     forwardClearFileGrantsForWindow(windowId)

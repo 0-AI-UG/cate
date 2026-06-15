@@ -17,8 +17,8 @@ import type { ProjectWorkspaceFile, ProjectSessionFile } from '../shared/types'
 import { toRelativePath } from '../shared/pathUtils'
 import { broadcastToAll } from './windowRegistry'
 import { ensureCateGitignore, CATE_GITIGNORE_CONTENT } from './cateGitignore'
-import { parseLocator, isLocalLocator } from './companion/locator'
-import { companions } from './companion/companionManager'
+import { parseLocator, isLocalLocator } from './runtime/locator'
+import { runtimes } from './runtime/runtimeManager'
 
 const CATE_DIR = '.cate'
 const WORKSPACE_FILE = 'workspace.json'
@@ -394,10 +394,10 @@ function enqueueSave(rootPath: string, task: () => Promise<void>): Promise<void>
 }
 
 // ---------------------------------------------------------------------------
-// Remote (cate-companion://) project state.
+// Remote (cate-runtime://) project state.
 //
-// A remote workspace's tree lives on a companion, so its `.cate/` files are
-// written next to the remote repo THROUGH the companion file API — the same
+// A remote workspace's tree lives on a runtime, so its `.cate/` files are
+// written next to the remote repo THROUGH the runtime file API — the same
 // `.cate/workspace.json` + `session.json` layout as local, just over RPC. This
 // is what lets remote and local round-trip identically (open/close/reopen).
 //
@@ -409,10 +409,10 @@ function enqueueSave(rootPath: string, task: () => Promise<void>): Promise<void>
 // ---------------------------------------------------------------------------
 
 function remoteCateTargets(rootPath: string) {
-  const { companionId, path: base } = parseLocator(rootPath)
+  const { runtimeId, path: base } = parseLocator(rootPath)
   const dir = path.posix.join(base, CATE_DIR)
   return {
-    companion: companions.resolve(companionId),
+    runtime: runtimes.resolve(runtimeId),
     cateDir: dir,
     workspaceFile: path.posix.join(dir, WORKSPACE_FILE),
     sessionFile: path.posix.join(dir, SESSION_FILE),
@@ -425,12 +425,12 @@ async function saveProjectStateRemote(
   workspace: ProjectWorkspaceFile,
   session: ProjectSessionFile,
 ): Promise<void> {
-  const { companion, workspaceFile, sessionFile, gitignoreFile } = remoteCateTargets(rootPath)
+  const { runtime, workspaceFile, sessionFile, gitignoreFile } = remoteCateTargets(rootPath)
 
   // Data-loss backstop (issue #220), mirrored for remote: never overwrite a
   // non-empty saved canvas with an empty one.
   if (workspaceNodeCount(workspace) <= 0) {
-    const existing = await companion.file
+    const existing = await runtime.file
       .readFile(workspaceFile)
       .then((raw) => JSON.parse(raw) as unknown)
       .catch(() => null)
@@ -441,13 +441,13 @@ async function saveProjectStateRemote(
   }
 
   // Write-once .gitignore so committable workspace.json is the only shared file.
-  await companion.file
+  await runtime.file
     .stat(gitignoreFile)
-    .catch(() => companion.file.writeFile(gitignoreFile, CATE_GITIGNORE_CONTENT))
+    .catch(() => runtime.file.writeFile(gitignoreFile, CATE_GITIGNORE_CONTENT))
 
   await Promise.all([
-    companion.file.writeFile(workspaceFile, JSON.stringify(workspace, null, 2)),
-    companion.file.writeFile(sessionFile, JSON.stringify(session, null, 2)),
+    runtime.file.writeFile(workspaceFile, JSON.stringify(workspace, null, 2)),
+    runtime.file.writeFile(sessionFile, JSON.stringify(session, null, 2)),
   ])
   log.debug('Remote project state saved to %s', rootPath)
 }
@@ -456,8 +456,8 @@ async function loadProjectStateRemote(rootPath: string): Promise<{
   workspace: ProjectWorkspaceFile
   session: ProjectSessionFile | null
 } | null> {
-  const { companion, workspaceFile, sessionFile } = remoteCateTargets(rootPath)
-  const wsRaw = await companion.file.readFile(workspaceFile).catch(() => null)
+  const { runtime, workspaceFile, sessionFile } = remoteCateTargets(rootPath)
+  const wsRaw = await runtime.file.readFile(workspaceFile).catch(() => null)
   if (!wsRaw) return null
   let ws: unknown
   try {
@@ -467,7 +467,7 @@ async function loadProjectStateRemote(rootPath: string): Promise<{
   }
   if (!isValidWorkspace(ws)) return null
 
-  const sessRaw = await companion.file.readFile(sessionFile).catch(() => null)
+  const sessRaw = await runtime.file.readFile(sessionFile).catch(() => null)
   let sess: ProjectSessionFile | null = null
   if (sessRaw) {
     try {
@@ -484,7 +484,7 @@ export function registerProjectStateHandlers(): void {
   ipcMain.handle(
     PROJECT_STATE_SAVE,
     async (_event, rootPath: string, workspace: ProjectWorkspaceFile, session: ProjectSessionFile) => {
-      // Remote workspaces save `.cate/` on their companion. No local lock,
+      // Remote workspaces save `.cate/` on their runtime. No local lock,
       // sync-fallback, or external-edit guard applies; just serialize per root.
       if (!isLocalLocator(rootPath)) {
         return enqueueSave(rootPath, () =>

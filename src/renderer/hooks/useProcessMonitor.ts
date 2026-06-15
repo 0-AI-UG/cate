@@ -129,10 +129,10 @@ export function useProcessMonitor(workspaceId: string): void {
     })
   }, [workspaceId])
 
-  // Re-arm whenever this workspace's companion becomes ready. During a
+  // Re-arm whenever this workspace's runtime becomes ready. During a
   // background restore the renderer can fire GIT_MONITOR_START before a remote
-  // companion finishes connecting; the main handler throws on an unconnected id
-  // and never arms. Keying on `ready` lets the effect re-run once the companion
+  // runtime finishes connecting; the main handler throws on an unconnected id
+  // and never arms. Keying on `ready` lets the effect re-run once the runtime
   // flips to 'connected'. For local workspaces `ready` is true immediately, so
   // behavior is unchanged.
   const ready = useAppStore((s) =>

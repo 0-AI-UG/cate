@@ -1,12 +1,12 @@
 // =============================================================================
 // Tests for workspaceRuntime — the single derive that turns a workspace's
-// connection record + companion phase into the canonical runtime status the
+// connection record + runtime phase into the canonical runtime status the
 // whole UI switches on (editability, lock overlay, sidebar dot).
 // =============================================================================
 
 import { describe, expect, it } from 'vitest'
 import { workspaceRuntime } from './workspaceRuntime'
-import type { CompanionConnection, CompanionPhase, WorkspaceState } from '../../../shared/types'
+import type { RuntimeConnection, RuntimePhase, WorkspaceState } from '../../../shared/types'
 
 function ws(overrides: Partial<WorkspaceState>): WorkspaceState {
   return {
@@ -19,13 +19,13 @@ function ws(overrides: Partial<WorkspaceState>): WorkspaceState {
   }
 }
 
-const wslConn: CompanionConnection = { kind: 'wsl', companionId: 'abc', distro: 'Ubuntu', distroPath: '/repo' }
+const wslConn: RuntimeConnection = { kind: 'wsl', runtimeId: 'abc', distro: 'Ubuntu', distroPath: '/repo' }
 
-function remote(phase: CompanionPhase | undefined, error?: string): WorkspaceState {
+function remote(phase: RuntimePhase | undefined, error?: string): WorkspaceState {
   return ws({
-    rootPath: 'cate-companion://abc/repo',
+    rootPath: 'cate-runtime://abc/repo',
     connection: wslConn,
-    companion: phase ? { phase, ...(error ? { error } : {}) } : undefined,
+    runtime: phase ? { phase, ...(error ? { error } : {}) } : undefined,
   })
 }
 
@@ -69,10 +69,10 @@ describe('workspaceRuntime', () => {
   })
 
   it('an initial connect with a phase seed but no stored connection has hasConnection=false', () => {
-    // connectRemoteWorkspace seeds companion.phase before the connection record
+    // connectRemoteWorkspace seeds runtime.phase before the connection record
     // is persisted; a failure there must still register as remote (not local)
     // and offer "Edit connection" rather than a retry.
-    const w = ws({ rootPath: '', companion: { phase: 'unreachable', error: 'bad host' } })
+    const w = ws({ rootPath: '', runtime: { phase: 'unreachable', error: 'bad host' } })
     const r = workspaceRuntime(w)
     expect(r.status).toBe('unreachable')
     expect(r.editable).toBe(false)

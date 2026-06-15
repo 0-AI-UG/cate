@@ -915,7 +915,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
           const imagePaths = paths.filter((p) => imageMimeForPath(p))
           const otherPaths = paths.filter((p) => !imageMimeForPath(p))
           // Attach images by reading their bytes through the workspace's
-          // companion (works for remote workspaces too).
+          // runtime (works for remote workspaces too).
           for (const p of imagePaths) {
             const img = await readPathAsImage(p, workspaceId)
             if (img) handleAddImage(img)

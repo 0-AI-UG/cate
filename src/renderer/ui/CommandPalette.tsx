@@ -71,7 +71,7 @@ const ZoomToFitIcon = () => <ArrowsOutSimple size={ICON_SIZE} />
 const ZoomSelectionIcon = () => <Selection size={ICON_SIZE} />
 const SaveIcon = () => <FloppyDisk size={ICON_SIZE} />
 const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
-const DeleteCompanionIcon = () => <Trash size={ICON_SIZE} />
+const DeleteRuntimeIcon = () => <Trash size={ICON_SIZE} />
 const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const SkillsIcon = () => <PuzzlePiece size={ICON_SIZE} />
 const AgentIcon = () => <CateLogo size={ICON_SIZE} />
@@ -126,7 +126,7 @@ export const CommandPalette: React.FC = () => {
     const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
     return !!ws?.connection && ws.connection.kind !== 'local'
   })
-  const deleteCompanion = useAppStore((s) => s.deleteCompanion)
+  const deleteRuntime = useAppStore((s) => s.deleteRuntime)
 
   const [searchText, setSearchText] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -195,18 +195,18 @@ export const CommandPalette: React.FC = () => {
       },
       { id: 'reloadWorkspace', title: 'Reload Workspace from Disk', icon: <ReloadIcon />, action: run('reloadWorkspace') },
       // Remote-only: delete the daemon from the host. Main re-probes to the
-      // 'missing' phase; the canvas lock then offers "Install Companion" for a
+      // 'missing' phase; the canvas lock then offers "Install Runtime" for a
       // clean reinstall — the deliberate delete → install two-step.
       ...(isRemoteWorkspace
         ? [{
-            id: 'deleteCompanion',
-            title: 'Delete Companion',
-            icon: <DeleteCompanionIcon />,
-            action: () => { void deleteCompanion(selectedWorkspaceId) },
+            id: 'deleteRuntime',
+            title: 'Delete Runtime',
+            icon: <DeleteRuntimeIcon />,
+            action: () => { void deleteRuntime(selectedWorkspaceId) },
           }]
         : []),
     ],
-    [run, isMainWindow, isRemoteWorkspace, deleteCompanion, selectedWorkspaceId],
+    [run, isMainWindow, isRemoteWorkspace, deleteRuntime, selectedWorkspaceId],
   )
 
   // Open panels in the current workspace.

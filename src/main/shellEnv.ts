@@ -86,7 +86,7 @@ function parseEnv(raw: string): Record<string, string> | null {
 
 /**
  * Drop env vars that belong to *this* Electron/electron-vite process and must
- * not leak into spawned shells, terminals, or the companion daemon:
+ * not leak into spawned shells, terminals, or the runtime daemon:
  *
  *  - ELECTRON_* — notably ELECTRON_RUN_AS_NODE, which we inject ourselves for
  *    the capture spawn (and `env -0` echoes back). If it reaches a child
@@ -96,8 +96,8 @@ function parseEnv(raw: string): Record<string, string> | null {
  *  - npm_*    — npm/electron-vite lifecycle vars from the parent `npm run` that
  *    would otherwise pollute every terminal opened inside dev-mode Cate.
  *
- * This mirrors the scrub the pre-companion local PTY path applied at spawn time;
- * doing it here keeps every consumer (companion, terminals, git, MCP) covered.
+ * This mirrors the scrub the pre-runtime local PTY path applied at spawn time;
+ * doing it here keeps every consumer (runtime, terminals, git, MCP) covered.
  */
 function sanitizeEnv(env: Record<string, string>): Record<string, string> {
   const clean: Record<string, string> = {}

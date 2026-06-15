@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { parseSshConfig } from './companion'
+import { parseSshConfig } from './runtime'
 
 const HOME = '/home/me'
 
