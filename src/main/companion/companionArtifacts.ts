@@ -101,12 +101,23 @@ export function localTarballIfPresent(version: string, target: CompanionTarget):
   return existsSync(cached) ? cached : null
 }
 
-/** The host-target companion tarball shipped inside the packaged app
- *  (resources/companion-host.tgz), or null in dev / when absent. */
+/** The host-target companion tarball shipped inside the packaged app, or null in
+ *  dev / when absent. macOS ships a per-arch daemon (companion-host-<arch>.tgz)
+ *  because one .app can run on either CPU — an Intel Mac (process.arch === 'x64',
+ *  natively or under Rosetta) must get the x64 daemon, since an arm64 node/node-pty
+ *  can't exec there. Other platforms ship a single host-arch companion-host.tgz.
+ *  The legacy unsuffixed name is kept as a fallback for older packagings. */
 export function shippedCompanionTarball(): string | null {
   if (!app.isPackaged) return null
-  const p = path.join(process.resourcesPath, 'companion-host.tgz')
-  return existsSync(p) ? p : null
+  const names =
+    process.platform === 'darwin'
+      ? [`companion-host-${process.arch}.tgz`, 'companion-host.tgz']
+      : ['companion-host.tgz']
+  for (const name of names) {
+    const p = path.join(process.resourcesPath, name)
+    if (existsSync(p)) return p
+  }
+  return null
 }
 
 /** Short content hash of a local tarball, for the remote `.ok` marker. */

@@ -54,13 +54,19 @@ extraResources:
     to: skills
     filter:
       - "**/*"
-  # Ship the host-target companion tarball under a fixed name so the packaged
-  # LOCAL workspace can run the same daemon tarball as remote hosts (resolved at
-  # runtime via shippedCompanionTarball() → resources/companion-host.tgz).
-  # scripts/package.mjs always produces this file before electron-builder runs
-  # (copying cate-companion-<version>-<target>.tgz → companion-host.tgz).
-  - from: dist-companion/companion-host.tgz
-    to: companion-host.tgz
+  # Ship the companion daemon tarball(s) so the packaged LOCAL workspace runs the
+  # same daemon as remote hosts. Linux/Windows stage one host-arch
+  # companion-host.tgz; macOS stages BOTH companion-host-x64.tgz (Intel) and
+  # companion-host-arm64.tgz, because one .app can run on either CPU and the
+  # daemon's bundled node + node-pty are arch-specific (an arm64 daemon can't
+  # exec on Intel → terminal never opens). Resolved at runtime by
+  # shippedCompanionTarball() → resources/companion-host-<arch>.tgz (legacy
+  # resources/companion-host.tgz fallback). The glob copies whatever this runner
+  # staged without erroring on the arches it didn't build (see release.yml).
+  - from: dist-companion
+    to: .
+    filter:
+      - companion-host*.tgz
 publish:
   provider: github
   owner: 0-AI-UG

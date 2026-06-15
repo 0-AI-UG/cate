@@ -34,7 +34,11 @@ jobs:
           fi
 
   release:
-    needs: create-release
+    # Depends on `companion` too: the macOS app embeds BOTH the arm64 and the
+    # Intel (darwin-x64) companion daemon, and the x64 one can only be built on
+    # an Intel runner (the `companion` job's macos-13 target). The mac app job
+    # pulls that published tarball below before packaging.
+    needs: [create-release, companion]
     strategy:
       fail-fast: false
       matrix:
@@ -123,6 +127,27 @@ jobs:
           node scripts/build-companion-tarball.mjs
           cp dist-companion/cate-companion-*.tgz dist-companion/companion-host.tgz
 
+      # A single macOS .app can run on either CPU (x64 natively on Intel, arm64
+      # on Apple Silicon, x64 under Rosetta), and the LOCAL workspace runs the
+      # companion daemon whose bundled node + node-pty are arch-specific — an
+      # arm64 daemon simply cannot exec on an Intel Mac, so the terminal panel
+      # never opens (#384). The app therefore ships BOTH arches and picks one at
+      # runtime (shippedCompanionTarball() → companion-host-<arch>.tgz). The host
+      # tarball staged above is darwin-arm64 (macos-latest is Apple Silicon); the
+      # Intel one can only be built on an Intel runner, so pull the darwin-x64
+      # tarball the `companion` job published to this release.
+      - name: Stage both macOS companion arches (Intel + Apple Silicon)
+        if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          cp dist-companion/companion-host.tgz dist-companion/companion-host-arm64.tgz
+          gh release download "$TAG_NAME" --repo "${{ github.repository }}" \
+            --pattern 'cate-companion-*-darwin-x64.tgz' --dir dist-companion --clobber
+          cp dist-companion/cate-companion-*-darwin-x64.tgz dist-companion/companion-host-x64.tgz
+
       # Note: the functional + content-search e2e suite used to gate the macOS
       # release here, but the hosted mac runner flaked on the synthetic-mouse
       # drag/detach specs often enough to redden otherwise-green releases (the
@@ -206,6 +231,13 @@ jobs:
             docker: true
           - os: macos-latest
             target: darwin-arm64
+          # Intel macOS. node-pty's native binary can't be cross-built for x64
+          # from an Apple Silicon host (build-companion-tarball.mjs refuses), so
+          # this must run on an Intel runner. macos-13 is GitHub's last hosted
+          # Intel image — if it's retired, this needs a self-hosted Intel runner
+          # or Intel support has to be dropped.
+          - os: macos-13
+            target: darwin-x64
           - os: windows-latest
             target: win32-x64
 
