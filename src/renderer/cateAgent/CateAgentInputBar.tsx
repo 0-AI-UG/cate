@@ -11,7 +11,8 @@
 // =============================================================================
 
 import React from 'react'
-import { ArrowUp, Stop } from '@phosphor-icons/react'
+import { ArrowUp } from '@phosphor-icons/react'
+import WorktreeToolbarMenu from '../canvas/WorktreeToolbarMenu'
 
 /** Cap the textarea growth; beyond this it scrolls internally. */
 const MAX_HEIGHT = 160
@@ -36,15 +37,13 @@ const saveDraft = (wsId: string, value: string): void => {
 
 export const CateAgentInputBar: React.FC<{
   workspaceId: string
-  /** True while the Cate Agent is running a task — shows the Stop button and
-   *  reframes Send as a follow-up. */
-  busy: boolean
+  canvasPanelId: string
+  rootPath: string
   onSend: (text: string) => void
-  onStop: () => void
   onClose: () => void
   /** Reports the textarea's current content height (px) so the toolbar resizes. */
   onHeightChange?: (px: number) => void
-}> = ({ workspaceId, busy, onSend, onStop, onClose, onHeightChange }) => {
+}> = ({ workspaceId, canvasPanelId, rootPath, onSend, onClose, onHeightChange }) => {
   // Seed from the persisted draft so a reopened bar (or a fresh app launch)
   // restores whatever was typed but not sent.
   const [text, setText] = React.useState(() => loadDraft(workspaceId))
@@ -83,7 +82,6 @@ export const CateAgentInputBar: React.FC<{
   }, [text, resize])
 
   const send = () => {
-    if (busy) return // must stop the current task before sending
     const t = text.trim()
     if (!t) return
     onSend(t)
@@ -92,6 +90,11 @@ export const CateAgentInputBar: React.FC<{
 
   return (
     <div className="flex items-end gap-1.5 w-full pl-1">
+      {/* Worktree selector/manager — same control as the toolbar, so a prompt can
+          be aimed at a chosen worktree. */}
+      <div className="flex-shrink-0">
+        <WorktreeToolbarMenu canvasPanelId={canvasPanelId} workspaceId={workspaceId} rootPath={rootPath} />
+      </div>
       <textarea
         ref={ref}
         rows={1}
@@ -106,22 +109,20 @@ export const CateAgentInputBar: React.FC<{
             onClose()
           }
         }}
-        placeholder={busy ? 'Working… stop to send' : 'Ask the Cate Agent…'}
+        placeholder="Ask the Cate Agent…"
         className="flex-1 min-w-0 resize-none bg-transparent text-sm leading-snug text-primary px-2 py-1.5 outline-none placeholder:text-muted"
         style={{ maxHeight: MAX_HEIGHT }}
       />
-      {/* One button: it's the Send arrow while idle, and turns into a Stop control
-          while a task is running so the run can be interrupted from the same spot. */}
       <button
         type="button"
-        onClick={busy ? onStop : send}
-        disabled={!busy && !text.trim()}
-        aria-label={busy ? 'Stop' : 'Send'}
-        title={busy ? 'Stop the current task' : 'Send'}
+        onClick={send}
+        disabled={!text.trim()}
+        aria-label="Send"
+        title="Send"
         style={{ WebkitTapHighlightColor: 'transparent' }}
         className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100 disabled:opacity-30"
       >
-        {busy ? <Stop size={15} weight="fill" /> : <ArrowUp size={15} weight="bold" />}
+        <ArrowUp size={15} weight="bold" />
       </button>
     </div>
   )

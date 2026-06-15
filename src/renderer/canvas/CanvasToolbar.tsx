@@ -424,9 +424,9 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                 <div className="flex-1 min-w-0 flex items-end">
                   <CateAgentInputBar
                     workspaceId={workspaceId}
-                    busy={cateAgent.currentTodoId !== null}
+                    canvasPanelId={canvasPanelId}
+                    rootPath={rootPath}
                     onSend={sendAgentPrompt}
-                    onStop={() => cateAgentController.stop(workspaceId)}
                     onClose={closeAgentInput}
                     onHeightChange={setAgentInputH}
                   />
