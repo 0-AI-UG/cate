@@ -272,7 +272,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   return (
     <>
     <div className="absolute inset-x-0 bottom-4 z-50 flex justify-center pointer-events-none">
-      <div data-onboarding="toolbar" className="relative pointer-events-auto flex flex-col items-stretch">
+      <div data-onboarding="toolbar" className="relative pointer-events-auto">
         <CateAgentFeedback workspaceId={workspaceId} rootPath={rootPath} />
         <div className="rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
           <div className="flex items-center gap-0.5 px-1 py-1">
@@ -282,12 +282,15 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
               active={inputOpen}
               onClick={toggleAgentInput}
             />
-            <div className="w-px h-5 bg-surface-5 mx-1" />
-
-            {inputOpen ? (
-              <CateAgentInputBar onSend={sendAgentPrompt} onClose={closeAgentInput} />
-            ) : (
-              <>
+            {/* Content zone: the tools always render and define the toolbar's
+                width; the input bar fades in over them when open, so toggling
+                never changes the toolbar's width. */}
+            <div className="relative flex items-center gap-0.5">
+              <div
+                className={`flex items-center gap-0.5 transition-opacity duration-150 ${
+                  inputOpen ? 'pointer-events-none opacity-0' : 'opacity-100'
+                }`}
+              >
             {/* Interaction tools (Select / Hand) */}
             <ModeButton
               onClick={() => setActiveTool('select')}
@@ -348,8 +351,13 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             <ToolbarButton onClick={onZoomIn} title={`Zoom In (${zoomInKey})`} size="zoom">
               <Plus size={16} />
             </ToolbarButton>
-              </>
-            )}
+              </div>
+              {inputOpen && (
+                <div className="absolute inset-0 flex items-center">
+                  <CateAgentInputBar onSend={sendAgentPrompt} onClose={closeAgentInput} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

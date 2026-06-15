@@ -24,7 +24,7 @@ export const CateAgentInputBar: React.FC<{
   }
 
   return (
-    <div className="flex items-center gap-1.5 pl-1 pr-1">
+    <div className="flex items-center gap-1.5 w-full pl-1 pr-1">
       <input
         ref={inputRef}
         value={text}
@@ -34,7 +34,7 @@ export const CateAgentInputBar: React.FC<{
           else if (e.key === 'Escape') { e.preventDefault(); onClose() }
         }}
         placeholder="Ask the Cate Agent…"
-        className="w-[320px] max-w-[60vw] bg-transparent text-[13px] text-primary px-2 py-1.5 outline-none placeholder:text-muted"
+        className="flex-1 min-w-0 bg-transparent text-[13px] text-primary px-2 py-1.5 outline-none placeholder:text-muted"
       />
       <button
         type="button"

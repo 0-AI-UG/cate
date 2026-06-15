@@ -3,8 +3,8 @@
 //
 // Shows the running feed (status/agent/user/error lines) and the Cate Agent's
 // proposed todos inline, where the user approves (Approve & run) or dismisses
-// them. Width is driven by its container (the toolbar stack), so it always
-// matches the input bar. Hidden when there's nothing to show and input is closed.
+// them. Floats directly above the toolbar pill (absolute, left-0 right-0) so it
+// always matches the pill's width. Hidden entirely when there's nothing to show.
 // =============================================================================
 
 import React from 'react'
@@ -37,16 +37,11 @@ export const CateAgentFeedback: React.FC<{ workspaceId: string; rootPath: string
     if (el) el.scrollTop = el.scrollHeight
   }, [cateAgent.feed.length, suggested.length])
 
-  if (!wsId) return null
-  if (!cateAgent.inputOpen && !hasContent) return null
+  if (!wsId || !hasContent) return null
 
   return (
-    <div className="mb-2 w-full rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)] overflow-hidden">
+    <div className="absolute bottom-full left-0 right-0 mb-2 rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)] overflow-hidden">
       <div ref={scrollRef} className="max-h-[40vh] overflow-y-auto px-3 py-2 flex flex-col gap-1.5">
-        {!hasContent && (
-          <div className="text-[12px] text-muted py-1">Ask the Cate Agent to do something…</div>
-        )}
-
         {cateAgent.feed.map((item) => (
           <div key={item.id} className={`text-[12px] leading-snug break-words ${KIND_CLASS[item.kind]}`}>
             {item.kind === 'user' ? <span className="text-muted">You: </span> : null}
