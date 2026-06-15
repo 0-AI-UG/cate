@@ -29,20 +29,27 @@ export const CateAgentFeedback: React.FC<{ workspaceId: string; rootPath: string
   const scrollRef = React.useRef<HTMLDivElement>(null)
 
   const suggested = (todos ?? []).filter((t) => t.status === 'suggested')
-  const hasContent = cateAgent.feed.length > 0 || suggested.length > 0
+
+  // Show only the latest turn: the most recent user message and everything the
+  // Cate Agent said in response to it. Sending a new prompt collapses the prior
+  // exchange so the panel stays compact instead of growing without bound.
+  const feed = cateAgent.feed
+  const lastUserIdx = feed.map((f) => f.kind).lastIndexOf('user')
+  const visibleFeed = lastUserIdx >= 0 ? feed.slice(lastUserIdx) : feed
+  const hasContent = visibleFeed.length > 0 || suggested.length > 0
 
   // Keep the newest feed line in view as items arrive.
   React.useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [cateAgent.feed.length, suggested.length])
+  }, [visibleFeed.length, suggested.length])
 
   if (!wsId || !hasContent) return null
 
   return (
     <div className="absolute bottom-full left-0 right-0 mb-2 rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)] overflow-hidden">
       <div ref={scrollRef} className="max-h-[40vh] overflow-y-auto px-3 py-2 flex flex-col gap-1.5">
-        {cateAgent.feed.map((item) => (
+        {visibleFeed.map((item) => (
           <div key={item.id} className={`text-[12px] leading-snug break-words ${KIND_CLASS[item.kind]}`}>
             {item.kind === 'user' ? <span className="text-muted">You: </span> : null}
             {item.text}
