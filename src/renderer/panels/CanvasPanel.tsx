@@ -298,7 +298,7 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
           z-50 escapes to the root stacking context and renders on top of the
           sidebars — visible when the toolbar overflows its inset box on small
           or split-view screens. Behind-the-sidebar is the intended layering. */}
-      <div data-canvas-area className="relative w-full h-full isolate" onPointerDown={handlePointerDown}>
+      <div className="relative w-full h-full isolate" onPointerDown={handlePointerDown}>
         {/* Welcome page only on a fresh, uninitialized workspace (no panels
             yet AND no rootPath). Once a folder is picked, the canvas stays
             blank when emptied — the start page does not return. */}

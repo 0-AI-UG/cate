@@ -22,11 +22,15 @@ import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
 import { useUIStateStore } from '../stores/uiStateStore'
-import { cornerFromPoint } from '../lib/canvasCorners'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { Tooltip } from '../ui/Tooltip'
+
+// The minimap pill can be docked in any of the four canvas corners. The choice
+// persists across sessions in ui-state.json (via the UI-state store).
+type MinimapCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+const loadMinimapCorner = (): MinimapCorner => useUIStateStore.getState().minimapButtonCorner
 
 interface CanvasToolbarProps {
   canvasPanelId: string
@@ -208,14 +212,11 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const zoomResetKey = useShortcutStore((s) => displayString(s.shortcuts.zoomReset))
   const zoomText = `${Math.round(zoom * 100)}%`
 
-  // Minimap pill docking corner + drag-to-dock handling. The corner is driven
-  // straight from the UI-state store so an external shove (the pet landing on
-  // this corner) moves the pill immediately. The toggle button doubles as a
-  // drag handle: a click toggles the map, a drag past a small threshold re-docks
-  // the pill to whichever corner the cursor ends up in.
-  const minimapCorner = useUIStateStore((s) => s.minimapButtonCorner)
+  // Minimap pill docking corner + drag-to-dock handling. The toggle button
+  // doubles as a drag handle: a click toggles the map, a drag past a small
+  // threshold re-docks the pill to whichever corner the cursor ends up in.
+  const [minimapCorner, setMinimapCorner] = useState<MinimapCorner>(loadMinimapCorner)
   const minimapDidDragRef = useRef(false)
-  const minimapPillRef = useRef<HTMLDivElement>(null)
   const mmBottom = minimapCorner.startsWith('bottom')
   const mmRight = minimapCorner.endsWith('right')
 
@@ -225,29 +226,23 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     const startX = e.clientX
     const startY = e.clientY
     minimapDidDragRef.current = false
-    // Resolve corners against this canvas's own area so the quadrant split lines
-    // up with where the pill (and the pet) actually render.
-    const area = minimapPillRef.current?.closest('[data-canvas-area]')
-    const rect = area?.getBoundingClientRect() ??
-      { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    let nextCorner = minimapCorner
     const onMove = (ev: MouseEvent) => {
       if (!minimapDidDragRef.current && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) {
         return
       }
       minimapDidDragRef.current = true
-      const next = cornerFromPoint(ev.clientX, ev.clientY, rect)
-      const store = useUIStateStore.getState()
-      const prev = store.minimapButtonCorner
-      if (next === prev) return
-      store.setUIState('minimapButtonCorner', next)
-      // Landing on the pet's corner swaps the pet into the corner we just left.
-      if (next === store.petCorner) {
-        store.setUIState('petCorner', prev)
-      }
+      const right = ev.clientX > window.innerWidth / 2
+      const bottom = ev.clientY > window.innerHeight / 2
+      nextCorner = `${bottom ? 'bottom' : 'top'}-${right ? 'right' : 'left'}` as MinimapCorner
+      setMinimapCorner((prev) => (prev === nextCorner ? prev : nextCorner))
     }
     const onUp = () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      if (minimapDidDragRef.current) {
+        useUIStateStore.getState().setUIState('minimapButtonCorner', nextCorner)
+      }
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -339,7 +334,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         the docked corner so open and close feel like the same gesture. Drag the
         button to re-dock the pill to a different corner. */}
     <div
-      ref={minimapPillRef}
       className="absolute z-50 flex gap-2"
       style={{
         ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),

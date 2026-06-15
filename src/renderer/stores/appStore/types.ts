@@ -105,9 +105,8 @@ export interface AppStoreActions {
   setWorkspaceRootPath: (wsId: string, rootPath: string) => Promise<boolean>
   connectRemoteWorkspace: (wsId: string, spec: RemoteConnectSpec) => Promise<boolean>
   ensureWorkspaceCompanion: (wsId: string) => Promise<boolean>
-  /** Cheap relaunch of an existing connection — for a disconnected/unreachable
-   *  companion. Remote/WSL re-probe via companion:ensure; a local workspace
-   *  relaunches the built-in daemon via companion:retry-local. */
+  /** Cheap relaunch of an existing connection (companion:ensure) — for a
+   *  disconnected/unreachable companion whose connection record is intact. */
   retryCompanion: (wsId: string) => Promise<boolean>
   /** Explicit clean install of the companion daemon, then connect. The entry
    *  action of the `missing` phase — the only action that installs. */

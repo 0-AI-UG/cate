@@ -26,7 +26,6 @@ import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
 import { ProvidersSettings } from './ProvidersSettings'
-import { CanvasPetSettings } from './CanvasPetSettings'
 import { SkillsSettings } from './SkillsSettings'
 import { SettingsSearchContext } from './SettingsSearchContext'
 import { TextInput } from './SettingsComponents'
@@ -41,7 +40,6 @@ const SECTIONS = [
   { title: 'File Explorer', component: FileExplorerSettings },
   { title: 'Notifications', component: NotificationSettings },
   { title: 'Providers', component: ProvidersSettings },
-  { title: 'Canvas Pet', component: CanvasPetSettings },
   { title: 'Skills', component: SkillsSettings },
   { title: 'Updates', component: UpdatesSettings },
   { title: 'Shortcuts', component: ShortcutSettings },

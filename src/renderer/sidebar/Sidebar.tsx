@@ -3,7 +3,6 @@ import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SearchView } from './SearchView'
 import { SourceControlView } from './SourceControlView'
-import { TasksView } from './TasksView'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -16,7 +15,6 @@ import {
   MagnifyingGlass,
   FloppyDisk,
   PuzzlePiece,
-  ListChecks,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import pkg from '../../../package.json'
@@ -31,7 +29,6 @@ const VIEW_META: Record<SidebarView, { icon: PhosphorIcon; title: string }> = {
   explorer: { icon: FolderOpen, title: 'Explorer' },
   search: { icon: MagnifyingGlass, title: 'Search' },
   git: { icon: GitBranch, title: 'Source Control' },
-  tasks: { icon: ListChecks, title: 'Tasks' },
 }
 
 // ---------------------------------------------------------------------------
@@ -72,8 +69,6 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
       return <SearchView rootPath={rootPath} workspaceId={selectedWorkspaceId} />
     case 'git':
       return <SourceControlView rootPath={rootPath} />
-    case 'tasks':
-      return <TasksView rootPath={rootPath} />
     default:
       return null
   }

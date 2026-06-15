@@ -37,11 +37,7 @@ import type {
   CustomOpenAIProvider,
   OAuthFlowEvent,
 } from '../../shared/types'
-import {
-  loadDefaultModel,
-  saveDefaultModel,
-  clearModelPrefsForProvider,
-} from './agentModelPrefs'
+import { loadDefaultModel, saveDefaultModel } from './agentModelPrefs'
 
 interface ProvidersViewProps {
   /** Called when the user pops past the list (returns to chat). Ignored when embedded. */
@@ -273,7 +269,6 @@ function CustomOpenAIForm({
     setSaving(true); setError(null)
     try {
       await window.electronAPI.agentCustomModelsSave(null)
-      clearModelPrefsForProvider('custom-openai')
       onSaved(null)
       setBaseUrl(''); setApiKey(''); setModels(''); setSavedAt(null)
     } catch (err) {
@@ -541,7 +536,6 @@ function OAuthForm({
   const handleDisconnect = useCallback(async () => {
     try {
       await window.electronAPI.authDelete(provider.id)
-      clearModelPrefsForProvider(provider.id)
       setPhase({ type: 'idle' })
       await onRefresh()
     } catch (err) {
@@ -775,7 +769,6 @@ function ApiKeyForm({
   const handleDisconnect = useCallback(async () => {
     try {
       await window.electronAPI.authDelete(provider.id)
-      clearModelPrefsForProvider(provider.id)
       setSavedAt(null)
       await onRefresh()
     } catch (err) {
@@ -838,45 +831,10 @@ function DefaultModelSection({ models }: { models: Array<{ provider: string; mod
   }, [])
 
   return (
-    <ModelPrefRow
-      label="Default model"
-      models={models}
-      current={current}
-      open={open}
-      setOpen={setOpen}
-      onPick={handlePick}
-      noneLabel="First available"
-    />
-  )
-}
-
-export type PickModels = Array<{ provider: string; model: string; label?: string }>
-
-// Shared model-picker row used by the default-model section here and the Canvas
-// Pet section (CanvasPetSettings). Exported so both render an identical control.
-export function ModelPrefRow({
-  label,
-  sublabel,
-  models,
-  current,
-  open,
-  setOpen,
-  onPick,
-  noneLabel,
-}: {
-  label: string
-  sublabel?: string
-  models: PickModels
-  current: AgentModelRef | null
-  open: boolean
-  setOpen: (v: boolean | ((prev: boolean) => boolean)) => void
-  onPick: (m: { provider: string; model: string } | null) => void
-  noneLabel: string
-}) {
-  return (
     <div className="space-y-1.5">
-      <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold">{label}</div>
-      {sublabel && <div className="text-[11px] text-muted -mt-1">{sublabel}</div>}
+      <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold">
+        Default model
+      </div>
       <div className="relative">
         <button
           onClick={() => setOpen((v) => !v)}
@@ -886,7 +844,7 @@ export function ModelPrefRow({
           <span className="truncate flex-1 text-left">
             {current
               ? (models.find((m) => m.provider === current.provider && m.model === current.model)?.label ?? current.model)
-              : noneLabel}
+              : 'First available'}
           </span>
           <CaretDown size={10} className="text-muted shrink-0" />
         </button>
@@ -894,11 +852,11 @@ export function ModelPrefRow({
           <ModelPickerDropdown
             models={models}
             selected={current}
-            onPick={onPick}
+            onPick={handlePick}
             onClose={() => setOpen(false)}
             className="w-full max-h-[320px]"
             allowNone
-            noneLabel={noneLabel}
+            noneLabel="First available"
           />
         )}
       </div>

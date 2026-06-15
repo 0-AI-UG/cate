@@ -76,8 +76,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   // deeper validation (shape of the model ref / sidebar layout) lives in the
   // renderer consumers, which already tolerate partial/legacy shapes.
   agentDefaultModel: 'object',
-  petModel: 'object',
-  petExecutorAgentId: 'string',
   sidebarLayout: 'object',
   customShortcuts: 'object',
 }

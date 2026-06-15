@@ -75,10 +75,6 @@ import {
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
   PROJECT_STATE_LOAD,
-  PROJECT_TODOS_LOAD,
-  PROJECT_TODOS_SAVE,
-  PROJECT_PET_LOAD,
-  PROJECT_PET_SAVE,
   WORKSPACE_EXTERNAL_EDIT,
   WORKSPACE_EXTERNAL_EDIT_DISMISS,
   BOOT_SNAPSHOT_WRITE,
@@ -168,7 +164,6 @@ import {
   COMPANION_INSTALL,
   COMPANION_STATUS,
   COMPANION_LOCAL_STATUS,
-  COMPANION_RETRY_LOCAL,
   COMPANION_PICK_SSH_KEY,
   WEBVIEW_SCREENSHOT,
   BROWSER_SET_PROXY,
@@ -384,10 +379,6 @@ const invokeForwarders = {
   // Session
   projectStateSave: makeInvoker<'projectStateSave'>(PROJECT_STATE_SAVE),
   projectStateLoad: makeInvoker<'projectStateLoad'>(PROJECT_STATE_LOAD),
-  projectTodosLoad: makeInvoker<'projectTodosLoad'>(PROJECT_TODOS_LOAD),
-  projectTodosSave: makeInvoker<'projectTodosSave'>(PROJECT_TODOS_SAVE),
-  projectPetLoad: makeInvoker<'projectPetLoad'>(PROJECT_PET_LOAD),
-  projectPetSave: makeInvoker<'projectPetSave'>(PROJECT_PET_SAVE),
 
   // Dialog
   openFolderDialog: makeInvoker<'openFolderDialog'>(DIALOG_OPEN_FOLDER),
@@ -475,7 +466,6 @@ const invokeForwarders = {
   companionPickSshKey: makeInvoker<'companionPickSshKey'>(COMPANION_PICK_SSH_KEY),
   companionInstall: makeInvoker<'companionInstall'>(COMPANION_INSTALL),
   companionDelete: makeInvoker<'companionDelete'>(COMPANION_DELETE),
-  companionRetryLocal: makeInvoker<'companionRetryLocal'>(COMPANION_RETRY_LOCAL),
 
   // Menu
   showContextMenu: makeInvoker<'showContextMenu'>(MENU_SHOW_CONTEXT),
