@@ -273,7 +273,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     <>
     <div className="absolute inset-x-0 bottom-4 z-50 flex justify-center pointer-events-none">
       <div data-onboarding="toolbar" className="relative pointer-events-auto flex flex-col items-stretch">
-        <CateAgentFeedback rootPath={rootPath} />
+        <CateAgentFeedback workspaceId={workspaceId} rootPath={rootPath} />
         <div className="rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
           <div className="flex items-center gap-0.5 px-1 py-1">
             {/* Cate Agent — always leftmost; toggles the prompt input. */}

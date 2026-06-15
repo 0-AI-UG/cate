@@ -10,17 +10,9 @@
 import { create } from 'zustand'
 import type { CateAgentActivity } from '../../shared/types'
 
-/** One ephemeral remark in the Cate Agent's speech-bubble stack. `id` is a
- *  process-unique sequence number so each remark's fade timer can remove exactly
- *  its own entry. */
-export interface CateAgentRemark {
-  id: number
-  text: string
-}
-
 /** One entry in the Cate Agent's persistent-per-session feedback log (rendered in
- *  the feedback panel above the toolbar). Unlike `remarks` (ephemeral bubbles),
- *  feed items stay until the feed is cleared or rolls past the cap. */
+ *  the feedback panel above the toolbar). Feed items stay until the feed is
+ *  cleared or rolls past the cap. */
 export type CateAgentFeedKind = 'user' | 'agent' | 'status' | 'error'
 
 export interface CateAgentFeedItem {
@@ -41,10 +33,6 @@ export interface CateAgentWsState {
   activity: CateAgentActivity
   /** Short status-bubble text, e.g. "Running tests…" or "Proposing: update docs". */
   status: string
-  /** Ephemeral FYIs the observer surfaced via remark(), newest last. Each entry
-   *  auto-clears after a few seconds (see setRemark). They stack as speech bubbles
-   *  so back-to-back remarks are all visible. Separate from `status` (activity). */
-  remarks: CateAgentRemark[]
   /** The todo the executor is currently running, or null. */
   currentTodoId: string | null
   /** Whether the toolbar is showing the prompt input bar (and the feedback panel
@@ -61,7 +49,6 @@ export const DEFAULT_CATE_AGENT_WS: CateAgentWsState = {
   autoObserve: true,
   activity: 'off',
   status: '',
-  remarks: [],
   currentTodoId: null,
   inputOpen: false,
   feed: [],
@@ -72,9 +59,6 @@ interface CateAgentStore {
   byWs: Record<string, CateAgentWsState>
   get: (wsId: string) => CateAgentWsState
   patch: (wsId: string, patch: Partial<CateAgentWsState>) => void
-  /** Dismiss one remark from the stack (user clicked it). Its fade timer becomes a
-   *  harmless no-op since it filters by id. */
-  popRemark: (wsId: string, id: number) => void
   reset: (wsId: string) => void
   setInputOpen: (wsId: string, open: boolean) => void
   appendFeed: (wsId: string, kind: CateAgentFeedKind, text: string) => void
@@ -95,13 +79,6 @@ export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
     set((s) => {
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
       return { byWs: { ...s.byWs, [wsId]: { ...prev, ...patch } } }
-    })
-  },
-
-  popRemark(wsId, id) {
-    set((s) => {
-      const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
-      return { byWs: { ...s.byWs, [wsId]: { ...prev, remarks: prev.remarks.filter((r) => r.id !== id) } } }
     })
   },
 

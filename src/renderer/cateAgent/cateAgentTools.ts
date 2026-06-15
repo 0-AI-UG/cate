@@ -103,26 +103,10 @@ export async function ensureTodoWorktree(
   return { worktreeId: meta.id, cwd: targetPath }
 }
 
-/** How long an observer remark lingers in its speech bubble before it fades. */
-const REMARK_TTL_MS = 9000
-/** Cap the visible stack so a chatty turn can't grow a skyscraper of bubbles. */
-const MAX_REMARKS = 4
-let remarkSeq = 0
-
-/** Push an ephemeral FYI onto the Cate Agent's speech-bubble stack. Back-to-back
- *  remarks stack (newest last) instead of overwriting, and each fades on its own
- *  timer. Ephemeral by design — nothing is persisted. */
+/** Surface a short FYI from the Cate Agent into the persistent feedback log shown
+ *  above the toolbar. */
 function setRemark(wsId: string, text: string): void {
-  const id = ++remarkSeq
-  const cur = useCateAgentStore.getState().get(wsId).remarks
-  useCateAgentStore.getState().patch(wsId, { remarks: [...cur, { id, text }].slice(-MAX_REMARKS) })
-  // Mirror into the persistent feedback log so the panel above the toolbar keeps a
-  // running record even after the bubble fades.
   useCateAgentStore.getState().appendFeed(wsId, 'agent', text)
-  setTimeout(() => {
-    const remarks = useCateAgentStore.getState().get(wsId).remarks.filter((r) => r.id !== id)
-    useCateAgentStore.getState().patch(wsId, { remarks })
-  }, REMARK_TTL_MS)
 }
 
 /** Resolve the ptyId for a terminal handle (the handle IS the panelId). */

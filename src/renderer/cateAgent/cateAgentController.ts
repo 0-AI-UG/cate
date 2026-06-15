@@ -308,7 +308,7 @@ class CateAgentController implements CateAgentBridgeHost {
         r.unsubGit = null
       }
     }
-    useCateAgentStore.getState().patch(wsId, { enabled: false, activity: 'off', status: '', remarks: [], currentTodoId: null })
+    useCateAgentStore.getState().patch(wsId, { enabled: false, activity: 'off', status: '', currentTodoId: null })
     this.persist(wsId, rootPath)
   }
 

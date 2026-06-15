@@ -9,7 +9,6 @@
 
 import React from 'react'
 import { Play, Sparkle, X } from '@phosphor-icons/react'
-import { useAppStore } from '../stores/appStore'
 import { useTodosStore } from '../stores/todosStore'
 import { useCateAgentWs } from './cateAgentStore'
 import { cateAgentController } from './cateAgentController'
@@ -22,8 +21,8 @@ const KIND_CLASS: Record<CateAgentFeedKind, string> = {
   error: 'text-red-400',
 }
 
-export const CateAgentFeedback: React.FC<{ rootPath: string }> = ({ rootPath }) => {
-  const wsId = useAppStore((s) => s.selectedWorkspaceId)
+export const CateAgentFeedback: React.FC<{ workspaceId: string; rootPath: string }> = ({ workspaceId, rootPath }) => {
+  const wsId = workspaceId
   const cateAgent = useCateAgentWs(wsId)
   const todos = useTodosStore((s) => s.todosByRoot[rootPath])
   const removeTodo = useTodosStore((s) => s.removeTodo)
