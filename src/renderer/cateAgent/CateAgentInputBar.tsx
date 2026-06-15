@@ -4,6 +4,10 @@
 // + send button. Enter sends; Shift+Enter inserts a newline; Escape closes.
 // Reports its content height via onHeightChange so the toolbar can grow/shrink
 // to fit (and animate that change).
+//
+// The draft is persisted per-workspace in localStorage, so an unsent prompt
+// survives closing the bar, switching away, and even an app restart / crash;
+// it's cleared once sent.
 // =============================================================================
 
 import React from 'react'
@@ -12,14 +16,40 @@ import { ArrowUp } from '@phosphor-icons/react'
 /** Cap the textarea growth; beyond this it scrolls internally. */
 const MAX_HEIGHT = 160
 
+const draftKey = (wsId: string): string => `cate.agentDraft.${wsId}`
+const loadDraft = (wsId: string): string => {
+  try {
+    return wsId ? localStorage.getItem(draftKey(wsId)) ?? '' : ''
+  } catch {
+    return ''
+  }
+}
+const saveDraft = (wsId: string, value: string): void => {
+  try {
+    if (!wsId) return
+    if (value) localStorage.setItem(draftKey(wsId), value)
+    else localStorage.removeItem(draftKey(wsId))
+  } catch {
+    /* private mode / quota — drafts are best-effort */
+  }
+}
+
 export const CateAgentInputBar: React.FC<{
+  workspaceId: string
   onSend: (text: string) => void
   onClose: () => void
   /** Reports the textarea's current content height (px) so the toolbar resizes. */
   onHeightChange?: (px: number) => void
-}> = ({ onSend, onClose, onHeightChange }) => {
-  const [text, setText] = React.useState('')
+}> = ({ workspaceId, onSend, onClose, onHeightChange }) => {
+  // Seed from the persisted draft so a reopened bar (or a fresh app launch)
+  // restores whatever was typed but not sent.
+  const [text, setText] = React.useState(() => loadDraft(workspaceId))
   const ref = React.useRef<HTMLTextAreaElement>(null)
+
+  const update = (value: string): void => {
+    setText(value)
+    saveDraft(workspaceId, value)
+  }
 
   // Grow the textarea to fit its content (measured by collapsing to 0 first) and
   // report that height upward so the toolbar zone can match it.
@@ -48,7 +78,7 @@ export const CateAgentInputBar: React.FC<{
     const t = text.trim()
     if (!t) return
     onSend(t)
-    setText('')
+    update('')
   }
 
   return (
@@ -57,7 +87,7 @@ export const CateAgentInputBar: React.FC<{
         ref={ref}
         rows={1}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => update(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
