@@ -233,10 +233,11 @@ jobs:
             target: darwin-arm64
           # Intel macOS. node-pty's native binary can't be cross-built for x64
           # from an Apple Silicon host (build-runtime-tarball.mjs refuses), so
-          # this must run on an Intel runner. macos-13 is GitHub's last hosted
-          # Intel image — if it's retired, this needs a self-hosted Intel runner
-          # or Intel support has to be dropped.
-          - os: macos-13
+          # this must run on an Intel runner. macos-13 was retired on 2025-12-04;
+          # macos-15-intel is GitHub's last hosted Intel image, available until
+          # Aug 2027 — after that this needs a self-hosted Intel runner or Intel
+          # support has to be dropped.
+          - os: macos-15-intel
             target: darwin-x64
           - os: windows-latest
             target: win32-x64
