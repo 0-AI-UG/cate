@@ -110,30 +110,19 @@ export const CateAgentInputBar: React.FC<{
         className="flex-1 min-w-0 resize-none bg-transparent text-sm leading-snug text-primary px-2 py-1.5 outline-none placeholder:text-muted"
         style={{ maxHeight: MAX_HEIGHT }}
       />
-      {busy ? (
-        <button
-          type="button"
-          onClick={onStop}
-          aria-label="Stop"
-          title="Stop the current task"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-          className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100"
-        >
-          <Stop size={15} weight="fill" />
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={send}
-          disabled={!text.trim()}
-          aria-label="Send"
-          title="Send"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-          className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100 disabled:opacity-30"
-        >
-          <ArrowUp size={15} weight="bold" />
-        </button>
-      )}
+      {/* One button: it's the Send arrow while idle, and turns into a Stop control
+          while a task is running so the run can be interrupted from the same spot. */}
+      <button
+        type="button"
+        onClick={busy ? onStop : send}
+        disabled={!busy && !text.trim()}
+        aria-label={busy ? 'Stop' : 'Send'}
+        title={busy ? 'Stop the current task' : 'Send'}
+        style={{ WebkitTapHighlightColor: 'transparent' }}
+        className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100 disabled:opacity-30"
+      >
+        {busy ? <Stop size={15} weight="fill" /> : <ArrowUp size={15} weight="bold" />}
+      </button>
     </div>
   )
 }
