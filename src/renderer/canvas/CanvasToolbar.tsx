@@ -38,6 +38,10 @@ import { useTodosStore } from '../stores/todosStore'
 // its notification dot lit (even after the panel has been opened once).
 const ATTENTION_STATUSES = ['suggested', 'review', 'pending', 'failed']
 
+// Collapsed toolbar row height = the w-9/h-9 buttons. Used as the input's one-line
+// height and the close-collapse target, so it can't drift with measurement.
+const AGENT_ROW_H = 36
+
 interface CanvasToolbarProps {
   canvasPanelId: string
   workspaceId: string
@@ -262,21 +266,21 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   // so reopening starts collapsed (the textarea re-reports on mount) instead of
   // briefly flashing the previous tall height.
   useEffect(() => {
-    if (!inputOpen) setAgentInputH(agentToolsSize.h)
-  }, [inputOpen, agentToolsSize.h])
+    if (!inputOpen) setAgentInputH(AGENT_ROW_H)
+  }, [inputOpen])
   const AGENT_INPUT_EXTRA = 96 // how much wider than the toolbar the input grows
   // Both width and height are explicit so opening, typing (as text wraps), and
   // closing all animate via the transition. Height tracks the live textarea
-  // content (clamped to at least one toolbar row).
+  // content (clamped to one toolbar row); the closed target is the fixed row
+  // height so it always collapses back to exactly the toolbar.
   const agentZoneStyle: React.CSSProperties = {
     width: inputOpen ? agentToolsSize.w + AGENT_INPUT_EXTRA : agentToolsSize.w || undefined,
-    height: inputOpen ? Math.max(agentToolsSize.h, agentInputH) : agentToolsSize.h || undefined,
+    height: inputOpen ? Math.max(AGENT_ROW_H, agentInputH) : AGENT_ROW_H,
   }
   // Pin the pill's corner radius to the COLLAPSED height/2 so a one-line bar is
-  // fully rounded and the radius stays constant as it grows taller (instead of
-  // `rounded-full`, which tracks the current height and over-rounds when tall).
-  // Collapsed pill height = tools height + the row's py-1 (8px).
-  const agentPillRadius = ((agentToolsSize.h || 36) + 8) / 2
+  // fully rounded and the radius stays constant as it grows taller. Collapsed
+  // pill height = row height + the row's py-1 (8px).
+  const agentPillRadius = (AGENT_ROW_H + 8) / 2
 
   // Minimap pill docking corner + drag-to-dock handling. The corner is driven
   // straight from the UI-state store so an external shove (the Cate Agent landing on
