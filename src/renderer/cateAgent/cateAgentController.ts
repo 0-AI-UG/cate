@@ -290,6 +290,19 @@ class CateAgentController implements CateAgentBridgeHost {
     await this.runTodo(wsId, rootPath, todo.id)
   }
 
+  /** Edit a job: replace its prompt and restart it from scratch. Stops any live
+   *  run, rewrites the prompt (title) + clears the derived topic, resets it to
+   *  pending, and re-runs (reusing the same worktree). */
+  async editJob(wsId: string, rootPath: string, todoId: string, newPrompt: string): Promise<void> {
+    const trimmed = newPrompt.trim()
+    if (!trimmed) return
+    const r = this.ws.get(wsId)
+    if (r?.runs.has(todoId)) this.stop(wsId, todoId)
+    useTodosStore.getState().patchTodo(rootPath, todoId, { title: trimmed, topic: undefined, status: 'pending', note: undefined })
+    useCateAgentStore.getState().appendFeed(wsId, 'user', `Edited: ${trimmed}`)
+    await this.runTodo(wsId, rootPath, todoId)
+  }
+
   /** Stop a specific running job (todoId), or all jobs in the workspace when no
    *  todoId is given. Removing the run first makes the trailing agent_end a no-op
    *  (no continue/settle race). */
