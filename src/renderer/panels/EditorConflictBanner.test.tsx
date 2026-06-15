@@ -42,10 +42,12 @@ describe('EditorConflictBanner — changed', () => {
       root.render(
         <EditorConflictBanner
           kind="changed"
+          showDiff={false}
           onReload={onReload}
           onKeepMine={onKeepMine}
           onKeepBoth={onKeepBoth}
           onViewDiff={onViewDiff}
+          onCloseDiff={vi.fn()}
           onSaveToRestore={vi.fn()}
           onDismiss={vi.fn()}
         />,
@@ -62,6 +64,35 @@ describe('EditorConflictBanner — changed', () => {
     expect(onKeepBoth).toHaveBeenCalledTimes(1)
     expect(onViewDiff).toHaveBeenCalledTimes(1)
   })
+
+  it('swaps View diff for Close diff while the diff overlay is open', () => {
+    const onViewDiff = vi.fn()
+    const onCloseDiff = vi.fn()
+    act(() => {
+      root.render(
+        <EditorConflictBanner
+          kind="changed"
+          showDiff={true}
+          onReload={vi.fn()}
+          onKeepMine={vi.fn()}
+          onKeepBoth={vi.fn()}
+          onViewDiff={onViewDiff}
+          onCloseDiff={onCloseDiff}
+          onSaveToRestore={vi.fn()}
+          onDismiss={vi.fn()}
+        />,
+      )
+    })
+
+    expect(
+      Array.from(host.querySelectorAll('button')).some((b) => b.textContent?.trim() === 'View diff'),
+    ).toBe(false)
+
+    act(() => { buttonByText('Close diff').click() })
+
+    expect(onCloseDiff).toHaveBeenCalledTimes(1)
+    expect(onViewDiff).not.toHaveBeenCalled()
+  })
 })
 
 describe('EditorConflictBanner — deleted', () => {
@@ -72,10 +103,12 @@ describe('EditorConflictBanner — deleted', () => {
       root.render(
         <EditorConflictBanner
           kind="deleted"
+          showDiff={false}
           onReload={vi.fn()}
           onKeepMine={vi.fn()}
           onKeepBoth={vi.fn()}
           onViewDiff={vi.fn()}
+          onCloseDiff={vi.fn()}
           onSaveToRestore={onSaveToRestore}
           onDismiss={onDismiss}
         />,
