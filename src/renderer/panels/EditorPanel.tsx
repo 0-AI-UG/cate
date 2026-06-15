@@ -32,9 +32,9 @@ import {
   resolveLoadedModel,
   markLoadFailed,
   clearLoadFailed,
-  isLoadFailed,
 } from '../lib/editor/modelCache'
-import { watchFsRoot } from '../lib/fs/fsWatchManager'
+import { useFileSync } from '../lib/editor/useFileSync'
+import EditorConflictBanner from './EditorConflictBanner'
 import { Tooltip } from '../ui/Tooltip'
 
 // -----------------------------------------------------------------------------
@@ -140,13 +140,6 @@ monacoGlobal.MonacoEnvironment = {
     }
   },
 }
-
-// File paths whose model is mid external-reload (setValue pulled from disk). A
-// shared cached model can back several editors, so the setValue fires
-// onDidChangeModelContent on every one of them — we mark the path here for the
-// synchronous duration of setValue so those change events aren't mistaken for a
-// user edit and flip the panel(s) to dirty.
-const externalReloadPaths = new Set<string>()
 
 // -----------------------------------------------------------------------------
 // Monaco theme — a single 'cate-active' theme built from the active unified
@@ -301,16 +294,7 @@ export default function EditorPanel({
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
-  const isDirtyRef = useRef(false)
-  const filePathRef = useRef(filePath)
-
-  // Only overwrite the ref from the prop when the prop is itself defined.
-  // In detached/dock windows the shell keeps its own local `panels` state
-  // and doesn't observe the global appStore update we issue after a
-  // Save-As, so the `filePath` prop stays undefined for the lifetime of
-  // this mount. Without this guard, every re-render would wipe out the
-  // path we just learned and the next Cmd+S would re-open Save-As.
-  if (filePath !== undefined) filePathRef.current = filePath
+  const diffOverlayRef = useRef<HTMLDivElement>(null)
 
   const [markdownContent, setMarkdownContent] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -332,86 +316,42 @@ export default function EditorPanel({
   const rootPath = ws?.rootPath
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
 
-  // ---------------------------------------------------------------------------
-  // Save handler (regular editor only)
-  // ---------------------------------------------------------------------------
+  const markdownPreviewRef = useRef(markdownPreview)
+  markdownPreviewRef.current = markdownPreview
 
-  const save = useCallback(async (): Promise<boolean> => {
-    const editor = editorRef.current
-    if (!editor || diffMode) return false
+  // Live accessor for our Monaco model, handed to the sync hook so it can read
+  // and replace the buffer without owning the editor's lifecycle.
+  const getModel = useCallback(() => editorRef.current?.getModel() ?? null, [])
+  // Keep the markdown preview in step when the hook replaces the buffer from disk
+  // (external reload / merge).
+  const onExternalReplace = useCallback((content: string) => {
+    if (markdownPreviewRef.current) setMarkdownContent(content)
+  }, [])
 
-    // Never write a buffer that failed to load (or never finished loading) back
-    // to disk — its contents are an empty placeholder, not the user's file, and
-    // saving would truncate the real file.
-    if (filePathRef.current && isLoadFailed(filePathRef.current)) {
-      log.warn('[EditorPanel] Refusing to save — file never loaded successfully:', filePathRef.current)
-      return false
-    }
-
-    const content = editor.getValue()
-
-    // Untitled buffer (no filePath): prompt the user for a destination via the
-    // native Save-As dialog. Once a path is chosen, persist it on the panel
-    // state so future saves (Cmd+S, close-confirm) write to the same file.
-    let targetPath = filePathRef.current
-    let isInitialSave = false
-    if (!targetPath) {
-      const currentPanel = useAppStore
-        .getState()
-        .workspaces.find((w) => w.id === workspaceId)?.panels[panelId]
-      const cleanTitle = currentPanel?.title?.replace(/\s•\s*$/, '').trim()
-      const defaultName = cleanTitle && cleanTitle !== 'Untitled' ? cleanTitle : 'Untitled.txt'
-      // Pick the separator that matches the workspace root so the prefilled
-      // path looks native on the user's platform (Electron's Save dialog
-      // accepts either on Windows but mixed slashes look sloppy).
-      const sep = rootPath?.includes('\\') ? '\\' : '/'
-      const defaultPath = rootPath ? `${rootPath}${sep}${defaultName}` : defaultName
-      const chosen = await window.electronAPI.saveFileDialog({ defaultName, defaultPath })
-      if (!chosen) return false
-      targetPath = chosen
-      isInitialSave = true
-    }
-
-    try {
-      await window.electronAPI.fsWriteFile(targetPath, content, workspaceId)
-    } catch (err) {
-      log.error('[EditorPanel] Failed to save file:', err)
-      return false
-    }
-
-    isDirtyRef.current = false
-    useAppStore.getState().setPanelDirty(workspaceId, panelId, false)
-
-    // Use both separators so the basename is correct on Windows (`\\`) as
-    // well as POSIX (`/`).
-    const fileName = targetPath.split(/[\\/]/).pop() || 'Untitled'
-    useAppStore.getState().updatePanelTitle(workspaceId, panelId, fileName)
-
-    if (isInitialSave) {
-      // Persist the new filePath in the global appStore (the source of
-      // truth for the main window's panels). In detached/dock windows the
-      // shell maintains its own local panels state instead, so we ALSO
-      // update filePathRef directly: that makes the next Cmd+S in this
-      // exact mount write to the chosen file instead of reopening Save-As,
-      // regardless of whether the prop ever updates.
-      filePathRef.current = targetPath
-      useAppStore.getState().updatePanelFilePath(workspaceId, panelId, targetPath)
-      // Clear the unsaved-content cache so the remount-from-disk path is
-      // the single source of truth for the editor model when the prop
-      // does flip (main window).
-      useAppStore.getState().setPanelUnsavedContent(workspaceId, panelId, undefined)
-      // Notify the surrounding detached/dock shell (DockWindowShell) so its
-      // session sync — which feeds persistence and close prompts in detached
-      // windows — flushes the new filePath, title, and clean dirty flag. The
-      // main window ignores this event because it reads from appStore directly.
-      window.dispatchEvent(
-        new CustomEvent('editor:panel-saved-as', {
-          detail: { panelId, filePath: targetPath, title: fileName },
-        }),
-      )
-    }
-    return true
-  }, [workspaceId, panelId, diffMode, rootPath])
+  // The whole buffer↔disk lifecycle lives in this one hook: baseline tracking,
+  // dirty state, external-change/delete conflicts, the guarded save, and the
+  // reload / keep-mine / keep-both / restore resolutions.
+  const sync = useFileSync({
+    workspaceId,
+    panelId,
+    filePath,
+    rootPath,
+    diffMode,
+    getModel,
+    onExternalReplace,
+  })
+  const {
+    conflict,
+    showDiff,
+    save,
+    reload,
+    keepMine,
+    keepBoth,
+    openDiff,
+    closeDiff,
+    saveToRestore,
+    dismiss,
+  } = sync
 
   // ---------------------------------------------------------------------------
   // Mount: create regular editor OR diff editor
@@ -564,6 +504,10 @@ export default function EditorPanel({
         retainModel(filePath)
         modelRetained = true
         editor.setModel(cached)
+        // Best-effort baseline from the warm model (assumed to mirror disk). If
+        // the file changed on disk while this panel was closed, the save guard
+        // catches the divergence on the next save.
+        sync.noteLoaded(cached.getValue())
         applyPendingReveal()
       } else {
         const language = detectLanguage(filePath)
@@ -587,6 +531,8 @@ export default function EditorPanel({
             retainModel(targetPath)
             modelRetained = true
             editor.setModel(model)
+            // Freshly read from disk — this is our sync point for the save guard.
+            sync.noteLoaded(content)
             applyPendingReveal()
           })
           .catch((err) => {
@@ -607,8 +553,7 @@ export default function EditorPanel({
       createdModel = model
       editor.setModel(model)
       if (restored) {
-        isDirtyRef.current = true
-        useAppStore.getState().setPanelDirty(workspaceId, panelId, true)
+        sync.noteUserEdit()
       }
     }
 
@@ -621,24 +566,14 @@ export default function EditorPanel({
 
     let unsavedSaveTimer: ReturnType<typeof setTimeout> | null = null
     const changeDisposable = editor.onDidChangeModelContent(() => {
-      // A disk-driven reload (see the fs-watch effect below) replaces the model
-      // value; that isn't a user edit, so don't flip the panel to dirty.
-      if (filePathRef.current && externalReloadPaths.has(filePathRef.current)) return
-      if (!isDirtyRef.current) {
-        isDirtyRef.current = true
-        useAppStore.getState().setPanelDirty(workspaceId, panelId, true)
-
-        if (filePathRef.current) {
-          const fileName = filePathRef.current.split('/').pop() ?? 'Untitled'
-          useAppStore
-            .getState()
-            .updatePanelTitle(workspaceId, panelId, `${fileName} \u2022`)
-        }
-      }
+      // A disk-driven reload/merge (in useFileSync) replaces the model value;
+      // that isn't a user edit, so don't flip the panel to dirty.
+      if (sync.isExternalReplace()) return
+      sync.noteUserEdit()
 
       // Persist scratch-editor content to the store (debounced) so it
       // survives canvas/workspace switches and app restarts.
-      if (!filePathRef.current) {
+      if (!sync.filePathRef.current) {
         if (unsavedSaveTimer) clearTimeout(unsavedSaveTimer)
         unsavedSaveTimer = setTimeout(() => {
           const value = editor.getModel()?.getValue() ?? ''
@@ -744,58 +679,44 @@ export default function EditorPanel({
   }, [markdownPreview, isMarkdown, filePath, workspaceId])
 
   // ---------------------------------------------------------------------------
-  // Reload the editor model when the file changes on disk externally
-  //
-  // Monaco models are cached at module level and survive panel unmount, and the
-  // markdown preview renders from the model's value — so without this an edit
-  // made by an external tool (another editor, an AI agent, git checkout) never
-  // reaches the open buffer or its preview, and reopening the file reuses the
-  // stale cached model. Watch the workspace root (the watcher is refcounted and
-  // shared with the file explorer, so this adds no new OS watcher) and pull the
-  // fresh content into the model when our file is updated on disk. Skipped while
-  // the buffer is dirty so we never clobber the user's unsaved edits.
+  // Diff overlay — disk (original) ⇆ unsaved buffer (modified), read-only.
+  // Mounted only while the user has the diff open on a `changed` conflict.
+  // (The buffer↔disk watch, reload, and conflict logic all live in useFileSync.)
   // ---------------------------------------------------------------------------
 
-  const markdownPreviewRef = useRef(markdownPreview)
-  markdownPreviewRef.current = markdownPreview
-
   useEffect(() => {
-    if (!filePath || !rootPath || diffMode) return
-    // Remote/companion files live behind a locator the local root watcher can't
-    // match; their changes aren't covered here.
-    if (filePath.startsWith('cate-companion://')) return
+    if (!showDiff || conflict?.kind !== 'changed' || !diffOverlayRef.current) return
 
-    const targetPosix = filePath.replace(/\\/g, '/')
+    const fontSize = useSettingsStore.getState().editorFontSize
+    const fontFamily = resolveEditorFontFamily(useSettingsStore.getState().editorFontFamily)
+    const language = filePath ? detectLanguage(filePath) : 'plaintext'
+    const bufferValue = editorRef.current?.getModel()?.getValue() ?? ''
 
-    return watchFsRoot(
-      rootPath,
-      (event) => {
-        if (event.type === 'delete') return
-        if (event.path.replace(/\\/g, '/') !== targetPosix) return
-        // The user's unsaved work wins until they save it themselves.
-        if (isDirtyRef.current) return
+    const original = monaco.editor.createModel(conflict.diskContent ?? '', language)
+    const modified = monaco.editor.createModel(bufferValue, language)
+    const diff = monaco.editor.createDiffEditor(diffOverlayRef.current, {
+      theme: CATE_MONACO_THEME,
+      fontFamily,
+      fontSize: fontSize || 12,
+      readOnly: true,
+      renderSideBySide: true,
+      automaticLayout: false,
+      scrollBeyondLastLine: false,
+      minimap: { enabled: false },
+      padding: { top: 8, bottom: 8 },
+    })
+    diff.setModel({ original, modified })
 
-        window.electronAPI
-          .fsReadFile(filePath, workspaceId)
-          .then((content) => {
-            const model = editorRef.current?.getModel()
-            if (!model || model.isDisposed()) return
-            // No-op when disk already matches the buffer (e.g. our own save
-            // fired the event) — avoids a needless full-model reset.
-            if (model.getValue() === content) return
-            externalReloadPaths.add(filePath)
-            try {
-              model.setValue(content)
-            } finally {
-              externalReloadPaths.delete(filePath)
-            }
-            if (markdownPreviewRef.current) setMarkdownContent(content)
-          })
-          .catch(() => { /* file vanished or unreadable — leave the buffer as-is */ })
-      },
-      workspaceId,
-    )
-  }, [filePath, rootPath, workspaceId, diffMode])
+    const layoutObserver = new ResizeObserver(() => diff.layout())
+    layoutObserver.observe(diffOverlayRef.current)
+
+    return () => {
+      layoutObserver.disconnect()
+      diff.dispose()
+      original.dispose()
+      modified.dispose()
+    }
+  }, [showDiff, conflict, filePath])
 
   // ---------------------------------------------------------------------------
   // Watch app theme changes and update Monaco theme
@@ -835,7 +756,32 @@ export default function EditorPanel({
           </button>
         </div>
       )}
+      {conflict && !diffMode && (
+        <EditorConflictBanner
+          kind={conflict.kind}
+          onReload={reload}
+          onKeepMine={keepMine}
+          onKeepBoth={keepBoth}
+          onViewDiff={openDiff}
+          onSaveToRestore={saveToRestore}
+          onDismiss={dismiss}
+        />
+      )}
       <div className="flex-1 min-h-0 relative">
+        {showDiff && conflict?.kind === 'changed' && (
+          <div className="absolute inset-0 z-30 flex flex-col bg-surface-1">
+            <div className="flex items-center justify-between shrink-0 px-2 py-0.5 border-b border-subtle">
+              <span className="text-[11px] text-secondary">On disk vs your unsaved changes</span>
+              <button
+                onClick={closeDiff}
+                className="px-2 py-0.5 rounded text-[11px] font-medium bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary transition-colors"
+              >
+                Close diff
+              </button>
+            </div>
+            <div ref={diffOverlayRef} className="flex-1 min-h-0" />
+          </div>
+        )}
         {markdownPreview && isMarkdown && (
           <MarkdownPreview content={markdownContent} />
         )}
