@@ -309,9 +309,9 @@ export function useFileSync({
 
   useEffect(() => {
     if (!filePath || !rootPath || diffMode) return
-    // Remote/companion files live behind a locator the local root watcher can't
+    // Remote/runtime files live behind a locator the local root watcher can't
     // match; their changes aren't covered here (the save guard still applies).
-    if (filePath.startsWith('cate-companion://')) return
+    if (filePath.startsWith('cate-runtime://')) return
 
     const targetPosix = filePath.replace(/\\/g, '/')
     let disposed = false

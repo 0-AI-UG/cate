@@ -26,8 +26,8 @@ const BASE_SEGMENTS: Record<SkillTargetId, string[]> = {
 }
 
 /** Host path to a target's skills root under the workspace. */
-export function skillsRootDir(targetId: SkillTargetId, companionId: string, hostCwd: string): string {
-  return hostJoin(companionId, hostCwd, ...BASE_SEGMENTS[targetId])
+export function skillsRootDir(targetId: SkillTargetId, runtimeId: string, hostCwd: string): string {
+  return hostJoin(runtimeId, hostCwd, ...BASE_SEGMENTS[targetId])
 }
 
 export function targetInfo(targetId: SkillTargetId): SkillTargetInfo {

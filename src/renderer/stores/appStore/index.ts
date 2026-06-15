@@ -13,9 +13,9 @@ import { create } from 'zustand'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { shallow } from 'zustand/shallow'
 import { arrayEqualBy } from '../selectorUtils'
-import type { WorkspaceState, PanelState, CompanionPhase } from '../../../shared/types'
+import type { WorkspaceState, PanelState, RuntimePhase } from '../../../shared/types'
 import type { CanvasOperations } from '../../lib/canvas/canvasBridge'
-import { LOCAL_COMPANION_ID } from '../../../main/companion/locator'
+import { LOCAL_RUNTIME_ID } from '../../../main/runtime/locator'
 
 import type { AppStore } from './types'
 import { createWorkspaceSlice } from './workspaceSlice'
@@ -59,7 +59,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Start empty — a default workspace is created during init only if no session is restored.
   workspaces: [],
   selectedWorkspaceId: '',
-  localCompanionPhase: null,
+  localRuntimePhase: null,
   reloadEpochs: {},
 
   // --- Slices ---
@@ -86,22 +86,22 @@ export function setupWorkspaceSync(): () => void {
   // The cross-window panel union (onWindowPanelsChanged) is subscribed in
   // useWindowRuntime so EVERY window — not just main — receives it.
 
-  // Reflect the live companion phase on the matching workspace. This broadcast
+  // Reflect the live runtime phase on the matching workspace. This broadcast
   // is the authoritative writer once a workspace has a stored connection record
-  // (companionId); the connect/ensure/reinstall actions only seed/finalize the
+  // (runtimeId); the connect/ensure/reinstall actions only seed/finalize the
   // phase around their IPC calls. All writes funnel through the one setter so
   // the canonical field can't be set two different ways.
-  const unsubscribeStatus = window.electronAPI.onCompanionStatus((evt) => {
+  const unsubscribeStatus = window.electronAPI.onRuntimeStatus((evt) => {
     const store = useAppStore.getState()
     // The LOCAL daemon is a singleton; its phase is global, not per-workspace.
-    if (evt.companionId === LOCAL_COMPANION_ID) {
-      store.setLocalCompanionPhase(evt.phase)
+    if (evt.runtimeId === LOCAL_RUNTIME_ID) {
+      store.setLocalRuntimePhase(evt.phase)
       return
     }
     const target = store.workspaces.find(
-      (ws) => ws.connection && ws.connection.kind !== 'local' && ws.connection.companionId === evt.companionId,
+      (ws) => ws.connection && ws.connection.kind !== 'local' && ws.connection.runtimeId === evt.runtimeId,
     )
-    if (target) store.setWorkspaceCompanionPhase(target.id, evt.phase, evt.message ?? null)
+    if (target) store.setWorkspaceRuntimePhase(target.id, evt.phase, evt.message ?? null)
   })
 
   // Seed the LOCAL phase once: the startup connect may have finished (or failed)
@@ -109,10 +109,10 @@ export function setupWorkspaceSync(): () => void {
   // FIRST (above), then snapshot — and don't clobber a live event that already
   // landed (only seed while still unknown).
   void window.electronAPI
-    .companionLocalStatus()
+    .runtimeLocalStatus()
     .then((s) => {
-      if (useAppStore.getState().localCompanionPhase === null) {
-        useAppStore.getState().setLocalCompanionPhase(s.phase as CompanionPhase)
+      if (useAppStore.getState().localRuntimePhase === null) {
+        useAppStore.getState().setLocalRuntimePhase(s.phase as RuntimePhase)
       }
     })
     .catch(() => { /* best-effort seed; live events still drive updates */ })
@@ -159,8 +159,8 @@ export function useWorkspaceList(): WorkspaceState[] {
       x.rootPath === y.rootPath &&
       x.rootPathError === y.rootPathError &&
       x.isRootPathPending === y.isRootPathPending &&
-      x.companion?.phase === y.companion?.phase &&
-      x.companion?.error === y.companion?.error,
+      x.runtime?.phase === y.runtime?.phase &&
+      x.runtime?.error === y.runtime?.error,
     ),
   )
 }

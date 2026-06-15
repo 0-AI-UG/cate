@@ -16,7 +16,7 @@ import { collectPanelIds } from '../canvas/collectPanelIds'
 import { captureAndSaveScrollback } from '../terminal/captureAndSaveScrollback'
 import { deferredSnapshots } from './deferredRestore'
 import { terminalRegistry } from '../terminal/terminalRegistry'
-import { isLocalLocator } from '../../../main/companion/locator'
+import { isLocalLocator } from '../../../main/runtime/locator'
 import { deriveSidebarSession } from './sidebarSession'
 import { buildWorkspaceFile, buildSessionFile, collectPanelIdsFromDockState } from './sessionSerialize'
 import type {
@@ -35,7 +35,7 @@ const lastSerializedByRoot = new Map<string, string>()
 // Same idea for the global sidebar arrangement: skip the IPC + electron-store
 // write when order/active-workspace haven't changed since the last save.
 let lastSidebarSessionSerialized: string | null = null
-// And for the remote-projects list (cate-companion:// restore snapshots).
+// And for the remote-projects list (cate-runtime:// restore snapshots).
 let lastRemoteProjectsSerialized: string | null = null
 
 export async function saveSession(): Promise<void> {
@@ -166,11 +166,11 @@ export async function saveSession(): Promise<void> {
     log.warn('[session] Dock window listing failed:', err)
   }
 
-  // Remote (cate-companion://) workspaces can't use the local .cate/ files —
-  // their tree lives on a companion. Collect their full snapshots + reconnect
+  // Remote (cate-runtime://) workspaces can't use the local .cate/ files —
+  // their tree lives on a runtime. Collect their full snapshots + reconnect
   // info into the electron-store remoteProjects list so restart can rebuild and
   // reconnect them (Findings 2/3/4). TODO: route remote project-state through
-  // companion.file so .cate/ lives next to the remote repo instead of here.
+  // runtime.file so .cate/ lives next to the remote repo instead of here.
   const remoteEntries: RemoteProjectEntry[] = []
   for (const snapshot of snapshots) {
     if (!snapshot.rootPath || isLocalLocator(snapshot.rootPath)) continue
@@ -191,7 +191,7 @@ export async function saveSession(): Promise<void> {
   }
 
   // Save to .cate/workspace.json + .cate/session.json next to the repo for EVERY
-  // workspace. Local writes to local disk; remote routes through the companion to
+  // workspace. Local writes to local disk; remote routes through the runtime to
   // the remote repo's .cate/ (projectStateSave is locator-aware). This is what
   // lets a closed remote workspace restore on reopen, exactly like local.
   // One owner workspace per root. When two share a root (a duplicated workspace),

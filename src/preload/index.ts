@@ -155,16 +155,16 @@ import {
   WORKSPACE_UPDATE,
   WORKSPACE_REMOVE,
   WORKSPACE_CHANGED,
-  COMPANION_CONNECT,
-  COMPANION_ENSURE,
-  COMPANION_LIST,
-  COMPANION_WSL_DISTROS,
-  COMPANION_SSH_HOSTS,
-  COMPANION_DELETE,
-  COMPANION_INSTALL,
-  COMPANION_STATUS,
-  COMPANION_LOCAL_STATUS,
-  COMPANION_PICK_SSH_KEY,
+  RUNTIME_CONNECT,
+  RUNTIME_ENSURE,
+  RUNTIME_LIST,
+  RUNTIME_WSL_DISTROS,
+  RUNTIME_SSH_HOSTS,
+  RUNTIME_DELETE,
+  RUNTIME_INSTALL,
+  RUNTIME_STATUS,
+  RUNTIME_LOCAL_STATUS,
+  RUNTIME_PICK_SSH_KEY,
   WEBVIEW_SCREENSHOT,
   BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
@@ -456,16 +456,16 @@ const invokeForwarders = {
   workspaceUpdate: makeInvoker<'workspaceUpdate'>(WORKSPACE_UPDATE),
   workspaceRemove: makeInvoker<'workspaceRemove'>(WORKSPACE_REMOVE),
 
-  // Companion connections (remote / WSL)
-  companionConnect: makeInvoker<'companionConnect'>(COMPANION_CONNECT),
-  companionEnsure: makeInvoker<'companionEnsure'>(COMPANION_ENSURE),
-  companionList: makeInvoker<'companionList'>(COMPANION_LIST),
-  companionLocalStatus: makeInvoker<'companionLocalStatus'>(COMPANION_LOCAL_STATUS),
-  companionWslDistros: makeInvoker<'companionWslDistros'>(COMPANION_WSL_DISTROS),
-  companionSshHosts: makeInvoker<'companionSshHosts'>(COMPANION_SSH_HOSTS),
-  companionPickSshKey: makeInvoker<'companionPickSshKey'>(COMPANION_PICK_SSH_KEY),
-  companionInstall: makeInvoker<'companionInstall'>(COMPANION_INSTALL),
-  companionDelete: makeInvoker<'companionDelete'>(COMPANION_DELETE),
+  // Runtime connections (remote / WSL)
+  runtimeConnect: makeInvoker<'runtimeConnect'>(RUNTIME_CONNECT),
+  runtimeEnsure: makeInvoker<'runtimeEnsure'>(RUNTIME_ENSURE),
+  runtimeList: makeInvoker<'runtimeList'>(RUNTIME_LIST),
+  runtimeLocalStatus: makeInvoker<'runtimeLocalStatus'>(RUNTIME_LOCAL_STATUS),
+  runtimeWslDistros: makeInvoker<'runtimeWslDistros'>(RUNTIME_WSL_DISTROS),
+  runtimeSshHosts: makeInvoker<'runtimeSshHosts'>(RUNTIME_SSH_HOSTS),
+  runtimePickSshKey: makeInvoker<'runtimePickSshKey'>(RUNTIME_PICK_SSH_KEY),
+  runtimeInstall: makeInvoker<'runtimeInstall'>(RUNTIME_INSTALL),
+  runtimeDelete: makeInvoker<'runtimeDelete'>(RUNTIME_DELETE),
 
   // Menu
   showContextMenu: makeInvoker<'showContextMenu'>(MENU_SHOW_CONTEXT),
@@ -801,8 +801,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Workspace management (main process is source of truth)
   // ---------------------------------------------------------------------------
 
-  onCompanionStatus(callback: (event: unknown) => void): () => void {
-    return createIpcListener(COMPANION_STATUS, callback)
+  onRuntimeStatus(callback: (event: unknown) => void): () => void {
+    return createIpcListener(RUNTIME_STATUS, callback)
   },
 
   onWorkspaceChanged(callback: (workspaces: unknown[], originWindowId: number | null) => void): () => void {

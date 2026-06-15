@@ -94,11 +94,11 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
   }
   // Rebuild active fs watchers so their ignore globs match the new exclusions
   // (dynamic import avoids a static store<->filesystem cycle). Also push the new
-  // set to the LOCAL companion daemon, which captured its exclusions once at
+  // set to the LOCAL runtime daemon, which captured its exclusions once at
   // launch — without this the daemon's file tree / file-name search wouldn't
   // honor the change until a restart. Only LOCAL: remote daemons get their
   // config at connect time (out of scope here). Imports are dynamic to avoid
-  // store<->filesystem and store<->companion cycles.
+  // store<->filesystem and store<->runtime cycles.
   if (key === 'fileExclusions') {
     try {
       const { refreshWatcherIgnores } = await import('./ipc/filesystem')
@@ -107,26 +107,26 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
       log.warn('Watcher ignore refresh failed: %O', err)
     }
     try {
-      const { companions } = await import('./companion/companionManager')
-      const { LOCAL_COMPANION_ID } = await import('./companion/locator')
-      if (companions.has(LOCAL_COMPANION_ID)) {
-        companions.resolve(LOCAL_COMPANION_ID).setExclusions(value as string[]).catch(() => {})
+      const { runtimes } = await import('./runtime/runtimeManager')
+      const { LOCAL_RUNTIME_ID } = await import('./runtime/locator')
+      if (runtimes.has(LOCAL_RUNTIME_ID)) {
+        runtimes.resolve(LOCAL_RUNTIME_ID).setExclusions(value as string[]).catch(() => {})
       }
     } catch (err) {
-      log.warn('Companion exclusions forward failed: %O', err)
+      log.warn('Runtime exclusions forward failed: %O', err)
     }
   }
-  // Push the idle-suspend toggle to the LOCAL companion daemon, which gated its
+  // Push the idle-suspend toggle to the LOCAL runtime daemon, which gated its
   // idle scanner once at launch — toggling otherwise needs a restart.
   if (key === 'autoSuspendIdleTerminals') {
     try {
-      const { companions } = await import('./companion/companionManager')
-      const { LOCAL_COMPANION_ID } = await import('./companion/locator')
-      if (companions.has(LOCAL_COMPANION_ID)) {
-        companions.resolve(LOCAL_COMPANION_ID).setIdleSuspend(value !== false).catch(() => {})
+      const { runtimes } = await import('./runtime/runtimeManager')
+      const { LOCAL_RUNTIME_ID } = await import('./runtime/locator')
+      if (runtimes.has(LOCAL_RUNTIME_ID)) {
+        runtimes.resolve(LOCAL_RUNTIME_ID).setIdleSuspend(value !== false).catch(() => {})
       }
     } catch (err) {
-      log.warn('Companion idle-suspend forward failed: %O', err)
+      log.warn('Runtime idle-suspend forward failed: %O', err)
     }
   }
   // The wallpaper image is copied into managed app data (see DIALOG_OPEN_IMAGE).
@@ -425,8 +425,8 @@ export function registerHandlers(): void {
     setSidebarSession(session)
   })
 
-  // Remote projects (cate-companion:// workspaces): full restore snapshot +
-  // reconnect info, since their tree lives on a companion and can't use the
+  // Remote projects (cate-runtime:// workspaces): full restore snapshot +
+  // reconnect info, since their tree lives on a runtime and can't use the
   // local .cate/ project-state files.
   ipcMain.handle(REMOTE_PROJECTS_GET, async () => {
     return getRemoteProjects()

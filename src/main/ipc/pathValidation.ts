@@ -9,7 +9,7 @@ import os from 'os'
 
 // Per-workspace ("scope") allowed-root registry. Each scopeId is a workspace id.
 // Phase 1 records which roots belong to which workspace and threads the scopeId
-// end-to-end (renderer -> IPC -> companion -> daemon), but does NOT yet use it to
+// end-to-end (renderer -> IPC -> runtime -> daemon), but does NOT yet use it to
 // restrict access — isWithinAllowedRoots still checks the union of all scopes'
 // roots (pre-isolation behavior). Strict per-workspace enforcement is deferred to
 // Phase 3. Calls without a scopeId land under the LEGACY key (home/agent dirs,

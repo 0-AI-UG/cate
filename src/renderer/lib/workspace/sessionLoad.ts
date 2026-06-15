@@ -4,7 +4,7 @@
 // =============================================================================
 
 import log from '../logger'
-import { isLocalLocator } from '../../../main/companion/locator'
+import { isLocalLocator } from '../../../main/runtime/locator'
 import { applySidebarSession } from './sidebarSession'
 import { projectFilesToSnapshot } from './sessionSerialize'
 import { createDefaultDockState } from '../../stores/dockStore'
@@ -60,7 +60,7 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
     recentProjects = []
   }
 
-  // Remote (cate-companion://) workspaces never appear in recentProjects — they
+  // Remote (cate-runtime://) workspaces never appear in recentProjects — they
   // live in the parallel remoteProjects store with their full restore snapshot
   // and reconnect info (Finding 3). Load them up front so they round-trip too.
   let remoteEntries: RemoteProjectEntry[] = []
@@ -101,7 +101,7 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
 
   // Append remote workspaces. Their snapshot is self-contained (canvas layout +
   // connection), so no projectStateLoad is needed. Skip any whose connection
-  // somehow went missing — without it ensureWorkspaceCompanion can't reconnect.
+  // somehow went missing — without it ensureWorkspaceRuntime can't reconnect.
   for (const entry of remoteEntries) {
     if (!entry?.snapshot || !entry.connection || entry.connection.kind === 'local') continue
     const snap = entry.snapshot

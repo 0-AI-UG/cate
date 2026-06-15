@@ -26,10 +26,10 @@ const fsModule = await import('./filesystem')
 const { registerHandlers, subscribeFsChanges } = fsModule
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_IMPORT_ENTRIES, FS_WATCH_START, FS_WATCH_STOP } = await import('../../shared/ipc-channels')
-const { registerTestLocalCompanion } = await import('../companion/testLocalCompanion')
+const { registerTestLocalRuntime } = await import('../runtime/testLocalRuntime')
 
 registerHandlers()
-registerTestLocalCompanion()
+registerTestLocalRuntime()
 const importEntries = handlers.get(FS_IMPORT_ENTRIES)!
 const watchStartHandler = handlers.get(FS_WATCH_START)!
 const watchStopHandler = handlers.get(FS_WATCH_STOP)!

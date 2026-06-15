@@ -2,11 +2,11 @@
 # =============================================================================
 # Import the Developer ID Application cert (CSC_LINK / CSC_KEY_PASSWORD) into a
 # dedicated temporary keychain, add it to the user search list, and export the
-# identity hash (CATE_MAC_SIGN_IDENTITY via $GITHUB_ENV) so build-companion-
+# identity hash (CATE_MAC_SIGN_IDENTITY via $GITHUB_ENV) so build-runtime-
 # tarball.mjs can codesign the bundled native binaries (node, rg, node-pty's
 # pty.node + spawn-helper) BEFORE packing them.
 #
-# Why: Apple's notarytool recurses into companion-host.tgz and rejects unsigned
+# Why: Apple's notarytool recurses into runtime-host.tgz and rejects unsigned
 # Mach-O ("not signed with a valid Developer ID certificate"), so the daemon
 # binaries must carry a Developer ID + hardened-runtime signature like the app.
 #
@@ -20,14 +20,14 @@
 set -euo pipefail
 
 if [ -z "${CSC_LINK:-}" ]; then
-  echo "No MAC_CERTS secret set — skipping companion-native signing setup."
+  echo "No MAC_CERTS secret set — skipping runtime-native signing setup."
   echo "(Notarization will reject the unsigned bundled binaries.)"
   exit 0
 fi
 
 TMP="${RUNNER_TEMP:-/tmp}"
-KEYCHAIN="$TMP/cate-companion-signing.keychain-db"
-CERT="$TMP/cate-companion-cert.p12"
+KEYCHAIN="$TMP/cate-runtime-signing.keychain-db"
+CERT="$TMP/cate-runtime-cert.p12"
 KPASS="$(uuidgen)"
 
 # Fresh keychain, unlocked, with a long auto-lock timeout so it is still usable
@@ -59,4 +59,4 @@ if [ -z "$IDENTITY" ]; then
 fi
 
 echo "CATE_MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
-echo "Companion natives will be signed with Developer ID identity $IDENTITY"
+echo "Runtime natives will be signed with Developer ID identity $IDENTITY"

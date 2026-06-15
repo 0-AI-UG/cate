@@ -14,7 +14,7 @@ import globals from 'globals'
 
 export default tseslint.config(
   {
-    // Build output, deps, generated assets, and the companion bundle.
+    // Build output, deps, generated assets, and the runtime bundle.
     ignores: [
       'dist/**',
       'release/**',

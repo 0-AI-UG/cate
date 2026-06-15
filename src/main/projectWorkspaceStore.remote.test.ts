@@ -23,12 +23,12 @@ vi.mock('./cateGitignore', () => ({
   CATE_GITIGNORE_CONTENT: '* \n!workspace.json\n',
 }))
 
-// A fake companion whose file API is backed by a temp dir: the remote POSIX
-// path is mapped under `hostRoot`, simulating files living on the companion.
+// A fake runtime whose file API is backed by a temp dir: the remote POSIX
+// path is mapped under `hostRoot`, simulating files living on the runtime.
 let hostRoot: string
 const fileWrites: string[] = []
-vi.mock('./companion/companionManager', () => ({
-  companions: {
+vi.mock('./runtime/runtimeManager', () => ({
+  runtimes: {
     resolve: () => ({
       file: {
         async readFile(p: string): Promise<string> {
@@ -81,8 +81,8 @@ function nodeCount(ws: ProjectWorkspaceFile): number {
   return Object.values(ws.canvases ?? {}).reduce((n, c) => n + Object.keys(c.canvasNodes).length, 0)
 }
 
-// cate-companion://<id>/<posix path> — routed to the companion, not local fs.
-const LOCATOR = 'cate-companion://srv1/remote/proj'
+// cate-runtime://<id>/<posix path> — routed to the runtime, not local fs.
+const LOCATOR = 'cate-runtime://srv1/remote/proj'
 
 const save = (root: string, ws: ProjectWorkspaceFile, sess: ProjectSessionFile) =>
   handlers.get(PROJECT_STATE_SAVE)!(null, root, ws, sess) as Promise<void>
@@ -103,8 +103,8 @@ afterEach(async () => {
   await fs.rm(hostRoot, { recursive: true, force: true })
 })
 
-describe('project state — remote (cate-companion://) routing', () => {
-  it('writes .cate/ next to the remote repo via the companion, and round-trips', async () => {
+describe('project state — remote (cate-runtime://) routing', () => {
+  it('writes .cate/ next to the remote repo via the runtime, and round-trips', async () => {
     await save(LOCATOR, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
 
     // Files landed at the remote repo's .cate/, addressed by POSIX path.

@@ -18,7 +18,7 @@
 // with the user's TypeError — proving this test would catch a regression.
 //
 // No server needed: buildTransport validates the key before any network I/O, so
-// this runs in CI. The live-server happy path lives in companionConnectE2e.itest.ts.
+// this runs in CI. The live-server happy path lives in runtimeConnectE2e.itest.ts.
 // =============================================================================
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -47,7 +47,7 @@ export default { app, safeStorage, ipcMain, dialog, BrowserWindow }
 // stops at constructing the transport (no connect), so a success print means the
 // key passed read + normalize + the ssh2 format check.
 const DRIVER = `
-import { buildTransport } from ${JSON.stringify(join(repoRoot, 'src/main/ipc/companion.ts'))}
+import { buildTransport } from ${JSON.stringify(join(repoRoot, 'src/main/ipc/runtime.ts'))}
 const spec = { kind:'server', host:'127.0.0.1', user:'u', port:22, remotePath:'/x', auth:{ keyPath: process.env.E2E_KEY } }
 const t = await buildTransport('srv_probe', spec)
 console.log('BUILD_OK:' + t.kind)

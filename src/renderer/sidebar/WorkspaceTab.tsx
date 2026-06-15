@@ -23,12 +23,12 @@ import { InlineEditInput } from './InlineEditInput'
 import { Tooltip } from '../ui/Tooltip'
 
 // -----------------------------------------------------------------------------
-// Companion status dot — surfaces a remote workspace's connection state in the
+// Runtime status dot — surfaces a remote workspace's connection state in the
 // sidebar and offers the matching one-click recovery. Driven by the canonical
 // workspaceRuntime status (shared with the canvas lock overlay).
 // -----------------------------------------------------------------------------
 
-function CompanionDot({ workspace }: { workspace: WorkspaceState }): JSX.Element | null {
+function RuntimeDot({ workspace }: { workspace: WorkspaceState }): JSX.Element | null {
   const { status, error } = workspaceRuntime(workspace)
   // Only remote, non-connected states get a dot.
   if (status === 'local' || status === 'connected') return null
@@ -36,18 +36,18 @@ function CompanionDot({ workspace }: { workspace: WorkspaceState }): JSX.Element
   const busy = status === 'installing' || status === 'connecting'
   const color = busy ? 'bg-amber-400 animate-pulse' : 'bg-red-500 hover:ring-2 hover:ring-red-500/40'
   const title =
-    status === 'installing' ? 'Installing companion…'
-    : status === 'connecting' ? 'Connecting to companion…'
-    : status === 'disconnected' ? `Companion disconnected${error ? `: ${error}` : ''}. Click to reconnect.`
-    : status === 'missing' ? `Companion not installed${error ? `: ${error}` : ''}. Click to install.`
-    : `Companion not reachable${error ? `: ${error}` : ''}. Click to retry.`
+    status === 'installing' ? 'Installing runtime…'
+    : status === 'connecting' ? 'Connecting to runtime…'
+    : status === 'disconnected' ? `Runtime disconnected${error ? `: ${error}` : ''}. Click to reconnect.`
+    : status === 'missing' ? `Runtime not installed${error ? `: ${error}` : ''}. Click to install.`
+    : `Runtime not reachable${error ? `: ${error}` : ''}. Click to retry.`
 
   const onClick = (e: React.MouseEvent): void => {
     e.stopPropagation()
     if (busy) return
     const app = useAppStore.getState()
-    if (status === 'missing') void app.installCompanion(workspace.id)
-    else void app.retryCompanion(workspace.id)
+    if (status === 'missing') void app.installRuntime(workspace.id)
+    else void app.retryRuntime(workspace.id)
   }
 
   return (
@@ -675,10 +675,10 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           </span>
         )}
 
-        {/* Companion connection indicator (remote workspaces only). Reads the
+        {/* Runtime connection indicator (remote workspaces only). Reads the
             same canonical runtime status as the canvas lock, so the dot and the
             overlay never disagree. */}
-        <CompanionDot workspace={workspace} />
+        <RuntimeDot workspace={workspace} />
 
         {/* Panel count badge (only when collapsed and has panels) */}
         {treeCount > 0 && !isExpanded && (

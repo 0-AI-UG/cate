@@ -87,7 +87,7 @@ export async function reloadActiveWorkspaceFromDisk(): Promise<void> {
   const ws = appStore.workspaces.find((w) => w.id === wsId)
   if (!ws?.rootPath) return
   // projectStateLoad is locator-aware: a local rootPath reads local .cate/, a
-  // remote cate-companion:// locator reads .cate/ on the companion next to the
+  // remote cate-runtime:// locator reads .cate/ on the runtime next to the
   // remote repo. Both paths round-trip through the same restore below.
 
   const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
@@ -146,9 +146,9 @@ export function isWorkspaceEffectivelyEmpty(wsId: string): boolean {
  * app startup, never on a runtime open.
  *
  * Locator-agnostic: a local rootPath reads local `.cate/`, a remote
- * cate-companion:// locator reads `.cate/` on the companion next to the remote
+ * cate-runtime:// locator reads `.cate/` on the runtime next to the remote
  * repo (projectStateLoad routes either way). For remote, the caller MUST ensure
- * the companion is connected first (restoreSession spawns terminals / reads
+ * the runtime is connected first (restoreSession spawns terminals / reads
  * files through it).
  *
  * Guarded to be a safe no-op: it only acts when the workspace has a rootPath, no

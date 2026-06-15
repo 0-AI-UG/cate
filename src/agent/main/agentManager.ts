@@ -1,12 +1,12 @@
 // =============================================================================
-// AgentManager — one pi session per panel, run THROUGH the companion.
+// AgentManager — one pi session per panel, run THROUGH the runtime.
 //
 // pi is no longer spawned (or bundled) by the desktop app. The session resolves
-// the workspace's companion from its locator and drives pi via `companion.agent`
+// the workspace's runtime from its locator and drives pi via `runtime.agent`
 // — local (in-process spawn from the on-demand pi tarball) or remote (pi on the
 // daemon's host) identically. PiRpcClient speaks pi's `--mode rpc` JSONL over
 // that channel. Provider credentials are seeded to the host's pi-agent dir via
-// `companion.file` (so they work on a remote host too).
+// `runtime.file` (so they work on a remote host too).
 //
 // This file stays a thin glue layer: forward renderer commands to pi, forward
 // pi's events back to the renderer.
@@ -15,9 +15,9 @@
 import path from 'path'
 import { type WebContents } from 'electron'
 import log from '../../main/logger'
-import { parseLocator } from '../../main/companion/locator'
-import { companions } from '../../main/companion/companionManager'
-import type { Companion } from '../../main/companion/types'
+import { parseLocator } from '../../main/runtime/locator'
+import { runtimes } from '../../main/runtime/runtimeManager'
+import type { Runtime } from '../../main/runtime/types'
 import { PiRpcClient } from './piRpcClient'
 
 import type { PiImageContent } from './piRpcClient'
@@ -43,9 +43,9 @@ import type { AuthManager } from './authManager'
 
 interface AgentSession {
   panelId: string
-  /** The companion hosting this session (local or remote). */
-  companion: Companion
-  /** Companion-absolute workspace path (the locator's path part). */
+  /** The runtime hosting this session (local or remote). */
+  runtime: Runtime
+  /** Runtime-absolute workspace path (the locator's path part). */
   cwd: string
   client: PiRpcClient
   sender: WebContents
@@ -91,7 +91,7 @@ export class AgentManager {
   private async syncAuthToOpenSessions(): Promise<void> {
     await Promise.all(
       Array.from(this.sessions.values()).map((session) =>
-        pushSharedToWorkspace(session.companion, session.cwd).catch((err) => {
+        pushSharedToWorkspace(session.runtime, session.cwd).catch((err) => {
           log.warn('[agentManager] auth sync failed for %s: %O', session.panelId, err)
         }),
       ),
@@ -103,7 +103,7 @@ export class AgentManager {
    *  on their next model-list fetch). */
   syncCustomModelsToOpenSessions(): void {
     for (const session of this.sessions.values()) {
-      void mirrorModelsToWorkspace(session.companion, session.cwd).catch((err) => {
+      void mirrorModelsToWorkspace(session.runtime, session.cwd).catch((err) => {
         log.warn('[agentManager] models sync failed for %s: %O', session.panelId, err)
       })
     }
@@ -123,36 +123,36 @@ export class AgentManager {
         await this.disposeInternal(opts.panelId)
       }
 
-      // Resolve the workspace's companion from its locator (throws if a remote
-      // companion isn't connected — surfaced as a start error).
-      const { companionId, path: cwd } = parseLocator(opts.cwd)
-      const companion = companions.resolve(companionId)
+      // Resolve the workspace's runtime from its locator (throws if a remote
+      // runtime isn't connected — surfaced as a start error).
+      const { runtimeId, path: cwd } = parseLocator(opts.cwd)
+      const runtime = runtimes.resolve(runtimeId)
 
       // Seed the host's <cwd>/.cate/pi-agent: auth.json + models.json via the
-      // companion (so it lands on the remote host too), plus Cate's bundled
+      // runtime (so it lands on the remote host too), plus Cate's bundled
       // extensions (subagent, plan-mode, ask-user). PI_CODING_AGENT_DIR points
       // pi at that dir.
-      await prepareAgentDir(companion, cwd)
-      await mirrorModelsToWorkspace(companion, cwd)
-      await installSubagentExtension(companion, cwd)
-      await installPlanModeExtension(companion, cwd)
-      await installAskUserExtension(companion, cwd)
+      await prepareAgentDir(runtime, cwd)
+      await mirrorModelsToWorkspace(runtime, cwd)
+      await installSubagentExtension(runtime, cwd)
+      await installPlanModeExtension(runtime, cwd)
+      await installAskUserExtension(runtime, cwd)
 
       const extraArgs: string[] = []
       if (opts.sessionFile) extraArgs.push('--session', opts.sessionFile)
 
-      const client = new PiRpcClient(companion, {
+      const client = new PiRpcClient(runtime, {
         cwd,
         provider: opts.model?.provider,
         model: opts.model?.model,
         args: extraArgs.length > 0 ? extraArgs : undefined,
-        env: { PI_CODING_AGENT_DIR: hostAgentDir(companionId, cwd) },
+        env: { PI_CODING_AGENT_DIR: hostAgentDir(runtimeId, cwd) },
       })
 
-      // Ensure pi is present on the host BEFORE start. pi ships in the companion
+      // Ensure pi is present on the host BEFORE start. pi ships in the runtime
       // tarball (remote) or is resolved/extracted client-side (local), so on a
       // provisioned host this is a quick verify.
-      await companion.agent.ensurePi()
+      await runtime.agent.ensurePi()
 
       try {
         await client.start()
@@ -187,11 +187,11 @@ export class AgentManager {
 
       // Watch the host's auth.json so OAuth token refreshes written by pi
       // propagate back to the shared file.
-      const disposeAuthWatcher = watchWorkspaceAuth(companion, cwd)
+      const disposeAuthWatcher = watchWorkspaceAuth(runtime, cwd)
 
       this.sessions.set(opts.panelId, {
         panelId: opts.panelId,
-        companion,
+        runtime,
         cwd,
         client,
         sender,
@@ -375,7 +375,7 @@ export class AgentManager {
     if (!session) return []
     try {
       const commands = await session.client.getCommands()
-      const homeAgent = hostAgentDir(session.companion.id, session.cwd) + path.sep
+      const homeAgent = hostAgentDir(session.runtime.id, session.cwd) + path.sep
       return commands.map((c) => {
         const filePath = (c as { sourceInfo?: { path?: string; scope?: 'user' | 'project' | 'temporary' } }).sourceInfo?.path
         const scope = (c as { sourceInfo?: { scope?: 'user' | 'project' | 'temporary' } }).sourceInfo?.scope

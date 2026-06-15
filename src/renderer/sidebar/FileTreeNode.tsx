@@ -21,7 +21,7 @@ import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExtern
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
-import { parseLocator } from '../../main/companion/locator'
+import { parseLocator } from '../../main/runtime/locator'
 import { InlineEditInput } from './InlineEditInput'
 import { CreateFileForm } from './CreateFileForm'
 

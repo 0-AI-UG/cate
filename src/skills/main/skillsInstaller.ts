@@ -1,6 +1,6 @@
 // =============================================================================
 // Skill install engine — writes a skill into a workspace's per-target dir via
-// the companion (local AND remote), and tracks installs in <ws>/.cate/skills.json.
+// the runtime (local AND remote), and tracks installs in <ws>/.cate/skills.json.
 //
 // Resolving a skill's files for a workspace install, in order:
 //   - reuse an existing install of the same skill in ANOTHER agent here (copy
@@ -12,10 +12,10 @@
 // =============================================================================
 
 import log from '../../main/logger'
-import { parseLocator, formatLocator } from '../../main/companion/locator'
-import { companions } from '../../main/companion/companionManager'
+import { parseLocator, formatLocator } from '../../main/runtime/locator'
+import { runtimes } from '../../main/runtime/runtimeManager'
 import { hostJoin } from '../../agent/main/agentDir'
-import type { Companion } from '../../main/companion/types'
+import type { Runtime } from '../../main/runtime/types'
 import { skillsRootDir, targetInfo } from './targets'
 import { ensureSkillName } from './frontmatter'
 import * as skillStore from './skillStore'
@@ -32,13 +32,13 @@ interface SkillsManifest {
   skills: InstalledSkill[]
 }
 
-function manifestPath(companionId: string, hostCwd: string): string {
-  return hostJoin(companionId, hostCwd, '.cate', 'skills.json')
+function manifestPath(runtimeId: string, hostCwd: string): string {
+  return hostJoin(runtimeId, hostCwd, '.cate', 'skills.json')
 }
 
-export async function readManifest(companion: Companion, companionId: string, hostCwd: string): Promise<InstalledSkill[]> {
+export async function readManifest(runtime: Runtime, runtimeId: string, hostCwd: string): Promise<InstalledSkill[]> {
   try {
-    const raw = await companion.file.readFile(manifestPath(companionId, hostCwd))
+    const raw = await runtime.file.readFile(manifestPath(runtimeId, hostCwd))
     const parsed = JSON.parse(raw) as SkillsManifest
     return Array.isArray(parsed.skills) ? parsed.skills : []
   } catch {
@@ -46,10 +46,10 @@ export async function readManifest(companion: Companion, companionId: string, ho
   }
 }
 
-async function writeManifest(companion: Companion, companionId: string, hostCwd: string, skills: InstalledSkill[]): Promise<void> {
-  await companion.file.mkdir(hostJoin(companionId, hostCwd, '.cate'))
+async function writeManifest(runtime: Runtime, runtimeId: string, hostCwd: string, skills: InstalledSkill[]): Promise<void> {
+  await runtime.file.mkdir(hostJoin(runtimeId, hostCwd, '.cate'))
   const manifest: SkillsManifest = { skills }
-  await companion.file.writeFile(manifestPath(companionId, hostCwd), `${JSON.stringify(manifest, null, 2)}\n`)
+  await runtime.file.writeFile(manifestPath(runtimeId, hostCwd), `${JSON.stringify(manifest, null, 2)}\n`)
 }
 
 // ---------------------------------------------------------------------------
@@ -71,55 +71,55 @@ export interface WriteSkillResult {
 }
 
 /** Create every directory level from the (existing) workspace root down to
- *  `targetDir`. `companion.file.mkdir` is recursive but its validation requires
+ *  `targetDir`. `runtime.file.mkdir` is recursive but its validation requires
  *  the IMMEDIATE parent to already exist, so we walk level by level — e.g. a
  *  fresh `.codex/skills` works even though `.codex` didn't exist yet. */
-async function mkdirp(companion: Companion, companionId: string, hostCwd: string, targetDir: string): Promise<void> {
+async function mkdirp(runtime: Runtime, runtimeId: string, hostCwd: string, targetDir: string): Promise<void> {
   if (!targetDir.startsWith(hostCwd)) {
-    await companion.file.mkdir(targetDir)
+    await runtime.file.mkdir(targetDir)
     return
   }
   const rel = targetDir.slice(hostCwd.length).replace(/^[/\\]+/, '')
   let cur = hostCwd
   for (const part of rel.split(/[/\\]+/).filter(Boolean)) {
-    cur = hostJoin(companionId, cur, part)
-    await companion.file.mkdir(cur)
+    cur = hostJoin(runtimeId, cur, part)
+    await runtime.file.mkdir(cur)
   }
 }
 
-async function writeFile(companion: Companion, hostPath: string, file: SkillFile, slug: string): Promise<void> {
+async function writeFile(runtime: Runtime, hostPath: string, file: SkillFile, slug: string): Promise<void> {
   if (file.text != null) {
     const content = file.relPath === 'SKILL.md' ? ensureSkillName(file.text, slug) : file.text
-    await companion.file.writeFile(hostPath, content)
+    await runtime.file.writeFile(hostPath, content)
   } else if (file.base64 != null) {
-    await companion.file.writeBinary(hostPath, Buffer.from(file.base64, 'base64'))
+    await runtime.file.writeBinary(hostPath, Buffer.from(file.base64, 'base64'))
   }
 }
 
 export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<WriteSkillResult> {
   const { skillId, name, targetId, cwd, files, origin } = args
-  const { companionId, path: hostCwd } = parseLocator(cwd)
+  const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) throw new Error('Workspace has no folder open')
-  const companion = companions.resolve(companionId)
+  const runtime = runtimes.resolve(runtimeId)
   const info = targetInfo(targetId)
   const slug = slugifySkillName(name)
-  const root = skillsRootDir(targetId, companionId, hostCwd)
+  const root = skillsRootDir(targetId, runtimeId, hostCwd)
 
   const warnings: string[] = []
   let installedHostPath: string
 
   if (info.layout === 'folder') {
-    const dir = hostJoin(companionId, root, slug)
-    await mkdirp(companion, companionId, hostCwd, dir)
+    const dir = hostJoin(runtimeId, root, slug)
+    await mkdirp(runtime, runtimeId, hostCwd, dir)
     for (const f of files) {
       const segs = f.relPath.split('/')
-      const target = hostJoin(companionId, dir, ...segs)
+      const target = hostJoin(runtimeId, dir, ...segs)
       if (segs.length > 1) {
-        await mkdirp(companion, companionId, hostCwd, hostJoin(companionId, dir, ...segs.slice(0, -1)))
+        await mkdirp(runtime, runtimeId, hostCwd, hostJoin(runtimeId, dir, ...segs.slice(0, -1)))
       }
-      await writeFile(companion, target, f, slug)
+      await writeFile(runtime, target, f, slug)
     }
-    installedHostPath = hostJoin(companionId, dir, 'SKILL.md')
+    installedHostPath = hostJoin(runtimeId, dir, 'SKILL.md')
   } else {
     const skillMd = files.find((f) => f.relPath === 'SKILL.md')
     if (!skillMd?.text) throw new Error('Skill is missing SKILL.md')
@@ -127,9 +127,9 @@ export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<Write
     if (extras.length) {
       warnings.push(`${info.label} supports single-file skills only; ${extras.length} bundled file(s) were not installed.`)
     }
-    await mkdirp(companion, companionId, hostCwd, root)
-    const file = hostJoin(companionId, root, `${slug}.md`)
-    await companion.file.writeFile(file, ensureSkillName(skillMd.text, slug))
+    await mkdirp(runtime, runtimeId, hostCwd, root)
+    const file = hostJoin(runtimeId, root, `${slug}.md`)
+    await runtime.file.writeFile(file, ensureSkillName(skillMd.text, slug))
     installedHostPath = file
   }
 
@@ -137,14 +137,14 @@ export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<Write
     skillId,
     name,
     targetId,
-    path: formatLocator({ companionId, path: installedHostPath }),
+    path: formatLocator({ runtimeId, path: installedHostPath }),
     origin,
   }
 
-  const manifest = await readManifest(companion, companionId, hostCwd)
+  const manifest = await readManifest(runtime, runtimeId, hostCwd)
   const next = manifest.filter((m) => !(m.skillId === skillId && m.targetId === targetId))
   next.push(installed)
-  await writeManifest(companion, companionId, hostCwd, next)
+  await writeManifest(runtime, runtimeId, hostCwd, next)
 
   return { installed, warnings }
 }
@@ -154,37 +154,37 @@ export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<Write
 // and for promoting to global).
 // ---------------------------------------------------------------------------
 
-async function readDirRec(companion: Companion, companionId: string, dir: string, base = ''): Promise<SkillFile[]> {
+async function readDirRec(runtime: Runtime, runtimeId: string, dir: string, base = ''): Promise<SkillFile[]> {
   const out: SkillFile[] = []
   let nodes
-  try { nodes = await companion.file.readDir(dir) } catch { return out }
+  try { nodes = await runtime.file.readDir(dir) } catch { return out }
   for (const n of nodes) {
-    const child = hostJoin(companionId, dir, n.name)
+    const child = hostJoin(runtimeId, dir, n.name)
     const rel = base ? `${base}/${n.name}` : n.name
     if (n.isDirectory) {
-      out.push(...(await readDirRec(companion, companionId, child, rel)))
+      out.push(...(await readDirRec(runtime, runtimeId, child, rel)))
     } else {
-      try { out.push({ relPath: rel, text: await companion.file.readFile(child) }) } catch { /* skip */ }
+      try { out.push({ relPath: rel, text: await runtime.file.readFile(child) }) } catch { /* skip */ }
     }
   }
   return out
 }
 
 async function readWorkspaceSkillFiles(
-  companion: Companion,
-  companionId: string,
+  runtime: Runtime,
+  runtimeId: string,
   hostCwd: string,
   targetId: SkillTargetId,
   name: string,
 ): Promise<SkillFile[]> {
   const info = targetInfo(targetId)
   const slug = slugifySkillName(name)
-  const root = skillsRootDir(targetId, companionId, hostCwd)
+  const root = skillsRootDir(targetId, runtimeId, hostCwd)
   if (info.layout === 'folder') {
-    return readDirRec(companion, companionId, hostJoin(companionId, root, slug))
+    return readDirRec(runtime, runtimeId, hostJoin(runtimeId, root, slug))
   }
   try {
-    return [{ relPath: 'SKILL.md', text: await companion.file.readFile(hostJoin(companionId, root, `${slug}.md`)) }]
+    return [{ relPath: 'SKILL.md', text: await runtime.file.readFile(hostJoin(runtimeId, root, `${slug}.md`)) }]
   } catch {
     return []
   }
@@ -195,16 +195,16 @@ async function readWorkspaceSkillFiles(
 // ---------------------------------------------------------------------------
 
 export async function install(entry: SkillEntry, targetId: SkillTargetId, cwd: string): Promise<WriteSkillResult> {
-  const { companionId, path: hostCwd } = parseLocator(cwd)
+  const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) throw new Error('Workspace has no folder open')
-  const companion = companions.resolve(companionId)
+  const runtime = runtimes.resolve(runtimeId)
 
   // Resolve files: existing agent install here → saved-library cache → GitHub.
-  const manifest = await readManifest(companion, companionId, hostCwd)
+  const manifest = await readManifest(runtime, runtimeId, hostCwd)
   const existing = manifest.find((m) => m.skillId === entry.id)
   let files: SkillFile[] = []
   if (existing) {
-    files = await readWorkspaceSkillFiles(companion, companionId, hostCwd, existing.targetId, existing.name)
+    files = await readWorkspaceSkillFiles(runtime, runtimeId, hostCwd, existing.targetId, existing.name)
   }
   if (!files.length) {
     files = (await skillStore.read(entry.id)) ?? []
@@ -222,30 +222,30 @@ export async function uninstall(
   targetId: SkillTargetId,
   cwd: string,
 ): Promise<void> {
-  const { companionId, path: hostCwd } = parseLocator(cwd)
+  const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) throw new Error('Workspace has no folder open')
-  const companion = companions.resolve(companionId)
+  const runtime = runtimes.resolve(runtimeId)
   const info = targetInfo(targetId)
   const slug = slugifySkillName(name)
-  const root = skillsRootDir(targetId, companionId, hostCwd)
+  const root = skillsRootDir(targetId, runtimeId, hostCwd)
   const target = info.layout === 'folder'
-    ? hostJoin(companionId, root, slug)
-    : hostJoin(companionId, root, `${slug}.md`)
+    ? hostJoin(runtimeId, root, slug)
+    : hostJoin(runtimeId, root, `${slug}.md`)
   try {
-    await companion.file.remove(target)
+    await runtime.file.remove(target)
   } catch (err) {
     log.warn('[skills] remove failed for %s: %O', target, err)
   }
-  const manifest = await readManifest(companion, companionId, hostCwd)
-  await writeManifest(companion, companionId, hostCwd, manifest.filter((m) => !(m.skillId === skillId && m.targetId === targetId)))
+  const manifest = await readManifest(runtime, runtimeId, hostCwd)
+  await writeManifest(runtime, runtimeId, hostCwd, manifest.filter((m) => !(m.skillId === skillId && m.targetId === targetId)))
 }
 
 export async function listInstalled(cwd: string): Promise<InstalledSkill[]> {
-  const { companionId, path: hostCwd } = parseLocator(cwd)
+  const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) return []
-  let companion: Companion
-  try { companion = companions.resolve(companionId) } catch { return [] }
-  return readManifest(companion, companionId, hostCwd)
+  let runtime: Runtime
+  try { runtime = runtimes.resolve(runtimeId) } catch { return [] }
+  return readManifest(runtime, runtimeId, hostCwd)
 }
 
 // ---------------------------------------------------------------------------

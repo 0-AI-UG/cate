@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { errorMessage } from './errorMessage'
 
 describe('errorMessage', () => {
-  it('strips the Electron IPC wrapper and maps the companion error', () => {
+  it('strips the Electron IPC wrapper and maps the runtime error', () => {
     const raw =
-      `Error invoking remote method 'git:init': Error: No companion registered for id "srv_cd1df3a429"`
+      `Error invoking remote method 'git:init': Error: No runtime registered for id "srv_cd1df3a429"`
     expect(errorMessage(new Error(raw))).toBe(
-      'The companion isn’t connected on this host yet. Install it and try again.',
+      'The runtime isn’t connected on this host yet. Install it and try again.',
     )
   })
 

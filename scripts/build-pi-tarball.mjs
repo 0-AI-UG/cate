@@ -1,10 +1,10 @@
 // =============================================================================
 // Build the cate-pi tarball — the pi coding agent (@earendil-works/pi-coding-agent)
-// shipped to a host on demand and run by the companion (local or remote) in
+// shipped to a host on demand and run by the runtime (local or remote) in
 // `--mode rpc`. pi is NOT bundled in the desktop app anymore; it's pulled per
-// version like the companion daemon.
+// version like the runtime daemon.
 //
-//   dist-companion/cate-pi-<piVersion>.tgz
+//   dist-runtime/cate-pi-<piVersion>.tgz
 //     dist/            (pi's built CLI — node dist/cli.js --mode rpc)
 //     node_modules/    (pruned: provider SDKs kept; native + TUI-only deps cut)
 //     package.json
@@ -12,7 +12,7 @@
 // CROSS-PLATFORM: in --mode rpc pi never loads its native deps (koffi/clipboard
 // are TUI-only + guarded; photon is a lazy dynamic import) — verified — so we
 // drop them and ship ONE artifact for every target. pi runs under the
-// companion's bundled Node, so no runtime is included here.
+// runtime's bundled Node, so no runtime is included here.
 //
 // Usage: node scripts/build-pi-tarball.mjs
 // =============================================================================
@@ -24,10 +24,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const dist = path.join(repoRoot, 'dist-companion')
+const dist = path.join(repoRoot, 'dist-runtime')
 const piSrc = path.join(repoRoot, 'node_modules', '@earendil-works', 'pi-coding-agent')
 // Forward-slash relative path for tar's -C: keeps Windows drive letters/backslashes
-// out of tar args (both bsdtar and msys2 GNU tar choke on `D:\…`). See the companion
+// out of tar args (both bsdtar and msys2 GNU tar choke on `D:\…`). See the runtime
 // build script's `fwd` note.
 const fwd = (from, to) => path.relative(from, to).split(path.sep).join('/') || '.'
 
@@ -165,14 +165,14 @@ function readDeps(pkgDir) {
   }
 }
 
-/** Generate src/companion/piVersion.ts so client + daemon agree on which
- *  cate-pi tarball to pull (mirrors version.ts for the companion). */
+/** Generate src/runtime/piVersion.ts so client + daemon agree on which
+ *  cate-pi tarball to pull (mirrors version.ts for the runtime). */
 function syncPiVersion(version) {
-  const file = path.join(repoRoot, 'src/companion/piVersion.ts')
+  const file = path.join(repoRoot, 'src/runtime/piVersion.ts')
   const next =
     '// =============================================================================\n' +
     '// pi version — GENERATED from the installed @earendil-works/pi-coding-agent by\n' +
-    '// `npm run pi:tarball`. The companion ships pi per this version; the host pulls\n' +
+    '// `npm run pi:tarball`. The runtime ships pi per this version; the host pulls\n' +
     '// cate-pi-<PI_VERSION>.tgz from the release. Do not edit by hand.\n' +
     '// =============================================================================\n\n' +
     `export const PI_VERSION = '${version}'\n`

@@ -1,15 +1,15 @@
-import type { CompanionPhase, WorkspaceState } from '../../../shared/types'
+import type { RuntimePhase, WorkspaceState } from '../../../shared/types'
 
 // =============================================================================
 // The ONE place that turns a workspace's stored state (connection record +
-// canonical companion phase) into the runtime status the whole UI switches on.
+// canonical runtime phase) into the runtime status the whole UI switches on.
 // Every consumer — the canvas lock, the sidebar dot, the git-monitor gate —
 // reads from here so they can never disagree about whether a workspace is
 // editable or which recovery action to offer.
 // =============================================================================
 
-/** Mirrors CompanionPhase, plus `local` for workspaces with no companion. */
-type WorkspaceRuntimeStatus = 'local' | CompanionPhase
+/** Mirrors RuntimePhase, plus `local` for workspaces with no runtime. */
+type WorkspaceRuntimeStatus = 'local' | RuntimePhase
 
 export interface WorkspaceRuntime {
   status: WorkspaceRuntimeStatus
@@ -28,21 +28,21 @@ export interface WorkspaceRuntime {
  * Derive a workspace's canonical runtime status.
  *
  * A workspace is treated as remote when it has a non-local connection record OR
- * an in-flight companion runtime (the optimistic seed set during the very first
+ * an in-flight runtime runtime (the optimistic seed set during the very first
  * connect, before the connection record is persisted). Otherwise it is local
  * and always editable.
  */
 export function workspaceRuntime(ws: WorkspaceState | undefined): WorkspaceRuntime {
   const conn = ws?.connection
-  const companion = ws?.companion
-  const isRemote = (!!conn && conn.kind !== 'local') || !!companion
+  const runtime = ws?.runtime
+  const isRemote = (!!conn && conn.kind !== 'local') || !!runtime
   if (!isRemote) return { status: 'local', editable: true, hasConnection: false }
 
   const hasConnection = !!conn && conn.kind !== 'local'
-  const error = companion?.error
+  const error = runtime?.error
   // No phase yet on a remote workspace (e.g. session restore in progress) reads
   // as still connecting, so the canvas stays blocked until it resolves.
-  const phase = companion?.phase ?? 'connecting'
+  const phase = runtime?.phase ?? 'connecting'
 
   switch (phase) {
     case 'connected':

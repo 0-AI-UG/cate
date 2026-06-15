@@ -16,9 +16,9 @@
 
 import log from '../../main/logger'
 import { hostSessionsDir, hostJoin } from './agentDir'
-import { parseLocator, formatLocator } from '../../main/companion/locator'
-import { companions } from '../../main/companion/companionManager'
-import type { Companion } from '../../main/companion/types'
+import { parseLocator, formatLocator } from '../../main/runtime/locator'
+import { runtimes } from '../../main/runtime/runtimeManager'
+import type { Runtime } from '../../main/runtime/types'
 import type { AgentSessionListEntry } from '../../shared/types'
 
 // Pi nests sessions under <agentDir>/sessions/<encoded-cwd>/. We validate file
@@ -38,12 +38,12 @@ interface ParsedHeader {
  *  first user message (for the title) but continues scanning for the latest
  *  `session_info.sessionName`, since names can be set anywhere in the file. */
 async function summarizeFile(
-  companion: Companion,
+  runtime: Runtime,
   hostFilePath: string,
 ): Promise<AgentSessionListEntry | null> {
   let raw: string
   try {
-    raw = await companion.file.readFile(hostFilePath)
+    raw = await runtime.file.readFile(hostFilePath)
   } catch (err) {
     log.warn('[sessionFiles] read failed for %s: %O', hostFilePath, err)
     return null
@@ -106,8 +106,8 @@ async function summarizeFile(
       : 'New chat')
   return {
     // Re-encode the host path as a locator so the renderer's load/delete calls
-    // route back to the same companion. No-op for the local companion.
-    path: formatLocator({ companionId: companion.id, path: hostFilePath }),
+    // route back to the same runtime. No-op for the local runtime.
+    path: formatLocator({ runtimeId: runtime.id, path: hostFilePath }),
     id: header.id,
     title: title || 'New chat',
     named: sessionName != null,
@@ -121,23 +121,23 @@ async function summarizeFile(
 
 /** List sessions for a given workspace locator, newest first. Returns [] when
  *  the directory doesn't exist yet (a workspace pi hasn't been invoked in).
- *  Routed through the companion so it works for local and remote hosts. */
+ *  Routed through the runtime so it works for local and remote hosts. */
 export async function listSessions(cwd: string): Promise<AgentSessionListEntry[]> {
-  const { companionId, path: hostCwd } = parseLocator(cwd)
-  let companion: Companion
-  try { companion = companions.resolve(companionId) }
-  catch (err) { log.warn('[sessionFiles] resolve companion failed: %O', err); return [] }
+  const { runtimeId, path: hostCwd } = parseLocator(cwd)
+  let runtime: Runtime
+  try { runtime = runtimes.resolve(runtimeId) }
+  catch (err) { log.warn('[sessionFiles] resolve runtime failed: %O', err); return [] }
 
-  const dir = hostSessionsDir(companionId, hostCwd)
+  const dir = hostSessionsDir(runtimeId, hostCwd)
   // FileHost.readDir returns [] for a missing dir (it swallows readdir errors),
   // so the "pi never ran here" case lands as an empty list.
-  const nodes = await companion.file.readDir(dir)
+  const nodes = await runtime.file.readDir(dir)
   const files = nodes
     .filter((n) => !n.isDirectory && n.name.endsWith('.jsonl'))
-    .map((n) => hostJoin(companionId, dir, n.name))
+    .map((n) => hostJoin(runtimeId, dir, n.name))
   const entries: AgentSessionListEntry[] = []
   for (const f of files) {
-    const s = await summarizeFile(companion, f)
+    const s = await summarizeFile(runtime, f)
     if (s) entries.push(s)
   }
   entries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
@@ -153,12 +153,12 @@ function isSessionFile(hostPath: string): boolean {
 }
 
 export async function deleteSession(sessionFile: string): Promise<void> {
-  const { companionId, path: hostPath } = parseLocator(sessionFile)
+  const { runtimeId, path: hostPath } = parseLocator(sessionFile)
   if (!isSessionFile(hostPath)) {
     throw new Error(`Refusing to delete ${sessionFile} — not a pi session file`)
   }
-  const companion = companions.resolve(companionId)
-  await companion.file.remove(hostPath)
+  const runtime = runtimes.resolve(runtimeId)
+  await runtime.file.remove(hostPath)
 }
 
 // ----------------------------------------------------------------------------
@@ -198,12 +198,12 @@ let counter = 0
 const nid = (): string => { counter += 1; return `s${counter}` }
 
 export async function loadSessionTranscript(sessionFile: string): Promise<RendererMessage[]> {
-  const { companionId, path: hostPath } = parseLocator(sessionFile)
+  const { runtimeId, path: hostPath } = parseLocator(sessionFile)
   if (!isSessionFile(hostPath)) {
     throw new Error(`Refusing to read ${sessionFile} — not a pi session file`)
   }
-  const companion = companions.resolve(companionId)
-  const raw = await companion.file.readFile(hostPath)
+  const runtime = runtimes.resolve(runtimeId)
+  const raw = await runtime.file.readFile(hostPath)
   const out: RendererMessage[] = []
   // Map of toolCallId → index in `out` so toolResult can update in place.
   const toolIndex = new Map<string, number>()

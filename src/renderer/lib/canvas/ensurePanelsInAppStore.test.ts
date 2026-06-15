@@ -153,7 +153,7 @@ describe('ensurePanelsInAppStore — stub selection', () => {
     const ws = useAppStore.getState().workspaces.find((w) => w.id === WS)!
     expect(ws.worktrees).toEqual([])
     expect(ws.connection).toBeUndefined()
-    expect(ws.companion).toBeUndefined()
+    expect(ws.runtime).toBeUndefined()
     expect(ws.additionalRoots).toBeUndefined()
     // The old stub leaked a non-WorkspaceState `focusedNodeId` field via `as any`.
     expect('focusedNodeId' in ws).toBe(false)

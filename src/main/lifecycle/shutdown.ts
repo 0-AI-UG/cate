@@ -12,7 +12,7 @@ import { flushPendingWritesSync as flushSettingsPendingWritesSync } from '../set
 import { flushWorkspaceStateSync } from '../workspaceStateStore'
 import { flushUIStateSync } from '../uiStateStore'
 import { releaseAllProjectLocks } from '../projectLock'
-import { companions } from '../companion/companionManager'
+import { runtimes } from '../runtime/runtimeManager'
 import { isUpdatePendingInstall } from '../auto-updater'
 import {
   SESSION_FLUSH_SAVE,
@@ -232,9 +232,9 @@ export function registerLifecycleHandlers(): void {
     // during Environment::CleanupHandles, node-pty's ThreadSafeFunction exit
     // callback throws into a torn-down context and SIGABRTs the process.
     killAllTerminals()
-    // Tear down any remote/WSL companion connections (kills their daemons /
+    // Tear down any remote/WSL runtime connections (kills their daemons /
     // closes SSH). Fire-and-forget — quit must not block on a remote socket.
-    void companions.disposeAll()
+    void runtimes.disposeAll()
     // An update has been downloaded and is queued to install on quit. DO NOT
     // reallyExit — electron-updater's install-on-quit hook runs on the 'quit'
     // event (which fires AFTER will-quit), so reallyExit (libc exit()) would kill

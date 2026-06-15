@@ -12,7 +12,7 @@ import {
   CloudArrowUp,
 } from '@phosphor-icons/react'
 import { abbreviateLocalPath, workspaceDisplayName } from '../lib/fs/displayPath'
-import { parseLocator, LOCAL_COMPANION_ID } from '../../main/companion/locator'
+import { parseLocator, LOCAL_RUNTIME_ID } from '../../main/runtime/locator'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { isWorkspaceEffectivelyEmpty } from '../lib/workspace/session'
@@ -45,7 +45,7 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
         }
       } else {
         const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-        setRemoteError(ws?.companion?.error ?? 'Failed to connect')
+        setRemoteError(ws?.runtime?.error ?? 'Failed to connect')
       }
     },
     [workspaceId],
@@ -152,15 +152,15 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
               </h2>
               <div className="flex flex-col gap-0.5">
                 {recentProjects.map((projectPath) => {
-                  const { companionId, path: decodedPath } = parseLocator(projectPath)
+                  const { runtimeId, path: decodedPath } = parseLocator(projectPath)
                   // Local paths are OS-native — split on `\` too so Windows paths
                   // ("C:\Users\foo\proj") don't render as one long segment.
-                  const sep = companionId === LOCAL_COMPANION_ID ? /[\\/]/ : /\//
+                  const sep = runtimeId === LOCAL_RUNTIME_ID ? /[\\/]/ : /\//
                   const name = workspaceDisplayName(projectPath) || projectPath
                   const parentPath = decodedPath.split(sep).slice(0, -1).join('/')
-                  const parent = companionId === LOCAL_COMPANION_ID
+                  const parent = runtimeId === LOCAL_RUNTIME_ID
                     ? abbreviateLocalPath(parentPath)
-                    : `${companionId}:${parentPath}`
+                    : `${runtimeId}:${parentPath}`
                   return (
                     <button
                       key={projectPath}

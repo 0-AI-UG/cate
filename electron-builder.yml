@@ -2,14 +2,14 @@ appId: com.cate.app
 productName: Cate
 directories:
   output: release
-# The cate-companion daemon is NOT bundled in the app. One self-contained
+# The cate-runtime daemon is NOT bundled in the app. One self-contained
 # tarball per target is built in CI and uploaded to the GitHub release
 # `v<version>`; on connect the remote pulls its own tarball (with a client-side
-# fallback). See companionArtifacts.ts + .github/workflows/release.yml.
+# fallback). See runtimeArtifacts.ts + .github/workflows/release.yml.
 #
 # @earendil-works/pi-coding-agent (the agent runtime, ~271MB) is NO LONGER
 # bundled — it's a devDependency, shipped on demand as the cate-pi tarball and
-# run by the companion (local or remote). See build-pi-tarball.mjs + ensurePi.ts.
+# run by the runtime (local or remote). See build-pi-tarball.mjs + ensurePi.ts.
 # @earendil-works/pi-ai stays a production dependency (authManager uses /oauth
 # for cate's own login flow) and is unpacked here. The @earendil-works glob now
 # only matches pi-ai + pi-agent-core. Its pure-JS SDK closure (AWS/Google/Mistral/
@@ -54,19 +54,19 @@ extraResources:
     to: skills
     filter:
       - "**/*"
-  # Ship the companion daemon tarball(s) so the packaged LOCAL workspace runs the
+  # Ship the runtime daemon tarball(s) so the packaged LOCAL workspace runs the
   # same daemon as remote hosts. Linux/Windows stage one host-arch
-  # companion-host.tgz; macOS stages BOTH companion-host-x64.tgz (Intel) and
-  # companion-host-arm64.tgz, because one .app can run on either CPU and the
+  # runtime-host.tgz; macOS stages BOTH runtime-host-x64.tgz (Intel) and
+  # runtime-host-arm64.tgz, because one .app can run on either CPU and the
   # daemon's bundled node + node-pty are arch-specific (an arm64 daemon can't
   # exec on Intel → terminal never opens). Resolved at runtime by
-  # shippedCompanionTarball() → resources/companion-host-<arch>.tgz (legacy
-  # resources/companion-host.tgz fallback). The glob copies whatever this runner
+  # shippedRuntimeTarball() → resources/runtime-host-<arch>.tgz (legacy
+  # resources/runtime-host.tgz fallback). The glob copies whatever this runner
   # staged without erroring on the arches it didn't build (see release.yml).
-  - from: dist-companion
+  - from: dist-runtime
     to: .
     filter:
-      - companion-host*.tgz
+      - runtime-host*.tgz
 publish:
   provider: github
   owner: 0-AI-UG

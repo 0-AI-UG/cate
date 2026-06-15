@@ -13,7 +13,7 @@ import type {
   PanelType,
   Point,
   DockStateSnapshot,
-  CompanionConnection,
+  RuntimeConnection,
 } from '../../../shared/types'
 import { ACCENT_COLORS } from '../../../shared/colors'
 import { BASE_DARK, BASE_LIGHT } from '../../../shared/themes'
@@ -39,7 +39,7 @@ import type { AppSet, AppGet, PanelPlacement } from './types'
  * Dynamically imported to avoid a static cycle (session.ts imports appStore).
  * hydrateWorkspaceFromDiskIfEmpty is internally guarded (rootPath + no live
  * content + not deferred), so this is a safe, idempotent no-op otherwise. For a
- * remote workspace the caller must ensure the companion is connected first.
+ * remote workspace the caller must ensure the runtime is connected first.
  */
 export async function hydrateWorkspaceFromDisk(wsId: string): Promise<void> {
   try {
@@ -57,15 +57,15 @@ export function createDefaultWorkspace(
   name?: string,
   rootPath?: string,
   id?: string,
-  connection?: CompanionConnection,
+  connection?: RuntimeConnection,
 ): WorkspaceState {
   return {
     id: id ?? generateId(),
     name: name ?? 'Workspace',
     color: '',
     rootPath: rootPath ?? '',
-    // Carry remote reconnect info through restore so ensureWorkspaceCompanion
-    // can reconnect the companion before any fs/git/terminal op (Finding 2).
+    // Carry remote reconnect info through restore so ensureWorkspaceRuntime
+    // can reconnect the runtime before any fs/git/terminal op (Finding 2).
     ...(connection && connection.kind !== 'local' ? { connection } : {}),
     rootPathError: null,
     isRootPathPending: false,

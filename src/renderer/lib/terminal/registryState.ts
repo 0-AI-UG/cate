@@ -92,7 +92,7 @@ export const registry = new Map<string, RegistryEntry>()
 // panelId<->ptyId fact lives — statusStore no longer keeps a parallel
 // ptyId->workspaceId map; it resolves through workspaceIdForPty() here.
 //
-// NOTE: this is the RENDERER bimap. Main's terminalOwners / terminalCompanion
+// NOTE: this is the RENDERER bimap. Main's terminalOwners / terminalRuntime
 // are distinct facts in a different process and are intentionally NOT folded in.
 // ---------------------------------------------------------------------------
 export const ptyToPanel = new Map<string, string>()

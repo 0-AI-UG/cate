@@ -1,15 +1,15 @@
 // =============================================================================
-// PiRpcClient — drives a pi `--mode rpc` process over a Companion's agent
+// PiRpcClient — drives a pi `--mode rpc` process over a Runtime's agent
 // channel (local in-process or remote over the daemon). It speaks pi's stdio
 // JSONL protocol — requests carry an id, `{type:"response",id,success,data|error}`
 // frames are correlated responses, everything else is an event — but the
-// transport is `companion.agent` instead of a child process pi-coding-agent
+// transport is `runtime.agent` instead of a child process pi-coding-agent
 // owns. This is a standalone reimplementation so the desktop app no longer
-// imports (or bundles) pi: pi ships only as the on-demand tarball the companion
+// imports (or bundles) pi: pi ships only as the on-demand tarball the runtime
 // installs on the host.
 // =============================================================================
 
-import type { Companion } from '../../main/companion/types'
+import type { Runtime } from '../../main/runtime/types'
 
 export interface PiImageContent {
   type: 'image'
@@ -49,16 +49,16 @@ export class PiRpcClient {
   private stderr = ''
 
   constructor(
-    private readonly companion: Companion,
+    private readonly runtime: Runtime,
     private readonly options: PiRpcClientOptions,
   ) {
-    this.aid = `pi-${++seq}-${companion.id}`
+    this.aid = `pi-${++seq}-${runtime.id}`
   }
 
   async start(): Promise<void> {
     if (this.started) throw new Error('PiRpcClient already started')
     this.started = true
-    await this.companion.agent.start(
+    await this.runtime.agent.start(
       {
         id: this.aid,
         cwd: this.options.cwd,
@@ -83,7 +83,7 @@ export class PiRpcClient {
   async stop(): Promise<void> {
     if (!this.started) return
     this.disposing = true
-    this.companion.agent.stop(this.aid)
+    this.runtime.agent.stop(this.aid)
     this.rejectAllPending('pi session stopped')
     this.started = false
   }
@@ -121,7 +121,7 @@ export class PiRpcClient {
 
   /** Write a raw object to pi's stdin (extension UI sub-protocol). */
   writeRaw(obj: unknown): void {
-    this.companion.agent.writeLine(this.aid, JSON.stringify(obj))
+    this.runtime.agent.writeLine(this.aid, JSON.stringify(obj))
   }
 
   // ---- Command methods (1:1 with pi's RpcClient) --------------------------
@@ -197,7 +197,7 @@ export class PiRpcClient {
         resolve: (r) => { clearTimeout(timer); resolve(r) },
         reject: (e) => { clearTimeout(timer); reject(e) },
       })
-      this.companion.agent.writeLine(this.aid, JSON.stringify({ ...command, id }))
+      this.runtime.agent.writeLine(this.aid, JSON.stringify({ ...command, id }))
     })
   }
 

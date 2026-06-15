@@ -11,8 +11,8 @@
 //       process.resourcesPath there.
 //
 // The SOURCE bundle is always read locally with node fs (it ships inside the
-// app). Each DESTINATION is written THROUGH the companion (local fs for the
-// local companion, the daemon for a remote one), so remote workspaces are
+// app). Each DESTINATION is written THROUGH the runtime (local fs for the
+// local runtime, the daemon for a remote one), so remote workspaces are
 // seeded too. The host copy is overwritten only when it differs from the
 // bundled source, so shipped updates reach hosts that already have an older
 // copy without rewriting on every launch.
@@ -23,7 +23,7 @@ import { app } from 'electron'
 import log from '../../main/logger'
 import { hostAgentDir, hostJoin } from './agentDir'
 import { copyFileToHost, createIdempotencyTracker, findSourceDir } from './extensionInstall'
-import type { Companion } from '../../main/companion/types'
+import type { Runtime } from '../../main/runtime/types'
 
 /** Source dir of the bundled extension. Tries dev path first (src/ on disk),
  *  then production extraResources copy. */
@@ -40,24 +40,24 @@ function sourceDir(): string | null {
  *  first means we still skip the write when nothing changed (the common case),
  *  but a shipped update reliably reaches hosts that already have an older copy. */
 async function copyIfChanged(
-  companion: Companion,
+  runtime: Runtime,
   src: string,
   destDir: string,
   destName: string,
 ): Promise<void> {
-  await copyFileToHost(companion, src, destDir, destName, 'if-changed', '[installPlanMode]')
+  await copyFileToHost(runtime, src, destDir, destName, 'if-changed', '[installPlanMode]')
 }
 
-// Keyed on companionId + host path so the same host path on different companions
+// Keyed on runtimeId + host path so the same host path on different runtimes
 // doesn't collide.
 const installed = createIdempotencyTracker()
 
 /** Idempotent — safe to call from AgentManager.create() on every session.
  *  `cwd` is the HOST path on whichever machine pi runs (local fs path for the
- *  local companion, POSIX path on a remote host). */
-export async function installPlanModeExtension(companion: Companion, cwd: string): Promise<void> {
-  const home = hostAgentDir(companion.id, cwd)
-  const key = companion.id + '\0' + home
+ *  local runtime, POSIX path on a remote host). */
+export async function installPlanModeExtension(runtime: Runtime, cwd: string): Promise<void> {
+  const home = hostAgentDir(runtime.id, cwd)
+  const key = runtime.id + '\0' + home
   if (!installed.shouldInstall(key)) return
   installed.markInstalled(key)
   try {
@@ -66,9 +66,9 @@ export async function installPlanModeExtension(companion: Companion, cwd: string
       log.warn('[installPlanMode] source dir not found — plan mode extension not installed')
       return
     }
-    const destDir = hostJoin(companion.id, home, 'extensions', 'cate-plan-mode')
-    await copyIfChanged(companion, path.join(src, 'index.ts'), destDir, 'index.ts')
-    await copyIfChanged(companion, path.join(src, 'package.json'), destDir, 'package.json')
+    const destDir = hostJoin(runtime.id, home, 'extensions', 'cate-plan-mode')
+    await copyIfChanged(runtime, path.join(src, 'index.ts'), destDir, 'index.ts')
+    await copyIfChanged(runtime, path.join(src, 'package.json'), destDir, 'package.json')
   } catch (err) {
     log.warn('[installPlanMode] install failed: %O', err)
   }

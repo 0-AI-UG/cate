@@ -485,11 +485,11 @@ export default function EditorPanel({
       // monaco.editor.getModel(uri) in case Monaco itself still owns one
       // (e.g. across HMR boundaries). Models survive panel unmount in the
       // cache so reopening the same file is instant.
-      // A remote/WSL file path is a `cate-companion://<id>/<path>` locator;
+      // A remote/WSL file path is a `cate-runtime://<id>/<path>` locator;
       // monaco.Uri.file() would mangle it, so parse the URI directly. Bare
       // local paths keep using .file(). The LRU cache key is the raw filePath
-      // string, which already distinguishes companions, so no cache change.
-      const fileUri = filePath.startsWith('cate-companion://')
+      // string, which already distinguishes runtimes, so no cache change.
+      const fileUri = filePath.startsWith('cate-runtime://')
         ? monaco.Uri.parse(filePath)
         : monaco.Uri.file(filePath)
       let cached = getCachedModel(filePath) as monaco.editor.ITextModel | undefined

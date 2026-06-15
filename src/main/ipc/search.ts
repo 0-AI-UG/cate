@@ -13,9 +13,9 @@ import { ipcMain } from 'electron'
 import log from '../logger'
 import { SEARCH_START, SEARCH_CANCEL, SEARCH_RESULT, SEARCH_DONE } from '../../shared/ipc-channels'
 import type { SearchOptions } from '../../shared/types'
-import type { SearchHandle } from '../../companion/search/engine'
-import { parseLocator, formatLocator } from '../companion/locator'
-import { companions } from '../companion/companionManager'
+import type { SearchHandle } from '../../runtime/search/engine'
+import { parseLocator, formatLocator } from '../runtime/locator'
+import { runtimes } from '../runtime/runtimeManager'
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback
@@ -66,16 +66,16 @@ export function registerHandlers(): void {
       const opts = sanitize(optsRaw)
       if (!opts.query.trim()) return searchId
 
-      // The root is a companion locator. Resolve which host owns it and run the
+      // The root is a runtime locator. Resolve which host owns it and run the
       // search there: the local machine spawns its bundled ripgrep, a remote
       // (SSH/WSL) daemon spawns the ripgrep shipped in its tarball — so a remote
       // workspace is searched on the remote, not against a bogus local path.
-      const { companionId, path: rootRel } = parseLocator(rootPath)
-      const companion = companions.resolve(companionId)
+      const { runtimeId, path: rootRel } = parseLocator(rootPath)
+      const runtime = runtimes.resolve(runtimeId)
 
       let validRoot: string
       try {
-        validRoot = await companion.validatePathStrict(rootRel, wcId, workspaceId)
+        validRoot = await runtime.validatePathStrict(rootRel, wcId, workspaceId)
       } catch (err) {
         log.warn(`[${SEARCH_START}] invalid root:`, err)
         if (!wc.isDestroyed()) {
@@ -88,12 +88,12 @@ export function registerHandlers(): void {
         return searchId
       }
 
-      const handle: SearchHandle | undefined = companion.file.searchContent(validRoot, opts, {
+      const handle: SearchHandle | undefined = runtime.file.searchContent(validRoot, opts, {
         onBatch: (files) => {
           if (wc.isDestroyed()) return
-          // Re-encode each result's absolute path as a companion locator so the
-          // renderer can open it through the same companion (a no-op for local).
-          const encoded = files.map((f) => ({ ...f, path: formatLocator({ companionId, path: f.path }) }))
+          // Re-encode each result's absolute path as a runtime locator so the
+          // renderer can open it through the same runtime (a no-op for local).
+          const encoded = files.map((f) => ({ ...f, path: formatLocator({ runtimeId, path: f.path }) }))
           wc.send(SEARCH_RESULT, { searchId, files: encoded })
         },
         onDone: (stats, error) => {

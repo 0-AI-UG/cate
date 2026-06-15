@@ -38,21 +38,21 @@ function run(command, commandArgs, options = {}) {
   })
 }
 
-// Ship the host-target companion tarball into the installer under a fixed name.
-// electron-builder can't compute the per-target name (cate-companion-<version>-<target>.tgz),
-// so copy it to dist-companion/companion-host.tgz (extraResources → resources/companion-host.tgz).
+// Ship the host-target runtime tarball into the installer under a fixed name.
+// electron-builder can't compute the per-target name (cate-runtime-<version>-<target>.tgz),
+// so copy it to dist-runtime/runtime-host.tgz (extraResources → resources/runtime-host.tgz).
 function plat(p) {
   return p === 'win32' ? 'win32' : p // darwin | linux pass through
 }
-function stageHostCompanionTarball() {
+function stageHostRuntimeTarball() {
   const version = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf-8')).version
   const target = `${plat(process.platform)}-${process.arch}`
-  const src = path.join(repoRoot, 'dist-companion', `cate-companion-${version}-${target}.tgz`)
-  const dest = path.join(repoRoot, 'dist-companion', 'companion-host.tgz')
+  const src = path.join(repoRoot, 'dist-runtime', `cate-runtime-${version}-${target}.tgz`)
+  const dest = path.join(repoRoot, 'dist-runtime', 'runtime-host.tgz')
   if (!existsSync(src)) {
     throw new Error(
-      `[package] host companion tarball missing: ${src}\n` +
-        'Packaging a local-daemon app requires it — run `npm run companion:tarball` first.',
+      `[package] host runtime tarball missing: ${src}\n` +
+        'Packaging a local-daemon app requires it — run `npm run runtime:tarball` first.',
     )
   }
   copyFileSync(src, dest)
@@ -61,5 +61,5 @@ function stageHostCompanionTarball() {
 
 await run(node, ['scripts/generate-icons.js'])
 await run(node, ['node_modules/electron-vite/bin/electron-vite.js', 'build'])
-stageHostCompanionTarball()
+stageHostRuntimeTarball()
 await run(node, ['node_modules/electron-builder/out/cli/cli.js', ...args])

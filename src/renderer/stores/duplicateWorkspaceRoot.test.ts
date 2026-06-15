@@ -51,12 +51,12 @@ describe('duplicateWorkspace preserves project identity', () => {
   it('keeps the connection so a remote duplicate stays reconnectable', () => {
     const connection = {
       kind: 'server' as const,
-      companionId: 'comp-1',
+      runtimeId: 'comp-1',
       host: 'box',
       user: 'me',
       remotePath: '/srv/repo',
     }
-    const a = useAppStore.getState().addWorkspace('Remote', 'cate-companion://comp-1/srv/repo', 'ws-a', connection)
+    const a = useAppStore.getState().addWorkspace('Remote', 'cate-runtime://comp-1/srv/repo', 'ws-a', connection)
 
     const dupId = useAppStore.getState().duplicateWorkspace(a)
 
@@ -64,7 +64,7 @@ describe('duplicateWorkspace preserves project identity', () => {
     expect(dup?.connection).toEqual(connection)
     // Not degraded to a broken local workspace.
     expect(dup?.connection?.kind).toBe('server')
-    expect(dup?.rootPath).toBe('cate-companion://comp-1/srv/repo')
+    expect(dup?.rootPath).toBe('cate-runtime://comp-1/srv/repo')
   })
 
   it('preserves additionalRoots and worktrees in the duplicate', () => {
