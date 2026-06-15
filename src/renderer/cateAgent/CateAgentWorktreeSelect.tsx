@@ -12,7 +12,6 @@ import React from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ArrowsSplit } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
-import { Tooltip } from '../ui/Tooltip'
 import type { WorktreeMeta } from '../../shared/types'
 
 /** Where a prompt runs: new isolated worktree, no worktree (root), or an id. */
@@ -28,6 +27,7 @@ export const CateAgentWorktreeSelect: React.FC<{
 }> = ({ workspaceId, value, onChange }) => {
   const worktrees = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.worktrees) ?? []
   const [open, setOpen] = React.useState(false)
+  const [hovered, setHovered] = React.useState(false)
   const btnRef = React.useRef<HTMLButtonElement>(null)
   const menuRef = React.useRef<HTMLDivElement>(null)
   const [pos, setPos] = React.useState<{ left: number; bottom: number } | null>(null)
@@ -59,23 +59,50 @@ export const CateAgentWorktreeSelect: React.FC<{
 
   return (
     <>
-      <Tooltip label={title} placement="top">
-        <button
-          ref={btnRef}
-          type="button"
-          onClick={toggle}
-          aria-label={`Run in worktree: ${title}`}
+      {/* Filled chip in the worktree color, matching the terminal WorktreePill:
+          just the icon, expanding on hover to reveal the name. */}
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        aria-label={`Run in worktree: ${title}`}
+        style={{
+          WebkitTapHighlightColor: 'transparent',
+          display: 'inline-flex',
+          alignItems: 'center',
+          flexShrink: 0,
+          gap: hovered ? 4 : 0,
+          height: 18,
+          maxWidth: 200,
+          padding: hovered ? '0 9px 0 7px' : '0 4px',
+          borderRadius: 9,
+          backgroundColor: `color-mix(in srgb, ${dot} 92%, black)`,
+          color: '#fff',
+          fontSize: 10,
+          fontWeight: 600,
+          lineHeight: 1,
+          letterSpacing: 0.2,
+          textShadow: '0 1px 1px rgba(0,0,0,0.3)',
+          transition: 'gap 150ms ease, padding 150ms ease, filter 150ms ease',
+          filter: open ? 'brightness(1.12)' : undefined,
+        }}
+      >
+        <ArrowsSplit size={11} weight="bold" style={{ flexShrink: 0 }} />
+        <span
           style={{
-            WebkitTapHighlightColor: 'transparent',
-            backgroundColor: `color-mix(in srgb, ${dot} 28%, transparent)`,
-            color: dot,
-            boxShadow: `0 0 0 1px color-mix(in srgb, ${dot} 55%, transparent)`,
+            maxWidth: hovered ? 160 : 0,
+            opacity: hovered ? 1 : 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            transition: 'max-width 150ms ease, opacity 150ms ease',
           }}
-          className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full hover:brightness-125 active:scale-[0.92] transition-all duration-100"
         >
-          <ArrowsSplit size={16} weight="bold" />
-        </button>
-      </Tooltip>
+          {title}
+        </span>
+      </button>
       {open &&
         pos &&
         createPortal(
