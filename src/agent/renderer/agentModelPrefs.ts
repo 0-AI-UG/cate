@@ -24,39 +24,39 @@ export function saveDefaultModel(model: AgentModelRef | null): void {
  *  disconnected, so a stale pick doesn't resurface as a "reconnect" prompt. */
 export function clearModelPrefsForProvider(providerId: string): void {
   if (loadDefaultModel()?.provider === providerId) saveDefaultModel(null)
-  if (loadPetModel()?.provider === providerId) savePetModel(null)
+  if (loadCateAgentModel()?.provider === providerId) saveCateAgentModel(null)
 }
 
-// --- Canvas Pet model -------------------------------------------------------
-// Both headless pet brains (observer + executor) run on this single user-chosen
-// model (Settings → Canvas Pet). null means "fall back to a default".
+// --- Cate Agent model -------------------------------------------------------
+// Both headless Cate Agent brains (observer + executor) run on this single
+// user-chosen model (Settings → Cate Agent). null means "fall back to a default".
 
 function readModel(value: AgentModelRef | null): AgentModelRef | null {
   if (value && typeof value.provider === 'string' && typeof value.model === 'string') return value
   return null
 }
 
-export function loadPetModel(): AgentModelRef | null {
-  return readModel(useSettingsStore.getState().petModel)
+export function loadCateAgentModel(): AgentModelRef | null {
+  return readModel(useSettingsStore.getState().cateAgentModel)
 }
 
-export function savePetModel(model: AgentModelRef | null): void {
-  useSettingsStore.getState().setSetting('petModel', model)
+export function saveCateAgentModel(model: AgentModelRef | null): void {
+  useSettingsStore.getState().setSetting('cateAgentModel', model)
 }
 
 /** The coding agent (an AgentId) the executor launches in terminals, or '' to
  *  let it choose. */
-export function loadPetExecutorAgentId(): string {
-  const v = useSettingsStore.getState().petExecutorAgentId
+export function loadCateAgentExecutorAgentId(): string {
+  const v = useSettingsStore.getState().cateAgentExecutorAgentId
   return typeof v === 'string' ? v.trim() : ''
 }
 
-export function savePetExecutorAgentId(id: string): void {
-  useSettingsStore.getState().setSetting('petExecutorAgentId', id)
+export function saveCateAgentExecutorAgentId(id: string): void {
+  useSettingsStore.getState().setSetting('cateAgentExecutorAgentId', id)
 }
 
 /** The CLI command the executor launches, resolved from the picked AgentId.
  *  Empty when nothing is picked (the executor then chooses one itself). */
-export function loadPetExecutorAgentCommand(): string {
-  return launchCommandForAgent(loadPetExecutorAgentId()) ?? ''
+export function loadCateAgentExecutorAgentCommand(): string {
+  return launchCommandForAgent(loadCateAgentExecutorAgentId()) ?? ''
 }

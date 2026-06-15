@@ -24,8 +24,8 @@ import {
   CloudArrowUp,
   CaretRight,
   CaretDown,
+  Sparkle,
 } from '@phosphor-icons/react'
-import { CateLogo } from '../../renderer/ui/CateLogo'
 import { ModelPickerDropdown } from './ModelPicker'
 import log from '../../renderer/lib/logger'
 import { errorMessage as toErrorMessage } from '../../renderer/lib/errorMessage'
@@ -852,8 +852,8 @@ function DefaultModelSection({ models }: { models: Array<{ provider: string; mod
 
 export type PickModels = Array<{ provider: string; model: string; label?: string }>
 
-// Shared model-picker row used by the default-model section here and the Canvas
-// Pet section (CanvasPetSettings). Exported so both render an identical control.
+// Shared model-picker row used by the default-model section here and the Cate
+// Agent section (CanvasCateAgentSettings). Exported so both render an identical control.
 export function ModelPrefRow({
   label,
   sublabel,
@@ -882,7 +882,7 @@ export function ModelPrefRow({
           onClick={() => setOpen((v) => !v)}
           className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-hover border border-strong text-[12.5px] text-primary hover:bg-hover-strong focus:outline-none focus:border-agent-light/50"
         >
-          <CateLogo size={12} className="text-agent-light shrink-0" />
+          <Sparkle size={12} className="text-agent-light shrink-0" />
           <span className="truncate flex-1 text-left">
             {current
               ? (models.find((m) => m.provider === current.provider && m.model === current.model)?.label ?? current.model)

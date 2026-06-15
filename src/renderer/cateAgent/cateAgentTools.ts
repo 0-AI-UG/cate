@@ -1,9 +1,10 @@
 // =============================================================================
-// petTools — the fulfilment side of the cate-pet-tools extension. Each pet tool
-// call arrives here (via petBridge) as {tool, params} with the calling session's
-// PetContext, and is carried out against the live renderer stores + IPC APIs:
-// terminals become visible canvas nodes, worktrees get registered (and rendered
-// as colored territory), todos are mutated and persisted.
+// cateAgentTools — the fulfilment side of the cate-agent-tools extension. Each
+// Cate Agent tool call arrives here (via cateAgentBridge) as {tool, params} with
+// the calling session's CateAgentContext, and is carried out against the live
+// renderer stores + IPC APIs: terminals become visible canvas nodes, worktrees
+// get registered (and rendered as colored territory), todos are mutated and
+// persisted.
 //
 // Every handler returns a model-readable string (JSON for structured results,
 // prose for output) which the extension surfaces verbatim as the tool result.
@@ -13,14 +14,14 @@ import { useAppStore, pickWorktreeColor } from '../stores/appStore'
 import { useTodosStore } from '../stores/todosStore'
 import { useStatusStore } from '../stores/statusStore'
 import { gitStatusStore } from '../stores/gitStatusStore'
-import { usePetStore } from './petStore'
+import { useCateAgentStore } from './cateAgentStore'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { generateId } from '../stores/canvas/helpers'
 import { getWorkspaceCanvasStore } from '../lib/workspace/canvasAccess'
 import { viewToCanvas } from '../lib/canvas/coordinates'
 import type { Todo, TodoStatus, WorktreeMeta, Point, AgentState } from '../../shared/types'
-import type { PetContext } from './petTypes'
-import { getExitCode, clearExit } from './petTerminalExits'
+import type { CateAgentContext } from './cateAgentTypes'
+import { getExitCode, clearExit } from './cateAgentTerminalExits'
 import log from '../lib/logger'
 
 const json = (v: unknown): string => JSON.stringify(v)
@@ -80,12 +81,12 @@ export async function ensureTodoWorktree(
   }
   if (!isRepo) return { worktreeId: null, cwd: rootPath }
 
-  const branch = `pet/${toBranchName(todo.title)}`
+  const branch = `cate-agent/${toBranchName(todo.title)}`
   const targetPath = worktreePathFor(rootPath, branch)
   try {
     await window.electronAPI.gitWorktreeAdd(rootPath, branch, targetPath, { createBranch: true })
   } catch (err) {
-    log.warn('[petTools] worktree add failed for %s: %O', todoId, err)
+    log.warn('[cateAgentTools] worktree add failed for %s: %O', todoId, err)
     return { worktreeId: null, cwd: rootPath }
   }
   const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
@@ -104,20 +105,21 @@ export async function ensureTodoWorktree(
 
 /** How long an observer remark lingers in its speech bubble before it fades. */
 const REMARK_TTL_MS = 9000
-const remarkTimers = new Map<string, ReturnType<typeof setTimeout>>()
+/** Cap the visible stack so a chatty turn can't grow a skyscraper of bubbles. */
+const MAX_REMARKS = 4
+let remarkSeq = 0
 
-/** Show an ephemeral FYI on the pet, replacing any current remark and resetting
- *  its fade timer. Ephemeral by design — nothing is persisted. */
+/** Push an ephemeral FYI onto the Cate Agent's speech-bubble stack. Back-to-back
+ *  remarks stack (newest last) instead of overwriting, and each fades on its own
+ *  timer. Ephemeral by design — nothing is persisted. */
 function setRemark(wsId: string, text: string): void {
-  const prev = remarkTimers.get(wsId)
-  if (prev) clearTimeout(prev)
-  usePetStore.getState().patch(wsId, { remark: text })
-  const timer = setTimeout(() => {
-    remarkTimers.delete(wsId)
-    // Only clear if it's still the remark we set (a newer one owns its own timer).
-    if (usePetStore.getState().get(wsId).remark === text) usePetStore.getState().patch(wsId, { remark: '' })
+  const id = ++remarkSeq
+  const cur = useCateAgentStore.getState().get(wsId).remarks
+  useCateAgentStore.getState().patch(wsId, { remarks: [...cur, { id, text }].slice(-MAX_REMARKS) })
+  setTimeout(() => {
+    const remarks = useCateAgentStore.getState().get(wsId).remarks.filter((r) => r.id !== id)
+    useCateAgentStore.getState().patch(wsId, { remarks })
   }, REMARK_TTL_MS)
-  remarkTimers.set(wsId, timer)
 }
 
 /** Resolve the ptyId for a terminal handle (the handle IS the panelId). */
@@ -125,7 +127,7 @@ function ptyFor(panelId: string): string | undefined {
   return terminalRegistry.ptyIdForPanel(panelId) ?? undefined
 }
 
-/** Compute an EXPLICIT canvas-space position for a pet terminal so it auto-places
+/** Compute an EXPLICIT canvas-space position for a Cate Agent terminal so it auto-places
  *  silently — never triggering the interactive "click to place" ghost (which is
  *  what fires when a canvas panel is created with no position and the placement
  *  picker is on). Anchors near the viewport center and cascades per terminal so
@@ -139,24 +141,6 @@ function terminalPosition(wsId: string, index: number): Point | undefined {
   // Top-left so the first lands roughly centered; cascade down-right after that.
   const step = 40
   return { x: canvasCenter.x - 240 + index * step, y: canvasCenter.y - 170 + index * step }
-}
-
-/** True when the terminal panel is a live node on the workspace's canvas (so the
- *  world avatar can actually tether to it). Docked / detached terminals have no
- *  canvas node — the pet stays in its corner for those. */
-function terminalOnCanvas(wsId: string, panelId: string): boolean {
-  const store = getWorkspaceCanvasStore(wsId)
-  if (!store) return false
-  return Object.values(store.getState().nodes).some((n) => n.panelId === panelId)
-}
-
-/** Move the world avatar to the terminal the pet is now interacting with, so it
- *  visibly follows from terminal to terminal. On-canvas terminals get tethered;
- *  a docked / detached one (no canvas node) CLEARS the anchor so the pet drops to
- *  its corner instead of sitting on a stale, now-unrelated terminal. */
-function anchorPetTo(wsId: string, terminalId: string): void {
-  const tether = terminalId && terminalOnCanvas(wsId, terminalId) ? terminalId : null
-  usePetStore.getState().patch(wsId, { focusNodeId: tether })
 }
 
 function activityRunning(wsId: string, ptyId: string): boolean {
@@ -370,7 +354,7 @@ async function waitForTerminalIdle(
 
 // --- tool dispatch ----------------------------------------------------------
 
-export async function runPetTool(ctx: PetContext, tool: string, params: Record<string, unknown>): Promise<string> {
+export async function runCateAgentTool(ctx: CateAgentContext, tool: string, params: Record<string, unknown>): Promise<string> {
   const { rootPath, workspaceId: wsId } = ctx
   const todos = useTodosStore.getState()
 
@@ -378,9 +362,6 @@ export async function runPetTool(ctx: PetContext, tool: string, params: Record<s
     // --- shared ---
     case 'read_terminal': {
       const terminalId = String(params.terminalId ?? '')
-      // Sit the pet on whatever it's currently reading, so it visibly moves to
-      // the terminal it's inspecting.
-      anchorPetTo(wsId, terminalId)
       return json(await readTerminalState(wsId, terminalId))
     }
 
@@ -393,7 +374,7 @@ export async function runPetTool(ctx: PetContext, tool: string, params: Record<s
       const todo: Todo = {
         id: generateId(),
         title,
-        origin: 'pet',
+        origin: 'cateAgent',
         status: 'suggested',
         createdAt: now,
         updatedAt: now,
@@ -411,17 +392,6 @@ export async function runPetTool(ctx: PetContext, tool: string, params: Record<s
     }
 
     // --- executor ---
-    case 'set_plan': {
-      const todoId = String(params.todoId ?? ctx.todoId ?? '')
-      const rawSteps = Array.isArray(params.steps) ? (params.steps as Array<Record<string, unknown>>) : []
-      const steps = rawSteps
-        .filter((s) => typeof s?.title === 'string')
-        .map((s) => ({ title: String(s.title), done: !!s.done }))
-      if (steps.length === 0) return json({ ok: false, error: 'steps required' })
-      todos.setTodoPlan(rootPath, todoId, steps)
-      return json({ ok: true, steps: steps.length })
-    }
-
     case 'create_terminal': {
       const todoId = String(params.todoId ?? ctx.todoId ?? '')
       const command = String(params.command ?? '')
@@ -438,11 +408,9 @@ export async function runPetTool(ctx: PetContext, tool: string, params: Record<s
       const pos = terminalPosition(wsId, priorCount)
       const panelId = app.createTerminal(wsId, undefined, pos, { target: 'canvas' }, cwd)
       if (todo.worktreeId) app.setPanelWorktreeId(wsId, panelId, todo.worktreeId)
-      // Track the terminal on the todo so the avatar + cleanup can find it, and
-      // point the avatar at it (it tethers to this terminal while working).
+      // Track the terminal on the todo so cleanup can find it.
       const existing = todoById(rootPath, todoId)?.terminalNodeIds ?? []
       todos.patchTodo(rootPath, todoId, { terminalNodeIds: [...existing, panelId] })
-      usePetStore.getState().patch(wsId, { focusNodeId: panelId })
 
       const ptyId = await waitForPty(panelId)
       if (!ptyId) return json({ ok: true, terminalId: panelId, warning: 'terminal not ready; command not sent yet' })
@@ -467,8 +435,6 @@ export async function runPetTool(ctx: PetContext, tool: string, params: Record<s
       const background = params.background === true
       const ptyId = ptyFor(terminalId)
       if (!ptyId) return json({ ok: false, error: 'terminal not found / not ready' })
-      // Follow the pet to the terminal it's driving.
-      anchorPetTo(wsId, terminalId)
       await window.electronAPI.terminalWrite(ptyId, enter ? keys + '\r' : keys)
       // Wait for the resulting work to finish by default; background:true returns now.
       if (background) return json({ ok: true })
@@ -481,7 +447,7 @@ export async function runPetTool(ctx: PetContext, tool: string, params: Record<s
       try {
         useAppStore.getState().closePanel(wsId, terminalId)
       } catch (err) {
-        log.warn('[petTools] close_terminal failed: %O', err)
+        log.warn('[cateAgentTools] close_terminal failed: %O', err)
       }
       if (ptyId) clearExit(ptyId)
       return json({ ok: true })
@@ -493,6 +459,10 @@ export async function runPetTool(ctx: PetContext, tool: string, params: Record<s
       if (typeof params.status === 'string') patch.status = params.status as TodoStatus
       if (typeof params.note === 'string') patch.note = params.note
       if (Object.keys(patch).length === 0) return json({ ok: false, error: 'nothing to update' })
+      // The review/land gate (merge / PR / discard) only exists for worktree-based
+      // todos. A non-git todo has no branch to land — its work is already in the
+      // project root — so it completes directly to `done`, never `review`.
+      if (patch.status === 'review' && !todoById(rootPath, todoId)?.worktreeId) patch.status = 'done'
       todos.patchTodo(rootPath, todoId, patch)
       return json({ ok: true })
     }

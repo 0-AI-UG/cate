@@ -16,13 +16,13 @@ import { useUIStateStore } from './stores/uiStateStore'
 import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
-import { petController } from './pet/petController'
+import { cateAgentController } from './cateAgent/cateAgentController'
 import { Sidebar, RightSidebar } from './sidebar/Sidebar'
 import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
 import { PanelSuspense } from './panels/PanelSuspense'
 const CanvasPanel = PANEL_REGISTRY.canvas.Component
 import { CompanionLockOverlay } from './ui/CompanionLockOverlay'
-import { PetAvatar } from './pet/PetAvatar'
+import { CateAgentAvatar } from './cateAgent/CateAgentAvatar'
 import WindowChrome from './shells/WindowChrome'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
 import { UpdateReadyDialog } from './dialogs/UpdateReadyDialog'
@@ -141,20 +141,20 @@ function MainApp() {
   // Main-only: terminal/agent activity → status bar + worktree sync.
   useProcessMonitor(selectedWorkspaceId)
 
-  // Tracks which workspace folders have had their pet restored this session.
-  const petRestoredRef = useRef<Set<string>>(new Set())
+  // Tracks which workspace folders have had their Cate Agent restored this session.
+  const cateAgentRestoredRef = useRef<Set<string>>(new Set())
 
-  // Canvas Pet — start the controller and restore each workspace's pet (re-summon
-  // if it was enabled in .cate/pet.json) once its folder path is known. Guarded
-  // per rootPath so a re-render never re-summons. Main window only (this MainApp
-  // path is gated to the primary window, like useProcessMonitor above).
+  // Cate Agent — start the controller and restore each workspace's Cate Agent
+  // (re-summon if it was enabled in .cate/cateAgent.json) once its folder path is
+  // known. Guarded per rootPath so a re-render never re-summons. Main window only
+  // (this MainApp path is gated to the primary window, like useProcessMonitor above).
   useEffect(() => {
     const rootPath = currentWorkspace?.rootPath
     if (!rootPath || !selectedWorkspaceId) return
-    petController.start()
-    if (petRestoredRef.current.has(rootPath)) return
-    petRestoredRef.current.add(rootPath)
-    void petController.restore(selectedWorkspaceId, rootPath)
+    cateAgentController.start()
+    if (cateAgentRestoredRef.current.has(rootPath)) return
+    cateAgentRestoredRef.current.add(rootPath)
+    void cateAgentController.restore(selectedWorkspaceId, rootPath)
   }, [currentWorkspace?.rootPath, selectedWorkspaceId])
 
   // Sync the OS window title to the active workspace name. On macOS this is
@@ -455,9 +455,9 @@ function MainApp() {
           never covers the sidebars. Renders nothing for local/healthy ws. */}
       <CompanionLockOverlay />
 
-      {/* Canvas Pet avatar — floats over the canvas area (not the sidebars),
-          reflecting the pet's activity. Renders nothing when not summoned. */}
-      <PetAvatar />
+      {/* Cate Agent avatar — floats over the canvas area (not the sidebars),
+          reflecting the Cate Agent's activity. Renders nothing when not summoned. */}
+      <CateAgentAvatar />
       </div>
 
       {/* Right sidebar — real flex item, pushes the shell from the right. */}

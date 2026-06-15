@@ -36,11 +36,11 @@ export const useUIStateStore = create<UIStateStore>((set) => ({
     if (!api) { set({ _loaded: true }); return }
     try {
       const merged = { ...DEFAULT_UI_STATE, ...mergeKnown(DEFAULT_UI_STATE, await api.uiStateGetAll()) }
-      // The pet and minimap dock into corners and shove each other apart, but a
-      // file from before the pet had its own corner can leave them stacked.
+      // The Cate Agent and minimap dock into corners and shove each other apart, but a
+      // file from before the Cate Agent had its own corner can leave them stacked.
       // Split them once on load so the two never start overlapping.
-      if (merged.petCorner === merged.minimapButtonCorner) {
-        merged.petCorner = nextFreeCorner(merged.petCorner, merged.minimapButtonCorner)
+      if (merged.cateAgentCorner === merged.minimapButtonCorner) {
+        merged.cateAgentCorner = nextFreeCorner(merged.cateAgentCorner, merged.minimapButtonCorner)
       }
       set({ ...merged, _loaded: true })
     } catch {

@@ -77,8 +77,8 @@ import {
   PROJECT_STATE_LOAD,
   PROJECT_TODOS_LOAD,
   PROJECT_TODOS_SAVE,
-  PROJECT_PET_LOAD,
-  PROJECT_PET_SAVE,
+  PROJECT_CATE_AGENT_LOAD,
+  PROJECT_CATE_AGENT_SAVE,
   WORKSPACE_EXTERNAL_EDIT,
   WORKSPACE_EXTERNAL_EDIT_DISMISS,
   BOOT_SNAPSHOT_WRITE,
@@ -386,8 +386,8 @@ const invokeForwarders = {
   projectStateLoad: makeInvoker<'projectStateLoad'>(PROJECT_STATE_LOAD),
   projectTodosLoad: makeInvoker<'projectTodosLoad'>(PROJECT_TODOS_LOAD),
   projectTodosSave: makeInvoker<'projectTodosSave'>(PROJECT_TODOS_SAVE),
-  projectPetLoad: makeInvoker<'projectPetLoad'>(PROJECT_PET_LOAD),
-  projectPetSave: makeInvoker<'projectPetSave'>(PROJECT_PET_SAVE),
+  projectCateAgentLoad: makeInvoker<'projectCateAgentLoad'>(PROJECT_CATE_AGENT_LOAD),
+  projectCateAgentSave: makeInvoker<'projectCateAgentSave'>(PROJECT_CATE_AGENT_SAVE),
 
   // Dialog
   openFolderDialog: makeInvoker<'openFolderDialog'>(DIALOG_OPEN_FOLDER),

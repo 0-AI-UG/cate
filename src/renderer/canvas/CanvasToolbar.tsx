@@ -15,8 +15,8 @@ import {
   Cursor,
   Hand,
   X,
+  Sparkle,
 } from '@phosphor-icons/react'
-import { CateLogo } from '../ui/CateLogo'
 import Minimap from './Minimap'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
@@ -209,7 +209,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const zoomText = `${Math.round(zoom * 100)}%`
 
   // Minimap pill docking corner + drag-to-dock handling. The corner is driven
-  // straight from the UI-state store so an external shove (the pet landing on
+  // straight from the UI-state store so an external shove (the Cate Agent landing on
   // this corner) moves the pill immediately. The toggle button doubles as a
   // drag handle: a click toggles the map, a drag past a small threshold re-docks
   // the pill to whichever corner the cursor ends up in.
@@ -226,7 +226,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     const startY = e.clientY
     minimapDidDragRef.current = false
     // Resolve corners against this canvas's own area so the quadrant split lines
-    // up with where the pill (and the pet) actually render.
+    // up with where the pill (and the Cate Agent) actually render.
     const area = minimapPillRef.current?.closest('[data-canvas-area]')
     const rect = area?.getBoundingClientRect() ??
       { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
@@ -240,9 +240,9 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       const prev = store.minimapButtonCorner
       if (next === prev) return
       store.setUIState('minimapButtonCorner', next)
-      // Landing on the pet's corner swaps the pet into the corner we just left.
-      if (next === store.petCorner) {
-        store.setUIState('petCorner', prev)
+      // Landing on the Cate Agent's corner swaps the Cate Agent into the corner we just left.
+      if (next === store.cateAgentCorner) {
+        store.setUIState('cateAgentCorner', prev)
       }
     }
     const onUp = () => {
@@ -303,8 +303,8 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             <ToolbarButton onClick={onNewEditor} title={`Editor (${newEditorKey})`} size="panel">
               <FileText size={18} />
             </ToolbarButton>
-            <ToolbarButton onClick={onNewAgent} title="Cate agent" size="panel">
-              <CateLogo size={18} />
+            <ToolbarButton onClick={onNewAgent} title="Agent" size="panel">
+              <Sparkle size={18} />
             </ToolbarButton>
 
             {/* Divider */}

@@ -15,7 +15,7 @@
 
 import { create } from 'zustand'
 import log from '../../renderer/lib/logger'
-import { isPetPanelId } from '../../renderer/pet/petSession'
+import { isCateAgentPanelId } from '../../renderer/cateAgent/cateAgentSession'
 import type {
   AgentExtensionUIRequest,
   AgentImageAttachment,
@@ -988,24 +988,25 @@ function handleEvent(panelId: string, event: { type: string; [key: string]: unkn
   }
 }
 
-// Lazy bridge loader — by the time any pet event arrives, petController.start()
-// has already imported the bridge module, so this resolves immediately. Kept out
-// of the static import graph so agentStore doesn't pull in xterm/terminalRegistry.
-let petHandler: ((panelId: string, event: { type: string; [k: string]: unknown }) => void) | null = null
-let petHandlerLoading = false
-function routePetEvent(panelId: string, event: { type: string; [key: string]: unknown }): void {
-  if (petHandler) {
-    petHandler(panelId, event)
+// Lazy bridge loader — by the time any Cate Agent event arrives,
+// cateAgentController.start() has already imported the bridge module, so this
+// resolves immediately. Kept out of the static import graph so agentStore doesn't
+// pull in xterm/terminalRegistry.
+let cateAgentHandler: ((panelId: string, event: { type: string; [k: string]: unknown }) => void) | null = null
+let cateAgentHandlerLoading = false
+function routeCateAgentEvent(panelId: string, event: { type: string; [key: string]: unknown }): void {
+  if (cateAgentHandler) {
+    cateAgentHandler(panelId, event)
     return
   }
-  if (!petHandlerLoading) {
-    petHandlerLoading = true
-    void import('../../renderer/pet/petBridge')
+  if (!cateAgentHandlerLoading) {
+    cateAgentHandlerLoading = true
+    void import('../../renderer/cateAgent/cateAgentBridge')
       .then((m) => {
-        petHandler = m.handlePetAgentEvent
-        petHandler(panelId, event)
+        cateAgentHandler = m.handleCateAgentEvent
+        cateAgentHandler(panelId, event)
       })
-      .catch((err) => log.warn('[agentStore] failed to load pet bridge', err))
+      .catch((err) => log.warn('[agentStore] failed to load Cate Agent bridge', err))
   }
 }
 
@@ -1016,13 +1017,13 @@ function ensureSubscribed(): void {
   try {
     window.electronAPI.onAgentEvent((envelope) => {
       if (!envelope?.panelId || !envelope.event) return
-      // Canvas Pet sessions (pet-observer:/pet-exec:) have no AgentPanel — route
-      // their events to the pet bridge instead of the normal panel handling,
-      // which would otherwise spawn a phantom empty panel for them. The bridge is
-      // lazy-loaded so agentStore stays free of the pet's terminal/xterm imports
-      // (keeps unrelated node-env tests that import this store light).
-      if (isPetPanelId(envelope.panelId)) {
-        routePetEvent(envelope.panelId, envelope.event)
+      // Cate Agent sessions (cate-agent-observer:/cate-agent-exec:) have no
+      // AgentPanel — route their events to the Cate Agent bridge instead of the
+      // normal panel handling, which would otherwise spawn a phantom empty panel
+      // for them. The bridge is lazy-loaded so agentStore stays free of the Cate
+      // Agent's terminal/xterm imports (keeps unrelated node-env tests light).
+      if (isCateAgentPanelId(envelope.panelId)) {
+        routeCateAgentEvent(envelope.panelId, envelope.event)
         return
       }
       handleEvent(envelope.panelId, envelope.event)

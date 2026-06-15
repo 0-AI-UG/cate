@@ -412,11 +412,11 @@ export interface ElectronAPI {
   /** Persist the whole per-workspace todo list to .cate/todos.json. */
   projectTodosSave(rootPath: string, todos: import('./types').Todo[]): Promise<void>
 
-  /** Load per-workspace Canvas Pet enablement from .cate/pet.json. */
-  projectPetLoad(rootPath: string): Promise<import('./types').ProjectPetFile>
+  /** Load per-workspace Cate Agent enablement from .cate/cateAgent.json. */
+  projectCateAgentLoad(rootPath: string): Promise<import('./types').ProjectCateAgentFile>
 
-  /** Persist per-workspace Canvas Pet enablement to .cate/pet.json. */
-  projectPetSave(rootPath: string, state: import('./types').ProjectPetFile): Promise<void>
+  /** Persist per-workspace Cate Agent enablement to .cate/cateAgent.json. */
+  projectCateAgentSave(rootPath: string, state: import('./types').ProjectCateAgentFile): Promise<void>
 
   // ---------------------------------------------------------------------------
   // App

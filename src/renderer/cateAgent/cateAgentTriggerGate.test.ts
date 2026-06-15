@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { shouldObserve, OBSERVE_COOLDOWN_MS, MAX_OPEN_SUGGESTIONS, type TriggerGateInput } from './petTriggerGate'
+import { shouldObserve, OBSERVE_COOLDOWN_MS, MAX_OPEN_SUGGESTIONS, type TriggerGateInput } from './cateAgentTriggerGate'
 
 function base(over: Partial<TriggerGateInput> = {}): TriggerGateInput {
   return {
     enabled: true,
-    paused: false,
     autoObserve: true,
     dirty: true,
     observerBusy: false,
@@ -21,9 +20,8 @@ describe('shouldObserve', () => {
     expect(shouldObserve(base())).toBe(true)
   })
 
-  it('holds when disabled or paused', () => {
+  it('holds when disabled', () => {
     expect(shouldObserve(base({ enabled: false }))).toBe(false)
-    expect(shouldObserve(base({ paused: true }))).toBe(false)
   })
 
   it('holds when not dirty', () => {

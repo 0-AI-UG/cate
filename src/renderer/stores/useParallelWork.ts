@@ -1,7 +1,7 @@
 // =============================================================================
 // useParallelWork — the shared "do something with a worktree" layer.
 //
-// All the verbs a worktree card / row offers (launch a terminal or Cate agent,
+// All the verbs a worktree card / row offers (launch a terminal or Agent,
 // publish, open/create a PR, update from main, merge, rename, recolor, reveal,
 // discard, clean up orphans) live here so the sidebar's ParallelWorkTab and the
 // canvas toolbar's worktree drop-up share one implementation and one error /
@@ -87,7 +87,7 @@ export interface UseParallelWork {
   reconcile: () => void
   createWorktree: (rawName: string, baseRef?: string) => Promise<void>
   checkoutPr: (pr: PrListItem) => Promise<void>
-  /** Spawn a terminal or Cate agent bound to a worktree. Pass `placement` to pin
+  /** Spawn a terminal or Agent bound to a worktree. Pass `placement` to pin
    *  it to a specific canvas (the toolbar does); omit for default placement. */
   launchInWorktree: (wt: JoinedWorktree, type: 'terminal' | 'agent', placement?: PanelPlacement) => void
   handlePublish: (wt: JoinedWorktree) => Promise<void>

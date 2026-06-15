@@ -63,18 +63,17 @@ describe('projectTodosStore', () => {
     expect(await loadTodos(root)).toEqual([])
   })
 
-  it('preserves the richer pet fields (plan, worktree, terminals, note)', async () => {
-    const petTodo = makeTodo({
+  it('preserves the richer Cate Agent fields (worktree, terminals, note)', async () => {
+    const cateAgentTodo = makeTodo({
       id: 'p1',
-      origin: 'pet',
+      origin: 'cateAgent',
       status: 'in_progress',
-      plan: [{ title: 'step', done: true }],
       worktreeId: 'wt-1',
-      branch: 'pet/p1',
+      branch: 'cate-agent/p1',
       terminalNodeIds: ['n1', 'n2'],
       note: 'because reasons',
     })
-    await saveTodos(root, [petTodo])
-    expect(await loadTodos(root)).toEqual([petTodo])
+    await saveTodos(root, [cateAgentTodo])
+    expect(await loadTodos(root)).toEqual([cateAgentTodo])
   })
 })

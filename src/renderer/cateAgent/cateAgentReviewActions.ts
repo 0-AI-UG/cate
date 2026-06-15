@@ -1,10 +1,10 @@
 // =============================================================================
-// petReviewActions — the user's "land it" gate for a todo in `review`.
+// cateAgentReviewActions — the user's "land it" gate for a todo in `review`.
 //
 // A finished executor leaves its work on the todo's worktree branch. The user
 // picks one outcome here: Merge it into the current branch, open a PR, or discard
-// it. The pet never lands work itself. Each action tidies the worktree (checkout
-// + registry + territory) and moves the todo to its terminal status.
+// it. The Cate Agent never lands work itself. Each action tidies the worktree
+// (checkout + registry + territory) and moves the todo to its terminal status.
 // =============================================================================
 
 import type { Todo, WorktreeMeta } from '../../shared/types'
@@ -24,7 +24,7 @@ async function cleanupWorktree(wsId: string, rootPath: string, meta: WorktreeMet
   try {
     await window.electronAPI.gitWorktreeRemove(rootPath, meta.path, { force })
   } catch (err) {
-    log.warn('[petReview] worktree remove failed: %O', err)
+    log.warn('[cateAgentReview] worktree remove failed: %O', err)
   }
   const app = useAppStore.getState()
   app.removeWorktree(wsId, meta.id)
@@ -77,7 +77,9 @@ export async function openPrTodo(wsId: string, rootPath: string, todo: Todo): Pr
   return { ok: true, message: res.url }
 }
 
-/** Throw away the worktree + branch; the todo is marked failed/discarded. */
+/** Throw away the worktree + branch, but KEEP the todo (status `discarded`) so the
+ *  user can rerun it. Clears the now-deleted worktree/branch/terminals so a rerun
+ *  starts from a clean slate. */
 export async function discardTodo(wsId: string, rootPath: string, todo: Todo): Promise<ReviewResult> {
   const meta = worktreeMeta(wsId, todo.worktreeId)
   if (meta) await cleanupWorktree(wsId, rootPath, meta, true)
@@ -85,9 +87,15 @@ export async function discardTodo(wsId: string, rootPath: string, todo: Todo): P
     try {
       await window.electronAPI.gitBranchDelete(rootPath, todo.branch, true)
     } catch (err) {
-      log.warn('[petReview] branch delete failed: %O', err)
+      log.warn('[cateAgentReview] branch delete failed: %O', err)
     }
   }
-  useTodosStore.getState().patchTodo(rootPath, todo.id, { status: 'failed', note: 'Discarded' })
+  useTodosStore.getState().patchTodo(rootPath, todo.id, {
+    status: 'discarded',
+    note: 'Discarded',
+    worktreeId: undefined,
+    branch: undefined,
+    terminalNodeIds: undefined,
+  })
   return { ok: true }
 }

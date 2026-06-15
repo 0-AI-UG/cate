@@ -1,7 +1,7 @@
 // =============================================================================
 // projectTodosStore — per-workspace todo list at `<project>/.cate/todos.json`.
 //
-// The Canvas Pet's shared task store: the user adds/checks todos from the Tasks
+// The Cate Agent's shared task store: the user adds/checks todos from the Tasks
 // sidebar, and later phases (observer/executor) read and mutate the same file.
 // Machine-local by default — the `.cate/.gitignore` written elsewhere ignores
 // everything but workspace.json, so todos.json never lands in the user's VCS.
@@ -33,7 +33,7 @@ function todosPath(rootPath: string): string {
   return path.join(rootPath, CATE_DIR, TODOS_FILE)
 }
 
-const VALID_STATUS = new Set(['suggested', 'pending', 'in_progress', 'review', 'done', 'failed'])
+const VALID_STATUS = new Set(['suggested', 'pending', 'in_progress', 'review', 'done', 'failed', 'discarded'])
 
 /** Coerce one raw parsed entry into a complete Todo, or null if unusable. A
  *  hand-edited / partial file must degrade gracefully rather than crash. */
@@ -42,7 +42,7 @@ function normalizeTodo(raw: unknown): Todo | null {
   const o = raw as Record<string, unknown>
   if (typeof o.id !== 'string' || typeof o.title !== 'string') return null
   const status = typeof o.status === 'string' && VALID_STATUS.has(o.status) ? (o.status as Todo['status']) : 'pending'
-  const origin = o.origin === 'pet' ? 'pet' : 'user'
+  const origin = o.origin === 'cateAgent' ? 'cateAgent' : 'user'
   const todo: Todo = {
     id: o.id,
     title: o.title,
@@ -51,11 +51,6 @@ function normalizeTodo(raw: unknown): Todo | null {
     createdAt: typeof o.createdAt === 'number' ? o.createdAt : 0,
   }
   if (typeof o.updatedAt === 'number') todo.updatedAt = o.updatedAt
-  if (Array.isArray(o.plan)) {
-    todo.plan = o.plan
-      .filter((s): s is { title: string; done?: boolean } => !!s && typeof s === 'object' && typeof (s as { title?: unknown }).title === 'string')
-      .map((s) => ({ title: s.title, done: !!s.done }))
-  }
   if (typeof o.worktreeId === 'string') todo.worktreeId = o.worktreeId
   if (typeof o.branch === 'string') todo.branch = o.branch
   if (Array.isArray(o.terminalNodeIds)) todo.terminalNodeIds = o.terminalNodeIds.filter((x): x is string => typeof x === 'string')

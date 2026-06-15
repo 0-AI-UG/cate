@@ -1,42 +1,42 @@
 // =============================================================================
-// cate-pet-tools — the Canvas Pet's tool surface.
+// cate-agent-tools — the Cate Agent's tool surface.
 //
-// Two headless pet brains call these tools:
+// Two headless Cate Agent brains call these tools:
 //   - observer (Haiku): watches the user, proposes todos, never acts.
 //   - executor (strong model): orchestrates VISIBLE terminals (in an isolated
 //     worktree, prepared up-front by the controller for git repos) to carry out
 //     one approved todo, then hands it to the review gate.
 //
-// Every tool is a thin RPC: it packs {tool, params} into a `cate-pet-tools:`
-// envelope and does ONE ctx.ui.input round-trip. Cate's renderer-side pet bridge
-// decodes the envelope, fulfills the request against the live stores / IPC APIs
-// (terminals become canvas nodes, worktrees get territory zones, todos persist),
-// and returns a JSON string the tool surfaces verbatim as its result.
+// Every tool is a thin RPC: it packs {tool, params} into a `cate-agent-tools:`
+// envelope and does ONE ctx.ui.input round-trip. Cate's renderer-side Cate Agent
+// bridge decodes the envelope, fulfills the request against the live stores / IPC
+// APIs (terminals become canvas nodes, worktrees get territory zones, todos
+// persist), and returns a JSON string the tool surfaces verbatim as its result.
 //
 // Why ctx.ui.input (not a custom RPC): pi only exposes select/input/confirm as
 // interactive primitives under Cate. input() blocks until the host replies, which
 // is exactly the request/response shape every tool needs — identical to how
 // cate-ask-user works.
 //
-// The tool SET is gated by CATE_PET_ROLE: with no role (a normal user agent
+// The tool SET is gated by CATE_AGENT_ROLE: with no role (a normal user agent
 // session) NOTHING is registered, so this extension is inert for everyone but
-// the pet. Kept in sync with PET_MARKER in src/renderer/pet/petBridge.ts.
+// the Cate Agent. Kept in sync with CATE_AGENT_MARKER in src/renderer/cateAgent/cateAgentBridge.ts.
 // =============================================================================
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 
-const PET_MARKER = "cate-pet-tools:"
+const CATE_AGENT_MARKER = "cate-agent-tools:"
 
 type Json = Record<string, unknown>
 
 /** Build the envelope title the bridge decodes: marker + JSON, nothing else. */
 function envelope(tool: string, params: Json): string {
-  return PET_MARKER + JSON.stringify({ tool, params })
+  return CATE_AGENT_MARKER + JSON.stringify({ tool, params })
 }
 
 export default function (pi: ExtensionAPI) {
-  const role = process.env.CATE_PET_ROLE
+  const role = process.env.CATE_AGENT_ROLE
   if (role !== "observer" && role !== "executor") return // inert for normal sessions
 
   // One round-trip helper shared by every tool. Returns the bridge's reply text
@@ -86,7 +86,7 @@ export default function (pi: ExtensionAPI) {
       name: "remark",
       label: "Remark",
       description:
-        "Give the user a brief, ephemeral update via the pet's speech bubble. Not saved or actionable — end every turn with one.",
+        "Give the user a brief, ephemeral update via the Cate Agent's speech bubble. Not saved or actionable — end every turn with one.",
       parameters: Type.Object({
         text: Type.String({ description: "One short, conversational sentence grounded in what the user is doing." }),
       }),
@@ -97,26 +97,6 @@ export default function (pi: ExtensionAPI) {
   }
 
   if (role === "executor") {
-    pi.registerTool({
-      name: "set_plan",
-      label: "Set plan",
-      description:
-        "Record your decomposition of the todo as an ordered list of steps. Do this first, before executing. Re-call to update step completion.",
-      parameters: Type.Object({
-        todoId: Type.String(),
-        steps: Type.Array(
-          Type.Object({
-            title: Type.String({ description: "Short step description." }),
-            done: Type.Optional(Type.Boolean()),
-          }),
-          { minItems: 1 },
-        ),
-      }),
-      async execute(_id, params, _signal, _onUpdate, ctx) {
-        return call(ctx, "set_plan", { todoId: params.todoId, steps: params.steps })
-      },
-    })
-
     pi.registerTool({
       name: "create_terminal",
       label: "Create terminal",

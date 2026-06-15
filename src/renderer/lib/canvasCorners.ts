@@ -1,6 +1,6 @@
 // =============================================================================
 // Corner placement helpers — shared by the floating minimap and the resting
-// Canvas Pet avatar. Both dock into one of four canvas corners; when one is
+// Cate Agent avatar. Both dock into one of four canvas corners; when one is
 // dragged onto the corner the other occupies, the occupant is shoved to the
 // next free corner so they never stack.
 // =============================================================================

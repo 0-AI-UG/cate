@@ -8,7 +8,7 @@
 // =============================================================================
 
 import { create } from 'zustand'
-import type { Todo, TodoStatus, TodoPlanStep } from '../../shared/types'
+import type { Todo, TodoStatus } from '../../shared/types'
 import { generateId } from './canvas/helpers'
 
 interface TodosStoreState {
@@ -28,17 +28,15 @@ interface TodosStoreActions {
   /** Remove a todo and persist. */
   removeTodo: (rootPath: string, id: string) => void
 
-  // --- Pet-facing mutators (also used by the Tasks UI gates) ---
+  // --- Cate Agent-facing mutators (also used by the Tasks UI gates) ---
   /** Read the current list for a root (already-loaded; [] otherwise). */
   getTodos: (rootPath: string) => Todo[]
   /** Insert or replace a whole todo (used by the observer's propose_todo). */
   upsertTodo: (rootPath: string, todo: Todo) => void
-  /** Patch a todo by id (status/note/plan/worktree/branch/terminals) and persist. */
+  /** Patch a todo by id (status/note/worktree/branch/terminals) and persist. */
   patchTodo: (rootPath: string, id: string, patch: Partial<Todo>) => void
   /** Set a todo's status (+ stamp updatedAt) and persist. */
   setTodoStatus: (rootPath: string, id: string, status: TodoStatus) => void
-  /** Set a todo's plan steps and persist. */
-  setTodoPlan: (rootPath: string, id: string, plan: TodoPlanStep[]) => void
 }
 
 export type TodosStore = TodosStoreState & TodosStoreActions
@@ -124,9 +122,5 @@ export const useTodosStore = create<TodosStore>((set, get) => ({
 
   setTodoStatus(rootPath, id, status) {
     get().patchTodo(rootPath, id, { status })
-  },
-
-  setTodoPlan(rootPath, id, plan) {
-    get().patchTodo(rootPath, id, { plan })
   },
 }))

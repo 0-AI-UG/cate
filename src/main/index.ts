@@ -13,7 +13,7 @@ import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, ge
 import { registerUIStateHandlers } from './uiStateStore'
 import { registerProjectStateHandlers } from './projectWorkspaceStore'
 import { registerProjectTodoHandlers } from './projectTodosStore'
-import { registerProjectPetHandlers } from './projectPetStore'
+import { registerProjectCateAgentHandlers } from './projectCateAgentStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
 import { registerAgentHandlers } from '../agent/main/ipcAgent'
@@ -92,7 +92,7 @@ function registerCriticalHandlers(): void {
   registerUIStateHandlers()
   registerProjectStateHandlers()
   registerProjectTodoHandlers()
-  registerProjectPetHandlers()
+  registerProjectCateAgentHandlers()
   registerWorkspaceHandlers()
   registerFilesystemHandlers()
   registerTerminalHandlers()

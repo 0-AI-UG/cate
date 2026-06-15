@@ -118,13 +118,13 @@ export const WORKSPACE_EXTERNAL_EDIT = 'project:externalEdit' // main -> rendere
 // the current in-app layout overwrites the external edit.
 export const WORKSPACE_EXTERNAL_EDIT_DISMISS = 'project:externalEditDismiss' // renderer -> main
 
-// Per-workspace todo list (.cate/todos.json) — the Canvas Pet's shared task store.
+// Per-workspace todo list (.cate/todos.json) — the Cate Agent's shared task store.
 export const PROJECT_TODOS_LOAD = 'project:todosLoad' // renderer -> main
 export const PROJECT_TODOS_SAVE = 'project:todosSave' // renderer -> main
 
-// Per-workspace Canvas Pet enablement (.cate/pet.json).
-export const PROJECT_PET_LOAD = 'project:petLoad' // renderer -> main
-export const PROJECT_PET_SAVE = 'project:petSave' // renderer -> main
+// Per-workspace Cate Agent enablement (.cate/cateAgent.json).
+export const PROJECT_CATE_AGENT_LOAD = 'project:cateAgentLoad' // renderer -> main
+export const PROJECT_CATE_AGENT_SAVE = 'project:cateAgentSave' // renderer -> main
 
 // Boot snapshot — a tiny JSON file (geometry, theme, last workspace id, native
 // tabs flag) written by the renderer whenever the relevant settings change.

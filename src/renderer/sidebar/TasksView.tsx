@@ -1,10 +1,11 @@
 // =============================================================================
-// TasksView — the Canvas Pet's task panel.
+// TasksView — the Cate Agent's task panel.
 //
-// Manual tasks (add / check / delete) plus the pet workflow surfaced as status
-// groups: Suggested (pet proposals → Approve & run / Dismiss), In progress (live
-// executor + jump-to-terminal), Review (the land gate → Merge / PR / Discard),
-// and Done/Failed history. A gear in the header opens the Canvas Pet settings.
+// Manual tasks (add / check / delete) plus the Cate Agent workflow surfaced as
+// status groups: Suggested (Cate Agent proposals → Approve & run / Dismiss), In
+// progress (live executor + jump-to-terminal), Review (the land gate → Merge / PR
+// / Discard), and Done/Failed history. A gear in the header opens the Cate Agent
+// settings.
 // =============================================================================
 
 import React, { useEffect, useState } from 'react'
@@ -26,9 +27,9 @@ import {
 import { useTodosStore } from '../stores/todosStore'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
-import { usePetWs } from '../pet/petStore'
-import { petController } from '../pet/petController'
-import { mergeTodo, openPrTodo, discardTodo } from '../pet/petReviewActions'
+import { useCateAgentWs } from '../cateAgent/cateAgentStore'
+import { cateAgentController } from '../cateAgent/cateAgentController'
+import { mergeTodo, openPrTodo, discardTodo } from '../cateAgent/cateAgentReviewActions'
 import { revealPanel } from '../lib/workspace/panelReveal'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { Todo } from '../../shared/types'
@@ -37,20 +38,12 @@ interface TasksViewProps {
   rootPath: string
 }
 
-const ACTIVITY_LABEL: Record<string, string> = {
-  off: 'Off',
-  resting: 'Resting',
-  observing: 'Looking around…',
-  working: 'Working',
-  paused: 'Paused',
-}
-
 export const TasksView: React.FC<TasksViewProps> = ({ rootPath }) => {
   const wsId = useAppStore((s) => s.selectedWorkspaceId)
   const todos = useTodosStore((s) => s.todosByRoot[rootPath])
   const loadTodos = useTodosStore((s) => s.loadTodos)
   const addTodo = useTodosStore((s) => s.addTodo)
-  const pet = usePetWs(wsId)
+  const cateAgent = useCateAgentWs(wsId)
 
   const [draft, setDraft] = useState('')
 
@@ -75,6 +68,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ rootPath }) => {
   const inProgress = byStatus('in_progress')
   const review = byStatus('review')
   const pending = byStatus('pending')
+  const discarded = byStatus('discarded')
   const history = list.filter((t) => t.status === 'done' || t.status === 'failed')
 
   const submit = (e: React.FormEvent) => {
@@ -83,35 +77,18 @@ export const TasksView: React.FC<TasksViewProps> = ({ rootPath }) => {
     setDraft('')
   }
 
-  // --- pet header control ---
-  // A single gear opens the Canvas Pet settings (enable / observe mode / models);
-  // all pet controls live there now rather than as buttons in this header.
-  const petControls = (
-    <SidebarHeaderButton onClick={() => useUIStore.getState().openSettings('canvas pet')} title="Canvas Pet settings">
+  // --- Cate Agent header control ---
+  // A single gear opens the Cate Agent settings (enable / observe mode / models);
+  // all Cate Agent controls live there now rather than as buttons in this header.
+  const cateAgentControls = (
+    <SidebarHeaderButton onClick={() => useUIStore.getState().openSettings('cate agent')} title="Cate Agent settings">
       <GearSix size={13} />
     </SidebarHeaderButton>
   )
 
   return (
     <div className="flex flex-col h-full">
-      <SidebarSectionHeader title="Tasks" actions={petControls} />
-
-      {pet.enabled && (
-        <div className="flex items-center gap-1.5 px-3 pb-1 text-[11px] text-muted select-none">
-          <span
-            className={`inline-block w-1.5 h-1.5 rounded-full ${
-              pet.activity === 'working'
-                ? 'bg-green-400'
-                : pet.activity === 'observing'
-                  ? 'bg-blue-400'
-                  : pet.activity === 'paused'
-                    ? 'bg-amber-400'
-                    : 'bg-muted/50'
-            }`}
-          />
-          <span className="truncate">{pet.status || ACTIVITY_LABEL[pet.activity] || 'Pet'}</span>
-        </div>
-      )}
+      <SidebarSectionHeader title="Tasks" actions={cateAgentControls} />
 
       <form onSubmit={submit} className="flex items-center gap-1.5 px-3 pb-2 pt-1">
         <input
@@ -135,12 +112,12 @@ export const TasksView: React.FC<TasksViewProps> = ({ rootPath }) => {
           <div className="flex flex-col items-center justify-center text-muted text-xs gap-2 pt-10">
             <ListChecks size={22} className="opacity-50" />
             <span>No tasks yet</span>
-            {!pet.enabled && (
+            {!cateAgent.enabled && (
               <button
-                onClick={() => useUIStore.getState().openSettings('canvas pet')}
+                onClick={() => useUIStore.getState().openSettings('cate agent')}
                 className="mt-1 flex items-center gap-1.5 px-2.5 py-1 rounded text-secondary hover:text-primary bg-surface-5 hover:bg-hover transition-colors"
               >
-                <Sparkle size={12} /> Set up pet
+                <Sparkle size={12} /> Set up Cate Agent
               </button>
             )}
           </div>
@@ -163,6 +140,11 @@ export const TasksView: React.FC<TasksViewProps> = ({ rootPath }) => {
 
         <GroupLabel show={pending.length > 0} text="To do" />
         {pending.map((t) => (
+          <TodoRow key={t.id} todo={t} wsId={wsId} rootPath={rootPath} />
+        ))}
+
+        <GroupLabel show={discarded.length > 0} text="Discarded" />
+        {discarded.map((t) => (
           <TodoRow key={t.id} todo={t} wsId={wsId} rootPath={rootPath} />
         ))}
 
@@ -212,6 +194,8 @@ const StatusGlyph: React.FC<{ todo: Todo; onToggle: () => void }> = ({ todo, onT
       return <GitMerge size={13} className={`${base} text-amber-400`} />
     case 'failed':
       return <X size={13} className={`${base} text-red-400/70`} />
+    case 'discarded':
+      return <Trash size={13} className={`${base} text-muted/70`} />
     default: // done
       return <Check size={13} weight="bold" className={`${base} text-green-500/70`} />
   }
@@ -235,10 +219,10 @@ const TodoRow: React.FC<{ todo: Todo; wsId: string; rootPath: string }> = ({ tod
     }
   }
 
-  const currentStep = todo.plan?.find((s) => !s.done)?.title
   const terminalId = todo.terminalNodeIds?.[todo.terminalNodeIds.length - 1]
   const done = todo.status === 'done'
-  const titleColor = done ? 'text-muted line-through' : todo.status === 'failed' ? 'text-muted' : 'text-secondary'
+  const titleColor =
+    done ? 'text-muted line-through' : todo.status === 'failed' || todo.status === 'discarded' ? 'text-muted' : 'text-secondary'
 
   const actions = (() => {
     switch (todo.status) {
@@ -246,7 +230,7 @@ const TodoRow: React.FC<{ todo: Todo; wsId: string; rootPath: string }> = ({ tod
         return (
           <>
             <button
-              onClick={() => void petController.runTodo(wsId, rootPath, todo.id)}
+              onClick={() => void cateAgentController.runTodo(wsId, rootPath, todo.id)}
               className={`${actionBtn} text-white bg-blue-500 hover:bg-blue-600`}
             >
               <Play size={10} weight="fill" /> Approve & run
@@ -286,7 +270,7 @@ const TodoRow: React.FC<{ todo: Todo; wsId: string; rootPath: string }> = ({ tod
         return (
           <>
             <button
-              onClick={() => void petController.runTodo(wsId, rootPath, todo.id)}
+              onClick={() => void cateAgentController.runTodo(wsId, rootPath, todo.id)}
               className={`${actionBtn} text-secondary hover:text-blue-400 hover:bg-hover`}
             >
               <Play size={11} /> Run
@@ -296,7 +280,22 @@ const TodoRow: React.FC<{ todo: Todo; wsId: string; rootPath: string }> = ({ tod
             </button>
           </>
         )
-      default: // done / failed
+      case 'failed':
+      case 'discarded':
+        return (
+          <>
+            <button
+              onClick={() => void cateAgentController.runTodo(wsId, rootPath, todo.id)}
+              className={`${actionBtn} text-secondary hover:text-blue-400 hover:bg-hover`}
+            >
+              <Play size={11} /> Rerun
+            </button>
+            <button onClick={() => removeTodo(rootPath, todo.id)} className={`${actionBtn} text-muted hover:text-red-400 hover:bg-hover`}>
+              <Trash size={11} /> Remove
+            </button>
+          </>
+        )
+      default: // done
         return (
           <button onClick={() => removeTodo(rootPath, todo.id)} className={`${actionBtn} text-muted hover:text-primary hover:bg-hover`}>
             <Trash size={11} /> Remove
@@ -323,7 +322,6 @@ const TodoRow: React.FC<{ todo: Todo; wsId: string; rootPath: string }> = ({ tod
           {open && (
             <div className="mt-1 space-y-1">
               {todo.branch && <div className="text-[11px] text-muted truncate font-mono">{todo.branch}</div>}
-              {currentStep && todo.status === 'in_progress' && <div className="text-[11.5px] text-muted">→ {currentStep}</div>}
               {todo.note && (
                 <div className={`text-[11.5px] leading-snug break-words ${todo.status === 'review' ? 'text-amber-400/90' : 'text-muted'}`}>
                   {todo.note}

@@ -98,7 +98,7 @@ export interface SkillTargetInfo {
  *  install matrix). Workspace-relative base dirs live in `src/skills/main/targets.ts`. */
 export const SKILL_TARGETS: readonly SkillTargetInfo[] = [
   { id: 'claude-code', label: 'Claude Code', layout: 'folder', bundledResources: true, nameMatchesDir: true },
-  { id: 'cate-agent', label: 'Cate Agent', layout: 'folder', bundledResources: true, nameMatchesDir: false },
+  { id: 'cate-agent', label: 'Agent', layout: 'folder', bundledResources: true, nameMatchesDir: false },
   { id: 'pi-native', label: 'Pi', layout: 'folder', bundledResources: true, nameMatchesDir: false },
   { id: 'opencode', label: 'OpenCode', layout: 'folder', bundledResources: true, nameMatchesDir: false },
   { id: 'codex', label: 'Codex', layout: 'folder', bundledResources: true, nameMatchesDir: false },

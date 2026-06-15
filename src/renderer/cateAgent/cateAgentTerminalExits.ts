@@ -1,15 +1,16 @@
 // =============================================================================
-// petTerminalExits — records terminal exit codes so the pet's read_terminal tool
-// and the executor's wake logic can report/detect lastExitCode. Main fires
-// TERMINAL_EXIT once and forgets it; we keep the last code per ptyId here. Its own
-// tiny module so petTools and petBridge can both use it without an import cycle.
+// cateAgentTerminalExits — records terminal exit codes so the Cate Agent's
+// read_terminal tool and the executor's wake logic can report/detect lastExitCode.
+// Main fires TERMINAL_EXIT once and forgets it; we keep the last code per ptyId
+// here. Its own tiny module so cateAgentTools and cateAgentBridge can both use it
+// without an import cycle.
 // =============================================================================
 
 const exitByPty = new Map<string, number>()
 let subscribed = false
 
 /** Subscribe once to terminal-exit events. Safe to call repeatedly. */
-export function initPetTerminalExits(): void {
+export function initCateAgentTerminalExits(): void {
   if (subscribed) return
   if (typeof window === 'undefined' || !window.electronAPI) return
   subscribed = true

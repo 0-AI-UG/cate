@@ -33,7 +33,7 @@ export interface AgentDef {
   displayName: string
   /** The CLI command that launches this agent in a terminal — usually the same
    *  as the detected process name, but not always (Antigravity installs as
-   *  `agy`, Cursor's agent as `cursor-agent`). Used by the Canvas Pet executor. */
+   *  `agy`, Cursor's agent as `cursor-agent`). Used by the Cate Agent executor. */
   command: string
   /** True when a shell child process with this (already-lowercased) name means
    *  this agent is the one running in that terminal. */

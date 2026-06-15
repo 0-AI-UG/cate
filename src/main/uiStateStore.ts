@@ -23,7 +23,7 @@ const store = createJsonStateFile<UIState>({
     return {
       minimapCorner: CORNERS.has(o.minimapCorner as string) ? (o.minimapCorner as UIState['minimapCorner']) : defaults.minimapCorner,
       minimapButtonCorner: CORNERS.has(o.minimapButtonCorner as string) ? (o.minimapButtonCorner as UIState['minimapButtonCorner']) : defaults.minimapButtonCorner,
-      petCorner: CORNERS.has(o.petCorner as string) ? (o.petCorner as UIState['petCorner']) : defaults.petCorner,
+      cateAgentCorner: CORNERS.has(o.cateAgentCorner as string) ? (o.cateAgentCorner as UIState['cateAgentCorner']) : defaults.cateAgentCorner,
       minimapSize: size && typeof size.w === 'number' && typeof size.h === 'number'
         ? { w: size.w, h: size.h }
         : defaults.minimapSize,

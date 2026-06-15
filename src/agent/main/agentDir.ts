@@ -23,17 +23,17 @@ import type { Companion } from '../../main/companion/types'
 
 const CATE_DIR = '.cate'
 export const PI_AGENT_DIR = 'pi-agent'
-/** The Canvas Pet's headless sessions live in their OWN per-workspace pi dir so
+/** The Cate Agent's headless sessions live in their OWN per-workspace pi dir so
  *  their transcripts never land in `pi-agent/sessions` — the dir the agent panel
  *  lists and resumes. Same auth/models, fully separate session store + extensions. */
-export const PI_AGENT_PET_DIR = 'pi-agent-pet'
+export const PI_AGENT_CATE_AGENT_DIR = 'pi-agent-cate-agent'
 
 /** Which per-workspace pi dir a session uses: the normal one (agent panel) or the
- *  isolated Canvas Pet one. Drives the agent dir, sessions store, and extensions. */
-export type AgentDirVariant = 'default' | 'pet'
+ *  isolated Cate Agent one. Drives the agent dir, sessions store, and extensions. */
+export type AgentDirVariant = 'default' | 'cateAgent'
 
 function agentDirName(variant: AgentDirVariant): string {
-  return variant === 'pet' ? PI_AGENT_PET_DIR : PI_AGENT_DIR
+  return variant === 'cateAgent' ? PI_AGENT_CATE_AGENT_DIR : PI_AGENT_DIR
 }
 
 /** Per-workspace pi config dir on the LOCAL machine (native path). Used by the

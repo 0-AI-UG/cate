@@ -37,7 +37,7 @@ import { broadcastToAll } from '../../main/windowRegistry'
 import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
 import { installAskUserExtension } from './installAskUser'
-import { installPetToolsExtension } from './installPetTools'
+import { installCateAgentToolsExtension } from './installCateAgentTools'
 import { hostAgentDir, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace, type AgentDirVariant } from './agentDir'
 import { mirrorModelsToWorkspace } from './customModels'
 import type { AuthManager } from './authManager'
@@ -48,7 +48,7 @@ interface AgentSession {
   companion: Companion
   /** Companion-absolute workspace path (the locator's path part). */
   cwd: string
-  /** Which per-workspace pi dir this session lives in (default vs isolated pet). */
+  /** Which per-workspace pi dir this session lives in (default vs isolated Cate Agent). */
   variant: AgentDirVariant
   client: PiRpcClient
   sender: WebContents
@@ -131,19 +131,19 @@ export class AgentManager {
       const { companionId, path: cwd } = parseLocator(opts.cwd)
       const companion = companions.resolve(companionId)
 
-      // The Canvas Pet's headless sessions live in an ISOLATED per-workspace pi
-      // dir (.cate/pi-agent-pet) so their transcripts never show up in — or get
+      // The Cate Agent's headless sessions live in an ISOLATED per-workspace pi
+      // dir (.cate/pi-agent-cate-agent) so their transcripts never show up in — or get
       // resumed by — the agent panel's session list. Normal panels use the
       // default dir. Either way auth.json + models.json are seeded via the
       // companion (so it lands on a remote host too) and PI_CODING_AGENT_DIR
       // points pi at the chosen dir.
-      const variant: AgentDirVariant = opts.agentDir === 'pet' ? 'pet' : 'default'
+      const variant: AgentDirVariant = opts.agentDir === 'cateAgent' ? 'cateAgent' : 'default'
       await prepareAgentDir(companion, cwd, variant)
       await mirrorModelsToWorkspace(companion, cwd, variant)
-      if (variant === 'pet') {
-        // The pet only needs its own tool surface — not the user-facing
+      if (variant === 'cateAgent') {
+        // The Cate Agent only needs its own tool surface — not the user-facing
         // subagent / plan-mode / ask-user extensions.
-        await installPetToolsExtension(companion, cwd, 'pet')
+        await installCateAgentToolsExtension(companion, cwd, 'cateAgent')
       } else {
         await installSubagentExtension(companion, cwd)
         await installPlanModeExtension(companion, cwd)
@@ -158,7 +158,7 @@ export class AgentManager {
         provider: opts.model?.provider,
         model: opts.model?.model,
         args: extraArgs.length > 0 ? extraArgs : undefined,
-        // opts.env (e.g. CATE_PET_ROLE) is merged last but must never clobber
+        // opts.env (e.g. CATE_AGENT_ROLE) is merged last but must never clobber
         // PI_CODING_AGENT_DIR, which points pi at the workspace agent dir.
         env: { ...(opts.env ?? {}), PI_CODING_AGENT_DIR: hostAgentDir(companionId, cwd, variant) },
       })
