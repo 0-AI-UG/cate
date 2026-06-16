@@ -11,6 +11,8 @@ function makeReal(overrides: Partial<Runtime> = {}): Runtime {
     agent: {} as Runtime['agent'],
     file: {} as Runtime['file'],
     vcs: {} as Runtime['vcs'],
+    server: {} as Runtime['server'],
+    tunnel: {} as Runtime['tunnel'],
     validatePath: (p) => p,
     validateCwd: (c) => c,
     validatePathStrict: async (p) => p,

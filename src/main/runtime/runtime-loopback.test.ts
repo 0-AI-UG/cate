@@ -10,7 +10,7 @@ import { RuntimeRpcClient } from './rpcClient'
 import { RemoteRuntime } from './RemoteRuntime'
 import { buildDaemonRuntime } from '../../runtime/capabilities'
 import { rgPath } from '@vscode/ripgrep'
-import type { Runtime, FileHost, VcsHost, ProcessHost, AgentHost } from './types'
+import type { Runtime, FileHost, VcsHost, ProcessHost, AgentHost, ServerHost, TunnelHost } from './types'
 
 /** The real daemon capability set over the wire — same FileHost/VcsHost the
  *  local workspace daemon hosts. rgPath is injected because tests don't run under
@@ -21,6 +21,8 @@ function daemonApi(): Runtime {
 
 const stubProcess = {} as unknown as ProcessHost
 const stubAgent = {} as unknown as AgentHost
+const stubServer = {} as unknown as ServerHost
+const stubTunnel = {} as unknown as TunnelHost
 
 // Wire an RpcServer and a RuntimeRpcClient back-to-back, in-process, over the
 // real LF-JSON framing. This proves the entire wire stack (framing, req/res
@@ -278,6 +280,8 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
       id: 'srv_test',
       process: stubProcess,
       agent: stubAgent,
+      server: stubServer,
+      tunnel: stubTunnel,
       file: { readFile: async () => { throw new Error('boom on daemon') } } as unknown as FileHost,
       vcs: {} as VcsHost,
       validatePath: (p: string) => p,
@@ -303,6 +307,8 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
       id: 'srv_test',
       process: stubProcess,
       agent: stubAgent,
+      server: stubServer,
+      tunnel: stubTunnel,
       file: {
         watch: (_prefix: string, onChange: (p: string) => void) => {
           emit = onChange
@@ -346,6 +352,8 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
       id: 'srv_test',
       process: stubProcess,
       agent: stubAgent,
+      server: stubServer,
+      tunnel: stubTunnel,
       file: {
         searchContent: (_root: string, _opts: unknown, cbs: typeof callbacks) => {
           callbacks = cbs
@@ -397,6 +405,8 @@ function localRuntimeLike(): Runtime {
     id: 'srv_test',
     process: stubProcess,
     agent: stubAgent,
+    server: stubServer,
+    tunnel: stubTunnel,
     file: {} as FileHost,
     vcs: {} as VcsHost,
     validatePath: (p) => p,

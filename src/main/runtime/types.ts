@@ -132,6 +132,69 @@ export interface AgentHost {
 }
 
 // ---------------------------------------------------------------------------
+// Server host (long-lived HTTP server children for server-backed extensions)
+//
+// Spawns an extension's server process on whichever host owns the files (local
+// or daemon), allocates a loopback port for it, injects that port via env, and
+// resolves only once the server answers an HTTP ready probe. stdout/stderr +
+// exit stream back via callbacks keyed by the caller-generated id. The tunnel
+// host then proxies raw TCP bytes to the bound loopback port.
+// ---------------------------------------------------------------------------
+
+export interface ServerStartOptions {
+  id: string                      // caller-generated; stdout/stderr+exit evt stream key
+  command: string[]               // argv, e.g. ['node','dist/server.js']
+  cwd: string                     // runtime-absolute (daemon validates)
+  env: Record<string, string>
+  portEnv: string                 // daemon injects the allocated port as env[portEnv]
+  readyPath: string               // HTTP path polled until ready
+  readyTimeoutMs: number
+}
+
+export interface ServerHandle { id: string; pid: number; port: number } // port bound 127.0.0.1 on the daemon host
+
+export interface ServerHost {
+  start(
+    opts: ServerStartOptions,
+    onOutput: (id: string, stream: 'stdout' | 'stderr', chunk: string) => void,
+    onExit: (id: string, code: number | null, signal: string | null) => void,
+  ): Promise<ServerHandle>   // resolves only AFTER the ready probe passes
+  stop(id: string): void     // SIGTERM then SIGKILL
+}
+
+// ---------------------------------------------------------------------------
+// Tunnel host (raw TCP bridge to a server child's loopback port)
+//
+// Opens a TCP connection on the daemon host to 127.0.0.1:port and bridges its
+// bytes (base64) over the runtime pipe, so a server-backed extension's traffic
+// can reach a daemon-bound server from the client. Mirrors agent.start's
+// register-the-stream-before-start pattern.
+// ---------------------------------------------------------------------------
+
+export interface TunnelHost {
+  // Open a TCP connection on the daemon host to 127.0.0.1:port. connId is the evt
+  // stream key (register before open). Mirrors agent.start register-before-start.
+  open(connId: string, port: number, onData: (connId: string, chunkB64: string) => void, onClose: (connId: string) => void): Promise<void>
+  write(connId: string, chunkB64: string): void   // outbound bytes, base64
+  // Flow-control ack: the client delivered `byteCount` decoded inbound bytes to
+  // their destination, so the daemon can resume a socket it paused once its
+  // outstanding (sent-but-unacked) credit window drains. Fire-and-forget.
+  ack(connId: string, byteCount: number): void
+  close(connId: string): void
+  // Reverse tunnel (CATE_API): bind a 127.0.0.1 listener on the daemon host and
+  // bridge each inbound connection BACK over the pipe. `onConnection(connId)`
+  // fires per accepted socket; its bytes then arrive via onData/onClose keyed by
+  // that connId, and outbound bytes reuse write/close. Returns the bound port.
+  listen(
+    listenerId: string,
+    onConnection: (connId: string) => void,
+    onData: (connId: string, chunkB64: string) => void,
+    onClose: (connId: string) => void,
+  ): Promise<{ port: number }>
+  stopListen(listenerId: string): void
+}
+
+// ---------------------------------------------------------------------------
 // File host (fs/promises + chokidar)
 // ---------------------------------------------------------------------------
 
@@ -349,6 +412,8 @@ export interface Runtime {
   readonly agent: AgentHost
   readonly file: FileHost
   readonly vcs: VcsHost
+  readonly server: ServerHost
+  readonly tunnel: TunnelHost
   /** Lexical + allowed-root check; returns the normalized path. The optional
    *  scopeId restricts the check to one workspace's roots (per-workspace
    *  isolation); when omitted, validation falls back to the union of all roots. */

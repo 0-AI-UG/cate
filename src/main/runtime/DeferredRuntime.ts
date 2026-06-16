@@ -23,6 +23,8 @@ import type {
   FileHost,
   ProcessHost,
   AgentHost,
+  ServerHost,
+  TunnelHost,
   VcsHost,
 } from './types'
 
@@ -31,6 +33,8 @@ export class DeferredRuntime implements Runtime {
   readonly agent: AgentHost
   readonly file: FileHost
   readonly vcs: VcsHost
+  readonly server: ServerHost
+  readonly tunnel: TunnelHost
 
   constructor(
     readonly id: RuntimeId,
@@ -56,6 +60,20 @@ export class DeferredRuntime implements Runtime {
       start: (opts, onLine, onExit) => d((c) => c.agent.start(opts, onLine, onExit)),
       writeLine: (id, line) => { void ready_.then((c) => c.agent.writeLine(id, line)).catch(() => {}) },
       stop: (id) => { void ready_.then((c) => c.agent.stop(id)).catch(() => {}) },
+    }
+
+    this.server = {
+      start: (opts, onOutput, onExit) => d((c) => c.server.start(opts, onOutput, onExit)),
+      stop: (id) => { void ready_.then((c) => c.server.stop(id)).catch(() => {}) },
+    }
+
+    this.tunnel = {
+      open: (connId, port, onData, onClose) => d((c) => c.tunnel.open(connId, port, onData, onClose)),
+      write: (connId, chunkB64) => { void ready_.then((c) => c.tunnel.write(connId, chunkB64)).catch(() => {}) },
+      ack: (connId, byteCount) => { void ready_.then((c) => c.tunnel.ack(connId, byteCount)).catch(() => {}) },
+      close: (connId) => { void ready_.then((c) => c.tunnel.close(connId)).catch(() => {}) },
+      listen: (listenerId, onConnection, onData, onClose) => d((c) => c.tunnel.listen(listenerId, onConnection, onData, onClose)),
+      stopListen: (listenerId) => { void ready_.then((c) => c.tunnel.stopListen(listenerId)).catch(() => {}) },
     }
 
     this.file = {

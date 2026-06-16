@@ -231,6 +231,22 @@ import {
   AUTH_SAVE_API_KEY,
   AUTH_DELETE,
   PERF_GET,
+  EXTENSION_LIST,
+  EXTENSION_ENABLE,
+  EXTENSION_DISABLE,
+  EXTENSION_ADD_SIDELOAD,
+  EXTENSION_REMOVE_SIDELOAD,
+  EXTENSION_CATALOG_REFRESH,
+  EXTENSION_INSTALL,
+  EXTENSION_ADD_CATALOG_SOURCE,
+  EXTENSION_REMOVE_CATALOG_SOURCE,
+  EXTENSION_CATALOG_SOURCES,
+  EXTENSION_PROXY_URL,
+  EXTENSION_PANEL_CLOSED,
+  EXTENSION_SERVER_RESTART,
+  EXTENSIONS_CHANGED,
+  CATE_HOST_FORWARD,
+  CATE_HOST_FORWARD_REPLY,
 } from '../shared/ipc-channels'
 import type { AppSettings, SearchResultBatch, SearchDoneEvent } from '../shared/types'
 import type { ElectronAPI, UpdateStatus } from '../shared/electron-api'
@@ -523,6 +539,20 @@ const invokeForwarders = {
   skillsRemoveSource: makeInvoker<'skillsRemoveSource'>(SKILLS_REMOVE_SOURCE),
   skillsGetToken: makeInvoker<'skillsGetToken'>(SKILLS_GET_TOKEN),
   skillsSetToken: makeInvoker<'skillsSetToken'>(SKILLS_SET_TOKEN),
+
+  // Extensions
+  extensionList: makeInvoker<'extensionList'>(EXTENSION_LIST),
+  extensionEnable: makeInvoker<'extensionEnable'>(EXTENSION_ENABLE),
+  extensionDisable: makeInvoker<'extensionDisable'>(EXTENSION_DISABLE),
+  extensionAddSideload: makeInvoker<'extensionAddSideload'>(EXTENSION_ADD_SIDELOAD),
+  extensionRemoveSideload: makeInvoker<'extensionRemoveSideload'>(EXTENSION_REMOVE_SIDELOAD),
+  extensionCatalogRefresh: makeInvoker<'extensionCatalogRefresh'>(EXTENSION_CATALOG_REFRESH),
+  extensionInstall: makeInvoker<'extensionInstall'>(EXTENSION_INSTALL),
+  extensionAddCatalogSource: makeInvoker<'extensionAddCatalogSource'>(EXTENSION_ADD_CATALOG_SOURCE),
+  extensionRemoveCatalogSource: makeInvoker<'extensionRemoveCatalogSource'>(EXTENSION_REMOVE_CATALOG_SOURCE),
+  extensionCatalogSources: makeInvoker<'extensionCatalogSources'>(EXTENSION_CATALOG_SOURCES),
+  extensionProxyUrl: makeInvoker<'extensionProxyUrl'>(EXTENSION_PROXY_URL),
+  extensionServerRestart: makeInvoker<'extensionServerRestart'>(EXTENSION_SERVER_RESTART),
 
   // Pi auth / providers
   authListProviders: makeInvoker<'authListProviders'>(AUTH_LIST_PROVIDERS),
@@ -894,6 +924,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onAuthChanged(callback: () => void): () => void {
     return createIpcListener(AUTH_CHANGED, callback)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Extensions
+  // ---------------------------------------------------------------------------
+
+  /** Fired (broadcast) whenever the known/enabled extension set changes. */
+  onExtensionsChanged(callback: () => void): () => void {
+    return createIpcListener(EXTENSIONS_CHANGED, callback)
+  },
+
+  /** A server-backed extension panel unmounted — let main start the grace timer
+   *  (fire-and-forget). */
+  extensionPanelClosed(args: { extensionId: string; workspaceId: string; panelId: string }): void {
+    ipcRenderer.send(EXTENSION_PANEL_CLOSED, args)
+  },
+
+  /** Main forwards a state-mutating cateHost call (editor.openFile,
+   *  canvas.createPanel, panel.setTitle) to the owning renderer, which acts and
+   *  replies via cateHostActionReply. */
+  onCateHostAction(
+    callback: (payload: {
+      requestId: string
+      workspaceId: string
+      panelId: string
+      extensionId: string
+      method: string
+      args: unknown
+    }) => void,
+  ): () => void {
+    return createIpcListener(CATE_HOST_FORWARD, callback)
+  },
+
+  /** Reply to a forwarded cateHost action (fire-and-forget). */
+  cateHostActionReply(payload: { requestId: string; ok: boolean; result?: unknown; error?: string }): void {
+    ipcRenderer.send(CATE_HOST_FORWARD_REPLY, payload)
   },
 
 })

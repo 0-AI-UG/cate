@@ -121,6 +121,17 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(191,90,242)', '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>'),
     canLiveOnCanvas: false,
   },
+  extension: {
+    type: 'extension',
+    label: 'Extension',
+    brandColor: '#8E8E93',
+    mutedColor: '#6a6a6e',
+    tintClass: 'text-zinc-400',
+    defaultSize: { width: 600, height: 400 },
+    minimumSize: { width: 320, height: 200 },
+    ghostSvg: ghost('rgb(142,142,147)', '<path d="M16 4h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 0 0 4 2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2 2 2 0 0 0-4 0 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2 2 2 0 0 0 0-4 2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2 2 2 0 0 0 4 0 2 2 0 0 1 2-2z"/>'),
+    canLiveOnCanvas: true,
+  },
 }
 
 /** Lookup helper. Falls back to the editor definition (matches the previous

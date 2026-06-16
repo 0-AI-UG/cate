@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hello Extension</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Cate Hello Extension</h1>
+  <section>
+    <div class="row"><span class="label">cate.version</span><code id="version">…</code></div>
+    <div class="row"><span class="label">panel.id</span><code id="panel">…</code></div>
+    <div class="row"><span class="label">workspace</span><code id="workspace">…</code></div>
+  </section>
+
+  <section>
+    <h2>storage</h2>
+    <div class="row">
+      <input id="storage-input" type="text" placeholder="value to store" />
+      <button id="storage-set">set</button>
+      <button id="storage-get">get</button>
+    </div>
+    <div class="row"><span class="label">stored</span><code id="storage-value">—</code></div>
+  </section>
+
+  <section>
+    <h2>actions</h2>
+    <div class="row">
+      <input id="file-input" type="text" placeholder="relative/path/to/file" />
+      <button id="open-file">editor.openFile</button>
+    </div>
+    <div class="row">
+      <button id="notify">ui.notify</button>
+    </div>
+  </section>
+
+  <pre id="log"></pre>
+  <script src="app.js"></script>
+</body>
+</html>

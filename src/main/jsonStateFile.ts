@@ -29,8 +29,11 @@ import { writeJsonAtomic, writeJsonAtomicSync } from './writeJsonAtomic'
 import { quarantineCorruptFile } from './quarantineCorruptFile'
 
 export interface JsonStateFileOptions<T> {
-  /** File name under `app.getPath('userData')`. */
+  /** File name, joined under `dir` (or `app.getPath('userData')` when omitted). */
   filename: string
+  /** Absolute directory the file lives in. Defaults to `app.getPath('userData')`
+   *  — pass this for project-local files (e.g. `<project>/.cate/...`). */
+  dir?: string
   /** Complete default value, used when the file is absent/empty/corrupt. */
   defaults: T
   /** Validate + normalize raw parsed JSON into a complete T. Never throws. */
@@ -60,7 +63,7 @@ export interface JsonStateFile<T> {
 const WRITE_DEBOUNCE_MS = 150
 
 export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonStateFile<T> {
-  const { filename, defaults, normalize } = options
+  const { filename, dir, defaults, normalize } = options
 
   // Authoritative in-memory value — defaults until loaded, always complete.
   let current: T = defaults
@@ -79,7 +82,7 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
   let flushInFlight = false
 
   function filePath(): string {
-    return path.join(app.getPath('userData'), filename)
+    return path.join(dir ?? app.getPath('userData'), filename)
   }
 
   function serialize(value: T): string {
