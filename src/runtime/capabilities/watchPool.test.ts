@@ -1,6 +1,17 @@
+import path from 'path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { buildDaemonRuntime } from './index'
 import { addAllowedRoot, removeAllowedRoot } from '../../main/ipc/pathValidation'
+
+// Build paths through path.resolve/join so they match what validatePath()
+// (= path.resolve) produces on the host OS. A POSIX literal like '/repo' becomes
+// a drive-prefixed backslash path on Windows, so hardcoded literals would never
+// match the subscriber prefix there.
+const ROOT = path.resolve('/repo')
+const SRC = path.join(ROOT, 'src')
+const FILE_A = path.join(SRC, 'a.ts')
+const FILE_B = path.join(SRC, 'b.ts')
+const README = path.join(ROOT, 'README.md')
 
 type Handler = (...args: unknown[]) => void
 
@@ -48,11 +59,11 @@ describe('daemon runtime watch pool', () => {
     mockState.watchers.length = 0
     mockState.watch.mockReset()
     mockState.watch.mockImplementation(createMockWatcher)
-    addAllowedRoot('/repo')
+    addAllowedRoot(ROOT)
   })
 
   afterEach(() => {
-    removeAllowedRoot('/repo')
+    removeAllowedRoot(ROOT)
   })
 
   test('shares one recursive watcher for nested file.watch subscribers', () => {
@@ -60,23 +71,23 @@ describe('daemon runtime watch pool', () => {
     const rootEvents: string[] = []
     const nestedEvents: string[] = []
 
-    const stopRoot = runtime.file.watch('/repo', (p) => rootEvents.push(p))
-    const stopNested = runtime.file.watch('/repo/src', (p) => nestedEvents.push(p))
+    const stopRoot = runtime.file.watch(ROOT, (p) => rootEvents.push(p))
+    const stopNested = runtime.file.watch(SRC, (p) => nestedEvents.push(p))
 
     expect(mockState.watch).toHaveBeenCalledTimes(1)
     const watcher = mockState.watchers[0]
 
-    watcher.emit('add', '/repo/src/a.ts')
-    watcher.emit('add', '/repo/README.md')
+    watcher.emit('add', FILE_A)
+    watcher.emit('add', README)
 
-    expect(rootEvents).toEqual(['/repo/src/a.ts', '/repo/README.md'])
-    expect(nestedEvents).toEqual(['/repo/src/a.ts'])
+    expect(rootEvents).toEqual([FILE_A, README])
+    expect(nestedEvents).toEqual([FILE_A])
 
     stopNested()
-    watcher.emit('change', '/repo/src/b.ts')
+    watcher.emit('change', FILE_B)
 
-    expect(rootEvents).toEqual(['/repo/src/a.ts', '/repo/README.md', '/repo/src/b.ts'])
-    expect(nestedEvents).toEqual(['/repo/src/a.ts'])
+    expect(rootEvents).toEqual([FILE_A, README, FILE_B])
+    expect(nestedEvents).toEqual([FILE_A])
 
     stopRoot()
     expect(watcher.close).toHaveBeenCalledTimes(1)
@@ -85,13 +96,13 @@ describe('daemon runtime watch pool', () => {
   test('drops a broken watcher on error so the next subscription can recreate it', () => {
     const runtime = buildDaemonRuntime({ id: 'srv_test', rgPath: '/rg' }).runtime
 
-    const stopFirst = runtime.file.watch('/repo', () => {})
+    const stopFirst = runtime.file.watch(ROOT, () => {})
     const first = mockState.watchers[0]
 
     expect(() => first.emit('error', Object.assign(new Error('too many open files'), { code: 'EMFILE' }))).not.toThrow()
     expect(first.close).toHaveBeenCalledTimes(1)
 
-    const stopSecond = runtime.file.watch('/repo', () => {})
+    const stopSecond = runtime.file.watch(ROOT, () => {})
     expect(mockState.watch).toHaveBeenCalledTimes(2)
     expect(mockState.watchers[1]).not.toBe(first)
 
@@ -102,8 +113,8 @@ describe('daemon runtime watch pool', () => {
   test('rebuilds a shared watcher once when exclusions change', async () => {
     const runtime = buildDaemonRuntime({ id: 'srv_test', rgPath: '/rg' }).runtime
 
-    const stopRoot = runtime.file.watch('/repo', () => {})
-    const stopNested = runtime.file.watch('/repo/src', () => {})
+    const stopRoot = runtime.file.watch(ROOT, () => {})
+    const stopNested = runtime.file.watch(SRC, () => {})
     const first = mockState.watchers[0]
 
     await runtime.setExclusions(['node_modules'])
