@@ -176,9 +176,30 @@ function createWatcher(dirPath: string, subscribers: Map<string, SubscriberEntry
       if (pathHasPrefix(fp, sub.prefix)) sub.dispatch(type, fp)
     }
   }
+
+  const dropActiveWatcher = (): void => {
+    const shared = sharedWatchers.get(dirPath)
+    if (shared?.watcher !== watcher) return
+
+    sharedWatchers.delete(dirPath)
+    for (const [key, normPath] of watcherKeys) {
+      if (normPath === dirPath) watcherKeys.delete(key)
+    }
+    for (const sub of subscribers.values()) sub.cancelFlush()
+    subscribers.clear()
+  }
+
+  const handleError = (err: unknown): void => {
+    log.warn('[fs-watch] watcher error for %s: %O', dirPath, err)
+    dropActiveWatcher()
+    watcher.removeAllListeners()
+    void watcher.close()
+  }
+
   watcher.on('add', (fp: string) => fanOut('create', fp))
   watcher.on('change', (fp: string) => fanOut('update', fp))
   watcher.on('unlink', (fp: string) => fanOut('delete', fp))
+  watcher.on('error', handleError)
   return watcher
 }
 

@@ -127,10 +127,11 @@ export class LocalSubprocessTransport implements RuntimeTransport {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: this.opts.env ?? process.env,
     })
+    child.stdin?.on('error', () => { /* EPIPE after daemon exit is reported via close */ })
     this.child = child
 
     return {
-      write: (line) => { child.stdin?.write(line) },
+      write: (line) => { writeToChildStdin(child, line) },
       onData: (cb) => { child.stdout?.on('data', cb) },
       onStderr: (cb) => { child.stderr?.on('data', cb) },
       onClose: (cb) => { child.on('close', (code) => cb({ code })) },
@@ -148,6 +149,14 @@ export class LocalSubprocessTransport implements RuntimeTransport {
     this.child = null
     if (child) await gracefulStop(child)
   }
+}
+
+function writeToChildStdin(child: ChildProcess, line: string): void {
+  const stdin = child.stdin
+  if (!stdin || stdin.destroyed || stdin.writableEnded || child.exitCode !== null || child.signalCode !== null) {
+    throw new Error('Runtime stdin is closed')
+  }
+  stdin.write(line)
 }
 
 /**

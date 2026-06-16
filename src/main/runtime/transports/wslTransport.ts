@@ -151,9 +151,10 @@ export class WslTransport implements RuntimeTransport {
     const args = ['-d', this.opts.distro, '-e', nodeBin, `${this.installDir}/runtime.cjs`, '--root', this.opts.root, '--id', this.opts.id]
     if (this.opts.exclusions?.length) args.push('--exclude', this.opts.exclusions.join(','))
     const child = spawn('wsl.exe', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    child.stdin?.on('error', () => { /* EPIPE after daemon exit is reported via close */ })
     this.child = child
     return {
-      write: (line) => { child.stdin?.write(line) },
+      write: (line) => { writeToChildStdin(child, line) },
       onData: (cb) => { child.stdout?.on('data', cb) },
       onStderr: (cb) => { child.stderr?.on('data', cb) },
       onClose: (cb) => { child.on('close', (code) => cb({ code })) },
@@ -165,4 +166,12 @@ export class WslTransport implements RuntimeTransport {
     this.child?.kill()
     this.child = null
   }
+}
+
+function writeToChildStdin(child: ChildProcess, line: string): void {
+  const stdin = child.stdin
+  if (!stdin || stdin.destroyed || stdin.writableEnded || child.exitCode !== null || child.signalCode !== null) {
+    throw new Error('Runtime stdin is closed')
+  }
+  stdin.write(line)
 }
