@@ -496,16 +496,19 @@ describe('canvasStore.recommendPlacements', () => {
     expect(cands[0].size).toEqual(std)
   })
 
-  it('STANDARD PREFERRED: a gap a standard panel fits gets a standard ghost (not oversized)', () => {
-    // Two tall nodes with a wide gap between them — a standard panel fits, so the
-    // ghost in the gap is standard, hugging the active node (no oversized custom).
+  it('GROW-TO-FILL: a bounded gap is filled even when a standard panel would fit', () => {
+    // Two tall nodes with a wide gap between them. The gap is pinned left and right,
+    // so the ghost grows to fill it (wider than the standard panel); its height is
+    // open, so it stays at the default.
     const std = recommendPlacements({}, null, 'terminal', VIEWPORT, null)[0].size
     const a = node('a', 0, 0, 400, 800)
     const b = node('b', 1300, 0, 400, 800, 1)
     const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
     const inGap = cands.find((c) => c.point.x >= 400 && c.point.x + c.size.width <= 1300)
     expect(inGap).toBeDefined()
-    expect(inGap!.size).toEqual(std)
+    // 900px gap minus a 40px clearance each side → grown to 820 wide.
+    expect(inGap!.size.width).toBe(820)
+    expect(inGap!.size.height).toBe(std.height)
   })
 
   it('GAP-FILL: a sub-standard gap between nodes gets a custom-sized recommendation', () => {

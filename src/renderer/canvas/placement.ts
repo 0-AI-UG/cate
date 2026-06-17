@@ -114,15 +114,13 @@ export function findFreePosition(
 }
 
 const PLACEMENT_GAP = 40
-/** Smallest a gap-fill recommendation may be (canvas px), and its aspect-ratio
- *  bounds (width / height) — a sub-standard hole only gets a recommendation if a
- *  panel within these limits fits it. */
+/** A recommendation is never smaller than MIN (a gap tighter than this is pruned,
+ *  so it gets no recommendation) and, when it grows to fill a bounded gap, never
+ *  larger than MAX (a very wide gap doesn't yield an enormous panel). */
 const PLACEMENT_MIN_W = 280
 const PLACEMENT_MIN_H = 180
 const PLACEMENT_MAX_W = 1400
 const PLACEMENT_MAX_H = 900
-const PLACEMENT_MIN_AR = 0.6
-const PLACEMENT_MAX_AR = 2.6
 // --- Geometry helpers --------------------------------------------------------
 
 /** Grow a rect by `m` on every side. */
@@ -182,25 +180,6 @@ function freeRectangles(area: Rect, obstacles: Rect[]): Rect[] {
   return free
 }
 
-/** Shrink (w,h) to fall within [minAR, maxAR] aspect ratio, keeping it inside. */
-function clampAspect(w: number, h: number, minAR: number, maxAR: number): Size {
-  const ar = w / h
-  if (ar > maxAR) w = h * maxAR
-  else if (ar < minAR) h = w / minAR
-  return { width: w, height: h }
-}
-
-/** Grid-snap + clamp a size to the placement min/max + aspect-ratio bounds. */
-function clampPlacementSize(w: number, h: number, grid: number): Size {
-  const snap = (v: number) => snapScalar(v, grid, true)
-  const s = clampAspect(
-    Math.min(Math.max(w, PLACEMENT_MIN_W), PLACEMENT_MAX_W),
-    Math.min(Math.max(h, PLACEMENT_MIN_H), PLACEMENT_MAX_H),
-    PLACEMENT_MIN_AR, PLACEMENT_MAX_AR,
-  )
-  return { width: snap(s.width), height: snap(s.height) }
-}
-
 /**
  * Recommend where a new node should go, for the interactive "ghost" picker.
  *
@@ -209,7 +188,11 @@ function clampPlacementSize(w: number, h: number, grid: number): Size {
  * ghost into the free spot closest to the ranking point, carves it out, and repeats.
  * Using the nearest free space first means no closer empty spot is ever left unused,
  * so the result stays tight with no odd gaps even when the windows aren't on a grid.
- * A ghost is standard-sized where there's room and shrunk to fill a tighter gap.
+ *
+ * Sizing is ORGANIC GROWTH: along an axis where the empty rectangle is pinned by a
+ * window on BOTH sides (an interior gap) the ghost grows to fill that gap, up to the
+ * max size; an axis open on either side has nothing to size it, so it falls back to
+ * the panel's default extent.
  *
  *  - A focused node on screen → packs around it (ranked from its centre).
  *  - Nothing focused → packs across the viewport, ranked from the cursor.
@@ -327,33 +310,61 @@ export function recommendPlacements(
   // drops one ghost into the empty rectangle whose best spot is closest to the
   // ranking point, then carves that ghost (plus its gap) out of the free space and
   // repeats. Because the nearest free space is always used first, no closer empty
-  // spot is ever left unused — which is what avoids the odd gaps in irregular
-  // layouts — and large areas get tiled while tight gaps get a shrunk ghost.
+  // spot is ever left unused — which is what keeps the result tight in irregular
+  // layouts.
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
-  let free = freeRectangles(area, nodeRects.map((r) => inflateRect(r, gap)))
+  const inflated = nodeRects.map((r) => inflateRect(r, gap))
+  let free = freeRectangles(area, inflated)
+
+  // An axis of free rect `f` is "pinned" when a window's opposite edge sits against
+  // BOTH of its sides (an interior gap), sharing a run along the edge. A pinned axis
+  // grows to fill the gap; an open axis falls back to the default extent.
+  const EPS = 1
+  const pinnedX = (f: Rect): boolean => {
+    const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
+    let left = false, right = false
+    for (const o of inflated) {
+      if (Math.min(o.origin.y + o.size.height, fB) - Math.max(o.origin.y, fT) <= EPS) continue
+      if (Math.abs(o.origin.x + o.size.width - fL) <= EPS) left = true
+      if (Math.abs(o.origin.x - fR) <= EPS) right = true
+    }
+    return left && right
+  }
+  const pinnedY = (f: Rect): boolean => {
+    const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
+    let top = false, bottom = false
+    for (const o of inflated) {
+      if (Math.min(o.origin.x + o.size.width, fR) - Math.max(o.origin.x, fL) <= EPS) continue
+      if (Math.abs(o.origin.y + o.size.height - fT) <= EPS) top = true
+      if (Math.abs(o.origin.y - fB) <= EPS) bottom = true
+    }
+    return top && bottom
+  }
 
   const raw: Raw[] = []
   for (let n = 0; n < max && free.length > 0; n++) {
     let best: { point: Point; size: Size; score: number } | null = null
     for (const f of free) {
-      // Largest panel ≤ standard that fits this rect (grid-snapped, ≥ min).
-      const size = clampPlacementSize(Math.min(std.width, f.size.width), Math.min(std.height, f.size.height), grid)
-      if (size.width > f.size.width + 0.5 || size.height > f.size.height + 0.5) continue
-      // Grid-aligned positions inside the rect (the rect already carries the gap,
-      // so snapping INTO it keeps the clearance — snapping toward the edge would
-      // eat into the gap and get the spot rejected later).
-      const gx0 = Math.ceil(f.origin.x / grid) * grid
-      const gx1 = Math.floor((f.origin.x + f.size.width - size.width) / grid) * grid
-      const gy0 = Math.ceil(f.origin.y / grid) * grid
-      const gy1 = Math.floor((f.origin.y + f.size.height - size.height) / grid) * grid
-      if (gx1 < gx0 || gy1 < gy0) continue
-      // Position the panel at the point of the rect closest to the ranking point.
+      // Grid-aligned interior of the rect (it already carries the gap, so staying
+      // inside it keeps the clearance).
+      const ix0 = Math.ceil(f.origin.x / grid) * grid
+      const ix1 = Math.floor((f.origin.x + f.size.width) / grid) * grid
+      const iy0 = Math.ceil(f.origin.y / grid) * grid
+      const iy1 = Math.floor((f.origin.y + f.size.height) / grid) * grid
+      const availW = ix1 - ix0, availH = iy1 - iy0
+      if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) continue
+      // Fill a pinned axis (capped at the max); otherwise take the default, shrunk
+      // to fit if the rect is narrower/shorter than it.
+      const w = clamp(pinnedX(f) ? availW : Math.min(std.width, availW), PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, availW))
+      const h = clamp(pinnedY(f) ? availH : Math.min(std.height, availH), PLACEMENT_MIN_H, Math.min(PLACEMENT_MAX_H, availH))
+      // Position at the point of the rect closest to the ranking point (a fully
+      // filled axis has only the one position).
       const point = {
-        x: clamp(Math.round((rankAt.x - size.width / 2) / grid) * grid, gx0, gx1),
-        y: clamp(Math.round((rankAt.y - size.height / 2) / grid) * grid, gy0, gy1),
+        x: clamp(Math.round((rankAt.x - w / 2) / grid) * grid, ix0, ix1 - w),
+        y: clamp(Math.round((rankAt.y - h / 2) / grid) * grid, iy0, iy1 - h),
       }
-      const score = Math.hypot(point.x + size.width / 2 - rankAt.x, point.y + size.height / 2 - rankAt.y)
-      if (!best || score < best.score) best = { point, size, score }
+      const score = Math.hypot(point.x + w / 2 - rankAt.x, point.y + h / 2 - rankAt.y)
+      if (!best || score < best.score) best = { point, size: { width: w, height: h }, score }
     }
     if (!best) break
     raw.push({ point: best.point, size: best.size })

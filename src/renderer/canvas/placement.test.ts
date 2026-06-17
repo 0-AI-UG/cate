@@ -153,9 +153,11 @@ describe('recommendPlacements — around existing nodes', () => {
     }
   })
 
-  it('crowded viewport with no qualifying hole still returns one non-overlapping fallback spot', () => {
-    // 3x2 tiling with 80px gaps — every hole is smaller than the minimum
-    // recommendation size, so the packer finds nothing and the fallback fires.
+  it('crowded grid: the interior gaps are too tight, so growth spills into the open space around it', () => {
+    // 3x2 tiling with 80px gaps. Every interior gap is below the minimum panel
+    // size once clearance is taken, so no candidate fills a hole — instead they
+    // grow into the open space flush around the grid (default-sized, since the
+    // outward axis isn't pinned), never overlapping.
     const list: CanvasNodeState[] = []
     let ci = 0
     for (const y of [0, 480]) {
@@ -166,11 +168,13 @@ describe('recommendPlacements — around existing nodes', () => {
 
     const out = recommendPlacements(nodes, null, 'terminal', viewport, { x: 1100, y: 500 })
 
-    expect(out).toHaveLength(1)
-    for (const n of list) {
-      expect(rectsOverlap(rectOf(out[0]), { origin: n.origin, size: n.size })).toBe(false)
+    expect(out.length).toBeGreaterThanOrEqual(1)
+    for (const c of out) {
+      expectGridAligned(c.point)
+      for (const n of list) {
+        expect(rectsOverlap(rectOf(c), { origin: n.origin, size: n.size })).toBe(false)
+      }
     }
-    expectGridAligned(out[0].point)
   })
 
   it('panned away from every node, recommends where the camera is looking', () => {
@@ -200,6 +204,32 @@ describe('recommendPlacements — around existing nodes', () => {
     // In the open space around a single node, the best candidates carry the
     // requested size (tight gaps may shrink later ones, never the first).
     expect(out[0].size).toEqual(size)
+  })
+
+  it('grows a candidate to fill a bounded gap between two panels (taller than the default)', () => {
+    // Two short panels with a tall, wide gap between them. A candidate seeded in
+    // the gap is pinned left AND right, so it fills the gap width exactly (gap
+    // minus a clearance each side); its height is unbounded, so it stays default.
+    const a = node('a', 0, 0, 400, 300, 0)
+    const b = node('b', 1200, 0, 400, 300, 1) // gap from x=400 to x=1200 → 800 wide
+    const viewport = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2400, height: 1200 } }
+    const anchor = { x: 800, y: 150 } // dead centre of the gap
+
+    const out = recommendPlacements(nodeMap(a, b), null, 'terminal', viewport, anchor)
+    const filler = out.find((c) => c.point.x >= 400 && c.point.x + c.size.width <= 1200)
+    expect(filler, `expected a gap-filling candidate: ${JSON.stringify(out)}`).toBeTruthy()
+    // Grown to fill the 800px gap minus a 40px clearance each side ≈ 720.
+    expect(filler!.size.width).toBe(720)
+    // Height was unbounded → fell back to the terminal default (400), not grown.
+    expect(filler!.size.height).toBe(TERMINAL.height)
+  })
+
+  it('uses the default size in open space — an unbounded axis never grows', () => {
+    const out = recommendPlacements(nodeMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null)
+    // Around a single node, every direction is open, so every candidate is exactly
+    // the default terminal size — nothing to grow into.
+    expect(out.length).toBeGreaterThanOrEqual(1)
+    for (const c of out) expect(c.size).toEqual(TERMINAL)
   })
 
   it('is deterministic — identical inputs produce identical candidate lists', () => {
