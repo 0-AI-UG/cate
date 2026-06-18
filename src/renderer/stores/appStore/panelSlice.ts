@@ -43,6 +43,7 @@ type PanelSliceActions = Pick<
   | 'updatePanelTitleFromAgent'
   | 'renamePanelByUser'
   | 'updatePanelUrl'
+  | 'updatePanelTabs'
   | 'updatePanelProxy'
   | 'updatePanelFilePath'
   | 'setPanelDirty'
@@ -258,6 +259,18 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     updatePanelUrl(workspaceId, panelId, url) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, url }))
+    },
+
+    updatePanelTabs(workspaceId, panelId, tabs, activeTabId) {
+      // Mirror the active tab's url into `url` so restore/transfer (which read
+      // `url`) reopen on the right page even if they ignore the tabs array.
+      const activeUrl = tabs.find((t) => t.id === activeTabId)?.url
+      setPanelField(set, workspaceId, panelId, (panel) => ({
+        ...panel,
+        tabs,
+        activeTabId,
+        ...(activeUrl !== undefined ? { url: activeUrl } : {}),
+      }))
     },
 
     updatePanelProxy(workspaceId, panelId, proxyUrl) {

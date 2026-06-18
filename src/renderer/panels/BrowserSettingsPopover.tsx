@@ -75,7 +75,6 @@ export function BrowserSettingsPopover({ onClose, onClearData }: Props): JSX.Ele
           options={[
             { value: 'startPage', label: 'Start page' },
             { value: 'homepage', label: 'Homepage' },
-            { value: 'blank', label: 'Blank' },
           ]}
         />
       </SettingRow>
