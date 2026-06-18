@@ -32,6 +32,16 @@ import {
   LAYOUT_LIST,
   LAYOUT_LOAD,
   LAYOUT_DELETE,
+  BROWSER_HISTORY_RECORD,
+  BROWSER_HISTORY_GET,
+  BROWSER_HISTORY_QUERY,
+  BROWSER_HISTORY_REMOVE,
+  BROWSER_HISTORY_CLEAR,
+  BROWSER_HISTORY_CHANGED,
+  BROWSER_BOOKMARKS_GET,
+  BROWSER_BOOKMARKS_ADD,
+  BROWSER_BOOKMARKS_REMOVE,
+  BROWSER_BOOKMARKS_CHANGED,
 } from '../shared/ipc-channels'
 import type { AppSettings, SidebarSession, RemoteProjectEntry } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
@@ -59,6 +69,17 @@ import {
   deleteLayout,
   startWatchingWorkspaceState,
 } from './workspaceStateStore'
+import {
+  recordBrowserVisit,
+  getBrowserHistory,
+  queryBrowserHistory,
+  removeBrowserHistoryEntry,
+  clearBrowserHistory,
+  getBookmarks,
+  addBookmark,
+  removeBookmark,
+  startWatchingBrowserState,
+} from './browserStateStore'
 import { grantFileAccess } from './ipc/pathValidation'
 import { recordPersistentGrant } from './grantedPathStore'
 import { computeThemeBootFields } from './themeBootCache'
@@ -393,6 +414,13 @@ export function registerHandlers(): void {
   // menu when layouts.json is hand-edited.
   startWatchingWorkspaceState((names) => { void pushLayoutNamesToMenu(names) })
 
+  // Browser history/bookmarks files — watch for external hand-edits and
+  // re-broadcast so open browser panels reflect the change immediately.
+  startWatchingBrowserState(() => {
+    broadcastToAll(BROWSER_HISTORY_CHANGED)
+    broadcastToAll(BROWSER_BOOKMARKS_CHANGED)
+  })
+
   // Drop any orphaned managed wallpaper copies (e.g. from a crash mid-replace),
   // keeping only the one the current setting points at.
   void import('./canvasBackgroundStore')
@@ -457,4 +485,43 @@ export function registerHandlers(): void {
 
   // Seed the native Layouts menu with whatever is already saved.
   void pushLayoutNamesToMenu(listLayoutNames())
+
+  // Browser history + bookmarks (global). Mutations broadcast a "changed" event
+  // to every window so all browser panels (and detached windows) stay consistent.
+  ipcMain.handle(BROWSER_HISTORY_RECORD, async (_event, url: string, title: string) => {
+    recordBrowserVisit(url, title)
+    broadcastToAll(BROWSER_HISTORY_CHANGED)
+  })
+
+  ipcMain.handle(BROWSER_HISTORY_GET, async () => {
+    return getBrowserHistory()
+  })
+
+  ipcMain.handle(BROWSER_HISTORY_QUERY, async (_event, query: string, limit: number) => {
+    return queryBrowserHistory(query, limit ?? 8)
+  })
+
+  ipcMain.handle(BROWSER_HISTORY_REMOVE, async (_event, url: string) => {
+    removeBrowserHistoryEntry(url)
+    broadcastToAll(BROWSER_HISTORY_CHANGED)
+  })
+
+  ipcMain.handle(BROWSER_HISTORY_CLEAR, async () => {
+    clearBrowserHistory()
+    broadcastToAll(BROWSER_HISTORY_CHANGED)
+  })
+
+  ipcMain.handle(BROWSER_BOOKMARKS_GET, async () => {
+    return getBookmarks()
+  })
+
+  ipcMain.handle(BROWSER_BOOKMARKS_ADD, async (_event, url: string, title: string) => {
+    addBookmark(url, title)
+    broadcastToAll(BROWSER_BOOKMARKS_CHANGED)
+  })
+
+  ipcMain.handle(BROWSER_BOOKMARKS_REMOVE, async (_event, url: string) => {
+    removeBookmark(url)
+    broadcastToAll(BROWSER_BOOKMARKS_CHANGED)
+  })
 }
