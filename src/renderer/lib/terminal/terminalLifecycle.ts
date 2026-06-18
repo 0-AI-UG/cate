@@ -33,6 +33,7 @@ import {
   effectiveCursorBlink,
 } from './terminalSettings'
 import { createTerminalLinkHandler, makeTerminalKeyEventHandler } from './terminalInput'
+import { registerOsc52ClipboardHandler } from './terminalOsc52Clipboard'
 import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvider'
 import { getActiveTheme } from '../themeManager'
 import { useStatusStore } from '../../stores/statusStore'
@@ -115,6 +116,7 @@ export function createAndConfigureXtermTerminal(opts: CreateOpts): ConfiguredTer
     altClickMovesCursor: true,
     minimumContrastRatio: getContrastRatio(),
   })
+  cleanupListeners.push(registerOsc52ClipboardHandler(terminal))
 
   // FitAddon — load before opening so fit() is available immediately
   const fitAddon = new FitAddon()

@@ -11,7 +11,7 @@
 // A terminal id is mapped to its runtime so write/resize/kill route correctly.
 // =============================================================================
 
-import { ipcMain } from 'electron'
+import { clipboard, ipcMain } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import {
@@ -25,6 +25,7 @@ import {
   TERMINAL_LOG_READ,
   TERMINAL_SCROLLBACK_SAVE,
   TERMINAL_SET_VISIBILITY,
+  TERMINAL_CLIPBOARD_WRITE,
 } from '../../shared/ipc-channels'
 import { getOrCreateLogger, removeLogger, flushAll as flushAllLoggers, disposeAll as disposeAllLoggers } from './terminalLogger'
 import log from '../logger'
@@ -311,6 +312,14 @@ export function registerHandlers(): void {
 
   ipcMain.handle(TERMINAL_SET_VISIBILITY, async (_event, terminalId: string, visible: boolean) => {
     runtimeForTerminal(terminalId)?.process.setVisibility(terminalId, visible)
+  })
+
+  ipcMain.handle(TERMINAL_CLIPBOARD_WRITE, async (_event, text: string): Promise<void> => {
+    if (typeof text !== 'string') {
+      log.warn('[terminal] rejected non-string clipboard write payload')
+      return
+    }
+    clipboard.writeText(text)
   })
 
   ipcMain.handle(TERMINAL_GET_CWD, async (_event, ptyId: string): Promise<string | null> => {

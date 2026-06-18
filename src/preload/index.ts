@@ -14,6 +14,7 @@ import {
   TERMINAL_LOG_READ,
   TERMINAL_SCROLLBACK_SAVE,
   TERMINAL_SET_VISIBILITY,
+  TERMINAL_CLIPBOARD_WRITE,
   FS_READ_FILE,
   FS_READ_BINARY,
   FS_WRITE_FILE,
@@ -310,6 +311,7 @@ const invokeForwarders = {
   terminalLogRead: makeInvoker<'terminalLogRead'>(TERMINAL_LOG_READ),
   terminalScrollbackSave: makeInvoker<'terminalScrollbackSave'>(TERMINAL_SCROLLBACK_SAVE),
   terminalSetVisibility: makeInvoker<'terminalSetVisibility'>(TERMINAL_SET_VISIBILITY),
+  terminalClipboardWrite: makeInvoker<'terminalClipboardWrite'>(TERMINAL_CLIPBOARD_WRITE),
 
   // Filesystem
   fsReadFile: makeInvoker<'fsReadFile'>(FS_READ_FILE),

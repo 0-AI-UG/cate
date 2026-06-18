@@ -22,7 +22,11 @@ vi.mock('node-pty', () => ({
 
 // Captured ipcMain.handle map so tests can invoke a handler directly.
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
+const clipboardWriteText = vi.fn()
 vi.mock('electron', () => ({
+  clipboard: {
+    writeText: clipboardWriteText,
+  },
   ipcMain: {
     handle: vi.fn((channel: string, fn: (...args: unknown[]) => unknown) => {
       handlers.set(channel, fn)
@@ -64,6 +68,9 @@ vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: 
 //     without a real xterm/DOM/store stack. registryState is left REAL so the
 //     dispose-during-creation path exercises the actual registry bookkeeping.
 const makeFakeTerminal = () => ({
+  parser: {
+    registerOscHandler: () => ({ dispose: () => {} }),
+  },
   loadAddon: () => {},
   registerLinkProvider: () => ({ dispose: () => {} }),
   write: () => {},
@@ -292,6 +299,26 @@ describe('scrollback IPC async fs round-trip', () => {
     const read = handlers.get(TERMINAL_LOG_READ)!
     const got = await read({}, 'pty-never-saved')
     expect(got).toBeNull()
+  })
+})
+
+describe('terminal clipboard IPC', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    handlers.clear()
+    clipboardWriteText.mockClear()
+  })
+
+  it('writes terminal clipboard text through Electron clipboard', async () => {
+    const { TERMINAL_CLIPBOARD_WRITE } = await import('../../shared/ipc-channels')
+    await import('./terminal').then((m) => m.registerHandlers())
+
+    const writeClipboard = handlers.get(TERMINAL_CLIPBOARD_WRITE)
+    if (!writeClipboard) throw new Error('clipboard IPC handler was not registered')
+
+    await writeClipboard({}, 'copied from remote tmux')
+
+    expect(clipboardWriteText).toHaveBeenCalledWith('copied from remote tmux')
   })
 })
 

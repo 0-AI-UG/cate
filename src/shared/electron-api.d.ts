@@ -80,6 +80,8 @@ export interface ElectronAPI {
    *  idle-suspend logic to SIGSTOP terminals that are offscreen and silent. */
   terminalSetVisibility(terminalId: string, visible: boolean): Promise<void>
 
+  terminalClipboardWrite(text: string): Promise<void>
+
   // ---------------------------------------------------------------------------
   // Filesystem
   // ---------------------------------------------------------------------------
