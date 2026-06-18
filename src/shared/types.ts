@@ -644,6 +644,27 @@ export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace' | '
  *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
 
+/** A single global browsing-history entry, deduplicated by URL. Shared across
+ *  all workspaces and browser panels so Cate behaves like one browser. */
+export interface BrowserHistoryEntry {
+  url: string
+  title: string
+  lastVisited: number // epoch ms
+  visitCount: number
+}
+
+/** A global bookmark/favorite, deduplicated by URL. */
+export interface BrowserBookmark {
+  url: string
+  title: string
+  addedAt: number // epoch ms
+}
+
+/** Sentinel URL for the browser start page ("new tab"). Persisted like any
+ *  other panel URL so a start-page panel survives session restore; never
+ *  recorded to history and never passed to the <webview> as src. */
+export const BROWSER_NEW_TAB_URL = 'cate://newtab'
+
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
   'newBrowser',
