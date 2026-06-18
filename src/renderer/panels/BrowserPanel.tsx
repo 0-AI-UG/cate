@@ -4,12 +4,15 @@
 // Ported from BrowserPanel.swift
 // =============================================================================
 
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck, Star } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
+import { useBrowserStore } from '../stores/browserStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
-import { SEARCH_ENGINE_URLS } from '../../shared/types'
+import { SEARCH_ENGINE_URLS, BROWSER_NEW_TAB_URL } from '../../shared/types'
+import { UrlSuggestions } from './UrlSuggestions'
+import { StartPage } from './StartPage'
 import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
@@ -90,10 +93,21 @@ export default function BrowserPanel({
   const updatePanelUrl = useAppStore((s) => s.updatePanelUrl)
   const updatePanelProxy = useAppStore((s) => s.updatePanelProxy)
 
+  // Global browser history + bookmarks (shared across all panels/windows).
+  const recordVisit = useBrowserStore((s) => s.recordVisit)
+  const bookmarks = useBrowserStore((s) => s.bookmarks)
+  const toggleBookmark = useBrowserStore((s) => s.toggleBookmark)
+  const querySuggestions = useBrowserStore((s) => s.querySuggestions)
+
   const isFocused = useCanvasStoreContext((s) => s.focusedNodeId === nodeId)
 
-  const rawInitialUrl = url || browserHomepage || 'https://www.google.com'
-  const initialUrl = rawInitialUrl.startsWith('about:') ? rawInitialUrl : normalizeUrl(rawInitialUrl)
+  // A new browser panel with no saved URL lands on the start page (unless the
+  // user configured a homepage). The sentinel is never normalized or navigated.
+  const rawInitialUrl = url || browserHomepage || BROWSER_NEW_TAB_URL
+  const initialUrl =
+    rawInitialUrl === BROWSER_NEW_TAB_URL || rawInitialUrl.startsWith('about:')
+      ? rawInitialUrl
+      : normalizeUrl(rawInitialUrl)
 
   // Per-panel proxy (issue #241). Local state mirrors PanelState.proxyUrl; the
   // dialog updates both this (drives the session) and the store (persistence).
@@ -121,6 +135,9 @@ export default function BrowserPanel({
   // webview without making it a dependency (which would remount on every nav).
   const currentUrlRef = useRef(initialUrl)
   const [inputUrl, setInputUrl] = useState(initialUrl)
+  // URL-bar autocomplete from global history.
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -163,9 +180,6 @@ export default function BrowserPanel({
   // -------------------------------------------------------------------------
 
   const navigateTo = useCallback((input: string) => {
-    const webview = webviewRef.current
-    if (!webview) return
-
     let targetUrl: string
     if (isUrl(input)) {
       targetUrl = normalizeUrl(input)
@@ -182,7 +196,14 @@ export default function BrowserPanel({
     // Persist immediately so a quick app close / workspace switch before
     // did-navigate fires still restores to the URL the user typed.
     updatePanelUrl(workspaceId, panelId, targetUrl)
-    webview.loadURL(targetUrl)
+    const webview = webviewRef.current
+    if (webview) {
+      webview.loadURL(targetUrl)
+    } else {
+      // Leaving the start page (or otherwise no live webview): seed the src so
+      // the about-to-mount <webview> opens straight at the target URL.
+      setWebviewSrc(targetUrl)
+    }
   }, [browserSearchEngine, updatePanelUrl, workspaceId, panelId])
 
   const handleGoBack = useCallback(() => {
@@ -245,12 +266,39 @@ export default function BrowserPanel({
     setScreenshot(null)
   }, [])
 
+  // Suggestions shown beneath the URL bar (history matches for the current input).
+  const suggestions = useMemo(
+    () => (showSuggestions ? querySuggestions(inputUrl, 8) : []),
+    [showSuggestions, inputUrl, querySuggestions],
+  )
+
+  // Bookmark state for the current page (the star toggle). Not bookmarkable on
+  // the start page or about: pages.
+  const isBookmarked = bookmarks.some((b) => b.url === currentUrl)
+  const canBookmark = !!currentUrl && currentUrl !== BROWSER_NEW_TAB_URL && !currentUrl.startsWith('about:')
+
   const handleUrlBarKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActiveSuggestion((i) => Math.min(i + 1, suggestions.length - 1))
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActiveSuggestion((i) => Math.max(i - 1, -1))
+      return
+    }
+    if (e.key === 'Escape') {
+      setShowSuggestions(false)
+      return
+    }
     if (e.key === 'Enter') {
       e.preventDefault()
-      navigateTo(inputUrl)
+      const pick = activeSuggestion >= 0 ? suggestions[activeSuggestion]?.url : undefined
+      setShowSuggestions(false)
+      navigateTo(pick ?? inputUrl)
     }
-  }, [inputUrl, navigateTo])
+  }, [inputUrl, navigateTo, suggestions, activeSuggestion])
 
   // -------------------------------------------------------------------------
   // Per-panel proxy (issue #241)
@@ -422,6 +470,7 @@ export default function BrowserPanel({
       setIsLoading(false)
       setLoadError(null)
       updatePanelUrl(workspaceId, panelId, url)
+      recordVisit(url, webview.getTitle() || '')
     }
 
     const onDidNavigateInPage = (event: any) => {
@@ -438,6 +487,9 @@ export default function BrowserPanel({
       const title = event.title ?? webview.getTitle()
       if (title) {
         updatePanelTitle(workspaceId, panelId, title)
+        // Capture the real title once the page sets it (dedups by URL in main).
+        const navUrl = webview.getURL()
+        if (navUrl && navUrl !== 'about:blank') recordVisit(navUrl, title)
       }
     }
 
@@ -515,7 +567,7 @@ export default function BrowserPanel({
     // `partition` + `proxyReady` are deps so the listeners re-bind to the fresh
     // <webview> element after a proxy change remounts it (key={partition} +
     // the proxyReady gate); without them the new element would have no handlers.
-  }, [panelId, workspaceId, updatePanelTitle, updatePanelUrl, partition, proxyReady])
+  }, [panelId, workspaceId, updatePanelTitle, updatePanelUrl, partition, proxyReady, recordVisit])
 
   // -------------------------------------------------------------------------
   // Render
@@ -560,19 +612,45 @@ export default function BrowserPanel({
           </Tooltip>
         </div>
 
-        {/* URL input */}
-        <div className="flex-1 flex items-center h-7 rounded-full border border-subtle bg-surface-5 px-3 gap-2 focus-within:border-strong transition-colors">
-          <MagnifyingGlass size={13} className="text-muted shrink-0" />
-          <input
-            ref={urlInputRef}
-            type="text"
-            value={inputUrl}
-            onChange={(e) => setInputUrl(e.target.value)}
-            onKeyDown={handleUrlBarKeyDown}
-            className="flex-1 h-full bg-transparent text-sm text-primary outline-none placeholder:text-muted"
-            placeholder="Enter URL or search..."
+        {/* URL input + autocomplete */}
+        <div className="flex-1 relative">
+          <div className="flex items-center h-7 rounded-full border border-subtle bg-surface-5 px-3 gap-2 focus-within:border-strong transition-colors">
+            <MagnifyingGlass size={13} className="text-muted shrink-0" />
+            <input
+              ref={urlInputRef}
+              type="text"
+              value={inputUrl}
+              onChange={(e) => { setInputUrl(e.target.value); setShowSuggestions(true); setActiveSuggestion(-1) }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 120)}
+              onKeyDown={handleUrlBarKeyDown}
+              className="flex-1 h-full bg-transparent text-sm text-primary outline-none placeholder:text-muted"
+              placeholder="Enter URL or search..."
+            />
+          </div>
+          <UrlSuggestions
+            items={suggestions}
+            activeIndex={activeSuggestion}
+            onPick={(pickedUrl) => { setShowSuggestions(false); navigateTo(pickedUrl) }}
+            onHover={setActiveSuggestion}
           />
         </div>
+
+        {/* Bookmark / favorite toggle */}
+        <Tooltip label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}>
+          <button
+            onClick={() => canBookmark && toggleBookmark(currentUrl, webviewRef.current?.getTitle() || currentUrl)}
+            disabled={!canBookmark}
+            className={`w-7 h-7 flex items-center justify-center rounded-full border transition-colors disabled:opacity-30 ${
+              isBookmarked
+                ? 'border-agent bg-agent/15 text-agent hover:bg-agent/25'
+                : 'border-subtle bg-surface-5 hover:bg-hover text-primary'
+            }`}
+            aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
+          >
+            <Star size={13} weight={isBookmarked ? 'fill' : 'regular'} />
+          </button>
+        </Tooltip>
 
         {/* Proxy tool — left-click configures, right-click offers clear. */}
         <Tooltip label={activeProxy ? `Proxy: ${activeProxy}` : 'Configure proxy'}>
@@ -624,18 +702,24 @@ export default function BrowserPanel({
           />
         )}
 
-        {/* Webview — keyed by panelId + partition so a proxy change OR this slot
-            being reused for a different browser panel cleanly remounts it with a
-            fresh webContents (no inherited page or history). Only rendered once
-            the proxy session is configured. */}
-        {proxyReady && (
-          <webview
-            key={`${panelId}:${partition}`}
-            ref={webviewRef as any}
-            src={webviewSrc}
-            className={`w-full h-full ${loadError || crashed ? 'hidden' : ''}`}
-            partition={partition}
-          />
+        {/* Start page (new tab): favorites + recent history, shown instead of a
+            webview when the panel is on the new-tab sentinel. */}
+        {currentUrl === BROWSER_NEW_TAB_URL ? (
+          <StartPage onNavigate={navigateTo} />
+        ) : (
+          /* Webview — keyed by panelId + partition so a proxy change OR this slot
+             being reused for a different browser panel cleanly remounts it with a
+             fresh webContents (no inherited page or history). Only rendered once
+             the proxy session is configured. */
+          proxyReady && (
+            <webview
+              key={`${panelId}:${partition}`}
+              ref={webviewRef as any}
+              src={webviewSrc}
+              className={`w-full h-full ${loadError || crashed ? 'hidden' : ''}`}
+              partition={partition}
+            />
+          )
         )}
 
         {/* Screenshot thumbnail */}
