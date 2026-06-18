@@ -315,6 +315,40 @@ describe('spawn → wire → dispose happy path', () => {
     expect(exitLine).toBeTruthy()
     LC.dispose('panel-exits')
   })
+
+  it('prints the instant-exit hint when a fresh PTY exits 0 immediately with no output (#401)', async () => {
+    terminalCreate.mockResolvedValueOnce('pty-instant')
+    await LC.getOrCreate('panel-instant', { workspaceId: 'ws-1' })
+
+    fireExit('pty-instant', 0)
+
+    const hint = terminalInstances[0].writes.find((w) => w.includes('exited immediately'))
+    expect(hint).toBeTruthy()
+    LC.dispose('panel-instant')
+  })
+
+  it('does NOT print the instant-exit hint when the shell produced output before exiting 0', async () => {
+    terminalCreate.mockResolvedValueOnce('pty-had-output')
+    await LC.getOrCreate('panel-had-output', { workspaceId: 'ws-1' })
+
+    fireData('pty-had-output', 'welcome\r\n$ ')
+    fireExit('pty-had-output', 0)
+
+    const hint = terminalInstances[0].writes.find((w) => w.includes('exited immediately'))
+    expect(hint).toBeFalsy()
+    LC.dispose('panel-had-output')
+  })
+
+  it('does NOT print the instant-exit hint for a non-zero exit code', async () => {
+    terminalCreate.mockResolvedValueOnce('pty-nonzero')
+    await LC.getOrCreate('panel-nonzero', { workspaceId: 'ws-1' })
+
+    fireExit('pty-nonzero', 1)
+
+    const hint = terminalInstances[0].writes.find((w) => w.includes('exited immediately'))
+    expect(hint).toBeFalsy()
+    LC.dispose('panel-nonzero')
+  })
 })
 
 // ===========================================================================
