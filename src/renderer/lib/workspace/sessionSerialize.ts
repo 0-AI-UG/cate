@@ -41,6 +41,8 @@ export function buildWorkspaceFile(
         url: p.url ?? undefined,
         proxyUrl: p.proxyUrl ?? undefined,
         documentType: p.documentType,
+        extensionId: p.extensionId,
+        extensionPanelId: p.extensionPanelId,
       }
     }
   }
@@ -115,6 +117,8 @@ export function projectFilesToSnapshot(
         url: ref.url,
         proxyUrl: ref.proxyUrl,
         documentType: ref.documentType,
+        extensionId: ref.extensionId,
+        extensionPanelId: ref.extensionPanelId,
         // Re-attach the machine-local facts kept out of the committed file.
         worktreeId: sp?.worktreeId,
         unsavedContent: sp?.unsavedContent,

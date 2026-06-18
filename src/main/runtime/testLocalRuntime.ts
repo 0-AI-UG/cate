@@ -36,6 +36,8 @@ import {
   registerScopedWriteAllowance as registerWriteAllowance,
 } from '../ipc/pathValidation'
 import { createVcsCapability } from '../../runtime/capabilities/vcs'
+import { createServerCapability } from '../../runtime/capabilities/server'
+import { createTunnelCapability } from '../../runtime/capabilities/tunnel'
 import { getShellEnv } from '../shellEnv'
 import { runtimes } from './runtimeManager'
 
@@ -69,6 +71,9 @@ export function makeTestLocalRuntime(): Runtime {
     agent: {} as unknown as Runtime['agent'],
     file: buildLocalFileHost(),
     vcs: createVcsCapability({ env: getShellEnv }),
+    // Real electron-free capabilities — exercised by the loopback tests.
+    server: createServerCapability({ baseEnv: getShellEnv }),
+    tunnel: createTunnelCapability(),
     validatePath: (p, winId, scopeId) => validatePath(p, winId, scopeId),
     validatePathStrict: (p, winId, scopeId) => validatePathStrict(p, winId, scopeId),
     validatePathForCreation: (p, winId, scopeId) => validatePathForCreation(p, winId, scopeId),

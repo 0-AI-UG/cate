@@ -4,4 +4,4 @@
 // cate-pi-<PI_VERSION>.tgz from the release. Do not edit by hand.
 // =============================================================================
 
-export const PI_VERSION = '0.75.5'
+export const PI_VERSION = '0.75.4'

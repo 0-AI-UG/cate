@@ -78,6 +78,9 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   agentDefaultModel: 'object',
   sidebarLayout: 'object',
   customShortcuts: 'object',
+  enabledExtensions: 'array',
+  extensionCatalogSources: 'array',
+  extensionSideloadPaths: 'array',
 }
 
 const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>
@@ -92,6 +95,15 @@ function valueMatchesSchema(key: keyof AppSettings, value: unknown): boolean {
   return typeof value === expected
 }
 
+// Array settings whose elements must all be strings. A malformed entry (non-array
+// or any non-string element) falls back to the default [] rather than poisoning
+// state with garbage that downstream consumers would have to defend against.
+const STRING_ARRAY_KEYS = new Set<keyof AppSettings>([
+  'enabledExtensions',
+  'extensionCatalogSources',
+  'extensionSideloadPaths',
+])
+
 /** Merge only known, type-correct keys from a parsed object into `target`. */
 function mergeValidatedSettings(target: AppSettings, source: Record<string, unknown>): void {
   for (const key of SETTINGS_KEYS) {
@@ -99,6 +111,10 @@ function mergeValidatedSettings(target: AppSettings, source: Record<string, unkn
     const val = source[key]
     if (!valueMatchesSchema(key, val)) {
       log.warn('Settings schema mismatch: %s expected %s, got %s', key, SETTINGS_SCHEMA[key], typeof val)
+      continue
+    }
+    if (STRING_ARRAY_KEYS.has(key) && !(val as unknown[]).every((v) => typeof v === 'string')) {
+      log.warn('Settings schema mismatch: %s expected array of strings', key)
       continue
     }
     ;(target as unknown as Record<string, unknown>)[key as string] = val

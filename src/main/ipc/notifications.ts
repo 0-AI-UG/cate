@@ -13,6 +13,32 @@ import type { NotificationAction } from '../../shared/types'
 // banner still shows, but clicking it is dead. Released on click/close/failed.
 const liveNotifications = new Set<Notification>()
 
+/**
+ * Show one OS notification with the GC-reference guard (above) and the macOS
+ * dock bounce, the single place that talks to Electron's Notification API.
+ * Shared by the NOTIFY_OS IPC handler and the extension `cate.ui.notify` reverse
+ * call so both behave identically (and neither re-introduces the click GC bug).
+ */
+export function showOsNotification(opts: {
+  title: string
+  body: string
+  onClick?: () => void
+}): void {
+  if (Notification.isSupported()) {
+    const notification = new Notification({ title: opts.title, body: opts.body })
+    liveNotifications.add(notification)
+    const release = (): void => { liveNotifications.delete(notification) }
+    notification.on('click', () => { opts.onClick?.(); release() })
+    notification.on('close', release)
+    notification.on('failed', release)
+    notification.show()
+  }
+  // Dock bounce on macOS (independent of banner support).
+  if (process.platform === 'darwin') {
+    app.dock?.bounce('informational')
+  }
+}
+
 export function registerHandlers(): void {
   ipcMain.handle(
     NOTIFY_OS,
@@ -23,39 +49,15 @@ export function registerHandlers(): void {
       const win = windowFromEvent(event)
       const ownerWindowId = win?.id ?? -1
 
-      if (Notification.isSupported()) {
-        const notification = new Notification({
-          title: payload.title,
-          body: payload.body,
-        })
-        liveNotifications.add(notification)
-        const release = (): void => {
-          liveNotifications.delete(notification)
-        }
-
-        notification.on('click', () => {
-          // Focus the owning window
-          if (win && !win.isDestroyed()) {
-            focusWindow(win)
-          }
-
-          // Send the action back to the renderer so it can execute it
-          if (payload.action) {
-            sendToWindow(ownerWindowId, NOTIFY_ACTION, payload.action)
-          }
-
-          release()
-        })
-        notification.on('close', release)
-        notification.on('failed', release)
-
-        notification.show()
-      }
-
-      // Dock bounce on macOS
-      if (process.platform === 'darwin') {
-        app.dock?.bounce('informational')
-      }
+      showOsNotification({
+        title: payload.title,
+        body: payload.body,
+        onClick: () => {
+          // Focus the owning window, then hand the action back to its renderer.
+          if (win && !win.isDestroyed()) focusWindow(win)
+          if (payload.action) sendToWindow(ownerWindowId, NOTIFY_ACTION, payload.action)
+        },
+      })
     },
   )
 }

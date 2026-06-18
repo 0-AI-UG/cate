@@ -37,6 +37,7 @@ type PanelSliceActions = Pick<
   | 'createCanvas'
   | 'createAgent'
   | 'createDocument'
+  | 'createExtensionPanel'
   | 'closePanel'
   | 'updatePanelTitle'
   | 'updatePanelTitleFromAgent'
@@ -167,6 +168,20 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         isDirty: false,
       }
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('agent', placement), position)
+    },
+
+    createExtensionPanel(workspaceId, extensionId, extensionPanelId, position?, placement?, title?) {
+      const panel: PanelState = {
+        id: generateId(),
+        type: 'extension',
+        // Default to the manifest panel id; a title-resolver / setTitle reverse
+        // call can replace it with the manifest's display label.
+        title: title ?? extensionPanelId,
+        isDirty: false,
+        extensionId,
+        extensionPanelId,
+      }
+      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('extension', placement), position)
     },
 
     // --- Panel management ---

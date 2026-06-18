@@ -13,6 +13,7 @@ import { flushWorkspaceStateSync } from '../workspaceStateStore'
 import { flushUIStateSync } from '../uiStateStore'
 import { releaseAllProjectLocks } from '../projectLock'
 import { runtimes } from '../runtime/runtimeManager'
+import { extensionServerManager } from '../extensions/ExtensionServerManager'
 import { isUpdatePendingInstall } from '../auto-updater'
 import {
   SESSION_FLUSH_SAVE,
@@ -232,6 +233,10 @@ export function registerLifecycleHandlers(): void {
     // during Environment::CleanupHandles, node-pty's ThreadSafeFunction exit
     // callback throws into a torn-down context and SIGABRTs the process.
     killAllTerminals()
+    // Stop any server-backed extension servers BEFORE tearing down runtimes
+    // (the daemon also kills its children on transport close, but stop them
+    // cleanly here too). Fire-and-forget — quit must not block.
+    void extensionServerManager.disposeAll()
     // Tear down any remote/WSL runtime connections (kills their daemons /
     // closes SSH). Fire-and-forget — quit must not block on a remote socket.
     void runtimes.disposeAll()

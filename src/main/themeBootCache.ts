@@ -58,6 +58,15 @@ function resolveTheme(settings: AppSettings): Theme {
   return themeById(selection, custom) ?? BUILT_IN_BY_ID[DEFAULT_DARK_THEME_ID]
 }
 
+/** Resolve the active Theme with its app palette fully merged over the base, so
+ *  callers (e.g. the extension `cate.theme.get` bridge) get a complete token map
+ *  rather than a partial override set. */
+export function resolveActiveTheme(settings: AppSettings): Theme {
+  const theme = resolveTheme(settings)
+  const base = theme.type === 'light' ? BASE_LIGHT : BASE_DARK
+  return { ...theme, app: { ...base, ...theme.app } }
+}
+
 /** Compute the theme cache fields for boot.json from the current settings. */
 export function computeThemeBootFields(settings: AppSettings): ThemeBootFields {
   const theme = resolveTheme(settings)

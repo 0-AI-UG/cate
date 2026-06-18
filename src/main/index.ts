@@ -4,6 +4,7 @@ import path from 'path'
 import { registerHandlers as registerTerminalHandlers } from './ipc/terminal'
 import { runtimes } from './runtime/runtimeManager'
 import { registerRuntimeHandlers } from './ipc/runtime'
+import { registerExtensionHandlers } from './extensions/cateApiHandlers'
 import { registerHandlers as registerFilesystemHandlers } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerSearchHandlers } from './ipc/search'
@@ -122,6 +123,7 @@ function registerDeferredHandlers(): void {
   registerAgentHandlers(authManager, agentManager)
   registerSkillHandlers()
   registerRuntimeHandlers()
+  registerExtensionHandlers()
 }
 
 // =============================================================================
