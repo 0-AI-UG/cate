@@ -13,6 +13,7 @@ import { getOrCreateWorkspaceDockStore } from './lib/workspace/dockRegistry'
 import { useStore } from 'zustand'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStateStore } from './stores/uiStateStore'
+import { useBrowserStore } from './stores/browserStore'
 import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
@@ -134,6 +135,12 @@ function MainApp() {
   // Resource profiler — wires up FPS/long-task observers only under CATE_PERF=1.
   useEffect(() => {
     initPerfClient()
+  }, [])
+
+  // Load global browser history + bookmarks and subscribe to change broadcasts,
+  // so every browser panel shares one consistent history/bookmarks store.
+  useEffect(() => {
+    void useBrowserStore.getState().init()
   }, [])
 
   // Main-only: terminal/agent activity → status bar + worktree sync.
