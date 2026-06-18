@@ -10,7 +10,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
 import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
-import { SEARCH_ENGINE_URLS, BROWSER_NEW_TAB_URL } from '../../shared/types'
+import { SEARCH_ENGINE_URLS, BROWSER_NEW_TAB_URL, isStartPageUrl } from '../../shared/types'
 import { UrlSuggestions } from './UrlSuggestions'
 import { StartPage } from './StartPage'
 import type { BrowserPanelProps } from './types'
@@ -275,7 +275,7 @@ export default function BrowserPanel({
   // Bookmark state for the current page (the star toggle). Not bookmarkable on
   // the start page or about: pages.
   const isBookmarked = bookmarks.some((b) => b.url === currentUrl)
-  const canBookmark = !!currentUrl && currentUrl !== BROWSER_NEW_TAB_URL && !currentUrl.startsWith('about:')
+  const canBookmark = !isStartPageUrl(currentUrl) && !currentUrl.startsWith('about:')
 
   const handleUrlBarKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
@@ -704,7 +704,7 @@ export default function BrowserPanel({
 
         {/* Start page (new tab): favorites + recent history, shown instead of a
             webview when the panel is on the new-tab sentinel. */}
-        {currentUrl === BROWSER_NEW_TAB_URL ? (
+        {isStartPageUrl(currentUrl) ? (
           <StartPage onNavigate={navigateTo} />
         ) : (
           /* Webview — keyed by panelId + partition so a proxy change OR this slot

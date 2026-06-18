@@ -5,6 +5,7 @@
 import log from '../../lib/logger'
 import { disambiguateTitle } from '../../lib/panelTitle'
 import type { PanelState, PanelType } from '../../../shared/types'
+import { BROWSER_NEW_TAB_URL } from '../../../shared/types'
 import { resolvePanelSize } from '../../../shared/panels'
 import { useSettingsStore } from '../settingsStore'
 import { generateId } from '../canvas/helpers'
@@ -97,7 +98,9 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         type: 'browser',
         title: url ?? 'Browser',
         isDirty: false,
-        url: url ?? 'about:blank',
+        // No URL → open the start page (not a blank page). BrowserPanel routes
+        // the sentinel / about:blank / empty to <StartPage> via isStartPageUrl.
+        url: url ?? BROWSER_NEW_TAB_URL,
         ...(proxyUrl ? { proxyUrl } : {}),
       }
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('browser', placement), position)

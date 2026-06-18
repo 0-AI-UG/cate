@@ -665,6 +665,14 @@ export interface BrowserBookmark {
  *  recorded to history and never passed to the <webview> as src. */
 export const BROWSER_NEW_TAB_URL = 'cate://newtab'
 
+/** True when a URL should render the start page rather than a webview: the
+ *  sentinel, the legacy `about:blank` default, or an empty/missing URL. Lets
+ *  brand-new AND already-saved (about:blank) browser panels show the start
+ *  screen instead of a blank page. */
+export function isStartPageUrl(url: string | undefined | null): boolean {
+  return !url || url === BROWSER_NEW_TAB_URL || url === 'about:blank'
+}
+
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
   'newBrowser',
