@@ -37,7 +37,8 @@ import { broadcastToAll } from '../../main/windowRegistry'
 import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
 import { installAskUserExtension } from './installAskUser'
-import { hostAgentDir, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace } from './agentDir'
+import { installCateAgentToolsExtension } from './installCateAgentTools'
+import { hostAgentDir, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace, type AgentDirVariant } from './agentDir'
 import { mirrorModelsToWorkspace } from './customModels'
 import type { AuthManager } from './authManager'
 
@@ -47,6 +48,8 @@ interface AgentSession {
   runtime: Runtime
   /** Runtime-absolute workspace path (the locator's path part). */
   cwd: string
+  /** Which per-workspace pi dir this session lives in (default vs isolated Cate Agent). */
+  variant: AgentDirVariant
   client: PiRpcClient
   sender: WebContents
   unsubscribeEvents: () => void
@@ -91,7 +94,7 @@ export class AgentManager {
   private async syncAuthToOpenSessions(): Promise<void> {
     await Promise.all(
       Array.from(this.sessions.values()).map((session) =>
-        pushSharedToWorkspace(session.runtime, session.cwd).catch((err) => {
+        pushSharedToWorkspace(session.runtime, session.cwd, session.variant).catch((err) => {
           log.warn('[agentManager] auth sync failed for %s: %O', session.panelId, err)
         }),
       ),
@@ -103,7 +106,7 @@ export class AgentManager {
    *  on their next model-list fetch). */
   syncCustomModelsToOpenSessions(): void {
     for (const session of this.sessions.values()) {
-      void mirrorModelsToWorkspace(session.runtime, session.cwd).catch((err) => {
+      void mirrorModelsToWorkspace(session.runtime, session.cwd, session.variant).catch((err) => {
         log.warn('[agentManager] models sync failed for %s: %O', session.panelId, err)
       })
     }
@@ -128,15 +131,24 @@ export class AgentManager {
       const { runtimeId, path: cwd } = parseLocator(opts.cwd)
       const runtime = runtimes.resolve(runtimeId)
 
-      // Seed the host's <cwd>/.cate/pi-agent: auth.json + models.json via the
-      // runtime (so it lands on the remote host too), plus Cate's bundled
-      // extensions (subagent, plan-mode, ask-user). PI_CODING_AGENT_DIR points
-      // pi at that dir.
-      await prepareAgentDir(runtime, cwd)
-      await mirrorModelsToWorkspace(runtime, cwd)
-      await installSubagentExtension(runtime, cwd)
-      await installPlanModeExtension(runtime, cwd)
-      await installAskUserExtension(runtime, cwd)
+      // The Cate Agent's headless sessions live in an ISOLATED per-workspace pi
+      // dir (.cate/pi-agent-cate-agent) so their transcripts never show up in — or get
+      // resumed by — the agent panel's session list. Normal panels use the
+      // default dir. Either way auth.json + models.json are seeded via the
+      // runtime (so it lands on a remote host too) and PI_CODING_AGENT_DIR
+      // points pi at the chosen dir.
+      const variant: AgentDirVariant = opts.agentDir === 'cateAgent' ? 'cateAgent' : 'default'
+      await prepareAgentDir(runtime, cwd, variant)
+      await mirrorModelsToWorkspace(runtime, cwd, variant)
+      if (variant === 'cateAgent') {
+        // The Cate Agent only needs its own tool surface — not the user-facing
+        // subagent / plan-mode / ask-user extensions.
+        await installCateAgentToolsExtension(runtime, cwd, 'cateAgent')
+      } else {
+        await installSubagentExtension(runtime, cwd)
+        await installPlanModeExtension(runtime, cwd)
+        await installAskUserExtension(runtime, cwd)
+      }
 
       const extraArgs: string[] = []
       if (opts.sessionFile) extraArgs.push('--session', opts.sessionFile)
@@ -146,7 +158,9 @@ export class AgentManager {
         provider: opts.model?.provider,
         model: opts.model?.model,
         args: extraArgs.length > 0 ? extraArgs : undefined,
-        env: { PI_CODING_AGENT_DIR: hostAgentDir(runtimeId, cwd) },
+        // opts.env (e.g. CATE_AGENT_ROLE) is merged last but must never clobber
+        // PI_CODING_AGENT_DIR, which points pi at the workspace agent dir.
+        env: { ...(opts.env ?? {}), PI_CODING_AGENT_DIR: hostAgentDir(runtimeId, cwd, variant) },
       })
 
       // Ensure pi is present on the host BEFORE start. pi ships in the runtime
@@ -187,12 +201,13 @@ export class AgentManager {
 
       // Watch the host's auth.json so OAuth token refreshes written by pi
       // propagate back to the shared file.
-      const disposeAuthWatcher = watchWorkspaceAuth(runtime, cwd)
+      const disposeAuthWatcher = watchWorkspaceAuth(runtime, cwd, variant)
 
       this.sessions.set(opts.panelId, {
         panelId: opts.panelId,
         runtime,
         cwd,
+        variant,
         client,
         sender,
         unsubscribeEvents,

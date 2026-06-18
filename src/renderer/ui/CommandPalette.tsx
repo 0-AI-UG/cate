@@ -29,9 +29,9 @@ import {
   Selection,
   ArrowUUpLeft,
   ArrowUUpRight,
+  Sparkle,
 } from '@phosphor-icons/react'
 import type { PanelType, MenuActionId } from '../../shared/types'
-import { CateLogo } from './CateLogo'
 import { PaletteDialogShell } from './Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
@@ -74,7 +74,7 @@ const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const DeleteRuntimeIcon = () => <Trash size={ICON_SIZE} />
 const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const SkillsIcon = () => <PuzzlePiece size={ICON_SIZE} />
-const AgentIcon = () => <CateLogo size={ICON_SIZE} />
+const AgentIcon = () => <Sparkle size={ICON_SIZE} />
 const CloseIcon = () => <X size={ICON_SIZE} />
 const MinimapIcon = () => <MapTrifold size={ICON_SIZE} />
 const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
@@ -157,7 +157,7 @@ export const CommandPalette: React.FC = () => {
       { id: 'newTerminal', title: 'New Terminal', icon: <TerminalIcon />, action: run('newTerminal') },
       { id: 'newBrowser', title: 'New Browser', icon: <GlobeIcon />, action: run('newBrowser') },
       { id: 'newEditor', title: 'New Editor', icon: <FileTextIcon />, action: run('newEditor') },
-      { id: 'newAgent', title: 'New Cate Agent', icon: <AgentIcon />, action: run('newAgent') },
+      { id: 'newAgent', title: 'New Agent', icon: <AgentIcon />, action: run('newAgent') },
       { id: 'newCanvas', title: 'New Canvas', icon: <LayoutIcon />, action: run('newCanvas') },
       { id: 'closePanel', title: 'Close Panel', icon: <CloseIcon />, action: run('closePanel') },
       { id: 'saveFile', title: 'Save File', icon: <SaveIcon />, action: run('saveFile') },
@@ -562,6 +562,6 @@ function PanelIcon({ type }: { type: PanelType }) {
   if (type === 'terminal') return <span className={`${cls} text-emerald-400`}><Terminal size={ICON_SIZE} /></span>
   if (type === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
   if (type === 'editor' || type === 'document') return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
-  if (type === 'agent')    return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><CateLogo size={ICON_SIZE} /></span>
+  if (type === 'agent')    return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><Sparkle size={ICON_SIZE} /></span>
   return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }

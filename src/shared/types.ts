@@ -684,7 +684,7 @@ export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
   newTerminal: 'New Terminal',
   newBrowser: 'New Browser',
   newEditor: 'New Editor',
-  newAgent: 'New Cate Agent',
+  newAgent: 'New Agent',
   newCanvas: 'New Canvas',
   newFile: 'New File',
   closePanel: 'Close Panel',
@@ -1051,6 +1051,83 @@ export interface ProjectSessionPanel {
 }
 
 // -----------------------------------------------------------------------------
+// Cate Agent — per-workspace todos (.cate/todos.json)
+//
+// The shared task list both the user and (later) the Cate Agent read/write. Phase 1
+// only exercises the `user` origin and the `pending`/`done` statuses via the
+// Tasks sidebar; the richer fields (plan, worktree, terminals) are defined now
+// so the executor/observer phases slot in without a file-format migration.
+// -----------------------------------------------------------------------------
+
+/** Who created the todo. `cateAgent` todos are proposed by the observer; `user` todos
+ *  are typed into the Tasks sidebar. */
+export type TodoOrigin = 'user' | 'cateAgent'
+
+/** Todo lifecycle. `suggested` awaits the approve gate; `review` awaits the
+ *  land gate. Manual todos start at `pending` and toggle to `done`. `discarded`
+ *  is a reviewed todo the user threw away — kept (not deleted) so it can be rerun. */
+export type TodoStatus = 'suggested' | 'pending' | 'in_progress' | 'review' | 'done' | 'failed' | 'discarded'
+
+export interface Todo {
+  id: string
+  title: string
+  origin: TodoOrigin
+  status: TodoStatus
+  /** Unix ms when the todo was created. */
+  createdAt: number
+  /** Unix ms when the todo last changed status (e.g. completed). */
+  updatedAt?: number
+  /** Isolated worktree the executor runs this todo in (later phases). */
+  worktreeId?: string
+  /** Branch created off HEAD for this todo (later phases). */
+  branch?: string
+  /** Canvas node ids of the terminals spawned for this todo (later phases). */
+  terminalNodeIds?: string[]
+  /** Free-form note — observer rationale for a suggestion, or a failure reason. */
+  note?: string
+  /** User-facing text result the executor produced via the `answer` tool — e.g.
+   *  the answer to a question or a summary of findings. Rendered on the job card
+   *  and kept (the job settles to `done`) until the user dismisses it. */
+  output?: string
+  /** Short 2–5 word title the executor derives for this job (UI card title). Falls
+   *  back to `title` (the original prompt) when absent. */
+  topic?: string
+  /** When true the executor runs in the project root with NO isolated worktree
+   *  (user chose "No worktree"). Otherwise a worktree is reused/minted. */
+  noWorktree?: boolean
+  /** Set when a run was cut short by an app restart (reconcileOrphans) rather than
+   *  finishing. The job card offers Continue (resume the executor where it left
+   *  off) instead of presenting the work as finished. Cleared when it resumes. */
+  interrupted?: boolean
+}
+
+export interface ProjectTodosFile {
+  version: 1
+  todos: Todo[]
+}
+
+/** Which headless brain a Cate Agent session drives. Passed to the cate-agent-tools
+ *  extension via `CATE_AGENT_ROLE` so it registers the matching tool subset. */
+export type CateAgentRole = 'observer' | 'executor'
+
+/** The Cate Agent's coarse runtime state, surfaced in the Tasks header + avatar. */
+export type CateAgentActivity =
+  | 'off' // not summoned
+  | 'resting' // summoned, nothing to do
+  | 'observing' // observer taking a look at user activity
+  | 'working' // executor running a todo
+
+/** Persisted per-workspace Cate Agent enablement (.cate/cateAgent.json). Machine-local. */
+export interface ProjectCateAgentFile {
+  version: 1
+  /** Whether the Cate Agent has been summoned for this workspace. */
+  enabled: boolean
+  /** Whether the observer runs automatically on a timer. When false, observe
+   *  turns happen only when the user clicks the idle Cate Agent. Defaults to true. */
+  autoObserve: boolean
+}
+
+// -----------------------------------------------------------------------------
 // Layout snapshot (saved canvas arrangements)
 // -----------------------------------------------------------------------------
 
@@ -1261,6 +1338,15 @@ export interface AppSettings {
    *  none. Was renderer localStorage (cate.agent.defaultModel.v1) before. */
   agentDefaultModel: AgentModelRef | null
 
+  // Cate Agent — the model both headless Cate Agent brains (observer + executor) run on.
+  // null falls back to agentDefaultModel, then pi's first-available. Chosen by the
+  // user in Settings → Cate Agent.
+  cateAgentModel: AgentModelRef | null
+  /** The coding agent the executor (a pure orchestrator) launches in a terminal
+   *  to do the actual work — an AgentId from src/shared/agents.ts. Empty ⇒ the
+   *  executor picks an installed one itself. */
+  cateAgentExecutorAgentId: string
+
   // Layout
   /** Which sidebar views live in the left vs. right rail. Was renderer
    *  localStorage (cate.sidebarLayout.v3) before. */
@@ -1343,6 +1429,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Agent
   agentDefaultModel: null,
 
+  // Cate Agent
+  cateAgentModel: null,
+  cateAgentExecutorAgentId: '',
+
   // Layout — keep in sync with the sidebar's default arrangement.
   sidebarLayout: {
     left: ['workspaces', 'explorer', 'search'],
@@ -1366,12 +1456,16 @@ export interface UIState {
   minimapSize: { w: number; h: number }
   /** Corner the minimap toggle button (canvas toolbar) is docked in. */
   minimapButtonCorner: CanvasCorner
+  /** Corner the resting Cate Agent avatar is docked in. */
+  cateAgentCorner: CanvasCorner
 }
 
 export const DEFAULT_UI_STATE: UIState = {
   minimapCorner: 'bottom-right',
   minimapSize: { w: 200, h: 150 },
   minimapButtonCorner: 'bottom-right',
+  // Cate Agent rests opposite the minimap's default so they don't start stacked.
+  cateAgentCorner: 'bottom-left',
 }
 
 // -----------------------------------------------------------------------------
@@ -1492,6 +1586,14 @@ export interface AgentCreateOptions {
   /** Resume an existing pi session file (jsonl). When set, pi will load it
    *  on start instead of creating a fresh session. */
   sessionFile?: string
+  /** Extra environment variables merged into the pi process env. Used by the
+   *  Cate Agent to pass `CATE_AGENT_ROLE` so the cate-agent-tools extension knows
+   *  which tool subset to register for this (headless) session. */
+  env?: Record<string, string>
+  /** Which per-workspace pi dir this session uses. `'cateAgent'` isolates the Cate
+   *  Agent's headless sessions in `.cate/pi-agent-cate-agent` so their transcripts never
+   *  appear in the agent panel's session list. Defaults to `'default'`. */
+  agentDir?: 'default' | 'cateAgent'
 }
 
 /** Pi agent events forwarded from main to renderer. We keep the shape loose

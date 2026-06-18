@@ -413,6 +413,18 @@ export interface ElectronAPI {
     session: import('./types').ProjectSessionFile | null
   } | null>
 
+  /** Load the per-workspace todo list from .cate/todos.json (empty if absent). */
+  projectTodosLoad(rootPath: string): Promise<import('./types').Todo[]>
+
+  /** Persist the whole per-workspace todo list to .cate/todos.json. */
+  projectTodosSave(rootPath: string, todos: import('./types').Todo[]): Promise<void>
+
+  /** Load per-workspace Cate Agent enablement from .cate/cateAgent.json. */
+  projectCateAgentLoad(rootPath: string): Promise<import('./types').ProjectCateAgentFile>
+
+  /** Persist per-workspace Cate Agent enablement to .cate/cateAgent.json. */
+  projectCateAgentSave(rootPath: string, state: import('./types').ProjectCateAgentFile): Promise<void>
+
   // ---------------------------------------------------------------------------
   // App
   // ---------------------------------------------------------------------------
@@ -733,6 +745,11 @@ export interface ElectronAPI {
    *  startup loading blocker, since the local connect can finish (or fail) before
    *  a window subscribes to the RUNTIME_STATUS broadcast. */
   runtimeLocalStatus(): Promise<{ phase: RuntimePhase; message?: string }>
+
+  /** Relaunch the built-in LOCAL runtime daemon after a failed connect — the
+   *  recovery behind Retry buttons (a failed startup connect is otherwise dead
+   *  until app restart). Resolves once the connect settles; no-op when live. */
+  runtimeRetryLocal(): Promise<{ ok: boolean; error?: string }>
 
   /** Names of WSL distros installed on this host ([] on non-Windows / no WSL). */
   runtimeWslDistros(): Promise<string[]>

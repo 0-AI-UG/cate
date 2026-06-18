@@ -138,6 +138,33 @@ export class RuntimeManager {
     if (this.localReconnectTimer.unref) this.localReconnectTimer.unref()
   }
 
+  /**
+   * Re-attempt the LOCAL connect on demand — the renderer's Retry path after the
+   * startup connect (or a crash relaunch) failed and left every local op dying
+   * with "No runtime registered". Reuses the opts from startup; a live
+   * runtime or in-flight connect is reused, never duplicated. Resolves once
+   * the connect settles, so the caller can re-run the op that failed.
+   */
+  async retryLocal(): Promise<{ ok: boolean; error?: string }> {
+    if (this.isConnected(LOCAL_RUNTIME_ID)) return { ok: true }
+    if (!this.localOpts) return { ok: false, error: 'The local runtime has not been initialised yet.' }
+    this.ensureLocalRuntime(this.localOpts)
+    // ensureLocalRuntime kicks connect() synchronously, so the attempt (this
+    // one's, or an in-flight one it deduped onto) is observable here.
+    const inFlight = this.connecting.get(LOCAL_RUNTIME_ID)
+    if (!inFlight) {
+      // No attempt could even start (no tarball/target for this platform);
+      // ensureLocalRuntime already emitted `unreachable` with the reason.
+      return { ok: false, error: this.lastLocalStatus.message ?? 'The local runtime is unavailable.' }
+    }
+    try {
+      await inFlight
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
   /** Wire a status sink (the IPC layer broadcasts these to the renderer). */
   setStatusListener(fn: (id: RuntimeId, state: RuntimePhase, message?: string) => void): void {
     this.statusListener = fn

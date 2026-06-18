@@ -17,7 +17,7 @@ import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
 import { writeJsonAtomic } from '../../main/writeJsonAtomic'
-import { hostAgentDir, hostJoin, PI_AGENT_DIR } from './agentDir'
+import { hostAgentDir, hostJoin, PI_AGENT_DIR, type AgentDirVariant } from './agentDir'
 import type { Runtime } from '../../main/runtime/types'
 import type { CustomOpenAIProvider } from '../../shared/types'
 
@@ -77,10 +77,10 @@ export async function saveCustomOpenAI(cfg: CustomOpenAIProvider | null): Promis
 
 /** Mirror the shared models.json into the host's pi-agent dir via the runtime
  *  (works local + remote). No-op when the shared file doesn't exist. */
-export async function mirrorModelsToWorkspace(runtime: Runtime, hostCwd: string): Promise<void> {
+export async function mirrorModelsToWorkspace(runtime: Runtime, hostCwd: string, variant: AgentDirVariant = 'default'): Promise<void> {
   const data = await readJson(sharedModelsPath())
   if (data == null) return
-  const dir = hostAgentDir(runtime.id, hostCwd)
+  const dir = hostAgentDir(runtime.id, hostCwd, variant)
   const dest = hostJoin(runtime.id, dir, 'models.json')
   try {
     await runtime.file.mkdir(dir)

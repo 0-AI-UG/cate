@@ -23,8 +23,8 @@ import {
   CaretDown,
   Sidebar as SidebarIcon,
   Gear,
+  Sparkle,
 } from '@phosphor-icons/react'
-import { CateLogo } from '../../renderer/ui/CateLogo'
 import log from '../../renderer/lib/logger'
 import { errorMessage as toErrorMessage } from '../../renderer/lib/errorMessage'
 import type { PanelProps } from '../../renderer/panels/types'
@@ -1003,7 +1003,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                 onClick={() => { setModelPickerOpen((v) => { if (!v) void refreshModels(); return !v }) }}
                 className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] text-primary hover:bg-hover"
               >
-                <CateLogo size={12} className="text-agent-light" />
+                <Sparkle size={12} className="text-agent-light" />
                 <span className="truncate max-w-[220px]">
                   {selectedModel ? selectedModel.model : 'Pick a model'}
                 </span>
@@ -1066,7 +1066,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
               <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-8 min-h-0">
                 <div className="w-full max-w-[520px] flex flex-col items-center">
                   <div className="w-12 h-12 rounded-2xl bg-agent/15 flex items-center justify-center mb-4">
-                    <CateLogo size={22} className="text-agent-light" />
+                    <Sparkle size={22} className="text-agent-light" />
                   </div>
                   <div className="text-[16px] font-medium text-primary mb-3 text-center">
                     What should we work on?

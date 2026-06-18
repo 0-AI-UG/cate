@@ -18,8 +18,8 @@ import { createPortal } from 'react-dom'
 import {
   Image as ImageIcon,
   X,
+  Sparkle,
 } from '@phosphor-icons/react'
-import { CateLogo } from '../../renderer/ui/CateLogo'
 import { Tooltip } from '../../renderer/ui/Tooltip'
 import type {
   AgentExtensionUIRequest,
@@ -209,7 +209,7 @@ function AskUserCard({
     <div className="rounded-lg border border-agent/40 bg-surface-3/90 backdrop-blur px-3 py-3 space-y-3">
       <div className="flex items-center gap-2">
         <div className="w-5 h-5 rounded-md bg-agent/15 flex items-center justify-center shrink-0">
-          <CateLogo size={12} className="text-agent-light" />
+          <Sparkle size={12} className="text-agent-light" />
         </div>
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-[10.5px] uppercase tracking-wider text-agent-light/80">Cate is asking</span>

@@ -95,6 +95,7 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: vi.fn(() => ({ dispose: () => {} 
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: vi.fn(() => ({})) }))
 vi.mock('@xterm/addon-serialize', () => ({ SerializeAddon: vi.fn(() => ({ dispose: () => {} })) }))
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: vi.fn(() => ({})) }))
+vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: class { onContextLoss() {} dispose() {} } }))
 vi.mock('../../renderer/lib/logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
 vi.mock('../../renderer/lib/terminal/terminalSettings', () => ({
   getTerminalFontFamily: () => 'mono',

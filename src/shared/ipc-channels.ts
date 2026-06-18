@@ -119,6 +119,14 @@ export const WORKSPACE_EXTERNAL_EDIT = 'project:externalEdit' // main -> rendere
 // the current in-app layout overwrites the external edit.
 export const WORKSPACE_EXTERNAL_EDIT_DISMISS = 'project:externalEditDismiss' // renderer -> main
 
+// Per-workspace todo list (.cate/todos.json) — the Cate Agent's shared task store.
+export const PROJECT_TODOS_LOAD = 'project:todosLoad' // renderer -> main
+export const PROJECT_TODOS_SAVE = 'project:todosSave' // renderer -> main
+
+// Per-workspace Cate Agent enablement (.cate/cateAgent.json).
+export const PROJECT_CATE_AGENT_LOAD = 'project:cateAgentLoad' // renderer -> main
+export const PROJECT_CATE_AGENT_SAVE = 'project:cateAgentSave' // renderer -> main
+
 // Boot snapshot — a tiny JSON file (geometry, theme, last workspace id, native
 // tabs flag) written by the renderer whenever the relevant settings change.
 // Read synchronously at launch by the main process to construct the
@@ -378,6 +386,7 @@ export const RUNTIME_INSTALL = 'runtime:install'       // renderer -> main (expl
 export const RUNTIME_DELETE = 'runtime:delete'         // renderer -> main (rm -rf the host install, keep saved auth)
 export const RUNTIME_STATUS = 'runtime:status'         // main -> renderer (broadcast)
 export const RUNTIME_LOCAL_STATUS = 'runtime:local-status' // renderer -> main (current LOCAL phase, seeds the loading blocker)
+export const RUNTIME_RETRY_LOCAL = 'runtime:retry-local' // renderer -> main (relaunch the built-in LOCAL daemon after a failed connect)
 export const RUNTIME_PICK_SSH_KEY = 'runtime:pick-ssh-key' // renderer -> main (native file picker for an SSH private key)
 
 

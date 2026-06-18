@@ -25,6 +25,7 @@ import {
   RUNTIME_SSH_HOSTS,
   RUNTIME_STATUS,
   RUNTIME_LOCAL_STATUS,
+  RUNTIME_RETRY_LOCAL,
   RUNTIME_PICK_SSH_KEY,
 } from '../../shared/ipc-channels'
 import { runtimes, RuntimeManager } from '../runtime/runtimeManager'
@@ -344,6 +345,18 @@ export function registerRuntimeHandlers(): void {
   // before a window subscribes to the RUNTIME_STATUS broadcast.
   ipcMain.handle(RUNTIME_LOCAL_STATUS, async () => {
     return runtimes.localStatus()
+  })
+
+  // Relaunch the built-in LOCAL daemon after a failed startup connect or crash —
+  // the renderer's Retry path (terminal create failure / lock overlay). Without
+  // this, a single failed local connect left the workspace dead until app
+  // restart: nothing re-ran ensureLocalRuntime and RUNTIME_ENSURE rejects
+  // local connections. Resolves once the connect settles; phases stream to the
+  // renderer via RUNTIME_STATUS as usual.
+  ipcMain.handle(RUNTIME_RETRY_LOCAL, async (): Promise<{ ok: boolean; error?: string }> => {
+    const res = await runtimes.retryLocal()
+    if (!res.ok) log.warn('[runtime:retry-local] %s', res.error ?? 'failed')
+    return res
   })
 
   ipcMain.handle(RUNTIME_WSL_DISTROS, async () => {

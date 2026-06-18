@@ -499,7 +499,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         items.push(
           { id: 'new-editor', label: 'New Editor' },
           { id: 'new-browser', label: 'New Browser' },
-          { id: 'new-agent', label: 'New Cate agent' },
+          { id: 'new-agent', label: 'New Agent' },
           { id: 'new-canvas', label: 'New Canvas' },
           { type: 'separator' as const },
         )

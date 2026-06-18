@@ -16,6 +16,7 @@ import { useUIStateStore } from './stores/uiStateStore'
 import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
+import { cateAgentController } from './cateAgent/cateAgentController'
 import { Sidebar, RightSidebar } from './sidebar/Sidebar'
 import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
 import { PanelSuspense } from './panels/PanelSuspense'
@@ -138,6 +139,22 @@ function MainApp() {
 
   // Main-only: terminal/agent activity → status bar + worktree sync.
   useProcessMonitor(selectedWorkspaceId)
+
+  // Tracks which workspace folders have had their Cate Agent restored this session.
+  const cateAgentRestoredRef = useRef<Set<string>>(new Set())
+
+  // Cate Agent — start the controller and restore each workspace's Cate Agent
+  // (re-summon if it was enabled in .cate/cateAgent.json) once its folder path is
+  // known. Guarded per rootPath so a re-render never re-summons. Main window only
+  // (this MainApp path is gated to the primary window, like useProcessMonitor above).
+  useEffect(() => {
+    const rootPath = currentWorkspace?.rootPath
+    if (!rootPath || !selectedWorkspaceId) return
+    cateAgentController.start()
+    if (cateAgentRestoredRef.current.has(rootPath)) return
+    cateAgentRestoredRef.current.add(rootPath)
+    void cateAgentController.restore(selectedWorkspaceId, rootPath)
+  }, [currentWorkspace?.rootPath, selectedWorkspaceId])
 
   // Sync the OS window title to the active workspace name. On macOS this is
   // what each native tab in the title bar displays, so the user can tell
