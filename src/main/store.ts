@@ -6,7 +6,7 @@
 // lives in dedicated hand-editable JSON files (see ./workspaceStateStore).
 // =============================================================================
 
-import { ipcMain, app, BrowserWindow, nativeTheme } from 'electron'
+import { ipcMain, app, BrowserWindow, nativeTheme, session } from 'electron'
 import log from './logger'
 import fsSync from 'fs'
 import path from 'path'
@@ -42,6 +42,7 @@ import {
   BROWSER_BOOKMARKS_ADD,
   BROWSER_BOOKMARKS_REMOVE,
   BROWSER_BOOKMARKS_CHANGED,
+  BROWSER_CLEAR_DATA,
 } from '../shared/ipc-channels'
 import type { AppSettings, SidebarSession, RemoteProjectEntry } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
@@ -523,5 +524,19 @@ export function registerHandlers(): void {
   ipcMain.handle(BROWSER_BOOKMARKS_REMOVE, async (_event, url: string) => {
     removeBookmark(url)
     broadcastToAll(BROWSER_BOOKMARKS_CHANGED)
+  })
+
+  // Clear browsing data: wipe the shared browser session's cookies/cache/storage
+  // (logs the user out of sites) plus the global history. Bookmarks are kept.
+  ipcMain.handle(BROWSER_CLEAR_DATA, async () => {
+    const ses = session.fromPartition('persist:browser-shared')
+    try {
+      await ses.clearStorageData()
+      await ses.clearCache()
+    } catch (err) {
+      log.warn('[browser] clear data failed: %O', err)
+    }
+    clearBrowserHistory()
+    broadcastToAll(BROWSER_HISTORY_CHANGED)
   })
 }

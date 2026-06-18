@@ -233,6 +233,7 @@ export const BROWSER_BOOKMARKS_GET = 'browser-bookmarks:get'
 export const BROWSER_BOOKMARKS_ADD = 'browser-bookmarks:add'
 export const BROWSER_BOOKMARKS_REMOVE = 'browser-bookmarks:remove'
 export const BROWSER_BOOKMARKS_CHANGED = 'browser-bookmarks:changed' // main -> renderer broadcast
+export const BROWSER_CLEAR_DATA = 'browser:clearData' // clear shared-session cookies/cache/storage + history
 
 // Layouts
 export const LAYOUT_SAVE = 'layout:save'

@@ -60,6 +60,8 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   autoSuspendIdleTerminals: 'boolean',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
+  browserShowBookmarksBar: 'boolean',
+  browserNewTabBehavior: 'string',
   terminalLinkOpenTarget: 'string',
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',

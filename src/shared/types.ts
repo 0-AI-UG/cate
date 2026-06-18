@@ -537,6 +537,9 @@ export type ThemeSelection = 'system' | string
 
 export type BrowserSearchEngine = 'google' | 'duckDuckGo' | 'bing' | 'brave'
 
+/** What a new browser panel / new tab opens to. */
+export type BrowserNewTabBehavior = 'startPage' | 'homepage' | 'blank'
+
 export const SEARCH_ENGINE_URLS: Record<BrowserSearchEngine, string> = {
   google: 'https://www.google.com/search?q=',
   duckDuckGo: 'https://duckduckgo.com/?q=',
@@ -1232,6 +1235,10 @@ export interface AppSettings {
   // Browser
   browserHomepage: string
   browserSearchEngine: BrowserSearchEngine
+  /** Show the horizontal bookmarks bar (favorite chips) under the URL bar. */
+  browserShowBookmarksBar: boolean
+  /** What a freshly-opened browser panel / new tab loads. */
+  browserNewTabBehavior: BrowserNewTabBehavior
   /** Where a Cmd/Ctrl+clicked terminal link opens.
    *  - 'ask': prompt once, with an option to remember the choice.
    *  - 'canvas': reuse/create an in-app browser panel.
@@ -1337,8 +1344,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoSuspendIdleTerminals: true,
 
   // Browser
-  browserHomepage: 'about:blank',
+  browserHomepage: '',
   browserSearchEngine: 'google',
+  browserShowBookmarksBar: true,
+  browserNewTabBehavior: 'startPage',
   terminalLinkOpenTarget: 'ask',
 
   // Sidebar

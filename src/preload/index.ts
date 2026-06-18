@@ -118,6 +118,7 @@ import {
   BROWSER_BOOKMARKS_ADD,
   BROWSER_BOOKMARKS_REMOVE,
   BROWSER_BOOKMARKS_CHANGED,
+  BROWSER_CLEAR_DATA,
   FS_DELETE,
   FS_RENAME,
   FS_MKDIR,
@@ -416,6 +417,7 @@ const invokeForwarders = {
   browserBookmarksGet: makeInvoker<'browserBookmarksGet'>(BROWSER_BOOKMARKS_GET),
   browserBookmarksAdd: makeInvoker<'browserBookmarksAdd'>(BROWSER_BOOKMARKS_ADD),
   browserBookmarksRemove: makeInvoker<'browserBookmarksRemove'>(BROWSER_BOOKMARKS_REMOVE),
+  browserClearData: makeInvoker<'browserClearData'>(BROWSER_CLEAR_DATA),
 
   sidebarSessionGet: makeInvoker<'sidebarSessionGet'>(SIDEBAR_SESSION_GET),
   sidebarSessionSet: makeInvoker<'sidebarSessionSet'>(SIDEBAR_SESSION_SET),

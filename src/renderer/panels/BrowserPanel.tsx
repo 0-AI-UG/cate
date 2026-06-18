@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck, Star } from '@phosphor-icons/react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck, Star, DotsThreeVertical } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
@@ -13,6 +13,9 @@ import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { SEARCH_ENGINE_URLS, BROWSER_NEW_TAB_URL, isStartPageUrl } from '../../shared/types'
 import { UrlSuggestions } from './UrlSuggestions'
 import { StartPage } from './StartPage'
+import { BookmarksBar } from './BookmarksBar'
+import { BrowserMenu } from './BrowserMenu'
+import { BrowserSettingsPopover } from './BrowserSettingsPopover'
 import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
@@ -276,6 +279,22 @@ export default function BrowserPanel({
   // the start page or about: pages.
   const isBookmarked = bookmarks.some((b) => b.url === currentUrl)
   const canBookmark = !isStartPageUrl(currentUrl) && !currentUrl.startsWith('about:')
+
+  // Chrome-like chrome: bookmarks bar (setting-driven), overflow menu + settings.
+  const showBookmarksBar = useSettingsStore((s) => s.browserShowBookmarksBar)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // "New tab" → a new browser panel on the canvas (opens the start page).
+  const createBrowser = useAppStore((s) => s.createBrowser)
+  const handleNewTab = useCallback(() => {
+    createBrowser(workspaceId)
+  }, [createBrowser, workspaceId])
+
+  const handleClearData = useCallback(async () => {
+    await window.electronAPI.browserClearData()
+    setSettingsOpen(false)
+  }, [])
 
   const handleUrlBarKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
@@ -574,7 +593,7 @@ export default function BrowserPanel({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="flex flex-col w-full h-full" onKeyDown={handleChromeKeyDown}>
+    <div className="flex flex-col w-full h-full relative" onKeyDown={handleChromeKeyDown}>
       {/* URL bar */}
       <div className="h-10 flex items-center gap-2 px-2 bg-surface-4 border-b border-subtle shrink-0">
         {/* Navigation pill */}
@@ -678,7 +697,36 @@ export default function BrowserPanel({
             <Camera size={13} />
           </button>
         </Tooltip>
+
+        {/* Overflow menu (new tab, bookmarks bar, settings) */}
+        <Tooltip label="Menu">
+          <button
+            onClick={() => { setMenuOpen((o) => !o); setSettingsOpen(false) }}
+            className="w-7 h-7 flex items-center justify-center rounded-full border border-subtle bg-surface-5 hover:bg-hover text-primary transition-colors"
+            aria-label="Browser menu"
+          >
+            <DotsThreeVertical size={15} weight="bold" />
+          </button>
+        </Tooltip>
       </div>
+
+      {/* Bookmarks bar */}
+      {showBookmarksBar && <BookmarksBar onNavigate={navigateTo} />}
+
+      {/* Overflow menu + settings popover */}
+      {menuOpen && (
+        <BrowserMenu
+          onNewTab={handleNewTab}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onClose={() => setMenuOpen(false)}
+        />
+      )}
+      {settingsOpen && (
+        <BrowserSettingsPopover
+          onClose={() => setSettingsOpen(false)}
+          onClearData={handleClearData}
+        />
+      )}
 
       {/* Webview + overlays container */}
       <div className="flex-1 relative">

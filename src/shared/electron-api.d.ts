@@ -517,6 +517,9 @@ export interface ElectronAPI {
   /** Remove a bookmark by URL. */
   browserBookmarksRemove(url: string): Promise<void>
 
+  /** Clear the shared browser session's cookies/cache/storage + history. */
+  browserClearData(): Promise<void>
+
   /** Subscribe to history changes (any window's mutation, or an external edit). */
   onBrowserHistoryChanged(callback: () => void): () => void
 
