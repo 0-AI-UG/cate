@@ -62,7 +62,21 @@ vi.mock('../windowRegistry', () => {
 })
 vi.mock('../shellEnv', () => ({ getShellEnv: () => ({}) }))
 vi.mock('../shellResolver', () => ({ resolveShell: () => ({ path: '/bin/sh', fallback: false }) }))
-vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
+
+// Hoisted spies shared with the module mocks below (vi.mock factories are
+// hoisted above all other code, so the spies they reference must be too).
+const diag = vi.hoisted(() => ({ warn: vi.fn(), ptyCreate: vi.fn() }))
+vi.mock('../logger', () => ({ default: { warn: diag.warn, info: () => {}, error: () => {}, debug: () => {} } }))
+
+// A fake runtime whose process.create is the hoisted spy, so the instant-exit
+// tests can drive onData/onExit deterministically through the real spawnTerminal.
+vi.mock('../runtime/runtimeManager', () => ({
+  runtimes: {
+    resolve: () => ({ validateCwd: (p: string) => p, process: { create: diag.ptyCreate } }),
+    disposeAll: () => Promise.resolve(),
+  },
+}))
+vi.mock('../runtime/locator', () => ({ parseLocator: (cwd: string) => ({ runtimeId: 'local', path: cwd }) }))
 
 // --- terminalLifecycle (renderer) deps, stubbed so getOrCreate/dispose run
 //     without a real xterm/DOM/store stack. registryState is left REAL so the
@@ -363,5 +377,56 @@ describe('terminalLifecycle dispose-during-creation', () => {
     await pending
 
     expect(terminalKill).toHaveBeenCalledWith('pty-freshly-created')
+  })
+})
+
+// ===========================================================================
+// Instant-exit diagnostics (#401): a fresh shell that exits 0 immediately with
+// no output never became a session. spawnTerminal logs it with the resolved
+// shell so the cause is captured for the next report.
+// ===========================================================================
+describe('instant-exit diagnostics (#401)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    diag.warn.mockClear()
+    diag.ptyCreate.mockReset()
+  })
+
+  // Spawn through the real TERMINAL_CREATE handler; return the captured PTY
+  // callbacks so the test fires data/exit deterministically (after create
+  // resolves, so the resolved shell is recorded).
+  async function spawn(shell = '/bin/zsh'): Promise<{
+    onData: (id: string, d: string) => void
+    onExit: (id: string, c: number) => void
+  }> {
+    let cbs!: { onData: (id: string, d: string) => void; onExit: (id: string, c: number) => void }
+    diag.ptyCreate.mockImplementation(async (_opts: unknown, onData: never, onExit: never) => {
+      cbs = { onData, onExit }
+      return { id: 'pty-x', pid: 123, shell }
+    })
+    const mod = await import('./terminal')
+    mod.registerHandlers()
+    await handlers.get('terminal:create')!({}, { cols: 80, rows: 24 })
+    return cbs
+  }
+
+  it('warns (with the resolved shell) when a fresh terminal exits 0 immediately with no output', async () => {
+    const { onExit } = await spawn('/bin/zsh')
+    onExit('pty-x', 0)
+    expect(diag.warn).toHaveBeenCalled()
+    expect(diag.warn.mock.calls[0].join(' ')).toContain('/bin/zsh')
+  })
+
+  it('does not warn when the shell produced output before exiting 0', async () => {
+    const { onData, onExit } = await spawn()
+    onData('pty-x', 'prompt$ ')
+    onExit('pty-x', 0)
+    expect(diag.warn).not.toHaveBeenCalled()
+  })
+
+  it('does not warn for a non-zero exit code', async () => {
+    const { onExit } = await spawn()
+    onExit('pty-x', 1)
+    expect(diag.warn).not.toHaveBeenCalled()
   })
 })

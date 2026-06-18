@@ -14,6 +14,11 @@ export interface UpdateStatus {
   version: string | null
   /** Download progress 0-100 (present while state === 'downloading'). */
   percent?: number
+  /** Transient flag on a re-broadcast of an already-staged 'downloaded' update,
+   *  set when the user explicitly asked ("Check for Updates…"). Tells the in-app
+   *  modal to re-open even for a version it was already dismissed for. Never
+   *  cached into lastStatus — it's a one-off, not part of the steady state. */
+  forceShow?: boolean
 }
 
 export interface NativeContextMenuItem {
