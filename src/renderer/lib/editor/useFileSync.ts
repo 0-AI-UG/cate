@@ -32,7 +32,7 @@ import type * as monaco from 'monaco-editor'
 import log from '../logger'
 import { useAppStore } from '../../stores/appStore'
 import { watchFsRoot } from '../fs/fsWatchManager'
-import { isLoadFailed } from './modelCache'
+import { isLoadFailed, getBaseline, rememberBaseline } from './modelCache'
 import { classifyExternalEvent, shouldBlockOverwrite } from './externalConflict'
 import { threeWayMerge } from './threeWayMerge'
 
@@ -77,6 +77,9 @@ export interface FileSync {
   isExternalReplace: () => boolean
   /** Guarded save (Save-As when untitled, overwrite-guard otherwise). */
   save: () => Promise<boolean>
+  /** Reconcile a reattached warm model with disk (reopen). Reloads a clean stale
+   *  buffer, raises a conflict for unsaved edits, no-ops if disk is unchanged. */
+  resyncFromDisk: () => Promise<void>
   reload: () => void
   keepMine: () => void
   keepBoth: () => void
@@ -135,9 +138,18 @@ export function useFileSync({
     }
   }, [workspaceId, panelId])
 
-  const noteLoaded = useCallback((content: string) => {
+  // Set the sync baseline (the disk content we last synced with) both locally
+  // and in the shared model cache, so a later reopen of this file can recover it
+  // and tell unsaved edits apart from a stale-but-clean buffer.
+  const setBaseline = useCallback((content: string) => {
     baselineRef.current = content
+    const path = filePathRef.current
+    if (path) rememberBaseline(path, content)
   }, [])
+
+  const noteLoaded = useCallback((content: string) => {
+    setBaseline(content)
+  }, [setBaseline])
 
   const isExternalReplace = useCallback(
     () => !!filePathRef.current && externalReplacePaths.has(filePathRef.current),
@@ -221,6 +233,7 @@ export function useFileSync({
     }
 
     baselineRef.current = content
+    rememberBaseline(targetPath, content)
     clearDirty()
     // clearDirty restores the title for an already-known path; for the initial
     // Save-As below we also set the freshly-derived name.
@@ -248,22 +261,22 @@ export function useFileSync({
   const reload = useCallback(() => {
     const content = conflict?.kind === 'changed' ? conflict.diskContent ?? '' : ''
     replaceBuffer(content)
-    baselineRef.current = content
+    setBaseline(content)
     clearDirty()
     setShowDiff(false)
     setConflict(null)
-  }, [conflict, clearDirty, replaceBuffer])
+  }, [conflict, clearDirty, replaceBuffer, setBaseline])
 
   // Keep the unsaved buffer over the external version. Adopt the on-disk content
   // as the new baseline so the next save writes the buffer straight over it
   // instead of re-flagging the same conflict.
   const keepMine = useCallback(() => {
     if (conflict?.kind === 'changed' && conflict.diskContent !== undefined) {
-      baselineRef.current = conflict.diskContent
+      setBaseline(conflict.diskContent)
     }
     setShowDiff(false)
     setConflict(null)
-  }, [conflict])
+  }, [conflict, setBaseline])
 
   // Merge both sides: baseline = common ancestor, buffer = mine, disk = theirs.
   // Non-overlapping edits combine cleanly; overlapping edits get conflict
@@ -282,10 +295,10 @@ export function useFileSync({
     noteUserEdit()
     // Disk still holds `theirs`; make it the baseline so saving the merged buffer
     // passes the guard (disk === baseline) and writes cleanly.
-    baselineRef.current = theirs
+    setBaseline(theirs)
     setShowDiff(false)
     setConflict(null)
-  }, [conflict, getModel, replaceBuffer, noteUserEdit])
+  }, [conflict, getModel, replaceBuffer, noteUserEdit, setBaseline])
 
   // Re-create a deleted file from the buffer contents.
   const saveToRestore = useCallback(async () => {
@@ -304,6 +317,68 @@ export function useFileSync({
   }, [])
 
   // ---------------------------------------------------------------------------
+  // Reconcile the buffer against disk
+  // ---------------------------------------------------------------------------
+
+  // Apply a fresh on-disk version after an external event KNOWN to have changed
+  // disk: silently reload a clean buffer, or raise a `changed` conflict when the
+  // buffer is dirty so unsaved edits aren't lost.
+  const applyDiskContent = useCallback((content: string) => {
+    const model = getModel()
+    if (!model || model.isDisposed()) return
+    // Disk already matches the buffer (e.g. our own save fired the event) —
+    // nothing diverges, so clear any stale conflict and skip the reset.
+    if (model.getValue() === content) {
+      setBaseline(content)
+      setConflict(null)
+      return
+    }
+    if (isDirtyRef.current) {
+      setConflict({ kind: 'changed', diskContent: content })
+      return
+    }
+    replaceBuffer(content)
+    setBaseline(content)
+    setConflict(null)
+  }, [getModel, replaceBuffer, setBaseline])
+
+  // Reconcile the buffer with disk when a warm cached model is reattached on
+  // reopen: while the panel was closed no watcher kept it current, so the buffer
+  // may be stale-but-clean or hold unsaved edits. Recover the baseline the model
+  // was last synced with (kept in the model cache) to tell those apart safely:
+  //   • clean buffer, disk moved → silent reload (the buffer catches up)
+  //   • unsaved edits, disk moved → `changed` conflict (never clobber edits)
+  //   • disk unchanged            → leave the buffer, just restore the dirty dot
+  const resyncFromDisk = useCallback(async () => {
+    const path = filePathRef.current
+    if (!path || diffMode || path.startsWith('cate-runtime://')) return
+    const model = getModel()
+    if (!model || model.isDisposed()) return
+    const baseline = getBaseline(path)
+    if (baseline === undefined) return // unknown baseline → don't risk a reload
+    baselineRef.current = baseline
+    const buffer = model.getValue()
+    const dirty = buffer !== baseline
+    // A warm reopen starts a fresh hook (isDirty=false); restore the marker so a
+    // genuinely-dirty buffer is treated as such by the reconcile below and the UI.
+    if (dirty && !isDirtyRef.current) noteUserEdit()
+    let disk: string
+    try {
+      disk = await window.electronAPI.fsReadFile(path, workspaceId)
+    } catch {
+      return // gone/unreadable while closed — leave it to the live watcher
+    }
+    if (disk === baseline) return // nothing changed on disk while we were closed
+    if (dirty) {
+      setConflict({ kind: 'changed', diskContent: disk })
+    } else {
+      replaceBuffer(disk)
+      setBaseline(disk)
+      setConflict(null)
+    }
+  }, [workspaceId, diffMode, getModel, replaceBuffer, noteUserEdit, setBaseline])
+
+  // ---------------------------------------------------------------------------
   // Watch the file on disk for external edits / deletion
   // ---------------------------------------------------------------------------
 
@@ -315,28 +390,6 @@ export function useFileSync({
 
     const targetPosix = filePath.replace(/\\/g, '/')
     let disposed = false
-
-    // Apply a fresh on-disk version: silently reload a clean buffer, or raise a
-    // `changed` conflict when the buffer is dirty so unsaved edits aren't lost.
-    const applyDiskContent = (content: string) => {
-      if (disposed) return
-      const model = getModel()
-      if (!model || model.isDisposed()) return
-      // Disk already matches the buffer (e.g. our own save fired the event) —
-      // nothing diverges, so clear any stale conflict and skip the reset.
-      if (model.getValue() === content) {
-        baselineRef.current = content
-        setConflict(null)
-        return
-      }
-      if (isDirtyRef.current) {
-        setConflict({ kind: 'changed', diskContent: content })
-        return
-      }
-      replaceBuffer(content)
-      baselineRef.current = content
-      setConflict(null)
-    }
 
     const stop = watchFsRoot(
       rootPath,
@@ -350,7 +403,7 @@ export function useFileSync({
             if (disposed) return
             window.electronAPI
               .fsReadFile(filePath, workspaceId)
-              .then((content) => applyDiskContent(content))
+              .then((content) => { if (!disposed) applyDiskContent(content) })
               .catch(() => {
                 if (disposed) return
                 // Genuinely deleted: the buffer is now unsaved work with no file
@@ -365,7 +418,7 @@ export function useFileSync({
 
         window.electronAPI
           .fsReadFile(filePath, workspaceId)
-          .then((content) => applyDiskContent(content))
+          .then((content) => { if (!disposed) applyDiskContent(content) })
           .catch(() => { /* vanished between event and read — leave buffer as-is */ })
       },
       workspaceId,
@@ -375,7 +428,7 @@ export function useFileSync({
       disposed = true
       stop()
     }
-  }, [filePath, rootPath, workspaceId, diffMode, getModel, replaceBuffer, noteUserEdit])
+  }, [filePath, rootPath, workspaceId, diffMode, applyDiskContent, noteUserEdit])
 
   // Reset conflict state when the panel switches files (a single EditorPanel
   // mount is reused across dock tabs, so stale conflict UI must not carry over).
@@ -398,6 +451,7 @@ export function useFileSync({
     noteUserEdit,
     isExternalReplace,
     save,
+    resyncFromDisk,
     reload,
     keepMine,
     keepBoth,

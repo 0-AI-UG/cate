@@ -15,6 +15,11 @@
     { "id": "career-ops", "repo": "santifer/career-ops", "path": ".agents/skills" },
     { "id": "taste-skill", "repo": "Leonxlnx/taste-skill", "path": "skills" },
     { "id": "humanizer", "repo": "blader/humanizer", "path": "" },
-    { "id": "notebooklm", "repo": "teng-lin/notebooklm-py", "path": "" }
+    { "id": "notebooklm", "repo": "teng-lin/notebooklm-py", "path": "" },
+    { "id": "wshobson-agents", "repo": "wshobson/agents", "path": "plugins" },
+    { "id": "karpathy-skills", "repo": "multica-ai/andrej-karpathy-skills", "path": "skills" },
+    { "id": "openai-skills", "repo": "openai/skills", "path": "skills" },
+    { "id": "google-skills", "repo": "google/skills", "path": "skills" },
+    { "id": "huggingface-skills", "repo": "huggingface/skills", "path": "skills" }
   ]
 }

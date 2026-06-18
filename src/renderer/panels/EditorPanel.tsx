@@ -504,11 +504,12 @@ export default function EditorPanel({
         retainModel(filePath)
         modelRetained = true
         editor.setModel(cached)
-        // Best-effort baseline from the warm model (assumed to mirror disk). If
-        // the file changed on disk while this panel was closed, the save guard
-        // catches the divergence on the next save.
-        sync.noteLoaded(cached.getValue())
         applyPendingReveal()
+        // The warm model may be stale: nothing kept it current while this panel
+        // was closed. Reconcile with disk — a clean buffer silently catches up, a
+        // buffer with unsaved edits raises a conflict instead of being clobbered.
+        // (resyncFromDisk recovers the real disk baseline from the model cache.)
+        void sync.resyncFromDisk()
       } else {
         const language = detectLanguage(filePath)
         const targetPath = filePath
@@ -703,6 +704,14 @@ export default function EditorPanel({
       automaticLayout: false,
       scrollBeyondLastLine: false,
       minimap: { enabled: false },
+      renderOverviewRuler: false,
+      overviewRulerLanes: 0,
+      scrollbar: {
+        verticalScrollbarSize: 8,
+        horizontalScrollbarSize: 8,
+        verticalSliderSize: 8,
+        horizontalSliderSize: 8,
+      },
       padding: { top: 8, bottom: 8 },
     })
     diff.setModel({ original, modified })
@@ -759,27 +768,20 @@ export default function EditorPanel({
       {conflict && !diffMode && (
         <EditorConflictBanner
           kind={conflict.kind}
+          showDiff={showDiff}
           onReload={reload}
           onKeepMine={keepMine}
           onKeepBoth={keepBoth}
           onViewDiff={openDiff}
+          onCloseDiff={closeDiff}
           onSaveToRestore={saveToRestore}
           onDismiss={dismiss}
         />
       )}
       <div className="flex-1 min-h-0 relative">
         {showDiff && conflict?.kind === 'changed' && (
-          <div className="absolute inset-0 z-30 flex flex-col bg-surface-1">
-            <div className="flex items-center justify-between shrink-0 px-2 py-0.5 border-b border-subtle">
-              <span className="text-[11px] text-secondary">On disk vs your unsaved changes</span>
-              <button
-                onClick={closeDiff}
-                className="px-2 py-0.5 rounded text-[11px] font-medium bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary transition-colors"
-              >
-                Close diff
-              </button>
-            </div>
-            <div ref={diffOverlayRef} className="flex-1 min-h-0" />
+          <div className="absolute inset-0 z-30 bg-surface-1">
+            <div ref={diffOverlayRef} className="w-full h-full" />
           </div>
         )}
         {markdownPreview && isMarkdown && (

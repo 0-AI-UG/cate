@@ -19,6 +19,8 @@ import { useFileSync, type FileSync, type UseFileSyncParams } from './useFileSyn
 
 const h = vi.hoisted(() => ({
   watchListener: null as ((e: { type: string; path: string }) => void) | null,
+  watchedPath: null as string | null,
+  baselines: new Map<string, string>(),
   store: {
     setPanelDirty: vi.fn(),
     updatePanelTitle: vi.fn(),
@@ -29,7 +31,8 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('../fs/fsWatchManager', () => ({
-  watchFsRoot: (_root: string, listener: (e: { type: string; path: string }) => void) => {
+  watchFsRoot: (root: string, listener: (e: { type: string; path: string }) => void) => {
+    h.watchedPath = root
     h.watchListener = listener
     return () => {
       h.watchListener = null
@@ -41,7 +44,13 @@ vi.mock('../../stores/appStore', () => ({
   useAppStore: Object.assign(() => undefined, { getState: () => h.store }),
 }))
 
-vi.mock('./modelCache', () => ({ isLoadFailed: () => false }))
+// The disk baseline lives in the model cache so it survives a panel reopen; back
+// the mock with a real map so noteLoaded/save/resync round-trip through it.
+vi.mock('./modelCache', () => ({
+  isLoadFailed: () => false,
+  rememberBaseline: (p: string, c: string) => { h.baselines.set(p, c) },
+  getBaseline: (p: string) => h.baselines.get(p),
+}))
 
 // --- harness ------------------------------------------------------------------
 
@@ -100,6 +109,8 @@ async function settle(ms = 0) {
 
 beforeEach(() => {
   h.watchListener = null
+  h.watchedPath = null
+  h.baselines.clear()
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     fsReadFile: vi.fn(),
     fsWriteFile: vi.fn().mockResolvedValue(undefined),
@@ -278,5 +289,93 @@ describe('useFileSync — resolutions', () => {
 
     expect(electronApi().fsWriteFile).toHaveBeenCalledWith(FILE, 'rescued content', 'w1')
     expect(latest!.conflict).toBeNull()
+  })
+})
+
+describe('useFileSync — unified root watcher', () => {
+  it('subscribes to the workspace ROOT, not the file path (one shared watcher)', () => {
+    mount(makeModel('x'))
+    // The editor rides the single refcounted root watcher (shared with the file
+    // tree). The matcher is what lets hidden-file events through — see
+    // createFsIgnoreMatcher tests.
+    expect(h.watchedPath).toBe('/proj')
+  })
+
+  it('reloads a clean dotfile buffer when its watch event fires', async () => {
+    const DOT = '/proj/.gitignore'
+    const model = makeModel('old')
+    mount(model, { filePath: DOT })
+    act(() => { latest!.noteLoaded('old') })
+    electronApi().fsReadFile.mockResolvedValue('new from disk')
+
+    act(() => { h.watchListener!({ type: 'update', path: DOT }) })
+    await settle()
+
+    expect(model.getValue()).toBe('new from disk')
+    expect(latest!.conflict).toBeNull()
+  })
+})
+
+describe('useFileSync — resyncFromDisk (reopen reconcile)', () => {
+  it('catches up a clean, stale buffer to the on-disk version', async () => {
+    const model = makeModel('old disk')
+    mount(model)
+    act(() => { latest!.noteLoaded('old disk') }) // clean: buffer === baseline
+    electronApi().fsReadFile.mockResolvedValue('new disk') // changed while closed
+
+    await act(async () => { await latest!.resyncFromDisk() })
+
+    expect(model.getValue()).toBe('new disk')
+    expect(latest!.conflict).toBeNull()
+  })
+
+  it('raises a conflict (never clobbers) when unsaved edits meet a changed disk', async () => {
+    const model = makeModel('my unsaved edits')
+    mount(model)
+    act(() => { latest!.noteLoaded('original') }) // buffer diverges from baseline
+    electronApi().fsReadFile.mockResolvedValue('their disk changes')
+
+    await act(async () => { await latest!.resyncFromDisk() })
+
+    expect(latest!.conflict).toEqual({ kind: 'changed', diskContent: 'their disk changes' })
+    expect(model.getValue()).toBe('my unsaved edits') // buffer preserved
+    expect(latest!.isDirtyRef.current).toBe(true) // dirty marker restored on reopen
+  })
+
+  it('keeps unsaved edits and restores the dirty marker when disk is unchanged', async () => {
+    const model = makeModel('my unsaved edits')
+    mount(model)
+    act(() => { latest!.noteLoaded('original') })
+    electronApi().fsReadFile.mockResolvedValue('original') // disk === baseline
+
+    await act(async () => { await latest!.resyncFromDisk() })
+
+    expect(latest!.conflict).toBeNull()
+    expect(model.getValue()).toBe('my unsaved edits')
+    expect(latest!.isDirtyRef.current).toBe(true)
+  })
+
+  it('is a no-op when the file is unreadable (deleted while closed)', async () => {
+    const model = makeModel('buffer')
+    mount(model)
+    act(() => { latest!.noteLoaded('buffer') })
+    electronApi().fsReadFile.mockRejectedValue(new Error('ENOENT'))
+
+    await act(async () => { await latest!.resyncFromDisk() })
+
+    expect(latest!.conflict).toBeNull()
+    expect(model.getValue()).toBe('buffer')
+  })
+
+  it('does not touch the buffer when no baseline is known', async () => {
+    const model = makeModel('buffer')
+    mount(model) // no noteLoaded → cache has no baseline for this path
+    electronApi().fsReadFile.mockResolvedValue('something else')
+
+    await act(async () => { await latest!.resyncFromDisk() })
+
+    expect(model.getValue()).toBe('buffer')
+    expect(latest!.conflict).toBeNull()
+    expect(electronApi().fsReadFile).not.toHaveBeenCalled()
   })
 })
