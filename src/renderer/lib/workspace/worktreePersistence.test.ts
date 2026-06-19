@@ -180,5 +180,49 @@ describe('worktree session persistence', () => {
     expect(snap.panels?.['dt-1']?.worktreeId).toBe('wt-x')
     // The terminal's working directory is carried for respawn.
     expect(snap.terminalCwds?.['t-1']).toBe(WT_X.path)
+    // The cwd is also re-attached to panel.cwd. TerminalPanel reads panel.cwd
+    // directly, so without this the terminal respawned at the workspace root
+    // instead of its worktree even though the worktree tag survived.
+    expect(snap.panels?.['t-1']?.cwd).toBe(WT_X.path)
+  })
+
+  it('restoring from on-disk files leaves the terminal panel cwd at its worktree, not the workspace root', async () => {
+    // End-to-end across both restore layers (files -> projectFilesToSnapshot ->
+    // restoreSession -> appStore), asserting the exact field TerminalPanel reads
+    // as panelCwd. Before the fix panel.cwd was dropped on restore, so this
+    // landed undefined and TerminalPanel fell back to the workspace root (ROOT)
+    // even though the worktree tag survived — the terminal opened in the primary
+    // checkout while the pill still claimed the worktree.
+    const wsFile: ProjectWorkspaceFile = {
+      version: 1,
+      name: 'WT',
+      color: '',
+      panels: { 't-1': { type: 'terminal', title: 'shell' } },
+      canvases: {
+        cv: {
+          id: 'cv',
+          canvasNodes: {
+            'node-t-1': { id: 'node-t-1', panelId: 't-1', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
+          },
+          zoomLevel: 1,
+          viewportOffset: { x: 0, y: 0 },
+        },
+      },
+    }
+    const sessFile: ProjectSessionFile = {
+      version: 1,
+      workspaceId: 'ws',
+      panels: { 't-1': { panelId: 't-1', workingDirectory: WT_X.path, worktreeId: 'wt-x' } },
+      worktrees: [WT_PRIMARY, WT_X],
+    }
+
+    const ws = useAppStore.getState().addWorkspace('WT', ROOT, 'ws')
+    await restoreSession(projectFilesToSnapshot(wsFile, sessFile, ROOT), ws)
+
+    const panel = useAppStore.getState().workspaces.find((w) => w.id === ws)!.panels['t-1']
+    expect(panel?.cwd).toBe(WT_X.path)
+    expect(panel?.cwd).not.toBe(ROOT)
+    // The worktree tag survives alongside it, so the pill and the shell agree.
+    expect(panel?.worktreeId).toBe('wt-x')
   })
 })

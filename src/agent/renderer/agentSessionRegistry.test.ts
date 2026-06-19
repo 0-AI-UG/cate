@@ -10,6 +10,7 @@ import {
   saveAgentPanelSession,
   getAgentPanelSession,
   disposeAgentPanel,
+  disposeAgentChats,
 } from './agentSessionRegistry'
 import { useAgentStore } from './agentStore'
 
@@ -50,6 +51,38 @@ describe('disposeAgentPanel', () => {
 
   it('is a no-op for an unknown panel', () => {
     disposeAgentPanel('does-not-exist')
+    expect(agentDispose).not.toHaveBeenCalled()
+  })
+})
+
+describe('disposeAgentChats', () => {
+  // The worktree-switch reinit disposes the old checkout's chats (pi process +
+  // store slice) and reopens fresh ones under the SAME panelId, so it must NOT
+  // touch the registry entry the way disposeAgentPanel does.
+  it('disposes each chat\'s pi + store slice without deleting the registry entry', () => {
+    const storeDispose = vi.spyOn(useAgentStore.getState(), 'dispose')
+    saveAgentPanelSession('panel-switch', {
+      openChats: [{ agentKey: 'old-1', sessionFile: '/wt-x/s.jsonl' }],
+      activeAgentKey: 'old-1',
+      readyByKey: { 'old-1': true },
+    })
+
+    disposeAgentChats([
+      { agentKey: 'old-1', sessionFile: '/wt-x/s.jsonl' },
+      { agentKey: 'old-2', sessionFile: null },
+    ])
+
+    expect(agentDispose).toHaveBeenCalledTimes(2)
+    expect(agentDispose).toHaveBeenCalledWith('old-1')
+    expect(agentDispose).toHaveBeenCalledWith('old-2')
+    expect(storeDispose).toHaveBeenCalledWith('old-1')
+    expect(storeDispose).toHaveBeenCalledWith('old-2')
+    // Registry entry survives — the panel lives on and reopens in the new cwd.
+    expect(getAgentPanelSession('panel-switch')).toBeDefined()
+  })
+
+  it('is a no-op for an empty chat list', () => {
+    disposeAgentChats([])
     expect(agentDispose).not.toHaveBeenCalled()
   })
 })

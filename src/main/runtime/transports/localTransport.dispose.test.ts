@@ -34,6 +34,11 @@ const UNKILLABLE_EXCEPT_HARD = `
   setInterval(() => {}, 1000);
 `
 
+const EXITS_IMMEDIATELY = `
+  process.stdout.write('ready\\n');
+  process.exit(0);
+`
+
 beforeAll(async () => {
   dir = await mkdtemp(path.join(os.tmpdir(), 'cate-dispose-test-'))
 })
@@ -44,6 +49,7 @@ afterAll(async () => {
 
 async function launchWith(script: string, name: string): Promise<{
   transport: LocalSubprocessTransport
+  channel: Awaited<ReturnType<LocalSubprocessTransport['launch']>>
   exit: Promise<{ code: number | null }>
 }> {
   const bundlePath = path.join(dir, `${name}.cjs`)
@@ -59,7 +65,7 @@ async function launchWith(script: string, name: string): Promise<{
     channel.onData((chunk) => { if (chunk.toString().includes('ready')) resolve() })
   })
   const exit = new Promise<{ code: number | null }>((resolve) => channel.onClose(resolve))
-  return { transport, exit }
+  return { transport, channel, exit }
 }
 
 describe('LocalSubprocessTransport graceful shutdown (FIX 16)', () => {
@@ -83,5 +89,12 @@ describe('LocalSubprocessTransport graceful shutdown (FIX 16)', () => {
     // after the grace window — exit code is null (killed by signal).
     expect(code).toBe(null)
     expect(Date.now() - start).toBeGreaterThanOrEqual(1000)
+  }, 15_000)
+
+  test('write after daemon exit fails synchronously instead of surfacing EPIPE as uncaught', async () => {
+    const { channel, exit } = await launchWith(EXITS_IMMEDIATELY, 'exits-immediately')
+    await exit
+
+    expect(() => channel.write('{"t":"req","id":1,"method":"ping","params":[]}\n')).toThrow('Runtime stdin is closed')
   }, 15_000)
 })

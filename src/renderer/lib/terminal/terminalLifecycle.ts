@@ -33,6 +33,7 @@ import {
   effectiveCursorBlink,
 } from './terminalSettings'
 import { createTerminalLinkHandler, makeTerminalKeyEventHandler } from './terminalInput'
+import { registerOsc52ClipboardHandler } from './terminalOsc52Clipboard'
 import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvider'
 import { getActiveTheme } from '../themeManager'
 import { useStatusStore } from '../../stores/statusStore'
@@ -48,6 +49,19 @@ interface CreateOpts {
   cwd?: string
   initialInput?: string
 }
+
+// A freshly-spawned shell that exits cleanly (code 0) within this window WITHOUT
+// ever producing output never became an interactive session — almost always the
+// user's shell startup files exiting, or a PTY that couldn't be allocated. A bare
+// "[Process exited with code 0]" leaves the user with nothing to act on (see #401),
+// so we print a hint pointing at the usual causes. Generous threshold: a real
+// interactive shell prints its prompt within a few ms, so anything sub-second with
+// zero bytes is the failure mode, not a session the user closed.
+const INSTANT_EXIT_THRESHOLD_MS = 1000
+const INSTANT_EXIT_HINT =
+  '\x1b[33mThe shell exited immediately without starting a session. This usually means your ' +
+  'shell startup files (~/.zshrc, ~/.zprofile, ~/.bashrc) are exiting, or a PTY could not be ' +
+  'allocated. Try a different shell in Settings, or check those files for an early "exit".\x1b[0m\r\n'
 
 /** Drive the panel tab title from an OSC 0/1/2 title — plain shells only.
  *  Agent terminals keep the detected agent name (set by useProcessMonitor and
@@ -115,6 +129,7 @@ export function createAndConfigureXtermTerminal(opts: CreateOpts): ConfiguredTer
     altClickMovesCursor: true,
     minimumContrastRatio: getContrastRatio(),
   })
+  cleanupListeners.push(registerOsc52ClipboardHandler(terminal))
 
   // FitAddon — load before opening so fit() is available immediately
   const fitAddon = new FitAddon()
@@ -162,13 +177,23 @@ export function wireTerminalListeners(args: {
   opts: CreateOpts
   terminal: Terminal
   cleanupListeners: Array<() => void>
+  /** True only for a fresh spawn (getOrCreate). Reconnects (cross-window
+   *  transfer) adopt an already-running PTY that has produced output, so the
+   *  instant-exit diagnostic below must not fire for them. */
+  freshSpawn?: boolean
 }): void {
-  const { panelId, ptyId, opts, terminal, cleanupListeners } = args
+  const { panelId, ptyId, opts, terminal, cleanupListeners, freshSpawn = false } = args
   const { electronAPI } = window
+
+  // Instant-exit diagnostic state — see INSTANT_EXIT_HINT. Wired roughly at
+  // spawn time; `sawOutput` flips on the first byte the PTY ever emits.
+  const spawnedAt = Date.now()
+  let sawOutput = false
 
   // PTY -> xterm: incoming data
   const removeDataListener = electronAPI.onTerminalData((id: string, data: string) => {
     if (id === ptyId) {
+      sawOutput = true
       terminal.write(data)
       if (outputShowsBodySpinner(data)) noteAgentSpinnerByte(ptyId)
     }
@@ -185,6 +210,9 @@ export function wireTerminalListeners(args: {
       terminal.write(
         `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`,
       )
+      if (freshSpawn && exitCode === 0 && !sawOutput && Date.now() - spawnedAt < INSTANT_EXIT_THRESHOLD_MS) {
+        terminal.write(INSTANT_EXIT_HINT)
+      }
     }
   })
   cleanupListeners.push(removeExitListener)
@@ -333,8 +361,9 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     setPtyForPanel(panelId, ptyId)
 
     // 6. Wire PTY<->xterm listeners + shell registration (shared with
-    //    reconnectTerminal via wireTerminalListeners).
-    wireTerminalListeners({ panelId, ptyId, opts, terminal, cleanupListeners })
+    //    reconnectTerminal via wireTerminalListeners). freshSpawn: this is a
+    //    brand-new PTY, so the instant-exit diagnostic applies.
+    wireTerminalListeners({ panelId, ptyId, opts, terminal, cleanupListeners, freshSpawn: true })
 
     // 11. Write initialInput immediately — the PTY buffers writes until the
     //     shell is ready to consume them, so a fixed setTimeout was both

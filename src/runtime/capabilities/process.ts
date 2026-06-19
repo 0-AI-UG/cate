@@ -254,7 +254,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
         idle.delete(id)
         onExit(id, exitCode)
       })
-      return { id, pid: pty.pid, notice: shell.notice }
+      return { id, pid: pty.pid, notice: shell.notice, shell: shell.path }
     },
 
     write(id: string, data: string): void {

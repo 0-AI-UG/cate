@@ -47,6 +47,17 @@ export function saveAgentPanelSession(panelId: string, session: AgentPanelSessio
   sessions.set(panelId, session)
 }
 
+/** Dispose the pi process + store slice for each given chat, without touching
+ *  any panel's registry entry. Shared by disposeAgentPanel (full teardown) and
+ *  AgentPanel's worktree-switch reinit, which disposes the old checkout's chats
+ *  and reopens fresh ones in the new checkout under the same panelId. */
+export function disposeAgentChats(openChats: OpenChat[]): void {
+  for (const chat of openChats) {
+    window.electronAPI?.agentDispose(chat.agentKey).catch(() => { /* */ })
+    useAgentStore.getState().dispose(chat.agentKey)
+  }
+}
+
 /** Tear down every pi chat this panel ever spawned and drop its store slices.
  *  Called from the appStore close paths (closePanel / closeAllPanels /
  *  clearCanvas) and the cross-window detach handler — the same deterministic
@@ -56,8 +67,5 @@ export function disposeAgentPanel(panelId: string): void {
   const session = sessions.get(panelId)
   if (!session) return
   sessions.delete(panelId)
-  for (const chat of session.openChats) {
-    window.electronAPI?.agentDispose(chat.agentKey).catch(() => { /* */ })
-    useAgentStore.getState().dispose(chat.agentKey)
-  }
+  disposeAgentChats(session.openChats)
 }
