@@ -61,6 +61,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   browserHomepage: 'string',
   browserSearchEngine: 'string',
   browserShowBookmarksBar: 'boolean',
+  browserShowTabSidebar: 'boolean',
   browserNewTabBehavior: 'string',
   terminalLinkOpenTarget: 'string',
   sidebarTintOpacity: 'number',

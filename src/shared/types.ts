@@ -1252,6 +1252,8 @@ export interface AppSettings {
   browserSearchEngine: BrowserSearchEngine
   /** Show the horizontal bookmarks bar (favorite chips) under the URL bar. */
   browserShowBookmarksBar: boolean
+  /** Show the vertical tab sidebar (Arc/Edge-style) on the left of the panel. */
+  browserShowTabSidebar: boolean
   /** What a freshly-opened browser panel / new tab loads. */
   browserNewTabBehavior: BrowserNewTabBehavior
   /** Where a Cmd/Ctrl+clicked terminal link opens.
@@ -1362,6 +1364,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   browserHomepage: '',
   browserSearchEngine: 'google',
   browserShowBookmarksBar: true,
+  browserShowTabSidebar: true,
   browserNewTabBehavior: 'startPage',
   terminalLinkOpenTarget: 'ask',
 

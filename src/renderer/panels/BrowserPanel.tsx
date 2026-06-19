@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck, Star, DotsThreeVertical } from '@phosphor-icons/react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, ShieldCheck, Star, DotsThreeVertical, SidebarSimple } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
@@ -16,7 +16,7 @@ import { StartPage } from './StartPage'
 import { BookmarksBar } from './BookmarksBar'
 import { BrowserMenu } from './BrowserMenu'
 import { BrowserSettingsPopover } from './BrowserSettingsPopover'
-import { BrowserTabStrip } from './BrowserTabStrip'
+import { BrowserTabSidebar } from './BrowserTabSidebar'
 import type { BrowserTab } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
@@ -382,6 +382,8 @@ export default function BrowserPanel({
 
   // Chrome-like chrome: bookmarks bar (setting-driven), overflow menu + settings.
   const showBookmarksBar = useSettingsStore((s) => s.browserShowBookmarksBar)
+  const showTabSidebar = useSettingsStore((s) => s.browserShowTabSidebar)
+  const setSetting = useSettingsStore((s) => s.setSetting)
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -695,19 +697,33 @@ export default function BrowserPanel({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="flex flex-col w-full h-full relative" onKeyDown={handleChromeKeyDown}>
-      {/* Tab strip */}
-      <BrowserTabStrip
-        tabs={tabs}
-        activeTabId={activeTabId}
-        onSelect={selectTab}
-        onClose={closeTab}
-        onNewTab={addTab}
-        onTogglePin={togglePin}
-      />
+    <div className="flex w-full h-full relative" onKeyDown={handleChromeKeyDown}>
+      {/* Vertical tab sidebar (Arc/Edge-style) */}
+      {showTabSidebar && (
+        <BrowserTabSidebar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onSelect={selectTab}
+          onClose={closeTab}
+          onNewTab={addTab}
+          onTogglePin={togglePin}
+        />
+      )}
 
+      {/* Main column: toolbar + bookmarks bar + content */}
+      <div className="flex flex-col flex-1 min-w-0 h-full">
       {/* URL bar */}
       <div className="h-10 flex items-center gap-2 px-2 bg-surface-4 border-b border-subtle shrink-0">
+        {/* Sidebar toggle */}
+        <Tooltip label={showTabSidebar ? 'Hide tabs' : 'Show tabs'}>
+          <button
+            onClick={() => setSetting('browserShowTabSidebar', !showTabSidebar)}
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-hover text-primary transition-colors shrink-0"
+            aria-label={showTabSidebar ? 'Hide tabs' : 'Show tabs'}
+          >
+            <SidebarSimple size={14} weight={showTabSidebar ? 'fill' : 'regular'} />
+          </button>
+        </Tooltip>
         {/* Navigation pill */}
         <div className="flex items-center h-7 rounded-full border border-subtle bg-surface-5 overflow-hidden">
           <Tooltip label="Back">
@@ -918,6 +934,7 @@ export default function BrowserPanel({
             onSave={applyProxy}
           />
         )}
+      </div>
       </div>
     </div>
   )
