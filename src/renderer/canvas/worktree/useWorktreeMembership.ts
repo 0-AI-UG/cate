@@ -11,9 +11,9 @@
 // =============================================================================
 
 import { useMemo } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStoreContext, shallow } from '../../stores/CanvasStoreContext'
 import { useAppStore } from '../../stores/appStore'
+import { useWorktrees } from '../../stores/useWorktrees'
 
 export interface WorktreeGroup {
   worktreeId: string
@@ -31,13 +31,18 @@ export interface WorktreeMembership {
 const EMPTY: WorktreeMembership = { groups: [], colorById: {} }
 
 /**
- * Gated on the workspace having 2+ worktrees (matching the WorktreePill) — a
- * single-branch flow shows no sludge at all.
+ * Reads the SAME reconciled worktree list as the WorktreePill and toolbar menu
+ * (live `git worktree list` joined with persisted UI metadata, orphans dropped),
+ * so the terrace can never disagree with them: a single-branch flow shows no
+ * sludge at all. Gating on the raw persisted `appStore.worktrees` instead let a
+ * stale/orphan metadata record paint a territory the other surfaces had hidden.
  */
 export function useWorktreeMembership(): WorktreeMembership {
-  const worktrees = useAppStore(
-    useShallow((s) => s.workspaces.find((w) => w.id === s.selectedWorkspaceId)?.worktrees ?? []),
+  const workspaceId = useAppStore((s) => s.selectedWorkspaceId ?? '')
+  const rootPath = useAppStore(
+    (s) => s.workspaces.find((w) => w.id === s.selectedWorkspaceId)?.rootPath ?? '',
   )
+  const joined = useWorktrees(rootPath, workspaceId)
   // Object identity changes only when a node publishes/clears its worktree
   // (tab switch, create, close) — not on drag/resize.
   const nodeActive = useCanvasStoreContext((s) => s.nodeActiveWorktreeId)
@@ -46,10 +51,13 @@ export function useWorktreeMembership(): WorktreeMembership {
   const nodeIds = useCanvasStoreContext((s) => Object.keys(s.nodes), shallow)
 
   return useMemo(() => {
-    if (worktrees.length < 2) return EMPTY
+    // Live checkouts only — an orphan (metadata without a worktree on disk) is a
+    // ghost, not a parallel branch, and must not count toward the 2+ gate.
+    const live = joined.filter((w) => !w.isOrphan)
+    if (live.length < 2) return EMPTY
 
     const colorById: Record<string, string> = {}
-    for (const w of worktrees) colorById[w.id] = w.color
+    for (const w of live) if (w.color) colorById[w.id] = w.color
 
     const present = new Set(nodeIds)
     const byWt = new Map<string, string[]>()
@@ -65,5 +73,5 @@ export function useWorktreeMembership(): WorktreeMembership {
       groups.push({ worktreeId, color: colorById[worktreeId], nodeIds: ids })
     }
     return { groups, colorById }
-  }, [worktrees, nodeActive, nodeIds])
+  }, [joined, nodeActive, nodeIds])
 }
