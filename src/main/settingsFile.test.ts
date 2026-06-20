@@ -46,8 +46,8 @@ describe('settingsFile', () => {
     m.loadSettingsSync()
     expect(fs.existsSync(settingsPath())).toBe(true)
     const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
-    expect(onDisk.defaultPanelWidth).toBe(DEFAULT_SETTINGS.defaultPanelWidth)
-    expect(m.getSetting('defaultPanelWidth')).toBe(DEFAULT_SETTINGS.defaultPanelWidth)
+    expect(onDisk.showMinimap).toBe(DEFAULT_SETTINGS.showMinimap)
+    expect(m.getSetting('showMinimap')).toBe(DEFAULT_SETTINGS.showMinimap)
   })
 
   it('loads an existing settings.json over defaults', async () => {

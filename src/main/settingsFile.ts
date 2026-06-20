@@ -40,8 +40,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   editorFontFamily: 'string',
   uiScale: 'number',
   showMinimap: 'boolean',
-  defaultPanelWidth: 'number',
-  defaultPanelHeight: 'number',
   zoomSpeed: 'number',
   autoFocusLargestVisibleNode: 'boolean',
   canvasGridStyle: 'string',

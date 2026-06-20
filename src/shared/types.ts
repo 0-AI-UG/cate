@@ -1141,8 +1141,6 @@ export interface AppSettings {
 
   // Canvas
   showMinimap: boolean
-  defaultPanelWidth: number
-  defaultPanelHeight: number
   zoomSpeed: number
   /** When enabled, the node that occupies the most visible canvas area is
    *  automatically focused as the user pans/zooms. */
@@ -1286,8 +1284,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // Canvas
   showMinimap: true,
-  defaultPanelWidth: 600,
-  defaultPanelHeight: 400,
   zoomSpeed: 1.0,
   autoFocusLargestVisibleNode: false,
   canvasGridStyle: 'lines',

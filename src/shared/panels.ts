@@ -133,35 +133,7 @@ export function getSharedPanelDef(type: PanelType | string): SharedPanelDefiniti
 // Default panel size resolution
 // -----------------------------------------------------------------------------
 
-// The factory defaults for the "Default panel width/height" setting. Mirrored
-// here (rather than imported from ./types) so this module stays at the bottom of
-// the import graph — types.ts imports PANEL_DEFINITIONS from here, so a value
-// import back into types would form a load-time cycle. A user who hasn't touched
-// the setting leaves it at these values, which we treat as "unset" so each panel
-// type keeps its own tuned default size.
-const UNSET_PANEL_WIDTH = 600
-const UNSET_PANEL_HEIGHT = 400
-
-/** Subset of AppSettings this module needs — kept narrow so panels.ts doesn't
- *  depend on the full settings shape (or its DEFAULT_SETTINGS value). */
-export interface PanelSizeSettings {
-  defaultPanelWidth?: number
-  defaultPanelHeight?: number
-}
-
-/** The size a freshly-created panel of `type` should get. Honors the user's
- *  "Default panel width/height" setting when it's been customized away from the
- *  factory default; otherwise falls back to the panel type's own default size.
- *  A non-positive override dimension is ignored (falls back per dimension). */
-export function resolvePanelSize(type: PanelType, settings?: PanelSizeSettings | null): Size {
-  const fallback = getSharedPanelDef(type).defaultSize
-  const w = settings?.defaultPanelWidth
-  const h = settings?.defaultPanelHeight
-  const customW = typeof w === 'number' && w > 0 && w !== UNSET_PANEL_WIDTH
-  const customH = typeof h === 'number' && h > 0 && h !== UNSET_PANEL_HEIGHT
-  if (!customW && !customH) return fallback
-  return {
-    width: customW ? (w as number) : fallback.width,
-    height: customH ? (h as number) : fallback.height,
-  }
+/** The fixed default size for a panel type. Panel size is no longer user-configurable. */
+export function resolvePanelSize(type: PanelType, _settings?: unknown): Size {
+  return PANEL_DEFINITIONS[type].defaultSize
 }

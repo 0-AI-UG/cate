@@ -114,12 +114,6 @@ export function CanvasSettings() {
           />
         </SettingRow>
       )}
-      <SettingRow label="Default panel width">
-        <NumberInput value={store.defaultPanelWidth} onChange={(v) => store.setSetting('defaultPanelWidth', v)} min={300} max={1200} step={50} />
-      </SettingRow>
-      <SettingRow label="Default panel height">
-        <NumberInput value={store.defaultPanelHeight} onChange={(v) => store.setSetting('defaultPanelHeight', v)} min={200} max={900} step={50} />
-      </SettingRow>
     </div>
   )
 }
