@@ -54,10 +54,10 @@ type PanelSliceActions = Pick<
   | 'bumpReloadEpoch'
 >
 
-// Carry the user's "Default panel width/height" setting onto a canvas-bound
-// create so the new node opens at the configured size (falling back to the panel
-// type's own default when the setting is unset). Dock/none placements ignore
-// size, and a placement that already pins a size (layout restore) is left as-is.
+// Stamp a canvas-bound create with the panel type's fixed default size (from
+// resolvePanelSize) so the new node opens at that size — there is no user
+// setting involved. Dock/none placements ignore size, and a placement that
+// already pins a size (layout restore) is left as-is.
 function withDefaultSize(type: PanelType, placement: PanelPlacement | undefined): PanelPlacement {
   if (placement?.target === 'dock' || placement?.target === 'none') return placement
   if (placement?.target === 'canvas' && placement.size) return placement

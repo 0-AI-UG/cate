@@ -430,11 +430,14 @@ export function recommendPlacements(
   }
 
   // Pack ghosts into the FREE SPACE, nearest the ranking point first. Each step
-  // drops one ghost into the empty rectangle whose best spot is closest to the
-  // ranking point, then carves that ghost (plus its gap) out of the free space and
-  // repeats. Because the nearest free space is always used first, no closer empty
-  // spot is ever left unused — which is what keeps the result tight in irregular
-  // layouts.
+  // evaluates every free rectangle: it SIZES the ghost by filling a pinned axis,
+  // else matching a one-sided neighbor's dimension, else the panel default — each
+  // clamped to MIN/MAX and the rect. It then POSITIONS the ghost by snapping each
+  // edge to the nearest alignment guide (else the grid) and clamping inside the
+  // rect. The rectangle whose result lands closest to the ranking point wins; that
+  // ghost (plus its gap) is carved out of the free space and the step repeats.
+  // Because the nearest free space is always used first, no closer empty spot is
+  // ever left unused — which is what keeps the result tight in irregular layouts.
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
   const inflated = nodeRects.map((r) => inflateRect(r, gap))
   let free = freeRectangles(area, inflated)
