@@ -108,6 +108,17 @@ import {
   LAYOUT_LIST,
   LAYOUT_LOAD,
   LAYOUT_DELETE,
+  BROWSER_HISTORY_RECORD,
+  BROWSER_HISTORY_GET,
+  BROWSER_HISTORY_QUERY,
+  BROWSER_HISTORY_REMOVE,
+  BROWSER_HISTORY_CLEAR,
+  BROWSER_HISTORY_CHANGED,
+  BROWSER_BOOKMARKS_GET,
+  BROWSER_BOOKMARKS_ADD,
+  BROWSER_BOOKMARKS_REMOVE,
+  BROWSER_BOOKMARKS_CHANGED,
+  BROWSER_CLEAR_DATA,
   FS_DELETE,
   FS_RENAME,
   FS_MKDIR,
@@ -396,6 +407,18 @@ const invokeForwarders = {
   recentProjectsGet: makeInvoker<'recentProjectsGet'>(RECENT_PROJECTS_GET),
   recentProjectsAdd: makeInvoker<'recentProjectsAdd'>(RECENT_PROJECTS_ADD),
   recentProjectsRemove: makeInvoker<'recentProjectsRemove'>(RECENT_PROJECTS_REMOVE),
+
+  // Browser history + bookmarks (global)
+  browserHistoryRecord: makeInvoker<'browserHistoryRecord'>(BROWSER_HISTORY_RECORD),
+  browserHistoryGet: makeInvoker<'browserHistoryGet'>(BROWSER_HISTORY_GET),
+  browserHistoryQuery: makeInvoker<'browserHistoryQuery'>(BROWSER_HISTORY_QUERY),
+  browserHistoryRemove: makeInvoker<'browserHistoryRemove'>(BROWSER_HISTORY_REMOVE),
+  browserHistoryClear: makeInvoker<'browserHistoryClear'>(BROWSER_HISTORY_CLEAR),
+  browserBookmarksGet: makeInvoker<'browserBookmarksGet'>(BROWSER_BOOKMARKS_GET),
+  browserBookmarksAdd: makeInvoker<'browserBookmarksAdd'>(BROWSER_BOOKMARKS_ADD),
+  browserBookmarksRemove: makeInvoker<'browserBookmarksRemove'>(BROWSER_BOOKMARKS_REMOVE),
+  browserClearData: makeInvoker<'browserClearData'>(BROWSER_CLEAR_DATA),
+
   sidebarSessionGet: makeInvoker<'sidebarSessionGet'>(SIDEBAR_SESSION_GET),
   sidebarSessionSet: makeInvoker<'sidebarSessionSet'>(SIDEBAR_SESSION_SET),
   remoteProjectsGet: makeInvoker<'remoteProjectsGet'>(REMOTE_PROJECTS_GET),
@@ -844,6 +867,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onBrowserShortcut(callback: (action: string) => void): () => void {
     return createIpcListener(BROWSER_SHORTCUT, callback)
+  },
+
+  onBrowserHistoryChanged(callback: () => void): () => void {
+    return createIpcListener(BROWSER_HISTORY_CHANGED, callback)
+  },
+
+  onBrowserBookmarksChanged(callback: () => void): () => void {
+    return createIpcListener(BROWSER_BOOKMARKS_CHANGED, callback)
   },
 
   // ---------------------------------------------------------------------------

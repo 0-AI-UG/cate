@@ -75,6 +75,11 @@ export interface PanelState {
   isDirty: boolean
   filePath?: string
   url?: string
+  /** Browser panels only: open tabs (light model). The active tab's url is kept
+   *  mirrored to `url` above for session-restore + panel-transfer compatibility,
+   *  so older code paths that only read `url` still work. */
+  tabs?: BrowserTab[]
+  activeTabId?: string
   /** Browser panels only: per-panel HTTP/HTTPS/SOCKS5/PAC proxy. When set, the
    *  panel runs in its own proxy-derived persistent session instead of the
    *  shared browser session. Supports auth (`user:pass@host`), a `;bypass=`
@@ -537,6 +542,9 @@ export type ThemeSelection = 'system' | string
 
 export type BrowserSearchEngine = 'google' | 'duckDuckGo' | 'bing' | 'brave'
 
+/** What a new browser panel / new tab opens to. */
+export type BrowserNewTabBehavior = 'startPage' | 'homepage'
+
 export const SEARCH_ENGINE_URLS: Record<BrowserSearchEngine, string> = {
   google: 'https://www.google.com/search?q=',
   duckDuckGo: 'https://duckduckgo.com/?q=',
@@ -643,6 +651,45 @@ export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace' | '
  *  focused BrowserPanel) rather than global shortcuts, so they don't collide
  *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
+
+/** A single global browsing-history entry, deduplicated by URL. Shared across
+ *  all workspaces and browser panels so Cate behaves like one browser. */
+export interface BrowserHistoryEntry {
+  url: string
+  title: string
+  lastVisited: number // epoch ms
+  visitCount: number
+}
+
+/** A global bookmark/favorite, deduplicated by URL. */
+export interface BrowserBookmark {
+  url: string
+  title: string
+  addedAt: number // epoch ms
+}
+
+/** One open tab in a browser panel (light model: a single <webview> re-navigates
+ *  on switch, so a background tab is just its saved url/title). */
+export interface BrowserTab {
+  id: string
+  url: string
+  title: string
+  /** Pinned ("fixed") tabs sort left, render compact, and resist accidental close. */
+  pinned?: boolean
+}
+
+/** Sentinel URL for the browser start page ("new tab"). Persisted like any
+ *  other panel URL so a start-page panel survives session restore; never
+ *  recorded to history and never passed to the <webview> as src. */
+export const BROWSER_NEW_TAB_URL = 'cate://newtab'
+
+/** True when a URL should render the start page rather than a webview: the
+ *  sentinel, the legacy `about:blank` default, or an empty/missing URL. Lets
+ *  brand-new AND already-saved (about:blank) browser panels show the start
+ *  screen instead of a blank page. */
+export function isStartPageUrl(url: string | undefined | null): boolean {
+  return !url || url === BROWSER_NEW_TAB_URL || url === 'about:blank'
+}
 
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   'newTerminal',
@@ -1203,6 +1250,12 @@ export interface AppSettings {
   // Browser
   browserHomepage: string
   browserSearchEngine: BrowserSearchEngine
+  /** Show the horizontal bookmarks bar (favorite chips) under the URL bar. */
+  browserShowBookmarksBar: boolean
+  /** Show the vertical tab sidebar (Arc/Edge-style) on the left of the panel. */
+  browserShowTabSidebar: boolean
+  /** What a freshly-opened browser panel / new tab loads. */
+  browserNewTabBehavior: BrowserNewTabBehavior
   /** Where a Cmd/Ctrl+clicked terminal link opens.
    *  - 'ask': prompt once, with an option to remember the choice.
    *  - 'canvas': reuse/create an in-app browser panel.
@@ -1308,8 +1361,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoSuspendIdleTerminals: true,
 
   // Browser
-  browserHomepage: 'about:blank',
+  browserHomepage: '',
   browserSearchEngine: 'google',
+  browserShowBookmarksBar: true,
+  browserShowTabSidebar: true,
+  browserNewTabBehavior: 'startPage',
   terminalLinkOpenTarget: 'ask',
 
   // Sidebar

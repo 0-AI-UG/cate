@@ -10,6 +10,7 @@ import { getSetting } from '../settingsFile'
 import { saveProjectStateSync } from '../projectWorkspaceStore'
 import { flushPendingWritesSync as flushSettingsPendingWritesSync } from '../settingsFile'
 import { flushWorkspaceStateSync } from '../workspaceStateStore'
+import { flushBrowserStateSync } from '../browserStateStore'
 import { flushUIStateSync } from '../uiStateStore'
 import { releaseAllProjectLocks } from '../projectLock'
 import { runtimes } from '../runtime/runtimeManager'
@@ -221,6 +222,8 @@ export function registerLifecycleHandlers(): void {
     // Same for the workspace-state files (recent projects, sidebar, remote
     // workspaces, layouts) — flush their debounced writes before the process exits.
     flushWorkspaceStateSync()
+    // Same for the global browser history/bookmarks files.
+    flushBrowserStateSync()
     // And the ui-state.json file (minimap placement).
     flushUIStateSync()
     // Drop per-project locks so a co-running instance can take over immediately
