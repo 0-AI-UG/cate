@@ -121,6 +121,28 @@ const PLACEMENT_MIN_W = 280
 const PLACEMENT_MIN_H = 180
 const PLACEMENT_MAX_W = 1400
 const PLACEMENT_MAX_H = 900
+const EPS = 1
+const SNAP_TOL = PLACEMENT_GAP / 2
+
+/** Sorted, deduped alignment lines implied by the existing windows: each edge plus
+ *  edge ± gap, so a new panel can land on a shared column/row or exactly one gap away. */
+export function deriveGuides(
+  nodes: Record<CanvasNodeId, CanvasNodeState>,
+  gap: number,
+): { xs: number[]; ys: number[] } {
+  const xs = new Set<number>()
+  const ys = new Set<number>()
+  for (const n of Object.values(nodes)) {
+    const l = n.origin.x, r = n.origin.x + n.size.width
+    const t = n.origin.y, b = n.origin.y + n.size.height
+    for (const x of [l, r]) { xs.add(x); xs.add(x + gap); xs.add(x - gap) }
+    for (const y of [t, b]) { ys.add(y); ys.add(y + gap); ys.add(y - gap) }
+  }
+  return {
+    xs: [...xs].sort((a, b) => a - b),
+    ys: [...ys].sort((a, b) => a - b),
+  }
+}
 // --- Geometry helpers --------------------------------------------------------
 
 /** Grow a rect by `m` on every side. */
@@ -319,7 +341,6 @@ export function recommendPlacements(
   // An axis of free rect `f` is "pinned" when a window's opposite edge sits against
   // BOTH of its sides (an interior gap), sharing a run along the edge. A pinned axis
   // grows to fill the gap; an open axis falls back to the default extent.
-  const EPS = 1
   const pinnedX = (f: Rect): boolean => {
     const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
     let left = false, right = false

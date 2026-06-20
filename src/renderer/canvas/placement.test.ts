@@ -9,10 +9,10 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { recommendPlacements, findFreePosition, nudgeToFree } from './placement'
+import { recommendPlacements, findFreePosition, nudgeToFree, deriveGuides } from './placement'
 import { CANVAS_GRID_SIZE, rectsOverlap } from './layoutEngine'
 import { PANEL_DEFAULT_SIZES } from '../../shared/types'
-import type { CanvasNodeState, Point, Rect, Size } from '../../shared/types'
+import type { CanvasNodeId, CanvasNodeState, Point, Rect, Size } from '../../shared/types'
 
 const TERMINAL = PANEL_DEFAULT_SIZES.terminal // 640x400
 
@@ -358,5 +358,33 @@ describe('nudgeToFree', () => {
     // overlaps, rather than refusing the placement.
     expect(p).toEqual({ x: 0, y: 0 })
     expect(rectsOverlap({ origin: p, size }, { origin: { x: -2000, y: -2000 }, size: { width: 4000, height: 4000 } })).toBe(true)
+  })
+})
+
+describe('deriveGuides', () => {
+  let __seq = 0
+  const node = (x: number, y: number, w: number, h: number): CanvasNodeState =>
+    ({
+      id: `n${__seq++}`,
+      panelType: 'editor',
+      origin: { x, y },
+      size: { width: w, height: h },
+      creationIndex: __seq,
+    } as unknown as CanvasNodeState)
+  const nodesOf = (...ns: CanvasNodeState[]): Record<CanvasNodeId, CanvasNodeState> =>
+    Object.fromEntries(ns.map((n) => [n.id, n])) as Record<CanvasNodeId, CanvasNodeState>
+
+  it('emits edge lines and edge±gap lines, deduped and sorted', () => {
+    const g = deriveGuides(nodesOf(node(100, 200, 600, 400)), 40)
+    // left=100, right=700; ±40 → 60,100,140 and 660,700,740
+    expect(g.xs).toEqual([60, 100, 140, 660, 700, 740])
+    // top=200, bottom=600; ±40 → 160,200,240 and 560,600,640
+    expect(g.ys).toEqual([160, 200, 240, 560, 600, 640])
+  })
+
+  it('dedupes shared edges across windows', () => {
+    // two windows sharing left edge x=100
+    const g = deriveGuides(nodesOf(node(100, 0, 200, 100), node(100, 500, 200, 100)), 40)
+    expect(g.xs.filter((v) => v === 100)).toHaveLength(1)
   })
 })
