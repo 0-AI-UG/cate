@@ -207,6 +207,21 @@ export function matchedHeight(f: Rect, inflated: Rect[], gap: number, rankAt: Po
   }
   return bestH
 }
+
+/** Snap the low edge of a fixed-size span to the nearest alignment guide (via either
+ *  edge) when within `tol`; otherwise snap the low edge to the grid. */
+export function snapAxis(lo: number, size: number, guides: number[], tol: number, grid: number): number {
+  let best = Math.round(lo / grid) * grid
+  let bestErr = tol
+  const hi = lo + size
+  for (const g of guides) {
+    const eLo = Math.abs(g - lo)
+    if (eLo < bestErr) { bestErr = eLo; best = g }
+    const eHi = Math.abs(g - hi)
+    if (eHi < bestErr) { bestErr = eHi; best = g - size }
+  }
+  return best
+}
 // --- Geometry helpers --------------------------------------------------------
 
 /** Grow a rect by `m` on every side. */

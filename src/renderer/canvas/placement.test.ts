@@ -18,6 +18,7 @@ import {
   pinnedY,
   matchedWidth,
   matchedHeight,
+  snapAxis,
 } from './placement'
 import { CANVAS_GRID_SIZE, rectsOverlap } from './layoutEngine'
 import { PANEL_DEFAULT_SIZES } from '../../shared/types'
@@ -439,5 +440,19 @@ describe('deriveGuides', () => {
     // two windows sharing left edge x=100
     const g = deriveGuides(nodesOf(node(100, 0, 200, 100), node(100, 500, 200, 100)), 40)
     expect(g.xs.filter((v) => v === 100)).toHaveLength(1)
+  })
+})
+
+describe('snapAxis', () => {
+  it('snaps the low edge to a guide within tolerance', () => {
+    expect(snapAxis(1012, 600, [1000], 20, 20)).toBe(1000) // 12px off → guide
+  })
+  it('snaps via the high edge when that is the closer guide', () => {
+    // lo=1012, size=600 → hi=1612; guide 1600 is 12px from hi → lo becomes 1000
+    expect(snapAxis(1012, 600, [1600], 20, 20)).toBe(1000)
+  })
+  it('falls back to the grid when no guide is within tolerance', () => {
+    expect(snapAxis(1012, 600, [1100], 20, 20)).toBe(1020) // nearest 20px grid
+    expect(snapAxis(1012, 600, [], 20, 20)).toBe(1020)
   })
 })
