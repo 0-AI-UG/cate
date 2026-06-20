@@ -397,12 +397,15 @@ describe('canvasStore.recommendPlacements', () => {
     expect(three.length).toBeLessThanOrEqual(3)
   })
 
-  it('sizes candidates from sizeOverride when given (honors the default-size setting)', () => {
+  it('sizes candidates from sizeOverride on axes with no neighbor to match', () => {
     const override = { width: 900, height: 700 }
     const cands = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 6, override)
     expect(cands.length).toBeGreaterThan(0)
+    // Neighbor-matched sizing matches the node's dimension along a shared edge, so
+    // the override applies on the axis that has no adjacent neighbor. Every
+    // candidate therefore carries the override on at least one axis.
     cands.forEach((c) => {
-      expect(c.size).toEqual(override)
+      expect(c.size.width === override.width || c.size.height === override.height).toBe(true)
     })
   })
 
@@ -486,21 +489,31 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
-  it('STANDARD SIZE: recommendations use the default size, not the active node size', () => {
-    // An unusually-shaped (tall) focused node → recommendations are still the
-    // standard 640×400, not the node's shape.
+  it('NEIGHBOR-MATCHED SIZE: each candidate matches the node on its shared edge, default on the open axis', () => {
+    // An unusually-shaped (tall) focused node. Neighbor-matched sizing aligns each
+    // candidate to the node along their shared edge: a slot beside it matches the
+    // node's height (clamped to the max), a slot above/below matches its width. The
+    // OPEN axis (the one with no neighbor) falls back to the standard default.
     const std = recommendPlacements({}, null, 'terminal', VIEWPORT, null)[0].size
     const a = node('a', 200, 200, 600, 1000)
     const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThanOrEqual(1)
-    expect(cands[0].size).toEqual(std)
+    // The node's height (1000) exceeds PLACEMENT_MAX_H, so a side slot matches it
+    // capped at 900; its open width axis keeps the default.
+    const sideSlot = cands.find((c) => c.size.width === std.width)
+    expect(sideSlot, `expected a side slot at the default width: ${JSON.stringify(cands)}`).toBeTruthy()
+    expect(sideSlot!.size.height).toBe(900)
+    // An above/below slot matches the node's width (600) with the default height.
+    const stackSlot = cands.find((c) => c.size.width === 600)
+    expect(stackSlot, `expected a stacked slot matching the node width: ${JSON.stringify(cands)}`).toBeTruthy()
+    expect(stackSlot!.size.height).toBe(std.height)
   })
 
   it('GROW-TO-FILL: a bounded gap is filled even when a standard panel would fit', () => {
     // Two tall nodes with a wide gap between them. The gap is pinned left and right,
-    // so the ghost grows to fill it (wider than the standard panel); its height is
-    // open, so it stays at the default.
-    const std = recommendPlacements({}, null, 'terminal', VIEWPORT, null)[0].size
+    // so the ghost grows to fill it (wider than the standard panel). Its height axis
+    // is open but both nodes are adjacent along it, so neighbor-matching takes their
+    // shared height (800) rather than the panel default.
     const a = node('a', 0, 0, 400, 800)
     const b = node('b', 1300, 0, 400, 800, 1)
     const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
@@ -508,7 +521,8 @@ describe('canvasStore.recommendPlacements', () => {
     expect(inGap).toBeDefined()
     // 900px gap minus a 40px clearance each side → grown to 820 wide.
     expect(inGap!.size.width).toBe(820)
-    expect(inGap!.size.height).toBe(std.height)
+    // Height matched the neighboring nodes (800), not the terminal default.
+    expect(inGap!.size.height).toBe(800)
   })
 
   it('GAP-FILL: a sub-standard gap between nodes gets a custom-sized recommendation', () => {

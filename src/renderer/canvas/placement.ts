@@ -21,6 +21,27 @@ export interface PlacementCandidate {
   size: Size
 }
 
+/** One packing iteration's inputs and decision — diagnostics for the picker only. */
+export interface PlacementTraceStep {
+  free: Rect[]
+  chosen: Rect
+  pinnedX: boolean
+  pinnedY: boolean
+  matchedWidth: number | null
+  matchedHeight: number | null
+  size: Size
+  point: Point
+}
+
+/** Optional out-param capturing the full reasoning of a recommendPlacements run. */
+export interface PlacementTrace {
+  area: Rect
+  rankAt: Point
+  inflated: Rect[]
+  guides: { xs: number[]; ys: number[] }
+  steps: PlacementTraceStep[]
+}
+
 
 /**
  * Find a free position for a new node that does not overlap any existing node.
@@ -310,6 +331,7 @@ export function recommendPlacements(
   anchor: Point | null,
   max = 6,
   sizeOverride?: Size,
+  trace?: PlacementTrace,
 ): PlacementCandidate[] {
   const grid = CANVAS_GRID_SIZE
   const snapPt = (p: Point): Point => snapToGrid(p, grid)
@@ -417,57 +439,65 @@ export function recommendPlacements(
   const inflated = nodeRects.map((r) => inflateRect(r, gap))
   let free = freeRectangles(area, inflated)
 
-  // An axis of free rect `f` is "pinned" when a window's opposite edge sits against
-  // BOTH of its sides (an interior gap), sharing a run along the edge. A pinned axis
-  // grows to fill the gap; an open axis falls back to the default extent.
-  const pinnedX = (f: Rect): boolean => {
-    const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
-    let left = false, right = false
-    for (const o of inflated) {
-      if (Math.min(o.origin.y + o.size.height, fB) - Math.max(o.origin.y, fT) <= EPS) continue
-      if (Math.abs(o.origin.x + o.size.width - fL) <= EPS) left = true
-      if (Math.abs(o.origin.x - fR) <= EPS) right = true
-    }
-    return left && right
-  }
-  const pinnedY = (f: Rect): boolean => {
-    const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
-    let top = false, bottom = false
-    for (const o of inflated) {
-      if (Math.min(o.origin.x + o.size.width, fR) - Math.max(o.origin.x, fL) <= EPS) continue
-      if (Math.abs(o.origin.y + o.size.height - fT) <= EPS) top = true
-      if (Math.abs(o.origin.y - fB) <= EPS) bottom = true
-    }
-    return top && bottom
+  const guides = deriveGuides(nodes, gap)
+  if (trace) {
+    trace.area = area
+    trace.rankAt = rankAt
+    trace.inflated = inflated
+    trace.guides = guides
   }
 
   const raw: Raw[] = []
   for (let n = 0; n < max && free.length > 0; n++) {
-    let best: { point: Point; size: Size; score: number } | null = null
+    const freeSnapshot = free.slice()
+    let best:
+      | { point: Point; size: Size; score: number; meta: PlacementTraceStep }
+      | null = null
     for (const f of free) {
-      // Grid-aligned interior of the rect (it already carries the gap, so staying
-      // inside it keeps the clearance).
       const ix0 = Math.ceil(f.origin.x / grid) * grid
       const ix1 = Math.floor((f.origin.x + f.size.width) / grid) * grid
       const iy0 = Math.ceil(f.origin.y / grid) * grid
       const iy1 = Math.floor((f.origin.y + f.size.height) / grid) * grid
       const availW = ix1 - ix0, availH = iy1 - iy0
       if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) continue
-      // Fill a pinned axis (capped at the max); otherwise take the default, shrunk
-      // to fit if the rect is narrower/shorter than it.
-      const w = clamp(pinnedX(f) ? availW : Math.min(std.width, availW), PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, availW))
-      const h = clamp(pinnedY(f) ? availH : Math.min(std.height, availH), PLACEMENT_MIN_H, Math.min(PLACEMENT_MAX_H, availH))
-      // Position at the point of the rect closest to the ranking point (a fully
-      // filled axis has only the one position).
+
+      const pX = pinnedX(f, inflated)
+      const pY = pinnedY(f, inflated)
+      const mwRaw = pX ? null : matchedWidth(f, inflated, gap, rankAt)
+      const mhRaw = pY ? null : matchedHeight(f, inflated, gap, rankAt)
+      const mW = pX ? availW : (mwRaw ?? std.width)
+      const mH = pY ? availH : (mhRaw ?? std.height)
+      const w = clamp(mW, PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, availW))
+      const h = clamp(mH, PLACEMENT_MIN_H, Math.min(PLACEMENT_MAX_H, availH))
+
+      const rawX = rankAt.x - w / 2
+      const rawY = rankAt.y - h / 2
       const point = {
-        x: clamp(Math.round((rankAt.x - w / 2) / grid) * grid, ix0, ix1 - w),
-        y: clamp(Math.round((rankAt.y - h / 2) / grid) * grid, iy0, iy1 - h),
+        x: clamp(snapAxis(rawX, w, guides.xs, SNAP_TOL, grid), ix0, ix1 - w),
+        y: clamp(snapAxis(rawY, h, guides.ys, SNAP_TOL, grid), iy0, iy1 - h),
       }
       const score = Math.hypot(point.x + w / 2 - rankAt.x, point.y + h / 2 - rankAt.y)
-      if (!best || score < best.score) best = { point, size: { width: w, height: h }, score }
+      if (!best || score < best.score) {
+        best = {
+          point,
+          size: { width: w, height: h },
+          score,
+          meta: {
+            free: freeSnapshot,
+            chosen: f,
+            pinnedX: pX,
+            pinnedY: pY,
+            matchedWidth: mwRaw,
+            matchedHeight: mhRaw,
+            size: { width: w, height: h },
+            point,
+          },
+        }
+      }
     }
     if (!best) break
     raw.push({ point: best.point, size: best.size })
+    if (trace) trace.steps.push(best.meta)
     const placed = inflateRect({ origin: best.point, size: best.size }, gap)
     free = pruneFreeRects(free.flatMap((f) => splitFree(f, placed)))
   }

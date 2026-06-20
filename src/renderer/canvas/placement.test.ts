@@ -19,6 +19,7 @@ import {
   matchedWidth,
   matchedHeight,
   snapAxis,
+  type PlacementTrace,
 } from './placement'
 import { CANVAS_GRID_SIZE, rectsOverlap } from './layoutEngine'
 import { PANEL_DEFAULT_SIZES } from '../../shared/types'
@@ -207,19 +208,28 @@ describe('recommendPlacements — around existing nodes', () => {
     expect(out.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('uses the size override for full-size candidates', () => {
+  it('uses the size override on axes with no neighbor to match', () => {
     const size = { width: 400, height: 300 }
     const out = recommendPlacements(nodeMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 6, size)
     expect(out.length).toBeGreaterThanOrEqual(1)
-    // In the open space around a single node, the best candidates carry the
-    // requested size (tight gaps may shrink later ones, never the first).
-    expect(out[0].size).toEqual(size)
+    // Neighbor-matched sizing now matches the node's dimension along a SHARED edge
+    // (a slot below matches the node's width; a slot beside it matches its height),
+    // so the override applies only on the axis with no adjacent neighbor. Every
+    // candidate must therefore carry the override on at least one axis, and never
+    // exceed it on the unmatched axis.
+    for (const c of out) {
+      const matchesOverride =
+        c.size.width === size.width || c.size.height === size.height
+      expect(matchesOverride, `candidate ${JSON.stringify(c)} keeps the override on its open axis`).toBe(true)
+    }
   })
 
-  it('grows a candidate to fill a bounded gap between two panels (taller than the default)', () => {
+  it('grows a candidate to fill a bounded gap between two panels, matching the neighbors height', () => {
     // Two short panels with a tall, wide gap between them. A candidate seeded in
     // the gap is pinned left AND right, so it fills the gap width exactly (gap
-    // minus a clearance each side); its height is unbounded, so it stays default.
+    // minus a clearance each side). Its height axis is open but both panels touch
+    // its top edge, so neighbor-matching takes their shared height (300) rather
+    // than the panel default.
     const a = node('a', 0, 0, 400, 300, 0)
     const b = node('b', 1200, 0, 400, 300, 1) // gap from x=400 to x=1200 → 800 wide
     const viewport = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2400, height: 1200 } }
@@ -230,8 +240,8 @@ describe('recommendPlacements — around existing nodes', () => {
     expect(filler, `expected a gap-filling candidate: ${JSON.stringify(out)}`).toBeTruthy()
     // Grown to fill the 800px gap minus a 40px clearance each side ≈ 720.
     expect(filler!.size.width).toBe(720)
-    // Height was unbounded → fell back to the terminal default (400), not grown.
-    expect(filler!.size.height).toBe(TERMINAL.height)
+    // Height matched the neighboring panels (300), not the terminal default.
+    expect(filler!.size.height).toBe(300)
   })
 
   it('uses the default size in open space — an unbounded axis never grows', () => {
@@ -454,5 +464,63 @@ describe('snapAxis', () => {
   it('falls back to the grid when no guide is within tolerance', () => {
     expect(snapAxis(1012, 600, [1100], 20, 20)).toBe(1020) // nearest 20px grid
     expect(snapAxis(1012, 600, [], 20, 20)).toBe(1020)
+  })
+})
+
+describe('recommendPlacements — neighbor-aware sizing', () => {
+  let __seq = 0
+  const node = (x: number, y: number, w: number, h: number): CanvasNodeState =>
+    ({
+      id: `n${__seq++}`,
+      panelType: 'editor',
+      origin: { x, y },
+      size: { width: w, height: h },
+      creationIndex: __seq,
+    } as unknown as CanvasNodeState)
+  const nodesOf = (...ns: CanvasNodeState[]): Record<CanvasNodeId, CanvasNodeState> =>
+    Object.fromEntries(ns.map((n) => [n.id, n])) as Record<CanvasNodeId, CanvasNodeState>
+
+  const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 4000, height: 4000 } }
+
+  it('matches the width of a window directly above (stacked)', () => {
+    const ns = nodesOf(node(1000, 1000, 600, 400))
+    const out = recommendPlacements(ns, null, 'editor', VP, { x: 1300, y: 1600 })
+    expect(out[0].size.width).toBe(600)        // matched A's width
+    expect(out[0].point.x).toBe(1000)          // aligned to A's left edge
+    expect(out[0].point.y).toBe(1440)          // 40px gap below A (1400 + 40)
+  })
+
+  it('matches the height of a window to the left (side-by-side)', () => {
+    const ns = nodesOf(node(1000, 1000, 600, 400))
+    const out = recommendPlacements(ns, null, 'editor', VP, { x: 1900, y: 1200 })
+    expect(out[0].size.height).toBe(400)       // matched A's height
+    expect(out[0].point.y).toBe(1000)          // aligned to A's top edge
+  })
+
+  it('still fills a gap bracketed on both sides (pinned regression)', () => {
+    const ns = nodesOf(node(1000, 1000, 600, 400), node(2000, 1000, 600, 400))
+    const out = recommendPlacements(ns, null, 'editor', VP, { x: 1800, y: 1200 })
+    const filled = out.find((c) => c.size.width === 320)
+    expect(filled).toBeTruthy()                // fills the 320px interior gap
+  })
+
+  it('uses default size on an empty canvas (regression)', () => {
+    const out = recommendPlacements({}, null, 'editor', VP, { x: 500, y: 500 })
+    expect(out.length).toBeGreaterThanOrEqual(1)
+    expect(out[0].size).toEqual({ width: 600, height: 500 })
+  })
+
+  it('fills a trace when one is provided', () => {
+    const ns = nodesOf(node(1000, 1000, 600, 400))
+    const trace: PlacementTrace = {
+      area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
+      rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [],
+    }
+    recommendPlacements(ns, null, 'editor', VP, { x: 1300, y: 1600 }, 6, undefined, trace)
+    expect(trace.steps.length).toBeGreaterThan(0)
+    expect(trace.guides.xs).toContain(1000)
+    const s = trace.steps[0]
+    expect(s.matchedWidth).toBe(600)
+    expect(s.pinnedX).toBe(false)
   })
 })
