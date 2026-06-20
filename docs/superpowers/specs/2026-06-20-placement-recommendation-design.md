@@ -1,0 +1,196 @@
+# Placement Recommendation — Neighbor-Aware Sizing, Shared-Grid Alignment, Fixed Default Size, and a Removable Visualization
+
+Date: 2026-06-20
+Branch: `fix-position-recommendation`
+Status: Approved design — ready for implementation plan
+
+## Problem
+
+The interactive "ghost" placement picker (`recommendPlacements` in
+`src/renderer/canvas/placement.ts`) recommends where a new panel should go. The
+recent grow-to-fill work made it size a new panel to fill a gap that is bracketed
+by windows on **both** sides of an axis (`pinnedX` / `pinnedY`). But in the common
+case where there is a neighbor on only **one** side (a window directly above with
+open space below, or a window to the left with open space to the right), the
+algorithm gives up on matching and falls back to the panel's **default size**, and
+it positions on the generic 20px grid rather than on the lines other windows
+already use. The result: new panels don't match their neighbor's width/height and
+gaps drift out of alignment.
+
+Two secondary goals ride along:
+
+- The default panel size is currently user-configurable (`defaultPanelWidth` /
+  `defaultPanelHeight`). It should be a fixed per-type constant, not changeable.
+- We want an in-app, **removable** visualization to see how gap, growth, and
+  matching come together while we tune the algorithm.
+
+## Non-Goals
+
+- No ML / RL. This is a deterministic geometry problem; a learned model would
+  trade away the exact-alignment guarantee that is the entire point, and there is
+  no training signal or labeled data.
+- No global lattice/constraint solver. A guide-line list gets consistent
+  columns/rows/gaps at a fraction of the complexity and stays pure and testable.
+- No change to the packer, clearance, dedupe, ranking, or the
+  empty-canvas / blank-viewport / focus-vs-cursor behavior.
+- No production UI for the visualization — it is a dev-only, throwaway tool.
+
+---
+
+## Part 1 — Neighbor-aware sizing + shared-grid alignment
+
+All changes are inside `src/renderer/canvas/placement.ts`. The free-rectangle
+decomposition (`freeRectangles` / `splitFree` / `pruneFreeRects`), the nearest-first
+packing loop, `finalize()` (clearance + dedupe + ranking), `findFreePosition`, and
+`nudgeToFree` are unchanged. Only the **size** and **point** computed per free
+rectangle change, plus one new pure helper.
+
+### 1a. `deriveGuides(nodes, gap) → { xs: number[]; ys: number[] }` (new pure helper)
+
+- From every window collect edge lines: left & right x into `xs`, top & bottom y
+  into `ys`.
+- Add **gap-offset lines**: for each edge, also emit `edge + gap` and `edge - gap`,
+  so a new panel can land exactly one standard gap from an existing edge.
+- Dedupe (within a small epsilon) and sort each list.
+- O(n). No store / React dependency. Unit-tested directly.
+
+### 1b. Neighbor-matched sizing (replaces the open-axis fallback at lines ~358-359)
+
+Per free rect, per axis:
+
+- **Pinned** (window touching both sides of the axis) → fill the gap, capped at
+  MAX. *(unchanged behavior)*
+- **Open, but a neighbor touches one edge of the rect along that axis** → match the
+  neighbor's dimension parallel to the shared edge:
+  - window directly **above/below** (shares a horizontal run with the rect) →
+    match its **width**.
+  - window directly **left/right** (shares a vertical run with the rect) → match
+    its **height**.
+  - When several windows touch that edge, pick the one with the **longest shared
+    run** along the edge (the truest alignment partner); tie-break by proximity to
+    the ranking point.
+- **No neighbor at all** → panel default size. *(unchanged behavior)*
+
+The chosen dimension is always clamped to `[PLACEMENT_MIN, PLACEMENT_MAX]` and to
+the free rect's available extent (`availW` / `availH`), so an unusually large or
+tiny neighbor cannot produce an awkward panel and the panel can never overflow its
+slot.
+
+### 1c. Guide-snapped positioning (replaces the grid-only snap at lines ~362-365)
+
+After the size is chosen, position the panel near the ranking point as today, then
+snap each **edge** to the nearest guide from 1a when within a tolerance (~half a
+panel gap); otherwise fall back to the 20px grid. Then re-clamp inside the free
+rect so clearance is never broken. Effect: left/right edges line up into columns,
+top/bottom into rows, and the gap to neighbors equals the gaps already on the
+canvas.
+
+Note: 1b already aligns one pair of edges as a side effect (matching a neighbor's
+width and aligning x to it makes both edges share the neighbor's column). 1c
+generalizes this to all edges via the guide list — the two are consistent, not
+competing.
+
+---
+
+## Part 2 — Fixed (non-configurable) default panel size
+
+Make panel size a fixed per-type constant; remove user configurability.
+
+- **`src/shared/types.ts`** — delete `defaultPanelWidth` / `defaultPanelHeight`
+  from the `AppSettings` type and from `DEFAULT_SETTINGS`.
+- **`src/main/settingsFile.ts`** — delete the two validation-schema entries.
+- **`src/renderer/settings/CanvasSettings.tsx`** — delete the two `NumberInput`
+  setting rows.
+- **`src/shared/panels.ts`** — simplify `resolvePanelSize()` to return the per-type
+  default (`PANEL_DEFINITIONS[type].defaultSize`) directly; drop the
+  `UNSET_PANEL_WIDTH` / `UNSET_PANEL_HEIGHT` magic values. Keep the function
+  signature so call sites (`panelSlice.ts`) are untouched.
+
+**Migration:** existing `settings.json` files may still contain the two keys.
+Settings load already tolerates unknown keys, so old values go inert — no crash, no
+migration code.
+
+---
+
+## Part 3 — Contained, removable visualization overlay
+
+A dev overlay that draws how **gap → growth → match → alignment** come together, on
+the live canvas, fully isolated so it can be deleted in one step.
+
+### Containment / removability (the load-bearing constraint)
+
+- All overlay UI lives in one folder: `src/renderer/canvas/placementViz/` (overlay
+  component + its own styles). Nothing outside it imports from it.
+- **One wiring line** mounts it in `Canvas.tsx`, behind a **dev-only keyboard
+  shortcut** that toggles visibility. Gated so it is a no-op in production builds.
+  No settings UI.
+- **One optional parameter** on `recommendPlacements(..., trace?)`: a trace sink the
+  real packing loop fills as it runs, so the overlay renders the *actual*
+  computation rather than a re-implementation that could drift. When `trace` is
+  omitted (production path), it is zero cost and causes zero behavior change.
+- **Removal = delete the `placementViz/` folder + the one mount line in
+  `Canvas.tsx` + the optional `trace` param and its type.** That is the entire
+  footprint.
+
+### Trace shape
+
+A `PlacementTrace` object (collected only when passed) capturing, per run:
+
+- the place area rect and the ranking point;
+- each window's inflated (gap-band) rect;
+- the free rectangles, in order;
+- the derived guides (`xs` / `ys`);
+- per packed step: the chosen free rect, `pinnedX` / `pinnedY` flags, the matched
+  neighbor (if any) for each open axis with the matched dimension, the guide each
+  edge snapped to, and the final size + point.
+
+### What it draws (annotated, over the real windows)
+
+- The place-area outline and each window's gap band.
+- The free rectangles, numbered.
+- Per step: pinned axes as brackets between the two bracketing windows (label
+  "filled gap = N"); open axes with the matched neighbor highlighted (label
+  "matched A's width = N").
+- The alignment guides as dotted column/row lines, marking which guide each edge
+  snapped to.
+- The resulting ghost with a size/gap label, plus the ranking-point dot and the
+  step ordering.
+
+### Data source
+
+Live canvas state (the windows currently open). No curated scenario set.
+
+---
+
+## Testing
+
+Extend `src/renderer/canvas/placement.test.ts` (pure, no React):
+
+1. Stacked window (neighbor above) → new panel matches the neighbor's **width** and
+   edges are aligned.
+2. Side-by-side window (neighbor left) → new panel matches the neighbor's
+   **height**.
+3. Three windows with an established gap → new panel **reuses the existing gap**.
+4. Guide-snapping prefers a shared column over the raw 20px grid.
+5. `deriveGuides` emits edge lines and `edge ± gap` lines, deduped and sorted.
+6. Longest-shared-run tiebreak picks the right neighbor when several touch an edge.
+7. Clamping: neighbor larger than MAX / smaller than MIN / larger than the slot all
+   clamp correctly.
+8. Regressions: pinned-fill, empty-canvas, blank-viewport, and focus-vs-cursor
+   ranking are unchanged.
+
+For Part 2: a test (or adjusted existing test) confirming `resolvePanelSize`
+returns the per-type default regardless of any leftover settings values.
+
+For Part 3: a unit test that, given a known layout, the populated `PlacementTrace`
+contains the expected free rects, guides, and per-step pinned/matched records —
+verifying the trace mirrors the real computation. The overlay rendering itself is
+not unit-tested (throwaway dev tool).
+
+## Risks / Open Considerations
+
+- Guide-snap tolerance (~half a gap) and the longest-run tiebreak are heuristics;
+  the visualization exists precisely to tune them. Values may be adjusted during
+  implementation without changing the design.
+- The optional `trace` param is the only intrusion into production code; it is
+  documented as removable with the overlay.
