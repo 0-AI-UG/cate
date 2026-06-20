@@ -397,15 +397,25 @@ describe('canvasStore.recommendPlacements', () => {
     expect(three.length).toBeLessThanOrEqual(3)
   })
 
-  it('sizes candidates from sizeOverride on axes with no neighbor to match', () => {
+  it('uses sizeOverride only where no neighbor is adjacent, mirroring the neighbor otherwise', () => {
     const override = { width: 900, height: 700 }
-    const cands = recommendPlacements(toMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 6, override)
+    const node0 = node('a', 0, 0) // 200x150
+    const cands = recommendPlacements(toMap(node0), 'a', 'terminal', VIEWPORT, null, 6, override)
     expect(cands.length).toBeGreaterThan(0)
-    // Neighbor-matched sizing matches the node's dimension along a shared edge, so
-    // the override applies on the axis that has no adjacent neighbor. Every
-    // candidate therefore carries the override on at least one axis.
+    // Mirror rule: a candidate adjacent to the node takes the node's FULL size,
+    // clamped to [MIN,MAX] (200x150 → MIN 280x180); a candidate with no adjacent
+    // neighbor falls back to the override, clamped to the slot. The override is
+    // therefore an UPPER bound only — it never appears blended axis-by-axis with
+    // the panel default the way the old one-axis-default rule produced.
+    expect(cands.some((c) => c.size.width === 280 && c.size.height === 180),
+      `expected a mirrored (MIN-clamped) candidate: ${JSON.stringify(cands)}`).toBe(true)
+    // The full override appears on at least one slot that has room for it.
+    expect(cands.some((c) => c.size.width === override.width && c.size.height === override.height),
+      `expected an override-sized candidate: ${JSON.stringify(cands)}`).toBe(true)
+    // Nothing ever exceeds the override on either axis.
     cands.forEach((c) => {
-      expect(c.size.width === override.width || c.size.height === override.height).toBe(true)
+      expect(c.size.width).toBeLessThanOrEqual(override.width)
+      expect(c.size.height).toBeLessThanOrEqual(override.height)
     })
   })
 
@@ -489,24 +499,25 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
-  it('NEIGHBOR-MATCHED SIZE: each candidate matches the node on its shared edge, default on the open axis', () => {
-    // An unusually-shaped (tall) focused node. Neighbor-matched sizing aligns each
-    // candidate to the node along their shared edge: a slot beside it matches the
-    // node's height (clamped to the max), a slot above/below matches its width. The
-    // OPEN axis (the one with no neighbor) falls back to the standard default.
-    const std = recommendPlacements({}, null, 'terminal', VIEWPORT, null)[0].size
+  it('MIRRORED SIZE: each adjacent candidate mirrors the node on BOTH axes, clamped to [MIN,MAX] and the slot', () => {
+    // An unusually-shaped (tall) focused node. The mirror rule copies the node's
+    // FULL size onto every adjacent candidate, clamped to [MIN,MAX] and the slot's
+    // available extent — there is no per-axis fallback to the default any more.
     const a = node('a', 200, 200, 600, 1000)
     const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThanOrEqual(1)
-    // The node's height (1000) exceeds PLACEMENT_MAX_H, so a side slot matches it
-    // capped at 900; its open width axis keeps the default.
-    const sideSlot = cands.find((c) => c.size.width === std.width)
-    expect(sideSlot, `expected a side slot at the default width: ${JSON.stringify(cands)}`).toBeTruthy()
-    expect(sideSlot!.size.height).toBe(900)
-    // An above/below slot matches the node's width (600) with the default height.
-    const stackSlot = cands.find((c) => c.size.width === 600)
-    expect(stackSlot, `expected a stacked slot matching the node width: ${JSON.stringify(cands)}`).toBeTruthy()
-    expect(stackSlot!.size.height).toBe(std.height)
+    // Every candidate mirrors the node's width (600), well within [MIN_W, MAX_W].
+    cands.forEach((c) => expect(c.size.width).toBe(600))
+    // The node's height (1000) exceeds PLACEMENT_MAX_H, so a side slot (whose
+    // height isn't bounded by the viewport) mirrors it capped at 900.
+    const sideSlot = cands.find((c) => c.size.height === 900)
+    expect(sideSlot, `expected a side slot capped at MAX_H: ${JSON.stringify(cands)}`).toBeTruthy()
+    // An above/below slot also mirrors the node's height, but the viewport bounds
+    // its available extent below 900, so it lands smaller (still > the old default).
+    const stackSlot = cands.find((c) => c.point.x === a.origin.x)
+    expect(stackSlot, `expected a stacked slot aligned to the node: ${JSON.stringify(cands)}`).toBeTruthy()
+    expect(stackSlot!.size.height).toBeGreaterThan(400) // no longer the terminal default
+    expect(stackSlot!.size.height).toBeLessThanOrEqual(900)
   })
 
   it('GROW-TO-FILL: a bounded gap is filled even when a standard panel would fit', () => {

@@ -190,43 +190,35 @@ export function pinnedY(f: Rect, inflated: Rect[]): boolean {
   return top && bottom
 }
 
-/** Width of the window adjacent above/below `f` with the longest shared horizontal
- *  run (tie-break: center nearest rankAt.x). Returns the ORIGINAL width
- *  (inflated minus the gap on both sides), or null when nothing is adjacent. */
-export function matchedWidth(f: Rect, inflated: Rect[], gap: number, rankAt: Point): number | null {
+/** Original size of the window adjacent to `f` (touching any one of its four sides
+ *  with a positive shared run) that has the LONGEST shared run along its touching
+ *  edge; tie-broken by the neighbor center nearest `rankAt` along that run's axis.
+ *  Returns the ORIGINAL size (inflated minus the gap on both sides), or null when
+ *  nothing is adjacent. Used to mirror a neighbor's size onto a new panel. */
+export function matchedNeighborSize(f: Rect, inflated: Rect[], gap: number, rankAt: Point): Size | null {
   const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
-  let bestRun = 0, bestDist = Infinity, bestW: number | null = null
+  let bestRun = 0, bestDist = Infinity, best: Size | null = null
   for (const o of inflated) {
     const oL = o.origin.x, oR = oL + o.size.width, oT = o.origin.y, oB = oT + o.size.height
-    const adjacent = Math.abs(oB - fT) <= EPS || Math.abs(oT - fB) <= EPS
-    if (!adjacent) continue
-    const run = Math.min(oR, fR) - Math.max(oL, fL)
+    const vAdjacent = Math.abs(oB - fT) <= EPS || Math.abs(oT - fB) <= EPS // above/below → horizontal run
+    const hAdjacent = Math.abs(oR - fL) <= EPS || Math.abs(oL - fR) <= EPS // left/right → vertical run
+    let run = 0, dist = 0
+    if (vAdjacent) {
+      run = Math.min(oR, fR) - Math.max(oL, fL)
+      dist = Math.abs((oL + oR) / 2 - rankAt.x)
+    } else if (hAdjacent) {
+      run = Math.min(oB, fB) - Math.max(oT, fT)
+      dist = Math.abs((oT + oB) / 2 - rankAt.y)
+    } else {
+      continue
+    }
     if (run <= EPS) continue
-    const dist = Math.abs((oL + oR) / 2 - rankAt.x)
     if (run > bestRun + EPS || (Math.abs(run - bestRun) <= EPS && dist < bestDist)) {
-      bestRun = run; bestDist = dist; bestW = oR - oL - 2 * gap
+      bestRun = run; bestDist = dist
+      best = { width: oR - oL - 2 * gap, height: oB - oT - 2 * gap }
     }
   }
-  return bestW
-}
-
-/** Height of the window adjacent left/right of `f` with the longest shared vertical
- *  run (tie-break: center nearest rankAt.y). Returns the ORIGINAL height, or null. */
-export function matchedHeight(f: Rect, inflated: Rect[], gap: number, rankAt: Point): number | null {
-  const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
-  let bestRun = 0, bestDist = Infinity, bestH: number | null = null
-  for (const o of inflated) {
-    const oL = o.origin.x, oR = oL + o.size.width, oT = o.origin.y, oB = oT + o.size.height
-    const adjacent = Math.abs(oR - fL) <= EPS || Math.abs(oL - fR) <= EPS
-    if (!adjacent) continue
-    const run = Math.min(oB, fB) - Math.max(oT, fT)
-    if (run <= EPS) continue
-    const dist = Math.abs((oT + oB) / 2 - rankAt.y)
-    if (run > bestRun + EPS || (Math.abs(run - bestRun) <= EPS && dist < bestDist)) {
-      bestRun = run; bestDist = dist; bestH = oB - oT - 2 * gap
-    }
-  }
-  return bestH
+  return best
 }
 
 /** Snap the low edge of a fixed-size span to the nearest alignment guide (via either
@@ -311,10 +303,12 @@ function freeRectangles(area: Rect, obstacles: Rect[]): Rect[] {
  * Using the nearest free space first means no closer empty spot is ever left unused,
  * so the result stays tight with no odd gaps even when the windows aren't on a grid.
  *
- * Sizing is ORGANIC GROWTH: along an axis where the empty rectangle is pinned by a
- * window on BOTH sides (an interior gap) the ghost grows to fill that gap, up to the
- * max size; an axis open on either side has nothing to size it, so it falls back to
- * the panel's default extent.
+ * Sizing MIRRORS THE NEIGHBOR: along an axis where the empty rectangle is pinned by
+ * a window on BOTH sides (an interior gap) the ghost grows to fill that gap, up to
+ * the max size. Otherwise, when a single window is adjacent to the rect, the ghost
+ * takes that neighbor's FULL size — both width and height — clamped to [MIN,MAX] and
+ * the available space. Only when no window is adjacent does an axis fall back to the
+ * panel's default extent.
  *
  *  - A focused node on screen → packs around it (ranked from its centre).
  *  - Nothing focused → packs across the viewport, ranked from the cursor.
@@ -431,8 +425,9 @@ export function recommendPlacements(
 
   // Pack ghosts into the FREE SPACE, nearest the ranking point first. Each step
   // evaluates every free rectangle: it SIZES the ghost by filling a pinned axis,
-  // else matching a one-sided neighbor's dimension, else the panel default — each
-  // clamped to MIN/MAX and the rect. It then POSITIONS the ghost by snapping each
+  // else mirroring an adjacent neighbor's FULL size (both axes), else the panel
+  // default — each clamped to MIN/MAX and the rect. It then POSITIONS the ghost by
+  // snapping each
   // edge to the nearest alignment guide (else the grid) and clamping inside the
   // rect. The rectangle whose result lands closest to the ranking point wins; that
   // ghost (plus its gap) is carved out of the free space and the step repeats.
@@ -466,8 +461,9 @@ export function recommendPlacements(
 
       const pX = pinnedX(f, inflated)
       const pY = pinnedY(f, inflated)
-      const mwRaw = pX ? null : matchedWidth(f, inflated, gap, rankAt)
-      const mhRaw = pY ? null : matchedHeight(f, inflated, gap, rankAt)
+      const neighbor = matchedNeighborSize(f, inflated, gap, rankAt)
+      const mwRaw = pX ? null : (neighbor ? neighbor.width : null)
+      const mhRaw = pY ? null : (neighbor ? neighbor.height : null)
       const mW = pX ? availW : (mwRaw ?? std.width)
       const mH = pY ? availH : (mhRaw ?? std.height)
       const w = clamp(mW, PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, availW))

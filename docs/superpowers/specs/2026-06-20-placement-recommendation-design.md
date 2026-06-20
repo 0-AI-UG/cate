@@ -56,23 +56,18 @@ rectangle change, plus one new pure helper.
 
 ### 1b. Neighbor-matched sizing (replaces the open-axis fallback at lines ~358-359)
 
-Per free rect, per axis:
+Per free rect, the new panel MIRRORS its adjacent neighbor: a pinned axis (a window
+touching both sides — an interior gap) still grows to fill the gap, capped at MAX;
+otherwise, when a single window is adjacent to the rect (touching any one of its four
+sides with a positive shared run), the panel takes that neighbor's **FULL size —
+both width and height** — not just the dimension parallel to the shared edge. When
+several windows touch the rect, the neighbor with the **longest shared run** along
+its touching edge wins (the truest alignment partner), tie-broken by proximity to
+the ranking point. With **no adjacent neighbor at all**, an axis falls back to the
+per-type default size.
 
-- **Pinned** (window touching both sides of the axis) → fill the gap, capped at
-  MAX. *(unchanged behavior)*
-- **Open, but a neighbor touches one edge of the rect along that axis** → match the
-  neighbor's dimension parallel to the shared edge:
-  - window directly **above/below** (shares a horizontal run with the rect) →
-    match its **width**.
-  - window directly **left/right** (shares a vertical run with the rect) → match
-    its **height**.
-  - When several windows touch that edge, pick the one with the **longest shared
-    run** along the edge (the truest alignment partner); tie-break by proximity to
-    the ranking point.
-- **No neighbor at all** → panel default size. *(unchanged behavior)*
-
-The chosen dimension is always clamped to `[PLACEMENT_MIN, PLACEMENT_MAX]` and to
-the free rect's available extent (`availW` / `availH`), so an unusually large or
+Both mirrored dimensions are always clamped to `[PLACEMENT_MIN, PLACEMENT_MAX]` and
+to the free rect's available extent (`availW` / `availH`), so an unusually large or
 tiny neighbor cannot produce an awkward panel and the panel can never overflow its
 slot.
 

@@ -16,8 +16,7 @@ import {
   deriveGuides,
   pinnedX,
   pinnedY,
-  matchedWidth,
-  matchedHeight,
+  matchedNeighborSize,
   snapAxis,
   type PlacementTrace,
 } from './placement'
@@ -208,20 +207,28 @@ describe('recommendPlacements — around existing nodes', () => {
     expect(out.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('uses the size override on axes with no neighbor to match', () => {
+  it('uses the size override only where no neighbor is adjacent, mirroring the neighbor otherwise', () => {
     const size = { width: 400, height: 300 }
     const out = recommendPlacements(nodeMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 6, size)
     expect(out.length).toBeGreaterThanOrEqual(1)
-    // Neighbor-matched sizing now matches the node's dimension along a SHARED edge
-    // (a slot below matches the node's width; a slot beside it matches its height),
-    // so the override applies only on the axis with no adjacent neighbor. Every
-    // candidate must therefore carry the override on at least one axis, and never
-    // exceed it on the unmatched axis.
+    // Mirror rule: a candidate adjacent to the node (touching a side) takes the
+    // node's FULL size (640x400). A candidate with no adjacent neighbor (a corner
+    // slot) falls back to the override. So each candidate is EITHER the node's size
+    // OR the override exactly — never a per-axis blend.
+    const nodeRect: Rect = { origin: { x: 0, y: 0 }, size: TERMINAL }
     for (const c of out) {
-      const matchesOverride =
-        c.size.width === size.width || c.size.height === size.height
-      expect(matchesOverride, `candidate ${JSON.stringify(c)} keeps the override on its open axis`).toBe(true)
+      const mirrors = c.size.width === TERMINAL.width && c.size.height === TERMINAL.height
+      const overrides = c.size.width === size.width && c.size.height === size.height
+      expect(mirrors || overrides, `candidate ${JSON.stringify(c)} is the mirror or the override`).toBe(true)
+      // A candidate that mirrors must actually be adjacent to the node (touching it).
+      if (mirrors) {
+        const touches = rectsOverlap(inflate(rectOf(c), 41), nodeRect)
+        expect(touches, `mirroring candidate ${JSON.stringify(c)} touches the node`).toBe(true)
+      }
     }
+    // Both outcomes occur: the nearest slots mirror, the corners take the override.
+    expect(out.some((c) => c.size.width === TERMINAL.width && c.size.height === TERMINAL.height)).toBe(true)
+    expect(out.some((c) => c.size.width === size.width && c.size.height === size.height)).toBe(true)
   })
 
   it('grows a candidate to fill a bounded gap between two panels, matching the neighbors height', () => {
@@ -381,31 +388,31 @@ describe('nudgeToFree', () => {
   })
 })
 
-describe('matchedWidth / matchedHeight', () => {
+describe('matchedNeighborSize', () => {
   // A window inflated by gap=40. Window A: origin (1000,1000) size 600x400.
   const inflateWin = (x: number, y: number, w: number, h: number, gap = 40): Rect => ({
     origin: { x: x - gap, y: y - gap },
     size: { width: w + gap * 2, height: h + gap * 2 },
   })
 
-  it('matches the width of a window directly above the free rect', () => {
+  it('mirrors the full size of a window directly above the free rect', () => {
     // A at (1000,1000,600,400) inflated → bottom edge at 1440.
     const A = inflateWin(1000, 1000, 600, 400)
     // free rect spanning below A
     const f = { origin: { x: 0, y: 1440 }, size: { width: 4000, height: 2000 } }
-    expect(matchedWidth(f, [A], 40, { x: 1300, y: 1600 })).toBe(600)
+    expect(matchedNeighborSize(f, [A], 40, { x: 1300, y: 1600 })).toEqual({ width: 600, height: 400 })
   })
 
-  it('matches the height of a window directly left of the free rect', () => {
+  it('mirrors the full size of a window directly left of the free rect', () => {
     const A = inflateWin(1000, 1000, 600, 400) // right edge at 1640
     const f = { origin: { x: 1640, y: 0 }, size: { width: 2000, height: 4000 } }
-    expect(matchedHeight(f, [A], 40, { x: 1900, y: 1200 })).toBe(400)
+    expect(matchedNeighborSize(f, [A], 40, { x: 1900, y: 1200 })).toEqual({ width: 600, height: 400 })
   })
 
   it('returns null when no neighbor touches the rect', () => {
     const A = inflateWin(1000, 1000, 600, 400)
     const f = { origin: { x: 3000, y: 3000 }, size: { width: 500, height: 500 } }
-    expect(matchedWidth(f, [A], 40, { x: 3250, y: 3250 })).toBeNull()
+    expect(matchedNeighborSize(f, [A], 40, { x: 3250, y: 3250 })).toBeNull()
   })
 
   it('pinnedX true only when bracketed on both sides', () => {
@@ -482,18 +489,20 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
 
   const VP = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 4000, height: 4000 } }
 
-  it('matches the width of a window directly above (stacked)', () => {
+  it('mirrors the full size of a window directly above (stacked)', () => {
     const ns = nodesOf(node(1000, 1000, 600, 400))
     const out = recommendPlacements(ns, null, 'editor', VP, { x: 1300, y: 1600 })
-    expect(out[0].size.width).toBe(600)        // matched A's width
+    expect(out[0].size.width).toBe(600)        // mirrored A's width
+    expect(out[0].size.height).toBe(400)       // mirrored A's height too (was the default)
     expect(out[0].point.x).toBe(1000)          // aligned to A's left edge
     expect(out[0].point.y).toBe(1440)          // 40px gap below A (1400 + 40)
   })
 
-  it('matches the height of a window to the left (side-by-side)', () => {
+  it('mirrors the full size of a window to the left (side-by-side)', () => {
     const ns = nodesOf(node(1000, 1000, 600, 400))
     const out = recommendPlacements(ns, null, 'editor', VP, { x: 1900, y: 1200 })
-    expect(out[0].size.height).toBe(400)       // matched A's height
+    expect(out[0].size.width).toBe(600)        // mirrored A's width too (was the default)
+    expect(out[0].size.height).toBe(400)       // mirrored A's height
     expect(out[0].point.y).toBe(1000)          // aligned to A's top edge
   })
 
@@ -521,6 +530,7 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     expect(trace.guides.xs).toContain(1000)
     const s = trace.steps[0]
     expect(s.matchedWidth).toBe(600)
+    expect(s.matchedHeight).toBe(400) // mirror rule now sizes BOTH axes from the neighbor
     expect(s.pinnedX).toBe(false)
   })
 })
