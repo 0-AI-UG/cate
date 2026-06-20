@@ -1,8 +1,9 @@
 // =============================================================================
-// StartPage — the browser "new tab" page. A polished launchpad: time-based
+// StartPage — the browser "new tab" page. A clean, minimal launchpad: a quiet
 // greeting, a hero search box, a favorites grid and a recent-history list, all
-// fed by the shared global browserStore. Self-contained (no network): site
-// glyphs are generated gradient tiles, so it looks the same online or offline.
+// fed by the shared global browserStore. Styled purely with Cate's theme tokens
+// (surface levels + the selected accent), so it matches whatever theme is active.
+// Self-contained (no network): site glyphs are generated locally.
 // =============================================================================
 import { useMemo, useState } from 'react'
 import { Star, MagnifyingGlass, ArrowClockwise, Plus } from '@phosphor-icons/react'
@@ -39,14 +40,6 @@ function glyphOf(title: string, url: string): string {
   return (m ? m[0] : '•').toUpperCase()
 }
 
-/** Deterministic two-hue gradient from a seed, so each site has a stable color. */
-function gradientFor(seed: string): string {
-  let h = 0
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360
-  const h2 = (h + 40) % 360
-  return `linear-gradient(135deg, hsl(${h} 62% 52%), hsl(${h2} 60% 42%))`
-}
-
 function relativeTime(ts: number): string {
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000))
   if (s < 60) return 'just now'
@@ -66,13 +59,12 @@ function greeting(): string {
   return 'Good evening'
 }
 
-/** A generated gradient site glyph (no network). */
+/** A minimal, theme-consistent site glyph (surface tile + initial). */
 function SiteTile({ url, title, size }: { url: string; title: string; size: number }): JSX.Element {
-  const seed = hostOf(url) || title || url
   return (
     <div
-      className="flex items-center justify-center rounded-xl font-semibold text-white shrink-0 shadow-sm ring-1 ring-black/10"
-      style={{ width: size, height: size, background: gradientFor(seed), fontSize: size * 0.42 }}
+      className="flex items-center justify-center rounded-lg bg-surface-4 border border-subtle text-secondary font-medium shrink-0"
+      style={{ width: size, height: size, fontSize: size * 0.4 }}
     >
       {glyphOf(title, url)}
     </div>
@@ -96,27 +88,15 @@ export function StartPage({ onNavigate }: Props): JSX.Element {
   }
 
   return (
-    <div className="relative w-full h-full overflow-auto bg-surface-0">
-      {/* Soft accent glow behind the hero */}
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-80"
-        style={{ background: 'radial-gradient(60% 100% at 50% 0%, var(--accent-agent, rgba(99,102,241,0.18)) 0%, transparent 70%)', opacity: 0.5 }}
-      />
-
-      <div className="relative mx-auto w-full max-w-2xl px-8 pt-[12vh] pb-16">
+    <div className="w-full h-full overflow-auto bg-surface-0">
+      <div className="mx-auto w-full max-w-2xl px-8 pt-[14vh] pb-16">
         {/* Greeting */}
-        <div className="flex flex-col items-center text-center mb-7">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg ring-1 ring-black/10"
-            style={{ background: 'linear-gradient(135deg, hsl(215 70% 55%), hsl(255 60% 50%))' }}>
-            <span className="text-white text-lg font-bold">C</span>
-          </div>
-          <h1 className="text-xl font-semibold text-primary tracking-tight">{hello}</h1>
-        </div>
+        <h1 className="text-lg font-medium text-secondary text-center mb-6">{hello}</h1>
 
         {/* Hero search */}
         <form
           onSubmit={(e) => { e.preventDefault(); submit() }}
-          className="group flex items-center h-12 rounded-2xl border border-subtle bg-surface-2 px-4 gap-3 shadow-sm transition-all focus-within:border-agent/60 focus-within:ring-4 focus-within:ring-agent/15"
+          className="flex items-center h-12 rounded-xl border border-subtle bg-surface-2 px-4 gap-3 transition-colors focus-within:border-agent"
         >
           <MagnifyingGlass size={18} className="text-muted shrink-0" />
           <input
@@ -135,17 +115,17 @@ export function StartPage({ onNavigate }: Props): JSX.Element {
         {/* Favorites */}
         <section className="mt-10">
           <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted mb-3 flex items-center gap-1.5">
-            <Star size={12} weight="fill" className="text-agent" /> Favorites
+            <Star size={12} /> Favorites
           </h2>
           {bookmarks.length === 0 ? (
-            <EmptyState icon={<Star size={18} />} text="Star a page to pin it here for quick access." />
+            <EmptyState icon={<Star size={16} />} text="Star a page to pin it here for quick access." />
           ) : (
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
               {bookmarks.map((b) => (
                 <button
                   key={b.url}
                   onClick={() => onNavigate(b.url)}
-                  className="group flex items-center gap-2.5 p-2.5 rounded-xl border border-subtle bg-surface-2 hover:bg-surface-3 hover:border-strong hover:-translate-y-0.5 transition-all text-left"
+                  className="flex items-center gap-2.5 p-2.5 rounded-lg border border-subtle bg-surface-1 hover:bg-surface-2 hover:border-strong transition-colors text-left"
                 >
                   <SiteTile url={b.url} title={b.title} size={30} />
                   <div className="min-w-0 flex-1">
@@ -164,9 +144,9 @@ export function StartPage({ onNavigate }: Props): JSX.Element {
             <ArrowClockwise size={12} /> Recently visited
           </h2>
           {recent.length === 0 ? (
-            <EmptyState icon={<Plus size={18} />} text="Pages you visit will appear here." />
+            <EmptyState icon={<Plus size={16} />} text="Pages you visit will appear here." />
           ) : (
-            <div className="rounded-xl border border-subtle bg-surface-1 overflow-hidden divide-y divide-subtle">
+            <div className="rounded-lg border border-subtle bg-surface-1 overflow-hidden divide-y divide-subtle">
               {recent.map((h) => (
                 <button
                   key={h.url}
@@ -188,7 +168,7 @@ export function StartPage({ onNavigate }: Props): JSX.Element {
 
 function EmptyState({ icon, text }: { icon: JSX.Element; text: string }): JSX.Element {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-dashed border-subtle bg-surface-1/50 px-4 py-5 text-muted">
+    <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-subtle px-4 py-4 text-muted">
       <span className="opacity-60">{icon}</span>
       <span className="text-sm">{text}</span>
     </div>
