@@ -9,7 +9,16 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { recommendPlacements, findFreePosition, nudgeToFree, deriveGuides } from './placement'
+import {
+  recommendPlacements,
+  findFreePosition,
+  nudgeToFree,
+  deriveGuides,
+  pinnedX,
+  pinnedY,
+  matchedWidth,
+  matchedHeight,
+} from './placement'
 import { CANVAS_GRID_SIZE, rectsOverlap } from './layoutEngine'
 import { PANEL_DEFAULT_SIZES } from '../../shared/types'
 import type { CanvasNodeId, CanvasNodeState, Point, Rect, Size } from '../../shared/types'
@@ -358,6 +367,50 @@ describe('nudgeToFree', () => {
     // overlaps, rather than refusing the placement.
     expect(p).toEqual({ x: 0, y: 0 })
     expect(rectsOverlap({ origin: p, size }, { origin: { x: -2000, y: -2000 }, size: { width: 4000, height: 4000 } })).toBe(true)
+  })
+})
+
+describe('matchedWidth / matchedHeight', () => {
+  // A window inflated by gap=40. Window A: origin (1000,1000) size 600x400.
+  const inflateWin = (x: number, y: number, w: number, h: number, gap = 40): Rect => ({
+    origin: { x: x - gap, y: y - gap },
+    size: { width: w + gap * 2, height: h + gap * 2 },
+  })
+
+  it('matches the width of a window directly above the free rect', () => {
+    // A at (1000,1000,600,400) inflated → bottom edge at 1440.
+    const A = inflateWin(1000, 1000, 600, 400)
+    // free rect spanning below A
+    const f = { origin: { x: 0, y: 1440 }, size: { width: 4000, height: 2000 } }
+    expect(matchedWidth(f, [A], 40, { x: 1300, y: 1600 })).toBe(600)
+  })
+
+  it('matches the height of a window directly left of the free rect', () => {
+    const A = inflateWin(1000, 1000, 600, 400) // right edge at 1640
+    const f = { origin: { x: 1640, y: 0 }, size: { width: 2000, height: 4000 } }
+    expect(matchedHeight(f, [A], 40, { x: 1900, y: 1200 })).toBe(400)
+  })
+
+  it('returns null when no neighbor touches the rect', () => {
+    const A = inflateWin(1000, 1000, 600, 400)
+    const f = { origin: { x: 3000, y: 3000 }, size: { width: 500, height: 500 } }
+    expect(matchedWidth(f, [A], 40, { x: 3250, y: 3250 })).toBeNull()
+  })
+
+  it('pinnedX true only when bracketed on both sides', () => {
+    const A = inflateWin(1000, 1000, 600, 400) // right 1640
+    const B = inflateWin(2000, 1000, 600, 400) // left 1960
+    const f = { origin: { x: 1640, y: 1000 }, size: { width: 320, height: 400 } }
+    expect(pinnedX(f, [A, B])).toBe(true)
+    expect(pinnedX(f, [A])).toBe(false)
+  })
+
+  it('pinnedY true only when bracketed top and bottom', () => {
+    const A = inflateWin(1000, 1000, 600, 400) // bottom 1440
+    const B = inflateWin(1000, 2000, 600, 400) // top 1960
+    const f = { origin: { x: 1000, y: 1440 }, size: { width: 600, height: 520 } }
+    expect(pinnedY(f, [A, B])).toBe(true)
+    expect(pinnedY(f, [A])).toBe(false)
   })
 })
 

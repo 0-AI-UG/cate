@@ -143,6 +143,70 @@ export function deriveGuides(
     ys: [...ys].sort((a, b) => a - b),
   }
 }
+
+/** True when a window's edge sits against BOTH the left and right sides of `f`
+ *  (an interior horizontal gap), sharing a vertical run along each side. */
+export function pinnedX(f: Rect, inflated: Rect[]): boolean {
+  const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
+  let left = false, right = false
+  for (const o of inflated) {
+    if (Math.min(o.origin.y + o.size.height, fB) - Math.max(o.origin.y, fT) <= EPS) continue
+    if (Math.abs(o.origin.x + o.size.width - fL) <= EPS) left = true
+    if (Math.abs(o.origin.x - fR) <= EPS) right = true
+  }
+  return left && right
+}
+
+/** True when a window's edge sits against BOTH the top and bottom of `f`. */
+export function pinnedY(f: Rect, inflated: Rect[]): boolean {
+  const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
+  let top = false, bottom = false
+  for (const o of inflated) {
+    if (Math.min(o.origin.x + o.size.width, fR) - Math.max(o.origin.x, fL) <= EPS) continue
+    if (Math.abs(o.origin.y + o.size.height - fT) <= EPS) top = true
+    if (Math.abs(o.origin.y - fB) <= EPS) bottom = true
+  }
+  return top && bottom
+}
+
+/** Width of the window adjacent above/below `f` with the longest shared horizontal
+ *  run (tie-break: center nearest rankAt.x). Returns the ORIGINAL width
+ *  (inflated minus the gap on both sides), or null when nothing is adjacent. */
+export function matchedWidth(f: Rect, inflated: Rect[], gap: number, rankAt: Point): number | null {
+  const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
+  let bestRun = 0, bestDist = Infinity, bestW: number | null = null
+  for (const o of inflated) {
+    const oL = o.origin.x, oR = oL + o.size.width, oT = o.origin.y, oB = oT + o.size.height
+    const adjacent = Math.abs(oB - fT) <= EPS || Math.abs(oT - fB) <= EPS
+    if (!adjacent) continue
+    const run = Math.min(oR, fR) - Math.max(oL, fL)
+    if (run <= EPS) continue
+    const dist = Math.abs((oL + oR) / 2 - rankAt.x)
+    if (run > bestRun + EPS || (Math.abs(run - bestRun) <= EPS && dist < bestDist)) {
+      bestRun = run; bestDist = dist; bestW = oR - oL - 2 * gap
+    }
+  }
+  return bestW
+}
+
+/** Height of the window adjacent left/right of `f` with the longest shared vertical
+ *  run (tie-break: center nearest rankAt.y). Returns the ORIGINAL height, or null. */
+export function matchedHeight(f: Rect, inflated: Rect[], gap: number, rankAt: Point): number | null {
+  const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
+  let bestRun = 0, bestDist = Infinity, bestH: number | null = null
+  for (const o of inflated) {
+    const oL = o.origin.x, oR = oL + o.size.width, oT = o.origin.y, oB = oT + o.size.height
+    const adjacent = Math.abs(oR - fL) <= EPS || Math.abs(oL - fR) <= EPS
+    if (!adjacent) continue
+    const run = Math.min(oB, fB) - Math.max(oT, fT)
+    if (run <= EPS) continue
+    const dist = Math.abs((oT + oB) / 2 - rankAt.y)
+    if (run > bestRun + EPS || (Math.abs(run - bestRun) <= EPS && dist < bestDist)) {
+      bestRun = run; bestDist = dist; bestH = oB - oT - 2 * gap
+    }
+  }
+  return bestH
+}
 // --- Geometry helpers --------------------------------------------------------
 
 /** Grow a rect by `m` on every side. */
