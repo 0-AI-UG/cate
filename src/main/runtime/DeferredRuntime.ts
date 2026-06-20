@@ -129,7 +129,7 @@ export class DeferredRuntime implements Runtime {
       discardFile: (cwd, filePath) => d((c) => c.vcs.discardFile(cwd, filePath)),
       worktreeList: (cwd) => d((c) => c.vcs.worktreeList(cwd)),
       worktreeAdd: (repoCwd, branch, target, options) => d((c) => c.vcs.worktreeAdd(repoCwd, branch, target, options)),
-      worktreeAddFromPr: (repoCwd, pr, target) => d((c) => c.vcs.worktreeAddFromPr(repoCwd, pr, target)),
+      worktreeAddFromPr: (repoCwd, pr, target, options) => d((c) => c.vcs.worktreeAddFromPr(repoCwd, pr, target, options)),
       worktreeRemove: (repoCwd, worktreePath, options) => d((c) => c.vcs.worktreeRemove(repoCwd, worktreePath, options)),
       worktreePrune: (repoCwd) => d((c) => c.vcs.worktreePrune(repoCwd)),
       worktreeStatus: (worktreePath) => d((c) => c.vcs.worktreeStatus(worktreePath)),

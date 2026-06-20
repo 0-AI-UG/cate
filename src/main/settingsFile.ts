@@ -32,6 +32,8 @@ const SETTINGS_FILENAME = 'settings.json'
 const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   defaultShellPath: 'string',
   warnBeforeQuit: 'boolean',
+  closeWorktreePanelsOnDelete: 'boolean',
+  worktreeSymlinkPaths: 'array',
   activeThemeId: 'string',
   systemLightThemeId: 'string',
   systemDarkThemeId: 'string',

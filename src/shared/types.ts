@@ -1120,6 +1120,11 @@ export interface AppSettings {
   // General
   defaultShellPath: string
   warnBeforeQuit: boolean
+  /** When discarding a worktree, also close its terminal and agent panels. */
+  closeWorktreePanelsOnDelete: boolean
+  /** Workspace-root-relative paths to symlink into every new worktree (e.g.
+   *  node_modules) so they don't need rebuilding per worktree. Empty = off. */
+  worktreeSymlinkPaths: string[]
 
   // Appearance
   /** Active unified theme: 'system' (auto light/dark) or a theme id. */
@@ -1274,6 +1279,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // where it commonly isn't installed.
   defaultShellPath: '',
   warnBeforeQuit: false,
+  closeWorktreePanelsOnDelete: true,
+  worktreeSymlinkPaths: [],
 
   // Appearance
   activeThemeId: 'system',

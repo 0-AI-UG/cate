@@ -22,6 +22,34 @@ import type { VcsHost } from '../../main/runtime/types'
 
 const execFileP = promisify(execFile)
 
+/** Best-effort symlink of workspace-root-relative paths (e.g. node_modules,
+ *  build output) from the source checkout into a freshly created worktree, so
+ *  heavy artifacts don't need reinstalling per worktree. Each entry is resolved
+ *  relative to the source root; absolute or parent-escaping entries and missing
+ *  sources are skipped. Existing files in the worktree are never clobbered, and
+ *  a single failure never aborts worktree creation. */
+async function linkWorktreePaths(
+  sourceRoot: string,
+  worktreePath: string,
+  relPaths: string[] | undefined,
+): Promise<void> {
+  for (const raw of relPaths ?? []) {
+    const rel = raw.trim().replace(/^[/\\]+/, '')
+    if (!rel || rel.split(/[/\\]/).includes('..')) continue
+    const src = path.join(sourceRoot, rel)
+    const dest = path.join(worktreePath, rel)
+    try {
+      const stat = await fsp.stat(src) // follows links; source must exist
+      const occupied = await fsp.lstat(dest).then(() => true, () => false)
+      if (occupied) continue
+      await fsp.mkdir(path.dirname(dest), { recursive: true })
+      await fsp.symlink(src, dest, stat.isDirectory() ? 'junction' : 'file')
+    } catch {
+      // Source missing or link failed — skip this entry silently.
+    }
+  }
+}
+
 export interface VcsCapabilityDeps {
   /** Environment for `git`/`gh` subprocesses (login-shell PATH locally). */
   env: () => NodeJS.ProcessEnv
@@ -233,9 +261,10 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       await git.raw(args)
       // TODO(scope): pass requesting workspace scope once threaded.
       addAllowedRoot(targetPath)
+      await linkWorktreePaths(validateCwd(repoCwd), targetPath, options?.symlinkPaths)
       return { path: targetPath, branch }
     },
-    async worktreeAddFromPr(repoCwd, prNumber, targetPath) {
+    async worktreeAddFromPr(repoCwd, prNumber, targetPath, options) {
       const validRepo = validateCwd(repoCwd)
       const git = simpleGit(validRepo)
       if (!(await ghAvailable(validRepo))) throw new Error('GitHub CLI (gh) is required to check out pull requests.')
@@ -252,6 +281,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         throw new Error(`Could not check out PR #${prNumber}: ${error instanceof Error ? error.message : String(error)}`)
       }
       const branch = (await simpleGit(targetPath).raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+      await linkWorktreePaths(validRepo, targetPath, options?.symlinkPaths)
       return { path: targetPath, branch }
     },
     async worktreeRemove(repoCwd, worktreePath, options) {

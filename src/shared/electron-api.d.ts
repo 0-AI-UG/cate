@@ -181,7 +181,7 @@ export interface ElectronAPI {
     repoCwd: string,
     branch: string,
     targetPath: string,
-    options?: { createBranch?: boolean; baseRef?: string },
+    options?: { createBranch?: boolean; baseRef?: string; symlinkPaths?: string[] },
   ): Promise<{ path: string; branch: string }>
 
   /** Remove a git worktree registration and delete its directory from disk. */
@@ -223,6 +223,7 @@ export interface ElectronAPI {
     repoCwd: string,
     prNumber: number,
     targetPath: string,
+    options?: { symlinkPaths?: string[] },
   ): Promise<{ path: string; branch: string }>
 
   /** List open pull requests for the branch picker. Returns [] without `gh`. */
