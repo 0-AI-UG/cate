@@ -27,6 +27,7 @@ export interface PlacementTraceStep {
   chosen: Rect
   matchedWidth: number | null
   matchedHeight: number | null
+  filled: boolean
   size: Size
   point: Point
 }
@@ -143,6 +144,11 @@ const PLACEMENT_MAX_H = 900
 const EPS = 1
 const SNAP_TOL = PLACEMENT_GAP / 2
 const FIT_TOL = CANVAS_GRID_SIZE // one grid step of allowed shortfall
+// Grow-to-fill only offers a gap this big or larger, so an empty gap that doesn't
+// match a neighbor still gets used without producing a thin sliver. Tuning values
+// (the dev viz, Cmd/Ctrl+Shift+G, is the tool for adjusting them).
+const USEFUL_MIN_W = 400
+const USEFUL_MIN_H = 340
 
 /** Sorted, deduped alignment lines implied by the existing windows: each edge plus
  *  edge ± gap, so a new panel can land on a shared column/row or exactly one gap away. */
@@ -443,14 +449,33 @@ export function recommendPlacements(
       const availW = ix1 - ix0, availH = iy1 - iy0
       if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) continue
 
+      // Balanced sizing: mirror a neighbor when it fits (uniform tiles), else
+      // grow-to-fill a genuinely empty gap that is at least USEFUL_MIN in both
+      // dimensions (so real gaps get used, thin slivers are skipped), else the
+      // per-type default where no neighbor exists.
       const neighbor = matchedNeighborSize(f, obstacles, gap, rankAt)
-      const targetW = neighbor ? neighbor.width : std.width
-      const targetH = neighbor ? neighbor.height : std.height
-      // Pure mirror grid: only offer a spot that can host the full target size.
-      // A rect too small for it would yield a shrunken sliver, so skip it
-      // (FIT_TOL allows a sub-grid shortfall). Default size applies only where no
-      // neighbor exists.
-      if (availW < targetW - FIT_TOL || availH < targetH - FIT_TOL) continue
+      const mirrorFits =
+        !!neighbor && availW >= neighbor.width - FIT_TOL && availH >= neighbor.height - FIT_TOL
+      let targetW: number
+      let targetH: number
+      let filled = false
+      if (mirrorFits) {
+        // Clean uniform mirror tile (equals a real neighbor) — always offered.
+        targetW = neighbor!.width
+        targetH = neighbor!.height
+      } else if (neighbor) {
+        // Mirror does not fit: grow to fill the gap, but only if it's useful —
+        // drop thin slivers.
+        if (availW < USEFUL_MIN_W || availH < USEFUL_MIN_H) continue
+        targetW = availW
+        targetH = availH
+        filled = true
+      } else {
+        // No neighbor at all → default size; skip if it doesn't fit.
+        if (availW < std.width - FIT_TOL || availH < std.height - FIT_TOL) continue
+        targetW = std.width
+        targetH = std.height
+      }
       const w = clamp(targetW, PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, availW))
       const h = clamp(targetH, PLACEMENT_MIN_H, Math.min(PLACEMENT_MAX_H, availH))
 
@@ -469,8 +494,9 @@ export function recommendPlacements(
           meta: {
             free: freeSnapshot,
             chosen: f,
-            matchedWidth: neighbor ? neighbor.width : null,
-            matchedHeight: neighbor ? neighbor.height : null,
+            matchedWidth: mirrorFits ? neighbor!.width : null,
+            matchedHeight: mirrorFits ? neighbor!.height : null,
+            filled,
             size: { width: w, height: h },
             point,
           },

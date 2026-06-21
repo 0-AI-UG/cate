@@ -86,8 +86,8 @@ const PlacementVizOverlay: React.FC = () => {
       ))}
 
       {trace.steps.map((s, i) => {
-        const wLabel = s.matchedWidth != null ? `match ${s.matchedWidth}` : 'default'
-        const hLabel = s.matchedHeight != null ? `match ${s.matchedHeight}` : 'default'
+        const wLabel = s.filled ? 'fill' : s.matchedWidth != null ? `match ${s.matchedWidth}` : 'default'
+        const hLabel = s.filled ? 'fill' : s.matchedHeight != null ? `match ${s.matchedHeight}` : 'default'
         return (
           <g key={`step${i}`}>
             <rect x={s.point.x} y={s.point.y} width={s.size.width} height={s.size.height}

@@ -54,26 +54,32 @@ rectangle change, plus one new pure helper.
 - Dedupe (within a small epsilon) and sort each list.
 - O(n). No store / React dependency. Unit-tested directly.
 
-### 1b. Pure mirror grid sizing (replaces the open-axis fallback at lines ~358-359)
+### 1b. Balanced sizing — mirror → grow-to-fill → default (replaces the open-axis fallback at lines ~358-359)
 
-Per free rect, the new panel MIRRORS its adjacent neighbor's **FULL size — both
-width and height**. When a window is adjacent to the rect (touching any one of its
-four sides with a positive shared run), the panel takes that neighbor's full size,
-not just the dimension parallel to the shared edge. When several windows touch the
-rect, the neighbor with the **longest shared run** along its touching edge wins (the
-truest alignment partner), tie-broken by proximity to the ranking point.
+Per free rect, sizing follows a three-way balanced rule:
 
-There is **no grow-to-fill**: a rect too small to host the neighbor's full size
-(beyond a one-grid-step `FIT_TOL`) is **SKIPPED** rather than filled with a shrunken
-sliver. The mirrored size is clamped to `[PLACEMENT_MIN, PLACEMENT_MAX]` so an
-unusually large neighbor cannot produce an enormous panel.
+- **Mirror a neighbor when it fits.** When a window (or already-placed ghost) is
+  adjacent to the rect (touching any one of its four sides with a positive shared
+  run) and its **FULL size — both width and height** fits the grid-aligned interior
+  (within a one-grid-step `FIT_TOL`), the panel takes that neighbor's full size. When
+  several windows touch the rect, the neighbor with the **longest shared run** along
+  its touching edge wins (the truest alignment partner), tie-broken by proximity to
+  the ranking point. This yields uniform same-size tiles.
+- **Grow-to-fill a genuinely empty gap.** When a neighbor exists but its full size
+  does NOT fit, the panel grows to fill the interior of the gap — but only if the gap
+  is useful, i.e. at least `USEFUL_MIN_W` × `USEFUL_MIN_H`. A gap thinner than that in
+  either dimension is **SKIPPED** rather than filled with a thin sliver. This means an
+  empty gap whose size matches no neighbor (mismatched-size neighbors around a center
+  hole) still gets a recommendation instead of being left unused.
+- **Default where there is no neighbor at all.** With nothing adjacent, the panel
+  falls back to the per-type default size; a rect too small for it (beyond `FIT_TOL`)
+  is skipped.
 
-Already-placed ghosts also count as mirror neighbors (the packer carries a growing
+The chosen size is clamped to `[PLACEMENT_MIN, PLACEMENT_MAX]` (and the slot's
+available extent) so an unusually large neighbor or gap cannot produce an enormous
+panel. Already-placed ghosts count as mirror neighbors (the packer carries a growing
 obstacle list seeded with the real windows and appended to as each ghost is placed),
-so a spot with no real-window neighbor mirrors the adjacent ghost and the window's
-size chains outward, tiling the recommendations into a uniform grid of same-size
-tiles. With **no adjacent neighbor at all**, the panel falls back to the per-type
-default size.
+so the window's size chains outward, tiling the recommendations into a uniform grid.
 
 ### 1c. Guide-snapped positioning (replaces the grid-only snap at lines ~362-365)
 

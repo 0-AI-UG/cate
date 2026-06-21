@@ -500,25 +500,23 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
-  it('MIRRORED SIZE: each adjacent candidate mirrors the node on BOTH axes, clamped to [MIN,MAX] and the slot', () => {
-    // An unusually-shaped (tall) focused node. The mirror rule copies the node's
-    // FULL size onto every adjacent candidate, clamped to [MIN,MAX] and the slot's
-    // available extent — there is no per-axis fallback to the default any more.
+  it('MIRRORED SIZE: a side slot mirrors the node on BOTH axes (height capped at MAX), no shrunken sliver', () => {
+    // An unusually-shaped (tall) focused node (600x1000). On the LEFT/RIGHT the
+    // free slot is tall enough to host the node's full height, so the mirror copies
+    // the node's full size onto the candidate, clamped to [MIN,MAX] — width 600,
+    // height capped at PLACEMENT_MAX_H (900). The mirror is never a shrunken sliver.
     const a = node('a', 200, 200, 600, 1000)
     const cands = recommendPlacements(toMap(a), 'a', 'terminal', VIEWPORT, null)
     expect(cands.length).toBeGreaterThanOrEqual(1)
-    // Every candidate mirrors the node's width (600), well within [MIN_W, MAX_W].
-    cands.forEach((c) => expect(c.size.width).toBe(600))
-    // The node's height (1000) exceeds PLACEMENT_MAX_H, so every mirror lands at the
-    // MAX_H cap (900); a slot too short to host it (beyond FIT_TOL) is SKIPPED, so
-    // no shrunken stacked sliver appears — every height sits at the cap (within a
-    // grid step of residual-slab clamping).
-    const sideSlot = cands.find((c) => c.size.height === 900)
-    expect(sideSlot, `expected a side slot capped at MAX_H: ${JSON.stringify(cands)}`).toBeTruthy()
-    cands.forEach((c) =>
-      expect(c.size.height, `no shrunken sliver: ${JSON.stringify(c)}`).toBeGreaterThanOrEqual(900 - CANVAS_GRID_SIZE),
-    )
-    cands.forEach((c) => expect(c.size.height).toBeLessThanOrEqual(900))
+    // A side slot mirrors the node: width 600, height clamped to MAX_H (900).
+    const sideSlot = cands.find((c) => c.size.width === 600 && c.size.height === 900)
+    expect(sideSlot, `expected a side mirror capped at MAX_H: ${JSON.stringify(cands)}`).toBeTruthy()
+    // Every mirror (width 600) sits at the MAX_H cap — no shrunken stacked sliver.
+    cands
+      .filter((c) => c.size.width === 600)
+      .forEach((c) => {
+        expect(c.size.height, `no shrunken sliver: ${JSON.stringify(c)}`).toBe(900)
+      })
   })
 
   it('MIRROR GRID: a bounded gap mirrors the neighbor size, never grows to fill', () => {

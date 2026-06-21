@@ -602,6 +602,60 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     }
   })
 
+  it('fills a useful empty gap that matches no neighbor (grow-to-fill)', () => {
+    // A center gap bounded by mismatched-size neighbors: a wide window above and
+    // below (1500x200) and tall narrow windows left/right (300x600). The longest-
+    // shared-run neighbor is the wide above/below window, whose 1500 width does NOT
+    // fit the 820-wide interior gap, so the mirror is rejected — but the gap is
+    // >= USEFUL_MIN in both dimensions, so it GROWS TO FILL rather than being
+    // skipped. (Under the old pure-mirror rule this obvious empty gap got nothing.)
+    const above = node(0, 0, 1500, 200)
+    const left = node(0, 240, 300, 600)
+    const right = node(1200, 240, 300, 600)
+    const below = node(0, 880, 1500, 200)
+    const ns = nodesOf(above, left, right, below)
+    const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1500, height: 1080 } }
+    const trace: PlacementTrace = {
+      area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
+      rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [],
+    }
+    const out = recommendPlacements(ns, null, 'editor', vp, { x: 750, y: 540 }, 6, undefined, trace)
+    // A candidate appears in the center gap, sized to (approximately) the gap.
+    const gapCand = out.find(
+      (c) => c.point.x >= 300 && c.point.x + c.size.width <= 1200 &&
+             c.point.y >= 200 && c.point.y + c.size.height <= 880,
+    )
+    expect(gapCand, `expected a grow-to-fill candidate in the gap: ${JSON.stringify(out)}`).toBeTruthy()
+    // Grow-to-fill: it spans (about) the whole interior gap — 820 wide x 600 tall —
+    // which is wider than every neighbor (none is 820 wide).
+    expect(gapCand!.size).toEqual({ width: 820, height: 600 })
+    // The trace marks the step as a fill (no mirror match).
+    const filledStep = trace.steps.find((s) => s.filled)
+    expect(filledStep, 'a filled step is recorded').toBeTruthy()
+    expect(filledStep!.matchedWidth).toBeNull()
+    expect(filledStep!.matchedHeight).toBeNull()
+  })
+
+  it('skips a thin sliver gap (one dimension below USEFUL_MIN) — no grow-to-fill', () => {
+    // Same shape as the grow-to-fill case but the center gap is only 320 wide
+    // (< USEFUL_MIN_W = 400). The mirror of the wide above/below neighbor does not
+    // fit either, so this would be a grow-to-fill candidate — but it is too thin to
+    // be useful, so it is SKIPPED rather than producing a sliver in the gap.
+    const above = node(0, 0, 1500, 300)
+    const left = node(0, 340, 500, 600)
+    const right = node(900, 340, 500, 600) // gap x 540..860 → 320 wide
+    const below = node(0, 980, 1500, 300)
+    const ns = nodesOf(above, left, right, below)
+    const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1400, height: 1280 } }
+    const out = recommendPlacements(ns, null, 'editor', vp, { x: 700, y: 640 }, 6)
+    // No candidate squeezes into the thin 320px center gap.
+    const sliver = out.find(
+      (c) => c.point.x > 500 && c.point.x + c.size.width < 900 &&
+             c.point.y > 340 && c.point.y + c.size.height < 940,
+    )
+    expect(sliver, `no sliver candidate expected: ${JSON.stringify(out)}`).toBeUndefined()
+  })
+
   it('fills a trace when one is provided', () => {
     const ns = nodesOf(node(1000, 1000, 600, 400))
     const trace: PlacementTrace = {
