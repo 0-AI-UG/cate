@@ -179,7 +179,7 @@ describe('in-process fs subscriptions', () => {
 
     unsubA()
     unsubB()
-  })
+  }, 20_000)
 
   // In-proc subscriptions are ACTIVE: each opens its own watcher when no
   // covering one exists (matching the daemon's runtime.file.watch), so a fresh
@@ -199,11 +199,13 @@ describe('in-process fs subscriptions', () => {
 
     const file = path.join(root, 'after.txt')
     let rev = 0
-    await waitFor(() => lateEvents.length, 1, () => fs.writeFile(file, `x${++rev}`, 'utf8'))
+    // A fresh watcher armed right after the prior one was torn down can be slow
+    // to start delivering on Windows CI, so give the poke loop extra headroom.
+    await waitFor(() => lateEvents.length, 1, () => fs.writeFile(file, `x${++rev}`, 'utf8'), 15_000)
 
     expect(lateEvents).toContain(file)
     // The unsubscribed listener got nothing more after it left.
     expect(earlyEvents).toHaveLength(earlyCountAtTeardown)
     unsubLate()
-  })
+  }, 20_000)
 })
