@@ -766,6 +766,18 @@ describe('canvasStore ghost placement actions', () => {
     expect(pending!.candidates.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('beginPlacement captures the dev placement trace on pendingPlacement', () => {
+    // Vitest runs with import.meta.env.DEV truthy, so the dev-only trace capture
+    // is active here. (Verified: import.meta.env.DEV === true under vitest.)
+    const store = setup()
+    store.getState().beginPlacement('p1', 'terminal')
+    const pending = store.getState().pendingPlacement
+    expect(pending).not.toBeNull()
+    expect(pending!.trace).toBeDefined()
+    expect(pending!.trace!.steps.length).toBeGreaterThan(0)
+    expect(pending!.trace!.guides).toBeDefined()
+  })
+
   it('beginPlacement on an empty canvas skips the picker and drops the panel at the camera centre', () => {
     const store = createCanvasStore()
     store.getState().setContainerSize({ width: 1000, height: 800 })

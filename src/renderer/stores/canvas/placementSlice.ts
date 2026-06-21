@@ -7,7 +7,7 @@
 import type { Rect } from '../../../shared/types'
 import { ZOOM_MIN, ZOOM_MAX, PANEL_DEFAULT_SIZES } from '../../../shared/types'
 import { viewToCanvas as viewToCanvasCoords } from '../../lib/canvas/coordinates'
-import { recommendPlacements, nudgeToFree } from '../../canvas/placement'
+import { recommendPlacements, nudgeToFree, type PlacementTrace } from '../../canvas/placement'
 import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
 import type { CanvasStoreCtx } from './storeCtx'
 
@@ -56,6 +56,13 @@ export function createPlacementSlice(set: CanvasSet, get: CanvasGet, ctx: Canvas
         get().focusAndCenter(nodeId)
         return true
       }
+      // Dev-only: capture the algorithm's reasoning so the placement-viz overlay
+      // (Cmd/Ctrl+Shift+G) can render the REAL spots. Stays undefined in prod, so
+      // no object is allocated and the trace path costs nothing.
+      const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
+      const trace: PlacementTrace | undefined = isDev
+        ? { area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } }, rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [] }
+        : undefined
       const candidates = recommendPlacements(
         state.nodes,
         state.focusedNodeId,
@@ -64,6 +71,7 @@ export function createPlacementSlice(set: CanvasSet, get: CanvasGet, ctx: Canvas
         ctx.lastPointerCanvasPos,
         undefined,
         nodeSize,
+        trace,
       )
       if (candidates.length === 0) return false
 
@@ -100,6 +108,7 @@ export function createPlacementSlice(set: CanvasSet, get: CanvasGet, ctx: Canvas
           freeArmed: false,
           freeGhost: null,
           size: nodeSize,
+          trace,
           prevZoom: state.zoomLevel,
           prevOffset: state.viewportOffset,
           onCancelled,

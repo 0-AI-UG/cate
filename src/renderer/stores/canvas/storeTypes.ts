@@ -14,7 +14,7 @@ import type {
   Size,
   PanelType,
 } from '../../../shared/types'
-import type { PlacementCandidate } from '../../canvas/placement'
+import type { PlacementCandidate, PlacementTrace } from '../../canvas/placement'
 
 /** Interactive ghost placement awaiting a user-chosen spot. */
 export interface PendingPlacement {
@@ -30,9 +30,12 @@ export interface PendingPlacement {
   /** Escape hatch preview: where a free "click-anywhere" placement would land
    *  (only while `freeArmed`). */
   freeGhost: { point: Point; size: Size } | null
-  /** Resolved node size for this placement (honors the user's default-size
-   *  setting); falls back to the panel-type default when unset. */
+  /** Resolved node size for this placement (the panel type's default). */
   size: Size
+  /** Dev-only: the placement algorithm's trace from this computation, captured so
+   *  the dev visualization overlay (Cmd/Ctrl+Shift+G) can render the REAL spots.
+   *  Populated only in dev builds; undefined in production. */
+  trace?: PlacementTrace
   /** Viewport before we zoomed out to show recommendations — restored on cancel/commit. */
   prevZoom: number
   prevOffset: Point
