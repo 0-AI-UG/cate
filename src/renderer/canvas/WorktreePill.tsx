@@ -19,6 +19,7 @@ import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
+import { resolveWorktree } from '../../shared/worktrees'
 import type { PanelState } from '../../shared/types'
 
 interface WorktreePillProps {
@@ -37,7 +38,7 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
   const focusWorktree = useUIStore((s) => s.focusWorktree)
   const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
 
-  const current = worktrees.find((w) => w.id === panel.worktreeId) ?? worktrees.find((w) => w.isPrimary)
+  const current = resolveWorktree(panel.worktreeId, worktrees) ?? worktrees.find((w) => w.isPrimary)
   const currentId = current?.id
 
   // Collapsed (icon-only) until hovered, so the overlay covers as little of the

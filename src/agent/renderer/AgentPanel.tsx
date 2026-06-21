@@ -64,6 +64,7 @@ import type {
 } from '../../shared/types'
 import type { AgentMessage as StoreMessage } from './agentStore'
 import { loadDefaultModel, clearModelPrefsForProvider } from './agentModelPrefs'
+import { resolveWorktree } from '../../shared/worktrees'
 
 // -----------------------------------------------------------------------------
 // Component
@@ -74,9 +75,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   // If this panel is tagged with a worktree, prefer its path so pi spawns
   // inside that parallel checkout instead of the workspace's primary root.
   const panelState = workspace?.panels[panelId]
-  const taggedWorktree = panelState?.worktreeId
-    ? workspace?.worktrees?.find((w) => w.id === panelState.worktreeId)
-    : undefined
+  const taggedWorktree = resolveWorktree(panelState?.worktreeId, workspace?.worktrees)
   const cwd = taggedWorktree?.path ?? workspace?.rootPath ?? ''
 
   // ---------------------------------------------------------------------------

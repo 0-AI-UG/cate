@@ -22,6 +22,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
+import { resolveWorktree } from '../../shared/worktrees'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -95,14 +96,24 @@ export default function TerminalPanel({
   const panelCwd = useAppStore(
     (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.cwd,
   )
+  // The worktree this terminal is tagged to (the title-bar pill), resolved to its
+  // checkout path. This is the AUTHORITATIVE cwd for a tagged terminal — same as
+  // AgentPanel — so a restart respawns it inside its worktree regardless of
+  // whether the live cwd was captured at save time (which is flaky: it depends on
+  // a live PTY query). Returns a stable string, so this selector is cheap.
+  const taggedWorktreePath = useAppStore((state) => {
+    const ws = state.workspaces.find((w) => w.id === workspaceId)
+    return resolveWorktree(ws?.panels[panelId]?.worktreeId, ws?.worktrees)?.path
+  })
   // Bumped by respawnPanelTerminal() to force a fresh PTY at a new cwd (worktree
   // switch). Folded into the lifecycle effect deps below so it re-creates.
   const ptyEpoch = useAppStore(
     (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.ptyEpoch ?? 0,
   )
   const workspaceRoot = workspaces.find((w) => w.id === workspaceId)?.rootPath
-  // Prefer an explicit per-panel cwd (drag-drop folder, worktree, etc.).
-  const rootPath = panelCwd || workspaceRoot
+  // Tagged worktree wins; else an explicit per-panel cwd (drag-drop folder); else
+  // the workspace root.
+  const rootPath = taggedWorktreePath || panelCwd || workspaceRoot
   const rootPathRef = useRef(rootPath)
   rootPathRef.current = rootPath
 
