@@ -70,27 +70,94 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   // via the rebuild below.
   const buildIgnored = (rootPath: string) => fileLeaf.createFsIgnoreMatcher(rootPath, new Set(exclusionSet))
 
-  // Registry of active fs-watch subscriptions, so setExclusions can rebuild each
-  // with the new ignore list. Keyed by a unique handle (an object identity) so a
-  // concurrent unsub during a rebuild removes exactly its own entry.
-  interface WatchEntry {
+  interface WatchSubscriber {
     prefix: string
     onChange: (changedPath: string, type: FsChangeType) => void
-    watcher: ReturnType<typeof watch>
   }
-  const activeWatches = new Set<WatchEntry>()
+
+  interface SharedWatch {
+    root: string
+    watcher: ReturnType<typeof watch>
+    subscribers: Set<WatchSubscriber>
+  }
+
+  // One recursive chokidar instance can cover several runtime.file.watch()
+  // subscribers under the same root. This keeps the local daemon from opening a
+  // second full-tree watch for the git monitor, agent auth sync, and any future
+  // nested subscriptions in the same workspace.
+  //
+  // Concurrency note: the SharedWatch object is still the identity token. Every
+  // stale unsubscribe/error/rebuild path checks `watchPool.get(root) === shared`
+  // before deleting or closing the current watcher, so an old handle cannot tear
+  // down a newer watcher that reused the same root key.
+  const watchPool = new Map<string, SharedWatch>()
+
+  const pathHasPrefix = (filePath: string, prefix: string): boolean => {
+    const fp = filePath.replace(/\\/g, '/')
+    const pre = prefix.replace(/\\/g, '/')
+    if (fp === pre) return true
+    if (!fp.startsWith(pre)) return false
+    const next = fp.charCodeAt(pre.length)
+    return next === 47 /* / */ || next === 92 /* \ */
+  }
 
   // Create a chokidar watcher for `prefix` with the CURRENT ignore list, wiring
   // its add/change/unlink to onChange. Used on first watch and on every rebuild.
-  const spawnWatcher = (prefix: string, onChange: (changedPath: string, type: FsChangeType) => void) => {
+  const spawnWatcher = (shared: SharedWatch) => {
     // Full-tree watch (no `depth` cap) — clients assume events for nested
     // paths; the ignore matcher prunes hidden/excluded subtrees.
-    const root = validatePath(prefix)
-    const w = watch(root, { ignoreInitial: true, ignored: buildIgnored(root) })
-    w.on('add', (fp) => onChange(fp, 'create'))
-    w.on('change', (fp) => onChange(fp, 'update'))
-    w.on('unlink', (fp) => onChange(fp, 'delete'))
+    const w = watch(shared.root, { ignoreInitial: true, ignored: buildIgnored(shared.root) })
+    const fanOut = (fp: string, type: FsChangeType) => {
+      for (const sub of shared.subscribers) {
+        if (pathHasPrefix(fp, sub.prefix)) sub.onChange(fp, type)
+      }
+    }
+    w.on('add', (fp) => fanOut(fp, 'create'))
+    w.on('change', (fp) => fanOut(fp, 'update'))
+    w.on('unlink', (fp) => fanOut(fp, 'delete'))
+    w.on('error', () => {
+      // EMFILE/EPERM/etc. must not crash the daemon. Drop this broken watcher;
+      // polling callers (for example git monitor) continue, and a later watch
+      // request can attempt a fresh watcher.
+      if (watchPool.get(shared.root) === shared && shared.watcher === w) {
+        watchPool.delete(shared.root)
+      }
+      w.removeAllListeners()
+      void w.close()
+    })
     return w
+  }
+
+  const findCoveringWatch = (prefix: string): SharedWatch | null => {
+    let best: SharedWatch | null = null
+    for (const shared of watchPool.values()) {
+      if (!pathHasPrefix(prefix, shared.root)) continue
+      if (!best || shared.root.length > best.root.length) best = shared
+    }
+    return best
+  }
+
+  const subscribeWatch = (
+    prefix: string,
+    onChange: (changedPath: string, type: FsChangeType) => void,
+  ): (() => void) => {
+    const root = validatePath(prefix)
+    let shared = findCoveringWatch(root)
+    if (!shared) {
+      shared = { root, watcher: null as never, subscribers: new Set<WatchSubscriber>() }
+      shared.watcher = spawnWatcher(shared)
+      watchPool.set(root, shared)
+    }
+    const sub: WatchSubscriber = { prefix: root, onChange }
+    shared.subscribers.add(sub)
+
+    return () => {
+      sub.onChange = () => { /* unsubscribed */ }
+      shared.subscribers.delete(sub)
+      if (shared.subscribers.size > 0) return
+      if (watchPool.get(shared.root) === shared) watchPool.delete(shared.root)
+      void shared.watcher.close()
+    }
   }
 
   // The daemon is the AUTHORITATIVE path check: only it can realpath its own
@@ -129,17 +196,10 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
       // hidden dotfiles and the daemon's exclusionSet, so the watcher never
       // floods with node_modules/.git events. Electron-free (no getSettingSync).
       //
-      // The watcher is tracked in activeWatches so setExclusions can rebuild it
-      // with a fresh ignore list — the chokidar `ignored` is fixed at creation,
-      // so a live exclusion change must recreate the watcher.
-      const entry: WatchEntry = { prefix, onChange, watcher: spawnWatcher(prefix, onChange) }
-      activeWatches.add(entry)
-      return () => {
-        // Remove from the registry FIRST so a concurrent setExclusions rebuild
-        // never resurrects a just-unsubscribed watcher.
-        activeWatches.delete(entry)
-        void entry.watcher.close()
-      }
+      // The shared watcher is tracked in watchPool so setExclusions can rebuild
+      // it with a fresh ignore list — the chokidar `ignored` is fixed at
+      // creation, so a live exclusion change must recreate the watcher.
+      return subscribeWatch(prefix, onChange)
     },
   }
 
@@ -226,19 +286,18 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     setExclusions: async (names) => {
       exclusionSet.clear()
       for (const name of names) exclusionSet.add(name)
-      // Snapshot first: rebuilding mutates nothing in activeWatches (we swap the
-      // watcher field in place), but an unsub during this loop deletes its entry,
-      // so iterating a snapshot + re-checking membership avoids reviving it.
+      // Snapshot first: rebuilding swaps each SharedWatch's watcher field in
+      // place, but an unsub during this loop deletes its pool entry, so
+      // iterating a snapshot + re-checking object identity avoids reviving it.
       // Close the OLD watcher fully before the swap is considered done, so it
       // can't keep emitting events for newly-excluded names during the overlap.
       await Promise.all(
-        [...activeWatches].map(async (entry) => {
-          if (!activeWatches.has(entry)) return // unsubscribed concurrently
-          const old = entry.watcher
-          entry.watcher = spawnWatcher(entry.prefix, entry.onChange)
-          // The entry may have been unsubscribed while we were swapping; if so its
-          // new watcher must also be closed (the unsub already closed the old one).
-          if (!activeWatches.has(entry)) void entry.watcher.close()
+        [...watchPool.values()].map(async (shared) => {
+          if (watchPool.get(shared.root) !== shared) return // unsubscribed concurrently
+          const old = shared.watcher
+          shared.watcher = spawnWatcher(shared)
+          if (watchPool.get(shared.root) !== shared) void shared.watcher.close()
+          old.removeAllListeners()
           await old.close()
         }),
       )

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { DEFAULT_UPDATE_RECORD, type UpdateRecord } from './updateState'
+import { UPDATE_STATUS } from '../shared/ipc-channels'
 
 // ---------------------------------------------------------------------------
 // Mocks. electron-updater's autoUpdater is an EventEmitter with stubbed methods
@@ -377,5 +378,28 @@ describe('manual-reinstall fallback', () => {
     h.autoUpdater.emit('update-available', { version: '1.2.3' })
     await flushMicrotasks()
     expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(2)
+  })
+
+  it('checkForUpdatesManually re-surfaces a staged update (forceShow) so a dismissed modal can re-open', async () => {
+    const { initAutoUpdater, checkForUpdatesManually } = await loadModule()
+    initAutoUpdater()
+    h.autoUpdater.emit('update-downloaded', { version: '1.2.3' })
+    h.broadcastToAll.mockClear()
+    checkForUpdatesManually()
+    expect(h.broadcastToAll).toHaveBeenCalledWith(
+      UPDATE_STATUS,
+      expect.objectContaining({ state: 'downloaded', version: '1.2.3', forceShow: true }),
+    )
+  })
+
+  it('checkForUpdatesManually does NOT force-broadcast when nothing is staged', async () => {
+    const { initAutoUpdater, checkForUpdatesManually } = await loadModule()
+    initAutoUpdater()
+    h.broadcastToAll.mockClear()
+    checkForUpdatesManually()
+    expect(h.broadcastToAll).not.toHaveBeenCalledWith(
+      UPDATE_STATUS,
+      expect.objectContaining({ forceShow: true }),
+    )
   })
 })

@@ -349,7 +349,11 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             until hovered so it covers almost no content (#370). Self-hides for
             non-terminal/agent panels and single-worktree workspaces. */}
         {activePanel && effectiveWorkspaceId && (
-          <div className="absolute top-1.5 right-1.5 z-10">
+          // right-3 (12px), not right-1.5: terminal/agent panels are xterm-backed
+          // and always reserve a 6px scrollbar lane (overflow-y: scroll). Offset
+          // past it so the chip clears the scrollbar and leaves a 6px gap that
+          // matches the 6px top inset (top-1.5).
+          <div className="absolute top-1.5 right-3 z-10">
             <WorktreePill panel={activePanel} workspaceId={effectiveWorkspaceId} />
           </div>
         )}

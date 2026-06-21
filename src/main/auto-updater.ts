@@ -354,10 +354,19 @@ export function initAutoUpdater(): void {
 
 /** Wired to the "Check for Updates…" menu items. Re-arms the manual prompt since
  *  the user explicitly asked. No "you're up to date" dialog by design — a pending
- *  update surfaces via the OS notification / manual fallback. */
+ *  update surfaces via the OS notification / manual fallback.
+ *
+ *  If an update is already downloaded and staged, the in-app modal may have been
+ *  dismissed ("Install on next quit") and won't re-open on its own — the modal
+ *  only auto-shows once per version. An explicit check is the deliberate way back
+ *  to "Restart now", so re-broadcast the staged status with forceShow to re-open
+ *  it. Sent off lastStatus directly (not cached) so the flag stays a one-off. */
 export function checkForUpdatesManually(): void {
   if (!app.isPackaged) return
   manualPrompted = false
+  if (updatePendingInstall && lastStatus.state === 'downloaded') {
+    broadcastToAll(UPDATE_STATUS, { ...lastStatus, forceShow: true })
+  }
   void runCheck(canSelfUpdate())
 }
 

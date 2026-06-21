@@ -14,7 +14,11 @@ import headerImg from '../assets/welcome-header.jpg'
 // Styled to match WelcomeDialog: header image, surface tokens, beveled icon.
 export function UpdateReadyDialog() {
   const [version, setVersion] = useState<string | null>(null)
-  const [dismissed, setDismissed] = useState(false)
+  // The version the user dismissed ("Install on next quit"), so the modal does
+  // NOT re-nag every time the 15-minute background check re-announces the same
+  // staged update. A genuinely newer version (or an explicit "Check for
+  // Updates…", which arrives with forceShow) re-opens it.
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null)
   const [restarting, setRestarting] = useState(false)
   const [entered, setEntered] = useState(false)
 
@@ -22,7 +26,8 @@ export function UpdateReadyDialog() {
     const apply = (status: UpdateStatus): void => {
       if (status.state === 'downloaded') {
         setVersion(status.version)
-        setDismissed(false) // a freshly downloaded update re-surfaces the modal
+        // Explicit user re-check: clear the dismissal so it opens again.
+        if (status.forceShow) setDismissedVersion(null)
       }
     }
     const unsubscribe = window.electronAPI.onUpdateStatus(apply)
@@ -31,7 +36,7 @@ export function UpdateReadyDialog() {
     return unsubscribe
   }, [])
 
-  const open = version !== null && !dismissed
+  const open = version !== null && version !== dismissedVersion
 
   // Soft fade + scale in on appear (matches the welcome card's transition).
   useEffect(() => {
@@ -40,7 +45,7 @@ export function UpdateReadyDialog() {
     return () => cancelAnimationFrame(id)
   }, [open])
 
-  const later = useCallback(() => setDismissed(true), [])
+  const later = useCallback(() => setDismissedVersion(version), [version])
 
   const restart = useCallback(async () => {
     setRestarting(true)

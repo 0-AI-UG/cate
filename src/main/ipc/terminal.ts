@@ -11,7 +11,7 @@
 // A terminal id is mapped to its runtime so write/resize/kill route correctly.
 // =============================================================================
 
-import { ipcMain } from 'electron'
+import { clipboard, ipcMain } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import {
@@ -25,6 +25,7 @@ import {
   TERMINAL_LOG_READ,
   TERMINAL_SCROLLBACK_SAVE,
   TERMINAL_SET_VISIBILITY,
+  TERMINAL_CLIPBOARD_WRITE,
 } from '../../shared/ipc-channels'
 import { getOrCreateLogger, removeLogger, flushAll as flushAllLoggers, disposeAll as disposeAllLoggers } from './terminalLogger'
 import log from '../logger'
@@ -214,6 +215,16 @@ async function spawnTerminal(
   // validation to that workspace's roots when supplied.
   const cwd = options.cwd ? runtime.validateCwd(cwdPath, ownerWindowId, options.workspaceId) : ''
 
+  // Instant-exit diagnostics (#401): a shell that exits cleanly within this
+  // window without ever emitting a byte never became an interactive session
+  // (shell startup files exiting, or a PTY that couldn't be allocated). Log it
+  // with the resolved shell so the next report carries the cause; the renderer
+  // shows the user-facing hint.
+  const INSTANT_EXIT_THRESHOLD_MS = 1000
+  const spawnedAt = Date.now()
+  let sawData = false
+  let resolvedShell = ''
+
   // Per-terminal output coalescing (16ms) → owner window. Owner is read at flush
   // time so a cross-window transfer reroutes in-flight output. The PTY only ever
   // invokes onData with this terminal's own id, so the id captured on first data
@@ -229,6 +240,7 @@ async function spawnTerminal(
   const onData = (id: string, data: string): void => {
     if (shuttingDown) return
     terminalId = id
+    sawData = true
     countTerminalData(data.length)
     getOrCreateLogger(id).append(data)
 
@@ -248,6 +260,13 @@ async function spawnTerminal(
 
   const onExit = (id: string, exitCode: number): void => {
     if (shuttingDown) return
+    if (exitCode === 0 && !sawData && Date.now() - spawnedAt < INSTANT_EXIT_THRESHOLD_MS) {
+      log.warn(
+        '[terminal] %s exited immediately (code 0) with no output — shell %s likely exited from its startup files or no PTY could be allocated',
+        id,
+        resolvedShell || '(unknown)',
+      )
+    }
     const windowId = terminalOwners.get(id)
     cleanupTerminal(id)
     if (windowId != null) sendToWindow(windowId, TERMINAL_EXIT, id, exitCode)
@@ -258,6 +277,7 @@ async function spawnTerminal(
   // [requested, $SHELL, bash, sh]) — so a path that only exists on the client is
   // handled there, not branched on here.
   const handle = await runtime.process.create({ cols: options.cols, rows: options.rows, cwd, shell: options.shell }, onData, onExit)
+  resolvedShell = handle.shell ?? ''
 
   terminalRuntime.set(handle.id, runtimeId)
   terminalOwners.set(handle.id, ownerWindowId)
@@ -311,6 +331,14 @@ export function registerHandlers(): void {
 
   ipcMain.handle(TERMINAL_SET_VISIBILITY, async (_event, terminalId: string, visible: boolean) => {
     runtimeForTerminal(terminalId)?.process.setVisibility(terminalId, visible)
+  })
+
+  ipcMain.handle(TERMINAL_CLIPBOARD_WRITE, async (_event, text: string): Promise<void> => {
+    if (typeof text !== 'string') {
+      log.warn('[terminal] rejected non-string clipboard write payload')
+      return
+    }
+    clipboard.writeText(text)
   })
 
   ipcMain.handle(TERMINAL_GET_CWD, async (_event, ptyId: string): Promise<string | null> => {

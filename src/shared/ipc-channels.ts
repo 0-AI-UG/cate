@@ -13,6 +13,7 @@ export const TERMINAL_GET_CWD = 'terminal:getCwd'
 export const TERMINAL_LOG_READ = 'terminal:logRead'
 export const TERMINAL_SCROLLBACK_SAVE = 'terminal:scrollbackSave'
 export const TERMINAL_SET_VISIBILITY = 'terminal:setVisibility'
+export const TERMINAL_CLIPBOARD_WRITE = 'terminal:clipboardWrite'
 
 // Filesystem
 export const FS_READ_FILE = 'fs:readFile'

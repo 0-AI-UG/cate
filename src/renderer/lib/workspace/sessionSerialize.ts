@@ -118,6 +118,10 @@ export function projectFilesToSnapshot(
         // Re-attach the machine-local facts kept out of the committed file.
         worktreeId: sp?.worktreeId,
         unsavedContent: sp?.unsavedContent,
+        // Restore the per-panel cwd (worktree path / dropped folder) so the
+        // terminal respawns there. TerminalPanel reads panel.cwd directly. The
+        // terminalCwds map below feeds the separate scrollback-restore path.
+        cwd: sp?.workingDirectory,
       }
       if (sp?.workingDirectory) terminalCwds[id] = sp.workingDirectory
     }

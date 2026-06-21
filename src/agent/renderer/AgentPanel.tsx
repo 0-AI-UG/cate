@@ -35,6 +35,7 @@ import { useAgentStore } from './agentStore'
 import {
   getAgentPanelSession,
   saveAgentPanelSession,
+  disposeAgentChats,
   type OpenChat,
 } from './agentSessionRegistry'
 import { buildFileMentions, type LineRef } from './agentDrop'
@@ -329,6 +330,47 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     }
   }, [workspaceId, cwd, refreshCommands, markReady])
 
+  // Open the most-recent on-disk session for the current cwd as the panel's sole
+  // chat (or a fresh chat if the checkout has none). Shared by the mount effect
+  // and the worktree-switch reinit below; both pass a `signal` so they can abort
+  // the in-flight startup if the panel unmounts or the cwd changes again.
+  const openInitialChat = useCallback(async (signal: { cancelled: boolean }) => {
+    const myGen = ++openGenRef.current
+    let resume: AgentSessionListEntry | null = null
+    try {
+      if (cwd) {
+        const list = await window.electronAPI.agentListSessions(cwd)
+        if (signal.cancelled || myGen !== openGenRef.current) return
+        if (list.length > 0) resume = list[0]
+      }
+    } catch { /* ignore — list failures fall through to fresh session */ }
+
+    if (signal.cancelled || myGen !== openGenRef.current) return
+    const key = newAgentKey()
+    useAgentStore.getState().init(key)
+    // Resume: prefer the chat's last-used model recorded in the session.
+    // Fresh chat: prefer the user-configured default, else fall through to
+    // the availableModels effect below.
+    const initialModel: AgentModelRef | null = resume?.lastModel
+      ? { provider: resume.lastModel.provider, model: resume.lastModel.model }
+      : loadDefaultModel()
+    if (initialModel) useAgentStore.getState().setModel(key, initialModel)
+
+    if (resume) {
+      try {
+        const transcript = await window.electronAPI.agentLoadSessionMessages(resume.path)
+        if (signal.cancelled || myGen !== openGenRef.current) return
+        useAgentStore.getState().loadMessages(key, transcript as StoreMessage[])
+      } catch (err) { log.warn('[AgentPanel] load transcript failed', err) }
+    }
+    if (signal.cancelled || myGen !== openGenRef.current) return
+    // Set state BEFORE creating pi so this key is recorded in openChats (and
+    // mirrored to the session registry) before any teardown could run.
+    setOpenChats([{ agentKey: key, sessionFile: resume?.path ?? null }])
+    setActiveAgentKey(key)
+    await createAgent(key, initialModel, resume?.path)
+  }, [cwd, newAgentKey, createAgent])
+
   // Mount: re-adopt this panel's live chats if a prior mount left them in the
   // session registry (e.g. the panel was dragged between a canvas node and a
   // dock zone, which unmounts it here and remounts it in another subtree).
@@ -353,53 +395,48 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       return
     }
 
-    let cancelled = false
-    const myGen = ++openGenRef.current
-
-    void (async () => {
-      let resume: AgentSessionListEntry | null = null
-      try {
-        if (cwd) {
-          const list = await window.electronAPI.agentListSessions(cwd)
-          if (cancelled || myGen !== openGenRef.current) return
-          if (list.length > 0) resume = list[0]
-        }
-      } catch { /* ignore — list failures fall through to fresh session */ }
-
-      if (cancelled || myGen !== openGenRef.current) return
-      const key = newAgentKey()
-      useAgentStore.getState().init(key)
-      // Resume: prefer the chat's last-used model recorded in the session.
-      // Fresh chat: prefer the user-configured default, else fall through to
-      // the availableModels effect below.
-      const initialModel: AgentModelRef | null = resume?.lastModel
-        ? { provider: resume.lastModel.provider, model: resume.lastModel.model }
-        : loadDefaultModel()
-      if (initialModel) useAgentStore.getState().setModel(key, initialModel)
-
-      if (resume) {
-        try {
-          const transcript = await window.electronAPI.agentLoadSessionMessages(resume.path)
-          if (cancelled || myGen !== openGenRef.current) return
-          useAgentStore.getState().loadMessages(key, transcript as StoreMessage[])
-        } catch (err) { log.warn('[AgentPanel] load transcript failed', err) }
-      }
-      if (cancelled || myGen !== openGenRef.current) return
-      // Set state BEFORE creating pi so this key is recorded in openChats (and
-      // mirrored to the session registry) before any teardown could run.
-      setOpenChats([{ agentKey: key, sessionFile: resume?.path ?? null }])
-      setActiveAgentKey(key)
-      await createAgent(key, initialModel, resume?.path)
-    })()
+    const signal = { cancelled: false }
+    void openInitialChat(signal)
 
     return () => {
       // Cancel any in-flight startup; do NOT dispose pi/store here — the panel
       // may just be moving between canvas and dock. Teardown is centralized in
       // disposeAgentPanel(), called from the appStore close paths.
-      cancelled = true
+      signal.cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelId])
+
+  // Worktree switch: pi's cwd is fixed at spawn and its sessions are cwd-scoped
+  // on disk, so re-tagging the panel's worktree (via the WorktreePill) isn't
+  // enough — the live chats still run in the old checkout. When the derived cwd
+  // changes under a live mount, dispose the old checkout's chats and reopen in
+  // the new one so the running agent actually moves with the pill.
+  const chatsCwdRef = useRef<string | null>(null)
+  useEffect(() => {
+    // A transient empty derivation (workspace/worktree briefly unresolved) must
+    // never tear down a live agent — wait for a real path.
+    if (!cwd) return
+    // First run records the cwd the mount effect spawned/adopted at; only a
+    // later change (a worktree switch) triggers a reinit.
+    if (chatsCwdRef.current === null) {
+      chatsCwdRef.current = cwd
+      return
+    }
+    if (chatsCwdRef.current === cwd) return
+    chatsCwdRef.current = cwd
+
+    // Tear down every chat bound to the old checkout, then reopen for the new.
+    disposeAgentChats(openChatsRef.current)
+    readyByKey.current = {}
+    setOpenChats([])
+    setActiveAgentKey(null)
+    setReadyTick((n) => n + 1)
+
+    const signal = { cancelled: false }
+    void openInitialChat(signal)
+    return () => { signal.cancelled = true }
+  }, [cwd, openInitialChat])
 
   // Mirror the live chat bookkeeping into the session registry so a remount
   // (canvas<->dock move) can re-adopt the same chats. Synced on every change so
