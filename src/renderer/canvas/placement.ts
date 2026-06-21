@@ -436,6 +436,9 @@ export function recommendPlacements(
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
   const inflated = nodeRects.map((r) => inflateRect(r, gap))
   let free = freeRectangles(area, inflated)
+  // Spots also mirror already-placed ghosts (not just real windows), so the
+  // recommendations tile outward into a uniform grid. Grows as ghosts are placed.
+  const obstacles: Rect[] = [...inflated]
 
   const guides = deriveGuides(nodes, gap)
   if (trace) {
@@ -459,9 +462,9 @@ export function recommendPlacements(
       const availW = ix1 - ix0, availH = iy1 - iy0
       if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) continue
 
-      const pX = pinnedX(f, inflated)
-      const pY = pinnedY(f, inflated)
-      const neighbor = matchedNeighborSize(f, inflated, gap, rankAt)
+      const pX = pinnedX(f, obstacles)
+      const pY = pinnedY(f, obstacles)
+      const neighbor = matchedNeighborSize(f, obstacles, gap, rankAt)
       const mwRaw = pX ? null : (neighbor ? neighbor.width : null)
       const mhRaw = pY ? null : (neighbor ? neighbor.height : null)
       const mW = pX ? availW : (mwRaw ?? std.width)
@@ -498,6 +501,7 @@ export function recommendPlacements(
     raw.push({ point: best.point, size: best.size })
     if (trace) trace.steps.push(best.meta)
     const placed = inflateRect({ origin: best.point, size: best.size }, gap)
+    obstacles.push(placed)
     free = pruneFreeRects(free.flatMap((f) => splitFree(f, placed)))
   }
 

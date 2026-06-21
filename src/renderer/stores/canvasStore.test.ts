@@ -397,26 +397,27 @@ describe('canvasStore.recommendPlacements', () => {
     expect(three.length).toBeLessThanOrEqual(3)
   })
 
-  it('uses sizeOverride only where no neighbor is adjacent, mirroring the neighbor otherwise', () => {
+  it('mirrors the neighbor (and placed ghosts) over sizeOverride wherever a neighbor is adjacent', () => {
     const override = { width: 900, height: 700 }
     const node0 = node('a', 0, 0) // 200x150
     const cands = recommendPlacements(toMap(node0), 'a', 'terminal', VIEWPORT, null, 6, override)
     expect(cands.length).toBeGreaterThan(0)
-    // Mirror rule: a candidate adjacent to the node takes the node's FULL size,
-    // clamped to [MIN,MAX] (200x150 → MIN 280x180); a candidate with no adjacent
-    // neighbor falls back to the override, clamped to the slot. The override is
-    // therefore an UPPER bound only — it never appears blended axis-by-axis with
-    // the panel default the way the old one-axis-default rule produced.
-    expect(cands.some((c) => c.size.width === 280 && c.size.height === 180),
-      `expected a mirrored (MIN-clamped) candidate: ${JSON.stringify(cands)}`).toBe(true)
-    // The full override appears on at least one slot that has room for it.
-    expect(cands.some((c) => c.size.width === override.width && c.size.height === override.height),
-      `expected an override-sized candidate: ${JSON.stringify(cands)}`).toBe(true)
-    // Nothing ever exceeds the override on either axis.
+    // Mirror rule: a candidate adjacent to the node OR to an already-placed ghost
+    // takes that neighbor's FULL size, clamped to [MIN,MAX] (200x150 → MIN
+    // 280x180). Because placed ghosts also act as neighbors, the grid tiles
+    // outward and EVERY candidate around the single node mirrors at 280x180 —
+    // the override never wins where a neighbor exists.
     cands.forEach((c) => {
-      expect(c.size.width).toBeLessThanOrEqual(override.width)
-      expect(c.size.height).toBeLessThanOrEqual(override.height)
+      expect(c.size, `every candidate mirrors the node (MIN-clamped): ${JSON.stringify(c)}`)
+        .toEqual({ width: 280, height: 180 })
     })
+  })
+
+  it('falls back to sizeOverride on an empty canvas, where there is no neighbor to mirror', () => {
+    const override = { width: 900, height: 700 }
+    const cands = recommendPlacements({}, null, 'terminal', VIEWPORT, { x: 500, y: 400 }, 6, override)
+    expect(cands.length).toBeGreaterThan(0)
+    cands.forEach((c) => expect(c.size).toEqual(override))
   })
 
   it('biases the best recommendation toward the anchor (mouse) when given', () => {
@@ -554,16 +555,31 @@ describe('canvasStore.recommendPlacements', () => {
     expect(custom!.size.height).toBeGreaterThanOrEqual(180)
   })
 
-  it('GAP-FILL: a staggered layout yields a custom ghost filling an irregular hole', () => {
-    // Two diagonally-offset nodes leave an L-shaped empty region a pairwise
-    // gap check would miss — the rectangle finder fills its holes.
+  it('GAP-FILL: a staggered layout tiles the irregular hole with neighbor-sized ghosts', () => {
+    // Two diagonally-offset, equal-sized nodes leave an L-shaped empty region a
+    // pairwise gap check would miss — the rectangle finder fills its holes. With
+    // placed ghosts acting as mirror neighbors the region tiles UNIFORMLY at the
+    // node size (400x300) instead of producing an odd custom box, but a ghost
+    // still lands in the hole, clear of both nodes and on the grid.
     const a = node('a', 0, 0, 400, 300)
     const b = node('b', 600, 360, 400, 300, 1)
     const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
-    const custom = cands.find((c) => c.size.width !== 400 || c.size.height !== 300)
-    expect(custom).toBeDefined()
-    expect(rectsOverlap(rectOf(custom!), { origin: a.origin, size: a.size })).toBe(false)
-    expect(rectsOverlap(rectOf(custom!), { origin: b.origin, size: b.size })).toBe(false)
+    // Every ghost mirrors the (equal) node size — the grid is uniform.
+    cands.forEach((c) =>
+      expect(c.size, `mirrors the node size: ${JSON.stringify(c)}`).toEqual({ width: 400, height: 300 }),
+    )
+    // A ghost fills the hole region (within the bounding box of the two nodes),
+    // overlapping neither node.
+    const filler = cands.find(
+      (c) =>
+        c.point.x >= 0 && c.point.x + c.size.width <= 1000 &&
+        c.point.y >= 0 && c.point.y + c.size.height <= 660,
+    )
+    expect(filler, `expected a hole-filling ghost: ${JSON.stringify(cands)}`).toBeDefined()
+    expect(rectsOverlap(rectOf(filler!), { origin: a.origin, size: a.size })).toBe(false)
+    expect(rectsOverlap(rectOf(filler!), { origin: b.origin, size: b.size })).toBe(false)
+    expect(filler!.point.x % CANVAS_GRID_SIZE).toBe(0)
+    expect(filler!.point.y % CANVAS_GRID_SIZE).toBe(0)
   })
 
   it('GAP-FILL: a gap below the minimum gets no recommendation', () => {

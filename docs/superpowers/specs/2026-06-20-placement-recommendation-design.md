@@ -71,6 +71,12 @@ to the free rect's available extent (`availW` / `availH`), so an unusually large
 tiny neighbor cannot produce an awkward panel and the panel can never overflow its
 slot.
 
+Already-placed ghosts also count as mirror neighbors (the packer carries a growing
+obstacle list seeded with the real windows and appended to as each ghost is placed),
+so a spot with no real-window neighbor mirrors the adjacent ghost and the window's
+size chains outward, tiling the recommendations into a uniform grid of same-size
+tiles.
+
 ### 1c. Guide-snapped positioning (replaces the grid-only snap at lines ~362-365)
 
 After the size is chosen, position the panel near the ranking point as today, then

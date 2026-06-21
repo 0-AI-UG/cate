@@ -207,28 +207,44 @@ describe('recommendPlacements — around existing nodes', () => {
     expect(out.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('uses the size override only where no neighbor is adjacent, mirroring the neighbor otherwise', () => {
+  it('mirrors the node (and placed ghosts) rather than the override whenever a neighbor is adjacent', () => {
     const size = { width: 400, height: 300 }
     const out = recommendPlacements(nodeMap(node('a', 0, 0)), 'a', 'terminal', VIEWPORT, null, 6, size)
     expect(out.length).toBeGreaterThanOrEqual(1)
-    // Mirror rule: a candidate adjacent to the node (touching a side) takes the
-    // node's FULL size (640x400). A candidate with no adjacent neighbor (a corner
-    // slot) falls back to the override. So each candidate is EITHER the node's size
-    // OR the override exactly — never a per-axis blend.
+    // Mirror rule: a candidate adjacent to the node OR to an already-placed ghost
+    // mirrors that neighbor's FULL size (640x400) — mirroring WINS over the
+    // override. Around a single node the grid tiles outward, so every candidate
+    // either fully mirrors the node size, or is a residual slab whose width still
+    // mirrors a neighbor (640) but whose height is clamped by the place area.
+    // The override is never produced here because no spot lacks a neighbor.
     const nodeRect: Rect = { origin: { x: 0, y: 0 }, size: TERMINAL }
+    let sawMirror = false
     for (const c of out) {
-      const mirrors = c.size.width === TERMINAL.width && c.size.height === TERMINAL.height
-      const overrides = c.size.width === size.width && c.size.height === size.height
-      expect(mirrors || overrides, `candidate ${JSON.stringify(c)} is the mirror or the override`).toBe(true)
-      // A candidate that mirrors must actually be adjacent to the node (touching it).
-      if (mirrors) {
-        const touches = rectsOverlap(inflate(rectOf(c), 41), nodeRect)
-        expect(touches, `mirroring candidate ${JSON.stringify(c)} touches the node`).toBe(true)
+      const fullMirror = c.size.width === TERMINAL.width && c.size.height === TERMINAL.height
+      // The override must NOT win where a neighbor is adjacent.
+      const isOverride = c.size.width === size.width && c.size.height === size.height
+      expect(isOverride, `override should not appear next to a neighbor: ${JSON.stringify(c)}`).toBe(false)
+      // Width is always mirrored from a neighbor (640), never the override width.
+      expect(c.size.width).toBe(TERMINAL.width)
+      if (fullMirror) {
+        sawMirror = true
+        // A full mirror must actually be adjacent to the node or a placed ghost.
+        const touchesNode = rectsOverlap(inflate(rectOf(c), 41), nodeRect)
+        const touchesGhost = out.some(
+          (o) => o !== c && rectsOverlap(inflate(rectOf(c), 41), rectOf(o)),
+        )
+        expect(touchesNode || touchesGhost, `mirror ${JSON.stringify(c)} is adjacent`).toBe(true)
       }
     }
-    // Both outcomes occur: the nearest slots mirror, the corners take the override.
-    expect(out.some((c) => c.size.width === TERMINAL.width && c.size.height === TERMINAL.height)).toBe(true)
-    expect(out.some((c) => c.size.width === size.width && c.size.height === size.height)).toBe(true)
+    expect(sawMirror, `at least one candidate fully mirrors the node: ${JSON.stringify(out)}`).toBe(true)
+  })
+
+  it('still falls back to the override on an empty canvas, where no neighbor exists', () => {
+    // The empty-canvas path has nothing to mirror, so the override drives the size.
+    const size = { width: 400, height: 300 }
+    const out = recommendPlacements({}, null, 'terminal', VIEWPORT, { x: 600, y: 400 }, 6, size)
+    expect(out.length).toBeGreaterThanOrEqual(1)
+    for (const c of out) expect(c.size).toEqual(size)
   })
 
   it('grows a candidate to fill a bounded gap between two panels, matching the neighbors height', () => {
@@ -517,6 +533,28 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     const out = recommendPlacements({}, null, 'editor', VP, { x: 500, y: 500 })
     expect(out.length).toBeGreaterThanOrEqual(1)
     expect(out[0].size).toEqual({ width: 600, height: 500 })
+  })
+
+  it('placed ghosts act as neighbors so the grid tiles uniformly outward', () => {
+    // A single 600x400 window (NOT the 600x500 editor default). Across a large
+    // area, the packer chains every spot off the window: the first-row ghosts
+    // mirror the window, and every later spot — though not adjacent to the real
+    // window — mirrors an already-placed ghost. So ALL candidates are 600x400.
+    // Before this change the second-row/far spots fell back to the editor
+    // default height (500), producing an out-of-place smaller box.
+    const ns = nodesOf(node(0, 0, 600, 400))
+    const VPbig = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 4000, height: 3000 } }
+    const out = recommendPlacements(ns, null, 'editor', VPbig, { x: 300, y: 200 }, 8)
+    expect(out.length).toBeGreaterThanOrEqual(6)
+    for (const c of out) {
+      expect(c.size, `candidate ${JSON.stringify(c)} mirrors the window, not the default`)
+        .toEqual({ width: 600, height: 400 })
+    }
+    // Specifically: a second-row candidate (below the first row, not touching
+    // the real window) exists and mirrors the ghost above it.
+    const secondRow = out.find((c) => c.point.y >= 880)
+    expect(secondRow, `expected a second-row candidate: ${JSON.stringify(out)}`).toBeTruthy()
+    expect(secondRow!.size).toEqual({ width: 600, height: 400 })
   })
 
   it('fills a trace when one is provided', () => {
