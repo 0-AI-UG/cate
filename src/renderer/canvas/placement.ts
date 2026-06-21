@@ -25,8 +25,6 @@ export interface PlacementCandidate {
 export interface PlacementTraceStep {
   free: Rect[]
   chosen: Rect
-  pinnedX: boolean
-  pinnedY: boolean
   matchedWidth: number | null
   matchedHeight: number | null
   size: Size
@@ -136,14 +134,15 @@ export function findFreePosition(
 
 const PLACEMENT_GAP = 40
 /** A recommendation is never smaller than MIN (a gap tighter than this is pruned,
- *  so it gets no recommendation) and, when it grows to fill a bounded gap, never
- *  larger than MAX (a very wide gap doesn't yield an enormous panel). */
+ *  so it gets no recommendation) and, when it mirrors a large neighbor, never
+ *  larger than MAX (a huge neighbor doesn't yield an enormous panel). */
 const PLACEMENT_MIN_W = 280
 const PLACEMENT_MIN_H = 180
 const PLACEMENT_MAX_W = 1400
 const PLACEMENT_MAX_H = 900
 const EPS = 1
 const SNAP_TOL = PLACEMENT_GAP / 2
+const FIT_TOL = CANVAS_GRID_SIZE // one grid step of allowed shortfall
 
 /** Sorted, deduped alignment lines implied by the existing windows: each edge plus
  *  edge ± gap, so a new panel can land on a shared column/row or exactly one gap away. */
@@ -163,31 +162,6 @@ export function deriveGuides(
     xs: [...xs].sort((a, b) => a - b),
     ys: [...ys].sort((a, b) => a - b),
   }
-}
-
-/** True when a window's edge sits against BOTH the left and right sides of `f`
- *  (an interior horizontal gap), sharing a vertical run along each side. */
-export function pinnedX(f: Rect, inflated: Rect[]): boolean {
-  const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
-  let left = false, right = false
-  for (const o of inflated) {
-    if (Math.min(o.origin.y + o.size.height, fB) - Math.max(o.origin.y, fT) <= EPS) continue
-    if (Math.abs(o.origin.x + o.size.width - fL) <= EPS) left = true
-    if (Math.abs(o.origin.x - fR) <= EPS) right = true
-  }
-  return left && right
-}
-
-/** True when a window's edge sits against BOTH the top and bottom of `f`. */
-export function pinnedY(f: Rect, inflated: Rect[]): boolean {
-  const fL = f.origin.x, fR = fL + f.size.width, fT = f.origin.y, fB = fT + f.size.height
-  let top = false, bottom = false
-  for (const o of inflated) {
-    if (Math.min(o.origin.x + o.size.width, fR) - Math.max(o.origin.x, fL) <= EPS) continue
-    if (Math.abs(o.origin.y + o.size.height - fT) <= EPS) top = true
-    if (Math.abs(o.origin.y - fB) <= EPS) bottom = true
-  }
-  return top && bottom
 }
 
 /** Original size of the window adjacent to `f` (touching any one of its four sides
@@ -303,12 +277,11 @@ function freeRectangles(area: Rect, obstacles: Rect[]): Rect[] {
  * Using the nearest free space first means no closer empty spot is ever left unused,
  * so the result stays tight with no odd gaps even when the windows aren't on a grid.
  *
- * Sizing MIRRORS THE NEIGHBOR: along an axis where the empty rectangle is pinned by
- * a window on BOTH sides (an interior gap) the ghost grows to fill that gap, up to
- * the max size. Otherwise, when a single window is adjacent to the rect, the ghost
- * takes that neighbor's FULL size — both width and height — clamped to [MIN,MAX] and
- * the available space. Only when no window is adjacent does an axis fall back to the
- * panel's default extent.
+ * Sizing is a PURE MIRROR GRID: when a window is adjacent to the rect, the ghost
+ * takes that neighbor's FULL size — both width and height — clamped to [MIN,MAX]. A
+ * rect too small to host the full target size is SKIPPED (no shrunken slivers, no
+ * grow-to-fill). Only when no window is adjacent does the ghost fall back to the
+ * panel's default size.
  *
  *  - A focused node on screen → packs around it (ranked from its centre).
  *  - Nothing focused → packs across the viewport, ranked from the cursor.
@@ -432,13 +405,13 @@ export function recommendPlacements(
   }
 
   // Pack ghosts into the FREE SPACE, nearest the ranking point first. Each step
-  // evaluates every free rectangle: it SIZES the ghost by filling a pinned axis,
-  // else mirroring an adjacent neighbor's FULL size (both axes), else the panel
-  // default — each clamped to MIN/MAX and the rect. It then POSITIONS the ghost by
-  // snapping each
-  // edge to the nearest alignment guide (else the grid) and clamping inside the
-  // rect. The rectangle whose result lands closest to the ranking point wins; that
-  // ghost (plus its gap) is carved out of the free space and the step repeats.
+  // evaluates every free rectangle: it SIZES the ghost by mirroring an adjacent
+  // neighbor's FULL size (both axes), else the panel default — clamped to MIN/MAX.
+  // A rect too small to host that full size is SKIPPED (no fill, no slivers). It
+  // then POSITIONS the ghost by snapping each edge to the nearest alignment guide
+  // (else the grid) and clamping inside the rect. The rectangle whose result lands
+  // closest to the ranking point wins; that ghost (plus its gap) is carved out of
+  // the free space and the step repeats.
   // Because the nearest free space is always used first, no closer empty spot is
   // ever left unused — which is what keeps the result tight in irregular layouts.
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
@@ -470,15 +443,16 @@ export function recommendPlacements(
       const availW = ix1 - ix0, availH = iy1 - iy0
       if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) continue
 
-      const pX = pinnedX(f, obstacles)
-      const pY = pinnedY(f, obstacles)
       const neighbor = matchedNeighborSize(f, obstacles, gap, rankAt)
-      const mwRaw = pX ? null : (neighbor ? neighbor.width : null)
-      const mhRaw = pY ? null : (neighbor ? neighbor.height : null)
-      const mW = pX ? availW : (mwRaw ?? std.width)
-      const mH = pY ? availH : (mhRaw ?? std.height)
-      const w = clamp(mW, PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, availW))
-      const h = clamp(mH, PLACEMENT_MIN_H, Math.min(PLACEMENT_MAX_H, availH))
+      const targetW = neighbor ? neighbor.width : std.width
+      const targetH = neighbor ? neighbor.height : std.height
+      // Pure mirror grid: only offer a spot that can host the full target size.
+      // A rect too small for it would yield a shrunken sliver, so skip it
+      // (FIT_TOL allows a sub-grid shortfall). Default size applies only where no
+      // neighbor exists.
+      if (availW < targetW - FIT_TOL || availH < targetH - FIT_TOL) continue
+      const w = clamp(targetW, PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, availW))
+      const h = clamp(targetH, PLACEMENT_MIN_H, Math.min(PLACEMENT_MAX_H, availH))
 
       const rawX = rankAt.x - w / 2
       const rawY = rankAt.y - h / 2
@@ -495,10 +469,8 @@ export function recommendPlacements(
           meta: {
             free: freeSnapshot,
             chosen: f,
-            pinnedX: pX,
-            pinnedY: pY,
-            matchedWidth: mwRaw,
-            matchedHeight: mhRaw,
+            matchedWidth: neighbor ? neighbor.width : null,
+            matchedHeight: neighbor ? neighbor.height : null,
             size: { width: w, height: h },
             point,
           },

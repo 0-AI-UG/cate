@@ -109,9 +109,15 @@ describe('beginPlacement', () => {
   })
 
   it('anchors recommendations to the last pointer position when nothing is focused', () => {
+    // The pure mirror grid only offers a spot big enough to host a full-size mirror
+    // of the seed (640x400), so give the viewport room around the seed on every
+    // side — otherwise the pointer-side region is too small for a tile and is
+    // skipped. With room, the best ghost still lands on the pointer's side.
+    const ROOMY = { width: 2600, height: 2000 }
     const make = (pointer: { x: number; y: number }) => {
       const store = createCanvasStore()
-      store.getState().setContainerSize(CONTAINER)
+      store.getState().setContainerSize(ROOMY)
+      store.getState().setZoomAndOffset(1, { x: 700, y: 500 }) // seed centred with margin
       store.getState().addNode('seed', 'terminal', { x: 0, y: 0 }, SEED_SIZE) // not focused
       store.getState().setPlacementPointer(pointer)
       store.getState().beginPlacement('p2', 'terminal')

@@ -509,50 +509,47 @@ describe('canvasStore.recommendPlacements', () => {
     expect(cands.length).toBeGreaterThanOrEqual(1)
     // Every candidate mirrors the node's width (600), well within [MIN_W, MAX_W].
     cands.forEach((c) => expect(c.size.width).toBe(600))
-    // The node's height (1000) exceeds PLACEMENT_MAX_H, so a side slot (whose
-    // height isn't bounded by the viewport) mirrors it capped at 900.
+    // The node's height (1000) exceeds PLACEMENT_MAX_H, so every mirror lands at the
+    // MAX_H cap (900); a slot too short to host it (beyond FIT_TOL) is SKIPPED, so
+    // no shrunken stacked sliver appears — every height sits at the cap (within a
+    // grid step of residual-slab clamping).
     const sideSlot = cands.find((c) => c.size.height === 900)
     expect(sideSlot, `expected a side slot capped at MAX_H: ${JSON.stringify(cands)}`).toBeTruthy()
-    // An above/below slot also mirrors the node's height, but the viewport bounds
-    // its available extent below 900, so it lands smaller (still > the old default).
-    const stackSlot = cands.find((c) => c.point.x === a.origin.x)
-    expect(stackSlot, `expected a stacked slot aligned to the node: ${JSON.stringify(cands)}`).toBeTruthy()
-    expect(stackSlot!.size.height).toBeGreaterThan(400) // no longer the terminal default
-    expect(stackSlot!.size.height).toBeLessThanOrEqual(900)
+    cands.forEach((c) =>
+      expect(c.size.height, `no shrunken sliver: ${JSON.stringify(c)}`).toBeGreaterThanOrEqual(900 - CANVAS_GRID_SIZE),
+    )
+    cands.forEach((c) => expect(c.size.height).toBeLessThanOrEqual(900))
   })
 
-  it('GROW-TO-FILL: a bounded gap is filled even when a standard panel would fit', () => {
-    // Two tall nodes with a wide gap between them. The gap is pinned left and right,
-    // so the ghost grows to fill it (wider than the standard panel). Its height axis
-    // is open but both nodes are adjacent along it, so neighbor-matching takes their
-    // shared height (800) rather than the panel default.
+  it('MIRROR GRID: a bounded gap mirrors the neighbor size, never grows to fill', () => {
+    // Two tall nodes with a wide gap between them. Under the pure mirror grid the
+    // gap mirrors a neighbor's FULL size (400x800) rather than growing to fill the
+    // 900px gap — no over-wide tile. The mirrored height (800) is clamped to MAX_H.
     const a = node('a', 0, 0, 400, 800)
     const b = node('b', 1300, 0, 400, 800, 1)
     const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
     const inGap = cands.find((c) => c.point.x >= 400 && c.point.x + c.size.width <= 1300)
     expect(inGap).toBeDefined()
-    // 900px gap minus a 40px clearance each side → grown to 820 wide.
-    expect(inGap!.size.width).toBe(820)
-    // Height matched the neighboring nodes (800), not the terminal default.
+    // Mirrors the neighbor width (400) — NOT an 820-wide grow-to-fill tile.
+    expect(inGap!.size.width).toBe(400)
+    // Height mirrored the neighbor (800), within MAX_H.
     expect(inGap!.size.height).toBe(800)
+    // No candidate is wider than the neighbor — uniform grid, no fill.
+    cands.forEach((c) => expect(c.size.width).toBeLessThanOrEqual(400))
   })
 
-  it('GAP-FILL: a sub-standard gap between nodes gets a custom-sized recommendation', () => {
-    // Two standard (640×400) nodes with a ~460px horizontal gap — too narrow for
-    // a standard panel, but wide enough for a custom one.
+  it('GAP-FILL: a sub-standard gap is SKIPPED under the mirror grid — no custom tile', () => {
+    // Two standard (640×400) nodes with a ~460px horizontal gap — too narrow for a
+    // mirror of the 640-wide neighbor. Under the pure mirror grid the gap mirrors a
+    // 640 neighbor, which does not fit 460, so it is SKIPPED rather than filled with
+    // a custom sliver. Every candidate mirrors the neighbor's full size.
     const a = node('a', 0, 0, 640, 400)
     const b = node('b', 1100, 0, 640, 400, 1)
     const cands = recommendPlacements(toMap(a, b), 'a', 'terminal', VIEWPORT, null)
+    // No custom-sized tile squeezes into the 460px gap.
     const custom = cands.find((c) => c.size.width !== 640 || c.size.height !== 400)
-    expect(custom).toBeDefined()
-    // It sits inside the gap and overlaps neither neighbour.
-    expect(custom!.point.x).toBeGreaterThanOrEqual(640)
-    expect(custom!.point.x + custom!.size.width).toBeLessThanOrEqual(1100)
-    expect(rectsOverlap(rectOf(custom!), { origin: a.origin, size: a.size })).toBe(false)
-    expect(rectsOverlap(rectOf(custom!), { origin: b.origin, size: b.size })).toBe(false)
-    // Custom size respects the minimums.
-    expect(custom!.size.width).toBeGreaterThanOrEqual(280)
-    expect(custom!.size.height).toBeGreaterThanOrEqual(180)
+    expect(custom, `no custom sliver expected: ${JSON.stringify(cands)}`).toBeUndefined()
+    cands.forEach((c) => expect(c.size).toEqual({ width: 640, height: 400 }))
   })
 
   it('GAP-FILL: a staggered layout tiles the irregular hole with neighbor-sized ghosts', () => {

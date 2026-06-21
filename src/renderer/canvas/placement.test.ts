@@ -14,8 +14,6 @@ import {
   findFreePosition,
   nudgeToFree,
   deriveGuides,
-  pinnedX,
-  pinnedY,
   matchedNeighborSize,
   snapAxis,
   type PlacementTrace,
@@ -247,12 +245,10 @@ describe('recommendPlacements — around existing nodes', () => {
     for (const c of out) expect(c.size).toEqual(size)
   })
 
-  it('grows a candidate to fill a bounded gap between two panels, matching the neighbors height', () => {
-    // Two short panels with a tall, wide gap between them. A candidate seeded in
-    // the gap is pinned left AND right, so it fills the gap width exactly (gap
-    // minus a clearance each side). Its height axis is open but both panels touch
-    // its top edge, so neighbor-matching takes their shared height (300) rather
-    // than the panel default.
+  it('mirrors the neighbor size into a wide bounded gap (no grow-to-fill)', () => {
+    // Two 400x300 panels with a tall, wide gap between them. Under the pure mirror
+    // grid a candidate in the gap mirrors a neighbor's FULL size (400x300) rather
+    // than growing to fill the 800px gap — no over-wide sliver.
     const a = node('a', 0, 0, 400, 300, 0)
     const b = node('b', 1200, 0, 400, 300, 1) // gap from x=400 to x=1200 → 800 wide
     const viewport = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2400, height: 1200 } }
@@ -260,11 +256,11 @@ describe('recommendPlacements — around existing nodes', () => {
 
     const out = recommendPlacements(nodeMap(a, b), null, 'terminal', viewport, anchor)
     const filler = out.find((c) => c.point.x >= 400 && c.point.x + c.size.width <= 1200)
-    expect(filler, `expected a gap-filling candidate: ${JSON.stringify(out)}`).toBeTruthy()
-    // Grown to fill the 800px gap minus a 40px clearance each side ≈ 720.
-    expect(filler!.size.width).toBe(720)
-    // Height matched the neighboring panels (300), not the terminal default.
-    expect(filler!.size.height).toBe(300)
+    expect(filler, `expected a gap candidate: ${JSON.stringify(out)}`).toBeTruthy()
+    // Mirrors the neighbor's full size — NOT a 720-wide grow-to-fill tile.
+    expect(filler!.size).toEqual({ width: 400, height: 300 })
+    // Every candidate mirrors the (equal) neighbor size — uniform grid.
+    for (const c of out) expect(c.size).toEqual({ width: 400, height: 300 })
   })
 
   it('uses the default size in open space — an unbounded axis never grows', () => {
@@ -430,22 +426,6 @@ describe('matchedNeighborSize', () => {
     const f = { origin: { x: 3000, y: 3000 }, size: { width: 500, height: 500 } }
     expect(matchedNeighborSize(f, [A], 40, { x: 3250, y: 3250 })).toBeNull()
   })
-
-  it('pinnedX true only when bracketed on both sides', () => {
-    const A = inflateWin(1000, 1000, 600, 400) // right 1640
-    const B = inflateWin(2000, 1000, 600, 400) // left 1960
-    const f = { origin: { x: 1640, y: 1000 }, size: { width: 320, height: 400 } }
-    expect(pinnedX(f, [A, B])).toBe(true)
-    expect(pinnedX(f, [A])).toBe(false)
-  })
-
-  it('pinnedY true only when bracketed top and bottom', () => {
-    const A = inflateWin(1000, 1000, 600, 400) // bottom 1440
-    const B = inflateWin(1000, 2000, 600, 400) // top 1960
-    const f = { origin: { x: 1000, y: 1440 }, size: { width: 600, height: 520 } }
-    expect(pinnedY(f, [A, B])).toBe(true)
-    expect(pinnedY(f, [A])).toBe(false)
-  })
 })
 
 describe('deriveGuides', () => {
@@ -522,11 +502,16 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     expect(out[0].point.y).toBe(1000)          // aligned to A's top edge
   })
 
-  it('still fills a gap bracketed on both sides (pinned regression)', () => {
+  it('a narrow interior gap is SKIPPED, not filled (no grow-to-fill)', () => {
+    // Two 600-wide windows one gap apart leave a 320px interior gap. Under the pure
+    // mirror grid the gap would mirror a 600-wide neighbor, which does NOT fit 320,
+    // so the gap is skipped — there is no shrunken 320-wide sliver. Every candidate
+    // mirrors a 600-wide neighbor instead.
     const ns = nodesOf(node(1000, 1000, 600, 400), node(2000, 1000, 600, 400))
     const out = recommendPlacements(ns, null, 'editor', VP, { x: 1800, y: 1200 })
-    const filled = out.find((c) => c.size.width === 320)
-    expect(filled).toBeTruthy()                // fills the 320px interior gap
+    expect(out.length).toBeGreaterThanOrEqual(1)
+    expect(out.some((c) => c.size.width === 320)).toBe(false) // no fill sliver
+    for (const c of out) expect(c.size.width).toBe(600)       // pure mirror grid
   })
 
   it('uses default size on an empty canvas (regression)', () => {
@@ -577,6 +562,46 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     expect(terminalMirrors.some((c) => c.point.y === 557.5 || c.point.y === 1037.5)).toBe(true)
   })
 
+  it('uniform mirror grid: no over-wide fill tiles', () => {
+    // Regression for the user's fix. Focused F=600x400 between two 400x400 side
+    // windows at a different row. Previously grow-to-fill produced a 760-wide tile
+    // in the gap between WL/WR (wider than the 600 window). Under the pure mirror
+    // grid every spot mirrors an existing window's full size: NO candidate is wider
+    // than 600, and every candidate's size equals an existing window's size.
+    const F = node(1000, 1500, 600, 400)
+    const WL = node(200, 700, 400, 400)
+    const WR = node(1800, 700, 400, 400)
+    const ns = nodesOf(F, WL, WR)
+    const VPbig = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 4000, height: 4000 } }
+    const out = recommendPlacements(ns, Object.keys(ns)[0], 'editor', VPbig, null, 8, { width: 600, height: 400 })
+    expect(out.length).toBeGreaterThanOrEqual(1)
+    const existing = [
+      { width: 600, height: 400 },
+      { width: 400, height: 400 },
+    ]
+    for (const c of out) {
+      expect(c.size.width, `no over-wide fill tile: ${JSON.stringify(c)}`).toBeLessThanOrEqual(600)
+      expect(
+        existing.some((s) => s.width === c.size.width && s.height === c.size.height),
+        `candidate mirrors an existing window size: ${JSON.stringify(c)}`,
+      ).toBe(true)
+    }
+  })
+
+  it('skips a rect too small for the mirror — no shrunken sliver', () => {
+    // A 600-wide window with a 320px interior gap on its right (a second 600-wide
+    // window one gap further). The gap mirrors a 600 neighbor, which does not fit
+    // 320, so the gap is skipped: no candidate is narrower than 600 beyond FIT_TOL.
+    const ns = nodesOf(node(1000, 1000, 600, 400), node(2000, 1000, 600, 400))
+    const out = recommendPlacements(ns, null, 'editor', VP, { x: 1800, y: 1200 })
+    expect(out.length).toBeGreaterThanOrEqual(1)
+    const FIT_TOL = CANVAS_GRID_SIZE
+    for (const c of out) {
+      expect(c.size.width, `no sliver narrower than the mirror: ${JSON.stringify(c)}`)
+        .toBeGreaterThanOrEqual(600 - FIT_TOL)
+    }
+  })
+
   it('fills a trace when one is provided', () => {
     const ns = nodesOf(node(1000, 1000, 600, 400))
     const trace: PlacementTrace = {
@@ -589,6 +614,5 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     const s = trace.steps[0]
     expect(s.matchedWidth).toBe(600)
     expect(s.matchedHeight).toBe(400) // mirror rule now sizes BOTH axes from the neighbor
-    expect(s.pinnedX).toBe(false)
   })
 })

@@ -54,28 +54,26 @@ rectangle change, plus one new pure helper.
 - Dedupe (within a small epsilon) and sort each list.
 - O(n). No store / React dependency. Unit-tested directly.
 
-### 1b. Neighbor-matched sizing (replaces the open-axis fallback at lines ~358-359)
+### 1b. Pure mirror grid sizing (replaces the open-axis fallback at lines ~358-359)
 
-Per free rect, the new panel MIRRORS its adjacent neighbor: a pinned axis (a window
-touching both sides — an interior gap) still grows to fill the gap, capped at MAX;
-otherwise, when a single window is adjacent to the rect (touching any one of its four
-sides with a positive shared run), the panel takes that neighbor's **FULL size —
-both width and height** — not just the dimension parallel to the shared edge. When
-several windows touch the rect, the neighbor with the **longest shared run** along
-its touching edge wins (the truest alignment partner), tie-broken by proximity to
-the ranking point. With **no adjacent neighbor at all**, an axis falls back to the
-per-type default size.
+Per free rect, the new panel MIRRORS its adjacent neighbor's **FULL size — both
+width and height**. When a window is adjacent to the rect (touching any one of its
+four sides with a positive shared run), the panel takes that neighbor's full size,
+not just the dimension parallel to the shared edge. When several windows touch the
+rect, the neighbor with the **longest shared run** along its touching edge wins (the
+truest alignment partner), tie-broken by proximity to the ranking point.
 
-Both mirrored dimensions are always clamped to `[PLACEMENT_MIN, PLACEMENT_MAX]` and
-to the free rect's available extent (`availW` / `availH`), so an unusually large or
-tiny neighbor cannot produce an awkward panel and the panel can never overflow its
-slot.
+There is **no grow-to-fill**: a rect too small to host the neighbor's full size
+(beyond a one-grid-step `FIT_TOL`) is **SKIPPED** rather than filled with a shrunken
+sliver. The mirrored size is clamped to `[PLACEMENT_MIN, PLACEMENT_MAX]` so an
+unusually large neighbor cannot produce an enormous panel.
 
 Already-placed ghosts also count as mirror neighbors (the packer carries a growing
 obstacle list seeded with the real windows and appended to as each ghost is placed),
 so a spot with no real-window neighbor mirrors the adjacent ghost and the window's
 size chains outward, tiling the recommendations into a uniform grid of same-size
-tiles.
+tiles. With **no adjacent neighbor at all**, the panel falls back to the per-type
+default size.
 
 ### 1c. Guide-snapped positioning (replaces the grid-only snap at lines ~362-365)
 
