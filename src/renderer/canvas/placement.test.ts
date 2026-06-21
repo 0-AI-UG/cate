@@ -629,11 +629,46 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     // Grow-to-fill: it spans (about) the whole interior gap — 820 wide x 600 tall —
     // which is wider than every neighbor (none is 820 wide).
     expect(gapCand!.size).toEqual({ width: 820, height: 600 })
+    // Good aspect ratio (820/600 ~= 1.37) sits inside the terminal's AR band
+    // [1.0, 2.56], so the fill AR guard does NOT over-reject this useful gap.
+    const ar = gapCand!.size.width / gapCand!.size.height
+    expect(ar).toBeGreaterThan(1.0)
+    expect(ar).toBeLessThan(2.56)
     // The trace marks the step as a fill (no mirror match).
     const filledStep = trace.steps.find((s) => s.filled)
     expect(filledStep, 'a filled step is recorded').toBeTruthy()
     expect(filledStep!.matchedWidth).toBeNull()
     expect(filledStep!.matchedHeight).toBeNull()
+  })
+
+  it('skips a grow-to-fill gap with an awkward aspect ratio (tall/narrow)', () => {
+    // A tall, narrow vertical channel between two tall side windows, capped by wide
+    // windows above and below. The longest-shared-run neighbor (a side window) is
+    // 500 wide and does NOT fit the channel, so the gap would grow-to-fill — and it
+    // is >= USEFUL_MIN in both dimensions (460 x 900), so the size guard passes.
+    // But its shape (AR 460/900 ~= 0.51) is far below the terminal's natural AR
+    // (640/400 = 1.6, band [1.0, 2.56]), so the AR guard SKIPS it: no awkward
+    // tall/narrow fill tile is offered in the channel.
+    const above = node(0, 0, 1600, 200)
+    const left = node(0, 240, 500, 900)
+    const right = node(1040, 240, 500, 900) // raw channel x 500..1040 -> post-gap 460 wide
+    const below = node(0, 1180, 1600, 200) // raw channel y 200..1180 -> post-gap 900 tall
+    const ns = nodesOf(above, left, right, below)
+    const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1600, height: 1380 } }
+    const trace: PlacementTrace = {
+      area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
+      rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [],
+    }
+    const out = recommendPlacements(ns, null, 'terminal', vp, { x: 770, y: 690 }, 6, undefined, trace)
+    // No candidate sits inside the tall/narrow channel.
+    const channelCand = out.find(
+      (c) => c.point.x >= 500 && c.point.x + c.size.width <= 1040 &&
+             c.point.y >= 200 && c.point.y + c.size.height <= 1180,
+    )
+    expect(channelCand, `no fill candidate expected in the awkward channel: ${JSON.stringify(out)}`).toBeUndefined()
+    // No candidate has the bad-AR 460x900 fill size, and no fill step was recorded.
+    expect(out.some((c) => c.size.width === 460 && c.size.height === 900)).toBe(false)
+    expect(trace.steps.some((s) => s.filled)).toBe(false)
   })
 
   it('skips a thin sliver gap (one dimension below USEFUL_MIN) — no grow-to-fill', () => {

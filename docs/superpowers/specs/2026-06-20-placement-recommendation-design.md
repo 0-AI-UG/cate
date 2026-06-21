@@ -70,7 +70,10 @@ Per free rect, sizing follows a three-way balanced rule:
   is useful, i.e. at least `USEFUL_MIN_W` × `USEFUL_MIN_H`. A gap thinner than that in
   either dimension is **SKIPPED** rather than filled with a thin sliver. This means an
   empty gap whose size matches no neighbor (mismatched-size neighbors around a center
-  hole) still gets a recommendation instead of being left unused.
+  hole) still gets a recommendation instead of being left unused. Grow-to-fill is
+  additionally guarded by aspect ratio — a gap whose filled shape would deviate too
+  far from the panel's natural aspect ratio (`FILL_AR_FACTOR`) is skipped rather than
+  producing an awkward tall/narrow or wide/flat tile.
 - **Default where there is no neighbor at all.** With nothing adjacent, the panel
   falls back to the per-type default size; a rect too small for it (beyond `FIT_TOL`)
   is skipped.

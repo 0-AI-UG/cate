@@ -149,6 +149,10 @@ const FIT_TOL = CANVAS_GRID_SIZE // one grid step of allowed shortfall
 // (the dev viz, Cmd/Ctrl+Shift+G, is the tool for adjusting them).
 const USEFUL_MIN_W = 400
 const USEFUL_MIN_H = 340
+// A grown-to-fill gap is only offered if its shape stays near the panel's natural
+// aspect ratio — a narrow/tall or wide/flat gap would fill into an awkward tile.
+// (Mirror tiles match a real window's shape, so they're exempt.) Tunable via the viz.
+const FILL_AR_FACTOR = 1.6
 
 /** Sorted, deduped alignment lines implied by the existing windows: each edge plus
  *  edge ± gap, so a new panel can land on a shared column/row or exactly one gap away. */
@@ -478,6 +482,15 @@ export function recommendPlacements(
       }
       const w = clamp(targetW, PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, availW))
       const h = clamp(targetH, PLACEMENT_MIN_H, Math.min(PLACEMENT_MAX_H, availH))
+
+      // Aspect-ratio guard — grow-to-fill ONLY. A filled gap whose final clamped
+      // shape strays too far from the panel's natural AR (a tall/narrow or
+      // wide/flat tile) is skipped. Mirror and default tiles are exempt.
+      if (filled) {
+        const ar = w / h
+        const defAR = std.width / std.height
+        if (ar < defAR / FILL_AR_FACTOR || ar > defAR * FILL_AR_FACTOR) continue
+      }
 
       const rawX = rankAt.x - w / 2
       const rawY = rankAt.y - h / 2
