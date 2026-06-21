@@ -14,6 +14,7 @@
 // =============================================================================
 import React, { useEffect, useState } from 'react'
 import { useCanvasStoreContext } from '../../stores/CanvasStoreContext'
+import { focusedNodeId as focusedNodeIdOf } from '../../stores/canvas/selectionModel'
 import { recommendPlacements, type PlacementTrace } from '../placement'
 import type { PanelType } from '../../../shared/types'
 
@@ -22,7 +23,7 @@ const SIM_PANEL: PanelType = 'editor'
 const PlacementVizOverlay: React.FC = () => {
   const [visible, setVisible] = useState(false)
   const nodes = useCanvasStoreContext((s) => s.nodes)
-  const focusedNodeId = useCanvasStoreContext((s) => s.focusedNodeId)
+  const focusedNodeId = useCanvasStoreContext((s) => focusedNodeIdOf(s))
   const offset = useCanvasStoreContext((s) => s.viewportOffset)
   const zoom = useCanvasStoreContext((s) => s.zoomLevel)
   const containerSize = useCanvasStoreContext((s) => s.containerSize)
