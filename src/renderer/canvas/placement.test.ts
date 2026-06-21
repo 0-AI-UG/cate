@@ -557,6 +557,26 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     expect(secondRow!.size).toEqual({ width: 600, height: 400 })
   })
 
+  it('keeps guide-aligned off-grid spots a non-grid neighbor produces', () => {
+    // Regression: a window with a non-grid size (402.5 tall) makes the packer
+    // align mirror tiles to off-grid neighbor-edge guides. finalize must NOT
+    // re-snap those to the 20px grid — doing so nudged a tile ~2.5px toward its
+    // neighbor, cutting clearance below the gap, and finalize then dropped it.
+    // Layout: a terminal-size window above a browser-size window, browser focused.
+    const terminal = node(1000, 1000, 640, 402.5)
+    const browser = node(820, 1480, 1000, 640)
+    const ns = nodesOf(terminal, browser)
+    const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 3000, height: 2500 } }
+    const out = recommendPlacements(ns, browser.id, 'browser', vp, null, 6, { width: 800, height: 600 })
+    // All six packed spots survive (before the fix only the three grid-aligned
+    // browser-mirror spots did; the three off-grid terminal-mirror spots were dropped).
+    expect(out.length).toBe(6)
+    // The terminal-mirror tiles are present and keep their off-grid (guide) position.
+    const terminalMirrors = out.filter((c) => c.size.width === 640 && c.size.height === 402.5)
+    expect(terminalMirrors.length).toBe(3)
+    expect(terminalMirrors.some((c) => c.point.y === 557.5 || c.point.y === 1037.5)).toBe(true)
+  })
+
   it('fills a trace when one is provided', () => {
     const ns = nodesOf(node(1000, 1000, 600, 400))
     const trace: PlacementTrace = {

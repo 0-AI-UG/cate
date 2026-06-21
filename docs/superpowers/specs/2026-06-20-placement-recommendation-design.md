@@ -91,6 +91,14 @@ width and aligning x to it makes both edges share the neighbor's column). 1c
 generalizes this to all edges via the guide list — the two are consistent, not
 competing.
 
+`finalize` (dedup + clearance + ranking) trusts these packed positions as-is — it
+does NOT re-snap them to the grid. The packer already aligns each spot to a guide
+or the grid and clamps it inside its gap-carrying free rect; a second grid snap in
+`finalize` would nudge a guide-aligned spot (common when a window's size or edge is
+off-grid) by up to half a grid step, cutting its clearance below the gap so
+`finalize`'s own clearance check would then drop it. The blank-canvas (`centred`)
+spots, which arrive un-aligned, are grid-snapped at their source instead.
+
 ---
 
 ## Part 2 — Fixed (non-configurable) default panel size

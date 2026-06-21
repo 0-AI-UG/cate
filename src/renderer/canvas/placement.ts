@@ -351,7 +351,12 @@ export function recommendPlacements(
     const clear = (rect: Rect, others: Rect[]) => !others.some((r) => rectsOverlap(inflateRect(rect, gap - 1), r))
     const seen = new Set<string>()
     const ranked = raw
-      .map((c) => ({ point: snapPt(c.point), size: c.size }))
+      // Trust incoming points: the packer already positioned each spot on a guide
+      // or the grid and clamped it inside its gap-carrying free rect. Re-snapping
+      // here would nudge a guide-aligned spot (common when a window's size/edge is
+      // off-grid) by up to half a grid step, cutting its clearance below the gap so
+      // the very next check drops it. Blank-canvas spots are snapped in centred().
+      .map((c) => ({ point: c.point, size: c.size }))
       .filter((c) => {
         const k = `${c.point.x},${c.point.y},${c.size.width},${c.size.height}`
         return seen.has(k) ? false : (seen.add(k), true)
@@ -381,11 +386,14 @@ export function recommendPlacements(
 
   // A few standard spots centred on a point (empty canvas / blank viewport).
   const centred = (c: Point): Raw[] => {
-    const tl = { x: c.x - std.width / 2, y: c.y - std.height / 2 }
+    // Grid-snap here at the source: finalize trusts incoming points as-is (it no
+    // longer re-snaps, which would nudge guide-aligned packed spots off their
+    // cleared positions), so the blank-canvas spots must arrive grid-aligned.
+    const tl = snapPt({ x: c.x - std.width / 2, y: c.y - std.height / 2 })
     return [
       { point: tl, size: std },
-      { point: { x: tl.x + std.width + gap, y: tl.y }, size: std },
-      { point: { x: tl.x, y: tl.y + std.height + gap }, size: std },
+      { point: snapPt({ x: tl.x + std.width + gap, y: tl.y }), size: std },
+      { point: snapPt({ x: tl.x, y: tl.y + std.height + gap }), size: std },
     ]
   }
 
