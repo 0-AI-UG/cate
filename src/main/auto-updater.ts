@@ -177,8 +177,23 @@ async function promptManualReinstall(version: string, opts: { offerMove: boolean
 
 /** Run a check. When eligible, AndNotify downloads (autoDownload) and shows the
  *  native "ready to install" notification; when ineligible we only check so the
- *  update-available handler can offer the manual path. */
+ *  update-available handler can offer the manual path.
+ *
+ *  Skips entirely once an update is downloaded and staged. A redundant check —
+ *  the 15-minute poll, a manual "Check for Updates…", or a beta-toggle re-check —
+ *  re-enters electron-updater's macOS flow (MacUpdater.doDownloadUpdate →
+ *  setFeedURL + nativeUpdater.checkForUpdates), which re-arms the native
+ *  Squirrel.Mac install-on-quit (no relaunch) and resets its internal
+ *  `squirrelDownloadedUpdate` "ready" flag. With that flag false, a subsequent
+ *  quitAndInstall (the "Restart now" button) silently DOESN'T relaunch: the
+ *  update installs on quit but the app never reopens (ShipItState
+ *  launchAfterInstallation=false). We already hold the latest, staged — there's
+ *  nothing to find by re-checking, so don't perturb the native state. */
 function runCheck(eligible: boolean): Promise<unknown> {
+  if (updatePendingInstall) {
+    log.info('[auto-updater] skipping check — an update is already downloaded and staged for install')
+    return Promise.resolve(null)
+  }
   const p = eligible ? autoUpdater.checkForUpdatesAndNotify() : autoUpdater.checkForUpdates()
   return p.catch((err) => {
     log.warn('[auto-updater] check failed: %O', err)

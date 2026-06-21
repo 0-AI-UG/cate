@@ -301,9 +301,41 @@ describe('RuntimeManager LOCAL auto-reconnect (FIX 4)', () => {
     expect(seen).not.toContain('connecting')
 
     // Let the backoff fire: ensureLocalRuntime re-runs once with the same opts.
+    // First retry assumes a transient failure → no forced re-extract.
     await vi.advanceTimersByTimeAsync(1100)
     expect(ensureSpy).toHaveBeenCalledTimes(1)
-    expect(ensureSpy).toHaveBeenCalledWith({ root: os.homedir() })
+    expect(ensureSpy).toHaveBeenCalledWith({ root: os.homedir() }, { force: false })
+  })
+
+  test('reconnect backs off, forces a re-extract, then gives up at the cap', () => {
+    vi.useFakeTimers()
+    const mgr = new RuntimeManager()
+    ;(mgr as unknown as { localOpts: unknown }).localOpts = { root: os.homedir() }
+    // Stub the relaunch so each scheduled reconnect is a no-op "failure" — the
+    // retry budget only resets on a real successful connect (which we never let
+    // happen here), so consecutive schedules escalate toward the cap.
+    const ensureSpy = vi.spyOn(mgr, 'ensureLocalRuntime').mockReturnValue(undefined)
+    const schedule = () => (mgr as unknown as { scheduleLocalReconnect(): void }).scheduleLocalReconnect()
+    const home = os.homedir()
+
+    // Attempt 1: ~1s backoff, no forced re-extract (transient-failure assumption).
+    schedule()
+    vi.advanceTimersByTime(1000)
+    expect(ensureSpy).toHaveBeenLastCalledWith({ root: home }, { force: false })
+
+    // Attempt 2+: force a clean re-extract to repair a corrupt/partial install.
+    schedule()
+    vi.advanceTimersByTime(2000)
+    expect(ensureSpy).toHaveBeenLastCalledWith({ root: home }, { force: true })
+
+    schedule(); vi.advanceTimersByTime(4000) // attempt 3
+    schedule(); vi.advanceTimersByTime(8000) // attempt 4 (cap)
+    expect(ensureSpy).toHaveBeenCalledTimes(4)
+
+    // Past LOCAL_MAX_RETRIES the auto-retry stops — no further relaunch scheduled.
+    schedule()
+    vi.advanceTimersByTime(8000)
+    expect(ensureSpy).toHaveBeenCalledTimes(4)
   })
 
   test('an intentional LOCAL teardown does NOT reconnect', async () => {

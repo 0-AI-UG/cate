@@ -36,6 +36,7 @@
 import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -215,15 +216,44 @@ async function stageParcelWatcher(outRoot) {
   for (const f of ['index.js', 'wrapper.js', 'index.js.flow', 'index.d.ts', 'package.json']) {
     if (existsSync(path.join(src, f))) cpSync(path.join(src, f), path.join(dest, f))
   }
-  // @parcel/watcher's OWN node_modules pins picomatch@4 (wrapper.js resolves the
-  // nested copy, not the repo-hoisted picomatch@2) — copy it verbatim.
-  if (existsSync(path.join(src, 'node_modules'))) {
-    cpSync(path.join(src, 'node_modules'), path.join(dest, 'node_modules'), { recursive: true, dereference: true })
+  // Stage @parcel/watcher's JS dependency closure. wrapper.js requires
+  // picomatch + is-glob (→ is-extglob); index.js requires detect-libc on linux.
+  // Resolve EACH from @parcel/watcher's own resolution root rather than assuming
+  // a fixed location: npm may nest a dep under @parcel/watcher/node_modules (a
+  // version-pin conflict) OR hoist it to the top-level node_modules (no conflict)
+  // — and which one happens varies by the full install tree. A previous version
+  // copied the nested dir if present, else a hardcoded list that OMITTED
+  // picomatch; when npm hoisted picomatch the nested dir was absent AND it wasn't
+  // in the list, so it shipped missing and the daemon crashed at startup with
+  // `Cannot find module 'picomatch'` (require'd by wrapper.js). createRequire
+  // finds the exact copy node would load, at whatever depth, every time.
+  const requireFrom = createRequire(path.join(src, 'package.json'))
+  for (const dep of ['picomatch', 'is-glob', 'is-extglob', 'detect-libc']) {
+    let pkgDir
+    try {
+      pkgDir = path.dirname(requireFrom.resolve(`${dep}/package.json`))
+    } catch {
+      // detect-libc is only require'd on linux; on darwin/win it may be absent.
+      if (dep === 'detect-libc') continue
+      throw new Error(`@parcel/watcher dependency "${dep}" not resolvable from ${src} — run \`npm install\` first`)
+    }
+    // Stage into the SAME relative location node resolved it from (nested under
+    // @parcel/watcher or hoisted to the top level) so resolution matches at runtime.
+    const rel = path.relative(repoRoot, pkgDir)
+    cpSync(pkgDir, path.join(outRoot, rel), { recursive: true, dereference: true })
   }
-  // The rest of the runtime closure resolves from the top-level node_modules.
-  for (const dep of ['is-glob', 'is-extglob', 'detect-libc']) {
-    const from = path.join(repoRoot, 'node_modules', dep)
-    if (existsSync(from)) cpSync(from, path.join(nm, dep), { recursive: true, dereference: true })
+  // Fail loudly if the staged tree can't resolve wrapper.js's requires — the exact
+  // crash that shipped before. Mirrors the watcher.node assert below.
+  const stagedRequire = createRequire(path.join(dest, 'wrapper.js'))
+  for (const dep of ['picomatch', 'is-glob']) {
+    try {
+      stagedRequire.resolve(dep)
+    } catch {
+      throw new Error(
+        `staged @parcel/watcher cannot resolve "${dep}" from ${path.join(dest, 'wrapper.js')}. ` +
+          'The daemon would crash at startup (MODULE_NOT_FOUND) — aborting the build.',
+      )
+    }
   }
 
   // The target's prebuilt native package.

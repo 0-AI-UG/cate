@@ -147,6 +147,32 @@ describe('initAutoUpdater — config', () => {
     expect(h.autoUpdater.checkForUpdatesAndNotify).toHaveBeenCalled()
   })
 
+  it('stops re-checking once an update is downloaded and staged', async () => {
+    const { initAutoUpdater } = await loadModule()
+    initAutoUpdater()
+    vi.advanceTimersByTime(6000) // launch check fires
+    expect(h.autoUpdater.checkForUpdatesAndNotify).toHaveBeenCalledTimes(1)
+
+    // Update finished downloading → staged for install on quit.
+    h.autoUpdater.emit('update-downloaded', { version: '1.2.3' })
+
+    // The 15-minute poll must NOT re-check: a redundant check resets the native
+    // macOS Squirrel "ready" flag, which would make a later "Restart now" install
+    // on quit without relaunching (the app never reopens).
+    vi.advanceTimersByTime(15 * 60 * 1000)
+    expect(h.autoUpdater.checkForUpdatesAndNotify).toHaveBeenCalledTimes(1)
+  })
+
+  it('a manual check does not re-check when an update is already staged', async () => {
+    const { initAutoUpdater, checkForUpdatesManually } = await loadModule()
+    initAutoUpdater()
+    vi.advanceTimersByTime(6000)
+    h.autoUpdater.emit('update-downloaded', { version: '1.2.3' })
+    const before = h.autoUpdater.checkForUpdatesAndNotify.mock.calls.length
+    checkForUpdatesManually() // re-opens the modal, but must not perturb native state
+    expect(h.autoUpdater.checkForUpdatesAndNotify.mock.calls.length).toBe(before)
+  })
+
   it('dev-update mode: wires events, forces dev config, and treats as eligible', async () => {
     h.app.isPackaged = false
     process.env.CATE_DEV_UPDATE = '1'
