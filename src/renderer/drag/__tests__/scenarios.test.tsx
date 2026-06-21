@@ -21,6 +21,7 @@ vi.mock('../../lib/logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), log: vi.fn() },
 }))
 
+import { act } from 'react-dom/test-utils'
 import { renderDragScene, type SceneApi } from './harness'
 import { renderDockScene, type DockSceneApi } from './dockHarness'
 
@@ -50,6 +51,42 @@ describe('drag integration — canvas-node scenarios', () => {
     // Delta should be (60, 40) — minus any rounding in the canvas store.
     expect(node.origin.x).toBeCloseTo(160, 0)
     expect(node.origin.y).toBeCloseTo(140, 0)
+  })
+
+  // ---------------------------------------------------------------------------
+  // 1b. Single-node drag moves ONLY the grabbed node — even when other nodes
+  //     are selected. The dock-aware single-node op (useDragOp) never fans the
+  //     delta out across the selection; only useGroupNodeDrag does, and it only
+  //     engages for selection.length > 1 that includes the grabbed node (see
+  //     gestureBlurCancel.test.tsx). Grabbing a node that ISN'T in the selection
+  //     therefore moves just it and leaves the selected nodes put.
+  // ---------------------------------------------------------------------------
+  it('1b: dragging a non-selected node moves only it, leaving the selected nodes put', () => {
+    scene = renderDragScene({
+      canvases: [{ panelId: 'c1', rect: { x: 0, y: 0, w: 1000, h: 800 } }],
+      nodes: [
+        { canvasPanelId: 'c1', nodeId: 'n1', origin: { x: 100, y: 100 }, size: { width: 200, height: 150 } },
+        { canvasPanelId: 'c1', nodeId: 'n2', origin: { x: 400, y: 100 }, size: { width: 200, height: 150 } },
+        { canvasPanelId: 'c1', nodeId: 'n3', origin: { x: 700, y: 100 }, size: { width: 200, height: 150 } },
+      ],
+    })
+    const store = scene.getCanvasStore('c1')
+    // Select n1 + n2, then grab n3 (which is NOT in the selection).
+    act(() => store.getState().selectNodes(['n1', 'n2'], false))
+    const n1Origin = { ...store.getState().nodes['n1'].origin }
+    const n2Origin = { ...store.getState().nodes['n2'].origin }
+
+    scene.mouse.downOnNode('n3')
+    scene.mouse.moveBy({ x: 50, y: 30 })
+    scene.mouse.moveBy({ x: 10, y: 10 }) // beyond dead zone
+    scene.mouse.up()
+
+    // n3 moved by (60,40)...
+    expect(store.getState().nodes['n3'].origin.x).toBeCloseTo(760, 0)
+    expect(store.getState().nodes['n3'].origin.y).toBeCloseTo(140, 0)
+    // ...the selected nodes did not budge.
+    expect(store.getState().nodes['n1'].origin).toEqual(n1Origin)
+    expect(store.getState().nodes['n2'].origin).toEqual(n2Origin)
   })
 
   // ---------------------------------------------------------------------------

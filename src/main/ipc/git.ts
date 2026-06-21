@@ -158,10 +158,16 @@ export function registerHandlers(): void {
 
   ipcMain.handle(
     GIT_WORKTREE_ADD_FROM_PR,
-    async (_event, repoCwd: string, prNumber: number, targetPath: string) => {
+    async (
+      _event,
+      repoCwd: string,
+      prNumber: number,
+      targetPath: string,
+      options?: { symlinkPaths?: string[] },
+    ) => {
       const { vcs, path, runtimeId } = vcsFor(repoCwd)
       const target = worktreeTargetPath(runtimeId, targetPath)
-      const res = await vcs.worktreeAddFromPr(path, prNumber, target)
+      const res = await vcs.worktreeAddFromPr(path, prNumber, target, options)
       return { ...res, path: formatLocator({ runtimeId, path: res.path }) }
     },
   )

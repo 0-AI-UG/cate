@@ -2,6 +2,8 @@
 // Panel type definitions for the renderer
 // =============================================================================
 
+import type { BrowserTab } from '../../shared/types'
+
 // -----------------------------------------------------------------------------
 // Base panel props
 // -----------------------------------------------------------------------------
@@ -29,4 +31,7 @@ export interface BrowserPanelProps extends PanelProps {
   /** Per-panel proxy URL (issue #241). When set, the panel runs in its own
    *  proxy-derived session instead of the shared browser session. */
   proxyUrl?: string
+  /** Persisted open tabs (light model) + the active tab id. */
+  tabs?: BrowserTab[]
+  activeTabId?: string
 }

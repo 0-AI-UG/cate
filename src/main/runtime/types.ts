@@ -323,12 +323,13 @@ export interface VcsHost {
     repoCwd: string,
     branch: string,
     targetPath: string,
-    options?: { createBranch?: boolean; baseRef?: string },
+    options?: { createBranch?: boolean; baseRef?: string; symlinkPaths?: string[] },
   ): Promise<{ path: string; branch: string }>
   worktreeAddFromPr(
     repoCwd: string,
     prNumber: number,
     targetPath: string,
+    options?: { symlinkPaths?: string[] },
   ): Promise<{ path: string; branch: string }>
   worktreeRemove(repoCwd: string, worktreePath: string, options?: { force?: boolean }): Promise<void>
   worktreePrune(repoCwd: string): Promise<{ output: string }>

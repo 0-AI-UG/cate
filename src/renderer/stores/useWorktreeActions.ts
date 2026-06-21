@@ -9,6 +9,7 @@
 
 import { useCallback } from 'react'
 import { useAppStore, pickWorktreeColor } from './appStore'
+import { useSettingsStore } from './settingsStore'
 import { gitStatusStore } from './gitStatusStore'
 import type { WorktreeMeta } from '../../shared/types'
 import type { PrListItem } from '../sidebar/CreateWorktreeForm'
@@ -36,6 +37,13 @@ function makeWorktreeId(): string {
   return `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+/** Workspace-root-relative paths to symlink into a new worktree, or undefined
+ *  when none are configured. Global setting, applied to every workspace. */
+function configuredSymlinkPaths(): string[] | undefined {
+  const paths = useSettingsStore.getState().worktreeSymlinkPaths.map((p) => p.trim()).filter(Boolean)
+  return paths.length ? paths : undefined
+}
+
 export interface WorktreeActions {
   /** Create a brand-new branch + worktree. Throws on failure (callers surface). */
   createWorktree: (rawName: string, baseRef?: string) => Promise<void>
@@ -56,6 +64,7 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
       await window.electronAPI.gitWorktreeAdd(rootPath, branch, targetPath, {
         createBranch: true,
         baseRef,
+        symlinkPaths: configuredSymlinkPaths(),
       })
 
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
@@ -79,7 +88,9 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
       // Slug includes the PR number so contributors' identically-named branches
       // never collide on disk.
       const targetPath = worktreePathFor(rootPath, `pr-${pr.number}-${pr.headRefName}`)
-      const res = await window.electronAPI.gitWorktreeAddFromPr(rootPath, pr.number, targetPath)
+      const res = await window.electronAPI.gitWorktreeAddFromPr(rootPath, pr.number, targetPath, {
+        symlinkPaths: configuredSymlinkPaths(),
+      })
 
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       const meta: WorktreeMeta = {

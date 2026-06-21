@@ -26,6 +26,13 @@ asarUnpack:
   # OpenAI SDK closure, zod, yaml, protobufjs, etc.) load fine straight out of the
   # asar, so packing them keeps ~10k loose sealed files out of the bundle.
   - "node_modules/node-pty/**"
+  # @parcel/watcher (workspace-tree file watching, main process) + its per-platform
+  # prebuilt binary packages (@parcel/watcher-<platform>-<arch>[-glibc/musl], each
+  # shipping watcher.node). The .node binaries can't be dlopen'd from inside
+  # app.asar, so the whole family is unpacked. npm install on the build runner
+  # provides the host platform's package.
+  - "node_modules/@parcel/watcher/**"
+  - "node_modules/@parcel/watcher-*/**"
   - "node_modules/koffi/**"
   - "node_modules/fsevents/**"
   - "node_modules/ssh2/**"

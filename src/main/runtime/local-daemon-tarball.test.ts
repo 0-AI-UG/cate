@@ -12,8 +12,9 @@ import { addAllowedRoot, removeAllowedRoot } from '../ipc/pathValidation'
 // through its OWN bundled node (runtime/bin/node), not Electron-as-node. This is
 // the load-bearing check for "local = just another runtime host": it proves the
 // tarball's node + its bundled node-pty prebuild are ABI-compatible enough to
-// spawn a PTY. Skips when the host tarball hasn't been built (`npm run
-// runtime:tarball`), so CI without the artifact doesn't fail.
+// spawn a PTY, and its bundled @parcel/watcher prebuild loads + emits fs events.
+// Skips when the host tarball hasn't been built (`npm run runtime:tarball`), so
+// CI without the artifact doesn't fail.
 const target = hostRuntimeTarget()
 const tarballPath = target
   ? path.resolve(process.cwd(), 'dist-runtime', tarballName(RUNTIME_VERSION, target))
@@ -59,6 +60,22 @@ describe.skipIf(!hasTarball)('local daemon from the real tarball', () => {
     const dir = await runtime.validatePathStrict(workspace)
     const tree = await runtime.file.readDir(dir)
     expect(tree.map((n) => n.name)).toContain('hello.ts')
+
+    // @parcel/watcher: its bundled prebuild must load + emit under the tarball
+    // node (the ABI the daemon actually runs). Watch the workspace, create a
+    // file, and assert the create event streams back.
+    const sawCreate = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no parcel watch event from the tarball daemon')), 8000)
+      runtime.file.watch(dir, (p, type) => {
+        if (p.includes('watched.ts') && type === 'create') {
+          clearTimeout(timer)
+          resolve()
+        }
+      })
+    })
+    await new Promise((r) => setTimeout(r, 400)) // let the watcher arm
+    await fs.writeFile(path.join(workspace, 'watched.ts'), 'export const y = 2\n')
+    await sawCreate
 
     // PTY: node-pty's bundled prebuild must load + spawn under the tarball node.
     const sawData = new Promise<void>((resolve) => {

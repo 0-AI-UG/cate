@@ -45,6 +45,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useDragStore } from '../drag'
 import { viewToCanvas } from '../lib/canvas/coordinates'
+import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
 import type { Point } from '../../shared/types'
 
@@ -478,6 +479,191 @@ describe('right-drag panning', () => {
     rightUp(el, 200, 100)
 
     expect(expose.current!.canvasContextMenu).toBeNull()
+  })
+})
+
+// =============================================================================
+// 2b. Marquee selection
+// =============================================================================
+
+const leftDown = (el: HTMLElement, x: number, y: number) => mouse(el, 'mousedown', 0, x, y)
+const winMove = (x: number, y: number) =>
+  act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true })))
+const winUp = (x: number, y: number) =>
+  act(() =>
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 0, clientX: x, clientY: y, bubbles: true })),
+  )
+
+describe('marquee selection', () => {
+  // Regression: the marquee must suppress iframe/webview/monaco/xterm hit-testing
+  // (via the shared `canvas-interacting` body class) like every other canvas
+  // gesture. Without it, the cursor crossing onto the FOCUSED panel — whose dim
+  // overlay is pointer-events:none — lets that panel's content swallow the
+  // window-level mousemove/mouseup, freezing and mis-selecting the marquee.
+  it('holds canvas-interacting for the duration of a marquee drag', () => {
+    const { el } = setupScene()
+
+    leftDown(el, 100, 100)
+    // A bare press (no drag yet) must not suppress panel hit-testing.
+    expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+
+    winMove(120, 120) // > 4px → the drag (and marquee) begins
+    expect(document.body.classList.contains('canvas-interacting')).toBe(true)
+
+    winMove(180, 160)
+    expect(document.body.classList.contains('canvas-interacting')).toBe(true)
+
+    winUp(180, 160)
+    expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+  })
+
+  it('does not leave canvas-interacting set after a click without a drag', () => {
+    const { el } = setupScene()
+
+    leftDown(el, 100, 100)
+    winUp(101, 101) // < 4px → not a drag
+    expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+  })
+
+  it('releases canvas-interacting if the window blurs mid-marquee', () => {
+    const { el } = setupScene()
+
+    leftDown(el, 100, 100)
+    winMove(140, 140)
+    expect(document.body.classList.contains('canvas-interacting')).toBe(true)
+
+    act(() => window.dispatchEvent(new Event('blur')))
+    expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+  })
+})
+
+// =============================================================================
+// 2c. Marquee selection — the SELECTION RESULT (which nodes get selected).
+//
+// The canvas div's getBoundingClientRect is (0,0) under jsdom and the scene runs
+// at zoom 1 / offset 0, so client coords map 1:1 to canvas coords. Node geometry
+// is read straight from the store (canvasStoreApi.getState().nodes), so we seed
+// nodes there and drag a box over them. rectsOverlap is half-open: a box whose
+// edge merely touches a node's edge does NOT count as a hit.
+// =============================================================================
+
+function seedNode(
+  store: StoreApi<CanvasStore>,
+  id: string,
+  origin: Point,
+  size: { width: number; height: number },
+) {
+  act(() => {
+    const created = store.getState().addNode(`panel-${id}`, 'editor', origin, size)
+    store.setState((s) => {
+      const node = s.nodes[created]
+      if (!node) return s
+      const next = { ...s.nodes }
+      delete next[created]
+      next[id] = { ...node, id, origin: { ...origin }, size: { ...size } }
+      return { ...s, nodes: next }
+    })
+  })
+  // addNode/seed leave a stale selection from the dedupe path; reset to a clean
+  // empty, deactivated selection so each test starts from a known state.
+  act(() => store.getState().clearSelection())
+}
+
+describe('marquee selection — result', () => {
+  it('selects exactly the nodes the box overlaps, and leaves the rest alone', () => {
+    const { store, el } = setupScene()
+    seedNode(store, 'A', { x: 50, y: 50 }, { width: 60, height: 60 })   // inside the box
+    seedNode(store, 'B', { x: 130, y: 130 }, { width: 60, height: 60 }) // partially inside
+    seedNode(store, 'C', { x: 400, y: 400 }, { width: 60, height: 60 }) // far outside
+
+    // Drag a box from (40,40) to (200,200): overlaps A fully and B partially.
+    leftDown(el, 40, 40)
+    winMove(60, 60) // > 4px → drag begins
+    winMove(200, 200)
+    winUp(200, 200)
+
+    const sel = new Set(store.getState().selection)
+    expect(sel.has('A')).toBe(true)
+    expect(sel.has('B')).toBe(true)
+    expect(sel.has('C')).toBe(false)
+    // Pure selection → no active lead.
+    expect(store.getState().selectionActive).toBe(false)
+    expect(focusedNodeId(store.getState())).toBeNull()
+  })
+
+  it('a node the box does not reach is NOT selected (edge-touch is not an overlap)', () => {
+    const { store, el } = setupScene()
+    // Node B's left edge is at x=200; a box ending exactly at x=200 only touches it.
+    seedNode(store, 'A', { x: 50, y: 50 }, { width: 60, height: 60 })
+    seedNode(store, 'B', { x: 200, y: 50 }, { width: 60, height: 60 })
+
+    leftDown(el, 40, 40)
+    winMove(60, 60)
+    winMove(200, 120) // right edge exactly at B's left edge
+    winUp(200, 120)
+
+    const sel = new Set(store.getState().selection)
+    expect(sel.has('A')).toBe(true)
+    expect(sel.has('B')).toBe(false)
+  })
+
+  it('a plain marquee REPLACES the prior selection', () => {
+    const { store, el } = setupScene()
+    seedNode(store, 'A', { x: 50, y: 50 }, { width: 60, height: 60 })
+    seedNode(store, 'B', { x: 400, y: 400 }, { width: 60, height: 60 })
+    act(() => store.getState().selectNodes(['B'], false)) // pre-existing selection
+
+    // Box over A only (no shift) → selection becomes just {A}.
+    leftDown(el, 40, 40)
+    winMove(60, 60)
+    winMove(150, 150)
+    winUp(150, 150)
+
+    expect(store.getState().selection).toEqual(['A'])
+  })
+
+  it('shift-marquee is ADDITIVE — it unions with the existing selection', () => {
+    const { store, el } = setupScene()
+    seedNode(store, 'A', { x: 50, y: 50 }, { width: 60, height: 60 })
+    seedNode(store, 'B', { x: 400, y: 400 }, { width: 60, height: 60 })
+    act(() => store.getState().selectNodes(['B'], false)) // keep B selected
+
+    // Shift held: box over A unions with {B}.
+    act(() => el.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40, shiftKey: true, bubbles: true })))
+    winMove(60, 60)
+    winMove(150, 150)
+    winUp(150, 150)
+
+    expect(new Set(store.getState().selection)).toEqual(new Set(['A', 'B']))
+    expect(store.getState().selectionActive).toBe(false)
+  })
+
+  it('a bare click (no drag) on empty canvas clears the selection and unfocuses', () => {
+    const { store, el } = setupScene()
+    seedNode(store, 'A', { x: 50, y: 50 }, { width: 60, height: 60 })
+    act(() => store.getState().focusNode('A')) // active selection
+    expect(focusedNodeId(store.getState())).toBe('A')
+
+    leftDown(el, 600, 600) // empty canvas, far from A
+    winUp(601, 601) // < 4px → not a drag
+
+    expect(store.getState().selection).toEqual([])
+    expect(store.getState().selectionActive).toBe(false)
+    expect(focusedNodeId(store.getState())).toBeNull()
+  })
+
+  it('an empty-box marquee (no nodes overlapped) clears the selection', () => {
+    const { store, el } = setupScene()
+    seedNode(store, 'A', { x: 50, y: 50 }, { width: 60, height: 60 })
+    act(() => store.getState().selectNodes(['A'], false))
+
+    // Drag a box over empty space → nothing overlapped → selection cleared.
+    leftDown(el, 500, 500)
+    winMove(520, 520)
+    winMove(600, 600)
+    winUp(600, 600)
+
+    expect(store.getState().selection).toEqual([])
   })
 })
 

@@ -188,7 +188,7 @@ export interface ElectronAPI {
     repoCwd: string,
     branch: string,
     targetPath: string,
-    options?: { createBranch?: boolean; baseRef?: string },
+    options?: { createBranch?: boolean; baseRef?: string; symlinkPaths?: string[] },
   ): Promise<{ path: string; branch: string }>
 
   /** Remove a git worktree registration and delete its directory from disk. */
@@ -230,6 +230,7 @@ export interface ElectronAPI {
     repoCwd: string,
     prNumber: number,
     targetPath: string,
+    options?: { symlinkPaths?: string[] },
   ): Promise<{ path: string; branch: string }>
 
   /** List open pull requests for the branch picker. Returns [] without `gh`. */
@@ -488,6 +489,43 @@ export interface ElectronAPI {
 
   /** Remove a project path from the recent projects list (issue #220 — forget on close). */
   recentProjectsRemove(projectPath: string): Promise<void>
+
+  // ---------------------------------------------------------------------------
+  // Browser history + bookmarks (global, shared across all workspaces/windows)
+  // ---------------------------------------------------------------------------
+
+  /** Record a page visit in the global browsing history (deduped by URL). */
+  browserHistoryRecord(url: string, title: string): Promise<void>
+
+  /** Get the full browsing history, most-recent first. */
+  browserHistoryGet(): Promise<import('./types').BrowserHistoryEntry[]>
+
+  /** Query history by URL/title substring for URL-bar autocomplete. */
+  browserHistoryQuery(query: string, limit: number): Promise<import('./types').BrowserHistoryEntry[]>
+
+  /** Remove a single history entry by URL. */
+  browserHistoryRemove(url: string): Promise<void>
+
+  /** Clear all browsing history. */
+  browserHistoryClear(): Promise<void>
+
+  /** Get all bookmarks/favorites, most-recently-added first. */
+  browserBookmarksGet(): Promise<import('./types').BrowserBookmark[]>
+
+  /** Add a bookmark (idempotent by URL). */
+  browserBookmarksAdd(url: string, title: string): Promise<void>
+
+  /** Remove a bookmark by URL. */
+  browserBookmarksRemove(url: string): Promise<void>
+
+  /** Clear the shared browser session's cookies/cache/storage + history. */
+  browserClearData(): Promise<void>
+
+  /** Subscribe to history changes (any window's mutation, or an external edit). */
+  onBrowserHistoryChanged(callback: () => void): () => void
+
+  /** Subscribe to bookmark changes (any window's mutation, or an external edit). */
+  onBrowserBookmarksChanged(callback: () => void): () => void
 
   /** Get the persisted sidebar arrangement (workspace order + active workspace). */
   sidebarSessionGet(): Promise<SidebarSession | null>

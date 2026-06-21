@@ -8,6 +8,7 @@ import { useEffect } from 'react'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { focusedNodeId } from '../stores/canvas/selectionModel'
 
 /** Minimum fraction of the viewport a node must cover before it can claim
  *  focus. Prevents flicker when a tiny sliver of a panel peeks into view. */
@@ -40,11 +41,16 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
       if (disposed) return
 
       const state = canvasApi.getState()
-      const { nodes, viewportOffset, zoomLevel, containerSize, focusedNodeId } = state
+      const { nodes, viewportOffset, zoomLevel, containerSize } = state
+      const currentFocused = focusedNodeId(state)
       // Keyboard canvas movement (Cmd+Arrow jump / Shift+Arrow pan) deliberately
       // selects without activating — don't fight it by auto-focusing whatever
       // scrolls into view.
       if (state.suppressAutoFocus) return
+      // Don't disturb a deliberate multi-selection: focusNode collapses the
+      // selection to one node, so auto-activating mid-marquee-selection would
+      // wipe the user's group. Stand down until it's back to <= 1.
+      if (state.selection.length > 1) return
       if (containerSize.width <= 0 || containerSize.height <= 0) return
       if (zoomLevel <= 0) return
 
@@ -110,7 +116,7 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
 
       if (!bestId) return
       if (bestArea < viewArea * MIN_COVERAGE_FRACTION) return
-      if (bestId === focusedNodeId) return
+      if (bestId === currentFocused) return
 
       autoSetId = bestId
       canvasApi.getState().focusNode(bestId)
@@ -132,16 +138,17 @@ export function useAutoFocusLargestVisible(canvasApi: StoreApi<CanvasStore>): vo
     let prevZoom = seed.zoomLevel
     let prevNodes = seed.nodes
     let prevSize = seed.containerSize
-    let prevFocused = seed.focusedNodeId
+    let prevFocused = focusedNodeId(seed)
 
     const unsubscribe = canvasApi.subscribe((s) => {
       // A focus change we didn't originate = user clicked a panel. Latch it
       // as an override until that node leaves the viewport.
-      if (s.focusedNodeId !== prevFocused) {
-        if (s.focusedNodeId && s.focusedNodeId !== autoSetId) {
-          overrideId = s.focusedNodeId
+      const focused = focusedNodeId(s)
+      if (focused !== prevFocused) {
+        if (focused && focused !== autoSetId) {
+          overrideId = focused
         }
-        prevFocused = s.focusedNodeId
+        prevFocused = focused
       }
       if (
         s.viewportOffset !== prevOffset ||

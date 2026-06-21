@@ -2,7 +2,6 @@
 // Filesystem IPC handlers — file read/write and directory watching
 // =============================================================================
 
-import { watch, FSWatcher } from 'chokidar'
 import { ipcMain } from 'electron'
 import log from '../logger'
 import { consumeScopedWriteAllowance, validatePathStrict } from './pathValidation'
@@ -39,52 +38,37 @@ export function currentExclusionSet(): Set<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Shared watcher pool — one chokidar watcher per normalised directory path,
-// shared across any number of windows/requesters via reference counting.
-// Per-requester event listeners are tracked separately so each window only
-// receives its own events and cleanup is precise.
+// Local watcher pool. Workspace-tree watching lives in ONE place — the shared
+// @parcel/watcher pool (runtime/capabilities/fileWatcher.ts), which owns the OS
+// watcher, covering-root sharing, native exclusion pruning, and error
+// containment. This module layers only the local concerns on top: a per-window
+// trailing-edge debounce + the FS_WATCH_EVENT IPC dispatch, and the in-process
+// subscription the git monitor uses. `getExclusions` reads the live
+// fileExclusions setting so refreshWatcherIgnores() re-applies edits via the
+// pool's refresh().
 // ---------------------------------------------------------------------------
 
-interface SubscriberEntry {
-  /** Only events whose path startsWith this prefix are dispatched. */
-  prefix: string
-  /** Per-subscriber dispatch function (a single event at a time). */
-  dispatch: (type: string, filePath: string) => void
-  /** Cancel any pending trailing-edge flush (called from watchStop). */
+const watchPool = createWatchPool(
+  () => currentExclusionSet(),
+  (root, err) => log.warn('[fs-watch] watcher error for %s: %O', root, err),
+)
+
+/** Trailing-edge debounce window for coalescing watcher bursts. */
+const DISPATCH_DEBOUNCE_MS = 16
+
+/** An active renderer watch: the pool unsubscribe + the debounce canceller, so
+ *  watchStop and window-close tear the subscription down precisely. */
+interface RendererWatch {
+  windowId: number
+  unsubscribe: () => void
   cancelFlush: () => void
 }
 
-interface SharedWatcher {
-  watcher: FSWatcher
-  refCount: number
-  /** Per-subscriber entries keyed by an opaque subscriber key. */
-  subscribers: Map<string, SubscriberEntry>
-}
-
-/** Shared watcher pool keyed by normalised absolute directory path. */
-const sharedWatchers: Map<string, SharedWatcher> = new Map()
-
-/** Per-requester key -> normalised path, so watchStop can look up the shared entry. */
-const watcherKeys: Map<string, string> = new Map()
+/** Active renderer watches keyed by `${windowId}:${dirPath}`. */
+const rendererWatches = new Map<string, RendererWatch>()
 
 function watcherKey(windowId: number, dirPath: string): string {
   return `${windowId}:${dirPath}`
-}
-
-/** Trailing-edge debounce window for coalescing chokidar bursts. */
-const DISPATCH_DEBOUNCE_MS = 16
-
-/**
- * True iff `filePath` is `prefix` itself or lives under it. Comparison is a
- * straightforward string-prefix check; chokidar emits absolute, OS-normalised
- * paths so we trust them as-is (matching how `dirPath` is stored upstream).
- */
-function pathHasPrefix(filePath: string, prefix: string): boolean {
-  if (filePath === prefix) return true
-  if (!filePath.startsWith(prefix)) return false
-  const next = filePath.charCodeAt(prefix.length)
-  // 47 = '/', 92 = '\\'
-  return next === 47 || next === 92
 }
 
 // -----------------------------------------------------------------------------
@@ -111,8 +95,8 @@ import {
   readDir as capReadDir,
   searchFiles as capSearchFiles,
   importEntriesInto as capImportEntriesInto,
-  createFsIgnoreMatcher,
 } from '../../runtime/capabilities/file'
+import { createWatchPool } from '../../runtime/capabilities/fileWatcher'
 export function readDir(dirPath: string): Promise<FileTreeNode[]> {
   return capReadDir(dirPath, currentExclusionSet())
 }
@@ -156,252 +140,86 @@ function encodeTreeNodes(runtimeId: string, nodes: FileTreeNode[]): FileTreeNode
   }))
 }
 
-/**
- * Create a chokidar watcher rooted at `dirPath` and wire its raw events to fan
- * out to `subscribers`. The Map is captured by reference, so subscribers added
- * after creation (and across watcher recreation) are honored.
- */
-function createWatcher(dirPath: string, subscribers: Map<string, SubscriberEntry>): FSWatcher {
-  // Watch the full tree (no `depth` cap): every consumer of a root watch — the
-  // editor's external-reload, the explorer tree refresh, the git status store —
-  // assumes events arrive for nested paths too. Hidden dirs and the user's
-  // exclusions (node_modules, caches, …) are pruned by the ignore matcher, so
-  // recursion stays affordable.
-  const watcher = watch(dirPath, {
-    ignoreInitial: true,
-    ignored: createFsIgnoreMatcher(dirPath, currentExclusionSet()),
-  })
-  const fanOut = (type: string, fp: string) => {
-    for (const sub of subscribers.values()) {
-      if (pathHasPrefix(fp, sub.prefix)) sub.dispatch(type, fp)
-    }
-  }
-
-  const dropActiveWatcher = (): void => {
-    const shared = sharedWatchers.get(dirPath)
-    if (shared?.watcher !== watcher) return
-
-    sharedWatchers.delete(dirPath)
-    for (const [key, normPath] of watcherKeys) {
-      if (normPath === dirPath) watcherKeys.delete(key)
-    }
-    for (const sub of subscribers.values()) sub.cancelFlush()
-    subscribers.clear()
-  }
-
-  const handleError = (err: unknown): void => {
-    log.warn('[fs-watch] watcher error for %s: %O', dirPath, err)
-    dropActiveWatcher()
-    watcher.removeAllListeners()
-    void watcher.close()
-  }
-
-  watcher.on('add', (fp: string) => fanOut('create', fp))
-  watcher.on('change', (fp: string) => fanOut('update', fp))
-  watcher.on('unlink', (fp: string) => fanOut('delete', fp))
-  watcher.on('error', handleError)
-  return watcher
-}
-
 function watchStart(dirPath: string, ownerWindowId: number): void {
   const key = watcherKey(ownerWindowId, dirPath)
 
-  // Remove any existing subscription for this window+path first
+  // Replace any existing subscription for this window+path.
   watchStop(dirPath, ownerWindowId)
 
-  let shared = sharedWatchers.get(dirPath)
-
-  if (!shared) {
-    // First subscriber — create the underlying chokidar watcher. The fan-out
-    // (in createWatcher) dispatches each raw event only to subscribers whose
-    // `prefix` is an ancestor of the changed path, so IPC consumers (and any
-    // in-process listeners such as the git monitor) aren't woken for changes
-    // in unrelated subtrees that happen to share the same watcher root.
-    const subscribers = new Map<string, SubscriberEntry>()
-    shared = {
-      watcher: createWatcher(dirPath, subscribers),
-      refCount: 0,
-      subscribers,
-    }
-    sharedWatchers.set(dirPath, shared)
-
-    // Attach any previously-registered in-process subscribers whose prefix
-    // falls under this newly-created watcher root.
-    for (const sub of inProcSubs.values()) {
-      if (pathHasPrefix(sub.prefix, dirPath)) {
-        attachInProcToWatcher(sub, dirPath, shared)
-      }
-    }
-  }
-
-  // Per-requester trailing-edge debounce — coalesces a burst (e.g. git status
-  // or a multi-file save) into a single IPC dispatch ~16ms after the last
-  // event, keeping the renderer-visible payload shape unchanged.
+  // Per-window trailing-edge debounce — coalesces a burst (e.g. git status or a
+  // multi-file save) into a single IPC dispatch ~16ms after the last event,
+  // keeping the renderer-visible payload shape unchanged.
   const dispatcher = createKeyedDispatcher<{ type: string; path: string }>(
     DISPATCH_DEBOUNCE_MS,
     (events) => {
       try {
-        for (const event of events) {
-          sendToWindow(ownerWindowId, FS_WATCH_EVENT, event)
-        }
+        for (const event of events) sendToWindow(ownerWindowId, FS_WATCH_EVENT, event)
       } catch (err) {
         log.warn('[fs-watch] flush failed:', err)
       }
     },
   )
 
-  const queueEvent = (type: string, filePath: string) => {
+  // The pool delivers only events under `dirPath` (prefix-filtered), with
+  // parcel's native create/update/delete type. The shared OS watcher is reused
+  // when a covering root is already watched (e.g. the git monitor's in-proc
+  // subscription on the same workspace).
+  const unsubscribe = watchPool.subscribe(dirPath, (filePath, type) => {
     dispatcher.push([filePath, { type, path: filePath }])
-  }
-
-  // cancelFlush clears the timer AND drops pending events for this subscriber.
-  const cancelFlush = () => dispatcher.cancel({ resetPending: true })
-
-  shared.subscribers.set(key, {
-    prefix: dirPath,
-    dispatch: queueEvent,
-    cancelFlush,
   })
-  shared.refCount++
-  watcherKeys.set(key, dirPath)
+
+  rendererWatches.set(key, {
+    windowId: ownerWindowId,
+    unsubscribe,
+    // cancelFlush clears the timer AND drops pending events for this watch.
+    cancelFlush: () => dispatcher.cancel({ resetPending: true }),
+  })
 }
 
 function watchStop(dirPath: string, ownerWindowId: number): void {
   const key = watcherKey(ownerWindowId, dirPath)
-  const normPath = watcherKeys.get(key)
-  if (!normPath) return
-
-  const shared = sharedWatchers.get(normPath)
-  if (shared) {
-    const sub = shared.subscribers.get(key)
-    if (sub) {
-      sub.cancelFlush()
-      shared.subscribers.delete(key)
-      shared.refCount--
-    }
-    if (shared.refCount <= 0) {
-      shared.watcher.close()
-      sharedWatchers.delete(normPath)
-    }
-  }
-  watcherKeys.delete(key)
+  const watch = rendererWatches.get(key)
+  if (!watch) return
+  watch.cancelFlush()
+  watch.unsubscribe()
+  rendererWatches.delete(key)
 }
 
 /**
  * Rebuild every pooled watcher with the current ignore list. Called when the
  * user edits the fileExclusions setting so already-running watchers honor the
- * new list without an app restart. Subscribers and ref counts are preserved;
+ * new list without an app restart. Subscribers are preserved across the swap;
  * the displayed tree is refreshed separately via the SETTINGS_CHANGED event.
  */
 export function refreshWatcherIgnores(): void {
-  for (const [dirPath, shared] of sharedWatchers) {
-    const old = shared.watcher
-    let next: FSWatcher
-    try {
-      next = createWatcher(dirPath, shared.subscribers)
-    } catch (err) {
-      // If the rebuild fails (e.g. invalid path / watcher init error), keep the
-      // existing watcher live rather than dropping file events for this root.
-      log.warn('[fs-watch] ignore refresh failed for %s; keeping old watcher: %O', dirPath, err)
-      continue
-    }
-    shared.watcher = next
-    // Detach the old watcher's listeners before closing it. close() is async,
-    // so without this both watchers are briefly live and share the subscribers
-    // map — an event landing in that window would fan out twice. IPC consumers
-    // dedupe by path, but in-process subscribers (the git monitor) don't.
-    old.removeAllListeners()
-    old.close().catch((err) => log.warn('[fs-watch] old watcher close failed:', err))
-  }
+  void watchPool.refresh().catch((err) => log.warn('[fs-watch] ignore refresh failed: %O', err))
 }
 
 // ---------------------------------------------------------------------------
 // In-process fs change subscriptions
 //
 // Lets other main-process modules (e.g. the git monitor) react to filesystem
-// events without round-tripping through IPC. Subscribers register a path
-// prefix; we deliver any change underneath it via whichever shared watcher
-// roots happen to cover it. Subscribers that register before a covering
-// watcher exists simply receive nothing until one does, which matches the
-// existing renderer-side semantics.
+// events without round-tripping through IPC. Backed by the same pool, so an
+// in-proc subscription shares the workspace-root OS watcher when one is already
+// open and otherwise opens its own — delivering parcel's real change type
+// (create/update/delete) with no coalescing (callers debounce themselves).
 // ---------------------------------------------------------------------------
 
 type InProcListener = (filePath: string, type: FsChangeType) => void
 
-interface InProcSub {
-  id: number
-  prefix: string
-  listener: InProcListener
-  // Reverse-lookup of (watcherRoot, key) we've attached to so we can detach
-  // on unsubscribe without scanning.
-  attachments: Array<{ root: string; key: string }>
-}
-
-let inProcSeq = 0
-const inProcSubs: Map<number, InProcSub> = new Map()
-
-function attachInProcToWatcher(sub: InProcSub, root: string, shared: SharedWatcher): void {
-  const key = `inproc:${sub.id}-${root}`
-  shared.subscribers.set(key, {
-    prefix: sub.prefix,
-    // No coalescing here — in-process consumers are expected to debounce
-    // themselves if they care; passing every event through makes "immediate
-    // poll on change" behaviour easy to reason about.
-    dispatch: (type, filePath) => sub.listener(filePath, type as FsChangeType),
-    cancelFlush: () => { /* no-op */ },
-  })
-  shared.refCount++
-  sub.attachments.push({ root, key })
-}
-
-/**
- * Subscribe to filesystem change events under `prefix`. The listener fires
- * once per chokidar event whose path is `prefix` itself or lives beneath it,
- * provided some existing watcher root covers `prefix`. Returns an unsubscribe
- * fn. Safe to call even if no covering watcher exists yet — the subscription
- * is registered and will simply produce no events until one does.
- */
 export function subscribeFsChanges(prefix: string, listener: InProcListener): () => void {
-  const id = ++inProcSeq
-  const sub: InProcSub = { id, prefix, listener, attachments: [] }
-  inProcSubs.set(id, sub)
-
-  for (const [root, shared] of sharedWatchers) {
-    if (pathHasPrefix(prefix, root)) {
-      attachInProcToWatcher(sub, root, shared)
-    }
-  }
-
-  return () => {
-    const s = inProcSubs.get(id)
-    if (!s) return
-    inProcSubs.delete(id)
-    for (const { root, key } of s.attachments) {
-      const shared = sharedWatchers.get(root)
-      if (!shared) continue
-      if (shared.subscribers.delete(key)) {
-        shared.refCount--
-        if (shared.refCount <= 0) {
-          shared.watcher.close()
-          sharedWatchers.delete(root)
-        }
-      }
-    }
-  }
+  return watchPool.subscribe(prefix, listener)
 }
 
 /**
  * Stop all watchers owned by a specific window (called on window close).
  */
 export function stopWatchersForWindow(windowId: number): void {
-  // Collect keys first to avoid mutating the map while iterating
-  const toStop: Array<[string, number]> = []
-  const prefix = `${windowId}:`
-  for (const [key, normPath] of watcherKeys) {
-    if (key.startsWith(prefix)) toStop.push([normPath, windowId])
-  }
-  for (const [normPath, wid] of toStop) {
-    watchStop(normPath, wid)
+  for (const [key, watch] of [...rendererWatches.entries()]) {
+    if (watch.windowId !== windowId) continue
+    watch.cancelFlush()
+    watch.unsubscribe()
+    rendererWatches.delete(key)
   }
   // Remote watches for this window.
   const remotePrefix = `${windowId}:`

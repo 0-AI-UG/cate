@@ -280,8 +280,8 @@ export function renderDragScene(spec: SceneSpec): SceneApi {
     store.setState((s) => ({
       ...s,
       nodes: {},
-      focusedNodeId: null,
-      selectedNodeIds: new Set<string>(),
+      selection: [],
+      selectionActive: false,
       history: [],
       historyIndex: -1,
     }))

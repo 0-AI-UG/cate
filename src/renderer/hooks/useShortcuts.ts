@@ -16,6 +16,7 @@ import { useUIStore } from '../stores/uiStore'
 import { getActivePanelId, setActivePanel } from '../lib/activePanel'
 import { resolvePanelById } from '../lib/workspace/panelReveal'
 import { getNodeActivePanelId } from '../panels/nodeDockRegistry'
+import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 import type { ShortcutAction } from '../../shared/types'
 import { runAction } from '../lib/runAction'
 
@@ -63,7 +64,8 @@ export function computeTerminalHasFocus(): boolean {
     const canvasStore =
       getActiveCanvasOps()?.storeApi ??
       getWorkspaceCanvasStore(useAppStore.getState().selectedWorkspaceId)
-    const focusedNodeId = canvasStore?.getState().focusedNodeId
+    const state = canvasStore?.getState()
+    const focusedNodeId = state ? focusedNodeIdOf(state) : null
     if (!focusedNodeId) return false
     const leafId = getNodeActivePanelId(canvasPanelId, focusedNodeId)
     if (!leafId) return false
@@ -184,7 +186,7 @@ export function useShortcuts(): void {
         // when focused, so its own handler can delete the multi-selection.
         if (isSidebarKeyNavFocused()) return
         const state = canvasStore()
-        if (state.selectedNodeIds.size > 0) {
+        if (state.selection.length > 0) {
           // Don't delete if a text input is focused
           const active = document.activeElement
           const isEditable = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.getAttribute('contenteditable') === 'true'
@@ -209,9 +211,9 @@ export function useShortcuts(): void {
         const uiNow = useUIStore.getState()
         if (uiNow.showCommandPalette) return
         const state = canvasStore()
-        if (state.selectedNodeIds.size === 1) {
-          const id = [...state.selectedNodeIds][0]
-          if (id !== state.focusedNodeId && state.nodes[id]) {
+        if (state.selection.length === 1) {
+          const id = state.selection[0]
+          if (id !== focusedNodeIdOf(state) && state.nodes[id]) {
             e.preventDefault()
             e.stopPropagation()
             canvasStore().focusNode(id)
@@ -281,7 +283,7 @@ export function useShortcuts(): void {
       // Keyboard-only passthrough: when a browser panel is focused, let
       // Cmd+=/- zoom the webview content instead of the canvas.
       if (action === 'zoomIn' || action === 'zoomOut' || action === 'zoomReset') {
-        const focusedId = canvasStore().focusedNodeId
+        const focusedId = focusedNodeIdOf(canvasStore())
         const focusedNode = focusedId ? canvasStore().nodes[focusedId] : null
         const focusedPanel = focusedNode
           ? appStore().workspaces.find(w => w.id === appStore().selectedWorkspaceId)?.panels[focusedNode.panelId]

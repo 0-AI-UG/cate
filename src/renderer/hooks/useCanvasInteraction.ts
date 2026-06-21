@@ -11,6 +11,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useDragStore } from '../drag'
 import { viewToCanvas } from '../lib/canvas/coordinates'
 import { rectsOverlap } from '../canvas/layoutEngine'
+import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 import { isMouseWheel, type WheelLike } from '../lib/wheelIntent'
 import { acquireBodyClass, releaseBodyClass } from '../lib/dom/bodyClassRefcount'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
@@ -269,7 +270,7 @@ export function useCanvasInteraction(
       if (target.tagName === 'WEBVIEW') {
         const nodeEl = target.closest('[data-node-id]')
         const nodeId = nodeEl?.getAttribute('data-node-id')
-        const { focusedNodeId } = canvasStoreApi.getState()
+        const focusedNodeId = focusedNodeIdOf(canvasStoreApi.getState())
         if (nodeId && nodeId === focusedNodeId) {
           return
         }
@@ -290,7 +291,7 @@ export function useCanvasInteraction(
       if (panelContent) {
         const nodeEl = panelContent.closest('[data-node-id]')
         const nodeId = nodeEl?.getAttribute('data-node-id')
-        const { focusedNodeId } = canvasStoreApi.getState()
+        const focusedNodeId = focusedNodeIdOf(canvasStoreApi.getState())
         if (nodeId && nodeId === focusedNodeId) {
           const isHorizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
           if (!isHorizontal) {
@@ -479,12 +480,21 @@ export function useCanvasInteraction(
           const shiftHeld = e.shiftKey
 
           let didDrag = false
+          let acquiredInteracting = false
 
           const handleMarqueeMove = (ev: MouseEvent) => {
             const dx = ev.clientX - startClientX
             const dy = ev.clientY - startClientY
             if (!didDrag && Math.sqrt(dx * dx + dy * dy) >= 4) {
               didDrag = true
+              // Suppress iframe/webview/monaco/xterm hit-testing for the duration
+              // of the marquee, exactly as every other canvas gesture does. The
+              // focused panel's dim overlay is pointer-events:none, so without this
+              // its webview/terminal/editor content swallows the window-level
+              // mousemove/mouseup and the marquee freezes + mis-selects the moment
+              // the cursor crosses onto the focused panel.
+              acquireBodyClass('canvas-interacting')
+              acquiredInteracting = true
               // Drop DOM focus from any panel (e.g. a Monaco textarea) so the
               // window-level keyboard shortcuts — Delete/Backspace over the new
               // selection — aren't swallowed by the editable that had focus.
@@ -515,6 +525,10 @@ export function useCanvasInteraction(
             window.removeEventListener('mousemove', handleMarqueeMove)
             window.removeEventListener('mouseup', handleMarqueeUp)
             window.removeEventListener('blur', handleMarqueeBlur)
+            if (acquiredInteracting) {
+              releaseBodyClass('canvas-interacting')
+              acquiredInteracting = false
+            }
           }
 
           const handleMarqueeBlur = () => {
@@ -554,6 +568,10 @@ export function useCanvasInteraction(
             if (!shiftHeld) {
               canvasStoreApi.getState().clearSelection()
             }
+            // selectNodes leaves the selection un-activated (no active lead), so
+            // the marquee result renders uniformly as selection rings and the
+            // glowing set is exactly the moved set — there's no separate focused
+            // node that looks selected but doesn't move.
             canvasStoreApi.getState().selectNodes(hitNodeIds, true)
           }
 

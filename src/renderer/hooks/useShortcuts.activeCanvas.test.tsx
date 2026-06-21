@@ -115,9 +115,9 @@ describe('useShortcuts active-canvas routing', () => {
     dispatchKey({ key: 'ArrowRight', metaKey: true })
 
     // Selection moved to the right node on the ACTIVE store...
-    expect([...active.getState().selectedNodeIds]).toEqual([right])
+    expect([...active.getState().selection]).toEqual([right])
     // ...and the captured singleton/primary was never touched.
-    expect(primary.getState().selectedNodeIds.size).toBe(0)
+    expect(primary.getState().selection.length).toBe(0)
   })
 
   it('Shift+Arrow pan moves the active canvas viewport, not the singleton', () => {

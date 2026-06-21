@@ -18,6 +18,7 @@ vi.mock('./appStore', () => ({
 }))
 
 import { createCanvasStore } from './canvasStore'
+import { focusedNodeId } from './canvas/selectionModel'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
 import type { CanvasNodeState } from '../../shared/types'
 
@@ -79,7 +80,7 @@ describe('node lifecycle', () => {
     store.getState().focusNode(a)
 
     const s = store.getState()
-    expect(s.focusedNodeId).toBe(a)
+    expect(focusedNodeId(s)).toBe(a)
     expect(s.focusEpoch).toBe(epochBefore + 1)
     expect(s.nodes[a].zOrder).toBeGreaterThan(topBefore)
     expect(s.suppressAutoFocus).toBe(false)
@@ -96,7 +97,7 @@ describe('node lifecycle', () => {
 
     store.getState().removeNode(a)
     expect(store.getState().nodes[a].animationState).toBe('exiting')
-    expect(store.getState().focusedNodeId).toBeNull()
+    expect(focusedNodeId(store.getState())).toBeNull()
 
     store.getState().finalizeRemoveNode(a)
     expect(store.getState().nodes[a]).toBeUndefined()
@@ -219,7 +220,7 @@ describe('viewport math', () => {
     expect(maxed.origin).toEqual({ x: 20, y: 20 })
     expect(maxed.size).toEqual({ width: 1160, height: 760 })
     expect(maxed.preMaximizeOrigin).toEqual({ x: 100, y: 100 })
-    expect(store.getState().focusedNodeId).toBe(id)
+    expect(focusedNodeId(store.getState())).toBe(id)
 
     store.getState().toggleMaximize(id, { width: 1200, height: 800 })
     const restored = store.getState().nodes[id]
@@ -242,20 +243,20 @@ describe('undo/redo across a bulk delete', () => {
     expect(closePanel).toHaveBeenCalledWith('ws-1', 'panel-b')
     expect(store.getState().nodes[a].animationState).toBe('exiting')
     expect(store.getState().nodes[b].animationState).toBe('exiting')
-    expect(store.getState().selectedNodeIds.size).toBe(0)
+    expect(store.getState().selection.length).toBe(0)
 
     // deleteSelection pushes once + once per removeNode → two undos rewind it.
     store.getState().undo()
     store.getState().undo()
     expect(store.getState().nodes[a].animationState).not.toBe('exiting')
     expect(store.getState().nodes[b].animationState).not.toBe('exiting')
-    expect([...store.getState().selectedNodeIds].sort()).toEqual([a, b].sort())
+    expect([...store.getState().selection].sort()).toEqual([a, b].sort())
 
     store.getState().redo()
     store.getState().redo()
     expect(store.getState().nodes[a].animationState).toBe('exiting')
     expect(store.getState().nodes[b].animationState).toBe('exiting')
-    expect(store.getState().selectedNodeIds.size).toBe(0)
+    expect(store.getState().selection.length).toBe(0)
   })
 
   it('a new mutation clears the redo stack', () => {
@@ -284,7 +285,7 @@ describe('undo/redo across a bulk delete', () => {
     store.getState().undo() // restores pre-add-d snapshot (selection had nothing yet)
 
     const s = store.getState()
-    for (const id of s.selectedNodeIds) {
+    for (const id of s.selection) {
       expect(s.nodes[id], `selected id ${id} must exist`).toBeDefined()
     }
     expect(s.nodes[d]).toBeUndefined()
@@ -305,14 +306,14 @@ describe('spatial keyboard navigation', () => {
     store.getState().focusNode(a)
 
     store.getState().navigateDirection('right')
-    expect(store.getState().focusedNodeId).toBe(b)
+    expect(focusedNodeId(store.getState())).toBe(b)
     // focusAndCenter: node center (1100, 100) maps to the container center.
     expect(store.getState().viewportOffset).toEqual({ x: 600 - 1100, y: 400 - 100 })
 
     store.getState().navigateDirection('right')
-    expect(store.getState().focusedNodeId).toBe(c)
+    expect(focusedNodeId(store.getState())).toBe(c)
     store.getState().navigateDirection('left')
-    expect(store.getState().focusedNodeId).toBe(b)
+    expect(focusedNodeId(store.getState())).toBe(b)
   })
 
   it('ignores candidates outside the directional cone', () => {
@@ -325,7 +326,7 @@ describe('spatial keyboard navigation', () => {
 
     store.getState().navigateDirection('right')
 
-    expect(store.getState().focusedNodeId).toBe(a)
+    expect(focusedNodeId(store.getState())).toBe(a)
   })
 
   it('navigateSelect moves the selection cursor without grabbing focus', () => {
@@ -336,8 +337,8 @@ describe('spatial keyboard navigation', () => {
     store.getState().navigateSelect('right')
 
     const s = store.getState()
-    expect([...s.selectedNodeIds]).toEqual([b])
-    expect(s.focusedNodeId).toBeNull()
+    expect([...s.selection]).toEqual([b])
+    expect(focusedNodeId(s)).toBeNull()
     expect(s.suppressAutoFocus).toBe(true)
     // No rAF in this environment → the viewport tween applies instantly.
     expect(s.viewportOffset).toEqual({ x: 600 - 1100, y: 400 - 100 })
@@ -438,7 +439,7 @@ describe('degenerate inputs and limits', () => {
 
     expect(store.getState().nodes).toEqual(nodesBefore)
     expect(store.getState().history).toHaveLength(historyLen)
-    expect(store.getState().focusedNodeId).toBeNull()
+    expect(focusedNodeId(store.getState())).toBeNull()
     expect(store.getState().focusEpoch).toBe(epochBefore)
   })
 
@@ -533,8 +534,8 @@ describe('loadWorkspaceCanvas session round-trip', () => {
       activeIndex: 1,
     })
     // Transients reset: no focus/selection/history, nothing animates on restore.
-    expect(s.focusedNodeId).toBeNull()
-    expect(s.selectedNodeIds.size).toBe(0)
+    expect(focusedNodeId(s)).toBeNull()
+    expect(s.selection.length).toBe(0)
     expect(s.history).toHaveLength(0)
     expect(Object.values(s.nodes).every((n) => n.animationState === 'idle')).toBe(true)
     // Counters resume past the loaded maxima — new nodes stack on top.

@@ -10,6 +10,7 @@ import { viewToCanvas as viewToCanvasCoords } from '../../lib/canvas/coordinates
 import { recommendPlacements, nudgeToFree, type PlacementTrace } from '../../canvas/placement'
 import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
 import type { CanvasStoreCtx } from './storeCtx'
+import { focusedNodeId } from './selectionModel'
 
 type PlacementActions = Pick<
   CanvasStoreActions,
@@ -65,7 +66,7 @@ export function createPlacementSlice(set: CanvasSet, get: CanvasGet, ctx: Canvas
         : undefined
       const candidates = recommendPlacements(
         state.nodes,
-        state.focusedNodeId,
+        focusedNodeId(state),
         panelType,
         { offset: state.viewportOffset, zoom: state.zoomLevel, containerSize: state.containerSize },
         ctx.lastPointerCanvasPos,
@@ -82,7 +83,8 @@ export function createPlacementSlice(set: CanvasSet, get: CanvasGet, ctx: Canvas
       const cs = state.containerSize
       if (cs.width > 0 && cs.height > 0) {
         const rects: Rect[] = candidates.map((c) => ({ origin: c.point, size: c.size }))
-        const focused = state.focusedNodeId ? state.nodes[state.focusedNodeId] : null
+        const focusedId = focusedNodeId(state)
+        const focused = focusedId ? state.nodes[focusedId] : null
         if (focused) rects.push({ origin: focused.origin, size: focused.size })
         const minX = Math.min(...rects.map((r) => r.origin.x))
         const minY = Math.min(...rects.map((r) => r.origin.y))

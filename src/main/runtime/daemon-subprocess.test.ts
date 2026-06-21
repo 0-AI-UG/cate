@@ -33,7 +33,7 @@ async function rmTemp(dir: string): Promise<void> {
 
 beforeAll(async () => {
   // Build UNDER the repo so the spawned daemon resolves externalized native
-  // deps (node-pty) from the repo's node_modules.
+  // deps (node-pty, @parcel/watcher) from the repo's node_modules.
   buildDir = await fs.mkdtemp(path.join(process.cwd(), 'cate-daemon-build-'))
   bundlePath = path.join(buildDir, 'runtime.cjs')
   await build({
@@ -43,7 +43,7 @@ beforeAll(async () => {
     format: 'cjs',
     target: 'node20',
     outfile: bundlePath,
-    external: ['fsevents', 'node-pty', 'electron'],
+    external: ['fsevents', 'node-pty', '@parcel/watcher', 'electron'],
     logLevel: 'silent',
   })
 }, 60_000)
@@ -273,7 +273,7 @@ describe('cate-runtime daemon (real subprocess)', () => {
       if (p.includes('fresh.txt') && type === 'delete') resolveDelete()
     })
 
-    // Give the daemon's chokidar a moment to initialize, then create a file.
+    // Give the daemon's watcher a moment to initialize, then create a file.
     await new Promise((r) => setTimeout(r, 400))
     const freshPath = path.join(workspace, 'fresh.txt')
     await fs.writeFile(freshPath, 'new\n')

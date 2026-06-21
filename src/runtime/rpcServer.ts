@@ -197,7 +197,7 @@ export class RpcServer {
       case Methods.vcsWorktreeList: return api.vcs.worktreeList(s(0))
       case Methods.vcsWorktreeAdd:
         return api.vcs.worktreeAdd(s(0), s(1), s(2), p[3] as never)
-      case Methods.vcsWorktreeAddFromPr: return api.vcs.worktreeAddFromPr(s(0), n(1) as number, s(2))
+      case Methods.vcsWorktreeAddFromPr: return api.vcs.worktreeAddFromPr(s(0), n(1) as number, s(2), p[3] as never)
       case Methods.vcsWorktreeRemove: return api.vcs.worktreeRemove(s(0), s(1), p[2] as never)
       case Methods.vcsWorktreePrune: return api.vcs.worktreePrune(s(0))
       case Methods.vcsWorktreeStatus: return api.vcs.worktreeStatus(s(0))

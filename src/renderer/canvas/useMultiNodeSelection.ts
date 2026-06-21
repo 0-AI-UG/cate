@@ -14,7 +14,7 @@ export function useMultiNodeSelection() {
   // Imperative read — for async menu builders / event handlers that need the
   // value at call time rather than as a reactive subscription.
   const isMultiSelected = useCallback(
-    () => canvasApi.getState().selectedNodeIds.size > 1,
+    () => canvasApi.getState().selection.length > 1,
     [canvasApi],
   )
 

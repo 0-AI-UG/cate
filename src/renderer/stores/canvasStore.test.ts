@@ -12,6 +12,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { createCanvasStore } from './canvasStore'
+import { focusedNodeId } from './canvas/selectionModel'
 import { recommendPlacements, nudgeToFree } from '../canvas/placement'
 import { CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { CanvasNodeState, CanvasNodeId } from '../../shared/types'
@@ -103,7 +104,7 @@ describe('canvasStore — focusEpoch bumps on focus actions', () => {
 
     expect(afterFirst).toBe(before + 1)
     expect(afterSecond).toBe(before + 2)
-    expect(store.getState().focusedNodeId).toBe(id)
+    expect(focusedNodeId(store.getState())).toBe(id)
   })
 
   it('focusAndCenter increments focusEpoch', () => {
@@ -114,7 +115,7 @@ describe('canvasStore — focusEpoch bumps on focus actions', () => {
     const before = store.getState().focusEpoch
     store.getState().focusAndCenter(id)
     expect(store.getState().focusEpoch).toBe(before + 1)
-    expect(store.getState().focusedNodeId).toBe(id)
+    expect(focusedNodeId(store.getState())).toBe(id)
   })
 
   it('focusAndCenter bumps focusEpoch even when called twice on the same node', () => {
@@ -170,7 +171,7 @@ describe('canvasStore.navigateDirection', () => {
     const nav = (dir: 'up' | 'down' | 'left' | 'right') => {
       store.getState().focusNode(c)
       store.getState().navigateDirection(dir)
-      return store.getState().focusedNodeId
+      return focusedNodeId(store.getState())
     }
     expect(nav('right')).toBe(r)
     expect(nav('left')).toBe(l)
@@ -182,7 +183,7 @@ describe('canvasStore.navigateDirection', () => {
     const { store, r } = setup()
     store.getState().focusNode(r) // rightmost node
     store.getState().navigateDirection('right')
-    expect(store.getState().focusedNodeId).toBe(r)
+    expect(focusedNodeId(store.getState())).toBe(r)
   })
 })
 
@@ -207,7 +208,7 @@ describe('canvasStore.navigateSelect', () => {
     const nav = (dir: 'up' | 'down' | 'left' | 'right') => {
       store.getState().selectNodes([c])
       store.getState().navigateSelect(dir)
-      return [...store.getState().selectedNodeIds]
+      return [...store.getState().selection]
     }
     expect(nav('right')).toEqual([r])
     expect(nav('left')).toEqual([l])
@@ -219,15 +220,15 @@ describe('canvasStore.navigateSelect', () => {
     const { store, c, r } = setup()
     store.getState().focusNode(c)
     store.getState().navigateSelect('right')
-    expect(store.getState().focusedNodeId).toBeNull()
-    expect([...store.getState().selectedNodeIds]).toEqual([r])
+    expect(focusedNodeId(store.getState())).toBeNull()
+    expect([...store.getState().selection]).toEqual([r])
   })
 
   it('uses the focused node as the reference when nothing is selected', () => {
     const { store, c, r } = setup()
     store.getState().focusNode(c)
     store.getState().navigateSelect('right')
-    expect([...store.getState().selectedNodeIds]).toEqual([r])
+    expect([...store.getState().selection]).toEqual([r])
   })
 
   it('chains: jumping again continues from the newly selected node', () => {
@@ -235,16 +236,16 @@ describe('canvasStore.navigateSelect', () => {
     const rr = store.getState().addNode('rr', 'editor', { x: 950, y: -40 }, { width: 100, height: 80 })
     store.getState().selectNodes([c])
     store.getState().navigateSelect('right')
-    expect([...store.getState().selectedNodeIds]).toEqual([r])
+    expect([...store.getState().selection]).toEqual([r])
     store.getState().navigateSelect('right')
-    expect([...store.getState().selectedNodeIds]).toEqual([rr])
+    expect([...store.getState().selection]).toEqual([rr])
   })
 
   it('is a no-op when no node lies in the requested direction', () => {
     const { store, r } = setup()
     store.getState().selectNodes([r]) // rightmost
     store.getState().navigateSelect('right')
-    expect([...store.getState().selectedNodeIds]).toEqual([r])
+    expect([...store.getState().selection]).toEqual([r])
   })
 
   it('suppresses auto-focus on jump, and resumes it on explicit focus or manual pan', () => {
@@ -287,8 +288,8 @@ describe('canvasStore.panViewport', () => {
     expect(store.getState().viewportOffset.y).toBeGreaterThan(0)
 
     // No selection/focus side effects.
-    expect(store.getState().focusedNodeId).toBeNull()
-    expect(store.getState().selectedNodeIds.size).toBe(0)
+    expect(focusedNodeId(store.getState())).toBeNull()
+    expect(store.getState().selection.length).toBe(0)
   })
 
   it('left and right pan by equal and opposite amounts', () => {
@@ -808,7 +809,7 @@ describe('canvasStore ghost placement actions', () => {
     expect(node.origin).toEqual(target.point)
     expect(node.size).toEqual(target.size)
     expect(Object.values(store.getState().nodes).filter((n) => n.panelId === 'p1')).toHaveLength(1)
-    expect(store.getState().focusedNodeId).toBe(nodeId)
+    expect(focusedNodeId(store.getState())).toBe(nodeId)
   })
 
   it('beginPlacement only ever zooms out, and cancel restores the viewport', () => {
@@ -894,6 +895,6 @@ describe('canvasStore ghost placement actions', () => {
     const node = store.getState().nodes[nodeId!]
     expect(node.panelId).toBe('p1')
     expect(Math.abs(node.origin.x + node.size.width / 2 - 650)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
-    expect(store.getState().focusedNodeId).toBe(nodeId)
+    expect(focusedNodeId(store.getState())).toBe(nodeId)
   })
 })

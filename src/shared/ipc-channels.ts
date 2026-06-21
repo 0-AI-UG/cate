@@ -221,6 +221,20 @@ export const SIDEBAR_SESSION_SET = 'sidebar-session:set'
 export const REMOTE_PROJECTS_GET = 'remote-projects:get'
 export const REMOTE_PROJECTS_SET = 'remote-projects:set'
 
+// Browser history + bookmarks (global, shared across all workspaces/windows so
+// browser panels behave like one consistent browser; see browserStateStore)
+export const BROWSER_HISTORY_RECORD = 'browser-history:record'
+export const BROWSER_HISTORY_GET = 'browser-history:get'
+export const BROWSER_HISTORY_QUERY = 'browser-history:query'
+export const BROWSER_HISTORY_REMOVE = 'browser-history:remove'
+export const BROWSER_HISTORY_CLEAR = 'browser-history:clear'
+export const BROWSER_HISTORY_CHANGED = 'browser-history:changed' // main -> renderer broadcast
+export const BROWSER_BOOKMARKS_GET = 'browser-bookmarks:get'
+export const BROWSER_BOOKMARKS_ADD = 'browser-bookmarks:add'
+export const BROWSER_BOOKMARKS_REMOVE = 'browser-bookmarks:remove'
+export const BROWSER_BOOKMARKS_CHANGED = 'browser-bookmarks:changed' // main -> renderer broadcast
+export const BROWSER_CLEAR_DATA = 'browser:clearData' // clear shared-session cookies/cache/storage + history
+
 // Layouts
 export const LAYOUT_SAVE = 'layout:save'
 export const LAYOUT_LIST = 'layout:list'

@@ -60,7 +60,8 @@ export function createTransferSnapshot(
     }
   }
 
-  // Browser-specific: capture URL
+  // Browser-specific: capture URL. (Tabs ride along in snapshot.panel, which is
+  // the full PanelState, so they are restored without extra wiring here.)
   if (panel.type === 'browser' && panel.url) {
     snapshot.browserState = {
       url: panel.url,

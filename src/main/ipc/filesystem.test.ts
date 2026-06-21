@@ -152,18 +152,15 @@ describe('in-process fs subscriptions', () => {
     }
   }
 
-  // Regression: in-proc subscriber keys were derived from a GLOBAL counter
-  // instead of each subscriber's own id, so two subs attached on the watchStart
-  // bulk-attach path collided on one key. The second overwrote the first in the
-  // subscribers map (dropping its events) while the watcher refCount was bumped
-  // twice (a leak). Both subs registered BEFORE the watcher exists exercise that
-  // exact path; both must now receive every event.
+  // Two independent in-proc subscribers under the same root share ONE pooled OS
+  // watcher (covering-root reuse) yet each receives every event — no key
+  // collision drops one. Registering both before the renderer watch also
+  // exercises the active in-proc path: the first subscribe opens the watcher
+  // itself, the renderer watchStart then reuses it.
   test('two subscribers under one watch root both receive events', async () => {
     const aEvents: string[] = []
     const bEvents: string[] = []
 
-    // Register both BEFORE starting the watcher so they attach via the
-    // watchStart bulk-attach loop (the colliding-key path).
     const unsubA = subscribeFsChanges(root, (fp) => aEvents.push(fp))
     const unsubB = subscribeFsChanges(root, (fp) => bEvents.push(fp))
 
@@ -182,31 +179,33 @@ describe('in-process fs subscriptions', () => {
 
     unsubA()
     unsubB()
-  })
+  }, 20_000)
 
-  // refCount must release cleanly: after both subs unsubscribe and the IPC
-  // watch is stopped, the shared watcher is fully torn down. A fresh subscriber
-  // that registers after teardown receives nothing until a watcher is recreated,
-  // so its absence of events confirms the prior watcher closed (no leaked
-  // refCount keeping a duplicate alive).
-  test('unsubscribing both releases the watcher refCount', async () => {
-    const unsubA = subscribeFsChanges(root, () => {})
-    const unsubB = subscribeFsChanges(root, () => {})
+  // In-proc subscriptions are ACTIVE: each opens its own watcher when no
+  // covering one exists (matching the daemon's runtime.file.watch), so a fresh
+  // subscriber receives events even with no renderer watch and after a prior one
+  // was torn down. Unsubscribed listeners receive nothing — clean teardown.
+  test('a fresh in-proc subscriber watches actively after a prior teardown', async () => {
+    const earlyEvents: string[] = []
+    const unsubA = subscribeFsChanges(root, (fp) => earlyEvents.push(fp))
     startWatch()
-
     unsubA()
-    unsubB()
     await watchStopHandler({ __win: { id: 1 } }, root)
+    const earlyCountAtTeardown = earlyEvents.length
 
-    // Watcher is gone now; a new subscriber stays event-free until one is
-    // recreated (proves the old watcher wasn't leaked and left running).
+    // A brand-new subscriber opens its own watcher and DOES receive events.
     const lateEvents: string[] = []
     const unsubLate = subscribeFsChanges(root, (fp) => lateEvents.push(fp))
 
-    await fs.writeFile(path.join(root, 'after.txt'), 'x', 'utf8')
-    await new Promise((r) => setTimeout(r, 300))
+    const file = path.join(root, 'after.txt')
+    let rev = 0
+    // A fresh watcher armed right after the prior one was torn down can be slow
+    // to start delivering on Windows CI, so give the poke loop extra headroom.
+    await waitFor(() => lateEvents.length, 1, () => fs.writeFile(file, `x${++rev}`, 'utf8'), 15_000)
 
-    expect(lateEvents).toHaveLength(0)
+    expect(lateEvents).toContain(file)
+    // The unsubscribed listener got nothing more after it left.
+    expect(earlyEvents).toHaveLength(earlyCountAtTeardown)
     unsubLate()
-  })
+  }, 20_000)
 })

@@ -148,6 +148,30 @@ jobs:
             --pattern 'cate-runtime-*-darwin-x64.tgz' --dir dist-runtime --clobber
           cp dist-runtime/cate-runtime-*-darwin-x64.tgz dist-runtime/runtime-host-x64.tgz
 
+      # The packaged macOS app's MAIN process loads @parcel/watcher (local file
+      # watching) at startup, and one .app runs on either CPU (arm64 native, x64
+      # under Rosetta). `npm install` on the arm64 runner only fetched the arm64
+      # prebuilt, so an Intel launch would crash on a missing darwin-x64
+      # watcher.node. Pull BOTH arch prebuilts into node_modules (`npm pack`
+      # skips the os/cpu gate that blocks a plain off-arch install) so asarUnpack
+      # (@parcel/watcher-*) ships both; @parcel/watcher's loader picks the right
+      # one via process.arch at runtime.
+      - name: Stage both macOS @parcel/watcher arches
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          VER=$(node -p "require('@parcel/watcher/package.json').version")
+          for arch in darwin-x64 darwin-arm64; do
+            dest="node_modules/@parcel/watcher-$arch"
+            [ -f "$dest/watcher.node" ] && continue
+            tmp=$(mktemp -d)
+            ( cd "$tmp" && npm pack "@parcel/watcher-$arch@$VER" --silent )
+            mkdir -p "$dest"
+            tar -xzf "$tmp"/*.tgz -C "$tmp"
+            cp -R "$tmp"/package/* "$dest"/
+            rm -rf "$tmp"
+          done
+
       # Note: the functional + content-search e2e suite used to gate the macOS
       # release here, but the hosted mac runner flaked on the synthetic-mouse
       # drag/detach specs often enough to redden otherwise-green releases (the

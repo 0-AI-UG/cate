@@ -20,6 +20,7 @@ import { formatTerminalPaste, type DroppedRef } from './terminalDrop'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
 
 // ---------------------------------------------------------------------------
@@ -105,7 +106,7 @@ export default function TerminalPanel({
   const rootPathRef = useRef(rootPath)
   rootPathRef.current = rootPath
 
-  const isFocused = useCanvasStoreContext((s) => s.focusedNodeId === nodeId)
+  const isFocused = useCanvasStoreContext((s) => focusedNodeId(s) === nodeId)
   const canvasApi = useCanvasStoreApi()
   const zoomLevel = useCanvasStoreContext((s) => s.zoomLevel)
 
@@ -395,7 +396,7 @@ export default function TerminalPanel({
     // is re-focused (no React re-render of this panel on unrelated focus actions).
     const unsubscribe = canvasApi.subscribe((s, prev) => {
       if (s.focusEpoch === prev.focusEpoch) return
-      if (s.focusedNodeId !== nodeId) return
+      if (focusedNodeId(s) !== nodeId) return
       stopRun?.()
       stopRun = runFocus()
     })

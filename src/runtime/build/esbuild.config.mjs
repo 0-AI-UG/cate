@@ -6,9 +6,12 @@
 // `simple-git` and `chokidar` are bundled inline so the artifact is
 // self-contained; `fsevents` (chokidar's optional macOS native dep) is
 // externalized — on the Linux/WSL target it isn't present, and chokidar falls
-// back to fs.watch. `node-pty` is externalized: terminals (ProcessHost) join
-// the daemon in a later step and need the per-target prebuilt .node binary
-// staged alongside the bundle (see the plan's native-deps staging).
+// back to fs.watch. `node-pty` and `@parcel/watcher` are externalized native
+// modules: terminals (ProcessHost) and workspace-tree watching need the
+// per-target prebuilt .node binary staged alongside the bundle (see
+// build-runtime-tarball.mjs's stageNodePty / stageParcelWatcher). @parcel/watcher
+// also resolves its platform binary via a computed `require()`, which can't be
+// bundled — another reason it must stay external.
 //
 // NOTE: this produces the JS bundle only. Shipping a real daemon also needs the
 // per-OS/arch node-pty prebuild staged next to it and, optionally, a bundled
@@ -53,7 +56,7 @@ export const runtimeBuildOptions = {
   format: 'cjs',
   target: 'node20',
   outfile: path.join(repoRoot, 'dist-runtime/runtime.cjs'),
-  external: ['fsevents', 'node-pty', 'electron'],
+  external: ['fsevents', 'node-pty', '@parcel/watcher', 'electron'],
   logLevel: 'info',
 }
 

@@ -19,6 +19,7 @@ import { useNodeResize } from '../hooks/useNodeResize'
 import { useCanvasNodeStyle } from './useCanvasNodeStyle'
 import { useCanvasNodeDrag } from './useCanvasNodeDrag'
 import { useGroupNodeDrag } from './useGroupNodeDrag'
+import { isSelected as isNodeSelected, isGroupDragMember } from '../stores/canvas/selectionModel'
 import { useNodeResizeCursor } from './useNodeResizeCursor'
 import { NodeResizeOverlay } from './NodeResizeOverlay'
 import type { DockStore } from '../stores/dockStore'
@@ -172,7 +173,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const focusNode = useCanvasStoreContext((s) => s.focusNode)
   const removeNode = useCanvasStoreContext((s) => s.removeNode)
   const toggleMaximize = useCanvasStoreContext((s) => s.toggleMaximize)
-  const isSelected = useCanvasStoreContext((s) => s.selectedNodeIds.has(nodeId))
+  const isSelected = useCanvasStoreContext((s) => isNodeSelected(s, nodeId))
   const isDockDragging = useDragStore((s) => s.isDragging)
   const { hidden: isWholeNodeDragSource } = useDragSourceVisibility(nodeId)
 
@@ -661,6 +662,11 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
             if (isFocused || e.button !== 0) return
             if (handToolPanShouldWin(e)) return
             e.stopPropagation()
+            // In a multi-selection no node is active, so the press lands on this
+            // dim overlay rather than the title bar. Try the group drag first
+            // (like the grab strip / tab bar) so grabbing any selected panel
+            // moves the whole group instead of collapsing to just this one.
+            if (startGroupDrag(e)) return
             handleDragStart(e)
           }}
           onClick={(e) => {
@@ -703,6 +709,14 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
             style={{ position: 'relative', zIndex: 0, width: '100%', height: '100%' }}
             onMouseDownCapture={(e) => {
               if (e.button !== 0 || isFocused) return
+              // When this node is part of a live multi-selection, a press on it
+              // starts a GROUP drag (handled in the bubble phase by the tab-bar /
+              // overlay handlers via startGroupDrag). Focusing here would run
+              // first (capture beats bubble) and collapse the selection to just
+              // this node — so the group drag would then read a single-node
+              // selection and move only this one. Bail and leave it to the group
+              // path; a no-drag click still focuses via handleClick.
+              if (isGroupDragMember(canvasApi.getState().selection, nodeId)) return
               focusThisNode()
             }}
           >

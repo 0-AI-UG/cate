@@ -214,6 +214,20 @@ log.info('Cate v%s starting (electron %s, node %s, platform %s)', app.getVersion
 // them before the async electron-store finishes initializing.
 loadSettingsSyncFromDisk()
 
+// Optional GPU-rasterization workaround (off by default). Under this app's GPU
+// load — many live xterm WebGL contexts + the worktree-territory WebGL2 renderer
+// + the canvas's `will-change: transform` compositing churn — Chromium's shared
+// GPU glyph atlas can intermittently corrupt, repainting text with random
+// missing glyphs (most visible in the file tree). Moving rasterization to the
+// CPU removes the glyph atlas from the path; WebGL still renders and composites
+// on the GPU, so terminals/territory stay accelerated. Command-line switches
+// must be set before app-ready (this runs at module load), so the toggle only
+// takes effect after a restart.
+if (getSettingSync('disableGpuRasterization')) {
+  app.commandLine.appendSwitch('disable-gpu-rasterization')
+  log.info('[gpu] GPU rasterization disabled via setting (text rendered on CPU)')
+}
+
 // Scope the onboarding tour to genuine first installs. Anyone who has launched
 // Cate before is marked past it, so an update never replays the tour. The
 // telemetry notice (WelcomeDialog) intentionally has NO such clause — every

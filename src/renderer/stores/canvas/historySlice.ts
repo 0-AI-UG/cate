@@ -1,34 +1,33 @@
 // =============================================================================
-// History slice — undo/redo snapshots of {nodes, focusedNodeId,
-// selectedNodeIds}.
+// History slice — undo/redo snapshots of {nodes, selection, selectionActive}.
 // =============================================================================
 
 import type { CanvasGet, CanvasSet, CanvasHistoryEntry, CanvasStoreActions } from './storeTypes'
 
 type HistoryActions = Pick<CanvasStoreActions, 'pushHistory' | 'undo' | 'redo' | 'clearHistory'>
 
-// Build a snapshot of the current store state. Selection sets are CLONED — the
-// live sets get mutated in place later, so storing the references would corrupt
-// already-recorded history.
+// Build a snapshot of the current store state. The selection array is CLONED —
+// the live array is replaced (not mutated) later, but cloning keeps history
+// entries defensively independent of any future in-place edit.
 function snapshot(state: {
   nodes: CanvasHistoryEntry['nodes']
-  focusedNodeId: CanvasHistoryEntry['focusedNodeId']
-  selectedNodeIds: Set<string>
+  selection: CanvasHistoryEntry['selection']
+  selectionActive: boolean
 }): CanvasHistoryEntry {
   return {
     nodes: state.nodes,
-    focusedNodeId: state.focusedNodeId,
-    selectedNodeIds: new Set(state.selectedNodeIds),
+    selection: [...state.selection],
+    selectionActive: state.selectionActive,
   }
 }
 
-// Restore an entry, intersecting its selection with its own nodes so no
-// dangling ids (e.g. nodes that were deleted in the undone step) survive.
+// Restore an entry, filtering its selection to ids that still exist in its own
+// nodes so no dangling ids (e.g. nodes deleted in the undone step) survive.
 function restore(entry: CanvasHistoryEntry) {
   return {
     nodes: entry.nodes,
-    focusedNodeId: entry.focusedNodeId,
-    selectedNodeIds: new Set([...entry.selectedNodeIds].filter((id) => entry.nodes[id])),
+    selection: entry.selection.filter((id) => entry.nodes[id]),
+    selectionActive: entry.selectionActive,
   }
 }
 

@@ -10,7 +10,7 @@ import { createCanvasStore } from '../canvasStore'
 // Invariant the whole feature exists to guarantee: every selected id is live.
 function expectSelectionLive(store: ReturnType<typeof createCanvasStore>) {
   const s = store.getState()
-  for (const id of s.selectedNodeIds) expect(s.nodes[id]).toBeDefined()
+  for (const id of s.selection) expect(s.nodes[id]).toBeDefined()
 }
 
 describe('canvas history — selection is versioned and restored filtered to live ids', () => {
@@ -22,7 +22,7 @@ describe('canvas history — selection is versioned and restored filtered to liv
     // Select both, then delete only A (deleteSelection deletes the selection, so
     // select just A for the delete but keep B selected first to exercise filtering).
     store.getState().selectNodes([a, b])
-    expect([...store.getState().selectedNodeIds].sort()).toEqual([a, b].sort())
+    expect([...store.getState().selection].sort()).toEqual([a, b].sort())
 
     // Snapshot now has selection {a,b}. Narrow selection to A and delete it.
     store.getState().selectNodes([a])
@@ -30,12 +30,12 @@ describe('canvas history — selection is versioned and restored filtered to liv
     store.getState().finalizeRemoveNode(a) // flush the exit animation
 
     expect(store.getState().nodes[a]).toBeUndefined()
-    expect(store.getState().selectedNodeIds.size).toBe(0) // delete clears selection
+    expect(store.getState().selection.length).toBe(0) // delete clears selection
 
     // Undo: A comes back; selection restored to the snapshot ({a}), and A is live.
     store.getState().undo()
     expect(store.getState().nodes[a]).toBeDefined()
-    expect([...store.getState().selectedNodeIds]).toEqual([a])
+    expect([...store.getState().selection]).toEqual([a])
     expectSelectionLive(store)
   })
 
@@ -50,15 +50,15 @@ describe('canvas history — selection is versioned and restored filtered to liv
       history: [
         {
           nodes: entryNodes,
-          focusedNodeId: null,
-          selectedNodeIds: new Set([a, 'b-deleted']),
+          selection: [a, 'b-deleted'],
+          selectionActive: false,
         },
       ],
       future: [],
     })
 
     store.getState().undo()
-    expect([...store.getState().selectedNodeIds]).toEqual([a]) // b-deleted filtered out
+    expect([...store.getState().selection]).toEqual([a]) // b-deleted filtered out
     expectSelectionLive(store)
   })
 
@@ -72,12 +72,12 @@ describe('canvas history — selection is versioned and restored filtered to liv
 
     store.getState().undo() // A back, selection {a}
     expect(store.getState().nodes[a]).toBeDefined()
-    expect([...store.getState().selectedNodeIds]).toEqual([a])
+    expect([...store.getState().selection]).toEqual([a])
 
     store.getState().redo() // re-applies the post-delete state (A gone)
     expect(store.getState().nodes[a]).toBeUndefined()
     // Redo restores the post-delete snapshot, whose selection was empty.
-    expect(store.getState().selectedNodeIds.size).toBe(0)
+    expect(store.getState().selection.length).toBe(0)
     expectSelectionLive(store)
   })
 
@@ -90,14 +90,14 @@ describe('canvas history — selection is versioned and restored filtered to liv
     store.getState().pushHistory() // snapshot selection {a}
     const snap = store.getState().history[store.getState().history.length - 1]
 
-    // The snapshot must be a distinct Set, not the live reference: mutating the
-    // current selection set in place must not leak into the recorded entry.
-    expect(snap.selectedNodeIds).not.toBe(store.getState().selectedNodeIds)
-    store.getState().selectedNodeIds.add(b) // mutate live set in place
-    expect([...snap.selectedNodeIds]).toEqual([a])
+    // The snapshot must be a distinct array, not the live reference: mutating the
+    // current selection in place must not leak into the recorded entry.
+    expect(snap.selection).not.toBe(store.getState().selection)
+    store.getState().selection.push(b) // mutate live array in place
+    expect([...snap.selection]).toEqual([a])
 
     store.getState().undo()
-    expect([...store.getState().selectedNodeIds]).toEqual([a])
+    expect([...store.getState().selection]).toEqual([a])
     expectSelectionLive(store)
   })
 

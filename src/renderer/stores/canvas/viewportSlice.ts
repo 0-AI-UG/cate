@@ -8,6 +8,7 @@ import { ZOOM_MIN, ZOOM_MAX } from '../../../shared/types'
 import { viewToCanvas as viewToCanvasCoords } from '../../lib/canvas/coordinates'
 import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
 import type { CanvasStoreCtx } from './storeCtx'
+import { focusedNodeId } from './selectionModel'
 
 type ViewportActions = Pick<
   CanvasStoreActions,
@@ -221,9 +222,10 @@ export function createViewportSlice(set: CanvasSet, get: CanvasGet, ctx: CanvasS
       if (cs.width === 0 || cs.height === 0) return
 
       // Target the selection, else the focused node, else fall back to fit-all.
-      let target = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+      let target = Object.values(state.nodes).filter((n) => state.selection.includes(n.id))
       if (target.length === 0) {
-        const focused = state.focusedNodeId ? state.nodes[state.focusedNodeId] : null
+        const focusedId = focusedNodeId(state)
+        const focused = focusedId ? state.nodes[focusedId] : null
         if (focused) target = [focused]
       }
       if (target.length === 0) {

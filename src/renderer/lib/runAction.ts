@@ -17,6 +17,7 @@ import { useUIStore, getSidebarLayout } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
+import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 import { confirmClosePanels } from './confirmClosePanels'
 
 /**
@@ -114,7 +115,7 @@ export async function runAction(
       break
     }
     case 'closePanel': {
-      const focusedNodeId = canvasStore().focusedNodeId
+      const focusedNodeId = focusedNodeIdOf(canvasStore())
       if (focusedNodeId) {
         const node = canvasStore().nodes[focusedNodeId]
         if (node && (await confirmClosePanels(selectedWorkspaceId, [node.panelId]))) {
@@ -219,7 +220,7 @@ export async function runAction(
       canvasStore().redo()
       break
     case 'deleteNode': {
-      const focusedId = canvasStore().focusedNodeId
+      const focusedId = focusedNodeIdOf(canvasStore())
       if (focusedId && canvasStore().nodes[focusedId]) {
         const node = canvasStore().nodes[focusedId]
         if (await confirmClosePanels(selectedWorkspaceId, [node.panelId])) {

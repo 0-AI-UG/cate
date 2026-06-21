@@ -209,9 +209,10 @@ describe('computeTerminalHasFocus', () => {
     seedPanels({ 'node-term': { id: 'node-term', type: 'terminal', title: 'T', isDirty: false } })
 
     // Canvas ops: registry membership makes getActiveCanvasPanelId resolve to
-    // CANVAS, and getState().focusedNodeId points at our node.
+    // CANVAS, and the (derived) focused node points at our node — an active
+    // single-node selection.
     registerCanvasOps(CANVAS, {
-      storeApi: { getState: () => ({ focusedNodeId: NODE }) },
+      storeApi: { getState: () => ({ selection: [NODE], selectionActive: true }) },
     } as any)
 
     const nodeDock = createDockStore()

@@ -7,6 +7,7 @@ import { pathKey } from '../../../shared/pathUtils'
 import type { AppSet, AppGet, AppStoreActions } from './types'
 import { pickWorktreeColor, setPanelField } from './helpers'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
+import { useSettingsStore } from '../settingsStore'
 
 type WorktreeSliceActions = Pick<
   AppStoreActions,
@@ -75,11 +76,22 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
     },
 
     removeWorktree(wsId, worktreeId) {
+      // Optionally destroy the worktree's terminal/agent panels (PTYs killed,
+      // pi sessions disposed) before we drop the worktree record. Done outside
+      // the set() updater because closePanel runs its own teardown + set().
+      if (useSettingsStore.getState().closeWorktreePanelsOnDelete) {
+        const ws = get().workspaces.find((w) => w.id === wsId)
+        const doomed = Object.values(ws?.panels ?? {}).filter(
+          (p) => p.worktreeId === worktreeId && (p.type === 'terminal' || p.type === 'agent'),
+        )
+        for (const p of doomed) get().closePanel(wsId, p.id)
+      }
       set((state) => ({
         workspaces: state.workspaces.map((ws) => {
           if (ws.id !== wsId) return ws
           const list = (ws.worktrees ?? []).filter((w) => w.id !== worktreeId)
-          // Strip the worktreeId from any panel tagged with it.
+          // Strip the worktreeId from any panel still tagged with it (editors,
+          // browsers, or all panels when the close-on-delete setting is off).
           const panels = Object.fromEntries(
             Object.entries(ws.panels).map(([id, p]) => [
               id,

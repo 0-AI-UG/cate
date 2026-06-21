@@ -47,8 +47,14 @@ export interface CanvasStoreState {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   viewportOffset: Point
   zoomLevel: number
-  focusedNodeId: CanvasNodeId | null
-  /** Increments on every focus action — lets panels re-run focus side effects even when focusedNodeId doesn't change. */
+  /** Canonical ordered selection (lead = last). The active/keyboard-focused
+   *  node is derived from this via selectionModel.focusedNodeId — there is no
+   *  separate focused-id field, so the rendered and moved sets can't disagree. */
+  selection: CanvasNodeId[]
+  /** Whether the selection's lead is the *active* panel (halo + keyboard) vs
+   *  selected-but-not-activated (ring). Only single-node operations set it. */
+  selectionActive: boolean
+  /** Increments on every activate action — lets panels re-run focus side effects even when the active node doesn't change. */
   focusEpoch: number
   /** Per-node active worktree id, published by CanvasNode from its active tab.
    *  Read by the worktree sludge/lens layers (which live outside the per-node
@@ -65,7 +71,6 @@ export interface CanvasStoreState {
       type: 'edge' | 'center'
     }>
   }
-  selectedNodeIds: Set<string>
   /** When true, the auto-focus-largest-visible hook stands down. Set while the
    *  user is moving the canvas by keyboard (Cmd+Arrow jump / Shift+Arrow pan)
    *  so those movements don't auto-activate whatever scrolls into view; cleared
@@ -81,8 +86,8 @@ export interface CanvasStoreState {
 
 export interface CanvasHistoryEntry {
   nodes: Record<CanvasNodeId, CanvasNodeState>
-  focusedNodeId: CanvasNodeId | null
-  selectedNodeIds: Set<string>
+  selection: CanvasNodeId[]
+  selectionActive: boolean
 }
 
 export interface CanvasStoreActions {

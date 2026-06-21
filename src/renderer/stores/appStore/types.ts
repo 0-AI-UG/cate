@@ -8,6 +8,7 @@ import type {
   WorkspaceInfo,
   PanelState,
   PanelType,
+  BrowserTab,
   Point,
   Size,
   DockZonePosition,
@@ -87,6 +88,9 @@ export interface AppStoreActions {
    *  no longer fight the chosen name. */
   renamePanelByUser: (workspaceId: string, panelId: string, title: string) => void
   updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
+  /** Browser panels only: persist the open tabs + active tab. Mirrors the active
+   *  tab's url into the panel's `url` for restore/transfer compatibility. */
+  updatePanelTabs: (workspaceId: string, panelId: string, tabs: BrowserTab[], activeTabId: string) => void
   /** Browser panels only: set/clear the per-panel proxy. Pass undefined to
    *  revert the panel to the shared (direct) browser session. */
   updatePanelProxy: (workspaceId: string, panelId: string, proxyUrl?: string) => void

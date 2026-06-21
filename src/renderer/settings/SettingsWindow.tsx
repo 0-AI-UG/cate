@@ -22,6 +22,7 @@ import { TerminalSettings } from './TerminalSettings'
 import { BrowserSettings } from './BrowserSettings'
 import { SidebarSettings } from './SidebarSettings'
 import { FileExplorerSettings } from './FileExplorerSettings'
+import { WorktreeSettings } from './WorktreeSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
@@ -38,6 +39,7 @@ const SECTIONS = [
   { title: 'Browser', component: BrowserSettings },
   { title: 'Sidebar', component: SidebarSettings },
   { title: 'File Explorer', component: FileExplorerSettings },
+  { title: 'Worktrees', component: WorktreeSettings },
   { title: 'Notifications', component: NotificationSettings },
   { title: 'Providers', component: ProvidersSettings },
   { title: 'Skills', component: SkillsSettings },

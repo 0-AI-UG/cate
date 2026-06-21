@@ -66,7 +66,7 @@ export function createArrangeSlice(set: CanvasSet, get: CanvasGet): ArrangeActio
     stackSelected(axis, gap = 16) {
       get().pushHistory()
       set((state) => {
-        const selected = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+        const selected = Object.values(state.nodes).filter((n) => state.selection.includes(n.id))
         if (selected.length < 2) return state
 
         const row = axis === 'row'
@@ -93,7 +93,7 @@ export function createArrangeSlice(set: CanvasSet, get: CanvasGet): ArrangeActio
     tidyGridSelected(gap = 16) {
       get().pushHistory()
       set((state) => {
-        const selected = Object.values(state.nodes).filter((n) => state.selectedNodeIds.has(n.id))
+        const selected = Object.values(state.nodes).filter((n) => state.selection.includes(n.id))
         if (selected.length < 2) return state
 
         const n = selected.length

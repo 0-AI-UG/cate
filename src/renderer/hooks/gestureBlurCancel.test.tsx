@@ -204,13 +204,24 @@ function GroupDragProbe({
   nodeId,
   store,
   wasDragged,
+  onResult,
 }: {
   nodeId: string
   store: StoreApi<CanvasStore>
   wasDragged: { current: boolean }
+  // Reports whether startGroupDrag took over the gesture (true) or bailed (false).
+  onResult?: (took: boolean) => void
 }) {
   const { startGroupDrag } = useGroupNodeDrag(nodeId, store, wasDragged)
-  return <div data-testid="group-handle" onMouseDown={(e) => startGroupDrag(e)} />
+  return (
+    <div
+      data-testid="group-handle"
+      onMouseDown={(e) => {
+        const took = startGroupDrag(e)
+        onResult?.(took)
+      }}
+    />
+  )
 }
 
 describe('group drag — blur cancellation', () => {
@@ -243,6 +254,207 @@ describe('group drag — blur cancellation', () => {
     const before = { ...store.getState().nodes['A'].origin }
     act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 400, clientY: 400, bubbles: true })))
     expect(store.getState().nodes['A'].origin).toEqual(before)
+  })
+
+  it('moves the whole selection and marks wasDragged so the follow-up click cannot collapse it', () => {
+    const store = freshStore()
+    addNode(store, 'A', { x: 0, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'B', { x: 200, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'C', { x: 400, y: 0 }, { width: 100, height: 100 })
+    act(() => store.getState().selectNodes(['A', 'B', 'C'], false))
+
+    const wasDragged = { current: false }
+    act(() => root.render(<GroupDragProbe nodeId="B" store={store} wasDragged={wasDragged} />))
+    const handle = container.querySelector<HTMLElement>('[data-testid="group-handle"]')!
+
+    // Grab B (a non-lead member) and drag past the dead zone.
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 50, clientY: 50, bubbles: true }))
+    })
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 90, clientY: 70, bubbles: true })))
+
+    // Every selected node translated by the same delta — not just the grabbed one.
+    expect(store.getState().nodes['A'].origin).toEqual({ x: 40, y: 20 })
+    expect(store.getState().nodes['B'].origin).toEqual({ x: 240, y: 20 })
+    expect(store.getState().nodes['C'].origin).toEqual({ x: 440, y: 20 })
+
+    // The drag latches wasDragged — this is what makes the node's onClick bail
+    // instead of running selectNodes([id])+focus and collapsing the group.
+    expect(wasDragged.current).toBe(true)
+    // Selection is untouched by the move itself.
+    expect(store.getState().selection).toEqual(['A', 'B', 'C'])
+
+    act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: 90, clientY: 70, bubbles: true })))
+  })
+
+  it('does NOT take over (returns false) when the grabbed node is OUTSIDE the selection', () => {
+    const store = freshStore()
+    addNode(store, 'A', { x: 0, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'B', { x: 200, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'C', { x: 400, y: 0 }, { width: 100, height: 100 })
+    // Multi-selection of A+B, but the user grabs C (not in the selection).
+    act(() => store.getState().selectNodes(['A', 'B'], false))
+
+    let took = true
+    const wasDragged = { current: false }
+    act(() =>
+      root.render(
+        <GroupDragProbe
+          nodeId="C"
+          store={store}
+          wasDragged={wasDragged}
+          onResult={(r) => { took = r }}
+        />,
+      ),
+    )
+    const handle = container.querySelector<HTMLElement>('[data-testid="group-handle"]')!
+
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 50, clientY: 50, bubbles: true }))
+    })
+
+    // startGroupDrag bailed → the caller falls through to single-node dock drag.
+    expect(took).toBe(false)
+    expect(wasDragged.current).toBe(false)
+
+    // No window listeners were installed: a window mousemove moves nothing.
+    const aBefore = { ...store.getState().nodes['A'].origin }
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 200, clientY: 200, bubbles: true })))
+    expect(store.getState().nodes['A'].origin).toEqual(aBefore)
+    expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+  })
+
+  it('does NOT take over for a single-node selection (returns false → single-node drag)', () => {
+    const store = freshStore()
+    addNode(store, 'A', { x: 0, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'B', { x: 200, y: 0 }, { width: 100, height: 100 })
+    act(() => store.getState().selectNodes(['A'], false)) // selection of one
+
+    let took = true
+    const wasDragged = { current: false }
+    act(() =>
+      root.render(
+        <GroupDragProbe
+          nodeId="A"
+          store={store}
+          wasDragged={wasDragged}
+          onResult={(r) => { took = r }}
+        />,
+      ),
+    )
+    const handle = container.querySelector<HTMLElement>('[data-testid="group-handle"]')!
+
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 50, clientY: 50, bubbles: true }))
+    })
+
+    expect(took).toBe(false)
+    // No takeover → a window mousemove must not translate anything.
+    const aBefore = { ...store.getState().nodes['A'].origin }
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 200, clientY: 200, bubbles: true })))
+    expect(store.getState().nodes['A'].origin).toEqual(aBefore)
+  })
+
+  it('ignores non-left buttons (right-click on a group member returns false)', () => {
+    const store = freshStore()
+    addNode(store, 'A', { x: 0, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'B', { x: 200, y: 0 }, { width: 100, height: 100 })
+    act(() => store.getState().selectNodes(['A', 'B'], false))
+
+    let took = true
+    const wasDragged = { current: false }
+    act(() =>
+      root.render(
+        <GroupDragProbe
+          nodeId="A"
+          store={store}
+          wasDragged={wasDragged}
+          onResult={(r) => { took = r }}
+        />,
+      ),
+    )
+    const handle = container.querySelector<HTMLElement>('[data-testid="group-handle"]')!
+
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('mousedown', { button: 2, clientX: 50, clientY: 50, bubbles: true }))
+    })
+
+    expect(took).toBe(false)
+  })
+
+  it('grabbing the LEAD member also moves the whole selection', () => {
+    const store = freshStore()
+    addNode(store, 'A', { x: 0, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'B', { x: 200, y: 0 }, { width: 100, height: 100 })
+    // Lead = last element = B.
+    act(() => store.getState().selectNodes(['A', 'B'], false))
+
+    const wasDragged = { current: false }
+    act(() => root.render(<GroupDragProbe nodeId="B" store={store} wasDragged={wasDragged} />))
+    const handle = container.querySelector<HTMLElement>('[data-testid="group-handle"]')!
+
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 50, clientY: 50, bubbles: true }))
+    })
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 80, clientY: 70, bubbles: true })))
+
+    expect(store.getState().nodes['A'].origin).toEqual({ x: 30, y: 20 })
+    expect(store.getState().nodes['B'].origin).toEqual({ x: 230, y: 20 })
+    expect(store.getState().selection).toEqual(['A', 'B'])
+
+    act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: 80, clientY: 70, bubbles: true })))
+  })
+
+  it('pushes history exactly ONCE per group drag (on the first real move)', () => {
+    const store = freshStore()
+    addNode(store, 'A', { x: 0, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'B', { x: 200, y: 0 }, { width: 100, height: 100 })
+    act(() => store.getState().selectNodes(['A', 'B'], false))
+    act(() => store.getState().clearHistory())
+
+    const wasDragged = { current: false }
+    act(() => root.render(<GroupDragProbe nodeId="A" store={store} wasDragged={wasDragged} />))
+    const handle = container.querySelector<HTMLElement>('[data-testid="group-handle"]')!
+
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 50, clientY: 50, bubbles: true }))
+    })
+    // Three moves across the dead zone — history must still be pushed only once.
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 60, clientY: 60, bubbles: true })))
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 90, clientY: 80, bubbles: true })))
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120, clientY: 100, bubbles: true })))
+
+    expect(store.getState().history.length).toBe(1)
+    // And that one snapshot captured the pre-move origins, so undo restores them.
+    act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: 120, clientY: 100, bubbles: true })))
+    act(() => store.getState().undo())
+    expect(store.getState().nodes['A'].origin).toEqual({ x: 0, y: 0 })
+    expect(store.getState().nodes['B'].origin).toEqual({ x: 200, y: 0 })
+  })
+
+  it('a press WITHOUT crossing the dead zone neither moves nodes nor sets wasDragged', () => {
+    const store = freshStore()
+    addNode(store, 'A', { x: 0, y: 0 }, { width: 100, height: 100 })
+    addNode(store, 'B', { x: 200, y: 0 }, { width: 100, height: 100 })
+    act(() => store.getState().selectNodes(['A', 'B'], false))
+
+    const wasDragged = { current: false }
+    act(() => root.render(<GroupDragProbe nodeId="A" store={store} wasDragged={wasDragged} />))
+    const handle = container.querySelector<HTMLElement>('[data-testid="group-handle"]')!
+
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 50, clientY: 50, bubbles: true }))
+    })
+    // A 2px jitter — below DEAD_ZONE_PX (4).
+    act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 51, clientY: 51, bubbles: true })))
+
+    expect(store.getState().nodes['A'].origin).toEqual({ x: 0, y: 0 })
+    expect(store.getState().nodes['B'].origin).toEqual({ x: 200, y: 0 })
+    // No real drag → the follow-up click is allowed to collapse the selection.
+    expect(wasDragged.current).toBe(false)
+    expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+
+    act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: 51, clientY: 51, bubbles: true })))
   })
 
   it('swallows wheel events while the group drag is live', () => {
@@ -345,7 +557,7 @@ describe('drag — Escape cancellation', () => {
     })
     const store = scene.getCanvasStore('c1')
     act(() => store.getState().selectNodes(['n1', 'n2'], false))
-    expect(store.getState().selectedNodeIds.size).toBe(2)
+    expect(store.getState().selection.length).toBe(2)
 
     // Begin and arm a drag.
     scene.mouse.downOnNode('n1')
@@ -372,7 +584,7 @@ describe('drag — Escape cancellation', () => {
     expect(scene.drag().isDragging).toBe(false)
     // The keypress was stopped before the global handler — selection intact.
     expect(reachedGlobal).toBe(false)
-    expect(store.getState().selectedNodeIds.size).toBe(2)
+    expect(store.getState().selection.length).toBe(2)
     expect(esc.defaultPrevented).toBe(true)
   })
 })

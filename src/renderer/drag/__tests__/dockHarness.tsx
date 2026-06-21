@@ -295,8 +295,8 @@ export function renderDockScene(spec: DockSceneSpec): DockSceneApi {
     store.setState((s) => ({
       ...s,
       nodes: {},
-      focusedNodeId: null,
-      selectedNodeIds: new Set<string>(),
+      selection: [],
+      selectionActive: false,
       history: [],
       historyIndex: -1,
     }))

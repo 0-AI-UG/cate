@@ -296,8 +296,8 @@ describe('useFileSync — unified root watcher', () => {
   it('subscribes to the workspace ROOT, not the file path (one shared watcher)', () => {
     mount(makeModel('x'))
     // The editor rides the single refcounted root watcher (shared with the file
-    // tree). The matcher is what lets hidden-file events through — see
-    // createFsIgnoreMatcher tests.
+    // tree). The pool's parcel `ignore` is what lets hidden-file events through
+    // while pruning hidden dirs — see fileWatcher tests.
     expect(h.watchedPath).toBe('/proj')
   })
 

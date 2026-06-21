@@ -6,10 +6,10 @@
 // daemon registers its workspace root via addAllowedRoot at startup.
 // =============================================================================
 
-import { watch } from 'chokidar'
 import { existsSync } from 'fs'
 import path from 'path'
 import * as fileLeaf from './file'
+import { createWatchPool } from './fileWatcher'
 import { runRipgrepSearch } from '../search/engine'
 import { createVcsCapability } from './vcs'
 import { createProcessCapability, type ProcessCapability } from './process'
@@ -27,7 +27,7 @@ import {
   clearFileGrantsForWindow as clearFileGrants,
   clearScopedWriteAllowancesForWindow as clearWriteAllowances,
 } from '../../main/ipc/pathValidation'
-import type { Runtime, FileHost, FsChangeType } from '../../main/runtime/types'
+import type { Runtime, FileHost } from '../../main/runtime/types'
 
 export interface DaemonRuntimeConfig {
   id: string
@@ -64,101 +64,12 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   const exclusionSet = new Set(config.exclusions ?? [])
   const rgPath = config.rgPath ?? daemonRgPath()
 
-  // The chokidar ignore predicate: hidden dotfiles + the daemon's live
-  // exclusionSet. Built fresh (snapshotting the CURRENT set) each time a
-  // watcher is (re)created, so setExclusions takes effect on active watchers
-  // via the rebuild below.
-  const buildIgnored = (rootPath: string) => fileLeaf.createFsIgnoreMatcher(rootPath, new Set(exclusionSet))
-
-  interface WatchSubscriber {
-    prefix: string
-    onChange: (changedPath: string, type: FsChangeType) => void
-  }
-
-  interface SharedWatch {
-    root: string
-    watcher: ReturnType<typeof watch>
-    subscribers: Set<WatchSubscriber>
-  }
-
-  // One recursive chokidar instance can cover several runtime.file.watch()
-  // subscribers under the same root. This keeps the local daemon from opening a
-  // second full-tree watch for the git monitor, agent auth sync, and any future
-  // nested subscriptions in the same workspace.
-  //
-  // Concurrency note: the SharedWatch object is still the identity token. Every
-  // stale unsubscribe/error/rebuild path checks `watchPool.get(root) === shared`
-  // before deleting or closing the current watcher, so an old handle cannot tear
-  // down a newer watcher that reused the same root key.
-  const watchPool = new Map<string, SharedWatch>()
-
-  const pathHasPrefix = (filePath: string, prefix: string): boolean => {
-    const fp = filePath.replace(/\\/g, '/')
-    const pre = prefix.replace(/\\/g, '/')
-    if (fp === pre) return true
-    if (!fp.startsWith(pre)) return false
-    const next = fp.charCodeAt(pre.length)
-    return next === 47 /* / */ || next === 92 /* \ */
-  }
-
-  // Create a chokidar watcher for `prefix` with the CURRENT ignore list, wiring
-  // its add/change/unlink to onChange. Used on first watch and on every rebuild.
-  const spawnWatcher = (shared: SharedWatch) => {
-    // Full-tree watch (no `depth` cap) — clients assume events for nested
-    // paths; the ignore matcher prunes hidden/excluded subtrees.
-    const w = watch(shared.root, { ignoreInitial: true, ignored: buildIgnored(shared.root) })
-    const fanOut = (fp: string, type: FsChangeType) => {
-      for (const sub of shared.subscribers) {
-        if (pathHasPrefix(fp, sub.prefix)) sub.onChange(fp, type)
-      }
-    }
-    w.on('add', (fp) => fanOut(fp, 'create'))
-    w.on('change', (fp) => fanOut(fp, 'update'))
-    w.on('unlink', (fp) => fanOut(fp, 'delete'))
-    w.on('error', () => {
-      // EMFILE/EPERM/etc. must not crash the daemon. Drop this broken watcher;
-      // polling callers (for example git monitor) continue, and a later watch
-      // request can attempt a fresh watcher.
-      if (watchPool.get(shared.root) === shared && shared.watcher === w) {
-        watchPool.delete(shared.root)
-      }
-      w.removeAllListeners()
-      void w.close()
-    })
-    return w
-  }
-
-  const findCoveringWatch = (prefix: string): SharedWatch | null => {
-    let best: SharedWatch | null = null
-    for (const shared of watchPool.values()) {
-      if (!pathHasPrefix(prefix, shared.root)) continue
-      if (!best || shared.root.length > best.root.length) best = shared
-    }
-    return best
-  }
-
-  const subscribeWatch = (
-    prefix: string,
-    onChange: (changedPath: string, type: FsChangeType) => void,
-  ): (() => void) => {
-    const root = validatePath(prefix)
-    let shared = findCoveringWatch(root)
-    if (!shared) {
-      shared = { root, watcher: null as never, subscribers: new Set<WatchSubscriber>() }
-      shared.watcher = spawnWatcher(shared)
-      watchPool.set(root, shared)
-    }
-    const sub: WatchSubscriber = { prefix: root, onChange }
-    shared.subscribers.add(sub)
-
-    return () => {
-      sub.onChange = () => { /* unsubscribed */ }
-      shared.subscribers.delete(sub)
-      if (shared.subscribers.size > 0) return
-      if (watchPool.get(shared.root) === shared) watchPool.delete(shared.root)
-      void shared.watcher.close()
-    }
-  }
+  // ONE place for workspace-tree watching: the shared @parcel/watcher pool. It
+  // owns covering-root sharing, prefix fan-out, native exclusion pruning, and
+  // error containment (a broken tree is dropped, never crashes the daemon).
+  // `getExclusions` reads the daemon's live set, so refresh() (below) re-applies
+  // setExclusions to active watchers.
+  const watchPool = createWatchPool(() => exclusionSet)
 
   // The daemon is the AUTHORITATIVE path check: only it can realpath its own
   // filesystem, and RemoteRuntime's client-side validate* are pass-throughs.
@@ -188,19 +99,12 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     // promise, and the spawn root must be authoritative-validated here.
     searchContent: (root, opts, cbs) =>
       runRipgrepSearch(rgPath, opts, validatePath(root), [...exclusionSet], cbs),
-    watch: (prefix, onChange) => {
-      // watch returns its unsub synchronously; use the cheap lexical check.
-      // Map chokidar's events to the real change type so the client can prune
-      // removed entries (not just re-read on every event).
-      // Mirror the in-process createWatcher: the shared ignore matcher prunes
-      // hidden dotfiles and the daemon's exclusionSet, so the watcher never
-      // floods with node_modules/.git events. Electron-free (no getSettingSync).
-      //
-      // The shared watcher is tracked in watchPool so setExclusions can rebuild
-      // it with a fresh ignore list — the chokidar `ignored` is fixed at
-      // creation, so a live exclusion change must recreate the watcher.
-      return subscribeWatch(prefix, onChange)
-    },
+    // watch returns its unsub synchronously and delivers parcel's native
+    // create/update/delete to the client (so it can prune removed entries, not
+    // just re-read). The root is authoritative-validated here (sync lexical
+    // check) before the pool watches it; parcel's `ignore` prunes the daemon's
+    // exclusionSet + hidden dirs so the watcher never floods on node_modules/.git.
+    watch: (prefix, onChange) => watchPool.subscribe(validatePath(prefix), onChange),
   }
 
   const env = config.env ?? (() => process.env)
@@ -280,27 +184,12 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     removeAllowedRoot: async (root, scopeId) => { removeRoot(root, scopeId) },
     // Mutate the existing Set IN PLACE so the readDir/search closures that
     // captured this reference see the new exclusions live (do NOT reassign).
-    // Active chokidar watchers fixed their `ignored` list at creation time, so
-    // rebuild each one against the new set: close the old watcher and spawn a
-    // fresh one (same prefix + onChange), swapping it into the registry entry.
+    // Active watchers fixed their parcel `ignore` list at subscribe time, so
+    // rebuild each one against the new set via the pool's refresh().
     setExclusions: async (names) => {
       exclusionSet.clear()
       for (const name of names) exclusionSet.add(name)
-      // Snapshot first: rebuilding swaps each SharedWatch's watcher field in
-      // place, but an unsub during this loop deletes its pool entry, so
-      // iterating a snapshot + re-checking object identity avoids reviving it.
-      // Close the OLD watcher fully before the swap is considered done, so it
-      // can't keep emitting events for newly-excluded names during the overlap.
-      await Promise.all(
-        [...watchPool.values()].map(async (shared) => {
-          if (watchPool.get(shared.root) !== shared) return // unsubscribed concurrently
-          const old = shared.watcher
-          shared.watcher = spawnWatcher(shared)
-          if (watchPool.get(shared.root) !== shared) void shared.watcher.close()
-          old.removeAllListeners()
-          await old.close()
-        }),
-      )
+      await watchPool.refresh()
     },
     setIdleSuspend: async (enabled) => { proc.setIdleSuspend(enabled) },
     // pathValidation's functions take (windowId, path); the Runtime contract

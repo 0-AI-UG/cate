@@ -54,7 +54,7 @@ describe('deleteSelection routes panel-backed nodes through closePanel', () => {
     store.getState().finalizeRemoveNode(b)
     expect(store.getState().nodes[a]).toBeUndefined()
     expect(store.getState().nodes[b]).toBeUndefined()
-    expect(store.getState().selectedNodeIds.size).toBe(0)
+    expect(store.getState().selection.length).toBe(0)
   })
 
   it('closes EVERY panel inside a multi-panel node (dock layout with several tabs)', async () => {

@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { createCanvasStore } from '../canvasStore'
+import { focusedNodeId } from './selectionModel'
 import { ZOOM_MIN, PANEL_DEFAULT_SIZES } from '../../../shared/types'
 import { rectsOverlap } from '../../canvas/layoutEngine'
 
@@ -45,7 +46,7 @@ describe('beginPlacement', () => {
     // 640x400 terminal centred on the view centre (600,400) → top-left (280,200).
     expect(nodes[0].origin).toEqual({ x: 280, y: 200 })
     expect(nodes[0].size).toEqual(PANEL_DEFAULT_SIZES.terminal)
-    expect(store.getState().focusedNodeId).toBe(nodes[0].id)
+    expect(focusedNodeId(store.getState())).toBe(nodes[0].id)
     expect(onCancelled).not.toHaveBeenCalled()
   })
 
@@ -158,7 +159,7 @@ describe('commitPlacement', () => {
     const cy = candidate.point.y + candidate.size.height / 2
     expect(s.viewportOffset.x).toBeCloseTo(CONTAINER.width / 2 - cx * 1.5)
     expect(s.viewportOffset.y).toBeCloseTo(CONTAINER.height / 2 - cy * 1.5)
-    expect(s.focusedNodeId).toBe(nodeId)
+    expect(focusedNodeId(s)).toBe(nodeId)
     // Commit is the success path — the rollback callback must never fire.
     expect(onCancelled).not.toHaveBeenCalled()
   })
@@ -315,7 +316,7 @@ describe('free "place anywhere" mode', () => {
       ),
     ).toBe(false)
     expect(s.zoomLevel).toBe(1.5)
-    expect(s.focusedNodeId).toBe(nodeId)
+    expect(focusedNodeId(s)).toBe(nodeId)
     expect(onCancelled).not.toHaveBeenCalled()
     // Transaction is closed: a second free commit does nothing.
     expect(store.getState().commitFreePlacement({ x: 9000, y: 9000 })).toBeNull()

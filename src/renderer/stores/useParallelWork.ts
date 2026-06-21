@@ -11,6 +11,7 @@
 
 import { useCallback } from 'react'
 import { useAppStore } from './appStore'
+import { useSettingsStore } from './settingsStore'
 import type { PanelPlacement } from './appStore'
 import { gitStatusStore } from './gitStatusStore'
 import { useWorktreeActions } from './useWorktreeActions'
@@ -240,9 +241,20 @@ export function useParallelWork(
       }
       const dirty = !!status?.dirty
       const branchAhead = (status?.ahead ?? 0) > 0
+      // When the close-on-delete setting is on, count the terminal/agent panels
+      // bound to this worktree so the prompt warns about what it'll tear down.
+      const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+      const panelCount = useSettingsStore.getState().closeWorktreePanelsOnDelete
+        ? Object.values(ws?.panels ?? {}).filter(
+            (p) => p.worktreeId === wt.id && (p.type === 'terminal' || p.type === 'agent'),
+          ).length
+        : 0
       const ok = window.confirm(
         `Discard “${label}”?\n\n` +
           `This deletes the parallel branch and everything in it.\n` +
+          (panelCount
+            ? `\nIts ${panelCount} open ${panelCount === 1 ? 'terminal/agent panel' : 'terminal/agent panels'} will be closed.`
+            : '') +
           (dirty ? '\nWARNING: unsaved changes here will be lost.' : '') +
           (branchAhead ? `\nWARNING: ${status?.ahead} unpublished commit(s) will be lost.` : ''),
       )

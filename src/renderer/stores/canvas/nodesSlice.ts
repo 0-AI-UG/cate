@@ -8,6 +8,7 @@ import { PANEL_DEFAULT_SIZES } from '../../../shared/types'
 import { findFreePosition } from '../../canvas/placement'
 import type { CanvasGet, CanvasSet, CanvasStoreActions, CanvasStoreState } from './storeTypes'
 import { generateId, IS_E2E } from './helpers'
+import { focusedNodeId } from './selectionModel'
 
 type NodesActions = Pick<
   CanvasStoreActions,
@@ -60,12 +61,13 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
             },
           },
           nextZOrder: state.nextZOrder + 1,
-          focusedNodeId: existing.id,
+          selection: [existing.id],
+          selectionActive: true,
         })
         return existing.id
       }
       const nodeId = generateId()
-      const origin = findFreePosition(state.nodes, state.focusedNodeId, defaultSize, position)
+      const origin = findFreePosition(state.nodes, focusedNodeId(state), defaultSize, position)
 
       const node: CanvasNodeState = {
         id: nodeId,
@@ -100,19 +102,30 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       set((state) => {
         const node = state.nodes[id]
         if (!node) return state
+        // Drop the node from the selection now (it's on its way out) and
+        // deactivate if it was the active lead, so nothing renders a ring/halo
+        // on an unmounting node.
+        const wasActiveLead = focusedNodeId(state) === id
         return {
           nodes: {
             ...state.nodes,
             [id]: { ...node, animationState: 'exiting' as const },
           },
-          focusedNodeId: state.focusedNodeId === id ? null : state.focusedNodeId,
+          selection: state.selection.filter((x) => x !== id),
+          selectionActive: wasActiveLead ? false : state.selectionActive,
         }
       })
     },
 
     finalizeRemoveNode(nodeId) {
       const { [nodeId]: _, ...rest } = get().nodes
-      set({ nodes: rest })
+      set((state) => ({
+        nodes: rest,
+        // Defensive: ensure a finalized node never lingers in the selection.
+        selection: state.selection.includes(nodeId)
+          ? state.selection.filter((x) => x !== nodeId)
+          : state.selection,
+      }))
     },
 
     setNodeAnimationState(nodeId, state) {
@@ -162,7 +175,11 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
             [id]: { ...node, zOrder: state.nextZOrder },
           },
           nextZOrder: state.nextZOrder + 1,
-          focusedNodeId: id,
+          // Activating a node collapses the selection to just it and makes it
+          // the active lead — so the active panel is always part of (and the
+          // only member of) the selection. Mirrors a plain click.
+          selection: [id],
+          selectionActive: true,
           focusEpoch: state.focusEpoch + 1,
           // An explicit focus (click, switcher, auto-focus) ends keyboard-nav mode.
           suppressAutoFocus: false,
@@ -171,7 +188,9 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
     },
 
     unfocus() {
-      set({ focusedNodeId: null })
+      // Deactivate the lead but keep the selection (rings remain), matching the
+      // old unfocus() which cleared focus without touching the selection.
+      set({ selectionActive: false })
     },
 
     toggleMaximize(id, viewportSize) {
@@ -222,7 +241,8 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       set({
         nodes: { ...state.nodes, [id]: updated },
         nextZOrder: state.nextZOrder + 1,
-        focusedNodeId: id,
+        selection: [id],
+        selectionActive: true,
         focusEpoch: state.focusEpoch + 1,
       })
     },
@@ -239,21 +259,21 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
     },
 
     nextNode() {
-      const { focusedNodeId } = get()
+      const focused = focusedNodeId(get())
       const sorted = get().sortedNodesByCreationOrder()
       if (sorted.length === 0) return null
-      if (!focusedNodeId) return sorted[0].id
-      const index = sorted.findIndex((n) => n.id === focusedNodeId)
+      if (!focused) return sorted[0].id
+      const index = sorted.findIndex((n) => n.id === focused)
       if (index === -1) return sorted[0].id
       return sorted[(index + 1) % sorted.length].id
     },
 
     previousNode() {
-      const { focusedNodeId } = get()
+      const focused = focusedNodeId(get())
       const sorted = get().sortedNodesByCreationOrder()
       if (sorted.length === 0) return null
-      if (!focusedNodeId) return sorted[sorted.length - 1].id
-      const index = sorted.findIndex((n) => n.id === focusedNodeId)
+      if (!focused) return sorted[sorted.length - 1].id
+      const index = sorted.findIndex((n) => n.id === focused)
       if (index === -1) return sorted[sorted.length - 1].id
       return sorted[(index - 1 + sorted.length) % sorted.length].id
     },
@@ -291,7 +311,8 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       const newState: Partial<CanvasStoreState> = {
         nodes: { ...state.nodes, [nodeId]: updated },
         nextZOrder: state.nextZOrder + 1,
-        focusedNodeId: nodeId,
+        selection: [nodeId],
+        selectionActive: true,
         focusEpoch: state.focusEpoch + 1,
       }
       if (cs.width > 0 && cs.height > 0) {

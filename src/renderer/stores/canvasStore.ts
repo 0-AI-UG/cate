@@ -25,6 +25,7 @@ import { createPlacementSlice } from './canvas/placementSlice'
 import { createNavigationSlice } from './canvas/navigationSlice'
 import { createSelectionSlice } from './canvas/selectionSlice'
 import { createArrangeSlice } from './canvas/arrangeSlice'
+import { focusedNodeId as focusedNodeIdOf } from './canvas/selectionModel'
 
 // Re-export the store types so existing importers (`from '.../canvasStore'`)
 // keep working unchanged.
@@ -50,14 +51,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       nodes: {},
       viewportOffset: { x: 0, y: 0 },
       zoomLevel: ZOOM_DEFAULT,
-      focusedNodeId: null,
+      selection: [],
+      selectionActive: false,
       focusEpoch: 0,
       nodeActiveWorktreeId: {},
       nextZOrder: 0,
       nextCreationIndex: 0,
       containerSize: { width: 0, height: 0 },
       snapGuides: { lines: [] },
-      selectedNodeIds: new Set<string>(),
       suppressAutoFocus: false,
       history: [],
       future: [],
@@ -89,10 +90,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
           nodes: idleNodes,
           viewportOffset,
           zoomLevel: Math.min(Math.max(zoomLevel, ZOOM_MIN), ZOOM_MAX),
-          focusedNodeId: null,
+          selection: [],
+          selectionActive: false,
           nextZOrder: maxZOrder + 1,
           nextCreationIndex: maxCreationIndex + 1,
-          selectedNodeIds: new Set<string>(),
           history: [],
           future: [],
           pendingPlacement: null,
@@ -208,7 +209,8 @@ export function useVisibleNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>):
     store ?? useCanvasStore,
     (s) => {
       perfCount('canvasCullEval')
-      const { nodes, viewportOffset, zoomLevel, containerSize, focusedNodeId } = s
+      const { nodes, viewportOffset, zoomLevel, containerSize } = s
+      const focusedNodeId = focusedNodeIdOf(s)
       const z = zoomLevel
       const cw = containerSize.width
       const ch = containerSize.height

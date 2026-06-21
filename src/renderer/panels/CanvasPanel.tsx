@@ -8,6 +8,7 @@ import React, { useMemo, useCallback, useEffect } from 'react'
 import { useRenderCount } from '../lib/perf/perfClient'
 import { getOrCreateCanvasStoreForPanel, useNodeIds, useVisibleNodeIds } from '../stores/canvasStore'
 import { CanvasStoreProvider, useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { focusedNodeId } from '../stores/canvas/selectionModel'
 import Canvas from '../canvas/Canvas'
 import CanvasNode from '../canvas/CanvasNode'
 import CanvasToolbar from '../canvas/CanvasToolbar'
@@ -81,7 +82,7 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
 }) => {
   useRenderCount('CanvasNodeWrapper')
   const node = useCanvasStoreContext((s) => s.nodes[nodeId])
-  const isFocused = useCanvasStoreContext((s) => s.focusedNodeId === nodeId)
+  const isFocused = useCanvasStoreContext((s) => focusedNodeId(s) === nodeId)
   const currentWorkspace = useSelectedWorkspace()
   const canvasStoreApi = useCanvasStoreApi()
 

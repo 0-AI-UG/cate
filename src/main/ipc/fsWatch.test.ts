@@ -84,6 +84,13 @@ describe('fs watch events for nested paths', () => {
   // the workspace root never reported changes to files nested deeper than one
   // level — the editor's external-reload (and git status / explorer refresh)
   // silently missed edits to virtually every real source file.
+  //
+  // Accept either `update` or `create`: macOS's native recursive watcher
+  // (issue #398) reports a content modify of an existing file as a `rename`,
+  // which the adapter maps to `create`. Downstream that's identical to `update`
+  // (classifyExternalEvent treats create/update the same; the file tree just
+  // re-reads on-disk state), so the meaningful assertion is "a change event for
+  // this deep path is delivered at all".
   test('reports updates to a file nested several levels below the watch root', async () => {
     const nestedDir = path.join(root, 'src', 'renderer', 'panels')
     const nestedFile = path.join(nestedDir, 'deep.txt')
@@ -94,7 +101,8 @@ describe('fs watch events for nested paths', () => {
 
     let rev = 0
     const seen = await waitForWatchEvent(
-      (event) => event.type === 'update' && event.path === nestedFile,
+      (event) =>
+        (event.type === 'update' || event.type === 'create') && event.path === nestedFile,
       () => fs.writeFile(nestedFile, `v${++rev}`, 'utf8'),
     )
     expect(seen).toBe(true)

@@ -7,6 +7,7 @@ import type { CanvasNodeState } from '../../../shared/types'
 import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
 import type { CanvasStoreCtx } from './storeCtx'
 import { findNodeInDirection, PAN_STEP } from './helpers'
+import { focusedNodeId } from './selectionModel'
 
 type NavigationActions = Pick<CanvasStoreActions, 'navigateDirection' | 'navigateSelect' | 'panViewport'>
 
@@ -18,7 +19,8 @@ export function createNavigationSlice(set: CanvasSet, get: CanvasGet, ctx: Canva
       if (nodeList.length === 0) return
 
       // Reference center: focused node's center, else the viewport center.
-      const current = state.focusedNodeId ? state.nodes[state.focusedNodeId] : null
+      const focused = focusedNodeId(state)
+      const current = focused ? state.nodes[focused] : null
       let refX: number
       let refY: number
       if (current) {
@@ -44,11 +46,11 @@ export function createNavigationSlice(set: CanvasSet, get: CanvasGet, ctx: Canva
       // the viewport center. Using selection (not focus) as the cursor lets the
       // user chain jumps without the destination grabbing keyboard focus.
       let ref: CanvasNodeState | null = null
-      if (state.selectedNodeIds.size === 1) {
-        const id = [...state.selectedNodeIds][0]
-        ref = state.nodes[id] ?? null
+      if (state.selection.length === 1) {
+        ref = state.nodes[state.selection[0]] ?? null
       }
-      if (!ref && state.focusedNodeId) ref = state.nodes[state.focusedNodeId] ?? null
+      const focused = focusedNodeId(state)
+      if (!ref && focused) ref = state.nodes[focused] ?? null
 
       let refX: number
       let refY: number
@@ -72,8 +74,10 @@ export function createNavigationSlice(set: CanvasSet, get: CanvasGet, ctx: Canva
       set({
         nodes: { ...state.nodes, [best.id]: { ...best, zOrder: state.nextZOrder } },
         nextZOrder: state.nextZOrder + 1,
-        selectedNodeIds: new Set([best.id]),
-        focusedNodeId: null,
+        // Select without activating (ring, not halo) so no panel grabs the
+        // keyboard and the next arrow keeps navigating.
+        selection: [best.id],
+        selectionActive: false,
         // Don't let auto-focus-largest re-activate a node as we pan to centre.
         suppressAutoFocus: true,
       })
