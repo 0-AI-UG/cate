@@ -367,16 +367,25 @@ export function recommendPlacements(
     return out
   }
 
-  // A few standard spots centred on a point (empty canvas / blank viewport).
+  // A few spots centred on a point (empty canvas / blank viewport).
   const centred = (c: Point): Raw[] => {
-    // Grid-snap here at the source: finalize trusts incoming points as-is (it no
-    // longer re-snaps, which would nudge guide-aligned packed spots off their
+    // On an empty/blank area, position is irrelevant — so offer the meaningful
+    // choice instead: SIZE. Default (centred, ranks best), a larger option, and a
+    // compact one. Grid-snapped at the source (finalize trusts incoming points as-is;
+    // it no longer re-snaps, which would nudge guide-aligned packed spots off their
     // cleared positions), so the blank-canvas spots must arrive grid-aligned.
-    const tl = snapPt({ x: c.x - std.width / 2, y: c.y - std.height / 2 })
+    const sized = (w: number, h: number): Size => ({
+      width: Math.max(PLACEMENT_MIN_W, Math.min(PLACEMENT_MAX_W, snapScalar(w, grid))),
+      height: Math.max(PLACEMENT_MIN_H, Math.min(PLACEMENT_MAX_H, snapScalar(h, grid))),
+    })
+    const def = std
+    const large = sized(std.width * 1.4, std.height * 1.4)
+    const compact = sized(std.width * 0.65, std.height * 0.65)
+    const tl = snapPt({ x: c.x - def.width / 2, y: c.y - def.height / 2 })
     return [
-      { point: tl, size: std },
-      { point: snapPt({ x: tl.x + std.width + gap, y: tl.y }), size: std },
-      { point: snapPt({ x: tl.x, y: tl.y + std.height + gap }), size: std },
+      { point: tl, size: def },
+      { point: snapPt({ x: tl.x + def.width + gap, y: tl.y }), size: large },
+      { point: snapPt({ x: tl.x, y: tl.y + def.height + gap }), size: compact },
     ]
   }
 

@@ -106,6 +106,11 @@ off-grid) by up to half a grid step, cutting its clearance below the gap so
 `finalize`'s own clearance check would then drop it. The blank-canvas (`centred`)
 spots, which arrive un-aligned, are grid-snapped at their source instead.
 
+On an empty/blank area the picker offers the same spot in a few sizes (default /
+larger / compact) rather than identical tiles in different positions, since
+position is irrelevant when the area is empty — so the meaningful choice becomes
+size. The default-size spot is centred on the anchor and ranks best.
+
 ---
 
 ## Part 2 — Fixed (non-configurable) default panel size

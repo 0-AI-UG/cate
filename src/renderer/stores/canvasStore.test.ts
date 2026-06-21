@@ -413,11 +413,15 @@ describe('canvasStore.recommendPlacements', () => {
     })
   })
 
-  it('falls back to sizeOverride on an empty canvas, where there is no neighbor to mirror', () => {
+  it('drives the default (best) spot from sizeOverride on an empty canvas, where there is no neighbor to mirror', () => {
     const override = { width: 900, height: 700 }
     const cands = recommendPlacements({}, null, 'terminal', VIEWPORT, { x: 500, y: 400 }, 6, override)
     expect(cands.length).toBeGreaterThan(0)
-    cands.forEach((c) => expect(c.size).toEqual(override))
+    // On a blank area the picker offers SIZE choices: the best/first spot uses
+    // the override; the others are distinct scaled variants of it.
+    expect(cands[0].size).toEqual(override)
+    const sizeKeys = cands.map((c) => `${c.size.width}x${c.size.height}`)
+    expect(new Set(sizeKeys).size).toBe(cands.length)
   })
 
   it('biases the best recommendation toward the anchor (mouse) when given', () => {

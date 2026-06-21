@@ -67,17 +67,25 @@ function expectGridAligned(p: Point) {
 }
 
 describe('recommendPlacements — empty canvas', () => {
-  it('returns a small set of standard-size spots centred on the anchor, best first', () => {
+  it('returns a small set of differently-SIZED spots centred on the anchor, default best first', () => {
     const anchor = { x: 600, y: 400 }
     const out = recommendPlacements({}, null, 'terminal', VIEWPORT, anchor)
 
-    // The exact contract for the blank-canvas case: the centred spot first,
-    // then below, then to the right (nearer first), all standard-sized.
+    // The exact contract for the blank-canvas case: on an empty area position is
+    // irrelevant, so the picker offers SIZE choices. The default-size spot is
+    // centred on the anchor (dist 0 → ranks best/first); a compact option below;
+    // a larger option to the right (each ranked by offset distance from anchor).
     expect(out).toEqual([
-      { point: { x: 280, y: 200 }, size: TERMINAL },
-      { point: { x: 280, y: 640 }, size: TERMINAL },
-      { point: { x: 960, y: 200 }, size: TERMINAL },
+      { point: { x: 280, y: 200 }, size: TERMINAL }, // default, centred → best
+      { point: { x: 280, y: 640 }, size: { width: 420, height: 260 } }, // compact, below
+      { point: { x: 960, y: 200 }, size: { width: 900, height: 560 } }, // larger, right
     ])
+
+    // The three options must offer DISTINCT sizes (the whole point on a blank
+    // area), and the best/first one is the panel default size.
+    expect(out[0].size).toEqual(TERMINAL)
+    const sizeKeys = out.map((c) => `${c.size.width}x${c.size.height}`)
+    expect(new Set(sizeKeys).size).toBe(out.length)
   })
 
   it('falls back to the viewport centre without an anchor, and to a fixed origin without a viewport', () => {
@@ -237,12 +245,17 @@ describe('recommendPlacements — around existing nodes', () => {
     expect(sawMirror, `at least one candidate fully mirrors the node: ${JSON.stringify(out)}`).toBe(true)
   })
 
-  it('still falls back to the override on an empty canvas, where no neighbor exists', () => {
-    // The empty-canvas path has nothing to mirror, so the override drives the size.
+  it('drives the default (best) spot from the override on an empty canvas, where no neighbor exists', () => {
+    // The empty-canvas path has nothing to mirror, so the override drives the
+    // default size — the best/first spot. The size choices (larger/compact) are
+    // scaled from that override.
     const size = { width: 400, height: 300 }
     const out = recommendPlacements({}, null, 'terminal', VIEWPORT, { x: 600, y: 400 }, 6, size)
     expect(out.length).toBeGreaterThanOrEqual(1)
-    for (const c of out) expect(c.size).toEqual(size)
+    expect(out[0].size).toEqual(size) // best spot uses the override
+    // The offered sizes are distinct (the point of the blank-area picker).
+    const sizeKeys = out.map((c) => `${c.size.width}x${c.size.height}`)
+    expect(new Set(sizeKeys).size).toBe(out.length)
   })
 
   it('mirrors the neighbor size into a wide bounded gap (no grow-to-fill)', () => {
