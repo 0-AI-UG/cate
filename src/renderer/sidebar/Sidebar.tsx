@@ -3,6 +3,7 @@ import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SearchView } from './SearchView'
 import { SourceControlView } from './SourceControlView'
+import { SkillsQuickBar } from './SkillsQuickBar'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -362,6 +363,9 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
           </div>
         )}
       </div>
+      {/* Quick view of skills installed in the current workspace — co-located
+          with the workspaces view, just above the version marker. */}
+      {isExpanded && activeView === 'workspaces' && <SkillsQuickBar rootPath={rootPath} />}
       {/* Version marker — shown on whichever side hosts the workspaces view */}
       {isExpanded && activeView === 'workspaces' && (
         <div className="flex-shrink-0 px-2 pt-1.5 pb-4 flex items-center justify-center gap-1.5 select-none">
