@@ -90,10 +90,16 @@ export function registerLifecycleHandlers(): void {
     if (BrowserWindow.getAllWindows().length === 0) {
       setMainWindowReady(false)
       const win = createWindow({ type: 'main' })
-      win.once('ready-to-show', () => {
+      let readyHandled = false
+      const markReady = (reason: string): void => {
+        if (readyHandled || win.isDestroyed()) return
+        readyHandled = true
+        log.info('Activated main window ready via %s', reason)
         setMainWindowReady(true)
         flushPendingOpenPaths()
-      })
+      }
+      win.once('ready-to-show', () => markReady('ready-to-show'))
+      win.webContents.once('did-finish-load', () => markReady('did-finish-load'))
     }
   })
 

@@ -355,14 +355,19 @@ app.whenReady().then(async () => {
   }
 
   // Check for a crash report from the previous session — shows an opt-in
-  // dialog if one exists. Deferred until after the window is ready so the
-  // dialog has a parent window and doesn't block startup.
-  mainWin.once('ready-to-show', () => {
+  // dialog if one exists. Deferred until the window is usable so the dialog has
+  // a parent window and doesn't block startup. did-finish-load is a fallback
+  // for hidden-window startup paths where ready-to-show never arrives.
+  let mainWindowReadyHandled = false
+  const markMainWindowReady = (reason: string): void => {
+    if (mainWindowReadyHandled || mainWin.isDestroyed()) return
+    mainWindowReadyHandled = true
+    log.info('Main window ready via %s', reason)
     setMainWindowReady(true)
     flushPendingOpenPaths()
     // Register deferred IPC handlers and start the auto-updater now that the
-    // first paint has landed. Anything not on the cold-launch critical path
-    // belongs here.
+    // first usable renderer load has landed. Anything not on the cold-launch
+    // critical path belongs here.
     registerDeferredHandlers()
     log.info('Deferred IPC handlers registered')
     initAutoUpdater()
@@ -377,7 +382,9 @@ app.whenReady().then(async () => {
           app.exit(1)
         })
     }
-  })
+  }
+  mainWin.once('ready-to-show', () => markMainWindowReady('ready-to-show'))
+  mainWin.webContents.once('did-finish-load', () => markMainWindowReady('did-finish-load'))
 })
 
 // Window lifecycle: window-all-closed, activate, and the before-quit / will-quit

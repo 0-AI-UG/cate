@@ -99,11 +99,22 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     },
   })
 
-  // Show on ready-to-show so the first frame is fully painted before the
-  // window appears — eliminates the white flash from initial mount.
-  win.once('ready-to-show', () => {
+  // Capture ID before window is destroyed (win.id throws after 'closed')
+  const windowId = win.id
+  let windowRevealed = false
+  const revealOnce = (reason: string): void => {
+    if (windowRevealed || win.isDestroyed()) return
+    windowRevealed = true
+    log.info('Revealing window type=%s id=%d via %s', windowType, windowId, reason)
     revealWindow(win)
-  })
+  }
+
+  // Prefer ready-to-show so the first frame is painted before the window
+  // appears. did-finish-load is a safety net for startup paths where
+  // ready-to-show never arrives and the hidden window would otherwise stay
+  // invisible forever.
+  win.once('ready-to-show', () => revealOnce('ready-to-show'))
+  win.webContents.once('did-finish-load', () => revealOnce('did-finish-load'))
 
   // Persist main-window geometry to the boot snapshot so the next cold launch
   // restores bounds synchronously (no white flash). The store debounces, so
@@ -124,8 +135,6 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   // Track this window in the registry with its type
   registerWindow(win, windowType, params?.workspaceId)
 
-  // Capture ID before window is destroyed (win.id throws after 'closed')
-  const windowId = win.id
   log.info('Creating window type=%s id=%d', windowType, windowId)
 
   // Recover from renderer crashes / hangs (OOM, GPU fault, native crash) that
