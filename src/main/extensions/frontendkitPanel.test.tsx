@@ -97,9 +97,9 @@ describe.skipIf(!HAS_EXT)('cate.frontendkit panel client (app.js)', () => {
     expect(document.getElementById('panel')!.textContent).toBe('main')
     expect(document.getElementById('workspace')!.textContent).toBe('/ws/root')
     expect(document.getElementById('theme')!.textContent).toBe('dark-cold (dark)')
-    // Theme tokens mapped onto the panel's CSS vars.
+    // Theme bg/fg tokens mapped onto the panel's CSS vars.
     expect(document.documentElement.style.getPropertyValue('--fk-bg')).toBe('#111')
-    expect(document.documentElement.style.getPropertyValue('--fk-accent')).toBe('#0af')
+    expect(document.documentElement.style.getPropertyValue('--fk-fg')).toBe('#eee')
   })
 
   it('restores notes via storage.get and subscribes to storage.onChange', () => {
