@@ -119,6 +119,15 @@ export interface BuiltPrimitives {
   /** World origin all coords are relative to (panels' bounding-box min). */
   originX: number
   originY: number
+  /** World-space AABB of the territory's potential coverage — every primitive
+   *  expanded by the field reach (panels by OUTER_REACH+WARP_AMP+SMINK, bridges
+   *  by their cullR). Lets the renderer scissor the draw to where the territory
+   *  can actually appear instead of shading the whole screen. `Infinity` bounds
+   *  mean "no geometry" (nothing to draw). */
+  boundsMinX: number
+  boundsMinY: number
+  boundsMaxX: number
+  boundsMaxY: number
 }
 
 const _primData = new Float32Array(MAX_PRIMITIVES * 8)
@@ -142,6 +151,12 @@ export function buildPrimitives(groups: TerritoryGroup[]): BuiltPrimitives {
 
   const data = _primData
   let count = 0
+  // World-space coverage AABB, accumulated over every emitted primitive so the
+  // renderer can scissor to it. A panel's territory reaches OUTER_REACH past its
+  // rect, the domain warp can push the sampled point another WARP_AMP, and smin
+  // fusion lifts the field by up to SMINK near a junction — pad by their sum.
+  const PANEL_MARGIN = OUTER_REACH + WARP_AMP + SMINK
+  let bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity
   // Panels first (never dropped); bridges after (dropped first on overflow).
   for (let gi = 0; gi < groupCount; gi++) {
     const c = hexToRgb(groups[gi].color)
@@ -156,6 +171,10 @@ export function buildPrimitives(groups: TerritoryGroup[]): BuiltPrimitives {
       data[o + 2] = rc.x + rc.w - ox; data[o + 3] = rc.y + rc.h - oy
       data[o + 4] = CORNER; data[o + 5] = gi; data[o + 6] = 0; data[o + 7] = 0
       count++
+      if (rc.x - PANEL_MARGIN < bMinX) bMinX = rc.x - PANEL_MARGIN
+      if (rc.y - PANEL_MARGIN < bMinY) bMinY = rc.y - PANEL_MARGIN
+      if (rc.x + rc.w + PANEL_MARGIN > bMaxX) bMaxX = rc.x + rc.w + PANEL_MARGIN
+      if (rc.y + rc.h + PANEL_MARGIN > bMaxY) bMaxY = rc.y + rc.h + PANEL_MARGIN
     }
   }
   for (let gi = 0; gi < groupCount; gi++) {
@@ -168,8 +187,20 @@ export function buildPrimitives(groups: TerritoryGroup[]): BuiltPrimitives {
       data[o + 2] = br.bx - ox; data[o + 3] = br.by - oy
       data[o + 4] = br.radius; data[o + 5] = gi; data[o + 6] = 1; data[o + 7] = 0
       count++
+      // br.cullR already = radius + OUTER_REACH + SMINK + WARP_AMP.
+      const lx = Math.min(br.ax, br.bx) - br.cullR
+      const hx = Math.max(br.ax, br.bx) + br.cullR
+      const ly = Math.min(br.ay, br.by) - br.cullR
+      const hy = Math.max(br.ay, br.by) + br.cullR
+      if (lx < bMinX) bMinX = lx
+      if (ly < bMinY) bMinY = ly
+      if (hx > bMaxX) bMaxX = hx
+      if (hy > bMaxY) bMaxY = hy
     }
   }
 
-  return { data, count, colors: _colorData, dims: _dimData, groupCount, originX: ox, originY: oy }
+  return {
+    data, count, colors: _colorData, dims: _dimData, groupCount, originX: ox, originY: oy,
+    boundsMinX: bMinX, boundsMinY: bMinY, boundsMaxX: bMaxX, boundsMaxY: bMaxY,
+  }
 }

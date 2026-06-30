@@ -96,6 +96,9 @@ interface RootEntry {
   /** Generation guard so a stale in-flight refetch can't clobber a newer one. */
   fetchSeq: number
   disposed: boolean
+  /** Test-only: when set, the live git fetch is suppressed so an injected
+   *  snapshot (gitStatusStore._seedWorktrees) survives focus/fs refreshes. */
+  pinned: boolean
 }
 
 const roots = new Map<string, RootEntry>()
@@ -116,6 +119,7 @@ function getRoot(rootPath: string): RootEntry {
       teardown: null,
       fetchSeq: 0,
       disposed: false,
+      pinned: false,
     }
     roots.set(rootPath, entry)
   }
@@ -169,10 +173,11 @@ async function fetchSnapshot(rootPath: string): Promise<GitStatusSnapshot | null
 /** Refetch and apply a fresh snapshot for this root, guarding against stale
  *  in-flight responses landing after a newer refresh. */
 function refresh(entry: RootEntry): void {
+  if (entry.pinned) return // test-only injected snapshot owns this root
   const seq = ++entry.fetchSeq
   void fetchSnapshot(entry.rootPath)
     .then((snap) => {
-      if (entry.disposed || seq !== entry.fetchSeq || !snap) return
+      if (entry.disposed || entry.pinned || seq !== entry.fetchSeq || !snap) return
       entry.snapshot = { ...snap, revision: entry.snapshot.revision + 1 }
       notify(entry)
     })
@@ -257,6 +262,27 @@ export const gitStatusStore = {
   refresh(rootPath: string): void {
     const entry = roots.get(rootPath)
     if (entry) refresh(entry)
+  },
+
+  /** Test-only: inject a live worktree list for `rootPath` and pin it so the
+   *  real git fetch can't overwrite it. Lets the e2e perf harness make the
+   *  worktree terrace render without a real on-disk repo. Marks the root as a
+   *  repo and notifies subscribers (membership recomputes on the new snapshot). */
+  _seedWorktrees(rootPath: string, worktrees: GitWorktreeEntry[]): void {
+    if (!rootPath) return
+    const entry = getRoot(rootPath)
+    entry.pinned = true
+    entry.snapshot = {
+      isRepo: true,
+      tracked: new Set(),
+      statusFiles: [],
+      branch: worktrees.find((w) => w.isPrimary)?.branch ?? 'main',
+      ahead: 0,
+      behind: 0,
+      worktrees,
+      revision: entry.snapshot.revision + 1,
+    }
+    notify(entry)
   },
 
   /** Test-only: clear all roots and timers. */

@@ -24,6 +24,7 @@ import {
 import { OUTER_REACH, INNER_RING, OUTER_A, INNER_EXTRA, buildPrimitives, type BuiltPrimitives } from './territoryGeometry'
 import { POCKET_FILL, type PocketMask } from './territoryPocketMask'
 import type { TerritoryGroup } from './territoryRenderer'
+import { perfCount } from '../../lib/perf/perfClient'
 
 /** GLSL float literal — guarantees a decimal point so ints aren't parsed as int. */
 function glf(n: number): string {
@@ -351,6 +352,12 @@ export function createTerritoryGL(canvas: HTMLCanvasElement): TerritoryGL | null
 
   let deviceW = 1, deviceH = 1
   let disposed = false
+  // Current view + coverage AABB, kept so draw() can scissor the shaded region
+  // to where the territory can actually appear (a full-screen field shader is
+  // otherwise charged for every empty pixel). Bounds are world-space; Infinity
+  // means "no geometry".
+  let vZoom = 1, vOffX = 0, vOffY = 0, vDpr = 1
+  let bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity
 
   return {
     resize(dw, dh) {
@@ -361,12 +368,15 @@ export function createTerritoryGL(canvas: HTMLCanvasElement): TerritoryGL | null
       gl.uniform2f(loc.viewport, deviceW, deviceH)
     },
     setView(zoom, offX, offY, dpr) {
+      vZoom = zoom; vOffX = offX; vOffY = offY; vDpr = dpr
       gl.useProgram(program)
       gl.uniform1f(loc.zoom, zoom)
       gl.uniform2f(loc.offset, offX, offY)
       gl.uniform1f(loc.dpr, dpr)
     },
     uploadGeometry(built) {
+      bMinX = built.boundsMinX; bMinY = built.boundsMinY
+      bMaxX = built.boundsMaxX; bMaxY = built.boundsMaxY
       gl.useProgram(program)
       gl.uniform1i(loc.primCount, built.count)
       gl.uniform1i(loc.groupCount, built.groupCount)
@@ -397,10 +407,40 @@ export function createTerritoryGL(canvas: HTMLCanvasElement): TerritoryGL | null
       gl.bindTexture(gl.TEXTURE_2D, primTex)
       gl.activeTexture(gl.TEXTURE1)
       gl.bindTexture(gl.TEXTURE_2D, maskTex)
+      // Full-canvas clear first (scissor off), so last frame's territory is erased
+      // everywhere even when this frame's coverage shrinks or moves.
+      gl.disable(gl.SCISSOR_TEST)
       gl.clear(gl.COLOR_BUFFER_BIT)
+      if (!isFinite(bMinX)) return // no geometry — cleared canvas is the result
+
+      // Project the world coverage AABB to device pixels (gl_FragCoord space:
+      // lower-left origin). Mirrors the shader's css→world mapping inverted:
+      //   fragX = (wx·zoom + offX)·dpr
+      //   fragY = deviceH − (wy·zoom + offY)·dpr   (note the y flip)
+      const PAD = 2 // device px — covers fwidth-AA bleed at the scissor edge
+      const x0 = (bMinX * vZoom + vOffX) * vDpr
+      const x1 = (bMaxX * vZoom + vOffX) * vDpr
+      // Larger world-y → smaller fragY, so bMaxY gives the lower scissor edge.
+      const yLo = deviceH - (bMaxY * vZoom + vOffY) * vDpr
+      const yHi = deviceH - (bMinY * vZoom + vOffY) * vDpr
+      const sx = Math.max(0, Math.min(deviceW, Math.floor(x0) - PAD))
+      const sy = Math.max(0, Math.min(deviceH, Math.floor(yLo) - PAD))
+      const sw = Math.max(0, Math.min(deviceW, Math.ceil(x1) + PAD)) - sx
+      const sh = Math.max(0, Math.min(deviceH, Math.ceil(yHi) + PAD)) - sy
+      if (sw <= 0 || sh <= 0) return // coverage is entirely off-screen
+
+      gl.enable(gl.SCISSOR_TEST)
+      gl.scissor(sx, sy, sw, sh)
       gl.bindVertexArray(vao)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
       gl.bindVertexArray(null)
+      gl.disable(gl.SCISSOR_TEST)
+      // Perf instrumentation (no-op unless CATE_PERF=1): draw rate plus shaded
+      // vs full-canvas area in kilopixels, so the e2e perf harness can report
+      // how much fragment work the scissor saved.
+      perfCount('territoryDraw')
+      perfCount('territoryScissorKpx', Math.round((sw * sh) / 1000))
+      perfCount('territoryFullKpx', Math.round((deviceW * deviceH) / 1000))
     },
     dispose() {
       if (disposed) return

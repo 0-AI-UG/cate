@@ -8,13 +8,14 @@
 import { useAppStore } from '../stores/appStore'
 import { useUIStore, type SidebarView } from '../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
+import { gitStatusStore, type GitWorktreeEntry } from '../stores/gitStatusStore'
 import { useDragStore } from '../drag/store'
 import { useSearchStore } from '../stores/searchStore'
 import { getLastReveal } from './editor/editorReveal'
 import { applyTheme } from './themeManager'
 import { BUILT_IN_THEMES } from '../../shared/themes'
 import { terminalRegistry } from './terminal/terminalRegistry'
-import type { Point } from '../../shared/types'
+import type { Point, WorktreeMeta } from '../../shared/types'
 
 /** Serializable snapshot of the search store for e2e assertions. */
 export interface SearchSnapshot {
@@ -49,8 +50,38 @@ declare global {
       zoom(): number
       setZoom(z: number): void
       resetViewport(): void
+      /** Set the canvas viewport offset (canvas-space pan), for driving a pan
+       *  sweep deterministically from a test (the windowless e2e harness doesn't
+       *  reliably route wheel-pan to the canvas). */
+      setViewport(offset: Point): void
+      /** Move a node's origin in the canvas store — drives the same per-frame
+       *  geometry-rebuild + redraw path a live node-drag does, without depending
+       *  on synthetic mouse drag working in the hidden window. */
+      moveNode(nodeId: string, origin: Point): void
+      /** Close every panel in the selected workspace (clears the canvas between
+       *  perf scenarios so node counts/layout don't accumulate). */
+      clearCanvas(): void
       addWorkspace(name?: string, rootPath?: string, id?: string): string
       selectWorkspace(id: string): Promise<void>
+      /** Seed N worktrees on the selected workspace (index 0 = primary, keyed by
+       *  the workspace root) WITHOUT a real on-disk repo: writes UI metadata
+       *  (id/color/label) and injects a pinned live `git worktree list` so the
+       *  worktree terrace / minimap outlines render. Returns the seeded records. */
+      seedWorktrees(specs: { color: string; label?: string }[]): { id: string; path: string; color: string }[]
+      /** Tag a terminal/agent node's panel with a worktree id (the real path,
+       *  flowing through CanvasNode → setNodeActiveWorktree). Returns false if the
+       *  node has no resolvable panel. */
+      tagNodeWorktree(nodeId: string, worktreeId: string): boolean
+      /** Inspect the worktree-terrace pipeline for perf-test assertions: how many
+       *  live worktrees, how many nodes are tagged, how many distinct groups they
+       *  form, and whether the GL (vs CPU-fallback) territory backend is active. */
+      worktreeDebug(): {
+        liveWorktrees: number
+        metaWorktrees: number
+        taggedNodes: number
+        distinctGroups: number
+        glActive: boolean
+      }
       /** Resolve the PTY id backing a terminal node (null until the PTY spawns). */
       terminalPtyId(nodeId: string): string | null
       /** Write raw data to a terminal node's PTY (e.g. a flooding command). */
@@ -165,12 +196,90 @@ export function installE2EHarness(): void {
     activeCanvasStore()?.setState({ viewportOffset: { x: 0, y: 0 } })
   }
 
+  const setViewport = (offset: Point) => {
+    activeCanvasStore()?.getState().setViewportOffset(offset)
+  }
+
+  const moveNode = (nodeId: string, origin: Point) => {
+    activeCanvasStore()?.getState().moveNode(nodeId, origin)
+  }
+
+  const clearCanvas = () => {
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
+    for (const panelId of Object.keys(ws?.panels ?? {})) {
+      useAppStore.getState().closePanel(wsId, panelId)
+    }
+  }
+
   const addWorkspace = (name?: string, rootPath?: string, id?: string): string => {
     return useAppStore.getState().addWorkspace(name, rootPath, id)
   }
 
   const selectWorkspace = async (id: string): Promise<void> => {
     await useAppStore.getState().selectWorkspace(id)
+  }
+
+  const seedWorktrees = (
+    specs: { color: string; label?: string }[],
+  ): { id: string; path: string; color: string }[] => {
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
+    if (!ws) return []
+    // The primary worktree is keyed by the workspace root; synthesize a path if
+    // the e2e workspace has none so useWorktrees has a stable join key.
+    const rootPath = ws.rootPath || `/private/tmp/cate-e2e-wt-${wsId}`
+    const metas: WorktreeMeta[] = specs.map((s, i) => ({
+      id: `wt-e2e-${i}`,
+      path: i === 0 ? rootPath : `${rootPath}/.cate-wt/feature-${i}`,
+      color: s.color,
+      label: s.label,
+    }))
+    // Set the workspace root + worktree metadata in one go (deterministic — no
+    // dependence on ensurePrimaryWorktree / upsert ordering).
+    useAppStore.setState((state) => ({
+      workspaces: state.workspaces.map((w) =>
+        w.id === wsId ? { ...w, rootPath, worktrees: metas } : w,
+      ),
+    }))
+    // Inject the matching live worktree list so membership sees 2+ live (the
+    // metadata alone would all read as orphans and gate the terrace off).
+    const live: GitWorktreeEntry[] = metas.map((m, i) => ({
+      path: m.path,
+      branch: i === 0 ? 'main' : `feature-${i}`,
+      isPrimary: i === 0,
+      isCurrent: i === 0,
+    }))
+    gitStatusStore._seedWorktrees(rootPath, live)
+    return metas.map((m) => ({ id: m.id, path: m.path, color: m.color }))
+  }
+
+  const tagNodeWorktree = (nodeId: string, worktreeId: string): boolean => {
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    const cs = activeCanvasStore()
+    const node = cs?.getState().nodes[nodeId]
+    const panelId = node?.panelId ?? nodeId
+    if (!panelId) return false
+    useAppStore.getState().setPanelWorktreeId(wsId, panelId, worktreeId)
+    return true
+  }
+
+  const worktreeDebug = () => {
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
+    const rootPath = ws?.rootPath ?? ''
+    const cs = activeCanvasStore()
+    const tags = cs ? cs.getState().nodeActiveWorktreeId : {}
+    const values = Object.values(tags).filter((v): v is string => !!v)
+    const glCanvas = document.querySelector('[data-worktree-territory]') as HTMLElement | null
+    const glActive = !!glCanvas && getComputedStyle(glCanvas).display !== 'none'
+    return {
+      liveWorktrees: gitStatusStore.getSnapshot(rootPath).worktrees.length,
+      metaWorktrees: ws?.worktrees?.length ?? 0,
+      taggedNodes: values.length,
+      distinctGroups: new Set(values).size,
+      glActive,
+    }
   }
 
   const terminalPtyId = (nodeId: string): string | null => {
@@ -260,8 +369,14 @@ export function installE2EHarness(): void {
     zoom,
     setZoom,
     resetViewport,
+    setViewport,
+    moveNode,
+    clearCanvas,
     addWorkspace,
     selectWorkspace,
+    seedWorktrees,
+    tagNodeWorktree,
+    worktreeDebug,
     terminalPtyId,
     writeTerminal,
     setWorkspaceRoot,

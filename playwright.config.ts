@@ -5,7 +5,9 @@ export default defineConfig({
   // perf-stress asserts FPS / spawn-rate thresholds that depend on the host's
   // raw speed, so it's a local regression tool, not a CI gate. CI sets
   // E2E_SKIP_PERF=1 to run only the functional (smoke/drag/dock) specs.
-  testIgnore: process.env.E2E_SKIP_PERF ? ['**/perf-stress.spec.ts'] : [],
+  testIgnore: process.env.E2E_SKIP_PERF
+    ? ['**/perf-stress.spec.ts', '**/worktree-territory-perf.spec.ts']
+    : [],
   // Generous per-test cap: the content-search specs do up to two cold-daemon
   // settles (ripgrep spawn) of up to 30s each, which can stack under full-suite
   // load on a busy CI runner.
