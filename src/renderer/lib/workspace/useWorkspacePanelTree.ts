@@ -23,6 +23,7 @@ import {
 } from './canvasAccess'
 import { collectPanelIds } from '../canvas/collectPanelIds'
 import { partitionWorkspacePanels, buildColdStartCanvasChildOwners } from '../../sidebar/partitionWorkspacePanels'
+import { sortWorkspacePanels } from '../../sidebar/sortWorkspacePanels'
 
 const EMPTY_PANELS: Record<string, PanelState> = {}
 
@@ -103,16 +104,19 @@ export function useWorkspacePanelTree(workspaceId: string): WorkspacePanelTree {
     return ws?.panels ?? EMPTY_PANELS
   }))
 
-  // Sorted panel list grouped by type (canvas, terminal, editor, browser, …).
-  const panelList = useMemo(() => {
-    const TYPE_ORDER: Record<string, number> = { canvas: 0, terminal: 1, editor: 2, browser: 3 }
-    return Object.values(panels).slice().sort((a, b) => {
-      const ta = TYPE_ORDER[a.type] ?? 99
-      const tb = TYPE_ORDER[b.type] ?? 99
-      if (ta !== tb) return ta - tb
-      return (a.title || '').localeCompare(b.title || '')
-    })
-  }, [panels])
+  // Worktrees + rootPath drive the per-worktree grouping below. Read separately
+  // (and shallow) so a recolor/add doesn't churn the whole tree, only the order.
+  const { worktrees, rootPath } = useAppStore(useShallow((s) => {
+    const ws = s.workspaces.find((w) => w.id === workspaceId)
+    return { worktrees: ws?.worktrees, rootPath: ws?.rootPath }
+  }))
+
+  // Panel list grouped by worktree first (so a worktree's terminals/agents stay
+  // together), then by type (canvas, terminal, editor, browser, …), then title.
+  const panelList = useMemo(
+    () => sortWorkspacePanels(Object.values(panels), worktrees, rootPath),
+    [panels, worktrees, rootPath],
+  )
 
   // Set of panel ids living on this workspace's canvases. The reactive hook
   // covers every live canvas store; the resolver fills the cold-start gap for a

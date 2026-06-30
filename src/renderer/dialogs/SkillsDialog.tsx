@@ -47,6 +47,11 @@ import {
 
 const api = () => window.electronAPI
 
+// The list of repos the curated catalog is crawled from. Linked at the bottom so
+// anyone can PR a missing skill's source repo in (the CI crawler turns this into
+// skills-index.json).
+const SKILL_SOURCES_URL = 'https://github.com/0-AI-UG/cate/blob/main/registry/sources.json'
+
 function matches(entry: SkillEntry, terms: string[]): boolean {
   if (terms.length === 0) return true
   const hay = `${entry.name} ${entry.description}`.toLowerCase()
@@ -290,6 +295,19 @@ export function SkillsDialog() {
           ) : (
             browseRows.map((e) => renderRow(e, false))
           )}
+        </div>
+
+        {/* Pinned footer — PR a missing skill into the curated index. Stays put
+            below the (possibly very long) scrolling list so it's always seen. */}
+        <div className="shrink-0 border-t border-subtle px-3.5 py-2 text-[11px] text-muted">
+          Missing a skill?{' '}
+          <button
+            onClick={() => window.electronAPI?.openExternalUrl(SKILL_SOURCES_URL)}
+            className="inline-flex items-center gap-0.5 text-secondary hover:text-primary underline decoration-dotted underline-offset-2"
+          >
+            Add its source
+            <ArrowSquareOut size={11} />
+          </button>
         </div>
     </PaletteDialogShell>
   )
