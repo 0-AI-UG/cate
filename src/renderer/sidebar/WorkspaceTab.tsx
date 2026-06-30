@@ -20,6 +20,7 @@ import { getAgentLogo } from '../lib/agent/agentLogos'
 import { workspaceDisplayName } from '../lib/fs/displayPath'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { InlineEditInput } from './InlineEditInput'
+import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
 import { Tooltip } from '../ui/Tooltip'
 
 // -----------------------------------------------------------------------------
@@ -296,6 +297,18 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const [renamingPanelId, setRenamingPanelId] = useState<string | null>(null)
   const [panelRenameValue, setPanelRenameValue] = useState('')
 
+  // Per-canvas collapse state (canvas rows fold their children, like the
+  // workspace row folds its tree). Absent = expanded; default is expanded.
+  const [collapsedCanvases, setCollapsedCanvases] = useState<Set<string>>(new Set())
+  const toggleCanvas = useCallback((canvasId: string) => {
+    setCollapsedCanvases((prev) => {
+      const next = new Set(prev)
+      if (next.has(canvasId)) next.delete(canvasId)
+      else next.add(canvasId)
+      return next
+    })
+  }, [])
+
   const beginRename = useCallback(() => {
     setRenameValue(workspace.name || (workspace.rootPath ? workspaceDisplayName(workspace.rootPath) : '') || 'Workspace')
     setIsRenaming(true)
@@ -544,6 +557,39 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     )
   }
 
+  // Detached canvas parent row — the read-only mirror of renderCanvasRow for a
+  // canvas living in another window: a disclosure caret that folds its children,
+  // the row click focusing the owning window. Collapse state is shared with the
+  // local canvases (keyed by panelId, which is unique across windows).
+  const renderDetachedCanvasRow = (p: WindowPanelInfo, hasChildren: boolean, collapsed: boolean) => {
+    const Icon = PANEL_ICONS[p.type] ?? SquaresFour
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        className="group/panel flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
+        onClick={(e) => { e.stopPropagation(); void window.electronAPI.focusWindowPanel(p.panelId) }}
+        title={`${p.title} — in another window`}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            className="flex-shrink-0 flex items-center justify-center w-[10px] text-muted hover:text-primary focus:outline-none"
+            onClick={(e) => { e.stopPropagation(); toggleCanvas(p.panelId) }}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            aria-label={collapsed ? 'Expand canvas' : 'Collapse canvas'}
+          >
+            <CaretRight size={10} className={`transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+          </button>
+        ) : (
+          <span className="flex-shrink-0 w-[10px]" />
+        )}
+        <Icon size={11} className="flex-shrink-0 opacity-60" />
+        <span className="truncate min-w-0 flex-1">{p.title}</span>
+      </div>
+    )
+  }
+
   const renderPanelRow = (p: PanelState, indent = false) => {
     const label = panelRowLabel(p)
     const isRenaming = renamingPanelId === p.id
@@ -607,6 +653,67 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
         )}
       </button>
+    )
+  }
+
+  // Canvas parent row — like a panel row, but with a disclosure caret that folds
+  // its children. A leaf canvas (no children) keeps an empty caret-width gutter
+  // so its icon stays aligned with sibling canvas rows. Rendered as a div (not a
+  // button) so the caret can be a real nested button without illegal nesting.
+  const renderCanvasRow = (cp: PanelState, hasChildren: boolean, collapsed: boolean) => {
+    const label = panelRowLabel(cp)
+    const isRenaming = renamingPanelId === cp.id
+    const rename: PanelRenameProps = {
+      renameValue: isRenaming ? panelRenameValue : null,
+      onRenameChange: setPanelRenameValue,
+      onRenameSubmit: () => handlePanelRenameSubmit(cp.id),
+      onRenameCancel: () => setRenamingPanelId(null),
+      onBeginRename: () => beginPanelRename(cp.id, label),
+      onContextMenu: (e) => handlePanelContextMenu(e, cp.id, label),
+    }
+    const Icon = PANEL_ICONS[cp.type] ?? SquaresFour
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        className="group/panel flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
+        onClick={(e) => handlePanelClick(e, cp.id)}
+        onContextMenu={rename.onContextMenu}
+        onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
+        onAuxClick={(e) => {
+          if (isMiddleClick(e)) {
+            e.preventDefault()
+            e.stopPropagation()
+            handleClosePanel(cp.id)
+          }
+        }}
+        title={label}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            className="flex-shrink-0 flex items-center justify-center w-[10px] text-muted hover:text-primary focus:outline-none"
+            onClick={(e) => { e.stopPropagation(); toggleCanvas(cp.id) }}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            aria-label={collapsed ? 'Expand canvas' : 'Collapse canvas'}
+          >
+            <CaretRight size={10} className={`transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+          </button>
+        ) : (
+          <span className="flex-shrink-0 w-[10px]" />
+        )}
+        <Icon size={11} className="flex-shrink-0" style={{ opacity: 0.6 }} />
+        {isRenaming ? (
+          <PanelRenameInput rename={rename} />
+        ) : (
+          <span
+            className="truncate min-w-0 flex-1"
+            onDoubleClick={(e) => { e.stopPropagation(); rename.onBeginRename() }}
+          >
+            {label}
+          </span>
+        )}
+      </div>
     )
   }
 
@@ -702,12 +809,16 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       {/* Tree of canvases + panels (when expanded) */}
       {isExpanded && treeCount > 0 && (
         <div className="flex flex-col">
-          {canvasPanels.map((cp) => (
-            <React.Fragment key={cp.id}>
-              {renderPanelRow(cp)}
-              {(childrenByCanvas[cp.id] || []).map((p) => renderPanelRow(p, true))}
-            </React.Fragment>
-          ))}
+          {canvasPanels.map((cp) => {
+            const children = childrenByCanvas[cp.id] || []
+            const collapsed = collapsedCanvases.has(cp.id)
+            return (
+              <React.Fragment key={cp.id}>
+                {renderCanvasRow(cp, children.length > 0, collapsed)}
+                {!collapsed && children.map((p) => renderPanelRow(p, true))}
+              </React.Fragment>
+            )
+          })}
           {orphanCanvasChildren.length > 0 && canvasPanels.length === 0 && (
             <>
               <div className="flex items-center gap-1.5 h-7 pl-6 pr-2 text-[13px] text-muted">
@@ -723,15 +834,22 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
               <div className="flex items-center gap-1.5 h-6 pl-7 pr-2 text-[11px] uppercase tracking-wide text-muted opacity-70">
                 <span className="truncate">Other windows</span>
               </div>
-              {detachedCanvases.map((cp) => (
-                <React.Fragment key={cp.panelId}>
-                  {renderDetachedRow(cp, false)}
-                  {(detachedChildrenByCanvas[cp.panelId] || []).map((c) => renderDetachedRow(c, true))}
-                </React.Fragment>
-              ))}
+              {detachedCanvases.map((cp) => {
+                const children = detachedChildrenByCanvas[cp.panelId] || []
+                const collapsed = collapsedCanvases.has(cp.panelId)
+                return (
+                  <React.Fragment key={cp.panelId}>
+                    {renderDetachedCanvasRow(cp, children.length > 0, collapsed)}
+                    {!collapsed && children.map((c) => renderDetachedRow(c, true))}
+                  </React.Fragment>
+                )
+              })}
               {detachedTopLevel.map((p) => renderDetachedRow(p, false))}
             </>
           )}
+          {/* Skills the workspace's agents already have — folded into the tree:
+              one row per agent, its skills nested beneath. No separate section. */}
+          <WorkspaceSkillsTree workspaceId={workspace.id} rootPath={workspace.rootPath} />
         </div>
       )}
     </div>

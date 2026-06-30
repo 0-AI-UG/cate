@@ -34,3 +34,8 @@ export function getAgentLogo(displayName: string | null | undefined): string | n
   if (!displayName) return null
   return LOGO_BY_DISPLAY_NAME[displayName] ?? null
 }
+
+export function getAgentLogoById(id: AgentId | null | undefined): string | null {
+  if (!id) return null
+  return LOGO_BY_ID[id] ?? null
+}
