@@ -189,6 +189,17 @@
   background-color: var(--scrollbar-thumb-hover);
 }
 
+/* Hide the scrollbar entirely while keeping the element scrollable (wheel/drag).
+   Unlayered so it overrides the @layer base scrollbar defaults above. */
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
 /* Electron window drag region */
 .titlebar-drag {
   -webkit-app-region: drag;
@@ -290,3 +301,42 @@
   inset: 1px;
   border-radius: 9999px;
 }
+
+/* Slow, clearly-visible pulse on a terminal the Cate Agent is driving. The color
+   comes from --cate-glow (the job's worktree color), falling back to the theme
+   accent when the job has no worktree. color-mix supplies the per-stop alpha. */
+@keyframes cate-agent-terminal-glow {
+  0%, 100% {
+    box-shadow: 0 0 3px 0 color-mix(in srgb, var(--cate-glow) 30%, transparent),
+                inset 0 0 12px 1px color-mix(in srgb, var(--cate-glow) 40%, transparent);
+    border-color: color-mix(in srgb, var(--cate-glow) 50%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 7px 1px color-mix(in srgb, var(--cate-glow) 55%, transparent),
+                inset 0 0 26px 4px color-mix(in srgb, var(--cate-glow) 75%, transparent);
+    border-color: color-mix(in srgb, var(--cate-glow) 95%, transparent);
+  }
+}
+.cate-agent-terminal-glow {
+  --cate-glow: rgb(var(--agent-rgb));
+  border: 1.5px solid color-mix(in srgb, var(--cate-glow) 55%, transparent);
+  border-radius: 6px;
+  animation: cate-agent-terminal-glow 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Attention pulse on the toolbar Cate Agent button when there's unseen activity
+   and the feedback panel is closed. Overrides the button's static ring while it
+   animates. */
+@keyframes cate-agent-attention {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgb(var(--agent-rgb) / 0.55), 0 0 6px 1px rgb(var(--agent-rgb) / 0.40);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgb(var(--agent-rgb) / 0.95), 0 0 16px 4px rgb(var(--agent-rgb) / 0.85);
+  }
+}
+.cate-agent-attention {
+  animation: cate-agent-attention 1.8s ease-in-out infinite;
+}
+

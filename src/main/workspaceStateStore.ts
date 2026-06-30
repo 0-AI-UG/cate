@@ -10,7 +10,6 @@
 
 import { createJsonStateFile } from './jsonStateFile'
 import { isPlainObject } from './jsonUtils'
-import log from './logger'
 import type { SidebarSession, RemoteProjectEntry } from '../shared/types'
 
 const MAX_RECENT_PROJECTS = 10
@@ -18,9 +17,9 @@ const MAX_RECENT_PROJECTS = 10
 // Legacy URI scheme from before the companion→runtime rename. Remote workspaces
 // saved by an older build carry `cate-companion://` locators that the current
 // `parseLocator` no longer recognizes (it would silently treat them as bare
-// local paths). We drop those stale entries on load and log a notice telling the
-// user to re-add the connection — there is no automatic migration. This is the
-// only place the old scheme string still appears intentionally.
+// local paths, surfacing a junk local project). We silently drop those stale
+// entries on load — there is no automatic migration, so the user re-adds the
+// connection. This is the only place the old scheme string still appears.
 const LEGACY_RUNTIME_SCHEME = 'cate-companion://'
 
 function isLegacyRemoteEntry(w: RemoteProjectEntry): boolean {
@@ -75,17 +74,6 @@ const remoteWorkspacesStore = createJsonStateFile<RemoteWorkspacesFile>({
     const all = Array.isArray(o.workspaces)
       ? (o.workspaces.filter((w) => w && typeof w === 'object') as RemoteProjectEntry[])
       : defaults.workspaces
-    const legacy = all.filter(isLegacyRemoteEntry)
-    if (legacy.length > 0) {
-      const names = legacy.map((w) => w.locator).join(', ')
-      log.warn(
-        '[workspaceState] dropping %d remote workspace(s) saved by an older version ' +
-          '(legacy %s locator); please re-add the connection: %s',
-        legacy.length,
-        LEGACY_RUNTIME_SCHEME,
-        names,
-      )
-    }
     const workspaces = all.filter((w) => !isLegacyRemoteEntry(w))
     return { workspaces }
   },

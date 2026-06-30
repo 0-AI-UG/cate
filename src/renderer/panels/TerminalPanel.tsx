@@ -22,6 +22,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
+import { useTerminalGlow } from '../cateAgent/cateAgentStore'
 import { resolveWorktree } from '../../shared/worktrees'
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,7 @@ export default function TerminalPanel({
   const containerRef = useRef<HTMLDivElement>(null)
   const renderBoxRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const glowColor = useTerminalGlow(workspaceId, panelId)
   const fitRafRef = useRef<number | null>(null)
   const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFitSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
@@ -87,10 +89,25 @@ export default function TerminalPanel({
     return unsubscribe
   }, [panelId])
 
+  // A create failure usually means the host's runtime is down (the local
+  // daemon failed to start, or a remote dropped) — re-running create alone can
+  // never fix that. Re-kick the runtime first, then re-run create either way
+  // so the freshest error surfaces if it still fails.
+  const [retrying, setRetrying] = useState(false)
+  const retryRuntime = useAppStore((state) => state.retryRuntime)
   const handleRetry = useCallback(() => {
-    setCreateError(null)
-    setRetryKey((k) => k + 1)
-  }, [])
+    if (retrying) return
+    setRetrying(true)
+    void (async () => {
+      try {
+        await retryRuntime(workspaceId)
+      } finally {
+        setRetrying(false)
+        setCreateError(null)
+        setRetryKey((k) => k + 1)
+      }
+    })()
+  }, [retrying, retryRuntime, workspaceId])
 
   const workspaces = useAppStore((state) => state.workspaces)
   const panelCwd = useAppStore(
@@ -672,7 +689,14 @@ export default function TerminalPanel({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="w-full h-full flex flex-col" style={{ padding: 0 }}>
+    <div className="relative w-full h-full flex flex-col" style={{ padding: 0 }}>
+      {glowColor && (
+        <div
+          className="cate-agent-terminal-glow absolute inset-0 z-20"
+          style={{ ['--cate-glow' as string]: glowColor }}
+          aria-hidden
+        />
+      )}
       {showSearch && (
         <div className="flex items-center gap-1 px-2 py-1 bg-surface-3 border-b border-subtle shrink-0">
           <input
@@ -758,9 +782,10 @@ export default function TerminalPanel({
               <button
                 type="button"
                 onClick={handleRetry}
-                className="px-3 py-1.5 rounded-md bg-[var(--focus-blue,#3b82f6)] text-white text-[12px] font-medium hover:brightness-110 active:scale-[0.97] focus:outline-none transition-all"
+                disabled={retrying}
+                className="px-3 py-1.5 rounded-md bg-[var(--focus-blue,#3b82f6)] text-white text-[12px] font-medium hover:brightness-110 active:scale-[0.97] focus:outline-none transition-all disabled:opacity-60 disabled:pointer-events-none"
               >
-                Retry
+                {retrying ? 'Reconnecting…' : 'Retry'}
               </button>
             </div>
           </div>

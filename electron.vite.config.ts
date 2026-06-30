@@ -42,10 +42,14 @@ export default defineConfig({
     // and, now, git worktrees (full repo checkouts under .cate/worktrees). When
     // developing Cate-on-Cate, creating a worktree there would otherwise drop a
     // duplicate index.html/tsconfig.json into the watched tree and force a full
-    // HMR reload. (Merged with Vite's built-in .git/node_modules ignores.)
+    // HMR reload. Anchored to `${root}/.cate` rather than a bare `**/.cate/**`:
+    // the latter matches against ABSOLUTE paths, so when dev runs FROM INSIDE a
+    // worktree (whose own path contains `/.cate/worktrees/…`) it would ignore the
+    // worktree's entire source tree and break HMR. (Merged with Vite's built-in
+    // .git/node_modules ignores.)
     server: {
       watch: {
-        ignored: ['**/.cate/**'],
+        ignored: [`${resolve(__dirname, '.cate')}/**`],
       },
     },
     build: {

@@ -1,0 +1,8 @@
+{
+  "name": "cate-agent-tools",
+  "description": "Cate Agent tool surface — terminal/worktree/todo orchestration tools the headless Cate Agent sessions call. Registers nothing unless CATE_AGENT_ROLE is set, so normal agent sessions are unaffected.",
+  "private": true,
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

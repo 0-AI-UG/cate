@@ -109,8 +109,9 @@ export interface AppStoreActions {
   setWorkspaceRootPath: (wsId: string, rootPath: string) => Promise<boolean>
   connectRemoteWorkspace: (wsId: string, spec: RemoteConnectSpec) => Promise<boolean>
   ensureWorkspaceRuntime: (wsId: string) => Promise<boolean>
-  /** Cheap relaunch of an existing connection (runtime:ensure) — for a
-   *  disconnected/unreachable runtime whose connection record is intact. */
+  /** Cheap relaunch of an existing connection — for a disconnected/unreachable
+   *  runtime. Remote/WSL re-probe via runtime:ensure; a local workspace
+   *  relaunches the built-in daemon via runtime:retry-local. */
   retryRuntime: (wsId: string) => Promise<boolean>
   /** Explicit clean install of the runtime daemon, then connect. The entry
    *  action of the `missing` phase — the only action that installs. */

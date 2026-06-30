@@ -262,6 +262,75 @@ describe('RuntimeManager connection lifecycle', () => {
   })
 })
 
+// The renderer's Retry path: a failed LOCAL startup connect used to be dead
+// until app restart (nothing re-ran ensureLocalRuntime, and runtime:ensure
+// rejects local connections). retryLocal re-attempts the connect on demand.
+describe('RuntimeManager retryLocal', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  /** Prime localOpts the way ensureLocalRuntime would at startup. */
+  function primeLocalOpts(mgr: RuntimeManager): void {
+    ;(mgr as unknown as { localOpts: unknown }).localOpts = { root: os.homedir() }
+  }
+
+  test('fails clearly when the local runtime was never initialised', async () => {
+    const mgr = new RuntimeManager()
+    const res = await mgr.retryLocal()
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/not been initialised/)
+  })
+
+  test('is a no-op when LOCAL is already connected', async () => {
+    const mgr = new RuntimeManager()
+    primeLocalOpts(mgr)
+    await mgr.connect(LOCAL_RUNTIME_ID, new FakeTransport(), { install: true })
+    const ensureSpy = vi.spyOn(mgr, 'ensureLocalRuntime')
+    expect(await mgr.retryLocal()).toEqual({ ok: true })
+    expect(ensureSpy).not.toHaveBeenCalled()
+  })
+
+  test('relaunches LOCAL after a failed startup connect and resolves once live', async () => {
+    const mgr = new RuntimeManager()
+    primeLocalOpts(mgr)
+    // Stand in for ensureLocalRuntime's transport construction (which needs a
+    // real tarball): kick the same connect() it would, over a fake transport.
+    vi.spyOn(mgr, 'ensureLocalRuntime').mockImplementation(() => {
+      void mgr.connect(LOCAL_RUNTIME_ID, new FakeTransport(), { install: true }).catch(() => {})
+    })
+    expect(mgr.has(LOCAL_RUNTIME_ID)).toBe(false) // the startup connect failed
+    const res = await mgr.retryLocal()
+    expect(res).toEqual({ ok: true })
+    expect(mgr.isConnected(LOCAL_RUNTIME_ID)).toBe(true)
+  })
+
+  test('surfaces the unreachable reason when no connect can even start (no tarball)', async () => {
+    const mgr = new RuntimeManager()
+    primeLocalOpts(mgr)
+    // ensureLocalRuntime with no transport available: emits unreachable and
+    // registers nothing.
+    vi.spyOn(mgr, 'ensureLocalRuntime').mockImplementation(() => {
+      mgr.report(LOCAL_RUNTIME_ID, 'unreachable', 'No local runtime tarball/target available')
+    })
+    const res = await mgr.retryLocal()
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/tarball/)
+  })
+
+  test('a retry whose connect fails resolves ok:false with the connect error', async () => {
+    const mgr = new RuntimeManager()
+    primeLocalOpts(mgr)
+    vi.spyOn(mgr, 'ensureLocalRuntime').mockImplementation(() => {
+      const transport = new FakeTransport()
+      transport.installed = false
+      // Probe (no install) of a not-installed host → NotInstalled rejection.
+      void mgr.connect(LOCAL_RUNTIME_ID, transport).catch(() => {})
+    })
+    const res = await mgr.retryLocal()
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/not installed/i)
+  })
+})
+
 // FIX [4]: a LOCAL daemon crash auto-reconnects (the whole workspace is dead
 // otherwise), while REMOTE drops stay the user's to reconnect.
 describe('RuntimeManager LOCAL auto-reconnect (FIX 4)', () => {

@@ -131,7 +131,7 @@ export function buildApplicationMenu(): void {
         { label: 'New Editor', accelerator: 'CmdOrCtrl+Shift+E', click: dispatch('newEditor') },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: dispatch('newTerminal') },
         { label: 'New Browser', accelerator: 'CmdOrCtrl+Shift+B', click: dispatch('newBrowser') },
-        { label: 'New Cate Agent', accelerator: 'CmdOrCtrl+Shift+A', click: dispatch('newAgent') },
+        { label: 'New Agent', accelerator: 'CmdOrCtrl+Shift+A', click: dispatch('newAgent') },
         { label: 'New Canvas', accelerator: 'CmdOrCtrl+Shift+C', click: dispatch('newCanvas') },
         { type: 'separator' },
         { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },

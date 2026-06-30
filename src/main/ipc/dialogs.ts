@@ -19,6 +19,7 @@ import {
   DIALOG_CONFIRM_CLOSE_CANVAS,
   DIALOG_CONFIRM_IMPORT,
   DIALOG_CONFIRM_RELOAD_WORKSPACE,
+  DIALOG_CONFIRM_DISCARD_JOB,
   DIALOG_TERMINAL_LINK_OPEN,
   CANVAS_READ_BACKGROUND_IMAGE,
 } from '../../shared/ipc-channels'
@@ -285,6 +286,28 @@ export function registerDialogHandlers(): void {
       noLink: true,
     })
     return result.response === 0 ? 'reload' : 'cancel'
+  })
+
+  // Confirm discarding an agent job. Discarding tears down the job's worktree
+  // and closes any terminals it opened, so the detail spells out the
+  // consequences based on what the job actually has. Returns 'discard' | 'cancel'.
+  ipcMain.handle(DIALOG_CONFIRM_DISCARD_JOB, async (event, payload: { hasWorktree?: boolean; terminalCount?: number }) => {
+    const win = windowFromEvent(event)
+    const hasWorktree = payload?.hasWorktree ?? false
+    const terminalCount = payload?.terminalCount ?? 0
+    const detail = hasWorktree || terminalCount > 0
+      ? `This deletes its worktree${terminalCount > 0 ? ' and closes its terminals' : ''}.`
+      : 'This removes the job.'
+    const result = await dialog.showMessageBox(win!, {
+      type: 'warning',
+      message: 'Discard this job?',
+      detail,
+      buttons: ['Discard', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    return result.response === 0 ? 'discard' : 'cancel'
   })
 
   // Ask where to open a Cmd/Ctrl+clicked terminal link the first time (while the

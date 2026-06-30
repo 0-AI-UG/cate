@@ -76,6 +76,10 @@ import {
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
   PROJECT_STATE_LOAD,
+  PROJECT_TODOS_LOAD,
+  PROJECT_TODOS_SAVE,
+  PROJECT_CATE_AGENT_LOAD,
+  PROJECT_CATE_AGENT_SAVE,
   WORKSPACE_EXTERNAL_EDIT,
   WORKSPACE_EXTERNAL_EDIT_DISMISS,
   BOOT_SNAPSHOT_WRITE,
@@ -95,6 +99,7 @@ import {
   DIALOG_CONFIRM_CLOSE_TERMINAL,
   DIALOG_CONFIRM_CLOSE_CANVAS,
   DIALOG_CONFIRM_RELOAD_WORKSPACE,
+  DIALOG_CONFIRM_DISCARD_JOB,
   DIALOG_CONFIRM_IMPORT,
   DIALOG_TERMINAL_LINK_OPEN,
   RECENT_PROJECTS_GET,
@@ -176,6 +181,7 @@ import {
   RUNTIME_INSTALL,
   RUNTIME_STATUS,
   RUNTIME_LOCAL_STATUS,
+  RUNTIME_RETRY_LOCAL,
   RUNTIME_PICK_SSH_KEY,
   WEBVIEW_SCREENSHOT,
   BROWSER_SET_PROXY,
@@ -392,6 +398,10 @@ const invokeForwarders = {
   // Session
   projectStateSave: makeInvoker<'projectStateSave'>(PROJECT_STATE_SAVE),
   projectStateLoad: makeInvoker<'projectStateLoad'>(PROJECT_STATE_LOAD),
+  projectTodosLoad: makeInvoker<'projectTodosLoad'>(PROJECT_TODOS_LOAD),
+  projectTodosSave: makeInvoker<'projectTodosSave'>(PROJECT_TODOS_SAVE),
+  projectCateAgentLoad: makeInvoker<'projectCateAgentLoad'>(PROJECT_CATE_AGENT_LOAD),
+  projectCateAgentSave: makeInvoker<'projectCateAgentSave'>(PROJECT_CATE_AGENT_SAVE),
 
   // Dialog
   openFolderDialog: makeInvoker<'openFolderDialog'>(DIALOG_OPEN_FOLDER),
@@ -401,6 +411,7 @@ const invokeForwarders = {
   confirmCloseTerminal: makeInvoker<'confirmCloseTerminal'>(DIALOG_CONFIRM_CLOSE_TERMINAL),
   confirmCloseCanvas: makeInvoker<'confirmCloseCanvas'>(DIALOG_CONFIRM_CLOSE_CANVAS),
   confirmReloadWorkspace: makeInvoker<'confirmReloadWorkspace'>(DIALOG_CONFIRM_RELOAD_WORKSPACE),
+  confirmDiscardJob: makeInvoker<'confirmDiscardJob'>(DIALOG_CONFIRM_DISCARD_JOB),
   confirmImportEntries: makeInvoker<'confirmImportEntries'>(DIALOG_CONFIRM_IMPORT),
 
   // Recent projects / sidebar / remote projects
@@ -491,6 +502,7 @@ const invokeForwarders = {
   runtimePickSshKey: makeInvoker<'runtimePickSshKey'>(RUNTIME_PICK_SSH_KEY),
   runtimeInstall: makeInvoker<'runtimeInstall'>(RUNTIME_INSTALL),
   runtimeDelete: makeInvoker<'runtimeDelete'>(RUNTIME_DELETE),
+  runtimeRetryLocal: makeInvoker<'runtimeRetryLocal'>(RUNTIME_RETRY_LOCAL),
 
   // Menu
   showContextMenu: makeInvoker<'showContextMenu'>(MENU_SHOW_CONTEXT),

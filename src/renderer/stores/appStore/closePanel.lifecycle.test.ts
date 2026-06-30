@@ -188,14 +188,14 @@ describe('closePanel — happy path', () => {
     expect(panelsOf(wsId)[canvasId]?.type).toBe('canvas')
   })
 
-  it('headless close (petTools/runAction path) leaves the canvas node behind with a stale panelId (BUG?)', () => {
+  it('headless close (cateAgentTools/runAction path) leaves the canvas node behind with a stale panelId (BUG?)', () => {
     const { wsId, canvasId } = makeWorkspace(`ghost-${testSeq}`)
     const termId = useAppStore.getState().createTerminal(wsId, undefined, { x: 10, y: 10 })
     const ptyId = spawnPty(termId, wsId)
     const canvasStore = getOrCreateCanvasStoreForPanel(canvasId)
     const nodeId = canvasStore.getState().nodeForPanel(termId)!
 
-    // Call closePanel directly, the way petTools close_terminal and the
+    // Call closePanel directly, the way cateAgentTools close_terminal and the
     // runAction 'closePanel' shortcut do — with the node's seeded mini-dock
     // layout (every addNode seeds dockLayout = [its own panel]) untouched.
     useAppStore.getState().closePanel(wsId, termId)
@@ -210,7 +210,7 @@ describe('closePanel — happy path', () => {
     // panel being closed. So unless a UI layer emptied the node's mini-dock
     // first (the DockTabStack close path) or removes the node itself
     // (deleteSelection, CanvasNode close button), the node survives as a ghost
-    // pointing at a deleted panel record. Headless callers (petTools
+    // pointing at a deleted panel record. Headless callers (cateAgentTools
     // close_terminal, runAction closePanel on a culled/unmounted node) hit
     // exactly this.
     const node = canvasStore.getState().nodes[nodeId]

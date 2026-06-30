@@ -4,7 +4,7 @@
 //
 // Per worktree you can: focus its spatial lens (click the row), see its git
 // status + PR state + what's already open on the canvas, open a terminal or
-// Cate agent bound to it (click = here, drag = drop anywhere on the canvas),
+// Agent bound to it (click = here, drag = drop anywhere on the canvas),
 // recolor / rename inline, reach the full publish / PR / update / merge /
 // discard menu via ⋯, start a new worktree, and clean up orphans. Plus a
 // git-init path when the folder isn't a repo yet.
@@ -25,8 +25,8 @@ import {
   Warning,
   X,
   GitPullRequest,
+  Sparkle,
 } from '@phosphor-icons/react'
-import { CateLogo } from '../ui/CateLogo'
 import { Tooltip } from '../ui/Tooltip'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
@@ -491,8 +491,8 @@ const WorktreeRow: React.FC<{
               onClick={() => onLaunch('terminal')}
             />
             <SpawnButton
-              icon={<CateLogo size={12} />}
-              title="Cate agent"
+              icon={<Sparkle size={12} />}
+              title="Agent"
               panelType="agent"
               cwd={wt.path}
               worktreeId={wt.id}
@@ -527,7 +527,7 @@ const WorktreeRow: React.FC<{
               )}
               {openAgents > 0 && (
                 <span className="flex items-center gap-0.5">
-                  <CateLogo size={10} />
+                  <Sparkle size={10} />
                   {openAgents}
                 </span>
               )}
