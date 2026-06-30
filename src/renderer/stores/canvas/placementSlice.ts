@@ -4,11 +4,11 @@
 // click-anywhere, or cancel). The latest pointer position lives on ctx.
 // =============================================================================
 
-import type { Rect } from '../../../shared/types'
+import type { Rect, Point, Size, PanelType } from '../../../shared/types'
 import { ZOOM_MIN, ZOOM_MAX, PANEL_DEFAULT_SIZES } from '../../../shared/types'
 import { viewToCanvas as viewToCanvasCoords } from '../../lib/canvas/coordinates'
-import { recommendPlacements, nudgeToFree, type PlacementTrace } from '../../canvas/placement'
-import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
+import { recommendPlacements, nudgeToFree, type PlacementTrace, type PlacementCandidate } from '../../canvas/placement'
+import type { CanvasGet, CanvasSet, CanvasStoreActions, CanvasStoreState } from './storeTypes'
 import type { CanvasStoreCtx } from './storeCtx'
 import { focusedNodeId } from './selectionModel'
 
@@ -16,6 +16,7 @@ type PlacementActions = Pick<
   CanvasStoreActions,
   | 'setPlacementPointer'
   | 'beginPlacement'
+  | 'refreshPlacement'
   | 'commitPlacement'
   | 'setFreeArmed'
   | 'updatePlacementCursor'
@@ -23,6 +24,65 @@ type PlacementActions = Pick<
   | 'cancelPlacement'
   | 'setPlacementHover'
 >
+
+// Dev-only: a fresh trace object the placement algorithm fills in, so the viz
+// overlay (Cmd/Ctrl+Shift+G) can render the REAL spots. Undefined in prod, so no
+// allocation and the trace path costs nothing.
+function buildTrace(): PlacementTrace | undefined {
+  const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
+  return isDev
+    ? { area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } }, rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [] }
+    : undefined
+}
+
+// Recommend spots for the current focus + viewport. Shared by the initial
+// beginPlacement and the focus-change refreshPlacement so both rank identically.
+function computeCandidates(
+  state: CanvasStoreState,
+  ctx: CanvasStoreCtx,
+  panelType: PanelType,
+  nodeSize: Size,
+  trace: PlacementTrace | undefined,
+): PlacementCandidate[] {
+  return recommendPlacements(
+    state.nodes,
+    focusedNodeId(state),
+    panelType,
+    { offset: state.viewportOffset, zoom: state.zoomLevel, containerSize: state.containerSize },
+    ctx.lastPointerCanvasPos,
+    undefined,
+    nodeSize,
+    trace,
+  )
+}
+
+// Camera that frames every recommendation plus the focused node for context.
+// Only ever zooms OUT from the current zoom — never further in.
+function fitCamera(state: CanvasStoreState, candidates: PlacementCandidate[]): { zoom: number; offset: Point } {
+  let nextZoom = state.zoomLevel
+  let nextOffset = state.viewportOffset
+  const cs = state.containerSize
+  if (cs.width > 0 && cs.height > 0) {
+    const rects: Rect[] = candidates.map((c) => ({ origin: c.point, size: c.size }))
+    const focusedId = focusedNodeId(state)
+    const focused = focusedId ? state.nodes[focusedId] : null
+    if (focused) rects.push({ origin: focused.origin, size: focused.size })
+    const minX = Math.min(...rects.map((r) => r.origin.x))
+    const minY = Math.min(...rects.map((r) => r.origin.y))
+    const maxX = Math.max(...rects.map((r) => r.origin.x + r.size.width))
+    const maxY = Math.max(...rects.map((r) => r.origin.y + r.size.height))
+    const padding = 80
+    const contentW = maxX - minX + padding * 2
+    const contentH = maxY - minY + padding * 2
+    const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
+    nextZoom = Math.min(Math.max(Math.min(state.zoomLevel, fitZoom), ZOOM_MIN), ZOOM_MAX)
+    nextOffset = {
+      x: (cs.width - contentW * nextZoom) / 2 - (minX - padding) * nextZoom,
+      y: (cs.height - contentH * nextZoom) / 2 - (minY - padding) * nextZoom,
+    }
+  }
+  return { zoom: nextZoom, offset: nextOffset }
+}
 
 export function createPlacementSlice(set: CanvasSet, get: CanvasGet, ctx: CanvasStoreCtx): PlacementActions {
   return {
@@ -57,49 +117,13 @@ export function createPlacementSlice(set: CanvasSet, get: CanvasGet, ctx: Canvas
         get().focusAndCenter(nodeId)
         return true
       }
-      // Dev-only: capture the algorithm's reasoning so the placement-viz overlay
-      // (Cmd/Ctrl+Shift+G) can render the REAL spots. Stays undefined in prod, so
-      // no object is allocated and the trace path costs nothing.
-      const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
-      const trace: PlacementTrace | undefined = isDev
-        ? { area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } }, rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [] }
-        : undefined
-      const candidates = recommendPlacements(
-        state.nodes,
-        focusedNodeId(state),
-        panelType,
-        { offset: state.viewportOffset, zoom: state.zoomLevel, containerSize: state.containerSize },
-        ctx.lastPointerCanvasPos,
-        undefined,
-        nodeSize,
-        trace,
-      )
+      const trace = buildTrace()
+      const candidates = computeCandidates(state, ctx, panelType, nodeSize, trace)
       if (candidates.length === 0) return false
 
       // Zoom out so every recommendation (plus the focused node for context) is
       // visible at once. Only ever zoom OUT — never further in.
-      let nextZoom = state.zoomLevel
-      let nextOffset = state.viewportOffset
-      const cs = state.containerSize
-      if (cs.width > 0 && cs.height > 0) {
-        const rects: Rect[] = candidates.map((c) => ({ origin: c.point, size: c.size }))
-        const focusedId = focusedNodeId(state)
-        const focused = focusedId ? state.nodes[focusedId] : null
-        if (focused) rects.push({ origin: focused.origin, size: focused.size })
-        const minX = Math.min(...rects.map((r) => r.origin.x))
-        const minY = Math.min(...rects.map((r) => r.origin.y))
-        const maxX = Math.max(...rects.map((r) => r.origin.x + r.size.width))
-        const maxY = Math.max(...rects.map((r) => r.origin.y + r.size.height))
-        const padding = 80
-        const contentW = maxX - minX + padding * 2
-        const contentH = maxY - minY + padding * 2
-        const fitZoom = Math.min(cs.width / contentW, cs.height / contentH)
-        nextZoom = Math.min(Math.max(Math.min(state.zoomLevel, fitZoom), ZOOM_MIN), ZOOM_MAX)
-        nextOffset = {
-          x: (cs.width - contentW * nextZoom) / 2 - (minX - padding) * nextZoom,
-          y: (cs.height - contentH * nextZoom) / 2 - (minY - padding) * nextZoom,
-        }
-      }
+      const { zoom, offset } = fitCamera(state, candidates)
 
       set({
         pendingPlacement: {
@@ -115,10 +139,31 @@ export function createPlacementSlice(set: CanvasSet, get: CanvasGet, ctx: Canvas
           prevOffset: state.viewportOffset,
           onCancelled,
         },
-        zoomLevel: nextZoom,
-        viewportOffset: nextOffset,
+        zoomLevel: zoom,
+        viewportOffset: offset,
       })
       return true
+    },
+
+    refreshPlacement() {
+      const state = get()
+      const pending = state.pendingPlacement
+      if (!pending) return
+      // Free "place anywhere" mode owns the camera and the cursor ghost — leave it
+      // alone; re-ranking ghosts under the user mid-drag would be disorienting.
+      if (pending.freeArmed) return
+      // Re-rank around whatever is focused NOW (the user clicked another panel) and
+      // re-frame the camera, but keep the open transaction: same panel, same
+      // original-viewport snapshot to restore on cancel/commit.
+      const trace = buildTrace()
+      const candidates = computeCandidates(state, ctx, pending.panelType, pending.size, trace)
+      if (candidates.length === 0) return
+      const { zoom, offset } = fitCamera(state, candidates)
+      set({
+        pendingPlacement: { ...pending, candidates, hoveredIndex: null, trace },
+        zoomLevel: zoom,
+        viewportOffset: offset,
+      })
     },
 
     commitPlacement(index) {
