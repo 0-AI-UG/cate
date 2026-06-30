@@ -135,6 +135,69 @@ describe('beginPlacement', () => {
   })
 })
 
+describe('refreshPlacement (re-target on focus change)', () => {
+  // Two panels both kept on-screen so the picker can cluster around whichever is
+  // focused. Mirrors the real bug: ghosts are pending around A, the user clicks B.
+  const ROOMY = { width: 2400, height: 1600 }
+  const VIEW = { zoom: 1, offset: { x: 600, y: 500 } } // A and B both visible
+  function storeWithTwo() {
+    const store = createCanvasStore()
+    store.getState().setContainerSize(ROOMY)
+    const a = store.getState().addNode('a', 'terminal', { x: 0, y: 0 }, SEED_SIZE)
+    const b = store.getState().addNode('b', 'terminal', { x: 900, y: 0 }, SEED_SIZE)
+    store.getState().setZoomAndOffset(VIEW.zoom, VIEW.offset)
+    return { store, a, b }
+  }
+  const distTo = (c: { point: { x: number; y: number }; size: { width: number; height: number } }, cx: number, cy: number) =>
+    Math.hypot(c.point.x + c.size.width / 2 - cx, c.point.y + c.size.height / 2 - cy)
+
+  it('recomputes candidates around the newly focused node, preserving the transaction', () => {
+    const { store, a, b } = storeWithTwo()
+    store.getState().focusNode(a)
+    store.getState().beginPlacement('p3', 'terminal')
+    const pendingA = store.getState().pendingPlacement!
+    const bestA = pendingA.candidates[0]
+
+    // Reproduce the click on B: restore the user's view (both panels visible),
+    // then focus B and let the focus-change refresh run.
+    store.getState().setZoomAndOffset(VIEW.zoom, VIEW.offset)
+    store.getState().focusNode(b)
+    store.getState().refreshPlacement()
+
+    const pendingB = store.getState().pendingPlacement!
+    // The transaction itself is preserved — only the candidates re-target.
+    expect(pendingB.panelId).toBe('p3')
+    expect(pendingB.prevZoom).toBe(pendingA.prevZoom)
+    expect(pendingB.prevOffset).toEqual(pendingA.prevOffset)
+    expect(pendingB.hoveredIndex).toBeNull()
+    // The best ghost now hugs B (center 1220,200), not A (center 320,200).
+    const bestB = pendingB.candidates[0]
+    expect(bestB.point).not.toEqual(bestA.point)
+    expect(distTo(bestB, 1220, 200)).toBeLessThan(distTo(bestA, 1220, 200))
+    // No node was created by the re-target.
+    expect(nodeCount(store)).toBe(2)
+  })
+
+  it('is a no-op when no placement is pending', () => {
+    const { store } = storeWithTwo()
+    store.getState().refreshPlacement()
+    expect(store.getState().pendingPlacement).toBeNull()
+    expect(nodeCount(store)).toBe(2)
+  })
+
+  it('does not disturb an armed free placement', () => {
+    const { store, a } = storeWithTwo()
+    store.getState().focusNode(a)
+    store.getState().beginPlacement('p3', 'terminal')
+    store.getState().setFreeArmed(true)
+    const before = store.getState().pendingPlacement!
+
+    store.getState().refreshPlacement()
+
+    expect(store.getState().pendingPlacement).toBe(before) // untouched while armed
+  })
+})
+
 describe('commitPlacement', () => {
   it('places the node exactly once at the chosen candidate, restores zoom, and recentres on the node', () => {
     const { store } = storeWithSeed(1.5, { x: 120, y: -40 })

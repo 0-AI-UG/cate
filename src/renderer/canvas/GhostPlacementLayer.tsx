@@ -14,6 +14,7 @@
 
 import React, { useEffect, useRef } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 
 // Theme accent — ghosts track the active theme's --focus-blue rather than a
 // hardcoded blue, so they recolor with the IDE theme. color-mix gives us a
@@ -35,12 +36,40 @@ function injectStyles() {
 
 const GhostPlacementLayer: React.FC = () => {
   const pending = useCanvasStoreContext((s) => s.pendingPlacement)
+  const focusedId = useCanvasStoreContext((s) => focusedNodeIdOf(s))
   const zoom = useCanvasStoreContext((s) => s.zoomLevel)
   const api = useCanvasStoreApi()
 
   const count = pending?.candidates.length ?? 0
 
   useEffect(injectStyles, [])
+
+  // Re-target the recommendations when the active panel changes mid-placement
+  // (the user clicked a different panel). The candidates were computed for the
+  // focus at beginPlacement; refreshPlacement re-ranks them around the new focus.
+  // We seed the ref with the begin-time focus so this skips that first render and
+  // only fires on an ACTUAL change — otherwise begin's own framing gets re-run.
+  const lastFocus = useRef<string | null>(null)
+  const wasPending = useRef(false)
+  useEffect(() => {
+    if (!pending) {
+      wasPending.current = false
+      return
+    }
+    if (!wasPending.current) {
+      // Placement just opened — candidates already match the current focus.
+      wasPending.current = true
+      lastFocus.current = focusedId
+      return
+    }
+    if (focusedId !== lastFocus.current) {
+      lastFocus.current = focusedId
+      // Clicking a panel briefly deselects (selectNodes clears the active flag)
+      // before focusNode re-activates it — skip that transient null so the camera
+      // doesn't jump to a viewport-ranked frame and straight back.
+      if (focusedId !== null) api.getState().refreshPlacement()
+    }
+  }, [pending, focusedId, api])
 
   // Keyboard: digits / Enter commit, F arms free placement, Esc cancels.
   useEffect(() => {
