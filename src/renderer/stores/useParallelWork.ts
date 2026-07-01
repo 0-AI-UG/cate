@@ -106,13 +106,16 @@ export function useParallelWork(
   primaryLabel: string,
   opts: {
     setError: (v: string | null) => void
-    setNotice: (v: string | null) => void
     onPrCreated?: () => void
+    /** Called with a worktree id while a slow op (publish / PR / update / merge /
+     *  discard) runs on it, then null when it finishes, so the UI can show a
+     *  per-row loading spinner. */
+    setBusy?: (id: string | null) => void
   },
 ): UseParallelWork {
   const { createWorktree, checkoutPr } = useWorktreeActions(rootPath, workspaceId)
   const removeWorktree = useAppStore((s) => s.removeWorktree)
-  const { setError, setNotice, onPrCreated } = opts
+  const { setError, onPrCreated, setBusy } = opts
 
   const reconcile = useCallback(() => {
     if (rootPath) gitStatusStore.refresh(rootPath)
@@ -135,52 +138,46 @@ export function useParallelWork(
     async (wt: JoinedWorktree) => {
       if (!wt.branch) return
       setError(null)
-      setNotice(`Publishing ${wt.branch}…`)
+      setBusy?.(wt.id)
       try {
         await window.electronAPI.gitPush(wt.path, 'origin', wt.branch)
-        setNotice(`Published ${wt.branch}`)
         reconcile()
       } catch (err: any) {
-        setNotice(null)
         setError(`Publish failed: ${err?.message || err}`)
+      } finally {
+        setBusy?.(null)
       }
     },
-    [reconcile],
+    [reconcile, setBusy, setError],
   )
 
   const handleCreatePR = useCallback(
     async (wt: JoinedWorktree) => {
       if (!wt.branch) return
       setError(null)
-      setNotice(`Opening a pull request for ${wt.branch}…`)
+      setBusy?.(wt.id)
       try {
         const res = await window.electronAPI.gitCreatePR(wt.path, wt.branch)
         if (res.ok) {
           window.electronAPI.openExternalUrl(res.url)
-          setNotice(
-            res.created
-              ? `Opened a pull request for ${wt.branch}`
-              : res.fallback
-                ? 'Opened GitHub to finish the pull request'
-                : `Pull request for ${wt.branch} already exists`,
-          )
           onPrCreated?.()
         } else {
-          setNotice(null)
           setError(res.message)
         }
       } catch (err: any) {
-        setNotice(null)
         setError(`Could not create pull request: ${err?.message || err}`)
+      } finally {
+        setBusy?.(null)
       }
     },
-    [onPrCreated],
+    [onPrCreated, setBusy, setError],
   )
 
   const handleUpdateFromMain = useCallback(
     async (wt: JoinedWorktree) => {
       if (wt.isPrimary || !wt.branch) return
       const target = primaryLabel
+      setBusy?.(wt.id)
       try {
         const result = await window.electronAPI.gitWorktreeUpdateFrom(wt.path, target)
         if (!result.ok) {
@@ -191,14 +188,15 @@ export function useParallelWork(
           )
         } else {
           setError(null)
-          setNotice(`Updated ${wt.branch} from ${target}`)
           reconcile()
         }
       } catch (err: any) {
         setError(err?.message || 'Update failed')
+      } finally {
+        setBusy?.(null)
       }
     },
-    [primaryLabel, reconcile],
+    [primaryLabel, reconcile, setBusy, setError],
   )
 
   const handleMerge = useCallback(
@@ -211,20 +209,22 @@ export function useParallelWork(
       }
       const ok = window.confirm(`Merge ${wt.branch} into ${target}?`)
       if (!ok) return
+      setBusy?.(wt.id)
       try {
         const result = await window.electronAPI.gitWorktreeMergeTo(rootPath, wt.branch, target)
         if (!result.ok) {
           setError(`Merge ${wt.branch} → ${target}: ${result.message}`)
         } else {
           setError(null)
-          setNotice(`Merged ${wt.branch} into ${target}`)
           reconcile()
         }
       } catch (err: any) {
         setError(err?.message || 'Merge failed')
+      } finally {
+        setBusy?.(null)
       }
     },
-    [rootPath, primaryLabel, reconcile],
+    [rootPath, primaryLabel, reconcile, setBusy, setError],
   )
 
   const handleDelete = useCallback(
@@ -259,6 +259,9 @@ export function useParallelWork(
           (branchAhead ? `\nWARNING: ${status?.ahead} unpublished commit(s) will be lost.` : ''),
       )
       if (!ok) return
+      // Removing a worktree shells out to git and can take several seconds, so
+      // flag the row as busy to drive its inline spinner.
+      setBusy?.(wt.id)
       try {
         await window.electronAPI.gitWorktreeRemove(rootPath, wt.path, { force: dirty })
         if (wt.branch) {
@@ -272,9 +275,11 @@ export function useParallelWork(
         reconcile()
       } catch (err: any) {
         setError(err?.message || 'Discard failed')
+      } finally {
+        setBusy?.(null)
       }
     },
-    [rootPath, workspaceId, removeWorktree, reconcile],
+    [rootPath, workspaceId, removeWorktree, reconcile, setBusy, setError],
   )
 
   const handlePrune = useCallback(async () => {

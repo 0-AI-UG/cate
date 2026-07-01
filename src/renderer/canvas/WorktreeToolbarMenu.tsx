@@ -25,6 +25,7 @@ import {
   Warning,
   X,
   GitPullRequest,
+  CircleNotch,
 } from '@phosphor-icons/react'
 import { CateLogo } from '../ui/CateLogo'
 import { Tooltip } from '../ui/Tooltip'
@@ -120,7 +121,9 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
   const rootRef = useRef<HTMLDivElement>(null)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  // Worktree id with a slow git op (publish / PR / update / merge / discard) in
+  // flight — drives that row's inline spinner so the work is visible.
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   const snapshot = useGitStatusSnapshot(rootPath)
   const isRepo = rootPath ? snapshot.isRepo : false
@@ -159,7 +162,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
     rootPath,
     workspaceId,
     primaryLabel,
-    { setError, setNotice, onPrCreated: refreshPr },
+    { setError, onPrCreated: refreshPr, setBusy: setBusyId },
   )
 
   // Close on outside click or Escape. Clicks on the trigger button are ignored
@@ -217,14 +220,10 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {(error || notice) && (
-        <div
-          className={`mx-1.5 mb-1 px-2 py-1 rounded-lg text-[11px] flex items-start gap-1.5 ${
-            error ? 'text-red-400/90 bg-red-500/[0.08]' : 'text-green-400/90 bg-green-500/[0.08]'
-          }`}
-        >
-          <span className="flex-1">{error || notice}</span>
-          <button onClick={() => { setError(null); setNotice(null) }} className="opacity-60 hover:opacity-100">
+      {error && (
+        <div className="mx-2.5 mb-1 flex items-start gap-1.5 text-[11px] text-red-400/90">
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100">
             <X size={11} />
           </button>
         </div>
@@ -271,6 +270,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
               status={humanStatus(statusByPath[wt.path], primaryLabel)}
               pr={prByPath[wt.path]}
               panels={panelCounts[wt.id]}
+              busy={busyId === wt.id}
               cb={makeCallbacks(wt)}
               onFocus={() => focusWorktree(focusedWorktreeId === wt.id ? null : wt.id)}
               onHover={(on) => setHoveredWorktree(on ? wt.id : null)}
@@ -393,11 +393,12 @@ const WorktreeRow: React.FC<{
   status: { text: string; tone: string } | null
   pr?: PrStatus
   panels?: { terminals: number; agents: number }
+  busy?: boolean
   cb: CardCallbacks
   onFocus: () => void
   onHover: (on: boolean) => void
   onLaunch: (type: 'terminal' | 'agent') => void
-}> = ({ wt, primaryLabel, focused, status, pr, panels, cb, onFocus, onHover, onLaunch }) => {
+}> = ({ wt, primaryLabel, focused, status, pr, panels, busy, cb, onFocus, onHover, onLaunch }) => {
   const isPrimary = !!wt.isPrimary
   const label = wt.label || wt.branch || (isPrimary ? 'main' : '(detached)')
   const color = wt.color || 'var(--text-muted)'
@@ -432,12 +433,16 @@ const WorktreeRow: React.FC<{
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       onClick={(e) => {
+        if (busy) return
         if ((e.target as HTMLElement).closest('button, input, [role="button"]')) return
         onFocus()
       }}
-      onContextMenu={(e) => { e.preventDefault(); void openMenu() }}
-      title={wt.path}
-      className="mx-1 px-1.5 py-1 rounded-lg cursor-pointer hover:bg-surface-4 transition-colors"
+      onContextMenu={(e) => { e.preventDefault(); if (!busy) void openMenu() }}
+      title={busy ? 'Discarding…' : wt.path}
+      aria-busy={busy || undefined}
+      className={`mx-1 px-1.5 py-1 rounded-lg transition-colors ${
+        busy ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-surface-4'
+      }`}
       style={focused ? { backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)` } : undefined}
     >
       {/* Line 1 — name + actions */}
@@ -480,7 +485,11 @@ const WorktreeRow: React.FC<{
           <Check size={11} weight="bold" className="flex-shrink-0 text-primary" />
         )}
 
-        {!renaming && (
+        {busy && (
+          <CircleNotch size={13} weight="bold" className="flex-shrink-0 text-muted animate-spin" />
+        )}
+
+        {!renaming && !busy && (
           <div className="flex items-center gap-0.5 flex-shrink-0">
             <SpawnButton
               icon={<TerminalIcon size={12} weight="bold" />}
