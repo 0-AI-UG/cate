@@ -1,21 +1,25 @@
 // =============================================================================
-// CanvasNode group-drag regression — pins the fix for "grabbing a selected
-// panel's title bar moves only that one panel".
+// CanvasNode group-drag regression — pins that grabbing a selected panel routes
+// to a GROUP drag through the unified drag engine (it carries the whole
+// selection), not a single-node move.
 //
 // A multi-selection is never "activated", so no node is focused and every node
-// renders its dim overlay. Pressing a node in that state must start a GROUP
-// move (translate the whole selection). The hazard this test guards against:
-// the dock-content wrapper has a CAPTURE-phase mousedown handler that focuses
-// the node, and capture runs BEFORE the bubble-phase tab-bar handler that
-// kicks off the group drag. If that capture handler focuses unconditionally it
-// collapses the selection to the grabbed node (focusNode → selection=[id])
-// before useGroupNodeDrag reads it — so the group drag sees a single-node
-// selection, bails, and only the grabbed panel moves.
+// renders its dim overlay. Pressing a member must dispatch a canvas-node drag
+// whose source carries the other selected nodes (`members`). The hazard this
+// guards against: the dock-content wrapper has a CAPTURE-phase mousedown handler
+// that focuses the node, and capture runs BEFORE the bubble-phase tab-bar
+// handler that starts the drag. If that capture handler focuses unconditionally
+// it collapses the selection to the grabbed node (focusNode → selection=[id])
+// before handleDragStart reads it — so the drag sees a single-node selection and
+// only the grabbed panel would move.
 //
-// Driven through the REAL CanvasNode (not a probe): a real mousedown on the
-// rendered `.dock-tab-bar`, then real window mousemoves. The only faked surface
-// is terminalRegistry (its import-time side effects explode under jsdom); the
-// electronAPI stub comes from the shared setup file.
+// Group MOVEMENT itself (members translate by the snapped delta on drop) is an
+// integration concern of the drag engine and is covered end-to-end in
+// drag/__tests__/scenarios.test.tsx (scenario 1c) + the resolve/commit unit
+// tests. Here we render the REAL CanvasNode and assert the dispatch wiring: a
+// mousedown on the `.dock-tab-bar` arms a drag whose published source carries
+// `members`, and the selection is not collapsed. The only faked surface is
+// terminalRegistry (import-time side effects explode under jsdom).
 // =============================================================================
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -48,6 +52,9 @@ import { CanvasStoreProvider } from '../stores/CanvasStoreContext'
 import { createCanvasStore, type CanvasStore } from '../stores/canvasStore'
 import { createDockStore, createDefaultDockState, type DockStore } from '../stores/dockStore'
 import { useAppStore } from '../stores/appStore'
+import { useDragStore } from '../drag'
+import { getDefaultSession } from '../drag/session'
+import { INITIAL_DRAG_STATE } from '../drag/types'
 import type { Point, Size, WindowDockState } from '../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -109,6 +116,10 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   document.body.classList.remove('canvas-interacting', 'canvas-dragging')
+  // Tests below leave a drag armed (mousedown without mouseup); reset the
+  // singleton dispatch + published state so they don't leak into the next test.
+  getDefaultSession().resetDispatch()
+  useDragStore.getState().applyDragState(INITIAL_DRAG_STATE)
 })
 
 function dispatchMouse(el: EventTarget, type: string, client: Point, button = 0) {
@@ -125,7 +136,7 @@ function dispatchMouse(el: EventTarget, type: string, client: Point, button = 0)
 // =============================================================================
 
 describe('CanvasNode — group drag from the title bar', () => {
-  it('grabbing a multi-selected node by its tab bar moves the WHOLE selection, not just the grabbed one', () => {
+  it('grabbing a multi-selected node by its tab bar arms a GROUP drag carrying the whole selection', () => {
     const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-group-drag')
     useAppStore.getState().addPanel(wsId, { id: 'panel-A', type: 'editor', title: 'A', isDirty: false })
 
@@ -155,19 +166,62 @@ describe('CanvasNode — group drag from the title bar', () => {
     const tabBar = container.querySelector<HTMLElement>('.dock-tab-bar')
     if (!tabBar) throw new Error('tab bar not rendered')
 
-    // Press the title bar, then drag past the dead zone (4px) and on to a delta.
+    // Press the title bar, then drag past the dead zone (4px) to arm the drag.
     dispatchMouse(tabBar, 'mousedown', { x: 50, y: 10 })
     dispatchMouse(window, 'mousemove', { x: 60, y: 10 }) // arm (past dead zone)
-    dispatchMouse(window, 'mousemove', { x: 90, y: 40 }) // → delta (+40, +30)
 
-    // BOTH nodes translated by the same delta — the whole selection moved.
-    expect(store.getState().nodes['A'].origin).toEqual({ x: 40, y: 30 })
-    expect(store.getState().nodes['B'].origin).toEqual({ x: 440, y: 30 })
+    // The armed drag's published source is a canvas-node carrying the OTHER
+    // selected node as a member — i.e. a group drag, not a single-node move.
+    const src = useDragStore.getState().source
+    expect(src?.origin.kind).toBe('canvas-node')
+    if (src?.origin.kind !== 'canvas-node') throw new Error('expected canvas-node source')
+    expect(src.origin.nodeId).toBe('A')
+    expect(src.origin.startOrigin).toEqual({ x: 0, y: 0 })
+    expect(src.origin.members).toEqual([{ nodeId: 'B', startOrigin: { x: 400, y: 0 } }])
+
     // The capture-phase focus must NOT have collapsed the selection to [A].
     expect(store.getState().selection).toEqual(['A', 'B'])
     expect(store.getState().selectionActive).toBe(false)
 
-    dispatchMouse(window, 'mouseup', { x: 90, y: 40 })
+    dispatchMouse(window, 'mouseup', { x: 60, y: 10 })
+  })
+
+  it('clicking an already-focused node keeps it active (no blue-ring de-focus on the second click)', () => {
+    const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-refocus')
+    useAppStore.getState().addPanel(wsId, { id: 'panel-A', type: 'editor', title: 'A', isDirty: false })
+
+    const store = freshCanvasStore()
+    addNode(store, 'A', 'panel-A', { x: 0, y: 0 }, { width: 200, height: 150 })
+
+    // First click already happened: the node is the sole, activated selection
+    // (halo, keyboard focus, panel content holds DOM focus).
+    act(() => store.getState().focusNode('A'))
+    expect(store.getState().selectionActive).toBe(true)
+
+    const dockA = tabsDockStore('panel-A')
+    act(() => {
+      root.render(
+        <CanvasStoreProvider store={store}>
+          <CanvasNode
+            nodeId="A"
+            isFocused={true}
+            dockStoreApi={dockA}
+            renderPanel={() => <div data-testid="content" />}
+          />
+        </CanvasStoreProvider>,
+      )
+    })
+
+    // A second click inside the focused panel's content bubbles to the node's
+    // onClick. It must NOT deactivate the selection — otherwise focus is derived
+    // away (selectionActive=false), the panel loses mouse focus and renders the
+    // blue selection ring instead of the active halo.
+    const content = container.querySelector<HTMLElement>('[data-testid="content"]')
+    if (!content) throw new Error('panel content not rendered')
+    dispatchMouse(content, 'click', { x: 50, y: 80 })
+
+    expect(store.getState().selection).toEqual(['A'])
+    expect(store.getState().selectionActive).toBe(true)
   })
 
   it('grabbing a single-selected node by its tab bar focuses it (no group takeover)', () => {

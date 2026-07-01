@@ -29,6 +29,7 @@ import {
   type CanvasStore,
 } from '../../stores/canvasStore'
 import { getDefaultSession } from '../session'
+import { isGroupDragMember } from '../../stores/canvas/selectionModel'
 import type { PanelState, PanelType, Point, Size } from '../../../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -205,8 +206,22 @@ function TestNode({ spec, canvasStore }: { spec: NodeSpec; canvasStore: StoreApi
 
   const { handleDragStart } = useDragOp()
 
-  const dragSpec = React.useMemo<DragOpSourceSpec>(
-    () => ({
+  // Build the spec at press time, mirroring useCanvasNodeDrag: when the grabbed
+  // node is part of a multi-selection, carry the other members + their start
+  // origins so the unified engine moves the whole group on drop.
+  const buildDragSpec = React.useCallback((): DragOpSourceSpec => {
+    const state = canvasStore.getState()
+    const n = state.nodes[nodeId]
+    const grouped = n && isGroupDragMember(state.selection, nodeId)
+    const startOrigin = grouped ? { x: n.origin.x, y: n.origin.y } : undefined
+    const members = grouped
+      ? state.selection
+          .filter((id) => id !== nodeId)
+          .map((id) => state.nodes[id])
+          .filter((m): m is NonNullable<typeof m> => !!m)
+          .map((m) => ({ nodeId: m.id, startOrigin: { x: m.origin.x, y: m.origin.y } }))
+      : undefined
+    return {
       kind: 'canvas-node',
       canvasStoreApi: canvasStore,
       nodeId,
@@ -214,9 +229,10 @@ function TestNode({ spec, canvasStore }: { spec: NodeSpec; canvasStore: StoreApi
       panelType: spec.panelType ?? 'editor',
       panelTitle: 'test',
       panel: panelState,
-    }),
-    [canvasStore, nodeId, spec.panelType, panelState],
-  )
+      startOrigin,
+      members,
+    }
+  }, [canvasStore, nodeId, spec.panelType, panelState])
 
   React.useEffect(() => {
     const el = elRef.current
@@ -245,7 +261,7 @@ function TestNode({ spec, canvasStore }: { spec: NodeSpec; canvasStore: StoreApi
     <div
       ref={elRef}
       data-node-id={nodeId}
-      onMouseDown={(e) => handleDragStart(e, dragSpec)}
+      onMouseDown={(e) => handleDragStart(e, buildDragSpec())}
       style={{ position: 'absolute' }}
     />
   )

@@ -10,6 +10,11 @@ import type { CanvasNodeState, NodeActivityState } from '../../shared/types'
 
 const CORNER_RADIUS = 8
 
+// Glow/ring layer z-index. Node containers live in the `1000 + node.zOrder`
+// band; this sits well above any realistic zOrder so a selected node's ring is
+// never painted under an overlapping neighbor.
+const GLOW_Z = 100000
+
 const SHADOW_UNFOCUSED = `0 12px 36px -14px rgba(0,0,0,0.28), 0 4px 10px -5px rgba(0,0,0,0.16)`
 const SHADOW_HOVERED = `${SHADOW_UNFOCUSED}, 0 0 18px rgba(255,255,255,0.015)`
 // Active/focused pane: a very faint bright (white) halo — no blue tint.
@@ -133,7 +138,12 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       top: node.origin.y,
       width: node.size.width,
       height: node.size.height,
-      zIndex: 999,
+      // Sit ABOVE the node band (`1000 + node.zOrder`) so the ring/halo renders
+      // over overlapping neighbors instead of being occluded by them. The layer
+      // is pointer-events:none and paints only an outset box-shadow (transparent
+      // fill), so drawing it above other nodes never blocks interaction or hides
+      // their content — it just lets a selected-but-backgrounded node's ring show.
+      zIndex: GLOW_Z,
       borderRadius: CORNER_RADIUS,
       // Worktree highlight (hover/lens) → colored ring in the branch color;
       // else focused/active → soft halo; else selected-only → outline ring.

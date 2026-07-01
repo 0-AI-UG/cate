@@ -49,7 +49,19 @@ export async function commitDrop(
 ): Promise<void> {
   switch (target.kind) {
     case 'canvas-reposition': {
-      target.canvasStoreApi.getState().moveNode(target.nodeId, target.origin)
+      const store = target.canvasStoreApi.getState()
+      store.moveNode(target.nodeId, target.origin)
+      // Group move: translate every other selected member by the same delta the
+      // (snapped) anchor just moved. `target.origin` is already grid-snapped, so
+      // the whole group lands on the grid while keeping its relative spacing.
+      if (source.origin.kind === 'canvas-node' && source.origin.members?.length) {
+        const start = source.origin.startOrigin ?? target.origin
+        const dx = target.origin.x - start.x
+        const dy = target.origin.y - start.y
+        for (const m of source.origin.members) {
+          store.moveNode(m.nodeId, { x: m.startOrigin.x + dx, y: m.startOrigin.y + dy })
+        }
+      }
       return
     }
 

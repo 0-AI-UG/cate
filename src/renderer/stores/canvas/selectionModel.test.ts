@@ -39,10 +39,10 @@ describe('focusedNodeId derivation', () => {
 
 describe('isGroupDragMember', () => {
   // This predicate is the contract between CanvasNode's capture-phase focus
-  // guard (which must BAIL when true) and useGroupNodeDrag's takeover (which
-  // must FIRE when true). If they disagree, a press on a selected panel's title
-  // bar focuses+collapses to that one node before the group drag reads the
-  // selection — so only the grabbed panel moves.
+  // guard (which must BAIL when true) and useCanvasNodeDrag's group dispatch
+  // (which carries the selection's `members` when true). If they disagree, a
+  // press on a selected panel's title bar focuses+collapses to that one node
+  // before handleDragStart reads the selection — so only the grabbed panel moves.
   it('is true only for a member of a real multi-selection', () => {
     expect(isGroupDragMember(['a', 'b'], 'a')).toBe(true)
     expect(isGroupDragMember(['a', 'b', 'c'], 'c')).toBe(true)
@@ -288,8 +288,8 @@ describe('activating actions collapse to a single active selection', () => {
 
 // =============================================================================
 // Single-node move vs group move — the store-level moveNode only ever touches
-// the one node it's given (group drag is what fans a delta out across the
-// selection; see useGroupNodeDrag tests).
+// the one node it's given (the drag commit is what fans a delta out across the
+// selection; see drag/commit.test.ts + scenarios.test.tsx scenario 1c).
 // =============================================================================
 
 describe('moveNode moves only the grabbed node', () => {

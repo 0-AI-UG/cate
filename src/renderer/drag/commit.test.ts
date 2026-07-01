@@ -152,6 +152,37 @@ describe('commitDrop — canvas-reposition', () => {
     await commitDrop(source, target, panel, defaultCtx())
     expect(c.state.moveNode).toHaveBeenCalledWith('node-1', { x: 100, y: 100 })
   })
+
+  it('group move: translates every member by the (snapped) anchor delta', async () => {
+    const c = createMockCanvasStore()
+    c.state.nodes['anchor'] = { id: 'anchor', origin: { x: 100, y: 100 }, size: { width: 100, height: 100 } }
+    c.state.nodes['m1'] = { id: 'm1', origin: { x: 400, y: 100 }, size: { width: 100, height: 100 } }
+    c.state.nodes['m2'] = { id: 'm2', origin: { x: 100, y: 400 }, size: { width: 100, height: 100 } }
+    const source: DragSource = {
+      panelId: 'panel-1',
+      origin: {
+        kind: 'canvas-node',
+        canvasStoreApi: c.store,
+        nodeId: 'anchor',
+        startOrigin: { x: 100, y: 100 },
+        members: [
+          { nodeId: 'm1', startOrigin: { x: 400, y: 100 } },
+          { nodeId: 'm2', startOrigin: { x: 100, y: 400 } },
+        ],
+      },
+    }
+    // Anchor lands at the snapped (120, 140) → delta (+20, +40).
+    const target: DropTarget = {
+      kind: 'canvas-reposition',
+      canvasStoreApi: c.store,
+      nodeId: 'anchor',
+      origin: { x: 120, y: 140 },
+    }
+    await commitDrop(source, target, panel, defaultCtx())
+    expect(c.state.moveNode).toHaveBeenCalledWith('anchor', { x: 120, y: 140 })
+    expect(c.state.moveNode).toHaveBeenCalledWith('m1', { x: 420, y: 140 })
+    expect(c.state.moveNode).toHaveBeenCalledWith('m2', { x: 120, y: 440 })
+  })
 })
 
 // -----------------------------------------------------------------------------

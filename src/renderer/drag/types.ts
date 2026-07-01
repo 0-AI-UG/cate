@@ -32,6 +32,13 @@ export type DragSource = {
         kind: 'canvas-node'
         canvasStoreApi: StoreApi<CanvasStore>
         nodeId: string
+        /** Group move: the grabbed node's origin at drag-start (the snap anchor)
+         *  plus the other selected nodes and their start origins. Present only
+         *  for a real multi-selection. Commit moves every member by the snapped
+         *  anchor delta; resolve keeps a grouped source canvas-only (no
+         *  detach/dock). */
+        startOrigin?: Point
+        members?: { nodeId: string; startOrigin: Point }[]
       }
     | {
         kind: 'dock-tab'
@@ -148,6 +155,10 @@ export type DragOpSourceSpec =
        *  windows don't sync useAppStore.workspaces — the caller (which owns the
        *  panel) must supply it so cross-window-drag-start can serialize. */
       panel: PanelState
+      /** Group move (see DragSource canvas-node origin). Set by the host when the
+       *  grabbed node is part of a multi-selection so the whole group moves. */
+      startOrigin?: Point
+      members?: { nodeId: string; startOrigin: Point }[]
     }
   | {
       kind: 'dock-tab'

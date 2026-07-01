@@ -6,7 +6,7 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { useDragStore } from './store'
-import type { DropTarget } from './types'
+import type { DragSource, DropTarget } from './types'
 import { getDropZoneEntries } from './registry'
 import { ghostScreenRect } from './geometry'
 
@@ -50,6 +50,13 @@ export default function DragOverlay() {
       : undefined
   const rect = snappedRect ?? ghostScreenRect(cursor.client, grab, ghostSize, renderZoom)
 
+  // Group drag: draw a ghost for every other selected member too, each offset
+  // from the anchor ghost by its canvas-space start delta (× renderZoom). The
+  // anchor's rect already tracks the cursor (or the snapped cell), so members
+  // ride along keeping their original relative spacing — matching the commit,
+  // which translates every member by the same snapped anchor delta.
+  const memberGhosts = source ? memberGhostRects(source, rect, renderZoom) : []
+
   return createPortal(
     <div data-drag-overlay="true" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10000 }}>
       <GhostWindow
@@ -59,10 +66,43 @@ export default function DragOverlay() {
         height={rect.height}
         title={panel.title}
       />
+      {memberGhosts.map((m) => (
+        <GhostWindow key={m.key} left={m.left} top={m.top} width={m.width} height={m.height} title="" />
+      ))}
       <DropIndicator target={target} />
     </div>,
     document.body,
   )
+}
+
+// -----------------------------------------------------------------------------
+// Group-drag member ghosts — one rect per other selected node, positioned by
+// its canvas-space offset from the anchor node at drag-start. Sizes are read
+// live from the source canvas store (members don't move until commit).
+// -----------------------------------------------------------------------------
+
+export function memberGhostRects(
+  source: DragSource,
+  anchorRect: { left: number; top: number; width: number; height: number },
+  renderZoom: number,
+): { key: string; left: number; top: number; width: number; height: number }[] {
+  if (source.origin.kind !== 'canvas-node') return []
+  const { members, startOrigin, canvasStoreApi } = source.origin
+  if (!members?.length || !startOrigin) return []
+  const nodes = canvasStoreApi.getState().nodes
+  const out: { key: string; left: number; top: number; width: number; height: number }[] = []
+  for (const m of members) {
+    const node = nodes[m.nodeId]
+    if (!node) continue
+    out.push({
+      key: m.nodeId,
+      left: anchorRect.left + (m.startOrigin.x - startOrigin.x) * renderZoom,
+      top: anchorRect.top + (m.startOrigin.y - startOrigin.y) * renderZoom,
+      width: node.size.width * renderZoom,
+      height: node.size.height * renderZoom,
+    })
+  }
+  return out
 }
 
 // -----------------------------------------------------------------------------

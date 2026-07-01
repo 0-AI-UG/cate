@@ -79,6 +79,8 @@ function specToDragSource(spec: DragOpSourceSpec): DragSource {
         kind: 'canvas-node',
         canvasStoreApi: spec.canvasStoreApi,
         nodeId: spec.nodeId,
+        startOrigin: spec.startOrigin,
+        members: spec.members,
       },
     }
   }
@@ -417,10 +419,15 @@ function onMouseMove(ev: MouseEvent) {
 
   const inside = cursorInsideWindow(client)
   // Build snapshot on the just-crossed boundary in case the runtime needs it
-  // to emit a cross-window-start effect.
+  // to emit a cross-window-start effect. A grouped canvas-node drag (multi-
+  // selection) can't detach — it's a pure in-window group reposition — so never
+  // build the snapshot for it: no snapshot means no cross-window native ghost,
+  // matching resolveDrop refusing every off-canvas target for grouped sources.
+  const isGrouped =
+    active.spec.kind === 'canvas-node' && !!active.spec.members?.length
   const wasInside = active.runtime.state.cursor?.insideWindow ?? true
   const snapshot =
-    wasInside && !inside && !active.runtime.crossWindowActive
+    !isGrouped && wasInside && !inside && !active.runtime.crossWindowActive
       ? buildSnapshotFor(active.spec)
       : null
 

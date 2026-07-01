@@ -14,6 +14,7 @@ import type { DockStore } from '../stores/dockStore'
 import { findStackContainingPanel } from '../stores/dockTreeUtils'
 import { useSelectedWorkspace } from '../stores/appStore'
 import type { useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { isGroupDragMember } from '../stores/canvas/selectionModel'
 
 export function useCanvasNodeDrag(
   nodeId: string,
@@ -32,10 +33,24 @@ export function useCanvasNodeDrag(
   }, [layout, currentWorkspace])
   const primaryPanelType: PanelType = primaryPanel?.type ?? 'editor'
 
-  // Whole-node drag (title bar / empty tab-bar / single-tab tab).
+  // Whole-node drag (title bar / empty tab-bar / single-tab tab). When the
+  // grabbed node is part of a multi-selection, carry the other selected nodes so
+  // the unified drag engine moves the whole group together (commit translates
+  // every member by the snapped anchor delta) — no separate group-drag path.
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     const panel = primaryPanel
     if (!panel) return
+    const state = canvasApi.getState()
+    const node = state.nodes[nodeId]
+    const grouped = node && isGroupDragMember(state.selection, nodeId)
+    const startOrigin = grouped ? { x: node.origin.x, y: node.origin.y } : undefined
+    const members = grouped
+      ? state.selection
+          .filter((id) => id !== nodeId)
+          .map((id) => state.nodes[id])
+          .filter((n): n is NonNullable<typeof n> => !!n)
+          .map((n) => ({ nodeId: n.id, startOrigin: { x: n.origin.x, y: n.origin.y } }))
+      : undefined
     rawHandleDragStart(e, {
       kind: 'canvas-node',
       canvasStoreApi: canvasApi,
@@ -44,6 +59,8 @@ export function useCanvasNodeDrag(
       panelType: panel.type,
       panelTitle: panel.title ?? '',
       panel,
+      startOrigin,
+      members,
     })
   }, [rawHandleDragStart, nodeId, primaryPanel, canvasApi])
 

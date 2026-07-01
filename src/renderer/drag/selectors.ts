@@ -19,7 +19,11 @@ export function selectDragSourceRole(state: DragState, nodeId: string): DragSour
   if (!state.isDragging || !state.source) return null
   const origin = state.source.origin
   if (origin.kind === 'canvas-node') {
-    return origin.nodeId === nodeId ? 'whole-node' : null
+    if (origin.nodeId === nodeId) return 'whole-node'
+    // Group drag: the other selected members are dragged too — hide each so the
+    // DragOverlay's per-member ghost takes its place (mirrors the anchor node).
+    if (origin.members?.some((m) => m.nodeId === nodeId)) return 'whole-node'
+    return null
   }
   if (origin.kind === 'dock-tab') {
     if (origin.sourceNodeId && origin.sourceNodeId === nodeId) return 'tab'

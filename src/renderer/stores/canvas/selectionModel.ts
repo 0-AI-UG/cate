@@ -40,10 +40,11 @@ export function isSelected(s: Pick<CanvasStoreState, 'selection'>, id: CanvasNod
 
 /** Whether a left-press on `id` should start a GROUP move (translate the whole
  *  selection) rather than focus/single-drag it: `id` is part of a real
- *  multi-selection. The single source of truth shared by `useGroupNodeDrag`'s
- *  takeover test and CanvasNode's capture-phase focus guard — they must agree,
- *  or the press collapses the selection to one before the group drag reads it
- *  (the "grabbing a selected panel moves only one" bug). */
+ *  multi-selection. The single source of truth shared by `useCanvasNodeDrag`
+ *  (which carries the group's `members` on the drag source) and CanvasNode's
+ *  capture-phase focus guard — they must agree, or the press collapses the
+ *  selection to one before handleDragStart reads it (the "grabbing a selected
+ *  panel moves only one" bug). */
 export function isGroupDragMember(selection: readonly CanvasNodeId[], id: CanvasNodeId): boolean {
   return selection.length > 1 && selection.includes(id)
 }

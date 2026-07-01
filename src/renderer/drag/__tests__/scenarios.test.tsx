@@ -54,12 +54,11 @@ describe('drag integration — canvas-node scenarios', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // 1b. Single-node drag moves ONLY the grabbed node — even when other nodes
-  //     are selected. The dock-aware single-node op (useDragOp) never fans the
-  //     delta out across the selection; only useGroupNodeDrag does, and it only
-  //     engages for selection.length > 1 that includes the grabbed node (see
-  //     gestureBlurCancel.test.tsx). Grabbing a node that ISN'T in the selection
-  //     therefore moves just it and leaves the selected nodes put.
+  // 1b. Single-node drag moves ONLY the grabbed node when that node is NOT part
+  //     of the selection. A grouped drag only engages when the grabbed node is
+  //     itself a member of a multi-selection (the spec then carries `members`).
+  //     Grabbing a node outside the selection moves just it and leaves the
+  //     selected nodes put. (Group move is covered by scenario 1c.)
   // ---------------------------------------------------------------------------
   it('1b: dragging a non-selected node moves only it, leaving the selected nodes put', () => {
     scene = renderDragScene({
@@ -87,6 +86,37 @@ describe('drag integration — canvas-node scenarios', () => {
     // ...the selected nodes did not budge.
     expect(store.getState().nodes['n1'].origin).toEqual(n1Origin)
     expect(store.getState().nodes['n2'].origin).toEqual(n2Origin)
+  })
+
+  // ---------------------------------------------------------------------------
+  // 1c. Group drag — grabbing a member of a multi-selection moves the WHOLE
+  //     selection by the same delta on drop (ghost model: real nodes land on
+  //     mouseup, not live). The grabbed node need not be the lead.
+  // ---------------------------------------------------------------------------
+  it('1c: grabbing a selected member moves the whole group by the same delta', () => {
+    scene = renderDragScene({
+      canvases: [{ panelId: 'c1', rect: { x: 0, y: 0, w: 1000, h: 800 } }],
+      nodes: [
+        { canvasPanelId: 'c1', nodeId: 'n1', origin: { x: 100, y: 100 }, size: { width: 200, height: 150 } },
+        { canvasPanelId: 'c1', nodeId: 'n2', origin: { x: 400, y: 100 }, size: { width: 200, height: 150 } },
+        { canvasPanelId: 'c1', nodeId: 'n3', origin: { x: 700, y: 100 }, size: { width: 200, height: 150 } },
+      ],
+    })
+    const store = scene.getCanvasStore('c1')
+    act(() => store.getState().selectNodes(['n1', 'n2', 'n3'], false))
+
+    // Grab n2 (a non-lead member) and drag by (60, 40).
+    scene.mouse.downOnNode('n2')
+    scene.mouse.moveBy({ x: 50, y: 30 })
+    scene.mouse.moveBy({ x: 10, y: 10 }) // beyond dead zone
+    scene.mouse.up()
+
+    // Every selected node translated by the same (60, 40) delta.
+    expect(store.getState().nodes['n1'].origin).toEqual({ x: 160, y: 140 })
+    expect(store.getState().nodes['n2'].origin).toEqual({ x: 460, y: 140 })
+    expect(store.getState().nodes['n3'].origin).toEqual({ x: 760, y: 140 })
+    // Selection untouched by the move.
+    expect(store.getState().selection).toEqual(['n1', 'n2', 'n3'])
   })
 
   // ---------------------------------------------------------------------------
@@ -284,6 +314,43 @@ describe('drag integration — canvas-node scenarios', () => {
     expect(electronAPI.crossWindowDragResolve).toHaveBeenCalled()
     expect(electronAPI.dragDetach).toHaveBeenCalled()
     expect(Object.keys(store.getState().nodes)).not.toContain('n1')
+  })
+
+  // ---------------------------------------------------------------------------
+  // 11b. Grouped drag can't detach — dragging a multi-selection past the window
+  //      edge must NOT arm the cross-window native ghost (no crossWindowDragStart)
+  //      and dropping outside is a no-op (every member stays put). Mirrors
+  //      resolveDrop refusing off-canvas targets for grouped sources, and the
+  //      useDragOp suppression of the boundary snapshot for grouped specs.
+  // ---------------------------------------------------------------------------
+  it('11b: grouped drag past the window edge never detaches (no cross-window ghost)', async () => {
+    const electronAPI = window.electronAPI as unknown as {
+      crossWindowDragStart: ReturnType<typeof vi.fn>
+      dragDetach: ReturnType<typeof vi.fn>
+    }
+    scene = renderDragScene({
+      canvases: [{ panelId: 'c1', rect: { x: 0, y: 0, w: 1000, h: 800 } }],
+      nodes: [
+        { canvasPanelId: 'c1', nodeId: 'n1', origin: { x: 100, y: 100 }, size: { width: 200, height: 150 } },
+        { canvasPanelId: 'c1', nodeId: 'n2', origin: { x: 400, y: 100 }, size: { width: 200, height: 150 } },
+      ],
+    })
+    const store = scene.getCanvasStore('c1')
+    act(() => store.getState().selectNodes(['n1', 'n2'], false))
+
+    scene.mouse.downOnNode('n1')
+    scene.mouse.dragBy({ x: 60, y: 60 }) // arm + move inside
+    // Move past the right window edge (jsdom default innerWidth = 1024).
+    scene.mouse.moveTo({ x: 2000, y: 400 })
+    scene.mouse.up()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    // No cross-window native ghost, no detach.
+    expect(electronAPI.crossWindowDragStart).not.toHaveBeenCalled()
+    expect(electronAPI.dragDetach).not.toHaveBeenCalled()
+    // Both nodes still on the canvas, unmoved (off-window drop → no target).
+    expect(store.getState().nodes['n1'].origin).toEqual({ x: 100, y: 100 })
+    expect(store.getState().nodes['n2'].origin).toEqual({ x: 400, y: 100 })
   })
 
   // ---------------------------------------------------------------------------

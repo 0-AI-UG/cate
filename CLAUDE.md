@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Before You Code
+
+Read and follow the **karpathy-guidelines** skill (`.claude/skills/karpathy-guidelines`) when writing, reviewing, or refactoring code here — surface assumptions, make surgical changes, keep it simple, and define verifiable success criteria.
+
 ## Project Overview
 
 Cate is a desktop application that provides an infinite zoomable canvas where editor panels, terminal panels, and browser panels float spatially (similar to Figma/Miro, but for coding). Built with Electron + React + TypeScript, styled with Tailwind CSS.
@@ -45,11 +49,11 @@ IPC channels are defined in `src/shared/ipc-channels.ts`. Type definitions in `s
 
 ### Coordinate System & Canvas
 
-The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions are stored in **canvas-space** and converted to **view-space** via zoom level and viewport offset. Key conversions in `src/renderer/lib/coordinates.ts`: `canvasToView()` / `viewToCanvas()`. Zoom range defined by `ZOOM_MIN`/`ZOOM_MAX` in shared types.
+The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions are stored in **canvas-space** and converted to **view-space** via zoom level and viewport offset. Key conversions in `src/renderer/lib/canvas/coordinates.ts`: `canvasToView()` / `viewToCanvas()`. Zoom range defined by `ZOOM_MIN`/`ZOOM_MAX` in shared types.
 
 ### Canvas Interaction
 
-`useCanvasInteraction` hook handles wheel events (Cmd+scroll = zoom, two-finger = pan) and right-click drag panning. Node drag/resize handled by `useNodeDrag` and `useNodeResize` hooks.
+`useCanvasInteraction` hook handles wheel events (Cmd+scroll = zoom, two-finger = pan) and right-click drag panning. Node drag/resize handled by `useCanvasNodeDrag` and `useNodeResize` hooks.
 
 ### Panel System
 
@@ -79,8 +83,6 @@ Zustand stores in `src/renderer/stores/`:
 - **shortcutStore** — keyboard shortcut bindings
 - **statusStore** — status bar state
 - **uiStore** — transient UI state (command palette, etc.)
-- **updateStore** — auto-updater status pushed from main
-- **urlPromptStore** — pending URL-open confirmations from terminals
 
 Persisted state is stored as hand-editable JSON files under `userData` (no
 electron-store). `settingsFile.ts` owns `settings.json`; `jsonStateFile.ts` is a

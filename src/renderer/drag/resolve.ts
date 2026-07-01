@@ -90,6 +90,18 @@ export function resolveDrop(
   opts: ResolveOptions = {},
 ): DropTarget | null {
   const { env = defaultDropEnvironment, snap = false } = opts
+
+  // A grouped canvas-node drag (multi-selection) is a pure group reposition: it
+  // can't detach to a window or dock into a zone. Restrict it to the canvas
+  // surface so the ghost only ever resolves canvas-reposition; off-canvas yields
+  // no target → a no-op drop that leaves the group where it started.
+  const grouped =
+    source.origin.kind === 'canvas-node' && !!source.origin.members?.length
+  if (grouped) {
+    if (!cursor.insideWindow) return null
+    return resolveCanvasHit(cursor, source, grab, ghostSize, env, snap)
+  }
+
   if (!cursor.insideWindow) {
     return { kind: 'detach', screen: cursor.screen }
   }

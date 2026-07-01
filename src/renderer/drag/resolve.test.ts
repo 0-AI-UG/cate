@@ -390,6 +390,63 @@ describe('resolveDrop — dock zones', () => {
 })
 
 // -----------------------------------------------------------------------------
+// Grouped canvas-node (multi-selection) — pure reposition, never dock/detach
+// -----------------------------------------------------------------------------
+
+describe('resolveDrop — grouped canvas-node', () => {
+  const groupedSource: DragSource = {
+    panelId: 'panel-A',
+    origin: {
+      kind: 'canvas-node',
+      canvasStoreApi: CANVAS_STORE_A,
+      nodeId: 'node-A',
+      startOrigin: { x: 100, y: 100 },
+      members: [{ nodeId: 'node-B', startOrigin: { x: 400, y: 100 } }],
+    },
+  }
+
+  it('ignores dock zones and resolves canvas-reposition (a group cannot dock)', () => {
+    const stackEntry: DropZoneEntry = {
+      id: 'stack-1',
+      zone: 'center',
+      stackId: 'stack-1',
+      dockStoreApi: DOCK_STORE,
+      getRect: () => rect(0, 0, 500, 400),
+    }
+    // Cursor in the top dock-tab band — a single-node source resolves dock-tab
+    // here (see the dock-zones suite); a grouped source must stay canvas-only.
+    const t = resolveDropT(
+      { client: { x: 250, y: 10 }, screen: { x: 250, y: 10 }, insideWindow: true },
+      groupedSource,
+      grab,
+      ghostSize,
+      'editor',
+      env({
+        zones: [stackEntry],
+        canvasAt: () => ({
+          panelId: 'canvas-A',
+          rect: rect(0, 0, 1000, 800),
+          canvasStoreApi: CANVAS_STORE_A,
+        }),
+      }),
+    )
+    expect(t).toMatchObject({ kind: 'canvas-reposition', nodeId: 'node-A' })
+  })
+
+  it('off-canvas (cursor left the window) yields null — no detach for a group', () => {
+    const t = resolveDropT(
+      { client: { x: -10, y: 100 }, screen: { x: 999, y: 100 }, insideWindow: false },
+      groupedSource,
+      grab,
+      ghostSize,
+      'editor',
+      env(),
+    )
+    expect(t).toBeNull()
+  })
+})
+
+// -----------------------------------------------------------------------------
 // Canvas surface
 // -----------------------------------------------------------------------------
 
