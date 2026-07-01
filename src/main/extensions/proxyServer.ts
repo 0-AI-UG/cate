@@ -19,7 +19,6 @@
 // =============================================================================
 
 import http from 'http'
-import fs from 'fs/promises'
 import path from 'path'
 import { randomBytes } from 'crypto'
 import type { Duplex } from 'stream'
@@ -28,6 +27,10 @@ import log from '../logger'
 import { extensionManager } from './ExtensionManager'
 import { extensionServerManager } from './ExtensionServerManager'
 import { openTunnelDuplex } from './serverTunnel'
+import { parseLocator, LOCAL_RUNTIME_ID } from '../runtime/locator'
+import { runtimes } from '../runtime/runtimeManager'
+import { getWorkspaceInfo } from '../workspaceManager'
+import type { Runtime } from '../runtime/types'
 import type { ExtensionManifest } from '../../shared/extensions'
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -110,15 +113,47 @@ function frontendEntry(manifest: ExtensionManifest): string {
   return manifest.frontend && manifest.frontend.length > 0 ? manifest.frontend : 'index.html'
 }
 
-/** Resolve a request's relative path to an absolute file inside `rootDir`, or
- *  null if it would escape the root (path traversal). */
-function resolveWithinRoot(rootDir: string, relPath: string): string | null {
+/**
+ * Resolve a request's relative URL path to a host-absolute file inside `rootDir`,
+ * or null if it would escape the root (path traversal → 403). The asset lives on
+ * the workspace's runtime host, so join with the host's separator (native for
+ * LOCAL — client == host — posix for remote daemons). The decoded URL path is
+ * always posix; any absolute path or `..` segment is refused outright (rather
+ * than silently collapsed) so a traversal attempt is a clear rejection.
+ */
+function resolveAssetPath(runtime: Runtime, rootDir: string, relPath: string): string | null {
   const decoded = decodeURIComponent(relPath)
-  const abs = path.resolve(rootDir, '.' + path.posix.sep + decoded)
-  const rel = path.relative(rootDir, abs)
-  if (rel === '' || rel === '.') return path.join(rootDir, 'index.html')
-  if (rel.startsWith('..') || path.isAbsolute(rel)) return null
-  return abs
+  if (path.posix.isAbsolute(decoded)) return null
+  const segments = decoded.split('/').filter((s) => s !== '' && s !== '.')
+  if (segments.length === 0 || segments.some((s) => s === '..')) return null
+  const joiner = runtime.id === LOCAL_RUNTIME_ID ? path : path.posix
+  return joiner.join(rootDir, ...segments)
+}
+
+// Immutable-per-version asset cache, keyed by `<hostRootDir>\0<relPath>`. The
+// host root dir embeds the extension version (~/.cate/extensions/<id>/<version>),
+// so a version bump yields a fresh key and the stale entries simply age out.
+// Bounded by entry count (assets are served from a remote host over base64 RPC,
+// so caching avoids a round-trip per request); oldest-inserted evicted on overflow.
+const ASSET_CACHE_MAX = 512
+const assetCache = new Map<string, Buffer>()
+
+function cacheGet(key: string): Buffer | undefined {
+  return assetCache.get(key)
+}
+
+function cachePut(key: string, data: Buffer): void {
+  if (assetCache.size >= ASSET_CACHE_MAX) {
+    const oldest = assetCache.keys().next().value
+    if (oldest !== undefined) assetCache.delete(oldest)
+  }
+  assetCache.set(key, data)
+}
+
+/** Drop all cached static assets. Called when an extension's bytes change
+ *  (reinstall/update) so a same-version repair doesn't keep serving stale bytes. */
+export function clearStaticAssetCache(): void {
+  assetCache.clear()
 }
 
 /** Parse `/ext/<routeToken>/<tail>` -> { token, tail } (tail has no leading /). */
@@ -135,26 +170,47 @@ function parseExtPath(pathname: string): { token: string; tail: string } | null 
 async function serveStatic(
   res: http.ServerResponse,
   extensionId: string,
+  workspaceId: string,
   manifest: ExtensionManifest,
   tail: string,
 ): Promise<void> {
-  const rootDir = extensionManager.getExtensionRootDir(extensionId)
-  if (!rootDir) {
-    res.writeHead(404).end('Extension not found')
+  // Resolve the workspace's runtime, provision the extension onto that host, and
+  // read assets through runtime.file — so a remote workspace's panel is served
+  // from the remote host, with no isLocal branch (LOCAL is just another daemon).
+  const { runtimeId } = parseLocator(getWorkspaceInfo(workspaceId)?.rootPath ?? '')
+  let runtime: Runtime
+  try {
+    runtime = runtimes.resolve(runtimeId)
+  } catch {
+    res.writeHead(404).end('Runtime not connected')
     return
   }
+
+  let rootDir: string
+  try {
+    rootDir = await extensionManager.ensureProvisioned(extensionId, runtime)
+  } catch (err) {
+    log.warn('[extensions] provision for static serve failed %s: %O', extensionId, err)
+    res.writeHead(404).end('Extension not available')
+    return
+  }
+
   const relPath = tail.length === 0 ? frontendEntry(manifest) : tail
-  const abs = resolveWithinRoot(rootDir, relPath)
+  const abs = resolveAssetPath(runtime, rootDir, relPath)
   if (!abs) {
     res.writeHead(403).end('Forbidden')
     return
   }
-  let data: Buffer
-  try {
-    data = await fs.readFile(abs)
-  } catch {
-    res.writeHead(404).end('Not found')
-    return
+  const cacheKey = `${rootDir}\0${abs}`
+  let data: Buffer | undefined = cacheGet(cacheKey)
+  if (!data) {
+    try {
+      data = await runtime.file.readBinary(abs)
+    } catch {
+      res.writeHead(404).end('Not found')
+      return
+    }
+    cachePut(cacheKey, data)
   }
   const headers: http.OutgoingHttpHeaders = {
     'Content-Type': contentTypeFor(abs),
@@ -219,6 +275,10 @@ async function proxyHttp(
     try { duplex.destroy() } catch { /* noop */ }
   })
   req.on('aborted', () => { try { upstream.destroy() } catch { /* noop */ } })
+  // Tear the tunnel Duplex down when the response finishes (or the client goes
+  // away) — otherwise a keep-alive upstream leaves the Duplex, the tunnel connId,
+  // and the daemon-side loopback socket leaked once per request.
+  res.on('close', () => { try { duplex.destroy() } catch { /* noop */ } })
   req.pipe(upstream)
 }
 
@@ -253,7 +313,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     await proxyHttp(req, res, extensionId, workspaceId, parsed.tail)
     return
   }
-  await serveStatic(res, extensionId, manifest, parsed.tail)
+  await serveStatic(res, extensionId, workspaceId, manifest, parsed.tail)
 }
 
 // ---------------------------------------------------------------------------

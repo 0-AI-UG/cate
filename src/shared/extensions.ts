@@ -85,6 +85,29 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
+// An extension `id`/`version` flows into `path.join()` calls that resolve the
+// extension's on-disk staging/storage folders. Anything containing a path
+// separator, a `..` traversal, or a NUL could escape the extensions dir and
+// enable arbitrary file writes/deletes or cross-extension storage reads. Reject
+// such values here — the single manifest chokepoint — so every downstream path
+// use is safe by construction.
+//
+// A safe id is a strict slug: alphanumeric-led, then only `A-Za-z0-9._-`. Dots
+// are allowed because real ids look like `acme.example` / `cate.frontendkit`.
+const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+// A version may additionally carry `+` for semver build metadata.
+const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9.+_-]*$/
+
+/** True if `value` is a non-empty, filesystem-safe extension id. */
+function isSafeId(value: unknown): value is string {
+  return nonEmptyString(value) && SAFE_ID.test(value)
+}
+
+/** True if `value` is a non-empty, filesystem-safe extension version. */
+function isSafeVersion(value: unknown): value is string {
+  return nonEmptyString(value) && SAFE_VERSION.test(value)
+}
+
 /** Normalize one untrusted panel entry, or null if it lacks id/label. */
 function normalizePanel(parsed: unknown): ExtensionPanelDef | null {
   if (!isObject(parsed)) return null
@@ -121,7 +144,8 @@ function normalizeServer(parsed: unknown): ExtensionServerSpec | undefined {
  */
 export function normalizeManifest(parsed: unknown): ExtensionManifest | null {
   if (!isObject(parsed)) return null
-  if (!nonEmptyString(parsed.id)) return null
+  // Reject unusable (missing) or filesystem-unsafe ids — the id resolves paths.
+  if (!isSafeId(parsed.id)) return null
 
   if (!Array.isArray(parsed.panels) || parsed.panels.length === 0) return null
   const panels: ExtensionPanelDef[] = []
@@ -138,7 +162,10 @@ export function normalizeManifest(parsed: unknown): ExtensionManifest | null {
     panels,
   }
 
-  if (nonEmptyString(parsed.version)) manifest.version = parsed.version
+  // Drop an unsafe version (treat as absent) rather than nulling the whole
+  // manifest; downstream code falls back to '0.0.0'. An unsafe version must
+  // never reach a path.
+  if (isSafeVersion(parsed.version)) manifest.version = parsed.version
   if (nonEmptyString(parsed.frontend)) manifest.frontend = parsed.frontend
 
   const server = normalizeServer(parsed.server)

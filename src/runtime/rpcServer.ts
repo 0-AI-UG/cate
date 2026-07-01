@@ -134,6 +134,8 @@ export class RpcServer {
       case Methods.fileRemove: return api.file.remove(s(0))
       case Methods.fileRename: return api.file.rename(s(0), s(1))
       case Methods.fileMkdir: return api.file.mkdir(s(0))
+      case Methods.fileExtensionsRoot: return api.file.extensionsRoot()
+      case Methods.fileExtractArtifact: return api.file.extractArtifact(s(0), s(1))
       case Methods.fileCopy: return api.file.copy(s(0), s(1))
       case Methods.fileImportEntries:
         return api.file.importEntries(p[0] as string[], s(1), p[2] as 'copy' | 'move', n(3))

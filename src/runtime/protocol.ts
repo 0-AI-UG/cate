@@ -88,6 +88,8 @@ export const Methods = {
   fileCopy: 'file.copy',
   fileImportEntries: 'file.importEntries',
   fileSearch: 'file.search',
+  fileExtensionsRoot: 'file.extensionsRoot',   // returns the host's ~/.cate/extensions, registering it as an allowed root
+  fileExtractArtifact: 'file.extractArtifact', // validate + untar a host-resident .tgz into a versioned dir
   fileSearchContentStart: 'file.searchContent.start', // returns a streamId; batch/done arrive as evt frames
   fileSearchContentStop: 'file.searchContent.stop',
   fileWatchStart: 'file.watch.start', // returns a streamId; events arrive as evt frames

@@ -32,7 +32,20 @@ export interface CatalogEntry {
   artifactUrl: string
   sha256?: string
   description?: string
+  /**
+   * True when the originating catalog source is itself local (a file:// URL or
+   * an absolute path). Set from the source at fetch time — NOT trusted from the
+   * index JSON — so a remote catalog can't claim locality to dodge the sha256 +
+   * http(s) requirement enforced in stageArtifact. Absent/false = treat as
+   * remote (fail-closed).
+   */
+  sourceIsLocal?: boolean
 }
+
+/** Catalog index fetch is capped in time and size so a hostile/broken server
+ *  can't hang us or stream unbounded bytes into memory. */
+export const CATALOG_INDEX_TIMEOUT_MS = 30_000
+export const MAX_CATALOG_INDEX_BYTES = 8 * 1024 * 1024 // 8 MB — an index is text
 
 /** Root for all catalog/extension state under userData. */
 export function extensionsDir(): string {
@@ -53,31 +66,81 @@ function localSourcePath(source: string): string {
   return source.startsWith('file://') ? fileURLToPath(source) : source
 }
 
+/**
+ * Read a fetch Response body as bytes, aborting once more than `maxBytes` have
+ * accumulated (checks Content-Length up front when present, then streams and
+ * sums chunk lengths). Prevents an unbounded response from exhausting memory.
+ */
+export async function readCappedBytes(res: Response, maxBytes: number, label: string): Promise<Buffer> {
+  const declared = Number(res.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new Error(`${label} exceeds max size ${maxBytes} bytes (Content-Length ${declared})`)
+  }
+  const reader = res.body?.getReader?.()
+  if (!reader) {
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.length > maxBytes) throw new Error(`${label} exceeds max size ${maxBytes} bytes`)
+    return buf
+  }
+  const chunks: Buffer[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {})
+      throw new Error(`${label} exceeds max size ${maxBytes} bytes`)
+    }
+    chunks.push(Buffer.from(value))
+  }
+  return Buffer.concat(chunks)
+}
+
 /** Load one source's raw index text (http(s) via fetch, else off disk). */
 async function loadSourceText(source: string): Promise<string> {
   if (isLocalSource(source)) {
     return readFile(localSourcePath(source), 'utf-8')
   }
-  const res = await fetch(source)
+  let res: Response
+  try {
+    res = await fetch(source, { signal: AbortSignal.timeout(CATALOG_INDEX_TIMEOUT_MS) })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error(`catalog index fetch timed out after ${CATALOG_INDEX_TIMEOUT_MS}ms (${source})`)
+    }
+    throw err
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.text()
+  const buf = await readCappedBytes(res, MAX_CATALOG_INDEX_BYTES, `catalog index (${source})`)
+  return buf.toString('utf-8')
 }
 
-/** Validate one untrusted catalog entry into a CatalogEntry, or null. */
-function normalizeEntry(parsed: unknown): CatalogEntry | null {
+/** Validate one untrusted catalog entry into a CatalogEntry, or null. The
+ *  `sourceIsLocal` trust class comes from the source, never from the JSON. */
+function normalizeEntry(parsed: unknown, sourceIsLocal: boolean): CatalogEntry | null {
   if (typeof parsed !== 'object' || parsed === null) return null
   const o = parsed as Record<string, unknown>
   const manifest = normalizeManifest(o.manifest)
   if (!manifest) return null
   if (typeof o.artifactUrl !== 'string' || o.artifactUrl.length === 0) return null
-  const entry: CatalogEntry = { manifest, artifactUrl: o.artifactUrl }
+  const entry: CatalogEntry = { manifest, artifactUrl: o.artifactUrl, sourceIsLocal }
   if (typeof o.sha256 === 'string' && o.sha256.length > 0) entry.sha256 = o.sha256
   if (typeof o.description === 'string' && o.description.length > 0) entry.description = o.description
   return entry
 }
 
-/** Parse one source's index text into validated entries. Throws on bad JSON. */
-function parseIndex(text: string, source: string): CatalogEntry[] {
+/**
+ * Parse one source's index text into validated entries. Throws on bad JSON.
+ * `sourceIsLocalFor` decides each entry's trust class: fetched sources pass a
+ * constant derived from the source; the trusted cache reads the value we wrote.
+ */
+function parseIndex(
+  text: string,
+  source: string,
+  sourceIsLocalFor: (raw: unknown) => boolean,
+): CatalogEntry[] {
   const parsed = JSON.parse(text) as unknown
   const list =
     typeof parsed === 'object' && parsed !== null
@@ -89,11 +152,16 @@ function parseIndex(text: string, source: string): CatalogEntry[] {
   }
   const out: CatalogEntry[] = []
   for (const raw of list) {
-    const entry = normalizeEntry(raw)
+    const entry = normalizeEntry(raw, sourceIsLocalFor(raw))
     if (entry) out.push(entry)
     else log.warn('[extensions] catalog %s: skipping invalid entry', source)
   }
   return out
+}
+
+/** Read a persisted-cache entry's stored (trusted) locality flag. */
+function storedSourceIsLocal(raw: unknown): boolean {
+  return typeof raw === 'object' && raw !== null && (raw as Record<string, unknown>).sourceIsLocal === true
 }
 
 /**
@@ -105,8 +173,9 @@ export async function fetchCatalog(sources: string[]): Promise<CatalogEntry[]> {
   for (const source of sources) {
     if (!source) continue
     try {
+      const local = isLocalSource(source)
       const text = await loadSourceText(source)
-      for (const entry of parseIndex(text, source)) {
+      for (const entry of parseIndex(text, source, () => local)) {
         merged.set(entry.manifest.id, entry)
       }
     } catch (err) {
@@ -134,7 +203,8 @@ export async function getCachedCatalog(): Promise<CatalogEntry[]> {
   if (!existsSync(file)) return []
   try {
     const text = await readFile(file, 'utf-8')
-    return parseIndex(text, file)
+    // The cache is data we wrote, so its stored per-entry locality is trusted.
+    return parseIndex(text, file, storedSourceIsLocal)
   } catch (err) {
     log.warn('[extensions] catalog cache unreadable: %O', err)
     return []

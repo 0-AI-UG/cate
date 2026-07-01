@@ -1,66 +1,68 @@
 // =============================================================================
-// Extension artifact install — download + verify + extract a catalog entry's
-// .tgz into a versioned dir the proxy can serve.
+// Extension artifact staging (client side) — download + verify a catalog entry's
+// .tgz and cache it, WITHOUT extracting. Extraction now happens on whichever host
+// owns the workspace (local OR remote), through the runtime daemon's
+// file.extractArtifact capability (see install.ts + runtime/capabilities/
+// extensions.ts). The client only fetches, pins (sha256), and caches the bytes so
+// any host can be provisioned from the same staged artifact — one install path.
 //
 // Layout under userData:
-//   extensions/<id>/<version>/         extracted extension root (manifest.json)
-//   extensions/<id>/<version>/.ok      idempotency marker (written last)
+//   extensions/<id>/<version>.tgz       staged (verified) artifact
 //
-// Mirrors the runtime tarball pattern (see runtime/runtimeArtifacts.ts):
-// fetch() -> Buffer -> write a *.part temp -> rename; sha256 via crypto; extract
-// by shelling out to system `tar`. Idempotent: an existing dir + .ok short-
-// circuits. On any failure the partial versioned dir is removed.
+// fetch() -> Buffer -> write a *.part temp -> rename; sha256 via crypto. The
+// rename makes a present .tgz mean "fully downloaded", so isStaged() is a simple
+// existence check.
 // =============================================================================
 
 import { app } from 'electron'
 import { createHash } from 'crypto'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { existsSync } from 'fs'
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'fs/promises'
 import log from '../logger'
-import { loadManifestFromDir } from './manifest'
-import { extensionsDir, type CatalogEntry } from './catalog'
+import { extensionsDir, readCappedBytes, type CatalogEntry } from './catalog'
 
-const execFileAsync = promisify(execFile)
+/** Remote artifact fetch is capped in time and size so a hostile/broken server
+ *  can't hang us or stream unbounded bytes into memory. */
+export const ARTIFACT_FETCH_TIMEOUT_MS = 120_000
+export const MAX_ARTIFACT_BYTES = 256 * 1024 * 1024 // 256 MB
 
-/** Extracted root dir for one (id, version). */
-export function installedDir(id: string, version: string): string {
-  return path.join(extensionsDir(), id, version)
+/** Staged artifact path for one (id, version). */
+export function stagedTgzPath(id: string, version: string): string {
+  return path.join(extensionsDir(), id, `${version}.tgz`)
 }
 
-/** True once an (id, version) is fully extracted (its .ok marker exists). */
-export function isInstalled(id: string, version: string): boolean {
-  return existsSync(path.join(installedDir(id, version), '.ok'))
+/** True once an (id, version) artifact is fully staged on the client. */
+export function isStaged(id: string, version: string): boolean {
+  return existsSync(stagedTgzPath(id, version))
 }
 
-/** Every fully-extracted version of an extension currently on disk. */
-export async function installedVersions(id: string): Promise<string[]> {
+/** Every staged version of an extension currently cached on the client. */
+export async function stagedVersions(id: string): Promise<string[]> {
   const dir = path.join(extensionsDir(), id)
   if (!existsSync(dir)) return []
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
   return entries
-    .filter((e) => e.isDirectory() && existsSync(path.join(dir, e.name, '.ok')))
-    .map((e) => e.name)
+    .filter((e) => e.isFile() && e.name.endsWith('.tgz'))
+    .map((e) => e.name.slice(0, -'.tgz'.length))
 }
 
-/** Remove every installed version of an extension (its whole id folder). */
-export async function removeInstalled(id: string): Promise<void> {
+/** Remove every staged version of an extension (its whole id folder). */
+export async function removeStaged(id: string): Promise<void> {
   await rm(path.join(extensionsDir(), id), { recursive: true, force: true })
 }
 
-/** Remove every installed version of an extension except `keep`. */
-export async function removeInstalledVersionsExcept(id: string, keep: string): Promise<void> {
-  for (const version of await installedVersions(id)) {
+/** Remove every staged version of an extension except `keep`. */
+export async function removeStagedVersionsExcept(id: string, keep: string): Promise<void> {
+  for (const version of await stagedVersions(id)) {
     if (version === keep) continue
-    await rm(installedDir(id, version), { recursive: true, force: true }).catch(() => {})
+    await rm(stagedTgzPath(id, version), { force: true }).catch(() => {})
   }
 }
 
-/** Fall back to '0.0.0' so an unversioned manifest still installs somewhere. */
-function entryVersion(entry: CatalogEntry): string {
+/** Fall back to '0.0.0' so an unversioned manifest still stages somewhere. */
+export function entryVersion(entry: CatalogEntry): string {
   return entry.manifest.version && entry.manifest.version.length > 0
     ? entry.manifest.version
     : '0.0.0'
@@ -82,14 +84,23 @@ function localArtifactPath(url: string): string {
   return path.resolve(app.getAppPath(), url)
 }
 
-/** Fetch the artifact bytes (http(s) via fetch, local via fs read). */
+/** Fetch the artifact bytes (http(s) via fetch, local via fs read). Remote
+ *  reads are time- and size-capped; a local fs read is exempt from the timeout. */
 async function readArtifact(url: string): Promise<Buffer> {
   if (isLocal(url)) {
     return readFile(localArtifactPath(url))
   }
-  const res = await fetch(url)
+  let res: Response
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(ARTIFACT_FETCH_TIMEOUT_MS) })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error(`artifact download timed out after ${ARTIFACT_FETCH_TIMEOUT_MS}ms (${url})`)
+    }
+    throw err
+  }
   if (!res.ok) throw new Error(`artifact download failed: HTTP ${res.status} (${url})`)
-  return Buffer.from(await res.arrayBuffer())
+  return readCappedBytes(res, MAX_ARTIFACT_BYTES, `artifact (${url})`)
 }
 
 function sha256(buf: Buffer): string {
@@ -97,120 +108,68 @@ function sha256(buf: Buffer): string {
 }
 
 /**
- * Inspect a .tgz's member list BEFORE extracting and reject anything dangerous:
- * a path that escapes the extraction dir (absolute or `..` traversal — "zip
- * slip"), or a symlink / hardlink / device / other non-regular entry (a symlink
- * could redirect a later member's write outside the dir). Only plain files and
- * directories are allowed. `tar -tzvf` prints one line per member, leading with
- * the type char of the mode string (`-` file, `d` dir, `l` symlink, `h`
- * hardlink, etc.); the member name is the last whitespace-separated field (links
- * render as "name -> target", so we cut at " -> "). Throws on the first offender.
+ * Ensure a catalog entry's artifact is staged (downloaded + verified) on the
+ * client, returning its (id, version, tgzPath). Idempotent: an existing .tgz
+ * short-circuits unless `force`.
+ *
+ * TRUST: the "local dev artifact is exempt from sha256" allowance applies ONLY
+ * when the catalog SOURCE the entry came from is itself local (file:// or an
+ * absolute path — `entry.sourceIsLocal === true`). An entry from a REMOTE
+ * catalog must point at an http(s) artifact AND carry a sha256; a non-http
+ * artifactUrl on a remote-sourced entry is rejected (it would otherwise be an
+ * arbitrary local-file read driven by remote catalog data). Every real entry is
+ * flagged by catalog.normalizeEntry; only directly-constructed dev/test entries
+ * lack the flag and fall back to the legacy artifactUrl-scheme check. The
+ * safe-tarball check and manifest validation run host-side at extraction time.
  */
-async function assertSafeTarball(tgz: string): Promise<void> {
-  const { stdout } = await execFileAsync('tar', ['-tzvf', tgz])
-  for (const rawLine of stdout.split('\n')) {
-    const line = rawLine.trimEnd()
-    if (!line) continue
-    const typeChar = line[0]
-    // Only regular files (-) and directories (d) are permitted.
-    if (typeChar !== '-' && typeChar !== 'd') {
-      throw new Error(`unsafe tar entry (type '${typeChar}'): ${line}`)
-    }
-    // The member name is everything after the timestamp columns; cut any link
-    // target, then take the trailing path token. The mode/owner/size/date
-    // columns never contain a slash, so the first slash-bearing token onward is
-    // the name — but to stay robust we just take the last field.
-    const namePart = line.split(' -> ')[0]
-    const fields = namePart.split(/\s+/)
-    const name = fields[fields.length - 1]
-    if (!name) continue
-    if (path.isAbsolute(name) || name.startsWith('/')) {
-      throw new Error(`unsafe tar entry (absolute path): ${name}`)
-    }
-    // Normalize and ensure it doesn't climb out with `..`.
-    const normalized = path.normalize(name)
-    if (normalized === '..' || normalized.startsWith('..' + path.sep) || normalized.includes(path.sep + '..' + path.sep)) {
-      throw new Error(`unsafe tar entry (path traversal): ${name}`)
-    }
-  }
-}
-
-/**
- * Ensure a catalog entry is installed, returning its extracted root dir.
- * Idempotent: if the dir + .ok marker exist, returns immediately (unless `force`
- * is set, which re-downloads over the existing version — used by reinstall).
- * Otherwise downloads, verifies sha256 (if present), extracts the .tgz,
- * validates the extracted manifest.json, and writes .ok. Cleans up a partial
- * dir on failure.
- */
-export async function installFromCatalog(entry: CatalogEntry, force = false): Promise<string> {
+export async function stageArtifact(
+  entry: CatalogEntry,
+  force = false,
+): Promise<{ id: string; version: string; tgzPath: string }> {
   const id = entry.manifest.id
   const version = entryVersion(entry)
-  const dest = installedDir(id, version)
+  const tgz = stagedTgzPath(id, version)
 
-  if (!force && isInstalled(id, version)) return dest
+  if (!force && isStaged(id, version)) return { id, version, tgzPath: tgz }
 
-  await mkdir(path.dirname(dest), { recursive: true })
+  await mkdir(path.dirname(tgz), { recursive: true })
 
-  // Download the tarball to a temp file (atomic via rename), then extract into a
-  // temp dir we rename into place so a half-extracted dir is never visible.
-  const tgz = `${dest}.${process.pid}.tgz`
-  const tmpDir = `${dest}.${process.pid}.tmp`
-
-  try {
-    // A REMOTE artifact MUST carry a sha256 — we can't trust bytes off the
-    // network without pinning them. Local (file://, absolute, relative) dev
-    // artifacts are exempt (the catalog distinguishes them the same way, via
-    // isLocal). Checked before the download so we never fetch unpinned bytes.
-    if (!isLocal(entry.artifactUrl) && !entry.sha256) {
+  const artifactIsHttp = /^https?:\/\//i.test(entry.artifactUrl)
+  // Trust class: an explicit sourceIsLocal (set by catalog.normalizeEntry for
+  // every real entry) is authoritative. When it is absent — only directly
+  // constructed dev/test entries — fall back to the legacy artifactUrl-scheme
+  // check so those keep working. A production remote-catalog entry is always
+  // flagged false, so the strict gate below always applies to it.
+  const treatAsLocal =
+    entry.sourceIsLocal === undefined ? isLocal(entry.artifactUrl) : entry.sourceIsLocal
+  if (!treatAsLocal) {
+    // Remote-sourced entry: only http(s) + sha256-pinned artifacts are trusted.
+    // A non-http artifactUrl here would be an arbitrary local-file read driven
+    // by remote catalog data — reject it.
+    if (!artifactIsHttp) {
+      throw new Error(
+        `artifact for ${id}@${version} came from a remote catalog and must use an http(s) artifactUrl (got "${entry.artifactUrl}")`,
+      )
+    }
+    if (!entry.sha256) {
       throw new Error(`remote artifact for ${id}@${version} is missing a required sha256`)
     }
-    const buf = await readArtifact(entry.artifactUrl)
-    if (entry.sha256 && sha256(buf) !== entry.sha256.toLowerCase()) {
-      throw new Error(`sha256 mismatch for ${id}@${version}`)
-    }
-    const tgzTmp = `${tgz}.part`
-    await writeFile(tgzTmp, buf)
-    await rename(tgzTmp, tgz)
-
-    // Reject zip-slip / symlink / other non-regular members BEFORE extracting,
-    // so a malicious tarball can never write outside the temp dir.
-    await assertSafeTarball(tgz)
-
-    await rm(tmpDir, { recursive: true, force: true })
-    await mkdir(tmpDir, { recursive: true })
-    await execFileAsync('tar', ['-xzf', tgz, '-C', tmpDir])
-
-    // The .tgz may contain the extension at its root or nested one level; accept
-    // a top-level manifest.json, else a single subdir holding it.
-    const root = await resolveExtractedRoot(tmpDir)
-    const manifest = await loadManifestFromDir(root)
-    if (!manifest) {
-      throw new Error(`extracted artifact for ${id}@${version} has no valid manifest.json`)
-    }
-
-    await rm(dest, { recursive: true, force: true })
-    await rename(root, dest)
-    await writeFile(path.join(dest, '.ok'), '')
-    log.info('[extensions] installed %s@%s -> %s', id, version, dest)
-    return dest
+  } else if (artifactIsHttp && !entry.sha256) {
+    // Even a locally-sourced entry can't fetch un-pinned bytes off the network.
+    throw new Error(`remote artifact for ${id}@${version} is missing a required sha256`)
+  }
+  const buf = await readArtifact(entry.artifactUrl)
+  if (entry.sha256 && sha256(buf) !== entry.sha256.toLowerCase()) {
+    throw new Error(`sha256 mismatch for ${id}@${version}`)
+  }
+  const tmp = `${tgz}.${process.pid}.part`
+  try {
+    await writeFile(tmp, buf)
+    await rename(tmp, tgz)
   } catch (err) {
-    await rm(dest, { recursive: true, force: true }).catch(() => {})
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {})
+    await rm(tmp, { force: true }).catch(() => {})
     throw err instanceof Error ? err : new Error(String(err))
-  } finally {
-    await rm(tgz, { force: true }).catch(() => {})
   }
-}
-
-/** Pick the extracted extension root: tmpDir itself if it holds a manifest,
- *  otherwise its single subdirectory (a tar that preserved a leading folder). */
-async function resolveExtractedRoot(tmpDir: string): Promise<string> {
-  if (existsSync(path.join(tmpDir, 'manifest.json'))) return tmpDir
-  const entries = await readdir(tmpDir, { withFileTypes: true })
-  const dirs = entries.filter((e) => e.isDirectory())
-  if (dirs.length === 1 && existsSync(path.join(tmpDir, dirs[0].name, 'manifest.json'))) {
-    return path.join(tmpDir, dirs[0].name)
-  }
-  return tmpDir
+  log.info('[extensions] staged %s@%s -> %s', id, version, tgz)
+  return { id, version, tgzPath: tgz }
 }

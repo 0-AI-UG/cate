@@ -15,7 +15,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Plus, Trash, PuzzlePiece, CircleNotch, ArrowsClockwise, ArrowCircleUp } from '@phosphor-icons/react'
+import { Plus, Trash, PuzzlePiece, CircleNotch, ArrowsClockwise, ArrowCircleUp, Warning } from '@phosphor-icons/react'
 import { SettingRow, SearchableBlock, SecondaryButton, Toggle, TextInput } from './SettingsComponents'
 import { Tooltip } from '../ui/Tooltip'
 import { errorMessage } from '../lib/errorMessage'
@@ -74,6 +74,10 @@ export function ExtensionsSettings() {
   const [sourceErr, setSourceErr] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [addingSource, setAddingSource] = useState(false)
+  // True until the first list fetch resolves, so we show "Loading catalog…"
+  // instead of a misleading "no extensions" message while the first-run
+  // background catalog fetch is still in flight.
+  const [initialLoad, setInitialLoad] = useState(true)
 
   const refresh = useCallback(async () => {
     try {
@@ -92,9 +96,10 @@ export function ExtensionsSettings() {
   }, [])
 
   useEffect(() => {
-    void refresh()
+    void refresh().finally(() => setInitialLoad(false))
     void refreshSources()
-    // Re-pull whenever main reports the extension set changed.
+    // Re-pull whenever main reports the extension set changed (including the
+    // first-run background catalog fetch completing).
     return api().onExtensionsChanged(() => void refresh())
   }, [refresh, refreshSources])
 
@@ -361,9 +366,15 @@ export function ExtensionsSettings() {
           <div className="my-2 rounded-lg border border-subtle overflow-hidden">
             {catalogEntries.map(renderCatalogRow)}
           </div>
+        ) : refreshing || initialLoad ? (
+          <p className="text-[11px] text-muted px-1 py-2">Loading catalog…</p>
+        ) : sources.length === 0 ? (
+          <p className="text-[11px] text-muted px-1 py-2">
+            No catalog sources configured. Add one below, then refresh.
+          </p>
         ) : (
           <p className="text-[11px] text-muted px-1 py-2">
-            No catalog extensions. Add a catalog source below and refresh.
+            No catalog extensions found. Use “Refresh catalog” above to fetch from your sources.
           </p>
         )}
       </SearchableBlock>
@@ -396,6 +407,15 @@ export function ExtensionsSettings() {
           <p className="text-xs text-muted mt-0.5">
             Remote URLs Cate fetches the extension catalog from.
           </p>
+
+          <div className="my-2 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2">
+            <Warning size={14} className="mt-0.5 shrink-0 text-amber-400" />
+            <p className="text-[11px] leading-relaxed text-secondary">
+              Only add sources you trust. An extension can run its own code on your machine, so a
+              malicious catalog can do anything you can. Stick to the official Cate catalog (governed
+              by the Cate team), or build and sideload your own extensions.
+            </p>
+          </div>
 
           <div className="my-2 flex items-center gap-2">
             <TextInput

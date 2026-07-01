@@ -34,6 +34,10 @@ const getWorkspaceInfo = vi.hoisted(() => vi.fn())
 vi.mock('../workspaceManager', () => ({ getWorkspaceInfo }))
 
 import { dispatchCateInvoke, type InvokeScope } from './cateApiHandlers'
+// Real storage now routes through the workspace's runtime (local is just another
+// daemon), so register the in-process LOCAL runtime; its file ops hit the real fs
+// under the temp project root (os.tmpdir() is always an allowed root).
+import { registerTestLocalRuntime } from '../runtime/testLocalRuntime'
 
 const EXT = 'cate.kitchensink'
 let projectRoot: string
@@ -43,7 +47,8 @@ function scope(workspaceId: string, panelId: string | undefined = 'panel-1'): In
 }
 
 beforeAll(() => {
-  projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-ks-storage-'))
+  projectRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cate-ks-storage-')))
+  registerTestLocalRuntime()
 })
 
 afterAll(() => {

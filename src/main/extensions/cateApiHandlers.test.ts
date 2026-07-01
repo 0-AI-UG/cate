@@ -63,7 +63,10 @@ vi.mock('./proxyServer', () => ({ getProxyUrlFor: vi.fn() }))
 vi.mock('./ExtensionServerManager', () => ({ extensionServerManager: {} }))
 const { activeWindow } = vi.hoisted(() => ({ activeWindow: { value: undefined as unknown } }))
 vi.mock('../windowRegistry', () => ({ getActiveMainWindow: () => activeWindow.value }))
-vi.mock('../runtime/locator', () => ({ parseLocator: (raw: string) => ({ runtimeId: 'local', path: raw }) }))
+vi.mock('../runtime/locator', () => ({
+  LOCAL_RUNTIME_ID: 'local',
+  parseLocator: (raw: string) => ({ runtimeId: 'local', path: raw }),
+}))
 vi.mock('../workspaceManager', () => ({ getWorkspaceInfo: vi.fn(() => ({ rootPath: '/ws/root' })) }))
 vi.mock('../settingsFile', () => ({
   getAllSettings: () => ({}),
@@ -286,7 +289,10 @@ describe('dispatchCateInvoke — cate.agent.run', () => {
     state.scopes = ['agent']
     activeWindow.value = fakeWin
     const s = agentScope()
-    const res = await dispatchCateInvoke(s, 'cate.agent.open', { resume: '/p/sess.jsonl' })
+    // A valid resume handle is a session-jsonl path inside this workspace's
+    // .cate/pi-agent dir (getWorkspaceInfo → rootPath '/ws/root').
+    const validResume = '/ws/root/.cate/pi-agent/sessions/-ws-root--/abc.jsonl'
+    const res = await dispatchCateInvoke(s, 'cate.agent.open', { resume: validResume })
     expect(res).toEqual({ sessionId: 'sess-1' })
     expect(showMessageBox).toHaveBeenCalledTimes(1) // first-use consent
     expect(openForExtension).toHaveBeenCalledWith({
@@ -294,8 +300,35 @@ describe('dispatchCateInvoke — cate.agent.run', () => {
       locator: '/ws/root',
       extensionId: s.extensionId,
       sender: fakeWin.webContents,
-      resume: '/p/sess.jsonl',
+      resume: validResume,
     })
+  })
+
+  it('opens a fresh session when no resume is supplied', async () => {
+    state.scopes = ['agent']
+    activeWindow.value = fakeWin
+    const s = agentScope()
+    const res = await dispatchCateInvoke(s, 'cate.agent.open', {})
+    expect(res).toEqual({ sessionId: 'sess-1' })
+    expect(openForExtension).toHaveBeenCalledWith(
+      expect.objectContaining({ extensionId: s.extensionId, resume: undefined }),
+    )
+  })
+
+  it.each([
+    ['a parent-traversal resume', '/ws/root/.cate/pi-agent/../../../etc/passwd'],
+    ['an absolute resume outside the workspace', '/etc/x'],
+    ['another workspace\'s session', '/other/project/.cate/pi-agent/sessions/s/x.jsonl'],
+    ['a relative resume (not an absolute session path)', '../../other/session.jsonl'],
+    ['a bare basename (agentManager needs a full path)', 'abc.jsonl'],
+  ])('rejects %s before reaching agentManager', async (_label, resume) => {
+    state.scopes = ['agent']
+    activeWindow.value = fakeWin
+    const res = await dispatchCateInvoke(agentScope(), 'cate.agent.open', { resume })
+    expect(res).toEqual({ error: 'invalid-resume', method: 'cate.agent.open' })
+    expect(openForExtension).not.toHaveBeenCalled()
+    // Rejected before the consent prompt, too.
+    expect(showMessageBox).not.toHaveBeenCalled()
   })
 
   it('sends a turn to an open session without re-prompting consent', async () => {

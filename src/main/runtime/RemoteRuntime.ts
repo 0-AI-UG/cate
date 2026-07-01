@@ -200,6 +200,10 @@ export class RemoteRuntime implements Runtime {
       rename: (oldP, newP) => call<void>(Methods.fileRename, [oldP, newP]),
       mkdir: (p) => call<void>(Methods.fileMkdir, [p]),
       copy: (src, destDir) => call<string>(Methods.fileCopy, [src, destDir]),
+      extensionsRoot: () => call<string>(Methods.fileExtensionsRoot, []),
+      // longCall (no deadline): extraction shells `tar` on the host and can run
+      // past the default 30s call timeout for a large extension.
+      extractArtifact: (tgz, destDir) => longCall<string>(Methods.fileExtractArtifact, [tgz, destDir]),
       importEntries: (sources, destDir, mode, winId) =>
         call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, winId]),
       search: (root, query, opts?: FileSearchOptions) =>

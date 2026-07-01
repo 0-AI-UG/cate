@@ -226,6 +226,15 @@ export interface FileHost {
   mkdir(safePath: string): Promise<void>
   /** Copy into a directory, auto-naming on collision; returns the final path. */
   copy(safeSrcPath: string, safeDestDir: string): Promise<string>
+  /** The host's per-host extensions install root (~/.cate/extensions), resolved
+   *  daemon-side (only the daemon knows its home dir) and registered as an
+   *  allowed root. Lets the install flow place an extension on whichever host
+   *  owns the workspace — local or remote — with no client-side path guessing. */
+  extensionsRoot(): Promise<string>
+  /** Validate + untar a host-resident, client-verified .tgz (written via
+   *  writeBinary) into `safeDestDir`, atomically; returns `safeDestDir`. The
+   *  daemon rejects unsafe (zip-slip / symlink) members and removes the .tgz. */
+  extractArtifact(safeTgzPath: string, safeDestDir: string): Promise<string>
   importEntries(
     sources: string[],
     safeDestDir: string,

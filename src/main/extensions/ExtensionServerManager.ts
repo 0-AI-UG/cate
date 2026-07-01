@@ -195,6 +195,67 @@ export class ExtensionServerManager {
     }
   }
 
+  /**
+   * Stop ALL servers for one extension, across every workspace. Sessions are
+   * keyed `"${extensionId} ${workspaceId}"`, so we match on the session's
+   * `extensionId` field (not the key string). Called when the extension's
+   * bytes/enable-state change (disable, uninstall, update, reinstall) so a
+   * stale or now-disabled process isn't left running. Mirrors disposeAll: take
+   * the per-key lock, clear any grace timer, stop the server, drop the session.
+   */
+  async stopForExtension(extensionId: string): Promise<void> {
+    const keys = [...this.sessions.entries()]
+      .filter(([, session]) => session.extensionId === extensionId)
+      .map(([key]) => key)
+    await Promise.all(
+      keys.map((key) =>
+        this.withLock(key, async () => {
+          const session = this.sessions.get(key)
+          if (!session) return
+          if (session.graceTimer) clearTimeout(session.graceTimer)
+          await this.stopServer(session)
+          this.sessions.delete(key)
+        }),
+      ),
+    )
+  }
+
+  /**
+   * Release every session bound to a runtime that has just DISCONNECTED (a live
+   * transport drop — crash / network / daemon exit). The daemon and its child
+   * server processes are already gone WITH the transport, so there is nothing to
+   * stop over RPC — talking to the dead runtime (runtime.server.stop) would only
+   * reject. We just release the local state under the per-key lock: cancel the
+   * grace timer, tear down the (now-dead) CATE_API reverse endpoint, drop the
+   * stale handle, and DELETE the session so the next joinPanel/ensureServer
+   * rebuilds it fresh against the reconnected runtime (instead of short-
+   * circuiting on the READY+handle guard and handing back a dead port → 502).
+   * Sessions are keyed `"${extensionId} ${workspaceId}"`, so we match on the
+   * session's `runtime.id`. Mirrors disposeAll's structure, minus the stop RPC.
+   */
+  async disposeForRuntime(runtimeId: string): Promise<void> {
+    const keys = [...this.sessions.entries()]
+      .filter(([, session]) => session.runtime.id === runtimeId)
+      .map(([key]) => key)
+    await Promise.all(
+      keys.map((key) =>
+        this.withLock(key, async () => {
+          const session = this.sessions.get(key)
+          if (!session) return
+          if (session.graceTimer) { clearTimeout(session.graceTimer); session.graceTimer = null }
+          // teardownCateApi's tunnel.stopListen is fire-and-forget (swallows its
+          // own rejection), so it's safe against a dead runtime — it just frees
+          // the main-side reverse endpoint + inbound duplexes.
+          this.teardownCateApi(session)
+          session.handle = null
+          session.state = 'IDLE'
+          this.sessions.delete(key)
+          log.info('[ext-server] runtime %s disconnected, dropped %s', runtimeId, key)
+        }),
+      ),
+    )
+  }
+
   /** Stop every server (app quit). The daemon already kills its children on
    *  transport close, so this is best-effort belt-and-suspenders. */
   async disposeAll(): Promise<void> {
@@ -275,14 +336,15 @@ export class ExtensionServerManager {
     // The server process runs from the EXTENSION's own dir (where server.js +
     // assets live), not the workspace root — `command` paths (e.g. "node
     // server.js") are relative to it. The workspace is passed via WORKSPACE_ROOT.
-    // NOTE (remote seam): for a remote workspace this dir is the client-side
-    // install cache, which the daemon host can't see; remote server-backed
-    // extensions need the artifact synced to the host (runtime.file.* — see
-    // install.ts). Local works today since the daemon shares the filesystem.
-    const extensionDir = extensionManager.getExtensionRootDir(session.extensionId)
-    if (!extensionDir) {
+    // ensureProvisioned places the extension's bytes ON this session's runtime
+    // host (local OR remote) and returns the host-absolute dir, so the daemon can
+    // see them and `cwd` is valid wherever the workspace lives.
+    let extensionDir: string
+    try {
+      extensionDir = await extensionManager.ensureProvisioned(session.extensionId, session.runtime)
+    } catch (err) {
       session.state = 'ERROR'
-      session.lastError = 'Extension is not installed (no root dir to run the server from)'
+      session.lastError = `Failed to provision extension to host: ${err instanceof Error ? err.message : String(err)}`
       throw new Error(session.lastError)
     }
 

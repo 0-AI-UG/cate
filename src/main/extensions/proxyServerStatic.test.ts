@@ -18,6 +18,7 @@ import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest'
 import http from 'http'
 import path from 'path'
 import { existsSync } from 'fs'
+import { readFile } from 'fs/promises'
 
 const EXT_DIR = path.resolve(__dirname, '../../../cate-extensions/extensions/cate.frontendkit')
 // cate-extensions is a local checkout (gitignored); skip when it's absent so a
@@ -41,12 +42,21 @@ vi.mock('./ExtensionManager', () => ({
       frontend: 'index.html',
       panels: [{ id: 'main', label: 'Frontend Kit' }],
     }),
-    getExtensionRootDir: () => EXT_DIR,
+    // Provisioning now returns the host root dir; the LOCAL host shares the fs,
+    // so it's the on-disk extension dir read through the runtime below.
+    ensureProvisioned: async () => EXT_DIR,
   },
 }))
 vi.mock('./ExtensionServerManager', () => ({ extensionServerManager: {} }))
 vi.mock('./serverTunnel', () => ({ openTunnelDuplex: vi.fn() }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+vi.mock('electron', () => ({}))
+// Static assets are now read through the workspace's runtime. Resolve LOCAL to a
+// fake runtime whose file.readBinary reads straight off disk (LOCAL == host).
+vi.mock('../workspaceManager', () => ({ getWorkspaceInfo: () => ({ rootPath: EXT_DIR }) }))
+vi.mock('../runtime/runtimeManager', () => ({
+  runtimes: { resolve: () => ({ id: 'local', file: { readBinary: (p: string) => readFile(p) } }) },
+}))
 
 import { ensureProxyServer, getProxyUrlFor } from './proxyServer'
 

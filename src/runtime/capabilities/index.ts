@@ -10,6 +10,7 @@ import { watch } from 'chokidar'
 import { existsSync } from 'fs'
 import path from 'path'
 import * as fileLeaf from './file'
+import { hostExtensionsRoot, extractArtifact } from './extensions'
 import { runRipgrepSearch } from '../search/engine'
 import { createVcsCapability } from './vcs'
 import { createProcessCapability, type ProcessCapability } from './process'
@@ -121,6 +122,20 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
       fileLeaf.copyInto(await validatePathStrict(src), await validatePathStrict(destDir)),
     importEntries: async (sources, destDir, mode, winId) =>
       fileLeaf.importEntriesInto(sources, await validatePathStrict(destDir), mode, winId, () => { /* errors counted, not logged */ }),
+    // Per-host extensions root (~/.cate/extensions). Register it as an allowed
+    // root here too (it's also registered at daemon startup) so the very first
+    // install on a fresh daemon, or any test driving buildDaemonRuntime directly,
+    // can read/write/extract under it. Idempotent.
+    extensionsRoot: async () => {
+      const root = hostExtensionsRoot()
+      addRoot(root)
+      return root
+    },
+    // Extract a host-resident, client-verified .tgz into destDir. validatePathStrict
+    // on the tgz (it exists), validatePathForCreation on dest (it may not yet) —
+    // both must resolve under an allowed root (extensionsRoot above / startup).
+    extractArtifact: async (tgz, destDir) =>
+      extractArtifact(await validatePathStrict(tgz), await validatePathForCreation(destDir)),
     search: async (root, query, opts) =>
       fileLeaf.searchFiles(await validatePathStrict(root), query, exclusionSet, opts),
     // Content search spawns the ripgrep shipped beside the daemon's node

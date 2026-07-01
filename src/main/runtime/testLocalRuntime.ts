@@ -35,6 +35,7 @@ import {
   grantFileAccess as grantFile,
   registerScopedWriteAllowance as registerWriteAllowance,
 } from '../ipc/pathValidation'
+import { hostExtensionsRoot, extractArtifact } from '../../runtime/capabilities/extensions'
 import { createVcsCapability } from '../../runtime/capabilities/vcs'
 import { createServerCapability } from '../../runtime/capabilities/server'
 import { createTunnelCapability } from '../../runtime/capabilities/tunnel'
@@ -54,6 +55,8 @@ function buildLocalFileHost(): FileHost {
     mkdir: (p) => mkdirEntry(p),
     copy: (src, destDir) => copyInto(src, destDir),
     importEntries: (sources, destDir, mode, winId) => importEntriesInto(sources, destDir, mode, winId),
+    extensionsRoot: async () => { const root = hostExtensionsRoot(); addRoot(root); return root },
+    extractArtifact: async (tgz, destDir) => extractArtifact(await validatePathStrict(tgz), await validatePathForCreation(destDir)),
     search: (root, query, opts) => searchFiles(root, query, opts),
     // Content search isn't exercised by the handler tests that use this stand-in;
     // they call the daemon api in the loopback test instead.

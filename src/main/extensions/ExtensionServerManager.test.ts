@@ -43,7 +43,7 @@ vi.mock('./ExtensionManager', () => ({
       panels: [{ id: 'main', label: 'Echo' }],
       server: { command: 'node server.js', readyPath: '/health', portEnv: 'PORT' },
     }),
-    getExtensionRootDir: () => '/fake/ext/cate.echo',
+    ensureProvisioned: async () => '/fake/ext/cate.echo',
   },
 }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
@@ -177,6 +177,87 @@ describe('ExtensionServerManager', () => {
     await expect(mgr.ensureServer(EXT, WS)).rejects.toThrow(/ready probe timed out/)
     expect(mgr.getState(EXT, WS)).toBe('ERROR')
     expect(mgr.getOutput(EXT, WS)).toContain('boom: cannot bind')
+  })
+
+  it('stopForExtension stops every session for that extension across workspaces', async () => {
+    // Same extension in two workspaces, plus a different extension.
+    await mgr.joinPanel(EXT, 'ws1', 'p1', fakeSender(1))
+    await mgr.joinPanel(EXT, 'ws2', 'p2', fakeSender(1))
+    await mgr.joinPanel('cate.other', 'ws1', 'p3', fakeSender(1))
+    expect(serverStart).toHaveBeenCalledTimes(3)
+
+    await mgr.stopForExtension(EXT)
+
+    // Both EXT sessions stopped + dropped; the other extension untouched.
+    expect(serverStop).toHaveBeenCalledTimes(2)
+    expect(mgr.getState(EXT, 'ws1')).toBeNull()
+    expect(mgr.getState(EXT, 'ws2')).toBeNull()
+    expect(mgr.getState('cate.other', 'ws1')).toBe('READY')
+  })
+
+  it('stopForExtension clears a pending grace timer (no double stop on expiry)', async () => {
+    await mgr.joinPanel(EXT, WS, 'p1', fakeSender(1))
+    mgr.leavePanel(EXT, WS, 'p1')
+    expect(mgr.getState(EXT, WS)).toBe('GRACE')
+
+    await mgr.stopForExtension(EXT)
+    expect(serverStop).toHaveBeenCalledTimes(1)
+    expect(mgr.getState(EXT, WS)).toBeNull()
+
+    // Grace timer was cleared, so advancing past it does not stop again.
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(serverStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('stopForExtension is a no-op when no session matches', async () => {
+    await mgr.stopForExtension('cate.nope')
+    expect(serverStop).not.toHaveBeenCalled()
+  })
+
+  it('disposeForRuntime drops sessions on the dead runtime and tears down CATE_API without an RPC stop', async () => {
+    // Two live sessions on runtime 'local' (the fake runtime's id).
+    await mgr.joinPanel(EXT, 'ws1', 'p1', fakeSender(1))
+    await mgr.joinPanel(EXT, 'ws2', 'p2', fakeSender(1))
+    expect(mgr.getState(EXT, 'ws1')).toBe('READY')
+    expect(mgr.getState(EXT, 'ws2')).toBe('READY')
+    // Each start opened a CATE_API reverse listener.
+    expect(fakeRuntime.tunnel.listen).toHaveBeenCalledTimes(2)
+
+    // Runtime disconnects: the daemon + its children are already gone, so we
+    // must NOT try to stop the server over the (dead) RPC — just release state.
+    await mgr.disposeForRuntime('local')
+
+    // Sessions removed so the next join rebuilds fresh against the reconnected
+    // runtime (no stale READY+handle short-circuit → no 502).
+    expect(mgr.getState(EXT, 'ws1')).toBeNull()
+    expect(mgr.getState(EXT, 'ws2')).toBeNull()
+    // No server.stop RPC against the dead runtime.
+    expect(serverStop).not.toHaveBeenCalled()
+    // The CATE_API reverse listener was torn down for each session.
+    expect(fakeRuntime.tunnel.stopListen).toHaveBeenCalledTimes(2)
+  })
+
+  it('disposeForRuntime leaves sessions on OTHER runtimes untouched', async () => {
+    await mgr.joinPanel(EXT, WS, 'p1', fakeSender(1))
+    expect(mgr.getState(EXT, WS)).toBe('READY')
+    // A drop on some other runtime id must not touch our 'local' session.
+    await mgr.disposeForRuntime('srv_other')
+    expect(mgr.getState(EXT, WS)).toBe('READY')
+    expect(serverStop).not.toHaveBeenCalled()
+  })
+
+  it('disposeForRuntime clears a pending grace timer (no stop on expiry)', async () => {
+    await mgr.joinPanel(EXT, WS, 'p1', fakeSender(1))
+    mgr.leavePanel(EXT, WS, 'p1')
+    expect(mgr.getState(EXT, WS)).toBe('GRACE')
+
+    await mgr.disposeForRuntime('local')
+    expect(mgr.getState(EXT, WS)).toBeNull()
+
+    // The grace timer was cleared with the session, so advancing past it does
+    // nothing (no stop, and no throw on a now-missing session).
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(serverStop).not.toHaveBeenCalled()
   })
 
   it('disposeForWebContents leaves panels owned by the destroyed window', async () => {

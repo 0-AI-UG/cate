@@ -8,7 +8,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 const h = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => h.userData } }))
 
-import { fetchCatalog, getCachedCatalog, writeCatalogCache } from './catalog'
+import {
+  fetchCatalog,
+  getCachedCatalog,
+  writeCatalogCache,
+  readCappedBytes,
+  MAX_CATALOG_INDEX_BYTES,
+} from './catalog'
 
 function validEntry(id: string, extra: Record<string, unknown> = {}) {
   return {
@@ -89,6 +95,33 @@ describe('fetchCatalog', () => {
     const entries = await fetchCatalog([pathToFileURL(file).toString()])
     expect(entries).toEqual([])
   })
+
+  it('marks entries from a local source as sourceIsLocal, ignoring the JSON', async () => {
+    // Even if the index tries to claim otherwise, locality is derived from the
+    // source, not trusted from the entry JSON.
+    const src = writeIndex('local.json', {
+      extensions: [validEntry('acme.local', { sourceIsLocal: false })],
+    })
+    const entries = await fetchCatalog([src])
+    expect(entries[0].sourceIsLocal).toBe(true)
+  })
+})
+
+describe('readCappedBytes', () => {
+  it('returns the body bytes when under the cap', async () => {
+    const res = new Response(new Uint8Array([9, 8, 7]))
+    const buf = await readCappedBytes(res, 100, 'test')
+    expect(Buffer.from([9, 8, 7]).equals(buf)).toBe(true)
+  })
+
+  it('throws once the body exceeds the cap', async () => {
+    const res = new Response(new Uint8Array(1000))
+    await expect(readCappedBytes(res, 100, 'test')).rejects.toThrow(/exceeds max size/)
+  })
+
+  it('exposes a defensible index cap', () => {
+    expect(MAX_CATALOG_INDEX_BYTES).toBeGreaterThan(0)
+  })
 })
 
 describe('catalog cache', () => {
@@ -102,5 +135,7 @@ describe('catalog cache', () => {
     const cached = await getCachedCatalog()
     expect(cached.map((e) => e.manifest.id)).toEqual(['acme.c'])
     expect(cached[0].description).toBe('cached')
+    // The trusted, stored locality survives the round-trip (local source here).
+    expect(cached[0].sourceIsLocal).toBe(true)
   })
 })

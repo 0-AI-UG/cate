@@ -18,6 +18,7 @@
 
 import { ipcMain, app, dialog, type WebContents } from 'electron'
 import { randomUUID } from 'crypto'
+import path from 'path'
 import log from '../logger'
 import {
   EXTENSION_LIST,
@@ -44,13 +45,14 @@ import {
   CATE_HOST_FORWARD_REPLY,
 } from '../../shared/ipc-channels'
 import { extensionManager } from './ExtensionManager'
+import { getCachedCatalog } from './catalog'
 import { getProxyUrlFor, identityForGuestUrl } from './proxyServer'
 import { extensionServerManager } from './ExtensionServerManager'
 import { agentManager } from '../../agent/main/agentManager'
 import { getExtensionStorage } from './storage'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { getActiveMainWindow } from '../windowRegistry'
-import { parseLocator } from '../runtime/locator'
+import { parseLocator, LOCAL_RUNTIME_ID } from '../runtime/locator'
 import { getAllSettings, getSetting } from '../settingsFile'
 import { resolveActiveTheme } from '../themeBootCache'
 import { showOsNotification } from '../ipc/notifications'
@@ -221,6 +223,43 @@ function agentError(err: unknown, method: string): InvokeResult {
   return { error: message || 'agent-failed', method }
 }
 
+/**
+ * Bound a guest-supplied `cate.agent.open({ resume })` handle to the caller's own
+ * workspace so an extension can't resume/read another workspace's (or an arbitrary
+ * host file's) pi conversation.
+ *
+ * The `resume` handle IS pi's session-jsonl path — the value `open` returned to
+ * this extension for this workspace — and pi (via agentManager) consumes it as a
+ * full `--session <path>` argument, so we can't accept a bare id here (agentManager
+ * doesn't resolve one; that would need an off-limits agentManager change). Instead
+ * we canonicalize the path and require it to live inside this workspace's
+ * `<cwd>/.cate/pi-agent/` dir — the ONLY place pi writes session jsonl for this
+ * workspace (see agentDir.ts hostAgentDir/hostSessionsDir). Anything absolute-but-
+ * outside, traversing (`..`), or NUL-bearing is rejected.
+ *
+ * Invariant relied on: every session file a legitimate `open` hands back is an
+ * absolute path under `<cwd>/.cate/pi-agent/`, and pi never writes this
+ * workspace's sessions elsewhere. Residual gap: the pi-agent dir is shared by ALL
+ * extensions in a workspace (session files are keyed by cwd, not extensionId), so
+ * this stops cross-WORKSPACE / arbitrary-file reads but not one consented
+ * extension resuming another extension's session within the SAME workspace. Fully
+ * closing that would require per-extension session keying inside agentManager
+ * (out of scope for this file) and remains advisable.
+ *
+ * Returns the canonicalized path when valid, or null to reject.
+ */
+function boundedResumePath(resume: string, runtimeId: string, cwd: string): string | null {
+  if (resume.includes('\0')) return null
+  // Session paths live on the host that runs pi: native separators for the local
+  // runtime, POSIX for a remote host. Match hostAgentDir's flavor choice.
+  const p = runtimeId === LOCAL_RUNTIME_ID ? path : path.posix
+  if (!p.isAbsolute(resume)) return null
+  const normalized = p.normalize(resume)
+  const root = p.join(cwd, '.cate', 'pi-agent')
+  if (normalized !== root && !normalized.startsWith(root + p.sep)) return null
+  return normalized
+}
+
 /** Ask the user (once per app session) whether `extensionId` may run the agent.
  *  Returns true if already granted or the user allows. */
 async function ensureAgentConsent(extensionId: string): Promise<boolean> {
@@ -313,7 +352,7 @@ export async function dispatchCateInvoke(
     case 'cate.storage.keys':
     case 'cate.storage.panel.get':
     case 'cate.storage.panel.set':
-      return dispatchStorage(method, panelId ?? '', args, extensionId, workspaceId)
+      return await dispatchStorage(method, panelId ?? '', args, extensionId, workspaceId)
 
     // --- Agent: drive a pi session through the bundled pi --------------------
     // pi owns all conversation state on its session jsonl; Cate only holds the
@@ -340,9 +379,19 @@ export async function dispatchCateInvoke(
 
     case 'cate.agent.open': {
       const a = (args ?? {}) as { resume?: unknown }
-      const resume = typeof a.resume === 'string' && a.resume ? a.resume : undefined
+      const rawResume = typeof a.resume === 'string' && a.resume ? a.resume : undefined
       const info = getWorkspaceInfo(workspaceId)
       if (!info) return { error: 'no-workspace', method }
+      // Security: a `resume` handle is forwarded to pi as a full session-file path,
+      // so bound it to THIS workspace's pi-agent dir before it can reach the agent
+      // (or prompt for consent) — reject cross-workspace / arbitrary-file handles.
+      let resume: string | undefined
+      if (rawResume !== undefined) {
+        const { runtimeId, path: cwd } = parseLocator(info.rootPath)
+        const bounded = boundedResumePath(rawResume, runtimeId, cwd)
+        if (!bounded) return { error: 'invalid-resume', method }
+        resume = bounded
+      }
       const win = requireHostWindow()
       if (!win) return { error: 'no-host-window', method }
       if (!(await ensureAgentConsent(extensionId))) return { error: 'consent-denied', method }
@@ -415,14 +464,14 @@ async function dispatchInvoke(
   )
 }
 
-function dispatchStorage(
+async function dispatchStorage(
   method: string,
   panelId: string,
   args: unknown,
   extensionId: string,
   workspaceId: string,
-): InvokeResult {
-  const storage = getExtensionStorage(extensionId, workspaceId)
+): Promise<InvokeResult> {
+  const storage = await getExtensionStorage(extensionId, workspaceId)
   if (!storage) return { error: 'no-storage', method }
   const a = (args ?? {}) as { key?: string; value?: unknown }
   switch (method) {
@@ -451,11 +500,28 @@ function dispatchStorage(
 // ---------------------------------------------------------------------------
 
 export function registerExtensionHandlers(): void {
+  // Subscribe to host-connect events so enabled extensions are eagerly
+  // provisioned onto each runtime (local + remote) as it comes online.
+  extensionManager.init()
+
   // Prime the registry from settings (sideload folders). Best-effort; the
-  // list/proxy handlers also tolerate an empty registry.
-  void extensionManager.refresh().catch((err) =>
-    log.warn('[extensions] initial refresh failed: %O', err),
-  )
+  // list/proxy handlers also tolerate an empty registry. On a fresh install the
+  // catalog cache is empty even though a default source is configured (the
+  // network fetch otherwise only happens on a manual "Refresh catalog"), so the
+  // Settings UI looks like no source exists. Self-heal: if sources are
+  // configured but the cache is empty, kick off one background fetch.
+  // refreshCatalog() fetches, caches, re-scans and broadcasts EXTENSIONS_CHANGED
+  // so the renderer updates itself. Fire-and-forget; offline failures are
+  // logged, never fatal.
+  void extensionManager
+    .refresh()
+    .then(async () => {
+      if (extensionManager.getCatalogSources().length === 0) return
+      const cached = await getCachedCatalog()
+      if (cached.length > 0) return
+      await extensionManager.refreshCatalog()
+    })
+    .catch((err) => log.warn('[extensions] initial refresh failed: %O', err))
 
   // --- Extension management ------------------------------------------------
   ipcMain.handle(EXTENSION_LIST, async () => {
@@ -613,7 +679,7 @@ export function registerExtensionHandlers(): void {
       }
       // Phase 1 supports the storage.change topic, fed by the storage watcher.
       if (topic !== 'storage.change') return { error: 'unsupported', topic }
-      const storage = getExtensionStorage(extensionId, workspaceId)
+      const storage = await getExtensionStorage(extensionId, workspaceId)
       if (!storage) return { error: 'no-storage' }
       const wc = event.sender
       const dispose = storage.onChange(() => {

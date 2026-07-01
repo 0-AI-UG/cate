@@ -147,6 +147,38 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
     expect(await fs.readFile(target, 'utf-8')).toBe('hello from remote\n')
   })
 
+  test('extensionsRoot + extractArtifact round-trip over the wire (extension install)', async () => {
+    const { execFile } = await import('node:child_process')
+    const { promisify } = await import('node:util')
+    const execFileAsync = promisify(execFile)
+    const { remote } = loopback(daemonApi())
+
+    // extensionsRoot returns a string over the wire (and registers itself as an
+    // allowed root daemon-side). Point it at a temp dir so we don't touch ~/.cate.
+    const hostRoot = path.join(rootDir, 'host-ext')
+    process.env.CATE_EXTENSIONS_ROOT = hostRoot
+    try {
+      expect(await remote.file.extensionsRoot()).toBe(hostRoot)
+
+      // Stage a tarball under the (allowed) rootDir, then extract it host-side
+      // through the daemon — the path a real catalog install takes after the
+      // client uploads the .tgz via writeBinary.
+      const stage = path.join(rootDir, 'stage')
+      await fs.mkdir(stage, { recursive: true })
+      await fs.writeFile(path.join(stage, 'manifest.json'), JSON.stringify({ id: 'cate.x', name: 'X', panels: [] }))
+      await fs.writeFile(path.join(stage, 'index.html'), '<title>wire</title>')
+      const tgz = path.join(hostRoot, 'cate.x', '1.0.0.tgz')
+      await fs.mkdir(path.dirname(tgz), { recursive: true })
+      await execFileAsync('tar', ['-czf', tgz, '-C', stage, '.'])
+
+      const dest = path.join(hostRoot, 'cate.x', '1.0.0')
+      expect(await remote.file.extractArtifact(tgz, dest)).toBe(dest)
+      expect(await remote.file.readFile(path.join(dest, 'index.html'))).toContain('<title>wire</title>')
+    } finally {
+      delete process.env.CATE_EXTENSIONS_ROOT
+    }
+  })
+
   test('grantFileAccess round-trips so the daemon allows an out-of-root file', async () => {
     const { remote } = loopback(daemonApi())
     // A file OUTSIDE any allowed root (not under rootDir, not under tmpdir): the

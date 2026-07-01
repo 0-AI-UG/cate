@@ -1,0 +1,110 @@
+// =============================================================================
+// install.ts — provisioning an extension onto a host THROUGH the runtime, for
+// both a LOCAL and a (simulated) REMOTE workspace. The whole point of the unified
+// path is that there is no isLocal branch: a catalog extension is staged on the
+// client, then uploaded + extracted on whichever host owns the workspace via
+// runtime.file.*. Here we drive a real in-process daemon runtime under BOTH a
+// 'local' id and a 'srv_test' (remote) id and assert the bytes land host-side.
+// =============================================================================
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import os from 'os'
+import path from 'path'
+import { pathToFileURL } from 'url'
+import { execFileSync } from 'child_process'
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync, readFileSync } from 'fs'
+
+const h = vi.hoisted(() => ({ userData: '', appPath: '' }))
+vi.mock('electron', () => ({
+  app: { getPath: () => h.userData, getAppPath: () => h.appPath },
+}))
+
+import { provisionCatalogToRuntime } from './install'
+import { buildDaemonRuntime } from '../../runtime/capabilities'
+import { addAllowedRoot, removeAllowedRoot } from '../ipc/pathValidation'
+import type { CatalogEntry } from './catalog'
+import type { Runtime } from '../runtime/types'
+
+let tmp: string
+let hostRoot: string
+
+beforeEach(() => {
+  tmp = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'cate-install-')))
+  h.userData = path.join(tmp, 'userData')
+  h.appPath = tmp
+  mkdirSync(h.userData, { recursive: true })
+  hostRoot = path.join(tmp, 'host-extensions')
+  process.env.CATE_EXTENSIONS_ROOT = hostRoot
+  addAllowedRoot(hostRoot)
+})
+
+afterEach(() => {
+  removeAllowedRoot(hostRoot)
+  delete process.env.CATE_EXTENSIONS_ROOT
+  rmSync(tmp, { recursive: true, force: true })
+})
+
+function buildEntry(id = 'cate.hello', version = '1.2.0'): CatalogEntry {
+  const srcDir = path.join(tmp, `src-${id}-${version}`)
+  mkdirSync(srcDir, { recursive: true })
+  writeFileSync(
+    path.join(srcDir, 'manifest.json'),
+    JSON.stringify({ id, name: 'Hello', version, panels: [{ id: 'main', label: 'Hello' }], frontend: 'index.html' }),
+  )
+  writeFileSync(path.join(srcDir, 'index.html'), '<!doctype html><h1>hi</h1>')
+  const file = path.join(tmp, `${id}-${version}.tgz`)
+  execFileSync('tar', ['-czf', file, '-C', srcDir, '.'])
+  return {
+    manifest: { id, name: 'Hello', version, panels: [{ id: 'main', label: 'Hello' }], frontend: 'index.html' },
+    artifactUrl: pathToFileURL(file).toString(),
+  }
+}
+
+// A daemon runtime under an arbitrary id, so we can pretend it's a remote host.
+// In-process, so the "upload" (writeBinary) and extract run against real fs under
+// the temp host root — the same code paths a real remote daemon would run.
+function runtimeWithId(id: string): Runtime {
+  return buildDaemonRuntime({ id }).runtime
+}
+
+describe('provisionCatalogToRuntime', () => {
+  it.each([
+    ['local', 'local'],
+    ['remote', 'srv_test'],
+  ])('provisions a catalog extension onto a %s host and extracts it there', async (_label, runtimeId) => {
+    const entry = buildEntry()
+    const runtime = runtimeWithId(runtimeId)
+
+    const dest = await provisionCatalogToRuntime(runtime, entry)
+
+    // The host dir lives under the (per-host) extensions root, keyed by id+version.
+    expect(dest).toBe(path.join(hostRoot, 'cate.hello', '1.2.0'))
+    expect(existsSync(path.join(dest, 'manifest.json'))).toBe(true)
+    expect(existsSync(path.join(dest, 'index.html'))).toBe(true)
+    expect(existsSync(path.join(dest, '.ok'))).toBe(true)
+    // The assets are readable back through the runtime (the path the proxy takes).
+    expect((await runtime.file.readBinary(path.join(dest, 'index.html'))).toString()).toContain('hi')
+  })
+
+  it('is idempotent: a second provision does not re-upload (staged tgz can vanish)', async () => {
+    const entry = buildEntry()
+    const runtime = runtimeWithId('srv_test')
+    const first = await provisionCatalogToRuntime(runtime, entry)
+
+    // Delete the client-staged tgz; a re-provision must short-circuit on the host
+    // .ok marker WITHOUT needing the staged bytes again.
+    rmSync(path.join(h.userData, 'extensions', 'cate.hello', '1.2.0.tgz'))
+    const second = await provisionCatalogToRuntime(runtime, entry)
+    expect(second).toBe(first)
+  })
+
+  it('force re-extracts even when already installed', async () => {
+    const entry = buildEntry()
+    const runtime = runtimeWithId('local')
+    const dest = await provisionCatalogToRuntime(runtime, entry)
+    // Tamper with the installed copy, then force a re-provision to restore it.
+    writeFileSync(path.join(dest, 'index.html'), 'TAMPERED')
+    await provisionCatalogToRuntime(runtime, entry, true)
+    expect(readFileSync(path.join(dest, 'index.html'), 'utf8')).toContain('hi')
+  })
+})

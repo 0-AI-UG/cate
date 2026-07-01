@@ -11,8 +11,20 @@ vi.mock('electron', () => ({
   app: { getPath: () => h.userData, getAppPath: () => h.appPath },
 }))
 
-import { installFromCatalog, isInstalled, installedDir } from './download'
-import type { CatalogEntry } from './catalog'
+// download.ts now STAGES the verified .tgz on the client (no extraction); the
+// host (local OR remote daemon) extracts it via file.extractArtifact. The
+// safe-tarball / manifest checks therefore live host-side and are covered by
+// runtime/capabilities/extensions.test.ts — here we only test fetch + verify +
+// cache of the artifact bytes.
+import {
+  stageArtifact,
+  isStaged,
+  stagedTgzPath,
+  stagedVersions,
+  MAX_ARTIFACT_BYTES,
+  ARTIFACT_FETCH_TIMEOUT_MS,
+} from './download'
+import { readCappedBytes, type CatalogEntry } from './catalog'
 
 let tmp: string
 
@@ -47,72 +59,49 @@ function entryFor(file: string, sha256?: string, id = 'cate.hello', version = '0
     manifest: { id, name: 'Hello', version, panels: [{ id: 'main', label: 'Hello' }] },
     artifactUrl: pathToFileURL(file).toString(),
     sha256,
+    // Represents an entry that came from a local (file:// / absolute) catalog
+    // source — the only case exempt from the http(s) + sha256 requirement.
+    sourceIsLocal: true,
   }
 }
 
-/** Build a tarball whose payload also contains a malicious member (a symlink
- *  escaping the dir, or a `..` traversal path). Returns the tarball path. */
-function buildMaliciousArtifact(kind: 'symlink' | 'traversal'): string {
-  const srcDir = path.join(tmp, `evil-src-${kind}`)
-  mkdirSync(srcDir, { recursive: true })
-  // A valid manifest so the only reason to reject is the malicious member.
-  writeFileSync(
-    path.join(srcDir, 'manifest.json'),
-    JSON.stringify({ id: 'cate.evil', name: 'Evil', version: '0.1.0', panels: [{ id: 'main', label: 'Evil' }], frontend: 'index.html' }),
-  )
-  writeFileSync(path.join(srcDir, 'index.html'), '<!doctype html>')
-  const file = path.join(tmp, `cate.evil-${kind}.tgz`)
-  if (kind === 'symlink') {
-    // A symlink that points outside the extraction dir (classic redirect).
-    execFileSync('ln', ['-s', '/etc/passwd', path.join(srcDir, 'pwned')])
-    execFileSync('tar', ['-czf', file, '-C', srcDir, '.'])
-  } else {
-    // A member whose name literally traverses out of the dir ("../escape"),
-    // injected via tar's name-rewrite. BSD tar (macOS) uses -s; GNU tar (Linux
-    // CI) uses --transform — try BSD first, fall back to GNU.
-    writeFileSync(path.join(srcDir, 'escape'), 'owned')
-    try {
-      execFileSync('tar', ['-czf', file, '-C', srcDir, '-s', '|^escape$|../escape|', 'escape', 'manifest.json', 'index.html'])
-    } catch {
-      execFileSync('tar', ['-czf', file, '-C', srcDir, '--transform', 's|^escape$|../escape|', 'escape', 'manifest.json', 'index.html'])
-    }
-  }
-  return file
-}
-
-describe('installFromCatalog', () => {
-  it('downloads + extracts a local file:// artifact and writes the .ok marker', async () => {
+describe('stageArtifact', () => {
+  it('downloads + caches a local file:// artifact as a verified .tgz', async () => {
     const { file } = buildArtifact()
-    const root = await installFromCatalog(entryFor(file))
-    expect(root).toBe(installedDir('cate.hello', '0.1.0'))
-    expect(existsSync(path.join(root, 'manifest.json'))).toBe(true)
-    expect(existsSync(path.join(root, 'index.html'))).toBe(true)
-    expect(isInstalled('cate.hello', '0.1.0')).toBe(true)
+    const { id, version, tgzPath } = await stageArtifact(entryFor(file))
+    expect(id).toBe('cate.hello')
+    expect(version).toBe('0.1.0')
+    expect(tgzPath).toBe(stagedTgzPath('cate.hello', '0.1.0'))
+    expect(existsSync(tgzPath)).toBe(true)
+    expect(isStaged('cate.hello', '0.1.0')).toBe(true)
+    expect(await stagedVersions('cate.hello')).toEqual(['0.1.0'])
+    // The cached bytes are the artifact bytes (so any host can extract them).
+    expect(readFileSync(tgzPath).equals(readFileSync(file))).toBe(true)
   })
 
-  it('is idempotent: a second install short-circuits on the .ok marker', async () => {
+  it('is idempotent: a second stage short-circuits on the cached .tgz', async () => {
     const { file } = buildArtifact()
     const entry = entryFor(file)
-    const first = await installFromCatalog(entry)
-    // Removing the source artifact proves the second call does no extraction.
+    const first = await stageArtifact(entry)
+    // Removing the source artifact proves the second call does no re-download.
     rmSync(file)
-    const second = await installFromCatalog(entry)
-    expect(second).toBe(first)
-    expect(isInstalled('cate.hello', '0.1.0')).toBe(true)
+    const second = await stageArtifact(entry)
+    expect(second.tgzPath).toBe(first.tgzPath)
+    expect(isStaged('cate.hello', '0.1.0')).toBe(true)
   })
 
-  it('verifies sha256 and installs when it matches', async () => {
+  it('verifies sha256 and stages when it matches', async () => {
     const { file, sha256 } = buildArtifact()
-    const root = await installFromCatalog(entryFor(file, sha256))
-    expect(existsSync(path.join(root, '.ok'))).toBe(true)
+    const { tgzPath } = await stageArtifact(entryFor(file, sha256))
+    expect(existsSync(tgzPath)).toBe(true)
   })
 
-  it('throws on sha256 mismatch and leaves nothing installed', async () => {
+  it('throws on sha256 mismatch and leaves nothing staged', async () => {
     const { file } = buildArtifact()
     const bad = 'f'.repeat(64)
-    await expect(installFromCatalog(entryFor(file, bad))).rejects.toThrow(/sha256 mismatch/)
-    expect(isInstalled('cate.hello', '0.1.0')).toBe(false)
-    expect(existsSync(installedDir('cate.hello', '0.1.0'))).toBe(false)
+    await expect(stageArtifact(entryFor(file, bad))).rejects.toThrow(/sha256 mismatch/)
+    expect(isStaged('cate.hello', '0.1.0')).toBe(false)
+    expect(existsSync(stagedTgzPath('cate.hello', '0.1.0'))).toBe(false)
   })
 
   it('rejects a remote (https) artifact that is missing a sha256, without downloading', async () => {
@@ -122,21 +111,8 @@ describe('installFromCatalog', () => {
       manifest: { id: 'cate.remote', name: 'Remote', version: '0.1.0', panels: [{ id: 'm', label: 'M' }] },
       artifactUrl: 'https://example.invalid/cate.remote-0.1.0.tgz',
     }
-    await expect(installFromCatalog(entry)).rejects.toThrow(/missing a required sha256/)
-    expect(isInstalled('cate.remote', '0.1.0')).toBe(false)
-  })
-
-  it('rejects a tarball containing a symlink member and installs nothing', async () => {
-    const file = buildMaliciousArtifact('symlink')
-    await expect(installFromCatalog(entryFor(file, undefined, 'cate.evil', '0.1.0'))).rejects.toThrow(/unsafe tar entry/)
-    expect(isInstalled('cate.evil', '0.1.0')).toBe(false)
-    expect(existsSync(installedDir('cate.evil', '0.1.0'))).toBe(false)
-  })
-
-  it('rejects a tarball with a path-traversal (../) member and installs nothing', async () => {
-    const file = buildMaliciousArtifact('traversal')
-    await expect(installFromCatalog(entryFor(file, undefined, 'cate.evil', '0.1.0'))).rejects.toThrow(/unsafe tar entry/)
-    expect(isInstalled('cate.evil', '0.1.0')).toBe(false)
+    await expect(stageArtifact(entry)).rejects.toThrow(/missing a required sha256/)
+    expect(isStaged('cate.remote', '0.1.0')).toBe(false)
   })
 
   it('resolves a relative artifactUrl against the app path', async () => {
@@ -145,8 +121,65 @@ describe('installFromCatalog', () => {
     const entry: CatalogEntry = {
       manifest: { id: 'cate.rel', name: 'Rel', version: '0.1.0', panels: [{ id: 'm', label: 'M' }] },
       artifactUrl: './' + rel,
+      sourceIsLocal: true,
     }
-    const root = await installFromCatalog(entry)
-    expect(existsSync(path.join(root, 'manifest.json'))).toBe(true)
+    const { tgzPath } = await stageArtifact(entry)
+    expect(existsSync(tgzPath)).toBe(true)
+  })
+
+  it('rejects a remote-sourced entry whose artifactUrl is not http(s)', async () => {
+    // A hostile remote catalog can't point at a local-disk path to get an
+    // unpinned, checksum-free read: a non-http artifactUrl from a remote source
+    // (sourceIsLocal !== true) is refused before any fs/network access.
+    const { file } = buildArtifact('cate.evil', '0.1.0')
+    const entry: CatalogEntry = {
+      manifest: { id: 'cate.evil', name: 'Evil', version: '0.1.0', panels: [{ id: 'm', label: 'M' }] },
+      artifactUrl: file, // absolute local path, but the source is remote
+      sha256: 'a'.repeat(64),
+      sourceIsLocal: false,
+    }
+    await expect(stageArtifact(entry)).rejects.toThrow(/must use an http\(s\) artifactUrl/)
+    expect(isStaged('cate.evil', '0.1.0')).toBe(false)
+  })
+
+  it('rejects a remote-sourced (http) entry missing a sha256', async () => {
+    const entry: CatalogEntry = {
+      manifest: { id: 'cate.rmt', name: 'Rmt', version: '0.1.0', panels: [{ id: 'm', label: 'M' }] },
+      artifactUrl: 'https://example.invalid/cate.rmt-0.1.0.tgz',
+      sourceIsLocal: false,
+    }
+    await expect(stageArtifact(entry)).rejects.toThrow(/missing a required sha256/)
+    expect(isStaged('cate.rmt', '0.1.0')).toBe(false)
+  })
+
+  it('falls back to the artifactUrl scheme for an unflagged entry (legacy compat)', async () => {
+    // Directly-constructed entries (dev/test) with no sourceIsLocal flag keep
+    // the legacy behavior: a local-path artifactUrl is treated as a local dev
+    // artifact and stages without a sha256. (Real entries are always flagged.)
+    const { file } = buildArtifact('cate.legacy', '0.1.0')
+    const entry: CatalogEntry = {
+      manifest: { id: 'cate.legacy', name: 'Legacy', version: '0.1.0', panels: [{ id: 'm', label: 'M' }] },
+      artifactUrl: pathToFileURL(file).toString(),
+    }
+    const { tgzPath } = await stageArtifact(entry)
+    expect(existsSync(tgzPath)).toBe(true)
+  })
+})
+
+describe('readCappedBytes', () => {
+  it('returns the body bytes when under the cap', async () => {
+    const res = new Response(new Uint8Array([1, 2, 3, 4]))
+    const buf = await readCappedBytes(res, 100, 'test')
+    expect(Buffer.from([1, 2, 3, 4]).equals(buf)).toBe(true)
+  })
+
+  it('throws once the body exceeds the cap', async () => {
+    const res = new Response(new Uint8Array(1000))
+    await expect(readCappedBytes(res, 100, 'test')).rejects.toThrow(/exceeds max size/)
+  })
+
+  it('exposes defensible artifact caps', () => {
+    expect(MAX_ARTIFACT_BYTES).toBe(256 * 1024 * 1024)
+    expect(ARTIFACT_FETCH_TIMEOUT_MS).toBeGreaterThan(0)
   })
 })
