@@ -16,6 +16,7 @@ import { createVcsCapability } from '../../runtime/capabilities/vcs'
 import { getShellEnv } from '../shellEnv'
 import {
   GIT_IS_REPO,
+  GIT_FIND_REPOS,
   GIT_INIT,
   GIT_LS_FILES,
   GIT_STATUS,
@@ -134,6 +135,17 @@ export function registerHandlers(): void {
 
   // Hand-written: these re-encode/decode the locator (runtimeId + formatLocator
   // / worktreeTargetPath) and so are NOT exact pass-throughs.
+
+  // findRepos returns runtime-absolute repo paths; re-encode each as a locator
+  // on the same runtime so the renderer can hand them straight back to the git
+  // IPC (which parses a locator off every cwd argument), exactly like the
+  // worktree list below.
+  ipcMain.handle(GIT_FIND_REPOS, async (_event, cwd: string, maxDepth?: number) => {
+    const { vcs, path, runtimeId } = vcsFor(cwd)
+    const repos = await vcs.findRepos(path, maxDepth)
+    return repos.map((repoPath) => formatLocator({ runtimeId, path: repoPath }))
+  })
+
   ipcMain.handle(GIT_WORKTREE_LIST, async (_event, cwd: string) => {
     const { vcs, path, runtimeId } = vcsFor(cwd)
     const worktrees = await vcs.worktreeList(path)

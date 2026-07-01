@@ -297,6 +297,9 @@ export interface PrSummary {
 // relocatable.
 export interface VcsHost {
   isRepo(dir: string): Promise<boolean>
+  /** Discover git repos at or below `dir`, scanning at most `maxDepth` levels
+   *  (default 1) and stopping at each repo it finds. Returns absolute paths. */
+  findRepos(dir: string, maxDepth?: number): Promise<string[]>
   init(dir: string): Promise<void>
   lsFiles(dir: string): Promise<string[]>
   status(cwd: string): Promise<GitStatusResult>

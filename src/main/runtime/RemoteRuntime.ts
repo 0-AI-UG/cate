@@ -187,6 +187,7 @@ export class RemoteRuntime implements Runtime {
 
     this.vcs = {
       isRepo: (dir) => call<boolean>(Methods.vcsIsRepo, [dir]),
+      findRepos: (dir, maxDepth) => call<string[]>(Methods.vcsFindRepos, [dir, maxDepth]),
       init: (dir) => call<void>(Methods.vcsInit, [dir]),
       lsFiles: (dir) => call<string[]>(Methods.vcsLsFiles, [dir]),
       status: (cwd) => call<GitStatusResult>(Methods.vcsStatus, [cwd]),

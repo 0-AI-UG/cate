@@ -103,6 +103,7 @@ export const Methods = {
   ptyScanPorts: 'pty.scanPorts',
 
   vcsIsRepo: 'vcs.isRepo',
+  vcsFindRepos: 'vcs.findRepos',
   vcsInit: 'vcs.init',
   vcsLsFiles: 'vcs.lsFiles',
   vcsStatus: 'vcs.status',
