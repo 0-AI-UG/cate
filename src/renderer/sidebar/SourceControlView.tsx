@@ -24,6 +24,7 @@ import { Tooltip } from '../ui/Tooltip'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { errorMessage } from '../lib/errorMessage'
+import { parseLocator } from '../../main/runtime/locator'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,6 +72,16 @@ function dirName(path: string): string {
   const parts = path.split('/')
   parts.pop()
   return parts.join('/')
+}
+
+/** Last path segment of a rootPath, for the nested-mode section header.
+ *  rootPath may be a locator (`cate-runtime://<id>/<path>`) for a remote
+ *  workspace, so decode it before taking the basename. */
+function repoDisplayName(rootPath: string): string {
+  let p = rootPath
+  try { p = parseLocator(rootPath).path } catch { /* already a plain path */ }
+  const segs = p.split(/[/\\]/).filter(Boolean)
+  return segs[segs.length - 1] || p
 }
 
 function statusColor(status: string): string {
@@ -382,14 +393,20 @@ const BranchPicker: React.FC<{
 }
 
 // ---------------------------------------------------------------------------
-// SourceControlView
+// RepoSourceControl — the full single-repo view (staged/changes/branches/log/
+// worktrees + commit box). Rendered standalone when the workspace root is
+// itself a repo, or once per discovered repo (nested) in a multi-repo
+// workspace. `nested` swaps the "Source Control" panel header for a
+// collapsible section headed by the repo's folder name.
 // ---------------------------------------------------------------------------
 
-interface SourceControlViewProps {
+interface RepoSourceControlProps {
   rootPath: string
+  nested?: boolean
 }
 
-export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }) => {
+const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested = false }) => {
+  const [sectionOpen, setSectionOpen] = useState(true)
   // status + worktrees come from the single per-workspace gitStatusStore (the
   // shared fsWatch + focus + branch-update loop). The Source Control list can
   // therefore no longer disagree with the Explorer / Search git tints. Only the
@@ -607,6 +624,8 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
     )
   }
 
+  const repoName = repoDisplayName(rootPath)
+
   const branchSubtitle = (
     <span className="flex items-center gap-1.5">
       <GitBranch size={11} className="text-muted flex-shrink-0" />
@@ -620,37 +639,59 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
     </span>
   )
 
-  return (
-    <div className="flex flex-col h-full overflow-hidden text-[12px]">
-      <SidebarSectionHeader
-        title="Source Control"
-        subtitle={branchSubtitle}
-        actions={
-          <>
-            <Tooltip label="Fetch from remote">
-              <SidebarHeaderButton onClick={fetch_} aria-label="Fetch from remote" disabled={fetching} spinning={fetching}>
-                <Download size={12} />
-              </SidebarHeaderButton>
-            </Tooltip>
-            <Tooltip label="Pull from remote">
-              <SidebarHeaderButton onClick={pull} aria-label="Pull from remote" disabled={pulling}>
-                <ArrowDown size={12} />
-              </SidebarHeaderButton>
-            </Tooltip>
-            <Tooltip label="Push to remote">
-              <SidebarHeaderButton onClick={push} aria-label="Push to remote" disabled={pushing}>
-                <ArrowUp size={12} />
-              </SidebarHeaderButton>
-            </Tooltip>
-            <Tooltip label="Refresh status">
-              <SidebarHeaderButton onClick={refresh} aria-label="Refresh status" spinning={loading}>
-                <ArrowClockwise size={12} />
-              </SidebarHeaderButton>
-            </Tooltip>
-          </>
-        }
-      />
+  const headerActions = (
+    <>
+      <Tooltip label="Fetch from remote">
+        <SidebarHeaderButton onClick={fetch_} aria-label="Fetch from remote" disabled={fetching} spinning={fetching}>
+          <Download size={12} />
+        </SidebarHeaderButton>
+      </Tooltip>
+      <Tooltip label="Pull from remote">
+        <SidebarHeaderButton onClick={pull} aria-label="Pull from remote" disabled={pulling}>
+          <ArrowDown size={12} />
+        </SidebarHeaderButton>
+      </Tooltip>
+      <Tooltip label="Push to remote">
+        <SidebarHeaderButton onClick={push} aria-label="Push to remote" disabled={pushing}>
+          <ArrowUp size={12} />
+        </SidebarHeaderButton>
+      </Tooltip>
+      <Tooltip label="Refresh status">
+        <SidebarHeaderButton onClick={refresh} aria-label="Refresh status" spinning={loading}>
+          <ArrowClockwise size={12} />
+        </SidebarHeaderButton>
+      </Tooltip>
+    </>
+  )
 
+  // In nested (multi-repo) mode the whole repo body collapses under a header
+  // labelled with the repo's folder name; standalone keeps the full panel.
+  const bodyVisible = !nested || sectionOpen
+
+  return (
+    <div className={nested ? 'flex flex-col text-[12px]' : 'flex flex-col h-full overflow-hidden text-[12px]'}>
+      {nested ? (
+        <div
+          className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-muted cursor-pointer hover:bg-hover select-none"
+          onClick={() => setSectionOpen((v) => !v)}
+        >
+          {sectionOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}
+          <span className="truncate text-secondary flex-shrink-0 max-w-[45%]">{repoName}</span>
+          <span className="flex-1 min-w-0 font-normal normal-case">{branchSubtitle}</span>
+          <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            {headerActions}
+          </div>
+        </div>
+      ) : (
+        <SidebarSectionHeader
+          title="Source Control"
+          subtitle={branchSubtitle}
+          actions={headerActions}
+        />
+      )}
+
+      {bodyVisible && (
+      <>
       {/* Error banner */}
       {actionError && (
         <div className="flex items-center gap-1 px-2 py-1 bg-red-500/[0.1] text-red-400/80 text-[11px] flex-shrink-0">
@@ -708,8 +749,9 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
         </div>
       </div>
 
-      {/* Scrollable file sections */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      {/* File sections — the standalone panel scrolls here; nested repos flow
+          into the wrapper's shared scroll container instead. */}
+      <div className={nested ? '' : 'flex-1 min-h-0 overflow-y-auto'}>
         {/* Staged Changes */}
         <Section
           title="Staged Changes"
@@ -850,6 +892,78 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
             No changes detected
           </div>
         )}
+      </div>
+      </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SourceControlView — public entry. Discovers the git repos in the workspace
+// and renders the single-repo view directly when the root itself is a repo (or
+// exactly one repo lives under it, or none is found), or a stacked, collapsible
+// section per repo when the root is a multi-repo parent folder (issue #400).
+// ---------------------------------------------------------------------------
+
+interface SourceControlViewProps {
+  rootPath: string
+}
+
+export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }) => {
+  // null = discovery hasn't resolved yet; render the single view meanwhile so
+  // the common (root-is-a-repo) case never flashes an intermediate layout.
+  const [repos, setRepos] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    if (!rootPath) {
+      setRepos(null)
+      return
+    }
+    let cancelled = false
+    const discover = (): void => {
+      window.electronAPI
+        .gitFindRepos(rootPath)
+        .then((found) => { if (!cancelled) setRepos(found) })
+        .catch(() => { if (!cancelled) setRepos([]) })
+    }
+    discover()
+    // Re-scan on focus so a repo created/removed in a subfolder while the app
+    // was backgrounded appears without reopening the workspace. The scan is a
+    // cheap depth-1 directory read.
+    window.addEventListener('focus', discover)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', discover)
+    }
+  }, [rootPath])
+
+  if (!rootPath) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted text-xs p-4">
+        No folder open
+      </div>
+    )
+  }
+
+  // Single-repo — the common case: root is the repo, one repo sits below it, or
+  // nothing was discovered (yet / at all). Render the full panel as before,
+  // targeting the discovered repo when it differs from the workspace root.
+  if (repos === null || repos.length <= 1) {
+    return <RepoSourceControl rootPath={repos && repos.length === 1 ? repos[0] : rootPath} />
+  }
+
+  // Multi-repo parent folder: one collapsible section per repo.
+  return (
+    <div className="flex flex-col h-full overflow-hidden text-[12px]">
+      <SidebarSectionHeader
+        title="Source Control"
+        subtitle={<span className="text-muted">{repos.length} repositories</span>}
+      />
+      <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-subtle">
+        {repos.map((repo) => (
+          <RepoSourceControl key={repo} rootPath={repo} nested />
+        ))}
       </div>
     </div>
   )

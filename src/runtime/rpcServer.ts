@@ -174,6 +174,7 @@ export class RpcServer {
 
       // --- vcs ---
       case Methods.vcsIsRepo: return api.vcs.isRepo(s(0))
+      case Methods.vcsFindRepos: return api.vcs.findRepos(s(0), n(1))
       case Methods.vcsInit: return api.vcs.init(s(0))
       case Methods.vcsLsFiles: return api.vcs.lsFiles(s(0))
       case Methods.vcsStatus: return api.vcs.status(s(0))

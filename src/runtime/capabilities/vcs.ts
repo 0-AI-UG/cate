@@ -76,6 +76,37 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
     }
   }
 
+  // Directory names we never descend into while scanning for sub-repos: heavy
+  // build/vendor output that can't itself be a workspace repo we'd surface.
+  // (Repos we DO find are never descended into either — see findReposFrom.)
+  const SCAN_SKIP_DIRS = new Set([
+    'node_modules', 'dist', 'build', 'out', 'target', 'vendor',
+    '.git', '.cache', '.next', '.turbo', '.venv', 'venv', '__pycache__',
+  ])
+
+  /** Recursively collect git-repo directories at or below `dir`, descending at
+   *  most `maxDepth` levels and stopping at each repo (so we never walk into a
+   *  found repo's own tree, node_modules, or dot-directories). `depth` is how
+   *  many levels below the original root `dir` sits. */
+  async function findReposFrom(dir: string, depth: number, maxDepth: number, out: string[]): Promise<void> {
+    if (await isGitRepo(dir)) {
+      out.push(dir)
+      return // a repo is a leaf for discovery — don't descend into it
+    }
+    if (depth >= maxDepth) return
+    let entries: import('fs').Dirent[]
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true })
+    } catch {
+      return // unreadable dir — skip silently
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      if (entry.name.startsWith('.') || SCAN_SKIP_DIRS.has(entry.name)) continue
+      await findReposFrom(path.join(dir, entry.name), depth + 1, maxDepth, out)
+    }
+  }
+
   async function ghAvailable(cwd: string): Promise<boolean> {
     try {
       await execFileP('gh', ['--version'], { cwd, timeout: 5000, env: env() })
@@ -105,6 +136,11 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
   return {
     async isRepo(dir) {
       return isGitRepo(validateCwd(dir))
+    },
+    async findRepos(dir, maxDepth) {
+      const out: string[] = []
+      await findReposFrom(validateCwd(dir), 0, Math.max(1, maxDepth ?? 1), out)
+      return out
     },
     async init(dir) {
       await simpleGit(validateCwd(dir)).init()

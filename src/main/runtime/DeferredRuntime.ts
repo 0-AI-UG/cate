@@ -107,6 +107,7 @@ export class DeferredRuntime implements Runtime {
 
     this.vcs = {
       isRepo: (dir) => d((c) => c.vcs.isRepo(dir)),
+      findRepos: (dir, maxDepth) => d((c) => c.vcs.findRepos(dir, maxDepth)),
       init: (dir) => d((c) => c.vcs.init(dir)),
       lsFiles: (dir) => d((c) => c.vcs.lsFiles(dir)),
       status: (cwd) => d((c) => c.vcs.status(cwd)),

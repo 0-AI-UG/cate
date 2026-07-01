@@ -146,6 +146,11 @@ export interface ElectronAPI {
   /** Check if a path is inside a git repository. */
   gitIsRepo(dirPath: string): Promise<boolean>
 
+  /** Discover git repos at or below `dirPath`, scanning at most `maxDepth`
+   *  levels (default 1) and stopping at each repo found. Returns locators (one
+   *  per repo) ready to hand back to the other git APIs as their cwd. */
+  gitFindRepos(dirPath: string, maxDepth?: number): Promise<string[]>
+
   /** Initialize a new git repository at the given directory. */
   gitInit(dirPath: string): Promise<void>
 
