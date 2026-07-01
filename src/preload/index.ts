@@ -24,6 +24,7 @@ import {
   FS_WATCH_EVENT,
   FS_STAT,
   GIT_IS_REPO,
+  GIT_FIND_REPOS,
   GIT_INIT,
   GIT_LS_FILES,
   GIT_BRANCH_UPDATE,
@@ -345,6 +346,7 @@ const invokeForwarders = {
 
   // Git
   gitIsRepo: makeInvoker<'gitIsRepo'>(GIT_IS_REPO),
+  gitFindRepos: makeInvoker<'gitFindRepos'>(GIT_FIND_REPOS),
   gitInit: makeInvoker<'gitInit'>(GIT_INIT),
   gitLsFiles: makeInvoker<'gitLsFiles'>(GIT_LS_FILES),
   gitStatus: makeInvoker<'gitStatus'>(GIT_STATUS),

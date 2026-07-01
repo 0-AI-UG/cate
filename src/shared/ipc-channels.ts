@@ -42,6 +42,7 @@ export const SHELL_SHOW_IN_FOLDER = 'shell:showInFolder'
 
 // Git
 export const GIT_IS_REPO = 'git:isRepo'
+export const GIT_FIND_REPOS = 'git:findRepos'
 export const GIT_INIT = 'git:init'
 export const GIT_LS_FILES = 'git:lsFiles'
 export const GIT_BRANCH_UPDATE = 'git:branch-update'         // main -> renderer

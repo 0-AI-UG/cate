@@ -143,6 +143,10 @@ export interface CanvasStoreActions {
     onCancelled?: (panelId: string) => void,
     size?: Size,
   ) => boolean
+  /** Re-rank the pending placement's ghosts around whatever node is focused NOW
+   *  (the user clicked a different panel) and re-frame the camera, keeping the
+   *  open transaction. No-op when nothing is pending or free mode is armed. */
+  refreshPlacement: () => void
   /** Commit the pending placement at the given candidate index; returns the new node id. */
   commitPlacement: (index: number) => CanvasNodeId | null
   /** Arm/disarm free "place anywhere" mode (press F). Disarming clears the ghost. */

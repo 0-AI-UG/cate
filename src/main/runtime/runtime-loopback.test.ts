@@ -137,6 +137,20 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
     expect(status.files.some((f) => f.path === 'alpha.ts')).toBe(true)
   })
 
+  test('vcs.findRepos discovers sub-repos one level down over the wire', async () => {
+    const { remote } = loopback(daemonApi())
+    // rootDir itself is not a repo; two children are, one plain folder is not.
+    await fs.mkdir(path.join(rootDir, 'frontend'))
+    await fs.mkdir(path.join(rootDir, 'backend'))
+    await remote.vcs.init(path.join(rootDir, 'frontend'))
+    await remote.vcs.init(path.join(rootDir, 'backend'))
+    // `sub` (created in beforeEach) stays a non-repo folder.
+    const repos = await remote.vcs.findRepos(rootDir)
+    expect(repos.sort()).toEqual(
+      [path.join(rootDir, 'backend'), path.join(rootDir, 'frontend')].sort(),
+    )
+  })
+
   test('write through the wire then read it back', async () => {
     const { remote } = loopback(daemonApi())
     const target = path.join(rootDir, 'written.txt')
