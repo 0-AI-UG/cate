@@ -28,8 +28,28 @@ interface WebviewElement extends HTMLElement {
   reload(): void
   getWebContentsId(): number
   send(channel: string, ...args: unknown[]): void
+  insertCSS(css: string): Promise<string>
   addEventListener(type: string, listener: (event: any) => void): void
   removeEventListener(type: string, listener: (event: any) => void): void
+}
+
+// The guest is an isolated document: the app's global stylesheet (and its
+// ::-webkit-scrollbar rules) can never reach it, so without help every
+// extension renders Chromium's default light scrollbars inside a dark app.
+// Inject the app's scrollbar treatment at dom-ready with the current theme's
+// thumb colors baked in — the guest has no access to the host's CSS vars, and
+// there is no theme-change event yet, so the colors are those at panel load.
+// Exported for unit testing.
+export function guestScrollbarCss(): string {
+  const vars = getComputedStyle(document.documentElement)
+  const thumb = vars.getPropertyValue('--scrollbar-thumb').trim() || 'rgba(255,255,255,0.15)'
+  const hover = vars.getPropertyValue('--scrollbar-thumb-hover').trim() || 'rgba(255,255,255,0.25)'
+  return (
+    '::-webkit-scrollbar{width:6px;height:6px}' +
+    '::-webkit-scrollbar-track{background:transparent}' +
+    `::-webkit-scrollbar-thumb{background:${thumb};border-radius:3px}` +
+    `::-webkit-scrollbar-thumb:hover{background:${hover}}`
+  )
 }
 
 // -----------------------------------------------------------------------------
@@ -263,6 +283,7 @@ export default function ExtensionPanel({
     if (!webview) return
     const onDomReady = (): void => {
       try { portalRegistry.register(panelId, webview as any) } catch { /* ignore */ }
+      try { void webview.insertCSS(guestScrollbarCss()).catch(() => { /* guest gone */ }) } catch { /* detached */ }
     }
     webview.addEventListener('dom-ready', onDomReady)
     return () => {

@@ -16,7 +16,7 @@ import { act } from 'react'
 
 vi.mock('../lib/portalRegistry', () => ({ portalRegistry: { register: vi.fn(), unregister: vi.fn() } }))
 
-import ExtensionPanel, { readDroppedFiles, clampText } from './ExtensionPanel'
+import ExtensionPanel, { readDroppedFiles, clampText, guestScrollbarCss } from './ExtensionPanel'
 
 const proxyUrl = vi.fn(async (_args: { extensionId: string; workspaceId: string; panelId: string }) => ({
   url: 'http://127.0.0.1:9/ext/tok/?x',
@@ -89,6 +89,38 @@ describe('ExtensionPanel', () => {
     })
     // Re-mount a throwaway so afterEach's unmount has a live root.
     mount({ workspaceId: 'ws-real-123' })
+  })
+
+  it('injects the app scrollbar CSS into the guest at dom-ready', async () => {
+    mount({ workspaceId: 'ws-real-123' })
+    await act(async () => { await Promise.resolve() })
+
+    const webview = container.querySelector('webview') as HTMLElement & { insertCSS?: unknown }
+    expect(webview).toBeTruthy()
+    const insertCSS = vi.fn(async () => 'css-key')
+    webview.insertCSS = insertCSS
+    act(() => { webview.dispatchEvent(new Event('dom-ready')) })
+
+    expect(insertCSS).toHaveBeenCalledTimes(1)
+    expect(insertCSS.mock.calls[0][0]).toContain('::-webkit-scrollbar')
+  })
+})
+
+describe('guestScrollbarCss', () => {
+  it('bakes the host theme thumb colors into the injected rules', () => {
+    document.documentElement.style.setProperty('--scrollbar-thumb', 'rgba(1,2,3,0.5)')
+    document.documentElement.style.setProperty('--scrollbar-thumb-hover', 'rgba(4,5,6,0.7)')
+    const css = guestScrollbarCss()
+    expect(css).toContain('::-webkit-scrollbar-thumb{background:rgba(1,2,3,0.5);border-radius:3px}')
+    expect(css).toContain(':hover{background:rgba(4,5,6,0.7)}')
+    document.documentElement.style.removeProperty('--scrollbar-thumb')
+    document.documentElement.style.removeProperty('--scrollbar-thumb-hover')
+  })
+
+  it('falls back to the dark defaults when the vars are unset', () => {
+    const css = guestScrollbarCss()
+    expect(css).toContain('rgba(255,255,255,0.15)')
+    expect(css).toContain('rgba(255,255,255,0.25)')
   })
 })
 
