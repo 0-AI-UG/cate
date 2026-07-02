@@ -107,6 +107,17 @@ describe('provisionCatalogToRuntime', () => {
     await provisionCatalogToRuntime(runtime, entry, true)
     expect(readFileSync(path.join(dest, 'index.html'), 'utf8')).toContain('hi')
   })
+
+  it('local (dev) entries re-provision on every call, so source edits land without a version bump', async () => {
+    const entry: CatalogEntry = { ...buildEntry(), sourceIsLocal: true }
+    const runtime = runtimeWithId('local')
+    const dest = await provisionCatalogToRuntime(runtime, entry)
+    // Simulate a dev edit landing in the installed copy being stale, then
+    // re-provision without `force`: sourceIsLocal alone must re-extract.
+    writeFileSync(path.join(dest, 'index.html'), 'STALE')
+    await provisionCatalogToRuntime(runtime, entry)
+    expect(readFileSync(path.join(dest, 'index.html'), 'utf8')).toContain('hi')
+  })
 })
 
 describe('provisionSideloadToRuntime', () => {

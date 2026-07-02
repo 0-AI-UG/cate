@@ -31,17 +31,24 @@ import type { CatalogEntry } from './catalog'
  * (download + sha256 verify), then uploads the .tgz to the host and extracts it
  * there. Idempotent: when the host already has the extracted dir (.ok marker)
  * the bytes are NOT re-uploaded (cheap stat probe first), unless `force`.
+ *
+ * Local (dev) extensions (`entry.sourceIsLocal`) ALWAYS re-provision, so source
+ * edits land on every reload without a version bump or manual reinstall — the
+ * same replace-each-time behaviour as sideload. The .ok short-circuit is only a
+ * bytes-transfer optimization for real catalog installs; a local artifact is a
+ * cheap fs read, so re-staging + re-extracting it each time is what devs expect.
  */
 export async function provisionCatalogToRuntime(
   runtime: Runtime,
   entry: CatalogEntry,
   force = false,
 ): Promise<string> {
-  const { id, version, tgzPath } = await stageArtifact(entry, force)
+  const reinstall = force || entry.sourceIsLocal === true
+  const { id, version, tgzPath } = await stageArtifact(entry, reinstall)
   const extRoot = await runtime.file.extensionsRoot()
   const dest = hostJoin(runtime.id, extRoot, id, version)
 
-  if (!force) {
+  if (!reinstall) {
     const installed = await runtime.file
       .stat(hostJoin(runtime.id, dest, '.ok'))
       .then(() => true)
