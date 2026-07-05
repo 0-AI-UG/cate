@@ -14,6 +14,7 @@
 // =============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import path from 'path'
 
 // --- electron: only app is touched at module load (will-quit handler) --------
 const { showMessageBox } = vi.hoisted(() => ({ showMessageBox: vi.fn(async () => ({ response: 0 })) }))
@@ -300,7 +301,9 @@ describe('dispatchCateInvoke — cate.agent.run', () => {
       locator: '/ws/root',
       extensionId: s.extensionId,
       sender: fakeWin.webContents,
-      resume: validResume,
+      // boundedResumePath canonicalizes via the local host's path flavor, so on
+      // Windows the accepted handle comes back with native separators.
+      resume: path.normalize(validResume),
     })
   })
 

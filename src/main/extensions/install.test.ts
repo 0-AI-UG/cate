@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 }))
 
 import { provisionCatalogToRuntime, provisionSideloadToRuntime } from './install'
+import { hostJoin } from '../../agent/main/agentDir'
 import { buildDaemonRuntime } from '../../runtime/capabilities'
 import { addAllowedRoot, removeAllowedRoot } from '../ipc/pathValidation'
 import type { CatalogEntry } from './catalog'
@@ -78,7 +79,9 @@ describe('provisionCatalogToRuntime', () => {
     const dest = await provisionCatalogToRuntime(runtime, entry)
 
     // The host dir lives under the (per-host) extensions root, keyed by id+version.
-    expect(dest).toBe(path.join(hostRoot, 'cate.hello', '1.2.0'))
+    // Joined with hostJoin's flavor: native for local, POSIX for a remote host —
+    // on a Windows client the remote dest therefore has forward-slash tails.
+    expect(dest).toBe(hostJoin(runtimeId, hostRoot, 'cate.hello', '1.2.0'))
     expect(existsSync(path.join(dest, 'manifest.json'))).toBe(true)
     expect(existsSync(path.join(dest, 'index.html'))).toBe(true)
     expect(existsSync(path.join(dest, '.ok'))).toBe(true)
