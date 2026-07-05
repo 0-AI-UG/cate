@@ -24,6 +24,11 @@ import { getExtensionStorage, disposeStoresForRuntime, flushAllPendingWritesSync
 
 const EXT = 'cate.test'
 const ROOT = '/proj'
+// The store builds its paths with hostJoin (= path.join for the local runtime),
+// so on Windows they come out backslashed — the fake must key its files and emit
+// its watch events the same way or every lookup misses.
+const STORAGE_DIR = path.join(ROOT, '.cate', 'extensions', EXT)
+const STORAGE_FILE = path.join(STORAGE_DIR, 'storage.json')
 
 /** A minimal fake Runtime whose FileHost records which instance handled each
  *  write and which watchers are currently live. */
@@ -64,10 +69,10 @@ function makeFakeRuntime(label: string): {
     writes,
     liveWatchers: () => watchers.size,
     watchedPrefixes,
-    setFile: (content: string) => files.set(`${ROOT}/.cate/extensions/${EXT}/storage.json`, content),
+    setFile: (content: string) => files.set(STORAGE_FILE, content),
     // The pool watches the storage file's parent DIR and delivers events for
     // paths inside it; default to the storage file's own path.
-    emitChange: (changedPath = `${ROOT}/.cate/extensions/${EXT}/storage.json`) => {
+    emitChange: (changedPath = STORAGE_FILE) => {
       for (const cb of watchers) cb(changedPath)
     },
   }
@@ -144,7 +149,7 @@ describe('storage — external-edit reload', () => {
     s!.onChange(() => {})
     await vi.waitFor(() => expect(a.liveWatchers()).toBe(1))
 
-    expect(a.watchedPrefixes).toEqual([`${ROOT}/.cate/extensions/${EXT}`])
+    expect(a.watchedPrefixes).toEqual([STORAGE_DIR])
   })
 
   it('ignores events for sibling files (editor tmp/backup) and same-content events', async () => {
@@ -158,7 +163,7 @@ describe('storage — external-edit reload', () => {
 
     // A sibling event (vim swap file) must not trigger a reload/notify.
     a.setFile('{"k":"external"}')
-    a.emitChange(`${ROOT}/.cate/extensions/${EXT}/.storage.json.swp`)
+    a.emitChange(path.join(STORAGE_DIR, '.storage.json.swp'))
     await new Promise((r) => setTimeout(r, 20))
     expect(fired).toBe(0)
     expect(s!.get('k')).toBeUndefined() // not reloaded either
