@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { createCanvasStore } from './canvasStore'
+import { createCanvasStore, selectVisibleNodeIds, __keepAliveNodeIdsForTest } from './canvasStore'
 import { focusedNodeId } from './canvas/selectionModel'
 import { recommendPlacements, nudgeToFree } from '../canvas/placement'
 import { CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
@@ -80,6 +80,118 @@ describe('canvasStore.addNode — canvas-on-canvas is rejected', () => {
     const result = store.getState().addNode('panel-canvas-1', 'canvas', { x: 10, y: 10 }, { width: 400, height: 300 })
     expect(result).toBe('')
     expect(Object.keys(store.getState().nodes)).toHaveLength(0)
+  })
+})
+
+// Viewport culling unmounts off-screen nodes to free terminal/editor resources.
+// Webview-backed nodes (extensions) hold non-reconstructible in-page state, so
+// they must stay mounted even off-screen — otherwise panning away resets them.
+// selectVisibleNodeIds is the pure cull core; `keepMountedPanelIds` is the set of
+// panel ids whose type must stay mounted off-screen (derived by the caller).
+describe('canvasStore.selectVisibleNodeIds — keep-mounted webview nodes', () => {
+  // A viewport that places nothing on-screen: far-away nodes are culled unless
+  // exempt. zoom 1, 800x600 → margin-expanded rect is x:[-800,1600] y:[-600,1200].
+  const offscreen = (store: ReturnType<typeof createCanvasStore>) => {
+    store.getState().setContainerSize({ width: 800, height: 600 })
+    store.setState({ zoomLevel: 1, viewportOffset: { x: 0, y: 0 }, selection: [], selectionActive: false })
+  }
+
+  it('culls an off-screen editor but keeps an off-screen extension', () => {
+    const store = createCanvasStore()
+    const editorId = store.getState().addNode('p-editor', 'editor', { x: 5000, y: 5000 }, { width: 100, height: 80 })
+    const extId = store.getState().addNode('p-ext', 'extension', { x: 5000, y: 6000 }, { width: 100, height: 80 })
+    offscreen(store)
+
+    // Only the extension panel keeps mounted off-screen.
+    const keepMounted = new Set(['p-ext'])
+    const visible = selectVisibleNodeIds(store.getState(), keepMounted)
+
+    expect(visible).toContain(extId)
+    expect(visible).not.toContain(editorId)
+  })
+
+  it('without a keep-mounted set, the extension is culled like any other node', () => {
+    const store = createCanvasStore()
+    const extId = store.getState().addNode('p-ext', 'extension', { x: 5000, y: 6000 }, { width: 100, height: 80 })
+    offscreen(store)
+
+    // No keep-mounted set → no exemption → pure geometric cull.
+    expect(selectVisibleNodeIds(store.getState())).not.toContain(extId)
+  })
+
+  it('keeps an extension node keep-alive (regression: keep-mounted membership)', () => {
+    const store = createCanvasStore()
+    const editorId = store.getState().addNode('p-editor', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const extId = store.getState().addNode('p-ext', 'extension', { x: 0, y: 0 }, { width: 100, height: 80 })
+
+    const keepAlive = __keepAliveNodeIdsForTest(store.getState().nodes, new Set(['p-ext']))
+    expect(keepAlive.has(extId)).toBe(true)
+    expect(keepAlive.has(editorId)).toBe(false)
+  })
+
+  it('does not recompute the keep-alive set when a stable set is reused (title churn)', () => {
+    const store = createCanvasStore()
+    store.getState().addNode('p-ext', 'extension', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const nodes = store.getState().nodes
+
+    // The caller's equality-checked selector hands back the SAME set object when
+    // only unrelated panel state (e.g. a title) changed. The cache is keyed on
+    // that identity, so the memoized set is returned without a rebuild.
+    const stableSet = new Set(['p-ext'])
+    const first = __keepAliveNodeIdsForTest(nodes, stableSet)
+    const second = __keepAliveNodeIdsForTest(nodes, stableSet)
+    expect(second).toBe(first) // same object → not recomputed
+
+    // A genuinely different set object forces a fresh computation.
+    const third = __keepAliveNodeIdsForTest(nodes, new Set(['p-ext']))
+    expect(third).not.toBe(first)
+  })
+
+  it('rebuilds the keep-alive set when a node is added later (async-restore ordering)', () => {
+    const store = createCanvasStore()
+    const keepMounted = new Set(['p-ext']) // stable set identity across both calls
+    // Set computed BEFORE the extension node exists (panel restored first).
+    const before = __keepAliveNodeIdsForTest(store.getState().nodes, keepMounted)
+    expect(before.size).toBe(0)
+
+    // Extension node lands afterwards — node count changes, so the cache rebuilds
+    // even though the keep-mounted set identity is unchanged.
+    const extId = store.getState().addNode('p-ext', 'extension', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const after = __keepAliveNodeIdsForTest(store.getState().nodes, keepMounted)
+    expect(after.has(extId)).toBe(true)
+  })
+
+  it('rebuilds when a keep-mounted panel moves between two existing nodes (count unchanged)', () => {
+    // Regression: dragging a keep-mounted extension tab from one existing node's
+    // dockLayout into another changes neither the node count nor the keep-mounted
+    // set identity, so a count-keyed cache returned a stale set naming the OLD
+    // node — culling then destroyed the extension webview on the destination.
+    const tabs = (panelIds: string[]) => ({
+      type: 'tabs' as const,
+      id: `stack-${panelIds.join('-')}`,
+      panelIds,
+      activeIndex: 0,
+    })
+    const store = createCanvasStore()
+    const nodeA = store.getState().addNode('p-ext', 'extension', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const nodeB = store.getState().addNode('p-b', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
+    // Node A hosts the keep-mounted tab alongside another; Node B hosts only its own.
+    store.getState().setNodeDockLayout(nodeA, tabs(['p-ext', 'p-a']))
+    store.getState().setNodeDockLayout(nodeB, tabs(['p-b']))
+
+    const keepMounted = new Set(['p-ext']) // stable identity across both calls
+    const before = __keepAliveNodeIdsForTest(store.getState().nodes, keepMounted)
+    expect(before.has(nodeA)).toBe(true)
+    expect(before.has(nodeB)).toBe(false)
+
+    // Move the keep-mounted tab A → B. Node count stays 2, set identity unchanged;
+    // only the two nodes' dockLayout objects change.
+    store.getState().setNodeDockLayout(nodeA, tabs(['p-a']))
+    store.getState().setNodeDockLayout(nodeB, tabs(['p-b', 'p-ext']))
+
+    const after = __keepAliveNodeIdsForTest(store.getState().nodes, keepMounted)
+    expect(after.has(nodeB)).toBe(true)
+    expect(after.has(nodeA)).toBe(false)
   })
 })
 

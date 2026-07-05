@@ -12,6 +12,7 @@ import { registerWorkspaceDockStore } from '../lib/workspace/dockRegistry'
 import DockZone from '../docking/DockZone'
 import { setupCrossWindowDragListeners } from '../drag'
 import { createRemoteDropHandler } from '../drag/crossWindow'
+import { useFileDropTracker, FileDropOverlay } from '../drag/fileDropTarget'
 import { captureTerminalScrollbacks } from './dockWindowSyncScrollback'
 import { terminalRestoreData } from '../lib/workspace/session'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
@@ -54,6 +55,10 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   const dockStore = useMemo(() => createDockStore(), [])
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hadPanelsRef = useRef(false)
+
+  // Track file drags so docked extension panels can arm their webview drop overlay
+  // (mirrors the main window — App.tsx installs the same tracker there).
+  useFileDropTracker()
 
   // The detached window's own appStore is the single in-window source of truth
   // for panels: transferred panels are merged into a stub workspace (see
@@ -447,6 +452,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
           />
         </div>
         <WindowChrome />
+        <FileDropOverlay />
       </div>
     </DockStoreProvider>
   )

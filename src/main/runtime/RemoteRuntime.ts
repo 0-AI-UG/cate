@@ -15,6 +15,9 @@ import type {
   AgentHost,
   AgentHandle,
   PtyHandle,
+  ServerHost,
+  ServerHandle,
+  TunnelHost,
   VcsHost,
   GitStatusResult,
   MonitorStatusResult,
@@ -29,7 +32,7 @@ import type {
   PrSummary,
 } from './types'
 import type { RuntimeRpcClient } from './rpcClient'
-import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, SearchEvtPayload } from '../../runtime/protocol'
+import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
 import type { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
 
 export class RemoteRuntime implements Runtime {
@@ -37,6 +40,8 @@ export class RemoteRuntime implements Runtime {
   readonly agent: AgentHost
   readonly file: FileHost
   readonly vcs: VcsHost
+  readonly server: ServerHost
+  readonly tunnel: TunnelHost
   private ptySeq = 0
 
   constructor(
@@ -107,6 +112,82 @@ export class RemoteRuntime implements Runtime {
       },
     }
 
+    // Server: the extension's server child runs on the daemon's host; its
+    // stdout/stderr + exit stream back keyed by the caller-generated id (register
+    // before start, like ptyCreate). start uses longCall — the ready probe can
+    // take seconds (well past the default 30s deadline on a cold server).
+    this.server = {
+      start: async (opts, onOutput, onExit) => {
+        this.rpc.registerStream(opts.id, (payload) => {
+          const p = payload as ServerEvtPayload
+          if (p.kind === 'output') onOutput(opts.id, p.stream, p.chunk)
+          else { onExit(opts.id, p.code, p.signal); this.rpc.unregisterStream(opts.id) }
+        })
+        try {
+          return await longCall<ServerHandle>(Methods.serverStart, [opts])
+        } catch (err) {
+          this.rpc.unregisterStream(opts.id)
+          throw err
+        }
+      },
+      stop: (id) => {
+        void this.rpc.call(Methods.serverStop, [id]).catch(() => {})
+        this.rpc.unregisterStream(id)
+      },
+    }
+
+    // Tunnel: raw TCP bridge to a server child's loopback port on the daemon.
+    // data/close stream back keyed by the caller-generated connId (register
+    // before open, like agent.start).
+    this.tunnel = {
+      open: async (connId, port, onData, onClose) => {
+        this.rpc.registerStream(connId, (payload) => {
+          const p = payload as TunnelEvtPayload
+          if (p.kind === 'data') onData(connId, p.chunk)
+          else { onClose(connId); this.rpc.unregisterStream(connId) }
+        })
+        try {
+          await call<void>(Methods.tunnelOpen, [connId, port])
+        } catch (err) {
+          this.rpc.unregisterStream(connId)
+          throw err
+        }
+      },
+      write: (connId, chunkB64) => { void this.rpc.call(Methods.tunnelWrite, [connId, chunkB64]).catch(() => {}) },
+      ack: (connId, byteCount) => { void this.rpc.call(Methods.tunnelAck, [connId, byteCount]).catch(() => {}) },
+      close: (connId) => {
+        void this.rpc.call(Methods.tunnelClose, [connId]).catch(() => {})
+        this.rpc.unregisterStream(connId)
+      },
+      // Reverse tunnel: register the listenerId stream BEFORE listen so a
+      // `connection` evt (arriving after the res on the ordered pipe) is never
+      // lost. Each connection registers its own connId substream for data/close.
+      listen: async (listenerId, onConnection, onData, onClose) => {
+        this.rpc.registerStream(listenerId, (payload) => {
+          const p = payload as TunnelListenEvtPayload
+          if (p.kind === 'connection') {
+            const connId = p.connId
+            this.rpc.registerStream(connId, (cp) => {
+              const d = cp as TunnelEvtPayload
+              if (d.kind === 'data') onData(connId, d.chunk)
+              else { onClose(connId); this.rpc.unregisterStream(connId) }
+            })
+            onConnection(connId)
+          }
+        })
+        try {
+          return await longCall<{ port: number }>(Methods.tunnelListen, [listenerId])
+        } catch (err) {
+          this.rpc.unregisterStream(listenerId)
+          throw err
+        }
+      },
+      stopListen: (listenerId) => {
+        void this.rpc.call(Methods.tunnelStopListen, [listenerId]).catch(() => {})
+        this.rpc.unregisterStream(listenerId)
+      },
+    }
+
     this.file = {
       readFile: (p) => call<string>(Methods.fileReadFile, [p]),
       readBinary: async (p) =>
@@ -119,6 +200,10 @@ export class RemoteRuntime implements Runtime {
       rename: (oldP, newP) => call<void>(Methods.fileRename, [oldP, newP]),
       mkdir: (p) => call<void>(Methods.fileMkdir, [p]),
       copy: (src, destDir) => call<string>(Methods.fileCopy, [src, destDir]),
+      extensionsRoot: () => call<string>(Methods.fileExtensionsRoot, []),
+      // longCall (no deadline): extraction shells `tar` on the host and can run
+      // past the default 30s call timeout for a large extension.
+      extractArtifact: (tgz, destDir) => longCall<string>(Methods.fileExtractArtifact, [tgz, destDir]),
       importEntries: (sources, destDir, mode, winId) =>
         call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, winId]),
       search: (root, query, opts?: FileSearchOptions) =>

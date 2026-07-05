@@ -155,9 +155,6 @@ export class PiRpcClient {
   async getForkMessages(): Promise<Array<{ entryId: string; text: string }>> {
     return this.data<{ messages: Array<{ entryId: string; text: string }> }>(await this.send({ type: 'get_fork_messages' })).messages
   }
-  async getLastAssistantText(): Promise<string | null> {
-    return this.data<{ text: string | null }>(await this.send({ type: 'get_last_assistant_text' })).text
-  }
   async setSessionName(name: string): Promise<void> { await this.send({ type: 'set_session_name', name }) }
   async getMessages(): Promise<unknown[]> {
     return this.data<{ messages: unknown[] }>(await this.send({ type: 'get_messages' })).messages

@@ -1,6 +1,7 @@
 {
   "version": 1,
   "sources": [
+    { "id": "cate", "repo": "0-AI-UG/cate", "path": "skills", "firstParty": true },
     { "id": "anthropic-skills", "repo": "anthropics/skills", "path": "" },
     { "id": "superpowers", "repo": "obra/superpowers", "path": "skills" },
     { "id": "mattpocock-skills", "repo": "mattpocock/skills", "path": "skills" },

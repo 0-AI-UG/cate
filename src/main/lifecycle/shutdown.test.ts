@@ -26,9 +26,13 @@ vi.mock('../browserStateStore', () => ({ flushBrowserStateSync: () => {} }))
 vi.mock('../uiStateStore', () => ({ flushUIStateSync: () => {} }))
 vi.mock('../projectLock', () => ({ releaseAllProjectLocks: () => {} }))
 vi.mock('../runtime/runtimeManager', () => ({ runtimes: { disposeAll: () => Promise.resolve() } }))
+vi.mock('../extensions/ExtensionServerManager', () => ({
+  extensionServerManager: { disposeAll: () => Promise.resolve() },
+}))
+vi.mock('../extensions/storage', () => ({ flushAllPendingWritesSync: () => {} }))
 vi.mock('../auto-updater', () => ({ isUpdatePendingInstall: () => false }))
 
-const { decideQuitPrompt } = await import('./shutdown')
+const { decideQuitPrompt, runHardExit } = await import('./shutdown')
 
 describe('decideQuitPrompt', () => {
   it('does not prompt when nothing is running and warn-before-quit is off', () => {
@@ -71,5 +75,53 @@ describe('decideQuitPrompt', () => {
       running: [{ processName: 'vim' }],
     })
     expect(prompt!.message).toContain('still running')
+  })
+})
+
+describe('runHardExit', () => {
+  it('prevents natural teardown, awaits dispose, then exits — in that order', async () => {
+    const order: string[] = []
+    const preventDefault = vi.fn(() => order.push('preventDefault'))
+    const disposeAll = vi.fn(
+      () =>
+        new Promise<void>((resolve) =>
+          setTimeout(() => {
+            order.push('disposed')
+            resolve()
+          }, 5),
+        ),
+    )
+    const exit = vi.fn(() => order.push('exit'))
+
+    await runHardExit({ preventDefault }, { disposeAll, exit, timeoutMs: 1000 })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(disposeAll).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(0)
+    // preventDefault must run before dispose is even started, and exit only after
+    // dispose settles.
+    expect(order).toEqual(['preventDefault', 'disposed', 'exit'])
+  })
+
+  it('still exits when dispose exceeds the timeout (never hangs quit)', async () => {
+    const preventDefault = vi.fn()
+    // A dispose that never settles — the timeout must win and exit anyway.
+    const disposeAll = vi.fn(() => new Promise<void>(() => {}))
+    const exit = vi.fn()
+
+    await runHardExit({ preventDefault }, { disposeAll, exit, timeoutMs: 1 })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(exit).toHaveBeenCalledWith(0)
+  })
+
+  it('exits even if dispose rejects', async () => {
+    const preventDefault = vi.fn()
+    const disposeAll = vi.fn(() => Promise.reject(new Error('boom')))
+    const exit = vi.fn()
+
+    await runHardExit({ preventDefault }, { disposeAll, exit, timeoutMs: 1000 })
+
+    expect(exit).toHaveBeenCalledWith(0)
   })
 })

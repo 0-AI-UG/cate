@@ -20,6 +20,7 @@ import {
   SquaresFour,
   FileDoc,
   ChatCircle,
+  PuzzlePiece,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import type { PanelType, Point, BrowserTab } from '../../shared/types'
@@ -41,6 +42,7 @@ const BrowserPanel = React.lazy(() => import('./BrowserPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('../../agent/renderer/AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
+const ExtensionPanel = React.lazy(() => import('./ExtensionPanel'))
 
 // -----------------------------------------------------------------------------
 // Renderer definition
@@ -60,6 +62,10 @@ export interface PanelCreateArgs {
   initialInput?: string
   /** Document only. */
   documentType?: 'pdf' | 'docx' | 'image'
+  /** Extension only. */
+  extensionId?: string
+  /** Extension only — panel id within the extension's manifest. */
+  extensionPanelId?: string
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
@@ -121,6 +127,15 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     create: ({ workspaceId, canvasPoint, placement, filePath, documentType }) =>
       trackCreated('document', useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null),
   },
+  extension: {
+    ...PANEL_DEFINITIONS.extension,
+    icon: PuzzlePiece,
+    Component: ExtensionPanel,
+    create: ({ workspaceId, canvasPoint, placement, extensionId, extensionPanelId }) =>
+      extensionId && extensionPanelId
+        ? trackCreated('extension', useAppStore.getState().createExtensionPanel(workspaceId, extensionId, extensionPanelId, canvasPoint, placement) || null)
+        : null,
+  },
 }
 
 /** Wrap a create() result with an anonymous usage signal. Lives on the registry
@@ -149,7 +164,7 @@ export function getPanelDef(type: PanelType | string): RendererPanelDefinition {
  *  the panel state itself, so callers don't need to know which extras any
  *  given type expects. Caller wraps in <Suspense> at the boundary it wants. */
 export function renderPanelComponent(
-  panel: { type: PanelType; id: string; filePath?: string; url?: string; proxyUrl?: string; tabs?: BrowserTab[]; activeTabId?: string },
+  panel: { type: PanelType; id: string; filePath?: string; url?: string; proxyUrl?: string; tabs?: BrowserTab[]; activeTabId?: string; extensionId?: string; extensionPanelId?: string },
   ctx: { workspaceId: string; nodeId: string; zoomLevel?: number },
 ): React.ReactElement | null {
   const def = PANEL_REGISTRY[panel.type]
@@ -165,6 +180,10 @@ export function renderPanelComponent(
     extras.tabs = panel.tabs
     extras.activeTabId = panel.activeTabId
     extras.zoomLevel = ctx.zoomLevel ?? 1
+  }
+  if (panel.type === 'extension') {
+    extras.extensionId = panel.extensionId
+    extras.extensionPanelId = panel.extensionPanelId
   }
   const props: PanelProps & Record<string, unknown> = {
     panelId: panel.id,

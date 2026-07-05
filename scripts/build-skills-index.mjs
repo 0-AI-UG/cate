@@ -171,13 +171,16 @@ async function main() {
   }
   // Quality floor: drop entries with no frontmatter description (no search
   // signal, render as broken rows) and from repos under MIN_STARS. Keeps the
-  // catalog selective — only well-adopted, documented skills ship.
+  // catalog selective — only well-adopted, documented skills ship. Sources
+  // marked firstParty (Cate's own repos) skip the star floor, not the
+  // description floor.
   const MIN_STARS = 10_000
+  const firstPartyIds = new Set(sources.filter((s) => s.firstParty).map((s) => s.id))
   const described = deduped.filter((s) => s.description && s.description.trim())
   if (described.length !== deduped.length) {
     console.log(`Dropped ${deduped.length - described.length} entr(ies) with no description`)
   }
-  const curated = described.filter((s) => (s.stars ?? 0) >= MIN_STARS)
+  const curated = described.filter((s) => firstPartyIds.has(s.sourceId) || (s.stars ?? 0) >= MIN_STARS)
   if (curated.length !== described.length) {
     console.log(`Dropped ${described.length - curated.length} entr(ies) under ${MIN_STARS} stars`)
   }

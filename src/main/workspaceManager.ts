@@ -100,6 +100,13 @@ function listWorkspaces(): WorkspaceInfo[] {
   return Array.from(workspaces.values())
 }
 
+/** Look up a workspace's metadata by id, or undefined if unknown. Exported for
+ *  consumers outside the IPC layer (e.g. the extension reverse-API bridge that
+ *  resolves a workspace's rootPath/locator). */
+export function getWorkspaceInfo(id: string): WorkspaceInfo | undefined {
+  return workspaces.get(id)
+}
+
 async function createWorkspace(
   name?: string,
   rootPath?: string,

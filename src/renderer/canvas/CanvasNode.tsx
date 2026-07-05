@@ -33,6 +33,11 @@ import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { collectPanelIds } from '../lib/canvas/collectPanelIds'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
+import { captureRendererException } from '../lib/sentry'
+
+// Node ids already reported for missing geometry, so a bad node that keeps
+// re-rendering warns/reports once instead of spamming.
+const warnedMissingGeometry = new Set<string>()
 
 // When the Hand tool is active, a left-press on a node must pan
 // the canvas instead of dragging/resizing the node. These handlers bail out
@@ -593,7 +598,22 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     worktreeDim,
   })
 
+  // A node must carry geometry to render. Reading `node.size`/`node.origin` below
+  // would throw and tear down the whole renderer, so skip the malformed node. The
+  // load path (sanitizeLoadedCanvasNodes) already repairs/drops geometry-invalid
+  // nodes on restore, so a node that EXISTS here but lacks geometry means an
+  // in-memory writer produced a bad node — surface that loudly (once, only for the
+  // has-node-but-missing-geometry case) instead of silently hiding the bug.
   if (!node) return null
+  if (!node.size || !node.origin) {
+    if (!warnedMissingGeometry.has(nodeId)) {
+      warnedMissingGeometry.add(nodeId)
+      const err = new Error(`CanvasNode ${nodeId} has no geometry (origin/size); skipping render`)
+      console.warn(err.message, { origin: node.origin, size: node.size })
+      captureRendererException(err, { nodeId, origin: node.origin, size: node.size })
+    }
+    return null
+  }
 
   return (
     <>

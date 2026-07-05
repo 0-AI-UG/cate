@@ -11,7 +11,7 @@
 import React, { useEffect } from 'react'
 import { create } from 'zustand'
 
-export type FileDropKind = 'canvas' | 'dock' | 'agent' | 'terminal'
+export type FileDropKind = 'canvas' | 'dock' | 'agent' | 'terminal' | 'extension'
 
 interface FileDropTarget {
   kind: FileDropKind
@@ -87,6 +87,7 @@ const LABEL: Record<FileDropKind, string> = {
   dock: 'Drop to open here',
   agent: 'Drop file to add to chat',
   terminal: 'Drop to paste path',
+  extension: 'Drop file here',
 }
 
 /** Single indicator for the active file-drop target. Mirrors the internal

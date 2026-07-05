@@ -235,6 +235,56 @@ describe('RuntimeManager connection lifecycle', () => {
     expect(mgr.has('wsl_test')).toBe(false)
   })
 
+  test('onDisconnected fires exactly once on a live drop and the unsubscribe stops it', async () => {
+    const mgr = new RuntimeManager()
+    const transport = new FakeTransport()
+    const dropped: string[] = []
+    const off = mgr.onDisconnected((id) => dropped.push(id))
+    await mgr.connect('wsl_test', transport)
+
+    transport.triggerClose() // live drop
+    expect(dropped).toEqual(['wsl_test'])
+
+    // A second close on the already-removed connection must not re-fire.
+    transport.triggerClose()
+    expect(dropped).toEqual(['wsl_test'])
+
+    // Unsubscribe: a later runtime's drop is no longer delivered.
+    off()
+    const t2 = new FakeTransport()
+    await mgr.connect('wsl_two', t2)
+    t2.triggerClose()
+    expect(dropped).toEqual(['wsl_test'])
+  })
+
+  test('onDisconnected fires for a LOCAL drop too, and a throwing subscriber is isolated', async () => {
+    const mgr = new RuntimeManager()
+    // No localOpts primed, so scheduleLocalReconnect no-ops (no dangling timer);
+    // emitDisconnected fires before the LOCAL branch regardless.
+    const dropped: string[] = []
+    mgr.onDisconnected(() => { throw new Error('subscriber boom') }) // must not break the handler
+    mgr.onDisconnected((id) => dropped.push(id))
+    const transport = new FakeTransport()
+    await mgr.connect(LOCAL_RUNTIME_ID, transport, { install: true })
+
+    transport.triggerClose()
+    // The throwing subscriber is swallowed + logged; the second still ran.
+    expect(dropped).toEqual([LOCAL_RUNTIME_ID])
+    expect(mgr.has(LOCAL_RUNTIME_ID)).toBe(false)
+  })
+
+  test('an intentional disposeConnection does NOT fire onDisconnected', async () => {
+    const mgr = new RuntimeManager()
+    const transport = new FakeTransport()
+    const dropped: string[] = []
+    mgr.onDisconnected((id) => dropped.push(id))
+    await mgr.connect('wsl_test', transport)
+    // disposeConnection removes the connection first, so the late close event is
+    // ignored — an intentional teardown is not a "drop".
+    await mgr.disposeConnection('wsl_test')
+    expect(dropped).toEqual([])
+  })
+
   test('the local runtime is NOT registered until ensureLocalRuntime brings it online', () => {
     const mgr = new RuntimeManager()
     // The LOCAL workspace runs as the daemon subprocess, provisioned by

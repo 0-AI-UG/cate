@@ -13,13 +13,16 @@ import Canvas from '../canvas/Canvas'
 import CanvasNode from '../canvas/CanvasNode'
 import CanvasToolbar from '../canvas/CanvasToolbar'
 import WelcomePage from '../ui/WelcomePage'
+import { NodeErrorBoundary } from '../ui/NodeErrorBoundary'
 import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, PanelLocation, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, type PanelPlacement } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useCateAgentStore } from '../cateAgent/cateAgentStore'
 import { useStore } from 'zustand'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
 import type { StoreApi } from 'zustand'
+import { keepsMountedOffscreen } from '../../shared/panels'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import { createCanvasOps } from '../lib/canvas/canvasBridge'
 import { setActivePanel } from '../lib/activePanel'
@@ -62,6 +65,39 @@ function collectLocationsFromLayout(
 
   walk(layout)
   return locations
+}
+
+// Same-membership equality for the keep-mounted set, so the selector below hands
+// back the SAME Set object whenever the ids are unchanged.
+function setEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a === b) return true
+  if (a.size !== b.size) return false
+  for (const v of a) if (!b.has(v)) return false
+  return true
+}
+
+// The set of panel ids whose type must stay mounted off-screen (webview-backed
+// extensions). Derived from the workspace's panels with an equality-checked
+// selector so pure panel-state churn (a title edit, dirty flag, etc.) does NOT
+// produce a new Set — the cull's keep-alive cache is keyed on this set's identity,
+// so a stable identity means no re-render here and no per-frame recompute there.
+// Panel `type` is immutable after creation, so this only changes when a
+// keep-mounted panel is actually added or removed.
+function useKeepMountedPanelIds(workspaceId: string): ReadonlySet<string> {
+  return useStoreWithEqualityFn(
+    useAppStore,
+    (s) => {
+      const panels = s.workspaces.find((w) => w.id === workspaceId)?.panels
+      const ids = new Set<string>()
+      if (panels) {
+        for (const p of Object.values(panels)) {
+          if (keepsMountedOffscreen(p.type)) ids.add(p.id)
+        }
+      }
+      return ids
+    },
+    setEqual,
+  )
 }
 
 interface CanvasPanelProps {
@@ -193,13 +229,15 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
   const firstPanel = currentWorkspace?.panels[node.panelId]
 
   return (
-    <CanvasNode
-      nodeId={node.id}
-      isFocused={isFocused}
-      dockStoreApi={dockStoreApi}
-      renderPanel={renderPanel}
-      title={firstPanel?.title}
-    />
+    <NodeErrorBoundary nodeId={node.id}>
+      <CanvasNode
+        nodeId={node.id}
+        isFocused={isFocused}
+        dockStoreApi={dockStoreApi}
+        renderPanel={renderPanel}
+        title={firstPanel?.title}
+      />
+    </NodeErrorBoundary>
   )
 })
 
@@ -238,12 +276,27 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   // `visibleNodeIds` is viewport-culled: we only mount CanvasNodeWrapper for
   // nodes whose bbox overlaps the visible canvas rect (plus a 1-screen margin),
   // so off-screen terminals/editors don't hold live xterm/Monaco instances.
+  // `keepMountedPanelIds` lets the cull exempt webview-backed nodes (extensions)
+  // so panning them off-screen doesn't unmount the guest and reset its session
+  // state. It's a stable, membership-keyed set (see useKeepMountedPanelIds) so
+  // unrelated panel churn (titles, dirty flags) never re-runs the cull.
   const nodeIds = useNodeIds(store)
-  // Terminals the Cate Agent is driving stay mounted even off-view: they're
-  // placed beside the user's content without moving the camera, and an
-  // unmounted terminal can't boot its pty or render the screen the agent reads.
+  const keepMountedPanelIds = useKeepMountedPanelIds(workspaceId)
+  // Terminals the Cate Agent is driving must also stay mounted off-view: they're
+  // placed beside the user's content without moving the camera, and an unmounted
+  // terminal can't boot its pty or render the screen the agent reads. Fold them
+  // into the same keep-mounted set the cull consults. Both inputs are
+  // identity-stable across pan/zoom, so the merged set is too (and when there are
+  // no controlled terminals we pass keepMountedPanelIds through unchanged, fully
+  // preserving the cull's identity-keyed keep-alive cache).
   const controlledTerminals = useCateAgentStore((s) => s.byWs[workspaceId]?.controlledTerminals)
-  const visibleNodeIds = useVisibleNodeIds(store, controlledTerminals)
+  const mountedPanelIds = useMemo(() => {
+    if (!controlledTerminals || Object.keys(controlledTerminals).length === 0) return keepMountedPanelIds
+    const merged = new Set(keepMountedPanelIds)
+    for (const id of Object.keys(controlledTerminals)) merged.add(id)
+    return merged
+  }, [keepMountedPanelIds, controlledTerminals])
+  const visibleNodeIds = useVisibleNodeIds(store, mountedPanelIds)
   // Welcome page only shows on a brand-new workspace (no rootPath chosen yet).
   // After a folder is picked, deleting all panels leaves a blank canvas.
   const workspaceRootPath = useAppStore(

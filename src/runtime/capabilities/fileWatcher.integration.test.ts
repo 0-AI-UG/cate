@@ -105,6 +105,30 @@ describe('createWatchPool — real @parcel/watcher', () => {
     expect(seen.has(dropNodeModules)).toBe(false)
   })
 
+  it('delivers events under a hidden dir to a subscriber rooted there, alongside a workspace tree', async () => {
+    // The extension-storage shape: the workspace root is already watched (its
+    // tree natively prunes `.cate/**`), then a subscriber arrives for a dir
+    // INSIDE `.cate`. It must get its own tree — not silently attach to the
+    // pruned workspace tree — and receive real events for the file.
+    root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'cate-pw-')))
+    const storageDir = path.join(root, '.cate', 'extensions', 'cate.test')
+    await mkdir(storageDir, { recursive: true })
+    const storageFile = path.join(storageDir, 'storage.json')
+
+    const rootEvents: Array<{ type: string; path: string }> = []
+    const dirEvents: Array<{ type: string; path: string }> = []
+    pool = createWatchPool(() => EXCLUSIONS)
+    pool.subscribe(root, (p, type) => rootEvents.push({ type, path: p }))
+    pool.subscribe(storageDir, (p, type) => dirEvents.push({ type, path: p }))
+    await new Promise((r) => setTimeout(r, 300)) // let both watchers arm
+
+    await writeFile(storageFile, '{"k":1}', 'utf8')
+    await waitFor(dirEvents, () => dirEvents.some((e) => e.path === storageFile))
+
+    // The workspace tree still prunes the hidden dir for ITS subscribers.
+    expect(rootEvents.some((e) => e.path === storageFile)).toBe(false)
+  })
+
   // Removing a populated directory must surface a delete for EVERY file inside,
   // not a single event for the directory. parcel synthesizes the per-file
   // deletes on recursive removal, so an editor open on a file in the deleted

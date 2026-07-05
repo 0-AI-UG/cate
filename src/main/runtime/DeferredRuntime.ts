@@ -23,6 +23,8 @@ import type {
   FileHost,
   ProcessHost,
   AgentHost,
+  ServerHost,
+  TunnelHost,
   VcsHost,
 } from './types'
 
@@ -31,6 +33,8 @@ export class DeferredRuntime implements Runtime {
   readonly agent: AgentHost
   readonly file: FileHost
   readonly vcs: VcsHost
+  readonly server: ServerHost
+  readonly tunnel: TunnelHost
 
   constructor(
     readonly id: RuntimeId,
@@ -58,6 +62,20 @@ export class DeferredRuntime implements Runtime {
       stop: (id) => { void ready_.then((c) => c.agent.stop(id)).catch(() => {}) },
     }
 
+    this.server = {
+      start: (opts, onOutput, onExit) => d((c) => c.server.start(opts, onOutput, onExit)),
+      stop: (id) => { void ready_.then((c) => c.server.stop(id)).catch(() => {}) },
+    }
+
+    this.tunnel = {
+      open: (connId, port, onData, onClose) => d((c) => c.tunnel.open(connId, port, onData, onClose)),
+      write: (connId, chunkB64) => { void ready_.then((c) => c.tunnel.write(connId, chunkB64)).catch(() => {}) },
+      ack: (connId, byteCount) => { void ready_.then((c) => c.tunnel.ack(connId, byteCount)).catch(() => {}) },
+      close: (connId) => { void ready_.then((c) => c.tunnel.close(connId)).catch(() => {}) },
+      listen: (listenerId, onConnection, onData, onClose) => d((c) => c.tunnel.listen(listenerId, onConnection, onData, onClose)),
+      stopListen: (listenerId) => { void ready_.then((c) => c.tunnel.stopListen(listenerId)).catch(() => {}) },
+    }
+
     this.file = {
       readFile: (p) => d((c) => c.file.readFile(p)),
       readBinary: (p) => d((c) => c.file.readBinary(p)),
@@ -69,6 +87,8 @@ export class DeferredRuntime implements Runtime {
       rename: (oldP, newP) => d((c) => c.file.rename(oldP, newP)),
       mkdir: (p) => d((c) => c.file.mkdir(p)),
       copy: (src, destDir) => d((c) => c.file.copy(src, destDir)),
+      extensionsRoot: () => d((c) => c.file.extensionsRoot()),
+      extractArtifact: (tgz, destDir) => d((c) => c.file.extractArtifact(tgz, destDir)),
       importEntries: (sources, destDir, mode, winId) => d((c) => c.file.importEntries(sources, destDir, mode, winId)),
       search: (root, query, opts) => d((c) => c.file.search(root, query, opts)),
       // Start-after-ready: return the cancel handle now; start the real search

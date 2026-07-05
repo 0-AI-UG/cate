@@ -1,0 +1,221 @@
+// =============================================================================
+// Extension catalog — fetch + merge remote/local catalog indexes and cache the
+// merged result so the extension list works offline after one refresh.
+//
+// catalog index JSON:
+//   { "extensions": [ { "manifest": {/* ExtensionManifest */},
+//                       "artifactUrl": "...", "sha256": "...",
+//                       "description": "..." } ] }
+//
+// A source is either an http(s):// URL (fetched) or a local source — a plain
+// absolute path or a file:// URL — read straight off disk so catalogs can be
+// tested offline. Sources are merged left-to-right: a later source overrides an
+// earlier one on a duplicate extension id. A failing source is logged + skipped,
+// never fatal to the whole fetch.
+//
+// The merged index is cached to userData/extensions/catalog-cache.json (atomic
+// write via writeJsonAtomic) so getCachedCatalog() returns the last good catalog with no
+// network. artifactUrl values are stored verbatim so a relative/file:// path in
+// a local index resolves the same way on install.
+// =============================================================================
+
+import { app } from 'electron'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import { existsSync } from 'fs'
+import { readFile } from 'fs/promises'
+import log from '../logger'
+import { writeJsonAtomic } from '../writeJsonAtomic'
+import { normalizeManifest, type ExtensionManifest } from '../../shared/extensions'
+
+export interface CatalogEntry {
+  manifest: ExtensionManifest
+  artifactUrl: string
+  sha256?: string
+  description?: string
+  /**
+   * True when the originating catalog source is itself local (a file:// URL or
+   * an absolute path). Set from the source at fetch time — NOT trusted from the
+   * index JSON — so a remote catalog can't claim locality to dodge the sha256 +
+   * http(s) requirement enforced in stageArtifact. Absent/false = treat as
+   * remote (fail-closed).
+   */
+  sourceIsLocal?: boolean
+}
+
+/** Catalog index fetch is capped in time and size so a hostile/broken server
+ *  can't hang us or stream unbounded bytes into memory. */
+export const CATALOG_INDEX_TIMEOUT_MS = 30_000
+export const MAX_CATALOG_INDEX_BYTES = 8 * 1024 * 1024 // 8 MB — an index is text
+
+/** Root for all catalog/extension state under userData. */
+export function extensionsDir(): string {
+  return path.join(app.getPath('userData'), 'extensions')
+}
+
+function cacheFile(): string {
+  return path.join(extensionsDir(), 'catalog-cache.json')
+}
+
+/** True for a source we read off disk instead of fetching. */
+function isLocalSource(source: string): boolean {
+  return source.startsWith('file://') || path.isAbsolute(source)
+}
+
+/** Resolve a local source string (absolute path or file:// URL) to a fs path. */
+function localSourcePath(source: string): string {
+  return source.startsWith('file://') ? fileURLToPath(source) : source
+}
+
+/**
+ * Read a fetch Response body as bytes, aborting once more than `maxBytes` have
+ * accumulated (checks Content-Length up front when present, then streams and
+ * sums chunk lengths). Prevents an unbounded response from exhausting memory.
+ */
+export async function readCappedBytes(res: Response, maxBytes: number, label: string): Promise<Buffer> {
+  const declared = Number(res.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new Error(`${label} exceeds max size ${maxBytes} bytes (Content-Length ${declared})`)
+  }
+  const reader = res.body?.getReader?.()
+  if (!reader) {
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.length > maxBytes) throw new Error(`${label} exceeds max size ${maxBytes} bytes`)
+    return buf
+  }
+  const chunks: Buffer[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {})
+      throw new Error(`${label} exceeds max size ${maxBytes} bytes`)
+    }
+    chunks.push(Buffer.from(value))
+  }
+  return Buffer.concat(chunks)
+}
+
+/** Load one source's raw index text (http(s) via fetch, else off disk). */
+async function loadSourceText(source: string): Promise<string> {
+  if (isLocalSource(source)) {
+    return readFile(localSourcePath(source), 'utf-8')
+  }
+  let res: Response
+  try {
+    res = await fetch(source, { signal: AbortSignal.timeout(CATALOG_INDEX_TIMEOUT_MS) })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error(`catalog index fetch timed out after ${CATALOG_INDEX_TIMEOUT_MS}ms (${source})`)
+    }
+    throw err
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const buf = await readCappedBytes(res, MAX_CATALOG_INDEX_BYTES, `catalog index (${source})`)
+  return buf.toString('utf-8')
+}
+
+/** Validate one untrusted catalog entry into a CatalogEntry, or null. The
+ *  `sourceIsLocal` trust class comes from the source, never from the JSON. */
+function normalizeEntry(parsed: unknown, sourceIsLocal: boolean): CatalogEntry | null {
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const o = parsed as Record<string, unknown>
+  const manifest = normalizeManifest(o.manifest)
+  if (!manifest) return null
+  if (typeof o.artifactUrl !== 'string' || o.artifactUrl.length === 0) return null
+  const entry: CatalogEntry = { manifest, artifactUrl: o.artifactUrl, sourceIsLocal }
+  if (typeof o.sha256 === 'string' && o.sha256.length > 0) entry.sha256 = o.sha256
+  if (typeof o.description === 'string' && o.description.length > 0) entry.description = o.description
+  return entry
+}
+
+/**
+ * Parse one source's index text into validated entries. Throws on bad JSON.
+ * `sourceIsLocalFor` decides each entry's trust class: fetched sources pass a
+ * constant derived from the source; the trusted cache reads the value we wrote.
+ */
+function parseIndex(
+  text: string,
+  source: string,
+  sourceIsLocalFor: (raw: unknown) => boolean,
+): CatalogEntry[] {
+  const parsed = JSON.parse(text) as unknown
+  const list =
+    typeof parsed === 'object' && parsed !== null
+      ? (parsed as Record<string, unknown>).extensions
+      : undefined
+  if (!Array.isArray(list)) {
+    log.warn('[extensions] catalog %s has no "extensions" array', source)
+    return []
+  }
+  const out: CatalogEntry[] = []
+  for (const raw of list) {
+    const entry = normalizeEntry(raw, sourceIsLocalFor(raw))
+    if (entry) out.push(entry)
+    else log.warn('[extensions] catalog %s: skipping invalid entry', source)
+  }
+  return out
+}
+
+/** Read a persisted-cache entry's stored (trusted) locality flag. */
+function storedSourceIsLocal(raw: unknown): boolean {
+  return typeof raw === 'object' && raw !== null && (raw as Record<string, unknown>).sourceIsLocal === true
+}
+
+/**
+ * Fetch + merge all catalog sources. Tolerates a failing source (logs + skips)
+ * and never throws. Later sources override earlier ones on duplicate id.
+ */
+export async function fetchCatalog(sources: string[]): Promise<CatalogEntry[]> {
+  // Fetch every source concurrently — each is independently bounded by
+  // CATALOG_INDEX_TIMEOUT_MS, so total time is ~one timeout instead of N×.
+  // allSettled keeps a failing source from rejecting the whole fetch.
+  const results = await Promise.allSettled(
+    sources.map(async (source) => {
+      if (!source) return [] as CatalogEntry[]
+      const local = isLocalSource(source)
+      const text = await loadSourceText(source)
+      return parseIndex(text, source, () => local)
+    }),
+  )
+  // Merge in the ORIGINAL source order so later-source-wins precedence (and the
+  // resulting value order) is identical to the old sequential loop, regardless
+  // of which fetch settled first.
+  const merged = new Map<string, CatalogEntry>()
+  sources.forEach((source, i) => {
+    const result = results[i]
+    if (result.status === 'fulfilled') {
+      for (const entry of result.value) merged.set(entry.manifest.id, entry)
+    } else if (source) {
+      log.warn('[extensions] catalog source failed (%s): %O', source, result.reason)
+    }
+  })
+  return Array.from(merged.values())
+}
+
+/** Persist the merged catalog so getCachedCatalog() works offline. */
+export async function writeCatalogCache(entries: CatalogEntry[]): Promise<void> {
+  // writeJsonAtomic handles mkdir + unique tmp suffix + win32 rename retry + tmp
+  // cleanup on failure — no need to hand-roll the atomic write here.
+  await writeJsonAtomic(cacheFile(), { extensions: entries })
+}
+
+/**
+ * The last cached merged catalog, read synchronously-ish off disk. Returns []
+ * when no cache exists yet or it is corrupt.
+ */
+export async function getCachedCatalog(): Promise<CatalogEntry[]> {
+  const file = cacheFile()
+  if (!existsSync(file)) return []
+  try {
+    const text = await readFile(file, 'utf-8')
+    // The cache is data we wrote, so its stored per-entry locality is trusted.
+    return parseIndex(text, file, storedSourceIsLocal)
+  } catch (err) {
+    log.warn('[extensions] catalog cache unreadable: %O', err)
+    return []
+  }
+}

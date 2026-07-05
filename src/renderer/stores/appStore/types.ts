@@ -76,6 +76,10 @@ export interface AppStoreActions {
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
+  /** Open an extension-hosted panel on the canvas. `extensionPanelId` selects
+   *  which panel from the extension's manifest. `title` defaults to the panel
+   *  id when omitted (a title-resolver can fill the manifest label later). */
+  createExtensionPanel: (workspaceId: string, extensionId: string, extensionPanelId: string, position?: Point, placement?: PanelPlacement, title?: string) => string
 
   // Ensure the center dock zone contains a canvas panel for the given workspace.
   // Covers session-restore and new-workspace paths where the center layout may

@@ -4,6 +4,7 @@
 
 import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentModelDescriptor, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CanvasLayoutSnapshot, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PerfSnapshot, Point, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
+import type { ExtensionListEntry, ExtensionManifest } from './extensions'
 
 /** Lifecycle state of the auto-updater, surfaced to the renderer for the
  *  in-app "update ready" modal. `downloaded` is the one the modal acts on. */
@@ -1059,6 +1060,99 @@ export interface ElectronAPI {
 
   /** Disconnect a provider (clears stored credentials). */
   authDelete(providerId: string): Promise<void>
+
+  // ---------------------------------------------------------------------------
+  // Extensions
+  // ---------------------------------------------------------------------------
+
+  /** All known extensions (sideload + catalog) plus their enabled flag. */
+  extensionList(): Promise<ExtensionListEntry[]>
+
+  /** Enable an extension by id. */
+  extensionEnable(id: string): Promise<void>
+
+  /** Disable an extension by id. */
+  extensionDisable(id: string): Promise<void>
+
+  /** Register a local dev folder as a sideloaded extension. */
+  extensionAddSideload(
+    folderPath: string,
+  ): Promise<{ ok: boolean; error?: string; manifest?: ExtensionManifest }>
+
+  /** Drop a sideloaded extension folder. */
+  extensionRemoveSideload(folderPath: string): Promise<void>
+
+  /** Re-fetch every catalog source, re-cache the merged index, and re-scan. */
+  extensionCatalogRefresh(): Promise<{ ok: boolean; error?: string }>
+
+  /** Download + extract a catalog extension by id (without enabling it). */
+  extensionInstall(id: string): Promise<{ ok: boolean; error?: string }>
+
+  /** Disable + remove an installed catalog extension's assets from disk. */
+  extensionUninstall(id: string): Promise<{ ok: boolean; error?: string }>
+
+  /** Re-download the installed version over itself (repair a broken install). */
+  extensionReinstall(id: string): Promise<{ ok: boolean; error?: string }>
+
+  /** Install the catalog's newer version and drop the older installed one. */
+  extensionUpdate(id: string): Promise<{ ok: boolean; error?: string }>
+
+  /** Add a catalog source URL (http(s) or local path/file://), then refresh. */
+  extensionAddCatalogSource(url: string): Promise<{ ok: boolean; error?: string }>
+
+  /** Remove a catalog source URL, then refresh. */
+  extensionRemoveCatalogSource(url: string): Promise<void>
+
+  /** The current catalog source URL list (`extensionCatalogSources` setting). */
+  extensionCatalogSources(): Promise<string[]>
+
+  /** Resolve the webview URL + cateHost preload path for an extension panel
+   *  instance. Returns null if the extension is unknown or not enabled. For a
+   *  server-backed extension this joins the panel + spawns/awaits its server;
+   *  a spawn/ready failure returns `{ error }` for the panel to render. */
+  extensionProxyUrl(args: {
+    extensionId: string
+    workspaceId: string
+    panelId: string
+  }): Promise<{ url: string; preloadPath: string } | { error: string } | null>
+
+  /** Tell main a server-backed extension panel unmounted (fire-and-forget) so it
+   *  starts the grace timer (and stops the server when the last panel leaves). */
+  extensionPanelClosed(args: {
+    extensionId: string
+    workspaceId: string
+    panelId: string
+  }): void
+
+  /** Manually restart a crashed/errored extension server (resets the crash
+   *  budget). Used by the panel's error-state Retry. */
+  extensionServerRestart(args: {
+    extensionId: string
+    workspaceId: string
+  }): Promise<{ ok: boolean; error?: string }>
+
+  /** Fired (broadcast) whenever the known/enabled extension set changes. */
+  onExtensionsChanged(cb: () => void): () => void
+
+  /** Main forwards a state-mutating cateHost call to the owning renderer. */
+  onCateHostAction(
+    cb: (payload: {
+      requestId: string
+      workspaceId: string
+      panelId: string
+      extensionId: string
+      method: string
+      args: unknown
+    }) => void,
+  ): () => void
+
+  /** Reply to a forwarded cateHost action (fire-and-forget). */
+  cateHostActionReply(payload: {
+    requestId: string
+    ok: boolean
+    result?: unknown
+    error?: string
+  }): void
 }
 
 declare global {

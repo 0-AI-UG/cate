@@ -31,6 +31,10 @@ dev-app-update.yml
 # Local logo scratch dir
 _logos/
 
+# The extensions catalog is its own repo (0-AI-UG/cate-extensions); it lives
+# here only as a local checkout for offline dev/testing, never committed.
+cate-extensions/
+
 # Temp dirs from runtime daemon tests (deleted on teardown; ignored here in
 # case a run is interrupted before afterAll fires)
 cate-local-ws-*/

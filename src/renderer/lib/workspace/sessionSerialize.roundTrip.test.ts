@@ -176,6 +176,39 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.panels!['ed-out'].filePath).toBe('/etc/hosts')
   })
 
+  it('round-trips an extension panel so it re-binds to its extension on reload', () => {
+    // Regression: extensionId/extensionPanelId used to be dropped by
+    // buildWorkspaceFile, so a restored extension panel came back with no
+    // extension binding and rendered "Extension unavailable" — even though a
+    // freshly created one worked. They must survive the disk round-trip.
+    const { snapshot } = buildSnapshot()
+    snapshot.panels!['ext-1'] = panel({
+      id: 'ext-1',
+      type: 'extension',
+      title: 'Kitchen Sink',
+      extensionId: 'cate.kitchensink',
+      extensionPanelId: 'main',
+    })
+
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT, ''))
+    // The binding is shareable metadata — it belongs in the committed file.
+    expect(wsFile.panels!['ext-1'].extensionId).toBe('cate.kitchensink')
+    expect(wsFile.panels!['ext-1'].extensionPanelId).toBe('main')
+
+    const restored = projectFilesToSnapshot(wsFile, throughDisk(buildSessionFile(snapshot)), ROOT)
+    expect(restored.panels!['ext-1'].type).toBe('extension')
+    expect(restored.panels!['ext-1'].extensionId).toBe('cate.kitchensink')
+    expect(restored.panels!['ext-1'].extensionPanelId).toBe('main')
+  })
+
+  it('leaves the extension binding undefined for non-extension panels', () => {
+    const { snapshot } = buildSnapshot()
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+    const restored = projectFilesToSnapshot(wsFile, null, ROOT)
+    expect(restored.panels!['ed-1'].extensionId).toBeUndefined()
+    expect(restored.panels!['ed-1'].extensionPanelId).toBeUndefined()
+  })
+
   it('restores from workspace.json alone (no session.json) without machine-local facts', () => {
     const { snapshot } = buildSnapshot()
 

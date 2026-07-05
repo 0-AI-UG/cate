@@ -18,6 +18,7 @@ import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
 import { cateAgentController } from './cateAgent/cateAgentController'
+import { useCateHostActionResponder } from './hooks/useCateHostActionResponder'
 import { Sidebar, RightSidebar } from './sidebar/Sidebar'
 import { renderPanelComponent, PANEL_REGISTRY } from './panels/registry'
 import { PanelSuspense } from './panels/PanelSuspense'
@@ -162,6 +163,10 @@ function MainApp() {
     cateAgentRestoredRef.current.add(rootPath)
     void cateAgentController.restore(selectedWorkspaceId, rootPath)
   }, [currentWorkspace?.rootPath, selectedWorkspaceId])
+
+  // Extension reverse-API: execute cate.* host actions forwarded from extension
+  // webviews (open file / create panel / set title). Mounted once here.
+  useCateHostActionResponder()
 
   // Sync the OS window title to the active workspace name. On macOS this is
   // what each native tab in the title bar displays, so the user can tell

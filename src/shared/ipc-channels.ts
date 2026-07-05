@@ -408,3 +408,37 @@ export const RUNTIME_PICK_SSH_KEY = 'runtime:pick-ssh-key' // renderer -> main (
 
 // Performance profiler (only active under CATE_PERF=1)
 export const PERF_GET = 'perf:get' // renderer -> main (pull latest resource snapshot)
+
+// =============================================================================
+// Extensions
+// =============================================================================
+
+// Extension management (renderer <-> main)
+export const EXTENSION_LIST = 'extension:list'                 // renderer -> main: active manifests + enable state
+export const EXTENSION_ENABLE = 'extension:enable'             // renderer -> main
+export const EXTENSION_DISABLE = 'extension:disable'           // renderer -> main
+export const EXTENSION_ADD_SIDELOAD = 'extension:addSideload'  // renderer -> main: register a local dev folder
+export const EXTENSION_REMOVE_SIDELOAD = 'extension:removeSideload' // renderer -> main
+export const EXTENSION_CATALOG_REFRESH = 'extension:catalogRefresh' // renderer -> main: re-fetch catalog sources + cache
+export const EXTENSION_INSTALL = 'extension:install'          // renderer -> main: download + extract a catalog extension
+export const EXTENSION_UNINSTALL = 'extension:uninstall'      // renderer -> main: disable + remove an installed catalog extension from disk
+export const EXTENSION_REINSTALL = 'extension:reinstall'      // renderer -> main: re-download the installed version (repair)
+export const EXTENSION_UPDATE = 'extension:update'            // renderer -> main: install the catalog's newer version, drop the old one
+export const EXTENSION_ADD_CATALOG_SOURCE = 'extension:addCatalogSource'    // renderer -> main
+export const EXTENSION_REMOVE_CATALOG_SOURCE = 'extension:removeCatalogSource' // renderer -> main
+export const EXTENSION_CATALOG_SOURCES = 'extension:catalogSources' // renderer -> main: current source URL list
+export const EXTENSION_PROXY_URL = 'extension:proxyUrl'        // renderer -> main: resolve webview URL for (extensionId, workspaceId, panelId)
+export const EXTENSION_PANEL_CLOSED = 'extension:panelClosed'  // renderer -> main: a server-backed panel unmounted (start grace)
+export const EXTENSION_SERVER_RESTART = 'extension:serverRestart' // renderer -> main: manual restart of a crashed/errored server
+export const EXTENSIONS_CHANGED = 'extension:changed'          // main -> renderer (broadcast)
+
+// Extension reverse API ("cateHost" bridge, webview-guest <-> main)
+export const CATE_HOST_INVOKE = 'cate:invoke'        // guest -> main: { extensionId, workspaceId, panelId, method, args } -> result
+export const CATE_HOST_SUBSCRIBE = 'cate:subscribe'  // guest -> main: { extensionId, workspaceId, panelId, topic }
+export const CATE_HOST_UNSUBSCRIBE = 'cate:unsubscribe' // guest -> main
+export const CATE_HOST_EVENT = 'cate:event'          // main -> guest: { panelId, topic, payload }
+
+// Forward a reverse-API call that mutates renderer state to the guest's owner
+// window and await its reply (editor.openFile, canvas.createPanel, panel.setTitle).
+export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args }
+export const CATE_HOST_FORWARD_REPLY = 'cate:hostActionReply' // renderer -> main: { requestId, ok, result?, error? }

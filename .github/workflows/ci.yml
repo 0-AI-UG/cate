@@ -51,6 +51,24 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: npm run lint
 
+      # The extensions catalog is its own repo (0-AI-UG/cate-extensions). Check
+      # it out + build so the catalog/distribution and kitchensink-server tests
+      # run against the real artifact instead of skipping. Skipped on Windows:
+      # the catalog repo's bash build.sh isn't Git-Bash/MSYS safe, and those
+      # tests skipIf the catalog is absent, so Windows stays green.
+      - name: Check out extensions catalog
+        if: runner.os != 'Windows'
+        uses: actions/checkout@v4
+        with:
+          repository: 0-AI-UG/cate-extensions
+          path: cate-extensions
+
+      - name: Build extensions catalog
+        if: runner.os != 'Windows'
+        run: ./build.sh
+        shell: bash
+        working-directory: cate-extensions
+
       - name: Unit tests
         run: npm run test
 

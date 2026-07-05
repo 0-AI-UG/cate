@@ -9,11 +9,14 @@
 import { existsSync } from 'fs'
 import path from 'path'
 import * as fileLeaf from './file'
+import { hostExtensionsRoot, extractArtifact } from './extensions'
 import { createWatchPool } from './fileWatcher'
 import { runRipgrepSearch } from '../search/engine'
 import { createVcsCapability } from './vcs'
 import { createProcessCapability, type ProcessCapability } from './process'
 import { createAgentCapability } from './agent'
+import { createServerCapability, type ServerCapability } from './server'
+import { createTunnelCapability, type TunnelCapability } from './tunnel'
 import { ensurePiOnHost, piCliPath } from '../ensurePi'
 import {
   validatePath,
@@ -45,11 +48,17 @@ export interface DaemonRuntimeConfig {
   rgPath?: string
 }
 
-/** A built daemon Runtime plus the concrete process capability, so the daemon
- *  entry can call killAllGroups() on shutdown (not part of the ProcessHost interface). */
+/** A built daemon Runtime plus the concrete process/server/tunnel capabilities,
+ *  so the daemon entry can reap children on shutdown (killAllGroups / killAll /
+ *  closeAll — none of which are part of the portable host interfaces). */
 export interface DaemonRuntime {
   runtime: Runtime
   process: ProcessCapability
+  server: ServerCapability
+  tunnel: TunnelCapability
+  /** Reap every live server child + tunnel socket (servers + tunnels). Process
+   *  groups are reaped via `process.killAllGroups()` by the daemon entry. */
+  killAll(): void
 }
 
 /** The ripgrep binary shipped in the runtime tarball, staged next to the
@@ -91,6 +100,20 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
       fileLeaf.copyInto(await validatePathStrict(src), await validatePathStrict(destDir)),
     importEntries: async (sources, destDir, mode, winId) =>
       fileLeaf.importEntriesInto(sources, await validatePathStrict(destDir), mode, winId, () => { /* errors counted, not logged */ }),
+    // Per-host extensions root (~/.cate/extensions). Register it as an allowed
+    // root here too (it's also registered at daemon startup) so the very first
+    // install on a fresh daemon, or any test driving buildDaemonRuntime directly,
+    // can read/write/extract under it. Idempotent.
+    extensionsRoot: async () => {
+      const root = hostExtensionsRoot()
+      addRoot(root)
+      return root
+    },
+    // Extract a host-resident, client-verified .tgz into destDir. validatePathStrict
+    // on the tgz (it exists), validatePathForCreation on dest (it may not yet) —
+    // both must resolve under an allowed root (extensionsRoot above / startup).
+    extractArtifact: async (tgz, destDir) =>
+      extractArtifact(await validatePathStrict(tgz), await validatePathForCreation(destDir)),
     search: async (root, query, opts) =>
       fileLeaf.searchFiles(await validatePathStrict(root), query, exclusionSet, opts),
     // Content search spawns the ripgrep shipped beside the daemon's node
@@ -170,12 +193,20 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     baseEnv: cleanEnv,
   })
 
+  // Server-backed extensions: spawn the server child on the daemon host, bound
+  // to a daemon-loopback port; the tunnel bridges raw TCP to that port. Both are
+  // electron-free and share the daemon's clean env.
+  const server = createServerCapability({ baseEnv: cleanEnv, daemonId: config.id })
+  const tunnel = createTunnelCapability()
+
   const runtime: Runtime = {
     id: config.id,
     process: proc,
     agent,
     file,
     vcs,
+    server,
+    tunnel,
     validatePath,
     validatePathStrict,
     validatePathForCreation,
@@ -199,5 +230,11 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     clearFileGrantsForWindow: async (windowId) => { clearFileGrants(windowId) },
     clearScopedWriteAllowancesForWindow: async (windowId) => { clearWriteAllowances(windowId) },
   }
-  return { runtime, process: proc }
+  return {
+    runtime,
+    process: proc,
+    server,
+    tunnel,
+    killAll: () => { server.killAll(); tunnel.closeAll() },
+  }
 }
