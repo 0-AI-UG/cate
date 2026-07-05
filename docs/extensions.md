@@ -13,6 +13,7 @@ Cate only standardizes how it serves/launches an extension and a small reverse A
 
 - Extensions live in a dedicated `cate-extensions` repo. New ones land via PR; CI builds each into an artifact.
 - Cate ships a catalog index, fetches an extension's artifact on first enable, and caches it.
+- A catalog source is a URL (or local path) to an index JSON: `{ "extensions": [ { "manifest": <full ExtensionManifest>, "artifactUrl", "sha256", "description" } ] }`. For a remote index `artifactUrl` must be an absolute `https://` URL — Cate treats any URL without an `http(s)` scheme as a local filesystem path. The artifact `.tgz` has `manifest.json` at its root.
 - Users can also point Cate at a local folder for development/sideloading.
 - No marketplace. The trust boundary is **PR review** (official) and **self-authorship** (local). Servers run unsandboxed, so reviewing an extension PR is a security review.
 - Official extensions are JS/TS built in CI. Local extensions own their own runtime.
