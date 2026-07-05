@@ -4,6 +4,7 @@
 // =============================================================================
 
 import fs from 'fs/promises'
+import { realpathSync } from 'fs'
 import path from 'path'
 import os from 'os'
 
@@ -15,7 +16,8 @@ import os from 'os'
 // Phase 3. Calls without a scopeId land under the LEGACY key (home/agent dirs,
 // daemon root, dev trust-scoping override) and stay globally allowed by design.
 const LEGACY_SCOPE = '__legacy_global__'
-const rootsByScope = new Map<string, Set<string>>()
+// scope -> (resolved root as registered -> every canonical form used for matching)
+const rootsByScope = new Map<string, Map<string, string[]>>()
 
 const scopedWriteAllowances = new Map<number, Map<string, ReturnType<typeof setTimeout>>>()
 const DEFAULT_WRITE_ALLOWANCE_TTL_MS = 60_000
@@ -39,26 +41,46 @@ export function pathCompareKey(p: string, platform: NodeJS.Platform = process.pl
 // location into the grant set.
 const persistentFileGrants = new Map<number, Set<string>>()
 
+// A root must match both the lexical form callers pass around AND the
+// symlink-free form the strict (realpath-based) checks produce. The two can
+// differ even without user symlinks: macOS /tmp is a symlink to /private/tmp,
+// and Windows 8.3 short names (C:\Users\RUNNER~1) expand to long names via the
+// native realpath that validatePathStrict uses. Registering only the lexical
+// form would make the strict check reject paths that are genuinely inside the
+// root, so each root is stored with every canonical form we can compute.
+function canonicalForms(resolved: string): string[] {
+  try {
+    const real = realpathSync.native(resolved)
+    if (pathCompareKey(real) !== pathCompareKey(resolved)) return [resolved, real]
+  } catch {
+    // Root doesn't exist (yet) — lexical form only.
+  }
+  return [resolved]
+}
+
 export function addAllowedRoot(root: string, scopeId?: string): void {
   const key = scopeId ?? LEGACY_SCOPE
-  const set = rootsByScope.get(key) ?? new Set<string>()
-  set.add(path.resolve(root))
-  rootsByScope.set(key, set)
+  const map = rootsByScope.get(key) ?? new Map<string, string[]>()
+  const resolved = path.resolve(root)
+  map.set(resolved, canonicalForms(resolved))
+  rootsByScope.set(key, map)
 }
 
 export function removeAllowedRoot(root: string, scopeId?: string): void {
   const key = scopeId ?? LEGACY_SCOPE
-  const set = rootsByScope.get(key)
-  if (!set) return
-  set.delete(path.resolve(root))
-  if (set.size === 0) rootsByScope.delete(key)
+  const map = rootsByScope.get(key)
+  if (!map) return
+  map.delete(path.resolve(root))
+  if (map.size === 0) rootsByScope.delete(key)
 }
 
 export function getAllowedRoots(): ReadonlySet<string> {
   // Union of every scope's roots — some callers/tests want the global view.
+  // Returns the roots as registered (lexical form), not the internal
+  // realpath variants.
   const union = new Set<string>()
-  for (const set of rootsByScope.values()) {
-    for (const root of set) union.add(root)
+  for (const map of rootsByScope.values()) {
+    for (const root of map.keys()) union.add(root)
   }
   return union
 }
@@ -76,10 +98,14 @@ function keyUnderRoots(key: string, roots: Iterable<string>): boolean {
   return false
 }
 
+// os.tmpdir() in both lexical and realpath form (see canonicalForms), computed
+// once — it's checked on every validation and never changes within a process.
+let tmpDirForms: string[] | undefined
+
 function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
   const key = pathCompareKey(normalized)
-  const tmpKey = pathCompareKey(path.resolve(os.tmpdir()))
-  if (key === tmpKey || key.startsWith(tmpKey + path.sep)) {
+  tmpDirForms ??= canonicalForms(path.resolve(os.tmpdir()))
+  if (keyUnderRoots(key, tmpDirForms)) {
     return true
   }
 
@@ -90,10 +116,12 @@ function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
   // workspace's roots" so behavior is unchanged. Strict per-workspace enforcement
   // (allow only `scopeId`'s own roots, denying cross-workspace access) is deferred to
   // Phase 3, where each local workspace gets its own daemon rooted at its own root —
-  // see keyUnderRoots(key, rootsByScope.get(scopeId)) for the future strict branch.
+  // the future strict branch checks only rootsByScope.get(scopeId)'s forms.
   void scopeId
-  for (const set of rootsByScope.values()) {
-    if (keyUnderRoots(key, set)) return true
+  for (const map of rootsByScope.values()) {
+    for (const forms of map.values()) {
+      if (keyUnderRoots(key, forms)) return true
+    }
   }
   return false
 }

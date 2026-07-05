@@ -134,6 +134,8 @@ export class RpcServer {
       case Methods.fileRemove: return api.file.remove(s(0))
       case Methods.fileRename: return api.file.rename(s(0), s(1))
       case Methods.fileMkdir: return api.file.mkdir(s(0))
+      case Methods.fileExtensionsRoot: return api.file.extensionsRoot()
+      case Methods.fileExtractArtifact: return api.file.extractArtifact(s(0), s(1))
       case Methods.fileCopy: return api.file.copy(s(0), s(1))
       case Methods.fileImportEntries:
         return api.file.importEntries(p[0] as string[], s(1), p[2] as 'copy' | 'move', n(3))
@@ -171,6 +173,38 @@ export class RpcServer {
         )
       case Methods.agentWriteLine: return api.agent.writeLine(s(0), s(1))
       case Methods.agentStop: return api.agent.stop(s(0))
+
+      // --- server (server-backed extensions) --- output/exit stream back keyed by the server id ---
+      case Methods.serverStart:
+        return api.server.start(
+          p[0] as never,
+          (id, stream, chunk) => this.write(serializeFrame({ t: 'evt', streamId: id, payload: { kind: 'output', stream, chunk } })),
+          (id, code, signal) => this.write(serializeFrame({ t: 'evt', streamId: id, payload: { kind: 'exit', code, signal } })),
+        )
+      case Methods.serverStop: return api.server.stop(s(0))
+
+      // --- tunnel (raw TCP bridge) --- data/close stream back keyed by the connId ---
+      case Methods.tunnelOpen:
+        return api.tunnel.open(
+          s(0),
+          n(1) as number,
+          (id, chunk) => this.write(serializeFrame({ t: 'evt', streamId: id, payload: { kind: 'data', chunk } })),
+          (id) => this.write(serializeFrame({ t: 'evt', streamId: id, payload: { kind: 'close' } })),
+        )
+      case Methods.tunnelWrite: return api.tunnel.write(s(0), s(1))
+      case Methods.tunnelAck: return api.tunnel.ack(s(0), n(1) as number)
+      case Methods.tunnelClose: return api.tunnel.close(s(0))
+
+      // --- reverse tunnel (CATE_API) --- connection evts on the listenerId
+      // stream; accepted-connection bytes use data/close on the connId stream.
+      case Methods.tunnelListen:
+        return api.tunnel.listen(
+          s(0),
+          (connId) => this.write(serializeFrame({ t: 'evt', streamId: s(0), payload: { kind: 'connection', connId } })),
+          (connId, chunk) => this.write(serializeFrame({ t: 'evt', streamId: connId, payload: { kind: 'data', chunk } })),
+          (connId) => this.write(serializeFrame({ t: 'evt', streamId: connId, payload: { kind: 'close' } })),
+        )
+      case Methods.tunnelStopListen: return api.tunnel.stopListen(s(0))
 
       // --- vcs ---
       case Methods.vcsIsRepo: return api.vcs.isRepo(s(0))

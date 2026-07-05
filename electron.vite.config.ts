@@ -30,7 +30,10 @@ export default defineConfig({
       outDir: 'dist/preload',
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/preload/index.ts')
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          // Second preload injected into extension webview guests (the `cate`
+          // reverse-API bridge). Emitted alongside index.js in dist/preload/.
+          cateHost: resolve(__dirname, 'src/preload/cateHost.ts')
         }
       }
     }

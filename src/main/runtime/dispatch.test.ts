@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { runtimes } from './runtimeManager'
 import { parseLocator, LOCAL_RUNTIME_ID } from './locator'
-import type { Runtime, FileHost, VcsHost, ProcessHost, AgentHost } from './types'
+import type { Runtime, FileHost, VcsHost, ProcessHost, AgentHost, ServerHost, TunnelHost } from './types'
 
 // Prove the decode-and-dispatch layer routes a `cate-runtime://` URI to a
 // registered (non-local) runtime, while bare local paths still parse to the
@@ -23,6 +23,8 @@ function makeStub(id: string, calls: string[]): Runtime {
     agent: {} as unknown as AgentHost,
     file,
     vcs,
+    server: {} as unknown as ServerHost,
+    tunnel: {} as unknown as TunnelHost,
     validatePath: (p) => p,
     validatePathStrict: async (p) => p,
     validatePathForCreation: async (p) => p,

@@ -22,6 +22,24 @@ import { collectPanelIds } from '../canvas/collectPanelIds'
 // Project-local state builders (.cate/workspace.json + .cate/session.json)
 // -----------------------------------------------------------------------------
 
+// Panel fields that persist verbatim (no path relativization) in BOTH
+// directions between the in-memory PanelState and the on-disk ProjectPanelRef.
+// `type`/`title` are always required and `filePath` needs explicit
+// relative/absolute conversion, so they're handled separately. Enumerated ONCE
+// here — consulted by both buildWorkspaceFile and projectFilesToSnapshot — so
+// the two paths can't drift and silently drop a field on round-trip.
+const PASSTHROUGH_PANEL_FIELDS = ['url', 'proxyUrl', 'documentType', 'extensionId', 'extensionPanelId'] as const
+
+type PassthroughPanelFields = Pick<ProjectPanelRef, (typeof PASSTHROUGH_PANEL_FIELDS)[number]>
+
+/** Copy the passthrough panel fields (see PASSTHROUGH_PANEL_FIELDS) from a
+ *  PanelState or ProjectPanelRef, normalizing null → undefined. */
+function pickPassthroughPanelFields(source: PassthroughPanelFields): PassthroughPanelFields {
+  const out: Record<string, unknown> = {}
+  for (const key of PASSTHROUGH_PANEL_FIELDS) out[key] = source[key] ?? undefined
+  return out as PassthroughPanelFields
+}
+
 export function buildWorkspaceFile(
   snapshot: SessionSnapshot,
   rootPath: string,
@@ -38,9 +56,7 @@ export function buildWorkspaceFile(
         type: p.type,
         title: p.title,
         filePath: p.filePath ? toRelativePath(p.filePath, rootPath) : undefined,
-        url: p.url ?? undefined,
-        proxyUrl: p.proxyUrl ?? undefined,
-        documentType: p.documentType,
+        ...pickPassthroughPanelFields(p),
       }
     }
   }
@@ -112,9 +128,7 @@ export function projectFilesToSnapshot(
         title: ref.title,
         isDirty: false,
         filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
-        url: ref.url,
-        proxyUrl: ref.proxyUrl,
-        documentType: ref.documentType,
+        ...pickPassthroughPanelFields(ref),
         // Re-attach the machine-local facts kept out of the committed file.
         worktreeId: sp?.worktreeId,
         unsavedContent: sp?.unsavedContent,

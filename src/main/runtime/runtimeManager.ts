@@ -36,6 +36,17 @@ export class RuntimeManager {
   /** Dedupe concurrent connects to the same id (mirrors AgentManager.withLock). */
   private readonly connecting = new Map<RuntimeId, Promise<Runtime>>()
   private statusListener: ((id: RuntimeId, state: RuntimePhase, message?: string) => void) | null = null
+  /** Fired when a runtime reaches the fully-`connected` step (a live
+   *  RemoteRuntime). Used to eagerly provision enabled extensions onto a newly
+   *  reachable host. Separate from the single statusListener so it can have many
+   *  subscribers without contending with the IPC status broadcast. */
+  private readonly connectedListeners = new Set<(id: RuntimeId, runtime: Runtime) => void>()
+  /** Fired when a runtime is REMOVED on transport close (a live drop — crash /
+   *  network / daemon exit), for both remote and the LOCAL path. Mirrors
+   *  connectedListeners so subscribers can release any per-runtime state that
+   *  became stale (extension server sessions, reverse endpoints, provisioned
+   *  caches) instead of stranding it against a dead handle. */
+  private readonly disconnectedListeners = new Set<(id: RuntimeId) => void>()
   /** The opts the LOCAL daemon was launched with, kept so a crash can be
    *  re-provisioned + relaunched identically. Set by ensureLocalRuntime. */
   private localOpts: { root: string; exclusions?: string[]; env?: NodeJS.ProcessEnv; idleSuspend?: boolean } | null = null
@@ -185,6 +196,37 @@ export class RuntimeManager {
   /** Wire a status sink (the IPC layer broadcasts these to the renderer). */
   setStatusListener(fn: (id: RuntimeId, state: RuntimePhase, message?: string) => void): void {
     this.statusListener = fn
+  }
+
+  /** Subscribe to runtime `connected` events (live RemoteRuntime). Fires for
+   *  LOCAL's real connect and every remote/WSL connect. Returns an unsubscribe. */
+  onConnected(cb: (id: RuntimeId, runtime: Runtime) => void): () => void {
+    this.connectedListeners.add(cb)
+    return () => { this.connectedListeners.delete(cb) }
+  }
+
+  private emitConnected(id: RuntimeId, runtime: Runtime): void {
+    for (const cb of this.connectedListeners) {
+      try { cb(id, runtime) } catch { /* a subscriber must not break connect */ }
+    }
+  }
+
+  /** Subscribe to runtime `disconnected` events (a live transport drop removed
+   *  the runtime). Fires exactly once per drop, for LOCAL and remote alike.
+   *  Returns an unsubscribe. */
+  onDisconnected(cb: (id: RuntimeId) => void): () => void {
+    this.disconnectedListeners.add(cb)
+    return () => { this.disconnectedListeners.delete(cb) }
+  }
+
+  private emitDisconnected(id: RuntimeId): void {
+    for (const cb of this.disconnectedListeners) {
+      // A subscriber must never throw into the channel close handler (that runs
+      // synchronously from the transport). Isolate + log each failure.
+      try { cb(id) } catch (err) {
+        log.warn('[runtime] onDisconnected subscriber for %s failed: %O', id, err)
+      }
+    }
   }
 
   private emitStatus(id: RuntimeId, state: RuntimePhase, message?: string): void {
@@ -439,6 +481,12 @@ export class RuntimeManager {
       if (this.connections.get(id) !== conn) return
       this.connections.delete(id)
       this.runtimes.delete(id)
+      // Notify subscribers the runtime is gone (both LOCAL and remote reach
+      // here). Fires exactly once per live drop — the intentional-teardown case
+      // returned above (disposeConnection removed the connection first). Lets the
+      // extension layer release the stranded server sessions / reverse endpoints
+      // that were bound to this now-dead runtime handle.
+      this.emitDisconnected(id)
       // The LOCAL workspace runs as a daemon subprocess. A remote drop is the
       // user's to reconnect, but a LOCAL crash leaves the whole workspace dead
       // (resolve(LOCAL) throws) until app restart — so auto-reconnect it. The
@@ -455,6 +503,7 @@ export class RuntimeManager {
     this.connections.set(id, conn)
     log.info('[runtime] connected %s (%s) node=%s', id, transport.kind, hello.node.version)
     this.emitStatus(id, 'connected')
+    this.emitConnected(id, runtime)
     return runtime
   }
 

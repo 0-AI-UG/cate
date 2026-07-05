@@ -27,6 +27,13 @@ export default tseslint.config(
       '**/*.config.ts',
       '**/*.config.mjs',
       'scripts/**',
+      // Sample extensions and the (gitignored) catalog repo checkout are their
+      // own JS/TS projects, not app source; don't lint them with the app config.
+      'examples/**',
+      'cate-extensions/**',
+      // Gitignored generated output / local worktrees — never app source.
+      'dist-runtime/**',
+      '.cate/**',
     ],
   },
   js.configs.recommended,

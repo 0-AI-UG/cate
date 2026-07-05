@@ -4,6 +4,7 @@ import path from 'path'
 import { registerHandlers as registerTerminalHandlers } from './ipc/terminal'
 import { runtimes } from './runtime/runtimeManager'
 import { registerRuntimeHandlers } from './ipc/runtime'
+import { registerExtensionHandlers } from './extensions/cateApiHandlers'
 import { registerHandlers as registerFilesystemHandlers } from './ipc/filesystem'
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerSearchHandlers } from './ipc/search'
@@ -18,10 +19,8 @@ import { registerAgentHandlers } from '../agent/main/ipcAgent'
 import { registerSkillHandlers } from '../skills/main/ipcSkills'
 import { registerAuthHandlers } from '../agent/main/ipcAuth'
 import { authManager } from '../agent/main/authManager'
-import { AgentManager } from '../agent/main/agentManager'
-
-// Shared singletons for pi agent + auth.
-const agentManager = new AgentManager(authManager)
+// Shared singletons for pi agent + auth (constructed at module load).
+import { agentManager } from '../agent/main/agentManager'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { addAllowedRoot } from './ipc/pathValidation'
 import { buildApplicationMenu, setNewMainWindowFn } from './menu'
@@ -122,6 +121,7 @@ function registerDeferredHandlers(): void {
   registerAgentHandlers(authManager, agentManager)
   registerSkillHandlers()
   registerRuntimeHandlers()
+  registerExtensionHandlers()
 }
 
 // =============================================================================

@@ -29,7 +29,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'extension'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -114,6 +114,10 @@ export interface PanelState {
    *  registry entry is disposed and `TerminalPanel`'s create effect re-runs at
    *  the new `cwd`. */
   ptyEpoch?: number
+  /** Extension panels only: which installed extension + which of its declared
+   *  panels this instance renders. */
+  extensionId?: string
+  extensionPanelId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -1058,6 +1062,11 @@ export interface ProjectPanelRef {
   proxyUrl?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
+  /** Extension panels only: which installed extension + which of its declared
+   *  panels this instance renders. Persisted so a restored extension panel
+   *  re-binds to its extension instead of coming back as "unavailable". */
+  extensionId?: string
+  extensionPanelId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -1329,6 +1338,14 @@ export interface AppSettings {
   /** Which sidebar views live in the left vs. right rail. Was renderer
    *  localStorage (cate.sidebarLayout.v3) before. */
   sidebarLayout: SidebarLayout
+
+  // Extensions
+  /** Ids of enabled extensions. */
+  enabledExtensions: string[]
+  /** Catalog index URLs (used in Phase 2). */
+  extensionCatalogSources: string[]
+  /** Absolute local folders sideloaded for dev. */
+  extensionSideloadPaths: string[]
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -1416,6 +1433,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
     left: ['workspaces', 'explorer', 'search'],
     right: ['git'],
   },
+
+  // Extensions
+  enabledExtensions: [],
+  // The official Cate extensions catalog (0-AI-UG/cate-extensions). That repo's
+  // CI hosts index.json + artifact tarballs as assets on a rolling `catalog`
+  // GitHub Release. Users can add more sources or remove this.
+  extensionCatalogSources: [
+    'https://github.com/0-AI-UG/cate-extensions/releases/download/catalog/index.json',
+  ],
+  extensionSideloadPaths: [],
 }
 
 // -----------------------------------------------------------------------------
@@ -1469,6 +1496,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   canvas: { width: 640, height: 480 },
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
+  extension: { width: 520, height: 360 },
 }
 
 // -----------------------------------------------------------------------------

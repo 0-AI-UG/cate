@@ -88,6 +88,8 @@ export const Methods = {
   fileCopy: 'file.copy',
   fileImportEntries: 'file.importEntries',
   fileSearch: 'file.search',
+  fileExtensionsRoot: 'file.extensionsRoot',   // returns the host's ~/.cate/extensions, registering it as an allowed root
+  fileExtractArtifact: 'file.extractArtifact', // validate + untar a host-resident .tgz into a versioned dir
   fileSearchContentStart: 'file.searchContent.start', // returns a streamId; batch/done arrive as evt frames
   fileSearchContentStop: 'file.searchContent.stop',
   fileWatchStart: 'file.watch.start', // returns a streamId; events arrive as evt frames
@@ -143,6 +145,29 @@ export const Methods = {
   agentStart: 'agent.start', // params [opts incl. id]; lines/exit arrive as evt frames keyed by id
   agentWriteLine: 'agent.writeLine',
   agentStop: 'agent.stop',
+
+  // --- server (long-lived HTTP server children for server-backed extensions) ---
+  // stdout/stderr + exit stream back as evt frames keyed by the caller-generated
+  // id. server.start resolves only after the daemon's ready probe passes.
+  serverStart: 'server.start', // params [opts incl. id]; output/exit arrive as evt frames keyed by id
+  serverStop: 'server.stop',
+
+  // --- tunnel (raw TCP bridge to a server child's loopback port) ---
+  // data/close stream back as evt frames keyed by the caller-generated connId.
+  tunnelOpen: 'tunnel.open', // params [connId, port]; data/close arrive as evt frames keyed by connId
+  tunnelWrite: 'tunnel.write',
+  tunnelClose: 'tunnel.close',
+  // Flow control (daemon→client credit window): the client acks decoded bytes it
+  // has delivered to their destination, so the daemon can resume a socket it
+  // paused once enough is outstanding. Fire-and-forget, like tunnel.write.
+  tunnelAck: 'tunnel.ack', // params [connId, byteCount]; client→daemon
+  // Reverse tunnel (CATE_API): a 127.0.0.1 listener on the daemon host whose
+  // inbound connections are bridged BACK over the pipe. `connection` evts arrive
+  // on the listenerId stream; each accepted connection's bytes use the SAME
+  // data/close TunnelEvtPayload on a connId stream, and outbound bytes reuse
+  // tunnel.write/tunnel.close.
+  tunnelListen: 'tunnel.listen',         // params [listenerId]; returns { port }; connection evts on listenerId stream
+  tunnelStopListen: 'tunnel.stopListen', // params [listenerId]
 } as const
 
 export type MethodName = (typeof Methods)[keyof typeof Methods]
@@ -167,6 +192,22 @@ export type AgentEvtPayload =
 export type PtyEvtPayload =
   | { kind: 'data'; data: string }
   | { kind: 'exit'; exitCode: number }
+
+/** Payload carried by a `server.start` stream's evt frames (keyed by the server id). */
+export type ServerEvtPayload =
+  | { kind: 'output'; stream: 'stdout' | 'stderr'; chunk: string }
+  | { kind: 'exit'; code: number | null; signal: string | null }
+
+/** Payload carried by a `tunnel.open` stream's evt frames (keyed by the connId). */
+export type TunnelEvtPayload =
+  | { kind: 'data'; chunk: string }   // base64
+  | { kind: 'close' }
+
+/** Payload carried by a `tunnel.listen` stream's evt frames (keyed by the
+ *  listenerId). One `connection` per inbound socket the daemon accepts; the
+ *  accepted connection's bytes then stream as TunnelEvtPayload on the connId
+ *  stream (and outbound bytes reuse tunnel.write/tunnel.close). */
+export type TunnelListenEvtPayload = { kind: 'connection'; connId: string }
 
 /** Payload carried by a `file.searchContent` stream's evt frames. `batch`
  *  delivers completed-file results as they arrive; `done` fires once with final

@@ -59,13 +59,14 @@ The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions 
 
 Panel definitions are centralised in `src/shared/panels.ts`. The detachable panel
 types (`PanelType` in `src/shared/types.ts`) are: terminal, browser, editor,
-canvas, agent, document. Renderer components live in `src/renderer/panels/`:
+canvas, agent, document, extension. Renderer components live in `src/renderer/panels/`:
 - **EditorPanel** — Monaco Editor with syntax highlighting
 - **TerminalPanel** — xterm.js terminal with WebGL renderer, backed by node-pty
 - **BrowserPanel** — embedded webview (file:// allowed for local HTML)
 - **CanvasPanel** — nested canvas
 - **DocumentPanel** — PDF / docx preview
 - **AgentPanel** — Claude-Code agent thread (sidebar + dock)
+- **ExtensionPanel** — third-party extension panel (isolated webview served by an extension server)
 
 The file tree (`src/renderer/sidebar/FileExplorer.tsx`) and recent-projects
 switcher (`src/renderer/sidebar/ProjectList.tsx`) are **sidebar** components, not
@@ -83,6 +84,7 @@ Zustand stores in `src/renderer/stores/`:
 - **shortcutStore** — keyboard shortcut bindings
 - **statusStore** — status bar state
 - **uiStore** — transient UI state (command palette, etc.)
+- **extensionsStore** — renderer-side mirror of the main process's extension registry (enabled-extension set)
 
 Persisted state is stored as hand-editable JSON files under `userData` (no
 electron-store). `settingsFile.ts` owns `settings.json`; `jsonStateFile.ts` is a
