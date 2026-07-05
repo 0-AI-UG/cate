@@ -119,13 +119,29 @@ export function createWatchPool(
   const subscribe = deps.subscribe ?? (nativeWatcher.subscribe as WatchPoolDeps['subscribe'])!
   const pool = new Map<string, SharedTree>()
 
-  // Find the longest existing root that covers `prefix`, so nested subscribers
-  // share one OS watcher. (We only reuse ANCESTOR trees, never widen an
-  // existing one — a parent subscribe after a child simply opens its own.)
+  // True iff a tree rooted at `root` can never deliver events under `prefix`:
+  // its native ignore globs (buildIgnorePatterns) prune any path that crosses a
+  // hidden or excluded segment below the root. Such a tree must not be reused
+  // as a covering root — the subscriber would attach and silently get nothing
+  // (e.g. a `.cate/extensions/<id>` subscriber under a workspace-root tree).
+  const prunedUnder = (root: string, prefix: string): boolean => {
+    if (prefix === root) return false
+    const excluded = new Set(getExclusions())
+    for (const segment of prefix.slice(root.length + 1).split(/[/\\]/)) {
+      if (segment.charCodeAt(0) === 46 /* '.' */ || excluded.has(segment)) return true
+    }
+    return false
+  }
+
+  // Find the longest existing root that covers `prefix` AND can actually emit
+  // events under it, so nested subscribers share one OS watcher. (We only reuse
+  // ANCESTOR trees, never widen an existing one — a parent subscribe after a
+  // child simply opens its own.)
   const findCovering = (prefix: string): SharedTree | null => {
     let best: SharedTree | null = null
     for (const tree of pool.values()) {
       if (!pathHasPrefix(prefix, tree.root)) continue
+      if (prunedUnder(tree.root, prefix)) continue
       if (!best || tree.root.length > best.root.length) best = tree
     }
     return best

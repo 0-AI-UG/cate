@@ -31,12 +31,14 @@ function makeFakeRuntime(label: string): {
   runtime: Runtime
   writes: Array<{ by: string; content: string }>
   liveWatchers: () => number
+  watchedPrefixes: string[]
   setFile: (content: string) => void
-  emitChange: () => void
+  emitChange: (changedPath?: string) => void
 } {
   const files = new Map<string, string>()
   const writes: Array<{ by: string; content: string }> = []
-  const watchers = new Set<() => void>()
+  const watchers = new Set<(changedPath: string) => void>()
+  const watchedPrefixes: string[] = []
 
   const file = {
     async readFile(p: string): Promise<string> {
@@ -48,7 +50,9 @@ function makeFakeRuntime(label: string): {
       files.set(p, content)
       writes.push({ by: label, content })
     },
-    watch(_prefix: string, onChange: () => void): () => void {
+    async mkdir(_p: string): Promise<void> {},
+    watch(prefix: string, onChange: (changedPath: string) => void): () => void {
+      watchedPrefixes.push(prefix)
       watchers.add(onChange)
       return () => { watchers.delete(onChange) }
     },
@@ -59,8 +63,13 @@ function makeFakeRuntime(label: string): {
     runtime,
     writes,
     liveWatchers: () => watchers.size,
+    watchedPrefixes,
     setFile: (content: string) => files.set(`${ROOT}/.cate/extensions/${EXT}/storage.json`, content),
-    emitChange: () => { for (const cb of watchers) cb() },
+    // The pool watches the storage file's parent DIR and delivers events for
+    // paths inside it; default to the storage file's own path.
+    emitChange: (changedPath = `${ROOT}/.cate/extensions/${EXT}/storage.json`) => {
+      for (const cb of watchers) cb(changedPath)
+    },
   }
 }
 
@@ -100,12 +109,67 @@ describe('storage — watcher teardown on last unsubscribe', () => {
     const s = await getExtensionStorage(EXT, 'ws')
     const off1 = s!.onChange(() => {})
     const off2 = s!.onChange(() => {})
-    expect(a.liveWatchers()).toBe(1)
+    // Arming is async (mkdir the watched dir first), so wait for it.
+    await vi.waitFor(() => expect(a.liveWatchers()).toBe(1))
 
     off1()
     expect(a.liveWatchers()).toBe(1) // still one subscriber
     off2()
     expect(a.liveWatchers()).toBe(0) // watcher disposed, not left live
+  })
+})
+
+describe('storage — external-edit reload', () => {
+  it('reloads the file and notifies subscribers when the watcher reports an external change', async () => {
+    const a = makeFakeRuntime('A')
+    runtimes.registerLocalForTest(a.runtime)
+
+    const s = await getExtensionStorage(EXT, 'ws')
+    let fired = 0
+    s!.onChange(() => { fired++ })
+    await vi.waitFor(() => expect(a.liveWatchers()).toBe(1))
+
+    a.setFile('{"k":"external"}')
+    a.emitChange()
+
+    await vi.waitFor(() => expect(fired).toBe(1))
+    expect(s!.get('k')).toBe('external')
+  })
+
+  it('watches the storage DIR, not the file (the watch pool is directory-based)', async () => {
+    const a = makeFakeRuntime('A')
+    runtimes.registerLocalForTest(a.runtime)
+
+    const s = await getExtensionStorage(EXT, 'ws')
+    s!.onChange(() => {})
+    await vi.waitFor(() => expect(a.liveWatchers()).toBe(1))
+
+    expect(a.watchedPrefixes).toEqual([`${ROOT}/.cate/extensions/${EXT}`])
+  })
+
+  it('ignores events for sibling files (editor tmp/backup) and same-content events', async () => {
+    const a = makeFakeRuntime('A')
+    runtimes.registerLocalForTest(a.runtime)
+
+    const s = await getExtensionStorage(EXT, 'ws')
+    let fired = 0
+    s!.onChange(() => { fired++ })
+    await vi.waitFor(() => expect(a.liveWatchers()).toBe(1))
+
+    // A sibling event (vim swap file) must not trigger a reload/notify.
+    a.setFile('{"k":"external"}')
+    a.emitChange(`${ROOT}/.cate/extensions/${EXT}/.storage.json.swp`)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fired).toBe(0)
+    expect(s!.get('k')).toBeUndefined() // not reloaded either
+
+    // A storage.json event with the content we already hold must not notify.
+    a.emitChange()
+    await vi.waitFor(() => expect(s!.get('k')).toBe('external'))
+    expect(fired).toBe(1)
+    a.emitChange() // content unchanged this time
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fired).toBe(1)
   })
 })
 

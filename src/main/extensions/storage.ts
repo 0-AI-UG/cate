@@ -20,8 +20,9 @@
 //
 // Each (runtime, project, extensionId) gets one cached store: async initial load
 // (runtime.file.readFile), in-memory authority for synchronous get/set, debounced
-// runtime.file.writeFile, and a runtime.file.watch that reloads on external edits
-// (suppressing our own write echo by content compare).
+// runtime.file.writeFile, and a runtime.file.watch on the storage DIR (the watch
+// pool is directory-based) that reloads on external edits, suppressing our own
+// write echo by content compare.
 // =============================================================================
 
 import fs from 'fs'
@@ -35,6 +36,8 @@ import type { Runtime } from '../runtime/types'
 
 /** Reserved sub-object holding per-panel slices. */
 const PANELS_KEY = '__panels__'
+/** Filename of the per-extension storage file inside `.cate/extensions/<id>/`. */
+const STORAGE_BASENAME = 'storage.json'
 /** Debounce window for batching writes (matches the old jsonStateFile cadence). */
 const WRITE_DEBOUNCE_MS = 150
 
@@ -91,7 +94,7 @@ function locate(workspaceId: string): { runtime: Runtime; root: string } | null 
 }
 
 function storageFile(runtimeId: RuntimeId, projectRoot: string, extensionId: string): string {
-  return hostJoin(runtimeId, projectRoot, '.cate', 'extensions', extensionId, 'storage.json')
+  return hostJoin(runtimeId, projectRoot, '.cate', 'extensions', extensionId, STORAGE_BASENAME)
 }
 
 /** Read + parse the host file, or {} when missing/corrupt. */
@@ -122,6 +125,12 @@ async function createStore(runtimeId: RuntimeId, file: string): Promise<Store> {
   let writeTimer: ReturnType<typeof setTimeout> | null = null
   /** The runtime watcher disposer, kept so we can stop watching (finding #2). */
   let unwatch: (() => void) | null = null
+  /** True while the async watch arming (mkdir + watch) is in flight, so two
+   *  concurrent subscribes can't arm two watchers. */
+  let watchArming = false
+  // The watch pool is directory-recursive (parcel can't root at a file), so we
+  // watch the storage file's parent dir and filter events down to the file.
+  const dir = file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
   // The JSON of our last scheduled write, so the watcher can ignore the change
   // event our own writeFile produces (otherwise every set() would echo back).
   let lastWritten: string | null = null
@@ -182,20 +191,46 @@ async function createStore(runtimeId: RuntimeId, file: string): Promise<Store> {
   }
 
   const ensureWatching = (): void => {
-    if (unwatch) return
+    if (unwatch || watchArming) return
     const host = currentFileHost()
     if (!host) return
-    unwatch = host.watch(file, () => {
-      void (async () => {
+    watchArming = true
+    void (async () => {
+      try {
+        // The watched dir may not exist before the first write; the pool can't
+        // watch a missing root. Create it through the runtime so local and
+        // remote arm identically. Idempotent (mkdir is recursive).
+        await host.mkdir(dir)
         const h = currentFileHost()
         if (!h) return
-        const fresh = await loadData(file, h)
-        const json = JSON.stringify(fresh, null, 2)
-        if (json === lastWritten) return // our own write echoed back
-        data = fresh
-        notify()
-      })()
-    })
+        const un = h.watch(dir, (changedPath) => {
+          // Basename match, not full-path equality: the watcher may emit a
+          // different representation of the same path (separators, resolved
+          // symlinks) than our hostJoin-built string, and a mismatch here
+          // would silently disarm reloads. Editor tmp/backup siblings are
+          // filtered out; a same-content event is dropped by the compares.
+          if (!changedPath.endsWith(STORAGE_BASENAME)) return
+          void (async () => {
+            const hh = currentFileHost()
+            if (!hh) return
+            const fresh = await loadData(file, hh)
+            const json = JSON.stringify(fresh, null, 2)
+            if (json === lastWritten) return // our own write echoed back
+            if (json === JSON.stringify(data, null, 2)) return // no content change
+            data = fresh
+            notify()
+          })()
+        })
+        // All subscribers left (or the store was disposed) while arming — don't
+        // strand a live watcher nothing listens to.
+        if (subscribers.size === 0) { un(); return }
+        unwatch = un
+      } catch (err) {
+        log.warn('[extensions] storage watch arming failed for %s: %O', file, err)
+      } finally {
+        watchArming = false
+      }
+    })()
   }
 
   const stopWatching = (): void => {

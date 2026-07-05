@@ -111,6 +111,38 @@ describe('createWatchPool — covering-root sharing + prefix fan-out', () => {
     pool.subscribe(other, () => {})
     expect(fake.subscribe).toHaveBeenCalledTimes(2)
   })
+
+  it('does NOT reuse a covering tree whose ignore globs prune the prefix (hidden dir)', async () => {
+    // A subscriber under `.cate/` must not attach to the workspace-root tree:
+    // that tree's native `**/.*/**` ignore prunes everything below `.cate`, so
+    // the subscriber would silently never receive an event (the extension
+    // storage regression). It gets its own tree rooted at the prefix instead.
+    const fake = fakeParcel()
+    const pool = createWatchPool(() => [], undefined, { subscribe: fake.subscribe })
+    const cateDir = path.join(ROOT, '.cate', 'extensions', 'cate.test')
+    const events: string[] = []
+
+    pool.subscribe(ROOT, () => {})
+    pool.subscribe(cateDir, (p) => events.push(p))
+
+    expect(fake.subscribe).toHaveBeenCalledTimes(2)
+    expect(fake.subs[1].root).toBe(cateDir)
+
+    const storageFile = path.join(cateDir, 'storage.json')
+    fake.fire(1, [{ path: storageFile, type: 'update' }])
+    await flush()
+    expect(events).toEqual([storageFile])
+  })
+
+  it('does NOT reuse a covering tree whose ignore globs prune the prefix (exclusion)', async () => {
+    const fake = fakeParcel()
+    const pool = createWatchPool(() => ['node_modules'], undefined, { subscribe: fake.subscribe })
+    const excludedDir = path.join(ROOT, 'node_modules', 'pkg')
+    pool.subscribe(ROOT, () => {})
+    pool.subscribe(excludedDir, () => {})
+    expect(fake.subscribe).toHaveBeenCalledTimes(2)
+    expect(fake.subs[1].root).toBe(excludedDir)
+  })
 })
 
 describe('createWatchPool — refcounted teardown', () => {
