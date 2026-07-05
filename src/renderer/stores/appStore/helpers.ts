@@ -297,11 +297,14 @@ function placePanel(
   // panel back). When the setting is off — or for a background restore — fall
   // through and auto-place in the best spot. Explicit-position paths (drag-drop,
   // session restore, right-click "new here") always skip the picker.
-  if (isActiveWorkspace && canvasPosition == null && onGhostCancel && useSettingsStore.getState().placementPicker) {
+  // Background create (`focus: false`): never interactive — no ghost picker, no
+  // focus steal, no camera move; the node is just added at its position.
+  const focus = placement?.target !== 'canvas' || placement.focus !== false
+  if (focus && isActiveWorkspace && canvasPosition == null && onGhostCancel && useSettingsStore.getState().placementPicker) {
     const shown = ops.beginPlacement(panelId, panelType, onGhostCancel, canvasSize)
     if (shown) return
   }
-  ops.addNodeAndFocus(panelId, panelType, canvasPosition, canvasSize)
+  ops.addNodeAndFocus(panelId, panelType, canvasPosition, canvasSize, focus)
 }
 
 /** Next "<base> N" title for a panel type within a workspace, unique across ALL

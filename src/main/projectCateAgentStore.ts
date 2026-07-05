@@ -1,10 +1,11 @@
 // =============================================================================
-// projectCateAgentStore — per-workspace Cate Agent enablement at `<project>/.cate/cateAgent.json`.
+// projectCateAgentStore — per-workspace Cate Agent preferences at
+// `<project>/.cate/cateAgent.json`.
 //
-// Tiny machine-local file recording whether the Cate Agent was summoned for this
-// workspace, so summon/dismiss survive a restart. Mirrors projectTodosStore's
-// load/save contract. Gitignored like the rest of .cate/ (only workspace.json is
-// shared).
+// Tiny machine-local file recording whether automatic observations are on for
+// this workspace (the Cate Agent itself is always on), so the choice survives a
+// restart. Mirrors projectTodosStore's load/save contract. Gitignored like the
+// rest of .cate/ (only workspace.json is shared).
 // =============================================================================
 
 import { ipcMain } from 'electron'
@@ -20,7 +21,7 @@ import { isLocalLocator } from './runtime/locator'
 const CATE_DIR = '.cate'
 const CATE_AGENT_FILE = 'cateAgent.json'
 
-const DEFAULTS: ProjectCateAgentFile = { version: 1, enabled: false, autoObserve: true }
+const DEFAULTS: ProjectCateAgentFile = { version: 1, autoObserve: true }
 
 function cateDir(rootPath: string): string {
   return path.join(rootPath, CATE_DIR)
@@ -37,7 +38,6 @@ export async function loadCateAgentState(rootPath: string): Promise<ProjectCateA
     const parsed = JSON.parse(raw) as Partial<ProjectCateAgentFile>
     return {
       version: 1,
-      enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : false,
       // Absent in older files → default on, preserving the prior always-observe behaviour.
       autoObserve: typeof parsed.autoObserve === 'boolean' ? parsed.autoObserve : true,
     }
@@ -51,7 +51,6 @@ export async function saveCateAgentState(rootPath: string, state: ProjectCateAge
   await ensureCateGitignore(cateDir(rootPath))
   await writeJsonAtomic(cateAgentPath(rootPath), {
     version: 1,
-    enabled: !!state.enabled,
     autoObserve: state.autoObserve !== false,
   })
 }

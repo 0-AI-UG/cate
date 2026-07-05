@@ -20,31 +20,31 @@ afterEach(async () => {
 })
 
 describe('projectCateAgentStore', () => {
-  it('defaults to disabled with automatic observations on when the file is absent', async () => {
-    expect(await loadCateAgentState(root)).toEqual({ version: 1, enabled: false, autoObserve: true })
+  it('defaults to automatic observations on when the file is absent', async () => {
+    expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: true })
   })
 
-  it('round-trips enabled + autoObserve', async () => {
-    await saveCateAgentState(root, { version: 1, enabled: true, autoObserve: false })
+  it('round-trips autoObserve', async () => {
+    await saveCateAgentState(root, { version: 1, autoObserve: false })
     expect(existsSync(path.join(root, '.cate', 'cateAgent.json'))).toBe(true)
-    expect(await loadCateAgentState(root)).toEqual({ version: 1, enabled: true, autoObserve: false })
+    expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: false })
   })
 
   it('defaults autoObserve to true for older files that omit it', async () => {
     await fs.mkdir(path.join(root, '.cate'), { recursive: true })
     await fs.writeFile(path.join(root, '.cate', 'cateAgent.json'), JSON.stringify({ enabled: true }), 'utf-8')
-    expect(await loadCateAgentState(root)).toEqual({ version: 1, enabled: true, autoObserve: true })
+    expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: true })
   })
 
-  it('coerces non-boolean fields back to defaults', async () => {
+  it('coerces a non-boolean autoObserve back to the default', async () => {
     await fs.mkdir(path.join(root, '.cate'), { recursive: true })
-    await fs.writeFile(path.join(root, '.cate', 'cateAgent.json'), JSON.stringify({ enabled: 'yes', autoObserve: 0 }), 'utf-8')
-    expect(await loadCateAgentState(root)).toEqual({ version: 1, enabled: false, autoObserve: true })
+    await fs.writeFile(path.join(root, '.cate', 'cateAgent.json'), JSON.stringify({ autoObserve: 0 }), 'utf-8')
+    expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: true })
   })
 
   it('returns defaults on unparseable JSON', async () => {
     await fs.mkdir(path.join(root, '.cate'), { recursive: true })
     await fs.writeFile(path.join(root, '.cate', 'cateAgent.json'), 'nope', 'utf-8')
-    expect(await loadCateAgentState(root)).toEqual({ version: 1, enabled: false, autoObserve: true })
+    expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: true })
   })
 })

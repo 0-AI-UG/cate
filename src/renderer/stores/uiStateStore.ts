@@ -10,7 +10,6 @@ import log from '../lib/logger'
 import type { UIState } from '../../shared/types'
 import { DEFAULT_UI_STATE } from '../../shared/types'
 import { getElectronAPI, mergeKnown } from './jsonProjection'
-import { nextFreeCorner } from '../lib/canvasCorners'
 
 interface ElectronUIStateAPI {
   uiStateGetAll: () => Promise<Partial<UIState>>
@@ -36,12 +35,6 @@ export const useUIStateStore = create<UIStateStore>((set) => ({
     if (!api) { set({ _loaded: true }); return }
     try {
       const merged = { ...DEFAULT_UI_STATE, ...mergeKnown(DEFAULT_UI_STATE, await api.uiStateGetAll()) }
-      // The Cate Agent and minimap dock into corners and shove each other apart, but a
-      // file from before the Cate Agent had its own corner can leave them stacked.
-      // Split them once on load so the two never start overlapping.
-      if (merged.cateAgentCorner === merged.minimapButtonCorner) {
-        merged.cateAgentCorner = nextFreeCorner(merged.cateAgentCorner, merged.minimapButtonCorner)
-      }
       set({ ...merged, _loaded: true })
     } catch {
       set({ _loaded: true })

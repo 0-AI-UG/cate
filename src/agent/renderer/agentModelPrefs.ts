@@ -44,19 +44,11 @@ export function saveCateAgentModel(model: AgentModelRef | null): void {
   useSettingsStore.getState().setSetting('cateAgentModel', model)
 }
 
-/** The coding agent (an AgentId) the orchestrator launches in terminals, or '' to
- *  let it choose. */
-export function loadCateAgentOrchestratorAgentId(): string {
-  const v = useSettingsStore.getState().cateAgentOrchestratorAgentId
-  return typeof v === 'string' ? v.trim() : ''
-}
-
-export function saveCateAgentOrchestratorAgentId(id: string): void {
-  useSettingsStore.getState().setSetting('cateAgentOrchestratorAgentId', id)
-}
-
-/** The CLI command the orchestrator launches, resolved from the picked AgentId.
- *  Empty when nothing is picked (the orchestrator then chooses one itself). */
+/** The CLI command each iteration's driver launches, resolved from the AgentId
+ *  picked in Settings → Cate Agent (key `cateAgentOrchestratorAgentId`). Empty
+ *  when nothing is picked — the driver then chooses an installed one itself. */
 export function loadCateAgentOrchestratorAgentCommand(): string {
-  return launchCommandForAgent(loadCateAgentOrchestratorAgentId()) ?? ''
+  const v = useSettingsStore.getState().cateAgentOrchestratorAgentId
+  const id = typeof v === 'string' ? v.trim() : ''
+  return launchCommandForAgent(id) ?? ''
 }

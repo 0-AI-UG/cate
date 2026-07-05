@@ -1,27 +1,25 @@
 import { describe, it, expect } from 'vitest'
-import { shouldObserve, OBSERVE_COOLDOWN_MS, MAX_OPEN_SUGGESTIONS, type TriggerGateInput } from './cateAgentTriggerGate'
+import { shouldObserve, MAX_OPEN_SUGGESTIONS, type TriggerGateInput } from './cateAgentTriggerGate'
+
+const COOLDOWN_MS = 60_000
 
 function base(over: Partial<TriggerGateInput> = {}): TriggerGateInput {
   return {
-    enabled: true,
     autoObserve: true,
     dirty: true,
     observerBusy: false,
     orchestratorBusy: false,
     openSuggestions: 0,
     lastObserveAt: 0,
-    now: OBSERVE_COOLDOWN_MS + 1,
+    now: COOLDOWN_MS + 1,
+    cooldownMs: COOLDOWN_MS,
     ...over,
   }
 }
 
 describe('shouldObserve', () => {
-  it('fires when dirty, enabled, idle, past cooldown', () => {
+  it('fires when dirty, idle, past cooldown', () => {
     expect(shouldObserve(base())).toBe(true)
-  })
-
-  it('holds when disabled', () => {
-    expect(shouldObserve(base({ enabled: false }))).toBe(false)
   })
 
   it('holds when not dirty', () => {
@@ -43,7 +41,12 @@ describe('shouldObserve', () => {
   })
 
   it('respects the cooldown window', () => {
-    expect(shouldObserve(base({ lastObserveAt: 0, now: OBSERVE_COOLDOWN_MS - 1 }))).toBe(false)
-    expect(shouldObserve(base({ lastObserveAt: 0, now: OBSERVE_COOLDOWN_MS + 1 }))).toBe(true)
+    expect(shouldObserve(base({ lastObserveAt: 0, now: COOLDOWN_MS - 1 }))).toBe(false)
+    expect(shouldObserve(base({ lastObserveAt: 0, now: COOLDOWN_MS + 1 }))).toBe(true)
+  })
+
+  it('honors a longer configured cooldown', () => {
+    expect(shouldObserve(base({ cooldownMs: 5 * COOLDOWN_MS, now: COOLDOWN_MS + 1 }))).toBe(false)
+    expect(shouldObserve(base({ cooldownMs: 5 * COOLDOWN_MS, now: 5 * COOLDOWN_MS + 1 }))).toBe(true)
   })
 })

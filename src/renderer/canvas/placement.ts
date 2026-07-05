@@ -59,7 +59,7 @@ export function findFreePosition(
     return preferred ?? { x: 100, y: 100 }
   }
 
-  const gap = 40
+  const gap = PLACEMENT_GAP
   const grid = CANVAS_GRID_SIZE
   const snap = (v: number) => snapScalar(v, grid)
 
@@ -133,7 +133,9 @@ export function findFreePosition(
   return { x: snap(ref.origin.x), y: snap(maxBottom + gap) }
 }
 
-const PLACEMENT_GAP = 40
+/** Canvas-space gap kept between panels by every non-interactive placement
+ *  (auto-place rays, ghost recommendations, the Cate Agent grid). */
+export const PLACEMENT_GAP = 40
 /** A recommendation is never smaller than MIN (a gap tighter than this is pruned,
  *  so it gets no recommendation) and, when it mirrors a large neighbor, never
  *  larger than MAX (a huge neighbor doesn't yield an enormous panel). */

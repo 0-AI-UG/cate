@@ -41,6 +41,8 @@ import {
   clearDriverOutstanding,
 } from './cateAgentRunWaiters'
 import { ptyFor, agentStateFor, activityRunning, readTerminalState, openTerminal, shortId } from './cateAgentTerminals'
+import type { AgentTerminalSlot } from './cateAgentPlacement'
+import { useTodosStore } from '../stores/todosStore'
 import { useStatusStore } from '../stores/statusStore'
 import type { AgentState } from '../../shared/types'
 import type { CateAgentContext } from './cateAgentTypes'
@@ -227,14 +229,28 @@ async function deliverWake(driverPanelId: string, wsId: string, terminalId: stri
 
 // --- create_terminal (driver only) ------------------------------------------
 
+/** Grid slot for a driver's next terminal: column = its iteration's position
+ *  within that iteration's round, row = terminals already recorded on the
+ *  iteration (work + verify, so a verifier's terminal stacks below the work
+ *  ones). Iteration not found → fall back to this driver's own terminal count. */
+function driverSlot(ctx: CateAgentContext): AgentTerminalSlot {
+  const todo = ctx.todoId
+    ? useTodosStore.getState().getTodos(ctx.rootPath).find((t) => t.id === ctx.todoId)
+    : undefined
+  const iters = todo?.iterations ?? []
+  const it = iters.find((i) => i.id === ctx.iterationId)
+  const column = it ? iters.filter((i) => i.round === it.round).findIndex((i) => i.id === it.id) : 0
+  const row = it ? it.agents.length : terminalsOwnedBy(ctx.panelId).length
+  return { runKey: ctx.todoId ?? ctx.panelId, column, row }
+}
+
 /** Open a BARE shell terminal for a driver in its iteration's worktree, record the
  *  ownership (so the terminal's completion wakes this driver), and return its id.
  *  No launch command — the driver starts the CLI with its first send_keys. */
 export async function openDriverTerminal(ctx: CateAgentContext): Promise<string> {
   const cwd = ctx.cwd ?? ctx.rootPath
   const glow = ctx.glow ?? 'rgb(var(--agent-rgb))'
-  const index = terminalsOwnedBy(ctx.panelId).length
-  const terminalId = await openTerminal(ctx.workspaceId, cwd, glow, index, ctx.worktreeId)
+  const terminalId = await openTerminal(ctx.workspaceId, cwd, glow, driverSlot(ctx), ctx.worktreeId)
   setTerminalOwner(terminalId, ctx.panelId)
   return terminalId
 }
@@ -258,11 +274,15 @@ export interface RunDriverOpts {
   overview: string
 }
 
-/** The driver's seed: the task + cwd + the configured default CLI to launch. */
+/** The driver's seed: the task + cwd + the configured default CLI to launch.
+ *  No CLI configured ⇒ the driver picks an installed one itself. */
 function seedPrompt(opts: RunDriverOpts): string {
-  const cli = loadCateAgentOrchestratorAgentCommand() || 'claude'
+  const cli = loadCateAgentOrchestratorAgentCommand()
+  const cliLine = cli
+    ? `Default CLI: \`${cli}\` (use it unless you have reason to pick another).`
+    : 'Pick an installed coding-agent CLI yourself (e.g. `claude`, `codex`).'
   return [
-    `Iteration ${shortId(opts.iterationId)}, worktree: ${opts.cwd}. Default CLI: \`${cli}\` (use it unless you have reason to pick another, e.g. \`codex\`).`,
+    `Iteration ${shortId(opts.iterationId)}, worktree: ${opts.cwd}. ${cliLine}`,
     opts.driverKind === 'verify'
       ? 'Exactly one agent must write the final .cate/verdict.json; if you split checks across terminals, have the others report back so one agent folds them in.'
       : '',

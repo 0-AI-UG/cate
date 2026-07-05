@@ -182,7 +182,10 @@ export function useNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>): string
  * Viewport-culled variant of useNodeIds. Only returns ids for nodes whose
  * bounding box intersects the visible canvas rect (expanded by a 1-screen
  * margin so panning doesn't thrash mount state at the edges). Focused and
- * pinned nodes are always included so they keep their live state.
+ * pinned nodes are always included so they keep their live state, as are nodes
+ * whose panelId is in `alwaysMountPanelIds` — panels that must stay live while
+ * off-view (Cate Agent terminals: their pty boots on mount and the agent reads
+ * their rendered screen).
  *
  * This is the primary lever for reducing memory/CPU when many terminals or
  * editors are open on a canvas — off-screen nodes don't mount at all.
@@ -204,7 +207,10 @@ function sortedNodesByZOrder(nodes: Record<CanvasNodeId, CanvasNodeState>): Canv
   return sorted
 }
 
-export function useVisibleNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>): string[] {
+export function useVisibleNodeIds(
+  store?: UseBoundStore<StoreApi<CanvasStore>>,
+  alwaysMountPanelIds?: Record<string, unknown>,
+): string[] {
   return useStoreWithEqualityFn(
     store ?? useCanvasStore,
     (s) => {
@@ -235,7 +241,7 @@ export function useVisibleNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>):
 
       const result: string[] = []
       for (const n of sorted) {
-        if (n.id === focusedNodeId || n.isPinned) {
+        if (n.id === focusedNodeId || n.isPinned || (alwaysMountPanelIds && n.panelId in alwaysMountPanelIds)) {
           result.push(n.id)
           continue
         }

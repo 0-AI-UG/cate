@@ -14,7 +14,7 @@ import { useCateAgentStore } from './cateAgentStore'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { getWorkspaceCanvasStore } from '../lib/workspace/canvasAccess'
 import { viewToCanvas } from '../lib/canvas/coordinates'
-import { nudgeToFree } from '../canvas/placement'
+import { agentAreaAnchor, agentGridPosition, type AgentTerminalSlot } from './cateAgentPlacement'
 import { resolvePanelSize } from '../../shared/panels'
 import type { Point, AgentState } from '../../shared/types'
 import { getExitCode, clearExit } from './cateAgentTerminalExits'
@@ -74,22 +74,24 @@ export function closeCanvasPanel(wsId: string, panelId: string): void {
 }
 
 /** Compute an EXPLICIT canvas-space position so a Cate Agent terminal auto-places
- *  silently (never the interactive "click to place" ghost). Anchors at the viewport
- *  centre (fanned per index so a burst doesn't pile on one spot), then lets
- *  `nudgeToFree` push it off any existing panel — including the terminals earlier
- *  iterations just opened — so agent terminals never land on top of the user's work. */
-function terminalPosition(wsId: string, index: number): Point | undefined {
+ *  silently (never the interactive "click to place" ghost): its slot's cell in
+ *  the run's grid, anchored beside the user's content (see cateAgentPlacement).
+ *  The anchor is computed once per run when its first terminal opens — stored on
+ *  the run's state (dropped when the run is finalized) so every later terminal
+ *  lands in the same fixed grid no matter where the viewport has moved since. */
+function terminalPosition(wsId: string, slot: AgentTerminalSlot): Point | undefined {
   const store = getWorkspaceCanvasStore(wsId)
   if (!store) return undefined // no canvas → panel docks (no ghost), leave undefined
   const s = store.getState()
   const size = resolvePanelSize('terminal')
-  const center = { x: s.containerSize.width / 2, y: s.containerSize.height / 2 }
-  const canvasCenter = viewToCanvas(center, s.zoomLevel, s.viewportOffset)
-  const desired = {
-    x: canvasCenter.x - size.width / 2 + index * 40,
-    y: canvasCenter.y - size.height / 2 + index * 40,
+  const cateAgent = useCateAgentStore.getState()
+  let anchor = cateAgent.get(wsId).runAnchors[slot.runKey]
+  if (!anchor) {
+    const center = { x: s.containerSize.width / 2, y: s.containerSize.height / 2 }
+    anchor = agentAreaAnchor(Object.values(s.nodes), size, viewToCanvas(center, s.zoomLevel, s.viewportOffset))
+    cateAgent.setRunAnchor(wsId, slot.runKey, anchor)
   }
-  return nudgeToFree(s.nodes, size, desired)
+  return agentGridPosition(anchor, size, slot)
 }
 
 /** Wait until a freshly created panel has a live pty, or give up. */
@@ -103,12 +105,15 @@ async function waitForPty(panelId: string, timeoutMs = 8000): Promise<string | u
   return ptyFor(panelId)
 }
 
-/** Open a visible canvas terminal in `cwd`, register it for activity polling, and
- *  light it up in `glow`. Returns the panelId (the terminal handle). */
-export async function openTerminal(wsId: string, cwd: string, glow: string, index: number, worktreeId?: string): Promise<string> {
+/** Open a canvas terminal in `cwd` at its grid slot, register it for activity
+ *  polling, and light it up in `glow`. Returns the panelId (the terminal handle).
+ *  `focus: false` keeps the camera where the user left it; the controlled-terminal
+ *  registration below is what keeps the (possibly off-view) node mounted so its
+ *  pty can boot (see useVisibleNodeIds). */
+export async function openTerminal(wsId: string, cwd: string, glow: string, slot: AgentTerminalSlot, worktreeId?: string): Promise<string> {
   const app = useAppStore.getState()
-  const pos = terminalPosition(wsId, index)
-  const panelId = app.createTerminal(wsId, undefined, pos, { target: 'canvas' }, cwd)
+  const pos = terminalPosition(wsId, slot)
+  const panelId = app.createTerminal(wsId, undefined, pos, { target: 'canvas', focus: false }, cwd)
   if (worktreeId) app.setPanelWorktreeId(wsId, panelId, worktreeId)
   useCateAgentStore.getState().addControlledTerminal(wsId, panelId, glow)
   const ptyId = await waitForPty(panelId)

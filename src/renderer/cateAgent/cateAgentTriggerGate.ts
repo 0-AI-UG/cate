@@ -8,7 +8,6 @@
 // =============================================================================
 
 export interface TriggerGateInput {
-  enabled: boolean
   /** Whether automatic observe turns are allowed. When false, only a manual
    *  nudge (clicking the idle Cate Agent) observes — the timer never fires. */
   autoObserve: boolean
@@ -24,19 +23,19 @@ export interface TriggerGateInput {
   lastObserveAt: number
   /** ms now. */
   now: number
+  /** Minimum gap between observe turns, even when dirty (Settings → Cate Agent,
+   *  "Observation frequency"). */
+  cooldownMs: number
 }
 
-/** Minimum gap between observe turns, even when dirty. */
-export const OBSERVE_COOLDOWN_MS = 60_000
 /** Cap on outstanding suggestions; above this the observer stays quiet. */
 export const MAX_OPEN_SUGGESTIONS = 3
 
 export function shouldObserve(input: TriggerGateInput): boolean {
-  if (!input.enabled) return false
   if (!input.autoObserve) return false
   if (!input.dirty) return false
   if (input.observerBusy || input.orchestratorBusy) return false
   if (input.openSuggestions >= MAX_OPEN_SUGGESTIONS) return false
-  if (input.now - input.lastObserveAt < OBSERVE_COOLDOWN_MS) return false
+  if (input.now - input.lastObserveAt < input.cooldownMs) return false
   return true
 }

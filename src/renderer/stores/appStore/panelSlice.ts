@@ -64,13 +64,9 @@ function withDefaultSize(type: PanelType, placement: PanelPlacement | undefined)
   if (placement?.target === 'dock' || placement?.target === 'none') return placement
   if (placement?.target === 'canvas' && placement.size) return placement
   const size = resolvePanelSize(type, useSettingsStore.getState())
-  return {
-    target: 'canvas',
-    size,
-    ...(placement?.target === 'canvas'
-      ? { position: placement.position, canvasPanelId: placement.canvasPanelId }
-      : {}),
-  }
+  // Spread the placement itself (size is absent — the early return above caught
+  // it) so new canvas-placement fields aren't silently dropped here.
+  return { ...(placement?.target === 'canvas' ? placement : {}), target: 'canvas', size }
 }
 
 export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {

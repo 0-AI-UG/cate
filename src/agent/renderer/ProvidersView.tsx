@@ -853,7 +853,9 @@ function DefaultModelSection({ models }: { models: Array<{ provider: string; mod
 export type PickModels = Array<{ provider: string; model: string; label?: string }>
 
 // Shared model-picker row used by the default-model section here and the Cate
-// Agent section (CanvasCateAgentSettings). Exported so both render an identical control.
+// Agent section (CanvasCateAgentSettings). Exported so both render an identical
+// control. Laid out like a settings SettingRow: label + sublabel on the left,
+// the picker button right-aligned like every other settings control.
 export function ModelPrefRow({
   label,
   sublabel,
@@ -874,13 +876,15 @@ export function ModelPrefRow({
   noneLabel: string
 }) {
   return (
-    <div className="space-y-1.5">
-      <div className="text-[10.5px] uppercase tracking-wider text-muted/70 font-semibold">{label}</div>
-      {sublabel && <div className="text-[11px] text-muted -mt-1">{sublabel}</div>}
-      <div className="relative">
+    <div className="flex items-center justify-between py-2.5 border-b border-subtle">
+      <div className="flex flex-col min-w-0">
+        <span className="text-sm text-primary">{label}</span>
+        {sublabel && <span className="text-xs text-muted mt-0.5">{sublabel}</span>}
+      </div>
+      <div className="relative flex-shrink-0 ml-4">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-hover border border-strong text-[12.5px] text-primary hover:bg-hover-strong focus:outline-none focus:border-agent-light/50"
+          className="w-52 flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-hover border border-strong text-[12.5px] text-primary hover:bg-hover-strong focus:outline-none focus:border-agent-light/50"
         >
           <Sparkle size={12} className="text-agent-light shrink-0" />
           <span className="truncate flex-1 text-left">
@@ -896,7 +900,7 @@ export function ModelPrefRow({
             selected={current}
             onPick={onPick}
             onClose={() => setOpen(false)}
-            className="w-full max-h-[320px]"
+            className="right-0 w-[280px] max-h-[320px]"
             allowNone
             noneLabel={noneLabel}
           />

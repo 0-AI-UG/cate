@@ -3,7 +3,7 @@
 //
 // Less chat, more jobs: each active/actionable todo renders as its own card that
 // runs in parallel with the others. A card shows the model-derived topic as its
-// title (falling back to the prompt), the prompt itself, its worktree, the
+// title (falling back to the prompt), its worktree, the
 // terminals it currently controls, and the actions for its state — Stop + Edit
 // while running, Approve/Dismiss for proposals, Merge/PR/Discard at review,
 // Rerun for failures. The container itself is transparent; only the cards have a
@@ -528,12 +528,9 @@ const JobCard: React.FC<{ job: Todo; wsId: string; rootPath: string; worktrees: 
       <div className="flex items-start gap-2">
         <StatusGlyph status={job.status} />
         <div className="flex-1 min-w-0">
+          {/* Topic (or the raw prompt until one exists) — never both. Echoing the
+              prompt under a topic that paraphrases it read as a stutter. */}
           <div className="text-sm leading-snug text-primary break-words">{title}</div>
-          {/* The raw prompt as a subline — but only when the goal below won't already
-              be standing in as the task's description (else it's the same task thrice). */}
-          {job.topic && job.title !== job.topic && !job.goal && (
-            <div className="text-xs leading-snug text-muted break-words">{job.title}</div>
-          )}
         </div>
         {worktree && <JobWorktreePill worktree={worktree} />}
       </div>

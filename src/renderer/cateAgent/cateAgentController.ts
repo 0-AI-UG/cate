@@ -2,7 +2,7 @@
 // cateAgentController — the Cate Agent's brain (renderer, main window).
 //
 // Owns the headless sessions and their loops:
-//   - Observer: an always-on session per enabled workspace. A 60s tick consults
+//   - Observer: an always-on session per workspace. A 60s tick consults
 //     the trigger gate; when it passes the observer takes ONE turn and may
 //     propose_todo. Proposals land as `suggested` todos for the user to approve.
 //   - Orchestrator (the `orchestrator` role): an ephemeral session per todo. It runs
@@ -20,8 +20,8 @@
 // — running checks, waiting on iterations to settle, and waking the orchestrator
 // when something it cares about completes.
 //
-// State here is per-workspace and not persisted beyond the enabled + autoObserve
-// flags (.cate/cateAgent.json); in-flight runs are NOT resumed after a restart —
+// State here is per-workspace and not persisted beyond the autoObserve flag
+// (.cate/cateAgent.json); in-flight runs are NOT resumed after a restart —
 // restore() reconciles their orphaned in_progress todos.
 // =============================================================================
 
@@ -48,6 +48,7 @@ import {
 } from './cateAgentTools'
 import { teardownTodoWork } from './cateAgentReviewActions'
 import { useCateAgentStore } from './cateAgentStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { useTodosStore } from '../stores/todosStore'
 import { generateId } from '../stores/canvas/helpers'
 import { workspaceIdForTerminal } from '../stores/statusStore'
@@ -82,6 +83,14 @@ interface WsRuntime {
 }
 
 const OBSERVE_TICK_MS = 60_000
+
+/** The user-set gap between automatic observe turns (Settings → Cate Agent),
+ *  floored at one tick. */
+function observeCooldownMs(): number {
+  const min = useSettingsStore.getState().cateAgentObserveCooldownMin
+  return Math.max(1, Number(min) || 1) * 60_000
+}
+
 /** Max FRESH-session re-grounds before we stop nudging a stalled orchestrator. */
 const MAX_CONTINUATIONS = 10
 /** Max decision wakes (a flapping loop), far above any real run. */
@@ -179,8 +188,8 @@ class CateAgentController implements CateAgentBridgeHost {
     try {
       await this.reconcileOrphans(rootPath)
       const state = await window.electronAPI.projectCateAgentLoad(rootPath)
-      useCateAgentStore.getState().patch(wsId, { autoObserve: state.autoObserve })
-      if (state.enabled) await this.summon(wsId, rootPath, state.autoObserve)
+      // The Cate Agent is always on — restore only recovers the autoObserve choice.
+      await this.summon(wsId, rootPath, state.autoObserve)
     } catch (err) {
       log.warn('[cateAgentController] restore failed for %s: %O', wsId, err)
     }
@@ -207,7 +216,7 @@ class CateAgentController implements CateAgentBridgeHost {
 
   private persist(wsId: string, rootPath: string): void {
     const p = useCateAgentStore.getState().get(wsId)
-    void window.electronAPI.projectCateAgentSave(rootPath, { version: 1, enabled: p.enabled, autoObserve: p.autoObserve })
+    void window.electronAPI.projectCateAgentSave(rootPath, { version: 1, autoObserve: p.autoObserve })
   }
 
   async summon(wsId: string, rootPath: string, autoObserve?: boolean): Promise<void> {
@@ -216,7 +225,7 @@ class CateAgentController implements CateAgentBridgeHost {
     await useTodosStore.getState().loadTodos(rootPath)
     console.info('[cateAgent] summon', wsId, rootPath)
     const auto = autoObserve ?? useCateAgentStore.getState().get(wsId).autoObserve
-    useCateAgentStore.getState().patch(wsId, { enabled: true, autoObserve: auto, activity: 'resting', status: '' })
+    useCateAgentStore.getState().patch(wsId, { autoObserve: auto, activity: 'resting', status: '' })
     this.persist(wsId, rootPath)
     if (!r.unsubGit) {
       r.unsubGit = gitStatusStore.subscribe(
@@ -350,25 +359,6 @@ class CateAgentController implements CateAgentBridgeHost {
     void promptCateAgent(r.observerPanelId, `${OBSERVE_TURN_PROMPT}\n\n${context}`)
   }
 
-  async dismiss(wsId: string, rootPath: string): Promise<void> {
-    const r = this.ws.get(wsId)
-    if (r) {
-      if (r.observerPanelId) {
-        void disposeCateAgent(r.observerPanelId)
-        deleteContext(r.observerPanelId)
-      }
-      for (const todoId of r.runs.keys()) this.disposeRunSessions(wsId, todoId)
-      r.runs.clear()
-      r.observerPanelId = null
-      if (r.unsubGit) {
-        r.unsubGit()
-        r.unsubGit = null
-      }
-    }
-    useCateAgentStore.getState().patch(wsId, { enabled: false, activity: 'off', status: '' })
-    this.persist(wsId, rootPath)
-  }
-
   setAutoObserve(wsId: string, rootPath: string, value: boolean): void {
     useCateAgentStore.getState().patch(wsId, { autoObserve: value })
     this.persist(wsId, rootPath)
@@ -385,7 +375,7 @@ class CateAgentController implements CateAgentBridgeHost {
     if (!r) return
     const cur = useCateAgentStore.getState().get(wsId)
     const anyRun = r.runs.size > 0
-    const activity: CateAgentActivity = anyRun ? 'working' : r.observerBusy ? 'observing' : cur.enabled ? 'resting' : 'off'
+    const activity: CateAgentActivity = anyRun ? 'working' : r.observerBusy ? 'observing' : 'resting'
     useCateAgentStore.getState().patch(wsId, { activity, status: anyRun ? cur.status : '' })
   }
 
@@ -395,8 +385,7 @@ class CateAgentController implements CateAgentBridgeHost {
     this.start()
     const r = this.rt(wsId, rootPath)
     await useTodosStore.getState().loadTodos(rootPath)
-    const cateAgent = useCateAgentStore.getState().get(wsId)
-    if (!cateAgent.enabled) await this.summon(wsId, rootPath)
+    if (!r.observerPanelId) await this.summon(wsId, rootPath)
     if (r.runs.has(todoId)) return
     // The worktree/terminal layer is never resumed — only the orchestrator is. So
     // every start (fresh OR resume) wipes any iterations/worktrees/terminals/branch
@@ -461,6 +450,9 @@ class CateAgentController implements CateAgentBridgeHost {
     if (r && ctx.todoId) r.runs.delete(ctx.todoId)
     const todo = ctx.todoId ? getTodo(ctx.rootPath, ctx.todoId) : undefined
     for (const tid of todo?.terminalNodeIds ?? []) useCateAgentStore.getState().removeControlledTerminal(ctx.workspaceId, tid)
+    // Drop the run's terminal-grid anchor so a re-run re-anchors beside the
+    // canvas content as it looks then, not as it looked this run.
+    if (ctx.todoId) useCateAgentStore.getState().clearRunAnchor(ctx.workspaceId, ctx.todoId)
     this.syncActivity(ctx.workspaceId)
     this.markDirty(ctx.workspaceId)
   }
@@ -598,7 +590,6 @@ class CateAgentController implements CateAgentBridgeHost {
       const todosForWs = useTodosStore.getState().getTodos(r.rootPath)
       const openSuggestions = todosForWs.filter((t) => t.status === 'suggested').length
       const fire = shouldObserve({
-        enabled: cateAgent.enabled,
         autoObserve: cateAgent.autoObserve,
         dirty: r.dirty,
         observerBusy: r.observerBusy,
@@ -606,6 +597,7 @@ class CateAgentController implements CateAgentBridgeHost {
         openSuggestions,
         lastObserveAt: r.lastObserveAt,
         now,
+        cooldownMs: observeCooldownMs(),
       })
       if (!fire || !r.observerPanelId) continue
       r.dirty = false
@@ -647,7 +639,7 @@ class CateAgentController implements CateAgentBridgeHost {
     if (ctx.role === 'observer') {
       if (r) r.observerBusy = false
       const cateAgent = useCateAgentStore.getState().get(ctx.workspaceId)
-      if (cateAgent.enabled && cateAgent.activity === 'observing') {
+      if (cateAgent.activity === 'observing') {
         useCateAgentStore.getState().patch(ctx.workspaceId, { activity: r && r.runs.size > 0 ? 'working' : 'resting', status: '' })
       }
       return

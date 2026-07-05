@@ -1,14 +1,14 @@
 // =============================================================================
 // cateAgentStore — renderer runtime state for the Cate Agent, keyed by workspace id.
 //
-// Pure observable state for the UI (Tasks header, avatar). The imperative brain
-// (sessions, timers, loops) lives in cateAgentController.ts; it writes here so the
-// UI reflects what the Cate Agent is doing. Enablement/pause are persisted to
+// Pure observable state for the UI (Tasks header, toolbar button). The imperative
+// brain (sessions, timers, loops) lives in cateAgentController.ts; it writes here
+// so the UI reflects what the Cate Agent is doing. autoObserve is persisted to
 // .cate/cateAgent.json by the controller — this store is the live mirror.
 // =============================================================================
 
 import { create } from 'zustand'
-import type { CateAgentActivity } from '../../shared/types'
+import type { CateAgentActivity, Point } from '../../shared/types'
 
 /** One entry in the Cate Agent's persistent-per-session feedback log (rendered in
  *  the feedback panel above the toolbar). Feed items stay until the feed is
@@ -26,9 +26,8 @@ let feedSeq = 0
 const MAX_FEED = 50
 
 export interface CateAgentWsState {
-  enabled: boolean
   /** Whether the observer runs automatically on the timer. When false the Cate Agent
-   *  only observes when the user clicks the idle avatar. Mirrors .cate/cateAgent.json. */
+   *  only observes when the user asks it to. Mirrors .cate/cateAgent.json. */
   autoObserve: boolean
   activity: CateAgentActivity
   /** Short status-bubble text, e.g. "Running tests…" or "Proposing: update docs". */
@@ -42,6 +41,11 @@ export interface CateAgentWsState {
    *  by panelId. The color is the job's worktree color, or the theme accent
    *  (`rgb(var(--agent-rgb))`) when the job runs with no worktree. */
   controlledTerminals: Record<string, string>
+  /** Anchor of each run's agent-terminal grid, keyed by run (todoId). Computed
+   *  from the canvas content when the run's first terminal opens and dropped
+   *  when the run is finalized, so a later re-run re-anchors beside the canvas
+   *  as it looks THEN (see cateAgentTerminals.terminalPosition). */
+  runAnchors: Record<string, Point>
   /** Agent activity has arrived (a remark, proposal, review, or error) that the
    *  user hasn't seen because the feedback panel was closed. Drives the toolbar
    *  button's attention glow + notification dot. Cleared when the panel opens. */
@@ -49,13 +53,13 @@ export interface CateAgentWsState {
 }
 
 export const DEFAULT_CATE_AGENT_WS: CateAgentWsState = {
-  enabled: false,
   autoObserve: true,
   activity: 'off',
   status: '',
   inputOpen: false,
   feed: [],
   controlledTerminals: {},
+  runAnchors: {},
   unseen: false,
 }
 
@@ -74,6 +78,8 @@ interface CateAgentStore {
   addControlledTerminal: (wsId: string, panelId: string, color: string) => void
   removeControlledTerminal: (wsId: string, panelId: string) => void
   clearControlledTerminals: (wsId: string) => void
+  setRunAnchor: (wsId: string, runKey: string, anchor: Point) => void
+  clearRunAnchor: (wsId: string, runKey: string) => void
 }
 
 export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
@@ -154,6 +160,23 @@ export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
     set((s) => {
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
       return { byWs: { ...s.byWs, [wsId]: { ...prev, controlledTerminals: {} } } }
+    })
+  },
+
+  setRunAnchor(wsId, runKey, anchor) {
+    set((s) => {
+      const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
+      return { byWs: { ...s.byWs, [wsId]: { ...prev, runAnchors: { ...prev.runAnchors, [runKey]: anchor } } } }
+    })
+  },
+
+  clearRunAnchor(wsId, runKey) {
+    set((s) => {
+      const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
+      if (!(runKey in prev.runAnchors)) return s
+      const next = { ...prev.runAnchors }
+      delete next[runKey]
+      return { byWs: { ...s.byWs, [wsId]: { ...prev, runAnchors: next } } }
     })
   },
 

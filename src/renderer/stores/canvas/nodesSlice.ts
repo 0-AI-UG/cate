@@ -49,7 +49,9 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       const existing = Object.values(state.nodes).find((n) => n.panelId === panelId)
       if (existing) {
         const { [existing.id]: _omit, ...otherNodes } = state.nodes
-        const nextOrigin = findFreePosition(otherNodes, existing.id, defaultSize, position)
+        // No anchor id: existing.id was just excluded from otherNodes, so the
+        // reference falls to the most recently created remaining node.
+        const nextOrigin = findFreePosition(otherNodes, null, defaultSize, position)
         set({
           nodes: {
             ...state.nodes,

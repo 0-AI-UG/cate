@@ -17,6 +17,7 @@ import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, PanelLocation, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, registerCanvasOps, unregisterCanvasOps, type PanelPlacement } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useCateAgentStore } from '../cateAgent/cateAgentStore'
 import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
@@ -238,7 +239,11 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
   // nodes whose bbox overlaps the visible canvas rect (plus a 1-screen margin),
   // so off-screen terminals/editors don't hold live xterm/Monaco instances.
   const nodeIds = useNodeIds(store)
-  const visibleNodeIds = useVisibleNodeIds(store)
+  // Terminals the Cate Agent is driving stay mounted even off-view: they're
+  // placed beside the user's content without moving the camera, and an
+  // unmounted terminal can't boot its pty or render the screen the agent reads.
+  const controlledTerminals = useCateAgentStore((s) => s.byWs[workspaceId]?.controlledTerminals)
+  const visibleNodeIds = useVisibleNodeIds(store, controlledTerminals)
   // Welcome page only shows on a brand-new workspace (no rootPath chosen yet).
   // After a folder is picked, deleting all panels leaves a blank canvas.
   const workspaceRootPath = useAppStore(

@@ -26,6 +26,7 @@
 // =============================================================================
 
 import { useAppStore, pickWorktreeColor } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { useTodosStore } from '../stores/todosStore'
 import { gitStatusStore } from '../stores/gitStatusStore'
 import { useCateAgentStore } from './cateAgentStore'
@@ -452,6 +453,19 @@ export async function runCateAgentTool(ctx: CateAgentContext, tool: string, para
       const curRound = todo.round ?? 0
       const curIters = (todo.iterations ?? []).filter((i) => i.round === curRound)
       const roundDone = curRound === 0 || (curIters.length > 0 && curIters.every((i) => i.status === 'failed' || i.status === 'error' || i.status === 'cancelled'))
+      // Cap on simultaneous attempts (Settings → Cate Agent) — each one is a fresh
+      // worktree running its own coding agents. Only applies when adding to a live
+      // round; a new round always starts from zero.
+      if (!roundDone) {
+        const cap = Math.max(1, Math.round(Number(useSettingsStore.getState().cateAgentMaxParallelIterations) || 3))
+        const active = curIters.filter((i) => i.status === 'running' || i.status === 'finished' || i.status === 'verifying').length
+        if (active >= cap) {
+          return json({
+            ok: false,
+            error: `round ${curRound} already has ${active} active attempts (the user caps parallel attempts at ${cap}). Wait for their verdicts instead of iterating again.`,
+          })
+        }
+      }
       let round = curRound
       if (roundDone) {
         round = curRound + 1

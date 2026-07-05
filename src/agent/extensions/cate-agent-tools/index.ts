@@ -169,7 +169,7 @@ export default function (pi: ExtensionAPI) {
       name: "iterate",
       label: "Iterate",
       description:
-        "Spawn one attempt: a fresh worktree driven from this overview by a driver that picks the agents. Call several times to race attempts. Returns {iterationId}; end your turn after — each is verified automatically and you're woken with the verdict.",
+        "Spawn one attempt: a fresh worktree driven from this overview by a driver that picks the agents. Call several times to race attempts (the user caps how many run at once; over the cap it errors, so wait for verdicts instead). Returns {iterationId}; end your turn after — each is verified automatically and you're woken with the verdict.",
       parameters: Type.Object({
         overview: Type.String({ description: "What this attempt should accomplish." }),
       }),

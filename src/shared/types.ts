@@ -1235,18 +1235,17 @@ export interface ProjectTodosFile {
  *    finishes. create_terminal + read_terminal + send_keys. */
 export type CateAgentRole = 'observer' | 'orchestrator' | 'driver'
 
-/** The Cate Agent's coarse runtime state, surfaced in the Tasks header + avatar. */
+/** The Cate Agent's coarse runtime state, surfaced in the toolbar button + feedback panel. */
 export type CateAgentActivity =
-  | 'off' // not summoned
-  | 'resting' // summoned, nothing to do
+  | 'off' // not started yet (workspace still restoring, or the session failed to start)
+  | 'resting' // running, nothing to do
   | 'observing' // observer taking a look at user activity
   | 'working' // orchestrator running a todo
 
-/** Persisted per-workspace Cate Agent enablement (.cate/cateAgent.json). Machine-local. */
+/** Persisted per-workspace Cate Agent preferences (.cate/cateAgent.json). Machine-local.
+ *  The Cate Agent is always on for a workspace — only automatic observations toggle. */
 export interface ProjectCateAgentFile {
   version: 1
-  /** Whether the Cate Agent has been summoned for this workspace. */
-  enabled: boolean
   /** Whether the observer runs automatically on a timer. When false, observe
    *  turns happen only when the user clicks the idle Cate Agent. Defaults to true. */
   autoObserve: boolean
@@ -1484,10 +1483,16 @@ export interface AppSettings {
   // null falls back to agentDefaultModel, then pi's first-available. Chosen by the
   // user in Settings → Cate Agent.
   cateAgentModel: AgentModelRef | null
-  /** The coding agent the orchestrator (a pure orchestrator) launches in a terminal
-   *  to do the actual work — an AgentId from src/shared/agents.ts. Empty ⇒ the
-   *  orchestrator picks an installed one itself. */
+  /** The coding-agent CLI each iteration's driver launches in a terminal to do the
+   *  actual work — an AgentId from src/shared/agents.ts. Empty ⇒ the driver picks
+   *  an installed one itself. */
   cateAgentOrchestratorAgentId: string
+  /** How often the observer may take an automatic look, in minutes. Applies only
+   *  when a workspace has automatic observations on. */
+  cateAgentObserveCooldownMin: number
+  /** Most iterations (each a fresh worktree running its own coding agents) a job
+   *  may have active at once in a round. Enforced by the `iterate` tool. */
+  cateAgentMaxParallelIterations: number
 
   // Layout
   /** Which sidebar views live in the left vs. right rail. Was renderer
@@ -1578,6 +1583,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Cate Agent
   cateAgentModel: null,
   cateAgentOrchestratorAgentId: '',
+  cateAgentObserveCooldownMin: 1,
+  cateAgentMaxParallelIterations: 3,
 
   // Layout — keep in sync with the sidebar's default arrangement.
   sidebarLayout: {
@@ -1602,16 +1609,12 @@ export interface UIState {
   minimapSize: { w: number; h: number }
   /** Corner the minimap toggle button (canvas toolbar) is docked in. */
   minimapButtonCorner: CanvasCorner
-  /** Corner the resting Cate Agent avatar is docked in. */
-  cateAgentCorner: CanvasCorner
 }
 
 export const DEFAULT_UI_STATE: UIState = {
   minimapCorner: 'bottom-right',
   minimapSize: { w: 200, h: 150 },
   minimapButtonCorner: 'bottom-right',
-  // Cate Agent rests opposite the minimap's default so they don't start stacked.
-  cateAgentCorner: 'bottom-left',
 }
 
 // -----------------------------------------------------------------------------

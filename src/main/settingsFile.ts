@@ -82,6 +82,8 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   agentDefaultModel: 'object',
   cateAgentModel: 'object',
   cateAgentOrchestratorAgentId: 'string',
+  cateAgentObserveCooldownMin: 'number',
+  cateAgentMaxParallelIterations: 'number',
   sidebarLayout: 'object',
   customShortcuts: 'object',
 }
