@@ -14,6 +14,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AgentTurnResult,
+  CateBrowserSnapshot,
+  CateBrowserState,
+  CateBrowserTab,
   CateDroppedFile,
   CateHost,
   CateHostTheme,
@@ -86,6 +89,24 @@ const api: CateHost = {
     dispose: (sessionId: string) => invoke('cate.agent.dispose', { sessionId }),
     run: (prompt: string) => invoke('cate.agent.run', { prompt }) as Promise<AgentTurnResult | { error: string }>,
     cancel: () => invoke('cate.agent.cancel'),
+  },
+
+  browser: {
+    list: () => invoke('cate.browser.list') as Promise<CateBrowserTab[]>,
+    open: (opts: { url: string; panelId?: string }) =>
+      invoke('cate.browser.open', opts) as Promise<{ panelId: string; url: string }>,
+    back: (opts?: { panelId?: string }) => invoke('cate.browser.back', opts) as Promise<{ ok: true }>,
+    forward: (opts?: { panelId?: string }) => invoke('cate.browser.forward', opts) as Promise<{ ok: true }>,
+    reload: (opts?: { panelId?: string }) => invoke('cate.browser.reload', opts) as Promise<{ ok: true }>,
+    current: (opts?: { panelId?: string }) => invoke('cate.browser.current', opts) as Promise<CateBrowserState>,
+    screenshot: (opts?: { panelId?: string }) =>
+      invoke('cate.browser.screenshot', opts) as Promise<{ path: string }>,
+    snapshot: (opts?: { panelId?: string }) =>
+      invoke('cate.browser.snapshot', opts) as Promise<CateBrowserSnapshot>,
+    click: (opts: { ref: string; panelId?: string }) =>
+      invoke('cate.browser.click', opts) as Promise<{ ok: true }>,
+    type: (opts: { ref: string; text: string; panelId?: string }) =>
+      invoke('cate.browser.type', opts) as Promise<{ ok: true }>,
   },
 
   files: {

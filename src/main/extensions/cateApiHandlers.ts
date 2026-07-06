@@ -11,9 +11,12 @@
 //   - Handled in main: version, workspace.get, theme.get, ui.notify, storage.*
 //   - Forwarded to the owning renderer (they mutate renderer state):
 //     editor.openFile, canvas.createPanel, panel.setTitle
+//   - cate.browser.*: forwarded to the OWNER window of the target browser panel
+//     (args.panelId), or the active main window when unaddressed.
 //   - Anything else: { error: 'unsupported', method }
 //
-// Every invoke validates the extension is enabled before serving.
+// Every invoke validates the extension is enabled before serving, EXCEPT
+// first-party (terminal/agent) callers, which are trusted and bypass that gate.
 // =============================================================================
 
 import { ipcMain, app, dialog, type WebContents } from 'electron'
@@ -51,7 +54,8 @@ import { extensionServerManager } from './ExtensionServerManager'
 import { agentManager } from '../../agent/main/agentManager'
 import { getExtensionStorage } from './storage'
 import { getWorkspaceInfo } from '../workspaceManager'
-import { getActiveMainWindow } from '../windowRegistry'
+import { getActiveMainWindow, getWindow } from '../windowRegistry'
+import { getWindowPanels } from '../windowPanels'
 import { parseLocator, LOCAL_RUNTIME_ID } from '../runtime/locator'
 import { getAllSettings, getSetting } from '../settingsFile'
 import { resolveActiveTheme } from '../themeBootCache'
@@ -59,7 +63,7 @@ import { showOsNotification } from '../ipc/notifications'
 
 /** Bumped when the cateHost API surface changes incompatibly. Guests use
  *  `cate.version` for feature detection. */
-const CATE_API_VERSION = 1
+const CATE_API_VERSION = 2
 
 const FORWARD_TIMEOUT_MS = 10_000
 
@@ -81,6 +85,14 @@ export interface InvokeScope {
   workspaceId: string
   panelId: string | undefined
   forward: (payload: InvokePayload) => Promise<InvokeResult>
+  /** Who is calling. First-party (terminal/agent via the CLI/reverse endpoint)
+   *  callers are trusted: they skip the extension-enabled gate and the browser
+   *  consent prompt. Undefined is treated as 'extension'. */
+  caller?: 'extension' | 'first-party'
+  /** Scopes the caller was granted. For first-party callers this is supplied by
+   *  the env-manager instead of a manifest; when absent the extension manifest's
+   *  `cateApi` is used. */
+  grantedScopes?: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +174,28 @@ export function forwardToActiveWindow(payload: InvokePayload): Promise<InvokeRes
   return forwardToOwner(win.webContents, payload)
 }
 
+/**
+ * Resolve the webContents that should receive a cate.browser.* method: the
+ * window that OWNS the addressed browser panel, or the active main window when
+ * the caller doesn't address a specific panel. Unlike the state-mutating
+ * forwards above, a browser method must reach the exact window hosting that
+ * panel's webview, not just any active window.
+ */
+function resolveBrowserTargetWindow(
+  panelId: string | undefined,
+): { wc: WebContents } | { error: string } {
+  if (panelId) {
+    const info = getWindowPanels().find((p) => p.panelId === panelId)
+    if (!info || info.type !== 'browser') return { error: 'no-such-browser' }
+    const win = getWindow(info.ownerWindowId)
+    if (!win || win.isDestroyed()) return { error: 'no-host-window' }
+    return { wc: win.webContents }
+  }
+  const win = getActiveMainWindow()
+  if (!win || win.isDestroyed()) return { error: 'no-host-window' }
+  return { wc: win.webContents }
+}
+
 // ---------------------------------------------------------------------------
 // Method dispatch
 // ---------------------------------------------------------------------------
@@ -185,7 +219,7 @@ function unsupported(method: string): InvokeResult {
 
 /** Maps a cate.* method to the scope it requires, or null when always allowed
  *  (version / panel identity). Returns undefined for unknown methods. */
-function requiredScopeFor(method: string): string | null | undefined {
+export function requiredScopeFor(method: string): string | null | undefined {
   switch (method) {
     case 'cate.version':
       return null
@@ -204,6 +238,7 @@ function requiredScopeFor(method: string): string | null | undefined {
       if (method.startsWith('cate.canvas.')) return 'canvas'
       if (method.startsWith('cate.agent.')) return 'agent'
       if (method.startsWith('cate.editor.')) return 'editor.read'
+      if (method.startsWith('cate.browser.')) return 'browser'
       return undefined
   }
 }
@@ -302,6 +337,37 @@ async function ensureAgentConsent(extensionId: string): Promise<boolean> {
   return false
 }
 
+// Extensions granted browser control this app session. Same in-memory,
+// host-owned, re-asked-on-launch model as agentConsent — first-party callers
+// never reach here (they're trusted and skip the prompt).
+const browserConsent = new Set<string>()
+
+/** Ask the user (once per app session) whether `extensionId` may control the
+ *  browser panel. Returns true if already granted or the user allows. */
+async function ensureBrowserConsent(extensionId: string): Promise<boolean> {
+  if (browserConsent.has(extensionId)) return true
+  const name = extensionManager.getManifest(extensionId)?.name ?? extensionId
+  const win = getActiveMainWindow()
+  const opts = {
+    type: 'question' as const,
+    buttons: ['Allow', 'Deny'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Control the browser?',
+    message: `Allow “${name}” to control the browser?`,
+    detail:
+      'This extension wants to control the browser panel (navigate, go back/forward, run actions), ' +
+      'which may act on your logged-in sessions. You can revoke this by disabling the extension.',
+  }
+  const { response } =
+    win && !win.isDestroyed() ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
+  if (response === 0) {
+    browserConsent.add(extensionId)
+    return true
+  }
+  return false
+}
+
 /**
  * Scope-based cate.* dispatch core, shared by the IPC handler (guest webview)
  * and the CATE_API reverse endpoint (extension server). The scope carries the
@@ -315,17 +381,21 @@ export async function dispatchCateInvoke(
 ): Promise<InvokeResult> {
   const { extensionId, workspaceId, panelId } = scope
 
-  // Security: only enabled, known extensions may call the host.
-  if (!extensionManager.isKnown(extensionId) || !extensionManager.isEnabled(extensionId)) {
+  // Security: only enabled, known extensions may call the host. First-party
+  // (terminal/agent) callers are trusted and skip this gate.
+  if (scope.caller !== 'first-party' && (!extensionManager.isKnown(extensionId) || !extensionManager.isEnabled(extensionId))) {
     return { error: 'not-enabled', method }
   }
 
-  // Security: enforce the manifest's declared `cateApi` scopes. version + the
-  // panel.* self-control methods are always allowed; an unknown method is
-  // rejected as unsupported before any scope check so callers get the clearer error.
+  // Security: enforce the caller's declared scopes. First-party callers carry
+  // their own `grantedScopes`; extensions use their manifest's `cateApi`.
+  // version + the panel.* self-control methods are always allowed; an unknown
+  // method is rejected as unsupported before any scope check so callers get the
+  // clearer error.
   const required = requiredScopeFor(method)
   if (required === undefined) return unsupported(method)
-  if (required !== null && !scopeGranted(extensionManager.getManifest(extensionId)?.cateApi, required)) {
+  const declared = scope.grantedScopes ?? extensionManager.getManifest(extensionId)?.cateApi
+  if (required !== null && !scopeGranted(declared, required)) {
     return { error: 'scope-denied', method }
   }
 
@@ -334,6 +404,21 @@ export async function dispatchCateInvoke(
   // enumeration of the six storage methods.
   if (method.startsWith('cate.storage.')) {
     return await dispatchStorage(method, panelId ?? '', args, extensionId, workspaceId)
+  }
+
+  // Browser control: route to the OWNER window of the addressed browser panel
+  // (args.panelId), or the active main window when unaddressed. `panelId` on the
+  // forwarded payload stays the caller's own origin panel (empty for terminals).
+  if (method.startsWith('cate.browser.')) {
+    const a = (args ?? {}) as { panelId?: string }
+    const target = resolveBrowserTargetWindow(typeof a.panelId === 'string' ? a.panelId : undefined)
+    if ('error' in target) return { error: target.error, method }
+    // Consent (extension callers only) gates the forward, mirroring the agent
+    // one-time-per-session prompt. First-party callers are trusted.
+    if (scope.caller !== 'first-party' && !(await ensureBrowserConsent(extensionId))) {
+      return { error: 'consent-denied', method }
+    }
+    return forwardToOwner(target.wc, { extensionId, workspaceId, panelId: panelId ?? '', method, args })
   }
 
   switch (method) {

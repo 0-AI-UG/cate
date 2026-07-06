@@ -21,6 +21,7 @@ import { placementForActivePanel } from '../lib/workspace/canvasAccess'
 import { setPendingReveal } from '../lib/editor/editorReveal'
 import { toAbsolutePath, pathKey } from '../../shared/pathUtils'
 import { parseLocator, formatLocator } from '../../main/runtime/locator'
+import { handleBrowserMethod } from '../lib/browser/browserDriver'
 import type { PanelType, Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 
@@ -114,6 +115,16 @@ export function useCateHostActionResponder(): void {
         window.electronAPI.cateHostActionReply({ requestId, ok, ...extra })
 
       try {
+        // Browser-control surface (cate.browser.*) is executed by the browser
+        // driver, which resolves the target browser panel and drives its live
+        // <webview>. Delegating here keeps this switch focused on store mutations.
+        if (method.startsWith('cate.browser.')) {
+          const outcome = await handleBrowserMethod(workspaceId, method, args)
+          return outcome.ok
+            ? reply(true, outcome.result !== undefined ? { result: outcome.result } : undefined)
+            : reply(false, { error: outcome.error })
+        }
+
         switch (method) {
           case 'cate.editor.openFile': {
             // The public bridge (cateHost.ts) sends the file as `path`; accept

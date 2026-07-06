@@ -70,6 +70,35 @@ async function runSmokeAssertions(win: BrowserWindow): Promise<void> {
   }
 }
 
+/** Install the cate-cli agent skill into ~/.claude/skills/cate-cli/ on launch
+ *  (copy-if-missing, mirroring installThemeSkill). It teaches an agent running
+ *  in a Cate terminal how to use the `cate` CLI. Source is bundled at
+ *  skills/cate-cli/ (dev: app path; prod: resourcesPath extraResources). */
+let cateCliSkillInstalled = false
+async function installCliSkill(): Promise<void> {
+  if (cateCliSkillInstalled) return
+  cateCliSkillInstalled = true
+  try {
+    const fs = require('fs') as typeof import('fs')
+    const os = require('os') as typeof import('os')
+    const src = [
+      path.join(app.getAppPath(), 'skills', 'cate-cli', 'SKILL.md'),
+      path.join(process.resourcesPath ?? '', 'skills', 'cate-cli', 'SKILL.md'),
+    ].find((p) => fs.existsSync(p))
+    if (!src) {
+      log.warn('[installCliSkill] source not found — cate-cli skill not installed')
+      return
+    }
+    const dest = path.join(os.homedir(), '.claude', 'skills', 'cate-cli', 'SKILL.md')
+    if (fs.existsSync(dest)) return // keep any user edits
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    fs.copyFileSync(src, dest)
+    log.info('[installCliSkill] installed %s', dest)
+  } catch (err) {
+    log.warn('[installCliSkill] install failed: %O', err)
+  }
+}
+
 // =============================================================================
 // Register all IPC handlers ONCE (not per-window)
 // =============================================================================
@@ -345,6 +374,8 @@ app.whenReady().then(async () => {
 
   // Install the cate-theme authoring skill into ~/.claude/skills (copy-if-missing).
   void installThemeSkill()
+  // Install the cate-cli agent skill into ~/.claude/skills (copy-if-missing).
+  void installCliSkill()
 
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)

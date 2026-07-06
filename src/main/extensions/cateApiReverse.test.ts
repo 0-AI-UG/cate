@@ -169,6 +169,33 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     endpoint.dispose()
   })
 
+  it('threads first-party caller + grantedScopes into the dispatch scope', async () => {
+    const { runtime, output } = makeRuntime()
+    const endpoint = createCateApiReverse({
+      extensionId: 'first-party', workspaceId: 'ws-1', token: TOKEN, runtime,
+      caller: 'first-party', grantedScopes: ['browser'],
+    })
+    await request(endpoint, output, { json: { method: 'cate.storage.get', args: { key: 'x' } } })
+    expect(dispatchCateInvoke).toHaveBeenCalledWith(
+      expect.objectContaining({ caller: 'first-party', grantedScopes: ['browser'] }),
+      'cate.storage.get',
+      { key: 'x' },
+    )
+    endpoint.dispose()
+  })
+
+  it('leaves caller/grantedScopes undefined for an extension-server session', async () => {
+    const { runtime, output } = makeRuntime()
+    const endpoint = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime })
+    await request(endpoint, output, { json: { method: 'cate.storage.get', args: { key: 'x' } } })
+    expect(dispatchCateInvoke).toHaveBeenCalledWith(
+      expect.objectContaining({ caller: undefined, grantedScopes: undefined }),
+      'cate.storage.get',
+      { key: 'x' },
+    )
+    endpoint.dispose()
+  })
+
   it('400s when no method is supplied', async () => {
     const { runtime, output } = makeRuntime()
     const endpoint = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime })

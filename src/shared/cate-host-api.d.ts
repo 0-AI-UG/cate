@@ -68,6 +68,40 @@ export interface CateDroppedFile {
   truncated?: boolean
 }
 
+/** One open browser panel, as reported by `cate.browser.list()`. */
+export interface CateBrowserTab {
+  panelId: string
+  title: string
+  url: string
+  focused: boolean
+}
+
+/** Navigation state of a browser panel, from `cate.browser.current()`. */
+export interface CateBrowserState {
+  url: string
+  title: string
+  canGoBack: boolean
+  canGoForward: boolean
+  loading: boolean
+}
+
+/** One interactable element in an accessibility `snapshot()`. `ref` is an opaque
+ *  handle to pass back to `click`/`type`; it is only valid for the snapshot it
+ *  came from (re-snapshot after a navigation or mutation). */
+export interface CateBrowserRef {
+  ref: string
+  role: string
+  name: string
+  value?: string
+}
+
+/** Accessibility snapshot of a browser panel, from `cate.browser.snapshot()`. */
+export interface CateBrowserSnapshot {
+  url: string
+  title: string
+  refs: CateBrowserRef[]
+}
+
 export interface CateHost {
   /** API version int, for feature detection. */
   version(): Promise<number>
@@ -125,6 +159,38 @@ export interface CateHost {
     run(prompt: string): Promise<AgentTurnResult | { error: string }>
     /** Abort the in-flight turn of this extension's session. */
     cancel(): Promise<unknown>
+  }
+  /** Drive Cate's browser panels (requires the `browser` scope). These panels
+   *  hold the user's real, logged-in browser session — cookies, auth, and all —
+   *  so anything the user can reach while signed in, the extension can too. Treat
+   *  it accordingly. Every method targets a single panel; `panelId` picks it, and
+   *  when omitted the host uses the focused (or only) browser panel. `open` can
+   *  point an existing panel at a URL or spawn one. `snapshot` returns opaque
+   *  element `ref`s to feed back to `click`/`type`; re-snapshot after any
+   *  navigation because refs don't survive it. `screenshot` returns a host
+   *  filesystem `path` (see the note in docs/extensions.md — a webview guest can't
+   *  read it directly; a server-backed extension can). */
+  browser: {
+    /** List open browser panels. */
+    list(): Promise<CateBrowserTab[]>
+    /** Point a panel at `url` (or open a new one); returns the target panel + url. */
+    open(opts: { url: string; panelId?: string }): Promise<{ panelId: string; url: string }>
+    /** Navigate back in a panel's history. */
+    back(opts?: { panelId?: string }): Promise<{ ok: true }>
+    /** Navigate forward in a panel's history. */
+    forward(opts?: { panelId?: string }): Promise<{ ok: true }>
+    /** Reload a panel. */
+    reload(opts?: { panelId?: string }): Promise<{ ok: true }>
+    /** Current navigation state of a panel. */
+    current(opts?: { panelId?: string }): Promise<CateBrowserState>
+    /** Capture a screenshot; returns a host filesystem path. */
+    screenshot(opts?: { panelId?: string }): Promise<{ path: string }>
+    /** Accessibility snapshot with interactable element refs. */
+    snapshot(opts?: { panelId?: string }): Promise<CateBrowserSnapshot>
+    /** Click the element identified by `ref` (from a recent `snapshot`). */
+    click(opts: { ref: string; panelId?: string }): Promise<{ ok: true }>
+    /** Type `text` into the element identified by `ref`. */
+    type(opts: { ref: string; text: string; panelId?: string }): Promise<{ ok: true }>
   }
   storage: CateHostStorage
 }

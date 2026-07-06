@@ -1,0 +1,7 @@
+#!/bin/sh
+# POSIX launcher for the `cate` CLI. Resolves the bundled Node and the bundled
+# CLI RELATIVE to this shim's own location, so `cate` works without node on PATH.
+# Staged layout: <install>/cate/bin/cate, <install>/cate/dist/cli.cjs,
+#                <install>/runtime/bin/node
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$here/../../runtime/bin/node" "$here/../dist/cli.cjs" "$@"

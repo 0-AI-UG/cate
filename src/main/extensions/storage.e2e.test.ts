@@ -24,6 +24,7 @@ vi.mock('./ExtensionManager', () => ({
 vi.mock('./proxyServer', () => ({ getProxyUrlFor: vi.fn() }))
 vi.mock('./ExtensionServerManager', () => ({ extensionServerManager: {} }))
 vi.mock('../windowRegistry', () => ({ getActiveMainWindow: vi.fn(() => undefined) }))
+vi.mock('../windowPanels', () => ({ getWindowPanels: () => [] }))
 vi.mock('../settingsFile', () => ({ getAllSettings: () => ({}) }))
 vi.mock('../themeBootCache', () => ({ resolveActiveTheme: () => ({ id: 't', type: 'dark', app: {}, terminal: {} }) }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))

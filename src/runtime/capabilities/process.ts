@@ -15,6 +15,7 @@ import { execFile } from 'child_process'
 import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/runtime/types'
 import type { TerminalActivity } from '../../shared/types'
 import { matchAgentProcess } from '../../shared/agents'
+import { catePathEnv } from '../cateCli'
 import {
   type ProcTree,
   snapshotProcessTreeProc,
@@ -237,7 +238,9 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
         // Empty cwd → the host's home dir (resolved on whichever host this
         // capability runs on: the local machine or the remote daemon).
         cwd: opts.cwd || os.homedir(),
-        env: deps.getEnv(),
+        // Merge caller env over the host env; when a CLI endpoint was injected
+        // (CATE_API), also put the bundled `cate` on PATH so agents can run it.
+        env: catePathEnv({ ...deps.getEnv(), ...(opts.env ?? {}) }),
       })
       ptys.set(id, pty)
       if (idleEnabled) {

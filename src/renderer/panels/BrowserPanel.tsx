@@ -80,9 +80,11 @@ interface WebviewElement extends HTMLElement {
   reloadIgnoringCache(): void
   canGoBack(): boolean
   canGoForward(): boolean
+  isLoading(): boolean
   getURL(): string
   getTitle(): string
   getWebContentsId(): number
+  executeJavaScript(code: string): Promise<any>
   addEventListener(type: string, listener: (event: any) => void): void
   removeEventListener(type: string, listener: (event: any) => void): void
 }

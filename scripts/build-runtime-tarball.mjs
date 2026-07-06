@@ -10,6 +10,8 @@
 //     runtime/bin/node[.exe]              (bundled Node runtime for the target)
 //     runtime/bin/rg[.exe]                 (bundled ripgrep for content search)
 //     pi/dist/cli.js                       (bundled pi coding agent, cross-platform)
+//     cate/dist/cli.cjs                    (bundled `cate` in-terminal CLI)
+//     cate/bin/cate[.cmd]                  (launcher shims → bundled node)
 //
 // UNIFIED layout: every target keeps node + rg under runtime/bin/, just with a
 // `.exe` suffix on win32 (runtime/bin/node.exe, runtime/bin/rg.exe). The install
@@ -104,6 +106,7 @@ await stageParcelWatcher(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', `node${exe}`))
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 stagePi(path.join(stageDir, 'pi'))
+await stageCateCli(path.join(stageDir, 'cate'))
 signMacNatives(stageDir)
 
 // Fail loudly if anything the daemon's install-probe requires is missing, rather
@@ -115,6 +118,9 @@ const required = [
   path.join('runtime', 'bin', `node${exe}`),
   path.join('runtime', 'bin', `rg${exe}`),
   path.join('pi', 'dist', 'cli.js'),
+  path.join('cate', 'dist', 'cli.cjs'),
+  path.join('cate', 'bin', 'cate'),
+  path.join('cate', 'bin', 'cate.cmd'),
 ]
 const missing = required.filter((rel) => !existsSync(path.join(stageDir, rel)))
 if (missing.length) throw new Error(`[runtime] incomplete stage for ${targetArg}; missing: ${missing.join(', ')}`)
@@ -521,6 +527,33 @@ function stagePi(outRoot) {
   execFileSync('tar', ['-xzf', path.basename(tar), '-C', fwd(path.dirname(tar), outRoot)], { stdio: 'ignore', cwd: path.dirname(tar) })
   if (!existsSync(path.join(outRoot, 'dist', 'cli.js'))) throw new Error('staged pi missing dist/cli.js')
   console.log(`[runtime] staged pi ${piVersion}`)
+}
+
+/** Stage the `cate` in-terminal CLI into <outRoot> (cate/dist/cli.cjs + the two
+ *  launcher shims under cate/bin/). The CLI rides in the runtime tarball exactly
+ *  like pi, so it lands on every host — local + remote/WSL — the moment the
+ *  daemon is provisioned; the env-injection layer prepends cate/bin to a shell's
+ *  PATH. Bundled to a single self-contained CJS file (node built-ins + global
+ *  fetch only), so the bundled node runs it directly. */
+async function stageCateCli(outRoot) {
+  rmSync(outRoot, { recursive: true, force: true })
+  mkdirSync(path.join(outRoot, 'dist'), { recursive: true })
+  mkdirSync(path.join(outRoot, 'bin'), { recursive: true })
+
+  await build({
+    entryPoints: [path.join(repoRoot, 'src', 'cli', 'cate.ts')],
+    outfile: path.join(outRoot, 'dist', 'cli.cjs'),
+    platform: 'node',
+    format: 'cjs',
+    bundle: true,
+    target: `node${NODE_VERSION.split('.')[0]}`,
+  })
+
+  const shimSrc = path.join(repoRoot, 'src', 'cli', 'bin')
+  cpSync(path.join(shimSrc, 'cate'), path.join(outRoot, 'bin', 'cate'))
+  chmodSync(path.join(outRoot, 'bin', 'cate'), 0o755)
+  cpSync(path.join(shimSrc, 'cate.cmd'), path.join(outRoot, 'bin', 'cate.cmd'))
+  console.log('[runtime] staged cate CLI')
 }
 
 /**

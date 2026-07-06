@@ -12,6 +12,7 @@
 
 import { spawn, type ChildProcess } from 'child_process'
 import type { AgentHost, AgentStartOptions, AgentHandle } from '../../main/runtime/types'
+import { catePathEnv } from '../cateCli'
 
 export interface AgentDeps {
   /** Install pi on this host if needed; resolves once dist/cli.js is present. */
@@ -39,7 +40,9 @@ export function createAgentCapability(deps: AgentDeps): AgentHost {
 
       const child = spawn(deps.nodeBin(), args, {
         cwd: opts.cwd,
-        env: { ...deps.baseEnv(), ...opts.env },
+        // Put the bundled `cate` on PATH when a CLI endpoint was injected, so the
+        // agent can drive the browser / call host methods from its shell tool.
+        env: catePathEnv({ ...deps.baseEnv(), ...opts.env }),
         stdio: ['pipe', 'pipe', 'pipe'],
       })
       children.set(opts.id, child)

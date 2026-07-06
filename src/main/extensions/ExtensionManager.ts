@@ -113,6 +113,11 @@ export class ExtensionManager {
       void import('./ExtensionServerManager')
         .then((m) => m.extensionServerManager.disposeForRuntime(id))
         .catch((err) => { log.warn('[extensions] disposeForRuntime %s failed: %O', id, err) })
+      // Same for first-party terminal/agent CATE_API endpoints stranded on the
+      // dead runtime handle — drop them so the next spawn rebuilds fresh.
+      void import('./workspaceCateApi')
+        .then((m) => m.workspaceCateApi.disposeForRuntime(id))
+        .catch((err) => { log.warn('[extensions] cateapi disposeForRuntime %s failed: %O', id, err) })
     })
   }
 

@@ -59,6 +59,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   terminalCursorBlink: 'boolean',
   terminalOptionIsMeta: 'boolean',
   autoSuspendIdleTerminals: 'boolean',
+  cliEnabled: 'boolean',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
   browserShowBookmarksBar: 'boolean',

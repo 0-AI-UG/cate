@@ -16,6 +16,7 @@ vi.mock('../windowRegistry', () => ({
   sendToWindow: () => {},
   listDockWindowIds: () => [],
 }))
+vi.mock('../windowPanels', () => ({ getWindowPanels: () => [] }))
 vi.mock('../dockWindowFlush', () => ({ flushDockWindowsBeforeQuit: () => Promise.resolve() }))
 vi.mock('../ipc/terminal', () => ({ flushAllLoggers: () => {}, killAllTerminals: () => {} }))
 vi.mock('../ipc/shell', () => ({ getRunningTerminals: () => [] }))

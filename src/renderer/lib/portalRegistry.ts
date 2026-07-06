@@ -13,12 +13,22 @@
 // subsequent commands.
 // =============================================================================
 
-/** Minimal subset of the Electron <webview> tag interface we depend on. */
+/** Minimal subset of the Electron <webview> tag interface we depend on.
+ *  BrowserPanel registers the real <webview> (a superset of this) — these are
+ *  the members the reverse-API driver (browserDriver.ts) and terminalUrlOpen
+ *  actually call. */
 export interface PortalWebview {
   getWebContentsId(): number
   getURL(): string
   getTitle(): string
   loadURL(url: string): void
+  goBack(): void
+  goForward(): void
+  reload(): void
+  canGoBack(): boolean
+  canGoForward(): boolean
+  isLoading(): boolean
+  executeJavaScript(code: string): Promise<unknown>
 }
 
 interface Entry {

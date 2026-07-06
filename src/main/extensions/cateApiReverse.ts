@@ -28,6 +28,13 @@ export interface ReverseSession {
   workspaceId: string
   token: string
   runtime: Runtime
+  /** First-party (terminal/agent) callers skip the extension-enabled gate and
+   *  browser consent prompt. Absent for extension-server sessions (the default).
+   *  `extensionId` may be a sentinel string for first-party sessions. */
+  caller?: 'first-party'
+  /** Scopes granted to a first-party caller (used instead of a manifest's
+   *  `cateApi`). Absent for extension-server sessions. */
+  grantedScopes?: string[]
 }
 
 export interface CateApiReverseEndpoint {
@@ -99,6 +106,10 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
           // forward to the active main window (best-effort — there's no
           // authoritative workspace→window map for main windows).
           forward: forwardToActiveWindow,
+          // Absent for extension-server sessions (undefined => 'extension'
+          // gate + manifest scopes); set for first-party terminal/agent callers.
+          caller: session.caller,
+          grantedScopes: session.grantedScopes,
         },
         method,
         parsed.args,

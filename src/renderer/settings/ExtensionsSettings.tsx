@@ -39,6 +39,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   storage: 'Store extension data',
   canvas: 'Create canvas panels',
   agent: 'Run the agent on your behalf',
+  browser: 'Control the browser',
   files: 'Receive dropped files',
   'files.drop': 'Receive dropped files',
 }
