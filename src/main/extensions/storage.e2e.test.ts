@@ -35,6 +35,7 @@ const getWorkspaceInfo = vi.hoisted(() => vi.fn())
 vi.mock('../workspaceManager', () => ({ getWorkspaceInfo }))
 
 import { dispatchCateInvoke, type InvokeScope } from './cateApiHandlers'
+import { flushAllPendingWritesSync } from './storage'
 // Real storage now routes through the workspace's runtime (local is just another
 // daemon), so register the in-process LOCAL runtime; its file ops hit the real fs
 // under the temp project root (os.tmpdir() is always an allowed root).
@@ -42,6 +43,15 @@ import { registerTestLocalRuntime } from '../runtime/testLocalRuntime'
 
 const EXT = 'cate.kitchensink'
 let projectRoot: string
+
+// Remove a dir the storage backend writes into. Flush first so no debounced
+// write is still in flight (Windows refuses rmdir on a dir with an open write
+// handle -> ENOTEMPTY/EPERM), and let rmSync retry to ride out any handle that
+// is still settling (a no-op on posix, which unlinks open handles lazily).
+function removeStorageDir(dir: string): void {
+  flushAllPendingWritesSync()
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })
+}
 
 function scope(workspaceId: string, panelId: string | undefined = 'panel-1'): InvokeScope {
   return { extensionId: EXT, workspaceId, panelId, forward: vi.fn() }
@@ -53,15 +63,14 @@ beforeAll(() => {
 })
 
 afterAll(() => {
-  fs.rmSync(projectRoot, { recursive: true, force: true })
+  removeStorageDir(projectRoot)
 })
 
 beforeEach(() => {
   // restoreMocks resets the implementation after each test, so (re)install it here.
   getWorkspaceInfo.mockImplementation((id: string) => (id === 'ws-real' ? { rootPath: projectRoot } : undefined))
   // Clear any persisted file between tests so keys() assertions are deterministic.
-  const dir = path.join(projectRoot, '.cate', 'extensions', EXT)
-  fs.rmSync(dir, { recursive: true, force: true })
+  removeStorageDir(path.join(projectRoot, '.cate', 'extensions', EXT))
 })
 
 describe('storage reverse API — real backend, end to end', () => {
@@ -85,10 +94,20 @@ describe('storage reverse API — real backend, end to end', () => {
   it('persists to <root>/.cate/extensions/<id>/storage.json on disk', async () => {
     await dispatchCateInvoke(scope('ws-real'), 'cate.storage.set', { key: 'persisted', value: 42 })
     const file = path.join(projectRoot, '.cate', 'extensions', EXT, 'storage.json')
-    // The write is debounced; poll briefly for the file to materialize on disk.
-    for (let i = 0; i < 100 && !fs.existsSync(file); i++) await new Promise((r) => setTimeout(r, 20))
-    expect(fs.existsSync(file)).toBe(true)
-    expect(JSON.parse(fs.readFileSync(file, 'utf8')).persisted).toBe(42)
+    // The write is debounced and non-atomic (plain write, no temp+rename), so the
+    // file can briefly be absent or half-written. Poll until it parses to the
+    // expected value rather than reading the instant it exists.
+    let parsed: { persisted?: number } | undefined
+    for (let i = 0; i < 100; i++) {
+      try {
+        parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+        if (parsed?.persisted === 42) break
+      } catch {
+        // Not written yet, or a partial read landed mid-write; keep polling.
+      }
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    expect(parsed?.persisted).toBe(42)
   })
 
   it('returns no-storage for an unknown workspace (the symptom the user saw)', async () => {
