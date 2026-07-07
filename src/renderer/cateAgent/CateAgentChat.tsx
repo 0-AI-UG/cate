@@ -744,7 +744,7 @@ export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> 
   // the observer timeline; picking a chat swaps it back.
   return (
     <div className="absolute bottom-full left-0 right-0 mb-2">
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
+      <div className="cate-agent-window-in flex flex-col overflow-hidden rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
         <div className="flex-none flex items-stretch bg-surface-0">
           <ChatTabs
             wsId={wsId}

@@ -253,6 +253,19 @@
   animation: cate-fade-in 0.35s ease-out both;
 }
 
+/* Cate Agent chat window entrance — the panel is anchored to the top of the
+   toolbar (bottom-full), so it grows UP out of it: a vertical unfold (scaleY
+   from the bottom edge) that pairs with the toolbar's horizontal width stretch,
+   so opening reads as one panel expanding rather than a card popping in. */
+@keyframes cate-agent-window-in {
+  from { opacity: 0; transform: translateY(6px) scaleY(0.9); }
+  to   { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+.cate-agent-window-in {
+  transform-origin: bottom center;
+  animation: cate-agent-window-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Skill install progress — an indeterminate left-to-right fill on an agent pill
    while a skill downloads/installs. The pill sets position:relative;overflow:hidden
    and renders <span class="skill-fill"> behind its label. Fills, fades, repeats
