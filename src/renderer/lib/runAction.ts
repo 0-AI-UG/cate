@@ -18,6 +18,7 @@ import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
 import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
+import { inheritedWorktreeFromSelection } from './inheritWorktree'
 import { confirmClosePanels } from './confirmClosePanels'
 
 /**
@@ -86,7 +87,13 @@ export async function runAction(
     case 'newTerminal': {
       const placement = placementForActivePanel()
       const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) appStore().createTerminal(wsId, undefined, undefined, placement)
+      if (wsId) {
+        // Inherit the selected terminal/agent's worktree so ⌘T from inside a
+        // worktree opens the new terminal in that same worktree.
+        const wt = inheritedWorktreeFromSelection(canvasStore(), appStore().getWorkspace(wsId)?.panels)
+        const panelId = appStore().createTerminal(wsId, undefined, undefined, placement, wt.cwd)
+        if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
+      }
       break
     }
     case 'newBrowser': {
@@ -105,7 +112,13 @@ export async function runAction(
     case 'newAgent': {
       const placement = placementForActivePanel()
       const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) appStore().createAgent(wsId, undefined, placement)
+      if (wsId) {
+        // Same worktree inheritance as newTerminal — an agent carries only a
+        // worktreeId (no cwd), so bind it when the selection has one.
+        const wt = inheritedWorktreeFromSelection(canvasStore(), appStore().getWorkspace(wsId)?.panels)
+        const panelId = appStore().createAgent(wsId, undefined, placement)
+        if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
+      }
       break
     }
     case 'newCanvas': {
