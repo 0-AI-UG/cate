@@ -258,8 +258,8 @@
    from the bottom edge) that pairs with the toolbar's horizontal width stretch,
    so opening reads as one panel expanding rather than a card popping in. */
 @keyframes cate-agent-window-in {
-  from { opacity: 0; transform: translateY(6px) scaleY(0.9); }
-  to   { opacity: 1; transform: translateY(0) scaleY(1); }
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
 }
 .cate-agent-window-in {
   transform-origin: bottom center;
@@ -267,11 +267,11 @@
 }
 /* ...and its reverse on close: the panel folds back DOWN into the toolbar while
    the toolbar collapses its width, so the window shrinks vertically (scaleY) and
-   horizontally (it tracks the shrinking toolbar) at once. Kept mounted for the
-   animation's duration, then unmounted. */
+   horizontally (it tracks the shrinking toolbar) at once — no fade, it just gets
+   smaller. Kept mounted for the animation's duration, then unmounted. */
 @keyframes cate-agent-window-out {
-  from { opacity: 1; transform: translateY(0) scaleY(1); }
-  to   { opacity: 0; transform: translateY(6px) scaleY(0.9); }
+  from { transform: scaleY(1); }
+  to   { transform: scaleY(0); }
 }
 .cate-agent-window-out {
   transform-origin: bottom center;

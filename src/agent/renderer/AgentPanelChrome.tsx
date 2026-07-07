@@ -1,7 +1,6 @@
 // =============================================================================
 // AgentPanelChrome — extra UI surfaces for the agent panel:
 //   • QueueBadges      — small chips for pending steering / follow-up messages
-//   • ExtensionStatusBar — extension setStatus() text (footer)
 //   • ExtensionWidget   — extension setWidget() lines (above/below editor)
 
 //   • ExtensionDialog   — in-panel renderer for extension_ui_request select /
@@ -26,10 +25,7 @@ import type {
   AgentImageAttachment,
   AgentThinkingLevel,
 } from '../../shared/types'
-import type {
-  ExtensionStatusEntry,
-  ExtensionWidgetEntry,
-} from './agentStore'
+import type { ExtensionWidgetEntry } from './agentStore'
 
 // -----------------------------------------------------------------------------
 // Steering / follow-up queue chips
@@ -70,26 +66,6 @@ export function QueueBadges({
 // -----------------------------------------------------------------------------
 // Extension chrome
 // -----------------------------------------------------------------------------
-
-// Status keys hidden from the footer. `plan-mode` drives the toggle-button
-// highlight in ChatInput, so surfacing it here too is redundant chrome. `mcp` /
-// `mcp-auth` are the pi-mcp-adapter's connection status — the MCP feature stays
-// fully active; we just don't want its footer line.
-const HIDDEN_STATUS_KEYS = new Set(['plan-mode', 'mcp', 'mcp-auth'])
-
-export function ExtensionStatusBar({ entries }: { entries: ExtensionStatusEntry[] }) {
-  const visible = entries.filter((e) => !HIDDEN_STATUS_KEYS.has(e.key))
-  if (visible.length === 0) return null
-  return (
-    <div className="flex flex-wrap gap-2 px-3 py-1 border-t border-subtle bg-surface-0 text-[11px] text-muted">
-      {visible.map((e) => (
-        <span key={e.key} className="px-1.5 py-0.5 rounded bg-hover font-mono">
-          {e.text}
-        </span>
-      ))}
-    </div>
-  )
-}
 
 export function ExtensionWidget({
   widgets,

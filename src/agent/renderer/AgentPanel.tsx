@@ -45,7 +45,6 @@ import { ChatInput } from './AgentChatInput'
 import { ModelPickerDropdown } from './ModelPicker'
 import {
   ExtensionDialog,
-  ExtensionStatusBar,
   ExtensionWidget,
   QueueBadges,
   readFileAsImage,
@@ -1174,8 +1173,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                 />
               </>
             )}
-
-            <ExtensionStatusBar entries={extensionStatuses} />
           </div>
         )}
       </div>
