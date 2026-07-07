@@ -3,6 +3,7 @@
 // agent-dir settings.json through a runtime.file stub — no real fs, no pi.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import path from 'node:path'
 
 vi.mock('electron', () => ({}))
 vi.mock('../../main/logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
@@ -45,7 +46,10 @@ describe('installMcpAdapter', () => {
 
   // The module-level idempotency tracker is per-process; each test uses a fresh
   // cwd so keys don't collide across cases.
-  const settingsPath = (cwd: string) => `${cwd}/.cate/pi-agent/settings.json`
+  // Build the key with path.join so it matches the separators hostJoin produces
+  // for the local runtime (backslashes on Windows) — a plain "/" string would
+  // miss the code's lookup on Windows and make the fake FS look empty.
+  const settingsPath = (cwd: string) => path.join(cwd, '.cate', 'pi-agent', 'settings.json')
 
   it('writes a fresh settings.json when none exists', async () => {
     const cwd = '/ws-fresh'
