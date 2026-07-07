@@ -35,6 +35,7 @@ import { parseLocator, type RuntimeId } from '../runtime/locator'
 import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime } from '../runtime/types'
 import { createStringDispatcher } from './batchedDispatcher'
+import { workspaceCateApi } from '../extensions/workspaceCateApi'
 
 // Set true during app shutdown so PTY data/exit callbacks no-op instead of
 // calling into a torn-down JS environment.
@@ -215,6 +216,18 @@ async function spawnTerminal(
   // validation to that workspace's roots when supplied.
   const cwd = options.cwd ? runtime.validateCwd(cwdPath, ownerWindowId, options.workspaceId) : ''
 
+  // First-party CATE_API endpoint: give this terminal CATE_API/CATE_TOKEN in its
+  // env so a `cate` CLI run inside it can reach the dispatch core. ensureEndpoint
+  // returns null when the CLI setting is disabled (the gate) or has no workspace
+  // to scope to — in which case we inject nothing (fail closed).
+  let cateApiEnv: Record<string, string> | undefined
+  if (options.workspaceId) {
+    const endpoint = await workspaceCateApi.ensureEndpoint(options.workspaceId)
+    if (endpoint) {
+      cateApiEnv = { CATE_API: `http://127.0.0.1:${endpoint.port}`, CATE_TOKEN: endpoint.token }
+    }
+  }
+
   // Instant-exit diagnostics (#401): a shell that exits cleanly within this
   // window without ever emitting a byte never became an interactive session
   // (shell startup files exiting, or a PTY that couldn't be allocated). Log it
@@ -276,7 +289,7 @@ async function spawnTerminal(
   // for its own host (the local resolver, or the daemon's first-existing-of
   // [requested, $SHELL, bash, sh]) — so a path that only exists on the client is
   // handled there, not branched on here.
-  const handle = await runtime.process.create({ cols: options.cols, rows: options.rows, cwd, shell: options.shell }, onData, onExit)
+  const handle = await runtime.process.create({ cols: options.cols, rows: options.rows, cwd, shell: options.shell, env: cateApiEnv }, onData, onExit)
   resolvedShell = handle.shell ?? ''
 
   terminalRuntime.set(handle.id, runtimeId)
@@ -310,7 +323,7 @@ export function registerHandlers(): void {
 
   ipcMain.handle(
     TERMINAL_CREATE,
-    async (event, options: { cols: number; rows: number; cwd?: string; shell?: string }): Promise<string> => {
+    async (event, options: { cols: number; rows: number; cwd?: string; shell?: string; workspaceId?: string }): Promise<string> => {
       const win = windowFromEvent(event)
       const windowId = win?.id ?? -1
       return spawnTerminal(options, windowId)

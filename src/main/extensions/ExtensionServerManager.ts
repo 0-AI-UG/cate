@@ -29,8 +29,8 @@ import type { Runtime, ServerHandle, ServerStartOptions } from '../runtime/types
 import { extensionManager } from './ExtensionManager'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { DEFAULT_PORT_ENV, DEFAULT_READY_PATH } from '../../shared/extensions'
-import { createCateApiReverse, type CateApiReverseEndpoint } from './cateApiReverse'
-import type { Duplex } from 'stream'
+import { createCateApiReverse, bindReverseTunnel, type ReverseTunnelBinding } from './cateApiReverse'
+import { KeyedLock } from '../keyedLock'
 
 type ServerState = 'IDLE' | 'SPAWNING' | 'READY' | 'GRACE' | 'STOPPING' | 'CRASHED' | 'ERROR'
 
@@ -69,9 +69,7 @@ interface ServerSession {
   lastError: string | null
   /** CATE_API reverse endpoint + its tunnel listener (Phase 3C), live while the
    *  server runs. Torn down on stop/crash. */
-  cateApi: CateApiReverseEndpoint | null
-  /** Per-connId inbound duplexes for the reverse listener. */
-  cateApiConns: Map<string, Duplex>
+  cateApiBinding: ReverseTunnelBinding | null
 }
 
 function keyFor(extensionId: string, workspaceId: string): string {
@@ -80,14 +78,7 @@ function keyFor(extensionId: string, workspaceId: string): string {
 
 export class ExtensionServerManager {
   private sessions = new Map<string, ServerSession>()
-  private locks = new Map<string, Promise<unknown>>()
-
-  private withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.locks.get(key) ?? Promise.resolve()
-    const next = prev.then(fn, fn)
-    this.locks.set(key, next.catch(() => undefined))
-    return next
-  }
+  private locks = new KeyedLock()
 
   // ---------------------------------------------------------------------------
   // Public API
@@ -102,7 +93,7 @@ export class ExtensionServerManager {
    */
   async ensureServer(extensionId: string, workspaceId: string): Promise<ServerEndpoint> {
     const key = keyFor(extensionId, workspaceId)
-    return this.withLock(key, () => this.ensureServerLocked(extensionId, workspaceId))
+    return this.locks.run(key, () => this.ensureServerLocked(extensionId, workspaceId))
   }
 
   /** ensureServer's body WITHOUT acquiring the lock — so joinPanel can register a
@@ -154,7 +145,7 @@ export class ExtensionServerManager {
     // acquisition: a disable→stopForExtension (which takes the same lock) can no
     // longer interleave between register and ensure and leave a spawned server for
     // a now-disabled extension.
-    return this.withLock(key, async () => {
+    return this.locks.run(key, async () => {
       const session = this.getOrCreateSession(extensionId, workspaceId)
       session.panels.add(panelId)
       session.owners.set(panelId, sender)
@@ -176,7 +167,7 @@ export class ExtensionServerManager {
     if (session.graceTimer) clearTimeout(session.graceTimer)
     if (session.state === 'READY') session.state = 'GRACE'
     session.graceTimer = setTimeout(() => {
-      void this.withLock(key, async () => {
+      void this.locks.run(key, async () => {
         const s = this.sessions.get(key)
         // A rejoin during grace would have cancelled this timer + re-added a
         // panel; bail if anything changed.
@@ -193,7 +184,7 @@ export class ExtensionServerManager {
   /** Manual restart from ERROR/CRASHED (resets the crash budget). */
   async restart(extensionId: string, workspaceId: string): Promise<{ ok: boolean; error?: string }> {
     const key = keyFor(extensionId, workspaceId)
-    return this.withLock(key, async () => {
+    return this.locks.run(key, async () => {
       const session = this.sessions.get(key)
       if (!session) return { ok: false, error: 'No server session' }
       session.restartTimes = []
@@ -248,7 +239,7 @@ export class ExtensionServerManager {
       .map(([key]) => key)
     await Promise.all(
       keys.map((key) =>
-        this.withLock(key, async () => {
+        this.locks.run(key, async () => {
           const session = this.sessions.get(key)
           if (!session) return
           if (session.graceTimer) { clearTimeout(session.graceTimer); session.graceTimer = null }
@@ -347,8 +338,7 @@ export class ExtensionServerManager {
       graceTimer: null,
       restartTimes: [],
       lastError: null,
-      cateApi: null,
-      cateApiConns: new Map(),
+      cateApiBinding: null,
     }
     this.sessions.set(key, session)
     return session
@@ -417,36 +407,15 @@ export class ExtensionServerManager {
       token: session.token,
       runtime: session.runtime,
     })
-    session.cateApi = reverse
-    session.cateApiConns = new Map()
-
-    const onConnection = (connId: string): void => {
-      const duplex = reverse.feedConnection(connId)
-      session.cateApiConns.set(connId, duplex)
-    }
-    const onData = (connId: string, b64: string): void => {
-      const duplex = session.cateApiConns.get(connId)
-      if (duplex) {
-        try {
-          const buf = Buffer.from(b64, 'base64')
-          duplex.push(buf)
-          // Credit the daemon's reverse-tunnel window for the bytes we delivered,
-          // so it can resume the accepted socket if it had paused (mirror of the
-          // forward path in serverTunnel.openTunnelDuplex).
-          session.runtime.tunnel.ack(connId, buf.length)
-        } catch { /* ended */ }
-      }
-    }
-    const onClose = (connId: string): void => {
-      const duplex = session.cateApiConns.get(connId)
-      session.cateApiConns.delete(connId)
-      if (duplex) { try { duplex.push(null) } catch { /* ended */ } }
-    }
 
     let cateApiPort: number
     try {
-      ;({ port: cateApiPort } = await session.runtime.tunnel.listen(listenerId, onConnection, onData, onClose))
+      session.cateApiBinding = await bindReverseTunnel(session.runtime, reverse, listenerId)
+      cateApiPort = session.cateApiBinding.port
     } catch (err) {
+      // bindReverseTunnel threw before taking ownership of `reverse`, so dispose
+      // it here (and stop the listener by its key, best-effort).
+      try { reverse.dispose() } catch { /* gone */ }
       this.teardownCateApi(session, listenerId)
       session.state = 'ERROR'
       session.lastError = `Failed to open CATE_API listener: ${err instanceof Error ? err.message : String(err)}`
@@ -506,11 +475,16 @@ export class ExtensionServerManager {
 
   /** Stop the reverse CATE_API listener + endpoint for a session (idempotent). */
   private teardownCateApi(session: ServerSession, listenerId?: string): void {
+    if (session.cateApiBinding) {
+      // The binding owns its listener + endpoint + inbound duplexes.
+      session.cateApiBinding.dispose()
+      session.cateApiBinding = null
+      return
+    }
+    // No binding was created (listen failed before it, or already torn down):
+    // still release the listener by its key, best-effort.
     const id = listenerId ?? `cateapi-${keyFor(session.extensionId, session.workspaceId)}`
     try { session.runtime.tunnel.stopListen(id) } catch { /* already gone */ }
-    if (session.cateApi) { try { session.cateApi.dispose() } catch { /* gone */ } }
-    session.cateApi = null
-    session.cateApiConns.clear()
   }
 
   /** Stop the running server (if any) and reset to IDLE. */
@@ -555,7 +529,7 @@ export class ExtensionServerManager {
     }
 
     session.restartTimes.push(now)
-    void this.withLock(key, async () => {
+    void this.locks.run(key, async () => {
       const s = this.sessions.get(key)
       // Only restart if the session still exists, still wants to run (has
       // panels), and is still in the crashed state.

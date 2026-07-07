@@ -1482,6 +1482,14 @@ export interface AppSettings {
    *  output for 2 minutes. SIGCONT is sent on focus/interaction. POSIX-only;
    *  no effect on Windows. */
   autoSuspendIdleTerminals: boolean
+  /** Enable the `cate` command-line control endpoint. When on, terminals and the
+   *  pi agent get a per-workspace CATE_API loopback endpoint + bearer token in
+   *  their env so a `cate` CLI can drive Cate (browser, panels, editor, canvas).
+   *  When OFF (fail closed): no endpoint is opened and no env is injected, so the
+   *  CLI is unreachable. Off by default (opt-in): the token lands in the env of
+   *  every process spawned in a terminal, so any of them (e.g. an npm postinstall)
+   *  could drive the browser on the user's live session. The user turns it on. */
+  cliEnabled: boolean
 
   // Browser
   browserHomepage: string
@@ -1619,6 +1627,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalCursorBlink: false,
   terminalOptionIsMeta: true,
   autoSuspendIdleTerminals: true,
+  cliEnabled: false,
 
   // Browser
   browserHomepage: '',

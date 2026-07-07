@@ -15,6 +15,7 @@ import { flushUIStateSync } from '../uiStateStore'
 import { releaseAllProjectLocks } from '../projectLock'
 import { runtimes } from '../runtime/runtimeManager'
 import { extensionServerManager } from '../extensions/ExtensionServerManager'
+import { workspaceCateApi } from '../extensions/workspaceCateApi'
 import { flushAllPendingWritesSync as flushExtensionStoragesSync } from '../extensions/storage'
 import { isUpdatePendingInstall } from '../auto-updater'
 import {
@@ -299,6 +300,7 @@ export function registerLifecycleHandlers(): void {
     // servers + runtimes first, fire-and-forget — the daemon kills its children
     // on transport close anyway, and we must not block the install handoff.)
     if (isUpdatePendingInstall()) {
+      workspaceCateApi.disposeAll()
       void extensionServerManager.disposeAll()
       void runtimes.disposeAll()
       log.info('will-quit: update staged, yielding to electron-updater install-on-quit')
@@ -321,8 +323,13 @@ export function registerLifecycleHandlers(): void {
     }
     hardExitStarted = true
     void runHardExit(event, {
-      disposeAll: () =>
-        Promise.allSettled([extensionServerManager.disposeAll(), runtimes.disposeAll()]),
+      disposeAll: () => {
+        // Sync teardown of the first-party CATE_API listeners (tunnel.stopListen
+        // is fire-and-forget + reverse.dispose closes the http server), then the
+        // bounded async server/runtime dispose.
+        workspaceCateApi.disposeAll()
+        return Promise.allSettled([extensionServerManager.disposeAll(), runtimes.disposeAll()])
+      },
       // process.reallyExit is Node's binding to libc exit() — it skips the 'exit'
       // event and the cleanup path app.exit/process.exit would run, bypassing
       // node::FreeEnvironment → CleanupHandles → uv_run (which drains pending

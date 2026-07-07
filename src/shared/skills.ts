@@ -48,6 +48,9 @@ export interface SkillEntry {
   updatedAt?: string
   provenance: 'curated' | 'user'
   sourceId: string
+  /** True for Cate's own skills (from a `firstParty` source) — pinned to the top
+   *  of the skills catalog. Absent for third-party entries. */
+  firstParty?: boolean
 }
 
 /** A user-added repo to live-crawl (in addition to the curated index). */

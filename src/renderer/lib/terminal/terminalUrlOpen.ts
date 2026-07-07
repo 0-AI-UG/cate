@@ -10,15 +10,7 @@
 
 import { useAppStore } from '../../stores/appStore'
 import { portalRegistry } from '../portalRegistry'
-
-function findBrowserPanelId(workspaceId: string): string | null {
-  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-  if (!ws) return null
-  for (const panel of Object.values(ws.panels)) {
-    if (panel.type === 'browser') return panel.id
-  }
-  return null
-}
+import { findBrowserPanelId } from '../browser/browserDriver'
 
 /** Open a URL on the canvas: reuse the workspace's browser panel if one exists,
  *  otherwise create a new one. */

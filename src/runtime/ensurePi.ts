@@ -9,15 +9,7 @@
 
 import { existsSync } from 'fs'
 import path from 'path'
-
-/** The runtime install dir — two levels up from the bundled node runtime
- *  (process.execPath == <installDir>/runtime/bin/node[.exe]). The unified layout
- *  keeps node under runtime/bin/ on win32 too (just node.exe), so the dirname×3
- *  depth is identical across platforms and this stays correct. pi sits at
- *  <installDir>/pi. */
-function installRoot(): string {
-  return path.resolve(path.dirname(process.execPath), '..', '..')
-}
+import { installRoot } from './installRoot'
 
 /** pi is cross-platform JS — the bundled node runs dist/cli.js identically on
  *  every OS, so this path needs no win32 branch. */

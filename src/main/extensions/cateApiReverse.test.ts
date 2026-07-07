@@ -20,6 +20,7 @@ vi.mock('./cateApiHandlers', () => ({
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 import { createCateApiReverse } from './cateApiReverse'
+import { unwrap, ApiError } from '../../cli/cate'
 import type { Runtime } from '../runtime/types'
 
 const TOKEN = 'secret-bearer-token'
@@ -166,6 +167,53 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     })
     expect(res.status).toBe(400)
     expect(res.body).toEqual({ error: 'bad-json' })
+    endpoint.dispose()
+  })
+
+  it('threads first-party caller + grantedScopes into the dispatch scope', async () => {
+    const { runtime, output } = makeRuntime()
+    const endpoint = createCateApiReverse({
+      extensionId: 'first-party', workspaceId: 'ws-1', token: TOKEN, runtime,
+      caller: 'first-party', grantedScopes: ['browser'],
+    })
+    await request(endpoint, output, { json: { method: 'cate.storage.get', args: { key: 'x' } } })
+    expect(dispatchCateInvoke).toHaveBeenCalledWith(
+      expect.objectContaining({ caller: 'first-party', grantedScopes: ['browser'] }),
+      'cate.storage.get',
+      { key: 'x' },
+    )
+    endpoint.dispose()
+  })
+
+  it('leaves caller/grantedScopes undefined for an extension-server session', async () => {
+    const { runtime, output } = makeRuntime()
+    const endpoint = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime })
+    await request(endpoint, output, { json: { method: 'cate.storage.get', args: { key: 'x' } } })
+    expect(dispatchCateInvoke).toHaveBeenCalledWith(
+      expect.objectContaining({ caller: undefined, grantedScopes: undefined }),
+      'cate.storage.get',
+      { key: 'x' },
+    )
+    endpoint.dispose()
+  })
+
+  it('serializes a void (undefined) result so the CLI reads it as success', async () => {
+    // Void-result host methods (cate browser back/click/type, cate panel set-title)
+    // resolve `undefined`. The wire body must still carry a `result` key, otherwise
+    // the CLI's unwrap sees neither `result` nor `error` and throws 'malformed
+    // response' on a request that actually succeeded.
+    dispatchCateInvoke.mockResolvedValue(undefined)
+    const { runtime, output } = makeRuntime()
+    const endpoint = createCateApiReverse({ extensionId: 'first-party', workspaceId: 'ws-1', token: TOKEN, runtime, caller: 'first-party', grantedScopes: ['panel'] })
+
+    const res = await request(endpoint, output, { json: { method: 'cate.panel.setTitle', args: { title: 'x' } } })
+    expect(res.status).toBe(200)
+    // (a) The body is valid and carries the result key.
+    expect(res.body).toEqual({ result: null })
+    // (b) The CLI's unwrap treats it as SUCCESS (no throw), not 'malformed response'.
+    let unwrapped: unknown
+    expect(() => { unwrapped = unwrap('cate.panel.setTitle', res.status, res.body) }).not.toThrow(ApiError)
+    expect(unwrapped).toBeNull()
     endpoint.dispose()
   })
 

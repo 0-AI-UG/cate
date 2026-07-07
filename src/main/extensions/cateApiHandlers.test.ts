@@ -62,8 +62,16 @@ vi.mock('./ExtensionManager', () => ({
 // importing cateApiHandlers doesn't drag in the proxy/server/IPC machinery.
 vi.mock('./proxyServer', () => ({ getProxyUrlFor: vi.fn() }))
 vi.mock('./ExtensionServerManager', () => ({ extensionServerManager: {} }))
-const { activeWindow } = vi.hoisted(() => ({ activeWindow: { value: undefined as unknown } }))
-vi.mock('../windowRegistry', () => ({ getActiveMainWindow: () => activeWindow.value }))
+const { activeWindow, windowsById, windowPanelList } = vi.hoisted(() => ({
+  activeWindow: { value: undefined as unknown },
+  windowsById: new Map<number, unknown>(),
+  windowPanelList: { value: [] as Array<{ panelId: string; type: string; ownerWindowId: number }> },
+}))
+vi.mock('../windowRegistry', () => ({
+  getActiveMainWindow: () => activeWindow.value,
+  getWindow: (id: number) => windowsById.get(id),
+}))
+vi.mock('../windowPanels', () => ({ getWindowPanels: () => windowPanelList.value }))
 vi.mock('../runtime/locator', () => ({
   LOCAL_RUNTIME_ID: 'local',
   parseLocator: (raw: string) => ({ runtimeId: 'local', path: raw }),
@@ -98,7 +106,7 @@ vi.mock('./storage', () => ({
   }),
 }))
 
-import { dispatchCateInvoke, type InvokeScope } from './cateApiHandlers'
+import { dispatchCateInvoke, requiredScopeFor, type InvokeScope } from './cateApiHandlers'
 
 const EXT = 'cate.kitchensink'
 const WS = 'ws-1'
@@ -113,6 +121,8 @@ beforeEach(() => {
   state.scopes = ['storage', 'editor', 'canvas', 'theme', 'ui', 'workspace.read']
   settings.notificationsEnabled = true
   activeWindow.value = undefined
+  windowsById.clear()
+  windowPanelList.value = []
   kv.clear()
   panelKv.clear()
   showOsNotification.mockClear()
@@ -130,7 +140,7 @@ beforeEach(() => {
 
 describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
   it('reports the API version for feature detection', async () => {
-    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(1)
+    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(2)
   })
 
   it('resolves the workspace root from the locator', async () => {
@@ -196,7 +206,7 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     // panel.* stay allowed (feature detection + panel self-control).
     state.scopes = undefined
     const forward = vi.fn()
-    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(1)
+    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(2)
     expect(await dispatchCateInvoke(scope(forward), 'cate.storage.get', { key: 'k' })).toEqual({ error: 'scope-denied', method: 'cate.storage.get' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.editor.openFile', { path: 'x' })).toEqual({ error: 'scope-denied', method: 'cate.editor.openFile' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.theme.get', undefined)).toEqual({ error: 'scope-denied', method: 'cate.theme.get' })
@@ -362,5 +372,229 @@ describe('dispatchCateInvoke — cate.agent.run', () => {
     const s = agentScope()
     expect(await dispatchCateInvoke(s, 'cate.agent.dispose', { sessionId: 'sess-1' })).toEqual({ ok: true })
     expect(disposeForExtension).toHaveBeenCalledWith({ extensionId: s.extensionId, sessionId: 'sess-1' })
+  })
+})
+
+describe('dispatchCateInvoke — cate.browser.* namespace', () => {
+  // webContents.send throws so the real forwardToOwner resolves fast ('no-owner')
+  // rather than waiting 10s for a reply, while still recording the target.
+  function makeWin() {
+    const send = vi.fn(() => { throw new Error('no-reply') })
+    return { win: { isDestroyed: () => false, webContents: { send } }, send }
+  }
+
+  // Browser consent is granted once per extension for the app session (module-
+  // level Set), so each consent test uses a fresh extension id to stay isolated.
+  let extSeq = 0
+  const extBrowserScope = (): InvokeScope => ({
+    extensionId: `cate.browser-ext-${++extSeq}`,
+    workspaceId: WS,
+    panelId: PANEL,
+    forward: vi.fn(),
+  })
+
+  it('maps every cate.browser.* method to the single `browser` scope', () => {
+    expect(requiredScopeFor('cate.browser.open')).toBe('browser')
+    expect(requiredScopeFor('cate.browser.back')).toBe('browser')
+  })
+
+  it('lets a first-party caller with granted `browser` scope through the gate', async () => {
+    const { win, send } = makeWin()
+    activeWindow.value = win
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward: vi.fn(),
+      caller: 'first-party', grantedScopes: ['browser'],
+    }
+    const res = await dispatchCateInvoke(s, 'cate.browser.back', {})
+    // Passed the scope gate and reached the forward to the active window (no
+    // panelId given) — not scope-denied, no consent prompt for first-party.
+    expect(res).not.toEqual({ error: 'scope-denied', method: 'cate.browser.back' })
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('denies an extension whose manifest lacks the `browser` scope', async () => {
+    activeWindow.value = makeWin().win
+    state.scopes = ['storage', 'editor'] // no browser
+    const res = await dispatchCateInvoke(scope(), 'cate.browser.back', {})
+    expect(res).toEqual({ error: 'scope-denied', method: 'cate.browser.back' })
+  })
+
+  it('routes an explicit browser panelId to that panel’s owner window', async () => {
+    // A send spy that throws lets the real forwardToOwner resolve immediately
+    // (it maps a failed send to 'no-owner') instead of waiting on a reply, while
+    // still capturing exactly which window's webContents the method reached.
+    const send = vi.fn((..._args: unknown[]) => { throw new Error('no-reply') })
+    const ownerWin = { isDestroyed: () => false, webContents: { id: 7, send } }
+    windowPanelList.value = [{ panelId: 'browser-7', type: 'browser', ownerWindowId: 42 }]
+    windowsById.set(42, ownerWin)
+    // Active window is a DIFFERENT window — the panelId must win over it.
+    activeWindow.value = makeWin().win
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward: vi.fn(),
+      caller: 'first-party', grantedScopes: ['browser'],
+    }
+    await dispatchCateInvoke(s, 'cate.browser.back', { panelId: 'browser-7' })
+    // Forwarded to the OWNER window (id 42's webContents), not the active window.
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0]![1]).toEqual(
+      expect.objectContaining({ method: 'cate.browser.back', args: { panelId: 'browser-7' }, panelId: '' }),
+    )
+  })
+
+  it('returns no-such-browser for an unknown panelId without forwarding', async () => {
+    const forward = vi.fn()
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward,
+      caller: 'first-party', grantedScopes: ['browser'],
+    }
+    const res = await dispatchCateInvoke(s, 'cate.browser.back', { panelId: 'does-not-exist' })
+    expect(res).toEqual({ error: 'no-such-browser', method: 'cate.browser.back' })
+    expect(forward).not.toHaveBeenCalled()
+  })
+
+  it('returns no-host-window when there is no active window and no panelId', async () => {
+    activeWindow.value = undefined
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward: vi.fn(),
+      caller: 'first-party', grantedScopes: ['browser'],
+    }
+    const res = await dispatchCateInvoke(s, 'cate.browser.back', {})
+    expect(res).toEqual({ error: 'no-host-window', method: 'cate.browser.back' })
+  })
+
+  // --- Extension consent (first-party skips this; extensions must be prompted) --
+
+  it('denies an extension browser call when the user rejects the consent prompt', async () => {
+    const { win, send } = makeWin()
+    activeWindow.value = win
+    state.scopes = ['browser']
+    showMessageBox.mockResolvedValue({ response: 1 }) // Deny
+    const res = await dispatchCateInvoke(extBrowserScope(), 'cate.browser.back', {})
+    expect(res).toEqual({ error: 'consent-denied', method: 'cate.browser.back' })
+    // Denied before the forward — the target window is never touched.
+    expect(send).not.toHaveBeenCalled()
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+  })
+
+  it('forwards an extension browser call after the user allows consent', async () => {
+    const { win, send } = makeWin()
+    activeWindow.value = win
+    state.scopes = ['browser']
+    // showMessageBox defaults to { response: 0 } (Allow) via beforeEach.
+    const res = await dispatchCateInvoke(extBrowserScope(), 'cate.browser.back', {})
+    // Passed consent and reached the forward (send throws → 'no-owner', not
+    // 'consent-denied' / 'scope-denied').
+    expect(res).not.toEqual({ error: 'consent-denied', method: 'cate.browser.back' })
+    expect(res).not.toEqual({ error: 'scope-denied', method: 'cate.browser.back' })
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+  })
+
+  it('prompts for browser consent only once per session for the same extension', async () => {
+    const { win, send } = makeWin()
+    activeWindow.value = win
+    state.scopes = ['browser']
+    const s = extBrowserScope()
+    await dispatchCateInvoke(s, 'cate.browser.back', {})
+    // A second cate.browser.* call from the same extension reuses the grant.
+    await dispatchCateInvoke(s, 'cate.browser.forward', {})
+    expect(showMessageBox).toHaveBeenCalledTimes(1) // no re-prompt
+    expect(send).toHaveBeenCalledTimes(2) // both forwarded
+  })
+
+  // --- Addressed panel whose owner window is missing / destroyed ---------------
+
+  it('returns no-host-window when the addressed browser panel’s owner window is missing', async () => {
+    // Panel resolves to ownerWindowId 42, but the registry has no such window.
+    windowPanelList.value = [{ panelId: 'browser-7', type: 'browser', ownerWindowId: 42 }]
+    const forward = vi.fn()
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward,
+      caller: 'first-party', grantedScopes: ['browser'],
+    }
+    const res = await dispatchCateInvoke(s, 'cate.browser.back', { panelId: 'browser-7' })
+    expect(res).toEqual({ error: 'no-host-window', method: 'cate.browser.back' })
+    expect(forward).not.toHaveBeenCalled()
+  })
+
+  it('returns no-host-window when the addressed browser panel’s owner window is destroyed', async () => {
+    const send = vi.fn()
+    windowPanelList.value = [{ panelId: 'browser-7', type: 'browser', ownerWindowId: 42 }]
+    windowsById.set(42, { isDestroyed: () => true, webContents: { id: 7, send } })
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward: vi.fn(),
+      caller: 'first-party', grantedScopes: ['browser'],
+    }
+    const res = await dispatchCateInvoke(s, 'cate.browser.back', { panelId: 'browser-7' })
+    expect(res).toEqual({ error: 'no-host-window', method: 'cate.browser.back' })
+    expect(send).not.toHaveBeenCalled()
+  })
+})
+
+// =============================================================================
+// TRUST-BOUNDARY CHARACTERIZATION
+//
+// First-party callers (interactive terminals + the pi agent, reaching dispatch
+// through the per-workspace CATE_API loopback) are DELIBERATELY trusted: they
+// skip BOTH the extension-enabled/known gate (cateApiHandlers.ts ~376-380) and
+// the browser consent prompt (~408-412), and carry GRANTED_SCOPES that include
+// `browser` instead of a manifest (workspaceCateApi.ts ~14-15, ~41-56). The
+// bearer token is a per-workspace randomBytes(32) bound to loopback and injected
+// into every terminal PTY's env, so anything spawned in a Cate terminal inherits
+// it and can drive `cate.browser.*` on the user's live browser with no prompt.
+//
+// This is a product/security TRADEOFF ("trusted terminal"), not a missing check.
+// These tests LOCK IN that intended behavior so an accidental future change to
+// the caller guards is caught. If the tradeoff is ever revisited, these are the
+// assertions to flip on purpose.
+// =============================================================================
+describe('dispatchCateInvoke — first-party trust boundary (characterization)', () => {
+  function makeWin() {
+    const send = vi.fn(() => { throw new Error('no-reply') })
+    return { win: { isDestroyed: () => false, webContents: { send } }, send }
+  }
+
+  it('first-party callers intentionally bypass the enabled gate AND the browser consent prompt', async () => {
+    // enabled=false would make a NON-first-party caller fail the enabled gate
+    // outright — proving the first-party pass-through is the branch under test
+    // (not just an incidentally-enabled extension).
+    state.enabled = false
+    const { win, send } = makeWin()
+    activeWindow.value = win
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward: vi.fn(),
+      caller: 'first-party', grantedScopes: ['browser'],
+    }
+    // A snapshot of the user's live, authenticated browser — the exact call the
+    // trust boundary permits without a prompt.
+    const res = await dispatchCateInvoke(s, 'cate.browser.snapshot', {})
+    // Reached the forward (send throws → resolved as a no-owner-style result),
+    // so it was NOT stopped by the enabled gate, the scope gate, or consent.
+    expect(res).not.toEqual({ error: 'not-enabled', method: 'cate.browser.snapshot' })
+    expect(res).not.toEqual({ error: 'scope-denied', method: 'cate.browser.snapshot' })
+    expect(res).not.toEqual({ error: 'consent-denied', method: 'cate.browser.snapshot' })
+    expect(send).toHaveBeenCalledTimes(1)
+    // The load-bearing assertion: no consent dialog was shown for first-party.
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('a non-first-party (extension) caller with no prior consent IS prompted and denied', async () => {
+    // Same enabled state as above would matter, but here the extension is enabled
+    // and holds the browser scope, so the ONLY remaining gate is consent — which
+    // first-party skipped above. A fresh ext id avoids the once-per-session grant.
+    state.enabled = true
+    state.scopes = ['browser']
+    const { win, send } = makeWin()
+    activeWindow.value = win
+    showMessageBox.mockResolvedValue({ response: 1 }) // user clicks Deny
+    const extScope: InvokeScope = {
+      extensionId: 'cate.browser-boundary-ext', workspaceId: WS, panelId: PANEL, forward: vi.fn(),
+    }
+    const res = await dispatchCateInvoke(extScope, 'cate.browser.snapshot', {})
+    expect(res).toEqual({ error: 'consent-denied', method: 'cate.browser.snapshot' })
+    // The prompt WAS shown (unlike first-party) and the browser was never touched.
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    expect(send).not.toHaveBeenCalled()
   })
 })

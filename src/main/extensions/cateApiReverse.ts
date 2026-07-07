@@ -28,6 +28,13 @@ export interface ReverseSession {
   workspaceId: string
   token: string
   runtime: Runtime
+  /** First-party (terminal/agent) callers skip the extension-enabled gate and
+   *  browser consent prompt. Absent for extension-server sessions (the default).
+   *  `extensionId` may be a sentinel string for first-party sessions. */
+  caller?: 'first-party'
+  /** Scopes granted to a first-party caller (used instead of a manifest's
+   *  `cateApi`). Absent for extension-server sessions. */
+  grantedScopes?: string[]
 }
 
 export interface CateApiReverseEndpoint {
@@ -99,11 +106,19 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
           // forward to the active main window (best-effort — there's no
           // authoritative workspace→window map for main windows).
           forward: forwardToActiveWindow,
+          // Absent for extension-server sessions (undefined => 'extension'
+          // gate + manifest scopes); set for first-party terminal/agent callers.
+          caller: session.caller,
+          grantedScopes: session.grantedScopes,
         },
         method,
         parsed.args,
       )
-      send(200, { result })
+      // A void host method resolves `undefined`; coerce to `null` so the wire
+      // body keeps a `result` key (JSON.stringify drops undefined values). Without
+      // this, `{ result: undefined }` serializes to `{}` and the CLI's unwrap
+      // reports a successful void call as 'malformed response'.
+      send(200, { result: result ?? null })
     } catch (err) {
       log.warn('[ext-cateapi] invoke failed %s: %O', session.extensionId, err)
       send(500, { error: 'internal' })
@@ -123,6 +138,63 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       for (const d of duplexes) { try { d.destroy() } catch { /* gone */ } }
       duplexes.clear()
       try { server.close() } catch { /* gone */ }
+    },
+  }
+}
+
+export interface ReverseTunnelBinding {
+  /** Loopback port bound on the runtime host for inbound connections. */
+  port: number
+  /** Stop the listener, dispose the endpoint, and drop all inbound duplexes. */
+  dispose(): void
+}
+
+/**
+ * Wire a reverse endpoint to a runtime tunnel listener and start listening.
+ * OWNS the per-connId inbound duplex map: an inbound connection is fed to the
+ * endpoint (feedConnection), inbound bytes are base64-decoded and pushed into
+ * its duplex (crediting the daemon's reverse-tunnel window via tunnel.ack, so a
+ * paused accepted socket resumes), and a close pushes EOF.
+ *
+ * A `listen` failure PROPAGATES — this helper does not catch/log/dispose. The
+ * caller owns that policy (ExtensionServerManager is fail-hard; the workspace
+ * first-party endpoint is fail-soft), so on throw the caller must dispose the
+ * endpoint it created.
+ */
+export async function bindReverseTunnel(
+  runtime: Runtime,
+  reverse: CateApiReverseEndpoint,
+  listenerId: string,
+): Promise<ReverseTunnelBinding> {
+  const conns = new Map<string, Duplex>()
+
+  const onConnection = (connId: string): void => {
+    conns.set(connId, reverse.feedConnection(connId))
+  }
+  const onData = (connId: string, b64: string): void => {
+    const duplex = conns.get(connId)
+    if (!duplex) return
+    try {
+      const buf = Buffer.from(b64, 'base64')
+      duplex.push(buf)
+      // Credit the daemon's reverse-tunnel window for the delivered bytes.
+      runtime.tunnel.ack(connId, buf.length)
+    } catch { /* ended */ }
+  }
+  const onClose = (connId: string): void => {
+    const duplex = conns.get(connId)
+    conns.delete(connId)
+    if (duplex) { try { duplex.push(null) } catch { /* ended */ } }
+  }
+
+  const { port } = await runtime.tunnel.listen(listenerId, onConnection, onData, onClose)
+
+  return {
+    port,
+    dispose(): void {
+      try { runtime.tunnel.stopListen(listenerId) } catch { /* already gone */ }
+      try { reverse.dispose() } catch { /* gone */ }
+      conns.clear()
     },
   }
 }

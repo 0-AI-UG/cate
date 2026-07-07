@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('electron', () => ({}))
 vi.mock('../../main/windowRegistry', () => ({ broadcastToAll: vi.fn() }))
+vi.mock('../../main/windowPanels', () => ({ getWindowPanels: () => [] }))
 vi.mock('../../main/runtime/runtimeManager', () => ({ runtimes: { resolve: vi.fn() } }))
 vi.mock('../../main/runtime/locator', () => ({
   parseLocator: vi.fn(() => ({ runtimeId: 'local', path: '/ws' })),

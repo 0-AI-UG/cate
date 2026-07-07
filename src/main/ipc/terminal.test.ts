@@ -68,6 +68,15 @@ vi.mock('../shellResolver', () => ({ resolveShell: () => ({ path: '/bin/sh', fal
 const diag = vi.hoisted(() => ({ warn: vi.fn(), ptyCreate: vi.fn() }))
 vi.mock('../logger', () => ({ default: { warn: diag.warn, info: () => {}, error: () => {}, debug: () => {} } }))
 
+// First-party CATE_API endpoint provider. spawnTerminal awaits
+// workspaceCateApi.ensureEndpoint(workspaceId) and, when it returns an endpoint,
+// injects CATE_API/CATE_TOKEN into the spawned PTY env. Mock it so the env
+// tests can drive both the endpoint-present and gated (null) paths.
+const cateApi = vi.hoisted(() => ({ ensureEndpoint: vi.fn() }))
+vi.mock('../extensions/workspaceCateApi', () => ({
+  workspaceCateApi: { ensureEndpoint: cateApi.ensureEndpoint },
+}))
+
 // A fake runtime whose process.create is the hoisted spy, so the instant-exit
 // tests can drive onData/onExit deterministically through the real spawnTerminal.
 vi.mock('../runtime/runtimeManager', () => ({
@@ -429,5 +438,58 @@ describe('instant-exit diagnostics (#401)', () => {
     const { onExit } = await spawn()
     onExit('pty-x', 1)
     expect(diag.warn).not.toHaveBeenCalled()
+  })
+})
+
+// ===========================================================================
+// CATE_API env injection: the wiring that makes the `cate` CLI reachable from a
+// spawned terminal. When a terminal is created WITH a workspaceId and the
+// first-party endpoint is up, spawnTerminal must inject CATE_API/CATE_TOKEN into
+// the PTY env. It must fail CLOSED — inject nothing — when there's no workspace
+// or when ensureEndpoint returns null (CLI setting disabled / listener failed).
+// ===========================================================================
+describe('CATE_API env injection into spawned terminals', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    diag.ptyCreate.mockReset()
+    cateApi.ensureEndpoint.mockReset()
+  })
+
+  // Spawn through the real TERMINAL_CREATE handler and return the env object
+  // that spawnTerminal passed down to runtime.process.create (the PTY env).
+  async function spawnAndGetEnv(
+    options: { cols: number; rows: number; cwd?: string; shell?: string; workspaceId?: string },
+  ): Promise<Record<string, string> | undefined> {
+    diag.ptyCreate.mockResolvedValue({ id: 'pty-env', pid: 123, shell: '/bin/zsh' })
+    const mod = await import('./terminal')
+    mod.registerHandlers()
+    await handlers.get('terminal:create')!({}, options)
+    const createOpts = diag.ptyCreate.mock.calls[0][0] as { env?: Record<string, string> }
+    return createOpts.env
+  }
+
+  it('injects CATE_API/CATE_TOKEN when a workspace endpoint is available', async () => {
+    cateApi.ensureEndpoint.mockResolvedValue({ port: 9876, token: 'tok-abc' })
+
+    const env = await spawnAndGetEnv({ cols: 80, rows: 24, workspaceId: 'ws-1' })
+
+    expect(cateApi.ensureEndpoint).toHaveBeenCalledWith('ws-1')
+    expect(env).toEqual({ CATE_API: 'http://127.0.0.1:9876', CATE_TOKEN: 'tok-abc' })
+  })
+
+  it('injects nothing (fail closed) when there is no workspaceId — ensureEndpoint is never consulted', async () => {
+    const env = await spawnAndGetEnv({ cols: 80, rows: 24 })
+
+    expect(cateApi.ensureEndpoint).not.toHaveBeenCalled()
+    expect(env).toBeUndefined()
+  })
+
+  it('injects nothing (fail closed) when ensureEndpoint returns null (CLI disabled)', async () => {
+    cateApi.ensureEndpoint.mockResolvedValue(null)
+
+    const env = await spawnAndGetEnv({ cols: 80, rows: 24, workspaceId: 'ws-1' })
+
+    expect(cateApi.ensureEndpoint).toHaveBeenCalledWith('ws-1')
+    expect(env).toBeUndefined()
   })
 })

@@ -31,6 +31,11 @@ export interface PtyCreateOptions {
   /** Caller-provided id. Used over the wire so the client registers its data
    *  stream before the create round-trip resolves (no early-output race). */
   id?: string
+  /** Extra env merged OVER the host's resolved shell env at spawn (e.g. the
+   *  first-party CATE_API/CATE_TOKEN vars). Rides the existing opts pass-through
+   *  (RemoteRuntime spreads opts; rpcServer forwards verbatim), so no protocol
+   *  change is needed to reach a remote host. */
+  env?: Record<string, string>
 }
 
 export interface PtyHandle {

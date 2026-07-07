@@ -37,7 +37,7 @@ import { PERF_GET } from '../shared/ipc-channels'
 import { TELEMETRY_NOTICE_VERSION } from '../shared/types'
 import { installWebContentsSecurity } from './webSecurity'
 import { installProxyAuthHandler } from './browserProxy'
-import { installThemeSkill } from './installThemeSkill'
+import { installBundledSkill } from './installBundledSkill'
 
 import { createWindow } from './windows/windowFactory'
 import { IS_E2E } from './windows/reveal'
@@ -347,8 +347,11 @@ app.whenReady().then(async () => {
   registerCriticalHandlers()
   log.info('Critical IPC handlers registered')
 
-  // Install the cate-theme authoring skill into ~/.claude/skills (copy-if-missing).
-  void installThemeSkill()
+  // Install our first-party skills into ~/.claude/skills (copy-if-missing) so
+  // Claude Code discovers them: cate-theme (theme authoring) and cate-cli
+  // (teaches an agent in a Cate terminal how to use the `cate` CLI).
+  void installBundledSkill('cate-theme')
+  void installBundledSkill('cate-cli')
 
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)

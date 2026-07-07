@@ -18,8 +18,11 @@ export function registerCaptureHandlers(): void {
     return image.toDataURL()
   }))
 
-  // Capture a webview's visible content, save to Desktop, return dataUrl + path
-  ipcMain.handle(WEBVIEW_SCREENSHOT, wrapHandler(`[${WEBVIEW_SCREENSHOT}]`, async (event, webContentsId: number) => {
+  // Capture a webview's visible content, save to Desktop, return dataUrl + path.
+  // `wantDataUrl` defaults to true for the manual UI button (it renders the
+  // thumbnail); the CLI/agent screenshot path passes false so we skip the
+  // multi-MB base64 encode it would only discard.
+  ipcMain.handle(WEBVIEW_SCREENSHOT, wrapHandler(`[${WEBVIEW_SCREENSHOT}]`, async (event, webContentsId: number, options?: { wantDataUrl?: boolean }) => {
     // Validate the webContentsId belongs to a webview guest of the calling window
     const callerWin = BrowserWindow.fromWebContents(event.sender)
     const wc = webContents.fromId(webContentsId)
@@ -42,6 +45,7 @@ export function registerCaptureHandlers(): void {
     const filePath = path.join(app.getPath('desktop'), fileName)
     await fs.promises.writeFile(filePath, image.toPNG())
 
+    if (options?.wantDataUrl === false) return { filePath }
     return { filePath, dataUrl: image.toDataURL() }
   }))
 

@@ -581,8 +581,11 @@ export interface ElectronAPI {
   /** Capture the current page as a data URL for panel previews. */
   capturePage(): Promise<string | null>
 
-  /** Capture a webview's content and save as PNG. Returns file path + data URL or null. */
-  webviewScreenshot(webContentsId: number): Promise<{ filePath: string; dataUrl: string } | null>
+  /** Capture a webview's content and save as PNG. Returns file path + data URL or
+   *  null. Pass `{ wantDataUrl: false }` (CLI/agent path) to skip the base64
+   *  encode and get back only the file path. */
+  webviewScreenshot(webContentsId: number, options: { wantDataUrl: false }): Promise<{ filePath: string } | null>
+  webviewScreenshot(webContentsId: number, options?: { wantDataUrl?: boolean }): Promise<{ filePath: string; dataUrl: string } | null>
 
   /** Configure the proxy for a browser panel's session partition (issue #241).
    *  Pass an empty/undefined proxyUrl to use a direct connection. */
