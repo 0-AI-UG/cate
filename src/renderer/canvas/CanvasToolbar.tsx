@@ -26,6 +26,7 @@ import { useUIStateStore } from '../stores/uiStateStore'
 import { useShortcutStore } from '../stores/shortcutStore'
 import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
+import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { Tooltip } from '../ui/Tooltip'
 
 // The minimap pill can be docked in any of the four canvas corners. The choice
@@ -112,10 +113,16 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
         .viewToCanvas({ x: ev.clientX - rect.left, y: ev.clientY - rect.top })
       const base = PANEL_DEFAULT_SIZES.terminal
       const pos = { x: center.x - base.width / 2, y: center.y - base.height / 2 }
-      const wsId = useAppStore.getState().selectedWorkspaceId
+      const app = useAppStore.getState()
+      const wsId = app.selectedWorkspaceId
       // Pin to this toolbar's canvas so the drop lands here, not on the
-      // workspace's primary canvas (matters on secondary/nested canvases).
-      if (wsId) useAppStore.getState().createTerminal(wsId, undefined, pos, { target: 'canvas', canvasPanelId })
+      // workspace's primary canvas (matters on secondary/nested canvases), and
+      // inherit the selected terminal/agent's worktree like the click path does.
+      if (wsId) {
+        const wt = inheritedWorktreeFromSelection(canvasApi.getState(), app.getWorkspace(wsId)?.panels)
+        const newId = app.createTerminal(wsId, undefined, pos, { target: 'canvas', canvasPanelId }, wt.cwd)
+        if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
+      }
     }
     window.addEventListener('mousemove', onMove, true)
     window.addEventListener('mouseup', onUp, true)
