@@ -107,6 +107,13 @@ describe('cateAgentStore — unseen activity indicator', () => {
     expect(useCateAgentStore.getState().get(WS).unseen).toBe(false)
   })
 
+  it('clearing the feed also clears unseen (nothing left for the eye to show)', () => {
+    useCateAgentStore.getState().appendFeed(WS, 'agent', 'remark')
+    expect(useCateAgentStore.getState().get(WS).unseen).toBe(true)
+    useCateAgentStore.getState().clearFeed(WS)
+    expect(useCateAgentStore.getState().get(WS).unseen).toBe(false)
+  })
+
   it('setUnseen sets and clears the flag', () => {
     useCateAgentStore.getState().setUnseen(WS, true)
     expect(useCateAgentStore.getState().get(WS).unseen).toBe(true)

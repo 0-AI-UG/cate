@@ -10,9 +10,11 @@
 // so the thread reads as one conversation. Live blocks bind to the chat's `run`
 // while it goes, then freeze to a snapshot so the transcript survives a reload.
 //
-// The observer's remarks (the feed tail) live in a collapsible OBSERVER tray pinned
-// at the bottom of the window — a transient FYI, NOT chat: the observer never mints
-// a chat, it just speaks there. The whole surface shows only while the panel is open.
+// The observer's remarks (the feed tail) get their own OBSERVER view, opened from an eye
+// tab beside the chats: the window body swaps to a full-height timeline — a single accent
+// rail, one dot + relative time per remark, newest at the bottom. A transient FYI, NOT
+// chat — the observer never mints a chat, it just speaks there. Hover a remark to dismiss
+// it, or clear the whole log. The whole surface shows only while the panel is open.
 // =============================================================================
 
 import React from 'react'
@@ -31,8 +33,8 @@ import {
   MagnifyingGlass,
   ArrowsSplit,
   SquaresFour,
+  Eye,
 } from '@phosphor-icons/react'
-import { createPortal } from 'react-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { useChatsStore } from '../stores/chatsStore'
 import { useAppStore } from '../stores/appStore'
@@ -61,8 +63,8 @@ import type {
 // How many observer feed lines to keep visible (a transient FYI, not a transcript).
 const MAX_VISIBLE_FEED = 6
 
-// The uppercase mono-ish label that titles each tool rail.
-const LBL = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-muted'
+// The small label that titles each tool rail.
+const LBL = 'text-[10px] font-semibold tracking-[0.04em] text-muted'
 
 const FEED_KIND_CLASS: Record<CateAgentFeedKind, string> = {
   user: 'text-primary',
@@ -425,20 +427,39 @@ const chatDot = (chat: Chat): React.ReactNode => {
 
 // Browser-style tab strip: one tab per chat (newest first), the active one pulled up
 // to merge with the transcript below, plus a trailing "+" to start a fresh chat.
-const ChatTabs: React.FC<{ wsId: string; rootPath: string; chats: Chat[]; activeChatId: string }> = ({ wsId, rootPath, chats, activeChatId }) => {
+const ChatTabs: React.FC<{
+  wsId: string
+  rootPath: string
+  chats: Chat[]
+  activeChatId: string
+  /** True while the observer view owns the body, so no chat tab reads as active. */
+  observerView: boolean
+  /** Picking any chat (or the "+") leaves the observer view. */
+  onPickChat: () => void
+}> = ({ wsId, rootPath, chats, activeChatId, observerView, onPickChat }) => {
   const setActiveChat = useCateAgentStore((s) => s.setActiveChat)
+  // With two or more chats the tabs join into a segmented strip: no gap, square
+  // corners, and shared 1px seams (collapsed via -ml-px). A lone tab keeps its
+  // rounded, standalone look.
+  const multi = chats.length >= 2
+  const pick = (chatId: string) => {
+    onPickChat()
+    setActiveChat(wsId, chatId)
+  }
   return (
-    <div className="no-scrollbar flex flex-1 min-w-0 items-stretch gap-1 overflow-x-auto px-1.5">
+    // No padding: tabs sit flush and fill the bar edge-to-edge. The card's rounded
+    // overflow clips the outer corners round while the seams between tabs stay square.
+    <div className={`no-scrollbar flex flex-1 min-w-0 items-stretch overflow-x-auto ${multi ? 'gap-0' : 'gap-1'}`}>
       {[...chats].reverse().map((chat) => {
-        const active = chat.id === activeChatId
+        const active = !observerView && chat.id === activeChatId
         return (
           <div
             key={chat.id}
-            className={`group/tab flex-shrink-0 flex items-center gap-1.5 rounded-t-lg px-2.5 py-1.5 -mb-px border border-b-0 transition-colors ${
-              active ? 'bg-surface-1 border-subtle' : 'border-transparent hover:bg-hover'
+            className={`group/tab flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 -mb-px border border-b-0 transition-colors ${
+              active ? 'bg-surface-0 border-subtle' : 'border-transparent hover:bg-hover'
             }`}
           >
-            <button onClick={() => setActiveChat(wsId, chat.id)} className="flex items-center gap-1.5 min-w-0" title={chat.title}>
+            <button onClick={() => pick(chat.id)} className="flex items-center gap-1.5 min-w-0" title={chat.title}>
               {chatDot(chat)}
               <span className={`text-[11.5px] truncate max-w-[130px] ${active ? 'text-primary' : 'text-secondary'}`}>{chat.title}</span>
             </button>
@@ -453,10 +474,10 @@ const ChatTabs: React.FC<{ wsId: string; rootPath: string; chats: Chat[]; active
         )
       })}
       <button
-        onClick={() => setActiveChat(wsId, '')}
+        onClick={() => pick('')}
         title="New chat"
         className={`flex-shrink-0 self-center ml-0.5 flex items-center justify-center w-6 h-6 rounded-md transition-colors ${
-          activeChatId === '' ? 'bg-surface-1 text-primary' : 'text-muted hover:text-primary hover:bg-hover'
+          !observerView && activeChatId === '' ? 'bg-hover-strong text-primary' : 'text-muted hover:text-primary hover:bg-hover'
         }`}
       >
         <Plus size={13} weight="bold" />
@@ -465,72 +486,104 @@ const ChatTabs: React.FC<{ wsId: string; rootPath: string; chats: Chat[]; active
   )
 }
 
-// --- observer menu -----------------------------------------------------------
+// The observer's own tab, pinned to the right of the chat tabs: a round accent dot. Toggles the
+// full-height timeline view into the window body. Only shown while the timeline has content.
+const ObserverTab: React.FC<{ active: boolean; onClick: () => void }> = ({ active, onClick }) => (
+  <button
+    onClick={onClick}
+    title="Observer"
+    aria-label="Observer"
+    aria-pressed={active}
+    className={`flex-shrink-0 flex items-center justify-center px-2.5 -mb-px border border-b-0 transition-colors ${
+      active ? 'bg-surface-0 border-subtle' : 'border-transparent hover:bg-hover'
+    }`}
+  >
+    <span
+      aria-hidden
+      className="w-2.5 h-2.5 rounded-full"
+      style={{ backgroundColor: 'rgb(var(--agent-rgb))' }}
+    />
+  </button>
+)
 
-// The observer's recent remarks, tucked into the top-right of the tab bar. A transient
-// FYI (never a chat): the amber count badge flags that something new is waiting, and
-// hovering drops a popover with the lines (each dismissable). The popover is portaled
-// to <body> so it isn't clipped by the window's rounded overflow, and a short close
-// delay bridges the gap between the trigger and the popover. Renders nothing when the
-// observer has nothing to say.
-const ObserverMenu: React.FC<{ wsId: string; items: CateAgentFeedItem[] }> = ({ wsId, items }) => {
-  const [open, setOpen] = React.useState(false)
-  const [pos, setPos] = React.useState<{ top: number; right: number } | null>(null)
-  const triggerRef = React.useRef<HTMLDivElement | null>(null)
-  const closeTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+// --- observer timeline -------------------------------------------------------
+
+// Relative age of a remark, coarsely (s / m / h). Recomputed on a slow tick so idle
+// timestamps don't drift stale.
+const relAge = (ts: number, now: number): string => {
+  const s = Math.max(0, Math.round((now - ts) / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  return `${Math.floor(m / 60)}h`
+}
+
+// The observer's remarks as a calm LOG that fills the window body like a chat: a single
+// accent rail down the left, one dot + relative time per remark, newest at the bottom.
+// A transient FYI — never a chat: the observer never mints a chat, it just speaks here.
+// Hover a remark to dismiss it; "Clear" empties the log. When the observer is quiet the
+// body explains what will show up here.
+const ObserverTimeline: React.FC<{ wsId: string; items: CateAgentFeedItem[] }> = ({ wsId, items }) => {
   const dismissFeedItem = useCateAgentStore((s) => s.dismissFeedItem)
+  const clearFeed = useCateAgentStore((s) => s.clearFeed)
+  const [now, setNow] = React.useState(() => Date.now())
 
-  const cancelClose = () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-  }
-  const scheduleClose = () => {
-    cancelClose()
-    closeTimer.current = setTimeout(() => setOpen(false), 140)
-  }
-  const openMenu = () => {
-    cancelClose()
-    const r = triggerRef.current?.getBoundingClientRect()
-    if (r) setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) })
-    setOpen(true)
-  }
-  React.useEffect(() => () => cancelClose(), [])
+  // A slow tick keeps the relative times fresh while the panel sits idle.
+  React.useEffect(() => {
+    if (items.length === 0) return
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [items.length])
 
-  if (items.length === 0) return null
+  if (items.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
+        <Eye size={22} weight="bold" className="opacity-70" style={{ color: 'rgb(var(--agent-rgb))' }} />
+        <span className="text-[12.5px] text-secondary">Nothing to report yet</span>
+        <span className="text-[11.5px] leading-snug text-muted">Cate drops a short note here as it watches your workspace.</span>
+      </div>
+    )
+  }
   return (
-    <div ref={triggerRef} className="flex-shrink-0 self-center pl-1 pr-1.5" onMouseEnter={openMenu} onMouseLeave={scheduleClose}>
-      <button className="flex items-center rounded-full px-2 py-1 text-secondary hover:text-primary hover:bg-hover transition-colors">
-        {/* Same signal the toolbar's Cate Agent button raises: a small agent-color
-            dot means the observer has something waiting. */}
-        <span
-          aria-hidden
-          className="w-2 h-2 rounded-full ring-2 ring-surface-0"
-          style={{ backgroundColor: 'rgb(var(--agent-rgb))' }}
-        />
-      </button>
-      {open &&
-        pos &&
-        createPortal(
-          <div
-            onMouseEnter={cancelClose}
-            onMouseLeave={scheduleClose}
-            style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 2147483000 }}
-            className="no-scrollbar w-[290px] max-h-[260px] overflow-y-auto rounded-xl border border-subtle bg-surface-0 p-2 shadow-[0_12px_32px_-8px_var(--shadow-node)] flex flex-col gap-1.5"
-          >
-            {items.map((item) => (
-              <div key={item.id} className="group/feed flex items-start gap-2">
-                <span className={`flex-1 text-[12px] leading-snug break-words ${FEED_KIND_CLASS[item.kind]}`}>{item.text}</span>
-                <button
-                  onClick={() => dismissFeedItem(wsId, item.id)}
-                  title="Dismiss"
-                  className="flex-shrink-0 mt-[1px] p-0.5 rounded text-muted opacity-0 group-hover/feed:opacity-100 hover:text-primary hover:bg-hover transition-opacity"
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
-          </div>,
-          document.body,
-        )}
+    <div className="flex flex-col gap-3 px-4 py-3">
+      <div className="flex items-center gap-1.5">
+        <span className={LBL}>Observer</span>
+        <button
+          onClick={() => clearFeed(wsId)}
+          title="Clear observer log"
+          className="ml-auto text-[10px] text-muted hover:text-primary transition-colors"
+        >
+          Clear
+        </button>
+      </div>
+      <div
+        className="flex flex-col gap-2.5 border-l-2 pl-4"
+        style={{ borderColor: 'color-mix(in srgb, rgb(var(--agent-rgb)) 40%, transparent)' }}
+      >
+        {items.map((item) => (
+          <div key={item.id} className="group/obs relative flex items-baseline gap-2.5">
+            {/* The dot sits on the rail; a ring in the body color masks the rail behind it. */}
+            <span
+              aria-hidden
+              className={`absolute -left-[21px] top-[6px] w-2 h-2 rounded-full ring-2 ring-surface-0 ${
+                item.kind === 'error' ? 'bg-red-400' : ''
+              }`}
+              style={item.kind === 'error' ? undefined : { backgroundColor: 'rgb(var(--agent-rgb))' }}
+            />
+            <span className="flex-shrink-0 w-[30px] font-mono text-[10px] leading-snug text-muted tabular-nums">
+              {relAge(item.ts, now)}
+            </span>
+            <span className={`flex-1 text-[12.5px] leading-snug break-words ${FEED_KIND_CLASS[item.kind]}`}>{item.text}</span>
+            <button
+              onClick={() => dismissFeedItem(wsId, item.id)}
+              title="Dismiss"
+              className="flex-shrink-0 -mt-[1px] p-0.5 rounded text-muted opacity-0 group-hover/obs:opacity-100 hover:text-primary hover:bg-hover transition-opacity"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -601,19 +654,19 @@ const EmptyRow: React.FC<{ icon: React.ReactNode; title: string; sub: string }> 
 
 const EmptyState: React.FC = () => (
   <div className="flex h-full flex-col items-center justify-center px-6 py-6">
-    <div className="flex w-full max-w-[320px] flex-col gap-1">
+    <div className="flex max-w-[320px] flex-col gap-1">
       <EmptyRow
-        icon={<ArrowsSplit size={16} weight="bold" className="text-purple-400" />}
+        icon={<ArrowsSplit size={16} weight="bold" className="text-muted" />}
         title="Runs parallel loops"
         sub="each in its own worktree"
       />
       <EmptyRow
-        icon={<CheckCircle size={16} className="text-green-400" />}
+        icon={<CheckCircle size={16} className="text-muted" />}
         title="Verifies the result"
         sub="against a goal you can see"
       />
       <EmptyRow
-        icon={<GitMerge size={16} className="text-blue-400" />}
+        icon={<GitMerge size={16} className="text-muted" />}
         title="Lands the winner"
         sub="merge, open a PR, or lay out the canvas"
       />
@@ -643,6 +696,9 @@ export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> 
   const lastUserIdx = feed.map((f) => f.kind).lastIndexOf('user')
   const visibleFeed = (lastUserIdx >= 0 ? feed.slice(lastUserIdx) : feed).slice(-MAX_VISIBLE_FEED)
 
+  // The eye tab swaps the body from the active chat to the full-height observer timeline.
+  const [observerView, setObserverView] = React.useState(false)
+
   // Stick to the bottom (newest, nearest the input) as the transcript grows, unless
   // the user has scrolled up to read.
   const scrollRef = React.useRef<HTMLDivElement | null>(null)
@@ -661,25 +717,36 @@ export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> 
   React.useLayoutEffect(() => {
     const el = scrollRef.current
     if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
-  }, [msgCount, runTick, visibleFeed.length, cateAgent.activeChatId])
+  }, [msgCount, runTick, visibleFeed.length, cateAgent.activeChatId, observerView])
 
   if (!wsId || !cateAgent.inputOpen) return null
   const hasChats = list.length > 0
   if (!hasChats && visibleFeed.length === 0) return null
 
-  // A fixed header bar (tabs + the observer's popover trigger) over a scrolling
-  // transcript. The transcript keeps a FIXED height so the window stays the same size
-  // no matter which chat is active — short chats have room to spare, long ones scroll —
-  // instead of the whole window jumping as you switch between them.
+  // A tab bar (chats + the observer's eye tab) over a body of FIXED height, so the window
+  // stays the same size whichever tab is active — short chats have room to spare, long
+  // ones scroll — instead of jumping as you switch. The eye tab swaps that same body to
+  // the observer timeline; picking a chat swaps it back.
   return (
     <div className="absolute bottom-full left-0 right-0 mb-2">
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-subtle bg-surface-1 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
-        <div className="flex-none flex items-stretch bg-surface-2 pt-1.5">
-          <ChatTabs wsId={wsId} rootPath={rootPath} chats={list} activeChatId={cateAgent.activeChatId} />
-          <ObserverMenu wsId={wsId} items={visibleFeed} />
+      <div className="flex flex-col overflow-hidden rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
+        <div className="flex-none flex items-stretch bg-surface-0">
+          <ChatTabs
+            wsId={wsId}
+            rootPath={rootPath}
+            chats={list}
+            activeChatId={cateAgent.activeChatId}
+            observerView={observerView}
+            onPickChat={() => setObserverView(false)}
+          />
+          {(visibleFeed.length > 0 || observerView) && (
+            <ObserverTab active={observerView} onClick={() => setObserverView((v) => !v)} />
+          )}
         </div>
         <div ref={scrollRef} onScroll={onScroll} className="no-scrollbar h-[min(420px,55vh)] overflow-y-auto border-t border-subtle">
-          {activeChat ? (
+          {observerView ? (
+            <ObserverTimeline wsId={wsId} items={visibleFeed} />
+          ) : activeChat ? (
             <div className="flex flex-col gap-3.5 px-3 py-3">
               {activeChat.messages.map((msg) => (
                 <MessageBlock key={msg.id} chat={activeChat} msg={msg} wsId={wsId} rootPath={rootPath} worktrees={worktrees} />

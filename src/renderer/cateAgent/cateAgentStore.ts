@@ -147,7 +147,8 @@ export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
   clearFeed(wsId) {
     set((s) => {
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
-      return { byWs: { ...s.byWs, [wsId]: { ...prev, feed: [] } } }
+      // No feed means nothing for the eye to show, so the toolbar dot must go dark too.
+      return { byWs: { ...s.byWs, [wsId]: { ...prev, feed: [], unseen: false } } }
     })
   },
 

@@ -241,12 +241,11 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     }
     void cateAgentController.sendMessage(workspaceId, rootPath, chatId, text)
   }
-  // Attention persists while any chat still needs a decision (review / interrupted);
-  // transient remarks (the `unseen` flag) flash it until the panel is opened. An open
-  // panel means the user is already looking, so no indicator then.
-  const chatsForRoot = useChatsStore((s) => s.chatsByRoot[rootPath])
-  const hasActionableChats = (chatsForRoot ?? []).some((c) => c.run?.status === 'review' || c.run?.interrupted)
-  const agentAttention = !inputOpen && (hasActionableChats || cateAgent.unseen)
+  // The dot means "there's observer feed to check via the eye tab" — it's the exact
+  // counterpart of that tab's gate (`unseen` is set only when a feed item arrives while
+  // closed, so it implies feed content). Chat attention (review / interrupted) is carried
+  // by the chat tabs, not this dot. An open panel means the user is already looking.
+  const agentAttention = !inputOpen && cateAgent.unseen
   // The content zone is sized explicitly so opening (wider for the input), typing
   // (taller as text wraps), and closing all animate via the width/height
   // transition. The tools define the closed size; we measure it while closed and

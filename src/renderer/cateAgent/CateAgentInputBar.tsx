@@ -80,6 +80,27 @@ export const CateAgentInputBar: React.FC<{
     resize()
   }, [text, resize])
 
+  // The bar lives in a zone that animates its width open/closed; how many lines the
+  // content wraps onto — and thus the height — depends on that width. Without this,
+  // a draft measured at the narrow start of the open animation freezes at a taller
+  // height and never shrinks back once the zone finishes widening, leaving the
+  // toolbar stuck tall (even after the text is sent and the input goes empty).
+  // Recompute on any WIDTH change so the reported height always matches the current
+  // width; guarded to width-only so setting our own height can't feed back into a loop.
+  React.useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let lastW = el.clientWidth
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth
+      if (w === lastW) return
+      lastW = w
+      resize()
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [resize])
+
   const send = () => {
     const t = text.trim()
     if (!t) return

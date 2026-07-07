@@ -214,11 +214,6 @@ function setRemark(wsId: string, text: string): void {
   useCateAgentStore.getState().appendFeed(wsId, 'agent', text)
 }
 
-/** Flag unseen activity for the toolbar attention dot when the panel is closed. */
-export function flagUnseen(wsId: string): void {
-  if (!useCateAgentStore.getState().get(wsId).inputOpen) useCateAgentStore.getState().setUnseen(wsId, true)
-}
-
 // --- observe context --------------------------------------------------------
 
 /** Snapshot of the workspace the observer needs every turn. */
@@ -607,7 +602,6 @@ export async function runCateAgentTool(ctx: CateAgentContext, tool: string, para
         branch: winner.branch,
         note,
       })
-      flagUnseen(wsId)
       return json({ ok: true })
     }
 
@@ -617,7 +611,6 @@ export async function runCateAgentTool(ctx: CateAgentContext, tool: string, para
       if (!getChat(rootPath, chatId)) return json({ ok: false, error: `no chat ${chatId}` })
       patchRun(rootPath, chatId, { status: 'failed', note: reason })
       useChatsStore.getState().appendMessage(rootPath, chatId, { id: msgId(), role: 'agent', ts: Date.now(), kind: 'result', met: false, reason })
-      flagUnseen(wsId)
       return json({ ok: true })
     }
 
@@ -637,7 +630,6 @@ export async function runCateAgentTool(ctx: CateAgentContext, tool: string, para
           working: false,
           panels: (snapshot.panels ?? []).map((p) => ({ id: p.id, type: p.type, title: p.title })),
         })
-        flagUnseen(wsId)
       }
       if (!ok) return json({ ok: false, error: 'canvas subagent failed to start' })
       return json({ ok: true, canvas: snapshot })

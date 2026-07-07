@@ -45,7 +45,6 @@ import {
   waitForIterationsSettled,
   patchIteration,
   runIterationCheck,
-  flagUnseen,
 } from './cateAgentTools'
 import { teardownRunWork } from './cateAgentReviewActions'
 import { getWorkspaceCanvasPanelId } from '../lib/workspace/canvasAccess'
@@ -574,7 +573,6 @@ class CateAgentController implements CateAgentBridgeHost {
     if (!ctx.chatId) return
     const output = (finalText ?? '').trim()
     if (output) useChatsStore.getState().appendMessage(ctx.rootPath, ctx.chatId, textMessage('agent', output))
-    flagUnseen(ctx.workspaceId)
     // Drop the run bookkeeping, but KEEP a run that still holds an unlanded worktree
     // (a code task in review): its result block needs the worktree/branch for the land
     // actions. A question/canvas/failed turn has nothing to land, so its run is cleared.
@@ -592,7 +590,6 @@ class CateAgentController implements CateAgentBridgeHost {
       ...(passed ? { worktreeId: passed.worktreeId, branch: passed.branch, recommendedIterationId: passed.id } : {}),
       note,
     })
-    flagUnseen(ctx.workspaceId)
     this.finalizeRun(ctx)
   }
 
@@ -701,7 +698,6 @@ class CateAgentController implements CateAgentBridgeHost {
       useChatsStore.getState().appendMessage(ctx.rootPath, ctx.chatId, textMessage('agent', `Error: ${message.slice(0, 200)}`))
       const run = getRun(ctx.rootPath, ctx.chatId)
       if (run) useChatsStore.getState().patchRun(ctx.rootPath, ctx.chatId, { status: 'failed', note: message.slice(0, 200) })
-      flagUnseen(ctx.workspaceId)
       this.finalizeRun(ctx)
     } else {
       const r = this.ws.get(ctx.workspaceId)
