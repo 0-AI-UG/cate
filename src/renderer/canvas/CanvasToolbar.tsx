@@ -234,12 +234,18 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   // OAuth sign-in ('needsReauth') hides it too; the reconnect prompt lives in
   // Settings → Cate Agent. Returns when a usable provider connects.
   const hasProvider = useCateAgentReady() === 'ok'
-  const inputOpen = cateAgent.inputOpen
+  // Without a provider the agent button and input bar are both hidden, so a
+  // lingering open state (persisted per-workspace) must not keep the content zone
+  // expanded — otherwise the pill renders empty and wide. Force it closed so the
+  // normal tools row shows.
+  const inputOpen = cateAgent.inputOpen && hasProvider
   const toggleAgentInput = () => useCateAgentStore.getState().setInputOpen(workspaceId, !inputOpen)
   const closeAgentInput = () => useCateAgentStore.getState().setInputOpen(workspaceId, false)
   // Compose into the active chat, minting one (titled from the prompt) on the first
   // send. The chat's persistent agent decides how to respond.
   const sendAgentPrompt = (text: string) => {
+    // The observer timeline is a read-only FYI view; it never takes a reply.
+    if (cateAgent.observerView) return
     const store = useChatsStore.getState()
     let chatId = cateAgent.activeChatId
     if (!chatId || !store.getChat(rootPath, chatId)) {
@@ -377,7 +383,9 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                 agentToolsRef); opening grows it wider for the input and taller as
                 text wraps. Width + height are explicit so every change animates. */}
             <div
-              className="relative flex items-stretch ml-1.5 overflow-hidden transition-[width,height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+              className={`relative flex items-stretch overflow-hidden transition-[width,height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+                hasProvider ? 'ml-1.5' : ''
+              }`}
               style={agentZoneStyle}
             >
               <div
@@ -456,6 +464,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                   <CateAgentInputBar
                     workspaceId={workspaceId}
                     multiline={agentMultiline}
+                    disabled={cateAgent.observerView}
                     onSend={sendAgentPrompt}
                     onClose={closeAgentInput}
                     onHeightChange={setAgentInputH}

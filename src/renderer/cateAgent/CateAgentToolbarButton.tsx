@@ -26,7 +26,7 @@ export const CateAgentToolbarButton: React.FC<{
   const color = COLOR[activity] ?? COLOR.resting
   const busy = activity === 'working' || activity === 'observing'
   return (
-    <Tooltip label={attention ? 'Cate Agent — new activity' : 'Cate Agent — ask it to do something'} placement="top">
+    <Tooltip label={attention ? 'Cate Agent: new activity' : 'Cate Agent'} placement="top">
       <button
         type="button"
         onClick={onClick}

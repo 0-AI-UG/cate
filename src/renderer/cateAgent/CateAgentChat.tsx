@@ -442,6 +442,7 @@ const ChatTabs: React.FC<{
   // corners, and shared 1px seams (collapsed via -ml-px). A lone tab keeps its
   // rounded, standalone look.
   const multi = chats.length >= 2
+  const hasChats = chats.length > 0
   const pick = (chatId: string) => {
     onPickChat()
     setActiveChat(wsId, chatId)
@@ -450,6 +451,13 @@ const ChatTabs: React.FC<{
     // No padding: tabs sit flush and fill the bar edge-to-edge. The card's rounded
     // overflow clips the outer corners round while the seams between tabs stay square.
     <div className={`no-scrollbar flex flex-1 min-w-0 items-stretch overflow-x-auto ${multi ? 'gap-0' : 'gap-1'}`}>
+      {/* With no chats the row would collapse below a tab's height; an invisible
+          tab-shaped spacer keeps the bar exactly as tall as it is with tabs. */}
+      {!hasChats && (
+        <div aria-hidden className="flex-shrink-0 flex items-center px-2.5 py-1.5 text-[11.5px] invisible">
+          &nbsp;
+        </div>
+      )}
       {[...chats].reverse().map((chat) => {
         const active = !observerView && chat.id === activeChatId
         return (
@@ -473,15 +481,19 @@ const ChatTabs: React.FC<{
           </div>
         )
       })}
-      <button
-        onClick={() => pick('')}
-        title="New chat"
-        className={`flex-shrink-0 self-center ml-0.5 flex items-center justify-center w-6 h-6 rounded-md transition-colors ${
-          !observerView && activeChatId === '' ? 'bg-hover-strong text-primary' : 'text-muted hover:text-primary hover:bg-hover'
-        }`}
-      >
-        <Plus size={13} weight="bold" />
-      </button>
+      {/* No "+" until there's a chat to switch from — a fresh chat is already the
+          default, so a lone plus in the empty bar just reads as a stray chip. */}
+      {hasChats && (
+        <button
+          onClick={() => pick('')}
+          title="New chat"
+          className={`flex-shrink-0 self-center ml-0.5 flex items-center justify-center w-6 h-6 rounded-md transition-colors ${
+            !observerView && activeChatId === '' ? 'bg-hover-strong text-primary' : 'text-muted hover:text-primary hover:bg-hover'
+          }`}
+        >
+          <Plus size={13} weight="bold" />
+        </button>
+      )}
     </div>
   )
 }
@@ -696,8 +708,11 @@ export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> 
   const lastUserIdx = feed.map((f) => f.kind).lastIndexOf('user')
   const visibleFeed = (lastUserIdx >= 0 ? feed.slice(lastUserIdx) : feed).slice(-MAX_VISIBLE_FEED)
 
-  // The eye tab swaps the body from the active chat to the full-height observer timeline.
-  const [observerView, setObserverView] = React.useState(false)
+  // The eye tab swaps the body from the active chat to the full-height observer
+  // timeline. Lifted into the store so the toolbar's input bar can disable sending
+  // while the (read-only) observer view owns the body.
+  const observerView = cateAgent.observerView
+  const setObserverView = useCateAgentStore((s) => s.setObserverView)
 
   // Stick to the bottom (newest, nearest the input) as the transcript grows, unless
   // the user has scrolled up to read.
@@ -737,10 +752,10 @@ export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> 
             chats={list}
             activeChatId={cateAgent.activeChatId}
             observerView={observerView}
-            onPickChat={() => setObserverView(false)}
+            onPickChat={() => setObserverView(wsId, false)}
           />
           {(visibleFeed.length > 0 || observerView) && (
-            <ObserverTab active={observerView} onClick={() => setObserverView((v) => !v)} />
+            <ObserverTab active={observerView} onClick={() => setObserverView(wsId, !observerView)} />
           )}
         </div>
         <div ref={scrollRef} onScroll={onScroll} className="no-scrollbar h-[min(420px,55vh)] overflow-y-auto border-t border-subtle">

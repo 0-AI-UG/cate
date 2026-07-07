@@ -38,6 +38,10 @@ export interface CateAgentWsState {
   /** The chat the input composes into and the transcript shows. Empty string means
    *  "compose a new chat" (one is minted on the first send). */
   activeChatId: string
+  /** The observer timeline (eye tab) owns the panel body instead of a chat. A
+   *  read-only FYI view — the input bar is disabled while it's shown, since the
+   *  observer never takes a reply. */
+  observerView: boolean
   /** Persistent-per-session feedback log shown above the toolbar, newest last. */
   feed: CateAgentFeedItem[]
   /** Terminals the orchestrator is actively driving → their pulsing glow color, keyed
@@ -61,6 +65,7 @@ export const DEFAULT_CATE_AGENT_WS: CateAgentWsState = {
   status: '',
   inputOpen: false,
   activeChatId: '',
+  observerView: false,
   feed: [],
   controlledTerminals: {},
   runAnchors: {},
@@ -75,6 +80,8 @@ interface CateAgentStore {
   setInputOpen: (wsId: string, open: boolean) => void
   /** Select the active chat (empty string = compose a new one). */
   setActiveChat: (wsId: string, chatId: string) => void
+  /** Toggle the observer timeline view (eye tab) on/off. */
+  setObserverView: (wsId: string, value: boolean) => void
   appendFeed: (wsId: string, kind: CateAgentFeedKind, text: string) => void
   /** Remove a single feed line by id (the per-remark dismiss button). */
   dismissFeedItem: (wsId: string, id: number) => void
@@ -106,14 +113,28 @@ export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
     set((s) => {
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
       // Opening the panel means the user has now seen any pending activity.
-      return { byWs: { ...s.byWs, [wsId]: { ...prev, inputOpen: open, unseen: open ? false : prev.unseen } } }
+      // Closing drops the observer view so a reopen always lands on the chat.
+      return {
+        byWs: {
+          ...s.byWs,
+          [wsId]: { ...prev, inputOpen: open, unseen: open ? false : prev.unseen, observerView: open ? prev.observerView : false },
+        },
+      }
     })
   },
 
   setActiveChat(wsId, chatId) {
     set((s) => {
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
-      return { byWs: { ...s.byWs, [wsId]: { ...prev, activeChatId: chatId } } }
+      // Picking a chat always leaves the observer timeline.
+      return { byWs: { ...s.byWs, [wsId]: { ...prev, activeChatId: chatId, observerView: false } } }
+    })
+  },
+
+  setObserverView(wsId, value) {
+    set((s) => {
+      const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
+      return { byWs: { ...s.byWs, [wsId]: { ...prev, observerView: value } } }
     })
   },
 
