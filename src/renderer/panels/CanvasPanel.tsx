@@ -34,6 +34,7 @@ import {
   findNodeIdForDockStore,
 } from './nodeDockRegistry'
 import { getPanelDef } from '../panels/registry'
+import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 
 // Re-export the lookup helpers so existing callers (drag dispatcher, drop
 // resolver) keep working through the same import path. New code should import
@@ -304,8 +305,14 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
 
   const onNewTerminal = useCallback(async () => {
     const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) useAppStore.getState().createTerminal(wsId, undefined, undefined, here())
-  }, [workspaceId, here])
+    if (!wsId) return
+    // Open the new terminal in the same worktree as the terminal/agent selected
+    // on this canvas (see inheritedWorktreeFromSelection).
+    const app = useAppStore.getState()
+    const wt = inheritedWorktreeFromSelection(store.getState(), app.getWorkspace(wsId)?.panels)
+    const newId = app.createTerminal(wsId, undefined, undefined, here(), wt.cwd)
+    if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
+  }, [workspaceId, here, store])
 
   const onNewBrowser = useCallback(async () => {
     const wsId = await ensureWorkspaceFolder(workspaceId)
@@ -319,8 +326,12 @@ export default function CanvasPanel({ panelId, workspaceId, nodeId, renderPanelC
 
   const onNewAgent = useCallback(async () => {
     const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) useAppStore.getState().createAgent(wsId, undefined, here())
-  }, [workspaceId, here])
+    if (!wsId) return
+    const app = useAppStore.getState()
+    const wt = inheritedWorktreeFromSelection(store.getState(), app.getWorkspace(wsId)?.panels)
+    const newId = app.createAgent(wsId, undefined, here())
+    if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
+  }, [workspaceId, here, store])
 
   const onZoomIn = useCallback(() => {
     store.getState().animateZoomTo(zoomLevel + 0.1)
