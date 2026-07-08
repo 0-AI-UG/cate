@@ -11,7 +11,7 @@
 
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { CaretDown, Plus, X, CircleNotch } from '@phosphor-icons/react'
+import { CaretDown, Plus, X } from '@phosphor-icons/react'
 import { useChatsStore } from '../stores/chatsStore'
 import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
 import { cateAgentController } from './cateAgentController'
@@ -78,7 +78,7 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
   const activeChat = cateAgent.activeChatId ? chats.find((c) => c.id === cateAgent.activeChatId) : undefined
 
   // What the collapsed pill shows.
-  const label = observer ? 'Observer' : activeChat ? activeChat.title : 'New chat'
+  const label = observer ? 'Feed' : activeChat ? activeChat.title : 'New chat'
 
   const pickObserver = () => {
     setObserverView(wsId, true)
@@ -104,7 +104,6 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
         title="Choose chat"
         className="flex items-center gap-1.5 h-[30px] max-w-[168px] pl-2.5 pr-1.5 rounded-full border border-subtle bg-surface-1 hover:bg-surface-2 hover:border-strong transition-colors"
       >
-        <SelectionDot observer={observer} chat={activeChat} />
         <span className="min-w-0 truncate text-[12px] text-secondary">{label}</span>
         <CaretDown size={11} weight="bold" className={`flex-shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -117,11 +116,9 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
           className="fixed w-[236px] p-1.5 rounded-xl border border-strong bg-surface-0 shadow-[0_12px_30px_-8px_rgba(0,0,0,0.6)]"
           style={{ left: pos.left, bottom: pos.bottom, zIndex: 60 }}
         >
-          <GroupLabel>Watching</GroupLabel>
           <Option selected={observer} onClick={pickObserver}>
             <span aria-hidden className="w-2 h-2 rounded-full flex-shrink-0" style={AGENT_DOT} />
-            <span className="flex-1 truncate">Observer</span>
-            <span className="font-mono text-[10px] text-muted">{cateAgent.feed.length > 0 ? 'live' : 'idle'}</span>
+            <span className="flex-1 truncate">Feed</span>
           </Option>
 
           {chats.length > 0 && (
@@ -130,11 +127,7 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
               <GroupLabel>Chats</GroupLabel>
               {[...chats].reverse().map((chat) => (
                 <Option key={chat.id} selected={!observer && chat.id === cateAgent.activeChatId} onClick={() => pickChat(chat.id)}>
-                  {chat.run?.status === 'running' ? (
-                    <CircleNotch size={10} className="flex-shrink-0 animate-spin" style={{ color: 'var(--green, #4ade80)' }} />
-                  ) : (
-                    <span aria-hidden className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: chatDotColor(chat) }} />
-                  )}
+                  <span aria-hidden className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: chatDotColor(chat) }} />
                   <span className="flex-1 truncate">{chat.title}</span>
                   <button
                     type="button"
@@ -163,18 +156,6 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
         document.body,
       )}
     </div>
-  )
-}
-
-// The collapsed pill's leading dot: accent for the observer, else the chat's status colour.
-const SelectionDot: React.FC<{ observer: boolean; chat?: Chat }> = ({ observer, chat }) => {
-  if (observer) return <span aria-hidden className="w-[7px] h-[7px] rounded-full flex-shrink-0" style={AGENT_DOT} />
-  return (
-    <span
-      aria-hidden
-      className="w-[7px] h-[7px] rounded-full flex-shrink-0"
-      style={{ backgroundColor: chat ? chatDotColor(chat) : 'rgb(var(--agent-rgb))' }}
-    />
   )
 }
 

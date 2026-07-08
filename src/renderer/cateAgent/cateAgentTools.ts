@@ -214,6 +214,12 @@ function setRemark(wsId: string, text: string): void {
   useCateAgentStore.getState().appendFeed(wsId, 'agent', text)
 }
 
+/** Surface an observer suggestion: a feed line carrying a one-click, ready-to-run
+ *  prompt for the coding agent (button labelled by the observer). */
+function setSuggestion(wsId: string, text: string, label: string, prompt: string): void {
+  useCateAgentStore.getState().appendFeed(wsId, 'agent', text, { label, prompt })
+}
+
 // --- observe context --------------------------------------------------------
 
 /** Snapshot of the workspace the observer needs every turn. */
@@ -445,6 +451,15 @@ export async function runCateAgentTool(ctx: CateAgentContext, tool: string, para
       const text = String(params.text ?? '').trim()
       if (!text) return json({ ok: false, error: 'text is required' })
       setRemark(wsId, text.slice(0, 200))
+      return json({ ok: true })
+    }
+
+    case 'suggest': {
+      const text = String(params.text ?? '').trim()
+      const label = String(params.label ?? '').trim()
+      const prompt = String(params.prompt ?? '').trim()
+      if (!text || !prompt) return json({ ok: false, error: 'text and prompt are required' })
+      setSuggestion(wsId, text.slice(0, 200), (label || 'Run').slice(0, 24), prompt.slice(0, 4000))
       return json({ ok: true })
     }
 

@@ -75,6 +75,42 @@ describe('cateAgentStore — appendFeed kinds', () => {
     s.appendFeed('w', 'error', 'boom')
     expect(useCateAgentStore.getState().get('w').feed.map((f) => f.kind)).toEqual(['user', 'agent', 'error'])
   })
+
+  it('carries an optional suggestion action; a plain remark has none', () => {
+    const s = useCateAgentStore.getState()
+    s.appendFeed('w', 'agent', 'a null token slips through', { label: 'Fix', prompt: 'Fix the null-token crash in auth.ts' })
+    s.appendFeed('w', 'agent', 'just watching')
+    const feed = useCateAgentStore.getState().get('w').feed
+    expect(feed[0].action).toEqual({ label: 'Fix', prompt: 'Fix the null-token crash in auth.ts' })
+    expect(feed[1].action).toBeUndefined()
+  })
+
+  it('resolveFeedAction marks a suggestion but keeps it in the feed', () => {
+    const s = useCateAgentStore.getState()
+    s.appendFeed('w', 'agent', 'fix it', { label: 'Fix', prompt: 'do the fix' })
+    const id = useCateAgentStore.getState().get('w').feed[0].id
+    s.resolveFeedAction('w', id, 'approved')
+    const feed = useCateAgentStore.getState().get('w').feed
+    expect(feed).toHaveLength(1)
+    expect(feed[0].resolved).toBe('approved')
+  })
+
+  it('resolveFeedAction is idempotent — a second resolve does not overwrite the first', () => {
+    const s = useCateAgentStore.getState()
+    s.appendFeed('w', 'agent', 'fix it', { label: 'Fix', prompt: 'do the fix' })
+    const id = useCateAgentStore.getState().get('w').feed[0].id
+    s.resolveFeedAction('w', id, 'approved')
+    s.resolveFeedAction('w', id, 'dismissed')
+    expect(useCateAgentStore.getState().get('w').feed[0].resolved).toBe('approved')
+  })
+
+  it('resolveFeedAction ignores plain remarks (no action to resolve)', () => {
+    const s = useCateAgentStore.getState()
+    s.appendFeed('w', 'agent', 'just watching')
+    const id = useCateAgentStore.getState().get('w').feed[0].id
+    s.resolveFeedAction('w', id, 'approved')
+    expect(useCateAgentStore.getState().get('w').feed[0].resolved).toBeUndefined()
+  })
 })
 
 describe('cateAgentStore — unseen activity indicator', () => {

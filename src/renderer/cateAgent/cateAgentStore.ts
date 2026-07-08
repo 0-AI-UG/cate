@@ -15,11 +15,26 @@ import type { CateAgentActivity, Point } from '../../shared/types'
  *  cleared or rolls past the cap. */
 export type CateAgentFeedKind = 'user' | 'agent' | 'status' | 'error'
 
+/** An observer-authored, ready-to-run prompt for the Cate Agent. When a feed item
+ *  carries one, the timeline renders a call-to-action button labelled `label`
+ *  (the observer's free choice, e.g. "Fix", "Implement") that starts a new chat
+ *  with `prompt`. */
+export interface CateAgentFeedAction {
+  label: string
+  prompt: string
+}
+
 export interface CateAgentFeedItem {
   id: number
   kind: CateAgentFeedKind
   text: string
   ts: number
+  /** Present on a suggestion: a one-click prompt the user can run as a new chat. */
+  action?: CateAgentFeedAction
+  /** A suggestion, once acted on, stays in the feed as a record but can't be run or
+   *  dismissed again. Undefined = still pending; 'approved' = the user ran it;
+   *  'dismissed' = the user waved it off. */
+  resolved?: 'approved' | 'dismissed'
 }
 
 let feedSeq = 0
@@ -83,9 +98,12 @@ interface CateAgentStore {
   setActiveChat: (wsId: string, chatId: string) => void
   /** Toggle the observer timeline view (eye tab) on/off. */
   setObserverView: (wsId: string, value: boolean) => void
-  appendFeed: (wsId: string, kind: CateAgentFeedKind, text: string) => void
+  appendFeed: (wsId: string, kind: CateAgentFeedKind, text: string, action?: CateAgentFeedAction) => void
   /** Remove a single feed line by id (the per-remark dismiss button). */
   dismissFeedItem: (wsId: string, id: number) => void
+  /** Mark a suggestion acted-on (run or waved off). It stays in the feed as a record
+   *  but its button + dismiss are spent — idempotent, so it can't resolve twice. */
+  resolveFeedAction: (wsId: string, id: number, resolution: 'approved' | 'dismissed') => void
   clearFeed: (wsId: string) => void
   /** Flag/clear unseen agent activity (drives the toolbar attention indicator). */
   setUnseen: (wsId: string, value: boolean) => void
@@ -140,10 +158,10 @@ export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
     })
   },
 
-  appendFeed(wsId, kind, text) {
+  appendFeed(wsId, kind, text, action) {
     set((s) => {
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
-      const item: CateAgentFeedItem = { id: ++feedSeq, kind, text, ts: Date.now() }
+      const item: CateAgentFeedItem = { id: ++feedSeq, kind, text, ts: Date.now(), action }
       // Agent output (anything but the user's own line) arriving while the panel
       // is closed becomes unseen activity → toolbar attention indicator.
       const unseen = prev.unseen || (kind !== 'user' && !prev.inputOpen)
@@ -156,6 +174,18 @@ export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
       const feed = prev.feed.filter((f) => f.id !== id)
       if (feed.length === prev.feed.length) return s
+      return { byWs: { ...s.byWs, [wsId]: { ...prev, feed } } }
+    })
+  },
+
+  resolveFeedAction(wsId, id, resolution) {
+    set((s) => {
+      const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
+      // Only pending suggestions resolve; already-resolved (or plain) items are left
+      // untouched so a double-click can't re-run or re-dismiss.
+      const target = prev.feed.find((f) => f.id === id)
+      if (!target || !target.action || target.resolved) return s
+      const feed = prev.feed.map((f) => (f.id === id ? { ...f, resolved: resolution } : f))
       return { byWs: { ...s.byWs, [wsId]: { ...prev, feed } } }
     })
   },

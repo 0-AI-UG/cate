@@ -48,6 +48,7 @@ function envelope(tool: string, params: Json): string {
 const OBSERVER_PROMPT = [
   "Observer for a coding workspace. You never act and never start work.",
   "Each turn: read a terminal or two if worthwhile, then remark with one short update. That's all.",
+  "When you spot something concrete the agent could do next (a failing test to fix, a feature to implement, a cleanup), you MAY additionally `suggest` it: write a complete, ready-to-run prompt for the coding agent and a short call-to-action label for its button (e.g. \"Fix\", \"Implement\", \"Investigate\"). Only suggest when the action is clear and useful; a plain remark is the default.",
 ].join(" ")
 
 const ORCHESTRATOR_PROMPT = [
@@ -145,6 +146,21 @@ export default function (pi: ExtensionAPI) {
       }),
       async execute(_id, params, _signal, _onUpdate, ctx) {
         return call(ctx, "remark", { text: params.text })
+      },
+    })
+
+    pi.registerTool({
+      name: "suggest",
+      label: "Suggest",
+      description:
+        "Offer the user a ready-to-run action for the coding agent, shown in the timeline as a one-click button. Use for a concrete next step you've spotted; a plain remark stays the default.",
+      parameters: Type.Object({
+        text: Type.String({ description: "One short sentence describing the suggestion, shown above the button." }),
+        label: Type.String({ description: "Call-to-action button text, your free choice — e.g. \"Fix\", \"Implement\", \"Investigate\". Keep it to one or two words." }),
+        prompt: Type.String({ description: "The complete, ready-to-run prompt sent to the coding agent when the user clicks the button." }),
+      }),
+      async execute(_id, params, _signal, _onUpdate, ctx) {
+        return call(ctx, "suggest", { text: params.text, label: params.label, prompt: params.prompt })
       },
     })
   }

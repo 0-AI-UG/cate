@@ -297,7 +297,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   useEffect(() => {
     if (!inputOpen) setAgentInputH(AGENT_ROW_H)
   }, [inputOpen])
-  const AGENT_INPUT_EXTRA = 210 // how much wider than the toolbar the input grows (picker + textarea)
+  const AGENT_INPUT_EXTRA = 120 // how much wider than the toolbar the input grows (picker + textarea)
   // Both width and height are explicit so opening, typing (as text wraps), and
   // closing all animate via the transition. Height tracks the live textarea
   // content (clamped to one toolbar row); the closed target is the fixed row
