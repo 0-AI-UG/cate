@@ -666,7 +666,10 @@ export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> 
   if (!wsId || !mounted) return null
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-2">
+    // Fixed width, centered above the toolbar — NOT left-0/right-0. Tracking the
+    // toolbar's width would make the card reflow (and its measured height jump)
+    // while the toolbar's open animation is still widening it, which flickered.
+    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-[min(440px,calc(100vw-32px))]">
       <div
         className="overflow-hidden rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
         style={{

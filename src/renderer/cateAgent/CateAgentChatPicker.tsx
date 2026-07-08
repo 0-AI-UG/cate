@@ -10,6 +10,7 @@
 // =============================================================================
 
 import React from 'react'
+import { createPortal } from 'react-dom'
 import { CaretDown, Plus, X, CircleNotch } from '@phosphor-icons/react'
 import { useChatsStore } from '../stores/chatsStore'
 import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
@@ -38,12 +39,29 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
 
   const [open, setOpen] = React.useState(false)
   const rootRef = React.useRef<HTMLDivElement>(null)
+  const btnRef = React.useRef<HTMLButtonElement>(null)
+  const menuRef = React.useRef<HTMLDivElement>(null)
 
-  // Close on any click outside the picker, or on Escape.
+  // The popover is rendered in a PORTAL (fixed-positioned above the button), so it
+  // escapes the toolbar zone's overflow-hidden clip and stacks above the window.
+  const [pos, setPos] = React.useState<{ left: number; bottom: number } | null>(null)
+  React.useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const r = btnRef.current?.getBoundingClientRect()
+      if (r) setPos({ left: r.left, bottom: window.innerHeight - r.top + 8 })
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [open])
+
+  // Close on any click outside the picker or its (portaled) menu, or on Escape.
   React.useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (!rootRef.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
@@ -78,6 +96,7 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
   return (
     <div ref={rootRef} className="relative flex-shrink-0">
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
@@ -90,11 +109,13 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
         <CaretDown size={11} weight="bold" className={`flex-shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
+      {open && pos && createPortal(
         <div
+          ref={menuRef}
           role="listbox"
           aria-label="Chats"
-          className="absolute left-0 bottom-[calc(100%+8px)] w-[236px] p-1.5 rounded-xl border border-strong bg-surface-0 shadow-[0_12px_30px_-8px_rgba(0,0,0,0.6)] z-10"
+          className="fixed w-[236px] p-1.5 rounded-xl border border-strong bg-surface-0 shadow-[0_12px_30px_-8px_rgba(0,0,0,0.6)]"
+          style={{ left: pos.left, bottom: pos.bottom, zIndex: 60 }}
         >
           <GroupLabel>Watching</GroupLabel>
           <Option selected={observer} onClick={pickObserver}>
@@ -138,7 +159,8 @@ export const CateAgentChatPicker: React.FC<{ workspaceId: string; rootPath: stri
             </span>
             <span className="flex-1 truncate" style={{ color: 'rgb(var(--agent-rgb))' }}>New chat</span>
           </Option>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
