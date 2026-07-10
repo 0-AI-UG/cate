@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // resolveShell is pulled in by shellEnv; stub it so the module loads without
 // touching the real shell resolver.
-vi.mock('./shellResolver', () => ({
+vi.mock('../runtime/capabilities/shellResolver', () => ({
   resolveShell: () => ({ path: '/bin/zsh', fellBack: false }),
 }))
 vi.mock('./logger', () => ({

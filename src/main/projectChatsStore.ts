@@ -27,6 +27,7 @@ import type {
   VerifyResult,
 } from '../shared/types'
 import { writeJsonAtomic } from './writeJsonAtomic'
+import { quarantineCorruptFile } from './quarantineCorruptFile'
 import { ensureCateGitignore } from './cateGitignore'
 import { isLocalLocator } from './runtime/locator'
 
@@ -177,17 +178,29 @@ function normalizeChat(raw: unknown): Chat | null {
   return chat
 }
 
-/** Read `.cate/chats.json` for a local project. Missing/corrupt → []. */
+/** Read `.cate/chats.json` for a local project. Missing → []; unparseable →
+ *  quarantined (kept for recovery) then []. */
 export async function loadChats(rootPath: string): Promise<Chat[]> {
   if (!isLocalLocator(rootPath)) return [] // remote chats unsupported in this phase
+  let raw: string
   try {
-    const raw = await fs.readFile(chatsPath(rootPath), 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<ProjectChatsFile>
-    if (!parsed || !Array.isArray(parsed.chats)) return []
-    return parsed.chats.map(normalizeChat).filter((c): c is Chat => c !== null)
+    raw = await fs.readFile(chatsPath(rootPath), 'utf-8')
   } catch {
-    return [] // absent or unparseable — start empty
+    return [] // absent — no chats yet
   }
+  let parsed: Partial<ProjectChatsFile>
+  try {
+    parsed = JSON.parse(raw) as Partial<ProjectChatsFile>
+  } catch {
+    // Unparseable (bad hand-edit / crash mid-write): quarantine the broken file
+    // so it survives for recovery instead of being silently overwritten by the
+    // next save — the same posture jsonStateFile applies to userData files.
+    const backup = quarantineCorruptFile(chatsPath(rootPath))
+    log.warn('[projectChatsStore] corrupt %s%s; starting empty', chatsPath(rootPath), backup ? `, backed up to ${backup}` : '')
+    return []
+  }
+  if (!parsed || !Array.isArray(parsed.chats)) return []
+  return parsed.chats.map(normalizeChat).filter((c): c is Chat => c !== null)
 }
 
 /** Persist the whole chat list for a local project (atomic tmp+rename). */

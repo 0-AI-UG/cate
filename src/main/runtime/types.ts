@@ -375,54 +375,58 @@ export interface PrSummary {
 // runtime-path `cwd` and validate it internally (via validateCwd), mirroring
 // the existing handler bodies and the already-exported `createBranch`. The
 // daemon supplies its own validateCwd in Phase 3, so the functions stay
-// relocatable.
+// relocatable. Like FileHost, every method takes a trailing access context:
+// the cwd is validated against `access.scopeId` (the calling workspace), so a
+// workspace can only run git against repos under its own registered roots.
 export interface VcsHost {
-  isRepo(dir: string): Promise<boolean>
+  isRepo(dir: string, access?: FileAccessContext): Promise<boolean>
   /** Discover git repos at or below `dir`, scanning at most `maxDepth` levels
    *  (default 1) and stopping at each repo it finds. Returns absolute paths. */
-  findRepos(dir: string, maxDepth?: number): Promise<string[]>
-  init(dir: string): Promise<void>
-  lsFiles(dir: string): Promise<string[]>
-  status(cwd: string): Promise<GitStatusResult>
-  diff(cwd: string, filePath?: string): Promise<string>
-  diffStaged(cwd: string, filePath?: string): Promise<string>
+  findRepos(dir: string, maxDepth?: number, access?: FileAccessContext): Promise<string[]>
+  init(dir: string, access?: FileAccessContext): Promise<void>
+  lsFiles(dir: string, access?: FileAccessContext): Promise<string[]>
+  status(cwd: string, access?: FileAccessContext): Promise<GitStatusResult>
+  diff(cwd: string, filePath?: string, access?: FileAccessContext): Promise<string>
+  diffStaged(cwd: string, filePath?: string, access?: FileAccessContext): Promise<string>
   /** Cheap poll for the sidebar branch/dirty indicator. */
-  monitorStatus(cwd: string): Promise<MonitorStatusResult>
-  stage(cwd: string, filePath: string): Promise<void>
-  unstage(cwd: string, filePath: string): Promise<void>
-  commit(cwd: string, message: string): Promise<void>
-  push(cwd: string, remote?: string, branch?: string): Promise<void>
-  pull(cwd: string, remote?: string, branch?: string): Promise<GitPullResult>
-  fetch(cwd: string, remote?: string): Promise<void>
-  log(cwd: string, maxCount?: number): Promise<GitLogEntry[]>
-  branchList(cwd: string): Promise<GitBranchListResult>
-  branchCreate(cwd: string, name: string, startPoint?: string): Promise<void>
-  branchDelete(cwd: string, name: string, force?: boolean): Promise<void>
-  checkout(cwd: string, branch: string): Promise<void>
-  stash(cwd: string, message?: string): Promise<void>
-  stashPop(cwd: string): Promise<void>
-  discardFile(cwd: string, filePath: string): Promise<void>
-  worktreeList(cwd: string): Promise<Worktree[]>
+  monitorStatus(cwd: string, access?: FileAccessContext): Promise<MonitorStatusResult>
+  stage(cwd: string, filePath: string, access?: FileAccessContext): Promise<void>
+  unstage(cwd: string, filePath: string, access?: FileAccessContext): Promise<void>
+  commit(cwd: string, message: string, access?: FileAccessContext): Promise<void>
+  push(cwd: string, remote?: string, branch?: string, access?: FileAccessContext): Promise<void>
+  pull(cwd: string, remote?: string, branch?: string, access?: FileAccessContext): Promise<GitPullResult>
+  fetch(cwd: string, remote?: string, access?: FileAccessContext): Promise<void>
+  log(cwd: string, maxCount?: number, access?: FileAccessContext): Promise<GitLogEntry[]>
+  branchList(cwd: string, access?: FileAccessContext): Promise<GitBranchListResult>
+  branchCreate(cwd: string, name: string, startPoint?: string, access?: FileAccessContext): Promise<void>
+  branchDelete(cwd: string, name: string, force?: boolean, access?: FileAccessContext): Promise<void>
+  checkout(cwd: string, branch: string, access?: FileAccessContext): Promise<void>
+  stash(cwd: string, message?: string, access?: FileAccessContext): Promise<void>
+  stashPop(cwd: string, access?: FileAccessContext): Promise<void>
+  discardFile(cwd: string, filePath: string, access?: FileAccessContext): Promise<void>
+  worktreeList(cwd: string, access?: FileAccessContext): Promise<Worktree[]>
   worktreeAdd(
     repoCwd: string,
     branch: string,
     targetPath: string,
     options?: { createBranch?: boolean; baseRef?: string; symlinkPaths?: string[] },
+    access?: FileAccessContext,
   ): Promise<{ path: string; branch: string }>
   worktreeAddFromPr(
     repoCwd: string,
     prNumber: number,
     targetPath: string,
     options?: { symlinkPaths?: string[] },
+    access?: FileAccessContext,
   ): Promise<{ path: string; branch: string }>
-  worktreeRemove(repoCwd: string, worktreePath: string, options?: { force?: boolean }): Promise<void>
-  worktreePrune(repoCwd: string): Promise<{ output: string }>
-  worktreeStatus(worktreePath: string): Promise<WorktreeStatusResult | null>
-  worktreeMergeTo(repoCwd: string, fromBranch: string, toBranch: string): Promise<MergeResult>
-  worktreeUpdateFrom(worktreePath: string, fromBranch: string): Promise<MergeResult>
-  createPr(worktreePath: string, branch: string): Promise<CreatePrResult>
-  prStatus(worktreePath: string, branch: string): Promise<PrStatusResult | null>
-  prList(repoCwd: string): Promise<PrSummary[]>
+  worktreeRemove(repoCwd: string, worktreePath: string, options?: { force?: boolean }, access?: FileAccessContext): Promise<void>
+  worktreePrune(repoCwd: string, access?: FileAccessContext): Promise<{ output: string }>
+  worktreeStatus(worktreePath: string, access?: FileAccessContext): Promise<WorktreeStatusResult | null>
+  worktreeMergeTo(repoCwd: string, fromBranch: string, toBranch: string, access?: FileAccessContext): Promise<MergeResult>
+  worktreeUpdateFrom(worktreePath: string, fromBranch: string, access?: FileAccessContext): Promise<MergeResult>
+  createPr(worktreePath: string, branch: string, access?: FileAccessContext): Promise<CreatePrResult>
+  prStatus(worktreePath: string, branch: string, access?: FileAccessContext): Promise<PrStatusResult | null>
+  prList(repoCwd: string, access?: FileAccessContext): Promise<PrSummary[]>
 }
 
 // ---------------------------------------------------------------------------

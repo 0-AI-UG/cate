@@ -47,10 +47,6 @@ export class WorkspaceCateApiManager {
     }
   }
 
-  disposeForWorkspace(workspaceId: string): void {
-    this.endpoints.dispose(endpointKey(workspaceId))
-  }
-
   disposeForRuntime(runtimeId: string): void {
     this.endpoints.disposeForRuntime('first-party', runtimeId)
   }

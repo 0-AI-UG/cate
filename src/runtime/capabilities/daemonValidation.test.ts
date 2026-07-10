@@ -35,8 +35,39 @@ describe('buildDaemonRuntime FileHost path validation', () => {
   })
 
   test('readFile within the root works', async () => {
-    const content = await runtime.file.readFile(path.join(root, 'inside.txt'))
+    const content = await runtime.file.readFile(path.join(root, 'inside.txt'), { scopeId: 'test' })
     expect(content).toBe('hello from inside\n')
+  })
+
+  // No fallback scope: omitting the access context (or its scopeId) validates
+  // against an empty root set, so even an in-root path is denied. This is the
+  // "silently widened to the daemon root" hole — closed.
+  test('readFile without a scope rejects even inside the root', async () => {
+    await expect(runtime.file.readFile(path.join(root, 'inside.txt'))).rejects.toThrow(
+      /Access denied|outside allowed directories/,
+    )
+    await expect(
+      runtime.file.readFile(path.join(root, 'inside.txt'), { ownerWindowId: 1 }),
+    ).rejects.toThrow(/Access denied|outside allowed directories/)
+  })
+
+
+  test('vcs ops without a scope reject; with the owning scope they work', async () => {
+    await expect(runtime.vcs.isRepo(root)).rejects.toThrow(
+      /Access denied|outside allowed directories/,
+    )
+    expect(await runtime.vcs.isRepo(root, { scopeId: 'test' })).toBe(false)
+  })
+
+  test('writeFile onto an existing symlink rejects (no write-through escape)', async () => {
+    const real = path.join(root, 'real.txt')
+    await fs.writeFile(real, 'target')
+    const link = path.join(root, 'link.txt')
+    await fs.symlink(real, link)
+    await expect(
+      runtime.file.writeFile(link, 'overwrite', { scopeId: 'test' }),
+    ).rejects.toThrow(/symbolic link/)
+    expect(await fs.readFile(real, 'utf-8')).toBe('target')
   })
 
   // POSIX-only: /etc/hostname is a deterministic existing path that is outside
@@ -49,14 +80,14 @@ describe('buildDaemonRuntime FileHost path validation', () => {
     const outside = existsSync('/etc/hostname')
       ? '/etc/hostname'
       : '/etc/hosts'
-    await expect(runtime.file.readFile(outside)).rejects.toThrow(
+    await expect(runtime.file.readFile(outside, { scopeId: 'test' })).rejects.toThrow(
       /Access denied|outside allowed directories/,
     )
   })
 
   test('writeBinary outside the root rejects and does not create the file', async () => {
     const outside = path.join(os.homedir(), 'cate-should-not-write.bin')
-    await expect(runtime.file.writeBinary(outside, Buffer.from([1]))).rejects.toThrow(
+    await expect(runtime.file.writeBinary(outside, Buffer.from([1]), { scopeId: 'test' })).rejects.toThrow(
       /Access denied|outside allowed directories/,
     )
     expect(existsSync(outside)).toBe(false)
@@ -65,23 +96,23 @@ describe('buildDaemonRuntime FileHost path validation', () => {
   test('writeBinary within root roundtrips binary bytes', async () => {
     const target = path.join(root, 'bin.dat')
     const bytes = Buffer.from([0, 1, 2, 253, 254, 255])
-    await runtime.file.writeBinary(target, bytes)
+    await runtime.file.writeBinary(target, bytes, { scopeId: 'test' })
 
-    const readBack = await runtime.file.readBinary(target)
+    const readBack = await runtime.file.readBinary(target, { scopeId: 'test' })
     expect(Buffer.isBuffer(readBack)).toBe(true)
     expect(readBack.equals(bytes)).toBe(true)
   })
 
   test('mkdir within root creates the directory', async () => {
     const dir = path.join(root, 'newdir')
-    await runtime.file.mkdir(dir)
+    await runtime.file.mkdir(dir, { scopeId: 'test' })
     const stat = await fs.stat(dir)
     expect(stat.isDirectory()).toBe(true)
   })
 
   test('mkdir outside the root rejects', async () => {
     const dir = path.join(os.homedir(), 'cate-should-not-mkdir')
-    await expect(runtime.file.mkdir(dir)).rejects.toThrow(
+    await expect(runtime.file.mkdir(dir, { scopeId: 'test' })).rejects.toThrow(
       /Access denied|outside allowed directories/,
     )
     expect(existsSync(dir)).toBe(false)
@@ -89,7 +120,7 @@ describe('buildDaemonRuntime FileHost path validation', () => {
 
   test('remove outside the root rejects', async () => {
     const outside = path.join(os.homedir(), 'cate-should-not-remove')
-    await expect(runtime.file.remove(outside)).rejects.toThrow(
+    await expect(runtime.file.remove(outside, { scopeId: 'test' })).rejects.toThrow(
       /Access denied|outside allowed directories/,
     )
   })

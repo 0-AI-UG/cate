@@ -9,10 +9,8 @@
 import { ipcMain, app, nativeTheme, session } from 'electron'
 import log from './logger'
 import { listWindows, windowFromEvent } from './windowRegistry'
-import fsSync from 'fs'
-import path from 'path'
-import { writeJsonAtomic } from './writeJsonAtomic'
 import { isPlainObject } from './jsonUtils'
+import { createJsonStateFile } from './jsonStateFile'
 import {
   SETTINGS_GET,
   SETTINGS_SET,
@@ -231,51 +229,32 @@ export interface BootSnapshot {
   lastWorkspaceId?: string
 }
 
-function getBootSnapshotPath(): string {
-  return path.join(app.getPath('userData'), 'boot.json')
+// Backed by the shared jsonStateFile store, which gives boot.json everything the
+// hand-rolled writer here used to lack: corrupt-file quarantine on load and a
+// sync flush for will-quit (a geometry/theme write inside the debounce window
+// used to be lost on quit). Sync load + debounced serialized atomic writes come
+// with it. The in-memory copy is authoritative, so partial writes from the
+// several sources (settings theme cache, windowFactory geometry, the renderer's
+// BOOT_SNAPSHOT_WRITE) merge in memory instead of read-modify-writing the disk.
+const bootFile = createJsonStateFile<BootSnapshot>({
+  filename: 'boot.json',
+  defaults: {},
+  normalize: (parsed) => (isPlainObject(parsed) ? (parsed as BootSnapshot) : {}),
+})
+
+/** Read the boot snapshot synchronously. `{}` when absent/corrupt. */
+export function readBootSnapshot(): BootSnapshot {
+  return bootFile.get()
 }
 
-/** Read the boot snapshot synchronously. Returns null on any failure. */
-export function readBootSnapshot(): BootSnapshot | null {
-  try {
-    const p = getBootSnapshotPath()
-    if (!fsSync.existsSync(p)) return null
-    const raw = fsSync.readFileSync(p, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (isPlainObject(parsed)) {
-      return parsed as BootSnapshot
-    }
-    return null
-  } catch (err) {
-    log.warn('Boot snapshot read failed: %O', err)
-    return null
-  }
-}
-
-// Debounced trailing-edge writer — coalesces bursts of setting changes into
-// a single 250 ms flush so we never thrash the disk on rapid setting updates.
-let bootSnapshotPending: BootSnapshot | null = null
-let bootSnapshotTimer: ReturnType<typeof setTimeout> | null = null
-const BOOT_SNAPSHOT_DEBOUNCE_MS = 250
-
-async function flushBootSnapshot(): Promise<void> {
-  bootSnapshotTimer = null
-  if (!bootSnapshotPending) return
-  const next = { ...(readBootSnapshot() ?? {}), ...bootSnapshotPending }
-  bootSnapshotPending = null
-  try {
-    // boot.json is read sync at the very first frame, so keep it compact.
-    await writeJsonAtomic(getBootSnapshotPath(), next, { pretty: false })
-  } catch (err) {
-    log.warn('Boot snapshot write failed: %O', err)
-  }
-}
-
-/** Merge `partial` into the current boot snapshot and flush after a short debounce. */
+/** Merge `partial` into the current boot snapshot (debounced atomic write). */
 export function writeBootSnapshot(partial: Partial<BootSnapshot>): void {
-  bootSnapshotPending = { ...(bootSnapshotPending ?? {}), ...partial }
-  if (bootSnapshotTimer) return
-  bootSnapshotTimer = setTimeout(() => { void flushBootSnapshot() }, BOOT_SNAPSHOT_DEBOUNCE_MS)
+  bootFile.update((current) => ({ ...current, ...partial }))
+}
+
+/** Flush a pending debounced boot.json write synchronously (quit path). */
+export function flushBootSnapshotSync(): void {
+  bootFile.flushPendingWritesSync()
 }
 
 /**
@@ -380,6 +359,13 @@ export function registerHandlers(): void {
     }
     broadcastSettingsReloaded()
   })
+
+  // Flush a pending debounced boot.json write before the process exits, so a
+  // window move / theme change just before quit survives to the next launch.
+  // Registered by boot.json's owner (like extension storage does) rather than
+  // shutdown.ts's flush list; will-quit listeners all run synchronously before
+  // the hard exit.
+  app.on('will-quit', () => flushBootSnapshotSync())
 
   // Boot snapshot — renderer pushes geometry/theme/etc. updates here. The
   // write is debounced internally; this handler returns immediately.

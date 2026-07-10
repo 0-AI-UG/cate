@@ -19,7 +19,7 @@ import {
 import { releaseCanvasStoreForPanel } from '../canvasStore'
 import { teardownPanelContent } from '../../lib/panels/panelTeardown'
 import { teardownPanelFamily } from '../../lib/panels/panelLifecycle'
-import { collectPanelIds } from '../../lib/canvas/collectPanelIds'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
 import { getOrCreateWorkspaceDockStore } from '../../lib/workspace/dockRegistry'
 import {
   ensureCanvasOpsForPanel,
@@ -257,12 +257,21 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
     },
 
     updateBrowserActiveTabUrl(workspaceId, panelId, url) {
-      setPanelField(set, workspaceId, panelId, (panel) => ({
-        ...panel,
-        tabs: panel.tabs?.map((tab) =>
-          tab.id === panel.activeTabId ? { ...tab, url } : tab,
-        ),
-      }))
+      setPanelField(set, workspaceId, panelId, (panel) => {
+        // tabs is the sole navigation authority for browser panels — a missing
+        // array here is an invariant violation. Fail loud at the cause instead
+        // of writing `tabs: undefined` and crashing BrowserPanel later.
+        if (!panel.tabs) {
+          log.error('[panelSlice] updateBrowserActiveTabUrl: panel %s has no tabs array', panelId)
+          return panel
+        }
+        return {
+          ...panel,
+          tabs: panel.tabs.map((tab) =>
+            tab.id === panel.activeTabId ? { ...tab, url } : tab,
+          ),
+        }
+      })
     },
 
     updatePanelTabs(workspaceId, panelId, tabs, activeTabId) {

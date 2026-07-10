@@ -18,8 +18,11 @@
 // The SOURCE bundle is always read locally with node fs (it ships inside the
 // app). Each DESTINATION is written THROUGH the runtime (local fs for the
 // local runtime, the daemon for a remote one), so remote workspaces are
-// seeded too. All copies are skip-if-exists so the user's own modifications on
-// the host survive.
+// seeded too. All copies overwrite when the host copy differs from the bundle:
+// these are Cate-managed artifacts (like installPlanMode's), and skip-if-exists
+// froze stale installs forever — e.g. older bundles pinned `model: claude-*`
+// in the subagent .md frontmatter, breaking every non-Anthropic user. Files a
+// user adds under agents/ or prompts/ have other names and are never touched.
 // =============================================================================
 
 import fs from 'fs'
@@ -41,15 +44,17 @@ function subagentSourceDir(): string | null {
   ])
 }
 
-/** Copy a single source file (read locally) to a host destination, skipping
- *  when the host already has it so a user's modified copy is never overwritten. */
-async function copyIfMissing(
+/** Copy a single source file (read locally) to a host destination, overwriting
+ *  only when the host copy differs from the bundled source. The bundle is
+ *  authoritative for these files, so shipped fixes reliably reach hosts that
+ *  already have an older copy (see header comment). */
+async function copyIfChanged(
   runtime: Runtime,
   src: string,
   destDir: string,
   destName: string,
 ): Promise<void> {
-  await copyFileToHost(runtime, src, destDir, destName, 'if-missing', '[installSubagents]')
+  await copyFileToHost(runtime, src, destDir, destName, 'if-changed', '[installSubagents]')
 }
 
 /** Copy every regular file under `srcDir` (local) into `destDir` (host). */
@@ -61,7 +66,7 @@ async function copyDirContents(
   if (!fs.existsSync(srcDir)) return
   for (const entry of await fsp.readdir(srcDir, { withFileTypes: true })) {
     if (!entry.isFile()) continue
-    await copyIfMissing(runtime, path.join(srcDir, entry.name), destDir, entry.name)
+    await copyIfChanged(runtime, path.join(srcDir, entry.name), destDir, entry.name)
   }
 }
 
@@ -84,8 +89,8 @@ export async function installSubagentExtension(runtime: Runtime, cwd: string): P
       return
     }
     const extDir = hostJoin(runtime.id, home, 'extensions', 'subagent')
-    await copyIfMissing(runtime, path.join(examples, 'index.ts'), extDir, 'index.ts')
-    await copyIfMissing(runtime, path.join(examples, 'agents.ts'), extDir, 'agents.ts')
+    await copyIfChanged(runtime, path.join(examples, 'index.ts'), extDir, 'index.ts')
+    await copyIfChanged(runtime, path.join(examples, 'agents.ts'), extDir, 'agents.ts')
     const agentsDir = hostJoin(runtime.id, home, 'agents')
     await copyDirContents(runtime, path.join(examples, 'agents'), agentsDir)
     await copyDirContents(

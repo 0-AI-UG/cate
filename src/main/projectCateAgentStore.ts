@@ -15,6 +15,8 @@ import log from './logger'
 import { PROJECT_CATE_AGENT_LOAD, PROJECT_CATE_AGENT_SAVE } from '../shared/ipc-channels'
 import type { ProjectCateAgentFile } from '../shared/types'
 import { writeJsonAtomic } from './writeJsonAtomic'
+import { quarantineCorruptFile } from './quarantineCorruptFile'
+import { isPlainObject } from './jsonUtils'
 import { ensureCateGitignore } from './cateGitignore'
 import { isLocalLocator } from './runtime/locator'
 
@@ -33,16 +35,29 @@ function cateAgentPath(rootPath: string): string {
 
 export async function loadCateAgentState(rootPath: string): Promise<ProjectCateAgentFile> {
   if (!isLocalLocator(rootPath)) return { ...DEFAULTS }
+  let raw: string
   try {
-    const raw = await fs.readFile(cateAgentPath(rootPath), 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<ProjectCateAgentFile>
-    return {
-      version: 1,
-      // Absent in older files → default on, preserving the prior always-observe behaviour.
-      autoObserve: typeof parsed.autoObserve === 'boolean' ? parsed.autoObserve : true,
-    }
+    raw = await fs.readFile(cateAgentPath(rootPath), 'utf-8')
   } catch {
+    return { ...DEFAULTS } // absent — this workspace has no saved preference yet
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // Unparseable (bad hand-edit / crash mid-write): quarantine the broken file
+    // so it survives for recovery instead of being silently overwritten by the
+    // next save — the same posture jsonStateFile applies to userData files.
+    const backup = quarantineCorruptFile(cateAgentPath(rootPath))
+    log.warn('[projectCateAgentStore] corrupt %s%s; using defaults', cateAgentPath(rootPath), backup ? `, backed up to ${backup}` : '')
     return { ...DEFAULTS }
+  }
+  const o = isPlainObject(parsed) ? parsed : {}
+  return {
+    version: 1,
+    // Per-field normalize: the file is hand-editable, so a missing or
+    // non-boolean flag degrades to the default without rejecting the file.
+    autoObserve: typeof o.autoObserve === 'boolean' ? o.autoObserve : DEFAULTS.autoObserve,
   }
 }
 

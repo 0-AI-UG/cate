@@ -109,6 +109,16 @@ describe('saveProjectState — issue #220 empty-overwrite guard', () => {
     await saveProjectStateLocal(root, makeWorkspace([makeNode('a')]), makeSession())
     expect(nodeCount(await readWorkspaceJson(root))).toBe(1)
   })
+
+  it('keeps the previous generation in workspace.json.bak after a save', async () => {
+    // The .bak recovery tier must survive the move onto the shared atomic-write
+    // primitive: each save copies the current file aside before renaming over it.
+    await saveProjectStateLocal(root, makeWorkspace([makeNode('a')]), makeSession())
+    await saveProjectStateLocal(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
+    const bak = JSON.parse(await fs.readFile(path.join(root, '.cate', 'workspace.json.bak'), 'utf-8'))
+    expect(nodeCount(bak)).toBe(1)
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
+  })
 })
 
 describe('loadProjectState — issue #220 prefer-richer fallback', () => {
@@ -206,7 +216,7 @@ describe('saveProjectStateSync — quit-time guard ordering (issue #220)', () =>
     saveProjectStateSync()
 
     // The quit flush must consult .bak's richness and refuse the empty overwrite,
-    // so atomicWriteSync never copies the empty primary over the rich .bak.
+    // so the .bak-copying writer never copies the empty primary over the rich .bak.
     expect(nodeCount(JSON.parse(await fs.readFile(wsPath + '.bak', 'utf-8')))).toBe(2)
     expect(nodeCount(await readWorkspaceJson(root))).toBe(0)
   })

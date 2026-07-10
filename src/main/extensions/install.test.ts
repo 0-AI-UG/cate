@@ -22,6 +22,7 @@ vi.mock('electron', () => ({
 import { provisionCatalogToRuntime, provisionSideloadToRuntime } from './install'
 import { hostJoin } from '../../agent/main/agentDir'
 import { buildDaemonRuntime } from '../../runtime/capabilities'
+import { loopbackRuntime } from '../runtime/testHarness'
 import type { CatalogEntry } from './catalog'
 import type { Runtime } from '../runtime/types'
 
@@ -60,10 +61,11 @@ function buildEntry(id = 'cate.hello', version = '1.2.0'): CatalogEntry {
 }
 
 // A daemon runtime under an arbitrary id, so we can pretend it's a remote host.
-// In-process, so the "upload" (writeBinary) and extract run against real fs under
+// In-process loopback (the production RemoteRuntime client over the real
+// framing), so the "upload" (writeBinary) and extract run against real fs under
 // the temp host root — the same code paths a real remote daemon would run.
 function runtimeWithId(id: string): Runtime {
-  return buildDaemonRuntime({ id }).runtime
+  return loopbackRuntime(buildDaemonRuntime({ id }).runtime, id)
 }
 
 describe('provisionCatalogToRuntime', () => {

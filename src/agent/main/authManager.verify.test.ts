@@ -19,19 +19,19 @@ const h = vi.hoisted(() => ({
   }>,
   getOAuthApiKey: vi.fn(),
   getModels: vi.fn(),
+  getProviders: vi.fn(),
   findEnvKeys: vi.fn(),
   readCustomOpenAI: vi.fn(),
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => h.userData }, shell: {} }))
 vi.mock('./agentDir', () => ({ sharedAuthPath: () => h.authJsonPath }))
-vi.mock('./agentConfigLock', () => ({
-  agentConfigLock: { run: (_key: string, fn: () => Promise<void>) => fn() },
-}))
 vi.mock('./customModels', () => ({ readCustomOpenAI: () => h.readCustomOpenAI() }))
 vi.mock('@earendil-works/pi-ai', () => ({
   findEnvKeys: (...args: unknown[]) => h.findEnvKeys(...args),
   getModels: (...args: unknown[]) => h.getModels(...args),
+  getProviders: () => h.getProviders(),
+  getEnvApiKey: () => undefined,
 }))
 vi.mock('@earendil-works/pi-ai/oauth', () => ({
   getOAuthApiKey: (...args: unknown[]) => h.getOAuthApiKey(...args),
@@ -54,6 +54,17 @@ beforeEach(() => {
   seedAuth({})
   h.getOAuthApiKey.mockReset()
   h.getModels.mockReset()
+  // pi's live catalog: curated ids plus entries the picker must NOT offer
+  // (non-API-key auth, OAuth-only, regional variants).
+  h.getProviders.mockReset().mockReturnValue([
+    'amazon-bedrock', 'anthropic', 'azure-openai-responses', 'cerebras',
+    'cloudflare-ai-gateway', 'cloudflare-workers-ai', 'deepseek', 'fireworks',
+    'github-copilot', 'google', 'google-vertex', 'groq', 'huggingface',
+    'kimi-coding', 'minimax', 'minimax-cn', 'mistral', 'moonshotai',
+    'moonshotai-cn', 'openai', 'openai-codex', 'opencode', 'opencode-go',
+    'openrouter', 'together', 'vercel-ai-gateway', 'xai', 'xiaomi',
+    'xiaomi-token-plan-ams', 'xiaomi-token-plan-cn', 'xiaomi-token-plan-sgp', 'zai',
+  ])
   h.findEnvKeys.mockReset().mockReturnValue(undefined)
   h.readCustomOpenAI.mockReset().mockResolvedValue(null)
 })
@@ -119,6 +130,32 @@ describe('AuthManager.verify — API key (presence only, no inference in main)',
   it('is error when there is no credential at all', async () => {
     const res = await authManager.verify('openai')
     expect(res).toMatchObject({ id: 'openai', health: 'error' })
+  })
+})
+
+describe('AuthManager.listProviders — curated API-key catalog', () => {
+  it('offers OAuth providers plus the curated allow-list in order, OpenAI first', async () => {
+    const providers = await authManager.listProviders()
+    const apiKeyIds = providers.filter((p) => p.kind === 'apiKey').map((p) => p.id)
+
+    expect(providers[0]).toMatchObject({ id: 'anthropic', kind: 'oauth' })
+    expect(apiKeyIds).toEqual([
+      'openai', 'anthropic', 'openrouter', 'google', 'groq', 'xai', 'mistral',
+      'deepseek', 'moonshotai', 'zai', 'minimax', 'cerebras', 'together',
+      'fireworks', 'huggingface', 'cloudflare-workers-ai', 'vercel-ai-gateway',
+    ])
+    // Not offered: bare API keys can't authenticate these / OAuth-only /
+    // regional variants — even though pi's catalog contains them.
+    for (const id of ['azure-openai-responses', 'google-vertex', 'cloudflare-ai-gateway', 'github-copilot', 'amazon-bedrock', 'openai-codex', 'moonshotai-cn', 'xiaomi-token-plan-cn']) {
+      expect(apiKeyIds).not.toContain(id)
+    }
+  })
+
+  it('drops curated ids pi no longer knows (intersection with getProviders)', async () => {
+    h.getProviders.mockReturnValue(['openai', 'groq'])
+    const providers = await authManager.listProviders()
+    const apiKeyIds = providers.filter((p) => p.kind === 'apiKey').map((p) => p.id)
+    expect(apiKeyIds).toEqual(['openai', 'groq'])
   })
 })
 

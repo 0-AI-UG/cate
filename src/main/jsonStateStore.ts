@@ -5,9 +5,9 @@
 // Debouncing, serialized writes, echo suppression, external reloads, and
 // subscriber delivery live here once.
 
-export type JsonStateChangeOrigin = 'local' | 'external'
+type JsonStateChangeOrigin = 'local' | 'external'
 
-export interface JsonStateBackend<T> {
+interface JsonStateBackend<T> {
   read?(): Promise<string | null>
   readSync?(): string | null
   write(value: T, content: string): Promise<void>
@@ -15,7 +15,7 @@ export interface JsonStateBackend<T> {
   watch?(onChange: () => void): (() => void) | Promise<() => void>
 }
 
-export interface JsonStateStoreOptions<T> {
+interface JsonStateStoreOptions<T> {
   defaults: T
   normalize(parsed: unknown, defaults: T): T
   backend: JsonStateBackend<T>

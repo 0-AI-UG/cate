@@ -110,17 +110,6 @@ describe('WorkspaceCateApiManager.ensureEndpoint', () => {
     expect(reverseCalls).toHaveLength(1)
   })
 
-  it('disposeForWorkspace tears down the listener + reverse endpoint', async () => {
-    const mgr = new WorkspaceCateApiManager()
-    await mgr.ensureEndpoint('ws1')
-    mgr.disposeForWorkspace('ws1')
-    expect(stopListen).toHaveBeenCalledWith('cateapi-terminal-ws1')
-    expect(reverseDispose).toHaveBeenCalledTimes(1)
-    // A subsequent ensure rebuilds a fresh endpoint.
-    await mgr.ensureEndpoint('ws1')
-    expect(listen).toHaveBeenCalledTimes(2)
-  })
-
   it('disposeForRuntime drops endpoints on the disconnected runtime', async () => {
     const mgr = new WorkspaceCateApiManager()
     await mgr.ensureEndpoint('ws1')

@@ -10,6 +10,9 @@ import { createVcsCapability } from './vcs'
 // pathValidation always allows, so no allowed-root wiring is needed here.
 
 const vcs = createVcsCapability({ env: () => process.env, scopeId: 'vcs-test' })
+// Every cwd is validated against the caller's scope; temp dirs are under
+// os.tmpdir(), which pathValidation allows for any NAMED scope.
+const access = { scopeId: 'vcs-test' }
 
 async function mkGitRepo(dir: string): Promise<void> {
   await fs.mkdir(path.join(dir, '.git'), { recursive: true })
@@ -32,7 +35,7 @@ describe('vcs.findRepos', () => {
   test('returns the root itself when it is a repo, without scanning children', async () => {
     await mkGitRepo(root)
     await mkGitRepo(path.join(root, 'nested'))
-    const repos = await vcs.findRepos(root)
+    const repos = await vcs.findRepos(root, undefined, access)
     expect(repos).toEqual([root])
   })
 
@@ -40,7 +43,7 @@ describe('vcs.findRepos', () => {
     await mkGitRepo(path.join(root, 'frontend'))
     await mkGitRepo(path.join(root, 'backend'))
     await fs.mkdir(path.join(root, 'docs'), { recursive: true })
-    const repos = await vcs.findRepos(root)
+    const repos = await vcs.findRepos(root, undefined, access)
     expect(repos.sort()).toEqual(
       [path.join(root, 'backend'), path.join(root, 'frontend')].sort(),
     )
@@ -49,26 +52,26 @@ describe('vcs.findRepos', () => {
   test('does not descend into a found repo (nested repos are ignored at default depth)', async () => {
     await mkGitRepo(path.join(root, 'frontend'))
     await mkGitRepo(path.join(root, 'frontend', 'vendor'))
-    const repos = await vcs.findRepos(root)
+    const repos = await vcs.findRepos(root, undefined, access)
     expect(repos).toEqual([path.join(root, 'frontend')])
   })
 
   test('skips node_modules and dot-directories', async () => {
     await mkGitRepo(path.join(root, 'node_modules', 'somepkg'))
     await mkGitRepo(path.join(root, '.cache', 'thing'))
-    const repos = await vcs.findRepos(root)
+    const repos = await vcs.findRepos(root, undefined, access)
     expect(repos).toEqual([])
   })
 
   test('returns an empty list when nothing is a repo', async () => {
     await fs.mkdir(path.join(root, 'docs'), { recursive: true })
     await fs.mkdir(path.join(root, 'assets'), { recursive: true })
-    expect(await vcs.findRepos(root)).toEqual([])
+    expect(await vcs.findRepos(root, undefined, access)).toEqual([])
   })
 
   test('respects a deeper maxDepth', async () => {
     await mkGitRepo(path.join(root, 'group', 'app'))
-    expect(await vcs.findRepos(root, 1)).toEqual([])
-    expect(await vcs.findRepos(root, 2)).toEqual([path.join(root, 'group', 'app')])
+    expect(await vcs.findRepos(root, 1, access)).toEqual([])
+    expect(await vcs.findRepos(root, 2, access)).toEqual([path.join(root, 'group', 'app')])
   })
 })

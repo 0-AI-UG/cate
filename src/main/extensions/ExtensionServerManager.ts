@@ -63,8 +63,6 @@ interface ServerSession {
   restartTimes: number[]
   /** Last error message (start failure / crash), surfaced to the panel. */
   lastError: string | null
-  /** CATE_API reverse endpoint + its tunnel listener (Phase 3C), live while the
-   *  server runs. Torn down on stop/crash. */
 }
 
 function keyFor(extensionId: string, workspaceId: string): string {
@@ -451,7 +449,7 @@ export class ExtensionServerManager {
       const base = err instanceof Error ? err.message : String(err)
       const tail = session.outputRing.trim() ? `\n${session.outputRing.trim().slice(-600)}` : ''
       session.handle = null
-      this.teardownCateApi(session, listenerId)
+      this.teardownCateApi(session)
       session.state = 'ERROR'
       session.lastError = `${base}${tail}`
       log.warn('[ext-server] start failed %s: %s', keyFor(session.extensionId, session.workspaceId), session.lastError)
@@ -460,7 +458,7 @@ export class ExtensionServerManager {
   }
 
   /** Stop the reverse CATE_API listener + endpoint for a session (idempotent). */
-  private teardownCateApi(session: ServerSession, _listenerId?: string): void {
+  private teardownCateApi(session: ServerSession): void {
     this.endpoints.dispose(keyFor(session.extensionId, session.workspaceId))
     session.token = ''
   }

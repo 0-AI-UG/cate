@@ -74,11 +74,9 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
   // connection), so no projectStateLoad is needed. Skip any whose connection
   // somehow went missing — without it ensureWorkspaceRuntime can't reconnect.
   for (const entry of remoteEntries) {
-    if (!entry?.snapshot || !entry.connection || entry.connection.kind === 'local') continue
-    const snap = entry.snapshot
-    // Ensure the connection rides on the snapshot even for entries persisted
-    // before connection was stored on the snapshot itself.
-    snapshots.push({ ...snap, connection: snap.connection ?? entry.connection })
+    const snap = entry?.snapshot
+    if (!snap?.connection || snap.connection.kind === 'local') continue
+    snapshots.push(snap)
   }
 
   if (snapshots.length === 0) return null

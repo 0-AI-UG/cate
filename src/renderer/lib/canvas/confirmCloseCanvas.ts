@@ -13,7 +13,7 @@
 import { useAppStore } from '../../stores/appStore'
 import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
 import { getNodeDockLayout } from '../workspace/canvasAccess'
-import { collectPanelIds } from './collectPanelIds'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
 
 export async function confirmCloseCanvas(
   workspaceId: string,

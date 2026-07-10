@@ -16,7 +16,7 @@ import type {
   WindowDockState,
 } from '../../../shared/types'
 import { toRelativePath, toAbsolutePath } from '../../../shared/pathUtils'
-import { collectPanelIds } from '../canvas/collectPanelIds'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
 
 // -----------------------------------------------------------------------------
 // Project-local state builders (.cate/workspace.json + .cate/session.json)

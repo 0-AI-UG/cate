@@ -10,8 +10,9 @@
 
 import { ipcMain } from 'electron'
 import { parseLocator, formatLocator } from '../runtime/locator'
-import type { VcsHost } from '../runtime/types'
+import type { FileAccessContext, VcsHost } from '../runtime/types'
 import { resolveLocator } from '../runtime/runtimeManager'
+import { windowFromEvent } from '../windowRegistry'
 import {
   GIT_IS_REPO,
   GIT_FIND_REPOS,
@@ -79,12 +80,21 @@ export function worktreeTargetPath(repoRuntimeId: string, targetLocator: string)
  * whose body is exactly `const { vcs, path } = vcsFor(arg); return vcs.op(path, ...rest)`
  * — handlers that re-encode the locator (worktree add/remove/list) stay
  * hand-written below.
+ *
+ * Every git channel carries the calling workspace id as its LAST argument (the
+ * ElectronAPI signatures make it a required trailing param, so the renderer
+ * always sends full-arity calls). It is popped off here and converted into the
+ * access context the VcsHost validates the cwd against — mirroring how
+ * filesystem.ts threads workspaceId into file ops. A missing/foreign id fails
+ * validation, so a workspace can only run git inside its own registered roots.
  */
 function route<K extends keyof VcsHost>(channel: string, op: K): void {
-  ipcMain.handle(channel, async (_event, locator: string, ...rest: unknown[]) => {
+  ipcMain.handle(channel, async (event, locator: string, ...rest: unknown[]) => {
     const { vcs, path } = vcsFor(locator)
+    const workspaceId = rest.pop() as string | undefined
+    const access: FileAccessContext = { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId }
     // op is a VcsHost method; rest carries this channel's remaining args verbatim.
-    return (vcs[op] as (...args: unknown[]) => unknown)(path, ...rest)
+    return (vcs[op] as (...args: unknown[]) => unknown)(path, ...rest, access)
   })
 }
 
@@ -125,30 +135,31 @@ export function registerHandlers(): void {
   // on the same runtime so the renderer can hand them straight back to the git
   // IPC (which parses a locator off every cwd argument), exactly like the
   // worktree list below.
-  ipcMain.handle(GIT_FIND_REPOS, async (_event, cwd: string, maxDepth?: number) => {
+  ipcMain.handle(GIT_FIND_REPOS, async (event, cwd: string, maxDepth: number | undefined, workspaceId?: string) => {
     const { vcs, path, runtimeId } = vcsFor(cwd)
-    const repos = await vcs.findRepos(path, maxDepth)
+    const repos = await vcs.findRepos(path, maxDepth, { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId })
     return repos.map((repoPath) => formatLocator({ runtimeId, path: repoPath }))
   })
 
-  ipcMain.handle(GIT_WORKTREE_LIST, async (_event, cwd: string) => {
+  ipcMain.handle(GIT_WORKTREE_LIST, async (event, cwd: string, workspaceId?: string) => {
     const { vcs, path, runtimeId } = vcsFor(cwd)
-    const worktrees = await vcs.worktreeList(path)
+    const worktrees = await vcs.worktreeList(path, { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId })
     return worktrees.map((w) => ({ ...w, path: formatLocator({ runtimeId, path: w.path }) }))
   })
 
   ipcMain.handle(
     GIT_WORKTREE_ADD,
     async (
-      _event,
+      event,
       repoCwd: string,
       branch: string,
       targetPath: string,
-      options?: { createBranch?: boolean; baseRef?: string },
+      options: { createBranch?: boolean; baseRef?: string } | undefined,
+      workspaceId?: string,
     ) => {
       const { vcs, path, runtimeId } = vcsFor(repoCwd)
       const target = worktreeTargetPath(runtimeId, targetPath)
-      const res = await vcs.worktreeAdd(path, branch, target, options)
+      const res = await vcs.worktreeAdd(path, branch, target, options, { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId })
       return { ...res, path: formatLocator({ runtimeId, path: res.path }) }
     },
   )
@@ -156,24 +167,25 @@ export function registerHandlers(): void {
   ipcMain.handle(
     GIT_WORKTREE_ADD_FROM_PR,
     async (
-      _event,
+      event,
       repoCwd: string,
       prNumber: number,
       targetPath: string,
-      options?: { symlinkPaths?: string[] },
+      options: { symlinkPaths?: string[] } | undefined,
+      workspaceId?: string,
     ) => {
       const { vcs, path, runtimeId } = vcsFor(repoCwd)
       const target = worktreeTargetPath(runtimeId, targetPath)
-      const res = await vcs.worktreeAddFromPr(path, prNumber, target, options)
+      const res = await vcs.worktreeAddFromPr(path, prNumber, target, options, { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId })
       return { ...res, path: formatLocator({ runtimeId, path: res.path }) }
     },
   )
 
   ipcMain.handle(
     GIT_WORKTREE_REMOVE,
-    async (_event, repoCwd: string, worktreePath: string, options?: { force?: boolean }) => {
+    async (event, repoCwd: string, worktreePath: string, options: { force?: boolean } | undefined, workspaceId?: string) => {
       const { vcs, path, runtimeId } = vcsFor(repoCwd)
-      return vcs.worktreeRemove(path, worktreeTargetPath(runtimeId, worktreePath), options)
+      return vcs.worktreeRemove(path, worktreeTargetPath(runtimeId, worktreePath), options, { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId })
     },
   )
 }

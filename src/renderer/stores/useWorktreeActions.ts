@@ -11,6 +11,7 @@ import { useCallback } from 'react'
 import { useAppStore, pickWorktreeColor } from './appStore'
 import { useSettingsStore } from './settingsStore'
 import { gitStatusStore } from './gitStatusStore'
+import { newWorktreeId } from '../lib/worktreeSync'
 import type { WorktreeMeta } from '../../shared/types'
 import type { PrListItem } from '../sidebar/CreateWorktreeForm'
 
@@ -31,10 +32,6 @@ function toBranchName(input: string): string {
     .replace(/\s+/g, '-')
     .replace(/[^\w./-]+/g, '')
     .replace(/^-+|-+$/g, '')
-}
-
-function makeWorktreeId(): string {
-  return `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 /** Workspace-root-relative paths to symlink into a new worktree, or undefined
@@ -65,11 +62,11 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
         createBranch: true,
         baseRef,
         symlinkPaths: configuredSymlinkPaths(),
-      })
+      }, workspaceId)
 
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       const meta: WorktreeMeta = {
-        id: makeWorktreeId(),
+        id: newWorktreeId(),
         path: targetPath,
         // Keep the friendly name when it differs from the slugged branch.
         label: rawName.trim() !== branch ? rawName.trim() : undefined,
@@ -90,11 +87,11 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
       const targetPath = worktreePathFor(rootPath, `pr-${pr.number}-${pr.headRefName}`)
       const res = await window.electronAPI.gitWorktreeAddFromPr(rootPath, pr.number, targetPath, {
         symlinkPaths: configuredSymlinkPaths(),
-      })
+      }, workspaceId)
 
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       const meta: WorktreeMeta = {
-        id: makeWorktreeId(),
+        id: newWorktreeId(),
         path: res.path,
         label: `#${pr.number} ${pr.headRefName}`,
         color: pickWorktreeColor(ws?.worktrees ?? []),

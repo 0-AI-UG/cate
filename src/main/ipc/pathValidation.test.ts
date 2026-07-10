@@ -7,7 +7,6 @@ import {
   clearFileGrantsForWindow,
   clearScopedWriteAllowancesForWindow,
   consumeScopedWriteAllowance,
-  getAllowedRoots,
   grantFileAccess,
   registerScopedWriteAllowance,
   removeAllowedRoot,
@@ -30,7 +29,7 @@ describe('pathValidation', () => {
   })
 
   afterEach(async () => {
-    for (const root of Array.from(getAllowedRoots(SCOPE))) removeAllowedRoot(root, SCOPE)
+    removeAllowedRoot(rootDir, SCOPE)
     clearScopedWriteAllowancesForWindow(1)
     clearScopedWriteAllowancesForWindow(2)
     clearFileGrantsForWindow(1)
@@ -150,15 +149,23 @@ describe('pathValidation', () => {
       await fs.rm(scopedRoot, { recursive: true, force: true })
     })
 
-    test('getAllowedRoots returns only the requested scope', () => {
-      expect(getAllowedRoots(SCOPE).has(path.resolve(rootDir))).toBe(true)
-      expect(getAllowedRoots(SCOPE).has(path.resolve(scopedRoot))).toBe(false)
-      expect(getAllowedRoots('ws-b').has(path.resolve(scopedRoot))).toBe(true)
+    test('each scope validates only against its own roots', () => {
+      expect(validatePath(path.join(rootDir, 'file.txt'), undefined, SCOPE)).toBe(
+        path.resolve(rootDir, 'file.txt'),
+      )
+      expect(() => validatePath(path.join(scopedRoot, 'file.txt'), undefined, SCOPE)).toThrow(
+        /outside allowed directories/,
+      )
+      expect(validatePath(path.join(scopedRoot, 'file.txt'), undefined, 'ws-b')).toBe(
+        path.resolve(scopedRoot, 'file.txt'),
+      )
     })
 
     test('removeAllowedRoot is scoped — wrong scope is a no-op', () => {
       removeAllowedRoot(scopedRoot, 'ws-a') // wrong scope: should not remove
-      expect(getAllowedRoots('ws-b').has(path.resolve(scopedRoot))).toBe(true)
+      expect(validatePath(path.join(scopedRoot, 'file.txt'), undefined, 'ws-b')).toBe(
+        path.resolve(scopedRoot, 'file.txt'),
+      )
     })
 
     test('denies a workspace access to another workspace root', () => {
@@ -167,17 +174,64 @@ describe('pathValidation', () => {
       )
     })
 
+    test('denies root-based access when no scope is provided at all', () => {
+      expect(() => validatePath(path.join(rootDir, 'file.txt'))).toThrow(
+        /outside allowed directories/,
+      )
+    })
+
     test('propagates and removes a related worktree root only for owning scopes', async () => {
       const worktree = await fs.mkdtemp(path.join(process.cwd(), 'cate-worktree-'))
+      const probe = path.join(worktree, 'file.txt')
       try {
         addAllowedRootForRelatedPath(worktree, rootDir, 'runtime')
-        expect(getAllowedRoots(SCOPE).has(path.resolve(worktree))).toBe(true)
-        expect(getAllowedRoots('ws-b').has(path.resolve(worktree))).toBe(false)
+        expect(validatePath(probe, undefined, SCOPE)).toBe(path.resolve(probe))
+        expect(() => validatePath(probe, undefined, 'ws-b')).toThrow(/outside allowed directories/)
         removeAllowedRootFromAllScopes(worktree)
-        expect(getAllowedRoots(SCOPE).has(path.resolve(worktree))).toBe(false)
+        expect(() => validatePath(probe, undefined, SCOPE)).toThrow(/outside allowed directories/)
       } finally {
         await fs.rm(worktree, { recursive: true, force: true })
       }
+    })
+  })
+
+  // Write/creation targets must not be reachable through symlinks: the parent
+  // chain is realpath-resolved (a symlinked dir pointing outside the root is
+  // rejected), and an EXISTING symlink as the final segment is rejected
+  // outright so a write can't follow it out of the validated location.
+  describe('symlink write/creation targets', () => {
+    test('rejects creation through a symlinked dir inside the root that points outside', async () => {
+      const link = path.join(rootDir, 'escape-dir')
+      await fs.symlink(outsideDir, link)
+      await expect(
+        validatePathForCreation(path.join(link, 'new.txt'), undefined, SCOPE),
+      ).rejects.toThrow(/outside allowed directories/)
+    })
+
+    test('rejects an existing symlink file as the creation target (out-of-root link)', async () => {
+      const real = path.join(outsideDir, 'real.txt')
+      await fs.writeFile(real, 'data')
+      const link = path.join(rootDir, 'link.txt')
+      await fs.symlink(real, link)
+      await expect(validatePathForCreation(link, undefined, SCOPE)).rejects.toThrow(
+        /symbolic link/,
+      )
+    })
+
+    test('rejects an existing symlink file as the creation target (in-root link)', async () => {
+      const real = path.join(rootDir, 'real.txt')
+      await fs.writeFile(real, 'data')
+      const link = path.join(rootDir, 'link.txt')
+      await fs.symlink(real, link)
+      await expect(validatePathForCreation(link, undefined, SCOPE)).rejects.toThrow(
+        /symbolic link/,
+      )
+    })
+
+    test('still allows a plain existing file as the creation target', async () => {
+      const target = path.join(rootDir, 'plain.txt')
+      await fs.writeFile(target, 'old')
+      await expect(validatePathForCreation(target, undefined, SCOPE)).resolves.toContain('plain.txt')
     })
   })
 

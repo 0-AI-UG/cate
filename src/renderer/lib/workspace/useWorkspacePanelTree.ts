@@ -21,7 +21,7 @@ import {
   getWorkspaceCanvasPanelIds,
   getWorkspaceDockSnapshot,
 } from './canvasAccess'
-import { collectPanelIds } from '../canvas/collectPanelIds'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
 import { partitionWorkspacePanels, buildColdStartCanvasChildOwners } from '../../sidebar/partitionWorkspacePanels'
 import { sortWorkspacePanels } from '../../sidebar/sortWorkspacePanels'
 

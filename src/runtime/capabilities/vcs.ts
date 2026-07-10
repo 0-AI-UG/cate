@@ -22,7 +22,7 @@ import {
   removeAllowedRootFromAllScopes,
 } from '../../main/ipc/pathValidation'
 import { ensureCateGitignore } from '../../main/cateGitignore'
-import type { VcsHost } from '../../main/runtime/types'
+import type { FileAccessContext, VcsHost } from '../../main/runtime/types'
 
 const execFileP = promisify(execFile)
 
@@ -57,13 +57,19 @@ async function linkWorktreePaths(
 export interface VcsCapabilityDeps {
   /** Environment for `git`/`gh` subprocesses (login-shell PATH locally). */
   env: () => NodeJS.ProcessEnv
-  /** Runtime-owned scope used for every git path and discovered worktree. */
+  /** Runtime-owned scope, used only as the FALLBACK for registering discovered
+   *  worktree roots when no workspace scope owns the source repo yet. Every cwd
+   *  is validated against the CALLER's scope (access.scopeId), never this. */
   scopeId: string
 }
 
 export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
   const env = () => deps.env()
-  const validateCwd = (cwd: string) => validateScopedCwd(cwd, undefined, deps.scopeId)
+  // Validate the cwd against the calling workspace's scope. No fallback to the
+  // runtime's own scope: an op that names no workspace scope is rejected, so a
+  // workspace can never run git against a repo outside its registered roots.
+  const validateCwd = (cwd: string, access?: FileAccessContext) =>
+    validateScopedCwd(cwd, access?.ownerWindowId, access?.scopeId)
   const addWorktreeRoot = (root: string, repoCwd: string) =>
     addAllowedRootForRelatedPath(root, repoCwd, deps.scopeId)
 
@@ -143,20 +149,20 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
   }
 
   return {
-    async isRepo(dir) {
-      return isGitRepo(validateCwd(dir))
+    async isRepo(dir, access) {
+      return isGitRepo(validateCwd(dir, access))
     },
-    async findRepos(dir, maxDepth) {
+    async findRepos(dir, maxDepth, access) {
       const out: string[] = []
-      await findReposFrom(validateCwd(dir), 0, Math.max(1, maxDepth ?? 1), out)
+      await findReposFrom(validateCwd(dir, access), 0, Math.max(1, maxDepth ?? 1), out)
       return out
     },
-    async init(dir) {
-      await simpleGit(validateCwd(dir)).init()
+    async init(dir, access) {
+      await simpleGit(validateCwd(dir, access)).init()
     },
-    async lsFiles(dir) {
+    async lsFiles(dir, access) {
       try {
-        const result = await simpleGit(validateCwd(dir)).raw([
+        const result = await simpleGit(validateCwd(dir, access)).raw([
           'ls-files', '--cached', '--others', '--exclude-standard',
         ])
         return result.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
@@ -164,8 +170,8 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         return []
       }
     },
-    async status(cwd) {
-      const status = await simpleGit(validateCwd(cwd)).status()
+    async status(cwd, access) {
+      const status = await simpleGit(validateCwd(cwd, access)).status()
       return {
         files: status.files.map((f) => ({ path: f.path, index: f.index, working_dir: f.working_dir })),
         current: status.current,
@@ -174,22 +180,22 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         behind: status.behind,
       }
     },
-    async diff(cwd, filePath) {
-      const validCwd = validateCwd(cwd)
+    async diff(cwd, filePath, access) {
+      const validCwd = validateCwd(cwd, access)
       const git = simpleGit(validCwd)
       return filePath ? git.diff([validateFilePath(validCwd, filePath)]) : git.diff()
     },
-    async diffStaged(cwd, filePath) {
-      const validCwd = validateCwd(cwd)
+    async diffStaged(cwd, filePath, access) {
+      const validCwd = validateCwd(cwd, access)
       const git = simpleGit(validCwd)
       return filePath ? git.diff(['--cached', validateFilePath(validCwd, filePath)]) : git.diff(['--cached'])
     },
-    async monitorStatus(cwd) {
+    async monitorStatus(cwd, access) {
       // Mirrors git-monitor.ts's old raw-git poll exactly: current branch,
       // dirty flag (tracked-only, -uno), and the local branch name list. Runs
       // on whichever host this capability lives on (local or daemon), so a
       // remote workspace's sidebar indicator now reflects the remote repo.
-      const validCwd = validateCwd(cwd)
+      const validCwd = validateCwd(cwd, access)
       const run = (args: string[]) =>
         execFileP('git', ['-C', validCwd, ...args], { timeout: 3000, env: env() })
           .then((r) => r.stdout)
@@ -205,22 +211,22 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         branches: branchesOut.split('\n').map((s) => s.trim()).filter(Boolean),
       }
     },
-    async stage(cwd, filePath) {
-      const validCwd = validateCwd(cwd)
+    async stage(cwd, filePath, access) {
+      const validCwd = validateCwd(cwd, access)
       await simpleGit(validCwd).add(validateFilePath(validCwd, filePath))
     },
-    async unstage(cwd, filePath) {
-      const validCwd = validateCwd(cwd)
+    async unstage(cwd, filePath, access) {
+      const validCwd = validateCwd(cwd, access)
       await simpleGit(validCwd).reset([validateFilePath(validCwd, filePath)])
     },
-    async commit(cwd, message) {
-      await simpleGit(validateCwd(cwd)).commit(message)
+    async commit(cwd, message, access) {
+      await simpleGit(validateCwd(cwd, access)).commit(message)
     },
-    async push(cwd, remote, branch) {
-      await simpleGit(validateCwd(cwd)).push(remote || 'origin', branch)
+    async push(cwd, remote, branch, access) {
+      await simpleGit(validateCwd(cwd, access)).push(remote || 'origin', branch)
     },
-    async pull(cwd, remote, branch) {
-      const result = await simpleGit(validateCwd(cwd)).pull(remote || 'origin', branch)
+    async pull(cwd, remote, branch, access) {
+      const result = await simpleGit(validateCwd(cwd, access)).pull(remote || 'origin', branch)
       return {
         summary: {
           changes: result.summary.changes,
@@ -229,17 +235,17 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         },
       }
     },
-    async fetch(cwd, remote) {
-      await simpleGit(validateCwd(cwd)).fetch(remote || 'origin')
+    async fetch(cwd, remote, access) {
+      await simpleGit(validateCwd(cwd, access)).fetch(remote || 'origin')
     },
-    async log(cwd, maxCount) {
-      const logResult = await simpleGit(validateCwd(cwd)).log({ maxCount: maxCount || 50 })
+    async log(cwd, maxCount, access) {
+      const logResult = await simpleGit(validateCwd(cwd, access)).log({ maxCount: maxCount || 50 })
       return logResult.all.map((e) => ({
         hash: e.hash, message: e.message, author_name: e.author_name, author_email: e.author_email, date: e.date,
       }))
     },
-    async branchList(cwd) {
-      const result = await simpleGit(validateCwd(cwd)).branch(['-a', '--sort=-committerdate'])
+    async branchList(cwd, access) {
+      const result = await simpleGit(validateCwd(cwd, access)).branch(['-a', '--sort=-committerdate'])
       return {
         current: result.current,
         branches: Object.entries(result.branches).map(([name, info]) => ({
@@ -247,35 +253,35 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         })),
       }
     },
-    async branchCreate(cwd, name, startPoint) {
-      const git = simpleGit(validateCwd(cwd))
+    async branchCreate(cwd, name, startPoint, access) {
+      const git = simpleGit(validateCwd(cwd, access))
       if (startPoint) await git.checkoutBranch(name, startPoint)
       else await git.checkoutLocalBranch(name)
     },
-    async branchDelete(cwd, name, force) {
-      await simpleGit(validateCwd(cwd)).branch([force ? '-D' : '-d', name])
+    async branchDelete(cwd, name, force, access) {
+      await simpleGit(validateCwd(cwd, access)).branch([force ? '-D' : '-d', name])
     },
-    async checkout(cwd, branch) {
-      await simpleGit(validateCwd(cwd)).checkout(branch)
+    async checkout(cwd, branch, access) {
+      await simpleGit(validateCwd(cwd, access)).checkout(branch)
     },
-    async stash(cwd, message) {
-      const git = simpleGit(validateCwd(cwd))
+    async stash(cwd, message, access) {
+      const git = simpleGit(validateCwd(cwd, access))
       if (message) await git.stash(['push', '-m', message])
       else await git.stash()
     },
-    async stashPop(cwd) {
-      await simpleGit(validateCwd(cwd)).stash(['pop'])
+    async stashPop(cwd, access) {
+      await simpleGit(validateCwd(cwd, access)).stash(['pop'])
     },
-    async discardFile(cwd, filePath) {
-      const validCwd = validateCwd(cwd)
+    async discardFile(cwd, filePath, access) {
+      const validCwd = validateCwd(cwd, access)
       await simpleGit(validCwd).checkout(['--', validateFilePath(validCwd, filePath)])
     },
-    async worktreeList(cwd) {
+    async worktreeList(cwd, access) {
       try {
         // Normalize CRLF first: Git for Windows can emit \r\n depending on the
         // user's core.autocrlf/eol config, and a trailing \r would otherwise
         // ride along on every parsed path/branch and break later path matching.
-        const raw = (await simpleGit(validateCwd(cwd)).raw(['worktree', 'list', '--porcelain'])).replace(/\r\n/g, '\n')
+        const raw = (await simpleGit(validateCwd(cwd, access)).raw(['worktree', 'list', '--porcelain'])).replace(/\r\n/g, '\n')
         const worktrees = []
         for (const block of raw.trim().split('\n\n')) {
           let wtPath = '', branch = '', isBare = false
@@ -295,19 +301,19 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         return []
       }
     },
-    async worktreeAdd(repoCwd, branch, targetPath, options) {
-      const git = simpleGit(validateCwd(repoCwd))
+    async worktreeAdd(repoCwd, branch, targetPath, options, access) {
+      const git = simpleGit(validateCwd(repoCwd, access))
       await ensureContainingDir(targetPath)
       const args = ['worktree', 'add']
       if (options?.createBranch) args.push('-b', branch, targetPath, options.baseRef ?? 'HEAD')
       else args.push(targetPath, branch)
       await git.raw(args)
       addWorktreeRoot(targetPath, repoCwd)
-      await linkWorktreePaths(validateCwd(repoCwd), targetPath, options?.symlinkPaths)
+      await linkWorktreePaths(validateCwd(repoCwd, access), targetPath, options?.symlinkPaths)
       return { path: targetPath, branch }
     },
-    async worktreeAddFromPr(repoCwd, prNumber, targetPath, options) {
-      const validRepo = validateCwd(repoCwd)
+    async worktreeAddFromPr(repoCwd, prNumber, targetPath, options, access) {
+      const validRepo = validateCwd(repoCwd, access)
       const git = simpleGit(validRepo)
       if (!(await ghAvailable(validRepo))) throw new Error('GitHub CLI (gh) is required to check out pull requests.')
       await ensureContainingDir(targetPath)
@@ -325,8 +331,8 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       await linkWorktreePaths(validRepo, targetPath, options?.symlinkPaths)
       return { path: targetPath, branch }
     },
-    async worktreeRemove(repoCwd, worktreePath, options) {
-      const git = simpleGit(validateCwd(repoCwd))
+    async worktreeRemove(repoCwd, worktreePath, options, access) {
+      const git = simpleGit(validateCwd(repoCwd, access))
       const args = ['worktree', 'remove']
       if (options?.force) args.push('--force')
       args.push(worktreePath)
@@ -334,18 +340,18 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       await fsp.rm(worktreePath, { recursive: true, force: true }).catch(() => {})
       removeAllowedRootFromAllScopes(worktreePath)
     },
-    async worktreePrune(repoCwd) {
-      const output = await simpleGit(validateCwd(repoCwd)).raw(['worktree', 'prune', '-v'])
+    async worktreePrune(repoCwd, access) {
+      const output = await simpleGit(validateCwd(repoCwd, access)).raw(['worktree', 'prune', '-v'])
       return { output }
     },
-    async worktreeStatus(worktreePath) {
+    async worktreeStatus(worktreePath, access) {
       try {
         const stat = await fsp.stat(worktreePath)
         if (!stat.isDirectory()) return null
       } catch {
         return null
       }
-      const git = simpleGit(validateCwd(worktreePath))
+      const git = simpleGit(validateCwd(worktreePath, access))
       if (!(await git.checkIsRepo())) return null
       const status = await git.status()
       let ahead = 0, behind = 0
@@ -367,9 +373,9 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         untracked: status.not_added.length,
       }
     },
-    async worktreeMergeTo(repoCwd, fromBranch, toBranch) {
+    async worktreeMergeTo(repoCwd, fromBranch, toBranch, access) {
       try {
-        const git = simpleGit(validateCwd(repoCwd))
+        const git = simpleGit(validateCwd(repoCwd, access))
         await git.fetch()
         await git.checkout(toBranch)
         const result = await git.merge([fromBranch, '--no-edit'])
@@ -379,9 +385,9 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         return { ok: false, conflict: /CONFLICT|conflict/.test(msg), message: msg }
       }
     },
-    async worktreeUpdateFrom(worktreePath, fromBranch) {
+    async worktreeUpdateFrom(worktreePath, fromBranch, access) {
       try {
-        const git = simpleGit(validateCwd(worktreePath))
+        const git = simpleGit(validateCwd(worktreePath, access))
         await git.fetch().catch(() => {})
         const result = await git.merge([fromBranch, '--no-edit'])
         return { ok: true, result }
@@ -390,8 +396,8 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         return { ok: false, conflict: /CONFLICT|conflict/.test(msg), message: msg }
       }
     },
-    async createPr(worktreePath, branch) {
-      const cwd = validateCwd(worktreePath)
+    async createPr(worktreePath, branch, access) {
+      const cwd = validateCwd(worktreePath, access)
       const git = simpleGit(cwd)
       try {
         await git.push(['-u', 'origin', branch])
@@ -414,9 +420,9 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       if (url) return { ok: true, created: false, url, fallback: true }
       return { ok: false, message: 'Pushed, but could not determine the GitHub URL (no origin remote?).' }
     },
-    async prStatus(worktreePath, branch) {
+    async prStatus(worktreePath, branch, access) {
       try {
-        const cwd = validateCwd(worktreePath)
+        const cwd = validateCwd(worktreePath, access)
         if (!(await ghAvailable(cwd))) return null
         const { stdout } = await execFileP('gh', ['pr', 'view', branch, '--json', 'number,state,url,isDraft'], { cwd, timeout: 10000, env: env() })
         const data = JSON.parse(stdout) as { number: number; state: string; url: string; isDraft: boolean }
@@ -425,9 +431,9 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         return null
       }
     },
-    async prList(repoCwd) {
+    async prList(repoCwd, access) {
       try {
-        const cwd = validateCwd(repoCwd)
+        const cwd = validateCwd(repoCwd, access)
         if (!(await ghAvailable(cwd))) return []
         const { stdout } = await execFileP('gh', ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,headRefName,author,isCrossRepository'], { cwd, timeout: 15000, env: env() })
         const arr = JSON.parse(stdout) as Array<{ number: number; title: string; headRefName: string; author?: { login?: string }; isCrossRepository?: boolean }>

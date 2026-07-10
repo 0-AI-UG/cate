@@ -32,12 +32,12 @@ export async function mergeChat(wsId: string, rootPath: string, chat: Chat): Pro
   if (!run || !meta || !run.branch) return { ok: false, message: 'No worktree to merge' }
   let toBranch = 'main'
   try {
-    const status = await window.electronAPI.gitStatus(rootPath)
+    const status = await window.electronAPI.gitStatus(rootPath, wsId)
     if (status.current) toBranch = status.current
   } catch {
     /* fall back to main */
   }
-  const res = await window.electronAPI.gitWorktreeMergeTo(rootPath, run.branch, toBranch)
+  const res = await window.electronAPI.gitWorktreeMergeTo(rootPath, run.branch, toBranch, wsId)
   if (!res.ok) {
     const message = res.conflict ? `Merge conflict with ${toBranch}` : res.message
     useChatsStore.getState().patchRun(rootPath, chat.id, { note: message })
@@ -54,7 +54,7 @@ export async function openPrChat(wsId: string, rootPath: string, chat: Chat): Pr
   const run = chat.run
   const meta = worktreeMetaFor(wsId, run?.worktreeId)
   if (!run || !meta || !run.branch) return { ok: false, message: 'No worktree for PR' }
-  const res = await window.electronAPI.gitCreatePR(meta.path, run.branch)
+  const res = await window.electronAPI.gitCreatePR(meta.path, run.branch, wsId)
   if (!res.ok) {
     useChatsStore.getState().patchRun(rootPath, chat.id, { note: res.message })
     return { ok: false, message: res.message }
@@ -92,7 +92,7 @@ export async function teardownRunWork(
 
   if (opts.deleteBranch && run.branch) {
     try {
-      await window.electronAPI.gitBranchDelete(rootPath, run.branch, true)
+      await window.electronAPI.gitBranchDelete(rootPath, run.branch, true, wsId)
     } catch (err) {
       log.warn('[cateAgentReview] branch delete failed: %O', err)
     }

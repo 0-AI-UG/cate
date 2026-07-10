@@ -58,7 +58,7 @@ describe('daemon runtime watch delegation', () => {
   test('file.watch subscribes the validated root and forwards events verbatim', () => {
     const runtime = buildDaemonRuntime({ id: 'srv_test', rgPath: '/rg' }).runtime
     const events: Array<[string, string]> = []
-    const unsub = runtime.file.watch(SRC, (p, t) => events.push([p, t]))
+    const unsub = runtime.file.watch(SRC, (p, t) => events.push([p, t]), { scopeId: 'srv_test' })
 
     const pool = lastPool()
     expect(pool.subscribe).toHaveBeenCalledTimes(1)

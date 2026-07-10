@@ -29,7 +29,7 @@ import { WelcomeDialog } from './dialogs/WelcomeDialog'
 import { OnboardingTour } from './onboarding/OnboardingTour'
 import PerfHud from './ui/PerfHud'
 import { initPerfClient } from './lib/perf/perfClient'
-import { loadSession, restoreSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave } from './lib/workspace/session'
+import { loadSession, restoreMultiWorkspaceSession, restoreDetachedWindows, setupAutoSave } from './lib/workspace/session'
 import type { MultiWorkspaceSession } from '../shared/types'
 import { createDockStore } from './stores/dockStore'
 import MainWindowShell from './shells/MainWindowShell'
@@ -237,14 +237,9 @@ function MainApp() {
       let restored = false
       const session = await loadSession()
       if (session) {
-        if ((session as MultiWorkspaceSession).version === 2) {
-          restoredSession = session as MultiWorkspaceSession
-          await restoreMultiWorkspaceSession(restoredSession)
-          restored = true
-        } else {
-          await restoreSession(session as any, useAppStore.getState().selectedWorkspaceId)
-          restored = true
-        }
+        restoredSession = session
+        await restoreMultiWorkspaceSession(restoredSession)
+        restored = true
       }
 
       if (restored) {

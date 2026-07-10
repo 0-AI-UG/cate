@@ -30,6 +30,7 @@ import {
   type GitTree,
 } from '../sidebar/gitStatusDecoration'
 import { watchFsRoot } from '../lib/fs/fsWatchManager'
+import { useAppStore } from './appStore'
 
 // -----------------------------------------------------------------------------
 // Types
@@ -130,20 +131,36 @@ function notify(entry: RootEntry): void {
   for (const sub of entry.subscribers) sub()
 }
 
+/** Resolve the workspace that owns `rootPath` — an exact root match first
+ *  (workspace roots are unique, see remoteSlice's duplicate-root guard), then
+ *  the workspace whose root is an ancestor (sub-repos discovered inside a
+ *  multi-repo workspace). Every git IPC call must name its workspace so main
+ *  validates the cwd against that workspace's scope; an unknown root yields ''
+ *  and is denied. Exported for call sites holding a rootPath but no id. */
+export function workspaceIdForRoot(rootPath: string): string {
+  const norm = (p: string) => toPosixPath(p)
+  const target = norm(rootPath)
+  const workspaces = useAppStore.getState().workspaces
+  const exact = workspaces.find((w) => norm(w.rootPath) === target)
+  if (exact) return exact.id
+  return workspaces.find((w) => w.rootPath && target.startsWith(`${norm(w.rootPath)}/`))?.id ?? ''
+}
+
 /** Fetch the full git snapshot for `rootPath` from the git IPC. */
 async function fetchSnapshot(rootPath: string): Promise<GitStatusSnapshot | null> {
   const api = window.electronAPI
   if (!api || !rootPath) return null
+  const workspaceId = workspaceIdForRoot(rootPath)
 
-  const isRepo = await api.gitIsRepo(rootPath).catch(() => false)
+  const isRepo = await api.gitIsRepo(rootPath, workspaceId).catch(() => false)
   if (!isRepo) {
     return { ...EMPTY_SNAPSHOT, isRepo: false, tracked: new Set(), worktrees: [] }
   }
 
   const [trackedFiles, status, worktreeList] = await Promise.all([
-    api.gitLsFiles(rootPath).catch(() => [] as string[]),
-    api.gitStatus(rootPath),
-    api.gitWorktreeList(rootPath).catch(() => [] as Array<{ path: string; branch: string; isBare: boolean; isCurrent: boolean }>),
+    api.gitLsFiles(rootPath, workspaceId).catch(() => [] as string[]),
+    api.gitStatus(rootPath, workspaceId),
+    api.gitWorktreeList(rootPath, workspaceId).catch(() => [] as Array<{ path: string; branch: string; isBare: boolean; isCurrent: boolean }>),
   ])
 
   // gitLsFiles returns repo-cwd-relative paths; convert to absolute (posix) so

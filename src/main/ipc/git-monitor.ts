@@ -97,7 +97,7 @@ async function pollGitStatus(entry: MonitorEntry): Promise<boolean> {
   const epoch = ++entry.pollEpoch
 
   try {
-    const { branch, dirty: isDirty, branches } = await runtime.vcs.monitorStatus(rootPath)
+    const { branch, dirty: isDirty, branches } = await runtime.vcs.monitorStatus(rootPath, { scopeId: workspaceId })
 
     // Stale: a fresher poll started, or the monitor was torn down/restarted.
     if (entry.pollEpoch !== epoch || !activeMonitors.has(workspaceId)) return false
@@ -250,7 +250,7 @@ export function registerHandlers(): void {
         clearTimer(entry)
         void tick(entry)
       })
-    })
+    }, { scopeId: workspaceId })
 
     activeMonitors.set(workspaceId, entry)
 

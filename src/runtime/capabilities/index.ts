@@ -73,17 +73,26 @@ function daemonRgPath(): string {
 export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   const exclusionSet = new Set(config.exclusions ?? [])
   const rgPath = config.rgPath ?? daemonRgPath()
-  const scopeId = (requested?: string) => requested ?? config.id
-  const validatePath = (p: string, ownerWindowId?: number, requestedScope?: string) =>
-    validateScopedPath(p, ownerWindowId, scopeId(requestedScope))
-  const validatePathStrict = (p: string, ownerWindowId?: number, requestedScope?: string) =>
-    validateScopedPathStrict(p, ownerWindowId, scopeId(requestedScope))
-  const validatePathForCreation = (p: string, ownerWindowId?: number, requestedScope?: string) =>
-    validateScopedPathForCreation(p, ownerWindowId, scopeId(requestedScope))
-  const validateCwd = (p: string, ownerWindowId?: number, requestedScope?: string) =>
-    validateScopedCwd(p, ownerWindowId, scopeId(requestedScope))
-  const addRoot = (root: string, requestedScope?: string) => addScopedRoot(root, scopeId(requestedScope))
-  const removeRoot = (root: string, requestedScope?: string) => removeScopedRoot(root, scopeId(requestedScope))
+  // NO fallback scope: an operation that names no scope is validated against
+  // an empty root set (only per-window grants can still admit it), so a caller
+  // that omits its workspace scope is rejected instead of being silently
+  // widened to the daemon's own root. Callers that legitimately operate at the
+  // daemon scope pass config.id explicitly (see extensionsRoot/extractArtifact
+  // below, and RemoteRuntime's trusted-caller default on the client side).
+  const validatePath = (p: string, ownerWindowId?: number, scopeId?: string) =>
+    validateScopedPath(p, ownerWindowId, scopeId)
+  const validatePathStrict = (p: string, ownerWindowId?: number, scopeId?: string) =>
+    validateScopedPathStrict(p, ownerWindowId, scopeId)
+  const validatePathForCreation = (p: string, ownerWindowId?: number, scopeId?: string) =>
+    validateScopedPathForCreation(p, ownerWindowId, scopeId)
+  const validateCwd = (p: string, ownerWindowId?: number, scopeId?: string) =>
+    validateScopedCwd(p, ownerWindowId, scopeId)
+  const requireScope = (scopeId?: string): string => {
+    if (!scopeId) throw new Error('A path scope is required')
+    return scopeId
+  }
+  const addRoot = (root: string, scopeId?: string) => addScopedRoot(root, requireScope(scopeId))
+  const removeRoot = (root: string, scopeId?: string) => removeScopedRoot(root, requireScope(scopeId))
 
   // ONE place for workspace-tree watching: the shared @parcel/watcher pool. It
   // owns covering-root sharing, prefix fan-out, native exclusion pruning, and
@@ -138,17 +147,23 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     // Per-host extensions root (~/.cate/extensions). Register it as an allowed
     // root here too (it's also registered at daemon startup) so the very first
     // install on a fresh daemon, or any test driving buildDaemonRuntime directly,
-    // can read/write/extract under it. Idempotent.
+    // can read/write/extract under it. Idempotent. Extension installs are
+    // per-host (shared across workspaces), so this root lives at the daemon's
+    // own scope — explicitly, since there is no fallback anymore.
     extensionsRoot: async () => {
       const root = hostExtensionsRoot()
-      addRoot(root)
+      addRoot(root, config.id)
       return root
     },
     // Extract a host-resident, client-verified .tgz into destDir. validatePathStrict
     // on the tgz (it exists), validatePathForCreation on dest (it may not yet) —
     // both must resolve under an allowed root (extensionsRoot above / startup).
+    // Provisioning is a per-host concern, hence the explicit daemon scope.
     extractArtifact: async (tgz, destDir) =>
-      extractArtifact(await validatePathStrict(tgz), await validatePathForCreation(destDir)),
+      extractArtifact(
+        await validatePathStrict(tgz, undefined, config.id),
+        await validatePathForCreation(destDir, undefined, config.id),
+      ),
     search: async (root, query, opts, access) =>
       fileLeaf.searchFiles(await validatePathStrict(root, access?.ownerWindowId, access?.scopeId), query, exclusionSet, opts),
     // Content search spawns the ripgrep shipped beside the daemon's node
@@ -169,6 +184,8 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   const env = config.env ?? (() => process.env)
   const cleanEnv = () =>
     Object.fromEntries(Object.entries(env()).filter(([, v]) => v !== undefined)) as Record<string, string>
+  // scopeId here is only the fallback for registering discovered worktree
+  // roots; every vcs cwd is validated against the CALLER's access.scopeId.
   const vcs = createVcsCapability({ env, scopeId: config.id })
 
   const innerProc = createProcessCapability({
@@ -186,12 +203,14 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   // The daemon is the AUTHORITATIVE cwd check (RemoteRuntime.validateCwd is a
   // client-side pass-through), so validate the terminal cwd here before spawning,
   // matching what terminal.ts does for a local runtime. Throwing rejects create.
+  // Terminals are validated at the daemon's own scope (the wire carries no
+  // per-workspace scope for pty create; status quo, stated explicitly).
   // Keep it a ProcessCapability (spread carries killAllGroups) so the daemon
   // entry can reap process groups on shutdown.
   const proc: ProcessCapability = {
     ...innerProc,
     create: async (opts, onData, onExit) => {
-      if (opts.cwd) validateCwd(opts.cwd) // throws -> rejects create, matching local
+      if (opts.cwd) validateCwd(opts.cwd, undefined, config.id) // throws -> rejects create, matching local
       return innerProc.create(opts, onData, onExit)
     },
   }

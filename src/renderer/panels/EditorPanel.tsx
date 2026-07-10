@@ -404,8 +404,8 @@ export default function EditorPanel({
         let originalContent = ''
         try {
           const diff = diffMode === 'staged'
-            ? await window.electronAPI.gitDiffStaged(rootPath, relativePath)
-            : await window.electronAPI.gitDiff(rootPath, relativePath)
+            ? await window.electronAPI.gitDiffStaged(rootPath, relativePath, workspaceId)
+            : await window.electronAPI.gitDiff(rootPath, relativePath, workspaceId)
           originalContent = reconstructOriginalFromDiff(modifiedContent, diff)
         } catch {
           originalContent = modifiedContent

@@ -102,7 +102,7 @@ describe('daemon FileHost extension install', () => {
     // The tgz is consumed.
     expect(existsSync(tgz)).toBe(false)
     // The extracted bytes are readable back through the runtime file host.
-    expect(await runtime.file.readFile(path.join(dest, 'index.html'))).toContain('<title>hi</title>')
+    expect(await runtime.file.readFile(path.join(dest, 'index.html'), { scopeId: 'test' })).toContain('<title>hi</title>')
   })
 
   test('extractArtifact rejects a tarball missing manifest.json', async () => {

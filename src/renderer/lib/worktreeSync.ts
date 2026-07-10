@@ -27,7 +27,9 @@ export interface WorktreeSyncResult {
   gitWorktrees: GitWorktree[]
 }
 
-function newWorktreeId(): string {
+/** Unique id for a WorktreeMeta record. Shared by every worktree-creating path
+ *  (sync reconcile, sidebar/toolbar actions, cate-agent tools). */
+export function newWorktreeId(): string {
   return `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
@@ -48,10 +50,10 @@ export async function syncWorktrees(workspaceId: string): Promise<WorktreeSyncRe
 
   // Gate everything on being a git repo so we never fire branch/worktree
   // commands (and log noisy errors) in a plain folder.
-  const repo = await window.electronAPI.gitIsRepo(rootPath).catch(() => false)
+  const repo = await window.electronAPI.gitIsRepo(rootPath, workspaceId).catch(() => false)
   if (!repo) return { isRepo: false, gitWorktrees: [] }
 
-  const list = await window.electronAPI.gitWorktreeList(rootPath)
+  const list = await window.electronAPI.gitWorktreeList(rootPath, workspaceId)
 
   const store = useAppStore.getState()
   store.ensurePrimaryWorktree(workspaceId)

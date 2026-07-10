@@ -161,7 +161,7 @@ export function useParallelWork(
       setError(null)
       setBusy?.(wt.id)
       try {
-        await window.electronAPI.gitPush(wt.path, 'origin', wt.branch)
+        await window.electronAPI.gitPush(wt.path, 'origin', wt.branch, workspaceId ?? '')
         reconcile()
       } catch (err: any) {
         setError(`Publish failed: ${err?.message || err}`)
@@ -169,7 +169,7 @@ export function useParallelWork(
         setBusy?.(null)
       }
     },
-    [reconcile, setBusy, setError],
+    [reconcile, setBusy, setError, workspaceId],
   )
 
   const handleCreatePR = useCallback(
@@ -178,7 +178,7 @@ export function useParallelWork(
       setError(null)
       setBusy?.(wt.id)
       try {
-        const res = await window.electronAPI.gitCreatePR(wt.path, wt.branch)
+        const res = await window.electronAPI.gitCreatePR(wt.path, wt.branch, workspaceId ?? '')
         if (res.ok) {
           window.electronAPI.openExternalUrl(res.url)
           onPrCreated?.()
@@ -191,7 +191,7 @@ export function useParallelWork(
         setBusy?.(null)
       }
     },
-    [onPrCreated, setBusy, setError],
+    [onPrCreated, setBusy, setError, workspaceId],
   )
 
   const handleUpdateFromMain = useCallback(
@@ -200,7 +200,7 @@ export function useParallelWork(
       const target = primaryLabel
       setBusy?.(wt.id)
       try {
-        const result = await window.electronAPI.gitWorktreeUpdateFrom(wt.path, target)
+        const result = await window.electronAPI.gitWorktreeUpdateFrom(wt.path, target, workspaceId ?? '')
         if (!result.ok) {
           setError(
             result.conflict
@@ -217,7 +217,7 @@ export function useParallelWork(
         setBusy?.(null)
       }
     },
-    [primaryLabel, reconcile, setBusy, setError],
+    [primaryLabel, reconcile, setBusy, setError, workspaceId],
   )
 
   const handleMerge = useCallback(
@@ -232,7 +232,7 @@ export function useParallelWork(
       if (!ok) return
       setBusy?.(wt.id)
       try {
-        const result = await window.electronAPI.gitWorktreeMergeTo(rootPath, wt.branch, target)
+        const result = await window.electronAPI.gitWorktreeMergeTo(rootPath, wt.branch, target, workspaceId ?? '')
         if (!result.ok) {
           setError(`Merge ${wt.branch} → ${target}: ${result.message}`)
         } else {
@@ -245,7 +245,7 @@ export function useParallelWork(
         setBusy?.(null)
       }
     },
-    [rootPath, primaryLabel, reconcile, setBusy, setError],
+    [rootPath, primaryLabel, reconcile, setBusy, setError, workspaceId],
   )
 
   const handleDelete = useCallback(
@@ -256,7 +256,7 @@ export function useParallelWork(
       // which surface triggered the discard.
       let status: WorktreeStatus | null = null
       try {
-        status = await window.electronAPI.gitWorktreeStatus(wt.path)
+        status = await window.electronAPI.gitWorktreeStatus(wt.path, workspaceId)
       } catch {
         status = null
       }
@@ -284,10 +284,10 @@ export function useParallelWork(
       // flag the row as busy to drive its inline spinner.
       setBusy?.(wt.id)
       try {
-        await window.electronAPI.gitWorktreeRemove(rootPath, wt.path, { force: dirty })
+        await window.electronAPI.gitWorktreeRemove(rootPath, wt.path, { force: dirty }, workspaceId)
         if (wt.branch) {
           try {
-            await window.electronAPI.gitBranchDelete(rootPath, wt.branch, true)
+            await window.electronAPI.gitBranchDelete(rootPath, wt.branch, true, workspaceId)
           } catch (err: any) {
             setError(`Removed, but branch ${wt.branch} could not be deleted: ${err?.message || err}`)
           }
@@ -306,12 +306,12 @@ export function useParallelWork(
   const handlePrune = useCallback(async () => {
     if (!rootPath || !workspaceId) return
     try {
-      await window.electronAPI.gitWorktreePrune(rootPath)
+      await window.electronAPI.gitWorktreePrune(rootPath, workspaceId)
       // `git worktree prune` only cleans entries git still tracks. The orphans
       // shown here are store metadata for worktrees git no longer lists, so
       // prune is a no-op for them — drop those stale entries from the store
       // explicitly, otherwise "Clean up" appears to do nothing.
-      const list = await window.electronAPI.gitWorktreeList(rootPath)
+      const list = await window.electronAPI.gitWorktreeList(rootPath, workspaceId)
       const livePaths = new Set(list.map((g) => g.path))
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       for (const w of ws?.worktrees ?? []) {

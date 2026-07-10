@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { addAllowedRoot, removeAllowedRoot, getAllowedRoots, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow } from '../ipc/pathValidation'
+import { addAllowedRoot, removeAllowedRoot, clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow } from '../ipc/pathValidation'
 import { readDir, searchFiles } from '../ipc/filesystem'
 import { RpcServer } from '../../runtime/rpcServer'
 import { RUNTIME_PROTOCOL_VERSION } from '../../runtime/protocol'
@@ -87,7 +87,7 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
 
   test('file.readDir over the wire matches the local function', async () => {
     const { remote } = loopback(daemonApi())
-    const safe = await remote.validatePathStrict(rootDir)
+    const safe = await remote.validatePathStrict(rootDir, undefined, 'srv_test')
     const viaRemote = await remote.file.readDir(safe)
     const direct = await readDir(safe)
     expect(viaRemote).toEqual(direct)
@@ -96,14 +96,14 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
 
   test('file.readFile + file.stat over the wire', async () => {
     const { remote } = loopback(daemonApi())
-    const file = await remote.validatePathStrict(path.join(rootDir, 'alpha.ts'))
+    const file = await remote.validatePathStrict(path.join(rootDir, 'alpha.ts'), undefined, 'srv_test')
     expect(await remote.file.readFile(file)).toBe('const needle = 42\n')
     expect(await remote.file.stat(file)).toEqual({ isDirectory: false, isFile: true })
   })
 
   test('file.readBinary survives base64 transit', async () => {
     const { remote } = loopback(daemonApi())
-    const file = await remote.validatePathStrict(path.join(rootDir, 'pic.bin'))
+    const file = await remote.validatePathStrict(path.join(rootDir, 'pic.bin'), undefined, 'srv_test')
     const buf = await remote.file.readBinary(file)
     expect(Buffer.isBuffer(buf)).toBe(true)
     expect([...buf]).toEqual([0, 1, 2, 3, 255])
@@ -111,7 +111,7 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
 
   test('file.search over the wire matches the local function', async () => {
     const { remote } = loopback(daemonApi())
-    const safe = await remote.validatePathStrict(rootDir)
+    const safe = await remote.validatePathStrict(rootDir, undefined, 'srv_test')
     const viaRemote = await remote.file.search(safe, 'needle')
     const direct = await searchFiles(safe, 'needle')
     expect(viaRemote).toEqual(direct)
@@ -119,7 +119,7 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
 
   test('file.searchContent streams ripgrep results over the wire', async () => {
     const { remote } = loopback(daemonApi())
-    const safe = await remote.validatePathStrict(rootDir)
+    const safe = await remote.validatePathStrict(rootDir, undefined, 'srv_test')
     const { files, stats, error } = await collectSearch(remote, safe, { query: 'needle' })
     expect(error).toBeUndefined()
     expect(stats.matches).toBe(1)
@@ -215,21 +215,47 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
 
   test('addAllowedRoot / removeAllowedRoot round-trip over the wire', async () => {
     const { remote } = loopback(daemonApi())
-    const extra = path.resolve(rootDir, 'extra-root')
+    // A dir OUTSIDE the registered root (and outside tmpdir) so validation
+    // flips with the root registration.
+    const extra = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-extra-')))
+    const probe = path.join(extra, 'probe.txt')
+    await fs.writeFile(probe, 'x\n')
+    try {
+      await expect(remote.file.readFile(probe, { scopeId: 'srv_test' })).rejects.toThrow(/Access denied/)
+      await remote.addAllowedRoot(extra, 'srv_test')
+      expect(await remote.file.readFile(probe, { scopeId: 'srv_test' })).toBe('x\n')
+      await remote.removeAllowedRoot(extra, 'srv_test')
+      await expect(remote.file.readFile(probe, { scopeId: 'srv_test' })).rejects.toThrow(/Access denied/)
+    } finally {
+      removeAllowedRoot(extra, 'srv_test')
+      await fs.rm(extra, { recursive: true, force: true })
+    }
+  })
 
-    expect(getAllowedRoots('srv_test').has(extra)).toBe(false)
-    await remote.addAllowedRoot(extra)
-    expect(getAllowedRoots('srv_test').has(extra)).toBe(true)
+  // The daemon has NO fallback scope: a request whose access context names no
+  // scopeId (or a foreign one) must be denied even for an in-root path — only
+  // per-window grants can admit a scopeless request. RemoteRuntime attaches the
+  // runtime's own scope for main-internal calls, so an explicit context is used
+  // here to exercise the wire-level rejection.
+  test('an access context without a scopeId is rejected even inside the root', async () => {
+    const { remote } = loopback(daemonApi())
+    const inRoot = path.join(rootDir, 'alpha.ts')
+    await expect(remote.file.readFile(inRoot, { ownerWindowId: 1 })).rejects.toThrow(/Access denied/)
+    await expect(remote.vcs.status(rootDir, { ownerWindowId: 1 })).rejects.toThrow(/Access denied/)
+  })
 
-    await remote.removeAllowedRoot(extra)
-    expect(getAllowedRoots('srv_test').has(extra)).toBe(false)
+  test('a foreign workspace scope is rejected for another scope\'s root', async () => {
+    const { remote } = loopback(daemonApi())
+    const inRoot = path.join(rootDir, 'alpha.ts')
+    await expect(remote.file.readFile(inRoot, { scopeId: 'ws-other' })).rejects.toThrow(/Access denied/)
+    await expect(remote.vcs.isRepo(rootDir, { scopeId: 'ws-other' })).rejects.toThrow(/Access denied/)
   })
 
   test('setExclusions mutates the daemon set live so readDir hides the new name', async () => {
     const { remote } = loopback(daemonApi())
     await fs.writeFile(path.join(rootDir, 'a.ts'), 'a\n')
     await fs.writeFile(path.join(rootDir, 'ignoreme.log'), 'noise\n')
-    const safe = await remote.validatePathStrict(rootDir)
+    const safe = await remote.validatePathStrict(rootDir, undefined, 'srv_test')
 
     // No exclusions yet: both files show in the tree.
     const before = (await remote.file.readDir(safe)).map((n) => n.name)
@@ -285,7 +311,7 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
   test('setExclusions rebuilds active watchers and the rebuilt watcher still delivers events', async () => {
     const api = daemonApi()
     const { remote } = loopback(api)
-    const safe = await remote.validatePathStrict(rootDir)
+    const safe = await remote.validatePathStrict(rootDir, undefined, 'srv_test')
 
     const events: string[] = []
     const unsub = remote.file.watch(safe, (changedPath) => { events.push(path.basename(changedPath)) })

@@ -200,12 +200,12 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
     if (!rootPath) return
     setError(null)
     try {
-      await window.electronAPI.gitInit(rootPath)
+      await window.electronAPI.gitInit(rootPath, workspaceId)
       gitStatusStore.refresh(rootPath)
     } catch (err: any) {
       setError(`Could not initialize git: ${err?.message || err}`)
     }
-  }, [rootPath])
+  }, [rootPath, workspaceId])
 
   return (
     <div

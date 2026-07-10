@@ -10,6 +10,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '../ui/Tooltip'
+import { workspaceIdForRoot } from '../stores/gitStatusStore'
 import {
   GitBranch,
   Check,
@@ -74,10 +75,10 @@ export const CreateWorktreeForm: React.FC<{
 
   useEffect(() => {
     let cancelled = false
-    window.electronAPI.gitPrList(rootPath).then((list) => {
+    window.electronAPI.gitPrList(rootPath, workspaceIdForRoot(rootPath)).then((list) => {
       if (!cancelled) setPrs(list)
     }).catch(() => {})
-    window.electronAPI.gitBranchList(rootPath).then((result) => {
+    window.electronAPI.gitBranchList(rootPath, workspaceIdForRoot(rootPath)).then((result) => {
       if (cancelled) return
       setBranches(
         result.branches

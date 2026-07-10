@@ -1468,7 +1468,7 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   // General
   // Empty string = auto-detect from $SHELL / platform fallback chain at spawn
-  // time (see src/main/shellResolver.ts). Avoids hardcoding /bin/zsh on Linux,
+  // time (see src/runtime/capabilities/shellResolver.ts). Avoids hardcoding /bin/zsh on Linux,
   // where it commonly isn't installed.
   defaultShellPath: '',
   warnBeforeQuit: false,
@@ -1639,8 +1639,6 @@ export interface AuthProviderDescriptor {
   /** Display name. */
   name: string
   kind: AuthProviderKind
-  /** Environment variable that pi-ai reads for this provider, if any. */
-  envVar?: string
   /** Hint shown under the input (e.g. where to get a key). */
   helpUrl?: string
   /** For OAuth providers: whether a local callback server is needed. */

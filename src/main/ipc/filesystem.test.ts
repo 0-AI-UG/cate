@@ -36,7 +36,9 @@ const fakeEvent = { sender: {} } as unknown
 
 // A throwaway event arg + helper to call the handler ergonomically.
 function callImport(sources: string[], destDir: string, mode: 'copy' | 'move') {
-  return importEntries(fakeEvent, sources, destDir, mode) as Promise<{ created: string[]; failed: number }>
+  // 'local' is the workspaceId the renderer would pass; roots here are
+  // registered under that scope.
+  return importEntries(fakeEvent, sources, destDir, mode, 'local') as Promise<{ created: string[]; failed: number }>
 }
 
 describe('FS_IMPORT_ENTRIES', () => {
@@ -133,7 +135,7 @@ describe('in-process fs subscriptions', () => {
     await fs.rm(root, { recursive: true, force: true })
   })
 
-  const startWatch = () => watchStartHandler({ __win: { id: 1 } }, root)
+  const startWatch = () => watchStartHandler({ __win: { id: 1 } }, root, 'local')
 
   // Wait until `got()` reaches `count` (or time out). chokidar drops events that
   // fire before its initial scan finishes, so `poke` re-applies the change each
@@ -160,8 +162,8 @@ describe('in-process fs subscriptions', () => {
     const aEvents: string[] = []
     const bEvents: string[] = []
 
-    const unsubA = testRuntime.file.watch(root, (fp) => aEvents.push(fp))
-    const unsubB = testRuntime.file.watch(root, (fp) => bEvents.push(fp))
+    const unsubA = testRuntime.file.watch(root, (fp) => aEvents.push(fp), { scopeId: 'local' })
+    const unsubB = testRuntime.file.watch(root, (fp) => bEvents.push(fp), { scopeId: 'local' })
 
     startWatch()
 
@@ -186,7 +188,7 @@ describe('in-process fs subscriptions', () => {
   // was torn down. Unsubscribed listeners receive nothing — clean teardown.
   test('a fresh in-proc subscriber watches actively after a prior teardown', async () => {
     const earlyEvents: string[] = []
-    const unsubA = testRuntime.file.watch(root, (fp) => earlyEvents.push(fp))
+    const unsubA = testRuntime.file.watch(root, (fp) => earlyEvents.push(fp), { scopeId: 'local' })
     startWatch()
     unsubA()
     await watchStopHandler({ __win: { id: 1 } }, root)
@@ -194,7 +196,7 @@ describe('in-process fs subscriptions', () => {
 
     // A brand-new subscriber opens its own watcher and DOES receive events.
     const lateEvents: string[] = []
-    const unsubLate = testRuntime.file.watch(root, (fp) => lateEvents.push(fp))
+    const unsubLate = testRuntime.file.watch(root, (fp) => lateEvents.push(fp), { scopeId: 'local' })
 
     const file = path.join(root, 'after.txt')
     let rev = 0

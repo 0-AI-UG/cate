@@ -7,9 +7,9 @@ import type { Runtime } from '../runtime/types'
 import { getWorkspaceInfo } from '../workspaceManager'
 import type { ReverseTunnelBinding } from './cateApiReverse'
 
-export type CateApiEndpointOwner = 'extension' | 'first-party'
+type CateApiEndpointOwner = 'extension' | 'first-party'
 
-export interface CateApiEndpoint {
+interface CateApiEndpoint {
   runtime: Runtime
   cwd: string
   port: number
@@ -22,7 +22,7 @@ interface EndpointSession extends CateApiEndpoint {
   binding: ReverseTunnelBinding
 }
 
-export interface CateApiEndpointOptions {
+interface CateApiEndpointOptions {
   key: string
   owner: CateApiEndpointOwner
   extensionId: string

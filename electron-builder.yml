@@ -63,13 +63,14 @@ extraResources:
       - "**/*"
   # Ship the runtime daemon tarball(s) so the packaged LOCAL workspace runs the
   # same daemon as remote hosts. Linux/Windows stage one host-arch
-  # runtime-host.tgz; macOS stages BOTH runtime-host-x64.tgz (Intel) and
-  # runtime-host-arm64.tgz, because one .app can run on either CPU and the
-  # daemon's bundled node + node-pty are arch-specific (an arm64 daemon can't
-  # exec on Intel → terminal never opens). Resolved at runtime by
-  # shippedRuntimeTarball() → resources/runtime-host-<arch>.tgz (legacy
-  # resources/runtime-host.tgz fallback). The glob copies whatever this runner
-  # staged without erroring on the arches it didn't build (see release.yml).
+  # runtime-host.tgz; macOS stages per-arch runtime-host-<arch>.tgz — release CI
+  # stages BOTH x64 (Intel) and arm64, local packaging just the host arch —
+  # because one .app can run on either CPU and the daemon's bundled node +
+  # node-pty are arch-specific (an arm64 daemon can't exec on Intel → terminal
+  # never opens). Resolved at runtime by shippedRuntimeTarball():
+  # resources/runtime-host-<arch>.tgz on macOS, resources/runtime-host.tgz
+  # elsewhere. The glob copies whatever this runner staged (scripts/package.mjs
+  # locally, release.yml in CI) without erroring on arches it didn't build.
   - from: dist-runtime
     to: .
     filter:

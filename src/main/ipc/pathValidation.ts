@@ -66,10 +66,6 @@ export function removeAllowedRoot(root: string, scopeId: string): void {
   if (map.size === 0) rootsByScope.delete(scopeId)
 }
 
-export function getAllowedRoots(scopeId: string): ReadonlySet<string> {
-  return new Set(rootsByScope.get(scopeId)?.keys() ?? [])
-}
-
 /** Register a related root (for example a git worktree) under every scope that
  *  owns `sourcePath`. The fallback is the daemon's own runtime scope, used when
  *  the workspace-specific root has not reached the daemon yet. */
@@ -306,9 +302,24 @@ export async function validatePathStrict(filePath: string, ownerWindowId?: numbe
  * Returns the safe absolute path (`realParent + baseName`).
  */
 export async function validatePathForCreation(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string> {
-  const normalized = path.resolve(filePath)
   const safeTarget = await normalizeCreationTarget(filePath)
-  if (isWithinAllowedRoots(normalized, scopeId) || isWithinAllowedRoots(safeTarget, scopeId)) {
+  // A creation/write target whose FINAL segment is an existing symlink is
+  // rejected outright: normalizeCreationTarget realpaths only the parent chain
+  // (the basename may not exist yet), so a symlink basename would otherwise let
+  // a write follow the link out of the allowed root. Mirrors statEntry /
+  // removeEntry, which likewise refuse to operate through a symlink.
+  const targetStat = await fs.lstat(safeTarget).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') return null // target doesn't exist yet — fine
+    throw err
+  })
+  if (targetStat?.isSymbolicLink()) {
+    throw new Error(`Access denied: "${filePath}" is a symbolic link`)
+  }
+  // Only the realpath-resolved target counts. Checking the lexical
+  // (pre-resolution) form as an alternative would defeat the parent symlink
+  // resolution above: a symlinked dir inside a root pointing outside it would
+  // pass on its lexical form.
+  if (isWithinAllowedRoots(safeTarget, scopeId)) {
     return safeTarget
   }
   if (hasGrantedFile(ownerWindowId, safeTarget)) {

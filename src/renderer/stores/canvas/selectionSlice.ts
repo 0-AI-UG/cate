@@ -3,7 +3,7 @@
 // overlay state.
 // =============================================================================
 
-import { collectPanelIds } from '../../lib/canvas/collectPanelIds'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
 import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
 import { withLead } from './selectionModel'
 

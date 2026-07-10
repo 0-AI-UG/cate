@@ -103,20 +103,26 @@ export class RpcServer {
     const { api } = this
     const s = (i: number) => p[i] as string
     const n = (i: number) => p[i] as number | undefined
+    // JSON turns a trailing `undefined` into `null`; normalize back so optional
+    // access-context params behave like a genuinely omitted argument.
+    const a = (i: number) => (p[i] ?? undefined) as FileAccessContext | undefined
 
     switch (method) {
       case Methods.ping:
         return 'pong'
 
       // --- validation ---
-      // scopeId is the trailing optional positional arg; inline the cast since
-      // the value may be undefined (older clients omit it).
-      case Methods.validatePath: return api.validatePath(s(0), n(1), p[2] as string | undefined)
-      case Methods.validatePathStrict: return api.validatePathStrict(s(0), n(1), p[2] as string | undefined)
-      case Methods.validatePathForCreation: return api.validatePathForCreation(s(0), n(1), p[2] as string | undefined)
-      case Methods.validateCwd: return api.validateCwd(s(0), n(1), p[2] as string | undefined)
-      case Methods.addAllowedRoot: return api.addAllowedRoot(s(0), p[1] as string | undefined)
-      case Methods.removeAllowedRoot: return api.removeAllowedRoot(s(0), p[1] as string | undefined)
+      // scopeId is the trailing positional arg and is REQUIRED: a request that
+      // omits it validates against an empty root set (per-window grants can
+      // still admit it), and addAllowedRoot/removeAllowedRoot reject outright.
+      // Version skew can't reach here — a client/daemon version mismatch
+      // triggers a re-push (see version.ts), so no older client is tolerated.
+      case Methods.validatePath: return api.validatePath(s(0), n(1), s(2))
+      case Methods.validatePathStrict: return api.validatePathStrict(s(0), n(1), s(2))
+      case Methods.validatePathForCreation: return api.validatePathForCreation(s(0), n(1), s(2))
+      case Methods.validateCwd: return api.validateCwd(s(0), n(1), s(2))
+      case Methods.addAllowedRoot: return api.addAllowedRoot(s(0), s(1))
+      case Methods.removeAllowedRoot: return api.removeAllowedRoot(s(0), s(1))
       case Methods.setExclusions: return api.setExclusions(p[0] as string[])
       case Methods.setIdleSuspend: return api.setIdleSuspend(p[0] as boolean)
       case Methods.grantFileAccess: return api.grantFileAccess(s(0), n(1) as number)
@@ -206,41 +212,42 @@ export class RpcServer {
         )
       case Methods.tunnelStopListen: return api.tunnel.stopListen(s(0))
 
-      // --- vcs ---
-      case Methods.vcsIsRepo: return api.vcs.isRepo(s(0))
-      case Methods.vcsFindRepos: return api.vcs.findRepos(s(0), n(1))
-      case Methods.vcsInit: return api.vcs.init(s(0))
-      case Methods.vcsLsFiles: return api.vcs.lsFiles(s(0))
-      case Methods.vcsStatus: return api.vcs.status(s(0))
-      case Methods.vcsDiff: return api.vcs.diff(s(0), p[1] as string | undefined)
-      case Methods.vcsDiffStaged: return api.vcs.diffStaged(s(0), p[1] as string | undefined)
-      case Methods.vcsMonitorStatus: return api.vcs.monitorStatus(s(0))
-      case Methods.vcsStage: return api.vcs.stage(s(0), s(1))
-      case Methods.vcsUnstage: return api.vcs.unstage(s(0), s(1))
-      case Methods.vcsCommit: return api.vcs.commit(s(0), s(1))
-      case Methods.vcsPush: return api.vcs.push(s(0), p[1] as string | undefined, p[2] as string | undefined)
-      case Methods.vcsPull: return api.vcs.pull(s(0), p[1] as string | undefined, p[2] as string | undefined)
-      case Methods.vcsFetch: return api.vcs.fetch(s(0), p[1] as string | undefined)
-      case Methods.vcsLog: return api.vcs.log(s(0), n(1))
-      case Methods.vcsBranchList: return api.vcs.branchList(s(0))
-      case Methods.vcsBranchCreate: return api.vcs.branchCreate(s(0), s(1), p[2] as string | undefined)
-      case Methods.vcsBranchDelete: return api.vcs.branchDelete(s(0), s(1), p[2] as boolean | undefined)
-      case Methods.vcsCheckout: return api.vcs.checkout(s(0), s(1))
-      case Methods.vcsStash: return api.vcs.stash(s(0), p[1] as string | undefined)
-      case Methods.vcsStashPop: return api.vcs.stashPop(s(0))
-      case Methods.vcsDiscardFile: return api.vcs.discardFile(s(0), s(1))
-      case Methods.vcsWorktreeList: return api.vcs.worktreeList(s(0))
+      // --- vcs --- (trailing arg carries the FileAccessContext, like file.*;
+      // the capability validates the cwd against its scopeId)
+      case Methods.vcsIsRepo: return api.vcs.isRepo(s(0), a(1))
+      case Methods.vcsFindRepos: return api.vcs.findRepos(s(0), n(1), a(2))
+      case Methods.vcsInit: return api.vcs.init(s(0), a(1))
+      case Methods.vcsLsFiles: return api.vcs.lsFiles(s(0), a(1))
+      case Methods.vcsStatus: return api.vcs.status(s(0), a(1))
+      case Methods.vcsDiff: return api.vcs.diff(s(0), p[1] as string | undefined, a(2))
+      case Methods.vcsDiffStaged: return api.vcs.diffStaged(s(0), p[1] as string | undefined, a(2))
+      case Methods.vcsMonitorStatus: return api.vcs.monitorStatus(s(0), a(1))
+      case Methods.vcsStage: return api.vcs.stage(s(0), s(1), a(2))
+      case Methods.vcsUnstage: return api.vcs.unstage(s(0), s(1), a(2))
+      case Methods.vcsCommit: return api.vcs.commit(s(0), s(1), a(2))
+      case Methods.vcsPush: return api.vcs.push(s(0), p[1] as string | undefined, p[2] as string | undefined, a(3))
+      case Methods.vcsPull: return api.vcs.pull(s(0), p[1] as string | undefined, p[2] as string | undefined, a(3))
+      case Methods.vcsFetch: return api.vcs.fetch(s(0), p[1] as string | undefined, a(2))
+      case Methods.vcsLog: return api.vcs.log(s(0), n(1), a(2))
+      case Methods.vcsBranchList: return api.vcs.branchList(s(0), a(1))
+      case Methods.vcsBranchCreate: return api.vcs.branchCreate(s(0), s(1), p[2] as string | undefined, a(3))
+      case Methods.vcsBranchDelete: return api.vcs.branchDelete(s(0), s(1), p[2] as boolean | undefined, a(3))
+      case Methods.vcsCheckout: return api.vcs.checkout(s(0), s(1), a(2))
+      case Methods.vcsStash: return api.vcs.stash(s(0), p[1] as string | undefined, a(2))
+      case Methods.vcsStashPop: return api.vcs.stashPop(s(0), a(1))
+      case Methods.vcsDiscardFile: return api.vcs.discardFile(s(0), s(1), a(2))
+      case Methods.vcsWorktreeList: return api.vcs.worktreeList(s(0), a(1))
       case Methods.vcsWorktreeAdd:
-        return api.vcs.worktreeAdd(s(0), s(1), s(2), p[3] as never)
-      case Methods.vcsWorktreeAddFromPr: return api.vcs.worktreeAddFromPr(s(0), n(1) as number, s(2), p[3] as never)
-      case Methods.vcsWorktreeRemove: return api.vcs.worktreeRemove(s(0), s(1), p[2] as never)
-      case Methods.vcsWorktreePrune: return api.vcs.worktreePrune(s(0))
-      case Methods.vcsWorktreeStatus: return api.vcs.worktreeStatus(s(0))
-      case Methods.vcsWorktreeMergeTo: return api.vcs.worktreeMergeTo(s(0), s(1), s(2))
-      case Methods.vcsWorktreeUpdateFrom: return api.vcs.worktreeUpdateFrom(s(0), s(1))
-      case Methods.vcsCreatePr: return api.vcs.createPr(s(0), s(1))
-      case Methods.vcsPrStatus: return api.vcs.prStatus(s(0), s(1))
-      case Methods.vcsPrList: return api.vcs.prList(s(0))
+        return api.vcs.worktreeAdd(s(0), s(1), s(2), p[3] as never, a(4))
+      case Methods.vcsWorktreeAddFromPr: return api.vcs.worktreeAddFromPr(s(0), n(1) as number, s(2), p[3] as never, a(4))
+      case Methods.vcsWorktreeRemove: return api.vcs.worktreeRemove(s(0), s(1), p[2] as never, a(3))
+      case Methods.vcsWorktreePrune: return api.vcs.worktreePrune(s(0), a(1))
+      case Methods.vcsWorktreeStatus: return api.vcs.worktreeStatus(s(0), a(1))
+      case Methods.vcsWorktreeMergeTo: return api.vcs.worktreeMergeTo(s(0), s(1), s(2), a(3))
+      case Methods.vcsWorktreeUpdateFrom: return api.vcs.worktreeUpdateFrom(s(0), s(1), a(2))
+      case Methods.vcsCreatePr: return api.vcs.createPr(s(0), s(1), a(2))
+      case Methods.vcsPrStatus: return api.vcs.prStatus(s(0), s(1), a(2))
+      case Methods.vcsPrList: return api.vcs.prList(s(0), a(1))
 
       default:
         throw new Error(`Unknown runtime method: ${method}`)

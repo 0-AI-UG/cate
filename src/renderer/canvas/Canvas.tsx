@@ -482,7 +482,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       let gitWorktrees: Array<{ path: string; branch: string; isCurrent: boolean }> = []
       if (rootPath) {
         try {
-          gitWorktrees = await window.electronAPI.gitWorktreeList(rootPath)
+          gitWorktrees = await window.electronAPI.gitWorktreeList(rootPath, wsId ?? '')
         } catch { /* single-root fallback */ }
       }
 

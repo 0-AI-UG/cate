@@ -12,6 +12,7 @@ import {
   WORKSPACE_EXTERNAL_EDIT_DISMISS,
 } from '../shared/ipc-channels'
 import { holdsProjectLock, acquireProjectLock } from './projectLock'
+import { writeTextAtomic, writeTextAtomicSync } from './writeJsonAtomic'
 import { isPlainObject } from './jsonUtils'
 import { quarantineCorruptFile } from './quarantineCorruptFile'
 import type { ProjectWorkspaceFile, ProjectSessionFile } from '../shared/types'
@@ -84,47 +85,20 @@ function workspaceEditedExternallySync(rootPath: string): boolean {
   }
 }
 
-// Per-write unique temp suffix. A shared `<file>.tmp` name is unsafe when two
-// saves for the same path overlap: one consumes the tmp, the other's rename
-// fails with ENOENT. Uniquify so each write owns its own tmp file.
-let tmpSeq = 0
-function uniqueTmpPath(filePath: string): string {
-  tmpSeq = (tmpSeq + 1) & 0x7fffffff
-  return `${filePath}.${process.pid}.${tmpSeq}.tmp`
+// The tmp+rename mechanics live in the shared writeJsonAtomic primitive (which
+// uniquifies each tmp as `<file>.<pid>.<seq>.tmp`); these wrappers add the
+// `.cate` recovery tier on top: back up the current file by *copying* (not
+// renaming) it to `<file>.bak` — so the primary never vanishes if the write
+// races a concurrent writer — before renaming the new content into place.
+// `.bak` is what the issue #220 prefer-richer load reads.
+async function atomicWriteWithBak(filePath: string, json: string): Promise<void> {
+  await fs.copyFile(filePath, filePath + '.bak').catch(() => {})
+  await writeTextAtomic(filePath, json)
 }
 
-async function atomicWrite(filePath: string, json: string): Promise<void> {
-  const dir = path.dirname(filePath)
-  const tmpPath = uniqueTmpPath(filePath)
-  const bakPath = filePath + '.bak'
-
-  await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(tmpPath, json, 'utf-8')
-  const stat = await fs.stat(tmpPath)
-  if (stat.size === 0) {
-    await fs.unlink(tmpPath).catch(() => {})
-    throw new Error('tmp file is empty after write')
-  }
-  // Back up by *copying* (not renaming) the current file so it never vanishes
-  // if this rename races a concurrent writer. The rename below is atomic and
-  // overwrites the target in place.
-  await fs.copyFile(filePath, bakPath).catch(() => {})
-  await fs.rename(tmpPath, filePath)
-}
-
-function atomicWriteSync(filePath: string, json: string): void {
-  const dir = path.dirname(filePath)
-  const tmpPath = uniqueTmpPath(filePath)
-  const bakPath = filePath + '.bak'
-
-  fsSync.mkdirSync(dir, { recursive: true })
-  fsSync.writeFileSync(tmpPath, json, 'utf-8')
-  const stat = fsSync.statSync(tmpPath)
-  if (stat.size === 0) {
-    throw new Error('tmp file is empty after write')
-  }
-  try { fsSync.copyFileSync(filePath, bakPath) } catch { /* OK */ }
-  fsSync.renameSync(tmpPath, filePath)
+function atomicWriteWithBakSync(filePath: string, json: string): void {
+  try { fsSync.copyFileSync(filePath, filePath + '.bak') } catch { /* no current file to back up */ }
+  writeTextAtomicSync(filePath, json)
 }
 
 async function tryReadJson<T>(filePath: string): Promise<T | null> {
@@ -192,9 +166,9 @@ function wouldEmptyOverwriteWorkspaceSync(rootPath: string, incomingNodeCount: n
   }
 }
 
-// Recovery tiers are primary then .bak. The writers (atomicWrite/atomicWriteSync)
-// no longer leave a fixed `<file>.tmp` behind — they uniquify each tmp as
-// `<file>.<pid>.<seq>.tmp` — so reading that stale name only ever found nothing.
+// Recovery tiers are primary then .bak. The shared atomic writer never leaves a
+// fixed `<file>.tmp` behind — it uniquifies each tmp as `<file>.<pid>.<seq>.tmp`
+// — so reading that stale name only ever found nothing.
 // When a validator is given, a parseable-but-invalid primary also falls through
 // to the .bak tier instead of masking a still-good backup.
 async function tryReadWithFallback<T>(filePath: string, isValid?: (v: unknown) => boolean): Promise<T | null> {
@@ -304,7 +278,7 @@ export async function saveProjectStateLocal(
   await enqueueSave(rootPath, async () => {
     await ensureCateGitignore(cateDir(rootPath))
     // session.json is machine-local and never hand-edited, so always write it.
-    const writes: Promise<void>[] = [atomicWrite(sessionPath(rootPath), sessJson)]
+    const writes: Promise<void>[] = [atomicWriteWithBak(sessionPath(rootPath), sessJson)]
     if (await workspaceEditedExternallyAsync(rootPath)) {
       // Hold the overwrite and ask the renderer to prompt for a reload. The
       // file stays steady until the user reloads or dismisses the prompt.
@@ -321,7 +295,7 @@ export async function saveProjectStateLocal(
       // deferred/non-selected workspaces serializing a momentarily-empty canvas.
       log.warn('Refusing to overwrite a non-empty canvas with an empty one for %s (issue #220 guard)', cateDir(rootPath))
     } else {
-      writes.push(atomicWrite(workspacePath(rootPath), wsJson).then(() => rememberWorkspaceContent(rootPath, wsJson)))
+      writes.push(atomicWriteWithBak(workspacePath(rootPath), wsJson).then(() => rememberWorkspaceContent(rootPath, wsJson)))
     }
     await Promise.all(writes)
     log.debug('Project state saved to %s', cateDir(rootPath))
@@ -359,7 +333,7 @@ const lastSavedProjectStates: Map<string, { workspace: string; session: string }
 export function saveProjectStateSync(): void {
   for (const [rootPath, { workspace, session }] of lastSavedProjectStates) {
     try {
-      atomicWriteSync(sessionPath(rootPath), session)
+      atomicWriteWithBakSync(sessionPath(rootPath), session)
       if (workspaceEditedExternallySync(rootPath)) {
         log.info('Skipping workspace.json sync overwrite for %s — edited externally', cateDir(rootPath))
       } else if (wouldEmptyOverwriteWorkspaceSync(rootPath, workspaceNodeCount(JSON.parse(workspace)))) {
@@ -367,7 +341,7 @@ export function saveProjectStateSync(): void {
         // canvas over a good one (mirrors the async saveProjectStateLocal guard).
         log.warn('Refusing empty workspace.json sync overwrite for %s (issue #220 guard)', cateDir(rootPath))
       } else {
-        atomicWriteSync(workspacePath(rootPath), workspace)
+        atomicWriteWithBakSync(workspacePath(rootPath), workspace)
         rememberWorkspaceContent(rootPath, workspace)
       }
     } catch (err) {

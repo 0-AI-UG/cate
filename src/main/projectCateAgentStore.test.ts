@@ -30,9 +30,9 @@ describe('projectCateAgentStore', () => {
     expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: false })
   })
 
-  it('defaults autoObserve to true for older files that omit it', async () => {
+  it('defaults autoObserve when a valid file omits the field', async () => {
     await fs.mkdir(path.join(root, '.cate'), { recursive: true })
-    await fs.writeFile(path.join(root, '.cate', 'cateAgent.json'), JSON.stringify({ enabled: true }), 'utf-8')
+    await fs.writeFile(path.join(root, '.cate', 'cateAgent.json'), JSON.stringify({ version: 1 }), 'utf-8')
     expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: true })
   })
 
@@ -42,9 +42,12 @@ describe('projectCateAgentStore', () => {
     expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: true })
   })
 
-  it('returns defaults on unparseable JSON', async () => {
+  it('quarantines an unparseable file and returns defaults', async () => {
     await fs.mkdir(path.join(root, '.cate'), { recursive: true })
     await fs.writeFile(path.join(root, '.cate', 'cateAgent.json'), 'nope', 'utf-8')
     expect(await loadCateAgentState(root)).toEqual({ version: 1, autoObserve: true })
+    // The broken content is preserved aside for recovery, not silently swallowed.
+    const files = await fs.readdir(path.join(root, '.cate'))
+    expect(files.some((f) => f.startsWith('cateAgent.json.corrupt-'))).toBe(true)
   })
 })

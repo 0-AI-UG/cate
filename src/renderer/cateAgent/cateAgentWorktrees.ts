@@ -37,7 +37,7 @@ export async function teardownWorktree(
   const meta = worktreeMetaFor(wsId, worktreeId)
   if (!meta) return
   try {
-    await window.electronAPI.gitWorktreeRemove(rootPath, meta.path, { force: opts.force ?? true })
+    await window.electronAPI.gitWorktreeRemove(rootPath, meta.path, { force: opts.force ?? true }, wsId)
   } catch (err) {
     log.warn('[cateAgent] worktree remove failed: %O', err)
   }

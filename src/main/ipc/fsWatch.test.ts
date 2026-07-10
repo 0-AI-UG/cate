@@ -97,7 +97,7 @@ describe('fs watch events for nested paths', () => {
     await fs.mkdir(nestedDir, { recursive: true })
     await fs.writeFile(nestedFile, 'v0', 'utf8')
 
-    await watchStart(fakeEvent, root)
+    await watchStart(fakeEvent, root, 'local')
 
     let rev = 0
     const seen = await waitForWatchEvent(
@@ -116,7 +116,7 @@ describe('fs watch events for nested paths', () => {
     await fs.writeFile(excludedFile, 'v0', 'utf8')
     await fs.writeFile(markerFile, 'v0', 'utf8')
 
-    await watchStart(fakeEvent, root)
+    await watchStart(fakeEvent, root, 'local')
 
     // Poke both files; once the marker's event arrives the watcher is provably
     // live, so the absence of the excluded file's event is meaningful.

@@ -72,7 +72,7 @@ The file tree (`src/renderer/sidebar/FileExplorer.tsx`) and recent-projects
 switcher (`src/renderer/sidebar/ProjectList.tsx`) are **sidebar** components, not
 detachable panels.
 
-Each panel can be wrapped in a `CanvasNode` (`src/renderer/canvas/CanvasNode.tsx`) — title bar, drag, resize, close — or live inside a dock zone via `DockTabStack` (`src/renderer/docking/`). Detached panel/dock windows have their own shells (`src/renderer/shells/PanelWindowShell.tsx`, `DockWindowShell.tsx`) with local panels state synced back to main for session persistence.
+Each panel can be wrapped in a `CanvasNode` (`src/renderer/canvas/CanvasNode.tsx`) — title bar, drag, resize, close — or live inside a dock zone via `DockTabStack` (`src/renderer/docking/`). All panel records render through the shared `PanelHost` (`src/renderer/panels/PanelHost.tsx`); detached windows are dock windows (`src/renderer/shells/DockWindowShell.tsx`) with local panels state synced back to main for session persistence.
 
 ### State Management
 
@@ -88,8 +88,9 @@ Zustand stores in `src/renderer/stores/`:
 
 Persisted state is stored as hand-editable JSON files under `userData` (no
 electron-store). `settingsFile.ts` owns `settings.json`; `jsonStateFile.ts` is a
-reusable factory for that same pattern (sync load, in-memory authority, debounced
-atomic write, chokidar external-edit watcher, corrupt-file quarantine).
+reusable factory for that same pattern — it delegates the in-memory-authority
+engine to `jsonStateStore.ts` and keeps the filesystem backend (sync load,
+debounced atomic write, chokidar external-edit watcher, corrupt-file quarantine).
 `workspaceStateStore.ts` uses it for `recent-projects.json`, `sidebar.json`,
 `remote-workspaces.json`, and `layouts.json`. Per-project canvas/session state
 lives in `<project>/.cate/workspace.json` + `session.json`. AI provider credentials are

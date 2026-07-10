@@ -94,4 +94,13 @@ describe('projectChatsStore', () => {
     expect(loaded.messages.map((m) => m.id)).toEqual(['ok'])
     expect(loaded.run?.iterations).toEqual([])
   })
+
+  it('quarantines an unparseable chats.json and starts empty', async () => {
+    await fs.mkdir(path.join(root, '.cate'), { recursive: true })
+    await fs.writeFile(path.join(root, '.cate', 'chats.json'), '{ definitely not json', 'utf-8')
+    expect(await loadChats(root)).toEqual([])
+    // The broken content is preserved aside for recovery, not silently swallowed.
+    const files = await fs.readdir(path.join(root, '.cate'))
+    expect(files.some((f) => f.startsWith('chats.json.corrupt-'))).toBe(true)
+  })
 })

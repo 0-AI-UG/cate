@@ -42,11 +42,11 @@ const fakeEvent = { sender: {} } as unknown
 
 const readDir = async (p: string): Promise<FileTreeNode[]> => {
   await testRuntime.setExclusions(exclusions)
-  return readDirHandler(fakeEvent, p) as Promise<FileTreeNode[]>
+  return readDirHandler(fakeEvent, p, 'local') as Promise<FileTreeNode[]>
 }
 const search = async (root: string, q: string): Promise<FileSearchResult[]> => {
   await testRuntime.setExclusions(exclusions)
-  return searchHandler(fakeEvent, root, q) as Promise<FileSearchResult[]>
+  return searchHandler(fakeEvent, root, q, undefined, 'local') as Promise<FileSearchResult[]>
 }
 const names = (nodes: FileTreeNode[]) => nodes.map((n) => n.name).sort()
 const relPaths = (results: FileSearchResult[]) => results.map((r) => r.relativePath).sort()

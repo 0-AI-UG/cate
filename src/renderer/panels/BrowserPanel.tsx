@@ -9,7 +9,7 @@ import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, Camera, MagnifyingGlass, 
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
-import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
+import { useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { SEARCH_ENGINE_URLS, BROWSER_NEW_TAB_URL, isStartPageUrl } from '../../shared/types'
 import { UrlSuggestions } from './UrlSuggestions'
@@ -116,7 +116,9 @@ export default function BrowserPanel({
   const toggleBookmark = useBrowserStore((s) => s.toggleBookmark)
   const querySuggestions = useBrowserStore((s) => s.querySuggestions)
 
-  const isFocused = useCanvasStoreContext((s) => focusedNodeId(s) === nodeId)
+  // Optional: a panel docked in a detached dock window has no CanvasStoreProvider
+  // (no canvas node to be focused), so treat that as not-canvas-focused.
+  const isFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
 
   // --- Tabs (light model: one webview re-navigates on switch) --------------
   // Seed once from the current persisted schema. There is deliberately no

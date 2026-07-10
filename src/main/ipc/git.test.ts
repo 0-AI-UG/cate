@@ -10,6 +10,8 @@ vi.mock('electron', () => ({
 const { createVcsCapability } = await import('../../runtime/capabilities/vcs')
 const { simpleGit } = await import('simple-git')
 const vcs = createVcsCapability({ env: () => process.env, scopeId: 'git-test' })
+// cwds are validated against the caller's scope; tmp dirs pass for any NAMED scope.
+const access = { scopeId: 'git-test' }
 
 describe('createBranch', () => {
   let repoDir: string
@@ -34,7 +36,7 @@ describe('createBranch', () => {
   })
 
   test('creates a branch from current HEAD when no start point is provided', async () => {
-    await vcs.branchCreate(repoDir, 'feature/head')
+    await vcs.branchCreate(repoDir, 'feature/head', undefined, access)
     const git = simpleGit(repoDir)
     const current = await git.revparse(['--abbrev-ref', 'HEAD'])
     expect(current.trim()).toBe('feature/head')
@@ -49,7 +51,7 @@ describe('createBranch', () => {
     await git.add('README.md')
     await git.commit('next')
 
-    await vcs.branchCreate(repoDir, 'feature/tagged', 'v1')
+    await vcs.branchCreate(repoDir, 'feature/tagged', 'v1', access)
     const branchHead = (await git.revparse(['HEAD'])).trim()
     const tagHead = (await git.revparse(['v1'])).trim()
 

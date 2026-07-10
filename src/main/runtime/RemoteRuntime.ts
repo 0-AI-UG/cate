@@ -31,6 +31,7 @@ import type {
   PrStatusResult,
   PrSummary,
 } from './types'
+import type { FileAccessContext } from './types'
 import type { RuntimeRpcClient } from './rpcClient'
 import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
 import type { FileTreeNode, FileSearchResult } from '../../shared/types'
@@ -56,6 +57,17 @@ export class RemoteRuntime implements Runtime {
     // transport closing (which rejects all in-flight calls).
     const longCall = <T>(method: string, params: unknown[] = []) =>
       this.rpc.call(method, params, { timeoutMs: 0 }) as Promise<T>
+
+    // The daemon validates every file/vcs path against the scope named in the
+    // access context and no longer falls back to its own root scope. Calls that
+    // arrive here with NO context at all are main-process-internal (the IPC
+    // handlers always attach one, so renderer-driven ops can't take this path):
+    // those trusted callers operate at the runtime's own scope, stated
+    // explicitly here instead of implicitly at the daemon. A context that IS
+    // present but names no scopeId is forwarded as-is and rejected daemon-side
+    // (that's the renderer-omitted-workspaceId hole this closes).
+    const scoped = (access?: FileAccessContext): FileAccessContext =>
+      access ?? { scopeId: this.id }
 
     this.process = {
       create: async (opts, onData, onExit) => {
@@ -189,31 +201,31 @@ export class RemoteRuntime implements Runtime {
     }
 
     this.file = {
-      readFile: (p, access) => call<string>(Methods.fileReadFile, [p, access]),
+      readFile: (p, access) => call<string>(Methods.fileReadFile, [p, scoped(access)]),
       readBinary: async (p, access) =>
-        Buffer.from(await call<string>(Methods.fileReadBinary, [p, access]), 'base64'),
-      writeFile: (p, content, access) => call<string>(Methods.fileWriteFile, [p, content, access]),
-      writeBinary: (p, data, access) => longCall<string>(Methods.fileWriteBinary, [p, data.toString('base64'), access]),
-      readDir: (p, access) => call<FileTreeNode[]>(Methods.fileReadDir, [p, access]),
-      stat: (p, access) => call<{ isDirectory: boolean; isFile: boolean }>(Methods.fileStat, [p, access]),
-      remove: (p, access) => call<void>(Methods.fileRemove, [p, access]),
-      rename: (oldP, newP, access) => call<string>(Methods.fileRename, [oldP, newP, access]),
-      mkdir: (p, access) => call<void>(Methods.fileMkdir, [p, access]),
-      copy: (src, destDir, access) => call<string>(Methods.fileCopy, [src, destDir, access]),
+        Buffer.from(await call<string>(Methods.fileReadBinary, [p, scoped(access)]), 'base64'),
+      writeFile: (p, content, access) => call<string>(Methods.fileWriteFile, [p, content, scoped(access)]),
+      writeBinary: (p, data, access) => longCall<string>(Methods.fileWriteBinary, [p, data.toString('base64'), scoped(access)]),
+      readDir: (p, access) => call<FileTreeNode[]>(Methods.fileReadDir, [p, scoped(access)]),
+      stat: (p, access) => call<{ isDirectory: boolean; isFile: boolean }>(Methods.fileStat, [p, scoped(access)]),
+      remove: (p, access) => call<void>(Methods.fileRemove, [p, scoped(access)]),
+      rename: (oldP, newP, access) => call<string>(Methods.fileRename, [oldP, newP, scoped(access)]),
+      mkdir: (p, access) => call<void>(Methods.fileMkdir, [p, scoped(access)]),
+      copy: (src, destDir, access) => call<string>(Methods.fileCopy, [src, destDir, scoped(access)]),
       extensionsRoot: () => call<string>(Methods.fileExtensionsRoot, []),
       // longCall (no deadline): extraction shells `tar` on the host and can run
       // past the default 30s call timeout for a large extension.
       extractArtifact: (tgz, destDir) => longCall<string>(Methods.fileExtractArtifact, [tgz, destDir]),
       importEntries: (sources, destDir, mode, access) =>
-        call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, access]),
+        call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, scoped(access)]),
       search: (root, query, opts, access) =>
-        longCall<FileSearchResult[]>(Methods.fileSearch, [root, query, opts, access]),
+        longCall<FileSearchResult[]>(Methods.fileSearch, [root, query, opts, scoped(access)]),
       searchContent: (root, opts, cbs, access) => {
         // Server-assigned streamId, like watch: start, then register the stream
         // when the round-trip resolves. batch/done arrive as evt frames.
         let streamId: string | null = null
         let stopped = false
-        void call<string>(Methods.fileSearchContentStart, [root, opts, access]).then((id) => {
+        void call<string>(Methods.fileSearchContentStart, [root, opts, scoped(access)]).then((id) => {
           if (stopped) {
             // Cancelled before the start round-trip resolved.
             void this.rpc.call(Methods.fileSearchContentStop, [id]).catch(() => {})
@@ -247,7 +259,7 @@ export class RemoteRuntime implements Runtime {
       watch: (prefix, onChange, access) => {
         let streamId: string | null = null
         let stopped = false
-        void call<string>(Methods.fileWatchStart, [prefix, access]).then((id) => {
+        void call<string>(Methods.fileWatchStart, [prefix, scoped(access)]).then((id) => {
           if (stopped) {
             // Unsubscribed before the start round-trip resolved.
             void this.rpc.call(Methods.fileWatchStop, [id]).catch(() => {})
@@ -271,42 +283,42 @@ export class RemoteRuntime implements Runtime {
     }
 
     this.vcs = {
-      isRepo: (dir) => call<boolean>(Methods.vcsIsRepo, [dir]),
-      findRepos: (dir, maxDepth) => call<string[]>(Methods.vcsFindRepos, [dir, maxDepth]),
-      init: (dir) => call<void>(Methods.vcsInit, [dir]),
-      lsFiles: (dir) => call<string[]>(Methods.vcsLsFiles, [dir]),
-      status: (cwd) => call<GitStatusResult>(Methods.vcsStatus, [cwd]),
-      diff: (cwd, filePath) => call<string>(Methods.vcsDiff, [cwd, filePath]),
-      diffStaged: (cwd, filePath) => call<string>(Methods.vcsDiffStaged, [cwd, filePath]),
-      monitorStatus: (cwd) => call<MonitorStatusResult>(Methods.vcsMonitorStatus, [cwd]),
-      stage: (cwd, filePath) => call<void>(Methods.vcsStage, [cwd, filePath]),
-      unstage: (cwd, filePath) => call<void>(Methods.vcsUnstage, [cwd, filePath]),
-      commit: (cwd, message) => call<void>(Methods.vcsCommit, [cwd, message]),
-      push: (cwd, remote, branch) => longCall<void>(Methods.vcsPush, [cwd, remote, branch]),
-      pull: (cwd, remote, branch) => longCall<GitPullResult>(Methods.vcsPull, [cwd, remote, branch]),
-      fetch: (cwd, remote) => longCall<void>(Methods.vcsFetch, [cwd, remote]),
-      log: (cwd, maxCount) => call<GitLogEntry[]>(Methods.vcsLog, [cwd, maxCount]),
-      branchList: (cwd) => call<GitBranchListResult>(Methods.vcsBranchList, [cwd]),
-      branchCreate: (cwd, name, startPoint) => call<void>(Methods.vcsBranchCreate, [cwd, name, startPoint]),
-      branchDelete: (cwd, name, force) => call<void>(Methods.vcsBranchDelete, [cwd, name, force]),
-      checkout: (cwd, branch) => call<void>(Methods.vcsCheckout, [cwd, branch]),
-      stash: (cwd, message) => call<void>(Methods.vcsStash, [cwd, message]),
-      stashPop: (cwd) => call<void>(Methods.vcsStashPop, [cwd]),
-      discardFile: (cwd, filePath) => call<void>(Methods.vcsDiscardFile, [cwd, filePath]),
-      worktreeList: (cwd) => call<Worktree[]>(Methods.vcsWorktreeList, [cwd]),
-      worktreeAdd: (repoCwd, branch, target, options) =>
-        call<{ path: string; branch: string }>(Methods.vcsWorktreeAdd, [repoCwd, branch, target, options]),
-      worktreeAddFromPr: (repoCwd, pr, target, options) =>
-        longCall<{ path: string; branch: string }>(Methods.vcsWorktreeAddFromPr, [repoCwd, pr, target, options]),
-      worktreeRemove: (repoCwd, worktreePath, options) =>
-        call<void>(Methods.vcsWorktreeRemove, [repoCwd, worktreePath, options]),
-      worktreePrune: (repoCwd) => call<{ output: string }>(Methods.vcsWorktreePrune, [repoCwd]),
-      worktreeStatus: (worktreePath) => call<WorktreeStatusResult | null>(Methods.vcsWorktreeStatus, [worktreePath]),
-      worktreeMergeTo: (repoCwd, from, to) => call<MergeResult>(Methods.vcsWorktreeMergeTo, [repoCwd, from, to]),
-      worktreeUpdateFrom: (worktreePath, from) => call<MergeResult>(Methods.vcsWorktreeUpdateFrom, [worktreePath, from]),
-      createPr: (worktreePath, branch) => longCall<CreatePrResult>(Methods.vcsCreatePr, [worktreePath, branch]),
-      prStatus: (worktreePath, branch) => longCall<PrStatusResult | null>(Methods.vcsPrStatus, [worktreePath, branch]),
-      prList: (repoCwd) => longCall<PrSummary[]>(Methods.vcsPrList, [repoCwd]),
+      isRepo: (dir, access) => call<boolean>(Methods.vcsIsRepo, [dir, scoped(access)]),
+      findRepos: (dir, maxDepth, access) => call<string[]>(Methods.vcsFindRepos, [dir, maxDepth, scoped(access)]),
+      init: (dir, access) => call<void>(Methods.vcsInit, [dir, scoped(access)]),
+      lsFiles: (dir, access) => call<string[]>(Methods.vcsLsFiles, [dir, scoped(access)]),
+      status: (cwd, access) => call<GitStatusResult>(Methods.vcsStatus, [cwd, scoped(access)]),
+      diff: (cwd, filePath, access) => call<string>(Methods.vcsDiff, [cwd, filePath, scoped(access)]),
+      diffStaged: (cwd, filePath, access) => call<string>(Methods.vcsDiffStaged, [cwd, filePath, scoped(access)]),
+      monitorStatus: (cwd, access) => call<MonitorStatusResult>(Methods.vcsMonitorStatus, [cwd, scoped(access)]),
+      stage: (cwd, filePath, access) => call<void>(Methods.vcsStage, [cwd, filePath, scoped(access)]),
+      unstage: (cwd, filePath, access) => call<void>(Methods.vcsUnstage, [cwd, filePath, scoped(access)]),
+      commit: (cwd, message, access) => call<void>(Methods.vcsCommit, [cwd, message, scoped(access)]),
+      push: (cwd, remote, branch, access) => longCall<void>(Methods.vcsPush, [cwd, remote, branch, scoped(access)]),
+      pull: (cwd, remote, branch, access) => longCall<GitPullResult>(Methods.vcsPull, [cwd, remote, branch, scoped(access)]),
+      fetch: (cwd, remote, access) => longCall<void>(Methods.vcsFetch, [cwd, remote, scoped(access)]),
+      log: (cwd, maxCount, access) => call<GitLogEntry[]>(Methods.vcsLog, [cwd, maxCount, scoped(access)]),
+      branchList: (cwd, access) => call<GitBranchListResult>(Methods.vcsBranchList, [cwd, scoped(access)]),
+      branchCreate: (cwd, name, startPoint, access) => call<void>(Methods.vcsBranchCreate, [cwd, name, startPoint, scoped(access)]),
+      branchDelete: (cwd, name, force, access) => call<void>(Methods.vcsBranchDelete, [cwd, name, force, scoped(access)]),
+      checkout: (cwd, branch, access) => call<void>(Methods.vcsCheckout, [cwd, branch, scoped(access)]),
+      stash: (cwd, message, access) => call<void>(Methods.vcsStash, [cwd, message, scoped(access)]),
+      stashPop: (cwd, access) => call<void>(Methods.vcsStashPop, [cwd, scoped(access)]),
+      discardFile: (cwd, filePath, access) => call<void>(Methods.vcsDiscardFile, [cwd, filePath, scoped(access)]),
+      worktreeList: (cwd, access) => call<Worktree[]>(Methods.vcsWorktreeList, [cwd, scoped(access)]),
+      worktreeAdd: (repoCwd, branch, target, options, access) =>
+        call<{ path: string; branch: string }>(Methods.vcsWorktreeAdd, [repoCwd, branch, target, options, scoped(access)]),
+      worktreeAddFromPr: (repoCwd, pr, target, options, access) =>
+        longCall<{ path: string; branch: string }>(Methods.vcsWorktreeAddFromPr, [repoCwd, pr, target, options, scoped(access)]),
+      worktreeRemove: (repoCwd, worktreePath, options, access) =>
+        call<void>(Methods.vcsWorktreeRemove, [repoCwd, worktreePath, options, scoped(access)]),
+      worktreePrune: (repoCwd, access) => call<{ output: string }>(Methods.vcsWorktreePrune, [repoCwd, scoped(access)]),
+      worktreeStatus: (worktreePath, access) => call<WorktreeStatusResult | null>(Methods.vcsWorktreeStatus, [worktreePath, scoped(access)]),
+      worktreeMergeTo: (repoCwd, from, to, access) => call<MergeResult>(Methods.vcsWorktreeMergeTo, [repoCwd, from, to, scoped(access)]),
+      worktreeUpdateFrom: (worktreePath, from, access) => call<MergeResult>(Methods.vcsWorktreeUpdateFrom, [worktreePath, from, scoped(access)]),
+      createPr: (worktreePath, branch, access) => longCall<CreatePrResult>(Methods.vcsCreatePr, [worktreePath, branch, scoped(access)]),
+      prStatus: (worktreePath, branch, access) => longCall<PrStatusResult | null>(Methods.vcsPrStatus, [worktreePath, branch, scoped(access)]),
+      prList: (repoCwd, access) => longCall<PrSummary[]>(Methods.vcsPrList, [repoCwd, scoped(access)]),
     }
   }
 

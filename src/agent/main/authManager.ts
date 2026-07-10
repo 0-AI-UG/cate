@@ -15,7 +15,6 @@
 // =============================================================================
 
 import { shell, type WebContents } from 'electron'
-import fsp from 'fs/promises'
 import {
   findEnvKeys,
   getEnvApiKey,
@@ -27,11 +26,9 @@ import {
 } from '@earendil-works/pi-ai'
 import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from '@earendil-works/pi-ai/oauth'
 import { sharedAuthPath } from './agentDir'
-import { agentConfigLock } from './agentConfigLock'
+import { readAgentConfigFile, updateAgentConfigFile } from './agentConfigLock'
 import { readCustomOpenAI } from './customModels'
 import log from '../../main/logger'
-import { isPlainObject } from '../../main/jsonUtils'
-import { writeJsonAtomic } from '../../main/writeJsonAtomic'
 import type {
   AgentModelDescriptor,
   AuthProviderDescriptor,
@@ -58,18 +55,7 @@ function authJsonPath(): string {
 }
 
 async function readAuthJson(): Promise<AuthStorageData> {
-  try {
-    const raw = await fsp.readFile(authJsonPath(), 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (isPlainObject(parsed)) {
-      return parsed as AuthStorageData
-    }
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      log.warn('[authManager] failed to read auth.json: %O', err)
-    }
-  }
-  return {}
+  return ((await readAgentConfigFile(authJsonPath())) ?? {}) as AuthStorageData
 }
 
 // Fired after every successful write so AgentManager can mirror the shared
@@ -77,9 +63,8 @@ async function readAuthJson(): Promise<AuthStorageData> {
 let onAuthChange: (() => void) | null = null
 
 async function writeAuthJson(data: AuthStorageData): Promise<void> {
-  await agentConfigLock.run('auth.json', async () => {
-    await writeJsonAtomic(authJsonPath(), data, { mode: 0o600 })
-  })
+  // Callers read-modify the full object above, so the update ignores `current`.
+  await updateAgentConfigFile(authJsonPath(), () => data)
   try { onAuthChange?.() } catch (err) { log.warn('[authManager] onChange hook failed: %O', err) }
 }
 
@@ -87,46 +72,42 @@ async function writeAuthJson(data: AuthStorageData): Promise<void> {
 // Built-in provider catalog
 // ---------------------------------------------------------------------------
 
-const PROVIDER_META: Record<string, Pick<AuthProviderDescriptor, 'name' | 'helpUrl'>> = {
-  openai: { name: 'OpenAI', helpUrl: 'https://platform.openai.com/api-keys' },
-  anthropic: { name: 'Anthropic (API key)', helpUrl: 'https://console.anthropic.com/settings/keys' },
-  openrouter: { name: 'OpenRouter', helpUrl: 'https://openrouter.ai/keys' },
-  google: { name: 'Google Gemini', helpUrl: 'https://aistudio.google.com/app/apikey' },
-  groq: { name: 'Groq', helpUrl: 'https://console.groq.com/keys' },
-  xai: { name: 'xAI', helpUrl: 'https://x.ai/api' },
-  mistral: { name: 'Mistral', helpUrl: 'https://console.mistral.ai/api-keys' },
-  deepseek: { name: 'DeepSeek', helpUrl: 'https://platform.deepseek.com' },
-  moonshotai: { name: 'Moonshot (Kimi)', helpUrl: 'https://platform.moonshot.ai' },
-  zai: { name: 'z.ai (Zhipu)', helpUrl: 'https://z.ai' },
-  minimax: { name: 'MiniMax', helpUrl: 'https://www.minimax.io' },
-  cerebras: { name: 'Cerebras', helpUrl: 'https://cloud.cerebras.ai' },
-  together: { name: 'Together AI', helpUrl: 'https://api.together.xyz' },
-  fireworks: { name: 'Fireworks', helpUrl: 'https://fireworks.ai' },
-  huggingface: { name: 'Hugging Face', helpUrl: 'https://huggingface.co/settings/tokens' },
-  'cloudflare-workers-ai': { name: 'Cloudflare Workers AI', helpUrl: 'https://developers.cloudflare.com/workers-ai/' },
-  'vercel-ai-gateway': { name: 'Vercel AI Gateway', helpUrl: 'https://vercel.com/ai-gateway' },
-}
+/** Curated API-key providers, in UI order (OpenAI first). Each id must match
+ *  pi-ai's provider catalog so credentials in auth.json are picked up by the
+ *  spawned pi process. Deliberately an explicit allow-list rather than
+ *  getProviders() wholesale: pi's full catalog also contains providers a bare
+ *  API key cannot authenticate (azure-openai-responses, google-vertex,
+ *  cloudflare-ai-gateway), OAuth-only providers already in the OAuth list
+ *  (github-copilot), and regional/plan variants (moonshotai-cn,
+ *  xiaomi-token-plan-*) that would clutter the picker. */
+const BUILTIN_API_KEY_PROVIDERS: Array<Pick<AuthProviderDescriptor, 'id' | 'name' | 'helpUrl'>> = [
+  { id: 'openai', name: 'OpenAI', helpUrl: 'https://platform.openai.com/api-keys' },
+  { id: 'anthropic', name: 'Anthropic (API key)', helpUrl: 'https://console.anthropic.com/settings/keys' },
+  { id: 'openrouter', name: 'OpenRouter', helpUrl: 'https://openrouter.ai/keys' },
+  { id: 'google', name: 'Google Gemini', helpUrl: 'https://aistudio.google.com/app/apikey' },
+  { id: 'groq', name: 'Groq', helpUrl: 'https://console.groq.com/keys' },
+  { id: 'xai', name: 'xAI', helpUrl: 'https://x.ai/api' },
+  { id: 'mistral', name: 'Mistral', helpUrl: 'https://console.mistral.ai/api-keys' },
+  { id: 'deepseek', name: 'DeepSeek', helpUrl: 'https://platform.deepseek.com' },
+  { id: 'moonshotai', name: 'Moonshot (Kimi)', helpUrl: 'https://platform.moonshot.ai' },
+  { id: 'zai', name: 'z.ai (Zhipu)', helpUrl: 'https://z.ai' },
+  { id: 'minimax', name: 'MiniMax', helpUrl: 'https://www.minimax.io' },
+  { id: 'cerebras', name: 'Cerebras', helpUrl: 'https://cloud.cerebras.ai' },
+  { id: 'together', name: 'Together AI', helpUrl: 'https://api.together.xyz' },
+  { id: 'fireworks', name: 'Fireworks', helpUrl: 'https://fireworks.ai' },
+  { id: 'huggingface', name: 'Hugging Face', helpUrl: 'https://huggingface.co/settings/tokens' },
+  { id: 'cloudflare-workers-ai', name: 'Cloudflare Workers AI', helpUrl: 'https://developers.cloudflare.com/workers-ai/' },
+  { id: 'vercel-ai-gateway', name: 'Vercel AI Gateway', helpUrl: 'https://vercel.com/ai-gateway' },
+]
 
-const NON_API_KEY_PROVIDERS = new Set(['amazon-bedrock', 'openai-codex'])
-
-function providerName(id: string): string {
-  return PROVIDER_META[id]?.name ?? id
-    .split('-')
-    .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
-    .join(' ')
-}
-
-/** pi-ai owns the provider id catalog. Cate contributes display/help metadata
- *  only, so upgrading pi cannot leave the UI on a stale provider fork. */
+/** The curated list intersected with pi-ai's live catalog, so an id a pi
+ *  upgrade drops disappears instead of offering a provider the runtime can't
+ *  use. */
 function apiKeyProviders(): AuthProviderDescriptor[] {
-  return getProviders()
-    .filter((id) => !NON_API_KEY_PROVIDERS.has(id))
-    .map((id) => ({
-      id,
-      name: providerName(id),
-      kind: 'apiKey' as const,
-      helpUrl: PROVIDER_META[id]?.helpUrl,
-    }))
+  const known = new Set<string>(getProviders())
+  return BUILTIN_API_KEY_PROVIDERS
+    .filter((p) => known.has(p.id))
+    .map((p) => ({ ...p, kind: 'apiKey' as const }))
 }
 
 // ---------------------------------------------------------------------------

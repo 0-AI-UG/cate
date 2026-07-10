@@ -30,6 +30,7 @@ vi.mock('electron', () => ({
 import { fetchCatalog } from './catalog'
 import { provisionCatalogToRuntime } from './install'
 import { buildDaemonRuntime } from '../../runtime/capabilities'
+import { loopbackRuntime } from '../runtime/testHarness'
 import { LOCAL_RUNTIME_ID } from '../runtime/locator'
 import type { Runtime } from '../runtime/types'
 
@@ -60,7 +61,7 @@ beforeEach(() => {
   // real ~/.cate. id LOCAL so host path joins use the native separator.
   hostRoot = path.join(tmp, 'host-extensions')
   process.env.CATE_EXTENSIONS_ROOT = hostRoot
-  runtime = buildDaemonRuntime({ id: LOCAL_RUNTIME_ID }).runtime
+  runtime = loopbackRuntime(buildDaemonRuntime({ id: LOCAL_RUNTIME_ID }).runtime, LOCAL_RUNTIME_ID)
 })
 
 afterEach(() => {

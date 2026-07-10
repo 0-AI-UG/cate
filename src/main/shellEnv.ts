@@ -9,7 +9,7 @@
 
 import { spawn } from 'child_process'
 import log from './logger'
-import { resolveShell } from './shellResolver'
+import { resolveShell } from '../runtime/capabilities/shellResolver'
 
 let resolvedEnv: Record<string, string> | null = null
 let resolvePromise: Promise<Record<string, string>> | null = null

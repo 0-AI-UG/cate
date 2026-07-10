@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { JoinedWorktree } from './useWorktrees'
 import type { WorktreeStatus } from './useParallelWork'
+import { workspaceIdForRoot } from './gitStatusStore'
 
 export interface PrStatus {
   number: number
@@ -64,7 +65,7 @@ export function useWorktreeStatuses(rootPath: string, live: JoinedWorktree[]): U
       const entries = await Promise.all(
         live.map(async (w) => {
           try {
-            const s = await window.electronAPI.gitWorktreeStatus(w.path)
+            const s = await window.electronAPI.gitWorktreeStatus(w.path, workspaceIdForRoot(rootPath))
             return s ? ([w.path, s] as const) : null
           } catch {
             return null
@@ -94,7 +95,7 @@ export function useWorktreeStatuses(rootPath: string, live: JoinedWorktree[]): U
       const entries = await Promise.all(
         targets.map(async (w) => {
           try {
-            const pr = await window.electronAPI.gitPrStatus(w.path, w.branch)
+            const pr = await window.electronAPI.gitPrStatus(w.path, w.branch, workspaceIdForRoot(rootPath))
             return pr ? ([w.path, pr] as const) : null
           } catch {
             return null
