@@ -25,13 +25,17 @@ describe('shared agent config access', () => {
     await expect(readAgentConfigFile(file)).resolves.toBeNull()
   })
 
-  it('preserves existing keys and writes private file permissions', async () => {
+  it('preserves existing keys and writes private file permissions where supported', async () => {
     await fsp.writeFile(file, JSON.stringify({ external: true }))
 
     await updateAgentConfigFile(file, (current) => ({ ...current, owned: 'value' }))
 
     await expect(readAgentConfigFile(file)).resolves.toEqual({ external: true, owned: 'value' })
-    expect((await fsp.stat(file)).mode & 0o777).toBe(0o600)
+    // Windows does not implement POSIX permission bits; Node reports a
+    // synthesized mode even when the write requested 0600.
+    if (process.platform !== 'win32') {
+      expect((await fsp.stat(file)).mode & 0o777).toBe(0o600)
+    }
   })
 
   it('serializes concurrent read-modify-write updates without losing data', async () => {
