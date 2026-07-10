@@ -30,10 +30,10 @@ vi.mock('../store', () => ({
 const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_WATCH_START, FS_WATCH_STOP, FS_WATCH_EVENT } = await import('../../shared/ipc-channels')
-const { registerTestLocalRuntime } = await import('../runtime/testLocalRuntime')
+const { registerTestDaemonRuntime } = await import('../runtime/testHarness')
 
 registerHandlers()
-registerTestLocalRuntime()
+registerTestDaemonRuntime(['node_modules'])
 const watchStart = handlers.get(FS_WATCH_START)!
 const watchStop = handlers.get(FS_WATCH_STOP)!
 const fakeEvent = { sender: {} } as unknown
@@ -70,13 +70,13 @@ describe('fs watch events for nested paths', () => {
     // realpath so the registered allowed root matches validatePathStrict's
     // symlink-resolved comparison (e.g. /tmp → /private/tmp on macOS).
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-watch-')))
-    addAllowedRoot(root)
+    addAllowedRoot(root, 'local')
     sendToWindow.mockClear()
   })
 
   afterEach(async () => {
     await watchStop(fakeEvent, root)
-    removeAllowedRoot(root)
+    removeAllowedRoot(root, 'local')
     await fs.rm(root, { recursive: true, force: true })
   })
 

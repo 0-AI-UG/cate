@@ -24,6 +24,7 @@ import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
 import { parseLocator } from '../../main/runtime/locator'
 import { InlineEditInput } from './InlineEditInput'
 import { CreateFileForm } from './CreateFileForm'
+import { CATE_FILE_MIME, readCateFilePaths, writeCateFileDrag } from '../drag/fileDragPayload'
 
 // -----------------------------------------------------------------------------
 // Icon mapping — extension to inline SVG icons with colors
@@ -261,7 +262,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       case 'open-on-canvas': onFileOpen(pathsToOpen, 'canvas'); break
       case 'new-file': startCreate('file'); break
       case 'new-folder': startCreate('folder'); break
-      case 'reveal': window.electronAPI.shellShowInFolder(node.path); break
+      case 'reveal': window.electronAPI.shellShowInFolder(node.path, workspaceId); break
       case 'copy': setClipboard(pathsToOpen); break
       case 'paste': await handlePaste(); break
       case 'rename': startRename(); break
@@ -393,13 +394,13 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       e.dataTransfer.dropEffect = 'copy'
       return
     }
-    if (!e.dataTransfer.types.includes('application/cate-file')) return
+    if (!e.dataTransfer.types.includes(CATE_FILE_MIME)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
   }, [])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!isExternalFileDrag(e) && !e.dataTransfer.types.includes('application/cate-file')) return
+    if (!isExternalFileDrag(e) && !e.dataTransfer.types.includes(CATE_FILE_MIME)) return
     e.preventDefault()
     dragCounterRef.current++
     setIsDragOver(true)
@@ -433,9 +434,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     setIsDragOver(false)
     if (!window.electronAPI) return
 
-    const raw = e.dataTransfer.getData('application/cate-files')
-    if (!raw) return
-    const sourcePaths: string[] = JSON.parse(raw)
+    const sourcePaths = readCateFilePaths(e.dataTransfer)
+    if (sourcePaths.length === 0) return
 
     for (const srcPath of sourcePaths) {
       const fileName = srcPath.substring(srcPath.lastIndexOf('/') + 1)
@@ -480,8 +480,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
           const dragPaths = isSelected && selectedPaths.size > 1
             ? [...selectedPaths]
             : [node.path]
-          e.dataTransfer.setData('application/cate-file', dragPaths[0])
-          e.dataTransfer.setData('application/cate-files', JSON.stringify(dragPaths))
+          writeCateFileDrag(e.dataTransfer, dragPaths)
           e.dataTransfer.effectAllowed = 'copyMove'
         }}
         onDragOver={node.isDirectory ? handleDragOver : undefined}

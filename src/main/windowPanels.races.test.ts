@@ -69,7 +69,7 @@ function makeWin(id: number): FakeWin {
   return fake
 }
 
-function open(id: number, type: 'main' | 'dock' | 'panel', workspaceId?: string): FakeWin {
+function open(id: number, type: 'main' | 'dock', workspaceId?: string): FakeWin {
   const fake = makeWin(id)
   registerWindow(fake.win, type, workspaceId)
   return fake

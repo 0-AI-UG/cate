@@ -71,7 +71,11 @@ function buildSnapshot(): { snapshot: SessionSnapshot; canvasSnapshot: CanvasSna
       'web-1': panel({
         id: 'web-1',
         type: 'browser',
-        url: 'http://localhost:3000',
+        tabs: [
+          { id: 'tab-1', url: 'https://docs.example', title: 'Docs' },
+          { id: 'tab-2', url: 'http://localhost:3000', title: 'App' },
+        ],
+        activeTabId: 'tab-2',
         proxyUrl: 'http://user:pass@proxy:8080',
       }),
     },
@@ -102,6 +106,9 @@ describe('workspace.json + session.json round-trip', () => {
     const sessFile = throughDisk(buildSessionFile(snapshot))
     const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
 
+    expect(wsFile.panels!['web-1']).not.toHaveProperty('url')
+    expect(wsFile.panels!['web-1'].tabs).toEqual(snapshot.panels!['web-1'].tabs)
+
     // Identity + reconnect metadata.
     expect(restored.workspaceId).toBe('ws-uuid-1')
     expect(restored.workspaceName).toBe('My Repo')
@@ -116,7 +123,8 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.panels!['ed-1'].filePath).toBe(`${ROOT}/src/app.ts`)
     expect(restored.panels!['ed-scratch'].unsavedContent).toBe('SCRATCH-CONTENT')
     expect(restored.panels!['term-1'].worktreeId).toBe('wt-1')
-    expect(restored.panels!['web-1'].url).toBe('http://localhost:3000')
+    expect(restored.panels!['web-1'].tabs).toEqual(snapshot.panels!['web-1'].tabs)
+    expect(restored.panels!['web-1'].activeTabId).toBe('tab-2')
     expect(restored.panels!['web-1'].proxyUrl).toBe('http://user:pass@proxy:8080')
     expect(restored.terminalCwds).toEqual({ 'term-1': WORKTREE_PATH })
 
@@ -238,6 +246,7 @@ describe('workspace.json + session.json round-trip', () => {
       bounds: { x: 50, y: 60, width: 800, height: 600 },
       workspaceId: 'ws-uuid-1',
       terminalCwds: { 'term-2': ROOT },
+      canvasStates: {},
     }
 
     const sessFile = throughDisk(buildSessionFile(snapshot, [dw]))

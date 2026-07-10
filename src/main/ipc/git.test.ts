@@ -7,8 +7,9 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
 }))
 
-const { createBranch } = await import('./git')
+const { createVcsCapability } = await import('../../runtime/capabilities/vcs')
 const { simpleGit } = await import('simple-git')
+const vcs = createVcsCapability({ env: () => process.env, scopeId: 'git-test' })
 
 describe('createBranch', () => {
   let repoDir: string
@@ -33,7 +34,7 @@ describe('createBranch', () => {
   })
 
   test('creates a branch from current HEAD when no start point is provided', async () => {
-    await createBranch(repoDir, 'feature/head')
+    await vcs.branchCreate(repoDir, 'feature/head')
     const git = simpleGit(repoDir)
     const current = await git.revparse(['--abbrev-ref', 'HEAD'])
     expect(current.trim()).toBe('feature/head')
@@ -48,7 +49,7 @@ describe('createBranch', () => {
     await git.add('README.md')
     await git.commit('next')
 
-    await createBranch(repoDir, 'feature/tagged', 'v1')
+    await vcs.branchCreate(repoDir, 'feature/tagged', 'v1')
     const branchHead = (await git.revparse(['HEAD'])).trim()
     const tagHead = (await git.revparse(['v1'])).trim()
 

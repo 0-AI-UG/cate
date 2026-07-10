@@ -15,6 +15,7 @@ import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
 import { Tooltip } from '../ui/Tooltip'
+import { writeCateFileDrag } from '../drag/fileDragPayload'
 
 // Uniform row height (px). Both the file-header and code-line rows are forced to
 // this height so the windowed (virtualized) list can map scrollTop <-> row index
@@ -59,12 +60,8 @@ const extOf = (name: string): string => {
  *  / terminal / agent drop targets all accept it. For a line drag, also carry
  *  the line + column so canvas/dock drops can open at the match. */
 function setFileDrag(e: React.DragEvent, path: string, line?: number, column?: number): void {
-  e.dataTransfer.setData('application/cate-file', path)
-  e.dataTransfer.setData('application/cate-files', JSON.stringify([path]))
+  writeCateFileDrag(e.dataTransfer, [path], line == null ? undefined : { path, line, column: column ?? 1 })
   e.dataTransfer.setData('text/plain', path)
-  if (line != null) {
-    e.dataTransfer.setData('application/cate-file-line', JSON.stringify({ path, line, column: column ?? 1 }))
-  }
   e.dataTransfer.effectAllowed = 'copy'
 }
 

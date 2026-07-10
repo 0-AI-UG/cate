@@ -31,14 +31,14 @@ export function selectAgentInfoByPanel(
   const out: Record<string, AgentPanelInfo> = {}
   const ws = workspaceId ? s.workspaces[workspaceId] : undefined
   if (!ws) return out
-  for (const [key, state] of Object.entries(ws.agentState)) {
+  for (const [key, terminal] of Object.entries(ws.terminals)) {
     // `agentName` is kept populated after the agent exits so the status
     // footer can still read "Finished (Claude Code)". Gate the name/logo on
     // `agentPresent` so the icon reverts to the terminal glyph the moment
     // the process is gone; leave `state` ungated so the finished/awaiting
     // indicators still render.
-    const name = ws.agentPresent[key] ? (ws.agentName[key] ?? null) : null
-    out[resolvePanelId(key)] = { state, name, logo: getAgentLogo(name) }
+    const name = terminal.agentPresent ? terminal.agentName : null
+    out[resolvePanelId(key)] = { state: terminal.agentState, name, logo: getAgentLogo(name) }
   }
   return out
 }

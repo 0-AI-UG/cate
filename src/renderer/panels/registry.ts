@@ -23,7 +23,7 @@ import {
   PuzzlePiece,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
-import type { PanelType, Point, BrowserTab } from '../../shared/types'
+import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { PANEL_DEFINITIONS, type SharedPanelDefinition } from '../../shared/panels'
@@ -78,7 +78,21 @@ export interface RendererPanelDefinition extends SharedPanelDefinition {
   /** Spawn a fresh panel of this type into the workspace. Returns the new
    *  panelId or null if creation failed. */
   create: (args: PanelCreateArgs) => string | null
+  props: (panel: PanelState, ctx: PanelRenderContext) => Record<string, unknown>
 }
+
+export interface PanelRenderContext {
+  workspaceId: string
+  nodeId: string
+  zoomLevel?: number
+  renderPanelContent?: (panelId: string, nodeId: string, zoomLevel: number) => React.ReactNode
+}
+
+const baseProps = (panel: PanelState, ctx: PanelRenderContext): Record<string, unknown> => ({
+  panelId: panel.id,
+  workspaceId: ctx.workspaceId,
+  nodeId: ctx.nodeId,
+})
 
 // -----------------------------------------------------------------------------
 // Registry
@@ -91,6 +105,7 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: TerminalPanel,
     create: ({ workspaceId, canvasPoint, placement, initialInput }) =>
       trackCreated('terminal', useAppStore.getState().createTerminal(workspaceId, initialInput, canvasPoint, placement) || null),
+    props: baseProps,
   },
   browser: {
     ...PANEL_DEFINITIONS.browser,
@@ -98,6 +113,13 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: BrowserPanel,
     create: ({ workspaceId, canvasPoint, placement, url }) =>
       trackCreated('browser', useAppStore.getState().createBrowser(workspaceId, url, canvasPoint, placement) || null),
+    props: (panel, ctx) => ({
+      ...baseProps(panel, ctx),
+      proxyUrl: panel.proxyUrl,
+      tabs: panel.tabs,
+      activeTabId: panel.activeTabId,
+      zoomLevel: ctx.zoomLevel ?? 1,
+    }),
   },
   editor: {
     ...PANEL_DEFINITIONS.editor,
@@ -105,6 +127,7 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: EditorPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath }) =>
       trackCreated('editor', useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null),
+    props: (panel, ctx) => ({ ...baseProps(panel, ctx), filePath: panel.filePath }),
   },
   canvas: {
     ...PANEL_DEFINITIONS.canvas,
@@ -112,6 +135,7 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: CanvasPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
       trackCreated('canvas', useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null),
+    props: (panel, ctx) => ({ ...baseProps(panel, ctx), renderPanelContent: ctx.renderPanelContent }),
   },
   agent: {
     ...PANEL_DEFINITIONS.agent,
@@ -119,6 +143,7 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: AgentPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
       trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null),
+    props: baseProps,
   },
   document: {
     ...PANEL_DEFINITIONS.document,
@@ -126,6 +151,7 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: DocumentPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath, documentType }) =>
       trackCreated('document', useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null),
+    props: (panel, ctx) => ({ ...baseProps(panel, ctx), filePath: panel.filePath }),
   },
   extension: {
     ...PANEL_DEFINITIONS.extension,
@@ -135,6 +161,11 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
       extensionId && extensionPanelId
         ? trackCreated('extension', useAppStore.getState().createExtensionPanel(workspaceId, extensionId, extensionPanelId, canvasPoint, placement) || null)
         : null,
+    props: (panel, ctx) => ({
+      ...baseProps(panel, ctx),
+      extensionId: panel.extensionId,
+      extensionPanelId: panel.extensionPanelId,
+    }),
   },
 }
 
@@ -164,39 +195,19 @@ export function getPanelDef(type: PanelType | string): RendererPanelDefinition {
  *  the panel state itself, so callers don't need to know which extras any
  *  given type expects. Caller wraps in <Suspense> at the boundary it wants. */
 export function renderPanelComponent(
-  panel: { type: PanelType; id: string; filePath?: string; url?: string; proxyUrl?: string; tabs?: BrowserTab[]; activeTabId?: string; extensionId?: string; extensionPanelId?: string },
-  ctx: { workspaceId: string; nodeId: string; zoomLevel?: number },
+  panel: PanelState,
+  ctx: PanelRenderContext,
 ): React.ReactElement | null {
   const def = PANEL_REGISTRY[panel.type]
   if (!def) return null
   const { Component } = def
-  // Per-type extras are passed through; components that don't accept them
-  // simply ignore the extra props.
-  const extras: Record<string, unknown> = {}
-  if (panel.type === 'editor') extras.filePath = panel.filePath
-  if (panel.type === 'browser') {
-    extras.url = panel.url
-    extras.proxyUrl = panel.proxyUrl
-    extras.tabs = panel.tabs
-    extras.activeTabId = panel.activeTabId
-    extras.zoomLevel = ctx.zoomLevel ?? 1
-  }
-  if (panel.type === 'extension') {
-    extras.extensionId = panel.extensionId
-    extras.extensionPanelId = panel.extensionPanelId
-  }
-  const props: PanelProps & Record<string, unknown> = {
-    panelId: panel.id,
-    workspaceId: ctx.workspaceId,
-    nodeId: ctx.nodeId,
-    ...extras,
-  }
+  const props = def.props(panel, ctx) as PanelProps & Record<string, unknown>
   // Wrap every panel in its own error boundary so a render error in one panel
   // fails in place rather than collapsing the whole window through the single
   // top-level boundary. Keyed by panel id so a reused slot resets cleanly.
   return React.createElement(
     PanelErrorBoundary,
     { panelType: panel.type, panelId: panel.id },
-    React.createElement(Component, props),
+    React.createElement(Component, { ...props, key: panel.id }),
   )
 }

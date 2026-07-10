@@ -12,6 +12,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const WS = 'ws-1'
 
+function browserPanel(id: string, title: string, url: string) {
+  const activeTabId = `${id}-tab`
+  return { id, type: 'browser', title, tabs: [{ id: activeTabId, url, title: '' }], activeTabId }
+}
+
 // A live <webview> stand-in. Each test tweaks the nav predicates it needs.
 function makeWebview(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -31,10 +36,10 @@ function makeWebview(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 const h = vi.hoisted(() => ({
-  workspaces: [] as Array<{ id: string; panels: Record<string, { id: string; type: string; title: string; url?: string }> }>,
+  workspaces: [] as Array<{ id: string; panels: Record<string, { id: string; type: string; title: string; tabs?: Array<{ id: string; url: string; title: string }>; activeTabId?: string }> }>,
   activePanelId: null as string | null,
   createBrowser: vi.fn(() => 'created-browser-id'),
-  updatePanelUrl: vi.fn(),
+  updateBrowserActiveTabUrl: vi.fn(),
   webviews: new Map<string, ReturnType<typeof makeWebview>>(),
   screenshot: vi.fn(async () => ({ filePath: '/tmp/shot.png', dataUrl: 'data:image/png;base64,x' }) as { filePath: string; dataUrl: string } | null),
 }))
@@ -44,7 +49,7 @@ vi.mock('../../stores/appStore', () => ({
     getState: () => ({
       workspaces: h.workspaces,
       createBrowser: h.createBrowser,
-      updatePanelUrl: h.updatePanelUrl,
+      updateBrowserActiveTabUrl: h.updateBrowserActiveTabUrl,
     }),
   },
 }))
@@ -72,7 +77,7 @@ beforeEach(() => {
       id: WS,
       panels: {
         term: { id: 'term', type: 'terminal', title: 'Term' },
-        b1: { id: 'b1', type: 'browser', title: 'Docs', url: 'https://docs.example/' },
+        b1: browserPanel('b1', 'Docs', 'https://docs.example/'),
       },
     },
   ]
@@ -92,7 +97,7 @@ describe('target resolution', () => {
 
   it('prefers the focused browser over the first browser', async () => {
     // Add a second browser and make it the active panel.
-    h.workspaces[0].panels.b2 = { id: 'b2', type: 'browser', title: 'App', url: 'https://app/' }
+    h.workspaces[0].panels.b2 = browserPanel('b2', 'App', 'https://app/')
     h.activePanelId = 'b2'
     const first = makeWebview()
     const focused = makeWebview()
@@ -112,7 +117,7 @@ describe('target resolution', () => {
   })
 
   it('routes to an explicit args.panelId', async () => {
-    h.workspaces[0].panels.b2 = { id: 'b2', type: 'browser', title: 'App', url: 'https://app/' }
+    h.workspaces[0].panels.b2 = browserPanel('b2', 'App', 'https://app/')
     const b1 = makeWebview()
     const b2 = makeWebview()
     h.webviews.set('b1', b1)
@@ -146,18 +151,18 @@ describe('open', () => {
     expect(out).toEqual({ ok: true, result: { panelId: 'created-browser-id', url: 'https://new/' } })
   })
 
-  it('loads the URL into the existing browser and mirrors it to the store', async () => {
+  it('loads the URL into the existing browser and updates the active tab', async () => {
     const wv = makeWebview()
     h.webviews.set('b1', wv)
     const out = await handleBrowserMethod(WS, M('open'), { url: 'https://go/' })
     expect(wv.loadURL).toHaveBeenCalledWith('https://go/')
-    expect(h.updatePanelUrl).toHaveBeenCalledWith(WS, 'b1', 'https://go/')
+    expect(h.updateBrowserActiveTabUrl).toHaveBeenCalledWith(WS, 'b1', 'https://go/')
     expect(out).toEqual({ ok: true, result: { panelId: 'b1', url: 'https://go/' } })
   })
 
-  it('mirrors the URL to the store when the webview is not attached yet (succeeds)', async () => {
+  it('updates the active tab when the webview is not attached yet (succeeds)', async () => {
     const out = await handleBrowserMethod(WS, M('open'), { url: 'https://later/' })
-    expect(h.updatePanelUrl).toHaveBeenCalledWith(WS, 'b1', 'https://later/')
+    expect(h.updateBrowserActiveTabUrl).toHaveBeenCalledWith(WS, 'b1', 'https://later/')
     expect(out).toEqual({ ok: true, result: { panelId: 'b1', url: 'https://later/' } })
   })
 
@@ -209,8 +214,14 @@ describe('navigation + query', () => {
     })
   })
 
+  it('does not treat about:blank as a start-page compatibility alias', async () => {
+    h.webviews.set('b1', makeWebview({ getURL: vi.fn(() => 'about:blank') }))
+    const out = await handleBrowserMethod(WS, M('current'), {})
+    expect(out).toMatchObject({ ok: true, result: { url: 'about:blank' } })
+  })
+
   it('list reports every browser panel with focus + start-page normalization', async () => {
-    h.workspaces[0].panels.b2 = { id: 'b2', type: 'browser', title: 'New Tab', url: 'cate://newtab' }
+    h.workspaces[0].panels.b2 = browserPanel('b2', 'New Tab', 'cate://newtab')
     h.activePanelId = 'b2'
     const out = await handleBrowserMethod(WS, M('list'), {})
     expect(out).toEqual({

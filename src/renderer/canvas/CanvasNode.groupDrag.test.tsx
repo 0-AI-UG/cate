@@ -99,7 +99,7 @@ function tabsDockStore(panelId: string): StoreApi<DockStore> {
       layout: { type: 'tabs', id: `stack-${panelId}`, panelIds: [panelId], activeIndex: 0 },
     },
   }
-  return createDockStore({ zones, locations: {} })
+  return createDockStore({ zones })
 }
 
 beforeEach(() => {

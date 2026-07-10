@@ -230,7 +230,6 @@ export function pickWorktreeColor(existing: { color: string }[]): string {
 export function createCleanDockSnapshot(): DockStateSnapshot {
   return {
     zones: createDefaultDockState(),
-    locations: {},
   }
 }
 

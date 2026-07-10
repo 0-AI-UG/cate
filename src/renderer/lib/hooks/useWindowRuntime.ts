@@ -32,8 +32,10 @@ import { revealPanel } from '../workspace/panelReveal'
 import { setupWindowPanelSync } from '../workspace/windowPanelSync'
 import { useOwnedTerminalTelemetry } from '../../hooks/useProcessMonitor'
 import type { AgentState } from '../../../shared/types'
+import type { StoreApi } from 'zustand'
+import type { CanvasStore } from '../../stores/canvasStore'
 
-export function useWindowRuntime(): void {
+export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
   // Appearance: hydrate settings + UI state, then apply theme + scale on change.
   // The main App loads these inside its awaited init effect; calling them here
   // too is idempotent (the stores no-op a redundant load), so every window mounts
@@ -47,7 +49,7 @@ export function useWindowRuntime(): void {
   // Keyboard shortcuts + native-menu dispatch (MENU_TRIGGER_ACTION etc.). All of
   // its canvas/active-panel resolution is per-window, so it acts on the in-window
   // canvas and panels.
-  useShortcuts()
+  useShortcuts(canvasStore)
 
   // Owner-routed terminal telemetry (agent presence/name, ports, cwd). Main
   // sends these only to each terminal's owning window, so every window must

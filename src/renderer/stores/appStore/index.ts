@@ -44,11 +44,7 @@ export {
   getWorkspaceCanvasStore,
   placementForActivePanel,
 } from '../../lib/workspace/canvasAccess'
-export {
-  registerCanvasOps,
-  getCanvasOpsById,
-  unregisterCanvasOps,
-} from '../../lib/workspace/canvasAccess'
+export { getCanvasOpsById } from '../../lib/workspace/canvasAccess'
 
 // -----------------------------------------------------------------------------
 // Store

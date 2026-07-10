@@ -26,6 +26,7 @@ import type {
   AgentThinkingLevel,
 } from '../../shared/types'
 import { Tooltip } from '../../renderer/ui/Tooltip'
+import { useAutoGrowingTextarea } from '../../renderer/lib/hooks/useAutoGrowingTextarea'
 
 export function ChatInput({
   draft,
@@ -81,12 +82,7 @@ export function ChatInput({
   onSlashOpen?: () => void
   placeholder?: string
 }) {
-  useEffect(() => {
-    const ta = textareaRef.current
-    if (!ta) return
-    ta.style.height = 'auto'
-    ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'
-  }, [draft, textareaRef])
+  useAutoGrowingTextarea(textareaRef, draft)
 
   // Slash popup is active when the draft starts with "/" and has no spaces
   // before the cursor — i.e. the user is still picking a command name.

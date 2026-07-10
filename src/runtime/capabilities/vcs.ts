@@ -16,7 +16,11 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import fsp from 'fs/promises'
 import path from 'path'
-import { validateCwd, addAllowedRoot, removeAllowedRoot } from '../../main/ipc/pathValidation'
+import {
+  validateCwd as validateScopedCwd,
+  addAllowedRootForRelatedPath,
+  removeAllowedRootFromAllScopes,
+} from '../../main/ipc/pathValidation'
 import { ensureCateGitignore } from '../../main/cateGitignore'
 import type { VcsHost } from '../../main/runtime/types'
 
@@ -53,10 +57,15 @@ async function linkWorktreePaths(
 export interface VcsCapabilityDeps {
   /** Environment for `git`/`gh` subprocesses (login-shell PATH locally). */
   env: () => NodeJS.ProcessEnv
+  /** Runtime-owned scope used for every git path and discovered worktree. */
+  scopeId: string
 }
 
 export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
   const env = () => deps.env()
+  const validateCwd = (cwd: string) => validateScopedCwd(cwd, undefined, deps.scopeId)
+  const addWorktreeRoot = (root: string, repoCwd: string) =>
+    addAllowedRootForRelatedPath(root, repoCwd, deps.scopeId)
 
   function validateFilePath(cwd: string, filePath: string): string {
     const resolvedCwd = path.resolve(cwd)
@@ -278,9 +287,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
           }
           if (wtPath) {
             worktrees.push({ path: wtPath, branch: branch || '(unknown)', isBare, isCurrent: path.resolve(wtPath) === path.resolve(cwd) })
-            // TODO(scope): pass requesting workspace scope once threaded — legacy
-            // (union) scope for now keeps worktree roots reachable.
-            if (!isBare) addAllowedRoot(wtPath)
+            if (!isBare) addWorktreeRoot(wtPath, cwd)
           }
         }
         return worktrees
@@ -295,8 +302,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       if (options?.createBranch) args.push('-b', branch, targetPath, options.baseRef ?? 'HEAD')
       else args.push(targetPath, branch)
       await git.raw(args)
-      // TODO(scope): pass requesting workspace scope once threaded.
-      addAllowedRoot(targetPath)
+      addWorktreeRoot(targetPath, repoCwd)
       await linkWorktreePaths(validateCwd(repoCwd), targetPath, options?.symlinkPaths)
       return { path: targetPath, branch }
     },
@@ -306,14 +312,13 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       if (!(await ghAvailable(validRepo))) throw new Error('GitHub CLI (gh) is required to check out pull requests.')
       await ensureContainingDir(targetPath)
       await git.raw(['worktree', 'add', '--detach', targetPath])
-      // TODO(scope): pass requesting workspace scope once threaded.
-      addAllowedRoot(targetPath)
+      addWorktreeRoot(targetPath, repoCwd)
       try {
         await execFileP('gh', ['pr', 'checkout', String(prNumber)], { cwd: targetPath, timeout: 120000, env: env() })
       } catch (error) {
         await git.raw(['worktree', 'remove', '--force', targetPath]).catch(() => {})
         await fsp.rm(targetPath, { recursive: true, force: true }).catch(() => {})
-        removeAllowedRoot(targetPath)
+        removeAllowedRootFromAllScopes(targetPath)
         throw new Error(`Could not check out PR #${prNumber}: ${error instanceof Error ? error.message : String(error)}`)
       }
       const branch = (await simpleGit(targetPath).raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
@@ -327,7 +332,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       args.push(worktreePath)
       await git.raw(args)
       await fsp.rm(worktreePath, { recursive: true, force: true }).catch(() => {})
-      removeAllowedRoot(worktreePath)
+      removeAllowedRootFromAllScopes(worktreePath)
     },
     async worktreePrune(repoCwd) {
       const output = await simpleGit(validateCwd(repoCwd)).raw(['worktree', 'prune', '-v'])

@@ -63,8 +63,6 @@ export function registerDockWindowHandlers({ createWindow }: DockWindowDeps): vo
 
     const newWin = createWindow({
       type: 'dock',
-      panelType: firstPanel.type,
-      panelId: firstPanel.id,
       workspaceId: workspaceId || undefined,
     })
 

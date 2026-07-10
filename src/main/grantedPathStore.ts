@@ -1,77 +1,26 @@
-// =============================================================================
-// grantedPathStore — main-owned persistence for file paths the user has
-// explicitly approved via a native dialog (currently the Save-As picker for
-// untitled editors).
-//
-// The list lives in a JSON file under userData and is loaded on first use.
-// Crucially, paths can only be ADDED from inside the main process — there is
-// no IPC handler that lets a renderer enrol arbitrary paths. The renderer
-// never sees this store directly; main grants per-window read+write access
-// to each persisted path when a window is created, and the window-scoped
-// grant evaporates on window close.
-// =============================================================================
+// Main-owned persistence for file paths explicitly approved by native dialogs.
+// The canonical JSON state engine owns parsing, quarantine, in-memory authority,
+// atomic writes, and write serialization; this module only enforces the grant
+// list's string-array schema.
 
-import path from 'path'
-import { app } from 'electron'
-import fs from 'fs/promises'
-import log from './logger'
-import { writeJsonAtomic } from './writeJsonAtomic'
-import { quarantineCorruptFile } from './quarantineCorruptFile'
+import { createJsonStateFile } from './jsonStateFile'
 
-const STORE_FILENAME = 'granted-paths.json'
+const grants = createJsonStateFile<string[]>({
+  filename: 'granted-paths.json',
+  defaults: [],
+  normalize: (parsed) => Array.isArray(parsed)
+    ? [...new Set(parsed.filter((value): value is string => typeof value === 'string'))]
+    : [],
+})
 
-function storePath(): string {
-  return path.join(app.getPath('userData'), STORE_FILENAME)
-}
-
-let cache: Set<string> | null = null
-
-async function load(): Promise<Set<string>> {
-  if (cache) return cache
-  let raw: string | null = null
-  try {
-    raw = await fs.readFile(storePath(), 'utf-8')
-  } catch {
-    // File missing or unreadable — treat as empty.
-  }
-  if (raw !== null) {
-    try {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        cache = new Set(parsed.filter((x): x is string => typeof x === 'string'))
-        return cache
-      }
-    } catch {
-      // Unparseable: quarantine before the next flush overwrites it, so the
-      // user's approved-path list stays recoverable.
-      const backup = quarantineCorruptFile(storePath())
-      log.warn('[grantedPathStore] %s is corrupt%s; starting empty', STORE_FILENAME, backup ? `, backed up to ${backup}` : '')
-    }
-  }
-  cache = new Set()
-  return cache
-}
-
-async function flush(): Promise<void> {
-  if (!cache) return
-  try {
-    await writeJsonAtomic(storePath(), Array.from(cache))
-  } catch (err) {
-    log.warn('[grantedPathStore] Failed to persist:', err)
-  }
-}
-
-/** Record `filePath` as a persistently approved location. Idempotent. The
- *  on-disk file is flushed before this promise resolves so an immediate
- *  app quit after a Save-As does not lose the freshly recorded grant. */
+/** Persist before resolving so an immediate quit after Save As cannot lose the grant. */
 export async function recordPersistentGrant(filePath: string): Promise<void> {
-  const set = await load()
-  if (set.has(filePath)) return
-  set.add(filePath)
-  await flush()
+  const current = grants.get()
+  if (current.includes(filePath)) return
+  grants.set([...current, filePath])
+  grants.flushPendingWritesSync()
 }
 
-/** Return a snapshot of all currently persisted paths. */
 export async function listPersistentGrants(): Promise<string[]> {
-  return Array.from(await load())
+  return [...grants.get()]
 }

@@ -12,14 +12,14 @@
 
 import fs from 'fs'
 import fsp from 'fs/promises'
-import os from 'os'
 import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
 import { writeTextAtomic } from '../../main/writeJsonAtomic'
 import { LOCAL_RUNTIME_ID } from '../../main/runtime/locator'
-import { sharedAuthWriteQueue } from './writeQueue'
+import { agentConfigLock } from './agentConfigLock'
 import type { Runtime } from '../../main/runtime/types'
+import { CATE_GITIGNORE_CONTENT } from '../../main/cateGitignore'
 
 const CATE_DIR = '.cate'
 export const PI_AGENT_DIR = 'pi-agent'
@@ -72,21 +72,17 @@ export function sharedAuthPath(): string {
   return path.join(app.getPath('userData'), PI_AGENT_DIR, 'auth.json')
 }
 
-/** Legacy global pi auth, used once to seed the shared file. */
-function legacyGlobalAuthPath(): string {
-  return path.join(os.homedir(), '.pi', 'agent', 'auth.json')
-}
-
 async function readFileOrNull(p: string): Promise<string | null> {
   try { return await fsp.readFile(p, 'utf-8') }
   catch { return null }
 }
 
 async function ensureSharedAuth(): Promise<void> {
-  const shared = sharedAuthPath()
-  if (fs.existsSync(shared)) return
-  const legacy = await readFileOrNull(legacyGlobalAuthPath())
-  await writeTextAtomic(shared, legacy ?? '{}\n', { mode: 0o600 })
+  await agentConfigLock.run('auth.json', async () => {
+    const shared = sharedAuthPath()
+    if (fs.existsSync(shared)) return
+    await writeTextAtomic(shared, '{}\n', { mode: 0o600 })
+  })
 }
 
 /** Push the shared auth.json into the host's workspace copy via the runtime. */
@@ -108,7 +104,7 @@ export async function prepareAgentDir(runtime: Runtime, hostCwd: string, variant
   try {
     await runtime.file.stat(gi)
   } catch {
-    try { await runtime.file.writeFile(gi, '*\n!workspace.json\n') } catch { /* best effort */ }
+    try { await runtime.file.writeFile(gi, CATE_GITIGNORE_CONTENT) } catch { /* best effort */ }
   }
 }
 
@@ -120,7 +116,7 @@ export async function pushSharedToWorkspace(runtime: Runtime, hostCwd: string, v
 async function syncBack(runtime: Runtime, hostCwd: string, variant: AgentDirVariant): Promise<void> {
   // Shared queue with authManager so two workspaces refreshing tokens (or a
   // UI-driven credential write) can't interleave on the shared auth.json.
-  await sharedAuthWriteQueue(async () => {
+  await agentConfigLock.run('auth.json', async () => {
     const authPath = hostJoin(runtime.id, hostAgentDir(runtime.id, hostCwd, variant), 'auth.json')
     let wsData: string | null
     try { wsData = await runtime.file.readFile(authPath) } catch { return }

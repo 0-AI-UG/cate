@@ -95,7 +95,7 @@ function commit(terminalId: string, state: AgentState, notify: boolean): void {
 
   t.state = state
   const status = useStatusStore.getState()
-  const agentName = status.workspaces[workspaceId]?.agentName[terminalId] ?? null
+  const agentName = status.workspaces[workspaceId]?.terminals[terminalId]?.agentName ?? null
   status.setAgentState(workspaceId, terminalId, state, agentName)
   window.electronAPI?.shellReportAgentScreenState?.(terminalId, state)
 
@@ -198,6 +198,6 @@ export function applyRemoteAgentScreenState(terminalId: string, state: AgentStat
   const status = useStatusStore.getState()
   const workspaceId = workspaceIdForTerminal(terminalId)
   if (!workspaceId) return
-  const agentName = status.workspaces[workspaceId]?.agentName[terminalId] ?? null
+  const agentName = status.workspaces[workspaceId]?.terminals[terminalId]?.agentName ?? null
   status.setAgentState(workspaceId, terminalId, state, agentName)
 }

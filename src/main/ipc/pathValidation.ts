@@ -8,14 +8,6 @@ import { realpathSync } from 'fs'
 import path from 'path'
 import os from 'os'
 
-// Per-workspace ("scope") allowed-root registry. Each scopeId is a workspace id.
-// Phase 1 records which roots belong to which workspace and threads the scopeId
-// end-to-end (renderer -> IPC -> runtime -> daemon), but does NOT yet use it to
-// restrict access — isWithinAllowedRoots still checks the union of all scopes'
-// roots (pre-isolation behavior). Strict per-workspace enforcement is deferred to
-// Phase 3. Calls without a scopeId land under the LEGACY key (home/agent dirs,
-// daemon root, dev trust-scoping override) and stay globally allowed by design.
-const LEGACY_SCOPE = '__legacy_global__'
 // scope -> (resolved root as registered -> every canonical form used for matching)
 const rootsByScope = new Map<string, Map<string, string[]>>()
 
@@ -58,31 +50,49 @@ function canonicalForms(resolved: string): string[] {
   return [resolved]
 }
 
-export function addAllowedRoot(root: string, scopeId?: string): void {
-  const key = scopeId ?? LEGACY_SCOPE
-  const map = rootsByScope.get(key) ?? new Map<string, string[]>()
+export function addAllowedRoot(root: string, scopeId: string): void {
+  if (!scopeId) throw new Error('A path scope is required')
+  const map = rootsByScope.get(scopeId) ?? new Map<string, string[]>()
   const resolved = path.resolve(root)
   map.set(resolved, canonicalForms(resolved))
-  rootsByScope.set(key, map)
+  rootsByScope.set(scopeId, map)
 }
 
-export function removeAllowedRoot(root: string, scopeId?: string): void {
-  const key = scopeId ?? LEGACY_SCOPE
-  const map = rootsByScope.get(key)
+export function removeAllowedRoot(root: string, scopeId: string): void {
+  if (!scopeId) throw new Error('A path scope is required')
+  const map = rootsByScope.get(scopeId)
   if (!map) return
   map.delete(path.resolve(root))
-  if (map.size === 0) rootsByScope.delete(key)
+  if (map.size === 0) rootsByScope.delete(scopeId)
 }
 
-export function getAllowedRoots(): ReadonlySet<string> {
-  // Union of every scope's roots — some callers/tests want the global view.
-  // Returns the roots as registered (lexical form), not the internal
-  // realpath variants.
-  const union = new Set<string>()
-  for (const map of rootsByScope.values()) {
-    for (const root of map.keys()) union.add(root)
+export function getAllowedRoots(scopeId: string): ReadonlySet<string> {
+  return new Set(rootsByScope.get(scopeId)?.keys() ?? [])
+}
+
+/** Register a related root (for example a git worktree) under every scope that
+ *  owns `sourcePath`. The fallback is the daemon's own runtime scope, used when
+ *  the workspace-specific root has not reached the daemon yet. */
+export function addAllowedRootForRelatedPath(root: string, sourcePath: string, fallbackScopeId: string): void {
+  const sourceKey = pathCompareKey(path.resolve(sourcePath))
+  const matchingScopes: string[] = []
+  for (const [scopeId, roots] of rootsByScope) {
+    if ([...roots.values()].some((forms) => keyUnderRoots(sourceKey, forms))) {
+      matchingScopes.push(scopeId)
+    }
   }
-  return union
+  for (const scopeId of matchingScopes.length ? matchingScopes : [fallbackScopeId]) {
+    addAllowedRoot(root, scopeId)
+  }
+}
+
+/** Remove an exact related root from every scope it was propagated to. */
+export function removeAllowedRootFromAllScopes(root: string): void {
+  const resolved = path.resolve(root)
+  for (const [scopeId, roots] of rootsByScope) {
+    roots.delete(resolved)
+    if (roots.size === 0) rootsByScope.delete(scopeId)
+  }
 }
 
 // True if `key` (a pre-computed pathCompareKey) is the root itself or sits under
@@ -103,25 +113,17 @@ function keyUnderRoots(key: string, roots: Iterable<string>): boolean {
 let tmpDirForms: string[] | undefined
 
 function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
+  if (!scopeId) return false
   const key = pathCompareKey(normalized)
   tmpDirForms ??= canonicalForms(path.resolve(os.tmpdir()))
   if (keyUnderRoots(key, tmpDirForms)) {
     return true
   }
 
-  // Phase 1 lands the SCOPE-THREADING INFRASTRUCTURE only: `scopeId` is recorded
-  // per workspace (see addAllowedRoot / rootsByScope) and is now carried end-to-end
-  // from the renderer through to this validator, but it is intentionally NOT used to
-  // restrict access yet. The check stays the pre-isolation "union of every open
-  // workspace's roots" so behavior is unchanged. Strict per-workspace enforcement
-  // (allow only `scopeId`'s own roots, denying cross-workspace access) is deferred to
-  // Phase 3, where each local workspace gets its own daemon rooted at its own root —
-  // the future strict branch checks only rootsByScope.get(scopeId)'s forms.
-  void scopeId
-  for (const map of rootsByScope.values()) {
-    for (const forms of map.values()) {
-      if (keyUnderRoots(key, forms)) return true
-    }
+  const roots = rootsByScope.get(scopeId)
+  if (!roots) return false
+  for (const forms of roots.values()) {
+    if (keyUnderRoots(key, forms)) return true
   }
   return false
 }

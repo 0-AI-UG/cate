@@ -117,7 +117,7 @@ export async function provisionSideloadToRuntime(
     // ~/.cate/extensions, tmpdir, workspace roots), so serveStatic's readBinary
     // would fail validatePathStrict → every asset 404s. Register it as an allowed
     // root so the daemon's authoritative path checks permit reading its assets.
-    await runtime.addAllowedRoot(folder)
+    await runtime.addAllowedRoot(folder, runtime.id)
     return folder
   }
 

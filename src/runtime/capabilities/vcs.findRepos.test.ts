@@ -9,7 +9,7 @@ import { createVcsCapability } from './vcs'
 // node_modules and similar heavy dirs). Temp dirs live under os.tmpdir(), which
 // pathValidation always allows, so no allowed-root wiring is needed here.
 
-const vcs = createVcsCapability({ env: () => process.env })
+const vcs = createVcsCapability({ env: () => process.env, scopeId: 'vcs-test' })
 
 async function mkGitRepo(dir: string): Promise<void> {
   await fs.mkdir(path.join(dir, '.git'), { recursive: true })

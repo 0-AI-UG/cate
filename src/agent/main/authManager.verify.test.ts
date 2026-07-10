@@ -25,7 +25,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({ app: { getPath: () => h.userData }, shell: {} }))
 vi.mock('./agentDir', () => ({ sharedAuthPath: () => h.authJsonPath }))
-vi.mock('./writeQueue', () => ({ sharedAuthWriteQueue: (fn: () => Promise<void>) => fn() }))
+vi.mock('./agentConfigLock', () => ({
+  agentConfigLock: { run: (_key: string, fn: () => Promise<void>) => fn() },
+}))
 vi.mock('./customModels', () => ({ readCustomOpenAI: () => h.readCustomOpenAI() }))
 vi.mock('@earendil-works/pi-ai', () => ({
   findEnvKeys: (...args: unknown[]) => h.findEnvKeys(...args),

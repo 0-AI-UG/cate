@@ -25,7 +25,6 @@ import {
   getOrCreateCanvasStoreForPanel,
   releaseCanvasStoreForPanel,
   getAllCanvasStores,
-  useCanvasStore,
   type CanvasStore,
 } from '../../stores/canvasStore'
 import { getDefaultSession } from '../session'
@@ -292,7 +291,7 @@ export function renderDragScene(spec: SceneSpec): SceneApi {
   installElementFromPoint()
   getDefaultSession().resetDispatch()
   useDragStore.getState().applyDragState(INITIAL_DRAG_STATE)
-  for (const store of [useCanvasStore, ...getAllCanvasStores()]) {
+  for (const store of getAllCanvasStores()) {
     store.setState((s) => ({
       ...s,
       nodes: {},

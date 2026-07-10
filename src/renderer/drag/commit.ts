@@ -1,7 +1,6 @@
 // =============================================================================
 // commitDrop — apply a resolved DropTarget. Pure switch over target.kind. Owns
-// every source→target combination directly (dock execution is inlined; no
-// translation back to a legacy union). Cross-window / detach are delegated to
+// every source→target combination directly. Cross-window / detach are delegated to
 // caller-provided callbacks so the dispatcher owns the IPC + history side
 // effects.
 // =============================================================================
@@ -72,26 +71,20 @@ export async function commitDrop(
       ctx.prepareLocalRemount?.(source.panelId, panel.type)
       // Remove the panel from its current location first so addNode doesn't
       // race with a stale duplicate (terminal PTY, xterm DOM, etc.).
-      removeFromSource(source, panel.type, ctx)
+      removeFromSource(source)
       placeNodeOnCanvas(target.canvasStoreApi, panel.id, panel.type, target.origin, target.size)
       return
     }
 
     case 'dock-zone': {
-      // A panel-window source can't land on a dock/canvas target inside its
-      // own window (no zones registered there); cross-window drops route
-      // through 'detach' and the receiver. So if we somehow get here with a
-      // panel-window source, drop the commit silently.
-      if (source.origin.kind === 'panel-window') return
       ctx.prepareLocalRemount?.(source.panelId, panel.type)
-      removeFromSource(source, panel.type, ctx)
+      removeFromSource(source)
       target.dockStoreApi.getState().dockPanel(panel.id, target.zone)
       return
     }
 
     case 'dock-tab':
     case 'dock-split': {
-      if (source.origin.kind === 'panel-window') return
       const targetState = target.dockStoreApi.getState()
       const zone = findZoneForStack(targetState.zones, target.stackId)
       // Stack vanished between resolve and commit — abort without touching the
@@ -102,7 +95,7 @@ export async function commitDrop(
           ? { type: 'tab', stackId: target.stackId }
           : { type: 'split', stackId: target.stackId, edge: target.edge }
       ctx.prepareLocalRemount?.(source.panelId, panel.type)
-      removeFromSource(source, panel.type, ctx)
+      removeFromSource(source)
       targetState.dockPanel(panel.id, zone, dockTarget)
       return
     }
@@ -120,18 +113,11 @@ export async function commitDrop(
         // cross-window drag. If so, just clean up the source.
         const { claimed } = await ctx.crossWindowResolve()
         if (claimed) {
-          removeFromSource(source, panel.type, ctx)
+          removeFromSource(source)
           ctx.onRemovedFromCanvas?.(source.panelId, panel.type)
           return
         }
-        // No window claimed. Panel-window sources are already in their own
-        // detached window — spawning ANOTHER detached window would be
-        // surprising, so just cancel the drag and leave the source as-is.
-        if (source.origin.kind === 'panel-window') {
-          ctx.crossWindowCancel()
-          return
-        }
-        // Otherwise: spawn a new dock window holding the panel.
+        // No window claimed: spawn a new dock window holding the panel.
         const snapshot = ctx.buildSnapshot()
         if (!snapshot) {
           ctx.crossWindowCancel()
@@ -139,7 +125,7 @@ export async function commitDrop(
         }
         const winId = await ctx.dragDetach(snapshot, ctx.workspaceId)
         if (winId != null) {
-          removeFromSource(source, panel.type, ctx)
+          removeFromSource(source)
           ctx.onRemovedFromCanvas?.(source.panelId, panel.type)
         }
         return
@@ -171,8 +157,6 @@ export function placeNodeOnCanvas(
 
 function removeFromSource(
   source: DragSource,
-  panelType: PanelType,
-  ctx: CommitContext,
 ): void {
   const origin = source.origin
   if (origin.kind === 'dock-tab') {
@@ -187,8 +171,5 @@ function removeFromSource(
       origin.canvasStoreApi,
     )
     store?.getState().finalizeRemoveNode(origin.nodeId)
-  } else if (origin.kind === 'panel-window') {
-    // Single-panel detached window — the panel left, so close the host.
-    window.close()
   }
 }

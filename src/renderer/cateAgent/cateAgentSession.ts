@@ -12,6 +12,7 @@
 import type { AgentModelRef, CateAgentRole } from '../../shared/types'
 import { loadDefaultModel, loadCateAgentModel } from '../../agent/renderer/agentModelPrefs'
 import log from '../lib/logger'
+import { agentClient } from '../../agent/renderer/agentClient'
 
 /** panelId for the always-on observer of a workspace. */
 export function observerPanelId(wsId: string): string {
@@ -70,7 +71,7 @@ export interface CreateCateAgentSessionOpts {
 /** Start a headless Cate Agent session. Returns false if creation failed. */
 export async function createCateAgentSession(opts: CreateCateAgentSessionOpts): Promise<boolean> {
   try {
-    const res = await window.electronAPI.agentCreate({
+    const res = await agentClient.create({
       panelId: opts.panelId,
       workspaceId: opts.workspaceId,
       cwd: opts.cwd ?? opts.rootPath,
@@ -95,7 +96,7 @@ export async function createCateAgentSession(opts: CreateCateAgentSessionOpts): 
 
 export async function promptCateAgent(panelId: string, text: string): Promise<void> {
   try {
-    await window.electronAPI.agentPrompt(panelId, text)
+    await agentClient.prompt(panelId, text)
   } catch (err) {
     log.warn('[cateAgentSession] prompt failed for %s: %O', panelId, err)
   }
@@ -103,7 +104,7 @@ export async function promptCateAgent(panelId: string, text: string): Promise<vo
 
 export async function interruptCateAgent(panelId: string): Promise<void> {
   try {
-    await window.electronAPI.agentInterrupt(panelId)
+    await agentClient.interrupt(panelId)
   } catch (err) {
     log.warn('[cateAgentSession] interrupt failed for %s: %O', panelId, err)
   }
@@ -111,7 +112,7 @@ export async function interruptCateAgent(panelId: string): Promise<void> {
 
 export async function disposeCateAgent(panelId: string): Promise<void> {
   try {
-    await window.electronAPI.agentDispose(panelId)
+    await agentClient.dispose(panelId)
   } catch (err) {
     log.warn('[cateAgentSession] dispose failed for %s: %O', panelId, err)
   }

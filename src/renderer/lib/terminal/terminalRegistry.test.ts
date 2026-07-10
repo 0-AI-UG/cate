@@ -104,7 +104,6 @@ vi.mock('../../stores/appStore', () => ({
   useAppStore: { getState: () => ({ workspaces: [] }) },
 }))
 vi.mock('../workspace/session', () => ({
-  terminalRestoreData: new Map(),
   replayTerminalLog: async () => {},
 }))
 vi.mock('./terminalUrlOpen', () => ({
@@ -121,7 +120,6 @@ vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: 
 // causes a fresh getOrCreate to silently go down the reconnect path.
 const terminalCreate = vi.fn(async () => 'pty-fresh')
 const panelTransferAck = vi.fn(async (_id: string) => undefined as undefined)
-const shellRegisterTerminal = vi.fn(async () => undefined)
 
 beforeEach(() => {
   fitProposal.cols = 80
@@ -135,7 +133,6 @@ beforeEach(() => {
   settingsState.terminalOptionIsMeta = true
   terminalCreate.mockClear()
   panelTransferAck.mockClear()
-  shellRegisterTerminal.mockClear()
   panelTransferAck.mockImplementation(async (id: string) => {
     events.push(`ack:${id}`)
   })
@@ -149,8 +146,6 @@ beforeEach(() => {
       terminalKill: vi.fn(async () => undefined),
       onTerminalData: vi.fn(() => () => {}),
       onTerminalExit: vi.fn(() => () => {}),
-      shellRegisterTerminal,
-      shellUnregisterTerminal: vi.fn(async () => undefined),
       settingsGet: vi.fn(async () => ''),
       panelTransferAck,
     },
@@ -352,7 +347,7 @@ describe('terminalRegistry pending-transfer cleanup invariant', () => {
   // Core regression: when getOrCreate short-circuits because an entry already
   // exists in this renderer (same-window canvas drag from dock), a pending
   // transfer that was deposited for that panelId is NOT consumed by the short-
-  // circuit and is left in the pendingTransfers map. The next time the panel
+  // circuit and is left in the pending-start registry. The next time the panel
   // is genuinely unmounted-and-remounted (e.g. workspace switch, or any
   // codepath that disposes then re-creates), that stale transfer will be
   // consumed, blowing away the live PTY wiring.

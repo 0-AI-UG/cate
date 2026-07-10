@@ -4,8 +4,20 @@
 // point at nodes that don't exist.
 // =============================================================================
 
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+
+const closePanelWithConfirm = vi.fn().mockResolvedValue(true)
+vi.mock('../appStore', () => ({
+  useAppStore: { getState: () => ({ selectedWorkspaceId: 'ws-1' }) },
+}))
+vi.mock('../../lib/closePanelWithConfirm', () => ({ closePanelWithConfirm }))
+
 import { createCanvasStore } from '../canvasStore'
+
+beforeEach(() => {
+  closePanelWithConfirm.mockReset()
+  closePanelWithConfirm.mockResolvedValue(true)
+})
 
 // Invariant the whole feature exists to guarantee: every selected id is live.
 function expectSelectionLive(store: ReturnType<typeof createCanvasStore>) {
@@ -14,7 +26,7 @@ function expectSelectionLive(store: ReturnType<typeof createCanvasStore>) {
 }
 
 describe('canvas history — selection is versioned and restored filtered to live ids', () => {
-  it('undo of a delete restores the deleted node AND its snapshot-time selection (live only)', () => {
+  it('undo of a delete restores the deleted node AND its snapshot-time selection (live only)', async () => {
     const store = createCanvasStore()
     const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
     const b = store.getState().addNode('b', 'editor', { x: 200, y: 0 }, { width: 100, height: 80 })
@@ -26,7 +38,7 @@ describe('canvas history — selection is versioned and restored filtered to liv
 
     // Snapshot now has selection {a,b}. Narrow selection to A and delete it.
     store.getState().selectNodes([a])
-    store.getState().deleteSelection() // pushes history with selection {a}, then removes A
+    await store.getState().deleteSelection() // pushes history with selection {a}, then removes A
     store.getState().finalizeRemoveNode(a) // flush the exit animation
 
     expect(store.getState().nodes[a]).toBeUndefined()
@@ -62,12 +74,12 @@ describe('canvas history — selection is versioned and restored filtered to liv
     expectSelectionLive(store)
   })
 
-  it('redo re-applies and keeps selection consistent (no dangling ids)', () => {
+  it('redo re-applies and keeps selection consistent (no dangling ids)', async () => {
     const store = createCanvasStore()
     const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
 
     store.getState().selectNodes([a])
-    store.getState().deleteSelection()
+    await store.getState().deleteSelection()
     store.getState().finalizeRemoveNode(a)
 
     store.getState().undo() // A back, selection {a}
@@ -101,16 +113,16 @@ describe('canvas history — selection is versioned and restored filtered to liv
     expectSelectionLive(store)
   })
 
-  it('invariant holds across an undo/redo sequence', () => {
+  it('invariant holds across an undo/redo sequence', async () => {
     const store = createCanvasStore()
     const a = store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
     const b = store.getState().addNode('b', 'editor', { x: 200, y: 0 }, { width: 100, height: 80 })
 
     store.getState().selectNodes([a])
-    store.getState().deleteSelection()
+    await store.getState().deleteSelection()
     store.getState().finalizeRemoveNode(a)
     store.getState().selectNodes([b])
-    store.getState().deleteSelection()
+    await store.getState().deleteSelection()
 
     // Walk back and forth; the invariant must hold after every step.
     store.getState().undo(); expectSelectionLive(store)

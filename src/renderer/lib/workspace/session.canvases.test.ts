@@ -21,7 +21,7 @@ const SECONDARY = 'canvas-secondary'
 function node(id: string, panelId: string): CanvasNodeState {
   return {
     id,
-    panelId,
+    dockLayout: { type: 'tabs', id: `stack-${id}`, panelIds: [panelId], activeIndex: 0 },
     origin: { x: 0, y: 0 },
     size: { width: 100, height: 100 },
     zOrder: 0,
@@ -77,7 +77,7 @@ describe('multi-canvas persistence round-trip', () => {
     expect(Object.keys(snap.canvases![PRIMARY].canvasNodes)).toEqual(['np'])
     // Secondary's distinct node survives under its OWN canvas id (not the primary).
     expect(Object.keys(snap.canvases![SECONDARY].canvasNodes)).toEqual(['ns'])
-    expect(snap.canvases![SECONDARY].canvasNodes.ns.panelId).toBe('p-sec')
+    expect(snap.canvases![SECONDARY].canvasNodes.ns.dockLayout).toMatchObject({ panelIds: ['p-sec'] })
     // Both canvases' child panel records survive so restore can recreate them.
     expect(snap.panels?.['p-prim']?.title).toBe('Primary term')
     expect(snap.panels?.['p-sec']?.title).toBe('Secondary term')

@@ -29,17 +29,14 @@ export async function confirmCloseCanvas(
   const isLast = canvasPanelIds.length <= 1
 
   // Enumerate every panel that currently lives on the closing canvas by walking
-  // each canvas node's dockLayout. Fall back to the node's seed panelId if the
-  // dock layout is missing (shouldn't happen in practice, but keeps us honest).
+  // each canvas node's dockLayout.
   const sourceStore = getOrCreateCanvasStoreForPanel(canvasPanelId)
   const sourceNodes = Object.values(sourceStore.getState().nodes)
   const contained: Array<{ panelId: string; origin: { x: number; y: number } }> = []
   for (const node of sourceNodes) {
     // Read the live mini-dock layout when the node is mounted (the resolver
     // falls back to the persisted node.dockLayout projection otherwise).
-    const layoutPanels = collectPanelIds(getNodeDockLayout(canvasPanelId, node.id))
-    const panelIds = layoutPanels.length > 0 ? layoutPanels : [node.panelId]
-    for (const pid of panelIds) {
+    for (const pid of collectPanelIds(getNodeDockLayout(canvasPanelId, node.id))) {
       if (ws.panels[pid]) contained.push({ panelId: pid, origin: node.origin })
     }
   }

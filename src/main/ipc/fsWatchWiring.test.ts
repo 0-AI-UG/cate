@@ -1,23 +1,19 @@
 import path from 'path'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-// The shared watch pool (runtime/capabilities/fileWatcher.ts) owns the OS
-// watcher, covering-root sharing, refcounted teardown and error containment —
-// all unit-tested there. Here we mock that boundary and verify the local IPC
-// layer DELEGATES correctly: watch start/stop subscribe and unsubscribe the
-// validated path, per-window close tears every watch down, an in-process
-// subscription flows through, and an exclusion edit rebuilds via refresh().
+// The daemon runtime owns the OS watcher. Here we mock the Runtime boundary and
+// verify the IPC layer adds only per-window routing/debounce and teardown.
 
 interface Captured {
   prefix: string
   onChange: (p: string, t: string) => void
   unsub: ReturnType<typeof vi.fn>
+  access?: { ownerWindowId?: number; scopeId?: string }
 }
 
 const mockState = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   captured: [] as Captured[],
-  refresh: vi.fn(async () => {}),
 }))
 
 vi.mock('electron', () => ({
@@ -28,17 +24,21 @@ vi.mock('electron', () => ({
   },
 }))
 
-vi.mock('../../runtime/capabilities/fileWatcher', () => ({
-  createWatchPool: () => ({
-    subscribe: vi.fn((prefix: string, onChange: (p: string, t: string) => void) => {
+vi.mock('../runtime/runtimeManager', () => {
+  const runtime = {
+    file: {
+      watch: vi.fn((prefix: string, onChange: (p: string, t: string) => void, access?: Captured['access']) => {
       const unsub = vi.fn()
-      mockState.captured.push({ prefix, onChange, unsub })
+      mockState.captured.push({ prefix, onChange, unsub, access })
       return unsub
     }),
-    refresh: mockState.refresh,
-    closeAll: vi.fn(async () => {}),
-  }),
-}))
+    },
+  }
+  return {
+    resolveLocator: (locator: string) => ({ runtime, runtimeId: 'local', path: locator }),
+    runtimes: { resolve: () => runtime },
+  }
+})
 
 const sentEvents: unknown[] = []
 vi.mock('../windowRegistry', () => ({
@@ -50,32 +50,27 @@ vi.mock('../store', () => ({
   getSettingSync: (key: string) => (key === 'fileExclusions' ? [] : undefined),
 }))
 
-const { registerHandlers, stopWatchersForWindow, subscribeFsChanges, refreshWatcherIgnores } = await import('./filesystem')
-const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
+const { registerHandlers, stopWatchersForWindow } = await import('./filesystem')
 const { FS_WATCH_START, FS_WATCH_STOP } = await import('../../shared/ipc-channels')
 
 registerHandlers()
 const watchStart = mockState.handlers.get(FS_WATCH_START)!
 const watchStop = mockState.handlers.get(FS_WATCH_STOP)!
 const fakeEvent = { sender: {} } as unknown
-// Resolve so the path matches what validatePathStrict produces on every OS
-// (a bare '/repo' becomes a drive-prefixed 'D:\repo' on Windows).
 const root = path.resolve('/repo')
 
 describe('filesystem watch wiring', () => {
   beforeEach(async () => {
     await Promise.resolve(watchStop(fakeEvent, root)).catch(() => {})
-    removeAllowedRoot(root)
     mockState.captured.length = 0
-    mockState.refresh.mockClear()
     sentEvents.length = 0
-    addAllowedRoot(root)
   })
 
-  test('FS_WATCH_START subscribes the validated path; FS_WATCH_STOP unsubscribes it', async () => {
-    await watchStart(fakeEvent, root)
+  test('FS_WATCH_START subscribes through the runtime; FS_WATCH_STOP unsubscribes it', async () => {
+    await watchStart(fakeEvent, root, 'workspace-1')
     expect(mockState.captured).toHaveLength(1)
     expect(mockState.captured[0].prefix).toBe(root)
+    expect(mockState.captured[0].access).toEqual({ ownerWindowId: 1, scopeId: 'workspace-1' })
 
     await watchStop(fakeEvent, root)
     expect(mockState.captured[0].unsub).toHaveBeenCalledTimes(1)
@@ -88,22 +83,11 @@ describe('filesystem watch wiring', () => {
     expect(unsub).toHaveBeenCalledTimes(1)
   })
 
-  test('subscribeFsChanges delegates straight to the pool', () => {
-    const listener = vi.fn()
-    const unsub = subscribeFsChanges(root, listener)
-    expect(mockState.captured).toHaveLength(1)
-    expect(mockState.captured[0].prefix).toBe(root)
-
+  test('runtime events are forwarded to the owning window', async () => {
+    await watchStart(fakeEvent, root)
     const file = path.join(root, 'a.ts')
     mockState.captured[0].onChange(file, 'create')
-    expect(listener).toHaveBeenCalledWith(file, 'create')
-
-    unsub()
-    expect(mockState.captured[0].unsub).toHaveBeenCalledTimes(1)
-  })
-
-  test('refreshWatcherIgnores rebuilds via the pool', () => {
-    refreshWatcherIgnores()
-    expect(mockState.refresh).toHaveBeenCalledTimes(1)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(sentEvents).toContainEqual({ path: file, type: 'create' })
   })
 })

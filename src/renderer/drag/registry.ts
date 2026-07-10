@@ -31,7 +31,7 @@ export interface DropZoneEntry {
   acceptsPanelType?: (type: PanelType) => boolean
 }
 
-// The registry now lives on the DragSession (one per window). These free
+// The registry lives on RendererSession (one per window). These free
 // functions delegate to the default singleton so non-React callers — and the
 // few component sites that still call them directly — continue to work.
 // eslint-disable-next-line @typescript-eslint/no-use-before-define

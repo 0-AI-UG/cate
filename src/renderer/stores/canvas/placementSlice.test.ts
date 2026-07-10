@@ -214,7 +214,7 @@ describe('commitPlacement', () => {
     expect(nodeCount(store)).toBe(2)
     expect(s.nodes[nodeId!].origin).toEqual(candidate.point)
     expect(s.nodes[nodeId!].size).toEqual(candidate.size)
-    expect(s.nodes[nodeId!].panelId).toBe('p2')
+    expect(s.nodes[nodeId!].dockLayout).toMatchObject({ panelIds: ['p2'] })
     // Zoom is restored to the snapshot; the offset is intentionally NOT the
     // snapshot — commit recentres the camera on the freshly placed node.
     expect(s.zoomLevel).toBe(1.5)

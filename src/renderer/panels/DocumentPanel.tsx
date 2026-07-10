@@ -322,9 +322,9 @@ export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
 
   const openExternal = useCallback(() => {
     if (filePath) {
-      window.electronAPI.shellShowInFolder(filePath)
+      window.electronAPI.shellShowInFolder(filePath, workspaceId)
     }
-  }, [filePath])
+  }, [filePath, workspaceId])
 
   useEffect(() => {
     if (!filePath) {

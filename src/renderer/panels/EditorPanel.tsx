@@ -287,7 +287,6 @@ function reconstructOriginalFromDiff(currentContent: string, diff: string): stri
 export default function EditorPanel({
   panelId,
   workspaceId,
-  nodeId,
   filePath,
 }: EditorPanelProps) {
   useRenderCount('EditorPanel')

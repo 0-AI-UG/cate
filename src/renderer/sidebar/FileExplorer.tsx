@@ -15,7 +15,7 @@ import { useGitTreeFor } from '../stores/gitStatusStore'
 import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
-import { workspaceDisplayName } from '../lib/fs/displayPath'
+import { pathDisplayName, workspaceDisplayName } from '../lib/fs/displayPath'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 
@@ -463,7 +463,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
   const deletePaths = useCallback(async (paths: string[]) => {
     if (!window.electronAPI || paths.length === 0) return
     const label = paths.length === 1
-      ? `"${paths[0].split('/').pop()}"`
+      ? `"${pathDisplayName(paths[0])}"`
       : `${paths.length} items`
     if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
     for (const p of paths) {
@@ -585,7 +585,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     switch (id) {
       case 'new-file': startRootCreate('file'); break
       case 'new-folder': startRootCreate('folder'); break
-      case 'reveal': window.electronAPI.shellShowInFolder(rootPath); break
+      case 'reveal': window.electronAPI.shellShowInFolder(rootPath, selectedWorkspaceId); break
       case 'open-terminal':
         createTerminal(selectedWorkspaceId, undefined, undefined, { target: 'dock', zone: 'bottom' })
         break

@@ -2,7 +2,7 @@
 // Regression: detached windows are separate renderer processes with their own
 // useAppStore that never bootstraps a workspace. Before the fix the shells kept
 // a LOCAL panels map as the de-facto source while panel components' live writes
-// (updatePanelUrl / setPanelDirty / updatePanelFilePath) hit appStore and were
+// (browser tab updates / setPanelDirty / updatePanelFilePath) hit appStore and were
 // silently dropped (setPanelField found no workspace). Session capture read the
 // stale local map, so a navigated URL or dirty flag was lost on restart.
 //
@@ -23,7 +23,7 @@ vi.mock('../logger', () => ({
 
 import { ensurePanelsInAppStore, applyCanvasChildPanels } from './applyCanvasChildPanels'
 import { useAppStore } from '../../stores/appStore'
-import type { PanelState, WorktreeMeta } from '../../../shared/types'
+import { browserPanelUrl, type PanelState, type WorktreeMeta } from '../../../shared/types'
 
 const WS = 'detached-ws-1'
 
@@ -31,13 +31,22 @@ const WS = 'detached-ws-1'
 const readPanels = (wsId: string): Record<string, PanelState> =>
   useAppStore.getState().workspaces.find((w) => w.id === wsId)?.panels ?? {}
 
+const browserPanel = (url: string): PanelState => ({
+  id: 'b1',
+  type: 'browser',
+  title: 'Web',
+  isDirty: false,
+  tabs: [{ id: 'tab-1', url, title: '' }],
+  activeTabId: 'tab-1',
+})
+
 beforeEach(() => {
   useAppStore.setState({ workspaces: [], selectedWorkspaceId: '' })
 })
 
 describe('ensurePanelsInAppStore', () => {
   it('creates a stub workspace holding the panels when none exists', () => {
-    const browser: PanelState = { id: 'b1', type: 'browser', title: 'Web', isDirty: false, url: 'https://a.test' }
+    const browser = browserPanel('https://a.test')
     ensurePanelsInAppStore(WS, { b1: browser })
 
     const ws = useAppStore.getState().workspaces.find((w) => w.id === WS)
@@ -47,7 +56,7 @@ describe('ensurePanelsInAppStore', () => {
   })
 
   it('merges into the existing stub workspace on a later transfer', () => {
-    ensurePanelsInAppStore(WS, { b1: { id: 'b1', type: 'browser', title: 'Web', isDirty: false } })
+    ensurePanelsInAppStore(WS, { b1: browserPanel('https://a.test') })
     ensurePanelsInAppStore(WS, { e1: { id: 'e1', type: 'editor', title: 'Untitled', isDirty: true } })
 
     const panels = readPanels(WS)
@@ -55,7 +64,7 @@ describe('ensurePanelsInAppStore', () => {
   })
 
   it('no-ops on empty workspaceId or empty panel map', () => {
-    ensurePanelsInAppStore('', { b1: { id: 'b1', type: 'browser', title: 'Web', isDirty: false } })
+    ensurePanelsInAppStore('', { b1: browserPanel('https://a.test') })
     ensurePanelsInAppStore(WS, {})
     expect(useAppStore.getState().workspaces).toHaveLength(0)
   })
@@ -161,17 +170,17 @@ describe('ensurePanelsInAppStore — stub selection', () => {
 })
 
 describe('detached-window source of truth — live edits land + are captured', () => {
-  it('updatePanelUrl on the stub workspace is what a sync read would capture (no mirror event)', () => {
+  it('active-tab URL updates on the stub workspace are captured without a mirror event', () => {
     // Init: populate appStore as the shell does on onDockWindowInit.
     ensurePanelsInAppStore(WS, {
-      b1: { id: 'b1', type: 'browser', title: 'Web', isDirty: false, url: 'https://start.test' },
+      b1: browserPanel('https://start.test'),
     })
 
     // Live navigation: BrowserPanel writes straight into appStore.
-    useAppStore.getState().updatePanelUrl(WS, 'b1', 'https://navigated.test')
+    useAppStore.getState().updateBrowserActiveTabUrl(WS, 'b1', 'https://navigated.test')
 
     // What syncNow reads at call time reflects the edit.
-    expect(readPanels(WS).b1.url).toBe('https://navigated.test')
+    expect(browserPanelUrl(readPanels(WS).b1)).toBe('https://navigated.test')
   })
 
   it('setPanelDirty + updatePanelFilePath (Save-As) land without an editor:panel-saved-as mirror', () => {

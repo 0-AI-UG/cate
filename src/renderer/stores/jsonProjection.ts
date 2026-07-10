@@ -26,3 +26,17 @@ export function mergeKnown<T extends object>(defaults: T, stored: Partial<T>): P
   }
   return out
 }
+
+/**
+ * Wrap an async projection load so every caller in a renderer window shares the
+ * same request. Projection stores are hydrated once and subsequently kept fresh
+ * by their change subscription; repeated shell/App hydration must not issue
+ * duplicate IPC reads.
+ */
+export function loadOnce(load: () => Promise<void>): () => Promise<void> {
+  let pending: Promise<void> | null = null
+  return () => {
+    pending ??= load()
+    return pending
+  }
+}

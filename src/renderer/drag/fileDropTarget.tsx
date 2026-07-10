@@ -10,6 +10,7 @@
 
 import React, { useEffect } from 'react'
 import { create } from 'zustand'
+import { CATE_FILE_MIME, CATE_FILES_MIME } from './fileDragPayload'
 
 export type FileDropKind = 'canvas' | 'dock' | 'agent' | 'terminal' | 'extension'
 
@@ -33,8 +34,8 @@ function isFileDrag(e: DragEvent): boolean {
   const types = e.dataTransfer?.types
   if (!types) return false
   return (
-    types.includes('application/cate-file') ||
-    types.includes('application/cate-files') ||
+    types.includes(CATE_FILE_MIME) ||
+    types.includes(CATE_FILES_MIME) ||
     types.includes('Files')
   )
 }

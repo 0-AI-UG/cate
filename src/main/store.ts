@@ -6,8 +6,9 @@
 // lives in dedicated hand-editable JSON files (see ./workspaceStateStore).
 // =============================================================================
 
-import { ipcMain, app, BrowserWindow, nativeTheme, session } from 'electron'
+import { ipcMain, app, nativeTheme, session } from 'electron'
 import log from './logger'
+import { listWindows, windowFromEvent } from './windowRegistry'
 import fsSync from 'fs'
 import path from 'path'
 import { writeJsonAtomic } from './writeJsonAtomic'
@@ -108,26 +109,26 @@ async function pushLayoutNamesToMenu(names: string[]): Promise<void> {
  * native/daemon side effects.
  */
 async function applySettingSideEffect(key: keyof AppSettings, value: unknown): Promise<void> {
+  if (key === 'customShortcuts') {
+    try {
+      const { rebuildApplicationMenu } = await import('./menu')
+      rebuildApplicationMenu()
+    } catch (err) {
+      log.warn('Native shortcut menu rebuild failed: %O', err)
+    }
+  }
   // fileExclusions has one live consumer (the FileExplorer tree) that listens on
   // the SETTINGS_CHANGED invalidation channel and reloads. Broadcast it directly
   // (the only key that uses this channel today).
   if (key === 'fileExclusions') {
     broadcastToAll(SETTINGS_CHANGED, key, value)
   }
-  // Rebuild active fs watchers so their ignore globs match the new exclusions
-  // (dynamic import avoids a static store<->filesystem cycle). Also push the new
-  // set to the LOCAL runtime daemon, which captured its exclusions once at
+  // Push the new set to the LOCAL runtime daemon, which captured its exclusions once at
   // launch — without this the daemon's file tree / file-name search wouldn't
   // honor the change until a restart. Only LOCAL: remote daemons get their
   // config at connect time (out of scope here). Imports are dynamic to avoid
   // store<->filesystem and store<->runtime cycles.
   if (key === 'fileExclusions') {
-    try {
-      const { refreshWatcherIgnores } = await import('./ipc/filesystem')
-      refreshWatcherIgnores()
-    } catch (err) {
-      log.warn('Watcher ignore refresh failed: %O', err)
-    }
     try {
       const { runtimes } = await import('./runtime/runtimeManager')
       const { LOCAL_RUNTIME_ID } = await import('./runtime/locator')
@@ -351,15 +352,15 @@ export function registerHandlers(): void {
   // pointing at settings.json keeps working across launches.
   ipcMain.handle(SETTINGS_OPEN_IN_EDITOR, async (event) => {
     const filePath = await ensureSettingsFile()
-    const win = BrowserWindow.fromWebContents(event.sender)
+    const win = windowFromEvent(event)
     if (!win) return filePath
     try {
       const safePath = await grantFileAccess(win.id, filePath)
       await recordPersistentGrant(safePath)
       // Grant every currently-open window too, so a panel dragged to another
       // window keeps access (mirrors the Save-As grant fan-out).
-      for (const other of BrowserWindow.getAllWindows()) {
-        if (other.id === win.id || other.isDestroyed()) continue
+      for (const other of listWindows()) {
+        if (other.id === win.id) continue
         try { await grantFileAccess(other.id, safePath) } catch { /* best effort */ }
       }
       return safePath
@@ -393,7 +394,7 @@ export function registerHandlers(): void {
     // so each window (main + detached panel/dock) updates its own chrome.
     if (typeof partial.backgroundColor === 'string') {
       try {
-        BrowserWindow.fromWebContents(event.sender)?.setBackgroundColor(partial.backgroundColor)
+        windowFromEvent(event)?.setBackgroundColor(partial.backgroundColor)
       } catch (err) {
         log.warn('Live window background update failed: %O', err)
       }

@@ -33,7 +33,6 @@ function makeSnapshot(): SessionSnapshot {
         canvasNodes: {
           'node-A': {
             id: 'node-A',
-            panelId: 'A',
             origin: { x: 10, y: 20 },
             size: { width: 400, height: 300 },
             zOrder: 0,
@@ -68,18 +67,9 @@ describe('session dock-layout round-trip', () => {
     expect(nodeA!.dockLayout).toEqual(twoTabLayout())
     expect((nodeA!.dockLayout as DockLayoutNode & { panelIds: string[] }).panelIds).toEqual(['A', 'B'])
 
-    // Both panel records survive (A is the node's seed, B is its tabbed sibling).
+    // Both panel records survive.
     expect(snap.panels?.A).toBeDefined()
     expect(snap.panels?.B).toBeDefined()
     expect(snap.panels?.B.title).toBe('Terminal B')
-  })
-
-  it('legacy node (no dockLayout) round-trips without crashing', () => {
-    const legacy = makeSnapshot()
-    legacy.canvases!.cv.canvasNodes['node-A'].dockLayout = null
-    const ws = buildWorkspaceFile(legacy, '/repo')
-    expect(ws.canvases?.cv.canvasNodes['node-A'].dockLayout).toBeNull()
-    const snap = projectFilesToSnapshot(ws, null, '/repo')
-    expect(snap.canvases?.cv.canvasNodes['node-A'].dockLayout).toBeNull()
   })
 })

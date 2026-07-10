@@ -9,7 +9,6 @@
 
 import fs from 'fs/promises'
 import path from 'path'
-import { validatePathForCreation } from '../../main/ipc/pathValidation'
 import type { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
 
 export async function readFile(filePath: string): Promise<string> {
@@ -187,7 +186,7 @@ async function nextAvailableName(destDir: string, baseName: string, intoSameDir:
 export async function copyInto(safeSrc: string, safeDestDir: string): Promise<string> {
   const intoSameDir = path.dirname(safeSrc) === safeDestDir
   const candidate = await nextAvailableName(safeDestDir, path.basename(safeSrc), intoSameDir)
-  const finalDest = await validatePathForCreation(path.join(safeDestDir, candidate))
+  const finalDest = path.join(safeDestDir, candidate)
   if (finalDest === safeSrc || finalDest.startsWith(safeSrc + path.sep)) {
     throw new Error('Cannot copy a folder into itself')
   }
@@ -199,7 +198,6 @@ export async function importEntriesInto(
   sources: string[],
   safeDestDir: string,
   mode: 'copy' | 'move',
-  ownerWindowId: number | undefined,
   onError: (src: string, error: unknown) => void,
 ): Promise<{ created: string[]; failed: number }> {
   const created: string[] = []
@@ -213,7 +211,7 @@ export async function importEntriesInto(
       }
       const intoSameDir = path.dirname(realSrc) === safeDestDir
       const candidate = await nextAvailableName(safeDestDir, path.basename(realSrc), intoSameDir)
-      const finalDest = await validatePathForCreation(path.join(safeDestDir, candidate), ownerWindowId)
+      const finalDest = path.join(safeDestDir, candidate)
 
       if (mode === 'move') {
         try {

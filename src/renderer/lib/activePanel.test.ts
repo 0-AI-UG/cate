@@ -23,8 +23,6 @@ import {
 import { placementForActivePanel } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { getOrCreateWorkspaceDockStore } from './workspace/dockRegistry'
-import { registerCanvasOps, unregisterCanvasOps } from '../stores/appStore'
-import { createCanvasOps } from './canvas/canvasBridge'
 import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../stores/canvasStore'
 import {
   getNodeActivePanelId,
@@ -97,12 +95,11 @@ describe('placementForActivePanel', () => {
     const dock = getOrCreateWorkspaceDockStore(wsId)
     dock.getState().dockPanel(canvasId, 'center')
     expect(dock.getState().getPanelLocation(canvasId)?.type).toBe('dock')
-    registerCanvasOps(canvasId, createCanvasOps(getOrCreateCanvasStoreForPanel(canvasId)))
+    getOrCreateCanvasStoreForPanel(canvasId)
 
     setActivePanel(canvasId)
     expect(placementForActivePanel()).toEqual({ target: 'canvas', canvasPanelId: canvasId })
 
-    unregisterCanvasOps(canvasId)
     releaseCanvasStoreForPanel(canvasId)
   })
 })

@@ -47,6 +47,7 @@ import { worktreeMetaFor, teardownWorktree } from './cateAgentWorktrees'
 import { getAgentCanvasStore } from '../lib/workspace/canvasAccess'
 import type { PanelType, Point } from '../../shared/types'
 import log from '../lib/logger'
+import { collectPanelIds } from '../../shared/collectPanelIds'
 
 const json = (v: unknown): string => JSON.stringify(v)
 
@@ -104,10 +105,10 @@ async function buildCanvasSnapshot(wsId: string, canvasPanelId?: string): Promis
   const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
   const nodes = Object.values(store.getState().nodes)
   const panels = await Promise.all(
-    nodes.map(async (node) => {
-      const panel = ws?.panels[node.panelId]
+    nodes.flatMap((node) => collectPanelIds(node.dockLayout).map(async (panelId) => {
+      const panel = ws?.panels[panelId]
       const base = {
-        id: shortId(node.panelId),
+        id: shortId(panelId),
         type: panel?.type ?? 'unknown',
         title: panel?.title ?? '',
         x: Math.round(node.origin.x),
@@ -117,7 +118,7 @@ async function buildCanvasSnapshot(wsId: string, canvasPanelId?: string): Promis
       }
       if (panel?.type === 'terminal') {
         try {
-          const state = await readTerminalState(wsId, node.panelId)
+          const state = await readTerminalState(wsId, panelId)
           const preview = state.output.trim().slice(-400)
           return { ...base, preview }
         } catch {
@@ -125,7 +126,7 @@ async function buildCanvasSnapshot(wsId: string, canvasPanelId?: string): Promis
         }
       }
       return base
-    }),
+    })),
   )
   return json({ panels })
 }

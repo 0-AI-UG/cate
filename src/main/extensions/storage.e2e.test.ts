@@ -39,7 +39,7 @@ import { flushAllPendingWritesSync } from './storage'
 // Real storage now routes through the workspace's runtime (local is just another
 // daemon), so register the in-process LOCAL runtime; its file ops hit the real fs
 // under the temp project root (os.tmpdir() is always an allowed root).
-import { registerTestLocalRuntime } from '../runtime/testLocalRuntime'
+import { registerTestDaemonRuntime } from '../runtime/testHarness'
 
 const EXT = 'cate.kitchensink'
 let projectRoot: string
@@ -59,7 +59,7 @@ function scope(workspaceId: string, panelId: string | undefined = 'panel-1'): In
 
 beforeAll(() => {
   projectRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cate-ks-storage-')))
-  registerTestLocalRuntime()
+  registerTestDaemonRuntime()
 })
 
 afterAll(() => {

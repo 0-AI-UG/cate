@@ -20,7 +20,7 @@ export function useMultiNodeSelection() {
 
   // Close (remove) every selected node at once. Mirrors the Delete shortcut.
   const closeSelection = useCallback(() => {
-    canvasApi.getState().deleteSelection()
+    void canvasApi.getState().deleteSelection()
   }, [canvasApi])
 
   return { isMultiSelected, closeSelection }

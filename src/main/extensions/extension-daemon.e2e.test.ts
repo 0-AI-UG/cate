@@ -31,7 +31,6 @@ import { RuntimeManager } from '../runtime/runtimeManager'
 import { LocalSubprocessTransport } from '../runtime/transports/localTransport'
 import { hostRuntimeTarget, tarballName } from '../runtime/runtimeArtifacts'
 import { RUNTIME_VERSION } from '../../runtime/version'
-import { addAllowedRoot, removeAllowedRoot } from '../ipc/pathValidation'
 import { provisionCatalogToRuntime } from './install'
 import type { CatalogEntry } from './catalog'
 import type { Runtime } from '../runtime/types'
@@ -61,7 +60,6 @@ describe.skipIf(!hasTarball)('extension install/serve over a real daemon subproc
     hostExtRoot = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-exte2e-hostext-')))
     h.userData = await fs.mkdtemp(path.join(process.cwd(), 'cate-exte2e-userdata-')) // client staging cache
     h.appPath = process.cwd()
-    addAllowedRoot(workspace)
 
     // Build a minimal extension artifact (manifest + an asset) as a .tgz.
     const src = await fs.mkdtemp(path.join(process.cwd(), 'cate-exte2e-src-'))
@@ -76,6 +74,7 @@ describe.skipIf(!hasTarball)('extension install/serve over a real daemon subproc
     entry = {
       manifest: { id: EXT_ID, name: 'E2E', version: EXT_VERSION, panels: [{ id: 'm', label: 'M' }], frontend: 'index.html' },
       artifactUrl: pathToFileURL(tgz).toString(),
+      sourceIsLocal: true,
     }
 
     mgr = new RuntimeManager()
@@ -93,7 +92,6 @@ describe.skipIf(!hasTarball)('extension install/serve over a real daemon subproc
 
   afterAll(async () => {
     await mgr?.disposeAll()
-    removeAllowedRoot(workspace)
     for (const dir of [installDir, workspace, hostExtRoot, h.userData]) {
       await fs.rm(dir, { recursive: true, force: true }).catch(() => {})
     }

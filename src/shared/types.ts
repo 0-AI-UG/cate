@@ -40,10 +40,6 @@ export type CanvasNodeId = string
 
 export interface CanvasNodeState {
   id: CanvasNodeId
-  /** Primary panel id — the panel the node was originally created from. The
-   *  authoritative panel layout lives in `dockLayout` (a per-node dock tree),
-   *  but `panelId` is preserved for legacy code paths and as a stable identity. */
-  panelId: string
   origin: Point
   size: Size
   zOrder: number
@@ -55,7 +51,7 @@ export interface CanvasNodeState {
    *  Each canvas node owns a private DockStore whose `center` zone holds this
    *  layout. Splits, stacks and drag-and-drop all use the same primitives as
    *  the main dock zones. */
-  dockLayout?: DockLayoutNode | null
+  dockLayout: DockLayoutNode
   animationState?: 'entering' | 'exiting' | 'idle'
 }
 
@@ -74,10 +70,8 @@ export interface PanelState {
   title: string
   isDirty: boolean
   filePath?: string
-  url?: string
-  /** Browser panels only: open tabs (light model). The active tab's url is kept
-   *  mirrored to `url` above for session-restore + panel-transfer compatibility,
-   *  so older code paths that only read `url` still work. */
+  /** Browser panels only: open tabs (light model). This is the sole persisted
+   *  navigation state; the current URL is derived through browserPanelUrl. */
   tabs?: BrowserTab[]
   activeTabId?: string
   /** Browser panels only: per-panel HTTP/HTTPS/SOCKS5/PAC proxy. When set, the
@@ -147,7 +141,7 @@ export interface WorktreeMeta {
 /**
  * Where a workspace's files physically live, and how the runtime that hosts
  * its terminal/fs/git operations is reached. Absent ⇒ `{ kind: 'local' }` (the
- * migration default for every workspace that predates remote support). Secrets
+ * canonical compact representation for a local workspace). Secrets
  * (SSH passphrases/keys) NEVER live here — they are stored encrypted via
  * Electron safeStorage, keyed by runtimeId.
  */
@@ -178,7 +172,7 @@ export interface WorkspaceInfo {
   /** Locator string: a bare absolute path for local, a `cate-runtime://`
    *  URI otherwise. See src/main/runtime/locator.ts. */
   rootPath: string
-  /** Defaults to { kind: 'local' } when absent (migration rule). */
+  /** Absent is the canonical local-workspace representation. */
   connection?: RuntimeConnection
 }
 
@@ -260,10 +254,10 @@ export type WorkspaceMutationResult =
   | { ok: false; error: WorkspaceMutationError }
 
 // -----------------------------------------------------------------------------
-// Window type system — main window vs borderless panel windows (Phase 4)
+// Window type system
 // -----------------------------------------------------------------------------
 
-export type CateWindowType = 'main' | 'panel' | 'dock'
+export type CateWindowType = 'main' | 'dock'
 
 /** A shadow record of a panel and the window that hosts it. Main maintains the
  *  union across ALL windows (main + detached) and broadcasts it, so every window
@@ -305,11 +299,7 @@ export interface WindowPanelReport {
 
 export interface CateWindowParams {
   type: CateWindowType
-  /** For panel windows: the panel type being displayed */
-  panelType?: PanelType
-  /** For panel windows: the panel ID */
-  panelId?: string
-  /** For panel/dock windows: workspace context */
+  /** For dock windows: workspace context */
   workspaceId?: string
 }
 
@@ -360,13 +350,12 @@ export interface DetachedDockWindowSnapshot {
    *  ptyId indirection, so restore never depends on a captured live-ptyId map. */
   terminalCwds?: Record<string, string>
   /** Per-canvas-panel layout snapshots (nodes + viewport), keyed by canvas panelId,
-   *  so a detached canvas window restores its children instead of landing empty.
-   *  Optional for back-compat with session files written before this existed. */
-  canvasStates?: Record<string, CanvasLayoutSnapshot>
+   *  so a detached canvas window restores its children instead of landing empty. */
+  canvasStates: Record<string, CanvasLayoutSnapshot>
 }
 
 // -----------------------------------------------------------------------------
-// Panel transfer protocol — cross-window panel migration (Phase 4)
+// Panel transfer protocol — cross-window panel handoff
 // -----------------------------------------------------------------------------
 
 export interface PanelTransferSnapshot {
@@ -388,24 +377,6 @@ export interface PanelTransferSnapshot {
   // Terminal-specific
   terminalPtyId?: string
   terminalScrollback?: string
-  /** Set during session restore: ptyId of the original (now-dead) PTY whose
-   *  scrollback log should be replayed into the freshly-spawned terminal. */
-  terminalReplayPtyId?: string
-
-  // Editor-specific
-  editorState?: {
-    cursorPosition: { line: number; column: number }
-    scrollTop: number
-    unsavedContent?: string
-  }
-
-  // Browser-specific
-  browserState?: {
-    url: string
-    canGoBack: boolean
-    canGoForward: boolean
-  }
-
   // Canvas-specific — child nodes/viewport for nested canvas panels.
   // Without this, detaching a canvas panel to a new window would land with an
   // empty store (fresh per-process), losing every panel inside it.
@@ -522,7 +493,7 @@ export interface WorkspaceState {
   panels: Record<string, PanelState>
   // PERSISTENCE-ONLY projection of the live per-workspace DockStore. Read via
   // getWorkspaceDockSnapshot(workspaceId), never directly.
-  dockState?: { zones: WindowDockState; locations: Record<string, PanelLocation> }
+  dockState?: DockStateSnapshot
   // PERSISTENCE-ONLY per-canvas projection, keyed by canvas panel id. A workspace
   // can host several canvas panels; each canvas's live CanvasStore projects into
   // this map at save time, and a never-mounted (cold-start) canvas restores from
@@ -609,42 +580,46 @@ export function displayString(s: StoredShortcut): string {
   return parts.join('')
 }
 
-// All shortcut actions. Keep ShortcutAction, SHORTCUT_ACTIONS,
-// SHORTCUT_DISPLAY_NAMES, and DEFAULT_SHORTCUTS in sync.
-export type ShortcutAction =
-  | 'newTerminal'
-  | 'newBrowser'
-  | 'newEditor'
-  | 'newAgent'
-  | 'newCanvas'
-  | 'newFile'
-  | 'closePanel'
-  | 'toggleSidebar'
-  | 'toggleFileExplorer'
-  | 'toggleSearch'
-  | 'toggleMinimap'
-  | 'commandPalette'
-  | 'zoomIn'
-  | 'zoomOut'
-  | 'zoomReset'
-  | 'focusNext'
-  | 'focusPrevious'
-  | 'saveFile'
-  | 'zoomToFit'
-  | 'zoomToSelection'
-  | 'autoLayout'
-  | 'undo'
-  | 'redo'
-  | 'deleteNode'
-  | 'toggleTool'
-  | 'navigateUp'
-  | 'navigateDown'
-  | 'navigateLeft'
-  | 'navigateRight'
-  | 'panUp'
-  | 'panDown'
-  | 'panLeft'
-  | 'panRight'
+/** Canonical shortcut-action catalog. Action ids, labels, ordering, and default
+ * bindings are derived from this one declaration. */
+export const SHORTCUT_DEFINITIONS = {
+  newTerminal: { label: 'New Terminal', shortcut: storedShortcut('t', { command: true }) },
+  newBrowser: { label: 'New Browser', shortcut: storedShortcut('b', { command: true, shift: true }) },
+  newEditor: { label: 'New Editor', shortcut: storedShortcut('e', { command: true, shift: true }) },
+  newAgent: { label: 'New Agent', shortcut: storedShortcut('a', { command: true, shift: true }) },
+  newCanvas: { label: 'New Canvas', shortcut: storedShortcut('c', { command: true, shift: true }) },
+  newFile: { label: 'New File', shortcut: storedShortcut('n', { command: true }) },
+  closePanel: { label: 'Close Panel', shortcut: storedShortcut('w', { command: true }) },
+  toggleSidebar: { label: 'Toggle Sidebar', shortcut: storedShortcut('b', { command: true }) },
+  toggleFileExplorer: { label: 'Toggle File Explorer', shortcut: storedShortcut('x', { command: true, shift: true }) },
+  toggleSearch: { label: 'Toggle Search', shortcut: storedShortcut('f', { command: true, shift: true }) },
+  toggleMinimap: { label: 'Toggle Minimap', shortcut: storedShortcut('m', { command: true, shift: true }) },
+  commandPalette: { label: 'Command Palette', shortcut: storedShortcut('k', { command: true }) },
+  zoomIn: { label: 'Zoom In', shortcut: storedShortcut('=', { command: true }) },
+  zoomOut: { label: 'Zoom Out', shortcut: storedShortcut('-', { command: true }) },
+  zoomReset: { label: 'Reset Zoom', shortcut: storedShortcut('0', { command: true }) },
+  focusNext: { label: 'Focus Next Panel', shortcut: storedShortcut('\t', { control: true }) },
+  focusPrevious: { label: 'Focus Previous Panel', shortcut: storedShortcut('\t', { shift: true, control: true }) },
+  saveFile: { label: 'Save File', shortcut: storedShortcut('s', { command: true }) },
+  zoomToFit: { label: 'Zoom to Fit', shortcut: storedShortcut('1', { command: true }) },
+  zoomToSelection: { label: 'Zoom to Selection', shortcut: storedShortcut('2', { command: true }) },
+  autoLayout: { label: 'Auto Layout Canvas', shortcut: storedShortcut('l', { command: true, shift: true }) },
+  undo: { label: 'Undo', shortcut: storedShortcut('z', { command: true }) },
+  redo: { label: 'Redo', shortcut: storedShortcut('z', { command: true, shift: true }) },
+  deleteNode: { label: 'Delete Focused Panel', shortcut: storedShortcut('Backspace', { command: true }) },
+  // Control+Space is safe while typing; Shift+Space used to swallow ordinary spaces.
+  toggleTool: { label: 'Toggle Select / Hand Tool', shortcut: storedShortcut(' ', { control: true }) },
+  navigateUp: { label: 'Navigate to Panel Above', shortcut: storedShortcut('↑', { command: true }) },
+  navigateDown: { label: 'Navigate to Panel Below', shortcut: storedShortcut('↓', { command: true }) },
+  navigateLeft: { label: 'Navigate to Panel Left', shortcut: storedShortcut('←', { command: true }) },
+  navigateRight: { label: 'Navigate to Panel Right', shortcut: storedShortcut('→', { command: true }) },
+  panUp: { label: 'Pan Canvas Up', shortcut: storedShortcut('↑', { shift: true }) },
+  panDown: { label: 'Pan Canvas Down', shortcut: storedShortcut('↓', { shift: true }) },
+  panLeft: { label: 'Pan Canvas Left', shortcut: storedShortcut('←', { shift: true }) },
+  panRight: { label: 'Pan Canvas Right', shortcut: storedShortcut('→', { shift: true }) },
+} as const satisfies Record<string, { label: string; shortcut: StoredShortcut }>
+
+export type ShortcutAction = keyof typeof SHORTCUT_DEFINITIONS
 
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
@@ -682,131 +657,62 @@ export interface BrowserTab {
   pinned?: boolean
 }
 
-/** Sentinel URL for the browser start page ("new tab"). Persisted like any
- *  other panel URL so a start-page panel survives session restore; never
+/** Sentinel URL for the browser start page ("new tab"). Persisted in a browser
+ *  tab so a start-page panel survives session restore; never
  *  recorded to history and never passed to the <webview> as src. */
 export const BROWSER_NEW_TAB_URL = 'cate://newtab'
 
-/** True when a URL should render the start page rather than a webview: the
- *  sentinel, the legacy `about:blank` default, or an empty/missing URL. Lets
- *  brand-new AND already-saved (about:blank) browser panels show the start
- *  screen instead of a blank page. */
+/** The selected browser tab, if the panel carries a valid current-schema tab
+ *  selection. Consumers use this instead of maintaining a parallel URL field. */
+export function activeBrowserTab(
+  panel: Pick<PanelState, 'tabs' | 'activeTabId'>,
+): BrowserTab | undefined {
+  return panel.tabs?.find((tab) => tab.id === panel.activeTabId)
+}
+
+/** Current URL selector for browser panel state. */
+export function browserPanelUrl(
+  panel: Pick<PanelState, 'tabs' | 'activeTabId'>,
+): string | undefined {
+  return activeBrowserTab(panel)?.url
+}
+
+/** True when a URL is the browser start-page sentinel. */
 export function isStartPageUrl(url: string | undefined | null): boolean {
-  return !url || url === BROWSER_NEW_TAB_URL || url === 'about:blank'
+  return url === BROWSER_NEW_TAB_URL
 }
 
-export const SHORTCUT_ACTIONS: ShortcutAction[] = [
-  'newTerminal',
-  'newBrowser',
-  'newEditor',
-  'newAgent',
-  'newCanvas',
-  'newFile',
-  'closePanel',
-  'toggleSidebar',
-  'toggleFileExplorer',
-  'toggleSearch',
-  'toggleMinimap',
-  'commandPalette',
-  'zoomIn',
-  'zoomOut',
-  'zoomReset',
-  'focusNext',
-  'focusPrevious',
-  'saveFile',
-  'zoomToFit',
-  'zoomToSelection',
-  'autoLayout',
-  'undo',
-  'redo',
-  'deleteNode',
-  'toggleTool',
-  'navigateUp',
-  'navigateDown',
-  'navigateLeft',
-  'navigateRight',
-  'panUp',
-  'panDown',
-  'panLeft',
-  'panRight',
-]
+export const SHORTCUT_ACTIONS = Object.keys(SHORTCUT_DEFINITIONS) as ShortcutAction[]
 
-export const SHORTCUT_DISPLAY_NAMES: Record<ShortcutAction, string> = {
-  newTerminal: 'New Terminal',
-  newBrowser: 'New Browser',
-  newEditor: 'New Editor',
-  newAgent: 'New Agent',
-  newCanvas: 'New Canvas',
-  newFile: 'New File',
-  closePanel: 'Close Panel',
-  toggleSidebar: 'Toggle Sidebar',
-  toggleFileExplorer: 'Toggle File Explorer',
-  toggleSearch: 'Toggle Search',
-  toggleMinimap: 'Toggle Minimap',
-  commandPalette: 'Command Palette',
-  zoomIn: 'Zoom In',
-  zoomOut: 'Zoom Out',
-  zoomReset: 'Reset Zoom',
-  focusNext: 'Focus Next Panel',
-  focusPrevious: 'Focus Previous Panel',
-  saveFile: 'Save File',
-  zoomToFit: 'Zoom to Fit',
-  zoomToSelection: 'Zoom to Selection',
-  autoLayout: 'Auto Layout Canvas',
-  undo: 'Undo',
-  redo: 'Redo',
-  deleteNode: 'Delete Focused Panel',
-  toggleTool: 'Toggle Select / Hand Tool',
-  navigateUp: 'Navigate to Panel Above',
-  navigateDown: 'Navigate to Panel Below',
-  navigateLeft: 'Navigate to Panel Left',
-  navigateRight: 'Navigate to Panel Right',
-  panUp: 'Pan Canvas Up',
-  panDown: 'Pan Canvas Down',
-  panLeft: 'Pan Canvas Left',
-  panRight: 'Pan Canvas Right',
+export const SHORTCUT_DISPLAY_NAMES = Object.fromEntries(
+  SHORTCUT_ACTIONS.map((action) => [action, SHORTCUT_DEFINITIONS[action].label]),
+) as Record<ShortcutAction, string>
+
+export const DEFAULT_SHORTCUTS = Object.fromEntries(
+  SHORTCUT_ACTIONS.map((action) => [action, SHORTCUT_DEFINITIONS[action].shortcut]),
+) as Record<ShortcutAction, StoredShortcut>
+
+function parseStoredShortcut(value: unknown): StoredShortcut | null {
+  if (typeof value !== 'object' || value === null) return null
+  const candidate = value as Record<string, unknown>
+  if (typeof candidate.key !== 'string') return null
+  return storedShortcut(candidate.key, {
+    command: candidate.command === true,
+    shift: candidate.shift === true,
+    option: candidate.option === true,
+    control: candidate.control === true,
+  })
 }
 
-export const DEFAULT_SHORTCUTS: Record<ShortcutAction, StoredShortcut> = {
-  newTerminal: storedShortcut('t', { command: true }),
-  newBrowser: storedShortcut('b', { command: true, shift: true }),
-  newEditor: storedShortcut('e', { command: true, shift: true }),
-  newAgent: storedShortcut('a', { command: true, shift: true }),
-  newCanvas: storedShortcut('c', { command: true, shift: true }),
-  newFile: storedShortcut('n', { command: true }),
-  closePanel: storedShortcut('w', { command: true }),
-  toggleSidebar: storedShortcut('b', { command: true }),
-  toggleFileExplorer: storedShortcut('x', { command: true, shift: true }),
-  toggleSearch: storedShortcut('f', { command: true, shift: true }),
-  toggleMinimap: storedShortcut('m', { command: true, shift: true }),
-  commandPalette: storedShortcut('k', { command: true }),
-  zoomIn: storedShortcut('=', { command: true }),
-  zoomOut: storedShortcut('-', { command: true }),
-  zoomReset: storedShortcut('0', { command: true }),
-  focusNext: storedShortcut('\t', { control: true }),
-  focusPrevious: storedShortcut('\t', { shift: true, control: true }),
-  saveFile: storedShortcut('s', { command: true }),
-  zoomToFit: storedShortcut('1', { command: true }),
-  zoomToSelection: storedShortcut('2', { command: true }),
-  autoLayout: storedShortcut('l', { command: true, shift: true }),
-  undo: storedShortcut('z', { command: true }),
-  redo: storedShortcut('z', { command: true, shift: true }),
-  deleteNode: storedShortcut('Backspace', { command: true }),
-  // ⌃Space toggles the tool from anywhere — including a focused terminal,
-  // editor, or input — by being intercepted before the surface sees it. (Plain
-  // Space also toggles, but only when the canvas is focused.) Used to be
-  // ⇧Space, but Shift is still held when the space after `:` `(` `?` `!` lands,
-  // so normal typing kept triggering it and the space never reached the
-  // terminal (issue #371).
-  toggleTool: storedShortcut(' ', { control: true }),
-  navigateUp: storedShortcut('↑', { command: true }),
-  navigateDown: storedShortcut('↓', { command: true }),
-  navigateLeft: storedShortcut('←', { command: true }),
-  navigateRight: storedShortcut('→', { command: true }),
-  panUp: storedShortcut('↑', { shift: true }),
-  panDown: storedShortcut('↓', { shift: true }),
-  panLeft: storedShortcut('←', { shift: true }),
-  panRight: storedShortcut('→', { shift: true }),
+/** Resolve persisted overrides over built-ins in every process from one parser. */
+export function resolveShortcuts(raw: unknown): Record<ShortcutAction, StoredShortcut> {
+  const shortcuts = { ...DEFAULT_SHORTCUTS }
+  if (typeof raw !== 'object' || raw === null) return shortcuts
+  for (const action of SHORTCUT_ACTIONS) {
+    const parsed = parseStoredShortcut((raw as Record<string, unknown>)[action])
+    if (parsed) shortcuts[action] = parsed
+  }
+  return shortcuts
 }
 
 // -----------------------------------------------------------------------------
@@ -954,7 +860,7 @@ export interface SessionSnapshot {
   dockState?: DockStateSnapshot
   /** Every placed panel's record, keyed by panel id — dock-zone panels AND every
    *  canvas's child panels (including each canvas panel itself). Geometry lives
-   *  in `canvases`; this carries type/title/filePath/url/etc. */
+   *  in `canvases`; this carries type/title/filePath/browser tabs/etc. */
   panels?: Record<string, PanelState>
   /** Every canvas's geometry (nodes + viewport + zoom), keyed by canvas panel id,
    *  including the primary/center canvas. */
@@ -1001,7 +907,6 @@ export interface SidebarSession {
 /** Serialized dock zone state for session persistence. */
 export interface DockStateSnapshot {
   zones: WindowDockState
-  locations: Record<string, PanelLocation>
 }
 
 /** Dock-window sync payload sent renderer -> main for session persistence.
@@ -1013,23 +918,14 @@ export interface DockWindowSyncState {
   dockState: DockStateSnapshot
   panels: Record<string, PanelState>
   terminalCwds?: Record<string, string>
-  canvasStates?: Record<string, CanvasLayoutSnapshot>
-}
-
-// Legacy: detached single-panel windows (removed). Retained only to migrate old session files into dock windows.
-export interface PanelWindowSnapshot {
-  panel: PanelState
-  bounds: { x: number; y: number; width: number; height: number }
-  workspaceId?: string
-  /** ptyId of the terminal in this window (terminal panels only). */
-  terminalPtyId?: string
+  canvasStates: Record<string, CanvasLayoutSnapshot>
 }
 
 export interface MultiWorkspaceSession {
   version: 2
   selectedWorkspaceIndex: number | null
   workspaces: SessionSnapshot[]
-  /** Detached dock windows with full dock layout. Missing = no dock windows (migration). */
+  /** Detached dock windows with full dock layout. */
   dockWindows?: DetachedDockWindowSnapshot[]
 }
 
@@ -1057,7 +953,9 @@ export interface ProjectPanelRef {
   type: string
   title: string
   filePath?: string
-  url?: string
+  /** Browser panels only: canonical navigation state. */
+  tabs?: BrowserTab[]
+  activeTabId?: string
   /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
   proxyUrl?: string
   /** Document panels only: sub-type discriminator for the viewer. */
@@ -1145,9 +1043,9 @@ export interface IterationAgent {
   /** The disjoint slice of the work this agent owns, if the driver partitioned. */
   scope?: string
   /** Which phase opened this terminal: `work` does the task, `verify` checks it.
-   *  Both get a job-card chip and stay open; absent ⇒ `work` (back-compat). The
-   *  orchestrator context and winner note are scoped to the work agents. */
-  kind?: 'work' | 'verify'
+   *  Both get a job-card chip and stay open. The orchestrator context and winner
+   *  note are scoped to the work agents. */
+  kind: 'work' | 'verify'
 }
 
 export interface Iteration {
@@ -1320,18 +1218,6 @@ export interface ProjectCateAgentFile {
   /** Whether the observer runs automatically on a timer. When false, observe
    *  turns happen only when the user clicks the idle Cate Agent. Defaults to true. */
   autoObserve: boolean
-}
-
-// -----------------------------------------------------------------------------
-// Layout snapshot (saved canvas arrangements)
-// -----------------------------------------------------------------------------
-
-export interface LayoutSnapshot {
-  nodes: Array<{
-    panelType: PanelType
-    origin: Point
-    size: Size
-  }>
 }
 
 // -----------------------------------------------------------------------------
@@ -1520,14 +1406,6 @@ export interface AppSettings {
   notifyOnlyWhenUnfocused: boolean
 
   // Privacy
-  /** DEPRECATED — no longer read anywhere. Telemetry is always on in packaged
-   *  builds since notice v2. Kept in the schema so existing settings.json files
-   *  load cleanly; remove in a later release. */
-  crashReportingEnabled: boolean
-  /** DEPRECATED — see crashReportingEnabled. */
-  usageAnalyticsEnabled: boolean
-  /** DEPRECATED — see crashReportingEnabled. */
-  telemetryConsentDecided: boolean
   /** Highest TELEMETRY_NOTICE_VERSION the user has dismissed the telemetry
    *  notice (WelcomeDialog) for. The notice shows whenever this is below the
    *  current TELEMETRY_NOTICE_VERSION — on first install, and again for every
@@ -1648,12 +1526,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   notifyOnlyWhenUnfocused: true,
 
-  // Privacy. The three legacy consent flags are deprecated (no longer read);
-  // telemetry is always on in packaged builds. The acknowledged notice version
-  // starts at 0 so every fresh install and every updater sees the notice once.
-  crashReportingEnabled: true,
-  usageAnalyticsEnabled: true,
-  telemetryConsentDecided: false,
+  // Privacy notice. Telemetry is always on in packaged builds.
   telemetryNoticeAcknowledgedVersion: 0,
 
   // Onboarding
@@ -1780,7 +1653,7 @@ export interface AuthProviderStatus {
   /** Last connect time as ISO string, if known. */
   connectedAt?: string
   /** Where the credential lives. */
-  source?: 'oauth' | 'safeStorage' | 'env' | 'config'
+  source?: 'oauth' | 'env' | 'config'
 }
 
 /** Result of actively verifying that a provider's credential works.

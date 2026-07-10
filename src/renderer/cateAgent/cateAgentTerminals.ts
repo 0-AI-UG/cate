@@ -41,12 +41,12 @@ export function ptyFor(panelId: string): string | undefined {
 }
 
 export function activityRunning(wsId: string, ptyId: string): boolean {
-  const act = useStatusStore.getState().workspaces[wsId]?.terminalActivity[ptyId]
+  const act = useStatusStore.getState().workspaces[wsId]?.terminals[ptyId]?.activity
   return act?.type === 'running'
 }
 
 export function agentStateFor(wsId: string, ptyId: string): AgentState | null {
-  return useStatusStore.getState().workspaces[wsId]?.agentState[ptyId] ?? null
+  return useStatusStore.getState().workspaces[wsId]?.terminals[ptyId]?.agentState ?? null
 }
 
 /** True while a terminal is doing work — a coding-agent CLI mid-turn or a live
@@ -105,8 +105,8 @@ async function waitForPty(panelId: string, timeoutMs = 8000): Promise<string | u
   return ptyFor(panelId)
 }
 
-/** Open a canvas terminal in `cwd` at its grid slot, register it for activity
- *  polling, and light it up in `glow`. Returns the panelId (the terminal handle).
+/** Open a canvas terminal in `cwd` at its grid slot and light it up in `glow`.
+ *  Returns the panelId (the terminal handle).
  *  `focus: false` keeps the camera where the user left it; the controlled-terminal
  *  registration below is what keeps the (possibly off-view) node mounted so its
  *  pty can boot (see useVisibleNodeIds). */
@@ -116,14 +116,7 @@ export async function openTerminal(wsId: string, cwd: string, glow: string, slot
   const panelId = app.createTerminal(wsId, undefined, pos, { target: 'canvas', focus: false, canvasPanelId }, cwd)
   if (worktreeId) app.setPanelWorktreeId(wsId, panelId, worktreeId)
   useCateAgentStore.getState().addControlledTerminal(wsId, panelId, glow)
-  const ptyId = await waitForPty(panelId)
-  if (ptyId) {
-    try {
-      await window.electronAPI.shellRegisterTerminal(ptyId)
-    } catch {
-      /* activity polling is best-effort */
-    }
-  }
+  await waitForPty(panelId)
   return panelId
 }
 

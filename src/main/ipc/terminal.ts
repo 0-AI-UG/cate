@@ -26,6 +26,7 @@ import {
   TERMINAL_SCROLLBACK_SAVE,
   TERMINAL_SET_VISIBILITY,
   TERMINAL_CLIPBOARD_WRITE,
+  PANEL_TRANSFER_ACK,
 } from '../../shared/ipc-channels'
 import { getOrCreateLogger, removeLogger, flushAll as flushAllLoggers, disposeAll as disposeAllLoggers } from './terminalLogger'
 import log from '../logger'
@@ -46,6 +47,20 @@ const terminalOwners: Map<string, number> = new Map()
 
 // Which runtime hosts each terminal — routes write/resize/kill/getCwd.
 const terminalRuntime: Map<string, RuntimeId> = new Map()
+const sessionListeners = new Set<() => void>()
+
+function emitSessionsChanged(): void {
+  for (const listener of sessionListeners) listener()
+}
+
+export function onTerminalSessionsChanged(listener: () => void): () => void {
+  sessionListeners.add(listener)
+  return () => { sessionListeners.delete(listener) }
+}
+
+export function getTerminalIds(): string[] {
+  return [...terminalRuntime.keys()]
+}
 
 function runtimeForTerminal(id: string): Runtime | null {
   const cid = terminalRuntime.get(id)
@@ -64,7 +79,7 @@ export function getRuntimeForTerminal(id: string): Runtime | null {
 }
 
 // =============================================================================
-// Terminal transfer buffering — holds PTY output during cross-window migration
+// Terminal transfer buffering — holds PTY output during cross-window handoff
 // =============================================================================
 
 interface TerminalTransferState {
@@ -200,6 +215,7 @@ export function reassignTerminalWindow(terminalId: string, newWindowId: number):
 function cleanupTerminal(id: string): void {
   terminalOwners.delete(id)
   terminalRuntime.delete(id)
+  emitSessionsChanged()
 }
 
 async function spawnTerminal(
@@ -294,6 +310,7 @@ async function spawnTerminal(
 
   terminalRuntime.set(handle.id, runtimeId)
   terminalOwners.set(handle.id, ownerWindowId)
+  emitSessionsChanged()
   if (handle.notice) {
     try { sendToWindow(ownerWindowId, TERMINAL_DATA, handle.id, handle.notice) } catch { /* window gone */ }
   }
@@ -320,6 +337,10 @@ export function registerHandlers(): void {
   // Complete/abandon in-flight terminal transfers when a window closes so a
   // running PTY's ownership follows the panel instead of orphaning on a dead window.
   onWindowClosed(handleWindowClosedTerminalTransfers)
+
+  ipcMain.handle(PANEL_TRANSFER_ACK, async (_event, ptyId?: string) => {
+    if (ptyId) acknowledgeTerminalTransfer(ptyId)
+  })
 
   ipcMain.handle(
     TERMINAL_CREATE,

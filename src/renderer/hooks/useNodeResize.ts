@@ -16,6 +16,7 @@ import { getCursorForEdge } from './resizeEdge'
 import type { ResizeEdge } from './resizeEdge'
 import { pinDocumentCursor } from '../lib/dom/pinDocumentCursor'
 import { acquireBodyClass, releaseBodyClass } from '../lib/dom/bodyClassRefcount'
+import { activeDockPanelId } from '../../shared/collectPanelIds'
 
 // Re-exported so existing importers (CanvasNode, useNodeResizeCursor,
 // NodeResizeOverlay) keep importing from this module unchanged.
@@ -129,7 +130,8 @@ export function useNodeResize(
 
         neighborStartRef.current = borders.map((b) => {
           const neighbor = state.nodes[b.neighborId]
-          const neighborPanel = ws?.panels[neighbor.panelId]
+          const neighborPanelId = activeDockPanelId(neighbor.dockLayout)
+          const neighborPanel = neighborPanelId ? ws?.panels[neighborPanelId] : undefined
           const neighborPanelType = neighborPanel?.type ?? 'terminal'
           return {
             id: b.neighborId,

@@ -65,7 +65,7 @@ function diskState(): { workspace: ProjectWorkspaceFile; session: ProjectSession
           canvasNodes: {
             'node-ed-1': {
               id: 'node-ed-1',
-              panelId: 'ed-1',
+              dockLayout: { type: 'tabs', id: 'stack-ed-1', panelIds: ['ed-1'], activeIndex: 0 },
               origin: { x: 0, y: 0 },
               size: { width: 200, height: 150 },
               zOrder: 0,

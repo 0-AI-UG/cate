@@ -55,11 +55,6 @@ export type DragSource = {
         sourceCanvasStoreApi?: StoreApi<CanvasStore>
       }
     | {
-        /** The source is a single-panel detached window. On a successful
-         *  cross-window claim the source cleans up by closing its own window. */
-        kind: 'panel-window'
-      }
-    | {
         /** The source lives in **another** renderer window. This window's
          *  runtime is mirroring the drag for ghost rendering + local hit
          *  testing. On commit the dispatcher claims the drop via IPC; the
@@ -175,13 +170,6 @@ export type DragOpSourceSpec =
       sourceCanvasStoreApi?: StoreApi<CanvasStore>
       /** Authoritative PanelState for snapshot building. See note on
        *  canvas-node variant. */
-      panel: PanelState
-    }
-  | {
-      kind: 'panel-window'
-      panelId: string
-      panelType: PanelType
-      panelTitle: string
       panel: PanelState
     }
 

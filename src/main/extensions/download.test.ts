@@ -110,6 +110,7 @@ describe('stageArtifact', () => {
     const entry: CatalogEntry = {
       manifest: { id: 'cate.remote', name: 'Remote', version: '0.1.0', panels: [{ id: 'm', label: 'M' }] },
       artifactUrl: 'https://example.invalid/cate.remote-0.1.0.tgz',
+      sourceIsLocal: false,
     }
     await expect(stageArtifact(entry)).rejects.toThrow(/missing a required sha256/)
     expect(isStaged('cate.remote', '0.1.0')).toBe(false)
@@ -164,17 +165,13 @@ describe('stageArtifact', () => {
     expect(versions[versions.length - 1]).toBe('0.10.0')
   })
 
-  it('falls back to the artifactUrl scheme for an unflagged entry (legacy compat)', async () => {
-    // Directly-constructed entries (dev/test) with no sourceIsLocal flag keep
-    // the legacy behavior: a local-path artifactUrl is treated as a local dev
-    // artifact and stages without a sha256. (Real entries are always flagged.)
-    const { file } = buildArtifact('cate.legacy', '0.1.0')
+  it('requires an explicit source trust class', async () => {
+    const { file } = buildArtifact('cate.unclassified', '0.1.0')
     const entry: CatalogEntry = {
-      manifest: { id: 'cate.legacy', name: 'Legacy', version: '0.1.0', panels: [{ id: 'm', label: 'M' }] },
+      manifest: { id: 'cate.unclassified', name: 'Unclassified', version: '0.1.0', panels: [{ id: 'm', label: 'M' }] },
       artifactUrl: pathToFileURL(file).toString(),
-    }
-    const { tgzPath } = await stageArtifact(entry)
-    expect(existsSync(tgzPath)).toBe(true)
+    } as CatalogEntry
+    await expect(stageArtifact(entry)).rejects.toThrow(/must use an http\(s\) artifactUrl/)
   })
 })
 

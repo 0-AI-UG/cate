@@ -14,16 +14,15 @@ import type { SidebarSession, RemoteProjectEntry } from '../shared/types'
 
 const MAX_RECENT_PROJECTS = 10
 
-// Legacy URI scheme from before the companion→runtime rename. Remote workspaces
-// saved by an older build carry `cate-companion://` locators that the current
-// `parseLocator` no longer recognizes (it would silently treat them as bare
-// local paths, surfacing a junk local project). We silently drop those stale
-// entries on load — there is no automatic migration, so the user re-adds the
-// connection. This is the only place the old scheme string still appears.
-const LEGACY_RUNTIME_SCHEME = 'cate-companion://'
-
-function isLegacyRemoteEntry(w: RemoteProjectEntry): boolean {
-  return typeof w.locator === 'string' && w.locator.startsWith(LEGACY_RUNTIME_SCHEME)
+function isRemoteProjectEntry(value: unknown): value is RemoteProjectEntry {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const entry = value as Partial<RemoteProjectEntry>
+  return typeof entry.locator === 'string'
+    && entry.locator.startsWith('cate-runtime://')
+    && !!entry.connection
+    && entry.connection.kind !== 'local'
+    && !!entry.snapshot
+    && typeof entry.snapshot === 'object'
 }
 
 // ---------------------------------------------------------------------------
@@ -69,12 +68,9 @@ const remoteWorkspacesStore = createJsonStateFile<RemoteWorkspacesFile>({
   defaults: { workspaces: [] },
   normalize: (parsed, defaults) => {
     const o = asObject(parsed)
-    // Keep entry validation light: the renderer's restore path is already
-    // defensive about partial/legacy snapshots. We only guarantee the array shape.
-    const all = Array.isArray(o.workspaces)
-      ? (o.workspaces.filter((w) => w && typeof w === 'object') as RemoteProjectEntry[])
+    const workspaces = Array.isArray(o.workspaces)
+      ? o.workspaces.filter(isRemoteProjectEntry)
       : defaults.workspaces
-    const workspaces = all.filter((w) => !isLegacyRemoteEntry(w))
     return { workspaces }
   },
 })

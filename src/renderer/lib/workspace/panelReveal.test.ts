@@ -14,11 +14,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolvePanelLocation, revealPanel, resolvePanelById } from './panelReveal'
 import {
-  registerCanvasOps,
-  unregisterCanvasOps,
-  invalidateWorkspaceCanvasCache,
-} from './canvasAccess'
-import {
   getOrCreateWorkspaceDockStore,
   releaseWorkspaceDockStore,
 } from './dockRegistry'
@@ -31,6 +26,7 @@ import {
 } from '../../panels/nodeDockRegistry'
 import { createDockStore } from '../../stores/dockStore'
 import { computeTerminalHasFocus } from '../../hooks/useShortcuts'
+import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
 
 const WS = 'ws-reveal'
 const CANVAS = 'canvas-1'
@@ -49,17 +45,12 @@ function setWorkspace() {
   } as any)
 }
 
-let focusSpy: ReturnType<typeof vi.fn>
+let focusSpy: ReturnType<typeof vi.spyOn>
 function registerCanvasContaining(childPanelId: string) {
-  focusSpy = vi.fn()
-  registerCanvasOps(CANVAS, {
-    focusPanelNode: focusSpy,
-    storeApi: {
-      getState: () => ({
-        nodeForPanel: (id: string) => (id === childPanelId ? 'node-1' : undefined),
-      }),
-    },
-  } as any)
+  const store = getOrCreateCanvasStoreForPanel(CANVAS)
+  const nodeId = store.getState().addNode(childPanelId, 'terminal')
+  focusSpy = vi.spyOn(store.getState(), 'focusAndCenter')
+  return nodeId
 }
 
 beforeEach(() => {
@@ -68,8 +59,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  unregisterCanvasOps(CANVAS)
-  invalidateWorkspaceCanvasCache(WS)
+  releaseCanvasStoreForPanel(CANVAS)
   releaseWorkspaceDockStore(WS)
   setActivePanel(null)
   useAppStore.setState({ workspaces: [], selectedWorkspaceId: null } as any)
@@ -90,13 +80,13 @@ describe('resolvePanelLocation', () => {
   })
 
   it('resolves a canvas-hosted panel via nodeForPanel when not docked', () => {
-    registerCanvasContaining(CHILD)
+    const nodeId = registerCanvasContaining(CHILD)
     const loc = resolvePanelLocation(WS, CHILD)
     expect(loc).toEqual({ kind: 'canvas', canvasPanelId: CANVAS })
   })
 
   it('returns null when the panel lives nowhere', () => {
-    registerCanvasContaining(CHILD)
+    const nodeId = registerCanvasContaining(CHILD)
     expect(resolvePanelLocation(WS, 'ghost')).toBeNull()
   })
 })
@@ -113,10 +103,10 @@ describe('revealPanel', () => {
   })
 
   it('reveals a canvas-hosted panel by focusing its node', async () => {
-    registerCanvasContaining(CHILD)
+    const nodeId = registerCanvasContaining(CHILD)
     const ok = await revealPanel(WS, CHILD)
     expect(ok).toBe(true)
-    expect(focusSpy).toHaveBeenCalledWith(CHILD)
+    expect(focusSpy).toHaveBeenCalledWith(nodeId)
     expect(getActivePanelId()).toBe(CHILD)
   })
 
@@ -125,7 +115,7 @@ describe('revealPanel', () => {
   // did nothing visible. Revealing the child must bring its hosting canvas's own
   // dock tab to the front first.
   it('brings the hosting canvas tab to front when a different canvas is active', async () => {
-    registerCanvasContaining(CHILD)
+    const nodeId = registerCanvasContaining(CHILD)
     const dock = getOrCreateWorkspaceDockStore(WS)
     // Two canvases share the center stack; the OTHER one is active (docked last).
     dock.getState().dockPanel(CANVAS, 'center')
@@ -136,7 +126,7 @@ describe('revealPanel', () => {
 
     const ok = await revealPanel(WS, CHILD)
     expect(ok).toBe(true)
-    expect(focusSpy).toHaveBeenCalledWith(CHILD)
+    expect(focusSpy).toHaveBeenCalledWith(nodeId)
     // The hosting canvas tab (CANVAS, index 0) is now the active center tab.
     const stack = dock.getState().zones.center.layout as any
     expect(stack.panelIds[stack.activeIndex]).toBe(CANVAS)
@@ -208,12 +198,8 @@ describe('computeTerminalHasFocus', () => {
     // leaf is the source of truth.
     seedPanels({ 'node-term': { id: 'node-term', type: 'terminal', title: 'T', isDirty: false } })
 
-    // Canvas ops: registry membership makes getActiveCanvasPanelId resolve to
-    // CANVAS, and the (derived) focused node points at our node — an active
-    // single-node selection.
-    registerCanvasOps(CANVAS, {
-      storeApi: { getState: () => ({ selection: [NODE], selectionActive: true }) },
-    } as any)
+    const canvasStore = getOrCreateCanvasStoreForPanel(CANVAS)
+    canvasStore.setState({ selection: [NODE], selectionActive: true } as any)
 
     const nodeDock = createDockStore()
     nodeDock.getState().dockPanel('node-term', 'center')

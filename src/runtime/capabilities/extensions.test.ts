@@ -63,12 +63,12 @@ describe('daemon FileHost extension install', () => {
 
   beforeEach(async () => {
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-ext-install-')))
-    addAllowedRoot(root)
+    addAllowedRoot(root, 'test')
     runtime = buildDaemonRuntime({ id: 'test' }).runtime
   })
 
   afterEach(async () => {
-    removeAllowedRoot(root)
+    removeAllowedRoot(root, 'test')
     await fs.rm(root, { recursive: true, force: true })
   })
 

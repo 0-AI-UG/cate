@@ -105,19 +105,14 @@ export function localTarballIfPresent(version: string, target: RuntimeTarget): s
  *  dev / when absent. macOS ships a per-arch daemon (runtime-host-<arch>.tgz)
  *  because one .app can run on either CPU — an Intel Mac (process.arch === 'x64',
  *  natively or under Rosetta) must get the x64 daemon, since an arm64 node/node-pty
- *  can't exec there. Other platforms ship a single host-arch runtime-host.tgz.
- *  The legacy unsuffixed name is kept as a fallback for older packagings. */
+ *  can't exec there. Other platforms ship a single host-arch runtime-host.tgz. */
 export function shippedRuntimeTarball(): string | null {
   if (!app.isPackaged) return null
-  const names =
-    process.platform === 'darwin'
-      ? [`runtime-host-${process.arch}.tgz`, 'runtime-host.tgz']
-      : ['runtime-host.tgz']
-  for (const name of names) {
-    const p = path.join(process.resourcesPath, name)
-    if (existsSync(p)) return p
-  }
-  return null
+  const name = process.platform === 'darwin'
+    ? `runtime-host-${process.arch}.tgz`
+    : 'runtime-host.tgz'
+  const tarball = path.join(process.resourcesPath, name)
+  return existsSync(tarball) ? tarball : null
 }
 
 /** Short content hash of a local tarball, for the remote `.ok` marker. */

@@ -29,7 +29,7 @@ function findRunningTerminals(panels: Array<PanelState | undefined>): RunningTer
     // terminal->workspace identity is owned by the registry bimap now.
     const wsId = terminalRegistry.workspaceIdForPty(ptyId)
     if (!wsId) continue
-    const activity = status.workspaces[wsId]?.terminalActivity[ptyId]
+    const activity = status.workspaces[wsId]?.terminals[ptyId]?.activity
     if (activity?.type === 'running') {
       out.push({ panelId: p.id, processName: activity.processName })
     }

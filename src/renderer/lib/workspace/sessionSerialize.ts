@@ -28,7 +28,14 @@ import { collectPanelIds } from '../canvas/collectPanelIds'
 // relative/absolute conversion, so they're handled separately. Enumerated ONCE
 // here — consulted by both buildWorkspaceFile and projectFilesToSnapshot — so
 // the two paths can't drift and silently drop a field on round-trip.
-const PASSTHROUGH_PANEL_FIELDS = ['url', 'proxyUrl', 'documentType', 'extensionId', 'extensionPanelId'] as const
+const PASSTHROUGH_PANEL_FIELDS = [
+  'tabs',
+  'activeTabId',
+  'proxyUrl',
+  'documentType',
+  'extensionId',
+  'extensionPanelId',
+] as const
 
 type PassthroughPanelFields = Pick<ProjectPanelRef, (typeof PASSTHROUGH_PANEL_FIELDS)[number]>
 
@@ -163,9 +170,9 @@ export function projectFilesToSnapshot(
 
 /** Collect all panel IDs referenced in a WindowDockState layout tree. */
 export function collectPanelIdsFromDockState(zones: WindowDockState): string[] {
-  const ids: string[] = []
+  const ids = new Set<string>()
   for (const zone of Object.values(zones)) {
-    for (const id of collectPanelIds(zone.layout)) ids.push(id)
+    for (const id of collectPanelIds(zone.layout)) ids.add(id)
   }
-  return ids
+  return [...ids]
 }

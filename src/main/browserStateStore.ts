@@ -9,6 +9,7 @@ import { createJsonStateFile } from './jsonStateFile'
 import { isPlainObject } from './jsonUtils'
 import type { BrowserHistoryEntry, BrowserBookmark } from '../shared/types'
 import { BROWSER_NEW_TAB_URL } from '../shared/types'
+import { queryBrowserHistoryEntries } from '../shared/browserHistory'
 
 const MAX_HISTORY = 2000
 
@@ -84,11 +85,7 @@ export function getBrowserHistory(): BrowserHistoryEntry[] {
 }
 
 export function queryBrowserHistory(query: string, limit: number): BrowserHistoryEntry[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return getBrowserHistory().slice(0, limit)
-  return getBrowserHistory()
-    .filter((e) => e.url.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))
-    .slice(0, limit)
+  return queryBrowserHistoryEntries(historyStore.get().entries, query, limit)
 }
 
 export function removeBrowserHistoryEntry(url: string): void {

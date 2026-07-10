@@ -1,5 +1,5 @@
 import { useSettingsStore } from '../stores/settingsStore'
-import { SettingRow, Toggle, NumberInput, Slider, Select } from './SettingsComponents'
+import { SettingRow, Toggle, Slider, Select } from './SettingsComponents'
 import type { CanvasGridStyle } from '../../shared/types'
 import {
   BUILTIN_WALLPAPERS,

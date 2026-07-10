@@ -47,14 +47,14 @@ function main(): void {
   // dir, which pathValidation always allows). Everything the client asks for is
   // validated against this on the daemon side — the authoritative check, since
   // only the daemon can realpath its own filesystem.
-  addAllowedRoot(args.root)
+  addAllowedRoot(args.root, args.id)
 
   // The per-host extensions install root (~/.cate/extensions) is also allowed,
   // independent of the workspace root: extensions are installed once per host and
   // shared across that host's workspaces. Registered here so static serving and
   // server-cwd validation succeed after a daemon restart even before any
   // re-provision call runs.
-  addAllowedRoot(hostExtensionsRoot())
+  addAllowedRoot(hostExtensionsRoot(), args.id)
 
   // Reap any extension-server children a PREVIOUS run of this daemon (same --id)
   // left orphaned — e.g. after a hard crash that skipped killAll(). Best-effort

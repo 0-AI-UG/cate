@@ -364,7 +364,6 @@ describe('terminalLifecycle dispose-during-creation', () => {
       settingsGet: vi.fn(() => Promise.resolve('/bin/zsh')),
       terminalCreate: vi.fn(() => createPromise),
       terminalKill,
-      shellUnregisterTerminal: vi.fn(() => Promise.resolve()),
     }
     ;(globalThis as unknown as { window: unknown }).window = { electronAPI }
 

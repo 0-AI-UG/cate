@@ -17,36 +17,11 @@ import { runCateAgentTool } from './cateAgentTools'
 import { initCateAgentTerminalExits } from './cateAgentTerminalExits'
 import { signalRunEnd } from './cateAgentRunWaiters'
 import log from '../lib/logger'
+import { lastAssistantText } from '../../shared/agentMessages'
 
 const CATE_AGENT_MARKER = 'cate-agent-tools:'
 
 let host: CateAgentBridgeHost | null = null
-
-/** Concatenate the text blocks of one pi assistant message. */
-function messageText(message: unknown): string {
-  const content = (message as { content?: unknown } | null)?.content
-  if (!Array.isArray(content)) return ''
-  return content
-    .filter((c): c is { type: 'text'; text: string } =>
-      !!c && (c as { type?: string }).type === 'text' && typeof (c as { text?: unknown }).text === 'string',
-    )
-    .map((c) => c.text)
-    .join('')
-    .trim()
-}
-
-/** The run's answer text from an `agent_end` event's `messages`: the most recent
- *  assistant turn that actually has text. Mirrors agentManager.answerMessage. */
-function finalAssistantText(messages: unknown): string {
-  if (!Array.isArray(messages)) return ''
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i] as { role?: string } | null
-    if (m?.role !== 'assistant') continue
-    const text = messageText(m)
-    if (text) return text
-  }
-  return ''
-}
 
 /** The controller registers itself so the bridge can resolve context + report
  *  lifecycle. Also arms terminal-exit tracking. */
@@ -121,7 +96,7 @@ export function handleCateAgentEvent(panelId: string, event: { type: string; [ke
       // Wake anything awaiting this run's completion (e.g. the launcher waiting on
       // a driver) BEFORE the host reconciles and possibly disposes the session.
       signalRunEnd(panelId)
-      if (ctx) host.onRunEnd(ctx, finalAssistantText(event.messages))
+      if (ctx) host.onRunEnd(ctx, lastAssistantText(event.messages))
       return
     }
 

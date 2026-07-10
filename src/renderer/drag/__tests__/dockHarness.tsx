@@ -36,7 +36,6 @@ import {
   getOrCreateCanvasStoreForPanel,
   releaseCanvasStoreForPanel,
   getAllCanvasStores,
-  useCanvasStore,
   type CanvasStore,
 } from '../../stores/canvasStore'
 import { createDockStore, type DockStore } from '../../stores/dockStore'
@@ -291,7 +290,7 @@ export function renderDockScene(spec: DockSceneSpec): DockSceneApi {
   installElementFromPoint()
   getDefaultSession().resetDispatch()
   useDragStore.getState().applyDragState(INITIAL_DRAG_STATE)
-  for (const store of [useCanvasStore, ...getAllCanvasStores()]) {
+  for (const store of getAllCanvasStores()) {
     store.setState((s) => ({
       ...s,
       nodes: {},
@@ -305,7 +304,6 @@ export function renderDockScene(spec: DockSceneSpec): DockSceneApi {
   // Real dock store seeded with the requested stack layout.
   const dockStore = createDockStore({
     zones: seededDockState(spec.stack),
-    locations: {},
   })
 
   // Register the canvas store with the session so canvas-add commits can find

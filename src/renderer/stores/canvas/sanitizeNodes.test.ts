@@ -3,7 +3,7 @@ import { sanitizeLoadedCanvasNodes } from './sanitizeNodes'
 
 const valid = {
   id: 'n1',
-  panelId: 'p1',
+  dockLayout: { type: 'tabs' as const, id: 'stack-p1', panelIds: ['p1'], activeIndex: 0 },
   origin: { x: 10, y: 20 },
   size: { width: 300, height: 200 },
   zOrder: 0,
@@ -52,18 +52,18 @@ describe('sanitizeLoadedCanvasNodes', () => {
   it('backfills missing z-order/creation counters above the highest valid ones', () => {
     const { nodes, repaired } = sanitizeLoadedCanvasNodes({
       a: { ...valid, id: 'a', zOrder: 5, creationIndex: 7 },
-      b: { ...valid, id: 'b', panelId: 'p2', zOrder: undefined, creationIndex: undefined },
+      b: { ...valid, id: 'b', dockLayout: { type: 'tabs', id: 'stack-p2', panelIds: ['p2'], activeIndex: 0 }, zOrder: undefined, creationIndex: undefined },
     })
     expect(repaired).toEqual(['b'])
     expect(nodes.b.zOrder).toBeGreaterThan(5)
     expect(nodes.b.creationIndex).toBeGreaterThan(7)
   })
 
-  it('drops unrecoverable entries (non-object, or no panelId)', () => {
+  it('drops unrecoverable entries (non-object, or no dock layout)', () => {
     const { nodes, dropped } = sanitizeLoadedCanvasNodes({
       bad1: null,
       bad2: 'x',
-      bad3: { ...valid, panelId: undefined },
+      bad3: { ...valid, dockLayout: undefined },
       good: valid,
     })
     expect(dropped.sort()).toEqual(['bad1', 'bad2', 'bad3'])

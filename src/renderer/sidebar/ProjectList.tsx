@@ -10,7 +10,6 @@ export const ProjectList: React.FC = () => {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const addWorkspace = useAppStore((s) => s.addWorkspace)
   const selectWorkspace = useAppStore((s) => s.selectWorkspace)
-  const removeWorkspace = useAppStore((s) => s.removeWorkspace)
 
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
   // Workspace expansion lives here (not in each WorkspaceTab) so the header
@@ -208,7 +207,6 @@ export const ProjectList: React.FC = () => {
                   isExpanded={expandedIds.has(ws.id)}
                   onToggleExpand={() => toggleExpanded(ws.id)}
                   onClick={(e) => handleWorkspaceClick(index, ws.id, e)}
-                  onClose={() => removeWorkspace(ws.id, true)}
                   onBulkContextMenu={(e) => handleBulkContextMenu(e, ws.id)}
                 />
               </div>

@@ -13,6 +13,7 @@ vi.mock('../lib/logger', () => ({
 }))
 vi.mock('../lib/terminal/terminalRegistry', () => ({
   terminalRegistry: {
+    setPendingRestore: vi.fn(),
     dispose: vi.fn(),
     disposeWorkspace: vi.fn(),
     getEntry: vi.fn(),
@@ -62,7 +63,7 @@ function makeSnapshot(canvasPanelId: string, rootPath: string): SessionSnapshot 
         canvasNodes: {
           'node-ed-1': {
             id: 'node-ed-1',
-            panelId: 'ed-1',
+            dockLayout: { type: 'tabs', id: 'stack-ed-1', panelIds: ['ed-1'], activeIndex: 0 },
             origin: { x: 10, y: 10 },
             size: { width: 200, height: 150 },
             zOrder: 0,
@@ -85,7 +86,6 @@ function makeSnapshot(canvasPanelId: string, rootPath: string): SessionSnapshot 
           layout: { type: 'tabs', id: 'stack-1', panelIds: [canvasPanelId], activeIndex: 0 },
         },
       },
-      locations: {},
     },
   }
 }
@@ -183,7 +183,7 @@ describe('per-workspace dock isolation', () => {
       canvasNodes: {
         'sec-node': {
           id: 'sec-node',
-          panelId: secChildTerm,
+          dockLayout: { type: 'tabs', id: 'stack-sec', panelIds: [secChildTerm], activeIndex: 0 },
           origin: { x: 30, y: 40 },
           size: { width: 250, height: 180 },
           zOrder: 0,
@@ -217,7 +217,6 @@ describe('per-workspace dock isolation', () => {
             layout: { type: 'tabs', id: 'stk', panelIds: [primaryCanvas, secondaryCanvas], activeIndex: 0 },
           },
         },
-        locations: {},
       },
       canvases: {
         [primaryCanvas]: {
@@ -225,7 +224,7 @@ describe('per-workspace dock isolation', () => {
           canvasNodes: {
             'prim-node': {
               id: 'prim-node',
-              panelId: 'prim-ed',
+              dockLayout: { type: 'tabs', id: 'stack-prim', panelIds: ['prim-ed'], activeIndex: 0 },
               origin: { x: 0, y: 0 },
               size: { width: 200, height: 150 },
               zOrder: 0,
@@ -245,7 +244,7 @@ describe('per-workspace dock isolation', () => {
     // (original panel ids preserved), not lumped into the primary.
     const secStore = getOrCreateCanvasStoreForPanel(secondaryCanvas).getState()
     expect(Object.keys(secStore.nodes)).toEqual(['sec-node'])
-    expect(secStore.nodes['sec-node'].panelId).toBe(secChildTerm)
+    expect(secStore.nodes['sec-node'].dockLayout).toMatchObject({ panelIds: [secChildTerm] })
     expect(secStore.zoomLevel).toBe(1.75)
     expect(secStore.viewportOffset).toEqual({ x: 9, y: 8 })
 
@@ -255,7 +254,7 @@ describe('per-workspace dock isolation', () => {
 
     // The primary canvas store did NOT absorb the secondary's node.
     const primStore = getOrCreateCanvasStoreForPanel(primaryCanvas).getState()
-    expect(Object.values(primStore.nodes).some((n) => n.panelId === secChildTerm)).toBe(false)
+    expect(primStore.nodeForPanel(secChildTerm)).toBeNull()
   })
 
   it('panels recorded on a workspace stay scoped to that workspace', () => {

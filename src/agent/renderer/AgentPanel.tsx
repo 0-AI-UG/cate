@@ -32,6 +32,7 @@ import { useAppStore } from '../../renderer/stores/appStore'
 import { useUIStore } from '../../renderer/stores/uiStore'
 import { useStatusStore } from '../../renderer/stores/statusStore'
 import { useAgentStore } from './agentStore'
+import { agentClient } from './agentClient'
 import {
   getAgentPanelSession,
   saveAgentPanelSession,
@@ -289,7 +290,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   ) => {
     markReady(key, false)
     try {
-      const res = await window.electronAPI.agentCreate({
+      const res = await agentClient.create({
         panelId: key,
         workspaceId,
         cwd,
@@ -471,9 +472,9 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     setDraftImages([])
     try {
       if (isSteering) {
-        await window.electronAPI.agentSteer(activeAgentKey, text, images.length > 0 ? images : undefined)
+        await agentClient.steer(activeAgentKey, text, images.length > 0 ? images : undefined)
       } else {
-        await window.electronAPI.agentPrompt(activeAgentKey, text, images.length > 0 ? images : undefined)
+        await agentClient.prompt(activeAgentKey, text, images.length > 0 ? images : undefined)
       }
     } catch (err) {
       const msg = toErrorMessage(err)
@@ -483,7 +484,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
 
   const handleInterrupt = useCallback(async () => {
     if (!activeAgentKey) return
-    try { await window.electronAPI.agentInterrupt(activeAgentKey) }
+    try { await agentClient.interrupt(activeAgentKey) }
     catch (err) { log.warn('[AgentPanel] interrupt failed', err) }
   }, [activeAgentKey])
 
@@ -552,7 +553,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     // Dispose pi for this chat without deleting its on-disk session file.
     // Used by the sidebar's "close" affordance on currently-open chats.
     readyByKey.current[key] = false
-    window.electronAPI.agentDispose(key).catch(() => { /* */ })
+    agentClient.dispose(key).catch(() => { /* */ })
     useAgentStore.getState().dispose(key)
     const remaining = openChatsRef.current.filter((c) => c.agentKey !== key)
     setOpenChats(remaining)
@@ -833,7 +834,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
 
   const handleTogglePlanMode = useCallback(async () => {
     if (!activeAgentKey) return
-    try { await window.electronAPI.agentPrompt(activeAgentKey, '/plan') }
+    try { await agentClient.prompt(activeAgentKey, '/plan') }
     catch (err) { log.warn('[AgentPanel] toggle plan mode failed', err) }
   }, [activeAgentKey])
 
@@ -843,7 +844,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     try {
       // The cate-plan-mode extension clears plan mode and starts the implement
       // turn itself (via a custom message), so there's no synthetic user prompt.
-      await window.electronAPI.agentPrompt(key, '/apply-plan')
+      await agentClient.prompt(key, '/apply-plan')
     } catch (err) {
       const msg = toErrorMessage(err)
       useAgentStore.getState().appendSystem(key, `Implement failed: ${msg}`, 'error')
@@ -853,7 +854,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const handleRefinePlan = useCallback(async (text: string) => {
     if (!activeAgentKey) return
     const key = activeAgentKey
-    try { await window.electronAPI.agentPrompt(key, text) }
+    try { await agentClient.prompt(key, text) }
     catch (err) {
       const msg = toErrorMessage(err)
       useAgentStore.getState().appendSystem(key, `Refine failed: ${msg}`, 'error')
@@ -869,7 +870,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       useAgentStore.getState().setCompaction(key, { active: false })
       // 'fresh' tells the extension to restate the full plan: compaction dropped
       // the original plan_complete call from context.
-      await window.electronAPI.agentPrompt(key, '/apply-plan fresh')
+      await agentClient.prompt(key, '/apply-plan fresh')
     } catch (err) {
       const msg = toErrorMessage(err)
       useAgentStore.getState().appendSystem(key, `Clear & implement failed: ${msg}`, 'error')

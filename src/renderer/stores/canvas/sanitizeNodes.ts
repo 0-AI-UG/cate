@@ -13,7 +13,7 @@
 // it.
 // =============================================================================
 
-import type { CanvasNodeId, CanvasNodeState, Point, Size } from '../../../shared/types'
+import type { CanvasNodeId, CanvasNodeState, DockLayoutNode, Point, Size } from '../../../shared/types'
 
 // Generic recovery geometry. We don't have the node's panel type here (it lives
 // on the PanelState, not the node), so a sensible mid-size default is the safe
@@ -43,6 +43,34 @@ export function isValidSize(s: unknown): s is Size {
     isFiniteNumber((s as Size).height) &&
     (s as Size).height > 0
   )
+}
+
+function isValidDockLayout(value: unknown): value is DockLayoutNode {
+  if (!value || typeof value !== 'object') return false
+  const layout = value as Partial<DockLayoutNode>
+  if (typeof layout.id !== 'string' || !layout.id) return false
+  if (layout.type === 'tabs') {
+    return (
+      Array.isArray(layout.panelIds) &&
+      layout.panelIds.length > 0 &&
+      layout.panelIds.every((id) => typeof id === 'string' && id.length > 0) &&
+      Number.isInteger(layout.activeIndex) &&
+      (layout.activeIndex as number) >= 0 &&
+      (layout.activeIndex as number) < layout.panelIds.length
+    )
+  }
+  if (layout.type === 'split') {
+    return (
+      (layout.direction === 'horizontal' || layout.direction === 'vertical') &&
+      Array.isArray(layout.children) &&
+      layout.children.length > 0 &&
+      layout.children.every(isValidDockLayout) &&
+      Array.isArray(layout.ratios) &&
+      layout.ratios.length === layout.children.length &&
+      layout.ratios.every((ratio) => isFiniteNumber(ratio) && ratio > 0)
+    )
+  }
+  return false
 }
 
 export interface SanitizeResult {
@@ -80,7 +108,7 @@ export function sanitizeLoadedCanvasNodes(
       continue
     }
     const v = value as Partial<CanvasNodeState>
-    if (typeof v.panelId !== 'string' || !v.panelId) {
+    if (!isValidDockLayout(v.dockLayout)) {
       dropped.push(key)
       continue
     }
@@ -97,7 +125,7 @@ export function sanitizeLoadedCanvasNodes(
     const node: CanvasNodeState = {
       ...(v as CanvasNodeState),
       id: key,
-      panelId: v.panelId,
+      dockLayout: v.dockLayout,
       origin: repair(isValidPoint(v.origin), v.origin as Point, { ...FALLBACK_ORIGIN }),
       size: repair(isValidSize(v.size), v.size as Size, { ...FALLBACK_SIZE }),
       zOrder: repair(isFiniteNumber(v.zOrder), v.zOrder as number, nextZ++),

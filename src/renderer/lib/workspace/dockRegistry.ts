@@ -14,21 +14,21 @@
 import type { StoreApi } from 'zustand'
 import { createDockStore } from '../../stores/dockStore'
 import type { DockStore } from '../../stores/dockStore'
-
-const dockStoresByWorkspace = new Map<string, StoreApi<DockStore>>()
+import { getDefaultSession } from '../../drag/session'
 
 /** The workspace's dock store, creating an empty one on first access. */
 export function getOrCreateWorkspaceDockStore(workspaceId: string): StoreApi<DockStore> {
-  const existing = dockStoresByWorkspace.get(workspaceId)
+  const session = getDefaultSession()
+  const existing = session.getWorkspaceDockStore(workspaceId)
   if (existing) return existing
   const store = createDockStore()
-  dockStoresByWorkspace.set(workspaceId, store)
+  session.registerWorkspaceDockStore(workspaceId, store)
   return store
 }
 
 /** The workspace's dock store, or undefined if one hasn't been created yet. */
 export function getWorkspaceDockStore(workspaceId: string): StoreApi<DockStore> | undefined {
-  return dockStoresByWorkspace.get(workspaceId)
+  return getDefaultSession().getWorkspaceDockStore(workspaceId)
 }
 
 /** Adopt an externally-created dock store as the workspace's store. Detached dock
@@ -36,10 +36,10 @@ export function getWorkspaceDockStore(workspaceId: string): StoreApi<DockStore> 
  *  shared placement code (placePanel → getOrCreateWorkspaceDockStore) targets the
  *  store this window actually renders, letting newly-created panels land here. */
 export function registerWorkspaceDockStore(workspaceId: string, store: StoreApi<DockStore>): void {
-  dockStoresByWorkspace.set(workspaceId, store)
+  getDefaultSession().registerWorkspaceDockStore(workspaceId, store)
 }
 
 /** Drop a workspace's dock store (on workspace removal). */
 export function releaseWorkspaceDockStore(workspaceId: string): void {
-  dockStoresByWorkspace.delete(workspaceId)
+  getDefaultSession().releaseWorkspaceDockStore(workspaceId)
 }

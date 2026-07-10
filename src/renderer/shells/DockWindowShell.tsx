@@ -14,7 +14,7 @@ import { setupCrossWindowDragListeners } from '../drag'
 import { createRemoteDropHandler } from '../drag/crossWindow'
 import { useFileDropTracker, FileDropOverlay } from '../drag/fileDropTarget'
 import { captureTerminalScrollbacks } from './dockWindowSyncScrollback'
-import { terminalRestoreData } from '../lib/workspace/session'
+import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { ensurePanelsInAppStore } from '../lib/canvas/applyCanvasChildPanels'
 import { hydrateReceivedPanel, hydrateCanvasState } from '../lib/panelTransfer'
@@ -28,10 +28,8 @@ import WindowControls from './WindowControls'
 import { useWindowRuntime } from '../lib/hooks/useWindowRuntime'
 import WindowChrome from './WindowChrome'
 
-import { renderPanelComponent, PANEL_REGISTRY } from '../panels/registry'
-import { PanelSuspense } from '../panels/PanelSuspense'
+import { PanelHost } from '../panels/PanelHost'
 import { IS_MAC } from '../lib/platform'
-const CanvasPanel = PANEL_REGISTRY.canvas.Component
 
 interface DockWindowShellProps {
   workspaceId?: string
@@ -110,10 +108,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       if (payload.restore) {
         for (const panel of Object.values(payload.panels)) {
           if (panel.type !== 'terminal') continue
-          terminalRestoreData.set(panel.id, {
-            cwd: payload.terminalCwds?.[panel.id],
-            replayFromId: panel.id,
-          })
+          terminalRegistry.setPendingRestore(panel.id, payload.terminalCwds?.[panel.id])
         }
       }
       if (payload.canvasStates) {
@@ -129,7 +124,6 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // demand (dockStore.getPanelLocation), so there's nothing to rebuild.
       dockStore.getState().restoreSnapshot({
         zones: payload.dockState,
-        locations: {},
       })
       setReady(true)
     })
@@ -299,44 +293,10 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     return cleanup
   }, [])
 
-  // Render panel content inside canvas nodes (used by CanvasPanel's renderPanelContent)
-  const renderPanelContent = useCallback(
-    (panelId: string, nodeId: string, zoom: number) => {
-      const panel = panels[panelId]
-      if (!panel) return null
-
-      const content = renderPanelComponent(panel, { workspaceId: wsId, nodeId, zoomLevel: zoom })
-      if (!content) return null
-
-      return <PanelSuspense>{content}</PanelSuspense>
-    },
-    [panels, wsId],
-  )
-
   // Render panel content for dock zones
   const renderPanel = useCallback(
-    (panelId: string) => {
-      const panel = panels[panelId]
-      if (!panel) return null
-
-      // Canvas panels get their own full canvas with renderPanelContent for nodes
-      if (panel.type === 'canvas') {
-        return (
-          <PanelSuspense>
-            <CanvasPanel
-              panelId={panelId}
-              workspaceId={wsId}
-              nodeId=""
-              renderPanelContent={renderPanelContent}
-            />
-          </PanelSuspense>
-        )
-      }
-
-      // All other panels render directly
-      return renderPanelContent(panelId, '', 1)
-    },
-    [panels, wsId, renderPanelContent],
+    (panelId: string) => <PanelHost panelId={panelId} panels={panels} workspaceId={wsId} />,
+    [panels, wsId],
   )
 
   const getPanelTitle = useCallback(
@@ -457,4 +417,3 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     </DockStoreProvider>
   )
 }
-

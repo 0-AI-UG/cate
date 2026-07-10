@@ -129,6 +129,20 @@ export function getWindow(id: number): BrowserWindow | undefined {
   return undefined
 }
 
+/** Snapshot of every live application window tracked by the registry. */
+export function listWindows(): BrowserWindow[] {
+  return [...windows.values()].filter((win) => !win.isDestroyed())
+}
+
+/** The focused application window, excluding unregistered helper windows. */
+export function getFocusedWindow(): BrowserWindow | undefined {
+  return listWindows().find((win) => win.isFocused())
+}
+
+export function isAnyWindowFocused(): boolean {
+  return getFocusedWindow() != null
+}
+
 /** Window ids of all live dock windows (used for the pre-quit flush sync). */
 export function listDockWindowIds(): number[] {
   const ids: number[] = []
@@ -217,11 +231,7 @@ export function setDockWindowState(
   windowId: number,
   state: DockWindowSyncState,
 ): void {
-  // Defensively strip a workspaceId if an out-of-date renderer still sends one:
-  // the registry value set at window creation is the sole authority, and a
-  // renderer echo could only be its process-local stub id.
-  const { workspaceId: _ignored, ...rest } = state as DockWindowSyncState & { workspaceId?: unknown }
-  dockWindowState.set(windowId, rest)
+  dockWindowState.set(windowId, state)
 }
 
 /** A dock window's persisted state plus its live window id and bounds. */
@@ -232,7 +242,7 @@ interface DockWindowListEntry {
   bounds: { x: number; y: number; width: number; height: number }
   workspaceId: string
   terminalCwds?: Record<string, string>
-  canvasStates?: Record<string, CanvasLayoutSnapshot>
+  canvasStates: Record<string, CanvasLayoutSnapshot>
 }
 
 /**

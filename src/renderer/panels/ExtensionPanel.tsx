@@ -16,6 +16,8 @@ import { useExtensionsStore, ensureExtensionsStarted } from '../stores/extension
 import { CATE_HOST_EVENT } from '../../shared/ipc-channels'
 import type { CateDroppedFile } from '../../shared/cate-host-api'
 import type { ExtensionPanelProps } from './types'
+import { hasCateFileDrag, readCateFilePaths } from '../drag/fileDragPayload'
+import { pathDisplayName } from '../lib/fs/displayPath'
 
 // Cap forwarded file content so a huge drop can't choke the IPC bridge / guest.
 const MAX_DROP_BYTES = 32 * 1024 * 1024
@@ -110,20 +112,12 @@ export async function readDroppedFiles(
   if (out.length > 0) return out
 
   // 2. Cate file-explorer drag: a path (or JSON array of paths) we read via IPC.
-  const paths: string[] = []
-  const many = dt.getData('application/cate-files')
-  if (many) {
-    try { for (const p of JSON.parse(many)) if (typeof p === 'string') paths.push(p) } catch { /* ignore */ }
-  }
-  if (paths.length === 0) {
-    const one = dt.getData('application/cate-file')
-    if (one) paths.push(one)
-  }
+  const paths = readCateFilePaths(dt)
   for (const p of paths) {
     try {
       const raw = await window.electronAPI.fsReadFile(p, workspaceId)
       const { text, truncated } = clampText(raw)
-      out.push({ name: p.split('/').pop() || p, path: p, text, truncated })
+      out.push({ name: pathDisplayName(p) || p, path: p, text, truncated })
     } catch { /* denied / unreadable — skip */ }
   }
   return out
@@ -226,16 +220,13 @@ export default function ExtensionPanel({
   useEffect(() => {
     if (!acceptsDrops || state.phase !== 'ready') return
 
-    const isCateDrag = (dt: DataTransfer | null): boolean =>
-      !!dt && (dt.types.includes('application/cate-file') || dt.types.includes('application/cate-files'))
-
     const setPassthrough = (on: boolean): void => {
       const webview = webviewRef.current
       if (webview) webview.style.pointerEvents = on ? 'none' : ''
     }
 
     const onDragOver = (e: DragEvent): void => {
-      if (isCateDrag(e.dataTransfer)) setPassthrough(true)
+      if (hasCateFileDrag(e.dataTransfer)) setPassthrough(true)
     }
     const onDragLeave = (e: DragEvent): void => {
       // relatedTarget null === cursor left the window entirely.
@@ -247,7 +238,7 @@ export default function ExtensionPanel({
       const dt = e.dataTransfer
       const root = rootRef.current
       const webview = webviewRef.current
-      if (!dt || !root || !webview || !isCateDrag(dt)) return
+      if (!dt || !root || !webview || !hasCateFileDrag(dt)) return
       const r = root.getBoundingClientRect()
       if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return
       // The drop is over this panel: claim it so the canvas/dock doesn't also open

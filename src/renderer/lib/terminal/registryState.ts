@@ -117,9 +117,12 @@ export function setPtyForPanel(panelId: string, ptyId: string): void {
   if (ptyId) ptyToPanel.set(ptyId, panelId)
 }
 
-// Transfer data deposited by shell code before TerminalPanel mounts in a new
-// window.  getOrCreate() checks this map and enters reconnect mode if found.
-export const pendingTransfers = new Map<string, { ptyId: string; scrollback?: string }>()
+export type PendingTerminalStart =
+  | { kind: 'transfer'; ptyId: string; scrollback?: string }
+  | { kind: 'restore'; cwd?: string; replayFromId: string }
+
+/** The one staging registry consulted before a TerminalPanel starts. */
+export const pendingTerminalStarts = new Map<string, PendingTerminalStart>()
 
 // Per-panel last-known create failure, surfaced by TerminalPanel as a Retry
 // overlay so a dead panel can recover without restarting the app.

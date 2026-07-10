@@ -9,7 +9,7 @@ import { create } from 'zustand'
 import log from '../lib/logger'
 import type { UIState } from '../../shared/types'
 import { DEFAULT_UI_STATE } from '../../shared/types'
-import { getElectronAPI, mergeKnown } from './jsonProjection'
+import { getElectronAPI, loadOnce, mergeKnown } from './jsonProjection'
 
 interface ElectronUIStateAPI {
   uiStateGetAll: () => Promise<Partial<UIState>>
@@ -26,20 +26,25 @@ interface UIStateStore extends UIState {
   setUIState: <K extends keyof UIState>(key: K, value: UIState[K]) => void
 }
 
+const loadUIStateOnce = loadOnce(async () => {
+  const api = getAPI()
+  if (!api) {
+    useUIStateStore.setState({ _loaded: true })
+    return
+  }
+  try {
+    const stored = await api.uiStateGetAll()
+    useUIStateStore.setState({ ...mergeKnown(DEFAULT_UI_STATE, stored), _loaded: true })
+  } catch {
+    useUIStateStore.setState({ _loaded: true })
+  }
+})
+
 export const useUIStateStore = create<UIStateStore>((set) => ({
   ...DEFAULT_UI_STATE,
   _loaded: false,
 
-  async loadUIState() {
-    const api = getAPI()
-    if (!api) { set({ _loaded: true }); return }
-    try {
-      const merged = { ...DEFAULT_UI_STATE, ...mergeKnown(DEFAULT_UI_STATE, await api.uiStateGetAll()) }
-      set({ ...merged, _loaded: true })
-    } catch {
-      set({ _loaded: true })
-    }
-  },
+  loadUIState: loadUIStateOnce,
 
   setUIState(key, value) {
     set({ [key]: value } as Partial<UIStateStore>)

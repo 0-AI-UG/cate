@@ -71,15 +71,12 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   fileExclusions: 'array',
   notificationsEnabled: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',
-  crashReportingEnabled: 'boolean',
-  usageAnalyticsEnabled: 'boolean',
-  telemetryConsentDecided: 'boolean',
   telemetryNoticeAcknowledgedVersion: 'number',
   onboardingCompleted: 'boolean',
   betaUpdatesEnabled: 'boolean',
   // Agent / layout — structured values. 'object' accepts a plain object or null;
   // deeper validation (shape of the model ref / sidebar layout) lives in the
-  // renderer consumers, which already tolerate partial/legacy shapes.
+  // renderer consumers, which validate hand-edited partial shapes.
   agentDefaultModel: 'object',
   cateAgentModel: 'object',
   cateAgentOrchestratorAgentId: 'string',

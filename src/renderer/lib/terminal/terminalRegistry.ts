@@ -21,6 +21,7 @@ import {
   disposeWorkspace,
   release,
   setPendingTransfer,
+  setPendingRestore,
 } from './terminalLifecycle'
 import { attach, detach, fit, restoreScroll } from './terminalDom'
 import { findNext, findPrevious, clearSearch } from './terminalSearch'
@@ -56,6 +57,7 @@ export const terminalRegistry = {
   fit,
   restoreScroll,
   setPendingTransfer,
+  setPendingRestore,
   getEntry,
   has,
   getFailure,

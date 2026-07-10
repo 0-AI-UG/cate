@@ -49,7 +49,7 @@ function makeWin(): FakeWin {
   return win
 }
 
-function register(type: 'main' | 'dock' | 'panel', workspaceId?: string): FakeWin {
+function register(type: 'main' | 'dock', workspaceId?: string): FakeWin {
   const win = makeWin()
   registerWindow(win as never, type, workspaceId)
   return win
@@ -165,7 +165,6 @@ describe('listDockWindows', () => {
           layout: { type: 'tabs', id: 'center-stack', panelIds: ['p1'], activeIndex: 0 },
         },
       },
-      locations: {},
     }
   }
 
@@ -177,6 +176,7 @@ describe('listDockWindows', () => {
       dockState: tabsDockState() as never,
       panels: { p1: { id: 'p1', type: 'terminal', title: 'zsh', isDirty: false } } as never,
       terminalCwds: { p1: '/work/p1' },
+      canvasStates: {},
     })
 
     const listed = listDockWindows()

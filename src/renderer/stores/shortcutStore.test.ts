@@ -1,13 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { DEFAULT_SHORTCUTS, storedShortcut } from '../../shared/types'
 
-// shortcutStore hydrates from the settings store at module init and subscribes
-// for later changes, so each case resets the module graph and re-imports.
 async function loadStores() {
   vi.resetModules()
   const { useSettingsStore } = await import('./settingsStore')
-  const { useShortcutStore } = await import('./shortcutStore')
-  return { useSettingsStore, useShortcutStore }
+  const shortcuts = await import('./shortcutStore')
+  return { useSettingsStore, ...shortcuts }
 }
 
 function keyEvent(key: string, mods: Partial<{ meta: boolean; shift: boolean; alt: boolean; ctrl: boolean }> = {}) {
@@ -26,49 +24,47 @@ describe('shortcutStore', () => {
   })
 
   it('toggleTool defaults to Ctrl+Space, not Shift+Space (#371)', async () => {
-    const { useShortcutStore } = await loadStores()
-    const match = useShortcutStore.getState().matchEvent
-    expect(match(keyEvent(' ', { shift: true }))).toBeNull()
-    expect(match(keyEvent(' ', { ctrl: true }))).toBe('toggleTool')
+    const { matchShortcutEvent } = await loadStores()
+    expect(matchShortcutEvent(keyEvent(' ', { shift: true }))).toBeNull()
+    expect(matchShortcutEvent(keyEvent(' ', { ctrl: true }))).toBe('toggleTool')
   })
 
   it('clearShortcut disables a binding so it never matches (#372)', async () => {
-    const { useShortcutStore } = await loadStores()
-    useShortcutStore.getState().clearShortcut('toggleTool')
-    expect(useShortcutStore.getState().shortcuts.toggleTool.key).toBe('')
-    expect(useShortcutStore.getState().matchEvent(keyEvent(' ', { ctrl: true }))).toBeNull()
+    const { clearShortcut, getResolvedShortcuts, matchShortcutEvent } = await loadStores()
+    clearShortcut('toggleTool')
+    expect(getResolvedShortcuts().toggleTool.key).toBe('')
+    expect(matchShortcutEvent(keyEvent(' ', { ctrl: true }))).toBeNull()
   })
 
   it('persists only diffs from the defaults into settings (#372)', async () => {
-    const { useSettingsStore, useShortcutStore } = await loadStores()
-    const store = useShortcutStore.getState()
+    const { useSettingsStore, setShortcut, clearShortcut, resetShortcut, resetAllShortcuts, getResolvedShortcuts } = await loadStores()
 
-    store.setShortcut('newTerminal', storedShortcut('t', { command: true, shift: true }))
-    store.clearShortcut('toggleTool')
+    setShortcut('newTerminal', storedShortcut('t', { command: true, shift: true }))
+    clearShortcut('toggleTool')
     expect(useSettingsStore.getState().customShortcuts).toEqual({
       newTerminal: storedShortcut('t', { command: true, shift: true }),
       toggleTool: storedShortcut(''),
     })
 
-    store.resetShortcut('newTerminal')
+    resetShortcut('newTerminal')
     expect(useSettingsStore.getState().customShortcuts).toEqual({
       toggleTool: storedShortcut(''),
     })
 
-    store.resetAll()
+    resetAllShortcuts()
     expect(useSettingsStore.getState().customShortcuts).toEqual({})
-    expect(useShortcutStore.getState().shortcuts).toEqual(DEFAULT_SHORTCUTS)
+    expect(getResolvedShortcuts()).toEqual(DEFAULT_SHORTCUTS)
   })
 
   it('hydrates overrides from the settings store (settings.json reloads)', async () => {
-    const { useSettingsStore, useShortcutStore } = await loadStores()
+    const { useSettingsStore, getResolvedShortcuts } = await loadStores()
     useSettingsStore.setState({
       customShortcuts: {
         toggleTool: storedShortcut(''),
         zoomIn: storedShortcut('=', { command: true, shift: true }),
       },
     })
-    const { shortcuts } = useShortcutStore.getState()
+    const shortcuts = getResolvedShortcuts()
     expect(shortcuts.toggleTool.key).toBe('')
     expect(shortcuts.zoomIn).toEqual(storedShortcut('=', { command: true, shift: true }))
     // Untouched actions keep their defaults.
@@ -76,15 +72,15 @@ describe('shortcutStore', () => {
   })
 
   it('ignores malformed hand-edited override entries', async () => {
-    const { useSettingsStore, useShortcutStore } = await loadStores()
+    const { useSettingsStore, getResolvedShortcuts, matchShortcutEvent } = await loadStores()
     useSettingsStore.setState({
       customShortcuts: {
         toggleTool: { key: 42, command: 'yes' },
         notAnAction: storedShortcut('x', { command: true }),
       } as never,
     })
-    const { shortcuts, matchEvent } = useShortcutStore.getState()
+    const shortcuts = getResolvedShortcuts()
     expect(shortcuts.toggleTool).toEqual(DEFAULT_SHORTCUTS.toggleTool)
-    expect(matchEvent(keyEvent('x', { meta: true }))).toBeNull()
+    expect(matchShortcutEvent(keyEvent('x', { meta: true }))).toBeNull()
   })
 })

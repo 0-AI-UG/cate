@@ -29,7 +29,8 @@ function panelsWithPorts(workspaceId: string): Set<string> {
   const ws = useStatusStore.getState().workspaces[workspaceId]
   const out = new Set<string>()
   if (!ws) return out
-  for (const [ptyId, ports] of Object.entries(ws.listeningPorts)) {
+  for (const [ptyId, terminal] of Object.entries(ws.terminals)) {
+    const ports = terminal.listeningPorts
     if (!ports.length) continue
     const pid = terminalRegistry.panelIdForPty(ptyId)
     if (pid) out.add(pid)
@@ -43,12 +44,10 @@ function panelsWithPorts(workspaceId: string): Set<string> {
 function statusSignature(): string {
   const parts: string[] = []
   for (const [wsId, ws] of Object.entries(useStatusStore.getState().workspaces)) {
-    for (const [k, st] of Object.entries(ws.agentState)) {
-      const name = ws.agentPresent[k] ? ws.agentName[k] ?? '' : ''
-      parts.push(`${wsId}:${k}:${st}:${name}`)
-    }
-    for (const [k, ports] of Object.entries(ws.listeningPorts)) {
-      if (ports.length) parts.push(`${wsId}:p:${k}`)
+    for (const [id, terminal] of Object.entries(ws.terminals)) {
+      const name = terminal.agentPresent ? terminal.agentName ?? '' : ''
+      parts.push(`${wsId}:${id}:${terminal.agentState}:${name}`)
+      if (terminal.listeningPorts.length) parts.push(`${wsId}:p:${id}`)
     }
   }
   return parts.sort().join('|')
@@ -61,8 +60,7 @@ function statusSignature(): string {
  *  that useWorkspaceCanvasChildOwners uses for the in-window tree — so the
  *  overview's "Other windows" section and the local tree can't disagree about
  *  which canvas hosts a panel. Reading the raw projection alone missed any panel
- *  living in a node's mini-dock that isn't the node's seed `panelId` (a second
- *  terminal added to a node, or a node whose seed was moved out). Canvases that
+ *  living in a node's mini-dock. Canvases that
  *  aren't mounted are skipped (their children report as top-level, matching how
  *  the overview already treats not-yet-loaded canvases). */
 function canvasChildMap(panels: Record<string, { id: string; type: string }>): Map<string, string> {
@@ -75,7 +73,7 @@ function canvasChildMap(panels: Record<string, { id: string; type: string }>): M
       canvasPanelId: p.id,
       nodes: Object.values(store.getState().nodes).map((node) => {
         const live = getLiveNodeDockLayout(p.id, node.id)
-        return { panelId: node.panelId, dockLayout: live !== undefined ? live : node.dockLayout }
+        return { dockLayout: live !== undefined ? live : node.dockLayout }
       }),
     })
   }

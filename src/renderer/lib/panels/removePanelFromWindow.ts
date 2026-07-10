@@ -19,10 +19,8 @@
 
 import type { PanelType } from '../../../shared/types'
 import { useAppStore } from '../../stores/appStore'
-import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
-import { getNodeDockLayout } from '../workspace/canvasAccess'
-import { teardownPanelContent, type PanelRemovalReason } from './panelTeardown'
-import { collectPanelIds } from '../canvas/collectPanelIds'
+import type { PanelRemovalReason } from './panelTeardown'
+import { teardownPanelFamily } from './panelLifecycle'
 
 export function removePanelFromWindow(
   workspaceId: string,
@@ -32,26 +30,8 @@ export function removePanelFromWindow(
 ): void {
   const app = useAppStore.getState()
 
-  if (panelType === 'canvas') {
-    // The children ride along with the canvas (transfer: inside the snapshot's
-    // canvasState; close: into oblivion) — tear down their content and drop
-    // their records here too, then release the now-orphaned per-panel canvas
-    // store so the sidebar's canvas-child resolver stops classifying them as
-    // residents.
-    const store = getOrCreateCanvasStoreForPanel(panelId)
-    const childIds = new Set<string>()
-    for (const node of Object.values(store.getState().nodes)) {
-      collectPanelIds(getNodeDockLayout(panelId, node.id), childIds)
-      if (node.panelId) childIds.add(node.panelId)
-    }
-    const ws = app.workspaces?.find((w) => w.id === workspaceId)
-    for (const id of childIds) {
-      teardownPanelContent(id, ws?.panels[id]?.type, reason)
-      app.removePanelRecord(workspaceId, id)
-    }
-    releaseCanvasStoreForPanel(panelId)
-  }
-
-  teardownPanelContent(panelId, panelType, reason)
+  const ws = app.workspaces?.find((w) => w.id === workspaceId)
+  const childIds = teardownPanelFamily(panelId, panelType, reason, (id) => ws?.panels[id]?.type)
+  for (const id of childIds) app.removePanelRecord(workspaceId, id)
   app.removePanelRecord(workspaceId, panelId)
 }

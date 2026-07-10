@@ -65,16 +65,6 @@ describe('sortWorkspacePanels', () => {
     expect(ids(sorted)).toEqual(['untagged', 'tagged-feat'])
   })
 
-  it('resolves a path-valued worktree tag to its registry record', () => {
-    const panels = [
-      panel('by-path', 'terminal', 'A', '/repo/.cate/worktrees/fix'),
-      panel('by-id', 'terminal', 'B', 'wt-feat'),
-    ]
-    const sorted = sortWorkspacePanels(panels, worktrees, '/repo')
-    // wt-feat ranks before wt-fix → by-id first.
-    expect(ids(sorted)).toEqual(['by-id', 'by-path'])
-  })
-
   it('within a worktree, orders by type then title', () => {
     const panels = [
       panel('term-b', 'terminal', 'B', 'wt-main'),

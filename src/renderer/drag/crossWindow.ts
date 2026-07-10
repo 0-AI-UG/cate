@@ -44,21 +44,16 @@ interface ActiveRemote {
   onDrop: RemoteDropHandler | undefined
   /** Id of the drag session this window is tracking, from the DRAG_UPDATE that
    *  STARTed it. A targeted DRAG_END only ends THIS drag when ids match. */
-  dragId: string | null
+  dragId: string
 }
 
 let activeRemote: ActiveRemote | null = null
 
-/** True when a targeted DRAG_END (carrying `payloadDragId`) must be IGNORED
- *  because it ends a DIFFERENT drag than the one this window is tracking. A
- *  payload with no id is a legacy/global end and is never ignored; with no
- *  active drag there is nothing to end anyway. Pure + exported for testing. */
+/** True when a targeted DRAG_END ends a different drag session. */
 export function shouldIgnoreDragEnd(
-  activeDragId: string | null | undefined,
-  payloadDragId: string | null | undefined,
+  activeDragId: string,
+  payloadDragId: string,
 ): boolean {
-  if (payloadDragId == null) return false
-  if (activeDragId == null) return false
   return activeDragId !== payloadDragId
 }
 
@@ -190,7 +185,7 @@ export function setupCrossWindowDragListeners(
   const cleanups: (() => void)[] = []
 
   cleanups.push(
-    window.electronAPI.onCrossWindowDragUpdate((screenPos: Point, snapshot: PanelTransferSnapshot, dragId?: string) => {
+    window.electronAPI.onCrossWindowDragUpdate((screenPos: Point, snapshot: PanelTransferSnapshot, dragId: string) => {
       const localX = screenPos.x - window.screenX
       const localY = screenPos.y - window.screenY
       const inside =
@@ -206,7 +201,7 @@ export function setupCrossWindowDragListeners(
           snapshot,
           runtime: runtimeInitial,
           onDrop,
-          dragId: dragId ?? null,
+          dragId,
         }
         step(activeRemote, {
           type: 'START',
@@ -253,7 +248,7 @@ export function setupCrossWindowDragListeners(
   )
 
   cleanups.push(
-    window.electronAPI.onDragEnd((dragId?: string) => {
+    window.electronAPI.onDragEnd((dragId: string) => {
       const active = activeRemote
       if (!active) return
       // Ignore a DRAG_END that ends a DIFFERENT drag — e.g. a detach completing

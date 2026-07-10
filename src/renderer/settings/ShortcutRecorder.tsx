@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { ShortcutAction, StoredShortcut } from '../../shared/types'
+import type { StoredShortcut } from '../../shared/types'
 import { displayString } from '../../shared/types'
 
 interface ShortcutRecorderProps {
-  action: ShortcutAction
   currentShortcut: StoredShortcut
   onRecord: (shortcut: StoredShortcut) => void
 }
 
-export function ShortcutRecorder({ action, currentShortcut, onRecord }: ShortcutRecorderProps) {
+export function ShortcutRecorder({ currentShortcut, onRecord }: ShortcutRecorderProps) {
   const [isRecording, setIsRecording] = useState(false)
 
   const handleKeyDown = useCallback(

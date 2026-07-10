@@ -16,7 +16,7 @@ import { errorMessage } from '../errorMessage'
 import {
   registry,
   ptyToPanel,
-  pendingTransfers,
+  pendingTerminalStarts,
   failures,
   setPtyForPanel,
   notifyFailure,
@@ -39,7 +39,6 @@ import { clearWebglDisabled } from './terminalDom'
 import { getActiveTheme } from '../themeManager'
 import { useStatusStore } from '../../stores/statusStore'
 import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
-import { terminalRestoreData } from './terminalRestoreData'
 import { replayTerminalLog } from '../workspace/session'
 import { extractAgentTitleSegment, shellTitleBasename } from '../agent/agentTitleParser'
 import { titleIndicatesRunning, outputShowsBodySpinner } from '../agent/agentSpinner'
@@ -79,7 +78,7 @@ function applyOscTitleIfNoAgent(
 ): void {
   const status = useStatusStore.getState()
   const wsId = workspaceIdForPty(ptyId) ?? workspaceId
-  if (status.workspaces[wsId]?.agentName[ptyId]) return
+  if (status.workspaces[wsId]?.terminals[ptyId]?.agentName) return
   useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, shellTitleBasename(title))
 }
 
@@ -251,8 +250,6 @@ export function wireTerminalListeners(args: {
   })
   cleanupListeners.push(() => resizeDisposable.dispose())
 
-  // Register with shell/process monitor (best-effort)
-  electronAPI.shellRegisterTerminal(ptyId).catch((err) => log.warn('[terminal] Shell register failed:', err))
   useStatusStore.getState().registerTerminal(ptyId, opts.workspaceId)
 }
 
@@ -275,7 +272,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
       // build a fresh terminal for the requesting workspace below.
       dispose(panelId)
     } else {
-      pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
+      if (pendingTerminalStarts.get(panelId)?.kind === 'transfer') pendingTerminalStarts.delete(panelId)
       return existing
     }
   }
@@ -284,9 +281,9 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
   if (failures.delete(panelId)) notifyFailure(panelId)
 
   // Check for a pending cross-window transfer — reconnect to existing PTY
-  const transfer = pendingTransfers.get(panelId)
-  if (transfer) {
-    pendingTransfers.delete(panelId)
+  const transfer = pendingTerminalStarts.get(panelId)
+  if (transfer?.kind === 'transfer') {
+    pendingTerminalStarts.delete(panelId)
     return reconnectTerminal(panelId, transfer.ptyId, transfer.scrollback, opts)
   }
 
@@ -331,7 +328,8 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     const rows = 24
 
     // Resolve cwd: prefer explicit opt, then fall back to restore data
-    const resolvedCwd = opts.cwd ?? terminalRestoreData.get(panelId)?.cwd
+    const pendingRestore = pendingTerminalStarts.get(panelId)
+    const resolvedCwd = opts.cwd ?? (pendingRestore?.kind === 'restore' ? pendingRestore.cwd : undefined)
 
     // If cwd points at a workspace rootPath that was just picked, the main
     // process may not have registered it as an allowed root yet (workspace
@@ -374,7 +372,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     }
 
     // 12. Replay scrollback log if this terminal was restored from a session
-    if (terminalRestoreData.has(panelId)) {
+    if (pendingTerminalStarts.get(panelId)?.kind === 'restore') {
       replayTerminalLog(panelId).catch((err) => log.warn('[terminal] Replay log failed:', err))
     }
   } catch (err) {
@@ -507,7 +505,12 @@ export function finalizeReconnect(panelId: string): void {
  * finds the pending transfer and reconnects instead of spawning a new PTY.
  */
 export function setPendingTransfer(panelId: string, ptyId: string, scrollback?: string): void {
-  pendingTransfers.set(panelId, { ptyId, scrollback })
+  pendingTerminalStarts.set(panelId, { kind: 'transfer', ptyId, scrollback })
+}
+
+export function setPendingRestore(panelId: string, cwd?: string, replayFromId = panelId): void {
+  if (pendingTerminalStarts.get(panelId)?.kind === 'transfer') return
+  pendingTerminalStarts.set(panelId, { kind: 'restore', cwd, replayFromId })
 }
 
 /**
@@ -517,12 +520,11 @@ export function setPendingTransfer(panelId: string, ptyId: string, scrollback?: 
  */
 export function release(panelId: string): void {
   const entry = registry.get(panelId)
+  pendingTerminalStarts.delete(panelId)
   if (!entry) return
 
   registry.delete(panelId)
   if (entry.ptyId) ptyToPanel.delete(entry.ptyId)
-  pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
-
   teardownEntry(entry)
 }
 
@@ -569,21 +571,20 @@ function teardownEntry(entry: RegistryEntry): void {
  */
 export function dispose(panelId: string): void {
   const entry = registry.get(panelId)
+  pendingTerminalStarts.delete(panelId)
   if (!entry) return
 
   // Remove from registry first so re-entrant calls are no-ops
   registry.delete(panelId)
   if (entry.ptyId) ptyToPanel.delete(entry.ptyId)
-  pendingTransfers.delete(panelId) // stale transfer would hijack a future fresh mount
   clearWebglDisabled(panelId)
 
   const { ptyId } = entry
   const { electronAPI } = window
 
-  // Kill PTY and unregister from shell monitor
+  // Kill PTY and clear renderer-owned status.
   if (ptyId) {
     electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
-    electronAPI.shellUnregisterTerminal(ptyId).catch((err) => log.warn('[terminal] Shell unregister failed:', err))
     useStatusStore.getState().unregisterTerminal(ptyId)
   }
 

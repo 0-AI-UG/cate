@@ -19,11 +19,12 @@ import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { formatTerminalPaste, type DroppedRef } from './terminalDrop'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { useOptionalCanvasStoreApi, useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
 import { useTerminalGlow } from '../cateAgent/cateAgentStore'
 import { resolveWorktree } from '../../shared/worktrees'
+import { CATE_FILE_MIME, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -134,9 +135,9 @@ export default function TerminalPanel({
   const rootPathRef = useRef(rootPath)
   rootPathRef.current = rootPath
 
-  const isFocused = useCanvasStoreContext((s) => focusedNodeId(s) === nodeId)
-  const canvasApi = useCanvasStoreApi()
-  const zoomLevel = useCanvasStoreContext((s) => s.zoomLevel)
+  const isFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
+  const canvasApi = useOptionalCanvasStoreApi()
+  const zoomLevel = useOptionalCanvasStoreContext((s) => s.zoomLevel, 1)
 
   // -------------------------------------------------------------------------
   // Search handlers
@@ -422,7 +423,7 @@ export default function TerminalPanel({
 
     // Imperative subscription to focusEpoch — re-runs focus when the same node
     // is re-focused (no React re-render of this panel on unrelated focus actions).
-    const unsubscribe = canvasApi.subscribe((s, prev) => {
+    const unsubscribe = canvasApi?.subscribe((s, prev) => {
       if (s.focusEpoch === prev.focusEpoch) return
       if (focusedNodeId(s) !== nodeId) return
       stopRun?.()
@@ -432,7 +433,7 @@ export default function TerminalPanel({
     return () => {
       cancelled = true
       stopRun?.()
-      unsubscribe()
+      unsubscribe?.()
     }
   }, [isFocused, panelId, nodeId, canvasApi])
 
@@ -631,7 +632,7 @@ export default function TerminalPanel({
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     // Accept drops from internal file explorer or external file drops
     if (
-      e.dataTransfer.types.includes('application/cate-file') ||
+      e.dataTransfer.types.includes(CATE_FILE_MIME) ||
       e.dataTransfer.types.includes('Files')
     ) {
       // Stop here so the app-root background handler doesn't override the drop
@@ -653,16 +654,10 @@ export default function TerminalPanel({
 
       // Internal file explorer / search drag. A search-line drag carries the
       // line number too — pasted as path:line (like a VS Code reference).
-      const catePath = e.dataTransfer.getData('application/cate-file')
+      const catePath = readCateFilePaths(e.dataTransfer)[0]
       if (catePath) {
-        let line: number | undefined
-        const lineRaw = e.dataTransfer.getData('application/cate-file-line')
-        if (lineRaw) {
-          try {
-            const lr = JSON.parse(lineRaw) as { path?: string; line?: number }
-            if (lr?.path === catePath) line = lr.line
-          } catch { /* ignore */ }
-        }
+        const location = readCateFileLocation(e.dataTransfer)
+        const line = location?.path === catePath ? location.line : undefined
         refs.push({ path: catePath, line })
       }
 

@@ -344,6 +344,6 @@ export function registerAgentHandlers(authManager: AuthManager, agentManager: Ag
 
   ipcMain.handle(AGENT_CUSTOM_MODELS_SAVE, async (_event, cfg: CustomOpenAIProvider | null) => {
     await saveCustomOpenAI(cfg)
-    agentManager.syncCustomModelsToOpenSessions()
+    await agentManager.syncCustomModelsToOpenSessions()
   })
 }

@@ -43,7 +43,7 @@ export interface AgentTerminalStatus {
 
 export function useAgentTerminalStatus(wsId: string, panelId: string): AgentTerminalStatus {
   const ptyId = terminalRegistry.ptyIdForPanel(panelId) ?? undefined
-  const agentState = useStatusStore((s) => (ptyId ? s.workspaces[wsId]?.agentState[ptyId] ?? null : null))
+  const agentState = useStatusStore((s) => (ptyId ? s.workspaces[wsId]?.terminals[ptyId]?.agentState ?? null : null))
   const [line, setLine] = useState<string | null>(null)
   useEffect(() => {
     let alive = true

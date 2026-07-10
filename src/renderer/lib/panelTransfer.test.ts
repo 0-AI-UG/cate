@@ -22,13 +22,13 @@ vi.mock('./terminal/terminalRegistry', () => ({
 
 // Controllable node dock layout so we can exercise tabbed (non-seed) children.
 const getNodeDockLayout = vi.fn<() => unknown>(() => null)
-vi.mock('./workspace/canvasAccess', () => ({
+vi.mock('./workspace/canvasAccess', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./workspace/canvasAccess')>()),
   getNodeDockLayout: () => getNodeDockLayout(),
 }))
 
 import { createTransferSnapshot, depositCanvasChildTransfers } from './panelTransfer'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
-import { terminalRestoreData } from './terminal/terminalRestoreData'
 import type { PanelState } from '../../shared/types'
 
 beforeEach(() => {
@@ -40,7 +40,7 @@ beforeEach(() => {
 })
 
 describe('createTransferSnapshot — editor content survival', () => {
-  it('captures unsaved scratch-editor content into editorState.unsavedContent', () => {
+  it('carries unsaved scratch-editor content in the canonical panel record', () => {
     const panel: PanelState = {
       id: 'panel-editor-1',
       type: 'editor',
@@ -53,7 +53,7 @@ describe('createTransferSnapshot — editor content survival', () => {
       size: { width: 600, height: 400 },
     })
 
-    expect(snapshot.editorState?.unsavedContent).toBe('function hello() { return 42 }')
+    expect(snapshot.panel.unsavedContent).toBe('function hello() { return 42 }')
   })
 })
 
@@ -103,7 +103,7 @@ describe('createTransferSnapshot — canvas children survival', () => {
 
     expect(snapshot.canvasState?.zoomLevel).toBe(1.5)
     expect(snapshot.canvasState?.viewportOffset).toEqual({ x: 12, y: 34 })
-    expect(snapshot.canvasState?.nodes[nodeId].panelId).toBe('child-panel-1')
+    expect(snapshot.canvasState?.nodes[nodeId].dockLayout).toMatchObject({ panelIds: ['child-panel-1'] })
     expect(snapshot.canvasState?.childPanels['child-panel-1']).toEqual(childPanel)
   })
 
@@ -146,13 +146,13 @@ describe('createTransferSnapshot — canvas children survival', () => {
     expect(snapshot.canvasState?.childTerminals?.['term-child']?.scrollback).toBe('SERIALIZED\x1b[0m')
   })
 
-  // Tabbed children (non-seed panels in a node's mini-dock) must transfer too.
-  it('captures tabbed children via the node dock layout, not just node.panelId', () => {
+  it('captures every tabbed child from the canonical node dock layout', () => {
     const panel: PanelState = { id: 'canvas-y', type: 'canvas', title: 'C', isDirty: false }
     const store = getOrCreateCanvasStoreForPanel(panel.id)
-    store.getState().addNode('seed', 'terminal', { x: 0, y: 0 }, { width: 300, height: 200 })
-    // Node's mini-dock holds two tabs; only 'seed' is the node's seed panel.
-    getNodeDockLayout.mockReturnValue({ type: 'tabs', panelIds: ['seed', 'tab2'] })
+    const nodeId = store.getState().addNode('seed', 'terminal', { x: 0, y: 0 }, { width: 300, height: 200 })
+    store.getState().setNodeDockLayout(nodeId, {
+      type: 'tabs', id: 'tabs', panelIds: ['seed', 'tab2'], activeIndex: 0,
+    })
 
     const snapshot = createTransferSnapshot(
       panel,
@@ -200,9 +200,8 @@ describe('depositCanvasChildTransfers — receiver reconnect', () => {
   // depositCanvasChildTransfers handles LIVE transfers only: a child terminal
   // with a live `ptyId` reconnects via setPendingTransfer. Cold restore does NOT
   // flow through here — the shell arms replay for every terminal panel by its
-  // stable panelId, so depositCanvasChildTransfers must not touch terminalRestoreData.
-  it('reconnects live ptyId children and leaves terminalRestoreData alone', () => {
-    terminalRestoreData.clear()
+  // stable panelId.
+  it('reconnects live ptyId children', () => {
     depositCanvasChildTransfers({
       nodes: {},
       viewportOffset: { x: 0, y: 0 },
@@ -214,7 +213,5 @@ describe('depositCanvasChildTransfers — receiver reconnect', () => {
     })
 
     expect(setPendingTransfer).toHaveBeenCalledWith('live', 'pty-live', 'LL')
-    expect(terminalRestoreData.has('live')).toBe(false)
-    terminalRestoreData.clear()
   })
 })

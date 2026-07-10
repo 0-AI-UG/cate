@@ -6,7 +6,6 @@ import { RuntimeManager } from './runtimeManager'
 import { LocalSubprocessTransport } from './transports/localTransport'
 import { hostRuntimeTarget, tarballName } from './runtimeArtifacts'
 import { RUNTIME_VERSION } from '../../runtime/version'
-import { addAllowedRoot, removeAllowedRoot } from '../ipc/pathValidation'
 
 // Provision the REAL per-target runtime tarball locally and run the daemon
 // through its OWN bundled node (runtime/bin/node), not Electron-as-node. This is
@@ -29,13 +28,11 @@ describe.skipIf(!hasTarball)('local daemon from the real tarball', () => {
   beforeAll(async () => {
     installDir = await fs.mkdtemp(path.join(process.cwd(), 'cate-local-install-'))
     workspace = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-local-ws-')))
-    addAllowedRoot(workspace)
     await fs.writeFile(path.join(workspace, 'hello.ts'), 'export const x = 1\n')
   }, 60_000)
 
   afterAll(async () => {
     await mgr?.disposeAll()
-    removeAllowedRoot(workspace)
     await fs.rm(installDir, { recursive: true, force: true })
     await fs.rm(workspace, { recursive: true, force: true })
   })

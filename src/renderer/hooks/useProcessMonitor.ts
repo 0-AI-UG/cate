@@ -56,7 +56,7 @@ export function useOwnedTerminalTelemetry(): void {
         // PRIOR name from there (not a separate module map) so the rising-edge
         // tab-title push fires once when the name first appears.
         const prevAgent =
-          useStatusStore.getState().workspaces[actualWorkspaceId]?.agentName[terminalId] ?? null
+          useStatusStore.getState().workspaces[actualWorkspaceId]?.terminals[terminalId]?.agentName ?? null
 
         store().setTerminalActivity(actualWorkspaceId, terminalId, terminalActivity)
         store().setAgentPresent(actualWorkspaceId, terminalId, agentPresent)

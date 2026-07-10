@@ -1,14 +1,12 @@
 // =============================================================================
 // Panel Transfer — serialize/deserialize PanelTransferSnapshot for cross-window
-// panel migration.
+// panel handoff.
 // =============================================================================
 
 import type { PanelState, PanelTransferSnapshot, PanelLocation, Point, Size, WorktreeMeta } from '../../shared/types'
-import { collectPanelIds } from '../../shared/collectPanelIds'
 import { terminalRegistry } from './terminal/terminalRegistry'
-import { terminalRestoreData } from './terminal/terminalRestoreData'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
-import { getNodeDockLayout } from './workspace/canvasAccess'
+import { captureCanvasPanel } from './workspace/canvasAccess'
 import { applyCanvasChildPanels } from './canvas/applyCanvasChildPanels'
 
 /**
@@ -51,25 +49,6 @@ export function createTransferSnapshot(
     }
   }
 
-  // Editor-specific: capture unsaved content
-  if (panel.type === 'editor') {
-    snapshot.editorState = {
-      cursorPosition: { line: 1, column: 1 },
-      scrollTop: 0,
-      unsavedContent: panel.unsavedContent,
-    }
-  }
-
-  // Browser-specific: capture URL. (Tabs ride along in snapshot.panel, which is
-  // the full PanelState, so they are restored without extra wiring here.)
-  if (panel.type === 'browser' && panel.url) {
-    snapshot.browserState = {
-      url: panel.url,
-      canGoBack: false,
-      canGoForward: false,
-    }
-  }
-
   // Canvas-specific: capture child nodes + viewport AND, for every child panel
   // the canvas hosts, its PanelState (so the receiver renders real panels, not
   // "Panel" stubs) and — for terminals — its live PTY id + scrollback (so the
@@ -77,15 +56,10 @@ export function createTransferSnapshot(
   // shell). Walk each node's mini-dock layout so TABBED children transfer too,
   // not just the node's seed panel.
   if (panel.type === 'canvas') {
-    const store = getOrCreateCanvasStoreForPanel(panel.id)
-    const state = store.getState()
+    const state = captureCanvasPanel(panel.id)
     const childPanels: Record<string, PanelState> = {}
     const childTerminals: Record<string, { ptyId: string; scrollback?: string }> = {}
-    for (const node of Object.values(state.nodes)) {
-      const childIds = new Set<string>()
-      collectPanelIds(getNodeDockLayout(panel.id, node.id), childIds)
-      if (node.panelId) childIds.add(node.panelId)
-      for (const childId of childIds) {
+    for (const childId of state.panelIds) {
         const childPanel = options.resolveChildPanel?.(childId)
         // Canvas-on-canvas is unsupported (nodesSlice rejects it at the UI
         // layer). Defensively skip a canvas child so a malformed snapshot can't
@@ -99,7 +73,6 @@ export function createTransferSnapshot(
             scrollback: terminalRegistry.serializeTerminalState(entry) ?? '',
           }
         }
-      }
     }
     snapshot.canvasState = {
       nodes: { ...state.nodes },
@@ -149,10 +122,6 @@ export function depositCanvasChildTransfers(
 export function depositPanelTerminalTransfer(snapshot: PanelTransferSnapshot): void {
   if (snapshot.terminalPtyId) {
     terminalRegistry.setPendingTransfer(snapshot.panel.id, snapshot.terminalPtyId, snapshot.terminalScrollback)
-  } else if (snapshot.terminalReplayPtyId && snapshot.panel.type === 'terminal') {
-    // Session restore: no live PTY, but a previous run wrote a scrollback log
-    // keyed by this panel id — replay it into a freshly spawned PTY on mount.
-    terminalRestoreData.set(snapshot.panel.id, { replayFromId: snapshot.panel.id })
   }
 }
 
@@ -182,4 +151,3 @@ export function hydrateReceivedPanel(wsId: string, snapshot: PanelTransferSnapsh
     hydrateCanvasState(snapshot.panel.id, wsId, snapshot.canvasState)
   }
 }
-

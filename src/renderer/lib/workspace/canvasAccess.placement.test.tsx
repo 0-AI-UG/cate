@@ -11,31 +11,25 @@
 
 import { describe, it, expect, afterEach } from 'vitest'
 import {
-  registerCanvasOps,
-  unregisterCanvasOps,
   placementForActivePanel,
   getActiveCanvasPanelId,
 } from './canvasAccess'
-import type { CanvasOperations } from '../canvas/canvasBridge'
 import { setActivePanel } from '../activePanel'
-
-// placementForActivePanel only consults the ops REGISTRY for the canvas-active
-// branch, so a stub is sufficient — no real canvas store needed.
-const stubOps = {} as CanvasOperations
+import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
 
 const PRIMARY = 'canvas-primary'
 const SECONDARY = 'canvas-secondary'
 
 afterEach(() => {
-  unregisterCanvasOps(PRIMARY)
-  unregisterCanvasOps(SECONDARY)
+  releaseCanvasStoreForPanel(PRIMARY)
+  releaseCanvasStoreForPanel(SECONDARY)
   setActivePanel(null)
 })
 
 describe('placementForActivePanel with multiple canvases', () => {
   it('pins the placement to the ACTIVE canvas, not the primary one', () => {
-    registerCanvasOps(PRIMARY, stubOps)
-    registerCanvasOps(SECONDARY, stubOps)
+    getOrCreateCanvasStoreForPanel(PRIMARY)
+    getOrCreateCanvasStoreForPanel(SECONDARY)
     setActivePanel(SECONDARY)
 
     expect(placementForActivePanel()).toEqual({
@@ -45,8 +39,8 @@ describe('placementForActivePanel with multiple canvases', () => {
   })
 
   it('pins to the primary canvas when that one is active', () => {
-    registerCanvasOps(PRIMARY, stubOps)
-    registerCanvasOps(SECONDARY, stubOps)
+    getOrCreateCanvasStoreForPanel(PRIMARY)
+    getOrCreateCanvasStoreForPanel(SECONDARY)
     setActivePanel(PRIMARY)
 
     expect(placementForActivePanel()).toEqual({
@@ -60,8 +54,8 @@ describe('placementForActivePanel with multiple canvases', () => {
   })
 
   it('getActiveCanvasPanelId resolves the active secondary canvas', () => {
-    registerCanvasOps(PRIMARY, stubOps)
-    registerCanvasOps(SECONDARY, stubOps)
+    getOrCreateCanvasStoreForPanel(PRIMARY)
+    getOrCreateCanvasStoreForPanel(SECONDARY)
     setActivePanel(SECONDARY)
 
     expect(getActiveCanvasPanelId()).toBe(SECONDARY)

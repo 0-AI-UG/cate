@@ -72,7 +72,7 @@ function makeWin(id: number): FakeWin {
 }
 
 /** Register a window of `type` for `workspaceId` and track it for teardown. */
-function open(id: number, type: 'main' | 'dock' | 'panel', workspaceId?: string): FakeWin {
+function open(id: number, type: 'main' | 'dock', workspaceId?: string): FakeWin {
   const fake = makeWin(id)
   registerWindow(fake.win, type, workspaceId)
   return fake
@@ -101,7 +101,7 @@ describe('cross-window panel discovery (main)', () => {
       { panelId: 't1', type: 'terminal', title: 'Terminal 1', workspaceId: 'ws-A' },
       { panelId: 'e1', type: 'editor', title: 'file.ts', workspaceId: 'ws-A' },
     ])
-    open(102, 'panel', 'ws-B')
+    open(102, 'dock', 'ws-B')
     setWindowPanels(102, [{ panelId: 'p1', type: 'browser', title: 'Docs', workspaceId: 'ws-B' }])
     open(1, 'main', 'ws-A')
     setWindowPanels(1, [{ panelId: 'm1', type: 'terminal', title: 'Main Term', workspaceId: 'ws-A' }])
@@ -109,7 +109,7 @@ describe('cross-window panel discovery (main)', () => {
     const byId = Object.fromEntries(getWindowPanels().map((p) => [p.panelId, p]))
     expect(byId.t1).toMatchObject({ type: 'terminal', title: 'Terminal 1', workspaceId: 'ws-A', ownerWindowId: 101, ownerWindowType: 'dock' })
     expect(byId.e1).toMatchObject({ type: 'editor', ownerWindowType: 'dock' })
-    expect(byId.p1).toMatchObject({ type: 'browser', title: 'Docs', workspaceId: 'ws-B', ownerWindowId: 102, ownerWindowType: 'panel' })
+    expect(byId.p1).toMatchObject({ type: 'browser', title: 'Docs', workspaceId: 'ws-B', ownerWindowId: 102, ownerWindowType: 'dock' })
     expect(byId.m1).toMatchObject({ workspaceId: 'ws-A', ownerWindowId: 1, ownerWindowType: 'main' })
   })
 
@@ -215,6 +215,7 @@ describe('cross-window panel discovery (main)', () => {
     setDockWindowState(150, {
       dockState: { zones: {} } as never,
       panels: { t1: { id: 't1', type: 'terminal', title: 'Terminal 1', isDirty: false } as PanelState },
+      canvasStates: {},
     })
 
     expect(broadcastsTo(main).length).toBe(before)

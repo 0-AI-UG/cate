@@ -22,7 +22,6 @@ import {
 } from '../../lib/workspace/dockRegistry'
 import {
   getWorkspaceCanvasPanelId,
-  invalidateWorkspaceCanvasCache,
 } from '../../lib/workspace/canvasAccess'
 import { setActivePanel } from '../../lib/activePanel'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
@@ -281,7 +280,6 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
         }
       }
       releaseWorkspaceDockStore(id)
-      invalidateWorkspaceCanvasCache(id)
       terminalRegistry.disposeWorkspace(id)
 
       const wasSelected = get().selectedWorkspaceId === id

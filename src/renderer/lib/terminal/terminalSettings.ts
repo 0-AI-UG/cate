@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { useSettingsStore } from '../../stores/settingsStore'
-import { getActiveTheme, subscribeTheme } from '../themeManager'
+import { subscribeTheme } from '../themeManager'
 import type { Theme } from '../../../shared/types'
 import { registry } from './registryState'
 

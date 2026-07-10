@@ -6,7 +6,11 @@ const state = {
 }
 const closePanel = vi.fn()
 const addNode = vi.fn()
-const canvasNodes: Record<string, { id: string; panelId: string; origin: { x: number; y: number } }> = {}
+const canvasNodes: Record<string, {
+  id: string
+  origin: { x: number; y: number }
+  dockLayout: { type: 'tabs'; id: string; panelIds: string[]; activeIndex: number }
+}> = {}
 
 vi.mock('../../stores/appStore', () => ({
   useAppStore: { getState: () => ({ workspaces: state.workspaces, closePanel }) },
@@ -18,9 +22,8 @@ vi.mock('../../stores/canvasStore', () => ({
   }),
 }))
 
-// Force the seed-panelId fallback path (no live mini-dock layout).
 vi.mock('../workspace/canvasAccess', () => ({
-  getNodeDockLayout: () => null,
+  getNodeDockLayout: (_canvasPanelId: string, nodeId: string) => canvasNodes[nodeId]?.dockLayout ?? null,
 }))
 
 import { confirmCloseCanvas } from './confirmCloseCanvas'
@@ -37,7 +40,11 @@ function setWorkspace(canvasIds: string[], childIds: string[]) {
 function setCanvasNodes(children: string[]) {
   for (const k of Object.keys(canvasNodes)) delete canvasNodes[k]
   children.forEach((panelId, i) => {
-    canvasNodes[`n${i}`] = { id: `n${i}`, panelId, origin: { x: i, y: i } }
+    canvasNodes[`n${i}`] = {
+      id: `n${i}`,
+      origin: { x: i, y: i },
+      dockLayout: { type: 'tabs', id: `stack-${i}`, panelIds: [panelId], activeIndex: 0 },
+    }
   })
 }
 

@@ -16,6 +16,7 @@ import { focusedNodeId } from './canvas/selectionModel'
 import { recommendPlacements, nudgeToFree } from '../canvas/placement'
 import { CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { CanvasNodeState, CanvasNodeId } from '../../shared/types'
+import { collectPanelIds } from '../../shared/collectPanelIds'
 
 describe('canvasStore.addNode panelId dedup invariant', () => {
   it('single addNode produces exactly one node for that panelId', () => {
@@ -23,7 +24,7 @@ describe('canvasStore.addNode panelId dedup invariant', () => {
     store.getState().addNode('panel-X', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
 
     const nodes = Object.values(store.getState().nodes)
-    const matching = nodes.filter((n) => n.panelId === 'panel-X')
+    const matching = nodes.filter((n) => collectPanelIds(n.dockLayout).includes('panel-X'))
     expect(matching).toHaveLength(1)
   })
 
@@ -33,7 +34,7 @@ describe('canvasStore.addNode panelId dedup invariant', () => {
     store.getState().addNode('panel-X', 'editor', { x: 200, y: 200 }, { width: 100, height: 80 })
 
     const nodes = Object.values(store.getState().nodes)
-    const matching = nodes.filter((n) => n.panelId === 'panel-X')
+    const matching = nodes.filter((n) => collectPanelIds(n.dockLayout).includes('panel-X'))
     // Today this produces 2; post-fix it should be 1.
     expect(matching).toHaveLength(1)
   })
@@ -65,8 +66,8 @@ describe('canvasStore.addNode panelId dedup invariant', () => {
     expect(idA).not.toBe(idB)
     const nodes = Object.values(store.getState().nodes)
     expect(nodes).toHaveLength(2)
-    expect(nodes.some((n) => n.panelId === 'panel-A')).toBe(true)
-    expect(nodes.some((n) => n.panelId === 'panel-B')).toBe(true)
+    expect(nodes.some((n) => collectPanelIds(n.dockLayout).includes('panel-A'))).toBe(true)
+    expect(nodes.some((n) => collectPanelIds(n.dockLayout).includes('panel-B'))).toBe(true)
   })
 })
 
@@ -463,7 +464,7 @@ describe('canvasStore.recommendPlacements', () => {
 
   function node(id: string, x: number, y: number, w = 200, h = 150, creationIndex = 0): CanvasNodeState {
     return {
-      id, panelId: `panel-${id}`, origin: { x, y }, size: { width: w, height: h },
+      id, dockLayout: { type: 'tabs', id: `stack-${id}`, panelIds: [`panel-${id}`], activeIndex: 0 }, origin: { x, y }, size: { width: w, height: h },
       zOrder: 0, creationIndex,
     }
   }
@@ -834,7 +835,7 @@ describe('canvasStore.recommendPlacements', () => {
 describe('canvasStore.nudgeToFree', () => {
   const size = { width: 200, height: 150 }
   const node = (id: string, x: number, y: number) => ({
-    id, panelId: `p-${id}`, origin: { x, y }, size, zOrder: 0, creationIndex: 0,
+    id, dockLayout: { type: 'tabs' as const, id: `stack-${id}`, panelIds: [`p-${id}`], activeIndex: 0 }, origin: { x, y }, size, zOrder: 0, creationIndex: 0,
   })
   const toMap = (...ns: ReturnType<typeof node>[]) => Object.fromEntries(ns.map((n) => [n.id, n]))
   const overlaps = (a: { origin: { x: number; y: number }; size: { width: number; height: number } }, p: { x: number; y: number }) =>
@@ -899,7 +900,7 @@ describe('canvasStore ghost placement actions', () => {
     expect(store.getState().pendingPlacement).toBeNull()
     const nodes = Object.values(store.getState().nodes)
     expect(nodes).toHaveLength(1)
-    expect(nodes[0].panelId).toBe('p1')
+    expect(nodes[0].dockLayout).toMatchObject({ panelIds: ['p1'] })
     // Centred on the viewport (1000x800 at zoom 1, offset 0,0 → canvas centre 500,400).
     const { origin, size } = nodes[0]
     expect(origin.x + size.width / 2).toBeCloseTo(500)
@@ -917,10 +918,10 @@ describe('canvasStore ghost placement actions', () => {
     expect(nodeId).toBeTruthy()
     expect(store.getState().pendingPlacement).toBeNull()
     const node = store.getState().nodes[nodeId!]
-    expect(node.panelId).toBe('p1')
+    expect(node.dockLayout).toMatchObject({ panelIds: ['p1'] })
     expect(node.origin).toEqual(target.point)
     expect(node.size).toEqual(target.size)
-    expect(Object.values(store.getState().nodes).filter((n) => n.panelId === 'p1')).toHaveLength(1)
+    expect(Object.values(store.getState().nodes).filter((n) => collectPanelIds(n.dockLayout).includes('p1'))).toHaveLength(1)
     expect(focusedNodeId(store.getState())).toBe(nodeId)
   })
 
@@ -1005,7 +1006,7 @@ describe('canvasStore ghost placement actions', () => {
     expect(nodeId).toBeTruthy()
     expect(store.getState().pendingPlacement).toBeNull()
     const node = store.getState().nodes[nodeId!]
-    expect(node.panelId).toBe('p1')
+    expect(node.dockLayout).toMatchObject({ panelIds: ['p1'] })
     expect(Math.abs(node.origin.x + node.size.width / 2 - 650)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
     expect(focusedNodeId(store.getState())).toBe(nodeId)
   })

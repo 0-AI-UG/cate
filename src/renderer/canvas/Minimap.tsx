@@ -8,6 +8,7 @@ import { useWorkspacePanels, useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { useUIStateStore } from '../stores/uiStateStore'
 import { useWorktreeMembership } from './worktree/useWorktreeMembership'
+import { activeDockPanelId } from '../../shared/collectPanelIds'
 
 // Default minimap size lives in DEFAULT_UI_STATE (shared/types); the floating
 // size is restored from ui-state.json.
@@ -308,12 +309,13 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
 
       {/* Node rectangles */}
       {nodeList.map((node) => {
-        const panel = panels?.[node.panelId]
+        const panelId = activeDockPanelId(node.dockLayout)
+        const panel = panelId ? panels?.[panelId] : undefined
         const type = panel?.type || 'terminal'
         const rectW = Math.max(node.size.width * scale, 2)
         const rectH = Math.max(node.size.height * scale, 2)
         // Show the agent logo when an agent is open in this panel's terminal.
-        const agentLogo = agentInfoByPanel[node.panelId]?.logo ?? null
+        const agentLogo = panelId ? agentInfoByPanel[panelId]?.logo ?? null : null
         const iconSize = Math.min(rectW, rectH) - 2
         // Outline the rect in its worktree color (if any) so each panel reads
         // as belonging to a branch.

@@ -3,21 +3,13 @@ import fs from 'fs'
 import path from 'path'
 import log from '../logger'
 import { wrapHandler } from './handlerError'
-import { validatePath } from './pathValidation'
+import { grantFileAccess, validatePath } from './pathValidation'
 import { isLocalLocator } from '../runtime/locator'
 import { configureBrowserProxy } from '../browserProxy'
 import { windowFromEvent } from '../windowRegistry'
-import { CAPTURE_PAGE, WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG } from '../../shared/ipc-channels'
+import { WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG } from '../../shared/ipc-channels'
 
 export function registerCaptureHandlers(): void {
-  // Capture page screenshot for panel previews
-  ipcMain.handle(CAPTURE_PAGE, wrapHandler('[CAPTURE_PAGE]', async (event) => {
-    const win = windowFromEvent(event)
-    if (!win) return null
-    const image = await win.webContents.capturePage()
-    return image.toDataURL()
-  }))
-
   // Capture a webview's visible content, save to Desktop, return dataUrl + path.
   // `wantDataUrl` defaults to true for the manual UI button (it renders the
   // thumbnail); the CLI/agent screenshot path passes false so we skip the
@@ -44,6 +36,7 @@ export function registerCaptureHandlers(): void {
     const fileName = `screenshot-${timestamp}.png`
     const filePath = path.join(app.getPath('desktop'), fileName)
     await fs.promises.writeFile(filePath, image.toPNG())
+    if (callerWin) await grantFileAccess(callerWin.id, filePath)
 
     if (options?.wantDataUrl === false) return { filePath }
     return { filePath, dataUrl: image.toDataURL() }
@@ -62,9 +55,9 @@ export function registerCaptureHandlers(): void {
     if (!isLocalLocator(filePath)) {
       return { ok: false, reason: 'remote' }
     }
-    const validPath = validatePath(filePath)
     const win = windowFromEvent(event)
     if (!win) return
+    const validPath = validatePath(filePath, win.id)
     // Create a small drag icon from the file
     const iconSize = 64
     const iconImage = nativeImage.createFromPath(validPath)

@@ -8,11 +8,9 @@ import log from '../logger'
 import { useAppStore } from '../../stores/appStore'
 import {
   getWorkspaceDockSnapshot,
-  getNodeDockLayout,
-  getCanvasSnapshotForPanel,
   getWorkspaceCanvasPanelIds,
+  captureCanvasPanel,
 } from './canvasAccess'
-import { collectPanelIds } from '../canvas/collectPanelIds'
 import { captureAndSaveScrollback } from '../terminal/captureAndSaveScrollback'
 import { deferredSnapshots } from './deferredRestore'
 import { terminalRegistry } from '../terminal/terminalRegistry'
@@ -25,7 +23,6 @@ import type {
   PanelState,
   RemoteProjectEntry,
   CanvasSnapshot,
-  CanvasNodeState,
 } from '../../../shared/types'
 
 // Last serialized session payload — used to skip disk writes when nothing
@@ -70,18 +67,11 @@ export async function saveSession(): Promise<void> {
     let canvases: Record<string, CanvasSnapshot> | undefined
     const placedPanelIds = new Set<string>()
     for (const cpId of canvasPanelIds) {
-      const snap = getCanvasSnapshotForPanel(cpId)
-      if (!snap) continue
-      const canvasNodes: Record<string, CanvasNodeState> = {}
-      for (const [nodeId, node] of Object.entries(snap.nodes)) {
-        const dockLayout = getNodeDockLayout(cpId, nodeId) ?? node.dockLayout ?? null
-        canvasNodes[nodeId] = { ...node, dockLayout }
-        if (node.panelId) placedPanelIds.add(node.panelId)
-        collectPanelIds(dockLayout, placedPanelIds)
-      }
+      const snap = captureCanvasPanel(cpId)
+      for (const panelId of snap.panelIds) placedPanelIds.add(panelId)
       ;(canvases ??= {})[cpId] = {
         id: cpId,
-        canvasNodes,
+        canvasNodes: snap.nodes,
         zoomLevel: snap.zoomLevel,
         viewportOffset: snap.viewportOffset,
       }

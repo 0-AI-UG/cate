@@ -37,10 +37,9 @@ export interface CatalogEntry {
    * True when the originating catalog source is itself local (a file:// URL or
    * an absolute path). Set from the source at fetch time — NOT trusted from the
    * index JSON — so a remote catalog can't claim locality to dodge the sha256 +
-   * http(s) requirement enforced in stageArtifact. Absent/false = treat as
-   * remote (fail-closed).
+   * http(s) requirement enforced in stageArtifact.
    */
-  sourceIsLocal?: boolean
+  sourceIsLocal: boolean
 }
 
 /** Catalog index fetch is capped in time and size so a hostile/broken server

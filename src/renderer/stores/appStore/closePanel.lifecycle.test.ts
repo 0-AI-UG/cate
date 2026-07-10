@@ -188,7 +188,7 @@ describe('closePanel — happy path', () => {
     expect(panelsOf(wsId)[canvasId]?.type).toBe('canvas')
   })
 
-  it('headless close (cateAgentTools/runAction path) leaves the canvas node behind with a stale panelId (BUG?)', () => {
+  it('headless close removes the emptied canvas node', () => {
     const { wsId, canvasId } = makeWorkspace(`ghost-${testSeq}`)
     const termId = useAppStore.getState().createTerminal(wsId, undefined, { x: 10, y: 10 })
     const ptyId = spawnPty(termId, wsId)
@@ -205,18 +205,8 @@ describe('closePanel — happy path', () => {
     expect(h.ptyKill).toHaveBeenCalledTimes(1)
     expect(h.ptyKill).toHaveBeenCalledWith(ptyId)
 
-    // BUG?: ...but removeNodeForPanel early-returns whenever the node's dock
-    // layout still lists ANY panel — and the seeded layout always lists the
-    // panel being closed. So unless a UI layer emptied the node's mini-dock
-    // first (the DockTabStack close path) or removes the node itself
-    // (deleteSelection, CanvasNode close button), the node survives as a ghost
-    // pointing at a deleted panel record. Headless callers (cateAgentTools
-    // close_terminal, runAction closePanel on a culled/unmounted node) hit
-    // exactly this.
     const node = canvasStore.getState().nodes[nodeId]
-    expect(node).toBeDefined() // ghost node
-    expect(node.animationState).not.toBe('exiting')
-    expect(node.panelId).toBe(termId) // stale reference to a deleted record
+    expect(node?.animationState).toBe('exiting')
   })
 
   it('closing an editor removes its record without touching any PTY', () => {

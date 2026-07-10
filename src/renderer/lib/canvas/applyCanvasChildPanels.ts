@@ -5,7 +5,7 @@
 // useAppStore that never bootstraps a workspace. Without merging transferred
 // PanelState records into the receiving window's appStore:
 //   - `resolvePanel` falls back to a generic "Panel" stub (no type, no title);
-//   - and, crucially, panel components' live writes (BrowserPanel.updatePanelUrl,
+//   - and, crucially, panel components' live writes (BrowserPanel tab updates,
 //     EditorPanel.setPanelDirty/updatePanelFilePath) become silent no-ops,
 //     because setPanelField can't find the panel's workspace.
 //

@@ -10,7 +10,7 @@
 
 import { LOCAL_RUNTIME_ID, parseLocator } from '../../../main/runtime/locator'
 
-/** Abbreviate a macOS home-dir path to `~/...`, matching WelcomePage's legacy
+/** Abbreviate a macOS home-dir path to `~/...`, matching WelcomePage's
  *  behavior exactly. */
 export function abbreviateLocalPath(fullPath: string): string {
   const home = '/Users/'
@@ -31,8 +31,10 @@ export function abbreviateLocalPath(fullPath: string): string {
  * Remote paths are always POSIX, where `\` is a legal filename character, so we
  * only treat `\` as a separator for local locators.
  */
-export function workspaceDisplayName(locator: string): string {
+export function pathDisplayName(locator: string): string {
   const { runtimeId, path } = parseLocator(locator)
   const sep = runtimeId === LOCAL_RUNTIME_ID ? /[\\/]/ : /\//
   return path.split(sep).filter(Boolean).pop() ?? ''
 }
+
+export const workspaceDisplayName = pathDisplayName

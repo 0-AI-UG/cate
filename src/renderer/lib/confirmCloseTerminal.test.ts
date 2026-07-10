@@ -14,7 +14,7 @@ vi.mock('./terminal/terminalRegistry', () => ({
 }))
 
 const statusState = {
-  workspaces: {} as Record<string, { terminalActivity: Record<string, unknown> }>,
+  workspaces: {} as Record<string, { terminals: Record<string, { activity: unknown }> }>,
 }
 vi.mock('../stores/statusStore', () => ({
   useStatusStore: { getState: () => statusState },
@@ -42,7 +42,7 @@ describe('confirmCloseRunningTerminals', () => {
   it('proceeds without prompting when no terminal is running', async () => {
     ptyIdForPanel.mockReturnValue('pty-1')
     ptyWorkspace.map = { 'pty-1': 'ws-1' }
-    statusState.workspaces = { 'ws-1': { terminalActivity: { 'pty-1': { type: 'idle' } } } }
+    statusState.workspaces = { 'ws-1': { terminals: { 'pty-1': { activity: { type: 'idle' } } } } }
 
     const ok = await confirmCloseRunningTerminals([terminalPanel('t1')])
     expect(ok).toBe(true)
@@ -61,7 +61,7 @@ describe('confirmCloseRunningTerminals', () => {
     ptyIdForPanel.mockReturnValue('pty-1')
     ptyWorkspace.map = { 'pty-1': 'ws-1' }
     statusState.workspaces = {
-      'ws-1': { terminalActivity: { 'pty-1': { type: 'running', processName: 'vim' } } },
+      'ws-1': { terminals: { 'pty-1': { activity: { type: 'running', processName: 'vim' } } } },
     }
     confirmCloseTerminal.mockResolvedValue('close')
 
@@ -74,7 +74,7 @@ describe('confirmCloseRunningTerminals', () => {
     ptyIdForPanel.mockReturnValue('pty-1')
     ptyWorkspace.map = { 'pty-1': 'ws-1' }
     statusState.workspaces = {
-      'ws-1': { terminalActivity: { 'pty-1': { type: 'running', processName: 'npm' } } },
+      'ws-1': { terminals: { 'pty-1': { activity: { type: 'running', processName: 'npm' } } } },
     }
     confirmCloseTerminal.mockResolvedValue('cancel')
 
@@ -87,9 +87,9 @@ describe('confirmCloseRunningTerminals', () => {
     ptyWorkspace.map = { 'pty-t1': 'ws-1', 'pty-t2': 'ws-1' }
     statusState.workspaces = {
       'ws-1': {
-        terminalActivity: {
-          'pty-t1': { type: 'running', processName: 'vim' },
-          'pty-t2': { type: 'running', processName: 'npm' },
+        terminals: {
+          'pty-t1': { activity: { type: 'running', processName: 'vim' } },
+          'pty-t2': { activity: { type: 'running', processName: 'npm' } },
         },
       },
     }

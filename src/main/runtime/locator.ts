@@ -10,7 +10,7 @@
 //
 //     cate-runtime://<runtimeId>/<absolute-posix-path>
 //
-// This is the back-compat anchor that lets us route fs/git/terminal operations
+// This is the compact local-path form that lets us route fs/git/terminal operations
 // to a remote or WSL runtime WITHOUT threading a new `runtimeId` argument
 // through the ~217 preload methods and every renderer call site: the runtime
 // rides inside the string, and only a single decode hop at the IPC boundary
@@ -46,7 +46,7 @@ function decodePath(p: string): string {
 /**
  * Decode a path/cwd string into its runtime + path. A string with no
  * `cate-runtime://` scheme is treated as a local path verbatim — this is the
- * implicit-local rule every legacy path relies on.
+ * implicit-local rule used by every local workspace path.
  */
 export function parseLocator(raw: string): ResourceLocator {
   if (typeof raw === 'string' && raw.startsWith(SCHEME)) {

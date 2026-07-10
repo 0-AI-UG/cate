@@ -63,34 +63,60 @@ export function createSelectionSlice(set: CanvasSet, get: CanvasGet): SelectionA
       })
     },
 
-    deleteSelection() {
-      const state = get()
-      if (state.selection.length === 0) return
-      state.pushHistory()
+    async deleteSelection() {
+      const selectedNodeIds = [...get().selection]
+      if (selectedNodeIds.length === 0) return
 
-      // Route panel-backed nodes through the real close flow so PTYs/agents are
-      // disposed and the workspace panel records are removed — bare removeNode only
-      // drops the canvas node, leaving the underlying panels running invisibly.
-      // Collect the panel ids synchronously (before removeNode runs), then close
-      // them via the appStore (imported lazily to avoid pulling the panel/terminal
-      // module graph into this slice's import cycle).
-      const panelIdsToClose: string[] = []
-      for (const nodeId of state.selection) {
+      // A selected node can host a mini-dock, so gather every panel before
+      // beginning any close. Each panel then goes through the same confirmation
+      // and lifecycle path as a normal panel close.
+      const panelIds = new Set<string>()
+      const panelIdsByNode = new Map<string, string[]>()
+      for (const nodeId of selectedNodeIds) {
         const node = get().nodes[nodeId]
         if (!node) continue
-        if (node.dockLayout) panelIdsToClose.push(...collectPanelIds(node.dockLayout))
-        else if (node.panelId) panelIdsToClose.push(node.panelId)
-        get().removeNode(nodeId)
+        const nodePanelIds = new Set<string>()
+        collectPanelIds(node.dockLayout, nodePanelIds)
+        panelIdsByNode.set(nodeId, [...nodePanelIds])
+        for (const panelId of nodePanelIds) panelIds.add(panelId)
       }
 
-      set({ selection: [], selectionActive: false })
+      try {
+        const [{ useAppStore }, { closePanelWithConfirm }] = await Promise.all([
+          import('../appStore'),
+          import('../../lib/closePanelWithConfirm'),
+        ])
+        const workspaceId = useAppStore.getState().selectedWorkspaceId
+        const closedPanelIds = new Set<string>()
 
-      if (panelIdsToClose.length > 0) {
-        void import('../appStore').then(({ useAppStore }) => {
-          const wsId = useAppStore.getState().selectedWorkspaceId
-          const closePanel = useAppStore.getState().closePanel
-          for (const panelId of panelIdsToClose) closePanel(wsId, panelId)
-        })
+        const removeClosedNodes = () => {
+          const nodeIdsToRemove = selectedNodeIds.filter((nodeId) => {
+            const nodePanelIds = panelIdsByNode.get(nodeId)
+            return nodePanelIds !== undefined && nodePanelIds.every((id) => closedPanelIds.has(id))
+          })
+          if (nodeIdsToRemove.length === 0) return
+
+          const state = get()
+          state.pushHistory()
+          for (const nodeId of nodeIdsToRemove) state.removeNode(nodeId)
+          set((current) => ({
+            selection: current.selection.filter((nodeId) => !nodeIdsToRemove.includes(nodeId)),
+            selectionActive: false,
+          }))
+        }
+
+        for (const panelId of panelIds) {
+          if (!(await closePanelWithConfirm(workspaceId, panelId))) {
+            removeClosedNodes()
+            return
+          }
+          closedPanelIds.add(panelId)
+        }
+
+        removeClosedNodes()
+      } catch {
+        // Closing is user-initiated; an unavailable confirmation path must not
+        // remove the selected nodes behind the user's back.
       }
     },
   }

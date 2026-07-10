@@ -36,7 +36,10 @@ vi.mock('electron', () => ({
 vi.mock('../browserProxy', () => ({ configureBrowserProxy: vi.fn() }))
 vi.mock('../runtime/locator', () => ({ isLocalLocator: () => true }))
 vi.mock('../windowRegistry', () => ({ windowFromEvent: vi.fn() }))
-vi.mock('./pathValidation', () => ({ validatePath: (p: string) => p }))
+vi.mock('./pathValidation', () => ({
+  validatePath: (p: string) => p,
+  grantFileAccess: vi.fn(async (_windowId: number, p: string) => p),
+}))
 
 // Avoid touching the real filesystem for the PNG write.
 vi.mock('fs', () => ({ default: { promises: { writeFile: vi.fn(async () => {}) } } }))

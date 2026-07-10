@@ -4,7 +4,7 @@
 // stream (streaming text + nested tool calls).
 // =============================================================================
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Info } from '@phosphor-icons/react'
 import type {
   SubagentResult,
@@ -16,35 +16,7 @@ import { formatTokensShort, toolIcon } from './chatShared'
 
 export function SubagentCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
   const [expanded, setExpanded] = useState(true)
-  const args = (msg.args ?? {}) as Record<string, unknown>
-  const fallbackResults: SubagentResult[] = useMemo(() => {
-    if (msg.subagent) return msg.subagent.results
-    const stubs: SubagentResult[] = []
-    const push = (agent: unknown, task: unknown) => {
-      if (typeof agent === 'string' && typeof task === 'string') {
-        stubs.push({ agent, task, exitCode: -1, parts: [] })
-      }
-    }
-    if (Array.isArray(args.chain)) {
-      for (const step of args.chain as unknown[]) {
-        if (step && typeof step === 'object') {
-          const s = step as Record<string, unknown>
-          push(s.agent, s.task)
-        }
-      }
-    } else if (Array.isArray(args.tasks)) {
-      for (const t of args.tasks as unknown[]) {
-        if (t && typeof t === 'object') {
-          const s = t as Record<string, unknown>
-          push(s.agent, s.task)
-        }
-      }
-    } else {
-      push(args.agent, args.task)
-    }
-    return stubs
-  }, [msg.subagent, args])
-  const results = msg.subagent?.results ?? fallbackResults
+  const results = msg.subagent?.results ?? []
 
   const running = msg.status === 'running' || msg.status === 'pending'
 

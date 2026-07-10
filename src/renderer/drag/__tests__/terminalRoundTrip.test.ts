@@ -38,7 +38,7 @@ function makeRegistry(label: string) {
     has: (id: string) => entries.has(id),
     release: (id: string) => { entries.delete(id) },
     // The contract under test. The real registry's existing-entry branch
-    // returns immediately and DOES NOT clear pendingTransfers — which is the
+    // returns immediately and DOES NOT clear the pending start — which is the
     // suspected leak. We assert against it via the round-trip below.
     getOrCreate: (id: string): Entry => {
       const existing = entries.get(id)

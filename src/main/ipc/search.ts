@@ -10,12 +10,12 @@
 // =============================================================================
 
 import { ipcMain } from 'electron'
-import log from '../logger'
 import { SEARCH_START, SEARCH_CANCEL, SEARCH_RESULT, SEARCH_DONE } from '../../shared/ipc-channels'
 import type { SearchOptions } from '../../shared/types'
 import type { SearchHandle } from '../../runtime/search/engine'
 import { parseLocator, formatLocator } from '../runtime/locator'
 import { runtimes } from '../runtime/runtimeManager'
+import { windowFromEvent } from '../windowRegistry'
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback
@@ -73,22 +73,8 @@ export function registerHandlers(): void {
       const { runtimeId, path: rootRel } = parseLocator(rootPath)
       const runtime = runtimes.resolve(runtimeId)
 
-      let validRoot: string
-      try {
-        validRoot = await runtime.validatePathStrict(rootRel, wcId, workspaceId)
-      } catch (err) {
-        log.warn(`[${SEARCH_START}] invalid root:`, err)
-        if (!wc.isDestroyed()) {
-          wc.send(SEARCH_DONE, {
-            searchId,
-            stats: { matches: 0, files: 0, truncated: false },
-            error: 'Invalid search path',
-          })
-        }
-        return searchId
-      }
-
-      const handle: SearchHandle | undefined = runtime.file.searchContent(validRoot, opts, {
+      const ownerWindowId = windowFromEvent(event)?.id
+      const handle: SearchHandle | undefined = runtime.file.searchContent(rootRel, opts, {
         onBatch: (files) => {
           if (wc.isDestroyed()) return
           // Re-encode each result's absolute path as a runtime locator so the
@@ -100,7 +86,7 @@ export function registerHandlers(): void {
           if (!wc.isDestroyed()) wc.send(SEARCH_DONE, { searchId, stats, error })
           if (handle && active.get(wcId) === handle) active.delete(wcId)
         },
-      })
+      }, { ownerWindowId, scopeId: workspaceId })
       active.set(wcId, handle)
       return searchId
     },

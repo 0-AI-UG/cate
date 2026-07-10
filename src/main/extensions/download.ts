@@ -123,9 +123,8 @@ function sha256(buf: Buffer): string {
  * catalog must point at an http(s) artifact AND carry a sha256; a non-http
  * artifactUrl on a remote-sourced entry is rejected (it would otherwise be an
  * arbitrary local-file read driven by remote catalog data). Every real entry is
- * flagged by catalog.normalizeEntry; only directly-constructed dev/test entries
- * lack the flag and fall back to the legacy artifactUrl-scheme check. The
- * safe-tarball check and manifest validation run host-side at extraction time.
+ * classified by catalog.normalizeEntry. The safe-tarball check and manifest
+ * validation run host-side at extraction time.
  */
 export async function stageArtifact(
   entry: CatalogEntry,
@@ -138,14 +137,7 @@ export async function stageArtifact(
   if (!force && isStaged(id, version)) return { id, version, tgzPath: tgz }
 
   const artifactIsHttp = /^https?:\/\//i.test(entry.artifactUrl)
-  // Trust class: an explicit sourceIsLocal (set by catalog.normalizeEntry for
-  // every real entry) is authoritative. When it is absent — only directly
-  // constructed dev/test entries — fall back to the legacy artifactUrl-scheme
-  // check so those keep working. A production remote-catalog entry is always
-  // flagged false, so the strict gate below always applies to it.
-  const treatAsLocal =
-    entry.sourceIsLocal === undefined ? isLocal(entry.artifactUrl) : entry.sourceIsLocal
-  if (!treatAsLocal) {
+  if (!entry.sourceIsLocal) {
     // Remote-sourced entry: only http(s) + sha256-pinned artifacts are trusted.
     // A non-http artifactUrl here would be an arbitrary local-file read driven
     // by remote catalog data — reject it.

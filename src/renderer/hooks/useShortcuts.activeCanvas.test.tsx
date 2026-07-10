@@ -29,18 +29,12 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import type { StoreApi } from 'zustand'
 import { useShortcuts } from './useShortcuts'
-import { CanvasStoreProvider } from '../stores/CanvasStoreContext'
 import {
   getOrCreateCanvasStoreForPanel,
   releaseCanvasStoreForPanel,
   type CanvasStore,
 } from '../stores/canvasStore'
-import {
-  registerCanvasOps,
-  unregisterCanvasOps,
-} from '../stores/appStore'
 import { setActivePanel } from '../lib/activePanel'
-import { createCanvasOps } from '../lib/canvas/canvasBridge'
 
 // Tell React this is an act() environment (silences the act warning + flushes effects).
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -54,15 +48,7 @@ let container: HTMLDivElement
 let root: Root
 
 function Harness({ store }: { store: StoreApi<CanvasStore> }) {
-  // Mirror App: useShortcuts runs under the singleton context provider.
-  return (
-    <CanvasStoreProvider store={store}>
-      <Inner />
-    </CanvasStoreProvider>
-  )
-}
-function Inner() {
-  useShortcuts()
+  useShortcuts(store)
   return null
 }
 
@@ -82,8 +68,6 @@ beforeEach(() => {
   // First panel inherits the legacy singleton; the second gets a fresh store.
   primary = getOrCreateCanvasStoreForPanel(PRIMARY) as unknown as StoreApi<CanvasStore>
   active = getOrCreateCanvasStoreForPanel(ACTIVE) as unknown as StoreApi<CanvasStore>
-  registerCanvasOps(PRIMARY, createCanvasOps(primary))
-  registerCanvasOps(ACTIVE, createCanvasOps(active))
   // The user is looking at the second canvas.
   setActivePanel(ACTIVE)
 
@@ -97,8 +81,6 @@ beforeEach(() => {
 afterEach(() => {
   act(() => { root.unmount() })
   container.remove()
-  unregisterCanvasOps(PRIMARY)
-  unregisterCanvasOps(ACTIVE)
   releaseCanvasStoreForPanel(PRIMARY)
   releaseCanvasStoreForPanel(ACTIVE)
 })

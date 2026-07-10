@@ -4,7 +4,7 @@
   "title": "Cate Unified Theme",
   "description": "One theme styling the whole Cate IDE: app chrome, terminal palette, and Monaco editor.",
   "type": "object",
-  "required": ["id", "name", "type", "terminal", "editor"],
+  "required": ["version", "id", "name", "type", "terminal", "editor"],
   "additionalProperties": false,
   "definitions": {
     "cssColor": {

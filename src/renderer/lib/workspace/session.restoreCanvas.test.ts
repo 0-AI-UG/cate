@@ -19,7 +19,6 @@ function dockStateWith(panelId: string): DockStateSnapshot {
     zones: {
       center: { layout: { type: 'tabs', id: 'stack-center', panelIds: [panelId], activeIndex: 0 } },
     } as DockStateSnapshot['zones'],
-    locations: {},
   }
 }
 
@@ -78,16 +77,4 @@ describe('buildRestoredCanvasState', () => {
     expect(buildRestoredCanvasState(dw, nonCanvas, new Set(['term-top']))).toBeUndefined()
   })
 
-  it('degrades gracefully to an empty canvas when canvasStates is absent (old session)', () => {
-    const dw = makeSnapshot()
-    delete dw.canvasStates
-    const result = buildRestoredCanvasState(dw, dw.panels['canvas-1'], new Set(['canvas-1']))
-
-    expect(result).toBeDefined()
-    expect(result!.nodes).toEqual({})
-    expect(result!.viewportOffset).toEqual({ x: 0, y: 0 })
-    expect(result!.zoomLevel).toBe(1)
-    // Children still recovered (replay armed by panelId in the shell).
-    expect(Object.keys(result!.childPanels).sort()).toEqual(['child-editor', 'child-term'])
-  })
 })

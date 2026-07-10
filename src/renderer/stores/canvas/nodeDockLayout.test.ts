@@ -36,7 +36,6 @@ function makeDockStore(layout: DockLayoutNode | null): StoreApi<DockStore> {
       bottom: { position: 'bottom', visible: false, size: 240, layout: null },
       center: { position: 'center', visible: true, size: 0, layout },
     },
-    locations: {},
   })
 }
 
@@ -57,7 +56,6 @@ describe('getNodeDockLayout', () => {
       nodes: {
         [NODE]: {
           id: NODE,
-          panelId: 'A',
           origin: { x: 0, y: 0 },
           size: { width: 100, height: 100 },
           zOrder: 0,
@@ -95,7 +93,6 @@ describe('sync-back keeps the projection current', () => {
       nodes: {
         [NODE]: {
           id: NODE,
-          panelId: 'A',
           origin: { x: 0, y: 0 },
           size: { width: 100, height: 100 },
           zOrder: 0,

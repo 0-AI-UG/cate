@@ -24,13 +24,13 @@ describe('buildDaemonRuntime FileHost path validation', () => {
     // realpath the temp dir so macOS /var -> /private/var symlinks don't trip
     // validatePathStrict (which compares fully resolved real paths).
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-daemon-val-')))
-    addAllowedRoot(root)
+    addAllowedRoot(root, 'test')
     await fs.writeFile(path.join(root, 'inside.txt'), 'hello from inside\n')
     runtime = buildDaemonRuntime({ id: 'test' }).runtime
   })
 
   afterEach(async () => {
-    removeAllowedRoot(root)
+    removeAllowedRoot(root, 'test')
     await fs.rm(root, { recursive: true, force: true })
   })
 

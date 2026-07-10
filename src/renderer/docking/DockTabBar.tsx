@@ -109,7 +109,6 @@ export interface DockTabBarProps {
   setRenameValue: (v: string) => void
   setRenameId: (id: string | null) => void
   commitRename: (panelId: string) => void
-  beginRename: (panelId: string, currentTitle: string) => void
   // Spring-load on tab hover
   springLoadTimer: React.MutableRefObject<number | null>
   setActiveTab: (stackId: string, index: number) => void
@@ -129,7 +128,7 @@ export function DockTabBar(props: DockTabBarProps) {
   const {
     stack, compact, workspaceId, getPanel, getPanelTitle, onClosePanel,
     onTabClick, onTabMouseDown, onTabContextMenu,
-    renameId, renameValue, renameInputRef, setRenameValue, setRenameId, commitRename, beginRename,
+    renameId, renameValue, renameInputRef, setRenameValue, setRenameId, commitRename,
     springLoadTimer, setActiveTab,
     onEmptyMouseDown, onEmptyContextMenu,
     showTabPlaceholder, selfTabDrag, onTabBarMouseDown,

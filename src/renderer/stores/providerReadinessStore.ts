@@ -49,6 +49,8 @@ interface ProviderReadinessStore {
 
 // Module-level: the AUTH_CHANGED subscription + first fetch happen once per window.
 let started = false
+let refreshPending: Promise<void> | null = null
+const verificationPending = new Map<string, Promise<void>>()
 
 export const useProviderReadinessStore = create<ProviderReadinessStore>((set, get) => ({
   statuses: [],
@@ -71,22 +73,36 @@ export const useProviderReadinessStore = create<ProviderReadinessStore>((set, ge
   },
 
   async refresh() {
-    try {
-      const statuses = await window.electronAPI.authStatus()
-      set({ statuses, loaded: true })
-    } catch (err) {
-      log.warn('[providerReadiness] authStatus failed', err)
-      set({ loaded: true })
-    }
+    if (refreshPending) return refreshPending
+    refreshPending = (async () => {
+      try {
+        const statuses = await window.electronAPI.authStatus()
+        set({ statuses, loaded: true })
+      } catch (err) {
+        log.warn('[providerReadiness] authStatus failed', err)
+        set({ loaded: true })
+      } finally {
+        refreshPending = null
+      }
+    })()
+    return refreshPending
   },
 
   async verify(providerId) {
-    try {
-      const result = await window.electronAPI.authVerify(providerId)
-      set((s) => ({ verifications: { ...s.verifications, [providerId]: result } }))
-    } catch (err) {
-      log.warn('[providerReadiness] authVerify failed for %s', providerId, err)
-    }
+    const pending = verificationPending.get(providerId)
+    if (pending) return pending
+    const request = (async () => {
+      try {
+        const result = await window.electronAPI.authVerify(providerId)
+        set((s) => ({ verifications: { ...s.verifications, [providerId]: result } }))
+      } catch (err) {
+        log.warn('[providerReadiness] authVerify failed for %s', providerId, err)
+      } finally {
+        verificationPending.delete(providerId)
+      }
+    })()
+    verificationPending.set(providerId, request)
+    return request
   },
 }))
 

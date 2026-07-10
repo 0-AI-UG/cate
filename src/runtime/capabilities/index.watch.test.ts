@@ -49,10 +49,10 @@ function lastPool(): FakePool {
 describe('daemon runtime watch delegation', () => {
   beforeEach(() => {
     mockState.pools.length = 0
-    addAllowedRoot(ROOT)
+    addAllowedRoot(ROOT, 'srv_test')
   })
   afterEach(() => {
-    removeAllowedRoot(ROOT)
+    removeAllowedRoot(ROOT, 'srv_test')
   })
 
   test('file.watch subscribes the validated root and forwards events verbatim', () => {

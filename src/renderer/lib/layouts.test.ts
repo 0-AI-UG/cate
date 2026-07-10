@@ -15,8 +15,6 @@ import { useAppStore } from '../stores/appStore'
 import { releaseCanvasStoreForPanel } from '../stores/canvasStore'
 import {
   ensureCanvasOpsForPanel,
-  unregisterCanvasOps,
-  invalidateWorkspaceCanvasCache,
 } from './workspace/canvasAccess'
 import {
   getOrCreateWorkspaceDockStore,
@@ -24,15 +22,44 @@ import {
 } from './workspace/dockRegistry'
 import { setActivePanel } from './activePanel'
 import { loadLayoutIntoActiveCanvas, loadLayoutIntoCanvas, type LayoutSnapshot } from './layouts'
+import type { PanelType } from '../../shared/types'
 
 const WS = 'ws-layout'
 const PRIMARY = 'canvas-primary'
 const TARGET = 'canvas-target'
 
-type LayoutNodeInput = LayoutSnapshot['nodes'][number]
+interface LayoutNodeInput {
+  panelType: PanelType
+  origin: { x: number; y: number }
+  size: { width: number; height: number }
+}
 
 function snapshot(nodes: LayoutNodeInput[]): LayoutSnapshot {
-  return { nodes, zoomLevel: 1, viewportOffset: { x: 0, y: 0 } }
+  const canvasNodes: LayoutSnapshot['canvas']['nodes'] = {}
+  const panels: LayoutSnapshot['panels'] = {}
+  nodes.forEach((input, index) => {
+    const panelId = `saved-panel-${index}`
+    const nodeId = `saved-node-${index}`
+    panels[panelId] = {
+      id: panelId,
+      type: input.panelType,
+      title: input.panelType,
+      isDirty: false,
+    }
+    canvasNodes[nodeId] = {
+      id: nodeId,
+      origin: input.origin,
+      size: input.size,
+      zOrder: index,
+      creationIndex: index,
+      dockLayout: { type: 'tabs', id: `saved-stack-${index}`, panelIds: [panelId], activeIndex: 0 },
+    }
+  })
+  return {
+    version: 1,
+    canvas: { nodes: canvasNodes, zoomLevel: 1, viewportOffset: { x: 0, y: 0 } },
+    panels,
+  }
 }
 
 function mockLayout(snap: LayoutSnapshot) {
@@ -62,11 +89,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  unregisterCanvasOps(PRIMARY)
-  unregisterCanvasOps(TARGET)
   releaseCanvasStoreForPanel(PRIMARY)
   releaseCanvasStoreForPanel(TARGET)
-  invalidateWorkspaceCanvasCache(WS)
   releaseWorkspaceDockStore(WS)
   setActivePanel(null)
   useAppStore.setState({ workspaces: [], selectedWorkspaceId: '' } as any)
@@ -111,7 +135,7 @@ describe('loadLayoutIntoCanvas', () => {
 
     const nodes = Object.values(targetStore.getState().nodes)
     expect(nodes).toHaveLength(1)
-    const panelId = nodes[0].panelId
+    const panelId = nodes[0].dockLayout.type === 'tabs' ? nodes[0].dockLayout.panelIds[0] : ''
     const ws = useAppStore.getState().workspaces.find((w) => w.id === WS)
     expect(ws?.panels[panelId]?.type).toBe('agent')
   })
@@ -123,7 +147,8 @@ describe('loadLayoutIntoCanvas', () => {
       .getState()
       .createEditor(WS, undefined, { x: 0, y: 0 }, { target: 'canvas', canvasPanelId: TARGET })
     expect(Object.values(targetStore.getState().nodes)).toHaveLength(1)
-    const stalePanelId = Object.values(targetStore.getState().nodes)[0].panelId
+    const staleLayout = Object.values(targetStore.getState().nodes)[0].dockLayout
+    const stalePanelId = staleLayout.type === 'tabs' ? staleLayout.panelIds[0] : ''
 
     mockLayout(
       snapshot([{ panelType: 'terminal', origin: { x: 100, y: 100 }, size: { width: 300, height: 200 } }]),
@@ -132,7 +157,7 @@ describe('loadLayoutIntoCanvas', () => {
 
     const nodes = Object.values(targetStore.getState().nodes)
     expect(nodes).toHaveLength(1)
-    expect(nodes[0].panelId).not.toBe(stalePanelId)
+    expect(nodes[0].dockLayout.type === 'tabs' && nodes[0].dockLayout.panelIds[0]).not.toBe(stalePanelId)
     const ws = useAppStore.getState().workspaces.find((w) => w.id === WS)
     expect(ws?.panels[stalePanelId]).toBeUndefined()
   })

@@ -6,9 +6,9 @@
 
 import React, { useCallback, useEffect, useRef } from 'react'
 import { useDockStoreContext } from '../stores/DockStoreContext'
-import type { DockZonePosition, DockLayoutNode, PanelState } from '../../shared/types'
+import type { DockZonePosition, PanelState } from '../../shared/types'
 import DockTabStack from './DockTabStack'
-import DockSplitContainer from './DockSplitContainer'
+import DockLayoutRenderer from './DockLayoutRenderer'
 import { registerDropZone } from '../drag'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
@@ -95,10 +95,8 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
     [workspaceId, position],
   )
 
-  const renderNode = useCallback(
-    (node: DockLayoutNode): React.ReactNode => {
-      if (node.type === 'tabs') {
-        return (
+  const renderTabs = useCallback(
+    (node: Extract<NonNullable<typeof zone.layout>, { type: 'tabs' }>): React.ReactNode => (
           <DockTabStack
             key={node.id}
             stack={node}
@@ -111,17 +109,8 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
             onPanelRemoved={onPanelRemoved}
             onPanelRenamed={onPanelRenamed}
           />
-        )
-      }
-      return (
-        <DockSplitContainer
-          key={node.id}
-          node={node}
-          renderNode={renderNode}
-        />
-      )
-    },
-    [renderPanel, getPanelTitle, onClosePanel],
+    ),
+    [position, renderPanel, getPanelTitle, onClosePanel, getPanel, workspaceId, onPanelRemoved, onPanelRenamed],
   )
 
   if (!zone.visible) return null
@@ -146,7 +135,7 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
-      {zone.layout ? renderNode(zone.layout) : (
+      {zone.layout ? <DockLayoutRenderer layout={zone.layout} renderTabs={renderTabs} /> : (
         // Empty center zone — show background
         isCenter && <div className="w-full h-full" />
       )}

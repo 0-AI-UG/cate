@@ -18,7 +18,11 @@ export class KeyedLock {
   run<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.locks.get(key) ?? Promise.resolve()
     const next = prev.then(fn, fn)
-    this.locks.set(key, next.catch(() => undefined))
+    const tail = next.catch(() => undefined)
+    this.locks.set(key, tail)
+    void tail.finally(() => {
+      if (this.locks.get(key) === tail) this.locks.delete(key)
+    })
     return next
   }
 }

@@ -12,8 +12,6 @@ import { ipcMain } from 'electron'
 import { parseLocator, formatLocator } from '../runtime/locator'
 import type { VcsHost } from '../runtime/types'
 import { resolveLocator } from '../runtime/runtimeManager'
-import { createVcsCapability } from '../../runtime/capabilities/vcs'
-import { getShellEnv } from '../shellEnv'
 import {
   GIT_IS_REPO,
   GIT_FIND_REPOS,
@@ -48,19 +46,6 @@ import {
   GIT_STASH_POP,
   GIT_DISCARD_FILE,
 } from '../../shared/ipc-channels'
-
-// The single vcs implementation, wired with the resolved login-shell env so
-// git/gh see the full PATH — matching how every runtime daemon builds it.
-const localVcs = createVcsCapability({ env: getShellEnv })
-
-/**
- * Create a local branch, optionally from an explicit start point. Thin
- * back-compat wrapper over the single vcs implementation (the logic lives in
- * `createVcsCapability().branchCreate`) — kept exported for the git tests.
- */
-export async function createBranch(cwd: string, branchName: string, startPoint?: string): Promise<void> {
-  return localVcs.branchCreate(cwd, branchName, startPoint)
-}
 
 // =============================================================================
 // IPC handlers — thin routers: parse the locator off the cwd-like argument,

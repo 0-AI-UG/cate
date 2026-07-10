@@ -331,7 +331,7 @@ export function useParallelWork(
       onUpdateFromMain: () => handleUpdateFromMain(wt),
       onMerge: () => handleMerge(wt),
       onDelete: () => handleDelete(wt),
-      onReveal: () => window.electronAPI.shellShowInFolder(wt.path),
+      onReveal: () => window.electronAPI.shellShowInFolder(wt.path, workspaceId ?? undefined),
       onRename: (label) => workspaceId && upsertWorktreeMeta(workspaceId, wt, { label: label?.trim() || undefined }),
       onRecolor: (color) => workspaceId && upsertWorktreeMeta(workspaceId, wt, { color }),
       onOpenPr: (url) => window.electronAPI.openExternalUrl(url),

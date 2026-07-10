@@ -22,14 +22,13 @@ vi.mock('../windowRegistry', () => ({
   sendToWindow: vi.fn(),
 }))
 
-const fsModule = await import('./filesystem')
-const { registerHandlers, subscribeFsChanges } = fsModule
+const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_IMPORT_ENTRIES, FS_WATCH_START, FS_WATCH_STOP } = await import('../../shared/ipc-channels')
-const { registerTestLocalRuntime } = await import('../runtime/testLocalRuntime')
+const { registerTestDaemonRuntime } = await import('../runtime/testHarness')
 
 registerHandlers()
-registerTestLocalRuntime()
+const testRuntime = registerTestDaemonRuntime()
 const importEntries = handlers.get(FS_IMPORT_ENTRIES)!
 const watchStartHandler = handlers.get(FS_WATCH_START)!
 const watchStopHandler = handlers.get(FS_WATCH_STOP)!
@@ -49,11 +48,11 @@ describe('FS_IMPORT_ENTRIES', () => {
     // symlink-resolved comparison (e.g. /tmp → /private/tmp on macOS).
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-import-dest-')))
     extern = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-import-src-')))
-    addAllowedRoot(root) // destination must be inside a workspace root; source need not be
+    addAllowedRoot(root, 'local') // destination must be inside a workspace root; source need not be
   })
 
   afterEach(async () => {
-    removeAllowedRoot(root)
+    removeAllowedRoot(root, 'local')
     await fs.rm(root, { recursive: true, force: true })
     await fs.rm(extern, { recursive: true, force: true })
   })
@@ -125,12 +124,12 @@ describe('in-process fs subscriptions', () => {
 
   beforeEach(async () => {
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-fswatch-')))
-    addAllowedRoot(root)
+    addAllowedRoot(root, 'local')
   })
 
   afterEach(async () => {
     await watchStopHandler({ __win: { id: 1 } }, root)
-    removeAllowedRoot(root)
+    removeAllowedRoot(root, 'local')
     await fs.rm(root, { recursive: true, force: true })
   })
 
@@ -161,8 +160,8 @@ describe('in-process fs subscriptions', () => {
     const aEvents: string[] = []
     const bEvents: string[] = []
 
-    const unsubA = subscribeFsChanges(root, (fp) => aEvents.push(fp))
-    const unsubB = subscribeFsChanges(root, (fp) => bEvents.push(fp))
+    const unsubA = testRuntime.file.watch(root, (fp) => aEvents.push(fp))
+    const unsubB = testRuntime.file.watch(root, (fp) => bEvents.push(fp))
 
     startWatch()
 
@@ -187,7 +186,7 @@ describe('in-process fs subscriptions', () => {
   // was torn down. Unsubscribed listeners receive nothing — clean teardown.
   test('a fresh in-proc subscriber watches actively after a prior teardown', async () => {
     const earlyEvents: string[] = []
-    const unsubA = subscribeFsChanges(root, (fp) => earlyEvents.push(fp))
+    const unsubA = testRuntime.file.watch(root, (fp) => earlyEvents.push(fp))
     startWatch()
     unsubA()
     await watchStopHandler({ __win: { id: 1 } }, root)
@@ -195,7 +194,7 @@ describe('in-process fs subscriptions', () => {
 
     // A brand-new subscriber opens its own watcher and DOES receive events.
     const lateEvents: string[] = []
-    const unsubLate = subscribeFsChanges(root, (fp) => lateEvents.push(fp))
+    const unsubLate = testRuntime.file.watch(root, (fp) => lateEvents.push(fp))
 
     const file = path.join(root, 'after.txt')
     let rev = 0

@@ -22,6 +22,19 @@ export function collectPanelIds(
   return out
 }
 
+/** The visible panel in the first leaf of a dock tree. */
+export function activeDockPanelId(layout: DockLayoutNode | null | undefined): string | null {
+  if (!layout) return null
+  if (layout.type === 'tabs') {
+    return layout.panelIds[layout.activeIndex] ?? layout.panelIds[0] ?? null
+  }
+  for (const child of layout.children) {
+    const panelId = activeDockPanelId(child)
+    if (panelId) return panelId
+  }
+  return null
+}
+
 function walk(
   layout: DockLayoutNode | null | undefined,
   out: string[],

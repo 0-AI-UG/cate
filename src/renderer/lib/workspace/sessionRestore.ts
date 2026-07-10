@@ -20,8 +20,8 @@ import {
 import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
 import { deferredSnapshots, setDeferredRestoreHandler } from './deferredRestore'
 import { beginRestoreQuiescence } from './sessionAutosave'
-import { terminalRestoreData } from '../terminal/terminalRestoreData'
 import { terminalRegistry } from '../terminal/terminalRegistry'
+import { pendingTerminalStarts } from '../terminal/registryState'
 import { collectPanelIdsFromDockState, projectFilesToSnapshot } from './sessionSerialize'
 import { dockWindowsFromSession } from './sessionLoad'
 import type {
@@ -294,11 +294,7 @@ async function restoreSessionHydrate(snapshot: SessionSnapshot, workspaceId: str
   // TerminalPanel mounts. Scrollback is keyed by the (restore-stable) panel id.
   for (const panel of Object.values(snapshot.panels ?? {})) {
     if (panel.type !== 'terminal') continue
-    if (terminalRestoreData.has(panel.id)) continue
-    terminalRestoreData.set(panel.id, {
-      cwd: snapshot.terminalCwds?.[panel.id],
-      replayFromId: panel.id,
-    })
+    terminalRegistry.setPendingRestore(panel.id, snapshot.terminalCwds?.[panel.id])
   }
 
   // Safety net: guarantee the center zone has a canvas panel after restore.
@@ -318,18 +314,18 @@ async function restoreSessionHydrate(snapshot: SessionSnapshot, workspaceId: str
 // -----------------------------------------------------------------------------
 
 export async function replayTerminalLog(panelId: string): Promise<void> {
-  const data = terminalRestoreData.get(panelId)
-  if (!data?.replayFromId) return
+  const data = pendingTerminalStarts.get(panelId)
+  if (data?.kind !== 'restore') return
 
   const logData = await window.electronAPI.terminalLogRead(data.replayFromId)
   if (!logData) {
-    terminalRestoreData.delete(panelId)
+    pendingTerminalStarts.delete(panelId)
     return
   }
 
   const entry = terminalRegistry.getEntry(panelId)
   if (!entry) {
-    terminalRestoreData.delete(panelId)
+    pendingTerminalStarts.delete(panelId)
     return
   }
 
@@ -339,7 +335,7 @@ export async function replayTerminalLog(panelId: string): Promise<void> {
   entry.terminal.write(logData)
   entry.terminal.write('\r\n\x1b[90m--- restored session ---\x1b[0m\r\n')
 
-  terminalRestoreData.delete(panelId)
+  pendingTerminalStarts.delete(panelId)
 }
 
 // -----------------------------------------------------------------------------

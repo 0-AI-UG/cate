@@ -46,9 +46,8 @@ export interface WorkspacePanelTree {
 
 // Subscribe to every canvas store in a workspace and return a map of
 // canvas-child panel id -> the canvas panel id that hosts it. A workspace can
-// host multiple canvas panels, and the legacy singleton `useCanvasStore` only
-// mirrors whichever canvas mounted first — so we scan ALL canvas panels in the
-// workspace. We record WHICH canvas owns each child (not merely THAT it lives
+// host multiple canvas panels, so we scan ALL canvas panels in the workspace.
+// We record WHICH canvas owns each child (not merely THAT it lives
 // on some canvas), so each child nests under its own canvas instead of
 // collapsing them all under the first one.
 function useWorkspaceCanvasChildOwners(workspaceId: string): Map<string, string> {
@@ -71,13 +70,12 @@ function useWorkspaceCanvasChildOwners(workspaceId: string): Map<string, string>
       const canvasPanelId = canvasPanelIds[i]
       for (const node of Object.values(stores[i].getState().nodes)) {
         // Each canvas node has its own mini-dock layout; a node may host several
-        // tabbed panels. `node.panelId` is only the seed — walk the full layout
-        // so additional tabs still classify as children of this canvas. Read the
+        // tabbed panels. Walk the full layout so every tab classifies as a child
+        // of this canvas. Read the
         // LIVE per-node DockStore (the runtime authority).
-        const ids = new Set<string>()
-        collectPanelIds(getNodeDockLayout(canvasPanelId, node.id), ids)
-        if (node.panelId) ids.add(node.panelId)
-        for (const id of ids) owners.set(id, canvasPanelId)
+        for (const id of collectPanelIds(getNodeDockLayout(canvasPanelId, node.id))) {
+          owners.set(id, canvasPanelId)
+        }
       }
     }
     return owners
@@ -140,7 +138,9 @@ export function useWorkspacePanelTree(workspaceId: string): WorkspacePanelTree {
   // a real panel is never hidden. Read inline (not memoized) so a dock move that
   // re-renders via the canvas-owners subscription re-reads the latest placement.
   const dockSnapshot = getWorkspaceDockSnapshot(workspaceId)
-  const dockPlacedIds = dockSnapshot ? new Set(Object.keys(dockSnapshot.locations)) : null
+  const dockPlacedIds = dockSnapshot ? new Set(
+    Object.values(dockSnapshot.zones).flatMap((zone) => collectPanelIds(zone.layout)),
+  ) : null
   const { canvasPanels, childrenByCanvas, orphanCanvasChildren, freePanels } =
     partitionWorkspacePanels(panelList, canvasChildOwners, dockPlacedIds)
 

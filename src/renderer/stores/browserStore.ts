@@ -6,6 +6,7 @@
 // =============================================================================
 import { create } from 'zustand'
 import type { BrowserHistoryEntry, BrowserBookmark } from '../../shared/types'
+import { queryBrowserHistoryEntries } from '../../shared/browserHistory'
 
 interface BrowserStore {
   history: BrowserHistoryEntry[]
@@ -56,12 +57,5 @@ export const useBrowserStore = create<BrowserStore>((set, get) => ({
   removeHistory: (url) => { void window.electronAPI.browserHistoryRemove(url) },
   clearHistory: () => { void window.electronAPI.browserHistoryClear() },
 
-  querySuggestions: (query, limit) => {
-    const q = query.trim().toLowerCase()
-    const base = [...get().history].sort((a, b) => b.lastVisited - a.lastVisited)
-    const filtered = q
-      ? base.filter((e) => e.url.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))
-      : base
-    return filtered.slice(0, limit)
-  },
+  querySuggestions: (query, limit) => queryBrowserHistoryEntries(get().history, query, limit),
 }))

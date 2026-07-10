@@ -48,8 +48,6 @@ beforeEach(() => {
 
 describe('analytics gating', () => {
   test('no send in dev builds, regardless of legacy consent settings', async () => {
-    settings.telemetryConsentDecided = true
-    settings.usageAnalyticsEnabled = true
     const ok = await sendEvent('app_start')
     expect(ok).toBe(false)
     expect(netRequest).not.toHaveBeenCalled()
@@ -65,9 +63,6 @@ describe('analytics gating', () => {
 
   test('legacy opt-out settings do NOT disable sending in packaged builds', async () => {
     electronApp.isPackaged = true
-    settings.telemetryConsentDecided = false
-    settings.usageAnalyticsEnabled = false
-    settings.crashReportingEnabled = false
     await sendEvent('app_start')
     expect(netRequest).toHaveBeenCalledTimes(1)
   })

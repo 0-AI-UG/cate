@@ -22,7 +22,7 @@
 import { useAppStore } from '../../stores/appStore'
 import { getActivePanelId } from '../activePanel'
 import { portalRegistry, type PortalWebview } from '../portalRegistry'
-import { isStartPageUrl } from '../../../shared/types'
+import { browserPanelUrl, isStartPageUrl } from '../../../shared/types'
 
 export type BrowserOutcome = { ok: true; result?: unknown } | { ok: false; error: string }
 
@@ -154,7 +154,7 @@ export async function handleBrowserMethod(
       .map((p) => ({
         panelId: p.id,
         title: p.title,
-        url: isStartPageUrl(p.url) ? '' : (p.url ?? ''),
+        url: isStartPageUrl(browserPanelUrl(p)) ? '' : (browserPanelUrl(p) ?? ''),
         focused: p.id === active,
       }))
     return { ok: true, result: browsers }
@@ -176,12 +176,12 @@ export async function handleBrowserMethod(
     // Mirror terminalUrlOpen: if the webview isn't attached yet, still update the
     // stored URL so the panel navigates there on mount — a real success.
     if (!webview) {
-      useAppStore.getState().updatePanelUrl(workspaceId, target.panelId, url)
+      useAppStore.getState().updateBrowserActiveTabUrl(workspaceId, target.panelId, url)
       return { ok: true, result: { panelId: target.panelId, url } }
     }
     try {
       webview.loadURL(url)
-      useAppStore.getState().updatePanelUrl(workspaceId, target.panelId, url)
+      useAppStore.getState().updateBrowserActiveTabUrl(workspaceId, target.panelId, url)
       return { ok: true, result: { panelId: target.panelId, url } }
     } catch {
       return { ok: false, error: 'webview-not-ready' }

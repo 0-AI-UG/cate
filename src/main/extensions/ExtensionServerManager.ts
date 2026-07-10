@@ -20,17 +20,13 @@
 // rejoin within grace cancels the timer (cheap reuse on a quick reopen).
 // =============================================================================
 
-import { randomBytes } from 'crypto'
 import { type WebContents } from 'electron'
 import log from '../logger'
-import { parseLocator } from '../runtime/locator'
-import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime, ServerHandle, ServerStartOptions } from '../runtime/types'
 import { extensionManager } from './ExtensionManager'
-import { getWorkspaceInfo } from '../workspaceManager'
 import { DEFAULT_PORT_ENV, DEFAULT_READY_PATH } from '../../shared/extensions'
-import { createCateApiReverse, bindReverseTunnel, type ReverseTunnelBinding } from './cateApiReverse'
 import { KeyedLock } from '../keyedLock'
+import { CateApiEndpointManager, cateApiEndpointManager, resolveWorkspaceRuntime } from './cateApiEndpointManager'
 
 type ServerState = 'IDLE' | 'SPAWNING' | 'READY' | 'GRACE' | 'STOPPING' | 'CRASHED' | 'ERROR'
 
@@ -69,7 +65,6 @@ interface ServerSession {
   lastError: string | null
   /** CATE_API reverse endpoint + its tunnel listener (Phase 3C), live while the
    *  server runs. Torn down on stop/crash. */
-  cateApiBinding: ReverseTunnelBinding | null
 }
 
 function keyFor(extensionId: string, workspaceId: string): string {
@@ -79,6 +74,8 @@ function keyFor(extensionId: string, workspaceId: string): string {
 export class ExtensionServerManager {
   private sessions = new Map<string, ServerSession>()
   private locks = new KeyedLock()
+
+  constructor(private readonly endpoints = new CateApiEndpointManager()) {}
 
   // ---------------------------------------------------------------------------
   // Public API
@@ -320,16 +317,14 @@ export class ExtensionServerManager {
     // Resolve runtime + cwd from the workspace locator (throws if a remote
     // runtime isn't connected — surfaced as a start error). A workspace with no
     // info / no root falls back to the local runtime with an empty cwd.
-    const info = getWorkspaceInfo(workspaceId)
-    const { runtimeId, path: cwd } = parseLocator(info?.rootPath ?? '')
-    const runtime = runtimes.resolve(runtimeId)
+    const { runtime, cwd } = resolveWorkspaceRuntime(workspaceId)
 
     const session: ServerSession = {
       extensionId,
       workspaceId,
       runtime,
       cwd,
-      token: randomBytes(32).toString('base64url'),
+      token: '',
       handle: null,
       state: 'IDLE',
       panels: new Set(),
@@ -338,7 +333,6 @@ export class ExtensionServerManager {
       graceTimer: null,
       restartTimes: [],
       lastError: null,
-      cateApiBinding: null,
     }
     this.sessions.set(key, session)
     return session
@@ -397,26 +391,18 @@ export class ExtensionServerManager {
     session.state = 'SPAWNING'
     session.lastError = null
 
-    // --- CATE_API reverse channel (Phase 3C) -------------------------------
-    // BEFORE start: stand up the reverse endpoint + open a 127.0.0.1 listener on
-    // the daemon host. Inbound connections tunnel BACK over the pipe into the
-    // endpoint's http server, which validates CATE_TOKEN and dispatches cate.*.
-    const reverse = createCateApiReverse({
-      extensionId: session.extensionId,
-      workspaceId: session.workspaceId,
-      token: session.token,
-      runtime: session.runtime,
-    })
-
     let cateApiPort: number
     try {
-      session.cateApiBinding = await bindReverseTunnel(session.runtime, reverse, listenerId)
-      cateApiPort = session.cateApiBinding.port
+      const endpoint = await this.endpoints.ensure({
+        key,
+        owner: 'extension',
+        extensionId: session.extensionId,
+        workspaceId: session.workspaceId,
+        listenerId,
+      })
+      session.token = endpoint.token
+      cateApiPort = endpoint.port
     } catch (err) {
-      // bindReverseTunnel threw before taking ownership of `reverse`, so dispose
-      // it here (and stop the listener by its key, best-effort).
-      try { reverse.dispose() } catch { /* gone */ }
-      this.teardownCateApi(session, listenerId)
       session.state = 'ERROR'
       session.lastError = `Failed to open CATE_API listener: ${err instanceof Error ? err.message : String(err)}`
       throw new Error(session.lastError)
@@ -474,17 +460,9 @@ export class ExtensionServerManager {
   }
 
   /** Stop the reverse CATE_API listener + endpoint for a session (idempotent). */
-  private teardownCateApi(session: ServerSession, listenerId?: string): void {
-    if (session.cateApiBinding) {
-      // The binding owns its listener + endpoint + inbound duplexes.
-      session.cateApiBinding.dispose()
-      session.cateApiBinding = null
-      return
-    }
-    // No binding was created (listen failed before it, or already torn down):
-    // still release the listener by its key, best-effort.
-    const id = listenerId ?? `cateapi-${keyFor(session.extensionId, session.workspaceId)}`
-    try { session.runtime.tunnel.stopListen(id) } catch { /* already gone */ }
+  private teardownCateApi(session: ServerSession, _listenerId?: string): void {
+    this.endpoints.dispose(keyFor(session.extensionId, session.workspaceId))
+    session.token = ''
   }
 
   /** Stop the running server (if any) and reset to IDLE. */
@@ -543,4 +521,4 @@ export class ExtensionServerManager {
   }
 }
 
-export const extensionServerManager = new ExtensionServerManager()
+export const extensionServerManager = new ExtensionServerManager(cateApiEndpointManager)

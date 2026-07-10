@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRenderCount } from '../lib/perf/perfClient'
 import type { StoreApi } from 'zustand'
-import type { NodeActivityState, DockLayoutNode, PanelType } from '../../shared/types'
+import type { NodeActivityState, DockTabStack as DockTabStackNode, PanelType } from '../../shared/types'
 import { isMaximized as checkMaximized } from '../../shared/types'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
@@ -27,7 +27,7 @@ import DockTabStack from '../docking/DockTabStack'
 import { activeLeafPanelId } from '../panels/nodeDockRegistry'
 import { setActivePanel } from '../lib/activePanel'
 import { Tooltip } from '../ui/Tooltip'
-import DockSplitContainer from '../docking/DockSplitContainer'
+import DockLayoutRenderer from '../docking/DockLayoutRenderer'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { collectPanelIds } from '../lib/canvas/collectPanelIds'
@@ -443,9 +443,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   const rootIsTabs = layout?.type === 'tabs'
 
-  const renderLayoutNodeRef = useRef<(node: DockLayoutNode, isRoot: boolean) => React.ReactNode>(null!)
-  renderLayoutNodeRef.current = (layoutNode: DockLayoutNode, isRoot: boolean): React.ReactNode => {
-    if (layoutNode.type === 'tabs') {
+  const renderTabs = (layoutNode: DockTabStackNode, isRoot: boolean): React.ReactNode => {
       const isHeaderHost = isRoot && rootIsTabs
       return (
         <DockTabStack
@@ -464,33 +462,20 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           dropDisabled={isWholeNodeDragSource}
         />
       )
-    }
-    return (
-      <DockSplitContainer
-        node={layoutNode}
-        renderNode={(n) => renderLayoutNodeRef.current(n, false)}
-      />
-    )
   }
-  const renderLayoutNode = useCallback(
-    (layoutNode: DockLayoutNode) => renderLayoutNodeRef.current(layoutNode, true),
-    // intentionally no deps — the ref is rebound on every render
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  )
 
   // --- Event handlers --------------------------------------------------------
 
   // Focus this node AND point the canonical active-panel pointer at its active
-  // leaf (the visible dock tab), not the node's seed panelId. This is the bridge
+  // leaf (the visible dock tab). This is the bridge
   // that makes terminal-focus detection (and Cmd+T placement) correct for a node
   // whose mini-dock holds several panels. The subscription below re-asserts it on
   // every tab switch while focused; this covers the initial focus.
   const focusThisNode = useCallback(() => {
     focusNode(nodeId)
     const leaf = activeLeafPanelId(dockStoreApi.getState().zones.center.layout)
-    setActivePanel(leaf ?? node?.panelId ?? null)
-  }, [focusNode, nodeId, dockStoreApi, node?.panelId])
+    setActivePanel(leaf)
+  }, [focusNode, nodeId, dockStoreApi])
 
   // Authoritative writer for the active panel while this node is focused: any
   // center-layout change (tab switch, split, close) re-points activePanelId at
@@ -744,7 +729,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
               focusThisNode()
             }}
           >
-            {layout ? renderLayoutNode(layout) : (
+            {layout ? <DockLayoutRenderer layout={layout} renderTabs={renderTabs} /> : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 12 }}>
                 Empty
               </div>

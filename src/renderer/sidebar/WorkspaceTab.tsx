@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
-import type { WorkspaceState, PanelType, PanelState, WindowPanelInfo } from '../../shared/types'
+import { browserPanelUrl, type WorkspaceState, type PanelType, type PanelState, type WindowPanelInfo } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
@@ -17,7 +17,7 @@ import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { getAgentLogo } from '../lib/agent/agentLogos'
-import { workspaceDisplayName } from '../lib/fs/displayPath'
+import { pathDisplayName, workspaceDisplayName } from '../lib/fs/displayPath'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { InlineEditInput } from './InlineEditInput'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
@@ -81,16 +81,16 @@ export interface PanelRenameProps {
 }
 
 /** Display label for a panel row: explicit title, else the file basename, else
- *  the url, else the panel type. Param is the minimal shape shared by the
+ *  the active browser tab URL, else the panel type. Param is the minimal shape shared by the
  *  TerminalPanelRow prop and a full PanelState. */
 export function panelRowLabel(
-  panel: { type: PanelType; title?: string; filePath?: string; url?: string },
+  panel: Pick<PanelState, 'type' | 'title' | 'filePath' | 'tabs' | 'activeTabId'>,
 ): string {
-  return panel.title || panel.filePath?.split('/').pop() || panel.url || panel.type
+  return panel.title || (panel.filePath ? pathDisplayName(panel.filePath) : '') || browserPanelUrl(panel) || panel.type
 }
 
 export interface TerminalPanelRowProps {
-  panel: { id: string; type: PanelType; title?: string; filePath?: string; url?: string }
+  panel: Pick<PanelState, 'id' | 'type' | 'title' | 'filePath' | 'tabs' | 'activeTabId'>
   indent: boolean
   agentState: AgentState | undefined
   agentLogo?: string | null
@@ -131,7 +131,7 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
           onClose()
         }
       }}
-      title={titleHint ?? (panel.filePath || panel.url || label)}
+      title={titleHint ?? (panel.filePath || browserPanelUrl(panel) || label)}
     >
       {agentLogo ? (
         <img
@@ -214,7 +214,6 @@ interface WorkspaceTabProps {
   isExpanded: boolean
   onToggleExpand: () => void
   onClick: (e?: React.MouseEvent) => void
-  onClose: () => void
   onBulkContextMenu?: (e: React.MouseEvent) => Promise<boolean>
 }
 
@@ -225,7 +224,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   isExpanded,
   onToggleExpand,
   onClick,
-  onClose,
   onBulkContextMenu,
 }) => {
   // Single store read for all workspace status data
@@ -233,7 +231,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     const ws = s.workspaces[workspace.id]
     if (!ws) return null
     return {
-      listeningPorts: ws.listeningPorts,
+      listeningPorts: Object.fromEntries(
+        Object.entries(ws.terminals).map(([id, terminal]) => [id, terminal.listeningPorts]),
+      ),
     }
   }))
   const agentInfoByPanel = useAgentInfoByPanel(workspace.id)
@@ -371,7 +371,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         const ws = statusState.workspaces[workspace.id]
         let dir: string | undefined
         if (ws) {
-          const cwds = Object.values(ws.terminalCwd)
+          const cwds = Object.values(ws.terminals).map((terminal) => terminal.cwd).filter(Boolean)
           dir = cwds[0]
         }
         if (!dir) dir = workspace.rootPath || undefined
@@ -636,7 +636,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
             handleClosePanel(p.id)
           }
         }}
-        title={p.filePath || p.url || label}
+        title={p.filePath || browserPanelUrl(p) || label}
       >
         <Icon size={11} className="flex-shrink-0 opacity-60" />
         {isRenaming ? (

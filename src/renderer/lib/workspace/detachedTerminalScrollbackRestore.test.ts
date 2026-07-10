@@ -139,8 +139,6 @@ beforeEach(() => {
       terminalKill: vi.fn(async () => undefined),
       onTerminalData: vi.fn(() => () => {}),
       onTerminalExit: vi.fn(() => () => {}),
-      shellRegisterTerminal: vi.fn(async () => undefined),
-      shellUnregisterTerminal: vi.fn(async () => undefined),
       settingsGet: vi.fn(async () => ''),
       panelTransferAck: vi.fn(async () => undefined),
       terminalScrollbackSave: vi.fn(async (key: string, content: string) => {
@@ -164,7 +162,6 @@ describe('detached top-level terminal scrollback restore round-trip', () => {
     const { terminalRegistry } = await import('../terminal/terminalRegistry')
     const { dockWindowsFromSession } = await import('./sessionLoad')
     const { buildDockWindowRestoreInit } = await import('./sessionStartup')
-    const { terminalRestoreData } = await import('../terminal/terminalRestoreData')
 
     const termPanelId = 'term-panel-1'
 
@@ -206,11 +203,26 @@ describe('detached top-level terminal scrollback restore round-trip', () => {
               right: { position: 'right', visible: false, size: 0, layout: null },
               bottom: { position: 'bottom', visible: false, size: 0, layout: null },
             },
-            locations: {},
           },
           panels,
           bounds: { x: 0, y: 0, width: 800, height: 600 },
           workspaceId: 'ws-1',
+          canvasStates: opts.canvasChild ? {
+            [canvasPanelId]: {
+              nodes: {
+                'child-node': {
+                  id: 'child-node',
+                  dockLayout: { type: 'tabs', id: 'child-stack', panelIds: [termPanelId], activeIndex: 0 },
+                  origin: { x: 0, y: 0 },
+                  size: { width: 640, height: 400 },
+                  zOrder: 0,
+                  creationIndex: 0,
+                },
+              },
+              viewportOffset: { x: 0, y: 0 },
+              zoomLevel: 1,
+            },
+          } : {},
         },
       ],
     } as any
@@ -227,11 +239,12 @@ describe('detached top-level terminal scrollback restore round-trip', () => {
     expect(initPayload.restore).toBe(true)
     for (const panel of Object.values(initPayload.panels)) {
       if (panel.type !== 'terminal') continue
-      terminalRestoreData.set(panel.id, { replayFromId: panel.id })
+      terminalRegistry.setPendingRestore(panel.id)
     }
 
     // The restore map must be armed for the terminal panel.
-    expect(terminalRestoreData.has(termPanelId)).toBe(true)
+    const { pendingTerminalStarts } = await import('../terminal/registryState')
+    expect(pendingTerminalStarts.has(termPanelId)).toBe(true)
 
     // ---- 5. Mount: getOrCreate spawns fresh + replays the saved scrollback ----
     await terminalRegistry.getOrCreate(termPanelId, { workspaceId: 'ws-1' })
@@ -242,7 +255,7 @@ describe('detached top-level terminal scrollback restore round-trip', () => {
     const wrote = (entry.terminal as unknown as { writes: string[] }).writes.join('')
 
     terminalRegistry.dispose(termPanelId)
-    terminalRestoreData.delete(termPanelId)
+    pendingTerminalStarts.delete(termPanelId)
 
     return {
       logReadCalls: (window.electronAPI.terminalLogRead as any).mock.calls as any[][],

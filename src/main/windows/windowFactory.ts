@@ -9,9 +9,11 @@ import {
   registerWindow,
   getWindowType,
   getActiveMainWindow,
+  listWindows,
+  broadcastToAll,
+  sendToWindow,
 } from '../windowRegistry'
 import { stopWatchersForWindow } from '../ipc/filesystem'
-import { unregisterTerminalsForWindow } from '../ipc/shell'
 import { stopMonitorsForWindow } from '../ipc/git-monitor'
 import { stopSearchesForWindow } from '../ipc/search'
 import { clearFileGrantsForWindow, clearScopedWriteAllowancesForWindow, grantFileAccess } from '../ipc/pathValidation'
@@ -176,8 +178,8 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   // `window-all-closed` never fires).
   if (windowType === 'main') {
     win.on('close', () => {
-      for (const other of BrowserWindow.getAllWindows()) {
-        if (other.id === windowId || other.isDestroyed()) continue
+      for (const other of listWindows()) {
+        if (other.id === windowId) continue
         const t = getWindowType(other.id)
         if (t === 'dock') {
           // Use close() rather than destroy() — destroy() tears down a
@@ -194,7 +196,6 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   win.on('closed', () => {
     log.debug('Window closed id=%d', windowId)
     stopWatchersForWindow(windowId)
-    unregisterTerminalsForWindow(windowId)
     stopMonitorsForWindow(windowId)
     stopSearchesForWindow(windowId)
     clearScopedWriteAllowancesForWindow(windowId)
@@ -209,7 +210,7 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     if (windowType !== 'main') {
       const mainWin = getActiveMainWindow()
       if (mainWin) {
-        mainWin.webContents.send(SESSION_FLUSH_SAVE)
+        sendToWindow(mainWin.id, SESSION_FLUSH_SAVE)
       }
     }
   })
@@ -226,10 +227,7 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   // handler registered once below, but these broadcasts cover the cache
   // path used by any listener that wants push updates.
   const broadcastFullscreen = (value: boolean): void => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (w.isDestroyed()) continue
-      try { w.webContents.send(WINDOW_FULLSCREEN_STATE, value) } catch { /* noop */ }
-    }
+    broadcastToAll(WINDOW_FULLSCREEN_STATE, value)
   }
   win.on('enter-full-screen', () => broadcastFullscreen(anyWindowFullscreen()))
   win.on('leave-full-screen', () => broadcastFullscreen(anyWindowFullscreen()))
@@ -246,7 +244,7 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   // Per-window (not broadcast): each window's maximize state is independent.
   const sendMaximizeState = (): void => {
     if (win.isDestroyed()) return
-    try { win.webContents.send(WINDOW_MAXIMIZE_STATE, win.isMaximized()) } catch { /* noop */ }
+    sendToWindow(win.id, WINDOW_MAXIMIZE_STATE, win.isMaximized())
   }
   win.on('maximize', sendMaximizeState)
   win.on('unmaximize', sendMaximizeState)
@@ -258,8 +256,6 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   // Pass the themed boot background so the renderer can paint its loading splash
   // to match the window backdrop on the first frame (main window only).
   if (windowType === 'main') queryParts.push(`bg=${encodeURIComponent(bgColor)}`)
-  if (params?.panelType) queryParts.push(`panelType=${encodeURIComponent(params.panelType)}`)
-  if (params?.panelId) queryParts.push(`panelId=${encodeURIComponent(params.panelId)}`)
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)
   const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : ''
 

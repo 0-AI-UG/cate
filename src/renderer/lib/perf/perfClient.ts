@@ -69,7 +69,6 @@ export function getLongTasks(): { count: number; maxMs: number } {
 let fps = 0
 let frameCount = 0
 let lastFpsAt = 0
-let rafHandle = 0
 
 export function getFps(): number {
   return fps
@@ -84,7 +83,7 @@ function frameTick(now: number): void {
     frameCount = 0
     lastFpsAt = now
   }
-  rafHandle = requestAnimationFrame(frameTick)
+  requestAnimationFrame(frameTick)
 }
 
 let started = false
@@ -126,7 +125,7 @@ export function initPerfClient(): void {
     // longtask not supported in this Chromium build — skip silently.
   }
 
-  rafHandle = requestAnimationFrame(frameTick)
+  requestAnimationFrame(frameTick)
 }
 
 /** Reset the per-second rolling counters. The HUD calls this after each read. */

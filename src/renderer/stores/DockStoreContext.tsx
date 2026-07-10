@@ -7,9 +7,8 @@ import { createContext, useContext } from 'react'
 import { useStore } from 'zustand'
 import type { StoreApi } from 'zustand'
 import type { DockStore } from './dockStore'
-import { useDockStore as defaultDockStore } from './dockStore'
 
-const DockStoreContext = createContext<StoreApi<DockStore>>(defaultDockStore)
+const DockStoreContext = createContext<StoreApi<DockStore> | null>(null)
 
 export function DockStoreProvider({ store, children }: {
   store: StoreApi<DockStore>
@@ -24,11 +23,14 @@ export function DockStoreProvider({ store, children }: {
 
 /** Returns the StoreApi for use in event handlers / callbacks (.getState()) */
 export function useDockStoreApi(): StoreApi<DockStore> {
-  return useContext(DockStoreContext)
+  const store = useContext(DockStoreContext)
+  if (!store) throw new Error('DockStoreProvider is required')
+  return store
 }
 
 /** Reactive selector hook — reads from the context-provided dock store */
 export function useDockStoreContext<T>(selector: (s: DockStore) => T): T {
   const store = useContext(DockStoreContext)
+  if (!store) throw new Error('DockStoreProvider is required')
   return useStore(store, selector)
 }

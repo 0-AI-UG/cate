@@ -270,7 +270,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           setRenameValue={actions.setRenameValue}
           setRenameId={actions.setRenameId}
           commitRename={actions.commitRename}
-          beginRename={actions.beginRename}
           springLoadTimer={springLoadTimer}
           setActiveTab={actions.setActiveTab}
           onEmptyMouseDown={(e) => onTabBarMouseDown?.(e)}

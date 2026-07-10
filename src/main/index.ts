@@ -24,14 +24,12 @@ import { authManager } from '../agent/main/authManager'
 // Shared singletons for pi agent + auth (constructed at module load).
 import { agentManager } from '../agent/main/agentManager'
 import { registerWorkspaceHandlers } from './workspaceManager'
-import { addAllowedRoot } from './ipc/pathValidation'
 import { buildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv, getShellEnv } from './shellEnv'
 import { currentExclusionSet } from './ipc/filesystem'
 import { initAutoUpdater } from './auto-updater'
 import { initSentry, captureMainException, flushSentry } from './sentry'
 import { initAnalytics, devSimulateUpdateFrom, hasRunBefore } from './analytics'
-import { disableTrustScoping } from './featureFlags'
 import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
 import { PERF_GET } from '../shared/ipc-channels'
 import { TELEMETRY_NOTICE_VERSION } from '../shared/types'
@@ -44,7 +42,6 @@ import { IS_E2E } from './windows/reveal'
 import { registerDialogHandlers } from './ipc/dialogs'
 import { registerCaptureHandlers } from './ipc/capture'
 import { registerWindowControlHandlers } from './ipc/windowControls'
-import { registerPanelWindowHandlers } from './ipc/panelWindows'
 import { registerDockWindowHandlers } from './ipc/dockWindows'
 import { registerWindowPanelHandlers } from './ipc/windowPanels'
 import { registerDragHandlers } from './ipc/dragHandlers'
@@ -102,7 +99,6 @@ function registerCriticalHandlers(): void {
   registerDialogHandlers()
   registerCaptureHandlers()
   registerWindowControlHandlers()
-  registerPanelWindowHandlers()
   registerDockWindowHandlers({ createWindow })
   registerWindowPanelHandlers()
   registerDragHandlers({ createWindow })
@@ -355,11 +351,6 @@ app.whenReady().then(async () => {
 
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)
-
-  if (disableTrustScoping()) {
-    addAllowedRoot(app.getPath('home'))
-    log.warn('[security] Trust scoping disabled via dev-only flag; home directory restored to allowed roots')
-  }
 
   // Check for a crash report from the previous session — shows an opt-in
   // dialog if one exists. Deferred until the window is usable so the dialog has

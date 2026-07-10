@@ -200,7 +200,7 @@ export interface CanvasStoreActions {
   clearSelection: () => void
   selectAll: () => void
   toggleNodeSelection: (id: string) => void
-  deleteSelection: () => void
+  deleteSelection: () => Promise<void>
 
   // Bulk arrangement of the current selection
   stackSelected: (axis: 'row' | 'column', gap?: number) => void

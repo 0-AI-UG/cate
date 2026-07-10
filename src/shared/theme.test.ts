@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
-import { validateTheme, APP_COLOR_KEYS, TERMINAL_ANSI_KEYS } from './theme'
+import { validateTheme, APP_COLOR_KEYS, TERMINAL_ANSI_KEYS, THEME_SCHEMA_VERSION } from './theme'
 import { BUILT_IN_THEMES } from './themes'
 
 const SKILL_DIR = path.join(process.cwd(), 'skills', 'cate-theme')
@@ -66,12 +66,14 @@ describe('validateTheme', () => {
   })
 
   it('strips CSS-injection attempts from app values', () => {
+    const terminal = BUILT_IN_THEMES[0].terminal
     const res = validateTheme({
+      version: THEME_SCHEMA_VERSION,
       id: 'evil',
       name: 'Evil',
       type: 'dark',
       app: { 'surface-0': 'red; background: url(http://x)', 'surface-1': '#112233' },
-      terminal: { background: '#000000', foreground: '#ffffff' },
+      terminal,
       editor: { base: 'vs-dark', tokens: [] },
     })
     expect(res.ok).toBe(true)
@@ -81,15 +83,27 @@ describe('validateTheme', () => {
     }
   })
 
-  it('fills missing ANSI colors from defaults', () => {
+  it('rejects imports without the current schema version', () => {
+    const current = BUILT_IN_THEMES[0]
+    expect(validateTheme({ ...current, version: undefined }).ok).toBe(false)
+    expect(validateTheme({ ...current, version: THEME_SCHEMA_VERSION - 1 }).ok).toBe(false)
+  })
+
+  it('rejects incomplete terminal palettes', () => {
     const res = validateTheme({
+      version: THEME_SCHEMA_VERSION,
       id: 'partial',
       name: 'Partial',
       type: 'dark',
       terminal: { background: '#101010', foreground: '#e0e0e0' },
       editor: { base: 'vs-dark', tokens: [] },
     })
-    expect(res.ok).toBe(true)
-    if (res.ok) expect(res.theme.terminal.red).toBeTruthy()
+    expect(res.ok).toBe(false)
+  })
+
+  it('rejects legacy aliases for canonical fields', () => {
+    const current = BUILT_IN_THEMES[0]
+    const { name: _name, type: _type, ...rest } = current
+    expect(validateTheme({ ...rest, label: 'Legacy', kind: 'dark' }).ok).toBe(false)
   })
 })

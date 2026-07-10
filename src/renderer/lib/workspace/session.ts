@@ -30,14 +30,3 @@ export {
   buildRestoredCanvasState,
 } from './sessionStartup'
 export { setupAutoSave } from './sessionAutosave'
-
-// Terminal restore data — the Map lives in the neutral lib/terminal module so
-// panelTransfer.ts can seed replay entries without importing this heavy module;
-// re-exported here for back-compat with existing importers.
-export { terminalRestoreData } from '../terminal/terminalRestoreData'
-
-// Deferred snapshots for inactive workspaces — restored on first switch. The
-// Map lives in the neutral lib/workspace/deferredRestore module (so appStore can
-// read it without importing session, breaking the old cycle); re-exported here
-// for existing importers.
-export { deferredSnapshots } from './deferredRestore'

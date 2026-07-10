@@ -14,6 +14,7 @@ vi.mock('../logger', () => ({
 }))
 vi.mock('../terminal/terminalRegistry', () => ({
   terminalRegistry: {
+    setPendingRestore: vi.fn(),
     dispose: vi.fn(),
     disposeWorkspace: vi.fn(),
     getEntry: vi.fn(),
@@ -75,7 +76,7 @@ function snapshotWithWorktrees(): SessionSnapshot {
       cv: {
         id: 'cv',
         canvasNodes: {
-          'node-ed-1': { id: 'node-ed-1', panelId: 'ed-1', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
+          'node-ed-1': { id: 'node-ed-1', dockLayout: { type: 'tabs', id: 'stack-ed-1', panelIds: ['ed-1'], activeIndex: 0 }, origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
         },
         zoomLevel: 1,
         viewportOffset: { x: 0, y: 0 },
@@ -156,7 +157,7 @@ describe('worktree session persistence', () => {
         cv: {
           id: 'cv',
           canvasNodes: {
-            'node-t-1': { id: 'node-t-1', panelId: 't-1', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
+            'node-t-1': { id: 'node-t-1', dockLayout: { type: 'tabs', id: 'stack-t-1', panelIds: ['t-1'], activeIndex: 0 }, origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
           },
           zoomLevel: 1,
           viewportOffset: { x: 0, y: 0 },
@@ -202,7 +203,7 @@ describe('worktree session persistence', () => {
         cv: {
           id: 'cv',
           canvasNodes: {
-            'node-t-1': { id: 'node-t-1', panelId: 't-1', origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
+            'node-t-1': { id: 'node-t-1', dockLayout: { type: 'tabs', id: 'stack-t-1', panelIds: ['t-1'], activeIndex: 0 }, origin: { x: 0, y: 0 }, size: { width: 200, height: 150 }, zOrder: 0, creationIndex: 0 },
           },
           zoomLevel: 1,
           viewportOffset: { x: 0, y: 0 },

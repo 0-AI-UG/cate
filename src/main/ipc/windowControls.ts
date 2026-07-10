@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { windowFromEvent, closeWindowsForWorkspace, getActiveMainWindow } from '../windowRegistry'
+import { windowFromEvent, closeWindowsForWorkspace, getActiveMainWindow, sendToWindow } from '../windowRegistry'
 import { anyWindowFullscreen } from '../windows/fullscreen'
 import {
   WINDOW_SET_TITLE,
@@ -51,7 +51,7 @@ export function registerWindowControlHandlers(): void {
   // and destroys the window instead of reloading the project.
   ipcMain.handle(RUN_ACTION_IN_MAIN, async (_e, action: string) => {
     const main = getActiveMainWindow()
-    if (main && !main.isDestroyed()) main.webContents.send(MENU_TRIGGER_ACTION, action)
+    if (main) sendToWindow(main.id, MENU_TRIGGER_ACTION, action)
   })
   ipcMain.on(WINDOW_IS_MAXIMIZED, (event) => {
     event.returnValue = windowFromEvent(event)?.isMaximized() ?? false

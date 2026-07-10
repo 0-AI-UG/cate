@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentModelDescriptor, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CanvasLayoutSnapshot, CateWindowParams, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, DockStateSnapshot, FileSearchOptions, FileSearchResult, FileTreeNode, GitInfo, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelState, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SessionSnapshot, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentModelDescriptor, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { ExtensionListEntry, ExtensionManifest } from './extensions'
 
@@ -318,12 +318,6 @@ export interface ElectronAPI {
   // Shell / Process Monitor
   // ---------------------------------------------------------------------------
 
-  /** Register a terminal for process activity monitoring. */
-  shellRegisterTerminal(terminalId: string, pid?: number): Promise<void>
-
-  /** Unregister a terminal from process monitoring. */
-  shellUnregisterTerminal(terminalId: string): Promise<void>
-
   /** Subscribe to shell activity updates (main -> renderer). */
   onShellActivityUpdate(
     callback: (
@@ -578,9 +572,6 @@ export interface ElectronAPI {
   /** Delete a named layout. */
   layoutDelete(name: string): Promise<void>
 
-  /** Capture the current page as a data URL for panel previews. */
-  capturePage(): Promise<string | null>
-
   /** Capture a webview's content and save as PNG. Returns file path + data URL or
    *  null. Pass `{ wantDataUrl: false }` (CLI/agent path) to skip the base64
    *  encode and get back only the file path. */
@@ -606,7 +597,7 @@ export interface ElectronAPI {
    *  which must resolve inside a workspace root. `mode` is 'copy' or 'move'.
    *  Returns the created destination paths and a count of entries that failed. */
   fsImportEntries(sources: string[], destDir: string, mode: 'copy' | 'move', workspaceId?: string): Promise<{ created: string[]; failed: number }>
-  shellShowInFolder(filePath: string): Promise<void>
+  shellShowInFolder(filePath: string, workspaceId?: string): Promise<void>
 
   // ---------------------------------------------------------------------------
   // Notifications
@@ -656,30 +647,15 @@ export interface ElectronAPI {
   // Panel transfer (cross-window)
   // ---------------------------------------------------------------------------
 
-  /** Initiate a cross-window panel transfer. Returns new window ID if a window was created. */
-  panelTransfer(snapshot: PanelTransferSnapshot, targetWindowId?: number, workspaceId?: string): Promise<number | void>
-
   /** Acknowledge receipt of a panel transfer (flushes buffered terminal data). */
   panelTransferAck(ptyId?: string): Promise<void>
 
   /** Subscribe to incoming panel transfers (main -> renderer). */
   onPanelReceive(callback: (snapshot: PanelTransferSnapshot) => void): () => void
 
-  /** Request this panel window to dock back into the main window. Passing the
-   *  panel's full transfer snapshot lets the main window reconstruct the panel
-   *  (its record was removed there on detach) and arms the PTY transfer home. */
-  panelWindowDockBack(snapshot?: PanelTransferSnapshot): Promise<void>
-
-  /** Subscribe to dock-back requests from panel windows (main -> renderer). The
-   *  snapshot carries the panel + canvas/terminal state to re-integrate. */
-  onPanelWindowDockBack(callback: (payload: { panelWindowId: number; snapshot?: PanelTransferSnapshot }) => void): () => void
-
   // ---------------------------------------------------------------------------
   // Cross-window drag-and-drop
   // ---------------------------------------------------------------------------
-
-  /** Start an OS-level drag with a panel transfer snapshot. */
-  dragStart(snapshot: PanelTransferSnapshot): Promise<void>
 
   /** Panel was dropped on desktop — create a new dock window. Resolves to
    *  `null` when the main window is in macOS native fullscreen; the caller
@@ -691,10 +667,8 @@ export interface ElectronAPI {
    *  without an IPC round-trip per mousemove. */
   isMainWindowFullscreen(): boolean
 
-  /** Subscribe to drag end events (main -> renderer). The optional `dragId`
-   *  identifies which cross-window drag ended; a remote-drag listener ignores
-   *  an end whose id doesn't match its own active drag. */
-  onDragEnd(callback: (dragId?: string) => void): () => void
+  /** Subscribe to drag end events (main -> renderer), targeted to one drag session. */
+  onDragEnd(callback: (dragId: string) => void): () => void
 
   /** Subscribe to native-fullscreen state changes. Fires with the new boolean
    *  whenever any Cate window enters or leaves macOS native fullscreen. */
@@ -760,7 +734,7 @@ export interface ElectronAPI {
   /** Subscribe to cross-window drag cursor updates (main -> renderer). The
    *  `dragId` identifies the drag session so a window can match a later
    *  targeted DRAG_END against the drag it's tracking. */
-  onCrossWindowDragUpdate(callback: (screenPos: Point, snapshot: PanelTransferSnapshot, dragId?: string) => void): () => void
+  onCrossWindowDragUpdate(callback: (screenPos: Point, snapshot: PanelTransferSnapshot, dragId: string) => void): () => void
 
   /** Claim the in-flight cross-window drop. Main is the arbiter: `accepted` is
    *  false when the drag already resolved unclaimed (the source has fallen back
@@ -1064,7 +1038,7 @@ export interface ElectronAPI {
    *  mirrored into live sessions. Renderers re-fetch provider status + models. */
   onAuthChanged(callback: () => void): () => void
 
-  /** Save an API key for a built-in keyed provider (encrypted via safeStorage). */
+  /** Save an API key for a built-in keyed provider in the shared pi auth config. */
   authSaveApiKey(providerId: string, apiKey: string): Promise<void>
 
   /** Disconnect a provider (clears stored credentials). */

@@ -21,9 +21,6 @@ import {
   getCanvasSnapshotForPanel,
   getWorkspaceCanvasPanelIds,
   getWorkspaceDockSnapshot,
-  registerCanvasOps,
-  unregisterCanvasOps,
-  invalidateWorkspaceCanvasCache,
   getCanvasOpsById,
 } from './canvasAccess'
 import {
@@ -31,6 +28,7 @@ import {
   releaseWorkspaceDockStore,
 } from './dockRegistry'
 import { useAppStore } from '../../stores/appStore'
+import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
 
 const WS = 'ws-snap'
 const CANVAS = 'canvas-panel-1'
@@ -49,18 +47,12 @@ function setWorkspace(extra: Record<string, unknown>, panels?: Record<string, un
   } as any)
 }
 
-function fakeCanvasOps(nodes: Record<string, unknown>) {
-  return {
-    storeApi: {
-      getState: () => ({
-        nodes,
-        zoomLevel: 2,
-        viewportOffset: { x: 5, y: 6 },
-        nodeForPanel: (panelId: string) =>
-          Object.values(nodes).some((n: any) => n.panelId === panelId) ? 'node-x' : undefined,
-      }),
-    },
-  } as any
+function seedCanvas(panelId: string, nodes: Record<string, unknown>) {
+  getOrCreateCanvasStoreForPanel(panelId).setState({
+    nodes,
+    zoomLevel: 2,
+    viewportOffset: { x: 5, y: 6 },
+  } as any)
 }
 
 beforeEach(() => {
@@ -68,9 +60,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  unregisterCanvasOps(CANVAS)
-  unregisterCanvasOps(CANVAS2)
-  invalidateWorkspaceCanvasCache(WS)
+  releaseCanvasStoreForPanel(CANVAS)
+  releaseCanvasStoreForPanel(CANVAS2)
   releaseWorkspaceDockStore(WS)
   useAppStore.setState({ workspaces: [] } as any)
   vi.restoreAllMocks()
@@ -84,7 +75,7 @@ describe('getWorkspaceCanvasSnapshot', () => {
       zoomLevel: 1,
       viewportOffset: { x: 0, y: 0 },
     })
-    registerCanvasOps(CANVAS, fakeCanvasOps({ n1: { id: 'n1', panelId: 'p1' } }))
+    seedCanvas(CANVAS, { n1: { id: 'n1', panelId: 'p1' } })
 
     const snap = getWorkspaceCanvasSnapshot(WS)
     expect(snap).not.toBeNull()
@@ -126,7 +117,7 @@ describe('getCanvasSnapshotForPanel (multi-canvas)', () => {
 
   it('reads the LIVE store for a specific canvas panel when mounted', () => {
     setWorkspace({ canvasNodes: {}, zoomLevel: 1, viewportOffset: { x: 0, y: 0 } }, twoCanvasPanels)
-    registerCanvasOps(CANVAS2, fakeCanvasOps({ s1: { id: 's1', panelId: 'p-sec' } }))
+    seedCanvas(CANVAS2, { s1: { id: 's1', panelId: 'p-sec' } })
 
     const snap = getCanvasSnapshotForPanel(CANVAS2)
     expect(Object.keys(snap!.nodes)).toEqual(['s1'])
@@ -176,7 +167,7 @@ describe('getCanvasSnapshotForPanel (multi-canvas)', () => {
 
 describe('getWorkspaceDockSnapshot', () => {
   it('returns the persisted dockState when no live dock store exists', () => {
-    const dockState = { zones: { center: { visible: true, layout: null } }, locations: {} }
+    const dockState = { zones: { center: { visible: true, layout: null } } }
     setWorkspace({ dockState })
     expect(getWorkspaceDockSnapshot(WS)).toBe(dockState)
   })
@@ -188,7 +179,6 @@ describe('getWorkspaceDockSnapshot', () => {
 
     const snap = getWorkspaceDockSnapshot(WS)
     expect(snap).toBeDefined()
-    expect(snap!.locations['p-term']).toBeDefined()
-    expect(snap!.locations['p-term'].type).toBe('dock')
+    expect(getOrCreateWorkspaceDockStore(WS).getState().getPanelLocation('p-term')).toMatchObject({ type: 'dock' })
   })
 })

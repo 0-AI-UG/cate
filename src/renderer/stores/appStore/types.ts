@@ -7,7 +7,6 @@ import type {
   WorkspaceState,
   WorkspaceInfo,
   PanelState,
-  PanelType,
   BrowserTab,
   Point,
   Size,
@@ -95,9 +94,8 @@ export interface AppStoreActions {
   /** User-initiated rename. Marks the panel as user-overridden so OSC updates
    *  no longer fight the chosen name. */
   renamePanelByUser: (workspaceId: string, panelId: string, title: string) => void
-  updatePanelUrl: (workspaceId: string, panelId: string, url: string) => void
-  /** Browser panels only: persist the open tabs + active tab. Mirrors the active
-   *  tab's url into the panel's `url` for restore/transfer compatibility. */
+  updateBrowserActiveTabUrl: (workspaceId: string, panelId: string, url: string) => void
+  /** Browser panels only: persist the sole navigation authority. */
   updatePanelTabs: (workspaceId: string, panelId: string, tabs: BrowserTab[], activeTabId: string) => void
   /** Browser panels only: set/clear the per-panel proxy. Pass undefined to
    *  revert the panel to the shared (direct) browser session. */

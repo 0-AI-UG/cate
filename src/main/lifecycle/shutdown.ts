@@ -1,8 +1,8 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, ipcMain, dialog } from 'electron'
 import log from '../logger'
 import { createWindow } from '../windows/windowFactory'
 import { setMainWindowReady, flushPendingOpenPaths } from './openPath'
-import { getActiveMainWindow, sendToWindow, listDockWindowIds } from '../windowRegistry'
+import { getActiveMainWindow, sendToWindow, listDockWindowIds, listWindows, windowFromEvent } from '../windowRegistry'
 import { flushDockWindowsBeforeQuit } from '../dockWindowFlush'
 import { flushAllLoggers, killAllTerminals } from '../ipc/terminal'
 import { getRunningTerminals } from '../ipc/shell'
@@ -135,7 +135,7 @@ export function registerLifecycleHandlers(): void {
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (listWindows().length === 0) {
       setMainWindowReady(false)
       const win = createWindow({ type: 'main' })
       let readyHandled = false
@@ -175,7 +175,7 @@ export function registerLifecycleHandlers(): void {
       if (prompt) {
         event.preventDefault()
         const focusWin =
-          getActiveMainWindow() ?? BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+          getActiveMainWindow() ?? listWindows()[0]
         void dialog
           .showMessageBox(focusWin!, {
             type: 'warning',
@@ -237,7 +237,7 @@ export function registerLifecycleHandlers(): void {
       requestSync: (id) => sendToWindow(id, DOCK_WINDOW_FLUSH_SYNC),
       subscribeAck: (handler) => {
         const listener = (e: Electron.IpcMainEvent) => {
-          const win = BrowserWindow.fromWebContents(e.sender)
+          const win = windowFromEvent(e)
           if (win) handler(win.id)
         }
         ipcMain.on(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
@@ -253,7 +253,7 @@ export function registerLifecycleHandlers(): void {
           proceed()
           return
         }
-        mainWin.webContents.send(SESSION_FLUSH_SAVE)
+        sendToWindow(mainWin.id, SESSION_FLUSH_SAVE)
         // Safety timeout — don't hang forever if the renderer is unresponsive
         setTimeout(() => {
           if (!sessionFlushed) {

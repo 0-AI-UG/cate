@@ -9,6 +9,7 @@ import type { CanvasStore } from '../../stores/canvasStore'
 import type { PanelType, Point, Size, CanvasNodeId, CanvasNodeState } from '../../../shared/types'
 import { findNodeDockStore } from '../../panels/nodeDockRegistry'
 import { collectPanelIds } from '../../../shared/collectPanelIds'
+import { removePanelFromTree } from '../../stores/dockStore'
 
 // -----------------------------------------------------------------------------
 // Canvas operations callback — the contract createCanvasOps implements, letting
@@ -69,11 +70,16 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       // panel is interactively closed, so the node's mini-dock is mounted) and
       // fall back to the projection if the store isn't registered.
       const liveStore = findNodeDockStore(nodeId)
-      const layout = liveStore
-        ? liveStore.getState().zones.center.layout
-        : node.dockLayout
-      if (layout && collectPanelIds(layout).length > 0) return
-      state.removeNode(nodeId)
+      if (liveStore) {
+        liveStore.getState().undockPanel(panelId)
+        const layout = liveStore.getState().zones.center.layout
+        if (layout) state.setNodeDockLayout(nodeId, layout)
+        else state.removeNode(nodeId)
+        return
+      }
+      const layout = removePanelFromTree(node.dockLayout, panelId)
+      if (layout && collectPanelIds(layout).length > 0) state.setNodeDockLayout(nodeId, layout)
+      else state.removeNode(nodeId)
     },
 
     loadWorkspaceCanvas(

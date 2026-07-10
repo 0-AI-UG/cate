@@ -10,8 +10,8 @@
 // etc. We parse enough to populate the sidebar and to convert a full session
 // into our renderer transcript on resume.
 //
-// Pi handles version migration when it loads a session; for the *list view* we
-// tolerate v1/v2/v3 by being lenient about which fields we read.
+// Pi owns the session schema; the list view reads only the stable fields it
+// needs and leaves loading/validation of a resumed conversation to Pi itself.
 // =============================================================================
 
 import log from '../../main/logger'

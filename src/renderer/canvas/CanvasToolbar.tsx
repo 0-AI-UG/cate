@@ -24,7 +24,7 @@ import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
 import { useUIStateStore } from '../stores/uiStateStore'
 import { cornerFromPoint } from '../lib/canvasCorners'
-import { useShortcutStore } from '../stores/shortcutStore'
+import { useResolvedShortcuts } from '../stores/shortcutStore'
 import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
@@ -52,7 +52,6 @@ interface CanvasToolbarProps {
   onNewBrowser: () => void
   onNewEditor: () => void
   onNewAgent: () => void
-  onNewCanvas: () => void
   onZoomIn: () => void
   onZoomOut: () => void
 }
@@ -212,7 +211,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onNewBrowser,
   onNewEditor,
   onNewAgent,
-  onNewCanvas,
   onZoomIn,
   onZoomOut,
 }) => {
@@ -221,12 +219,13 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const toggleMinimapOpen = useUIStore((s) => s.toggleMinimapOpen)
   const activeTool = useUIStore((s) => s.activeTool)
   const setActiveTool = useUIStore((s) => s.setActiveTool)
-  const toggleToolKey = useShortcutStore((s) => displayString(s.shortcuts.toggleTool))
-  const newBrowserKey = useShortcutStore((s) => displayString(s.shortcuts.newBrowser))
-  const newEditorKey = useShortcutStore((s) => displayString(s.shortcuts.newEditor))
-  const zoomInKey = useShortcutStore((s) => displayString(s.shortcuts.zoomIn))
-  const zoomOutKey = useShortcutStore((s) => displayString(s.shortcuts.zoomOut))
-  const zoomResetKey = useShortcutStore((s) => displayString(s.shortcuts.zoomReset))
+  const shortcuts = useResolvedShortcuts()
+  const toggleToolKey = displayString(shortcuts.toggleTool)
+  const newBrowserKey = displayString(shortcuts.newBrowser)
+  const newEditorKey = displayString(shortcuts.newEditor)
+  const zoomInKey = displayString(shortcuts.zoomIn)
+  const zoomOutKey = displayString(shortcuts.zoomOut)
+  const zoomResetKey = displayString(shortcuts.zoomReset)
   const zoomText = `${Math.round(zoom * 100)}%`
 
   const cateAgent = useCateAgentWs(workspaceId)

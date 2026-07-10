@@ -23,7 +23,7 @@ export type CanvasTool = 'select' | 'hand'
 const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git', 'search']
 
 /** Filter to known views and ensure every view appears exactly once (missing
- *  ones appended to the right). Tolerates partial/legacy/hand-edited shapes. */
+ *  ones appended to the right). Tolerates partial hand-edited shapes. */
 export function normalizeSidebarLayout(raw: Partial<SidebarLayout> | null | undefined): SidebarLayout {
   const left = (raw?.left ?? []).filter((v) => ALL_VIEWS.includes(v))
   const right = (raw?.right ?? []).filter((v) => ALL_VIEWS.includes(v))
@@ -52,7 +52,6 @@ interface UIStoreState {
   showSettings: boolean
   /** Optional initial settings tab to open when showSettings flips to true. */
   settingsInitialTab: string | null
-  fileExplorerVisible: boolean
   /** Active marquee selection rectangle in canvas-space coordinates, or null when idle. */
   marquee: { startX: number; startY: number; currentX: number; currentY: number } | null
   /** Active canvas tool. Sticky: toggled via the toolbar or the Space key. */
@@ -81,8 +80,6 @@ interface UIStoreActions {
   openSettings: (initialTab?: string) => void
   closeSettings: () => void
   toggleSidebar: () => void
-  toggleFileExplorer: () => void
-  setFileExplorerVisible: (visible: boolean) => void
   setMarquee: (marquee: { startX: number; startY: number; currentX: number; currentY: number } | null) => void
   setActiveTool: (tool: CanvasTool) => void
   setActiveLeftSidebarView: (view: SidebarView | null) => void
@@ -112,7 +109,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   minimapOpen: false,
   showSettings: false,
   settingsInitialTab: null,
-  fileExplorerVisible: false,
   marquee: null,
   activeTool: 'select',
   activeLeftSidebarView: 'workspaces',
@@ -164,14 +160,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
       const first = getSidebarLayout().left[0] ?? null
       set({ activeLeftSidebarView: first })
     }
-  },
-
-  toggleFileExplorer() {
-    set((state) => ({ fileExplorerVisible: !state.fileExplorerVisible }))
-  },
-
-  setFileExplorerVisible(visible) {
-    set({ fileExplorerVisible: visible })
   },
 
   setMarquee(marquee) {

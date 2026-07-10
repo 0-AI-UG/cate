@@ -9,33 +9,24 @@
 // ps/lsof); for a REMOTE terminal the scans run on the daemon host.
 // =============================================================================
 
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import log from '../logger'
 import {
-  SHELL_REGISTER_TERMINAL,
-  SHELL_UNREGISTER_TERMINAL,
   SHELL_ACTIVITY_UPDATE,
   SHELL_PORTS_UPDATE,
   SHELL_CWD_UPDATE,
   SHELL_AGENT_SCREEN_STATE,
 } from '../../shared/ipc-channels'
-import { getRuntimeForTerminal } from './terminal'
-import { sendToWindow, windowFromEvent, broadcastToAll } from '../windowRegistry'
+import { getRuntimeForTerminal, getTerminalIds, getTerminalOwner, onTerminalSessionsChanged } from './terminal'
+import { sendToWindow, broadcastToAll, isAnyWindowFocused } from '../windowRegistry'
 import type { Runtime, PtyActivity } from '../runtime/types'
 import type { TerminalActivity } from '../../shared/types'
-
-interface TerminalRegistration {
-  ownerWindowId: number
-}
 
 interface PreviousState {
   /** Last agent name seen — carried across transient scan misses so the tab
    *  name doesn't flicker when a single scan cycle fails to spot the agent. */
   previousAgentName: string | null
 }
-
-// Registered terminals for process monitoring (keyed by pty id == terminal id).
-const registeredTerminals: Map<string, TerminalRegistration> = new Map()
 
 // Track previous state for transition detection
 const previousStates: Map<string, PreviousState> = new Map()
@@ -51,7 +42,7 @@ const lastActivity: Map<string, TerminalActivity> = new Map()
  */
 export function getRunningTerminals(): Array<{ processName: string | null }> {
   const out: Array<{ processName: string | null }> = []
-  for (const terminalId of registeredTerminals.keys()) {
+  for (const terminalId of getTerminalIds()) {
     const activity = lastActivity.get(terminalId)
     if (activity?.type === 'running') out.push({ processName: activity.processName })
   }
@@ -91,9 +82,7 @@ let anyWindowFocused = true
 let focusHooksInstalled = false
 
 function refreshFocusState(): boolean {
-  anyWindowFocused = BrowserWindow.getAllWindows().some(
-    (w) => !w.isDestroyed() && w.isFocused(),
-  )
+  anyWindowFocused = isAnyWindowFocused()
   return anyWindowFocused
 }
 
@@ -127,7 +116,7 @@ function installFocusHooks(): void {
  */
 function groupByRuntime(): Map<Runtime, string[]> {
   const groups = new Map<Runtime, string[]>()
-  for (const terminalId of registeredTerminals.keys()) {
+  for (const terminalId of getTerminalIds()) {
     const runtime = getRuntimeForTerminal(terminalId)
     if (!runtime) continue
     const ids = groups.get(runtime)
@@ -165,8 +154,8 @@ async function runActivityScan(): Promise<void> {
         }
 
         for (const terminalId of toScan) {
-          const info = registeredTerminals.get(terminalId)
-          if (!info) continue
+          const ownerWindowId = getTerminalOwner(terminalId)
+          if (ownerWindowId == null) continue
           const scanned = results[terminalId]
           const prev = previousStates.get(terminalId) || { previousAgentName: null }
           const activity: TerminalActivity = scanned?.activity ?? { type: 'idle' }
@@ -176,7 +165,7 @@ async function runActivityScan(): Promise<void> {
 
           previousStates.set(terminalId, { previousAgentName: agentName })
           lastActivity.set(terminalId, activity)
-          sendToWindow(info.ownerWindowId, SHELL_ACTIVITY_UPDATE, terminalId, activity, agentName, agentPresent)
+          sendToWindow(ownerWindowId, SHELL_ACTIVITY_UPDATE, terminalId, activity, agentName, agentPresent)
         }
       }),
     )
@@ -206,8 +195,8 @@ async function runSlowScan(): Promise<void> {
             ids.map(async (terminalId) => {
               try {
                 const cwd = await runtime.process.getCwd(terminalId)
-                const info = registeredTerminals.get(terminalId)
-                if (cwd && info) sendToWindow(info.ownerWindowId, SHELL_CWD_UPDATE, terminalId, cwd)
+                const ownerWindowId = getTerminalOwner(terminalId)
+                if (cwd && ownerWindowId != null) sendToWindow(ownerWindowId, SHELL_CWD_UPDATE, terminalId, cwd)
               } catch { /* ignore */ }
             }),
           )
@@ -223,10 +212,10 @@ async function runSlowScan(): Promise<void> {
           log.debug('[shell] scanPorts failed: %s', err instanceof Error ? err.message : String(err))
         }
         for (const terminalId of ids) {
-          const info = registeredTerminals.get(terminalId)
-          if (!info) continue
+          const ownerWindowId = getTerminalOwner(terminalId)
+          if (ownerWindowId == null) continue
           const ports = (portMap[terminalId] ?? []).slice().sort((a, b) => a - b)
-          sendToWindow(info.ownerWindowId, SHELL_PORTS_UPDATE, terminalId, ports)
+          sendToWindow(ownerWindowId, SHELL_PORTS_UPDATE, terminalId, ports)
         }
       }),
     )
@@ -242,7 +231,7 @@ async function runSlowScan(): Promise<void> {
  * correct (so a focus flip between this app's own windows doesn't churn timers).
  */
 function applyPollCadence(): void {
-  if (registeredTerminals.size === 0) return
+  if (getTerminalIds().length === 0) return
   const activityMs = anyWindowFocused ? ACTIVITY_POLL_FOCUSED_MS : ACTIVITY_POLL_UNFOCUSED_MS
   const slowMs = anyWindowFocused ? SLOW_POLL_FOCUSED_MS : SLOW_POLL_UNFOCUSED_MS
   if (pollInterval && slowPollInterval && activeActivityMs === activityMs && activeSlowMs === slowMs) {
@@ -269,49 +258,22 @@ function stopPolling(): void {
   activeSlowMs = 0
 }
 
-/**
- * Unregister all terminals owned by a specific window (called on window close).
- */
-export function unregisterTerminalsForWindow(windowId: number): void {
-  for (const [terminalId, info] of registeredTerminals) {
-    if (info.ownerWindowId === windowId) {
-      registeredTerminals.delete(terminalId)
-      previousStates.delete(terminalId)
-      lastActivity.delete(terminalId)
-    }
-  }
-  if (registeredTerminals.size === 0) {
-    stopPolling()
-  }
-}
-
 export function registerHandlers(): void {
   installFocusHooks()
-
-  ipcMain.handle(
-    SHELL_REGISTER_TERMINAL,
-    async (event, terminalId: string, _pid?: number) => {
-      // The scans are now keyed by the pty id and run inside the terminal's
-      // runtime ProcessHost (which owns the pid), so we no longer need a local
-      // pid here — only that the terminal resolves to a runtime. (The legacy
-      // `pid` arg is accepted but unused.)
-      const runtime = getRuntimeForTerminal(terminalId)
-      if (!runtime) {
-        log.warn(`[shell] No runtime found for terminal ${terminalId}`)
-        return
+  onTerminalSessionsChanged(() => {
+    const activeIds = new Set(getTerminalIds())
+    for (const terminalId of previousStates.keys()) {
+      if (!activeIds.has(terminalId)) {
+        previousStates.delete(terminalId)
+        lastActivity.delete(terminalId)
       }
-
-      const win = windowFromEvent(event)
-      const ownerWindowId = win?.id ?? -1
-
-      registeredTerminals.set(terminalId, { ownerWindowId })
-      previousStates.set(terminalId, { previousAgentName: null })
-
-      // Start (or re-confirm) polling on first registration, at the cadence
-      // matching the current focus state.
-      applyPollCadence()
-    },
-  )
+    }
+    for (const terminalId of activeIds) {
+      if (!previousStates.has(terminalId)) previousStates.set(terminalId, { previousAgentName: null })
+    }
+    if (activeIds.size === 0) stopPolling()
+    else applyPollCadence()
+  })
 
   // Renderer reports screen-derived agent state; rebroadcast so every
   // window's sidebar gets it (the sidebar in the main window won't otherwise
@@ -320,12 +282,4 @@ export function registerHandlers(): void {
     broadcastToAll(SHELL_AGENT_SCREEN_STATE, terminalId, state)
   })
 
-  ipcMain.handle(SHELL_UNREGISTER_TERMINAL, async (_event, terminalId: string) => {
-    registeredTerminals.delete(terminalId)
-    previousStates.delete(terminalId)
-    lastActivity.delete(terminalId)
-    if (registeredTerminals.size === 0) {
-      stopPolling()
-    }
-  })
 }

@@ -78,9 +78,11 @@ vi.mock('../windowRegistry', () => ({
   registerWindow: () => {},
   getWindowType: () => undefined,
   getActiveMainWindow: () => null,
+  listWindows: () => hooks.created.filter((w) => !(w as { destroyed: boolean }).destroyed),
+  broadcastToAll: () => {},
+  sendToWindow: () => {},
 }))
 vi.mock('../ipc/filesystem', () => ({ stopWatchersForWindow: () => {} }))
-vi.mock('../ipc/shell', () => ({ unregisterTerminalsForWindow: () => {} }))
 vi.mock('../ipc/git-monitor', () => ({ stopMonitorsForWindow: () => {} }))
 vi.mock('../ipc/search', () => ({ stopSearchesForWindow: () => {} }))
 vi.mock('../ipc/pathValidation', () => ({

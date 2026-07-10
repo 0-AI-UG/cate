@@ -1,6 +1,6 @@
 // =============================================================================
-// DragSession — mutable drag state (drop zones, canvas stores, active
-// dispatcher). A module-level default singleton is exposed via
+// RendererSession — the per-renderer owner of runtime stores and drag state.
+// A module-level singleton is exposed via
 // `getDefaultSession()`; the live drag is per-window anyway (only one window
 // has the cursor), so a single instance is sufficient.
 //
@@ -14,6 +14,7 @@
 import type { StoreApi } from 'zustand'
 import type { Point, Size } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
+import type { DockStore } from '../stores/dockStore'
 import type { DropZoneEntry } from './registry'
 import type { DragOpSourceSpec, RuntimeState } from './types'
 
@@ -43,7 +44,7 @@ interface CanvasStoreEntry {
   knownNodeIds: Set<string>
 }
 
-export class DragSession {
+export class RendererSession {
   active: ActiveDispatch | null = null
   listenersAttached = false
   wasDragged: { current: boolean } = { current: false }
@@ -51,6 +52,8 @@ export class DragSession {
   readonly dropZones = new Map<string, DropZoneEntry>()
   private readonly canvasStoreEntries = new Map<string, CanvasStoreEntry>()
   readonly nodeToStore = new Map<string, string>() // nodeId → panelId
+  private readonly nodeDockStores = new Map<string, StoreApi<DockStore>>()
+  private readonly workspaceDockStores = new Map<string, StoreApi<DockStore>>()
 
   // ---------------------------------------------------------------------------
   // Drop zones
@@ -141,6 +144,14 @@ export class DragSession {
     return null
   }
 
+  getCanvasStore(panelId: string): StoreApi<CanvasStore> | undefined {
+    return this.canvasStoreEntries.get(panelId)?.api
+  }
+
+  getCanvasStores(): StoreApi<CanvasStore>[] {
+    return Array.from(this.canvasStoreEntries.values(), (entry) => entry.api)
+  }
+
   getCanvasStoreForNode(nodeId: string): StoreApi<CanvasStore> | null {
     const panelId = this.nodeToStore.get(nodeId)
     if (!panelId) return null
@@ -172,6 +183,44 @@ export class DragSession {
     return sessionStore ?? callerStore ?? null
   }
 
+  registerNodeDockStore(canvasPanelId: string, nodeId: string, store: StoreApi<DockStore>): void {
+    this.nodeDockStores.set(`${canvasPanelId}:${nodeId}`, store)
+  }
+
+  unregisterNodeDockStore(canvasPanelId: string, nodeId: string): void {
+    this.nodeDockStores.delete(`${canvasPanelId}:${nodeId}`)
+  }
+
+  getNodeDockStore(canvasPanelId: string, nodeId: string): StoreApi<DockStore> | undefined {
+    return this.nodeDockStores.get(`${canvasPanelId}:${nodeId}`)
+  }
+
+  findNodeDockStore(nodeId: string): StoreApi<DockStore> | null {
+    for (const [key, store] of this.nodeDockStores) {
+      if (key.endsWith(`:${nodeId}`)) return store
+    }
+    return null
+  }
+
+  findNodeIdForDockStore(store: StoreApi<DockStore>): string | null {
+    for (const [key, candidate] of this.nodeDockStores) {
+      if (candidate === store) return key.slice(key.indexOf(':') + 1)
+    }
+    return null
+  }
+
+  getWorkspaceDockStore(workspaceId: string): StoreApi<DockStore> | undefined {
+    return this.workspaceDockStores.get(workspaceId)
+  }
+
+  registerWorkspaceDockStore(workspaceId: string, store: StoreApi<DockStore>): void {
+    this.workspaceDockStores.set(workspaceId, store)
+  }
+
+  releaseWorkspaceDockStore(workspaceId: string): void {
+    this.workspaceDockStores.delete(workspaceId)
+  }
+
   // ---------------------------------------------------------------------------
   // Reset (for tests)
   // ---------------------------------------------------------------------------
@@ -187,13 +236,13 @@ export class DragSession {
 // Default singleton.
 // -----------------------------------------------------------------------------
 
-let defaultSession: DragSession = new DragSession()
+let defaultSession: RendererSession = new RendererSession()
 
-export function getDefaultSession(): DragSession {
+export function getDefaultSession(): RendererSession {
   return defaultSession
 }
 
 /** Test-only: replace the default session (so each test starts clean). */
-export function __setDefaultSessionForTests(session: DragSession): void {
+export function __setDefaultSessionForTests(session: RendererSession): void {
   defaultSession = session
 }

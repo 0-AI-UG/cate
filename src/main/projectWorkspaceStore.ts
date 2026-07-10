@@ -4,6 +4,7 @@ import fsSync from 'fs'
 import crypto from 'crypto'
 import path from 'path'
 import log from './logger'
+import { KeyedLock } from './keyedLock'
 import {
   PROJECT_STATE_SAVE,
   PROJECT_STATE_LOAD,
@@ -14,7 +15,6 @@ import { holdsProjectLock, acquireProjectLock } from './projectLock'
 import { isPlainObject } from './jsonUtils'
 import { quarantineCorruptFile } from './quarantineCorruptFile'
 import type { ProjectWorkspaceFile, ProjectSessionFile } from '../shared/types'
-import { toRelativePath } from '../shared/pathUtils'
 import { broadcastToAll } from './windowRegistry'
 import { ensureCateGitignore, CATE_GITIGNORE_CONTENT } from './cateGitignore'
 import { parseLocator, isLocalLocator } from './runtime/locator'
@@ -376,21 +376,13 @@ export function saveProjectStateSync(): void {
   }
 }
 
-// Serialize saves per root. Overlapping saves for the same project would race
-// on disk and, worse, desync the remembered-hash guard (one write finishes
-// last on disk while another finishes last in memory), spuriously flagging
-// workspace.json as edited-externally. A per-root promise chain keeps them
-// strictly ordered.
-const saveQueues = new Map<string, Promise<unknown>>()
+// Serialize saves per root. Overlapping saves race both disk and the remembered
+// hash guard, so they share the same keyed queue used by other main-process
+// lifecycle managers.
+const saveQueues = new KeyedLock()
 
 function enqueueSave(rootPath: string, task: () => Promise<void>): Promise<void> {
-  const prev = saveQueues.get(rootPath) ?? Promise.resolve()
-  const next = prev.catch(() => {}).then(task)
-  saveQueues.set(rootPath, next)
-  next.finally(() => {
-    if (saveQueues.get(rootPath) === next) saveQueues.delete(rootPath)
-  })
-  return next
+  return saveQueues.run(rootPath, task)
 }
 
 // ---------------------------------------------------------------------------

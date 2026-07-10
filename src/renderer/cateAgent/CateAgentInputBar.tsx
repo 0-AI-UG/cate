@@ -12,6 +12,7 @@
 
 import React from 'react'
 import { ArrowUp } from '@phosphor-icons/react'
+import { useAutoGrowingTextarea } from '../lib/hooks/useAutoGrowingTextarea'
 
 /** Cap the textarea growth; beyond this it scrolls internally. */
 const MAX_HEIGHT = 160
@@ -59,50 +60,16 @@ export const CateAgentInputBar: React.FC<{
     saveDraft(workspaceId, normalized)
   }
 
-  // Grow the textarea to fit its content (measured by collapsing to 0 first) and
-  // report that height upward so the toolbar zone can match it.
-  const resize = React.useCallback(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = '0px'
-    const full = el.scrollHeight
-    const h = Math.min(full, MAX_HEIGHT)
-    el.style.height = `${h}px`
-    // Only show a scrollbar once the content actually exceeds the cap; otherwise
-    // the textarea fits its content exactly and a scrollbar would be spurious.
-    el.style.overflowY = full > MAX_HEIGHT ? 'auto' : 'hidden'
-    onHeightChange?.(h)
-  }, [onHeightChange])
+  const resize = useAutoGrowingTextarea(ref, text, {
+    maxHeight: MAX_HEIGHT,
+    observeWidth: true,
+    onHeightChange,
+  })
 
   React.useEffect(() => {
     ref.current?.focus()
     resize()
   }, [resize])
-  React.useEffect(() => {
-    resize()
-  }, [text, resize])
-
-  // The bar lives in a zone that animates its width open/closed; how many lines the
-  // content wraps onto — and thus the height — depends on that width. Without this,
-  // a draft measured at the narrow start of the open animation freezes at a taller
-  // height and never shrinks back once the zone finishes widening, leaving the
-  // toolbar stuck tall (even after the text is sent and the input goes empty).
-  // Recompute on any WIDTH change so the reported height always matches the current
-  // width; guarded to width-only so setting our own height can't feed back into a loop.
-  React.useEffect(() => {
-    const el = ref.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    let lastW = el.clientWidth
-    const ro = new ResizeObserver(() => {
-      const w = el.clientWidth
-      if (w === lastW) return
-      lastW = w
-      resize()
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [resize])
-
   const send = () => {
     const t = text.trim()
     if (!t) return

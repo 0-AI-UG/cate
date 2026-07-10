@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import type { DetachedDockWindowSnapshot, PanelState, DockStateSnapshot, WindowDockState } from '../../../shared/types'
 import { buildDockWindowRestoreInit } from './session'
 
-const emptyZone = (position: 'left' | 'right' | 'bottom') => ({
+const emptyZone = (position: 'left' | 'right' | 'bottom' | 'center') => ({
   position,
   visible: false,
   size: 0,
@@ -32,7 +32,7 @@ function multiTabDockState(panelIds: string[]): DockStateSnapshot {
       layout: { type: 'tabs', id: 'center-stack', panelIds, activeIndex: 0 },
     },
   }
-  return { zones, locations: {} }
+  return { zones }
 }
 
 function makeMultiTabSnapshot(): DetachedDockWindowSnapshot {
@@ -133,57 +133,7 @@ describe('buildDockWindowRestoreInit', () => {
     expect(topLevelPanelIds).toEqual(['top-term', 'top-editor', 'top-canvas'])
   })
 
-  it('back-compat: a snapshot without canvasStates still restores (empty canvas, children kept)', () => {
-    const dw = makeMultiTabSnapshot()
-    delete dw.canvasStates
-    const { initPayload } = buildDockWindowRestoreInit(dw)
-
-    const cs = initPayload.canvasStates?.['top-canvas']
-    expect(cs).toBeDefined()
-    expect(cs!.nodes).toEqual({})
-    expect(cs!.zoomLevel).toBe(1)
-    // Children still recovered from dw.panels (replay is armed by panelId in the shell).
-    expect(Object.keys(cs!.childPanels).sort()).toEqual(['canvas-child-editor', 'canvas-child-term'])
-  })
-
-  it('recovers panels into a tab stack when dockState is missing entirely (legacy/malformed snapshot)', () => {
-    // FIX: buildDockWindowRestoreInit used to read dw.dockState.zones blindly and
-    // threw "Cannot read properties of undefined (reading 'zones')" for snapshots
-    // produced before dockState was synced. It then degraded to an empty window,
-    // which silently dropped every panel record. Now the panels are recovered as
-    // tabs in a synthesized center stack so the window (and its panels) survive.
-    const dw = makeMultiTabSnapshot()
-    delete (dw as Partial<DetachedDockWindowSnapshot>).dockState
-    const { topLevelPanelIds, initPayload } = buildDockWindowRestoreInit(dw)
-    expect(topLevelPanelIds.sort()).toEqual([
-      'canvas-child-editor',
-      'canvas-child-term',
-      'top-canvas',
-      'top-editor',
-      'top-term',
-    ])
-    expect(initPayload.workspaceId).toBe('ws-9')
-    // Panel records still pass through so the receiver can resolve types/titles.
-    expect(initPayload.panels).toBe(dw.panels)
-    const center = initPayload.dockState.center.layout
-    expect(center?.type).toBe('tabs')
-    expect(center && 'panelIds' in center ? center.panelIds.sort() : []).toEqual([
-      'canvas-child-editor',
-      'canvas-child-term',
-      'top-canvas',
-      'top-editor',
-      'top-term',
-    ])
-  })
-
-  it('recovers panels when dockState exists but its zones are missing', () => {
-    const dw = makeMultiTabSnapshot()
-    dw.dockState = {} as DockStateSnapshot
-    const { topLevelPanelIds } = buildDockWindowRestoreInit(dw)
-    expect(topLevelPanelIds).toHaveLength(5)
-  })
-
-  it('recovers panels orphaned by an empty dock layout', () => {
+  it('does not synthesize placement for panels orphaned by an empty dock layout', () => {
     const dw = makeMultiTabSnapshot()
     dw.dockState = {
       zones: {
@@ -192,10 +142,9 @@ describe('buildDockWindowRestoreInit', () => {
         bottom: emptyZone('bottom'),
         center: { position: 'center', visible: true, size: 0, layout: null },
       },
-      locations: {},
     }
     const { topLevelPanelIds } = buildDockWindowRestoreInit(dw)
-    expect(topLevelPanelIds).toHaveLength(5)
+    expect(topLevelPanelIds).toEqual([])
   })
 
   it('tolerates zones referencing a panel with no record (stale layout after an incomplete flush)', () => {
@@ -239,15 +188,22 @@ describe('buildDockWindowRestoreInit', () => {
     const { topLevelPanelIds, initPayload } = buildDockWindowRestoreInit(dw)
 
     expect(topLevelPanelIds).toEqual(['top-term', 'top-editor'])
-    expect(initPayload.canvasStates).toBeUndefined()
+    expect(initPayload.canvasStates).toEqual({})
   })
 
   it('returns no top-level ids for a genuinely empty window (no panels)', () => {
     const dw = makeMultiTabSnapshot()
-    delete (dw as Partial<DetachedDockWindowSnapshot>).dockState
+    dw.dockState = {
+      zones: {
+        left: emptyZone('left'),
+        right: emptyZone('right'),
+        bottom: emptyZone('bottom'),
+        center: emptyZone('center'),
+      },
+    }
     dw.panels = {}
     const { topLevelPanelIds, initPayload } = buildDockWindowRestoreInit(dw)
     expect(topLevelPanelIds).toEqual([])
-    expect(initPayload.canvasStates).toBeUndefined()
+    expect(initPayload.canvasStates).toEqual({})
   })
 })

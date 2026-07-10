@@ -4,8 +4,9 @@
 // =============================================================================
 
 import { useEffect } from 'react'
-import { useShortcutStore } from '../stores/shortcutStore'
-import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { matchShortcutEvent } from '../stores/shortcutStore'
+import type { StoreApi } from 'zustand'
+import type { CanvasStore } from '../stores/canvasStore'
 import {
   useAppStore,
   getActiveCanvasOps,
@@ -19,6 +20,7 @@ import { getNodeActivePanelId } from '../panels/nodeDockRegistry'
 import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 import type { ShortcutAction } from '../../shared/types'
 import { runAction } from '../lib/runAction'
+import { activeDockPanelId } from '../../shared/collectPanelIds'
 
 // ensureWorkspaceFolder lives in lib/runAction now; re-exported here for the
 // panels/pages that still import it from this module.
@@ -44,8 +46,8 @@ const PAN_ACTIONS = new Set<ShortcutAction>([
  * Fallback: the active id is a CANVAS container (a canvas is itself the active
  * panel when a node was focused only via the canvas), so descend into the
  * focused node's per-node dock to find its active leaf panel, and check that.
- * This is what fixes the old `node.panelId` (seed panel) bug — a node holding a
- * terminal tab beside an editor now reports correctly per the visible tab.
+ * A node holding a terminal tab beside an editor reports correctly per the
+ * visible tab.
  *
  * Exported (and pure — reads only module/store state) so it can be unit-tested.
  */
@@ -84,27 +86,27 @@ export function computeTerminalHasFocus(): boolean {
  *
  * Must be called once at the top-level component (e.g. App.tsx).
  */
-export function useShortcuts(): void {
-  const canvasStoreApi = useCanvasStoreApi()
-
+export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
   useEffect(() => {
-    const shortcutStore = useShortcutStore.getState
     // Resolve the *active* canvas store at call time rather than binding to the
     // context store captured on mount. The visible canvas is a per-panel store;
     // getActiveCanvasOps derives it from the canonical active panel (see
     // lib/activePanel + canvasAccess), falling back to the workspace's primary
-    // canvas. The App-level context only aliases the legacy singleton, which is
-    // usually NOT the canvas the user is looking at once more than one exists.
+    // canvas.
     // Routing every canvas action through the active store keeps keyboard
     // navigation/pan/zoom acting on the canvas actually on screen. Falls back to
-    // the context store for single-canvas / detached windows.
-    const canvasStore = () => (getActiveCanvasOps()?.storeApi ?? canvasStoreApi).getState()
+    // the explicitly supplied store for detached-window shells.
+    const canvasStore = () => (
+      getActiveCanvasOps()?.storeApi ??
+      windowCanvasStore ??
+      getWorkspaceCanvasStore(useAppStore.getState().selectedWorkspaceId)
+    )?.getState()
     const appStore = useAppStore.getState
 
     // Subscribe to native-menu dispatches. The menu fires this on every File /
     // View / Terminal / etc. item that maps to a runnable action.
     const unsubscribeMenu = window.electronAPI.onMenuTriggerAction((action) => {
-      runAction(action, canvasStoreApi).catch(() => { /* noop — menu actions are best-effort */ })
+      runAction(action, windowCanvasStore).catch(() => { /* noop — menu actions are best-effort */ })
     })
 
     // Native "Layouts" menu → load a saved layout into the active canvas.
@@ -150,7 +152,7 @@ export function useShortcuts(): void {
         if (!isEditable) {
           e.preventDefault()
           e.stopPropagation()
-          canvasStore().selectAll()
+          canvasStore()?.selectAll()
           return
         }
       }
@@ -160,7 +162,7 @@ export function useShortcuts(): void {
         if (terminalHasFocus) return
         e.preventDefault()
         e.stopPropagation()
-        canvasStore().tidyGridSelected()
+        canvasStore()?.tidyGridSelected()
         return
       }
 
@@ -170,7 +172,7 @@ export function useShortcuts(): void {
         if (terminalHasFocus) return
         const ui = useUIStore.getState()
         if (!ui.showCommandPalette) {
-          canvasStore().clearSelection()
+          canvasStore()?.clearSelection()
           if (ui.activeTool !== 'select') ui.setActiveTool('select')
           // Don't prevent default — Escape might also close other things
           return
@@ -186,14 +188,14 @@ export function useShortcuts(): void {
         // when focused, so its own handler can delete the multi-selection.
         if (isSidebarKeyNavFocused()) return
         const state = canvasStore()
-        if (state.selection.length > 0) {
+        if (state && state.selection.length > 0) {
           // Don't delete if a text input is focused
           const active = document.activeElement
           const isEditable = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.getAttribute('contenteditable') === 'true'
           if (!isEditable) {
             e.preventDefault()
             e.stopPropagation()
-            state.deleteSelection()
+            void state.deleteSelection()
             return
           }
         }
@@ -211,19 +213,19 @@ export function useShortcuts(): void {
         const uiNow = useUIStore.getState()
         if (uiNow.showCommandPalette) return
         const state = canvasStore()
-        if (state.selection.length === 1) {
+        if (state && state.selection.length === 1) {
           const id = state.selection[0]
           if (id !== focusedNodeIdOf(state) && state.nodes[id]) {
             e.preventDefault()
             e.stopPropagation()
-            canvasStore().focusNode(id)
+            state.focusNode(id)
             return
           }
         }
       }
 
       // --- Shortcut matching ---
-      const action = shortcutStore().matchEvent(e)
+      const action = matchShortcutEvent(e)
       if (!action) return
 
       const ui = useUIStore.getState()
@@ -283,10 +285,12 @@ export function useShortcuts(): void {
       // Keyboard-only passthrough: when a browser panel is focused, let
       // Cmd+=/- zoom the webview content instead of the canvas.
       if (action === 'zoomIn' || action === 'zoomOut' || action === 'zoomReset') {
-        const focusedId = focusedNodeIdOf(canvasStore())
-        const focusedNode = focusedId ? canvasStore().nodes[focusedId] : null
-        const focusedPanel = focusedNode
-          ? appStore().workspaces.find(w => w.id === appStore().selectedWorkspaceId)?.panels[focusedNode.panelId]
+        const state = canvasStore()
+        const focusedId = state ? focusedNodeIdOf(state) : null
+        const focusedNode = focusedId && state ? state.nodes[focusedId] : null
+        const focusedPanelId = activeDockPanelId(focusedNode?.dockLayout)
+        const focusedPanel = focusedPanelId
+          ? appStore().workspaces.find(w => w.id === appStore().selectedWorkspaceId)?.panels[focusedPanelId]
           : null
         if (focusedPanel?.type === 'browser') return
       }
@@ -294,7 +298,7 @@ export function useShortcuts(): void {
       e.preventDefault()
       e.stopPropagation()
 
-      runAction(action, canvasStoreApi).catch(() => { /* noop */ })
+      runAction(action, windowCanvasStore).catch(() => { /* noop */ })
     }
 
     /**
@@ -339,5 +343,5 @@ export function useShortcuts(): void {
       unsubscribeMenu()
       unsubscribeLoadLayout()
     }
-  }, [canvasStoreApi])
+  }, [windowCanvasStore])
 }

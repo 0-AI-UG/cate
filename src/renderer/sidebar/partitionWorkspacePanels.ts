@@ -12,30 +12,13 @@ export interface PanelLike {
   type: string
 }
 
-/** Minimal per-canvas snapshot shape the owner-builder needs: a canvas panel id
- *  and the nodes hosted on it (each node carries a seed `panelId` and an optional
- *  mini-dock `dockLayout` whose panels are also children of this canvas). */
+import type { DockLayoutNode } from '../../shared/types'
+import { collectPanelIds } from '../../shared/collectPanelIds'
+
+/** Minimal per-canvas snapshot shape the owner-builder needs. */
 export interface CanvasOwnerSnapshot {
   canvasPanelId: string
-  nodes: Array<{ panelId?: string; dockLayout?: DockLayoutNodeLike | null }>
-}
-
-/** Structural subset of DockLayoutNode (avoids importing the shared type here). */
-export type DockLayoutNodeLike =
-  | { type: 'tabs'; panelIds: string[] }
-  | { type: unknown; children: DockLayoutNodeLike[] }
-
-function collectDockLayoutPanelIds(
-  layout: DockLayoutNodeLike | null | undefined,
-  out: Set<string>,
-): void {
-  if (!layout) return
-  if ('panelIds' in layout && Array.isArray((layout as { panelIds?: string[] }).panelIds)) {
-    for (const id of (layout as { panelIds: string[] }).panelIds) out.add(id)
-    return
-  }
-  const children = (layout as { children?: DockLayoutNodeLike[] }).children
-  if (children) for (const child of children) collectDockLayoutPanelIds(child, out)
+  nodes: Array<{ dockLayout: DockLayoutNode | null }>
 }
 
 /**
@@ -53,10 +36,9 @@ export function buildColdStartCanvasChildOwners(
   const owners = new Map<string, string>()
   for (const { canvasPanelId, nodes } of snapshots) {
     for (const node of nodes) {
-      const ids = new Set<string>()
-      collectDockLayoutPanelIds(node.dockLayout, ids)
-      if (node.panelId) ids.add(node.panelId)
-      for (const id of ids) if (!owners.has(id)) owners.set(id, canvasPanelId)
+      for (const id of collectPanelIds(node.dockLayout)) {
+        if (!owners.has(id)) owners.set(id, canvasPanelId)
+      }
     }
   }
   return owners

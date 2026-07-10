@@ -23,7 +23,6 @@ import {
 } from './territoryConfig'
 import { OUTER_REACH, INNER_RING, OUTER_A, INNER_EXTRA, buildPrimitives, type BuiltPrimitives } from './territoryGeometry'
 import { POCKET_FILL, type PocketMask } from './territoryPocketMask'
-import type { TerritoryGroup } from './territoryRenderer'
 import { perfCount } from '../../lib/perf/perfClient'
 
 /** GLSL float literal — guarantees a decimal point so ints aren't parsed as int. */

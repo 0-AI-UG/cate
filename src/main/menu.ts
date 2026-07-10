@@ -4,9 +4,35 @@
 
 import { BrowserWindow, Menu, shell, app } from 'electron'
 import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, MENU_LOAD_LAYOUT, BROWSER_SHORTCUT } from '../shared/ipc-channels'
-import type { MenuActionId, BrowserShortcutAction } from '../shared/types'
+import {
+  SHORTCUT_DISPLAY_NAMES,
+  resolveShortcuts,
+  type MenuActionId,
+  type BrowserShortcutAction,
+  type ShortcutAction,
+  type StoredShortcut,
+} from '../shared/types'
 import { checkForUpdatesManually } from './auto-updater'
-import { getActiveMainWindow } from './windowRegistry'
+import { getActiveMainWindow, getFocusedWindow, sendToWindow } from './windowRegistry'
+import { getSetting } from './settingsFile'
+
+function shortcutAccelerator(shortcut: StoredShortcut): string | undefined {
+  if (!shortcut.key) return undefined
+  const parts: string[] = []
+  if (shortcut.command) parts.push('CmdOrCtrl')
+  if (shortcut.control) parts.push('Ctrl')
+  if (shortcut.option) parts.push('Alt')
+  if (shortcut.shift) parts.push('Shift')
+  const key = ({ '\t': 'Tab', '\r': 'Enter', ' ': 'Space', '↑': 'Up', '↓': 'Down', '←': 'Left', '→': 'Right' } as Record<string, string>)[shortcut.key] ?? shortcut.key
+  return [...parts, key].join('+')
+}
+
+function actionMeta(action: ShortcutAction): { label: string; accelerator?: string } {
+  return {
+    label: SHORTCUT_DISPLAY_NAMES[action],
+    accelerator: shortcutAccelerator(resolveShortcuts(getSetting('customShortcuts'))[action]),
+  }
+}
 
 /** Dispatch a renderer-side menu action to the focused window. Items in the
  *  template use this as their click handler — the renderer's useShortcuts hook
@@ -16,9 +42,9 @@ import { getActiveMainWindow } from './windowRegistry'
  *  renderer placement path as the keyboard shortcut. */
 function dispatch(action: MenuActionId): () => void {
   return (): void => {
-    const win = BrowserWindow.getFocusedWindow()
+    const win = getFocusedWindow()
     if (!win) return
-    win.webContents.send(MENU_TRIGGER_ACTION, action)
+    sendToWindow(win.id, MENU_TRIGGER_ACTION, action)
   }
 }
 
@@ -27,16 +53,16 @@ function dispatch(action: MenuActionId): () => void {
  *  panel-locally so they never steal Monaco's Cmd+[ / Cmd+] / Cmd+L. */
 function dispatchBrowser(action: BrowserShortcutAction): () => void {
   return (): void => {
-    const win = BrowserWindow.getFocusedWindow()
-    if (win) win.webContents.send(BROWSER_SHORTCUT, action)
+    const win = getFocusedWindow()
+    if (win) sendToWindow(win.id, BROWSER_SHORTCUT, action)
   }
 }
 
 /** Tell the focused renderer to load a named saved layout (replacing the workspace). */
 function dispatchLoadLayout(name: string): () => void {
   return (): void => {
-    const win = BrowserWindow.getFocusedWindow()
-    if (win) win.webContents.send(MENU_LOAD_LAYOUT, name)
+    const win = getFocusedWindow()
+    if (win) sendToWindow(win.id, MENU_LOAD_LAYOUT, name)
   }
 }
 
@@ -103,8 +129,8 @@ export function buildApplicationMenu(): void {
           label: 'Preferences...',
           accelerator: 'Cmd+,',
           click: (): void => {
-            const win = BrowserWindow.getFocusedWindow()
-            if (win) win.webContents.send(MENU_OPEN_SETTINGS)
+            const win = getFocusedWindow()
+            if (win) sendToWindow(win.id, MENU_OPEN_SETTINGS)
           },
         },
         { type: 'separator' },
@@ -127,19 +153,19 @@ export function buildApplicationMenu(): void {
           click: newWindow,
         },
         { type: 'separator' },
-        { label: 'New File', accelerator: 'CmdOrCtrl+N', click: dispatch('newFile') },
-        { label: 'New Editor', accelerator: 'CmdOrCtrl+Shift+E', click: dispatch('newEditor') },
-        { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: dispatch('newTerminal') },
-        { label: 'New Browser', accelerator: 'CmdOrCtrl+Shift+B', click: dispatch('newBrowser') },
-        { label: 'New Agent', accelerator: 'CmdOrCtrl+Shift+A', click: dispatch('newAgent') },
-        { label: 'New Canvas', accelerator: 'CmdOrCtrl+Shift+C', click: dispatch('newCanvas') },
+        { ...actionMeta('newFile'), click: dispatch('newFile') },
+        { ...actionMeta('newEditor'), click: dispatch('newEditor') },
+        { ...actionMeta('newTerminal'), click: dispatch('newTerminal') },
+        { ...actionMeta('newBrowser'), click: dispatch('newBrowser') },
+        { ...actionMeta('newAgent'), click: dispatch('newAgent') },
+        { ...actionMeta('newCanvas'), click: dispatch('newCanvas') },
         { type: 'separator' },
         { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },
         { label: 'Reload Workspace from Disk', click: dispatch('reloadWorkspace') },
         { type: 'separator' },
-        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: dispatch('saveFile') },
+        { ...actionMeta('saveFile'), label: 'Save', click: dispatch('saveFile') },
         { type: 'separator' },
-        { label: 'Close Panel', accelerator: 'CmdOrCtrl+W', click: dispatch('closePanel') },
+        { ...actionMeta('closePanel'), click: dispatch('closePanel') },
         { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },
       ],
     },
@@ -147,8 +173,8 @@ export function buildApplicationMenu(): void {
     {
       label: 'Edit',
       submenu: [
-        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: dispatch('undo') },
-        { label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: dispatch('redo') },
+        { ...actionMeta('undo'), click: dispatch('undo') },
+        { ...actionMeta('redo'), click: dispatch('redo') },
         { type: 'separator' },
         { role: 'cut' },
         { role: 'copy' },
@@ -157,31 +183,29 @@ export function buildApplicationMenu(): void {
         { role: 'delete' },
         { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Find in Files...', accelerator: 'CmdOrCtrl+Shift+F', click: dispatch('commandPalette') },
+        { ...actionMeta('toggleSearch'), label: 'Find in Files...', click: dispatch('toggleSearch') },
       ],
     },
     // View menu
     {
       label: 'View',
       submenu: [
-        { label: 'Command Palette...', accelerator: 'CmdOrCtrl+K', click: dispatch('commandPalette') },
+        { ...actionMeta('commandPalette'), label: 'Command Palette...', click: dispatch('commandPalette') },
         // VS Code-style aliases for the same unified palette (fuzzy file search +
         // commands). Hidden so they don't clutter the menu but still bind the key.
         { label: 'Go to File...', accelerator: 'CmdOrCtrl+P', click: dispatch('commandPalette'), visible: false, acceleratorWorksWhenHidden: true },
         { label: 'Show All Commands', accelerator: 'CmdOrCtrl+Shift+P', click: dispatch('commandPalette'), visible: false, acceleratorWorksWhenHidden: true },
         { type: 'separator' },
-        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: dispatch('toggleSidebar') },
-        // Secondary sidebar binding (legacy / VS Code split-editor key) kept as an alias.
-        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+\\', click: dispatch('toggleSidebar'), visible: false, acceleratorWorksWhenHidden: true },
-        { label: 'Toggle File Explorer', accelerator: 'CmdOrCtrl+Shift+X', click: dispatch('toggleFileExplorer') },
-        { label: 'Toggle Minimap', accelerator: 'CmdOrCtrl+Shift+M', click: dispatch('toggleMinimap') },
+        { ...actionMeta('toggleSidebar'), click: dispatch('toggleSidebar') },
+        { ...actionMeta('toggleFileExplorer'), click: dispatch('toggleFileExplorer') },
+        { ...actionMeta('toggleMinimap'), click: dispatch('toggleMinimap') },
         { type: 'separator' },
-        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: dispatch('zoomIn') },
+        { ...actionMeta('zoomIn'), click: dispatch('zoomIn') },
         { label: 'Zoom In', accelerator: 'CmdOrCtrl+Shift+=', click: dispatch('zoomIn'), visible: false, acceleratorWorksWhenHidden: true },
         { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', click: dispatch('zoomIn'), visible: false, acceleratorWorksWhenHidden: true },
-        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: dispatch('zoomOut') },
-        { label: 'Reset Zoom', accelerator: 'CmdOrCtrl+0', click: dispatch('zoomReset') },
-        { label: 'Zoom to Fit', accelerator: 'CmdOrCtrl+1', click: dispatch('zoomToFit') },
+        { ...actionMeta('zoomOut'), click: dispatch('zoomOut') },
+        { ...actionMeta('zoomReset'), click: dispatch('zoomReset') },
+        { ...actionMeta('zoomToFit'), click: dispatch('zoomToFit') },
         { type: 'separator' },
         { role: 'togglefullscreen' },
         { type: 'separator' },
@@ -193,8 +217,8 @@ export function buildApplicationMenu(): void {
     {
       label: 'Go',
       submenu: [
-        { label: 'Next Panel', accelerator: 'Ctrl+Tab', click: dispatch('focusNext') },
-        { label: 'Previous Panel', accelerator: 'Ctrl+Shift+Tab', click: dispatch('focusPrevious') },
+        { ...actionMeta('focusNext'), label: 'Next Panel', click: dispatch('focusNext') },
+        { ...actionMeta('focusPrevious'), label: 'Previous Panel', click: dispatch('focusPrevious') },
       ],
     },
     // Layouts menu — save / manage / load named canvas layouts. The list is

@@ -541,10 +541,8 @@ describe('snapshot round-trip', () => {
 
     const snapshot = store.getState().getSnapshot()
 
-    expect(Object.keys(snapshot.locations).sort()).toEqual(['a', 'b', 'c', 'd', 'e'])
-    for (const id of ['a', 'b', 'c', 'd', 'e']) {
-      expect(snapshot.locations[id]).toEqual(store.getState().getPanelLocation(id))
-    }
+    expect(snapshot).toEqual({ zones: store.getState().zones })
+    for (const id of ['a', 'b', 'c', 'd', 'e']) expect(store.getState().getPanelLocation(id)).toBeDefined()
   })
 
   it('restoreSnapshot reproduces the zones tree exactly in a fresh store', () => {

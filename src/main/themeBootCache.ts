@@ -18,22 +18,12 @@
 import { nativeTheme } from 'electron'
 import type { Theme } from '../shared/theme'
 import type { AppSettings } from '../shared/types'
-import {
-  BASE_DARK,
-  BASE_LIGHT,
-  BUILT_IN_BY_ID,
-  DEFAULT_DARK_THEME_ID,
-  DEFAULT_LIGHT_THEME_ID,
-} from '../shared/themes'
+import { mergeThemeApp, resolveTheme } from '../shared/themeResolution'
 
 export interface ThemeBootFields {
   theme: string
   backgroundColor: string
   appearance: 'dark' | 'light' | 'system'
-}
-
-function themeById(id: string, customThemes: Theme[] | undefined): Theme | undefined {
-  return (customThemes ?? []).find((t) => t.id === id) ?? BUILT_IN_BY_ID[id]
 }
 
 function prefersDark(): boolean {
@@ -44,34 +34,18 @@ function prefersDark(): boolean {
   }
 }
 
-/** Resolve a selection ('system' or a theme id) to a concrete Theme, falling
- *  back to the matching default so a deleted/renamed theme never breaks. */
-function resolveTheme(settings: AppSettings): Theme {
-  const selection = settings.activeThemeId
-  const custom = settings.customThemes
-  if (selection === 'system') {
-    const id = prefersDark()
-      ? (settings.systemDarkThemeId || DEFAULT_DARK_THEME_ID)
-      : (settings.systemLightThemeId || DEFAULT_LIGHT_THEME_ID)
-    return themeById(id, custom) ?? BUILT_IN_BY_ID[prefersDark() ? DEFAULT_DARK_THEME_ID : DEFAULT_LIGHT_THEME_ID]
-  }
-  return themeById(selection, custom) ?? BUILT_IN_BY_ID[DEFAULT_DARK_THEME_ID]
-}
-
 /** Resolve the active Theme with its app palette fully merged over the base, so
  *  callers (e.g. the extension `cate.theme.get` bridge) get a complete token map
  *  rather than a partial override set. */
 export function resolveActiveTheme(settings: AppSettings): Theme {
-  const theme = resolveTheme(settings)
-  const base = theme.type === 'light' ? BASE_LIGHT : BASE_DARK
-  return { ...theme, app: { ...base, ...theme.app } }
+  const theme = resolveTheme(settings, settings.activeThemeId, prefersDark())
+  return { ...theme, app: mergeThemeApp(theme) }
 }
 
 /** Compute the theme cache fields for boot.json from the current settings. */
 export function computeThemeBootFields(settings: AppSettings): ThemeBootFields {
-  const theme = resolveTheme(settings)
-  const base = theme.type === 'light' ? BASE_LIGHT : BASE_DARK
-  const merged = { ...base, ...theme.app }
+  const theme = resolveTheme(settings, settings.activeThemeId, prefersDark())
+  const merged = mergeThemeApp(theme)
   const backgroundColor = theme.bootBackground ?? merged['surface-0']
   // While the selection is 'system' the native appearance tracks the OS; an
   // explicit theme pins the appearance to its dark/light so native chrome

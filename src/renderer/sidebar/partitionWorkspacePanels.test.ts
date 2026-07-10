@@ -112,11 +112,16 @@ describe('partitionWorkspacePanels', () => {
 describe('buildColdStartCanvasChildOwners (cold-start per-canvas attribution)', () => {
   // The core regression: a NEVER-MOUNTED secondary canvas's child must be
   // attributed to IT, not lumped under the primary. Each canvas contributes its
-  // own nodes' seed panel ids.
+  // own nodes' dock panel ids.
   it('attributes each canvas snapshot to its own children', () => {
     const owners = buildColdStartCanvasChildOwners([
-      { canvasPanelId: 'canvasA', nodes: [{ panelId: 'term1' }, { panelId: 'term2' }] },
-      { canvasPanelId: 'canvasB', nodes: [{ panelId: 'term3' }] },
+      { canvasPanelId: 'canvasA', nodes: [
+        { dockLayout: { type: 'tabs', id: 's1', panelIds: ['term1'], activeIndex: 0 } },
+        { dockLayout: { type: 'tabs', id: 's2', panelIds: ['term2'], activeIndex: 0 } },
+      ] },
+      { canvasPanelId: 'canvasB', nodes: [
+        { dockLayout: { type: 'tabs', id: 's3', panelIds: ['term3'], activeIndex: 0 } },
+      ] },
     ])
     expect(owners.get('term1')).toBe('canvasA')
     expect(owners.get('term2')).toBe('canvasA')
@@ -130,8 +135,7 @@ describe('buildColdStartCanvasChildOwners (cold-start per-canvas attribution)', 
         canvasPanelId: 'canvasA',
         nodes: [
           {
-            panelId: 'seed',
-            dockLayout: { type: 'tabs', panelIds: ['seed', 'tab2', 'tab3'] },
+            dockLayout: { type: 'tabs', id: 'stack', panelIds: ['seed', 'tab2', 'tab3'], activeIndex: 0 },
           },
         ],
       },
@@ -147,14 +151,16 @@ describe('buildColdStartCanvasChildOwners (cold-start per-canvas attribution)', 
         canvasPanelId: 'canvasA',
         nodes: [
           {
-            panelId: 'a',
             dockLayout: {
               type: 'split',
+              id: 'split',
+              direction: 'horizontal',
               children: [
-                { type: 'tabs', panelIds: ['a', 'b'] },
-                { type: 'tabs', panelIds: ['c'] },
+                { type: 'tabs', id: 'left', panelIds: ['a', 'b'], activeIndex: 0 },
+                { type: 'tabs', id: 'right', panelIds: ['c'], activeIndex: 0 },
               ],
-            } as never,
+              ratios: [0.5, 0.5],
+            },
           },
         ],
       },
@@ -166,8 +172,8 @@ describe('buildColdStartCanvasChildOwners (cold-start per-canvas attribution)', 
 
   it('first canvas wins a tie (deterministic ownership)', () => {
     const owners = buildColdStartCanvasChildOwners([
-      { canvasPanelId: 'canvasA', nodes: [{ panelId: 'shared' }] },
-      { canvasPanelId: 'canvasB', nodes: [{ panelId: 'shared' }] },
+      { canvasPanelId: 'canvasA', nodes: [{ dockLayout: { type: 'tabs', id: 'sa', panelIds: ['shared'], activeIndex: 0 } }] },
+      { canvasPanelId: 'canvasB', nodes: [{ dockLayout: { type: 'tabs', id: 'sb', panelIds: ['shared'], activeIndex: 0 } }] },
     ])
     expect(owners.get('shared')).toBe('canvasA')
   })

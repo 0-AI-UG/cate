@@ -34,7 +34,7 @@ function node(
 ): CanvasNodeState {
   return {
     id,
-    panelId: `panel-${id}`,
+    dockLayout: { type: 'tabs', id: `stack-${id}`, panelIds: [`panel-${id}`], activeIndex: 0 },
     origin: { x, y },
     size: { width: w, height: h },
     zOrder: creationIndex,

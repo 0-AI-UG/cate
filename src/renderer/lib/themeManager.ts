@@ -19,12 +19,10 @@
 import type { Theme, ThemeSelection } from '../../shared/types'
 import { useSettingsStore } from '../stores/settingsStore'
 import {
-  BASE_DARK,
-  BASE_LIGHT,
   DEFAULT_DARK_THEME_ID,
-  DEFAULT_LIGHT_THEME_ID,
   BUILT_IN_BY_ID,
 } from '../../shared/themes'
+import { mergeThemeApp, resolveTheme as resolveThemeSelection } from '../../shared/themeResolution'
 
 let currentTheme: Theme = BUILT_IN_BY_ID[DEFAULT_DARK_THEME_ID]
 let currentSelection: ThemeSelection = 'system'
@@ -37,11 +35,6 @@ let mediaListener: ((e: MediaQueryListEvent) => void) | null = null
 // Theme lookup
 // ---------------------------------------------------------------------------
 
-function themeById(id: string): Theme | undefined {
-  const custom = useSettingsStore.getState().customThemes ?? []
-  return custom.find((t) => t.id === id) ?? BUILT_IN_BY_ID[id]
-}
-
 function prefersDark(): boolean {
   if (typeof window === 'undefined') return true
   return window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -50,14 +43,14 @@ function prefersDark(): boolean {
 /** Resolve a selection ('system' or a theme id) to a concrete Theme. Unknown
  *  ids fall back to the matching default so a deleted/renamed theme never breaks. */
 function resolveTheme(selection: ThemeSelection): Theme {
-  if (selection === 'system') {
-    const s = useSettingsStore.getState()
-    const id = prefersDark()
-      ? (s.systemDarkThemeId || DEFAULT_DARK_THEME_ID)
-      : (s.systemLightThemeId || DEFAULT_LIGHT_THEME_ID)
-    return themeById(id) ?? BUILT_IN_BY_ID[prefersDark() ? DEFAULT_DARK_THEME_ID : DEFAULT_LIGHT_THEME_ID]
-  }
-  return themeById(selection) ?? BUILT_IN_BY_ID[DEFAULT_DARK_THEME_ID]
+  // The OS preference only participates in the `system` selection. Avoid
+  // eagerly touching matchMedia for an explicit theme (including non-browser
+  // render/test environments where matchMedia does not exist).
+  return resolveThemeSelection(
+    useSettingsStore.getState(),
+    selection,
+    selection === 'system' ? prefersDark() : true,
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -69,15 +62,10 @@ function notify(theme: Theme): void {
 }
 
 /** Compute the full merged app-var map for a theme. */
-function mergedAppVars(theme: Theme): Record<string, string> {
-  const base = theme.type === 'light' ? BASE_LIGHT : BASE_DARK
-  return { ...base, ...theme.app }
-}
-
 function injectAppVars(theme: Theme): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
-  const merged = mergedAppVars(theme)
+  const merged = mergeThemeApp(theme)
   for (const [key, value] of Object.entries(merged)) {
     root.style.setProperty('--' + key, value)
   }
@@ -111,7 +99,7 @@ function applyResolved(theme: Theme): void {
   // next cold launch constructs the BrowserWindow with the right color, and
   // (on macOS) drive the native window appearance.
   try {
-    const bg = theme.bootBackground ?? mergedAppVars(theme)['surface-0']
+    const bg = theme.bootBackground ?? mergeThemeApp(theme)['surface-0']
     // macOS draws the native title bar itself when native tabs are on
     // (titleBarStyle 'default') — it can't take an arbitrary color, only a
     // dark/light system material. Send the desired appearance so the native bar

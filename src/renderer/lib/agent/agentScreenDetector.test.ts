@@ -107,7 +107,7 @@ describe('coordinator settle timing', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
-    useStatusStore.setState({ workspaces: {}, _clearTimers: {} })
+    useStatusStore.setState({ workspaces: {} })
     // terminal->workspace identity is owned by terminalRegistry's bimap; stub
     // the resolver so the detector can map this pty to its workspace.
     setTerminalWorkspaceResolver((ptyId) => (ptyId === PTY ? WS : undefined))
@@ -123,7 +123,7 @@ describe('coordinator settle timing', () => {
   })
 
   function state(): string | undefined {
-    return useStatusStore.getState().workspaces[WS]?.agentState[PTY]
+    return useStatusStore.getState().workspaces[WS]?.terminals[PTY]?.agentState
   }
 
   it('the 1 Hz presence poll must not reset the settle timer (regression)', () => {

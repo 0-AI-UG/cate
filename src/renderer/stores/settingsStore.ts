@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import log from '../lib/logger'
 import type { AppSettings } from '../../shared/types'
 import { DEFAULT_SETTINGS } from '../../shared/types'
-import { getElectronAPI as getAPI, mergeKnown } from './jsonProjection'
+import { getElectronAPI as getAPI, loadOnce, mergeKnown } from './jsonProjection'
 
 // -----------------------------------------------------------------------------
 // Electron API type (exposed via preload)
@@ -17,7 +17,7 @@ interface ElectronSettingsAPI {
   settingsGet: (key: string) => Promise<unknown>
   settingsSet: (key: string, value: unknown) => Promise<void>
   settingsGetAll: () => Promise<Partial<AppSettings>>
-  settingsReset: (key: string) => Promise<void>
+  settingsReset: (key?: string) => Promise<void>
   settingsOpenInEditor?: () => Promise<string>
   onSettingsReloaded?: (callback: (settings: Partial<AppSettings>) => void) => () => void
 }
@@ -52,7 +52,6 @@ interface SettingsStoreActions {
   resetSetting: (key: keyof AppSettings) => void
   resetAll: () => void
   loadSettings: () => Promise<void>
-  saveSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => Promise<void>
 }
 
 export type SettingsStore = SettingsStoreState & SettingsStoreActions
@@ -61,7 +60,29 @@ export type SettingsStore = SettingsStoreState & SettingsStoreActions
 // Store
 // -----------------------------------------------------------------------------
 
-export const useSettingsStore = create<SettingsStore>((set, get) => ({
+const loadSettingsOnce = loadOnce(async () => {
+  const api = getElectronAPI()
+  if (!api) {
+    useSettingsStore.setState({ _loaded: true })
+    return
+  }
+
+  try {
+    const stored = await api.settingsGetAll()
+    useSettingsStore.setState({ ...mergeKnown(DEFAULT_SETTINGS, stored), _loaded: true })
+  } catch {
+    useSettingsStore.setState({ _loaded: true })
+  }
+
+  if (!reloadSubscribed && api.onSettingsReloaded) {
+    reloadSubscribed = true
+    api.onSettingsReloaded((settings) => {
+      useSettingsStore.setState(pickKnownSettings(settings))
+    })
+  }
+})
+
+export const useSettingsStore = create<SettingsStore>((set) => ({
   // --- State: all settings with defaults ---
   ...DEFAULT_SETTINGS,
   _loaded: false,
@@ -90,58 +111,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ ...DEFAULT_SETTINGS })
     const api = getElectronAPI()
     if (api) {
-      // Reset each key individually via IPC
-      for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[]) {
-        api.settingsReset(key).catch((err) => log.warn('[settings] Reset failed for %s:', key, err))
-      }
+      api.settingsReset().catch((err) => log.warn('[settings] Reset failed:', err))
     }
   },
 
-  async loadSettings() {
-    const api = getElectronAPI()
-    if (!api) {
-      set({ _loaded: true })
-      return
-    }
-
-    try {
-      const stored = await api.settingsGetAll()
-      // Merge stored values over defaults (only known keys)
-      const merged = mergeKnown(DEFAULT_SETTINGS, stored)
-      // Migrate the legacy appearanceMode setting → activeThemeId. The old
-      // values map directly to built-in theme ids (with two legacy aliases).
-      // terminalCustomThemes / defaultTerminalTheme are intentionally dropped:
-      // the unified theme has no separate per-terminal palette.
-      if (!('activeThemeId' in stored) && 'appearanceMode' in (stored as Record<string, unknown>)) {
-        const legacy = String((stored as Record<string, unknown>).appearanceMode ?? 'system')
-        const map: Record<string, string> = {
-          dark: 'dark-warm',
-          light: 'light-subtle',
-        }
-        merged.activeThemeId = map[legacy] ?? legacy
-        log.info('[settings] Migrated appearanceMode "%s" → activeThemeId "%s"', legacy, merged.activeThemeId)
-      }
-      set({ ...merged, _loaded: true })
-    } catch {
-      // Fall back to defaults on error
-      set({ _loaded: true })
-    }
-
-    // Track external edits to settings.json (VS Code-style) so the UI updates
-    // live when the file is hand-edited.
-    if (!reloadSubscribed && api.onSettingsReloaded) {
-      reloadSubscribed = true
-      api.onSettingsReloaded((settings) => {
-        set(pickKnownSettings(settings))
-      })
-    }
-  },
-
-  async saveSetting(key, value) {
-    set({ [key]: value } as Partial<SettingsStoreState>)
-    const api = getElectronAPI()
-    if (api) {
-      await api.settingsSet(key, value)
-    }
-  },
+  loadSettings: loadSettingsOnce,
 }))

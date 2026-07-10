@@ -23,6 +23,7 @@ import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { portalRegistry } from '../lib/portalRegistry'
+import { writeCateFileDrag } from '../drag/fileDragPayload'
 import { isUrl, normalizeUrl } from './browserUrl'
 import { pageLoadErrorFrom } from './browserLoadError'
 import { Tooltip } from '../ui/Tooltip'
@@ -97,7 +98,6 @@ export default function BrowserPanel({
   panelId,
   workspaceId,
   nodeId,
-  url,
   proxyUrl,
   tabs: tabsProp,
   activeTabId: activeTabIdProp,
@@ -106,7 +106,7 @@ export default function BrowserPanel({
   const browserSearchEngine = useSettingsStore((s) => s.browserSearchEngine)
   const browserNewTabBehavior = useSettingsStore((s) => s.browserNewTabBehavior)
   const updatePanelTitle = useAppStore((s) => s.updatePanelTitle)
-  const updatePanelUrl = useAppStore((s) => s.updatePanelUrl)
+  const updateBrowserActiveTabUrl = useAppStore((s) => s.updateBrowserActiveTabUrl)
   const updatePanelTabs = useAppStore((s) => s.updatePanelTabs)
   const updatePanelProxy = useAppStore((s) => s.updatePanelProxy)
 
@@ -118,27 +118,19 @@ export default function BrowserPanel({
 
   const isFocused = useCanvasStoreContext((s) => focusedNodeId(s) === nodeId)
 
-  // A new browser panel with no saved URL lands on the start page (unless the
-  // user configured a homepage). The sentinel is never normalized or navigated.
-  const rawInitialUrl = url || browserHomepage || BROWSER_NEW_TAB_URL
-  const initialUrl =
-    rawInitialUrl === BROWSER_NEW_TAB_URL || rawInitialUrl.startsWith('about:')
-      ? rawInitialUrl
-      : normalizeUrl(rawInitialUrl)
-
   // --- Tabs (light model: one webview re-navigates on switch) --------------
-  // Seed once from persisted tabs, else a single tab at the initial URL.
+  // Seed once from the current persisted schema. There is deliberately no
+  // URL fallback: tabs + activeTabId are the only navigation authority.
   const seedTabs = useRef<{ tabs: BrowserTab[]; activeId: string } | null>(null)
   if (seedTabs.current === null) {
-    const seeded =
-      tabsProp && tabsProp.length > 0 ? tabsProp : [{ id: makeTabId(), url: initialUrl, title: '' }]
-    const active = activeTabIdProp && seeded.some((t) => t.id === activeTabIdProp)
-      ? activeTabIdProp
-      : seeded[0].id
-    seedTabs.current = { tabs: seeded, activeId: active }
+    if (tabsProp.length === 0 || !tabsProp.some((tab) => tab.id === activeTabIdProp)) {
+      throw new Error(`Browser panel ${panelId} has invalid tab state`)
+    }
+    seedTabs.current = { tabs: tabsProp, activeId: activeTabIdProp }
   }
   const [tabs, setTabs] = useState<BrowserTab[]>(seedTabs.current.tabs)
   const [activeTabId, setActiveTabId] = useState<string>(seedTabs.current.activeId)
+  const initialUrl = seedTabs.current.tabs.find((tab) => tab.id === seedTabs.current!.activeId)!.url
   const activeTabIdRef = useRef(activeTabId)
   useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
 
@@ -188,38 +180,6 @@ export default function BrowserPanel({
   const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // A dock tab stack renders only its active tab and REUSES this component
-  // instance when the slot switches between two browser panels (same type, no
-  // React key, so A and B reconcile as one instance). Our webview src + nav
-  // state are seeded once at mount, so a reused slot would keep showing the
-  // PREVIOUS browser's page — the "press +/split, then open the new tab and it
-  // renders the first one" bug. Re-seed every per-panel field the moment the
-  // slot switches panels. Done during render (React's "reset state when a prop
-  // changes" pattern) so the panelId-keyed <webview> below mounts straight to
-  // the new URL with no intermediate load of the old page. Editor/terminal
-  // panels stay correct the same way, via their own identity props/effects.
-  const [seededPanelId, setSeededPanelId] = useState(panelId)
-  if (seededPanelId !== panelId) {
-    setSeededPanelId(panelId)
-    setActiveProxy(proxyUrl)
-    setWebviewSrc(initialUrl)
-    setCurrentUrl(initialUrl)
-    setInputUrl(initialUrl)
-    currentUrlRef.current = initialUrl
-    setCanGoBack(false)
-    setCanGoForward(false)
-    setIsLoading(false)
-    setLoadError(null)
-    setCrashed(false)
-    setScreenshot(null)
-    // Re-seed tabs for the panel now occupying this reused slot.
-    const reseeded = tabsProp && tabsProp.length > 0 ? tabsProp : [{ id: makeTabId(), url: initialUrl, title: '' }]
-    const reActive = activeTabIdProp && reseeded.some((t) => t.id === activeTabIdProp) ? activeTabIdProp : reseeded[0].id
-    setTabs(reseeded)
-    setActiveTabId(reActive)
-    activeTabIdRef.current = reActive
-  }
-
   // -------------------------------------------------------------------------
   // Navigation helpers
   // -------------------------------------------------------------------------
@@ -261,9 +221,9 @@ export default function BrowserPanel({
     patchActiveTab({ url: targetUrl })
     // Persist immediately so a quick app close / workspace switch before
     // did-navigate fires still restores to the URL the user typed.
-    updatePanelUrl(workspaceId, panelId, targetUrl)
+    updateBrowserActiveTabUrl(workspaceId, panelId, targetUrl)
     loadInView(targetUrl)
-  }, [browserSearchEngine, updatePanelUrl, workspaceId, panelId, patchActiveTab, loadInView])
+  }, [browserSearchEngine, updateBrowserActiveTabUrl, workspaceId, panelId, patchActiveTab, loadInView])
 
   // --- Tab operations -------------------------------------------------------
   const selectTab = useCallback((id: string) => {
@@ -307,7 +267,7 @@ export default function BrowserPanel({
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)))
   }, [])
 
-  // Persist tabs + active tab (mirrors the active url into PanelState.url).
+  // Persist the complete canonical navigation state.
   useEffect(() => {
     updatePanelTabs(workspaceId, panelId, tabs, activeTabId)
   }, [tabs, activeTabId, updatePanelTabs, workspaceId, panelId])
@@ -352,7 +312,7 @@ export default function BrowserPanel({
     // editable surfaces (URL bar, search boxes, external apps that accept text).
     try {
       e.dataTransfer.effectAllowed = 'copy'
-      e.dataTransfer.setData('application/cate-file', screenshot.filePath)
+      writeCateFileDrag(e.dataTransfer, [screenshot.filePath])
       e.dataTransfer.setData('text/uri-list', `file://${screenshot.filePath}`)
       e.dataTransfer.setData('text/plain', screenshot.filePath)
       // Use the screenshot itself as the drag image so the cursor shows the
@@ -591,7 +551,7 @@ export default function BrowserPanel({
       setIsLoading(false)
       setLoadError(null)
       currentUrlRef.current = url
-      updatePanelUrl(workspaceId, panelId, url)
+      updateBrowserActiveTabUrl(workspaceId, panelId, url)
       patchActiveTab({ url, title: webview.getTitle() || '' })
       recordVisit(url, webview.getTitle() || '')
     }
@@ -604,7 +564,7 @@ export default function BrowserPanel({
       setCanGoBack(webview.canGoBack())
       setCanGoForward(webview.canGoForward())
       currentUrlRef.current = url
-      updatePanelUrl(workspaceId, panelId, url)
+      updateBrowserActiveTabUrl(workspaceId, panelId, url)
       patchActiveTab({ url })
     }
 
@@ -634,17 +594,11 @@ export default function BrowserPanel({
       setCrashed(false)
     }
 
-    // The guest renderer process died. Newer Electron fires `render-process-gone`
-    // (with a reason); older builds fire the deprecated `crashed`. Handle both.
+    // The guest renderer process died.
     const onRenderProcessGone = (event: any) => {
       const reason = event?.reason ?? 'crashed'
       if (reason === 'clean-exit') return // normal teardown, not a crash
       console.error('[BrowserPanel] webview renderer gone:', reason)
-      setCrashed(true)
-      setIsLoading(false)
-    }
-    const onCrashed = () => {
-      console.error('[BrowserPanel] webview crashed')
       setCrashed(true)
       setIsLoading(false)
     }
@@ -676,7 +630,6 @@ export default function BrowserPanel({
     webview.addEventListener('did-start-loading', onDidStartLoading)
     webview.addEventListener('did-stop-loading', onDidStopLoading)
     webview.addEventListener('render-process-gone', onRenderProcessGone)
-    webview.addEventListener('crashed', onCrashed)
 
     return () => {
       try { portalRegistry.unregister(panelId) } catch { /* ignore */ }
@@ -688,12 +641,11 @@ export default function BrowserPanel({
       webview.removeEventListener('did-start-loading', onDidStartLoading)
       webview.removeEventListener('did-stop-loading', onDidStopLoading)
       webview.removeEventListener('render-process-gone', onRenderProcessGone)
-      webview.removeEventListener('crashed', onCrashed)
     }
     // `partition` + `proxyReady` are deps so the listeners re-bind to the fresh
     // <webview> element after a proxy change remounts it (key={partition} +
     // the proxyReady gate); without them the new element would have no handlers.
-  }, [panelId, workspaceId, updatePanelTitle, updatePanelUrl, partition, proxyReady, recordVisit, patchActiveTab])
+  }, [panelId, workspaceId, updatePanelTitle, updateBrowserActiveTabUrl, partition, proxyReady, recordVisit, patchActiveTab])
 
   // -------------------------------------------------------------------------
   // Render

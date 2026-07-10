@@ -77,28 +77,28 @@ export class DeferredRuntime implements Runtime {
     }
 
     this.file = {
-      readFile: (p) => d((c) => c.file.readFile(p)),
-      readBinary: (p) => d((c) => c.file.readBinary(p)),
-      writeFile: (p, content) => d((c) => c.file.writeFile(p, content)),
-      writeBinary: (p, data) => d((c) => c.file.writeBinary(p, data)),
-      readDir: (p) => d((c) => c.file.readDir(p)),
-      stat: (p) => d((c) => c.file.stat(p)),
-      remove: (p) => d((c) => c.file.remove(p)),
-      rename: (oldP, newP) => d((c) => c.file.rename(oldP, newP)),
-      mkdir: (p) => d((c) => c.file.mkdir(p)),
-      copy: (src, destDir) => d((c) => c.file.copy(src, destDir)),
+      readFile: (p, access) => d((c) => c.file.readFile(p, access)),
+      readBinary: (p, access) => d((c) => c.file.readBinary(p, access)),
+      writeFile: (p, content, access) => d((c) => c.file.writeFile(p, content, access)),
+      writeBinary: (p, data, access) => d((c) => c.file.writeBinary(p, data, access)),
+      readDir: (p, access) => d((c) => c.file.readDir(p, access)),
+      stat: (p, access) => d((c) => c.file.stat(p, access)),
+      remove: (p, access) => d((c) => c.file.remove(p, access)),
+      rename: (oldP, newP, access) => d((c) => c.file.rename(oldP, newP, access)),
+      mkdir: (p, access) => d((c) => c.file.mkdir(p, access)),
+      copy: (src, destDir, access) => d((c) => c.file.copy(src, destDir, access)),
       extensionsRoot: () => d((c) => c.file.extensionsRoot()),
       extractArtifact: (tgz, destDir) => d((c) => c.file.extractArtifact(tgz, destDir)),
-      importEntries: (sources, destDir, mode, winId) => d((c) => c.file.importEntries(sources, destDir, mode, winId)),
-      search: (root, query, opts) => d((c) => c.file.search(root, query, opts)),
+      importEntries: (sources, destDir, mode, access) => d((c) => c.file.importEntries(sources, destDir, mode, access)),
+      search: (root, query, opts, access) => d((c) => c.file.search(root, query, opts, access)),
       // Start-after-ready: return the cancel handle now; start the real search
       // once ready unless cancelled. Mirrors RemoteRuntime.file.searchContent.
-      searchContent: (root, opts, cbs) => {
+      searchContent: (root, opts, cbs, access) => {
         let stopped = false
         let handle: { cancel: () => void } | null = null
         ready_.then((c) => {
           if (stopped) return
-          handle = c.file.searchContent(root, opts, cbs)
+          handle = c.file.searchContent(root, opts, cbs, access)
         }).catch((err) => {
           if (!stopped) cbs.onDone({ matches: 0, files: 0, truncated: false }, err instanceof Error ? err.message : String(err))
         })
@@ -111,12 +111,12 @@ export class DeferredRuntime implements Runtime {
       },
       // Start-after-ready: return the unsub now; start the real watch once ready
       // unless unsubscribed. Mirrors RemoteRuntime.file.watch.
-      watch: (prefix, onChange) => {
+      watch: (prefix, onChange, access) => {
         let stopped = false
         let realUnsub: (() => void) | null = null
         ready_.then((c) => {
           if (stopped) return
-          realUnsub = c.file.watch(prefix, onChange)
+          realUnsub = c.file.watch(prefix, onChange, access)
         }).catch(() => { /* watch failed to start; no events */ })
         return () => {
           stopped = true

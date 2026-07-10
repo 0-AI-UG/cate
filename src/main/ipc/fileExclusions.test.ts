@@ -32,16 +32,22 @@ vi.mock('../store', () => ({
 const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_READ_DIR, FS_SEARCH } = await import('../../shared/ipc-channels')
-const { registerTestLocalRuntime } = await import('../runtime/testLocalRuntime')
+const { registerTestDaemonRuntime } = await import('../runtime/testHarness')
 
 registerHandlers()
-registerTestLocalRuntime()
+const testRuntime = registerTestDaemonRuntime()
 const readDirHandler = handlers.get(FS_READ_DIR)!
 const searchHandler = handlers.get(FS_SEARCH)!
 const fakeEvent = { sender: {} } as unknown
 
-const readDir = (p: string) => readDirHandler(fakeEvent, p) as Promise<FileTreeNode[]>
-const search = (root: string, q: string) => searchHandler(fakeEvent, root, q) as Promise<FileSearchResult[]>
+const readDir = async (p: string): Promise<FileTreeNode[]> => {
+  await testRuntime.setExclusions(exclusions)
+  return readDirHandler(fakeEvent, p) as Promise<FileTreeNode[]>
+}
+const search = async (root: string, q: string): Promise<FileSearchResult[]> => {
+  await testRuntime.setExclusions(exclusions)
+  return searchHandler(fakeEvent, root, q) as Promise<FileSearchResult[]>
+}
 const names = (nodes: FileTreeNode[]) => nodes.map((n) => n.name).sort()
 const relPaths = (results: FileSearchResult[]) => results.map((r) => r.relativePath).sort()
 
@@ -53,7 +59,7 @@ describe('file exclusions across explorer + search', () => {
     // realpath so the registered allowed root matches validatePathStrict's
     // symlink-resolved comparison (e.g. /tmp → /private/tmp on macOS).
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-excl-')))
-    addAllowedRoot(root)
+    addAllowedRoot(root, 'local')
 
     await fs.writeFile(path.join(root, 'keep.txt'), 'alpha', 'utf8')
 
@@ -69,7 +75,7 @@ describe('file exclusions across explorer + search', () => {
   })
 
   afterEach(async () => {
-    removeAllowedRoot(root)
+    removeAllowedRoot(root, 'local')
     await fs.rm(root, { recursive: true, force: true })
   })
 

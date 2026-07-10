@@ -45,8 +45,14 @@ vi.mock('../lib/workspace/canvasAccess', () => ({
   getAgentCanvasStore: () => ({
     getState: () => ({
       nodes: {
-        n1: { panelId: 'term-aaaaaaaa-1111', origin: { x: 10.4, y: 20.6 }, size: { width: 300.2, height: 200.9 } },
-        n2: { panelId: 'edit-bbbbbbbb-2222', origin: { x: 400, y: 0 }, size: { width: 500, height: 400 } },
+        n1: {
+          dockLayout: { type: 'tabs', id: 'stack-term', panelIds: ['term-aaaaaaaa-1111'], activeIndex: 0 },
+          origin: { x: 10.4, y: 20.6 }, size: { width: 300.2, height: 200.9 },
+        },
+        n2: {
+          dockLayout: { type: 'tabs', id: 'stack-edit', panelIds: ['edit-bbbbbbbb-2222'], activeIndex: 0 },
+          origin: { x: 400, y: 0 }, size: { width: 500, height: 400 },
+        },
       },
       nodeForPanel: h.nodeForPanel,
       moveNode: h.moveNode,

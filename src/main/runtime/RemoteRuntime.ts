@@ -33,7 +33,7 @@ import type {
 } from './types'
 import type { RuntimeRpcClient } from './rpcClient'
 import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
-import type { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
+import type { FileTreeNode, FileSearchResult } from '../../shared/types'
 
 export class RemoteRuntime implements Runtime {
   readonly process: ProcessHost
@@ -189,31 +189,31 @@ export class RemoteRuntime implements Runtime {
     }
 
     this.file = {
-      readFile: (p) => call<string>(Methods.fileReadFile, [p]),
-      readBinary: async (p) =>
-        Buffer.from(await call<string>(Methods.fileReadBinary, [p]), 'base64'),
-      writeFile: (p, content) => call<void>(Methods.fileWriteFile, [p, content]),
-      writeBinary: (p, data) => longCall<void>(Methods.fileWriteBinary, [p, data.toString('base64')]),
-      readDir: (p) => call<FileTreeNode[]>(Methods.fileReadDir, [p]),
-      stat: (p) => call<{ isDirectory: boolean; isFile: boolean }>(Methods.fileStat, [p]),
-      remove: (p) => call<void>(Methods.fileRemove, [p]),
-      rename: (oldP, newP) => call<void>(Methods.fileRename, [oldP, newP]),
-      mkdir: (p) => call<void>(Methods.fileMkdir, [p]),
-      copy: (src, destDir) => call<string>(Methods.fileCopy, [src, destDir]),
+      readFile: (p, access) => call<string>(Methods.fileReadFile, [p, access]),
+      readBinary: async (p, access) =>
+        Buffer.from(await call<string>(Methods.fileReadBinary, [p, access]), 'base64'),
+      writeFile: (p, content, access) => call<string>(Methods.fileWriteFile, [p, content, access]),
+      writeBinary: (p, data, access) => longCall<string>(Methods.fileWriteBinary, [p, data.toString('base64'), access]),
+      readDir: (p, access) => call<FileTreeNode[]>(Methods.fileReadDir, [p, access]),
+      stat: (p, access) => call<{ isDirectory: boolean; isFile: boolean }>(Methods.fileStat, [p, access]),
+      remove: (p, access) => call<void>(Methods.fileRemove, [p, access]),
+      rename: (oldP, newP, access) => call<string>(Methods.fileRename, [oldP, newP, access]),
+      mkdir: (p, access) => call<void>(Methods.fileMkdir, [p, access]),
+      copy: (src, destDir, access) => call<string>(Methods.fileCopy, [src, destDir, access]),
       extensionsRoot: () => call<string>(Methods.fileExtensionsRoot, []),
       // longCall (no deadline): extraction shells `tar` on the host and can run
       // past the default 30s call timeout for a large extension.
       extractArtifact: (tgz, destDir) => longCall<string>(Methods.fileExtractArtifact, [tgz, destDir]),
-      importEntries: (sources, destDir, mode, winId) =>
-        call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, winId]),
-      search: (root, query, opts?: FileSearchOptions) =>
-        longCall<FileSearchResult[]>(Methods.fileSearch, [root, query, opts]),
-      searchContent: (root, opts, cbs) => {
+      importEntries: (sources, destDir, mode, access) =>
+        call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, access]),
+      search: (root, query, opts, access) =>
+        longCall<FileSearchResult[]>(Methods.fileSearch, [root, query, opts, access]),
+      searchContent: (root, opts, cbs, access) => {
         // Server-assigned streamId, like watch: start, then register the stream
         // when the round-trip resolves. batch/done arrive as evt frames.
         let streamId: string | null = null
         let stopped = false
-        void call<string>(Methods.fileSearchContentStart, [root, opts]).then((id) => {
+        void call<string>(Methods.fileSearchContentStart, [root, opts, access]).then((id) => {
           if (stopped) {
             // Cancelled before the start round-trip resolved.
             void this.rpc.call(Methods.fileSearchContentStop, [id]).catch(() => {})
@@ -244,10 +244,10 @@ export class RemoteRuntime implements Runtime {
           },
         }
       },
-      watch: (prefix, onChange) => {
+      watch: (prefix, onChange, access) => {
         let streamId: string | null = null
         let stopped = false
-        void call<string>(Methods.fileWatchStart, [prefix]).then((id) => {
+        void call<string>(Methods.fileWatchStart, [prefix, access]).then((id) => {
           if (stopped) {
             // Unsubscribed before the start round-trip resolved.
             void this.rpc.call(Methods.fileWatchStop, [id]).catch(() => {})

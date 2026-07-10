@@ -13,7 +13,7 @@
 // NOTE: sender and receiver share one process here (one registry / one canvas
 // store map), so the test releases the sender entry BEFORE depositing the
 // receiver hand-off — exactly the order the two real processes produce, and
-// required because release() clears pendingTransfers for the panel id.
+// required because release() clears the pending start for the panel id.
 
 // @vitest-environment jsdom
 
@@ -153,7 +153,8 @@ vi.mock('./themeManager', () => ({
 }))
 vi.mock('./logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
 
-vi.mock('./workspace/canvasAccess', () => ({
+vi.mock('./workspace/canvasAccess', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./workspace/canvasAccess')>()),
   getNodeDockLayout: () => getNodeDockLayout(),
 }))
 
@@ -163,7 +164,7 @@ import {
   hydrateReceivedPanel,
 } from './panelTransfer'
 import { terminalRegistry } from './terminal/terminalRegistry'
-import { terminalRestoreData } from './terminal/terminalRestoreData'
+import { pendingTerminalStarts } from './terminal/registryState'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { ensurePanelsInAppStore } from './canvas/applyCanvasChildPanels'
 import type { PanelState, PanelTransferSnapshot, PanelLocation } from '../../shared/types'
@@ -172,7 +173,7 @@ beforeEach(() => {
   events.length = 0
   appState.workspaces = []
   appState.selectedWorkspaceId = ''
-  terminalRestoreData.clear()
+  pendingTerminalStarts.clear()
   terminalCreate.mockClear()
   terminalCreate.mockImplementation(async () => 'pty-fresh')
   panelTransferAck.mockClear()
@@ -189,8 +190,6 @@ beforeEach(() => {
       terminalKill,
       onTerminalData: vi.fn(() => () => {}),
       onTerminalExit: vi.fn(() => () => {}),
-      shellRegisterTerminal: vi.fn(async () => undefined),
-      shellUnregisterTerminal: vi.fn(async () => undefined),
       settingsGet: vi.fn(async () => ''),
       panelTransferAck,
     },
@@ -278,7 +277,7 @@ describe('hydrateReceivedPanel — happy path round trips', () => {
     } as PanelState
 
     const snapshot = createTransferSnapshot(panel, DOCK_LOC, GEOM)
-    expect(snapshot.editorState?.unsavedContent).toBe('const x = 1')
+    expect(snapshot.panel.unsavedContent).toBe('const x = 1')
 
     expect(() => hydrateReceivedPanel('ws-recv', snapshot)).not.toThrow()
     ensurePanelsInAppStore('ws-recv', { [snapshot.panel.id]: snapshot.panel })
@@ -289,7 +288,7 @@ describe('hydrateReceivedPanel — happy path round trips', () => {
       unsavedContent: 'const x = 1',
     })
     // The preamble must not touch terminal machinery for a non-terminal panel.
-    expect(terminalRestoreData.size).toBe(0)
+    expect(pendingTerminalStarts.size).toBe(0)
   })
 
   it('canvas: children, viewport and live child PTYs hydrate before the canvas mounts', async () => {
@@ -320,7 +319,7 @@ describe('hydrateReceivedPanel — happy path round trips', () => {
 
     // Layout + viewport restored into the receiver's canvas store.
     const hydrated = getOrCreateCanvasStoreForPanel('hrp-canvas').getState()
-    expect(hydrated.nodes[nodeId]?.panelId).toBe('hrp-canvas-child')
+    expect(hydrated.nodes[nodeId]?.dockLayout).toMatchObject({ panelIds: ['hrp-canvas-child'] })
     expect(hydrated.zoomLevel).toBe(1.25)
     expect(hydrated.viewportOffset).toEqual({ x: 7, y: 9 })
 
@@ -351,8 +350,10 @@ describe('depositPanelTerminalTransfer — PTY hand-off', () => {
     }
 
     depositPanelTerminalTransfer(snapshot)
-    // Live transfer must not be confused with cold session restore.
-    expect(terminalRestoreData.has('dep-live')).toBe(false)
+    expect(pendingTerminalStarts.get('dep-live')).toMatchObject({
+      kind: 'transfer',
+      ptyId: 'pty-armed',
+    })
 
     const entry = await terminalRegistry.getOrCreate('dep-live', { workspaceId: 'ws-recv' })
     expect(entry.ptyId).toBe('pty-armed')
@@ -365,35 +366,6 @@ describe('depositPanelTerminalTransfer — PTY hand-off', () => {
     terminalRegistry.dispose('dep-live')
   })
 
-  it('session restore (no live PTY): arms scrollback replay by the stable panelId and spawns fresh', async () => {
-    const snapshot: PanelTransferSnapshot = {
-      panel: termPanel('dep-replay'),
-      geometry: GEOM,
-      sourceLocation: DOCK_LOC,
-      terminalReplayPtyId: 'pty-dead-old',
-    }
-
-    depositPanelTerminalTransfer(snapshot)
-    expect(terminalRestoreData.get('dep-replay')).toEqual({ replayFromId: 'dep-replay' })
-
-    terminalCreate.mockResolvedValueOnce('pty-respawned')
-    const entry = await terminalRegistry.getOrCreate('dep-replay', { workspaceId: 'ws-recv' })
-    expect(entry.ptyId).toBe('pty-respawned') // fresh spawn, not a reconnect
-    expect(replayTerminalLog).toHaveBeenCalledWith('dep-replay')
-
-    terminalRegistry.dispose('dep-replay')
-  })
-
-  it('ignores a replay hint on a non-terminal panel', () => {
-    const snapshot: PanelTransferSnapshot = {
-      panel: { id: 'dep-not-term', type: 'editor', title: 'E', isDirty: false } as PanelState,
-      geometry: GEOM,
-      sourceLocation: DOCK_LOC,
-      terminalReplayPtyId: 'pty-dead-old',
-    }
-    depositPanelTerminalTransfer(snapshot)
-    expect(terminalRestoreData.has('dep-not-term')).toBe(false)
-  })
 })
 
 // ===========================================================================
@@ -412,7 +384,7 @@ describe('snapshot of a terminal whose registry entry was released mid-drag', ()
 
     expect(() => hydrateReceivedPanel('ws-recv', snapshot)).not.toThrow()
     // No hand-off and no replay were armed.
-    expect(terminalRestoreData.size).toBe(0)
+    expect(pendingTerminalStarts.size).toBe(0)
 
     // Mount: a FRESH PTY is spawned — the fresh-spawn signal is a terminalCreate
     // IPC call and a brand-new ptyId (not the stale 'pty-vanishing').
@@ -445,21 +417,21 @@ describe('canvas snapshot with a vanished child panel record', () => {
       resolveChildPanel: () => undefined,
     })
     expect(snapshot.canvasState?.childPanels).toEqual({})
-    expect(snapshot.canvasState?.nodes[nodeId]?.panelId).toBe('ghost-child')
+    expect(snapshot.canvasState?.nodes[nodeId]?.dockLayout).toMatchObject({ panelIds: ['ghost-child'] })
 
     store.setState({ nodes: {} }) // fresh receiver store
     expect(() => hydrateReceivedPanel('ws-recv', snapshot)).not.toThrow()
 
     // Documented behavior: the orphan node is KEPT (loadWorkspaceCanvas applies
-    // the captured nodes verbatim; nothing prunes nodes whose panelId has no
+    // the captured nodes verbatim; nothing prunes nodes whose dock panel has no
     // PanelState). The receiver renders it via resolvePanel's generic "Panel"
     // stub fallback — it is NOT dropped.
     const hydrated = getOrCreateCanvasStoreForPanel('edge-ghost-canvas').getState()
-    expect(hydrated.nodes[nodeId]?.panelId).toBe('ghost-child')
+    expect(hydrated.nodes[nodeId]?.dockLayout).toMatchObject({ panelIds: ['ghost-child'] })
     // ...while the appStore receives no record for the ghost child.
     expect(receiverPanels('ws-recv')?.['ghost-child']).toBeUndefined()
     // And no terminal hand-off was armed for it.
-    expect(terminalRestoreData.size).toBe(0)
+    expect(pendingTerminalStarts.size).toBe(0)
   })
 })
 
@@ -489,7 +461,7 @@ describe('two deposits race before the panel mounts', () => {
     const entry = await terminalRegistry.getOrCreate('race-panel', { workspaceId: 'ws-recv' })
     await attachAndSettle('race-panel')
 
-    // Actual behavior: pendingTransfers is keyed by panelId, so the second
+    // The pending-start registry is keyed by panelId, so the second
     // set() overwrites the first — the mount reconnects to pty-second only.
     expect(entry.ptyId).toBe('pty-second')
     expect((entry.terminal as unknown as { writes: string[] }).writes.join('')).toContain('SECOND')
@@ -554,7 +526,7 @@ describe('malformed or partial snapshots hydrate without throwing', () => {
       sourceLocation: DOCK_LOC,
     }
     expect(() => hydrateReceivedPanel('ws-recv', snapshot)).not.toThrow()
-    expect(terminalRestoreData.size).toBe(0)
+    expect(pendingTerminalStarts.size).toBe(0)
   })
 
   it('canvas snapshot with undefined childPanels and childTerminals still loads the layout', () => {
@@ -579,7 +551,7 @@ describe('malformed or partial snapshots hydrate without throwing', () => {
     expect(hydrated.zoomLevel).toBe(2)
     // Nothing seeded, nothing armed.
     expect(receiverPanels('ws-recv')).toBeUndefined()
-    expect(terminalRestoreData.size).toBe(0)
+    expect(pendingTerminalStarts.size).toBe(0)
   })
 
   it('canvas panel WITHOUT canvasState skips hydration entirely (no throw, store untouched)', () => {

@@ -16,8 +16,9 @@ import {
   nextNumberedTitle,
   createCleanDockSnapshot,
 } from './helpers'
-import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../canvasStore'
+import { releaseCanvasStoreForPanel } from '../canvasStore'
 import { teardownPanelContent } from '../../lib/panels/panelTeardown'
+import { teardownPanelFamily } from '../../lib/panels/panelLifecycle'
 import { collectPanelIds } from '../../lib/canvas/collectPanelIds'
 import { getOrCreateWorkspaceDockStore } from '../../lib/workspace/dockRegistry'
 import {
@@ -43,7 +44,7 @@ type PanelSliceActions = Pick<
   | 'updatePanelTitle'
   | 'updatePanelTitleFromAgent'
   | 'renamePanelByUser'
-  | 'updatePanelUrl'
+  | 'updateBrowserActiveTabUrl'
   | 'updatePanelTabs'
   | 'updatePanelProxy'
   | 'updatePanelFilePath'
@@ -91,14 +92,15 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     createBrowser(workspaceId, url?, position?, placement?, proxyUrl?) {
       const panelId = generateId()
+      const tabId = generateId()
+      const initialUrl = url ?? BROWSER_NEW_TAB_URL
       const panel: PanelState = {
         id: panelId,
         type: 'browser',
         title: url ?? 'Browser',
         isDirty: false,
-        // No URL → open the start page (not a blank page). BrowserPanel routes
-        // the sentinel / about:blank / empty to <StartPage> via isStartPageUrl.
-        url: url ?? BROWSER_NEW_TAB_URL,
+        tabs: [{ id: tabId, url: initialUrl, title: '' }],
+        activeTabId: tabId,
         ...(proxyUrl ? { proxyUrl } : {}),
       }
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('browser', placement), position)
@@ -190,27 +192,13 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       const ws = get().workspaces.find((w) => w.id === workspaceId)
       const panel = ws?.panels[panelId]
 
-      // Tear down window-local content (PTY killed, xterm + pi disposed). The
-      // close-vs-transfer decision lives in teardownPanelContent — transfer
-      // paths (detach, cross-window drop) go through removePanelFromWindow.
-      teardownPanelContent(panelId, panel?.type, 'close')
-
-      // A canvas takes its children with it: kill each child's content and
-      // drop its record below. Without this, closing a canvas tab leaked the
-      // children's PTYs and left orphaned panel records behind.
-      const childIds = new Set<string>()
-      if (panel?.type === 'canvas') {
-        const store = getOrCreateCanvasStoreForPanel(panelId)
-        for (const node of Object.values(store.getState().nodes)) {
-          collectPanelIds(getNodeDockLayout(panelId, node.id), childIds)
-          if (node.panelId) childIds.add(node.panelId)
-        }
-        for (const id of childIds) {
-          teardownPanelContent(id, ws?.panels[id]?.type, 'close')
-          clearActivePanelIfMatches(id)
-        }
-        releaseCanvasStoreForPanel(panelId)
-      }
+      const childIds = teardownPanelFamily(
+        panelId,
+        panel?.type,
+        'close',
+        (id) => ws?.panels[id]?.type,
+      )
+      for (const id of childIds) clearActivePanelIfMatches(id)
 
       // Remove from dock/canvas first (less critical — log errors but continue).
       // resolvePanelLocation is the canonical probe (dock tree, then every canvas
@@ -268,19 +256,20 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, title, titleUserOverridden: true }))
     },
 
-    updatePanelUrl(workspaceId, panelId, url) {
-      setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, url }))
+    updateBrowserActiveTabUrl(workspaceId, panelId, url) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({
+        ...panel,
+        tabs: panel.tabs?.map((tab) =>
+          tab.id === panel.activeTabId ? { ...tab, url } : tab,
+        ),
+      }))
     },
 
     updatePanelTabs(workspaceId, panelId, tabs, activeTabId) {
-      // Mirror the active tab's url into `url` so restore/transfer (which read
-      // `url`) reopen on the right page even if they ignore the tabs array.
-      const activeUrl = tabs.find((t) => t.id === activeTabId)?.url
       setPanelField(set, workspaceId, panelId, (panel) => ({
         ...panel,
         tabs,
         activeTabId,
-        ...(activeUrl !== undefined ? { url: activeUrl } : {}),
       }))
     },
 
@@ -370,8 +359,11 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       const ops = ensureCanvasOpsForPanel(canvasPanelId)
       const storeApi = ops.storeApi
       const state = storeApi.getState()
-      const panelIds = Object.values(state.nodes).map((n) => n.panelId)
-      if (panelIds.length === 0) return
+      const panelIds = new Set<string>()
+      for (const node of Object.values(state.nodes)) {
+        collectPanelIds(getNodeDockLayout(canvasPanelId, node.id), panelIds)
+      }
+      if (panelIds.size === 0) return
 
       // Empty the canvas store in one synchronous step (no per-node exit
       // animation, which would otherwise leave the old nodes mid-transition).

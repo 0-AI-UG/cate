@@ -5,6 +5,7 @@
 
 import type { CanvasNodeState } from '../../../shared/types'
 import { PANEL_DEFAULT_SIZES } from '../../../shared/types'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
 import { findFreePosition } from '../../canvas/placement'
 import type { CanvasGet, CanvasSet, CanvasStoreActions, CanvasStoreState } from './storeTypes'
 import { generateId, IS_E2E } from './helpers'
@@ -45,8 +46,8 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       get().pushHistory()
       const state = get()
       const defaultSize = size ?? PANEL_DEFAULT_SIZES[panelType]
-      // Dedupe on panelId: reposition + resize + focus the existing node.
-      const existing = Object.values(state.nodes).find((n) => n.panelId === panelId)
+      // Panel membership is owned solely by each node's dock tree.
+      const existing = Object.values(state.nodes).find((n) => collectPanelIds(n.dockLayout).includes(panelId))
       if (existing) {
         const { [existing.id]: _omit, ...otherNodes } = state.nodes
         // No anchor id: existing.id was just excluded from otherNodes, so the
@@ -73,7 +74,6 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
 
       const node: CanvasNodeState = {
         id: nodeId,
-        panelId,
         origin,
         size: defaultSize,
         zOrder: state.nextZOrder,
@@ -251,7 +251,7 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
 
     nodeForPanel(panelId) {
       const { nodes } = get()
-      const found = Object.values(nodes).find((n) => n.panelId === panelId)
+      const found = Object.values(nodes).find((n) => collectPanelIds(n.dockLayout).includes(panelId))
       return found?.id ?? null
     },
 
@@ -350,6 +350,14 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       set((state) => {
         const node = state.nodes[nodeId]
         if (!node) return state
+        if (!layout) {
+          const { [nodeId]: _removed, ...nodes } = state.nodes
+          return {
+            nodes,
+            selection: state.selection.filter((id) => id !== nodeId),
+            selectionActive: false,
+          }
+        }
         return {
           nodes: {
             ...state.nodes,

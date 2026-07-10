@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { ipcMain, dialog, shell } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import log from '../logger'
@@ -8,7 +8,7 @@ import { isLocalLocator } from '../runtime/locator'
 import { forwardFileGrant } from '../runtime/runtimeManager'
 import { recordPersistentGrant } from '../grantedPathStore'
 import { importCanvasBackgroundImage } from '../canvasBackgroundStore'
-import { windowFromEvent } from '../windowRegistry'
+import { listWindows, windowFromEvent } from '../windowRegistry'
 import {
   SHELL_SHOW_IN_FOLDER,
   DIALOG_OPEN_FOLDER,
@@ -26,14 +26,15 @@ import {
 
 export function registerDialogHandlers(): void {
   // Shell: Reveal in Finder
-  ipcMain.handle(SHELL_SHOW_IN_FOLDER, wrapHandler('[SHELL_SHOW_IN_FOLDER]', async (_event, filePath: string) => {
+  ipcMain.handle(SHELL_SHOW_IN_FOLDER, wrapHandler('[SHELL_SHOW_IN_FOLDER]', async (event, filePath: string, workspaceId?: string) => {
     // A remote (cate-runtime://) path has no representation on this machine —
     // there is nothing local to reveal. Return a structured result instead of
     // throwing so the renderer can quietly ignore/disable the action.
     if (!isLocalLocator(filePath)) {
       return { ok: false, reason: 'remote' }
     }
-    shell.showItemInFolder(validatePath(filePath))
+    const win = windowFromEvent(event)
+    shell.showItemInFolder(validatePath(filePath, win?.id, workspaceId))
     return { ok: true }
   }))
 
@@ -134,8 +135,8 @@ export function registerDialogHandlers(): void {
         // would lose access (createWindow's grantsReady only runs at the
         // owning window's creation — older sibling windows never see the
         // newly approved path otherwise).
-        for (const other of BrowserWindow.getAllWindows()) {
-          if (other.id === win.id || other.isDestroyed()) continue
+        for (const other of listWindows()) {
+          if (other.id === win.id) continue
           try {
             await grantFileAccess(other.id, safePath)
             forwardFileGrant(safePath, other.id)

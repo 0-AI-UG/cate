@@ -217,24 +217,29 @@ export interface FsChangeEvent {
 
 // NOTE (Phase 1, filesystem = "Model A"): every `path`/`dir` argument below is
 // an ALREADY-VALIDATED, runtime-absolute path. The IPC handler validates the
-// raw locator path via `Runtime.validate*` first, then passes the safe path
-// here. This keeps these leaf ops pure fs — directly reusable by the standalone
-// runtime daemon in Phase 3. `importEntries` is the lone exception: it computes
-// per-item destinations, so it validates each one internally (hence ownerWindowId).
+// Every operation validates and executes on the owning host in one call. The
+// optional access context carries window grants and workspace scope across RPC.
+export interface FileAccessContext {
+  ownerWindowId?: number
+  scopeId?: string
+}
+
 export interface FileHost {
-  readFile(safePath: string): Promise<string>
-  readBinary(safePath: string): Promise<Buffer>
-  writeFile(safePath: string, content: string): Promise<void>
+  readFile(safePath: string, access?: FileAccessContext): Promise<string>
+  readBinary(safePath: string, access?: FileAccessContext): Promise<Buffer>
+  /** Returns the canonical path written, used to consume mirrored one-shot grants. */
+  writeFile(safePath: string, content: string, access?: FileAccessContext): Promise<string>
   /** Write raw bytes. Used by remote upload (drag-import into a remote workspace):
    *  the source is read on the client and its bytes written here on the host. */
-  writeBinary(safePath: string, data: Buffer): Promise<void>
-  readDir(safePath: string): Promise<FileTreeNode[]>
-  stat(safePath: string): Promise<{ isDirectory: boolean; isFile: boolean }>
-  remove(safePath: string): Promise<void>
-  rename(safeOldPath: string, safeNewPath: string): Promise<void>
-  mkdir(safePath: string): Promise<void>
+  writeBinary(safePath: string, data: Buffer, access?: FileAccessContext): Promise<string>
+  readDir(safePath: string, access?: FileAccessContext): Promise<FileTreeNode[]>
+  stat(safePath: string, access?: FileAccessContext): Promise<{ isDirectory: boolean; isFile: boolean }>
+  remove(safePath: string, access?: FileAccessContext): Promise<void>
+  /** Returns the canonical destination path. */
+  rename(safeOldPath: string, safeNewPath: string, access?: FileAccessContext): Promise<string>
+  mkdir(safePath: string, access?: FileAccessContext): Promise<void>
   /** Copy into a directory, auto-naming on collision; returns the final path. */
-  copy(safeSrcPath: string, safeDestDir: string): Promise<string>
+  copy(safeSrcPath: string, safeDestDir: string, access?: FileAccessContext): Promise<string>
   /** The host's per-host extensions install root (~/.cate/extensions), resolved
    *  daemon-side (only the daemon knows its home dir) and registered as an
    *  allowed root. Lets the install flow place an extension on whichever host
@@ -248,9 +253,9 @@ export interface FileHost {
     sources: string[],
     safeDestDir: string,
     mode: 'copy' | 'move',
-    ownerWindowId?: number,
+    access?: FileAccessContext,
   ): Promise<{ created: string[]; failed: number }>
-  search(safeRoot: string, query: string, opts?: FileSearchOptions): Promise<FileSearchResult[]>
+  search(safeRoot: string, query: string, opts?: FileSearchOptions, access?: FileAccessContext): Promise<FileSearchResult[]>
   /**
    * Streaming ripgrep content search (the VS Code-style Search view). Runs on
    * whichever host owns the files — the local machine spawns its bundled
@@ -267,17 +272,16 @@ export interface FileHost {
       onBatch: (files: SearchFileResult[]) => void
       onDone: (stats: SearchStats, error?: string) => void
     },
+    access?: FileAccessContext,
   ): { cancel: () => void }
   /**
    * Subscribe to filesystem changes under `prefix`. Returns an unsubscribe fn.
-   * Matches the in-process `subscribeFsChanges` semantics (one call per event,
-   * no coalescing — the caller debounces). `type` carries the real change kind
+   * Emits one call per event with no coalescing; the caller debounces. `type`
+   * carries the real change kind
    * (create/update/delete) so consumers can prune removed entries; the git
-   * monitor ignores it. Used by the git monitor and the remote watch wrapper.
-   * The renderer-facing watch path (per-window debounce + FS_WATCH_EVENT) stays
-   * its own window-keyed wrapper in filesystem.ts for now (routed in Phase 3).
+   * monitor ignores it. Used by the git monitor and renderer watch wrapper.
    */
-  watch(prefix: string, onChange: (changedPath: string, type: FsChangeType) => void): () => void
+  watch(prefix: string, onChange: (changedPath: string, type: FsChangeType) => void, access?: FileAccessContext): () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -436,9 +440,8 @@ export interface Runtime {
   readonly vcs: VcsHost
   readonly server: ServerHost
   readonly tunnel: TunnelHost
-  /** Lexical + allowed-root check; returns the normalized path. The optional
-   *  scopeId restricts the check to one workspace's roots (per-workspace
-   *  isolation); when omitted, validation falls back to the union of all roots. */
+  /** Lexical + allowed-root check; returns the normalized path. When scopeId is
+   *  omitted, the runtime uses its own configured root scope. */
   validatePath(filePath: string, ownerWindowId?: number, scopeId?: string): string
   /** Strict (symlink-resolving) read validation; returns the real path. */
   validatePathStrict(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string>
@@ -448,8 +451,8 @@ export interface Runtime {
   validateCwd(cwd: string, ownerWindowId?: number, scopeId?: string): string
   /** Add/remove a path from this runtime's allowed-roots set. For the local
    *  daemon (and remote daemons), workspace roots are forwarded here so the
-   *  daemon's authoritative path checks allow them. The optional scopeId keys the
-   *  root under one workspace's scope (per-workspace isolation). */
+   *  daemon's authoritative path checks allow them. When scopeId is omitted,
+   *  the runtime uses its own configured root scope. */
   addAllowedRoot(root: string, scopeId?: string): Promise<void>
   removeAllowedRoot(root: string, scopeId?: string): Promise<void>
   /** Replace this runtime's readDir/search exclusion basenames live (the

@@ -43,7 +43,7 @@ import type { ProjectWorkspaceFile, ProjectSessionFile, CanvasNodeState } from '
 function makeNode(panelId: string): CanvasNodeState {
   return {
     id: `node-${panelId}`,
-    panelId,
+    dockLayout: { type: 'tabs', id: `stack-${panelId}`, panelIds: [panelId], activeIndex: 0 },
     origin: { x: 0, y: 0 },
     size: { width: 100, height: 100 },
     zOrder: 0,

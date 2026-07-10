@@ -4,17 +4,16 @@
 // lookup helpers without pulling in the full CanvasPanel tree. CanvasPanel
 // owns registration/cleanup; everyone else just reads.
 //
-// This file exists as the first concrete step toward the Phase 3 plan goal of
-// passing identities explicitly via a session/context rather than module-level
-// scans. The map itself is still global; the next refactor moves it onto the
-// DragSession.
+// Storage lives on RendererSession; this module is the dock-specific facade.
 // =============================================================================
 
 import type { StoreApi } from 'zustand'
 import type { DockLayoutNode } from '../../shared/types'
+import { activeDockPanelId } from '../../shared/collectPanelIds'
 import type { DockStore } from '../stores/dockStore'
+import { getDefaultSession } from '../drag/session'
 
-const nodeStoreMap = new Map<string, StoreApi<DockStore>>()
+export { activeDockPanelId as activeLeafPanelId } from '../../shared/collectPanelIds'
 
 /** Walk a dock layout tree to the id of the currently-active leaf panel. For a
  *  tab stack that's the active tab (`panelIds[activeIndex]`, falling back to the
@@ -22,39 +21,26 @@ const nodeStoreMap = new Map<string, StoreApi<DockStore>>()
  *  Returns null for an empty/missing tree. Shared by CanvasNode (worktree pill +
  *  node-focus active-panel write) and getNodeActivePanelId so the two can't
  *  drift. */
-export function activeLeafPanelId(node: DockLayoutNode | null | undefined): string | null {
-  if (!node) return null
-  if (node.type === 'tabs') return node.panelIds[node.activeIndex] ?? node.panelIds[0] ?? null
-  for (const child of node.children) {
-    const found = activeLeafPanelId(child)
-    if (found) return found
-  }
-  return null
-}
-
-const storeKey = (canvasPanelId: string, nodeId: string) =>
-  `${canvasPanelId}:${nodeId}`
-
 export function registerNodeDockStore(
   canvasPanelId: string,
   nodeId: string,
   store: StoreApi<DockStore>,
 ): void {
-  nodeStoreMap.set(storeKey(canvasPanelId, nodeId), store)
+  getDefaultSession().registerNodeDockStore(canvasPanelId, nodeId, store)
 }
 
 export function unregisterNodeDockStore(
   canvasPanelId: string,
   nodeId: string,
 ): void {
-  nodeStoreMap.delete(storeKey(canvasPanelId, nodeId))
+  getDefaultSession().unregisterNodeDockStore(canvasPanelId, nodeId)
 }
 
 export function getNodeDockStore(
   canvasPanelId: string,
   nodeId: string,
 ): StoreApi<DockStore> | undefined {
-  return nodeStoreMap.get(storeKey(canvasPanelId, nodeId))
+  return getDefaultSession().getNodeDockStore(canvasPanelId, nodeId)
 }
 
 /** Find the per-node DockStore that owns a canvas node (by canvas-node id).
@@ -62,10 +48,7 @@ export function getNodeDockStore(
  *  at the time of lookup — there's at most a handful of canvases, so the scan
  *  is cheap. */
 export function findNodeDockStore(nodeId: string): StoreApi<DockStore> | null {
-  for (const [key, store] of nodeStoreMap.entries()) {
-    if (key.endsWith(`:${nodeId}`)) return store
-  }
-  return null
+  return getDefaultSession().findNodeDockStore(nodeId)
 }
 
 /** The active leaf panel id inside a canvas node's per-node mini-dock — i.e.
@@ -75,7 +58,7 @@ export function findNodeDockStore(nodeId: string): StoreApi<DockStore> | null {
 export function getNodeActivePanelId(canvasPanelId: string, nodeId: string): string | null {
   const store = getNodeDockStore(canvasPanelId, nodeId)
   if (!store) return null
-  return activeLeafPanelId(store.getState().zones.center.layout)
+  return activeDockPanelId(store.getState().zones.center.layout)
 }
 
 /** The LIVE center-zone dock layout for a canvas node, read straight from its
@@ -97,11 +80,5 @@ export function getLiveNodeDockLayout(
  *  recognise drags that originated inside a canvas node and treat them as a
  *  node move instead of an undock + add. */
 export function findNodeIdForDockStore(store: StoreApi<DockStore>): string | null {
-  for (const [key, s] of nodeStoreMap.entries()) {
-    if (s === store) {
-      const idx = key.indexOf(':')
-      return idx >= 0 ? key.slice(idx + 1) : null
-    }
-  }
-  return null
+  return getDefaultSession().findNodeIdForDockStore(store)
 }

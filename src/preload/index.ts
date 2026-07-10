@@ -58,8 +58,6 @@ import {
   GIT_STASH,
   GIT_STASH_POP,
   GIT_DISCARD_FILE,
-  SHELL_REGISTER_TERMINAL,
-  SHELL_UNREGISTER_TERMINAL,
   SHELL_ACTIVITY_UPDATE,
   SHELL_PORTS_UPDATE,
   SHELL_CWD_UPDATE,
@@ -144,13 +142,10 @@ import {
   WINDOW_CLOSE,
   WINDOW_IS_MAXIMIZED,
   WINDOW_MAXIMIZE_STATE,
-  PANEL_TRANSFER,
   PANEL_RECEIVE,
   PANEL_TRANSFER_ACK,
-  PANEL_WINDOW_DOCK_BACK,
   WINDOW_CLOSE_FOR_WORKSPACE,
   RUN_ACTION_IN_MAIN,
-  DRAG_START,
   DRAG_DETACH,
   WINDOW_FULLSCREEN_STATE,
   DRAG_END,
@@ -187,7 +182,6 @@ import {
   WEBVIEW_SCREENSHOT,
   BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
-  CAPTURE_PAGE,
   UPDATE_STATUS,
   UPDATE_QUIT_AND_INSTALL,
   UPDATE_GET_STATUS,
@@ -405,8 +399,6 @@ const invokeForwarders = {
   gitDiscardFile: makeInvoker<'gitDiscardFile'>(GIT_DISCARD_FILE),
 
   // Shell / Process Monitor
-  shellRegisterTerminal: makeInvoker<'shellRegisterTerminal'>(SHELL_REGISTER_TERMINAL),
-  shellUnregisterTerminal: makeInvoker<'shellUnregisterTerminal'>(SHELL_UNREGISTER_TERMINAL),
 
   // Settings
   settingsGet: makeInvoker<'settingsGet'>(SETTINGS_GET),
@@ -464,7 +456,6 @@ const invokeForwarders = {
   layoutDelete: makeInvoker<'layoutDelete'>(LAYOUT_DELETE),
 
   // Capture / browser
-  capturePage: makeInvoker<'capturePage'>(CAPTURE_PAGE),
   webviewScreenshot: makeInvoker<'webviewScreenshot'>(WEBVIEW_SCREENSHOT),
   browserSetProxy: makeInvoker<'browserSetProxy'>(BROWSER_SET_PROXY),
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
@@ -483,12 +474,9 @@ const invokeForwarders = {
   runActionInMain: makeInvoker<'runActionInMain'>(RUN_ACTION_IN_MAIN),
 
   // Panel transfer (cross-window)
-  panelTransfer: makeInvoker<'panelTransfer'>(PANEL_TRANSFER),
   panelTransferAck: makeInvoker<'panelTransferAck'>(PANEL_TRANSFER_ACK),
-  panelWindowDockBack: makeInvoker<'panelWindowDockBack'>(PANEL_WINDOW_DOCK_BACK),
 
   // Cross-window drag-and-drop
-  dragStart: makeInvoker<'dragStart'>(DRAG_START),
   dragDetach: makeInvoker<'dragDetach'>(DRAG_DETACH),
 
   // Workspace external edit
@@ -786,10 +774,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return createIpcListener(PANEL_RECEIVE, callback)
   },
 
-  onPanelWindowDockBack(callback: (payload: { panelWindowId: number; snapshot?: unknown }) => void): () => void {
-    return createIpcListener(PANEL_WINDOW_DOCK_BACK, callback)
-  },
-
   // ---------------------------------------------------------------------------
   // Cross-window drag-and-drop
   // ---------------------------------------------------------------------------
@@ -817,7 +801,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => { ipcRenderer.removeListener(WINDOW_MAXIMIZE_STATE, listener) }
   },
 
-  onDragEnd(callback: (dragId?: string) => void): () => void {
+  onDragEnd(callback: (dragId: string) => void): () => void {
     return createIpcListener(DRAG_END, callback)
   },
 
@@ -870,7 +854,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Cross-window drag coordination
   // ---------------------------------------------------------------------------
 
-  onCrossWindowDragUpdate(callback: (screenPos: unknown, snapshot: unknown, dragId?: unknown) => void): () => void {
+  onCrossWindowDragUpdate(callback: (screenPos: unknown, snapshot: unknown, dragId: unknown) => void): () => void {
     return createIpcListener(CROSS_WINDOW_DRAG_UPDATE, callback)
   },
 

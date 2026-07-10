@@ -20,6 +20,7 @@ import { writeJsonAtomic } from '../../main/writeJsonAtomic'
 import { hostAgentDir, hostJoin, PI_AGENT_DIR, type AgentDirVariant } from './agentDir'
 import type { Runtime } from '../../main/runtime/types'
 import type { CustomOpenAIProvider } from '../../shared/types'
+import { agentConfigLock } from './agentConfigLock'
 
 const PROVIDER_ID = 'custom-openai'
 
@@ -53,26 +54,28 @@ export async function readCustomOpenAI(): Promise<CustomOpenAIProvider | null> {
 /** Write (or clear, when cfg is null/empty) the custom provider, preserving any
  *  other providers in models.json. */
 export async function saveCustomOpenAI(cfg: CustomOpenAIProvider | null): Promise<void> {
-  const shared = sharedModelsPath()
-  const data = (await readJson(shared)) ?? {}
-  if (!data.providers || typeof data.providers !== 'object') data.providers = {}
+  await agentConfigLock.run('models.json', async () => {
+    const shared = sharedModelsPath()
+    const data = (await readJson(shared)) ?? {}
+    if (!data.providers || typeof data.providers !== 'object') data.providers = {}
 
-  if (!cfg || !cfg.baseUrl.trim() || cfg.models.length === 0) {
-    delete data.providers[PROVIDER_ID]
-  } else {
-    data.providers[PROVIDER_ID] = {
-      baseUrl: cfg.baseUrl.trim(),
-      api: 'openai-completions',
-      // pi requires a non-empty apiKey when models are defined; local servers
-      // (Ollama, LM Studio, vLLM) ignore the value, so default to a placeholder.
-      apiKey: cfg.apiKey.trim() || 'none',
-      models: cfg.models.map((id) => ({ id })),
+    if (!cfg || !cfg.baseUrl.trim() || cfg.models.length === 0) {
+      delete data.providers[PROVIDER_ID]
+    } else {
+      data.providers[PROVIDER_ID] = {
+        baseUrl: cfg.baseUrl.trim(),
+        api: 'openai-completions',
+        // pi requires a non-empty apiKey when models are defined; local servers
+        // (Ollama, LM Studio, vLLM) ignore the value, so default to a placeholder.
+        apiKey: cfg.apiKey.trim() || 'none',
+        models: cfg.models.map((id) => ({ id })),
+      }
     }
-  }
 
-  // models.json sits beside auth.json under the pi-agent dir, so write it with
-  // the same secret-mode dir (0700) the credentials store uses.
-  await writeJsonAtomic(shared, data, { mode: 0o600 })
+    // models.json sits beside auth.json under the pi-agent dir, so write it with
+    // the same secret-mode dir (0700) the credentials store uses.
+    await writeJsonAtomic(shared, data, { mode: 0o600 })
+  })
 }
 
 /** Mirror the shared models.json into the host's pi-agent dir via the runtime

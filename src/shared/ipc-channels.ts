@@ -78,8 +78,6 @@ export const GIT_STASH_POP = 'git:stashPop'
 export const GIT_DISCARD_FILE = 'git:discardFile'
 
 // Shell / Process Monitor
-export const SHELL_REGISTER_TERMINAL = 'shell:registerTerminal'
-export const SHELL_UNREGISTER_TERMINAL = 'shell:unregisterTerminal'
 export const SHELL_ACTIVITY_UPDATE = 'shell:activityUpdate' // main -> renderer
 export const SHELL_PORTS_UPDATE = 'shell:ports-update'       // main -> renderer
 export const SHELL_CWD_UPDATE = 'shell:cwd-update'           // main -> renderer
@@ -273,16 +271,10 @@ export const WINDOW_CLOSE_FOR_WORKSPACE = 'window:closeForWorkspace' // renderer
 export const RUN_ACTION_IN_MAIN = 'window:runActionInMain' // renderer -> main
 
 // Panel transfer (cross-window)
-export const PANEL_TRANSFER = 'panel:transfer'
 export const PANEL_RECEIVE = 'panel:receive'       // main -> renderer
 export const PANEL_TRANSFER_ACK = 'panel:transferAck'
 
-// Dock-back — re-integrate a transferred panel into the main window (shared by
-// dock windows via the title-bar double-click).
-export const PANEL_WINDOW_DOCK_BACK = 'panel:dockBack'  // renderer -> main
-
 // Cross-window drag-and-drop
-export const DRAG_START = 'drag:start'
 export const DRAG_DETACH = 'drag:detach'
 export const DRAG_END = 'drag:end'                 // main -> renderer
 
@@ -320,9 +312,6 @@ export const CROSS_WINDOW_DRAG_RESOLVE = 'crossDrag:resolve'   // renderer -> ma
 // Webview
 export const WEBVIEW_SCREENSHOT = 'webview:screenshot'
 export const NATIVE_FILE_DRAG = 'native:fileDrag'
-
-// Page capture
-export const CAPTURE_PAGE = 'capture-page'
 
 // Pi agent (renderer <-> main)
 export const AGENT_CREATE = 'agent:create'           // renderer -> main

@@ -20,7 +20,7 @@ import {
   type SearchEvtPayload,
 } from './protocol'
 import { RUNTIME_VERSION } from './version'
-import type { Runtime } from '../main/runtime/types'
+import type { FileAccessContext, Runtime } from '../main/runtime/types'
 import type { SearchOptions } from '../shared/types'
 
 export interface RpcServerOptions {
@@ -125,27 +125,27 @@ export class RpcServer {
       case Methods.clearScopedWriteAllowancesForWindow: return api.clearScopedWriteAllowancesForWindow(n(0) as number)
 
       // --- file ---
-      case Methods.fileReadFile: return api.file.readFile(s(0))
-      case Methods.fileReadBinary: return (await api.file.readBinary(s(0))).toString('base64')
-      case Methods.fileWriteFile: return api.file.writeFile(s(0), s(1))
-      case Methods.fileWriteBinary: return api.file.writeBinary(s(0), Buffer.from(s(1), 'base64'))
-      case Methods.fileReadDir: return api.file.readDir(s(0))
-      case Methods.fileStat: return api.file.stat(s(0))
-      case Methods.fileRemove: return api.file.remove(s(0))
-      case Methods.fileRename: return api.file.rename(s(0), s(1))
-      case Methods.fileMkdir: return api.file.mkdir(s(0))
+      case Methods.fileReadFile: return api.file.readFile(s(0), p[1] as FileAccessContext | undefined)
+      case Methods.fileReadBinary: return (await api.file.readBinary(s(0), p[1] as FileAccessContext | undefined)).toString('base64')
+      case Methods.fileWriteFile: return api.file.writeFile(s(0), s(1), p[2] as FileAccessContext | undefined)
+      case Methods.fileWriteBinary: return api.file.writeBinary(s(0), Buffer.from(s(1), 'base64'), p[2] as FileAccessContext | undefined)
+      case Methods.fileReadDir: return api.file.readDir(s(0), p[1] as FileAccessContext | undefined)
+      case Methods.fileStat: return api.file.stat(s(0), p[1] as FileAccessContext | undefined)
+      case Methods.fileRemove: return api.file.remove(s(0), p[1] as FileAccessContext | undefined)
+      case Methods.fileRename: return api.file.rename(s(0), s(1), p[2] as FileAccessContext | undefined)
+      case Methods.fileMkdir: return api.file.mkdir(s(0), p[1] as FileAccessContext | undefined)
       case Methods.fileExtensionsRoot: return api.file.extensionsRoot()
       case Methods.fileExtractArtifact: return api.file.extractArtifact(s(0), s(1))
-      case Methods.fileCopy: return api.file.copy(s(0), s(1))
+      case Methods.fileCopy: return api.file.copy(s(0), s(1), p[2] as FileAccessContext | undefined)
       case Methods.fileImportEntries:
-        return api.file.importEntries(p[0] as string[], s(1), p[2] as 'copy' | 'move', n(3))
+        return api.file.importEntries(p[0] as string[], s(1), p[2] as 'copy' | 'move', p[3] as FileAccessContext | undefined)
       case Methods.fileSearch:
         // JSON turns a trailing `undefined` arg into `null`; restore undefined
         // so search's default-parameter ({}) applies.
-        return api.file.search(s(0), s(1), (p[2] ?? undefined) as never)
-      case Methods.fileSearchContentStart: return this.startSearch(s(0), p[1] as SearchOptions)
+        return api.file.search(s(0), s(1), (p[2] ?? undefined) as never, p[3] as FileAccessContext | undefined)
+      case Methods.fileSearchContentStart: return this.startSearch(s(0), p[1] as SearchOptions, p[2] as FileAccessContext | undefined)
       case Methods.fileSearchContentStop: return this.stopSearch(s(0))
-      case Methods.fileWatchStart: return this.startWatch(s(0))
+      case Methods.fileWatchStart: return this.startWatch(s(0), p[1] as FileAccessContext | undefined)
       case Methods.fileWatchStop: return this.stopWatch(s(0))
 
       // --- process (pty) --- data/exit stream back keyed by the pty id ---
@@ -247,7 +247,7 @@ export class RpcServer {
     }
   }
 
-  private startSearch(root: string, opts: SearchOptions): string {
+  private startSearch(root: string, opts: SearchOptions, access?: FileAccessContext): string {
     const streamId = `s${++this.streamSeq}`
     const handle = this.api.file.searchContent(root, opts, {
       onBatch: (files) => {
@@ -259,7 +259,7 @@ export class RpcServer {
         this.write(serializeFrame({ t: 'evt', streamId, payload }))
         this.searchCancels.delete(streamId)
       },
-    })
+    }, access)
     this.searchCancels.set(streamId, handle.cancel)
     return streamId
   }
@@ -271,12 +271,12 @@ export class RpcServer {
     }
   }
 
-  private startWatch(prefix: string): string {
+  private startWatch(prefix: string, access?: FileAccessContext): string {
     const streamId = `w${++this.streamSeq}`
     const unsub = this.api.file.watch(prefix, (changedPath, type) => {
       const payload: FsWatchEvtPayload = { changedPath, type }
       this.write(serializeFrame({ t: 'evt', streamId, payload }))
-    })
+    }, access)
     this.watchUnsubs.set(streamId, unsub)
     return streamId
   }

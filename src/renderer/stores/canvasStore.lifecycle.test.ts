@@ -7,20 +7,26 @@
 // slices in one scenario — the bugs this guards against live at the seams.
 // =============================================================================
 
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 
-// deleteSelection routes panel closure through a lazily-imported appStore.
-const closePanel = vi.fn()
+// deleteSelection routes panel closure through the normal close helper.
+const closePanelWithConfirm = vi.fn().mockResolvedValue(true)
 vi.mock('./appStore', () => ({
   useAppStore: {
-    getState: () => ({ selectedWorkspaceId: 'ws-1', closePanel }),
+    getState: () => ({ selectedWorkspaceId: 'ws-1' }),
   },
 }))
+vi.mock('../lib/closePanelWithConfirm', () => ({ closePanelWithConfirm }))
 
 import { createCanvasStore } from './canvasStore'
 import { focusedNodeId } from './canvas/selectionModel'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
 import type { CanvasNodeState } from '../../shared/types'
+
+beforeEach(() => {
+  closePanelWithConfirm.mockReset()
+  closePanelWithConfirm.mockResolvedValue(true)
+})
 
 const SIZE = { width: 200, height: 200 }
 
@@ -40,10 +46,6 @@ function nodesOverlap(a: CanvasNodeState, b: CanvasNodeState): boolean {
     a.origin.y < b.origin.y + b.size.height &&
     b.origin.y < a.origin.y + a.size.height
   )
-}
-
-async function flushMicrotasks() {
-  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 describe('node lifecycle', () => {
@@ -237,10 +239,9 @@ describe('undo/redo across a bulk delete', () => {
     const { a, b } = addThree(store)
     store.getState().selectNodes([a, b])
 
-    store.getState().deleteSelection()
-    await flushMicrotasks()
-    expect(closePanel).toHaveBeenCalledWith('ws-1', 'panel-a')
-    expect(closePanel).toHaveBeenCalledWith('ws-1', 'panel-b')
+    await store.getState().deleteSelection()
+    expect(closePanelWithConfirm).toHaveBeenCalledWith('ws-1', 'panel-a')
+    expect(closePanelWithConfirm).toHaveBeenCalledWith('ws-1', 'panel-b')
     expect(store.getState().nodes[a].animationState).toBe('exiting')
     expect(store.getState().nodes[b].animationState).toBe('exiting')
     expect(store.getState().selection.length).toBe(0)

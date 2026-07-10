@@ -16,6 +16,7 @@ import { applyTheme } from './themeManager'
 import { BUILT_IN_THEMES } from '../../shared/themes'
 import { terminalRegistry } from './terminal/terminalRegistry'
 import type { Point, WorktreeMeta } from '../../shared/types'
+import { activeDockPanelId } from '../../shared/collectPanelIds'
 
 /** Serializable snapshot of the search store for e2e assertions. */
 export interface SearchSnapshot {
@@ -149,10 +150,7 @@ export function installE2EHarness(): void {
     const panelId = useAppStore.getState().createTerminal(wsId, undefined, point)
     const cs = activeCanvasStore()
     if (!cs) return panelId
-    for (const n of Object.values(cs.getState().nodes)) {
-      if (n.panelId === panelId) return n.id
-    }
-    return panelId
+    return cs.getState().nodeForPanel(panelId) ?? panelId
   }
 
   const createEditor = (point: Point): string => {
@@ -160,10 +158,7 @@ export function installE2EHarness(): void {
     const panelId = useAppStore.getState().createEditor(wsId, undefined, point)
     const cs = activeCanvasStore()
     if (!cs) return panelId
-    for (const n of Object.values(cs.getState().nodes)) {
-      if (n.panelId === panelId) return n.id
-    }
-    return panelId
+    return cs.getState().nodeForPanel(panelId) ?? panelId
   }
 
   const createCanvasPanel = (point: Point): string => {
@@ -180,7 +175,7 @@ export function installE2EHarness(): void {
     if (!cs) return []
     return Object.values(cs.getState().nodes).map((n) => ({
       id: n.id,
-      panelId: n.panelId,
+      panelId: activeDockPanelId(n.dockLayout) ?? '',
       origin: { x: n.origin.x, y: n.origin.y },
       size: { width: n.size.width, height: n.size.height },
     }))
@@ -258,7 +253,7 @@ export function installE2EHarness(): void {
     const wsId = useAppStore.getState().selectedWorkspaceId
     const cs = activeCanvasStore()
     const node = cs?.getState().nodes[nodeId]
-    const panelId = node?.panelId ?? nodeId
+    const panelId = activeDockPanelId(node?.dockLayout) ?? nodeId
     if (!panelId) return false
     useAppStore.getState().setPanelWorktreeId(wsId, panelId, worktreeId)
     return true
@@ -286,7 +281,7 @@ export function installE2EHarness(): void {
     const cs = activeCanvasStore()
     if (!cs) return null
     const node = cs.getState().nodes[nodeId]
-    const panelId = node?.panelId ?? nodeId
+    const panelId = activeDockPanelId(node?.dockLayout) ?? nodeId
     return terminalRegistry.getEntry(panelId)?.ptyId || null
   }
 

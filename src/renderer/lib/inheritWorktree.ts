@@ -13,6 +13,7 @@
 import type { PanelState } from '../../shared/types'
 import type { CanvasStoreState } from '../stores/canvas/storeTypes'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
+import { activeDockPanelId } from '../../shared/collectPanelIds'
 
 export interface InheritedWorktree {
   /** Explicit working directory of the selected terminal (a dropped folder or a
@@ -33,7 +34,7 @@ export function inheritedWorktreeFromSelection(
 ): InheritedWorktree {
   const nodeId = focusedNodeId(canvasState)
   if (!nodeId || !panels) return {}
-  const panelId = canvasState.nodes[nodeId]?.panelId
+  const panelId = activeDockPanelId(canvasState.nodes[nodeId]?.dockLayout)
   const panel = panelId ? panels[panelId] : undefined
   if (!panel || (panel.type !== 'terminal' && panel.type !== 'agent')) return {}
   return { cwd: panel.cwd, worktreeId: panel.worktreeId }

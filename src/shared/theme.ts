@@ -6,13 +6,10 @@
 // (syntax token colors). There is no longer a separate terminal theme.
 //
 // Themes are partial-over-base (VS Code style): a theme supplies only the app
-// colors it overrides, merged over a canonical base chosen by `type`. Adding a
-// new app token later stays backward-compatible — old/imported themes inherit
-// the base for keys they don't specify.
+// colors it overrides, merged over a canonical base chosen by `type`.
 // =============================================================================
 
-/** Bump when the Theme shape changes incompatibly. validateTheme() upgrades or
- *  rejects older imported JSON. */
+/** Bump when the Theme shape changes incompatibly. Imports must match exactly. */
 export const THEME_SCHEMA_VERSION = 1
 
 /** The app-chrome CSS custom property names, WITHOUT the leading `--`. This is
@@ -94,7 +91,7 @@ export interface EditorColors {
 }
 
 export interface Theme {
-  /** Schema version — for import migration. */
+  /** Schema version. */
   version: number
   /** Stable kebab-case id. Used in settings + boot.json + system mapping. */
   id: string
@@ -145,17 +142,12 @@ function normalizeMonacoHex(v: unknown): string | null {
 
 const FONT_STYLE_RE = /^(italic|bold|underline|\s)+$/
 
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64)
-}
-
 type Validated = { ok: true; theme: Theme } | { ok: false; error: string }
 
 /**
  * Coerce arbitrary user JSON into a valid Theme, or explain why it can't.
- * Lenient where safe (skips invalid app keys, fills missing terminal ANSI from
- * the base, derives editor defaults) and strict where it matters (rejects
- * non-color values, requires id/name/type and the terminal essentials).
+ * The schema version and required fields are strict. Invalid optional color
+ * entries are skipped so imports cannot inject arbitrary CSS.
  */
 export function validateTheme(raw: unknown): Validated {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -163,15 +155,24 @@ export function validateTheme(raw: unknown): Validated {
   }
   const o = raw as Record<string, unknown>
 
-  // type / kind
-  const rawType = String(o.type ?? o.kind ?? '').toLowerCase()
-  const type: 'dark' | 'light' = rawType === 'light' ? 'light' : 'dark'
+  if (o.version !== THEME_SCHEMA_VERSION) {
+    return { ok: false, error: `Theme schema version must be ${THEME_SCHEMA_VERSION}.` }
+  }
 
-  // name / label
-  const name = String(o.name ?? o.label ?? 'Imported Theme').slice(0, 64)
+  if (o.type !== 'dark' && o.type !== 'light') {
+    return { ok: false, error: 'Theme type must be `dark` or `light`.' }
+  }
+  const type = o.type
 
-  // id (slug)
-  const id = slugify(String(o.id ?? name)) || 'imported-theme'
+  if (typeof o.name !== 'string' || o.name.length === 0 || o.name.length > 64) {
+    return { ok: false, error: 'Theme name must be a non-empty string of at most 64 characters.' }
+  }
+  const name = o.name
+
+  if (typeof o.id !== 'string' || o.id.length > 64 || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(o.id)) {
+    return { ok: false, error: 'Theme id must be a kebab-case identifier.' }
+  }
+  const id = o.id
 
   // app — keep only known keys with valid color values
   const app: AppColors = {}
@@ -181,7 +182,7 @@ export function validateTheme(raw: unknown): Validated {
     if (v !== undefined && isCssColor(v)) app[key] = v.trim()
   }
 
-  // terminal — require background + foreground; fill ANSI from defaults if absent
+  // terminal — require the complete current palette
   const rawTerm = o.terminal
   if (!rawTerm || typeof rawTerm !== 'object') {
     return { ok: false, error: 'Theme is missing a `terminal` palette.' }
@@ -190,7 +191,6 @@ export function validateTheme(raw: unknown): Validated {
   if (!isCssColor(t.background) || !isCssColor(t.foreground)) {
     return { ok: false, error: 'terminal.background and terminal.foreground must be colors.' }
   }
-  const fallback = type === 'light' ? DEFAULT_ANSI_LIGHT : DEFAULT_ANSI_DARK
   const terminal = {
     background: (t.background as string).trim(),
     foreground: (t.foreground as string).trim(),
@@ -199,15 +199,24 @@ export function validateTheme(raw: unknown): Validated {
     if (isCssColor(t[opt])) (terminal as unknown as Record<string, string>)[opt] = (t[opt] as string).trim()
   }
   for (const key of TERMINAL_ANSI_KEYS) {
-    terminal[key] = isCssColor(t[key]) ? (t[key] as string).trim() : fallback[key]
+    if (!isCssColor(t[key])) {
+      return { ok: false, error: `terminal.${key} must be a color.` }
+    }
+    terminal[key] = (t[key] as string).trim()
   }
 
   // editor — base + optional colors + token rules
-  const rawEditor = (o.editor && typeof o.editor === 'object' ? o.editor : {}) as Record<string, unknown>
-  const editorBase: 'vs' | 'vs-dark' =
-    rawEditor.base === 'vs' || rawEditor.base === 'vs-dark'
-      ? rawEditor.base
-      : type === 'light' ? 'vs' : 'vs-dark'
+  if (!o.editor || typeof o.editor !== 'object' || Array.isArray(o.editor)) {
+    return { ok: false, error: 'Theme is missing an `editor` palette.' }
+  }
+  const rawEditor = o.editor as Record<string, unknown>
+  if (rawEditor.base !== 'vs' && rawEditor.base !== 'vs-dark') {
+    return { ok: false, error: 'editor.base must be `vs` or `vs-dark`.' }
+  }
+  if (!Array.isArray(rawEditor.tokens)) {
+    return { ok: false, error: 'editor.tokens must be an array.' }
+  }
+  const editorBase = rawEditor.base
   const editorColors: Record<string, string> = {}
   if (rawEditor.colors && typeof rawEditor.colors === 'object') {
     for (const [k, v] of Object.entries(rawEditor.colors as Record<string, unknown>)) {
@@ -237,7 +246,7 @@ export function validateTheme(raw: unknown): Validated {
   const bootBackground = isCssColor(o.bootBackground) ? (o.bootBackground as string).trim() : undefined
 
   const theme: Theme = {
-    version: typeof o.version === 'number' ? o.version : THEME_SCHEMA_VERSION,
+    version: THEME_SCHEMA_VERSION,
     id,
     name,
     type,
@@ -249,20 +258,4 @@ export function validateTheme(raw: unknown): Validated {
     ...(bootBackground ? { bootBackground } : {}),
   }
   return { ok: true, theme }
-}
-
-/** VS Code Dark+ ANSI defaults — used to fill any ANSI colors a dark import omits. */
-const DEFAULT_ANSI_DARK: Record<(typeof TERMINAL_ANSI_KEYS)[number], string> = {
-  black: '#000000', red: '#CD3131', green: '#0DBC79', yellow: '#E5E510',
-  blue: '#2472C8', magenta: '#BC3FBC', cyan: '#11A8CD', white: '#E5E5E5',
-  brightBlack: '#666666', brightRed: '#F14C4C', brightGreen: '#23D18B', brightYellow: '#F5F543',
-  brightBlue: '#3B8EEA', brightMagenta: '#D670D6', brightCyan: '#29B8DB', brightWhite: '#FFFFFF',
-}
-
-/** Light ANSI defaults for light-theme imports that omit ANSI colors. */
-const DEFAULT_ANSI_LIGHT: Record<(typeof TERMINAL_ANSI_KEYS)[number], string> = {
-  black: '#38322b', red: '#c04030', green: '#4a8f3a', yellow: '#b58900',
-  blue: '#3c7ef0', magenta: '#a04a7a', cyan: '#5e747f', white: '#8a8274',
-  brightBlack: '#5e747f', brightRed: '#cb4b16', brightGreen: '#5fa34a', brightYellow: '#c89a1f',
-  brightBlue: '#5e93f4', brightMagenta: '#b85a8a', brightCyan: '#7a8f99', brightWhite: '#38322b',
 }

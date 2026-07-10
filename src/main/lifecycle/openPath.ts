@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import log from '../logger'
-import { getActiveMainWindow, focusWindow } from '../windowRegistry'
+import { getActiveMainWindow, focusWindow, sendToWindow } from '../windowRegistry'
 import { IS_E2E } from '../windows/reveal'
 import { APP_OPEN_PATH } from '../../shared/ipc-channels'
 
@@ -35,7 +35,7 @@ function deliverOpenPath(p: string): void {
     // Skip in e2e so opening a path never foregrounds the shared Electron bundle.
     if (!IS_E2E) focusWindow(win)
   } catch { /* noop */ }
-  win.webContents.send(APP_OPEN_PATH, p)
+  sendToWindow(win.id, APP_OPEN_PATH, p)
 }
 
 export function flushPendingOpenPaths(): void {
@@ -43,7 +43,7 @@ export function flushPendingOpenPaths(): void {
   const win = getActiveMainWindow()
   if (!win) return
   for (const p of pendingOpenPaths.splice(0)) {
-    win.webContents.send(APP_OPEN_PATH, p)
+    sendToWindow(win.id, APP_OPEN_PATH, p)
   }
 }
 

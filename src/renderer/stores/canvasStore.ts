@@ -5,7 +5,7 @@
 // The action implementations are split into focused slices under ./canvas
 // (each a `(set, get, ctx) => Pick<CanvasStoreActions, ...>` creator). This
 // module owns the public surface: the store factory that composes the slices,
-// the singleton + per-panel registry, and the render selectors.
+// the per-panel registry, and the render selectors.
 // =============================================================================
 
 import { create, type UseBoundStore } from 'zustand'
@@ -125,36 +125,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
 }
 
 // -----------------------------------------------------------------------------
-// Default singleton — backward-compatible during migration
-// -----------------------------------------------------------------------------
-
-export const useCanvasStore = createCanvasStore()
-
-// -----------------------------------------------------------------------------
-// Per-panel store registry — registration is delegated to the DragSession's
-// canvasStores map. The session is the single source of truth for both
-// panelId → store and nodeId → store lookups (the latter via a reverse index
-// maintained by a store subscription). The local map below is kept for the
-// returned `UseBoundStore` reference identity — the session stores a
-// `StoreApi`, but consumers of this module hold `UseBoundStore` (`store(...)`).
+// Per-panel store registry — delegated to the RendererSession, the single
+// source of truth for panelId → store and nodeId → store lookups.
 // -----------------------------------------------------------------------------
 
 import { getDefaultSession } from '../drag/session'
 
-const canvasBoundStoresByPanelId = new Map<string, UseBoundStore<StoreApi<CanvasStore>>>()
-
 export function getOrCreateCanvasStoreForPanel(
   panelId: string,
-): UseBoundStore<StoreApi<CanvasStore>> {
-  const existing = canvasBoundStoresByPanelId.get(panelId)
+): StoreApi<CanvasStore> {
+  const session = getDefaultSession()
+  const existing = session.getCanvasStore(panelId)
   if (existing) return existing
   // Every canvas panel gets its own fresh store. A canvas panel belongs to one
   // workspace, so keying by panel id keeps workspaces fully isolated — no panel
-  // ever inherits the legacy `useCanvasStore` singleton (which, being shared and
-  // never cleared, used to leak one workspace's nodes into another).
+  // ever shares state with another canvas.
   const store = createCanvasStore()
-  canvasBoundStoresByPanelId.set(panelId, store)
-  getDefaultSession().registerCanvasStore(panelId, store)
+  session.registerCanvasStore(panelId, store)
   return store
 }
 
@@ -163,22 +150,18 @@ export function getOrCreateCanvasStoreForPanel(
  *  nodes without instantiating empty stores for canvases that aren't mounted. */
 export function peekCanvasStoreForPanel(
   panelId: string,
-): UseBoundStore<StoreApi<CanvasStore>> | undefined {
-  return canvasBoundStoresByPanelId.get(panelId)
+): StoreApi<CanvasStore> | undefined {
+  return getDefaultSession().getCanvasStore(panelId)
 }
 
 export function releaseCanvasStoreForPanel(panelId: string): void {
-  const store = canvasBoundStoresByPanelId.get(panelId)
-  canvasBoundStoresByPanelId.delete(panelId)
-  if (store) {
-    getDefaultSession().releaseCanvasStore(panelId, store)
-  }
+  getDefaultSession().releaseCanvasStore(panelId)
 }
 
 /** Iterate every live CanvasStore (one per canvas panel currently mounted).
  *  Used by drag handlers to find the source canvas of a given node id. */
-export function getAllCanvasStores(): UseBoundStore<StoreApi<CanvasStore>>[] {
-  return Array.from(canvasBoundStoresByPanelId.values())
+export function getAllCanvasStores(): StoreApi<CanvasStore>[] {
+  return getDefaultSession().getCanvasStores()
 }
 
 // -----------------------------------------------------------------------------
@@ -189,9 +172,9 @@ export function getAllCanvasStores(): UseBoundStore<StoreApi<CanvasStore>>[] {
  * Returns a stable sorted array of node IDs ordered by zOrder.
  * Only triggers a re-render when nodes are added, removed, or z-order changes.
  */
-export function useNodeIds(store?: UseBoundStore<StoreApi<CanvasStore>>): string[] {
+export function useNodeIds(store: StoreApi<CanvasStore>): string[] {
   return useStoreWithEqualityFn(
-    store ?? useCanvasStore,
+    store,
     (s) => Object.values(s.nodes)
       .sort((a, b) => a.zOrder - b.zOrder)
       .map(n => n.id),
@@ -272,16 +255,12 @@ const dockLayoutTags = new WeakMap<object, number>()
 function membershipSignature(nodes: Record<CanvasNodeId, CanvasNodeState>): string {
   let sig = ''
   for (const n of Object.values(nodes)) {
-    if (n.dockLayout) {
-      let tag = dockLayoutTags.get(n.dockLayout)
-      if (tag === undefined) {
-        tag = ++dockLayoutTagCounter
-        dockLayoutTags.set(n.dockLayout, tag)
-      }
-      sig += `${n.id}=d${tag};`
-    } else {
-      sig += `${n.id}=p${n.panelId};`
+    let tag = dockLayoutTags.get(n.dockLayout)
+    if (tag === undefined) {
+      tag = ++dockLayoutTagCounter
+      dockLayoutTags.set(n.dockLayout, tag)
     }
+    sig += `${n.id}=d${tag};`
   }
   return sig
 }
@@ -304,7 +283,7 @@ function keepAliveNodeIds(
   perfCount('canvasKeepAliveWalk')
   const ids = new Set<string>()
   for (const n of Object.values(nodes)) {
-    const panelIds = n.dockLayout ? collectPanelIds(n.dockLayout) : [n.panelId]
+    const panelIds = collectPanelIds(n.dockLayout)
     if (panelIds.some((pid) => keepMountedPanelIds.has(pid))) ids.add(n.id)
   }
   keepAliveCache.set(keepMountedPanelIds, { nodes, sig, ids })
@@ -369,11 +348,11 @@ export function selectVisibleNodeIds(
 }
 
 export function useVisibleNodeIds(
-  store: UseBoundStore<StoreApi<CanvasStore>> | undefined,
+  store: StoreApi<CanvasStore>,
   keepMountedPanelIds: ReadonlySet<string>,
 ): string[] {
   return useStoreWithEqualityFn(
-    store ?? useCanvasStore,
+    store,
     (s) => selectVisibleNodeIds(s, keepMountedPanelIds),
     primitiveArrayEqual,
   )

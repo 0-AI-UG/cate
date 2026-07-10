@@ -30,6 +30,7 @@
 // =============================================================================
 
 import { app, BrowserWindow, ipcMain, net, shell } from 'electron'
+import { sendToWindow } from './windowRegistry'
 import log from './logger'
 import { getCommonContext } from './appContext'
 import { installIdPreexisted } from './installId'
@@ -483,7 +484,7 @@ function promptFeedback(mainWin: BrowserWindow, toVersion: string, fromVersion: 
   // prompt from competing with the first paint.
   setTimeout(() => {
     if (mainWin.isDestroyed()) return
-    mainWin.webContents.send(ANALYTICS_FEEDBACK_PROMPT, { fromVersion, toVersion })
+    sendToWindow(mainWin.id, ANALYTICS_FEEDBACK_PROMPT, { fromVersion, toVersion })
   }, 2500)
 }
 

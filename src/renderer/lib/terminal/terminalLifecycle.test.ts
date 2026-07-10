@@ -108,7 +108,6 @@ vi.mock('../../stores/appStore', () => ({
 const replayTerminalLog = vi.fn(async () => {})
 vi.mock('../workspace/session', () => ({
   get replayTerminalLog() { return replayTerminalLog },
-  terminalRestoreData: new Map(),
 }))
 vi.mock('./terminalUrlOpen', () => ({ openTerminalUrl: () => {} }))
 vi.mock('./terminalFileLinkProvider', () => ({
@@ -140,8 +139,6 @@ const terminalCreate = vi.fn(async () => `pty-${++ptyCounter}`)
 const terminalWrite = vi.fn()
 const terminalResize = vi.fn()
 const terminalKill = vi.fn(async () => undefined)
-const shellRegisterTerminal = vi.fn(async () => undefined)
-const shellUnregisterTerminal = vi.fn(async () => undefined)
 const panelTransferAck = vi.fn(async () => undefined)
 const settingsGet = vi.fn(async () => '')
 
@@ -174,12 +171,10 @@ function fireExit(ptyId: string, code: number): void {
 
 let LC: typeof import('./terminalLifecycle')
 let RS: typeof import('./registryState')
-let restoreData: Map<string, { cwd?: string; replayFromId?: string }>
 
 beforeAll(async () => {
   LC = await import('./terminalLifecycle')
   RS = await import('./registryState')
-  restoreData = (await import('./terminalRestoreData')).terminalRestoreData
 })
 
 beforeEach(() => {
@@ -189,15 +184,13 @@ beforeEach(() => {
     value: {
       terminalCreate, terminalWrite, terminalResize, terminalKill,
       onTerminalData, onTerminalExit,
-      shellRegisterTerminal, shellUnregisterTerminal,
       settingsGet, panelTransferAck,
     },
   })
   // Drain module-singleton state left by a prior test.
   for (const panelId of [...RS.registry.keys()]) LC.dispose(panelId)
-  RS.pendingTransfers.clear()
+  RS.pendingTerminalStarts.clear()
   RS.failures.clear()
-  restoreData.clear()
   terminalInstances.length = 0
   dataListeners.length = 0
   exitListeners.length = 0
@@ -208,10 +201,6 @@ beforeEach(() => {
   terminalResize.mockClear()
   terminalKill.mockClear()
   terminalKill.mockImplementation(async () => undefined)
-  shellRegisterTerminal.mockClear()
-  shellRegisterTerminal.mockImplementation(async () => undefined)
-  shellUnregisterTerminal.mockClear()
-  shellUnregisterTerminal.mockImplementation(async () => undefined)
   panelTransferAck.mockClear()
   panelTransferAck.mockImplementation(async () => undefined)
   settingsGet.mockClear()
@@ -250,8 +239,7 @@ describe('spawn → wire → dispose happy path', () => {
     expect(RS.panelIdForPty('pty-happy')).toBe('panel-happy')
     expect(entry.alive).toBe(true)
 
-    // Listener wiring: shell monitor + status store registered.
-    expect(shellRegisterTerminal).toHaveBeenCalledWith('pty-happy')
+    // Renderer status is registered; main owns process monitoring automatically.
     expect(statusRegisterTerminal).toHaveBeenCalledWith('pty-happy', 'ws-1')
 
     // PTY data is routed into THIS xterm only when the ptyId matches.
@@ -266,7 +254,6 @@ describe('spawn → wire → dispose happy path', () => {
     LC.dispose('panel-happy')
     expect(terminalKill).toHaveBeenCalledTimes(1)
     expect(terminalKill).toHaveBeenCalledWith('pty-happy')
-    expect(shellUnregisterTerminal).toHaveBeenCalledWith('pty-happy')
     expect(statusUnregisterTerminal).toHaveBeenCalledWith('pty-happy')
     expect(RS.has('panel-happy')).toBe(false)
     expect(RS.panelIdForPty('pty-happy')).toBeNull()
@@ -291,7 +278,7 @@ describe('spawn → wire → dispose happy path', () => {
   })
 
   it('uses the session-restore cwd and replays the scrollback log for restored terminals', async () => {
-    restoreData.set('panel-restored', { cwd: '/tmp/restored-project', replayFromId: 'old-pty' })
+    LC.setPendingRestore('panel-restored', '/tmp/restored-project', 'old-pty')
 
     await LC.getOrCreate('panel-restored', { workspaceId: 'ws-1' })
 
@@ -364,10 +351,9 @@ describe('adopt path — pending transfer reconnects without spawning', () => {
     expect(terminalCreate).not.toHaveBeenCalled()
     expect(entry.ptyId).toBe('pty-transferred')
     expect(RS.panelIdForPty('pty-transferred')).toBe('panel-adopt')
-    expect(RS.pendingTransfers.has('panel-adopt')).toBe(false) // consumed
+    expect(RS.pendingTerminalStarts.has('panel-adopt')).toBe(false) // consumed
 
     // Listeners are wired to the EXISTING pty immediately.
-    expect(shellRegisterTerminal).toHaveBeenCalledWith('pty-transferred')
     fireData('pty-transferred', 'live output')
     expect(terminalInstances[0].writes).toContain('live output')
 
@@ -443,7 +429,6 @@ describe('release — transfer source lets go without killing the PTY', () => {
     expect(RS.has('panel-rel')).toBe(false)
     expect(RS.panelIdForPty('pty-keep')).toBeNull()
     expect(terminalKill).not.toHaveBeenCalled()          // PTY lives on in main
-    expect(shellUnregisterTerminal).not.toHaveBeenCalled()
     expect(terminalInstances[0].disposeCount).toBe(1)    // local xterm torn down
     expect(dataDisposers[0]).toHaveBeenCalledTimes(1)    // IPC listener removed
   })
@@ -474,7 +459,7 @@ describe('release — transfer source lets go without killing the PTY', () => {
     LC.setPendingTransfer('panel-hijack', 'pty-stale', 'old-sb')
 
     LC.release('panel-hijack')
-    expect(RS.pendingTransfers.has('panel-hijack')).toBe(false)
+    expect(RS.pendingTerminalStarts.has('panel-hijack')).toBe(false)
 
     // A later fresh mount spawns a NEW pty instead of adopting the stale one.
     terminalCreate.mockResolvedValueOnce('pty-fresh-again')
@@ -488,29 +473,21 @@ describe('release — transfer source lets go without killing the PTY', () => {
 // Remount armed but the panel never remounts
 // ===========================================================================
 describe('remount armed but never completed', () => {
-  it('an unconsumed pending transfer stays deposited indefinitely', async () => {
+  it('dispose clears a transfer that never mounted', async () => {
     // Arm: source window released, transfer deposited in this window... and
     // then the receiving panel never mounts (e.g. drop aborted mid-flight).
     LC.setPendingTransfer('panel-never', 'pty-orphan', 'sb')
 
     // Nothing in the lifecycle module ever expires this entry.
-    expect(RS.pendingTransfers.get('panel-never')).toEqual({ ptyId: 'pty-orphan', scrollback: 'sb' })
+    expect(RS.pendingTerminalStarts.get('panel-never')).toEqual({ kind: 'transfer', ptyId: 'pty-orphan', scrollback: 'sb' })
 
-    // BUG?: pendingTransfers has no TTL/cancel path. If the receiving panel
-    // never mounts, the PTY in main stays un-acked (main keeps buffering its
-    // output) and a MUCH later mount of the same panelId would silently adopt
-    // the stale ptyId instead of spawning fresh. Worse: dispose() and release()
-    // both early-return when there is no registry entry — BEFORE their
-    // pendingTransfers.delete line — so for a never-mounted panel there is NO
-    // cleanup path at all except actually mounting it (getOrCreate consumes it).
+    // Closing an unmounted destination must cancel the staged transfer so a
+    // later panel with the same id starts fresh.
     LC.dispose('panel-never')
-    LC.release('panel-never')
-    expect(RS.pendingTransfers.has('panel-never')).toBe(true) // still armed!
+    expect(RS.pendingTerminalStarts.has('panel-never')).toBe(false)
 
-    // Mounting is the only consumer — and it adopts the (possibly stale) pty.
     const entry = await LC.getOrCreate('panel-never', { workspaceId: 'ws-1' })
-    expect(entry.ptyId).toBe('pty-orphan')
-    expect(RS.pendingTransfers.has('panel-never')).toBe(false)
+    expect(entry.ptyId).not.toBe('pty-orphan')
     LC.dispose('panel-never')
   })
 

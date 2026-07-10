@@ -26,7 +26,6 @@ import {
 import { buildSinglePanelDockState } from '../windows/dockState'
 import { anyWindowFullscreen } from '../windows/fullscreen'
 import { revealWindow } from '../windows/reveal'
-import { writeDragTempFile, cleanupDragTempFile, createDragGhostImage } from './drag'
 import {
   abortTerminalTransfer,
   beginTerminalBuffering,
@@ -38,10 +37,10 @@ import {
   broadcastToAll,
   broadcastToAllExcept,
   windowFromEvent,
+  listWindows,
 } from '../windowRegistry'
 import type { CateWindowParams, DockWindowInitPayload, PanelTransferSnapshot } from '../../shared/types'
 import {
-  DRAG_START,
   DRAG_DETACH,
   DRAG_END,
   PANEL_RECEIVE,
@@ -64,20 +63,6 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
   // record by id even when DROP cleared crossWindowDragState before the
   // resolver was armed. Only one drag is in flight at a time (single cursor).
   let lastCrossWindowDragId: string | null = null
-
-  // Cross-window drag-and-drop
-  ipcMain.handle(DRAG_START, async (event, snapshot: PanelTransferSnapshot) => {
-    const win = windowFromEvent(event)
-    if (!win) return
-
-    const tempFile = writeDragTempFile(snapshot)
-    const icon = createDragGhostImage()
-
-    win.webContents.startDrag({
-      file: tempFile,
-      icon,
-    })
-  })
 
   ipcMain.handle(DRAG_DETACH, async (_event, snapshot: PanelTransferSnapshot, workspaceId?: string) => {
     const cursor = screen.getCursorScreenPoint()
@@ -124,15 +109,12 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
     try {
       newWin = createWindow({
         type: 'dock',
-        panelType: snapshot.panel.type,
-        panelId: snapshot.panel.id,
         workspaceId,
       })
     } catch (err) {
       // The move is off: flush held output back to the source window (where the
       // panel still lives) instead of leaving a destination-less transfer armed.
       for (const ptyId of transferPtyIds) abortTerminalTransfer(ptyId)
-      cleanupDragTempFile()
       log.error('[drag-detach] window creation failed, detach aborted:', err)
       return null
     }
@@ -166,7 +148,6 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
       revealWindow(newWin, { focus: true })
     })
 
-    cleanupDragTempFile()
     // End only the just-finished cross-window drag (if any) in other windows —
     // a window tracking a DIFFERENT active drag must not be force-ended here.
     // (DRAG_DETACH is the fallback when no window claimed the cross-window drop,
@@ -177,7 +158,6 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
   })
 
   ipcMain.on(DRAG_END, () => {
-    cleanupDragTempFile()
     broadcastToAll(DRAG_END)
   })
 
@@ -246,7 +226,7 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
       if (ghost) {
         const overCateWindow = isCursorInsideAnyAppWindow(
           pos,
-          BrowserWindow.getAllWindows() as unknown as GhostHostWindow[],
+          listWindows() as unknown as GhostHostWindow[],
         )
         if (overCateWindow) {
           if (ghost.isVisible()) ghost.hide()

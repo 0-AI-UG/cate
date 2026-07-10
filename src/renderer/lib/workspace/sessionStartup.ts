@@ -7,7 +7,6 @@ import log from '../logger'
 import { useAppStore } from '../../stores/appStore'
 import { deferredSnapshots } from './deferredRestore'
 import { collectPanelIdsFromDockState } from './sessionSerialize'
-import { createDefaultDockState } from '../../stores/dockStore'
 import { mark } from '../perfMarks'
 import { restoreWorkspaceLayout } from './sessionRestore'
 import type {
@@ -112,10 +111,8 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
 // -----------------------------------------------------------------------------
 
 export async function restoreDetachedWindows(session: MultiWorkspaceSession): Promise<void> {
-  // Recreate dock windows that were open at the time of last save. Detached
-  // windows now restore ONLY via dock windows (legacy single-panel windows are
-  // migrated into dock windows upstream, in dockWindowsFromSession). Unlike a
-  // LIVE single-panel detach, a restore must rebuild the FULL window: every
+  // Recreate dock windows that were open at the time of last save. A restore
+  // rebuilds the full window: every
   // top-level tab from dw.dockState.zones, each terminal tab's scrollback
   // replay, and each canvas tab's children.
   if (session.dockWindows && session.dockWindows.length > 0) {
@@ -199,39 +196,24 @@ async function recreateDockWindow(dw: DetachedDockWindowSnapshot): Promise<void>
  *     identical to the main window, no live-ptyId round-trip, and
  *   • every top-level canvas tab's layout hydrated via buildRestoredCanvasState
  *     (nodes + childPanels).
- * Back-compat: a snapshot without canvasStates degrades to empty canvases.
  */
 export function buildDockWindowRestoreInit(
   dw: DetachedDockWindowSnapshot,
 ): { topLevelPanelIds: string[]; initPayload: DockWindowInitPayload } {
-  // A legacy/malformed snapshot may lack dockState.zones entirely, or carry
-  // zones that reference no panels. A window with no panels at all is genuinely
-  // empty: return no top-level ids so the caller skips it. But when panel
-  // records DO exist, dropping the window would silently lose them (the next
-  // autosave only persists live windows) — recover by laying every panel out as
-  // a tab in a fresh center stack instead.
-  let zones = dw.dockState?.zones
-  let topLevelIds = zones ? collectPanelIdsFromDockState(zones) : []
+  const zones = dw.dockState.zones
+  const topLevelIds = collectPanelIdsFromDockState(zones)
   if (topLevelIds.length === 0) {
-    const orphanIds = Object.keys(dw.panels ?? {})
-    if (orphanIds.length === 0) {
-      return {
-        topLevelPanelIds: [],
-        initPayload: {
-          panels: dw.panels,
-          dockState: zones ?? createDefaultDockState(),
-          workspaceId: dw.workspaceId,
-          restore: true,
-          terminalCwds: dw.terminalCwds,
-        },
-      }
+    return {
+      topLevelPanelIds: [],
+      initPayload: {
+        panels: dw.panels,
+        dockState: zones,
+        workspaceId: dw.workspaceId,
+        restore: true,
+        terminalCwds: dw.terminalCwds,
+        canvasStates: {},
+      },
     }
-    log.warn(
-      `[session] dock window snapshot has ${orphanIds.length} panels but no dock zones referencing them; recovering panels into a single tab stack`,
-    )
-    zones = createDefaultDockState()
-    zones.center.layout = { type: 'tabs', id: 'restored-orphan-tabs', panelIds: orphanIds, activeIndex: 0 }
-    topLevelIds = orphanIds
   }
 
   const topLevelSet = new Set(topLevelIds)
@@ -251,14 +233,12 @@ export function buildDockWindowRestoreInit(
     // Send EVERY persisted panel record (top-level tabs AND canvas children) so
     // the receiving shell can resolve types/titles AND arm replay for all of them.
     panels: dw.panels,
-    // Past the guard above, zones is either the snapshot's own layout (with at
-    // least one referenced panel) or the synthesized recovery stack.
-    dockState: zones!,
+    dockState: zones,
     workspaceId: dw.workspaceId,
     // Cold restore: the shell replays every terminal panel by its panelId.
     restore: true,
     terminalCwds: dw.terminalCwds && Object.keys(dw.terminalCwds).length ? dw.terminalCwds : undefined,
-    canvasStates: Object.keys(canvasStates).length ? canvasStates : undefined,
+    canvasStates,
   }
 
   return { topLevelPanelIds: topLevelIds, initPayload }
@@ -268,9 +248,9 @@ export function buildDockWindowRestoreInit(
  * Build the `canvasState` for a detached canvas window being restored from a
  * `DetachedDockWindowSnapshot`. Pure (no store/IPC access) so it's unit-testable.
  *
- * Returns undefined when the top-level panel isn't a canvas. When it IS a canvas:
- *   • nodes/viewport come from dw.canvasStates[canvasId] (empty if absent —
- *     old session files degrade gracefully to an empty canvas).
+ * Returns undefined when the top-level panel isn't a canvas or its canonical
+ * canvas snapshot is absent. When it IS a canvas:
+ *   • nodes/viewport come from dw.canvasStates[canvasId].
  *   • childPanels = every dw.panels entry that is NOT a top-level dock panel.
  * Child terminal scrollback replay is NOT wired here: the shell arms replay for
  * EVERY terminal panel (children included) by its stable panelId on restore.
@@ -282,7 +262,8 @@ export function buildRestoredCanvasState(
 ): PanelTransferSnapshot['canvasState'] | undefined {
   if (topLevelPanel.type !== 'canvas') return undefined
 
-  const layout = dw.canvasStates?.[topLevelPanel.id]
+  const layout = dw.canvasStates[topLevelPanel.id]
+  if (!layout) return undefined
   const childPanels: Record<string, PanelState> = {}
   for (const [panelId, panel] of Object.entries(dw.panels)) {
     if (topLevelIds.has(panelId)) continue // top-level dock panels aren't canvas children
@@ -290,9 +271,9 @@ export function buildRestoredCanvasState(
   }
 
   return {
-    nodes: layout?.nodes ?? {},
-    viewportOffset: layout?.viewportOffset ?? { x: 0, y: 0 },
-    zoomLevel: layout?.zoomLevel ?? 1,
+    nodes: layout.nodes,
+    viewportOffset: layout.viewportOffset,
+    zoomLevel: layout.zoomLevel,
     childPanels,
   }
 }

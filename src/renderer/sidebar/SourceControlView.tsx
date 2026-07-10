@@ -20,6 +20,7 @@ import {
 } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
+import { pathDisplayName } from '../lib/fs/displayPath'
 import { Tooltip } from '../ui/Tooltip'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
@@ -65,7 +66,7 @@ interface GitLogEntry {
 // ---------------------------------------------------------------------------
 
 function fileName(path: string): string {
-  return path.split('/').pop() || path
+  return pathDisplayName(path) || path
 }
 
 function dirName(path: string): string {

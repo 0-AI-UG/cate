@@ -61,14 +61,14 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
 
   beforeEach(async () => {
     rootDir = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-loopback-')))
-    addAllowedRoot(rootDir)
+    addAllowedRoot(rootDir, 'srv_test')
     await fs.writeFile(path.join(rootDir, 'alpha.ts'), 'const needle = 42\n')
     await fs.writeFile(path.join(rootDir, 'pic.bin'), Buffer.from([0, 1, 2, 3, 255]))
     await fs.mkdir(path.join(rootDir, 'sub'))
   })
 
   afterEach(async () => {
-    removeAllowedRoot(rootDir)
+    removeAllowedRoot(rootDir, 'srv_test')
     await fs.rm(rootDir, { recursive: true, force: true })
   })
 
@@ -156,8 +156,8 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
   test('write through the wire then read it back', async () => {
     const { remote } = loopback(daemonApi())
     const target = path.join(rootDir, 'written.txt')
-    const safe = await remote.validatePathForCreation(target)
-    await remote.file.writeFile(safe, 'hello from remote\n')
+    const safe = await remote.file.writeFile(target, 'hello from remote\n')
+    expect(safe).toBe(target)
     expect(await fs.readFile(target, 'utf-8')).toBe('hello from remote\n')
   })
 
@@ -217,12 +217,12 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
     const { remote } = loopback(daemonApi())
     const extra = path.resolve(rootDir, 'extra-root')
 
-    expect(getAllowedRoots().has(extra)).toBe(false)
+    expect(getAllowedRoots('srv_test').has(extra)).toBe(false)
     await remote.addAllowedRoot(extra)
-    expect(getAllowedRoots().has(extra)).toBe(true)
+    expect(getAllowedRoots('srv_test').has(extra)).toBe(true)
 
     await remote.removeAllowedRoot(extra)
-    expect(getAllowedRoots().has(extra)).toBe(false)
+    expect(getAllowedRoots('srv_test').has(extra)).toBe(false)
   })
 
   test('setExclusions mutates the daemon set live so readDir hides the new name', async () => {
@@ -259,12 +259,17 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
       await remote.clearFileGrantsForWindow(7)
       await expect(remote.validatePathStrict(outsideFile, 7)).rejects.toThrow(/Access denied/)
 
-      // Scoped write allowance: register one, confirm creation passes, then clear.
+      // A scoped write is authorized, executed, and consumed in one RPC.
       const createTarget = path.join(outsideDir, 'new.txt')
       await remote.registerScopedWriteAllowance(createTarget, 7)
-      await expect(remote.validatePathForCreation(createTarget, 7)).resolves.toBe(createTarget)
+      await expect(remote.file.writeFile(createTarget, 'created\n', { ownerWindowId: 7 })).resolves.toBe(createTarget)
+      await expect(remote.file.writeFile(createTarget, 'again\n', { ownerWindowId: 7 })).rejects.toThrow(/Access denied/)
+
+      // Explicit clearing still revokes an unused allowance.
+      const clearedTarget = path.join(outsideDir, 'cleared.txt')
+      await remote.registerScopedWriteAllowance(clearedTarget, 7)
       await remote.clearScopedWriteAllowancesForWindow(7)
-      await expect(remote.validatePathForCreation(createTarget, 7)).rejects.toThrow(/Access denied/)
+      await expect(remote.file.writeFile(clearedTarget, 'nope\n', { ownerWindowId: 7 })).rejects.toThrow(/Access denied/)
     } finally {
       clearFileGrantsForWindow(7)
       clearScopedWriteAllowancesForWindow(7)

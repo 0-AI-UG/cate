@@ -16,20 +16,22 @@
 
 import { shell, type WebContents } from 'electron'
 import fsp from 'fs/promises'
-import path from 'path'
 import {
   findEnvKeys,
+  getEnvApiKey,
   getModels,
+  getProviders,
   type KnownProvider,
   type OAuthCredentials,
   type OAuthLoginCallbacks,
 } from '@earendil-works/pi-ai'
 import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from '@earendil-works/pi-ai/oauth'
 import { sharedAuthPath } from './agentDir'
-import { sharedAuthWriteQueue } from './writeQueue'
+import { agentConfigLock } from './agentConfigLock'
 import { readCustomOpenAI } from './customModels'
 import log from '../../main/logger'
 import { isPlainObject } from '../../main/jsonUtils'
+import { writeJsonAtomic } from '../../main/writeJsonAtomic'
 import type {
   AgentModelDescriptor,
   AuthProviderDescriptor,
@@ -75,13 +77,8 @@ async function readAuthJson(): Promise<AuthStorageData> {
 let onAuthChange: (() => void) | null = null
 
 async function writeAuthJson(data: AuthStorageData): Promise<void> {
-  await sharedAuthWriteQueue(async () => {
-    const p = authJsonPath()
-    await fsp.mkdir(path.dirname(p), { recursive: true, mode: 0o700 })
-    const tmp = p + '.tmp'
-    await fsp.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
-    try { await fsp.chmod(tmp, 0o600) } catch { /* noop on platforms without modes */ }
-    await fsp.rename(tmp, p)
+  await agentConfigLock.run('auth.json', async () => {
+    await writeJsonAtomic(authJsonPath(), data, { mode: 0o600 })
   })
   try { onAuthChange?.() } catch (err) { log.warn('[authManager] onChange hook failed: %O', err) }
 }
@@ -90,35 +87,47 @@ async function writeAuthJson(data: AuthStorageData): Promise<void> {
 // Built-in provider catalog
 // ---------------------------------------------------------------------------
 
-interface BuiltInApiKeyProvider {
-  id: string
-  name: string
-  envVar: string
-  helpUrl?: string
+const PROVIDER_META: Record<string, Pick<AuthProviderDescriptor, 'name' | 'helpUrl'>> = {
+  openai: { name: 'OpenAI', helpUrl: 'https://platform.openai.com/api-keys' },
+  anthropic: { name: 'Anthropic (API key)', helpUrl: 'https://console.anthropic.com/settings/keys' },
+  openrouter: { name: 'OpenRouter', helpUrl: 'https://openrouter.ai/keys' },
+  google: { name: 'Google Gemini', helpUrl: 'https://aistudio.google.com/app/apikey' },
+  groq: { name: 'Groq', helpUrl: 'https://console.groq.com/keys' },
+  xai: { name: 'xAI', helpUrl: 'https://x.ai/api' },
+  mistral: { name: 'Mistral', helpUrl: 'https://console.mistral.ai/api-keys' },
+  deepseek: { name: 'DeepSeek', helpUrl: 'https://platform.deepseek.com' },
+  moonshotai: { name: 'Moonshot (Kimi)', helpUrl: 'https://platform.moonshot.ai' },
+  zai: { name: 'z.ai (Zhipu)', helpUrl: 'https://z.ai' },
+  minimax: { name: 'MiniMax', helpUrl: 'https://www.minimax.io' },
+  cerebras: { name: 'Cerebras', helpUrl: 'https://cloud.cerebras.ai' },
+  together: { name: 'Together AI', helpUrl: 'https://api.together.xyz' },
+  fireworks: { name: 'Fireworks', helpUrl: 'https://fireworks.ai' },
+  huggingface: { name: 'Hugging Face', helpUrl: 'https://huggingface.co/settings/tokens' },
+  'cloudflare-workers-ai': { name: 'Cloudflare Workers AI', helpUrl: 'https://developers.cloudflare.com/workers-ai/' },
+  'vercel-ai-gateway': { name: 'Vercel AI Gateway', helpUrl: 'https://vercel.com/ai-gateway' },
 }
 
-/** Built-in API-key providers recognised by pi-ai. Order = UI order. The id
- *  must match pi-ai's `KnownProvider` union so credentials in auth.json are
- *  picked up by the spawned pi process. */
-const BUILTIN_API_KEY_PROVIDERS: BuiltInApiKeyProvider[] = [
-  { id: 'openai', name: 'OpenAI', envVar: 'OPENAI_API_KEY', helpUrl: 'https://platform.openai.com/api-keys' },
-  { id: 'anthropic', name: 'Anthropic (API key)', envVar: 'ANTHROPIC_API_KEY', helpUrl: 'https://console.anthropic.com/settings/keys' },
-  { id: 'openrouter', name: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', helpUrl: 'https://openrouter.ai/keys' },
-  { id: 'google', name: 'Google Gemini', envVar: 'GEMINI_API_KEY', helpUrl: 'https://aistudio.google.com/app/apikey' },
-  { id: 'groq', name: 'Groq', envVar: 'GROQ_API_KEY', helpUrl: 'https://console.groq.com/keys' },
-  { id: 'xai', name: 'xAI', envVar: 'XAI_API_KEY', helpUrl: 'https://x.ai/api' },
-  { id: 'mistral', name: 'Mistral', envVar: 'MISTRAL_API_KEY', helpUrl: 'https://console.mistral.ai/api-keys' },
-  { id: 'deepseek', name: 'DeepSeek', envVar: 'DEEPSEEK_API_KEY', helpUrl: 'https://platform.deepseek.com' },
-  { id: 'moonshotai', name: 'Moonshot (Kimi)', envVar: 'MOONSHOT_API_KEY', helpUrl: 'https://platform.moonshot.ai' },
-  { id: 'zai', name: 'z.ai (Zhipu)', envVar: 'ZAI_API_KEY', helpUrl: 'https://z.ai' },
-  { id: 'minimax', name: 'MiniMax', envVar: 'MINIMAX_API_KEY', helpUrl: 'https://www.minimax.io' },
-  { id: 'cerebras', name: 'Cerebras', envVar: 'CEREBRAS_API_KEY', helpUrl: 'https://cloud.cerebras.ai' },
-  { id: 'together', name: 'Together', envVar: 'TOGETHER_API_KEY', helpUrl: 'https://api.together.xyz' },
-  { id: 'fireworks', name: 'Fireworks', envVar: 'FIREWORKS_API_KEY', helpUrl: 'https://fireworks.ai' },
-  { id: 'huggingface', name: 'HuggingFace', envVar: 'HF_TOKEN', helpUrl: 'https://huggingface.co/settings/tokens' },
-  { id: 'cloudflare-workers-ai', name: 'Cloudflare Workers AI', envVar: 'CLOUDFLARE_API_KEY', helpUrl: 'https://developers.cloudflare.com/workers-ai/' },
-  { id: 'vercel-ai-gateway', name: 'Vercel AI Gateway', envVar: 'AI_GATEWAY_API_KEY', helpUrl: 'https://vercel.com/ai-gateway' },
-]
+const NON_API_KEY_PROVIDERS = new Set(['amazon-bedrock', 'openai-codex'])
+
+function providerName(id: string): string {
+  return PROVIDER_META[id]?.name ?? id
+    .split('-')
+    .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
+    .join(' ')
+}
+
+/** pi-ai owns the provider id catalog. Cate contributes display/help metadata
+ *  only, so upgrading pi cannot leave the UI on a stale provider fork. */
+function apiKeyProviders(): AuthProviderDescriptor[] {
+  return getProviders()
+    .filter((id) => !NON_API_KEY_PROVIDERS.has(id))
+    .map((id) => ({
+      id,
+      name: providerName(id),
+      kind: 'apiKey' as const,
+      helpUrl: PROVIDER_META[id]?.helpUrl,
+    }))
+}
 
 // ---------------------------------------------------------------------------
 // AuthManager
@@ -151,13 +160,7 @@ export class AuthManager {
         usesCallbackServer: p.usesCallbackServer === true,
       })
     }
-    const apiKey: AuthProviderDescriptor[] = BUILTIN_API_KEY_PROVIDERS.map((p) => ({
-      id: p.id,
-      name: p.name,
-      kind: 'apiKey',
-      envVar: p.envVar,
-      helpUrl: p.helpUrl,
-    }))
+    const apiKey = apiKeyProviders()
     return [...oauth, ...apiKey]
   }
 
@@ -178,14 +181,14 @@ export class AuthManager {
     }
 
     // Built-in API-key providers (auth.json + env vars)
-    for (const p of BUILTIN_API_KEY_PROVIDERS) {
+    for (const p of apiKeyProviders()) {
       const hasAuthJson = authData[p.id]?.type === 'api_key'
-      const hasEnv = !!findEnvKeys(p.id)
+      const hasEnv = !!getEnvApiKey(p.id)
       const connected = hasAuthJson || hasEnv
       result.push({
         id: p.id,
         connected,
-        source: hasAuthJson ? 'safeStorage' : hasEnv ? 'env' : undefined,
+        source: hasAuthJson ? 'config' : hasEnv ? 'env' : undefined,
         connectedAt: connected ? this.connectedAt.get(p.id) : undefined,
       })
     }

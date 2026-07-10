@@ -52,12 +52,13 @@ function normalizeAgent(raw: unknown): IterationAgent | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   if (typeof o.terminalId !== 'string') return null
+  if (o.kind !== 'work' && o.kind !== 'verify') return null
   const agent: IterationAgent = {
     agent: typeof o.agent === 'string' ? o.agent : 'coding agent',
     terminalId: o.terminalId,
+    kind: o.kind,
   }
   if (typeof o.scope === 'string') agent.scope = o.scope
-  if (o.kind === 'work' || o.kind === 'verify') agent.kind = o.kind
   return agent
 }
 

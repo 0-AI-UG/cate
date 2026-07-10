@@ -45,6 +45,7 @@ import { authManager, type AuthManager } from './authManager'
 import { getSetting } from '../../main/settingsFile'
 import { workspaceCateApi } from '../../main/extensions/workspaceCateApi'
 import { KeyedLock } from '../../main/keyedLock'
+import { agentMessageText, lastAssistantMessage } from '../../shared/agentMessages'
 
 interface AgentSession {
   panelId: string
@@ -66,35 +67,6 @@ interface AgentSession {
 function toImageContent(images?: AgentImageAttachment[]): PiImageContent[] | undefined {
   if (!images || images.length === 0) return undefined
   return images.map((img) => ({ type: 'image', data: img.data, mimeType: img.mimeType }))
-}
-
-/** Concatenate the text blocks of a single pi message (assistant turn). */
-function messageText(message: unknown): string {
-  const content = (message as { content?: unknown } | null)?.content
-  if (!Array.isArray(content)) return ''
-  return content
-    .filter((c): c is { type: 'text'; text: string } =>
-      !!c && (c as { type?: string }).type === 'text' && typeof (c as { text?: unknown }).text === 'string',
-    )
-    .map((c) => c.text)
-    .join('')
-    .trim()
-}
-
-/** The assistant message that holds a turn's answer, from a pi `messages` array:
- *  the most recent assistant turn that actually has text, else the last assistant
- *  message at all (e.g. a tool-only turn), else null. Scans from the end so the
- *  text and the returned message agree. Mirrors pi's own `getLastAssistantText`. */
-function answerMessage(messages: unknown): Record<string, unknown> | null {
-  if (!Array.isArray(messages)) return null
-  let lastAssistant: Record<string, unknown> | null = null
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i] as { role?: string } | null
-    if (m?.role !== 'assistant') continue
-    if (!lastAssistant) lastAssistant = m as Record<string, unknown>
-    if (messageText(m)) return m as Record<string, unknown>
-  }
-  return lastAssistant
 }
 
 /** Result of one extension agent turn: the flattened `text` for convenience plus
@@ -141,16 +113,20 @@ export class AgentManager {
   private async handleAuthChanged(): Promise<void> {
     // Mirror FIRST so a renderer re-querying available models sees pi pick up
     // the fresh credentials, then broadcast.
-    await this.syncAuthToOpenSessions()
+    await this.syncConfigToOpenSessions('auth', (session) =>
+      pushSharedToWorkspace(session.runtime, session.cwd, session.variant),
+    )
     broadcastToAll(AUTH_CHANGED)
   }
 
-  /** Push the shared auth.json into every live session's workspace dir. */
-  private async syncAuthToOpenSessions(): Promise<void> {
+  private async syncConfigToOpenSessions(
+    label: 'auth' | 'models',
+    sync: (session: AgentSession) => Promise<void>,
+  ): Promise<void> {
     await Promise.all(
       Array.from(this.sessions.values()).map((session) =>
-        pushSharedToWorkspace(session.runtime, session.cwd, session.variant).catch((err) => {
-          log.warn('[agentManager] auth sync failed for %s: %O', session.panelId, err)
+        sync(session).catch((err) => {
+          log.warn('[agentManager] %s sync failed for %s: %O', label, session.panelId, err)
         }),
       ),
     )
@@ -159,12 +135,11 @@ export class AgentManager {
   /** Re-mirror the shared models.json into every open workspace, so the custom
    *  OpenAI provider edited in cate's UI reaches live pi processes (picked up
    *  on their next model-list fetch). */
-  syncCustomModelsToOpenSessions(): void {
-    for (const session of this.sessions.values()) {
-      void mirrorModelsToWorkspace(session.runtime, session.cwd, session.variant).catch((err) => {
-        log.warn('[agentManager] models sync failed for %s: %O', session.panelId, err)
-      })
-    }
+  async syncCustomModelsToOpenSessions(): Promise<void> {
+    await this.syncConfigToOpenSessions('models', (session) =>
+      mirrorModelsToWorkspace(session.runtime, session.cwd, session.variant),
+    )
+    broadcastToAll(AUTH_CHANGED)
   }
 
   async create(opts: AgentCreateOptions, sender: WebContents): Promise<void> {
@@ -491,7 +466,7 @@ export class AgentManager {
         if (e?.type === 'agent_end') {
           // A retry turn follows — not the terminal end of the run.
           if (e.willRetry === true) return
-          const message = answerMessage(e.messages)
+          const message = lastAssistantMessage(e.messages)
           // A turn can end on a non-retryable error (unsupported model, auth, bad
           // request): pi sets stopReason 'error' + an errorMessage on an empty
           // assistant message. Surface it, don't hand back silent empty text.
@@ -500,7 +475,7 @@ export class AgentManager {
             settle(() => reject(new Error(reason)))
             return
           }
-          settle(() => resolve({ text: message ? messageText(message) : '', message }))
+          settle(() => resolve({ text: agentMessageText(message), message }))
         } else if (e?.type === 'error') {
           settle(() => reject(new Error(e.message || 'agent error')))
         }

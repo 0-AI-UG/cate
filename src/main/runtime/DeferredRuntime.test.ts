@@ -50,7 +50,7 @@ describe('DeferredRuntime', () => {
 
     resolveReady(real)
     await expect(pending).resolves.toBe('contents:/a.txt')
-    expect(real.file.readFile).toHaveBeenCalledWith('/a.txt')
+    expect(real.file.readFile).toHaveBeenCalledWith('/a.txt', undefined)
   })
 
   test('async methods reject with the connect error if ready rejects', async () => {
@@ -89,7 +89,7 @@ describe('DeferredRuntime', () => {
     resolveReady(real)
     await ready
     await Promise.resolve()
-    expect(realWatch).toHaveBeenCalledWith('/root', cb)
+    expect(realWatch).toHaveBeenCalledWith('/root', cb, undefined)
 
     unsub()
     expect(realUnsub).toHaveBeenCalledTimes(1)
