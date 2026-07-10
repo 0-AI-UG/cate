@@ -49,19 +49,21 @@ let projectRoot: string
 // handle -> ENOTEMPTY/EPERM), and let rmSync retry to ride out any handle that
 // is still settling (a no-op on posix, which unlinks open handles lazily).
 //
-// Best-effort by design: on Windows an AV/indexer scan or a not-yet-released
-// handle can still hold a just-written file past every retry, so we swallow the
-// removal error instead of failing the suite. This only clears a temp dir under
-// os.tmpdir() (which the OS reaps regardless), and the assertions — not the
-// teardown — are what this test exercises. Leaving the dir cannot corrupt other
-// tests: each seeds its own keys and asserts on those, and the sole exact-key
-// assertion runs first against a freshly-created (empty) root.
+// Best-effort AND time-bounded by design. On Windows an AV/indexer scan or a
+// not-yet-released handle can hold a just-written file open, and rmSync's retry
+// backoff is synchronous — with maxRetries:20/retryDelay:50 the linear backoff
+// (50+100+…+1000ms) blocks ~10s and trips vitest's 10s hook timeout. So we keep
+// the retry budget small (4 attempts ≈ 0.5s worst case) and swallow a still-
+// locked dir: it only lives under os.tmpdir() (the OS reaps it regardless), and
+// the assertions — not the teardown — are what this test exercises. Leaving the
+// dir cannot corrupt other tests: each seeds its own keys and asserts on those,
+// and the sole exact-key assertion runs first against a freshly-created root.
 function removeStorageDir(dir: string): void {
   flushAllPendingWritesSync()
   try {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 50 })
   } catch {
-    // Handle still locked after every retry — leave it for the OS to reap.
+    // Handle still locked after the bounded retries — leave it for the OS to reap.
   }
 }
 
