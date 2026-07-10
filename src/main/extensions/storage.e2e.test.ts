@@ -48,9 +48,21 @@ let projectRoot: string
 // write is still in flight (Windows refuses rmdir on a dir with an open write
 // handle -> ENOTEMPTY/EPERM), and let rmSync retry to ride out any handle that
 // is still settling (a no-op on posix, which unlinks open handles lazily).
+//
+// Best-effort by design: on Windows an AV/indexer scan or a not-yet-released
+// handle can still hold a just-written file past every retry, so we swallow the
+// removal error instead of failing the suite. This only clears a temp dir under
+// os.tmpdir() (which the OS reaps regardless), and the assertions — not the
+// teardown — are what this test exercises. Leaving the dir cannot corrupt other
+// tests: each seeds its own keys and asserts on those, and the sole exact-key
+// assertion runs first against a freshly-created (empty) root.
 function removeStorageDir(dir: string): void {
   flushAllPendingWritesSync()
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })
+  } catch {
+    // Handle still locked after every retry — leave it for the OS to reap.
+  }
 }
 
 function scope(workspaceId: string, panelId: string | undefined = 'panel-1'): InvokeScope {
