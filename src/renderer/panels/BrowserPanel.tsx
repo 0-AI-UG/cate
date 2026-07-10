@@ -125,7 +125,11 @@ export default function BrowserPanel({
   // URL fallback: tabs + activeTabId are the only navigation authority.
   const seedTabs = useRef<{ tabs: BrowserTab[]; activeId: string } | null>(null)
   if (seedTabs.current === null) {
-    if (tabsProp.length === 0 || !tabsProp.some((tab) => tab.id === activeTabIdProp)) {
+    // A legacy panel persisted before the tabs schema (migrations were removed)
+    // arrives with tabs/activeTabId undefined. Treat that like any other invalid
+    // state so the PanelErrorBoundary renders a clean error tile instead of an
+    // unguarded `undefined.length` TypeError.
+    if (!tabsProp?.length || !tabsProp.some((tab) => tab.id === activeTabIdProp)) {
       throw new Error(`Browser panel ${panelId} has invalid tab state`)
     }
     seedTabs.current = { tabs: tabsProp, activeId: activeTabIdProp }

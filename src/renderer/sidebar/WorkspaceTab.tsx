@@ -23,6 +23,11 @@ import { InlineEditInput } from './InlineEditInput'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
 import { Tooltip } from '../ui/Tooltip'
 
+// Stable empty map so the ports selector returns a referentially-constant value
+// when a workspace has no status entry (a fresh `{}` each render would defeat
+// useShallow and spin useSyncExternalStore).
+const EMPTY_PORTS: Record<string, number[]> = {}
+
 // -----------------------------------------------------------------------------
 // Runtime status dot — surfaces a remote workspace's connection state in the
 // sidebar and offers the matching one-click recovery. Driven by the canonical
@@ -226,15 +231,18 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   onClick,
   onBulkContextMenu,
 }) => {
-  // Single store read for all workspace status data
-  const wsStatus = useStatusStore(useShallow((s) => {
+  // Listening ports per ptyId for this workspace. Returned as a FLAT map so
+  // `useShallow` can compare it entry-by-entry: the per-terminal port arrays are
+  // stable references while unchanged, so the memoized snapshot stays referentially
+  // stable and `useSyncExternalStore` doesn't re-render forever. (Wrapping this in
+  // an outer `{ listeningPorts }` object defeated useShallow — the wrapper was a
+  // fresh object every render, so the snapshot never compared equal → infinite loop.)
+  const portsByPty = useStatusStore(useShallow((s) => {
     const ws = s.workspaces[workspace.id]
-    if (!ws) return null
-    return {
-      listeningPorts: Object.fromEntries(
-        Object.entries(ws.terminals).map(([id, terminal]) => [id, terminal.listeningPorts]),
-      ),
-    }
+    if (!ws) return EMPTY_PORTS
+    return Object.fromEntries(
+      Object.entries(ws.terminals).map(([id, terminal]) => [id, terminal.listeningPorts]),
+    )
   }))
   const agentInfoByPanel = useAgentInfoByPanel(workspace.id)
 
@@ -277,7 +285,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   // panelId. Translate via terminalRegistry so the indicators on the workspace
   // overview line up. (Agent state/name/logo come pre-mapped from
   // useAgentInfoByPanel.)
-  const portsByPty = wsStatus?.listeningPorts ?? {}
   const portsByPanel = useMemo(() => {
     const out: Record<string, number[]> = {}
     for (const [ptyId, ports] of Object.entries(portsByPty)) {
