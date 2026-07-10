@@ -254,7 +254,7 @@ describe('spawn → wire → dispose happy path', () => {
     LC.dispose('panel-happy')
     expect(terminalKill).toHaveBeenCalledTimes(1)
     expect(terminalKill).toHaveBeenCalledWith('pty-happy')
-    expect(statusUnregisterTerminal).toHaveBeenCalledWith('pty-happy')
+    expect(statusUnregisterTerminal).toHaveBeenCalledWith('pty-happy', 'ws-1')
     expect(RS.has('panel-happy')).toBe(false)
     expect(RS.panelIdForPty('pty-happy')).toBeNull()
     expect(fake.disposeCount).toBe(1)

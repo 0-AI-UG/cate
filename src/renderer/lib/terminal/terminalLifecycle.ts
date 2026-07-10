@@ -585,7 +585,7 @@ export function dispose(panelId: string): void {
   // Kill PTY and clear renderer-owned status.
   if (ptyId) {
     electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
-    useStatusStore.getState().unregisterTerminal(ptyId)
+    useStatusStore.getState().unregisterTerminal(ptyId, entry.workspaceId)
   }
 
   teardownEntry(entry)

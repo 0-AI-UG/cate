@@ -40,7 +40,7 @@ interface StatusStoreActions {
   isAnimating: (workspaceId: string) => boolean
   ensureWorkspace: (workspaceId: string) => void
   registerTerminal: (terminalId: string, workspaceId: string) => void
-  unregisterTerminal: (terminalId: string) => void
+  unregisterTerminal: (terminalId: string, workspaceId?: string) => void
   setTerminalPorts: (terminalId: string, ports: number[]) => void
   setTerminalCwd: (terminalId: string, cwd: string) => void
 }
@@ -172,14 +172,17 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
     get().ensureWorkspace(workspaceId)
   },
 
-  unregisterTerminal(terminalId) {
+  unregisterTerminal(terminalId, knownWorkspaceId) {
     void import('../hooks/useProcessMonitor').then(({ forgetTerminalForProcessMonitor }) => {
       forgetTerminalForProcessMonitor(terminalId)
     })
     void import('../lib/agent/agentScreenDetector').then(({ forgetAgentTracker }) => {
       forgetAgentTracker(terminalId)
     })
-    const workspaceId = workspaceResolver(terminalId)
+    // Disposal removes the terminal identity bimap before calling us so
+    // re-entrant lifecycle calls are inert. Accept the workspace captured by
+    // that lifecycle; other callers can still resolve a live terminal here.
+    const workspaceId = knownWorkspaceId ?? workspaceResolver(terminalId)
     if (!workspaceId) return
     set((state) => {
       const workspace = state.workspaces[workspaceId]

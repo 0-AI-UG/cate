@@ -51,6 +51,8 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
   let writeTimer: ReturnType<typeof setTimeout> | null = null
   let flushChain: Promise<void> = Promise.resolve()
   let flushInFlight = false
+  let queuedWrites = 0
+  let writingRevision: number | null = null
   let unwatch: (() => void) | null = null
   let watchArming = false
   let watchGeneration = 0
@@ -127,17 +129,42 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
   const flushWrite = (): Promise<void> => {
     writeTimer = null
     flushInFlight = true
+    queuedWrites++
     flushChain = flushChain.then(async () => {
+      queuedWrites--
       const value = current
       const content = serialize(value)
-      const writingRevision = revision
+      const revisionAtWrite = revision
+      writingRevision = revisionAtWrite
       // Record before writing so an eager watcher event still matches.
       lastWrittenContent = content
       try {
         await backend.write(value, content)
-        durableRevision = Math.max(durableRevision, writingRevision)
+        if (revisionAtWrite < durableRevision) {
+          // A newer synchronous flush landed while this older async write was
+          // in flight. The async backend may have published its stale snapshot
+          // after that sync write, so immediately restore the latest authority
+          // before allowing the serialized chain to continue.
+          const correctionValue = current
+          const correctionContent = serialize(correctionValue)
+          const correctionRevision = revision
+          lastWrittenContent = correctionContent
+          try {
+            await backend.write(correctionValue, correctionContent)
+            durableRevision = Math.max(durableRevision, correctionRevision)
+          } catch (error) {
+            // The stale write succeeded but its corrective write failed. Mark
+            // the state non-durable so a later flush retries it.
+            durableRevision = Math.min(durableRevision, revisionAtWrite)
+            throw error
+          }
+        } else {
+          durableRevision = Math.max(durableRevision, revisionAtWrite)
+        }
       } catch (error) {
         report('write', error)
+      } finally {
+        writingRevision = null
       }
     })
     const settled = flushChain
@@ -223,7 +250,15 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       writeTimer = null
       return flushWrite()
     }
-    if (force || revision !== durableRevision) return flushWrite()
+    if (force) return flushWrite()
+    if (revision !== durableRevision) {
+      // A queued write snapshots `current` when it starts, so it already covers
+      // every revision currently visible. Likewise, an active write for this
+      // exact revision is sufficient. Only append when the active snapshot is
+      // older than the current state (or a previous write failed and settled).
+      if (queuedWrites > 0 || writingRevision === revision) return flushChain
+      return flushWrite()
+    }
     return flushChain
   }
 

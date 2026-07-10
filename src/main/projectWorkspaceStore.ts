@@ -198,25 +198,18 @@ async function cleanOrphanedTmpFiles(filePath: string): Promise<void> {
   }
 }
 
-// Workspace-aware read (issue #220): the plain primary file can be a valid but
-// *empty* canvas left behind by a wipe. When that happens, prefer the richer of
-// primary / .bak so a previously-wiped workspace still recovers its panels on
-// the next load instead of perpetuating the empty state.
+// Workspace-aware read (issue #220): a valid, non-empty primary is authoritative
+// even when .bak has more nodes (the difference may be a legitimate deletion).
+// Fall back only when the primary is invalid or empty, which still recovers the
+// original empty-workspace wipe without resurrecting older panels on every load.
 async function readWorkspaceWithFallback(filePath: string): Promise<ProjectWorkspaceFile | null> {
-  const candidates = await Promise.all([
+  const [primary, backup] = await Promise.all([
     tryReadJson<ProjectWorkspaceFile>(filePath),
     tryReadJson<ProjectWorkspaceFile>(filePath + '.bak'),
   ])
-  let best: ProjectWorkspaceFile | null = null
-  let bestCount = -1
-  for (const candidate of candidates) {
-    const count = workspaceNodeCount(candidate)
-    if (count > bestCount) {
-      best = candidate
-      bestCount = count
-    }
-  }
-  return best
+  if (workspaceNodeCount(primary) > 0) return primary
+  if (workspaceNodeCount(backup) >= 0) return backup
+  return workspaceNodeCount(primary) >= 0 ? primary : null
 }
 
 function isValidWorkspace(data: unknown): data is ProjectWorkspaceFile {

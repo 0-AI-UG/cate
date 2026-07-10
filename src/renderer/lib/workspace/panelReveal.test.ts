@@ -26,7 +26,11 @@ import {
 } from '../../panels/nodeDockRegistry'
 import { createDockStore } from '../../stores/dockStore'
 import { computeTerminalHasFocus } from '../../hooks/useShortcuts'
-import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
+import {
+  getOrCreateCanvasStoreForPanel,
+  peekCanvasStoreForPanel,
+  releaseCanvasStoreForPanel,
+} from '../../stores/canvasStore'
 
 const WS = 'ws-reveal'
 const CANVAS = 'canvas-1'
@@ -83,6 +87,41 @@ describe('resolvePanelLocation', () => {
     const nodeId = registerCanvasContaining(CHILD)
     const loc = resolvePanelLocation(WS, CHILD)
     expect(loc).toEqual({ kind: 'canvas', canvasPanelId: CANVAS })
+  })
+
+  it('resolves a child from a never-mounted persisted canvas without creating a store', () => {
+    useAppStore.setState({
+      workspaces: [{
+        id: WS,
+        rootPath: '/repo',
+        panels: {
+          [CANVAS]: { id: CANVAS, type: 'canvas', title: 'Canvas' },
+          [CHILD]: { id: CHILD, type: 'terminal', title: 'Terminal' },
+        },
+        canvases: {
+          [CANVAS]: {
+            id: CANVAS,
+            canvasNodes: {
+              persisted: {
+                id: 'persisted',
+                origin: { x: 10, y: 20 },
+                size: { width: 400, height: 300 },
+                zOrder: 0,
+                creationIndex: 0,
+                animationState: 'idle',
+                dockLayout: { type: 'tabs', id: 'tabs', panelIds: [CHILD], activeIndex: 0 },
+              },
+            },
+            zoomLevel: 1.25,
+            viewportOffset: { x: 3, y: 4 },
+          },
+        },
+      } as any],
+    } as any)
+
+    expect(peekCanvasStoreForPanel(CANVAS)).toBeUndefined()
+    expect(resolvePanelLocation(WS, CHILD)).toEqual({ kind: 'canvas', canvasPanelId: CANVAS })
+    expect(peekCanvasStoreForPanel(CANVAS)).toBeUndefined()
   })
 
   it('returns null when the panel lives nowhere', () => {

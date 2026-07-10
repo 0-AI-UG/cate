@@ -92,6 +92,19 @@ function forwardAllowedRoot(rootPath: string, op: 'add' | 'remove', scopeId: str
   result.catch(() => { /* best-effort: never break workspace lifecycle */ })
 }
 
+/** Re-register every workspace root owned by a runtime after connect. Daemon
+ *  root state is process-local, so a reconnect starts with none of the
+ *  workspace-scoped roots previously forwarded by this process. */
+function replayAllowedRoots(runtimeId: string, runtime: ReturnType<typeof runtimes.resolve>): void {
+  for (const workspace of workspaces.values()) {
+    const locator = parseLocator(workspace.rootPath)
+    if (!locator.path || locator.runtimeId !== runtimeId) continue
+    runtime.addAllowedRoot(locator.path, workspace.id).catch(() => {
+      /* best-effort: a rejected registration must not break runtime connect */
+    })
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Public API (called by IPC handlers)
 // -----------------------------------------------------------------------------
@@ -147,10 +160,10 @@ async function createWorkspace(
   }
   workspaces.set(info.id, info)
   log.info('Workspace created: %s (%s%s)', info.id, info.rootPath || 'no root', remote ? ', remote' : '')
-  if (info.rootPath && !remote) {
-    addAllowedRoot(info.rootPath, info.id)
+  if (info.rootPath) {
+    if (!remote) addAllowedRoot(info.rootPath, info.id)
     forwardAllowedRoot(info.rootPath, 'add', info.id)
-    claimProjectLock(info.rootPath, info.name)
+    if (!remote) claimProjectLock(info.rootPath, info.name)
   }
   return { ok: true, workspace: info }
 }
@@ -218,15 +231,15 @@ async function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 
   const rootChanged = existing.rootPath !== nextRootPath
   const existingLocal = !!existing.rootPath && isLocalLocator(existing.rootPath)
   const nextLocal = !!nextRootPath && isLocalLocator(nextRootPath)
-  if (existingLocal && rootChanged) {
-    removeAllowedRoot(existing.rootPath, id)
+  if (existing.rootPath && rootChanged) {
+    if (existingLocal) removeAllowedRoot(existing.rootPath, id)
     forwardAllowedRoot(existing.rootPath, 'remove', id)
   }
 
   const updated = { ...existing, ...changes, rootPath: nextRootPath }
   workspaces.set(id, updated)
-  if (nextLocal) {
-    addAllowedRoot(updated.rootPath, id)
+  if (updated.rootPath) {
+    if (nextLocal) addAllowedRoot(updated.rootPath, id)
     forwardAllowedRoot(updated.rootPath, 'add', id)
   }
   if (rootChanged) {
@@ -244,11 +257,12 @@ function removeWorkspace(id: string): boolean {
   }
   const existing = workspaces.get(id)
   const removed = workspaces.delete(id)
-  if (existing?.rootPath && isLocalLocator(existing.rootPath)) {
-    removeAllowedRoot(existing.rootPath, id)
+  if (existing?.rootPath) {
+    const local = isLocalLocator(existing.rootPath)
+    if (local) removeAllowedRoot(existing.rootPath, id)
     forwardAllowedRoot(existing.rootPath, 'remove', id)
     // Delete first so rootInUse() doesn't count the workspace we just removed.
-    dropProjectLock(existing.rootPath, id)
+    if (local) dropProjectLock(existing.rootPath, id)
   }
   if (removed) log.info('Workspace removed: %s', id)
   return removed
@@ -267,6 +281,12 @@ function broadcastWorkspaceChange(originWindowId?: number): void {
 // -----------------------------------------------------------------------------
 
 export function registerWorkspaceHandlers(): void {
+  // A runtime daemon loses its in-memory allowed-root registry whenever its
+  // process disconnects. Rebuild the workspace-scoped entries on every initial
+  // connection and reconnect; workspace ids deliberately differ from runtime
+  // ids and are the scope carried by renderer fs/git requests.
+  runtimes.onConnected(replayAllowedRoots)
+
   // Create a new workspace
   ipcMain.handle(
     WORKSPACE_CREATE,

@@ -129,6 +129,44 @@ function makeWorkspace(suffix: string): { wsId: string; canvasId: string } {
   return { wsId, canvasId }
 }
 
+function seedNeverMountedCanvas(suffix: string): { wsId: string; canvasId: string; childId: string } {
+  const wsId = `ws-cold-${suffix}`
+  const canvasId = `canvas-cold-${suffix}`
+  const childId = `term-cold-${suffix}`
+  useAppStore.setState({
+    selectedWorkspaceId: wsId,
+    workspaces: [{
+      id: wsId,
+      name: 'Cold workspace',
+      color: '',
+      rootPath: '/tmp/cold',
+      panels: {
+        [canvasId]: { id: canvasId, type: 'canvas', title: 'Canvas', isDirty: false },
+        [childId]: { id: childId, type: 'terminal', title: 'Terminal', isDirty: false },
+      },
+      canvases: {
+        [canvasId]: {
+          id: canvasId,
+          canvasNodes: {
+            'persisted-node': {
+              id: 'persisted-node',
+              origin: { x: 1, y: 2 },
+              size: { width: 400, height: 300 },
+              zOrder: 0,
+              creationIndex: 0,
+              animationState: 'idle',
+              dockLayout: { type: 'tabs', id: 'persisted-tabs', panelIds: [childId], activeIndex: 0 },
+            },
+          },
+          zoomLevel: 1.5,
+          viewportOffset: { x: 7, y: 8 },
+        },
+      },
+    }],
+  })
+  return { wsId, canvasId, childId }
+}
+
 let testSeq = 0
 
 beforeEach(() => {
@@ -299,6 +337,19 @@ describe('closePanel — canvas with children', () => {
     expect(h.ptyKill).toHaveBeenCalledTimes(1)
     expect(h.ptyKill).toHaveBeenCalledWith(childPty)
   })
+
+  it('closes persisted children of a never-mounted canvas without creating an empty live store', () => {
+    const { wsId, canvasId, childId } = seedNeverMountedCanvas(`close-${testSeq}`)
+    const childPty = spawnPty(childId, wsId)
+    expect(peekCanvasStoreForPanel(canvasId)).toBeUndefined()
+
+    useAppStore.getState().closePanel(wsId, canvasId)
+
+    expect(panelsOf(wsId)[canvasId]).toBeUndefined()
+    expect(panelsOf(wsId)[childId]).toBeUndefined()
+    expect(h.ptyKill).toHaveBeenCalledWith(childPty)
+    expect(peekCanvasStoreForPanel(canvasId)).toBeUndefined()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -350,6 +401,19 @@ describe('closePanel — detached-window interactions', () => {
     expect(panelsOf(wsId)[termId]).toBeUndefined()
     expect(h.ptyKill).toHaveBeenCalledTimes(1)
     expect(h.ptyKill).toHaveBeenCalledWith(ptyId)
+  })
+
+  it('transfers persisted children of a never-mounted canvas without creating an empty live store', () => {
+    const { wsId, canvasId, childId } = seedNeverMountedCanvas(`transfer-${testSeq}`)
+    spawnPty(childId, wsId)
+    expect(peekCanvasStoreForPanel(canvasId)).toBeUndefined()
+
+    removePanelFromWindow(wsId, canvasId, 'canvas', 'transfer')
+
+    expect(h.releaseSpy).toHaveBeenCalledWith(childId)
+    expect(panelsOf(wsId)[canvasId]).toBeUndefined()
+    expect(panelsOf(wsId)[childId]).toBeUndefined()
+    expect(peekCanvasStoreForPanel(canvasId)).toBeUndefined()
   })
 })
 

@@ -62,9 +62,8 @@ async function readAuthJson(): Promise<AuthStorageData> {
 // auth.json into open workspaces' pi-agent dirs.
 let onAuthChange: (() => void) | null = null
 
-async function writeAuthJson(data: AuthStorageData): Promise<void> {
-  // Callers read-modify the full object above, so the update ignores `current`.
-  await updateAgentConfigFile(authJsonPath(), () => data)
+async function updateAuthJson(update: (current: AuthStorageData) => AuthStorageData): Promise<void> {
+  await updateAgentConfigFile(authJsonPath(), (current) => update(current as AuthStorageData))
   try { onAuthChange?.() } catch (err) { log.warn('[authManager] onChange hook failed: %O', err) }
 }
 
@@ -261,9 +260,10 @@ export class AuthManager {
         if (!res) return { id: providerId, health: 'needsReauth' }
         const next = res.newCredentials
         if (next && (next.access !== cred.access || next.expires !== cred.expires)) {
-          const fresh = await readAuthJson()
-          fresh[providerId] = { type: 'oauth', ...next }
-          await writeAuthJson(fresh)
+          await updateAuthJson((current) => ({
+            ...current,
+            [providerId]: { type: 'oauth', ...next },
+          }))
           this.connectedAt.set(providerId, new Date().toISOString())
         }
         return { id: providerId, health: 'ok' }
@@ -387,9 +387,10 @@ export class AuthManager {
 
     try {
       const credentials = await provider.login(callbacks)
-      const current = await readAuthJson()
-      current[providerId] = { type: 'oauth', ...credentials }
-      await writeAuthJson(current)
+      await updateAuthJson((current) => ({
+        ...current,
+        [providerId]: { type: 'oauth', ...credentials },
+      }))
       this.connectedAt.set(providerId, new Date().toISOString())
       send({ type: 'done' })
     } catch (err) {
@@ -428,18 +429,19 @@ export class AuthManager {
   // -------------------------------------------------------------------------
 
   async saveApiKey(providerId: string, key: string): Promise<void> {
-    const current = await readAuthJson()
-    current[providerId] = { type: 'api_key', key }
-    await writeAuthJson(current)
+    await updateAuthJson((current) => ({
+      ...current,
+      [providerId]: { type: 'api_key', key },
+    }))
     this.connectedAt.set(providerId, new Date().toISOString())
   }
 
   async deleteProvider(providerId: string): Promise<void> {
-    const auth = await readAuthJson()
-    if (providerId in auth) {
-      delete auth[providerId]
-      await writeAuthJson(auth)
-    }
+    await updateAuthJson((current) => {
+      const remaining = { ...current }
+      delete remaining[providerId]
+      return remaining
+    })
     this.connectedAt.delete(providerId)
   }
 

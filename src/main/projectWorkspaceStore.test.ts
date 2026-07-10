@@ -149,6 +149,20 @@ describe('loadProjectState — issue #220 prefer-richer fallback', () => {
     expect(nodeCount(loaded!.workspace)).toBe(3)
   })
 
+  it('does not resurrect legitimately deleted nodes from a richer .bak', async () => {
+    const cateDir = path.join(root, '.cate')
+    await fs.mkdir(cateDir, { recursive: true })
+    const wsPath = path.join(cateDir, 'workspace.json')
+    // The primary is a valid later generation where node b was intentionally
+    // deleted. Richness alone must not make the older backup authoritative.
+    await fs.writeFile(wsPath, JSON.stringify(makeWorkspace([makeNode('a')])), 'utf-8')
+    await fs.writeFile(wsPath + '.bak', JSON.stringify(makeWorkspace([makeNode('a'), makeNode('b')])), 'utf-8')
+    await fs.writeFile(path.join(cateDir, 'session.json'), JSON.stringify(makeSession()), 'utf-8')
+
+    const loaded = await loadProjectState(root)
+    expect(nodeCount(loaded!.workspace)).toBe(1)
+  })
+
   it('sweeps orphaned <file>.<pid>.<seq>.tmp files left by a crashed write', async () => {
     const cateDir = path.join(root, '.cate')
     await fs.mkdir(cateDir, { recursive: true })

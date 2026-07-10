@@ -213,21 +213,26 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
     }
   })
 
-  test('addAllowedRoot / removeAllowedRoot round-trip over the wire', async () => {
+  test('workspace-scoped allowed roots round-trip when workspaceId differs from runtimeId', async () => {
     const { remote } = loopback(daemonApi())
     // A dir OUTSIDE the registered root (and outside tmpdir) so validation
     // flips with the root registration.
     const extra = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-extra-')))
     const probe = path.join(extra, 'probe.txt')
+    const workspaceId = 'workspace-alpha'
     await fs.writeFile(probe, 'x\n')
     try {
+      await expect(remote.file.readFile(probe, { scopeId: workspaceId })).rejects.toThrow(/Access denied/)
+      await remote.addAllowedRoot(extra, workspaceId)
+      expect(await remote.file.readFile(probe, { scopeId: workspaceId })).toBe('x\n')
+      // Runtime identity is not workspace authority, and another workspace may
+      // not borrow this root.
       await expect(remote.file.readFile(probe, { scopeId: 'srv_test' })).rejects.toThrow(/Access denied/)
-      await remote.addAllowedRoot(extra, 'srv_test')
-      expect(await remote.file.readFile(probe, { scopeId: 'srv_test' })).toBe('x\n')
-      await remote.removeAllowedRoot(extra, 'srv_test')
-      await expect(remote.file.readFile(probe, { scopeId: 'srv_test' })).rejects.toThrow(/Access denied/)
+      await expect(remote.file.readFile(probe, { scopeId: 'workspace-foreign' })).rejects.toThrow(/Access denied/)
+      await remote.removeAllowedRoot(extra, workspaceId)
+      await expect(remote.file.readFile(probe, { scopeId: workspaceId })).rejects.toThrow(/Access denied/)
     } finally {
-      removeAllowedRoot(extra, 'srv_test')
+      removeAllowedRoot(extra, workspaceId)
       await fs.rm(extra, { recursive: true, force: true })
     }
   })

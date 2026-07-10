@@ -31,6 +31,11 @@ vi.mock('../../../agent/renderer/agentSessionRegistry', () => ({
 
 vi.mock('../../stores/canvasStore', () => ({
   getOrCreateCanvasStoreForPanel: () => ({ getState: () => ({ nodes: canvasNodes }) }),
+  peekCanvasStoreForPanel: () => ({ getState: () => ({
+    nodes: canvasNodes,
+    zoomLevel: 1,
+    viewportOffset: { x: 0, y: 0 },
+  }) }),
   releaseCanvasStoreForPanel: (id: string) => releaseCanvasStoreForPanel(id),
 }))
 

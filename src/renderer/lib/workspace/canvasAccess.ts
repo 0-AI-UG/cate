@@ -228,12 +228,16 @@ export function getWorkspaceCanvasSnapshot(workspaceId: string): WorkspaceCanvas
 export function getNodeDockLayout(canvasPanelId: string, nodeId: string): DockLayoutNode | null {
   const live = getLiveNodeDockLayout(canvasPanelId, nodeId)
   if (live !== undefined) return live
-  return getOrCreateCanvasStoreForPanel(canvasPanelId).getState().nodes[nodeId]?.dockLayout ?? null
+  return getCanvasSnapshotForPanel(canvasPanelId)?.nodes[nodeId]?.dockLayout ?? null
 }
 
 /** Capture one canvas's lossless layout and complete child membership. */
 export function captureCanvasPanel(canvasPanelId: string): CanvasLayoutSnapshot & { panelIds: string[] } {
-  const state = getOrCreateCanvasStoreForPanel(canvasPanelId).getState()
+  const state = getCanvasSnapshotForPanel(canvasPanelId) ?? {
+    nodes: {},
+    viewportOffset: { x: 0, y: 0 },
+    zoomLevel: ZOOM_DEFAULT,
+  }
   const nodes: Record<string, CanvasNodeState> = {}
   const panelIds = new Set<string>()
   for (const [nodeId, node] of Object.entries(state.nodes)) {
@@ -302,8 +306,11 @@ export function resolvePanelLocation(
     }
   }
   for (const canvasPanelId of candidateCanvasIds) {
-    const ops = getCanvasOpsById(canvasPanelId) ?? ensureCanvasOpsForPanel(canvasPanelId)
-    if (ops.storeApi.getState().nodeForPanel(panelId)) {
+    const nodes = getCanvasSnapshotForPanel(canvasPanelId)?.nodes ?? {}
+    const containsPanel = Object.values(nodes).some((node) =>
+      collectPanelIds(getNodeDockLayout(canvasPanelId, node.id)).includes(panelId),
+    )
+    if (containsPanel) {
       return { kind: 'canvas', canvasPanelId }
     }
   }
