@@ -19,12 +19,15 @@ vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
 import { DEFAULT_SETTINGS } from '../shared/types'
 
 let counter = 0
+let lastModule: Awaited<ReturnType<typeof freshModule>> | null = null
 
 // Re-import a fresh copy of the module so its cached state (loaded/current)
 // resets between tests.
 async function freshModule() {
   vi.resetModules()
-  return import('./settingsFile')
+  const m = await import('./settingsFile')
+  lastModule = m
+  return m
 }
 
 function settingsPath() {
@@ -37,6 +40,12 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Drain the previous module's debounced write before switching dirRef —
+  // its file path resolves app.getPath('userData') at write time, so a stale
+  // timer firing later would drop a settings.json into the NEXT test's dir
+  // (e.g. overwriting the corrupt file the quarantine test just planted).
+  lastModule?.flushPendingWritesSync()
+  lastModule = null
   fs.rmSync(dirRef.current, { recursive: true, force: true })
 })
 
