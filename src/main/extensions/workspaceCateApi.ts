@@ -47,6 +47,13 @@ export class WorkspaceCateApiManager {
     }
   }
 
+  /** Tear down a single workspace's first-party endpoint. The local runtime never
+   *  disconnects during app life, so without this every opened-then-closed
+   *  workspace would leak its loopback listener + http.Server for the session. */
+  disposeForWorkspace(workspaceId: string): void {
+    this.endpoints.dispose(endpointKey(workspaceId))
+  }
+
   disposeForRuntime(runtimeId: string): void {
     this.endpoints.disposeForRuntime('first-party', runtimeId)
   }

@@ -21,6 +21,7 @@ import { resolveTrustedWorkspaceRoot } from './workspaceRoots'
 import { acquireProjectLock, releaseProjectLock } from './projectLock'
 import { isLocalLocator, parseLocator } from './runtime/locator'
 import { runtimes } from './runtime/runtimeManager'
+import { workspaceCateApi } from './extensions/workspaceCateApi'
 import type { RuntimeConnection } from '../shared/types'
 
 // In-memory workspace list — authoritative source of truth
@@ -317,6 +318,10 @@ export function registerWorkspaceHandlers(): void {
     // Closing a workspace tab also closes its detached (dock) windows — they
     // belong to the workspace and have no home once it's gone.
     closeWindowsForWorkspace(id)
+    // Release the workspace's first-party CATE_API endpoint. The local runtime
+    // never disconnects during app life, so disposeForRuntime alone would let
+    // this endpoint leak until quit.
+    workspaceCateApi.disposeForWorkspace(id)
     const removed = removeWorkspace(id)
     if (removed) {
       const win = windowFromEvent(event)

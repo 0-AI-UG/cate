@@ -99,7 +99,12 @@ export function resolveDrop(
     source.origin.kind === 'canvas-node' && !!source.origin.members?.length
   if (grouped) {
     if (!cursor.insideWindow) return null
-    return resolveCanvasHit(cursor, source, grab, ghostSize, env, snap)
+    // A grouped drag may only reposition within its OWN canvas. Over a different
+    // canvas resolveCanvasHit yields `canvas-add`, whose commit moves only the
+    // anchor and strands the other members on the source canvas — so accept only
+    // a same-canvas reposition; anything else is a no-op that keeps the group put.
+    const target = resolveCanvasHit(cursor, source, grab, ghostSize, env, snap)
+    return target?.kind === 'canvas-reposition' ? target : null
   }
 
   if (!cursor.insideWindow) {

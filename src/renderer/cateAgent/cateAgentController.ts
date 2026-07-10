@@ -695,6 +695,12 @@ class CateAgentController implements CateAgentBridgeHost {
     log.warn('[cateAgentController] %s error: %s', ctx.panelId, message)
     if (ctx.role === 'driver' || ctx.role === 'canvas') return // launcher owns cleanup
     if (ctx.role === 'orchestrator' && ctx.chatId) {
+      // Bail if this run was superseded. Stop + resend replaces r.runs[chatId]
+      // with a fresh epoch; patching/finalizing on the stale epoch would mark the
+      // live turn failed and delete the NEW run's bookkeeping (finalizeRun deletes
+      // r.runs[chatId]). Mirrors the epoch guard onRunStart/onRunEnd already use.
+      const active = this.ws.get(ctx.workspaceId)?.runs.get(ctx.chatId)
+      if (!active || active.epoch !== ctx.epoch) return
       useChatsStore.getState().appendMessage(ctx.rootPath, ctx.chatId, textMessage('agent', `Error: ${message.slice(0, 200)}`))
       const run = getRun(ctx.rootPath, ctx.chatId)
       if (run) useChatsStore.getState().patchRun(ctx.rootPath, ctx.chatId, { status: 'failed', note: message.slice(0, 200) })

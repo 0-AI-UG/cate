@@ -444,6 +444,27 @@ describe('resolveDrop — grouped canvas-node', () => {
     )
     expect(t).toBeNull()
   })
+
+  it('over a DIFFERENT canvas yields null — a group cannot cross canvases (would strand members)', () => {
+    // resolveCanvasHit on a foreign canvas resolves canvas-add, whose commit
+    // moves only the anchor and leaves the members behind. The grouped guard must
+    // refuse it so the whole selection stays on its source canvas.
+    const t = resolveDropT(
+      { client: { x: 100, y: 100 }, screen: { x: 100, y: 100 }, insideWindow: true },
+      groupedSource,
+      grab,
+      ghostSize,
+      'editor',
+      env({
+        canvasAt: () => ({
+          panelId: 'canvas-B',
+          rect: rect(0, 0, 1000, 800),
+          canvasStoreApi: CANVAS_STORE_B,
+        }),
+      }),
+    )
+    expect(t).toBeNull()
+  })
 })
 
 // -----------------------------------------------------------------------------
