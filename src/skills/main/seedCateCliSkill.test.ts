@@ -24,30 +24,34 @@ const CATE_AGENT_SKILL = `${WS}/.cate/pi-agent/skills/cate-cli/SKILL.md`
 const CLAUDE_SKILL = `${WS}/.claude/skills/cate-cli/SKILL.md`
 
 // In-memory host filesystem behind runtime.file. mkdir is lax about parents —
-// the installer's mkdirp walks level-by-level anyway.
+// the installer's mkdirp walks level-by-level anyway. Keys are normalized to
+// forward slashes: the local runtime builds paths with path.join, which uses
+// backslashes on Windows, while the test constants are POSIX.
 let files: Map<string, string>
 let dirs: Set<string>
+
+const norm = (p: string): string => p.replace(/\\/g, '/')
 
 function makeRuntime() {
   return {
     file: {
       readFile: async (p: string) => {
-        const v = files.get(p)
+        const v = files.get(norm(p))
         if (v === undefined) throw new Error(`ENOENT: ${p}`)
         return v
       },
       writeFile: async (p: string, content: string) => {
-        files.set(p, content)
+        files.set(norm(p), content)
       },
       writeBinary: async (p: string, buf: Buffer) => {
-        files.set(p, buf.toString('utf8'))
+        files.set(norm(p), buf.toString('utf8'))
       },
       mkdir: async (p: string) => {
-        dirs.add(p)
+        dirs.add(norm(p))
       },
       stat: async (p: string) => {
-        if (dirs.has(p)) return { isDirectory: true, isFile: false }
-        if (files.has(p)) return { isDirectory: false, isFile: true }
+        if (dirs.has(norm(p))) return { isDirectory: true, isFile: false }
+        if (files.has(norm(p))) return { isDirectory: false, isFile: true }
         throw new Error(`ENOENT: ${p}`)
       },
     },
