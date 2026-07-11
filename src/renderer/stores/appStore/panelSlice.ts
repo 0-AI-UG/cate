@@ -28,6 +28,7 @@ import {
   resolvePanelLocation,
 } from '../../lib/workspace/canvasAccess'
 import { clearActivePanelIfMatches } from '../../lib/activePanel'
+import { pathDisplayName } from '../../lib/fs/displayPath'
 import { recordRecentFile } from '../../lib/fs/recentFiles'
 
 type PanelSliceActions = Pick<
@@ -109,7 +110,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
     createEditor(workspaceId, filePath?, position?, placement?) {
       const panelId = generateId()
       if (filePath) recordRecentFile(workspaceId, filePath)
-      const fileName = filePath ? filePath.split('/').pop() ?? 'Untitled' : 'Untitled'
+      const fileName = (filePath && pathDisplayName(filePath)) || 'Untitled'
       const panel: PanelState = {
         id: panelId,
         type: 'editor',
@@ -123,7 +124,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
     createDocument(workspaceId, filePath?, documentType?, position?, placement?) {
       const panelId = generateId()
       if (filePath) recordRecentFile(workspaceId, filePath)
-      const fileName = filePath ? filePath.split('/').pop() ?? 'Document' : 'Document'
+      const fileName = (filePath && pathDisplayName(filePath)) || 'Document'
       const panel: PanelState = {
         id: panelId,
         type: 'document',
@@ -137,7 +138,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     createDiffEditor(workspaceId, filePath, diffMode, position?, placement?) {
       const panelId = generateId()
-      const fileName = filePath.split('/').pop() ?? 'Untitled'
+      const fileName = pathDisplayName(filePath) || 'Untitled'
       const label = diffMode === 'staged' ? 'Staged' : 'Working'
       const panel: PanelState = {
         id: panelId,

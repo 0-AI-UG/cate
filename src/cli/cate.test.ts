@@ -308,11 +308,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('run — exit codes', () => {
-  it('CATE_API unset -> exit 3 with a clear message', async () => {
+  it('CATE_API unset -> exit 3 with a how-to-enable message', async () => {
     const deps = makeDeps({ env: {} })
     const code = await run(['browser', 'current'], deps)
     expect(code).toBe(3)
-    expect(deps.err.join('\n')).toMatch(/not running inside a Cate terminal/)
+    const err = deps.err.join('\n')
+    expect(err).toMatch(/CATE_API\/CATE_TOKEN unset/)
+    expect(err).toMatch(/Settings → Terminal/)
   })
 
   it('happy path -> exit 0, url on stdout', async () => {
@@ -614,7 +616,7 @@ describe('defaultReadStdin — real binary', () => {
     )
     expect(r.timedOut).toBe(false)
     expect(r.code).toBe(3)
-    expect(r.stderr).toMatch(/not running inside a Cate terminal/)
+    expect(r.stderr).toMatch(/CATE_API\/CATE_TOKEN unset/)
   }, 15_000)
 
   posixIt('reads buffered pipe bytes even when the writer keeps the pipe open', async () => {

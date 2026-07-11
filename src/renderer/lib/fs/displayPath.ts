@@ -38,3 +38,21 @@ export function pathDisplayName(locator: string): string {
 }
 
 export const workspaceDisplayName = pathDisplayName
+
+/**
+ * Workspace-relative path for display / clipboard. Decodes both locators and
+ * returns the host-relative path when `locator` sits inside `rootLocator` on
+ * the same runtime; otherwise the decoded absolute host path. Local Windows
+ * paths are compared with normalized separators (mirrors shared/pathUtils).
+ */
+export function relativeDisplayPath(locator: string, rootLocator: string): string {
+  const file = parseLocator(locator)
+  const root = parseLocator(rootLocator)
+  if (file.runtimeId !== root.runtimeId) return file.path
+  const norm = (p: string): string =>
+    (file.runtimeId === LOCAL_RUNTIME_ID ? p.replace(/\\/g, '/') : p).replace(/\/+$/, '')
+  const normFile = norm(file.path)
+  const normRoot = norm(root.path)
+  if (normRoot && normFile.startsWith(normRoot + '/')) return normFile.slice(normRoot.length + 1)
+  return file.path
+}

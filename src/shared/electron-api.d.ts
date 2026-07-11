@@ -731,11 +731,18 @@ export interface ElectronAPI {
   /** Ask main to focus the window that owns `panelId` and reveal it. */
   focusWindowPanel(panelId: string): Promise<void>
 
+  /** Ask main to have the window that owns `panelId` close it (behind that
+   *  window's own dirty/running confirmation gates). */
+  closeWindowPanel(panelId: string): Promise<void>
+
   /** Report this window's panels (across its workspaces) for cross-window discovery. */
   reportWindowPanels(report: WindowPanelReport[]): Promise<void>
 
   /** This window owns `panelId` — bring it forward within this window. */
   onRevealPanelInWindow(callback: (panelId: string) => void): () => void
+
+  /** This window owns `panelId` — close it (with the usual confirmation gates). */
+  onClosePanelInWindow(callback: (panelId: string) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Cross-window drag coordination

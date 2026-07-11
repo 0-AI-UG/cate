@@ -43,7 +43,8 @@ export const DEFAULT_TIMEOUT_MS = 30_000
 
 /** Bad command-line usage → exit 2. */
 export class UsageError extends Error {}
-/** Missing CATE_API/CATE_TOKEN or a failed fetch → exit 3. */
+/** Missing CATE_API/CATE_TOKEN (endpoint disabled / not a Cate terminal) or a
+ *  failed fetch → exit 3. */
 export class EnvError extends Error {}
 /** A completed request that reported failure (top-level or in-band) → exit 1. */
 export class ApiError extends Error {
@@ -270,7 +271,13 @@ export async function send(method: string, args: Record<string, unknown>, deps: 
   const api = deps.env.CATE_API
   const token = deps.env.CATE_TOKEN
   if (!api || !token) {
-    throw new EnvError('not running inside a Cate terminal (CATE_API/CATE_TOKEN unset)')
+    // `cate` is on PATH in every Cate terminal, endpoint enabled or not — so a
+    // missing endpoint env almost always means the setting is off (or this
+    // terminal predates enabling it). Say how to fix it, not just what's wrong.
+    throw new EnvError(
+      'the cate CLI endpoint is not available in this shell (CATE_API/CATE_TOKEN unset).\n' +
+        'Enable "Command-line control (cate CLI)" in Cate Settings → Terminal, then open a new terminal.',
+    )
   }
 
   let res: Response
@@ -454,7 +461,8 @@ Flags:
   -h, --help       show this help
   --version        print the CLI version
 
-Requires CATE_API and CATE_TOKEN in the environment (Cate injects them).`
+Requires CATE_API and CATE_TOKEN in the environment. Cate injects them into new
+terminals while "Command-line control (cate CLI)" is enabled (Settings → Terminal).`
 
 export interface RunDeps {
   fetch: typeof fetch

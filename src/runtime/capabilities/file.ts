@@ -30,18 +30,74 @@ async function assertNotSymlink(filePath: string): Promise<void> {
   }
 }
 
-export async function writeFile(filePath: string, content: string): Promise<void> {
+// ---------------------------------------------------------------------------
+// Atomic writes — every write through the runtime is tmp+rename, so a crash
+// mid-write can never leave a truncated file, on any host. This mirrors the
+// main process's writeJsonAtomic (src/main/writeJsonAtomic.ts): per-write
+// unique tmp in the same directory (rename is atomic on the same fs; unique so
+// concurrent writes can't consume each other's tmp), win32 rename retry for
+// the transient EPERM that MoveFileEx(REPLACE_EXISTING) hits when racing an
+// antivirus/indexer handle. The target's existing mode is copied onto the tmp
+// BEFORE the rename (a plain write preserves the inode's mode; a rename
+// replaces the inode — without this an editor save would strip a script's
+// executable bit).
+// ---------------------------------------------------------------------------
+
+let tmpSeq = 0
+function uniqueTmpPath(filePath: string): string {
+  tmpSeq = (tmpSeq + 1) & 0x7fffffff
+  return `${filePath}.${process.pid}.${tmpSeq}.tmp`
+}
+
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
+const RENAME_MAX_RETRIES = 10
+const RENAME_RETRY_STEP_MS = 20
+
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fs.rename(from, to)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      const retryable =
+        process.platform === 'win32' &&
+        attempt < RENAME_MAX_RETRIES &&
+        code !== undefined &&
+        RENAME_RETRY_CODES.has(code)
+      if (!retryable) throw err
+      await new Promise((r) => setTimeout(r, RENAME_RETRY_STEP_MS * (attempt + 1)))
+    }
+  }
+}
+
+async function writeAtomic(filePath: string, data: string | Buffer): Promise<void> {
   await assertNotSymlink(filePath)
   await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.writeFile(filePath, content, 'utf-8')
+  const existingMode = await fs
+    .stat(filePath)
+    .then((s) => s.mode & 0o7777)
+    .catch(() => null) // no existing file — the tmp's default mode applies
+  const tmp = uniqueTmpPath(filePath)
+  try {
+    await fs.writeFile(tmp, data, 'utf-8') // encoding ignored for Buffers
+    if (existingMode !== null) {
+      await fs.chmod(tmp, existingMode).catch(() => { /* no modes on this fs */ })
+    }
+    await renameWithRetry(tmp, filePath)
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => { /* never written */ })
+    throw err
+  }
+}
+
+export async function writeFile(filePath: string, content: string): Promise<void> {
+  await writeAtomic(filePath, content)
 }
 
 /** Write raw bytes (used by remote upload, where the source is read client-side
  *  and the contents are streamed in as a Buffer). Creates the parent directory. */
 export async function writeBinary(filePath: string, data: Buffer): Promise<void> {
-  await assertNotSymlink(filePath)
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.writeFile(filePath, data)
+  await writeAtomic(filePath, data)
 }
 
 /** lstat + reject symlinks, returning the directory/file discriminator. */

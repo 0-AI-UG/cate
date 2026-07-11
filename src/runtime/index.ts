@@ -13,6 +13,7 @@ import { RpcServer } from './rpcServer'
 import { buildDaemonRuntime } from './capabilities'
 import { hostExtensionsRoot } from './capabilities/extensions'
 import { reapOrphanServers } from './capabilities/server'
+import { applyLoginEnv } from './loginEnv'
 
 interface DaemonArgs {
   root: string
@@ -40,8 +41,13 @@ function parseArgs(argv: string[]): DaemonArgs {
   return { root, id, exclusions, idleSuspend }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
+
+  // Merge the user's login-shell env over process.env (skipped when the
+  // launcher already resolved it — see loginEnv.ts). Awaited so the very first
+  // spawn sees the same PATH a local daemon gets from getShellEnv().
+  await applyLoginEnv()
 
   // The daemon's filesystem sandbox: its workspace root (plus the system temp
   // dir, which pathValidation always allows). Everything the client asks for is
@@ -89,4 +95,4 @@ function main(): void {
   server.start()
 }
 
-main()
+void main()

@@ -32,6 +32,7 @@ import type * as monaco from 'monaco-editor'
 import log from '../logger'
 import { useAppStore } from '../../stores/appStore'
 import { watchFsRoot } from '../fs/fsWatchManager'
+import { pathDisplayName } from '../fs/displayPath'
 import { isLoadFailed, getBaseline, rememberBaseline } from './modelCache'
 import { classifyExternalEvent, shouldBlockOverwrite } from './externalConflict'
 import { threeWayMerge } from './threeWayMerge'
@@ -124,7 +125,7 @@ export function useFileSync({
     isDirtyRef.current = true
     useAppStore.getState().setPanelDirty(workspaceId, panelId, true)
     if (filePathRef.current) {
-      const fileName = filePathRef.current.split('/').pop() ?? 'Untitled'
+      const fileName = pathDisplayName(filePathRef.current) || 'Untitled'
       useAppStore.getState().updatePanelTitle(workspaceId, panelId, `${fileName} •`)
     }
   }, [workspaceId, panelId])
@@ -133,7 +134,7 @@ export function useFileSync({
     isDirtyRef.current = false
     useAppStore.getState().setPanelDirty(workspaceId, panelId, false)
     if (filePathRef.current) {
-      const fileName = filePathRef.current.split('/').pop() ?? 'Untitled'
+      const fileName = pathDisplayName(filePathRef.current) || 'Untitled'
       useAppStore.getState().updatePanelTitle(workspaceId, panelId, fileName)
     }
   }, [workspaceId, panelId])

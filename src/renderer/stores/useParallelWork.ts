@@ -18,6 +18,7 @@ import { useWorktreeActions } from './useWorktreeActions'
 import type { JoinedWorktree } from './useWorktrees'
 import type { PrListItem } from '../sidebar/CreateWorktreeForm'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
+import { isLocalLocator } from '../../main/runtime/locator'
 
 /** Apply a color/label change to a worktree's UI metadata, creating the metadata
  *  record when none exists yet (a worktree discovered only from git has its path
@@ -58,6 +59,9 @@ export interface CardCallbacks {
   onUpdateFromMain: () => void
   onMerge: () => void
   onDelete: () => void
+  /** Reveal opens the LOCAL Finder — false when the worktree lives on a remote
+   *  host, so menus omit the action instead of silently no-oping. */
+  canReveal: boolean
   onReveal: () => void
   onRename: (label: string | undefined) => void
   onRecolor: (color: string) => void
@@ -87,7 +91,7 @@ export async function runWorktreeContextMenu(opts: {
   items.push({ type: 'separator' })
   items.push({ id: 'rename', label: 'Rename…' })
   items.push({ id: 'color', label: 'Change color…' })
-  items.push({ id: 'reveal', label: 'Reveal in Finder' })
+  if (opts.cb.canReveal) items.push({ id: 'reveal', label: 'Reveal in Finder' })
   if (!opts.isPrimary) {
     items.push({ type: 'separator' })
     items.push({ id: 'delete', label: 'Discard this work…' })
@@ -331,6 +335,7 @@ export function useParallelWork(
       onUpdateFromMain: () => handleUpdateFromMain(wt),
       onMerge: () => handleMerge(wt),
       onDelete: () => handleDelete(wt),
+      canReveal: isLocalLocator(wt.path),
       onReveal: () => window.electronAPI.shellShowInFolder(wt.path, workspaceId ?? undefined),
       onRename: (label) => workspaceId && upsertWorktreeMeta(workspaceId, wt, { label: label?.trim() || undefined }),
       onRecolor: (color) => workspaceId && upsertWorktreeMeta(workspaceId, wt, { color }),

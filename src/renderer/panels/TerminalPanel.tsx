@@ -25,6 +25,7 @@ import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
 import { useTerminalGlow } from '../cateAgent/cateAgentStore'
 import { resolveWorktree } from '../../shared/worktrees'
 import { CATE_FILE_MIME, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
+import { parseLocator } from '../../main/runtime/locator'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -658,7 +659,10 @@ export default function TerminalPanel({
       if (catePath) {
         const location = readCateFileLocation(e.dataTransfer)
         const line = location?.path === catePath ? location.line : undefined
-        refs.push({ path: catePath, line })
+        // Tree/search nodes carry locator-encoded paths (cate-runtime://… for a
+        // remote workspace). The shell runs ON that workspace's host, so paste
+        // the bare host path; for local paths parseLocator is a pass-through.
+        refs.push({ path: parseLocator(catePath).path, line })
       }
 
       // External OS file drop — use Electron's webUtils to get real paths

@@ -25,7 +25,7 @@ import { Tooltip } from '../ui/Tooltip'
 import { useGitStatusSnapshot, gitStatusStore, workspaceIdForRoot } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { errorMessage } from '../lib/errorMessage'
-import { parseLocator } from '../../main/runtime/locator'
+import { parseLocator, formatLocator } from '../../main/runtime/locator'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -468,8 +468,15 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
   // -------------------------------------------------------------------------
 
   const openFileDiff = useCallback((filePath: string, staged: boolean) => {
-    const fullPath = filePath.startsWith('/') ? filePath : `${rootPath}/${filePath}`
-    createDiffEditor(selectedWorkspaceId, fullPath, staged ? 'staged' : 'working')
+    // filePath is git-relative (POSIX). Join onto the DECODED host root and
+    // re-encode through formatLocator — concatenating onto the raw locator
+    // string corrupts remote filenames whose bytes collide with the percent
+    // encoding. For local roots formatLocator returns the bare path unchanged.
+    const { runtimeId, path: root } = parseLocator(rootPath)
+    const hostPath = filePath.startsWith('/')
+      ? filePath
+      : `${root.replace(/\/+$/, '')}/${filePath}`
+    createDiffEditor(selectedWorkspaceId, formatLocator({ runtimeId, path: hostPath }), staged ? 'staged' : 'working')
   }, [rootPath, selectedWorkspaceId, createDiffEditor])
 
   // -------------------------------------------------------------------------

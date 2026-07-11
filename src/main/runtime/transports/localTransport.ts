@@ -18,6 +18,7 @@ import os from 'os'
 import path from 'path'
 import type { RuntimeChannel, RuntimeTransport } from './transport'
 import { RUNTIME_VERSION } from '../../../runtime/version'
+import { LOGIN_ENV_MARKER } from '../../../runtime/loginEnv'
 import { hostRuntimeTarget, localTarballIfPresent, shippedRuntimeTarball, tarballHash, type RuntimeTarget } from '../runtimeArtifacts'
 
 const execFileP = promisify(execFile)
@@ -125,7 +126,9 @@ export class LocalSubprocessTransport implements RuntimeTransport {
 
     const child = spawn(nodePath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: this.opts.env ?? process.env,
+      // The env passed here is already the login-shell env (getShellEnv());
+      // the marker tells the daemon to skip its own login-env capture.
+      env: { ...(this.opts.env ?? process.env), [LOGIN_ENV_MARKER]: '1' },
     })
     child.stdin?.on('error', () => { /* EPIPE after daemon exit is reported via close */ })
     this.child = child

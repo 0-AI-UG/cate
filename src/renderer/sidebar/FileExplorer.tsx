@@ -16,6 +16,7 @@ import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { pathDisplayName, workspaceDisplayName } from '../lib/fs/displayPath'
+import { isLocalLocator } from '../../main/runtime/locator'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 
@@ -570,7 +571,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       { id: 'new-file', label: 'New File…' },
       { id: 'new-folder', label: 'New Folder…' },
       { type: 'separator' },
-      { id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' },
+      // Reveal opens the LOCAL Finder — omitted for a remote workspace root
+      // instead of silently no-oping.
+      ...(isLocalLocator(rootPath)
+        ? [{ id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' }]
+        : []),
       { id: 'open-terminal', label: 'Open in Integrated Terminal' },
       { type: 'separator' },
       { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: hasClipboard() },

@@ -445,13 +445,19 @@ export interface Runtime {
   readonly server: ServerHost
   readonly tunnel: TunnelHost
   /** Lexical + allowed-root check; returns the normalized path. When scopeId is
-   *  omitted, the runtime uses its own configured root scope. */
+   *  omitted, the runtime uses its own configured root scope.
+   *  NOTE: only the DAEMON's implementation validates (it alone can realpath
+   *  its filesystem). The client-side Runtime handles (RemoteRuntime /
+   *  DeferredRuntime) are sync pass-throughs that never throw — don't call
+   *  this client-side expecting a check; every leaf op re-validates on the
+   *  daemon anyway. Use validatePathStrict for a real client-side round-trip. */
   validatePath(filePath: string, ownerWindowId?: number, scopeId?: string): string
   /** Strict (symlink-resolving) read validation; returns the real path. */
   validatePathStrict(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string>
   /** Validate a target whose parent must exist; returns the safe path. */
   validatePathForCreation(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string>
-  /** Directory validation for cwd parameters. */
+  /** Directory validation for cwd parameters. Same caveat as validatePath:
+   *  a real check only on the daemon; a pass-through on client-side handles. */
   validateCwd(cwd: string, ownerWindowId?: number, scopeId?: string): string
   /** Add/remove a path from this runtime's allowed-roots set. For the local
    *  daemon (and remote daemons), workspace roots are forwarded here so the

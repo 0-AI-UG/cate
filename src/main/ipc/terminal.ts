@@ -225,12 +225,11 @@ async function spawnTerminal(
   const { runtimeId, path: cwdPath } = parseLocator(options.cwd ?? '')
   const runtime = runtimes.resolve(runtimeId)
 
-  // Resolve the cwd through the runtime: the local one validates against its
-  // allowed roots, the remote one trusts the locator path (its daemon validates).
-  // An empty cwd is defaulted to the host's home dir inside the ProcessHost, so
-  // there's nothing host-specific to decide here. The owning workspace id scopes
-  // validation to that workspace's roots when supplied.
-  const cwd = options.cwd ? runtime.validateCwd(cwdPath, ownerWindowId, options.workspaceId) : ''
+  // No client-side validation: the authoritative allowed-root check runs on
+  // the daemon inside process.create (a bad cwd rejects the create). An empty
+  // cwd is defaulted to the host's home dir inside the ProcessHost, so there's
+  // nothing host-specific to decide here.
+  const cwd = options.cwd ? cwdPath : ''
 
   // First-party CATE_API endpoint: give this terminal CATE_API/CATE_TOKEN in its
   // env so a `cate` CLI run inside it can reach the dispatch core. ensureEndpoint

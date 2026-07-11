@@ -222,10 +222,11 @@ describe('cate CLI — real binary over a real socket', () => {
     expect(r.stderr).toContain('unauthorized')
   }, 20_000)
 
-  it('6. env unset: exit 3 with the "not running inside a Cate terminal" message', async () => {
+  it('6. env unset: exit 3 with the how-to-enable message', async () => {
     const r = await runCli(['browser', 'current'], { PATH: process.env.PATH ?? '' })
     expect(r.code).toBe(3)
-    expect(r.stderr).toContain('not running inside a Cate terminal')
+    expect(r.stderr).toContain('CATE_API/CATE_TOKEN unset')
+    expect(r.stderr).toContain('Settings → Terminal')
     // Never reached the server.
     expect(lastRequest).toBeUndefined()
   }, 20_000)

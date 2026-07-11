@@ -45,6 +45,7 @@ import { useWorkspacePanelTree } from '../lib/workspace/useWorkspacePanelTree'
 import { revealPanel } from '../lib/workspace/panelReveal'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { getRecentFiles } from '../lib/fs/recentFiles'
+import { pathDisplayName, relativeDisplayPath } from '../lib/fs/displayPath'
 import { cateAgentController } from '../cateAgent/cateAgentController'
 
 // -----------------------------------------------------------------------------
@@ -314,8 +315,8 @@ export const CommandPalette: React.FC = () => {
       .filter((p) => !openPaths.has(p))
       .map((p) => ({
         path: p,
-        name: p.split('/').pop() ?? p,
-        relativePath: rootPath && p.startsWith(rootPath) ? p.slice(rootPath.length).replace(/^\/+/, '') : p,
+        name: pathDisplayName(p) || p,
+        relativePath: relativeDisplayPath(p, rootPath ?? ''),
       }))
   }, [query, panels, selectedWorkspaceId, rootPath])
 

@@ -158,6 +158,8 @@ import {
   WINDOW_PANELS_CHANGED,
   FOCUS_WINDOW_PANEL,
   REVEAL_PANEL_IN_WINDOW,
+  CLOSE_WINDOW_PANEL,
+  CLOSE_PANEL_IN_WINDOW,
   WINDOW_PANELS_REPORT,
   CROSS_WINDOW_DRAG_START,
   CROSS_WINDOW_DRAG_UPDATE,
@@ -489,6 +491,7 @@ const invokeForwarders = {
 
   // Cross-window panel discovery
   focusWindowPanel: makeInvoker<'focusWindowPanel'>(FOCUS_WINDOW_PANEL),
+  closeWindowPanel: makeInvoker<'closeWindowPanel'>(CLOSE_WINDOW_PANEL),
   reportWindowPanels: makeInvoker<'reportWindowPanels'>(WINDOW_PANELS_REPORT),
 
   // Cross-window drag coordination
@@ -848,6 +851,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onRevealPanelInWindow(callback: (panelId: string) => void): () => void {
     return createIpcListener(REVEAL_PANEL_IN_WINDOW, callback)
+  },
+
+  onClosePanelInWindow(callback: (panelId: string) => void): () => void {
+    return createIpcListener(CLOSE_PANEL_IN_WINDOW, callback)
   },
 
   // ---------------------------------------------------------------------------

@@ -40,6 +40,10 @@ describe('isUrl', () => {
     expect(isUrl('how to use file://')).toBe(false)
   })
 
+  it('recognises remote-workspace locators (never leaked to a search engine)', () => {
+    expect(isUrl('cate-runtime://srv_x/%2Fhome%2Fdev%2Findex.html')).toBe(true)
+  })
+
   it('treats single bare words as search queries', () => {
     expect(isUrl('react')).toBe(false)
   })
@@ -54,6 +58,11 @@ describe('normalizeUrl', () => {
 
   it('passes file:// URLs through unchanged', () => {
     expect(normalizeUrl('file:///Users/foo/index.html')).toBe('file:///Users/foo/index.html')
+  })
+
+  it('passes remote-workspace locators through untouched (never rewritten to file:// or https://)', () => {
+    const locator = 'cate-runtime://srv_x/%2Fhome%2Fdev%2Findex.html'
+    expect(normalizeUrl(locator)).toBe(locator)
   })
 
   it('prepends file:// to POSIX absolute paths', () => {

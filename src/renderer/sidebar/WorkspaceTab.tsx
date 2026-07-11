@@ -11,13 +11,20 @@ import { useOtherWindowPanels } from '../stores/windowPanelStore'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import type { AgentState } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
-import { closePanelWithConfirm } from '../lib/closePanelWithConfirm'
+import {
+  closePanelWithConfirm,
+  closeAllPanelsWithConfirm,
+  removeWorkspacesWithConfirm,
+} from '../lib/closePanelWithConfirm'
+import { movePanelToNewWindow } from '../lib/workspace/movePanelToNewWindow'
+import { getActivePanelId } from '../lib/activePanel'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
+import { panelRowLabel } from '../lib/panelTitle'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { getAgentLogo } from '../lib/agent/agentLogos'
-import { pathDisplayName, workspaceDisplayName } from '../lib/fs/displayPath'
+import { workspaceDisplayName } from '../lib/fs/displayPath'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { InlineEditInput } from './InlineEditInput'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
@@ -85,14 +92,10 @@ export interface PanelRenameProps {
   onContextMenu: (e: React.MouseEvent) => void
 }
 
-/** Display label for a panel row: explicit title, else the file basename, else
- *  the active browser tab URL, else the panel type. Param is the minimal shape shared by the
- *  TerminalPanelRow prop and a full PanelState. */
-export function panelRowLabel(
-  panel: Pick<PanelState, 'type' | 'title' | 'filePath' | 'tabs' | 'activeTabId'>,
-): string {
-  return panel.title || (panel.filePath ? pathDisplayName(panel.filePath) : '') || browserPanelUrl(panel) || panel.type
-}
+// Canonical row-label logic lives in lib/panelTitle (shared with the cross-
+// window panel report and the Cate agent chat). Re-exported for existing
+// importers of this module.
+export { panelRowLabel }
 
 export interface TerminalPanelRowProps {
   panel: Pick<PanelState, 'id' | 'type' | 'title' | 'filePath' | 'tabs' | 'activeTabId'>
@@ -105,6 +108,9 @@ export interface TerminalPanelRowProps {
   /** Middle-click closes the row (mirrors the dock tab behavior). */
   onClose?: () => void
   rename?: PanelRenameProps
+  /** Context menu for rows without rename support (detached rows). Local rows
+   *  route their menu through rename.onContextMenu instead. */
+  onContextMenu?: (e: React.MouseEvent) => void
   /** Overrides the row's hover tooltip (used by detached rows to note the panel
    *  lives in another window). Falls back to the panel's path / url / label. */
   titleHint?: string
@@ -112,7 +118,7 @@ export interface TerminalPanelRowProps {
 
 const AWAIT_COLOR = '#c08a5a'
 
-export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts, worktreeColor, onClick, onClose, rename, titleHint }) => {
+export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts, worktreeColor, onClick, onClose, rename, titleHint, onContextMenu }) => {
   const Icon = PANEL_ICONS[panel.type] ?? TerminalIcon
   const label = panelRowLabel(panel)
 
@@ -127,7 +133,7 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
         indent ? 'pl-10' : 'pl-7'
       } ${isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
       onClick={onClick}
-      onContextMenu={rename?.onContextMenu}
+      onContextMenu={onContextMenu ?? rename?.onContextMenu}
       onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
       onAuxClick={(e) => {
         if (isMiddleClick(e) && onClose) {
@@ -251,7 +257,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   // dock store, multi-canvas/dock-aware and ghost-filtered. The Cmd+K palette
   // reads the exact same source (see useWorkspacePanelTree), so the overview and
   // the palette can never disagree about which panels exist or where they live.
-  const { panels, canvasPanels, childrenByCanvas, orphanCanvasChildren, freePanels } =
+  const { panels, canvasPanels, childrenByCanvas, orphanCanvasChildren, freePanels, orderedPanels } =
     useWorkspacePanelTree(workspace.id)
 
   // Panels living in other (detached) windows for this workspace — they dropped
@@ -262,11 +268,15 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const otherWindowPanels = useOtherWindowPanels(workspace.id, Object.keys(panels))
   const { detachedCanvases, detachedChildrenByCanvas, detachedTopLevel, detachedCount } = useMemo(() => {
     const canvases = otherWindowPanels.filter((p) => p.type === 'canvas')
+    const canvasIds = new Set(canvases.map((c) => c.panelId))
     const childrenByCanvas: Record<string, WindowPanelInfo[]> = {}
     const topLevel: WindowPanelInfo[] = []
     for (const p of otherWindowPanels) {
       if (p.type === 'canvas') continue
-      if (p.parentCanvasId) (childrenByCanvas[p.parentCanvasId] ??= []).push(p)
+      // A child whose parent canvas is missing from the union (transiently
+      // possible mid-transfer) renders top-level instead of being dropped —
+      // mirrors partitionWorkspacePanels' orphan fallback for local rows.
+      if (p.parentCanvasId && canvasIds.has(p.parentCanvasId)) (childrenByCanvas[p.parentCanvasId] ??= []).push(p)
       else topLevel.push(p)
     }
     return { detachedCanvases: canvases, detachedChildrenByCanvas: childrenByCanvas, detachedTopLevel: topLevel, detachedCount: otherWindowPanels.length }
@@ -303,6 +313,11 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   // the matching panel row renders an inline input in place of its label.
   const [renamingPanelId, setRenamingPanelId] = useState<string | null>(null)
   const [panelRenameValue, setPanelRenameValue] = useState('')
+  // The value the rename input was seeded with. The seed is the row's DERIVED
+  // label (file basename / browser URL / type when the panel has no title), so
+  // committing it unchanged would freeze that derived label as a permanent
+  // user title (titleUserOverridden) — only write when the user actually edited.
+  const panelRenameSeedRef = useRef('')
 
   // Per-canvas collapse state (canvas rows fold their children, like the
   // workspace row folds its tree). Absent = expanded; default is expanded.
@@ -342,16 +357,26 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         enabled: color !== workspace.color,
       })),
     ]
+    const hasCwd =
+      !!workspace.rootPath ||
+      Object.keys(useStatusStore.getState().workspaces[workspace.id]?.terminals ?? {}).length > 0
     const items: NativeContextMenuItem[] = [
       { id: 'select', label: 'Select Workspace', enabled: !isSelected },
       { id: 'rename', label: 'Rename Workspace' },
       { label: 'Change Color', submenu: colorSubmenu },
       { type: 'separator' },
       { id: 'select-folder', label: 'Select Project Folder' },
-      { id: 'copy-cwd', label: 'Copy Working Directory' },
+      { id: 'copy-cwd', label: 'Copy Working Directory', enabled: hasCwd },
       { type: 'separator' },
       { id: 'duplicate', label: 'Duplicate Workspace' },
-      { id: 'close-panels', label: 'Close All Panels', enabled: Object.keys(workspace.panels).length > 0 },
+      {
+        id: 'close-panels',
+        // Panels living in detached windows are NOT closed by this — say so.
+        label: detachedCount > 0 ? 'Close All Panels in This Window' : 'Close All Panels',
+        // `panels` is the live registry (the `workspace` prop's panels can be
+        // stale — useWorkspaceList's equality fn ignores them).
+        enabled: Object.keys(panels).length > 0,
+      },
       { type: 'separator' },
       { id: 'remove', label: 'Close Workspace' },
     ]
@@ -374,22 +399,22 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         break
       }
       case 'copy-cwd': {
-        const statusState = useStatusStore.getState()
-        const ws = statusState.workspaces[workspace.id]
-        let dir: string | undefined
-        if (ws) {
-          const cwds = Object.values(ws.terminals).map((terminal) => terminal.cwd).filter(Boolean)
-          dir = cwds[0]
-        }
+        const terminals = useStatusStore.getState().workspaces[workspace.id]?.terminals ?? {}
+        // Prefer the active panel's terminal — "first terminal in the status
+        // map" is an arbitrary pick when several run in different directories.
+        const activeId = getActivePanelId()
+        const activePty = activeId ? terminalRegistry.ptyIdForPanel(activeId) : null
+        let dir = (activePty && terminals[activePty]?.cwd) || undefined
+        if (!dir) dir = Object.values(terminals).map((terminal) => terminal.cwd).find(Boolean)
         if (!dir) dir = workspace.rootPath || undefined
         if (dir) navigator.clipboard.writeText(dir)
         break
       }
       case 'duplicate': app.duplicateWorkspace(workspace.id); break
-      case 'close-panels': app.closeAllPanels(workspace.id); break
-      case 'remove': app.removeWorkspace(workspace.id, true); break
+      case 'close-panels': void closeAllPanelsWithConfirm(workspace.id); break
+      case 'remove': void removeWorkspacesWithConfirm([workspace.id]); break
     }
-  }, [workspace.id, workspace.name, workspace.rootPath, workspace.color, workspace.panels, isSelected, onBulkContextMenu, beginRename])
+  }, [workspace.id, workspace.name, workspace.rootPath, workspace.color, panels, detachedCount, isSelected, onBulkContextMenu, beginRename])
 
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {
@@ -407,13 +432,14 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }, [renameValue, workspace.id, workspace.name])
 
   const beginPanelRename = useCallback((panelId: string, currentTitle: string) => {
+    panelRenameSeedRef.current = currentTitle
     setPanelRenameValue(currentTitle)
     setRenamingPanelId(panelId)
   }, [])
 
   const handlePanelRenameSubmit = useCallback((panelId: string) => {
     const trimmed = panelRenameValue.trim()
-    if (trimmed) {
+    if (trimmed && trimmed !== panelRenameSeedRef.current) {
       useAppStore.getState().renamePanelByUser(workspace.id, panelId, trimmed)
     }
     setRenamingPanelId(null)
@@ -432,10 +458,11 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     e.stopPropagation()
     if (!window.electronAPI) return
     // Mirror the dock tab menu, limited to actions that apply to a flat sidebar
-    // list (Split / Close-Others / Close-to-the-Right / Move-to-Window are
-    // dock-stack-relative and have no meaning here).
+    // list (Split / Close-Others / Close-to-the-Right are dock-stack-relative
+    // and have no meaning here).
     const id = await window.electronAPI.showContextMenu([
       { id: 'rename', label: 'Rename' },
+      { id: 'move-window', label: 'Move into New Window' },
       { type: 'separator' },
       { id: 'close', label: 'Close' },
     ])
@@ -443,15 +470,39 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       case 'rename':
         beginPanelRename(panelId, currentTitle)
         break
+      case 'move-window':
+        void movePanelToNewWindow(workspace.id, panelId)
+        break
       case 'close':
         handleClosePanel(panelId)
         break
     }
-  }, [beginPanelRename, handleClosePanel])
+  }, [beginPanelRename, handleClosePanel, workspace.id])
+
+  // Context menu for rows hosted in ANOTHER window: cross-window actions only
+  // (reveal there / close there, behind the owner's confirm gates). Without
+  // this the right-click bubbles into the workspace menu, which reads as a
+  // misfire on a specific panel row.
+  const handleDetachedContextMenu = useCallback(async (e: React.MouseEvent, panelId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!window.electronAPI) return
+    const id = await window.electronAPI.showContextMenu([
+      { id: 'show', label: 'Show in Window' },
+      { type: 'separator' },
+      { id: 'close', label: 'Close' },
+    ])
+    switch (id) {
+      case 'show': void window.electronAPI.focusWindowPanel(panelId); break
+      case 'close': void window.electronAPI.closeWindowPanel?.(panelId); break
+    }
+  }, [])
 
   // Local panels plus panels in detached windows — drives the expand toggle and
   // the count badge so a workspace whose only panels are detached still expands.
-  const treeCount = Object.keys(panels).length + detachedCount
+  // Counts what the tree actually renders (orderedPanels excludes ghost records;
+  // the raw ws.panels registry can contain more).
+  const treeCount = orderedPanels.length + detachedCount
 
   const handlePanelClick = useCallback(async (e: React.MouseEvent, panelId: string) => {
     e.stopPropagation()
@@ -541,6 +592,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           hasPorts={!!p.hasPorts}
           worktreeColor={worktreeColorForId(p.worktreeId)}
           onClick={onClick}
+          onContextMenu={(e) => handleDetachedContextMenu(e, p.panelId)}
           titleHint={titleHint}
         />
       )
@@ -553,6 +605,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           indent ? 'pl-10' : 'pl-7'
         }`}
         onClick={onClick}
+        onContextMenu={(e) => handleDetachedContextMenu(e, p.panelId)}
         title={titleHint}
       >
         <Icon size={11} className="flex-shrink-0 opacity-60" />
@@ -576,6 +629,14 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         tabIndex={0}
         className="group/panel flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
         onClick={(e) => { e.stopPropagation(); void window.electronAPI.focusWindowPanel(p.panelId) }}
+        onContextMenu={(e) => handleDetachedContextMenu(e, p.panelId)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            e.stopPropagation()
+            void window.electronAPI.focusWindowPanel(p.panelId)
+          }
+        }}
         title={`${p.title} — in another window`}
       >
         {hasChildren ? (
@@ -685,6 +746,13 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         tabIndex={0}
         className="group/panel flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
         onClick={(e) => handlePanelClick(e, cp.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            e.stopPropagation()
+            void focusWorkspacePanel(workspace.id, cp.id)
+          }
+        }}
         onContextMenu={rename.onContextMenu}
         onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
         onAuxClick={(e) => {

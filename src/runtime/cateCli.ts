@@ -22,15 +22,16 @@ export function cateCliPath(): string {
   return path.join(installRoot(), 'cate', 'dist', 'cli.cjs')
 }
 
-/** Put the bundled `cate` on a spawn env's PATH so agents can run it — but only
- *  when a CLI endpoint was injected (CATE_API present), keeping this consistent
- *  with the enable/disable gate (disabled ⇒ no endpoint AND no `cate`). Runs
- *  daemon-side (process.execPath == the tarball node), where cateBinDir() is
- *  correct for local and remote hosts. No-ops when the CLI dir is absent
+/** Put the bundled `cate` on a spawn env's PATH so agents and users can run it.
+ *  Unconditional (not gated on CATE_API): the endpoint env is the real on/off
+ *  switch, and keeping `cate` on PATH while the endpoint is disabled means
+ *  running it prints how to enable the setting (see the EnvError message in
+ *  src/cli/cate.ts) instead of a discoverability-killing "command not found".
+ *  Runs daemon-side (process.execPath == the tarball node), where cateBinDir()
+ *  is correct for local and remote hosts. No-ops when the CLI dir is absent
  *  (dev/direct mode runs the daemon from source, with no extracted tarball).
  *  Finds the PATH key case-insensitively (Windows uses `Path`). */
 export function catePathEnv(env: Record<string, string>): Record<string, string> {
-  if (!env.CATE_API) return env
   const binDir = presentBinDir()
   if (!binDir) return env
   const key = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH'

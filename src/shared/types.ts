@@ -1370,12 +1370,24 @@ export interface AppSettings {
   autoSuspendIdleTerminals: boolean
   /** Enable the `cate` command-line control endpoint. When on, terminals and the
    *  pi agent get a per-workspace CATE_API loopback endpoint + bearer token in
-   *  their env so a `cate` CLI can drive Cate (browser, panels, editor, canvas).
+   *  their env so the `cate` CLI can drive Cate (browser, panels, editor, canvas).
    *  When OFF (fail closed): no endpoint is opened and no env is injected, so the
-   *  CLI is unreachable. Off by default (opt-in): the token lands in the env of
-   *  every process spawned in a terminal, so any of them (e.g. an npm postinstall)
-   *  could drive the browser on the user's live session. The user turns it on. */
+   *  CLI is unreachable — `cate` stays on PATH but only explains how to enable it.
+   *  On by default. The trade-off: the token lands in the env of every process
+   *  spawned in a terminal, so any of them (e.g. an npm postinstall) could drive
+   *  the browser on the user's live session — turn it off to close that.
+   *  Existing installs keep the value already written in their settings.json
+   *  (the file is seeded with full defaults on first run). */
   cliEnabled: boolean
+  /** Auto-install the bundled cate-cli skill so agents learn the `cate` command:
+   *  seeded into each opened workspace through the skills installer, the same
+   *  way for local and remote hosts — Cate's own agent always, other supported
+   *  agents (Claude Code, Pi, OpenCode, Codex, Antigravity) when their tool dir
+   *  exists there (see seedCateCliSkill).
+   *  Seeds at most once per workspace/target, never overwrites edits, and an
+   *  uninstall sticks. Turning this off stops future installs; it does not
+   *  remove an already-installed skill. */
+  cliSkillInstallEnabled: boolean
 
   // Browser
   browserHomepage: string
@@ -1505,7 +1517,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalCursorBlink: false,
   terminalOptionIsMeta: true,
   autoSuspendIdleTerminals: true,
-  cliEnabled: false,
+  cliEnabled: true,
+  cliSkillInstallEnabled: true,
 
   // Browser
   browserHomepage: '',

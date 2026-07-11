@@ -17,8 +17,10 @@
 // editor reload in one workspace share a single OS watcher), and events fan out
 // only to subscribers whose prefix actually covers the changed path.
 //
-// Both call sites delegate here: the local IPC pool (main/ipc/filesystem.ts)
-// and the daemon's watch capability (runtime/capabilities/index.ts).
+// The daemon's watch capability (runtime/capabilities/index.ts) is the ONLY
+// call site — main/ipc/filesystem.ts routes every watch (local and remote)
+// through runtime.file.watch, so all workspaces share these exact event
+// semantics.
 // =============================================================================
 
 import nativeWatcher from '@parcel/watcher'

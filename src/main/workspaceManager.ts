@@ -22,6 +22,7 @@ import { acquireProjectLock, releaseProjectLock } from './projectLock'
 import { isLocalLocator, parseLocator } from './runtime/locator'
 import { runtimes } from './runtime/runtimeManager'
 import { workspaceCateApi } from './extensions/workspaceCateApi'
+import { seedCateCliSkill } from '../skills/main/seedCateCliSkill'
 import type { RuntimeConnection } from '../shared/types'
 
 // In-memory workspace list — authoritative source of truth
@@ -106,6 +107,20 @@ function replayAllowedRoots(runtimeId: string, runtime: ReturnType<typeof runtim
   }
 }
 
+/** Seed the cate-cli skill for every workspace on a runtime once it actually
+ *  connects. createWorkspace/updateWorkspace seed too, but a REMOTE workspace's
+ *  runtime connects only AFTER those run (register → create/attach → ensure), so
+ *  their attempt finds no runtime and skips — this replay is what makes seeding
+ *  behave the same for local and remote. Re-runs on reconnect are cheap: seed
+ *  markers in .cate/skills.json short-circuit already-seeded targets. */
+function replaySkillSeeds(runtimeId: string): void {
+  for (const workspace of workspaces.values()) {
+    const locator = parseLocator(workspace.rootPath)
+    if (!locator.path || locator.runtimeId !== runtimeId) continue
+    void seedCateCliSkill(workspace.rootPath)
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Public API (called by IPC handlers)
 // -----------------------------------------------------------------------------
@@ -165,6 +180,9 @@ async function createWorkspace(
     if (!remote) addAllowedRoot(info.rootPath, info.id)
     forwardAllowedRoot(info.rootPath, 'add', info.id)
     if (!remote) claimProjectLock(info.rootPath, info.name)
+    // Seed the bundled cate-cli skill for the agents used in this workspace
+    // (same install path as the skills modal). Best effort, never blocks open.
+    void seedCateCliSkill(info.rootPath)
   }
   return { ok: true, workspace: info }
 }
@@ -247,6 +265,9 @@ async function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 
     // Release the lock on the old root (local only) and claim the new one.
     if (existingLocal) dropProjectLock(existing.rootPath, id)
     if (nextLocal) claimProjectLock(updated.rootPath, updated.name)
+    // A workspace first gets its folder through here (local folder pick, remote
+    // attach) — seed exactly like createWorkspace. Best effort, never blocks.
+    if (updated.rootPath) void seedCateCliSkill(updated.rootPath)
   }
   return { ok: true, workspace: updated }
 }
@@ -287,6 +308,11 @@ export function registerWorkspaceHandlers(): void {
   // connection and reconnect; workspace ids deliberately differ from runtime
   // ids and are the scope carried by renderer fs/git requests.
   runtimes.onConnected(replayAllowedRoots)
+
+  // Skill seeding needs a live runtime; replay it on every (re)connect so remote
+  // workspaces — whose runtime connects after create/attach — seed exactly like
+  // local ones. Idempotent via seed markers.
+  runtimes.onConnected(replaySkillSeeds)
 
   // Create a new workspace
   ipcMain.handle(

@@ -30,6 +30,12 @@ export function skillsRootDir(targetId: SkillTargetId, runtimeId: string, hostCw
   return hostJoin(runtimeId, hostCwd, ...BASE_SEGMENTS[targetId])
 }
 
+/** The target's top-level tool dir under the workspace root (e.g. `.claude`,
+ *  `.codex`) — its presence is the signal that the agent is used there. */
+export function toolDirSegment(targetId: SkillTargetId): string {
+  return BASE_SEGMENTS[targetId][0]
+}
+
 export function targetInfo(targetId: SkillTargetId): SkillTargetInfo {
   return getSkillTarget(targetId)
 }

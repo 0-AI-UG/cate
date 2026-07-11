@@ -1,18 +1,14 @@
-// catePathEnv gates on CATE_API and only prepends when the bundled CLI dir
-// actually exists (dev/direct mode has no extracted tarball). We can't force the
-// tarball layout in a unit test, so we assert the gate behaviour that does not
-// depend on the filesystem, plus that a present PATH is preserved when it no-ops.
+// catePathEnv prepends the bundled CLI dir whenever it exists — NOT gated on
+// CATE_API, so `cate` is callable (with a how-to-enable message) even while the
+// endpoint is disabled. We can't force the tarball layout in a unit test, so we
+// assert the behaviour that does not depend on the filesystem, plus that a
+// present PATH is preserved when it no-ops (dev/direct mode has no tarball).
 import { describe, it, expect } from 'vitest'
 import { catePathEnv, cateBinDir, cateCliPath } from './cateCli'
 import { existsSync } from 'fs'
 import path from 'path'
 
 describe('catePathEnv', () => {
-  it('no-ops when CATE_API is absent (CLI disabled / not injected)', () => {
-    const env = { PATH: '/usr/bin' }
-    expect(catePathEnv(env)).toEqual(env)
-  })
-
   it('returns env unchanged (never drops keys) regardless of the tarball state', () => {
     const env = { PATH: '/usr/bin', CATE_API: 'http://127.0.0.1:1', FOO: 'bar' }
     const out = catePathEnv(env)
@@ -23,8 +19,8 @@ describe('catePathEnv', () => {
     expect(out.PATH).toContain('/usr/bin')
   })
 
-  it('prepends cateBinDir() to PATH when the CLI dir exists and CATE_API is set', () => {
-    const env = { PATH: '/usr/bin', CATE_API: 'http://127.0.0.1:1' }
+  it('prepends cateBinDir() to PATH even without CATE_API (disabled endpoint keeps `cate` callable)', () => {
+    const env = { PATH: '/usr/bin' }
     const out = catePathEnv(env)
     if (existsSync(cateBinDir())) {
       expect(out.PATH).toBe(cateBinDir() + path.delimiter + '/usr/bin')
