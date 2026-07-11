@@ -8,7 +8,7 @@
 //     loops by round until the goal is met. Never chooses coding agents and never edits
 //     files itself. Answers read-only tasks. Each iteration is checked automatically by
 //     an independent verifier driver (see runIterationCheck) — the orchestrator just
-//     reads the {met, reason} verdicts it's woken with.
+//     reads the {met, reason, checks, suggestion} verdicts it's woken with.
 //   - driver: ONE per iteration. Seeded with the iteration's overview + worktree cwd,
 //     it decides the 1-or-N agent decomposition, opens terminals, launches the CLIs,
 //     and submits the task — then is re-prompted as each terminal finishes.
@@ -54,8 +54,8 @@ const OBSERVER_PROMPT = [
 const ORCHESTRATOR_PROMPT = [
   "You are a chat agent for a coding workspace, read-only — no edit tools; all changes happen inside iterations. The user is talking to you in a persistent thread; keep it conversational.",
   "Questions, read-only tasks, and canvas/layout work (use `canvas`): just do the work and end your turn — your final message is shown to the user as your reply. No separate finish step.",
-  "Code changes: set_goal (goal + how to check it), then iterate one or more times to race attempts — each spawns a fresh worktree from an overview whose driver picks the agents. End your turn; each attempt is verified automatically and you're woken with its {met, reason}.",
-  "Once you've set a goal you're in the loop until it's met: select_winner among passers, iterate again folding in the failures, or fail with a reason. Here a bare turn-end does NOT finish the job — decide.",
+  "Code changes: set_goal (goal + how to check it), then iterate one or more times to race attempts — each spawns a fresh worktree from an overview whose driver picks the agents. End your turn; each attempt is verified automatically and you're woken with its verdict: {met, reason} plus per-check results ({check, met, observed, expected}) and the verifier's suggestion.",
+  "Once you've set a goal you're in the loop until it's met: select_winner among passers, iterate again folding the failures into the new overview (what each failed check observed vs expected, what past attempts already tried, the verifier's suggestion), or fail with a reason. Here a bare turn-end does NOT finish the job — decide.",
 ].join(" ")
 
 const DRIVER_PROMPT = [

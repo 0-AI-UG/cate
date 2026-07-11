@@ -1014,13 +1014,32 @@ export interface ProjectSessionPanel {
 // This state lives on the chat's `run` (see ChatRun above).
 // -----------------------------------------------------------------------------
 
+/** One atomic check inside a verdict. `observed` is pasted from output the verifier
+ *  actually produced (test run, build, diff inspection) — or "unknown" when the check
+ *  could not be run — so a failed attempt's cause travels with its verdict as ground
+ *  truth, not judge prose. */
+export interface VerdictCheck {
+  /** What was checked, e.g. "vitest suite" or "shift-resize keeps aspect". */
+  check: string
+  met: boolean
+  /** Verbatim outcome (command output excerpt, exit code, what the diff shows). */
+  observed: string
+  /** What a pass would have looked like — set on failed checks. */
+  expected?: string
+}
+
 /** A single verification verdict for one iteration — produced by a checker coding
- *  agent that ran the check in the iteration's worktree and wrote {met, reason}. */
+ *  agent that ran the check in the iteration's worktree and wrote the verdict file.
+ *  `met` is the conjunction over `checks` when they're present. */
 export interface VerifyResult {
   met: boolean
   reason: string
   /** Unix ms when verification completed. */
   at: number
+  /** Per-check results backing the verdict, when the verifier provided them. */
+  checks?: VerdictCheck[]
+  /** The verifier's advisory next step for a failed attempt. */
+  suggestion?: string
 }
 
 export type IterationStatus =
