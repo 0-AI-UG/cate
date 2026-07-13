@@ -34,10 +34,8 @@ import { CateAgentInputBar } from '../cateAgent/CateAgentInputBar'
 import { CateAgentChatPicker } from '../cateAgent/CateAgentChatPicker'
 import { CateAgentChat } from '../cateAgent/CateAgentChat'
 import { useCateAgentWs, useCateAgentStore } from '../cateAgent/cateAgentStore'
-import { cateAgentController } from '../cateAgent/cateAgentController'
-import { deriveTopic } from '../cateAgent/cateAgentTools'
+import { sendCateAgentMessage } from '../cateAgent/cateAgentSend'
 import { useCateAgentReady } from '../stores/providerReadinessStore'
-import { useChatsStore } from '../stores/chatsStore'
 
 // Collapsed toolbar row height = the w-9/h-9 buttons. Used as the input's one-line
 // height and the close-collapse target, so it can't drift with measurement.
@@ -241,21 +239,9 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const inputOpen = cateAgent.inputOpen && hasProvider
   const toggleAgentInput = () => useCateAgentStore.getState().setInputOpen(workspaceId, !inputOpen)
   const closeAgentInput = () => useCateAgentStore.getState().setInputOpen(workspaceId, false)
-  // Compose into the active chat, minting one (titled from the prompt) on the first
-  // send. The chat's persistent agent decides how to respond.
-  const sendAgentPrompt = (text: string) => {
-    const store = useChatsStore.getState()
-    // From the observer front door, a message always starts a NEW chat (you don't
-    // reply to the observer). Otherwise it composes into the selected chat.
-    let chatId = cateAgent.observerView ? '' : cateAgent.activeChatId
-    if (!chatId || !store.getChat(rootPath, chatId)) {
-      chatId = store.createChat(rootPath, deriveTopic(text)).id
-    }
-    // Always select the target chat: this clears the observer view and grows the
-    // window into the chat we're sending to.
-    useCateAgentStore.getState().setActiveChat(workspaceId, chatId)
-    void cateAgentController.sendMessage(workspaceId, rootPath, chatId, text)
-  }
+  // Compose into the active chat (see sendCateAgentMessage). The chat's persistent
+  // agent decides how to respond.
+  const sendAgentPrompt = (text: string) => sendCateAgentMessage(workspaceId, rootPath, text)
   // The dot means "there's observer feed to check via the eye tab" — it's the exact
   // counterpart of that tab's gate (`unseen` is set only when a feed item arrives while
   // closed, so it implies feed content). Chat attention (review / interrupted) is carried
