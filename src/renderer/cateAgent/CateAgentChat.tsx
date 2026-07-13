@@ -84,7 +84,7 @@ export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> 
   return (
     <div className="absolute bottom-full inset-x-0 mb-2">
       <div
-        className="overflow-hidden rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
+        className="overflow-hidden rounded-2xl border border-subtle/60 bg-surface-0 shadow-[0_4px_16px_-8px_var(--shadow-node)]"
         style={{
           height: naturalH || undefined,
           transition: animate ? 'height 240ms cubic-bezier(0.16,1,0.3,1)' : undefined,

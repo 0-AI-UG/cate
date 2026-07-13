@@ -51,7 +51,7 @@ import { sendCateAgentMessage } from './cateAgentSend'
 const MAX_VISIBLE_FEED = 6
 
 // The small label that titles each tool rail.
-const LBL = 'text-[10px] font-semibold tracking-[0.04em] text-muted'
+const LBL = 'text-[10px] font-medium tracking-[0.03em] text-muted/80'
 
 const FEED_KIND_CLASS: Record<CateAgentFeedKind, string> = {
   user: 'text-primary',
@@ -211,7 +211,7 @@ const IterationRow: React.FC<{ it: Iteration; index: number; multi: boolean; win
 const TextBlock: React.FC<{ msg: ChatTextMessage }> = ({ msg }) => {
   if (msg.role === 'user') {
     return (
-      <div className="self-end max-w-[85%] rounded-2xl rounded-br-md bg-surface-3 px-3 py-1.5 text-[13px] leading-snug text-primary break-words">
+      <div className="self-end max-w-[85%] rounded-2xl rounded-br-md bg-surface-2/70 px-3 py-1.5 text-[13px] leading-snug text-secondary break-words">
         {msg.text}
       </div>
     )
