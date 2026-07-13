@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown
 
 const handlers = new Map<string, IpcHandler>()
-let connectedListener: ((id: string, runtime: typeof remoteRuntime) => void) | undefined
+const connectedListeners: Array<(id: string, runtime: typeof remoteRuntime) => void> = []
+const fireConnected = (id: string): void => {
+  for (const listener of connectedListeners) listener(id, remoteRuntime)
+}
 let connected = false
 
 const remoteRuntime = {
@@ -34,18 +37,21 @@ vi.mock('./runtime/runtimeManager', () => ({
   runtimes: {
     has: vi.fn(() => connected),
     resolve: vi.fn(() => remoteRuntime),
-    onConnected: vi.fn((listener: typeof connectedListener) => {
-      connectedListener = listener
+    onConnected: vi.fn((listener: (typeof connectedListeners)[number]) => {
+      connectedListeners.push(listener)
       return () => {}
     }),
   },
 }))
+vi.mock('../skills/main/seedCateCliSkill', () => ({ seedCateCliSkill: vi.fn(async () => {}) }))
 
-const { WORKSPACE_CREATE } = await import('../shared/ipc-channels')
+const { WORKSPACE_CREATE, WORKSPACE_UPDATE } = await import('../shared/ipc-channels')
 const { registerWorkspaceHandlers } = await import('./workspaceManager')
+const { seedCateCliSkill } = await import('../skills/main/seedCateCliSkill')
 
 describe('remote workspace root scopes', () => {
   it('registers roots by workspace id and replays them after connection and reconnect', async () => {
+    connectedListeners.length = 0
     registerWorkspaceHandlers()
     const create = handlers.get(WORKSPACE_CREATE)
     expect(create).toBeDefined()
@@ -64,7 +70,7 @@ describe('remote workspace root scopes', () => {
     // the runtime id carried by the locator).
     expect(remoteRuntime.addAllowedRoot).not.toHaveBeenCalled()
     connected = true
-    connectedListener?.(runtimeId, remoteRuntime)
+    fireConnected(runtimeId)
     expect(remoteRuntime.addAllowedRoot).toHaveBeenLastCalledWith(root, workspaceId)
     expect(workspaceId).not.toBe(runtimeId)
 
@@ -81,10 +87,47 @@ describe('remote workspace root scopes', () => {
     // Reconnect creates a fresh daemon root registry; both workspace scopes are
     // replayed onto the replacement runtime.
     remoteRuntime.addAllowedRoot.mockClear()
-    connectedListener?.(runtimeId, remoteRuntime)
+    fireConnected(runtimeId)
     expect(remoteRuntime.addAllowedRoot.mock.calls).toEqual([
       [root, workspaceId],
       [secondRoot, secondId],
     ])
+  })
+
+  it('seeds the cate-cli skill at create, at rootPath attach, and on runtime connect', async () => {
+    connectedListeners.length = 0
+    registerWorkspaceHandlers()
+    const create = handlers.get(WORKSPACE_CREATE)!
+    const update = handlers.get(WORKSPACE_UPDATE)!
+    const seed = vi.mocked(seedCateCliSkill)
+    seed.mockClear()
+
+    const runtimeId = 'srv_seeding'
+    const locator = (p: string): string => `cate-runtime://${runtimeId}${p}`
+
+    // Open with a folder → seed attempt for that root.
+    await create({}, { id: 'workspace-seed-a', name: 'A', rootPath: locator('/home/dev/a') })
+    expect(seed).toHaveBeenLastCalledWith(locator('/home/dev/a'))
+
+    // A rootless workspace seeds nothing until a folder is attached (the local
+    // folder-pick / remote-attach path, which lands as an update).
+    await create({}, { id: 'workspace-seed-b', name: 'B' })
+    expect(seed).toHaveBeenCalledTimes(1)
+    await update({}, 'workspace-seed-b', { rootPath: locator('/home/dev/b') })
+    expect(seed).toHaveBeenLastCalledWith(locator('/home/dev/b'))
+
+    // Runtime (re)connect replays seeding for every workspace on that runtime —
+    // the moment a REMOTE workspace can actually seed.
+    seed.mockClear()
+    fireConnected(runtimeId)
+    expect(seed.mock.calls.map(([root]) => root).sort()).toEqual([
+      locator('/home/dev/a'),
+      locator('/home/dev/b'),
+    ])
+
+    // Other runtimes' connects don't touch these workspaces.
+    seed.mockClear()
+    fireConnected('srv_other')
+    expect(seed).not.toHaveBeenCalled()
   })
 })

@@ -32,7 +32,7 @@ import { gitStatusStore } from '../stores/gitStatusStore'
 import { useCateAgentStore } from './cateAgentStore'
 import { generateId } from '../stores/canvas/helpers'
 import { newWorktreeId } from '../lib/worktreeSync'
-import type { Chat, ChatRun, WorktreeMeta, Iteration } from '../../shared/types'
+import type { Chat, ChatRun, WorktreeMeta, Iteration, VerdictCheck } from '../../shared/types'
 import type { CateAgentContext } from './cateAgentTypes'
 import {
   ptyFor,
@@ -315,7 +315,14 @@ export function buildRunContext(wsId: string, rootPath: string, chatId: string):
     agents: it.agents
       .filter((a) => a.kind !== 'verify')
       .map((a) => ({ agent: a.agent, scope: a.scope, terminalId: shortId(a.terminalId), busy: terminalBusy(wsId, a.terminalId) })),
-    verdict: it.verify ? { met: it.verify.met, reason: it.verify.reason } : null,
+    verdict: it.verify
+      ? {
+          met: it.verify.met,
+          reason: it.verify.reason,
+          ...(it.verify.checks ? { checks: it.verify.checks } : {}),
+          ...(it.verify.suggestion ? { suggestion: it.verify.suggestion } : {}),
+        }
+      : null,
   }))
   return json({
     goal: run.goal ?? null,
@@ -338,7 +345,7 @@ export async function runIterationCheck(
   rootPath: string,
   chatId: string,
   iteration: Iteration,
-): Promise<{ met: boolean; reason: string }> {
+): Promise<Verdict> {
   const run = runFor(rootPath, chatId)
   const meta = iteration.worktreeId ? worktreeMetaFor(wsId, iteration.worktreeId) : undefined
   const cwd = meta?.path ?? rootPath
@@ -348,7 +355,10 @@ export async function runIterationCheck(
   const prompt = [
     `Verify this goal in this worktree: "${goal}". How: ${check}.`,
     'Run the needed tests/build and inspect git diff. Be strict: if you cannot confirm it, it is NOT met.',
-    'Write the verdict to .cate/verdict.json as {"met": <true|false>, "reason": "<one sentence>"}, then stop. Change nothing else.',
+    'Write the verdict to .cate/verdict.json as {"met": <true|false>, "reason": "<1-2 sentence summary>",',
+    '"checks": [{"check": "<what you checked>", "met": <true|false>, "observed": "<verbatim outcome: pasted command output excerpt / exit code / what the diff shows — or unknown if you could not run it>", "expected": "<on failed checks: what a pass looks like>"}],',
+    '"suggestion": "<optional, only when not met: what the next attempt should do differently>"}.',
+    'met must be the conjunction of the checks. observed must be copied from output you actually produced — never invented. Then stop. Change nothing else.',
   ].join(' ')
 
   await runDriverToCompletion({
@@ -370,15 +380,61 @@ function chatTitleFor(rootPath: string, chatId: string): string {
   return getChat(rootPath, chatId)?.title ?? 'the task'
 }
 
+export interface Verdict {
+  met: boolean
+  reason: string
+  checks?: VerdictCheck[]
+  suggestion?: string
+}
+
+/** Caps applied when reading a verdict back — it's folded verbatim into the
+ *  orchestrator's wake context, so it's bounded at the source. */
+const VERDICT_STRING_MAX = 700
+const VERDICT_CHECKS_MAX = 20
+
+const verdictString = (raw: unknown): string | undefined => {
+  const s = typeof raw === 'string' ? raw.trim() : ''
+  return s ? s.slice(0, VERDICT_STRING_MAX) : undefined
+}
+
+/** Parse the verifier's `checks` into the flat {check, met, observed, expected?}
+ *  shape, capped in count and string length. Entries missing a check name or an
+ *  observed outcome drop; a malformed list just drops — it never fails a verdict. */
+export function parseVerdictChecks(raw: unknown): VerdictCheck[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: VerdictCheck[] = []
+  for (const entry of raw.slice(0, VERDICT_CHECKS_MAX)) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const { check, met, observed, expected } = entry as Record<string, unknown>
+    const name = verdictString(check)
+    const seen = verdictString(observed)
+    if (!name || !seen) continue
+    const kept: VerdictCheck = { check: name, met: met === true, observed: seen }
+    const want = verdictString(expected)
+    if (want) kept.expected = want
+    out.push(kept)
+  }
+  return out.length ? out : undefined
+}
+
 /** Read + parse `.cate/verdict.json` from a worktree. Anything unreadable or
- *  malformed is a NOT-met verdict (the checker failed to commit to a clear pass). */
-async function readVerdict(cwd: string): Promise<{ met: boolean; reason: string }> {
+ *  malformed is a NOT-met verdict (the checker failed to commit to a clear pass).
+ *  A check reported failed forces met:false even if the top-level flag says true —
+ *  the conjunction is structural, not trusted. */
+async function readVerdict(cwd: string): Promise<Verdict> {
   try {
     const raw = await window.electronAPI.fsReadFile(`${cwd}/.cate/verdict.json`)
-    const parsed = JSON.parse(raw) as { met?: unknown; reason?: unknown }
-    const met = parsed.met === true
-    const reason = typeof parsed.reason === 'string' && parsed.reason.trim() ? parsed.reason.trim() : met ? 'met' : 'not met'
-    return { met, reason }
+    const parsed = JSON.parse(raw) as { met?: unknown; reason?: unknown; checks?: unknown; suggestion?: unknown }
+    const checks = parseVerdictChecks(parsed.checks)
+    const met = parsed.met === true && (checks ?? []).every((c) => c.met)
+    const reason = verdictString(parsed.reason) ?? (met ? 'met' : 'not met')
+    const suggestion = verdictString(parsed.suggestion)
+    return {
+      met,
+      reason,
+      ...(checks ? { checks } : {}),
+      ...(suggestion ? { suggestion } : {}),
+    }
   } catch {
     return { met: false, reason: 'the checker did not produce a clear verdict' }
   }
@@ -586,6 +642,15 @@ export async function runCateAgentTool(ctx: CateAgentContext, tool: string, para
       const run = runFor(rootPath, chatId)
       const winner = run?.iterations?.find((i) => i.id === iterationId)
       if (!run || !winner) return json({ ok: false, error: 'run or iteration not found' })
+      // Verdict-gated: only a verified passer can land. The wake prompt already says
+      // so; this makes it structural rather than advisory.
+      if (winner.status !== 'passed') {
+        const verdict = winner.verify ? `${winner.verify.met ? 'met' : 'not met'}: ${winner.verify.reason}` : 'no verdict yet'
+        return json({
+          ok: false,
+          error: `iteration ${shortId(winner.id)} has not passed verification (status: ${winner.status}, verdict ${verdict}) — select_winner only lands a passer. Iterate again or fail.`,
+        })
+      }
       if (!winner.worktreeId || !winner.branch) {
         return json({ ok: false, error: 'winning iteration has no worktree to land (non-git?) — use fail instead.' })
       }

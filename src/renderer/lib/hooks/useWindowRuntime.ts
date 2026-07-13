@@ -29,6 +29,7 @@ import {
 } from '../agent/agentScreenDetector'
 import { isExternalFileDrag } from '../fs/importExternalEntries'
 import { revealPanel } from '../workspace/panelReveal'
+import { closePanelWithConfirm } from '../closePanelWithConfirm'
 import { setupWindowPanelSync } from '../workspace/windowPanelSync'
 import { useOwnedTerminalTelemetry } from '../../hooks/useProcessMonitor'
 import type { AgentState } from '../../../shared/types'
@@ -132,6 +133,17 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
       const owner = app.workspaces.find((w) => panelId in w.panels)
       const wsId = owner?.id ?? app.selectedWorkspaceId
       void revealPanel(wsId, panelId, { retry: true })
+    })
+  }, [])
+
+  // Cross-window close: another window's overview asked to close a panel this
+  // window owns. Runs the same confirm gates as any local close affordance.
+  useEffect(() => {
+    return window.electronAPI.onClosePanelInWindow?.((panelId: string) => {
+      const app = useAppStore.getState()
+      const owner = app.workspaces.find((w) => panelId in w.panels)
+      if (!owner) return
+      void closePanelWithConfirm(owner.id, panelId)
     })
   }, [])
 }

@@ -70,6 +70,10 @@ export function useDockTabActions(params: DockTabActionsParams) {
   // --- Inline rename --------------------------------------------------------
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  // Seed value the input opened with — committing it unchanged must not write:
+  // renamePanelByUser sets titleUserOverridden, which would freeze a live
+  // auto-title (agent name) the user never actually edited.
+  const renameSeedRef = useRef('')
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     if (renameId && renameInputRef.current) {
@@ -79,7 +83,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
   }, [renameId])
   const commitRename = (panelId: string) => {
     const trimmed = renameValue.trim()
-    if (trimmed) {
+    if (trimmed && trimmed !== renameSeedRef.current) {
       const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
       // renamePanelByUser sets titleUserOverridden so the agent-name tab title
       // (terminalRegistry) won't clobber a manual rename; onPanelRenamed keeps
@@ -90,6 +94,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
     setRenameId(null)
   }
   const beginRename = (panelId: string, currentTitle: string) => {
+    renameSeedRef.current = currentTitle
     setRenameValue(currentTitle)
     setRenameId(panelId)
   }

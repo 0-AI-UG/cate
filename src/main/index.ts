@@ -343,11 +343,11 @@ app.whenReady().then(async () => {
   registerCriticalHandlers()
   log.info('Critical IPC handlers registered')
 
-  // Install our first-party skills into ~/.claude/skills (copy-if-missing) so
-  // Claude Code discovers them: cate-theme (theme authoring) and cate-cli
-  // (teaches an agent in a Cate terminal how to use the `cate` CLI).
+  // Install the cate-theme skill into ~/.claude/skills (copy-if-missing) so the
+  // LOCAL Claude Code discovers theme authoring anywhere. The cate-cli skill is
+  // NOT installed globally — it is seeded per-workspace for every supported
+  // agent at workspace open (seedCateCliSkill), where the CLI actually works.
   void installBundledSkill('cate-theme')
-  void installBundledSkill('cate-cli')
 
   const mainWin = createWindow({ type: 'main' })
   log.info('Main window created (id=%d)', mainWin.id)

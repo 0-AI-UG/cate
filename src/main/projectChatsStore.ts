@@ -4,11 +4,12 @@
 // The Cate Agent's front door: each chat is a persistent thread of typed messages
 // (text / plan / attempts / result / canvas) plus the live/last `run` state for a
 // code task. The renderer holds the authoritative in-memory list and mirrors every
-// mutation here. Machine-local — `.cate/.gitignore` keeps it out of the user's VCS.
+// mutation here. Local roots write directly (atomic tmp+rename); remote roots
+// write the same file through the runtime, so chats survive a restart wherever
+// the workspace lives. `.cate/.gitignore` keeps it out of the user's VCS.
 //
-// Persistence mirrors projectTodosStore's contract (load/save IPC, atomic
-// tmp+rename writes). A hand-edited / partial file must degrade gracefully rather
-// than crash, so every record is coerced on load.
+// A hand-edited / partial file must degrade gracefully rather than crash, so
+// every record is coerced on load.
 // =============================================================================
 
 import { ipcMain } from 'electron'
@@ -28,8 +29,9 @@ import type {
 } from '../shared/types'
 import { writeJsonAtomic } from './writeJsonAtomic'
 import { quarantineCorruptFile } from './quarantineCorruptFile'
-import { ensureCateGitignore } from './cateGitignore'
-import { isLocalLocator } from './runtime/locator'
+import { ensureCateGitignore, CATE_GITIGNORE_CONTENT } from './cateGitignore'
+import { isLocalLocator, parseLocator } from './runtime/locator'
+import { runtimes } from './runtime/runtimeManager'
 
 const CATE_DIR = '.cate'
 const CHATS_FILE = 'chats.json'
@@ -178,19 +180,63 @@ function normalizeChat(raw: unknown): Chat | null {
   return chat
 }
 
-/** Read `.cate/chats.json` for a local project. Missing → []; unparseable →
- *  quarantined (kept for recovery) then []. */
+/** Coerce a parsed chats file into a clean Chat[] (shared local/remote). */
+function normalizeChatsFile(parsed: unknown): Chat[] {
+  const o = parsed as Partial<ProjectChatsFile> | null
+  if (!o || !Array.isArray(o.chats)) return []
+  return o.chats.map(normalizeChat).filter((c): c is Chat => c !== null)
+}
+
+// Remote workspaces persist the same `.cate/chats.json` through the runtime
+// (remote paths are POSIX; runtime.file.writeFile is atomic tmp+rename on the
+// host, matching writeJsonAtomic locally). A corrupt file isn't quarantined
+// over RPC — it degrades to an empty list, same posture as
+// projectWorkspaceStore's remote branch.
+function remoteTargets(rootPath: string) {
+  const { runtimeId, path: base } = parseLocator(rootPath)
+  const dir = path.posix.join(base, CATE_DIR)
+  return {
+    runtime: runtimes.resolve(runtimeId),
+    file: path.posix.join(dir, CHATS_FILE),
+    gitignoreFile: path.posix.join(dir, '.gitignore'),
+  }
+}
+
+async function loadChatsRemote(rootPath: string): Promise<Chat[]> {
+  const { runtime, file } = remoteTargets(rootPath)
+  const raw = await runtime.file.readFile(file).catch(() => null)
+  if (!raw) return [] // absent (or runtime hiccup) — no chats yet
+  try {
+    return normalizeChatsFile(JSON.parse(raw))
+  } catch {
+    log.warn('[projectChatsStore] corrupt remote %s; starting empty', file)
+    return []
+  }
+}
+
+async function saveChatsRemote(rootPath: string, chats: Chat[]): Promise<void> {
+  const { runtime, file, gitignoreFile } = remoteTargets(rootPath)
+  // Write-once .gitignore, mirroring ensureCateGitignore on the local branch.
+  await runtime.file
+    .stat(gitignoreFile)
+    .catch(() => runtime.file.writeFile(gitignoreFile, CATE_GITIGNORE_CONTENT))
+  const payload: ProjectChatsFile = { version: 1, chats }
+  await runtime.file.writeFile(file, `${JSON.stringify(payload, null, 2)}\n`)
+}
+
+/** Read `.cate/chats.json` for a project. Missing → []; unparseable →
+ *  quarantined locally (kept for recovery) then []. */
 export async function loadChats(rootPath: string): Promise<Chat[]> {
-  if (!isLocalLocator(rootPath)) return [] // remote chats unsupported in this phase
+  if (!isLocalLocator(rootPath)) return loadChatsRemote(rootPath)
   let raw: string
   try {
     raw = await fs.readFile(chatsPath(rootPath), 'utf-8')
   } catch {
     return [] // absent — no chats yet
   }
-  let parsed: Partial<ProjectChatsFile>
+  let parsed: unknown
   try {
-    parsed = JSON.parse(raw) as Partial<ProjectChatsFile>
+    parsed = JSON.parse(raw)
   } catch {
     // Unparseable (bad hand-edit / crash mid-write): quarantine the broken file
     // so it survives for recovery instead of being silently overwritten by the
@@ -199,13 +245,12 @@ export async function loadChats(rootPath: string): Promise<Chat[]> {
     log.warn('[projectChatsStore] corrupt %s%s; starting empty', chatsPath(rootPath), backup ? `, backed up to ${backup}` : '')
     return []
   }
-  if (!parsed || !Array.isArray(parsed.chats)) return []
-  return parsed.chats.map(normalizeChat).filter((c): c is Chat => c !== null)
+  return normalizeChatsFile(parsed)
 }
 
-/** Persist the whole chat list for a local project (atomic tmp+rename). */
+/** Persist the whole chat list for a project (atomic tmp+rename on both paths). */
 export async function saveChats(rootPath: string, chats: Chat[]): Promise<void> {
-  if (!isLocalLocator(rootPath)) return
+  if (!isLocalLocator(rootPath)) return saveChatsRemote(rootPath, chats)
   const file: ProjectChatsFile = { version: 1, chats }
   await ensureCateGitignore(cateDir(rootPath))
   await writeJsonAtomic(chatsPath(rootPath), file)

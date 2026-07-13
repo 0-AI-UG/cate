@@ -15,10 +15,10 @@ root, and git knows the branch. It talks to a per-workspace loopback endpoint
 Cate injects as `CATE_API` + `CATE_TOKEN`.
 
 **It only works inside a Cate terminal, and only when command-line control is
-enabled.** It is off by default; the user turns it on in Settings → Terminal
-("Command-line control"). Until then, and outside a Cate terminal, the env vars
-are unset and every command exits `3` with `not running inside a Cate terminal`.
-There is nothing to install.
+enabled.** It is on by default; the user can turn it off in Settings → Terminal
+("Command-line control"). While it is off — or outside a Cate terminal — the env
+vars are unset and every command exits `3` with a message explaining how to
+enable the setting. There is nothing to install.
 
 ## Browser control
 

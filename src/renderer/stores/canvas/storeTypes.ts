@@ -9,6 +9,7 @@ import type {
   CanvasNodeId,
   CanvasNodeState,
   DockLayoutNode,
+  PanelState,
   Point,
   Rect,
   Size,
@@ -88,6 +89,11 @@ export interface CanvasHistoryEntry {
   nodes: Record<CanvasNodeId, CanvasNodeState>
   selection: CanvasNodeId[]
   selectionActive: boolean
+  /** Panel records closed by the delete that followed this snapshot. Undo
+   *  re-adds them to the workspace (so the restored nodes aren't ghosts);
+   *  redo closes them again. Carried between the history and future stacks
+   *  as the entry bounces on undo/redo. */
+  closedPanels?: { workspaceId: string; panels: PanelState[] }
 }
 
 export interface CanvasStoreActions {
@@ -216,6 +222,14 @@ export interface CanvasStoreActions {
   undo: () => void
   redo: () => void
   clearHistory: () => void
+  /** Open a delete transaction: snapshots the current state and suppresses all
+   *  pushHistory calls until commit, so a multi-panel delete (which removes
+   *  nodes through several paths) lands as ONE undo step. */
+  beginHistoryTransaction: () => void
+  /** Close the transaction. Pushes the begin-time snapshot as a single history
+   *  entry when nodes actually changed, annotated with the panel records the
+   *  delete closed so undo can restore them. No-op without a begin. */
+  commitHistoryTransaction: (closedPanels?: { workspaceId: string; panels: PanelState[] }) => void
 
   // Bulk reset (used when switching workspaces)
   loadWorkspaceCanvas: (

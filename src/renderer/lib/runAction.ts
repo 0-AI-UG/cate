@@ -18,6 +18,7 @@ import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId, ShortcutAction } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
 import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
+import { provideAppStoreForHistory } from '../stores/canvas/historySlice'
 import { inheritedWorktreeFromSelection } from './inheritWorktree'
 import { closePanelWithConfirm } from './closePanelWithConfirm'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
@@ -243,7 +244,22 @@ export async function runAction(
       if (focusedId && canvas?.nodes[focusedId]) {
         const node = canvas.nodes[focusedId]
         const panelId = activeDockPanelId(node.dockLayout)
-        if (panelId) await closePanelWithConfirm(selectedWorkspaceId, panelId)
+        if (panelId) {
+          // Snapshot the record before the close so the history entry can
+          // carry it — Cmd+Z then restores the panel, not a ghost node.
+          const record = appStore().workspaces
+            .find((w) => w.id === selectedWorkspaceId)?.panels[panelId]
+          provideAppStoreForHistory(useAppStore)
+          canvas.beginHistoryTransaction()
+          let closed = false
+          try {
+            closed = await closePanelWithConfirm(selectedWorkspaceId, panelId)
+          } finally {
+            canvas.commitHistoryTransaction(
+              closed && record ? { workspaceId: selectedWorkspaceId, panels: [record] } : undefined,
+            )
+          }
+        }
       }
       break
     }

@@ -5,6 +5,8 @@ import { useAppStore } from '../stores/appStore'
 import { ArrowLeft, ArrowRight, Minus, Plus } from '@phosphor-icons/react'
 import { errorMessage } from '../lib/errorMessage'
 import { viewedArrayBuffer } from './documentBytes'
+import { pathDisplayName } from '../lib/fs/displayPath'
+import { isLocalLocator } from '../../main/runtime/locator'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -310,7 +312,7 @@ export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fileName = filePath?.split('/').pop() ?? 'Document'
+  const fileName = (filePath && pathDisplayName(filePath)) || 'Document'
 
   const detected = useMemo(() => {
     if (!data) return null
@@ -364,12 +366,15 @@ export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-surface-4 gap-2">
         <span className="text-red-400 text-sm">{error ?? 'Failed to load file'}</span>
-        <button
-          onClick={openExternal}
-          className="text-xs text-neutral-400 hover:text-white underline"
-        >
-          Show in Finder
-        </button>
+        {/* Finder is local-only; a remote file has nothing to show there. */}
+        {filePath && isLocalLocator(filePath) && (
+          <button
+            onClick={openExternal}
+            className="text-xs text-neutral-400 hover:text-white underline"
+          >
+            Show in Finder
+          </button>
+        )}
       </div>
     )
   }

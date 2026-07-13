@@ -19,7 +19,7 @@
 // =============================================================================
 
 import type { WindowPanelInfo, WindowPanelReport } from '../shared/types'
-import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW } from '../shared/ipc-channels'
+import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW, CLOSE_PANEL_IN_WINDOW } from '../shared/ipc-channels'
 import { broadcastToAll, focusWindow, getWindow, getWindowType, onWindowClosed, sendToWindow } from './windowRegistry'
 
 /** The latest panel report from each window, keyed by Electron window id. */
@@ -93,6 +93,19 @@ export function revealWindowPanel(panelId: string): boolean {
   if (!win) return false
   focusWindow(win)
   sendToWindow(owner.ownerWindowId, REVEAL_PANEL_IN_WINDOW, panelId)
+  return true
+}
+
+/** Ask the window that owns `panelId` to close the panel (behind its own
+ *  dirty/running confirmation gates). Focuses the owner first so the gates'
+ *  dialogs are visible. Returns false if no live window owns it. */
+export function closeWindowPanel(panelId: string): boolean {
+  const owner = getWindowPanels().find((p) => p.panelId === panelId)
+  if (!owner) return false
+  const win = getWindow(owner.ownerWindowId)
+  if (!win) return false
+  focusWindow(win)
+  sendToWindow(owner.ownerWindowId, CLOSE_PANEL_IN_WINDOW, panelId)
   return true
 }
 

@@ -9,9 +9,24 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 const closePanelWithConfirm = vi.fn()
 const SELECTED_WS = 'ws-1'
 
+// Live panel-record map so the history transaction can snapshot records and
+// undo can re-add them. Seeded per test with the panel ids the test uses.
+const wsPanels: Record<string, { id: string; type: string; title: string; isDirty: boolean }> = {}
+const addPanel = vi.fn((_wsId: string, panel: { id: string }) => {
+  wsPanels[panel.id] = panel as (typeof wsPanels)[string]
+})
+const closePanel = vi.fn((_wsId: string, panelId: string) => {
+  delete wsPanels[panelId]
+})
+
 vi.mock('../appStore', () => ({
   useAppStore: {
-    getState: () => ({ selectedWorkspaceId: SELECTED_WS }),
+    getState: () => ({
+      selectedWorkspaceId: SELECTED_WS,
+      workspaces: [{ id: SELECTED_WS, panels: wsPanels }],
+      addPanel,
+      closePanel,
+    }),
   },
 }))
 
@@ -24,10 +39,22 @@ function tabs(panelIds: string[]): DockLayoutNode {
   return { type: 'tabs', id: `stack-${panelIds.join('-')}`, panelIds, activeIndex: 0 }
 }
 
+function seedPanels(ids: string[]) {
+  for (const id of Object.keys(wsPanels)) delete wsPanels[id]
+  for (const id of ids) wsPanels[id] = { id, type: 'terminal', title: id, isDirty: false }
+}
+
 describe('deleteSelection routes panel-backed nodes through closePanelWithConfirm', () => {
   beforeEach(() => {
     closePanelWithConfirm.mockReset()
-    closePanelWithConfirm.mockResolvedValue(true)
+    // The real closePanelWithConfirm removes the panel record on success.
+    closePanelWithConfirm.mockImplementation(async (_wsId: string, panelId: string) => {
+      delete wsPanels[panelId]
+      return true
+    })
+    addPanel.mockClear()
+    closePanel.mockClear()
+    seedPanels(['term-a', 'term-b', 'p1', 'p2', 'p3'])
   })
 
   it('closes every selected single-panel node through the normal close path', async () => {

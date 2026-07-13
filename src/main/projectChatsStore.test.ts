@@ -7,7 +7,33 @@ vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }))
 vi.mock('./logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
-vi.mock('./cateGitignore', () => ({ ensureCateGitignore: vi.fn(async () => {}) }))
+vi.mock('./cateGitignore', () => ({
+  ensureCateGitignore: vi.fn(async () => {}),
+  CATE_GITIGNORE_CONTENT: '*\n!workspace.json\n',
+}))
+
+// In-memory host fs behind runtime.file for the remote branch.
+const hostFiles = vi.hoisted(() => new Map<string, string>())
+vi.mock('./runtime/runtimeManager', () => ({
+  runtimes: {
+    resolve: () => ({
+      file: {
+        async readFile(p: string): Promise<string> {
+          const v = hostFiles.get(p)
+          if (v === undefined) throw new Error(`ENOENT: ${p}`)
+          return v
+        },
+        async writeFile(p: string, content: string): Promise<void> {
+          hostFiles.set(p, content)
+        },
+        async stat(p: string): Promise<{ isDirectory: boolean; isFile: boolean }> {
+          if (!hostFiles.has(p)) throw new Error(`ENOENT: ${p}`)
+          return { isDirectory: false, isFile: true }
+        },
+      },
+    }),
+  },
+}))
 
 import { loadChats, saveChats } from './projectChatsStore'
 import type { Chat } from '../shared/types'
@@ -102,5 +128,43 @@ describe('projectChatsStore', () => {
     // The broken content is preserved aside for recovery, not silently swallowed.
     const files = await fs.readdir(path.join(root, '.cate'))
     expect(files.some((f) => f.startsWith('chats.json.corrupt-'))).toBe(true)
+  })
+})
+
+describe('projectChatsStore — remote roots (through the runtime)', () => {
+  const REMOTE_ROOT = 'cate-runtime://srv_abc/home/dev/project'
+  const FILE = '/home/dev/project/.cate/chats.json'
+  const GITIGNORE = '/home/dev/project/.cate/.gitignore'
+
+  const chat: Chat = {
+    id: 'c1',
+    title: 'remote chat',
+    createdAt: 1,
+    updatedAt: 2,
+    messages: [{ id: 'm1', role: 'user', ts: 3, kind: 'text', text: 'hello from afar' }],
+  }
+
+  beforeEach(() => hostFiles.clear())
+
+  it('loads empty when the remote file is absent', async () => {
+    expect(await loadChats(REMOTE_ROOT)).toEqual([])
+    expect(hostFiles.size).toBe(0) // load never writes
+  })
+
+  it('round-trips chats on the runtime host and seeds .gitignore once', async () => {
+    await saveChats(REMOTE_ROOT, [chat])
+    expect(hostFiles.has(FILE)).toBe(true)
+    expect(hostFiles.has(GITIGNORE)).toBe(true)
+    expect(await loadChats(REMOTE_ROOT)).toEqual([chat])
+
+    // A hand-edited .gitignore is not clobbered by the next save.
+    hostFiles.set(GITIGNORE, 'custom')
+    await saveChats(REMOTE_ROOT, [chat])
+    expect(hostFiles.get(GITIGNORE)).toBe('custom')
+  })
+
+  it('degrades a corrupt remote file to an empty list', async () => {
+    hostFiles.set(FILE, '{ definitely not json')
+    expect(await loadChats(REMOTE_ROOT)).toEqual([])
   })
 })

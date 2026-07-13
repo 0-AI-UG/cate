@@ -7,8 +7,20 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 const closePanelWithConfirm = vi.fn().mockResolvedValue(true)
+const wsPanels: Record<string, { id: string; type: string; title: string; isDirty: boolean }> = {}
 vi.mock('../appStore', () => ({
-  useAppStore: { getState: () => ({ selectedWorkspaceId: 'ws-1' }) },
+  useAppStore: {
+    getState: () => ({
+      selectedWorkspaceId: 'ws-1',
+      workspaces: [{ id: 'ws-1', panels: wsPanels }],
+      addPanel: (_wsId: string, panel: { id: string }) => {
+        wsPanels[panel.id] = panel as (typeof wsPanels)[string]
+      },
+      closePanel: (_wsId: string, panelId: string) => {
+        delete wsPanels[panelId]
+      },
+    }),
+  },
 }))
 vi.mock('../../lib/closePanelWithConfirm', () => ({ closePanelWithConfirm }))
 
@@ -17,6 +29,8 @@ import { createCanvasStore } from '../canvasStore'
 beforeEach(() => {
   closePanelWithConfirm.mockReset()
   closePanelWithConfirm.mockResolvedValue(true)
+  for (const id of Object.keys(wsPanels)) delete wsPanels[id]
+  for (const id of ['a', 'b']) wsPanels[id] = { id, type: 'editor', title: id, isDirty: false }
 })
 
 // Invariant the whole feature exists to guarantee: every selected id is live.

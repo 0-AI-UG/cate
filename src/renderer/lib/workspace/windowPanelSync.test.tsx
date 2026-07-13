@@ -13,6 +13,11 @@
 //    appStore-only subscription left the report stale and the moved terminal
 //    rendered at base level instead of nested ("only the first terminal on a
 //    canvas gets the indentation; the second is at root level").
+//
+// 3. The report contains only PLACED panels (same partition rules as the local
+//    tree) and stamps the DERIVED row label — ghost records used to surface in
+//    other windows as phantom rows, and titleless browser/editor panels
+//    reported an empty title that rendered as the bare panel type.
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -189,5 +194,74 @@ describe('windowPanelSync — canvas child parentCanvasId', () => {
     stop()
     releaseWorkspaceDockStore(ws)
     releaseCanvasStoreForPanel('cv')
+  })
+})
+
+describe('windowPanelSync — placed-only report + derived titles', () => {
+  it('omits ghost records (in ws.panels but placed in no dock/canvas) and keeps placed ones', async () => {
+    const reports: WindowPanelReport[][] = []
+    ;(window as any).electronAPI = {
+      reportWindowPanels: vi.fn(async (r: WindowPanelReport[]) => { reports.push(r) }),
+    }
+
+    const ws = 'ws-ghost'
+    useAppStore.setState({
+      workspaces: [{
+        id: ws, name: 'W', color: '', rootPath: '/x', rootPathError: null,
+        isRootPathPending: false, worktrees: [],
+        panels: { cv: panel('cv', 'canvas'), t1: panel('t1', 'terminal'), ghost: panel('ghost', 'terminal') },
+      } as any],
+      selectedWorkspaceId: ws,
+    } as any)
+
+    // The workspace's dock store places cv + t1; `ghost` is referenced nowhere.
+    const dock = createDockStore()
+    dock.getState().dockPanel('cv', 'center')
+    dock.getState().dockPanel('t1', 'center')
+    registerWorkspaceDockStore(ws, dock)
+
+    const stop = setupWindowPanelSync()
+    await tick()
+
+    const ids = reports[reports.length - 1].filter((r) => r.workspaceId === ws).map((r) => r.panelId)
+    expect(ids).toContain('cv')
+    expect(ids).toContain('t1')
+    expect(ids).not.toContain('ghost')
+
+    stop()
+    releaseWorkspaceDockStore(ws)
+  })
+
+  it('stamps the derived label: a titleless browser reports its URL, a titleless editor its basename', async () => {
+    const reports: WindowPanelReport[][] = []
+    ;(window as any).electronAPI = {
+      reportWindowPanels: vi.fn(async (r: WindowPanelReport[]) => { reports.push(r) }),
+    }
+
+    const ws = 'ws-titles'
+    useAppStore.setState({
+      workspaces: [{
+        id: ws, name: 'W', color: '', rootPath: '/x', rootPathError: null,
+        isRootPathPending: false, worktrees: [],
+        panels: {
+          b1: {
+            id: 'b1', type: 'browser', title: '', isDirty: false,
+            tabs: [{ id: 'tab1', url: 'https://example.com/docs', title: '' }],
+            activeTabId: 'tab1',
+          } as PanelState,
+          e1: { id: 'e1', type: 'editor', title: '', isDirty: false, filePath: '/x/src/main.ts' } as PanelState,
+        },
+      } as any],
+      selectedWorkspaceId: ws,
+    } as any)
+
+    const stop = setupWindowPanelSync()
+    await tick()
+
+    const byId = Object.fromEntries(reports[reports.length - 1].filter((r) => r.workspaceId === ws).map((r) => [r.panelId, r]))
+    expect(byId.b1?.title).toBe('https://example.com/docs')
+    expect(byId.e1?.title).toBe('main.ts')
+
+    stop()
   })
 })

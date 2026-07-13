@@ -121,30 +121,29 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
   if (key === 'fileExclusions') {
     broadcastToAll(SETTINGS_CHANGED, key, value)
   }
-  // Push the new set to the LOCAL runtime daemon, which captured its exclusions once at
-  // launch — without this the daemon's file tree / file-name search wouldn't
-  // honor the change until a restart. Only LOCAL: remote daemons get their
-  // config at connect time (out of scope here). Imports are dynamic to avoid
-  // store<->filesystem and store<->runtime cycles.
+  // Push the new set to EVERY connected runtime daemon (local and remote alike
+  // — each captured its exclusions once at launch); without this a daemon's
+  // file tree / file-name search / watchers wouldn't honor the change until a
+  // reconnect. Imports are dynamic to avoid store<->filesystem and
+  // store<->runtime cycles.
   if (key === 'fileExclusions') {
     try {
       const { runtimes } = await import('./runtime/runtimeManager')
-      const { LOCAL_RUNTIME_ID } = await import('./runtime/locator')
-      if (runtimes.has(LOCAL_RUNTIME_ID)) {
-        runtimes.resolve(LOCAL_RUNTIME_ID).setExclusions(value as string[]).catch(() => {})
+      for (const id of runtimes.connectedIds()) {
+        runtimes.resolve(id).setExclusions(value as string[]).catch(() => {})
       }
     } catch (err) {
       log.warn('Runtime exclusions forward failed: %O', err)
     }
   }
-  // Push the idle-suspend toggle to the LOCAL runtime daemon, which gated its
-  // idle scanner once at launch — toggling otherwise needs a restart.
+  // Push the idle-suspend toggle to EVERY connected runtime daemon, each of
+  // which gated its idle scanner once at launch — toggling otherwise needs a
+  // reconnect. (POSIX-only inside the daemon; a win32 host ignores it.)
   if (key === 'autoSuspendIdleTerminals') {
     try {
       const { runtimes } = await import('./runtime/runtimeManager')
-      const { LOCAL_RUNTIME_ID } = await import('./runtime/locator')
-      if (runtimes.has(LOCAL_RUNTIME_ID)) {
-        runtimes.resolve(LOCAL_RUNTIME_ID).setIdleSuspend(value !== false).catch(() => {})
+      for (const id of runtimes.connectedIds()) {
+        runtimes.resolve(id).setIdleSuspend(value !== false).catch(() => {})
       }
     } catch (err) {
       log.warn('Runtime idle-suspend forward failed: %O', err)

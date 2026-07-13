@@ -227,11 +227,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('run — exit codes', () => {
-  it('CATE_API unset -> exit 3 with a clear message', async () => {
+  it('CATE_API unset -> exit 3 with a how-to-enable message', async () => {
     const deps = makeDeps({ env: {} })
     const code = await run(['browser', 'wait'], deps)
     expect(code).toBe(3)
-    expect(deps.err.join('\n')).toMatch(/not running inside a Cate terminal/)
+    const err = deps.err.join('\n')
+    expect(err).toMatch(/CATE_API\/CATE_TOKEN unset/)
+    expect(err).toMatch(/Settings → Terminal/)
   })
 
   it('happy path -> exit 0, url on stdout', async () => {

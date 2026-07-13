@@ -37,6 +37,10 @@ export interface SshOptions {
   passphrase?: string
   agentSock?: string
   exclusions?: string[]
+  /** Idle-suspend of backgrounded terminals (the user's setting); appended as
+   *  `--idle-suspend` to the daemon launch args when true — same flag the
+   *  local transport passes, so an SSH host honors the setting identically. */
+  idleSuspend?: boolean
   /** Host-key policy (TOFU pin). Injected for tests; defaults to the on-disk
    *  known-hosts store keyed by host:port. Receives ssh2's sha256 fingerprint;
    *  must throw to reject the connection (host-key mismatch / MITM). */
@@ -236,7 +240,8 @@ export class SshTransport implements RuntimeTransport {
     await this.ensureConnected()
     const nodeBin = `${this.installDir}/runtime/bin/node`
     const args = `--root ${shq(this.opts.root)} --id ${shq(this.opts.id)}` +
-      (this.opts.exclusions?.length ? ` --exclude ${shq(this.opts.exclusions.join(','))}` : '')
+      (this.opts.exclusions?.length ? ` --exclude ${shq(this.opts.exclusions.join(','))}` : '') +
+      (this.opts.idleSuspend ? ' --idle-suspend' : '')
     const cmd = `${shq(nodeBin)} ${shq(`${this.installDir}/runtime.cjs`)} ${args}`
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

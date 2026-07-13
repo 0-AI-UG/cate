@@ -536,7 +536,13 @@ class CateAgentController implements CateAgentBridgeHost {
     if (r.runs.get(ctx.chatId)?.epoch !== ctx.epoch) return // superseded mid-check
     patchIteration(ctx.rootPath, ctx.chatId, iterationId, {
       status: verdict.met ? 'passed' : 'failed',
-      verify: { met: verdict.met, reason: verdict.reason, at: Date.now() },
+      verify: {
+        met: verdict.met,
+        reason: verdict.reason,
+        at: Date.now(),
+        ...(verdict.checks ? { checks: verdict.checks } : {}),
+        ...(verdict.suggestion ? { suggestion: verdict.suggestion } : {}),
+      },
     })
     void this.reconcile(ctx)
   }
