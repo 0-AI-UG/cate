@@ -22,6 +22,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useOptionalCanvasStoreApi, useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
+import { shouldAdjustTerminalCoords } from '../lib/terminal/terminalCoordAdjust'
 import { useTerminalGlow } from '../cateAgent/cateAgentStore'
 import { resolveWorktree } from '../../shared/worktrees'
 import { CATE_FILE_MIME, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
@@ -576,29 +577,22 @@ export default function TerminalPanel({
     // xterm computes hit-testing against its own DOM-space cell metrics, so we
     // must convert the incoming screen-space offset back into DOM space.
     const adjustCoords = (e: MouseEvent) => {
-      // Don't touch coordinates while a canvas gesture (panel resize / pan) is
-      // in flight. This handler runs in the capture phase and rewrites
-      // e.clientX/Y; the node-resize listener is on window (bubble phase) and
-      // would otherwise read the rewritten value, computing its delta from a
-      // moving target (screenEl's rect shifts as the panel resizes). On a
-      // zoomed canvas that feeds back every frame and the dragged edge runs
-      // away from the cursor — the terminal-only "right edge jumps right while
-      // dragging left" bug. xterm only needs adjusted coords for its own
-      // selection, which isn't happening during a resize/pan anyway.
-      if (document.body.classList.contains('canvas-interacting')) return
-
-      // A middle/right press starts a canvas pan, not an xterm selection. This
-      // capture handler runs before the canvas sets canvas-interacting, so the
-      // guard above can't catch the pan's opening mousedown — we'd rewrite its
-      // clientX/Y while every follow-up move (which lands on the now
-      // pointer-events:none terminal -> canvas) stays raw. The first pan delta
-      // would then be (raw - adjusted) and jump the camera on a zoomed canvas.
-      // xterm only needs adjusted coords for left-button selection, so leave
-      // non-left presses untouched.
-      if (e.type === 'mousedown' && e.button !== 0) return
-
+      // Whether to rewrite this event's clientX/Y lives in a pure helper so the
+      // middle-click-pan regression it prevents can be unit-tested. It skips the
+      // rewrite when a canvas gesture owns the pointer (canvas-interacting), when
+      // this is a pan's opening non-left mousedown (rewriting it would jump the
+      // camera on the first delta — see shouldAdjustTerminalCoords), and when the
+      // canvas isn't zoomed. See terminalCoordAdjust.ts for the full rationale.
       const effective = zoomLevel / renderScale
-      if (Math.abs(effective - 1.0) < 0.001) return
+      if (
+        !shouldAdjustTerminalCoords(
+          e.type,
+          e.button,
+          document.body.classList.contains('canvas-interacting'),
+          effective,
+        )
+      )
+        return
 
       // Find xterm's screen element — the same element xterm uses for its
       // own getBoundingClientRect() call in getCoordsRelativeToElement()

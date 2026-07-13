@@ -61,6 +61,8 @@ This is the **complete** surface today. It is intentionally small; new methods a
 cate.version()                                 // API version (int), for feature detection
 cate.panel.id                                  // this panel instance's id
 cate.panel.setTitle(title)
+cate.panel.list() => [{ panelId, type, title, focused, filePath?, url? }]  // this window's panels (`panel` scope)
+cate.panel.focus(panelId)                      // reveal/focus a panel (`panel` scope)
 cate.workspace.get()                           // { rootPath, branch, worktree }  (branch/worktree null for now)
 cate.theme.get()                               // { id, type, app, terminal } theme tokens
 cate.editor.openFile(path, { line?, column? }) // path is confined to the workspace root
@@ -75,33 +77,40 @@ cate.storage.onChange(cb)                       // fires on external edits and w
 cate.agent.open({ resume? }) => { sessionId }   // open (or resume) an agent session
 cate.agent.send(sessionId, prompt) => { text, message }   // run one turn on an open session
 cate.agent.dispose(sessionId)                   // tear down the live session (its file stays; reopen via resume)
-cate.agent.run(prompt) => { text, message }     // one-shot sugar: open -> send -> dispose
 cate.agent.cancel()                             // abort this extension's in-flight turn
-cate.browser.list() => [{ panelId, title, url, focused }]        // open browser panels
 cate.browser.open({ url, panelId? }) => { panelId, url }         // point a panel at url (or open one)
-cate.browser.back|forward|reload({ panelId? }) => { ok: true }   // navigate a panel
-cate.browser.current({ panelId? }) => { url, title, canGoBack, canGoForward, loading }
+cate.browser.reload({ panelId? }) => { ok: true }               // reload a panel
 cate.browser.screenshot({ panelId? }) => { path }               // host filesystem path
 cate.browser.snapshot({ panelId? }) => { url, title, refs: [{ ref, role, name, value? }] }
 cate.browser.click({ ref, panelId? }) => { ok: true }           // ref is from a recent snapshot
 cate.browser.type({ ref, text, panelId? }) => { ok: true }
+cate.browser.wait({ panelId?, timeoutMs? }) => { url, title, loading: false }  // until load settles (cap 8s)
+cate.browser.press({ key, ref?, panelId? }) => { ok: true }     // TRUSTED key input (Enter submits forms)
 ```
+
+`panel.setTitle` (self-identity) needs no scope; `panel.list` and `panel.focus`
+read/steer other panels and require the `panel` scope. `panel.list` is the
+single enumeration surface — browser panels carry their `url` there, editors
+their `filePath`, and the `focused` entry answers "what is the user looking
+at" (there is no `browser.list` or `editor.active`). `press` accepts Enter,
+Tab, Escape, Backspace, Delete, Space, the arrows, PageUp/PageDown, Home, End;
+with `ref` the element is focused first.
 
 `cateApi` scopes in the manifest declare which namespaces an extension uses; the host enforces them (default-deny) and Cate surfaces them as the extension's permissions in Settings → Extensions.
 
 ### Agent (`agent` scope)
 
-`cate.agent` lets an extension drive Cate's bundled pi agent, using the user's configured default model and credentials. It is turn-based and session-oriented: `open` starts (or, with `resume`, reopens) a session and returns its handle, `send` runs one turn and resolves with the final assistant text plus the raw final message, `dispose` tears the live session down (pi's session file stays, so a conversation can be resumed later with nothing persisted on Cate's side), and `run` is one-shot sugar over open/send/dispose. The run is a real, visible Agent-panel-style session bound to the active window — the user can watch and interrupt it. Guardrails are deliberately minimal in v1:
+`cate.agent` lets an extension drive Cate's bundled pi agent, using the user's configured default model and credentials. It is turn-based and session-oriented: `open` starts (or, with `resume`, reopens) a session and returns its handle, `send` runs one turn and resolves with the final assistant text plus the raw final message, `dispose` tears the live session down (pi's session file stays, so a conversation can be resumed later with nothing persisted on Cate's side). There is no one-shot `run` — compose open -> send -> dispose. A session is a real, visible Agent-panel-style session bound to the active window — the user can watch and interrupt it. Guardrails are deliberately minimal in v1:
 
 - A dedicated **`agent` scope** (default-deny, shown at install) — never folded into another namespace.
 - **First-use consent**: the first agent call per extension prompts the user; the grant lasts the app session.
 - **One live session per extension, one turn in flight**: a concurrent turn returns `{ error: 'agent-busy' }`. This is the whole anti-runaway-loop guard for v1; token/cost budgets and rate limits are intentionally deferred.
 
-Turns are long-lived (minutes); `send`/`run` resolve on the agent's terminal `agent_end`, so callers must not impose a short timeout.
+Turns are long-lived (minutes); `send` resolves on the agent's terminal `agent_end`, so callers must not impose a short timeout.
 
 ### Browser (`browser` scope)
 
-An extension that declares the **`browser`** scope can drive Cate's browser panels through `cate.browser.*`: list open panels, `open` a URL (in an existing panel or a new one), navigate (`back`/`forward`/`reload`), read `current` navigation state, `screenshot`, take an accessibility `snapshot`, and `click`/`type` on the elements it returns. Every method targets one panel — pass `panelId` to pick it, or omit it to hit the focused (or only) browser panel. `snapshot` returns opaque element `ref`s; a `ref` is only valid for the snapshot it came from, so re-snapshot after any navigation or DOM change before clicking or typing. This is a single, undivided scope: there is no read-only vs. read-write split, and a bare `browser` grant covers every `cate.browser.*` method (frontend via `cateHost` and server-backed via `CATE_API` alike, once declared).
+An extension that declares the **`browser`** scope can drive Cate's browser panels through `cate.browser.*`: `open` a URL (in an existing panel or a new one — enumeration is `cate.panel.list`, under the `panel` scope), `reload`, `wait` for a load to settle, `screenshot`, take an accessibility `snapshot`, and `click`/`type`/`press` on the elements it returns. There is no history traversal or separate nav-state query: navigate by URL, and read "where am I" from `wait` (instant when idle) or the `snapshot` header. Every method targets one panel — pass `panelId` to pick it, or omit it to hit the focused (or only) browser panel. `snapshot` returns opaque element `ref`s; a `ref` is only valid for the snapshot it came from, so re-snapshot after any navigation or DOM change before clicking or typing. This is a single, undivided scope: there is no read-only vs. read-write split, and a bare `browser` grant covers every `cate.browser.*` method (frontend via `cateHost` and server-backed via `CATE_API` alike, once declared).
 
 **Shared session — treat as sensitive.** Cate's browser panels hold the user's *real, logged-in* browser session: cookies, saved auth, and everything the user is signed into. An extension with the `browser` scope can therefore reach anything the user can reach while signed in, act as them, and read what's on screen. First-use consent is prompted (handled by the host), but grant `browser` only to extensions you trust with that access. Two notes on the returned data: `screenshot` gives back a **host filesystem `path`**, not image bytes — an isolated webview guest can't read that path directly (a server-backed extension, which shares the host filesystem, can), so frontends typically use `snapshot` for content; and `snapshot` exposes page text/values, so anything on the page is visible to the extension.
 

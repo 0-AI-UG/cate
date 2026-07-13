@@ -16,13 +16,13 @@
 // isTrusted=false). Pages that gate on trusted events (some drag/paste flows,
 // certain <input type=file> pickers) won't react. This is an accepted v1
 // limitation — documented so callers don't treat a synthetic click as a full
-// user gesture.
+// user gesture. `press` is the exception: it delivers REAL input through
+// webContents.sendInputEvent (isTrusted=true), so Enter submits forms.
 // =============================================================================
 
 import { useAppStore } from '../../stores/appStore'
 import { getActivePanelId } from '../activePanel'
 import { portalRegistry, type PortalWebview } from '../portalRegistry'
-import { browserPanelUrl, isStartPageUrl } from '../../../shared/types'
 
 export type BrowserOutcome = { ok: true; result?: unknown } | { ok: false; error: string }
 
@@ -134,6 +134,61 @@ function typeJs(ref: string, text: string): string {
 })(${JSON.stringify(ref)}, ${JSON.stringify(text)})`
 }
 
+function focusJs(ref: string): string {
+  return `(function (ref) {
+  ${elementByRefBody()}
+  if (!el) return { error: 'stale-ref' }
+  el.scrollIntoView({ block: 'center' })
+  el.focus()
+  return { ok: true }
+})(${JSON.stringify(ref)})`
+}
+
+// --- press key map -------------------------------------------------------------
+// Friendly key names (lowercased) → Electron accelerator key codes for
+// sendInputEvent. A closed allowlist: `press` exists to complete interaction
+// flows (submit, dismiss, scroll, move), not to be a general keyboard.
+const PRESS_KEYS: Record<string, string> = {
+  enter: 'Return',
+  return: 'Return',
+  tab: 'Tab',
+  escape: 'Escape',
+  esc: 'Escape',
+  backspace: 'Backspace',
+  delete: 'Delete',
+  space: 'Space',
+  arrowup: 'Up',
+  up: 'Up',
+  arrowdown: 'Down',
+  down: 'Down',
+  arrowleft: 'Left',
+  left: 'Left',
+  arrowright: 'Right',
+  right: 'Right',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
+  home: 'Home',
+  end: 'End',
+}
+
+/** Wait for the guest to stop loading. Polls isLoading() — the PortalWebview
+ *  surface has no event hooks — and must resolve WELL inside the main process's
+ *  10s forward timeout, so the caller-supplied timeout is capped at 8s. */
+const WAIT_DEFAULT_MS = 5_000
+const WAIT_MAX_MS = 8_000
+const WAIT_POLL_MS = 100
+
+async function waitForLoad(webview: PortalWebview, timeoutMs: number): Promise<BrowserOutcome> {
+  const deadline = Date.now() + Math.min(Math.max(timeoutMs, 0) || WAIT_DEFAULT_MS, WAIT_MAX_MS)
+  for (;;) {
+    if (!webview.isLoading()) {
+      return { ok: true, result: { url: webview.getURL(), title: webview.getTitle(), loading: false } }
+    }
+    if (Date.now() >= deadline) return { ok: false, error: 'still-loading' }
+    await new Promise((r) => setTimeout(r, WAIT_POLL_MS))
+  }
+}
+
 // --- Entry point -------------------------------------------------------------
 
 /** Execute one `cate.browser.*` method. `method` keeps its full `cate.browser.`
@@ -145,20 +200,8 @@ export async function handleBrowserMethod(
 ): Promise<BrowserOutcome> {
   const name = method.slice('cate.browser.'.length)
 
-  // `list` reads the store only — no webview needed, works even mid-load.
-  if (name === 'list') {
-    const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-    const active = getActivePanelId()
-    const browsers = Object.values(ws?.panels ?? {})
-      .filter((p) => p.type === 'browser')
-      .map((p) => ({
-        panelId: p.id,
-        title: p.title,
-        url: isStartPageUrl(browserPanelUrl(p)) ? '' : (browserPanelUrl(p) ?? ''),
-        focused: p.id === active,
-      }))
-    return { ok: true, result: browsers }
-  }
+  // NOTE: there is deliberately no `list` here — `cate.panel.list` (the
+  // responder) is the single enumeration surface and includes browser urls.
 
   // `open` may create a browser when none exists; resolve/handle specially.
   if (name === 'open') {
@@ -197,30 +240,12 @@ export async function handleBrowserMethod(
 
   try {
     switch (name) {
-      case 'back':
-        if (!webview.canGoBack()) return { ok: false, error: 'cannot-go-back' }
-        webview.goBack()
-        return { ok: true }
-      case 'forward':
-        if (!webview.canGoForward()) return { ok: false, error: 'cannot-go-forward' }
-        webview.goForward()
-        return { ok: true }
+      // No back/forward/current: agents navigate by URL (`open`) and read
+      // "where am I / is it settled" from `wait`, which returns instantly when
+      // the page is idle.
       case 'reload':
         webview.reload()
         return { ok: true }
-      case 'current': {
-        const raw = webview.getURL()
-        return {
-          ok: true,
-          result: {
-            url: isStartPageUrl(raw) ? '' : raw,
-            title: webview.getTitle(),
-            canGoBack: webview.canGoBack(),
-            canGoForward: webview.canGoForward(),
-            loading: webview.isLoading(),
-          },
-        }
-      }
       case 'screenshot': {
         const wcId = webview.getWebContentsId()
         // The CLI/agent path returns only the file path, so opt out of the
@@ -251,6 +276,30 @@ export async function handleBrowserMethod(
         const text = typeof args.text === 'string' ? args.text : ''
         const res = (await webview.executeJavaScript(typeJs(ref, text))) as { ok?: true; error?: string }
         if (res?.error) return { ok: false, error: res.error }
+        return { ok: true }
+      }
+      case 'wait': {
+        const timeoutMs = typeof args.timeoutMs === 'number' ? args.timeoutMs : WAIT_DEFAULT_MS
+        return await waitForLoad(webview, timeoutMs)
+      }
+      case 'press': {
+        const key = typeof args.key === 'string' ? PRESS_KEYS[args.key.toLowerCase()] : undefined
+        if (!key) return { ok: false, error: 'unsupported-key' }
+        // Optional ref: focus the element first (Enter into a field, Tab from a
+        // field). Without one the key goes to whatever the guest has focused —
+        // that's how page-level keys (Escape, PageDown) work.
+        const ref = typeof args.ref === 'string' ? args.ref : undefined
+        if (ref) {
+          const res = (await webview.executeJavaScript(focusJs(ref))) as { ok?: true; error?: string }
+          if (res?.error) return { ok: false, error: res.error }
+        }
+        // keyDown + char + keyUp is the full trusted key sequence; the char event
+        // is what fires keypress/beforeinput handlers and native form submit.
+        await webview.sendInputEvent({ type: 'keyDown', keyCode: key })
+        if (key === 'Return' || key === 'Space' || key === 'Tab') {
+          await webview.sendInputEvent({ type: 'char', keyCode: key })
+        }
+        await webview.sendInputEvent({ type: 'keyUp', keyCode: key })
         return { ok: true }
       }
       default:

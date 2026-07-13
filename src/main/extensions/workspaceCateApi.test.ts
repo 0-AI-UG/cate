@@ -57,11 +57,13 @@ beforeEach(() => {
 })
 
 describe('GRANTED_SCOPES contract', () => {
-  it('includes browser and excludes storage + agent', () => {
+  it('grants exactly the scopes the CLI has verbs for', () => {
     expect(GRANTED_SCOPES).toContain('browser')
     expect(GRANTED_SCOPES).not.toContain('storage')
     expect(GRANTED_SCOPES).not.toContain('agent')
-    expect([...GRANTED_SCOPES]).toEqual(['browser', 'workspace.read', 'theme', 'ui', 'editor', 'canvas', 'panel'])
+    // workspace.read/theme are extension-only: a terminal's cwd IS the
+    // workspace root, so the CLI has no verbs (and thus no grants) for them.
+    expect([...GRANTED_SCOPES]).toEqual(['browser', 'ui', 'editor', 'canvas', 'panel'])
   })
 })
 

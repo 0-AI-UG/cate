@@ -9,8 +9,9 @@
 //
 // Dispatch policy for cate.* methods (see docs/extensions.md):
 //   - Handled in main: version, workspace.get, theme.get, ui.notify, storage.*
-//   - Forwarded to the owning renderer (they mutate renderer state):
-//     editor.openFile, canvas.createPanel, panel.setTitle
+//   - Forwarded to the owning renderer (they touch renderer state):
+//     editor.openFile, canvas.createPanel, panel.setTitle, panel.list,
+//     panel.focus
 //   - cate.browser.*: forwarded to the OWNER window of the target browser panel
 //     (args.panelId), or the active main window when unaddressed.
 //   - Anything else: { error: 'unsupported', method }
@@ -62,8 +63,13 @@ import { resolveActiveTheme } from '../themeBootCache'
 import { showOsNotification } from '../ipc/notifications'
 
 /** Bumped when the cateHost API surface changes incompatibly. Guests use
- *  `cate.version` for feature detection. */
-const CATE_API_VERSION = 2
+ *  `cate.version` for feature detection. v3 removals: browser.list and
+ *  editor.active (cate.panel.list is the single enumeration surface — browser
+ *  panels carry `url`, the focused entry answers "what is the user looking
+ *  at"); browser.back/forward/current (navigate by URL; `wait` reads the
+ *  settled url/title instantly when idle); agent.run (compose open -> send ->
+ *  dispose). */
+const CATE_API_VERSION = 3
 
 const FORWARD_TIMEOUT_MS = 10_000
 
@@ -204,6 +210,8 @@ const FORWARDED_METHODS = new Set([
   'editor.openFile',
   'canvas.createPanel',
   'panel.setTitle',
+  'panel.list',
+  'panel.focus',
 ])
 
 function unsupported(method: string): InvokeResult {
@@ -231,6 +239,11 @@ export function requiredScopeFor(method: string): string | null | undefined {
       return 'ui'
     case 'cate.editor.openFile':
       return 'editor.write'
+    // Unlike the self-identity panel.* methods below, these read or steer OTHER
+    // panels — they need an explicit `panel` grant.
+    case 'cate.panel.list':
+    case 'cate.panel.focus':
+      return 'panel'
     default:
       // A panel controlling its own identity (id / title / badge) needs no scope.
       if (method.startsWith('cate.panel.')) return null
@@ -448,26 +461,8 @@ export async function dispatchCateInvoke(
     // --- Agent: drive a pi session through the bundled pi --------------------
     // pi owns all conversation state on its session jsonl; Cate only holds the
     // live client. `open` returns a handle (the jsonl path) the extension reuses
-    // for `send` and can persist to `resume` later. `run` is one-shot sugar.
-    case 'cate.agent.run': {
-      const a = (args ?? {}) as { prompt?: string }
-      const promptText = typeof a.prompt === 'string' ? a.prompt.trim() : ''
-      if (!promptText) return { error: 'bad-args', method }
-      const info = getWorkspaceInfo(workspaceId)
-      if (!info) return { error: 'no-workspace', method }
-      const win = requireHostWindow()
-      if (!win) return { error: 'no-host-window', method }
-      if (!(await ensureConsent(extensionId, 'agent'))) return { error: 'consent-denied', method }
-      try {
-        // A turn can take minutes; no short timeout applies here.
-        return await agentManager.runForExtension(promptText, {
-          workspaceId, locator: info.rootPath, extensionId, sender: win.webContents,
-        })
-      } catch (err) {
-        return agentError(err, method)
-      }
-    }
-
+    // for `send` and can persist to `resume` later. There is no one-shot `run`
+    // sugar — compose open -> send -> dispose.
     case 'cate.agent.open': {
       const a = (args ?? {}) as { resume?: unknown }
       const rawResume = typeof a.resume === 'string' && a.resume ? a.resume : undefined

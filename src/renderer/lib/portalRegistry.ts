@@ -22,13 +22,12 @@ export interface PortalWebview {
   getURL(): string
   getTitle(): string
   loadURL(url: string): void
-  goBack(): void
-  goForward(): void
   reload(): void
-  canGoBack(): boolean
-  canGoForward(): boolean
   isLoading(): boolean
   executeJavaScript(code: string): Promise<unknown>
+  /** Real (isTrusted) input delivered to the guest webContents — unlike the
+   *  synthetic DOM events click/type dispatch. Used by `browser press`. */
+  sendInputEvent(event: { type: 'keyDown' | 'char' | 'keyUp'; keyCode: string }): Promise<void> | void
 }
 
 interface Entry {
