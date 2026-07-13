@@ -48,7 +48,9 @@ import type {
 import { sendCateAgentMessage } from './cateAgentSend'
 
 // How many observer feed lines to keep visible (a transient FYI, not a transcript).
-const MAX_VISIBLE_FEED = 6
+// Exported so the card's height-measuring signature slices the same window this
+// body renders — a single source keeps the grow/shrink animation in step.
+export const MAX_VISIBLE_FEED = 6
 
 // The small label that titles each tool rail.
 const LBL = 'text-[10px] font-medium tracking-[0.03em] text-muted/80'

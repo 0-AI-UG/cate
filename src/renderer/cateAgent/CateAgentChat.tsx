@@ -18,7 +18,7 @@
 import React from 'react'
 import { useChatsStore } from '../stores/chatsStore'
 import { useCateAgentWs } from './cateAgentStore'
-import { CateAgentThread } from './CateAgentThread'
+import { CateAgentThread, MAX_VISIBLE_FEED } from './CateAgentThread'
 
 export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> = ({ workspaceId, rootPath }) => {
   const wsId = workspaceId
@@ -36,7 +36,7 @@ export const CateAgentChat: React.FC<{ workspaceId: string; rootPath: string }> 
   // re-measures the card height for the grow/shrink animation.
   const feed = cateAgent.feed
   const lastUserIdx = feed.map((f) => f.kind).lastIndexOf('user')
-  const visibleFeed = (lastUserIdx >= 0 ? feed.slice(lastUserIdx) : feed).slice(-6)
+  const visibleFeed = (lastUserIdx >= 0 ? feed.slice(lastUserIdx) : feed).slice(-MAX_VISIBLE_FEED)
 
   // --- content-height measuring + grow/shrink animation (unchanged) ---
   const contentRef = React.useRef<HTMLDivElement | null>(null)
