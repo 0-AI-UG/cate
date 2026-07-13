@@ -26,8 +26,15 @@ import {
   TERMINAL_SCROLLBACK_SAVE,
   TERMINAL_SET_VISIBILITY,
   TERMINAL_CLIPBOARD_WRITE,
+  WEBGL_REQUEST_GRANT,
+  WEBGL_RELEASE_GRANT,
   PANEL_TRANSFER_ACK,
 } from '../../shared/ipc-channels'
+import {
+  requestWebglGrant,
+  releaseWebglGrant,
+  reclaimWindowWebglGrants,
+} from '../webglBudget'
 import { getOrCreateLogger, removeLogger, flushAll as flushAllLoggers, disposeAll as disposeAllLoggers } from './terminalLogger'
 import log from '../logger'
 import { sendToWindow, windowFromEvent, onWindowClosed } from '../windowRegistry'
@@ -337,8 +344,24 @@ export function registerHandlers(): void {
   // running PTY's ownership follows the panel instead of orphaning on a dead window.
   onWindowClosed(handleWindowClosedTerminalTransfers)
 
+  // Reclaim a closed/crashed window's WebGL context grants — its renderer can no
+  // longer release them, and a leaked grant would permanently shrink the budget.
+  onWindowClosed(reclaimWindowWebglGrants)
+
   ipcMain.handle(PANEL_TRANSFER_ACK, async (_event, ptyId?: string) => {
     if (ptyId) acknowledgeTerminalTransfer(ptyId)
+  })
+
+  // Process-wide WebGL context budget (keyed by the sender window + panel).
+  ipcMain.handle(WEBGL_REQUEST_GRANT, (event, panelId: string): boolean => {
+    const win = windowFromEvent(event)
+    if (!win || typeof panelId !== 'string' || !panelId) return false
+    return requestWebglGrant(win.id, panelId)
+  })
+
+  ipcMain.handle(WEBGL_RELEASE_GRANT, (event, panelId: string): void => {
+    const win = windowFromEvent(event)
+    if (win && typeof panelId === 'string' && panelId) releaseWebglGrant(win.id, panelId)
   })
 
   ipcMain.handle(

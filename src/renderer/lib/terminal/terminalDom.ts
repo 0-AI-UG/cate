@@ -17,11 +17,12 @@ import { finalizeReconnect } from './terminalLifecycle'
  *  rest of the session. */
 const webglDisabledPanels = new Set<string>()
 
-/** Hard cap on simultaneous WebGL-rendered terminals. Chromium allows ~16 live
- *  WebGL contexts process-wide; past that it silently drops/never-paints contexts
- *  (blank white terminals). Many terminals (an agent driving several, all visible
- *  on a zoomed-out canvas) blow past it, so we only GPU-render up to this many and
- *  fall the rest back to xterm's DOM renderer (slower glyphs, but always paints). */
+/** Per-window fairness ceiling on simultaneous WebGL-rendered terminals. The
+ *  process-wide limit (Chromium allows ~16 live WebGL contexts per GPU process,
+ *  shared across every window) is now enforced by main's context budget — see
+ *  src/main/webglBudget. This local cap just stops a single window from claiming
+ *  the whole shared budget and starving the others; terminals past it fall back
+ *  to xterm's DOM renderer (slower glyphs, but always paints). */
 const MAX_WEBGL_TERMINALS = 6
 
 /** Count terminals currently holding a live WebGL addon/context. */
@@ -31,9 +32,34 @@ function liveWebglCount(): number {
   return n
 }
 
+/** Panels currently holding a process-wide WebGL grant (brokered by main — see
+ *  src/main/webglBudget). Tracked renderer-side so we release exactly once and a
+ *  DOM reparent can recreate the addon without re-requesting the slot. */
+const grantedWebglPanels = new Set<string>()
+
+/** Panels with a grant request in flight — counted toward the per-window ceiling
+ *  so several simultaneous attaches don't all overshoot before any resolves. */
+const pendingWebglGrants = new Set<string>()
+
 /** Forget a panel's WebGL-disabled flag when its terminal is disposed. */
 export function clearWebglDisabled(panelId: string): void {
   webglDisabledPanels.delete(panelId)
+}
+
+/** Release this panel's process-wide WebGL grant (if held) and drop any in-flight
+ *  request. Called on context loss and on terminal dispose so the slot returns to
+ *  the shared budget instead of leaking. */
+export function releaseWebglGrant(panelId: string): void {
+  pendingWebglGrants.delete(panelId)
+  if (!grantedWebglPanels.delete(panelId)) return
+  try { void window.electronAPI?.webglReleaseGrant?.(panelId) } catch { /* ignore */ }
+}
+
+/** True when this window already renders (or is about to render) its local share
+ *  of WebGL terminals. The process-wide cap is enforced by main; this is only a
+ *  per-window fairness ceiling so one window can't grab the whole budget. */
+function webglCeilingReached(): boolean {
+  return liveWebglCount() + pendingWebglGrants.size >= MAX_WEBGL_TERMINALS
 }
 
 /**
@@ -61,7 +87,7 @@ export function clearWebglDisabled(panelId: string): void {
  * refreshing fixes the blank/garbled terminal once the window is shown. No-op
  * (besides a cheap refresh) on the canvas renderer fallback.
  */
-function forceWebglRepaint(): void {
+export function forceWebglRepaint(): void {
   for (const entry of registry.values()) {
     try {
       entry.webglAddon?.clearTextureAtlas()
@@ -70,6 +96,80 @@ function forceWebglRepaint(): void {
       /* renderer mid-dispose — ignore */
     }
   }
+}
+
+/**
+ * Create the WebGL renderer for a granted panel and swap it in for xterm's DOM
+ * renderer. No-op if the entry is gone or already on WebGL. On context loss the
+ * panel falls back to the DOM renderer for the rest of the session and returns
+ * its grant so another terminal can claim the slot.
+ */
+function createWebglAddon(panelId: string): void {
+  const entry = registry.get(panelId)
+  if (!entry || entry.webglAddon) return
+  try {
+    const newWebgl = new WebglAddon()
+    newWebgl.onContextLoss(() => {
+      try { newWebgl.dispose() } catch { /* ignore */ }
+      const e = registry.get(panelId)
+      if (e) e.webglAddon = null
+      // Don't fight the context limit: re-acquiring just loses it again. Stay on
+      // the DOM renderer (which always paints), hand the slot back, and repaint
+      // so the dead WebGL canvas doesn't leave the terminal blank/white.
+      webglDisabledPanels.add(panelId)
+      releaseWebglGrant(panelId)
+      try { e?.terminal.refresh(0, e.terminal.rows - 1) } catch { /* ignore */ }
+    })
+    entry.terminal.loadAddon(newWebgl)
+    entry.webglAddon = newWebgl
+    // The DOM renderer may have laid out the shared glyph atlas differently;
+    // resync every terminal so this fresh WebGL renderer doesn't start desynced.
+    forceWebglRepaint()
+  } catch {
+    // Context creation failed outright — DOM fallback; don't retry, release slot.
+    webglDisabledPanels.add(panelId)
+    releaseWebglGrant(panelId)
+  }
+}
+
+/**
+ * Try to upgrade a panel from xterm's DOM renderer to the WebGL renderer.
+ *
+ * The terminal already paints on the DOM renderer, so WebGL is an optional GPU
+ * upgrade gated on a process-wide context grant from main — Chromium caps live
+ * WebGL contexts per GPU process across ALL windows, and a per-window cap can't
+ * see the others (that overflow is what leaves terminals blank). A denied grant,
+ * this window's local ceiling, or a prior context loss simply keeps the panel on
+ * the DOM renderer. Async because the grant is an IPC round-trip, so it re-checks
+ * liveness after awaiting.
+ */
+async function maybeUpgradeToWebgl(panelId: string): Promise<void> {
+  if (webglDisabledPanels.has(panelId)) return
+  // Reparent of a panel that already holds a grant: recreate the addon without
+  // asking main again (its grant is idempotent and still held on our behalf).
+  if (grantedWebglPanels.has(panelId)) {
+    createWebglAddon(panelId)
+    return
+  }
+  if (webglCeilingReached()) return
+
+  pendingWebglGrants.add(panelId)
+  let granted = false
+  try {
+    granted = (await window.electronAPI?.webglRequestGrant?.(panelId)) === true
+  } catch {
+    granted = false
+  }
+  pendingWebglGrants.delete(panelId)
+  if (!granted) return
+
+  // The panel may have been disposed or disabled while the grant was in flight.
+  if (!has(panelId) || webglDisabledPanels.has(panelId)) {
+    try { void window.electronAPI?.webglReleaseGrant?.(panelId) } catch { /* ignore */ }
+    return
+  }
+  grantedWebglPanels.add(panelId)
+  createWebglAddon(panelId)
 }
 
 /**
@@ -229,33 +329,19 @@ export function attach(panelId: string, container: HTMLDivElement): void {
   void container.offsetHeight
 
   // Reload the WebGL addon — its internal canvas buffers are tied to the old
-  // container dimensions and cannot survive a DOM reparent reliably.
+  // container dimensions and cannot survive a DOM reparent reliably. The panel's
+  // grant is a reservation that outlives the addon, so the upgrade below reuses
+  // it (requestWebglGrant is idempotent) rather than churning the budget.
   if (entry.webglAddon) {
     try { entry.webglAddon.dispose() } catch { /* ignore */ }
     entry.webglAddon = null
   }
-  // Skip WebGL when this terminal already lost a context, or when we're already
-  // at the live-context cap — those terminals use the DOM renderer (which always
-  // paints) instead of creating a context the GPU would drop and leave blank.
-  if (!webglDisabledPanels.has(panelId) && liveWebglCount() < MAX_WEBGL_TERMINALS) {
-    try {
-      const newWebgl = new WebglAddon()
-      newWebgl.onContextLoss(() => {
-        try { newWebgl.dispose() } catch { /* ignore */ }
-        const e = registry.get(panelId)
-        if (e) e.webglAddon = null
-        // Don't fight the context limit: fall back to the DOM renderer and force a
-        // repaint, otherwise the dead WebGL canvas leaves the terminal blank/white.
-        webglDisabledPanels.add(panelId)
-        try { terminal.refresh(0, terminal.rows - 1) } catch { /* ignore */ }
-      })
-      terminal.loadAddon(newWebgl)
-      entry.webglAddon = newWebgl
-    } catch {
-      // Context creation failed outright — DOM renderer fallback; don't retry.
-      webglDisabledPanels.add(panelId)
-    }
-  }
+  // Upgrade to the WebGL renderer asynchronously. The terminal already paints on
+  // xterm's DOM renderer (which always works); WebGL requires a process-wide
+  // context grant from main, so we never create a context we weren't allotted —
+  // that's what used to leave over-limit terminals blank. Denied grants stay on
+  // the DOM renderer. Fire-and-forget: attach() must stay synchronous.
+  void maybeUpgradeToWebgl(panelId)
 
   // Fit after the next frame — the container may still be mid-layout during
   // the sync DOM append (e.g. WebGL canvas initialization).  Retry up to 5

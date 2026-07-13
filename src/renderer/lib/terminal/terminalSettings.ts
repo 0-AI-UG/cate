@@ -9,6 +9,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { subscribeTheme } from '../themeManager'
 import type { Theme } from '../../../shared/types'
 import { registry } from './registryState'
+import { forceWebglRepaint } from './terminalDom'
 
 export const DEFAULT_TERMINAL_FONT_FAMILY = 'Menlo, Monaco, "Courier New", monospace'
 export const DEFAULT_TERMINAL_FONT_SIZE = 13
@@ -93,6 +94,13 @@ export function repaintAllTerminals(theme: Theme): void {
   for (const entry of registry.values()) {
     entry.terminal.options.theme = theme.terminal
   }
+  // theme.terminal is baked into the SHARED WebGL glyph atlas (foreground/
+  // background colors are rasterized into each cached glyph). Setting
+  // options.theme per terminal re-lays-out that shared atlas but only redraws
+  // the terminal whose option changed, leaving every sibling's render model
+  // pointing at stale texture coordinates (scrambled glyphs). Resync all in one
+  // coordinated pass — see forceWebglRepaint.
+  forceWebglRepaint()
 }
 
 /** Apply a cursor-blink state to every live terminal. */
@@ -116,6 +124,10 @@ export function applyFontSettingsToAll(fontFamily: string, fontSize: number): vo
       /* terminal mid-dispose — ignore */
     }
   }
+  // Font family/size are part of the shared glyph-atlas key, so changing them
+  // re-rasterizes the atlas and desyncs sibling terminals' render models. Resync
+  // all in one coordinated pass — see repaintAllTerminals / forceWebglRepaint.
+  forceWebglRepaint()
 }
 
 /** Apply a scroll-speed multiplier (xterm `scrollSensitivity`) to every live terminal. */
@@ -130,8 +142,10 @@ export function applyScrollSensitivityToAll(value: number): void {
 }
 
 /** Apply a minimum text-contrast ratio (xterm `minimumContrastRatio`) to every
- *  live terminal. xterm clears its contrast cache and does a full refresh on
- *  this option change, so already-rendered text is recoloured immediately. */
+ *  live terminal. Contrast-adjusted colors are baked into the cached glyphs, so
+ *  this value is part of the shared glyph-atlas key: changing it re-rasterizes
+ *  the atlas per terminal and desyncs siblings' render models exactly like a
+ *  theme/font change. Resync all in one coordinated pass afterward. */
 export function applyContrastRatioToAll(value: number): void {
   for (const entry of registry.values()) {
     try {
@@ -140,6 +154,7 @@ export function applyContrastRatioToAll(value: number): void {
       /* terminal mid-dispose — ignore */
     }
   }
+  forceWebglRepaint()
 }
 
 /** Apply the ⌥ Option-as-Meta setting (xterm `macOptionIsMeta`) to every live terminal. */
@@ -209,4 +224,37 @@ if (typeof window !== 'undefined') {
     windowFocused = false
     applyCursorBlinkToAll(false)
   })
+}
+
+// ---------------------------------------------------------------------------
+// Device-pixel-ratio change — resync the shared glyph atlas across terminals
+//
+// DPR (the resolution the atlas is rasterized at) changes when the window moves
+// to a monitor with a different scale factor. xterm handles this per terminal:
+// its CoreBrowserService watches `matchMedia('screen and (resolution: Xdppx)')`
+// and each terminal re-rasterizes its glyphs at the new DPR — reshaping the
+// SHARED atlas but redrawing only itself, so every sibling is left with stale
+// texture coordinates (scrambled glyphs) until something clears its model too.
+//
+// Mirror xterm's own resolution query so we fire on the same transitions, and
+// schedule the coordinated resync on the next frame so it runs AFTER xterm's
+// synchronous per-terminal handlers (and before the next paint). The query is
+// DPR-specific, so re-register against the new ratio on every change.
+// ---------------------------------------------------------------------------
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+  let dprRepaintRaf: number | null = null
+  const watchDpr = (): void => {
+    const mql = window.matchMedia(`screen and (resolution: ${window.devicePixelRatio}dppx)`)
+    const onChange = (): void => {
+      mql.removeEventListener('change', onChange)
+      if (dprRepaintRaf !== null) cancelAnimationFrame(dprRepaintRaf)
+      dprRepaintRaf = requestAnimationFrame(() => {
+        dprRepaintRaf = null
+        forceWebglRepaint()
+      })
+      watchDpr() // re-arm against the new device pixel ratio
+    }
+    mql.addEventListener('change', onChange)
+  }
+  watchDpr()
 }

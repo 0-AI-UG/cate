@@ -15,6 +15,8 @@ import {
   TERMINAL_SCROLLBACK_SAVE,
   TERMINAL_SET_VISIBILITY,
   TERMINAL_CLIPBOARD_WRITE,
+  WEBGL_REQUEST_GRANT,
+  WEBGL_RELEASE_GRANT,
   FS_READ_FILE,
   FS_READ_BINARY,
   FS_WRITE_FILE,
@@ -346,6 +348,8 @@ const invokeForwarders = {
   terminalScrollbackSave: makeInvoker<'terminalScrollbackSave'>(TERMINAL_SCROLLBACK_SAVE),
   terminalSetVisibility: makeInvoker<'terminalSetVisibility'>(TERMINAL_SET_VISIBILITY),
   terminalClipboardWrite: makeInvoker<'terminalClipboardWrite'>(TERMINAL_CLIPBOARD_WRITE),
+  webglRequestGrant: makeInvoker<'webglRequestGrant'>(WEBGL_REQUEST_GRANT),
+  webglReleaseGrant: makeInvoker<'webglReleaseGrant'>(WEBGL_RELEASE_GRANT),
 
   // Filesystem
   fsReadFile: makeInvoker<'fsReadFile'>(FS_READ_FILE),
