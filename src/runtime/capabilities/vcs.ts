@@ -63,6 +63,47 @@ export interface VcsCapabilityDeps {
   scopeId: string
 }
 
+// Every git op fails with a raw `spawn git ENOENT` on a host without git — the
+// only runtime dependency that is NOT bundled into the tarball (node, rg, pi
+// are). Detect that case and replace it with an actionable message; a probe
+// failure is not cached, so installing git mid-session recovers on the next op.
+const GIT_MISSING_MESSAGE =
+  'git was not found on this host. Install git (and re-open the workspace if needed) to use source control.'
+
+function looksLikeMissingGit(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('spawn git ENOENT') || /'git' is not recognized/i.test(msg)
+}
+
+/** Wrap every VcsHost method: when an op fails in the shape of a missing git
+ *  binary AND a `git --version` probe confirms it, throw the clear message
+ *  instead of the raw spawn error. Anything else rethrows untouched. */
+function guardGitMissing(host: VcsHost, env: () => NodeJS.ProcessEnv): VcsHost {
+  let probe: Promise<boolean> | null = null
+  const gitAvailable = (): Promise<boolean> =>
+    (probe ??= execFileP('git', ['--version'], { env: env() }).then(
+      () => true,
+      () => {
+        probe = null // re-probe next time: installing git recovers without a reconnect
+        return false
+      },
+    ))
+  const guarded = {} as Record<string, unknown>
+  for (const [key, method] of Object.entries(host)) {
+    guarded[key] = async (...args: unknown[]) => {
+      try {
+        return await (method as (...a: unknown[]) => Promise<unknown>)(...args)
+      } catch (err) {
+        if (looksLikeMissingGit(err) && !(await gitAvailable())) {
+          throw new Error(GIT_MISSING_MESSAGE)
+        }
+        throw err
+      }
+    }
+  }
+  return guarded as unknown as VcsHost
+}
+
 export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
   const env = () => deps.env()
   // Validate the cwd against the calling workspace's scope. No fallback to the
@@ -148,7 +189,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
     }
   }
 
-  return {
+  const host: VcsHost = {
     async isRepo(dir, access) {
       return isGitRepo(validateCwd(dir, access))
     },
@@ -443,4 +484,5 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       }
     },
   }
+  return guardGitMissing(host, env)
 }

@@ -24,13 +24,10 @@ function makeWebview(overrides: Partial<Record<string, unknown>> = {}) {
     getURL: vi.fn(() => 'https://example.com/'),
     getTitle: vi.fn(() => 'Example'),
     loadURL: vi.fn(),
-    goBack: vi.fn(),
-    goForward: vi.fn(),
     reload: vi.fn(),
-    canGoBack: vi.fn(() => true),
-    canGoForward: vi.fn(() => true),
     isLoading: vi.fn(() => false),
     executeJavaScript: vi.fn(async () => ({ ok: true })),
+    sendInputEvent: vi.fn(async (_e: { type: string; keyCode: string }) => {}),
     ...overrides,
   }
 }
@@ -193,56 +190,11 @@ describe('open', () => {
 })
 
 describe('navigation + query', () => {
-  it('rejects back when the webview cannot go back', async () => {
-    h.webviews.set('b1', makeWebview({ canGoBack: vi.fn(() => false) }))
-    const out = await handleBrowserMethod(WS, M('back'), {})
-    expect(out).toEqual({ ok: false, error: 'cannot-go-back' })
-  })
-
-  it('rejects forward when the webview cannot go forward', async () => {
-    h.webviews.set('b1', makeWebview({ canGoForward: vi.fn(() => false) }))
-    const out = await handleBrowserMethod(WS, M('forward'), {})
-    expect(out).toEqual({ ok: false, error: 'cannot-go-forward' })
-  })
-
-  it('current returns nav state and maps a start-page URL back to empty', async () => {
-    h.webviews.set('b1', makeWebview({ getURL: vi.fn(() => 'cate://newtab') }))
-    const out = await handleBrowserMethod(WS, M('current'), {})
-    expect(out).toEqual({
-      ok: true,
-      result: { url: '', title: 'Example', canGoBack: true, canGoForward: true, loading: false },
-    })
-  })
-
-  it('does not treat about:blank as a start-page compatibility alias', async () => {
-    h.webviews.set('b1', makeWebview({ getURL: vi.fn(() => 'about:blank') }))
-    const out = await handleBrowserMethod(WS, M('current'), {})
-    expect(out).toMatchObject({ ok: true, result: { url: 'about:blank' } })
-  })
-
-  it('list reports every browser panel with focus + start-page normalization', async () => {
-    h.workspaces[0].panels.b2 = browserPanel('b2', 'New Tab', 'cate://newtab')
-    h.activePanelId = 'b2'
-    const out = await handleBrowserMethod(WS, M('list'), {})
-    expect(out).toEqual({
-      ok: true,
-      result: [
-        { panelId: 'b1', title: 'Docs', url: 'https://docs.example/', focused: false },
-        { panelId: 'b2', title: 'New Tab', url: '', focused: true },
-      ],
-    })
-  })
-
-  it('list returns a BARE array (the declared list(): Promise<CateBrowserTab[]> contract)', async () => {
-    // Regression: the driver used to wrap the array as { browsers: [...] }, which
-    // broke every consumer (preload/CLI) that expects a bare CateBrowserTab[].
-    const out = await handleBrowserMethod(WS, M('list'), {})
-    expect(out.ok).toBe(true)
-    const result = (out as { ok: true; result: unknown }).result
-    expect(Array.isArray(result)).toBe(true)
-    const tabs = result as Array<{ panelId: string; url: string; title: string }>
-    expect(tabs).toHaveLength(1)
-    expect(tabs[0]).toMatchObject({ panelId: 'b1', url: 'https://docs.example/', title: 'Docs' })
+  it('removed verbs (list/back/forward/current) report unsupported', async () => {
+    h.webviews.set('b1', makeWebview())
+    for (const name of ['list', 'back', 'forward', 'current']) {
+      expect(await handleBrowserMethod(WS, M(name), {})).toEqual({ ok: false, error: 'unsupported' })
+    }
   })
 
   it('reports no-browser for a nav call when the workspace has none', async () => {
@@ -309,22 +261,6 @@ describe('snapshot / click / type', () => {
 })
 
 describe('webview failure + error paths', () => {
-  it('back invokes goBack and succeeds when it can go back', async () => {
-    const wv = makeWebview() // canGoBack() → true by default
-    h.webviews.set('b1', wv)
-    const out = await handleBrowserMethod(WS, M('back'), {})
-    expect(out).toEqual({ ok: true })
-    expect(wv.goBack).toHaveBeenCalled()
-  })
-
-  it('forward invokes goForward and succeeds when it can go forward', async () => {
-    const wv = makeWebview() // canGoForward() → true by default
-    h.webviews.set('b1', wv)
-    const out = await handleBrowserMethod(WS, M('forward'), {})
-    expect(out).toEqual({ ok: true })
-    expect(wv.goForward).toHaveBeenCalled()
-  })
-
   it('type requires a ref', async () => {
     h.webviews.set('b1', makeWebview())
     const out = await handleBrowserMethod(WS, M('type'), { text: 'hi' })
@@ -352,18 +288,6 @@ describe('webview failure + error paths', () => {
   it('maps a throwing executeJavaScript to webview-not-ready (click)', async () => {
     h.webviews.set('b1', makeWebview({ executeJavaScript: vi.fn(async () => { throw new Error('guest gone') }) }))
     const out = await handleBrowserMethod(WS, M('click'), { ref: '@e1' })
-    expect(out).toEqual({ ok: false, error: 'webview-not-ready' })
-  })
-
-  it('maps a throwing getURL to webview-not-ready (current)', async () => {
-    h.webviews.set('b1', makeWebview({ getURL: vi.fn(() => { throw new Error('guest gone') }) }))
-    const out = await handleBrowserMethod(WS, M('current'), {})
-    expect(out).toEqual({ ok: false, error: 'webview-not-ready' })
-  })
-
-  it('maps a throwing goBack to webview-not-ready (back)', async () => {
-    h.webviews.set('b1', makeWebview({ goBack: vi.fn(() => { throw new Error('guest gone') }) }))
-    const out = await handleBrowserMethod(WS, M('back'), {})
     expect(out).toEqual({ ok: false, error: 'webview-not-ready' })
   })
 
@@ -525,6 +449,73 @@ describe('injected page JS (jsdom)', () => {
     await handleBrowserMethod(WS, M('snapshot'), {})
     const out = await handleBrowserMethod(WS, M('type'), { ref: '@nope', text: 'x' })
     expect(out).toEqual({ ok: false, error: 'stale-ref' })
+  })
+})
+
+describe('wait', () => {
+  it('resolves immediately when the guest is not loading', async () => {
+    h.webviews.set('b1', makeWebview())
+    const out = await handleBrowserMethod(WS, M('wait'), {})
+    expect(out).toEqual({ ok: true, result: { url: 'https://example.com/', title: 'Example', loading: false } })
+  })
+
+  it('polls until loading settles', async () => {
+    const wv = makeWebview({ isLoading: vi.fn().mockReturnValueOnce(true).mockReturnValue(false) })
+    h.webviews.set('b1', wv)
+    const out = await handleBrowserMethod(WS, M('wait'), {})
+    expect(out).toMatchObject({ ok: true })
+    expect(wv.isLoading.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('reports still-loading past the deadline', async () => {
+    h.webviews.set('b1', makeWebview({ isLoading: vi.fn(() => true) }))
+    const out = await handleBrowserMethod(WS, M('wait'), { timeoutMs: 1 })
+    expect(out).toEqual({ ok: false, error: 'still-loading' })
+  })
+})
+
+describe('press', () => {
+  it('sends the trusted keyDown/char/keyUp sequence for Enter', async () => {
+    const wv = makeWebview()
+    h.webviews.set('b1', wv)
+    const out = await handleBrowserMethod(WS, M('press'), { key: 'Enter' })
+    expect(out).toEqual({ ok: true })
+    expect(wv.sendInputEvent.mock.calls.map((c) => c[0].type)).toEqual([
+      'keyDown', 'char', 'keyUp',
+    ])
+    expect(wv.sendInputEvent.mock.calls[0][0].keyCode).toBe('Return')
+    // No ref -> no focus script ran.
+    expect(wv.executeJavaScript).not.toHaveBeenCalled()
+  })
+
+  it('skips the char event for non-committing keys', async () => {
+    const wv = makeWebview()
+    h.webviews.set('b1', wv)
+    await handleBrowserMethod(WS, M('press'), { key: 'PageDown' })
+    expect(wv.sendInputEvent.mock.calls.map((c) => c[0].type)).toEqual([
+      'keyDown', 'keyUp',
+    ])
+  })
+
+  it('focuses the ref first and propagates a stale ref', async () => {
+    const wv = makeWebview({ executeJavaScript: vi.fn(async () => ({ error: 'stale-ref' })) })
+    h.webviews.set('b1', wv)
+    const out = await handleBrowserMethod(WS, M('press'), { key: 'Enter', ref: '@e9' })
+    expect(out).toEqual({ ok: false, error: 'stale-ref' })
+    expect(wv.sendInputEvent).not.toHaveBeenCalled()
+  })
+
+  it('rejects a key outside the allowlist', async () => {
+    h.webviews.set('b1', makeWebview())
+    const out = await handleBrowserMethod(WS, M('press'), { key: 'F13' })
+    expect(out).toEqual({ ok: false, error: 'unsupported-key' })
+  })
+
+  it('accepts friendly aliases case-insensitively', async () => {
+    const wv = makeWebview()
+    h.webviews.set('b1', wv)
+    await handleBrowserMethod(WS, M('press'), { key: 'arrowdown' })
+    expect(wv.sendInputEvent.mock.calls[0][0].keyCode).toBe('Down')
   })
 })
 

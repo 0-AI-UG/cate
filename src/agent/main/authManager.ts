@@ -15,15 +15,16 @@
 // =============================================================================
 
 import { shell, type WebContents } from 'electron'
-import {
-  findEnvKeys,
-  getEnvApiKey,
-  getModels,
-  getProviders,
-  type KnownProvider,
-  type OAuthCredentials,
-  type OAuthLoginCallbacks,
+import type {
+  KnownProvider,
+  OAuthCredentials,
+  OAuthLoginCallbacks,
 } from '@earendil-works/pi-ai'
+// findEnvKeys/getEnvApiKey are only exported via the compat entry in pi-ai
+// 0.80; the new-style replacement is per-provider auth.resolve(), which needs
+// a Models collection + CredentialStore — not worth it for presence checks.
+import { findEnvKeys, getEnvApiKey } from '@earendil-works/pi-ai/compat'
+import { getBuiltinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all'
 import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from '@earendil-works/pi-ai/oauth'
 import { sharedAuthPath } from './agentDir'
 import { readAgentConfigFile, updateAgentConfigFile } from './agentConfigLock'
@@ -103,7 +104,7 @@ const BUILTIN_API_KEY_PROVIDERS: Array<Pick<AuthProviderDescriptor, 'id' | 'name
  *  upgrade drops disappears instead of offering a provider the runtime can't
  *  use. */
 function apiKeyProviders(): AuthProviderDescriptor[] {
-  const known = new Set<string>(getProviders())
+  const known = new Set<string>(getBuiltinProviders())
   return BUILTIN_API_KEY_PROVIDERS
     .filter((p) => known.has(p.id))
     .map((p) => ({ ...p, kind: 'apiKey' as const }))
@@ -202,9 +203,9 @@ export class AuthManager {
 
     for (const providerId of connected) {
       if (providerId === 'custom-openai') continue
-      // getModels indexes a static catalog and returns [] for unknown ids, so
-      // the cast is safe even for providers pi doesn't recognise.
-      for (const m of getModels(providerId as KnownProvider)) {
+      // getBuiltinModels indexes a static catalog and returns [] for unknown
+      // ids, so the cast is safe even for providers pi doesn't recognise.
+      for (const m of getBuiltinModels(providerId as KnownProvider)) {
         const key = `${m.provider}:${m.id}`
         if (seen.has(key)) continue
         seen.add(key)

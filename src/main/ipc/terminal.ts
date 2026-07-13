@@ -26,8 +26,15 @@ import {
   TERMINAL_SCROLLBACK_SAVE,
   TERMINAL_SET_VISIBILITY,
   TERMINAL_CLIPBOARD_WRITE,
+  WEBGL_REQUEST_GRANT,
+  WEBGL_RELEASE_GRANT,
   PANEL_TRANSFER_ACK,
 } from '../../shared/ipc-channels'
+import {
+  requestWebglGrant,
+  releaseWebglGrant,
+  reclaimWindowWebglGrants,
+} from '../webglBudget'
 import { getOrCreateLogger, removeLogger, flushAll as flushAllLoggers, disposeAll as disposeAllLoggers } from './terminalLogger'
 import log from '../logger'
 import { sendToWindow, windowFromEvent, onWindowClosed } from '../windowRegistry'
@@ -225,12 +232,11 @@ async function spawnTerminal(
   const { runtimeId, path: cwdPath } = parseLocator(options.cwd ?? '')
   const runtime = runtimes.resolve(runtimeId)
 
-  // Resolve the cwd through the runtime: the local one validates against its
-  // allowed roots, the remote one trusts the locator path (its daemon validates).
-  // An empty cwd is defaulted to the host's home dir inside the ProcessHost, so
-  // there's nothing host-specific to decide here. The owning workspace id scopes
-  // validation to that workspace's roots when supplied.
-  const cwd = options.cwd ? runtime.validateCwd(cwdPath, ownerWindowId, options.workspaceId) : ''
+  // No client-side validation: the authoritative allowed-root check runs on
+  // the daemon inside process.create (a bad cwd rejects the create). An empty
+  // cwd is defaulted to the host's home dir inside the ProcessHost, so there's
+  // nothing host-specific to decide here.
+  const cwd = options.cwd ? cwdPath : ''
 
   // First-party CATE_API endpoint: give this terminal CATE_API/CATE_TOKEN in its
   // env so a `cate` CLI run inside it can reach the dispatch core. ensureEndpoint
@@ -338,8 +344,24 @@ export function registerHandlers(): void {
   // running PTY's ownership follows the panel instead of orphaning on a dead window.
   onWindowClosed(handleWindowClosedTerminalTransfers)
 
+  // Reclaim a closed/crashed window's WebGL context grants — its renderer can no
+  // longer release them, and a leaked grant would permanently shrink the budget.
+  onWindowClosed(reclaimWindowWebglGrants)
+
   ipcMain.handle(PANEL_TRANSFER_ACK, async (_event, ptyId?: string) => {
     if (ptyId) acknowledgeTerminalTransfer(ptyId)
+  })
+
+  // Process-wide WebGL context budget (keyed by the sender window + panel).
+  ipcMain.handle(WEBGL_REQUEST_GRANT, (event, panelId: string): boolean => {
+    const win = windowFromEvent(event)
+    if (!win || typeof panelId !== 'string' || !panelId) return false
+    return requestWebglGrant(win.id, panelId)
+  })
+
+  ipcMain.handle(WEBGL_RELEASE_GRANT, (event, panelId: string): void => {
+    const win = windowFromEvent(event)
+    if (win && typeof panelId === 'string' && panelId) releaseWebglGrant(win.id, panelId)
   })
 
   ipcMain.handle(

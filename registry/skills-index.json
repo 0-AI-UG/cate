@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-07T14:48:30.167Z",
+  "generatedAt": "2026-07-13T09:50:59.570Z",
   "skills": [
     {
       "id": "academic-research-skills/academic-paper",
       "name": "academic-paper",
-      "description": "12-agent academic paper writing pipeline. 11 modes (full/plan/outline/revision/revision-coach/abstract/lit-review/format-convert/citation-check/disclosure/rebuttal-audit). 6 paper types, 5 citation formats, bilingual abstracts, LaTeX/DOCX-via-Pandoc/PDF output. Style Calibration + Writing Quality Check + Anti-Patterns with IRON RULE markers. Triggers: write paper, academic paper, guide my paper, parse reviews, audit my rebuttal, check my response draft, AI disclosure, 寫論文, 學術論文, 引導我寫論文, 審查意見, 評估回覆.",
+      "description": "12-agent academic paper writing pipeline. 11 modes (full/plan/outline/revision/revision-coach/abstract/lit-review/format-convert/citation-check/disclosure/rebuttal-audit). 6 paper types, 5 citation formats, bilingual abstracts, LaTeX/DOCX-via-Pandoc/PDF output. Style Calibration + Writing Quality Check + Anti-Patterns with IRON RULE markers. Triggers: write paper, academic paper, guide my paper, parse reviews, audit my rebuttal, check my response draft, AI disclosure, 寫論文, 學術論文, 引導我寫論文, 審查意見, 評估回覆, 논문 작성, 초록 작성, 논문 수정, 논문 계획을 도와줘, 심사 의견 반영, 답변서 점검, AI 사용 고지.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -12,15 +12,15 @@
         "ref": "main",
         "path": "academic-paper"
       },
-      "stars": 36705,
-      "updatedAt": "2026-07-06T13:50:47Z",
+      "stars": 37613,
+      "updatedAt": "2026-07-13T09:48:55Z",
       "provenance": "curated",
       "sourceId": "academic-research-skills"
     },
     {
       "id": "academic-research-skills/academic-paper-reviewer",
       "name": "academic-paper-reviewer",
-      "description": "Multi-perspective academic paper review with dynamic reviewer personas. Simulates 5 independent reviewers (EIC + 3 peer reviewers + Devil's Advocate) with field-specific expertise. Supports full review, re-review (verification), quick assessment, methodology focus, Socratic guided, and calibration modes. Triggers on: review paper, peer review, manuscript review, referee report, review my paper, critique paper, simulate review, editorial review, calibrate reviewer, reviewer calibration, measure reviewer accuracy.",
+      "description": "Multi-perspective academic paper review with dynamic reviewer personas. Simulates 5 independent reviewers (EIC + 3 peer reviewers + Devil's Advocate) with field-specific expertise. Supports full review, re-review (verification), quick assessment, methodology focus, Socratic guided, and calibration modes. Triggers on: review paper, peer review, manuscript review, referee report, review my paper, critique paper, simulate review, editorial review, calibrate reviewer, reviewer calibration, measure reviewer accuracy, 논문 심사, 동료 심사, 모의 심사, 심사자 관점에서 평가, 심사자 보정.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -28,15 +28,15 @@
         "ref": "main",
         "path": "academic-paper-reviewer"
       },
-      "stars": 36705,
-      "updatedAt": "2026-07-06T13:50:47Z",
+      "stars": 37613,
+      "updatedAt": "2026-07-13T09:48:55Z",
       "provenance": "curated",
       "sourceId": "academic-research-skills"
     },
     {
       "id": "academic-research-skills/academic-pipeline",
       "name": "academic-pipeline",
-      "description": "Orchestrator for the full academic research pipeline: research -> write -> integrity check -> review -> revise -> re-review -> re-revise -> final integrity check -> finalize. Coordinates deep-research, academic-paper, and academic-paper-reviewer into a seamless 10-stage workflow with mandatory integrity verification, two-stage peer review, and reproducible quality gates. Triggers on: academic pipeline, research to paper, full paper workflow, paper pipeline, end-to-end paper, research-to-publication, complete paper workflow.",
+      "description": "Orchestrator for the full academic research pipeline: research -> write -> integrity check -> review -> revise -> re-review -> re-revise -> final integrity check -> finalize. Coordinates deep-research, academic-paper, and academic-paper-reviewer into a seamless 10-stage workflow with mandatory integrity verification, two-stage peer review, and reproducible quality gates. Triggers on: academic pipeline, research to paper, full paper workflow, paper pipeline, end-to-end paper, research-to-publication, complete paper workflow, 연구부터 논문까지, 연구 주제 설정부터 논문 완성까지, 논문 전체 워크플로.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -44,15 +44,15 @@
         "ref": "main",
         "path": "academic-pipeline"
       },
-      "stars": 36705,
-      "updatedAt": "2026-07-06T13:50:47Z",
+      "stars": 37613,
+      "updatedAt": "2026-07-13T09:48:55Z",
       "provenance": "curated",
       "sourceId": "academic-research-skills"
     },
     {
       "id": "academic-research-skills/deep-research",
       "name": "deep-research",
-      "description": "Universal deep research agent team. 13-agent pipeline for rigorous academic research on any topic. 8 modes: full research, quick brief, paper review, lit-review, fact-check, three-way literature scan, Socratic guided research dialogue, and systematic review with optional meta-analysis. Covers research question formulation, Socratic mentoring, methodology design, systematic literature search, source verification, cross-source synthesis, risk of bias assessment, meta-analysis, APA 7.0 report compilation, editorial review, devil's advocate challenges, ethics review, and post-research literature monitoring. Triggers on: research, deep research, literature review, systematic review, meta-analysis, PRISMA, evidence synthesis, fact-check, WHY HOW WHAT papers, 3W literature scan, guide my research, help me think through, 研究, 深度研究, 文獻回顧, 文獻探討, 系統性回顧, 後設分析, 事實查核, 三段式文獻掃描, 引導我的研究, 幫我釐清, 幫我想想, 我不確定要研究什麼, 研究方向, 研究主題.",
+      "description": "Universal deep research agent team. 13-agent pipeline for rigorous academic research on any topic. 8 modes: full research, quick brief, paper review, lit-review, fact-check, three-way literature scan, Socratic guided research dialogue, and systematic review with optional meta-analysis. Covers research question formulation, Socratic mentoring, methodology design, systematic literature search, source verification, cross-source synthesis, risk of bias assessment, meta-analysis, APA 7.0 report compilation, editorial review, devil's advocate challenges, ethics review, and post-research literature monitoring. Triggers on: research, deep research, literature review, systematic review, meta-analysis, PRISMA, evidence synthesis, fact-check, WHY HOW WHAT papers, 3W literature scan, guide my research, help me think through, 研究, 深度研究, 文獻回顧, 文獻探討, 系統性回顧, 後設分析, 事實查核, 三段式文獻掃描, 引導我的研究, 幫我釐清, 幫我想想, 我不確定要研究什麼, 研究方向, 研究主題, 심층 연구, 문헌 조사, 체계적 문헌고찰, 메타분석, 사실 확인, 연구 방향을 잡아줘, 연구 주제 정하는 것을 도와줘.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -60,8 +60,8 @@
         "ref": "main",
         "path": "deep-research"
       },
-      "stars": 36705,
-      "updatedAt": "2026-07-06T13:50:47Z",
+      "stars": 37613,
+      "updatedAt": "2026-07-13T09:48:55Z",
       "provenance": "curated",
       "sourceId": "academic-research-skills"
     },
@@ -76,8 +76,8 @@
         "ref": "main",
         "path": "skills/api-and-interface-design"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -92,8 +92,8 @@
         "ref": "main",
         "path": "skills/browser-testing-with-devtools"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -108,8 +108,8 @@
         "ref": "main",
         "path": "skills/ci-cd-and-automation"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -124,8 +124,8 @@
         "ref": "main",
         "path": "skills/code-review-and-quality"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -140,8 +140,8 @@
         "ref": "main",
         "path": "skills/code-simplification"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -156,8 +156,8 @@
         "ref": "main",
         "path": "skills/context-engineering"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -172,8 +172,8 @@
         "ref": "main",
         "path": "skills/debugging-and-error-recovery"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -188,8 +188,8 @@
         "ref": "main",
         "path": "skills/deprecation-and-migration"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -204,8 +204,8 @@
         "ref": "main",
         "path": "skills/documentation-and-adrs"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -220,15 +220,15 @@
         "ref": "main",
         "path": "skills/doubt-driven-development"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
     {
       "id": "addyosmani-agent-skills/frontend-ui-engineering",
       "name": "frontend-ui-engineering",
-      "description": "Builds production-quality UIs. Use when building or modifying user-facing interfaces. Use when creating components, implementing layouts, managing state, or when the output needs to look and feel production-quality rather than AI-generated.",
+      "description": "Builds production-quality, accessible, responsive user-facing UIs. Use when building or modifying interfaces and pages, creating components, implementing layouts, meeting WCAG accessibility requirements, managing state, or when the output needs to look and feel production-quality rather than AI-generated.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -236,8 +236,8 @@
         "ref": "main",
         "path": "skills/frontend-ui-engineering"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -252,8 +252,8 @@
         "ref": "main",
         "path": "skills/git-workflow-and-versioning"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -268,8 +268,8 @@
         "ref": "main",
         "path": "skills/idea-refine"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -284,8 +284,8 @@
         "ref": "main",
         "path": "skills/incremental-implementation"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -300,8 +300,8 @@
         "ref": "main",
         "path": "skills/interview-me"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -316,15 +316,15 @@
         "ref": "main",
         "path": "skills/observability-and-instrumentation"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
     {
       "id": "addyosmani-agent-skills/performance-optimization",
       "name": "performance-optimization",
-      "description": "Optimizes application performance. Use when performance requirements exist, when you suspect performance regressions, or when Core Web Vitals or load times need improvement. Use when profiling reveals bottlenecks that need fixing.",
+      "description": "Optimizes application performance across frontend, backend, queries, and databases. Use when performance requirements exist, when you suspect performance regressions, when Core Web Vitals or load times need improvement, when N+1 query patterns need fixing, or when profiling reveals bottlenecks.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -332,8 +332,8 @@
         "ref": "main",
         "path": "skills/performance-optimization"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -348,8 +348,8 @@
         "ref": "main",
         "path": "skills/planning-and-task-breakdown"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -364,8 +364,8 @@
         "ref": "main",
         "path": "skills/security-and-hardening"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -380,8 +380,8 @@
         "ref": "main",
         "path": "skills/shipping-and-launch"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -396,8 +396,8 @@
         "ref": "main",
         "path": "skills/source-driven-development"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -412,8 +412,8 @@
         "ref": "main",
         "path": "skills/spec-driven-development"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -428,8 +428,8 @@
         "ref": "main",
         "path": "skills/test-driven-development"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -444,8 +444,8 @@
         "ref": "main",
         "path": "skills/using-agent-skills"
       },
-      "stars": 71721,
-      "updatedAt": "2026-07-07T00:59:41Z",
+      "stars": 77725,
+      "updatedAt": "2026-07-12T18:03:54Z",
       "provenance": "curated",
       "sourceId": "addyosmani-agent-skills"
     },
@@ -460,7 +460,7 @@
         "ref": "main",
         "path": "skills/algorithmic-art"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -476,7 +476,7 @@
         "ref": "main",
         "path": "skills/brand-guidelines"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -492,7 +492,7 @@
         "ref": "main",
         "path": "skills/canvas-design"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -508,7 +508,7 @@
         "ref": "main",
         "path": "skills/claude-api"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -524,7 +524,7 @@
         "ref": "main",
         "path": "skills/doc-coauthoring"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -540,7 +540,7 @@
         "ref": "main",
         "path": "skills/docx"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -556,7 +556,7 @@
         "ref": "main",
         "path": "skills/frontend-design"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -572,7 +572,7 @@
         "ref": "main",
         "path": "skills/internal-comms"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -588,7 +588,7 @@
         "ref": "main",
         "path": "skills/mcp-builder"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -604,7 +604,7 @@
         "ref": "main",
         "path": "skills/pdf"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -620,7 +620,7 @@
         "ref": "main",
         "path": "skills/pptx"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -636,7 +636,7 @@
         "ref": "main",
         "path": "skills/skill-creator"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -652,7 +652,7 @@
         "ref": "main",
         "path": "skills/slack-gif-creator"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -668,7 +668,7 @@
         "ref": "main",
         "path": "template"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -684,7 +684,7 @@
         "ref": "main",
         "path": "skills/theme-factory"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -700,7 +700,7 @@
         "ref": "main",
         "path": "skills/web-artifacts-builder"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -716,7 +716,7 @@
         "ref": "main",
         "path": "skills/webapp-testing"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -732,7 +732,7 @@
         "ref": "main",
         "path": "skills/xlsx"
       },
-      "stars": 159088,
+      "stars": 160715,
       "updatedAt": "2026-07-01T18:11:25Z",
       "provenance": "curated",
       "sourceId": "anthropic-skills"
@@ -748,8 +748,8 @@
         "ref": "main",
         "path": ".agents/skills/career-ops"
       },
-      "stars": 58962,
-      "updatedAt": "2026-07-07T14:16:40Z",
+      "stars": 59803,
+      "updatedAt": "2026-07-13T09:34:37Z",
       "provenance": "curated",
       "sourceId": "career-ops"
     },
@@ -809,15 +809,15 @@
         "ref": "main",
         "path": "skills/ab-testing"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
     {
       "id": "coreyhaines-marketing-skills/ad-creative",
       "name": "ad-creative",
-      "description": "When the user wants to generate, iterate, or scale ad creative — headlines, descriptions, primary text, or full ad variations — for any paid advertising platform. Also use when the user mentions 'ad copy variations,' 'ad creative,' 'generate headlines,' 'RSA headlines,' 'bulk ad copy,' 'ad iterations,' 'creative testing,' 'ad performance optimization,' 'write me some ads,' 'Facebook ad copy,' 'Google ad headlines,' 'LinkedIn ad text,' 'static ads,' 'static ad concepts,' 'ad templates,' or 'I need more ad variations.' Use this whenever someone needs to produce ad copy at scale or iterate on existing ads. For campaign strategy and targeting, see ads. For landing page copy, see copywriting.",
+      "description": "When the user wants to generate, iterate, or scale ad creative — headlines, descriptions, primary text, or full ad variations — for any paid advertising platform. Also use when the user mentions 'ad copy variations,' 'ad creative,' 'generate headlines,' 'RSA headlines,' 'bulk ad copy,' 'ad iterations,' 'creative testing,' 'ad performance optimization,' 'write me some ads,' 'Facebook ad copy,' 'Google ad headlines,' 'LinkedIn ad text,' 'static ads,' 'static ad concepts,' 'ad templates,' 'iMessage ad,' 'chat reveal ad,' 'text message ad,' 'fake DM ad,' 'ChatGPT ad,' 'Apple Notes ad,' 'creative strategy,' 'creative roadmap,' 'creative retro,' 'hook writing,' 'creative review page,' 'present ad creative for approval,' 'motion video ad,' 'faceless video ad,' 'animated explainer ad,' 'motion collage ad,' or 'I need more ad variations.' Use this whenever someone needs to produce ad copy at scale or iterate on existing ads. For campaign strategy and targeting, see ads. For landing page copy, see copywriting.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -825,8 +825,8 @@
         "ref": "main",
         "path": "skills/ad-creative"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -841,8 +841,8 @@
         "ref": "main",
         "path": "skills/ads"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -857,8 +857,8 @@
         "ref": "main",
         "path": "skills/ai-seo"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -873,8 +873,8 @@
         "ref": "main",
         "path": "skills/analytics"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -889,8 +889,8 @@
         "ref": "main",
         "path": "skills/aso"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -905,8 +905,8 @@
         "ref": "main",
         "path": "skills/churn-prevention"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -921,8 +921,8 @@
         "ref": "main",
         "path": "skills/co-marketing"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -937,8 +937,8 @@
         "ref": "main",
         "path": "skills/cold-email"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -953,8 +953,8 @@
         "ref": "main",
         "path": "skills/community-marketing"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -969,8 +969,8 @@
         "ref": "main",
         "path": "skills/competitor-profiling"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -985,8 +985,8 @@
         "ref": "main",
         "path": "skills/competitors"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1001,8 +1001,8 @@
         "ref": "main",
         "path": "skills/content-strategy"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1017,8 +1017,8 @@
         "ref": "main",
         "path": "skills/copy-editing"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1033,8 +1033,8 @@
         "ref": "main",
         "path": "skills/copywriting"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1049,8 +1049,8 @@
         "ref": "main",
         "path": "skills/cro"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1065,8 +1065,8 @@
         "ref": "main",
         "path": "skills/customer-research"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1081,8 +1081,8 @@
         "ref": "main",
         "path": "skills/directory-submissions"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1097,8 +1097,8 @@
         "ref": "main",
         "path": "skills/emails"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1113,8 +1113,8 @@
         "ref": "main",
         "path": "skills/free-tools"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1129,8 +1129,8 @@
         "ref": "main",
         "path": "skills/image"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1145,8 +1145,8 @@
         "ref": "main",
         "path": "skills/launch"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1161,8 +1161,8 @@
         "ref": "main",
         "path": "skills/lead-magnets"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1177,8 +1177,8 @@
         "ref": "main",
         "path": "skills/marketing-council"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1193,8 +1193,8 @@
         "ref": "main",
         "path": "skills/marketing-ideas"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1209,8 +1209,8 @@
         "ref": "main",
         "path": "skills/marketing-loops"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1225,8 +1225,8 @@
         "ref": "main",
         "path": "skills/marketing-plan"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1241,8 +1241,8 @@
         "ref": "main",
         "path": "skills/marketing-psychology"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1257,8 +1257,8 @@
         "ref": "main",
         "path": "skills/offers"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1273,8 +1273,8 @@
         "ref": "main",
         "path": "skills/onboarding"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1289,8 +1289,8 @@
         "ref": "main",
         "path": "skills/paywalls"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1305,8 +1305,8 @@
         "ref": "main",
         "path": "skills/popups"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1321,8 +1321,8 @@
         "ref": "main",
         "path": "skills/pricing"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1337,8 +1337,8 @@
         "ref": "main",
         "path": "skills/product-marketing"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1353,8 +1353,8 @@
         "ref": "main",
         "path": "skills/programmatic-seo"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1369,8 +1369,8 @@
         "ref": "main",
         "path": "skills/prospecting"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1385,8 +1385,8 @@
         "ref": "main",
         "path": "skills/public-relations"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1401,8 +1401,8 @@
         "ref": "main",
         "path": "skills/referrals"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1417,8 +1417,8 @@
         "ref": "main",
         "path": "skills/revops"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1433,8 +1433,8 @@
         "ref": "main",
         "path": "skills/sales-enablement"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1449,8 +1449,8 @@
         "ref": "main",
         "path": "skills/schema"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1465,8 +1465,8 @@
         "ref": "main",
         "path": "skills/seo-audit"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1481,8 +1481,8 @@
         "ref": "main",
         "path": "skills/signup"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1497,8 +1497,8 @@
         "ref": "main",
         "path": "skills/site-architecture"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1513,15 +1513,15 @@
         "ref": "main",
         "path": "skills/sms"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
     {
       "id": "coreyhaines-marketing-skills/social",
       "name": "social",
-      "description": "When the user wants help creating, scheduling, or optimizing social media content for LinkedIn, Twitter/X, Instagram, TikTok, Facebook, or other platforms, or wants to do social listening and engagement triage. Also use when the user mentions 'LinkedIn post,' 'Twitter thread,' 'social media,' 'content calendar,' 'social scheduling,' 'engagement,' 'viral content,' 'what should I post,' 'repurpose this content,' 'tweet ideas,' 'LinkedIn carousel,' 'social media strategy,' 'grow my following,' 'TikTok video,' 'Reels,' 'Shorts,' 'video script,' 'video hook,' 'short-form video,' 'create a reel,' 'social listening,' 'brand mentions,' 'competitor monitoring,' 'top posts to comment on,' or 'find people asking for.' Use this for social media content creation, repurposing, scheduling, short-form video scripting, and social listening. For broader content strategy, see content-strategy. For paid ads, see ad-creative. For earned media, see public-relations.",
+      "description": "When the user wants help creating, scheduling, or optimizing social media content for LinkedIn, Twitter/X, Instagram, TikTok, Facebook, or other platforms, or wants to do social listening and engagement triage. Also use when the user mentions 'LinkedIn post,' 'Twitter thread,' 'social media,' 'content calendar,' 'social scheduling,' 'engagement,' 'viral content,' 'what should I post,' 'repurpose this content,' 'tweet ideas,' 'LinkedIn carousel,' 'social media strategy,' 'grow my following,' 'TikTok video,' 'Reels,' 'Shorts,' 'video script,' 'video hook,' 'short-form video,' 'create a reel,' 'social listening,' 'brand mentions,' 'competitor monitoring,' 'top posts to comment on,' 'find people asking for,' 'carousel,' 'slide-by-slide,' or 'document post.' Use this for social media content creation, repurposing, scheduling, short-form video scripting, and social listening. For broader content strategy, see content-strategy. For paid ads, see ad-creative. For earned media, see public-relations.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -1529,8 +1529,8 @@
         "ref": "main",
         "path": "skills/social"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1545,8 +1545,8 @@
         "ref": "main",
         "path": "skills/video"
       },
-      "stars": 37019,
-      "updatedAt": "2026-07-06T22:49:02Z",
+      "stars": 38028,
+      "updatedAt": "2026-07-13T06:21:28Z",
       "provenance": "curated",
       "sourceId": "coreyhaines-marketing-skills"
     },
@@ -1561,8 +1561,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-alert-configuration"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1577,8 +1577,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-deploy"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1593,8 +1593,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-endpoint-management"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1609,8 +1609,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-eval-flywheel"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1625,8 +1625,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-inference"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1641,8 +1641,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-migrate-from-ai-studio"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1657,8 +1657,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-model-registry"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1673,8 +1673,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-prompt-management"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1689,8 +1689,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-rag-engine-management"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1705,8 +1705,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-skill-registry"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1721,8 +1721,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-tuning"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1737,8 +1737,8 @@
         "ref": "main",
         "path": "skills/cloud/agent-platform-tuning-management"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1753,8 +1753,8 @@
         "ref": "main",
         "path": "skills/cloud/alloydb-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1769,8 +1769,8 @@
         "ref": "main",
         "path": "skills/cloud/bigquery-ai-ml"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1785,8 +1785,8 @@
         "ref": "main",
         "path": "skills/cloud/bigquery-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1801,8 +1801,8 @@
         "ref": "main",
         "path": "skills/cloud/bigquery-bigframes"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1817,8 +1817,8 @@
         "ref": "main",
         "path": "skills/cloud/bigtable-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1833,8 +1833,8 @@
         "ref": "main",
         "path": "skills/cloud/cloud-run-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1849,8 +1849,8 @@
         "ref": "main",
         "path": "skills/cloud/cloud-sql-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1863,10 +1863,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/data-manager-api/data-manager-api-audience-ingestion"
+        "path": "skills/ads/data-manager-api-audience-ingestion"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1879,10 +1879,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/data-manager-api/data-manager-api-event-ingestion"
+        "path": "skills/ads/data-manager-api-event-ingestion"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1895,10 +1895,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/data-manager-api/data-manager-api-setup"
+        "path": "skills/ads/data-manager-api-setup"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1913,8 +1913,8 @@
         "ref": "main",
         "path": "skills/cloud/datalineage-bigquery-asset-impact-analysis"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1929,8 +1929,8 @@
         "ref": "main",
         "path": "skills/cloud/detection-engineering-coverage-evaluation"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1945,8 +1945,8 @@
         "ref": "main",
         "path": "skills/cloud/firebase-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1961,8 +1961,8 @@
         "ref": "main",
         "path": "skills/cloud/gcloud"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1977,8 +1977,8 @@
         "ref": "main",
         "path": "skills/cloud/gemini-agents-api"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -1993,8 +1993,8 @@
         "ref": "main",
         "path": "skills/cloud/gemini-api"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2009,8 +2009,8 @@
         "ref": "main",
         "path": "skills/cloud/gemini-interactions-api"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2025,8 +2025,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-app-onboarding"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2041,8 +2041,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-backup-dr"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2057,8 +2057,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2073,8 +2073,24 @@
         "ref": "main",
         "path": "skills/cloud/gke-batch-hpc"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
+      "provenance": "curated",
+      "sourceId": "google-skills"
+    },
+    {
+      "id": "google-skills/gke-cluster-autoscaler",
+      "name": "gke-cluster-autoscaler",
+      "description": "Trigger on mention of GKE cluster autoscaler, node autoscaling, node pool auto-creation / node auto-provisioning. Provides guidance on enabling and optimizing cluster autoscaler, best practices, and troubleshooting issues such as nodes not scaling up or down, zonal stockouts, or capacity buffers. Do not use for ComputeClass-specific YAML generation or priority configuration (defer to gke-compute-classes skill).",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "google/skills",
+        "ref": "main",
+        "path": "skills/cloud/gke-cluster-autoscaler"
+      },
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2089,8 +2105,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-cluster-creation"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2105,8 +2121,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-compute-classes"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2121,8 +2137,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-cost"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2137,8 +2153,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-golden-path"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2153,8 +2169,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-inference"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2169,8 +2185,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-multitenancy"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2185,8 +2201,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-networking"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2201,8 +2217,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-observability"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2217,8 +2233,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-reliability"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2233,8 +2249,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-scaling"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2249,8 +2265,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-security"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2265,8 +2281,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-storage"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2281,8 +2297,8 @@
         "ref": "main",
         "path": "skills/cloud/gke-upgrades"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2295,10 +2311,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/google-ads-api/google-ads-api-mcp-setup"
+        "path": "skills/ads/google-ads-api-mcp-setup"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2311,10 +2327,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/google-ads-api/google-ads-api-quickstart"
+        "path": "skills/ads/google-ads-api-quickstart"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2329,8 +2345,8 @@
         "ref": "main",
         "path": "skills/cloud/google-agents-cli-onboarding"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2345,8 +2361,8 @@
         "ref": "main",
         "path": "skills/analytics/google-analytics-admin-api-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2361,8 +2377,24 @@
         "ref": "main",
         "path": "skills/analytics/google-analytics-data-api-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
+      "provenance": "curated",
+      "sourceId": "google-skills"
+    },
+    {
+      "id": "google-skills/google-cloud-global-frontend-configuration",
+      "name": "google-cloud-global-frontend-configuration",
+      "description": "Guides agents through a structured 6-step discovery process to design and deploy Google Cloud global external Application Load Balancers with Cloud CDN, Cloud Armor, and Service Extensions, mapping workload requirements to opinionated best-practice configurations. Use when: - Designing, configuring, or deploying a Google Cloud global external Application Load Balancer, Cloud CDN, Cloud Armor WAF, or Service Extensions. - Discovering existing Google Cloud resources (Cloud Storage buckets, Compute Engine MIGs, GKE, Cloud Run) to use as load balancer backends. - Generating production-grade Terraform HCL or gcloud CLI scripts for global external Application Load Balancer configurations. - Actuating deployments via Infrastructure Manager or bash scripts, including performing IAM pre-checks. - Detecting, analyzing, or reconciling configuration drift on deployed global external Application Load Balancers. Don't use for: - Non-Google Cloud load balancing or security configurations. - Purely regional or internal load balancing setups (unless part of a hybrid/failover global design).",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "google/skills",
+        "ref": "main",
+        "path": "skills/cloud/google-cloud-global-frontend-configuration"
+      },
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2377,8 +2409,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-networking-observability"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2393,8 +2425,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-recipe-auth"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2409,8 +2441,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-recipe-foundation-builder"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2425,8 +2457,40 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-recipe-onboarding"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
+      "provenance": "curated",
+      "sourceId": "google-skills"
+    },
+    {
+      "id": "google-skills/google-cloud-solution-agentic-ai-bidirectional-streaming",
+      "name": "google-cloud-solution-agentic-ai-bidirectional-streaming",
+      "description": "Guides agents to interactively discover customer requirements for live, bidirectional multi-agent AI systems that process continuous streams of multimodal data for real-time technical guidance and safety monitoring. Generates a custom Google Cloud solution that uses opinionated best practices and architecture guidance. Use when users need agentic assistance to design and create a multi-product solution in the cloud for live bidirectional multimodal streaming workloads.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "google/skills",
+        "ref": "main",
+        "path": "skills/cloud/google-cloud-solution-agentic-ai-bidirectional-streaming"
+      },
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
+      "provenance": "curated",
+      "sourceId": "google-skills"
+    },
+    {
+      "id": "google-skills/google-cloud-solution-architecture",
+      "name": "google-cloud-solution-architecture",
+      "description": "Interactively discovers requirements for a specific cloud workload and generates design recommendations and architectural guidance to build a multi-product solution in Google Cloud. Use when users need holistic, end-to-end design recommendations and architectural guidance for complex workloads on Google Cloud for specific use cases. Don't use this skill when other specialized skills exist that directly address the user-specified workload or use case. If the user's request is narrowly focused on a specific Google Cloud product, use the skills that are specific to that product. When users need assistance with workflows for onboarding, authentication, or designing foundational infrastructure, use the recipe skills that are specific to those workflows.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "google/skills",
+        "ref": "main",
+        "path": "skills/cloud/google-cloud-solution-architecture"
+      },
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2441,8 +2505,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-waf-cost-optimization"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2457,8 +2521,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-waf-operational-excellence"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2473,8 +2537,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-waf-performance-optimization"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2489,8 +2553,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-waf-reliability"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2505,8 +2569,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-waf-security"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2521,8 +2585,8 @@
         "ref": "main",
         "path": "skills/cloud/google-cloud-waf-sustainability"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2535,10 +2599,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/google-mobile-ads/google-mobile-ads-android-migrate-to-next-gen"
+        "path": "skills/ads/google-mobile-ads-android-migrate-to-next-gen"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2551,10 +2615,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/google-mobile-ads/google-mobile-ads-banner"
+        "path": "skills/ads/google-mobile-ads-banner"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2567,10 +2631,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/google-mobile-ads/google-mobile-ads-get-started"
+        "path": "skills/ads/google-mobile-ads-get-started"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2583,10 +2647,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/google-mobile-ads/google-mobile-ads-interstitial"
+        "path": "skills/ads/google-mobile-ads-interstitial"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2599,10 +2663,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/google-mobile-ads/google-mobile-ads-rewarded"
+        "path": "skills/ads/google-mobile-ads-rewarded"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2617,8 +2681,8 @@
         "ref": "main",
         "path": "skills/cloud/iam-recommendations-fetcher"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2631,10 +2695,10 @@
       "source": {
         "repo": "google/skills",
         "ref": "main",
-        "path": "skills/ads/interactive-media-ads/ima-sdk-basics"
+        "path": "skills/ads/ima-sdk-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2649,8 +2713,8 @@
         "ref": "main",
         "path": "skills/cloud/workload-manager-basics"
       },
-      "stars": 14430,
-      "updatedAt": "2026-07-06T22:23:28Z",
+      "stars": 14573,
+      "updatedAt": "2026-07-13T06:35:22Z",
       "provenance": "curated",
       "sourceId": "google-skills"
     },
@@ -2665,8 +2729,8 @@
         "ref": "main",
         "path": "skills/hf-cli"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2681,8 +2745,8 @@
         "ref": "main",
         "path": "skills/hf-cloud-aws-context-discovery"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2697,8 +2761,8 @@
         "ref": "main",
         "path": "skills/hf-cloud-python-env-setup"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2713,8 +2777,8 @@
         "ref": "main",
         "path": "skills/hf-cloud-sagemaker-deployment-planner"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2729,8 +2793,8 @@
         "ref": "main",
         "path": "skills/hf-cloud-sagemaker-iam-preflight"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2745,8 +2809,8 @@
         "ref": "main",
         "path": "skills/hf-cloud-sagemaker-production-defaults"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2761,8 +2825,8 @@
         "ref": "main",
         "path": "skills/hf-cloud-serving-image-selection"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2777,8 +2841,8 @@
         "ref": "main",
         "path": "skills/hf-mem"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2793,8 +2857,8 @@
         "ref": "main",
         "path": "skills/huggingface-best"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2809,8 +2873,8 @@
         "ref": "main",
         "path": "skills/huggingface-community-evals"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2825,8 +2889,8 @@
         "ref": "main",
         "path": "skills/huggingface-datasets"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2841,8 +2905,8 @@
         "ref": "main",
         "path": "skills/huggingface-gradio"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2857,8 +2921,8 @@
         "ref": "main",
         "path": "skills/huggingface-llm-trainer"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2873,8 +2937,8 @@
         "ref": "main",
         "path": "skills/huggingface-local-models"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2889,8 +2953,8 @@
         "ref": "main",
         "path": "skills/huggingface-lora-space-builder"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2905,8 +2969,8 @@
         "ref": "main",
         "path": "skills/huggingface-paper-publisher"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2921,8 +2985,8 @@
         "ref": "main",
         "path": "skills/huggingface-papers"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2937,8 +3001,8 @@
         "ref": "main",
         "path": "skills/huggingface-spaces"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2953,8 +3017,8 @@
         "ref": "main",
         "path": "skills/huggingface-tool-builder"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2969,8 +3033,8 @@
         "ref": "main",
         "path": "skills/huggingface-trackio"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -2985,8 +3049,8 @@
         "ref": "main",
         "path": "skills/huggingface-vision-trainer"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -3001,8 +3065,8 @@
         "ref": "main",
         "path": "skills/huggingface-zerogpu"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -3017,8 +3081,8 @@
         "ref": "main",
         "path": "skills/train-sentence-transformers"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -3033,8 +3097,8 @@
         "ref": "main",
         "path": "skills/transformers-js"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -3049,8 +3113,8 @@
         "ref": "main",
         "path": "skills/trl-training"
       },
-      "stars": 10782,
-      "updatedAt": "2026-07-07T14:32:22Z",
+      "stars": 10801,
+      "updatedAt": "2026-07-13T09:34:53Z",
       "provenance": "curated",
       "sourceId": "huggingface-skills"
     },
@@ -3065,7 +3129,7 @@
         "ref": "main",
         "path": ""
       },
-      "stars": 27868,
+      "stars": 28955,
       "updatedAt": "2026-06-29T20:43:06Z",
       "provenance": "curated",
       "sourceId": "humanizer"
@@ -3081,7 +3145,7 @@
         "ref": "main",
         "path": "skills/karpathy-guidelines"
       },
-      "stars": 188926,
+      "stars": 191400,
       "updatedAt": "2026-04-20T10:05:04Z",
       "provenance": "curated",
       "sourceId": "karpathy-skills"
@@ -3094,11 +3158,11 @@
       "format": "skill-md",
       "source": {
         "repo": "mvanhorn/last30days-skill",
-        "ref": "fix/hermes-scan-safe-verdict",
+        "ref": "main",
         "path": "skills/last30days"
       },
-      "stars": 50200,
-      "updatedAt": "2026-07-06T19:36:17Z",
+      "stars": 51828,
+      "updatedAt": "2026-07-13T06:36:07Z",
       "provenance": "curated",
       "sourceId": "last30days"
     },
@@ -3113,8 +3177,8 @@
         "ref": "main",
         "path": "skills/engineering/ask-matt"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3129,8 +3193,8 @@
         "ref": "main",
         "path": "skills/in-progress/claude-handoff"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3145,8 +3209,8 @@
         "ref": "main",
         "path": "skills/engineering/code-review"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3161,8 +3225,8 @@
         "ref": "main",
         "path": "skills/engineering/codebase-design"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3177,8 +3241,8 @@
         "ref": "main",
         "path": "skills/deprecated/design-an-interface"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3193,8 +3257,8 @@
         "ref": "main",
         "path": "skills/engineering/diagnosing-bugs"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3209,8 +3273,8 @@
         "ref": "main",
         "path": "skills/engineering/domain-modeling"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3225,8 +3289,8 @@
         "ref": "main",
         "path": "skills/personal/edit-article"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3241,8 +3305,8 @@
         "ref": "main",
         "path": "skills/misc/git-guardrails-claude-code"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3257,8 +3321,8 @@
         "ref": "main",
         "path": "skills/productivity/grill-me"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3273,8 +3337,8 @@
         "ref": "main",
         "path": "skills/engineering/grill-with-docs"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3289,8 +3353,8 @@
         "ref": "main",
         "path": "skills/productivity/grilling"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3305,15 +3369,15 @@
         "ref": "main",
         "path": "skills/productivity/handoff"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
     {
       "id": "mattpocock-skills/implement",
       "name": "implement",
-      "description": "Implement a piece of work based on a PRD or set of issues.",
+      "description": "Implement a piece of work based on a spec or set of tickets.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -3321,8 +3385,8 @@
         "ref": "main",
         "path": "skills/engineering/implement"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3337,8 +3401,8 @@
         "ref": "main",
         "path": "skills/engineering/improve-codebase-architecture"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3353,8 +3417,8 @@
         "ref": "main",
         "path": "skills/in-progress/loop-me"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3369,8 +3433,8 @@
         "ref": "main",
         "path": "skills/misc/migrate-to-shoehorn"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3385,8 +3449,8 @@
         "ref": "main",
         "path": "skills/personal/obsidian-vault"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3401,8 +3465,8 @@
         "ref": "main",
         "path": "skills/engineering/prototype"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3417,8 +3481,8 @@
         "ref": "main",
         "path": "skills/deprecated/qa"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3433,8 +3497,8 @@
         "ref": "main",
         "path": "skills/deprecated/request-refactor-plan"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3449,8 +3513,8 @@
         "ref": "main",
         "path": "skills/engineering/research"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3465,8 +3529,8 @@
         "ref": "main",
         "path": "skills/engineering/resolving-merge-conflicts"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3481,8 +3545,8 @@
         "ref": "main",
         "path": "skills/misc/scaffold-exercises"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3497,8 +3561,8 @@
         "ref": "main",
         "path": "skills/engineering/setup-matt-pocock-skills"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3513,8 +3577,24 @@
         "ref": "main",
         "path": "skills/misc/setup-pre-commit"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
+      "provenance": "curated",
+      "sourceId": "mattpocock-skills"
+    },
+    {
+      "id": "mattpocock-skills/setup-ts-deep-modules",
+      "name": "setup-ts-deep-modules",
+      "description": "Wire dependency-cruiser into a TypeScript repo so each package is a deep module — implementation hidden in subfolders, reachable only through its entry-point files. User-invoked.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "mattpocock/skills",
+        "ref": "main",
+        "path": "skills/in-progress/setup-ts-deep-modules"
+      },
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3529,8 +3609,8 @@
         "ref": "main",
         "path": "skills/engineering/tdd"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3545,40 +3625,40 @@
         "ref": "main",
         "path": "skills/productivity/teach"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
     {
-      "id": "mattpocock-skills/to-issues",
-      "name": "to-issues",
-      "description": "Break a plan, spec, or PRD into independently-grabbable issues on the project issue tracker using tracer-bullet vertical slices.",
+      "id": "mattpocock-skills/to-spec",
+      "name": "to-spec",
+      "description": "Turn the current conversation into a spec and publish it to the project issue tracker — no interview, just synthesis of what you've already discussed.",
       "tags": [],
       "format": "skill-md",
       "source": {
         "repo": "mattpocock/skills",
         "ref": "main",
-        "path": "skills/engineering/to-issues"
+        "path": "skills/engineering/to-spec"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
     {
-      "id": "mattpocock-skills/to-prd",
-      "name": "to-prd",
-      "description": "Turn the current conversation into a PRD and publish it to the project issue tracker — no interview, just synthesis of what you've already discussed.",
+      "id": "mattpocock-skills/to-tickets",
+      "name": "to-tickets",
+      "description": "Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker — edges as text in one file per ticket locally, or native blocking links on a real tracker.",
       "tags": [],
       "format": "skill-md",
       "source": {
         "repo": "mattpocock/skills",
         "ref": "main",
-        "path": "skills/engineering/to-prd"
+        "path": "skills/engineering/to-tickets"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3593,8 +3673,8 @@
         "ref": "main",
         "path": "skills/engineering/triage"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3609,8 +3689,8 @@
         "ref": "main",
         "path": "skills/deprecated/ubiquitous-language"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3623,10 +3703,10 @@
       "source": {
         "repo": "mattpocock/skills",
         "ref": "main",
-        "path": "skills/in-progress/wayfinder"
+        "path": "skills/engineering/wayfinder"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3641,8 +3721,8 @@
         "ref": "main",
         "path": "skills/in-progress/wizard"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3657,8 +3737,8 @@
         "ref": "main",
         "path": "skills/in-progress/writing-beats"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3673,8 +3753,8 @@
         "ref": "main",
         "path": "skills/in-progress/writing-fragments"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3689,8 +3769,8 @@
         "ref": "main",
         "path": "skills/productivity/writing-great-skills"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3705,8 +3785,8 @@
         "ref": "main",
         "path": "skills/in-progress/writing-shape"
       },
-      "stars": 159547,
-      "updatedAt": "2026-07-07T14:19:44Z",
+      "stars": 167580,
+      "updatedAt": "2026-07-13T09:46:22Z",
       "provenance": "curated",
       "sourceId": "mattpocock-skills"
     },
@@ -3721,8 +3801,8 @@
         "ref": "main",
         "path": ""
       },
-      "stars": 17296,
-      "updatedAt": "2026-07-07T14:15:58Z",
+      "stars": 17678,
+      "updatedAt": "2026-07-13T09:42:49Z",
       "provenance": "curated",
       "sourceId": "notebooklm"
     },
@@ -3737,7 +3817,7 @@
         "ref": "main",
         "path": "skills/defuddle"
       },
-      "stars": 40105,
+      "stars": 41506,
       "updatedAt": "2026-06-08T16:12:01Z",
       "provenance": "curated",
       "sourceId": "obsidian-skills"
@@ -3753,7 +3833,7 @@
         "ref": "main",
         "path": "skills/json-canvas"
       },
-      "stars": 40105,
+      "stars": 41506,
       "updatedAt": "2026-06-08T16:12:01Z",
       "provenance": "curated",
       "sourceId": "obsidian-skills"
@@ -3769,7 +3849,7 @@
         "ref": "main",
         "path": "skills/obsidian-bases"
       },
-      "stars": 40105,
+      "stars": 41506,
       "updatedAt": "2026-06-08T16:12:01Z",
       "provenance": "curated",
       "sourceId": "obsidian-skills"
@@ -3785,7 +3865,7 @@
         "ref": "main",
         "path": "skills/obsidian-cli"
       },
-      "stars": 40105,
+      "stars": 41506,
       "updatedAt": "2026-06-08T16:12:01Z",
       "provenance": "curated",
       "sourceId": "obsidian-skills"
@@ -3801,7 +3881,7 @@
         "ref": "main",
         "path": "skills/obsidian-markdown"
       },
-      "stars": 40105,
+      "stars": 41506,
       "updatedAt": "2026-06-08T16:12:01Z",
       "provenance": "curated",
       "sourceId": "obsidian-skills"
@@ -3817,8 +3897,8 @@
         "ref": "main",
         "path": "skills/.curated/aspnet-core"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3833,8 +3913,8 @@
         "ref": "main",
         "path": "skills/.curated/chatgpt-apps"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3849,8 +3929,8 @@
         "ref": "main",
         "path": "skills/.curated/cli-creator"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3865,8 +3945,8 @@
         "ref": "main",
         "path": "skills/.curated/cloudflare-deploy"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3881,8 +3961,8 @@
         "ref": "main",
         "path": "skills/.curated/define-goal"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3897,8 +3977,8 @@
         "ref": "main",
         "path": "skills/.curated/figma"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3913,8 +3993,8 @@
         "ref": "main",
         "path": "skills/.curated/figma-code-connect-components"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3929,8 +4009,8 @@
         "ref": "main",
         "path": "skills/.curated/figma-create-design-system-rules"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3945,8 +4025,8 @@
         "ref": "main",
         "path": "skills/.curated/figma-create-new-file"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3961,8 +4041,8 @@
         "ref": "main",
         "path": "skills/.curated/figma-generate-design"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3977,8 +4057,8 @@
         "ref": "main",
         "path": "skills/.curated/figma-generate-library"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -3993,8 +4073,8 @@
         "ref": "main",
         "path": "skills/.curated/figma-implement-design"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4009,8 +4089,8 @@
         "ref": "main",
         "path": "skills/.curated/figma-use"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4025,8 +4105,8 @@
         "ref": "main",
         "path": "skills/.curated/gh-address-comments"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4041,8 +4121,8 @@
         "ref": "main",
         "path": "skills/.curated/gh-fix-ci"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4057,8 +4137,8 @@
         "ref": "main",
         "path": "skills/.curated/hatch-pet"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4073,8 +4153,8 @@
         "ref": "main",
         "path": "skills/.system/imagegen"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4089,8 +4169,8 @@
         "ref": "main",
         "path": "skills/.curated/jupyter-notebook"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4105,8 +4185,8 @@
         "ref": "main",
         "path": "skills/.curated/linear"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4121,8 +4201,8 @@
         "ref": "main",
         "path": "skills/.curated/migrate-to-codex"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4137,8 +4217,8 @@
         "ref": "main",
         "path": "skills/.curated/netlify-deploy"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4153,8 +4233,8 @@
         "ref": "main",
         "path": "skills/.curated/notion-knowledge-capture"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4169,8 +4249,8 @@
         "ref": "main",
         "path": "skills/.curated/notion-meeting-intelligence"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4185,8 +4265,8 @@
         "ref": "main",
         "path": "skills/.curated/notion-research-documentation"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4201,8 +4281,8 @@
         "ref": "main",
         "path": "skills/.curated/notion-spec-to-implementation"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4217,8 +4297,8 @@
         "ref": "main",
         "path": "skills/.curated/openai-docs"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4233,8 +4313,8 @@
         "ref": "main",
         "path": "skills/.curated/pdf"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4249,8 +4329,8 @@
         "ref": "main",
         "path": "skills/.curated/playwright"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4265,8 +4345,8 @@
         "ref": "main",
         "path": "skills/.curated/playwright-interactive"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4281,8 +4361,8 @@
         "ref": "main",
         "path": "skills/.system/plugin-creator"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4297,8 +4377,8 @@
         "ref": "main",
         "path": "skills/.curated/render-deploy"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4313,8 +4393,8 @@
         "ref": "main",
         "path": "skills/.curated/screenshot"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4329,8 +4409,8 @@
         "ref": "main",
         "path": "skills/.curated/security-best-practices"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4345,8 +4425,8 @@
         "ref": "main",
         "path": "skills/.curated/security-ownership-map"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4361,8 +4441,8 @@
         "ref": "main",
         "path": "skills/.curated/security-threat-model"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4377,8 +4457,8 @@
         "ref": "main",
         "path": "skills/.curated/sentry"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4393,8 +4473,8 @@
         "ref": "main",
         "path": "skills/.system/skill-creator"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4409,8 +4489,8 @@
         "ref": "main",
         "path": "skills/.system/skill-installer"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4425,8 +4505,8 @@
         "ref": "main",
         "path": "skills/.curated/speech"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4441,8 +4521,8 @@
         "ref": "main",
         "path": "skills/.curated/transcribe"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4457,8 +4537,8 @@
         "ref": "main",
         "path": "skills/.curated/vercel-deploy"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4473,8 +4553,8 @@
         "ref": "main",
         "path": "skills/.curated/winui-app"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4489,8 +4569,8 @@
         "ref": "main",
         "path": "skills/.curated/yeet"
       },
-      "stars": 23347,
-      "updatedAt": "2026-06-24T02:36:15Z",
+      "stars": 23612,
+      "updatedAt": "2026-07-09T19:53:55Z",
       "provenance": "curated",
       "sourceId": "openai-skills"
     },
@@ -4505,8 +4585,8 @@
         "ref": "main",
         "path": "skills/brainstorming"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4521,8 +4601,8 @@
         "ref": "main",
         "path": "skills/dispatching-parallel-agents"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4537,8 +4617,8 @@
         "ref": "main",
         "path": "skills/executing-plans"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4553,8 +4633,8 @@
         "ref": "main",
         "path": "skills/finishing-a-development-branch"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4569,8 +4649,8 @@
         "ref": "main",
         "path": "skills/receiving-code-review"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4585,8 +4665,8 @@
         "ref": "main",
         "path": "skills/requesting-code-review"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4601,8 +4681,8 @@
         "ref": "main",
         "path": "skills/subagent-driven-development"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4617,8 +4697,8 @@
         "ref": "main",
         "path": "skills/systematic-debugging"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4633,8 +4713,8 @@
         "ref": "main",
         "path": "skills/test-driven-development"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4649,8 +4729,8 @@
         "ref": "main",
         "path": "skills/using-git-worktrees"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4665,8 +4745,8 @@
         "ref": "main",
         "path": "skills/using-superpowers"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4681,8 +4761,8 @@
         "ref": "main",
         "path": "skills/verification-before-completion"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4697,8 +4777,8 @@
         "ref": "main",
         "path": "skills/writing-plans"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4713,8 +4793,8 @@
         "ref": "main",
         "path": "skills/writing-skills"
       },
-      "stars": 248457,
-      "updatedAt": "2026-07-06T21:53:36Z",
+      "stars": 253417,
+      "updatedAt": "2026-07-10T15:58:09Z",
       "provenance": "curated",
       "sourceId": "superpowers"
     },
@@ -4729,7 +4809,7 @@
         "ref": "main",
         "path": "skills/brandkit"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4745,7 +4825,7 @@
         "ref": "main",
         "path": "skills/taste-skill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4761,7 +4841,7 @@
         "ref": "main",
         "path": "skills/taste-skill-v1"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4777,7 +4857,7 @@
         "ref": "main",
         "path": "skills/output-skill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4793,7 +4873,7 @@
         "ref": "main",
         "path": "skills/gpt-tasteskill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4809,7 +4889,7 @@
         "ref": "main",
         "path": "skills/soft-skill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4825,7 +4905,7 @@
         "ref": "main",
         "path": "skills/image-to-code-skill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4841,7 +4921,7 @@
         "ref": "main",
         "path": "skills/imagegen-frontend-mobile"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4857,7 +4937,7 @@
         "ref": "main",
         "path": "skills/imagegen-frontend-web"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4873,7 +4953,7 @@
         "ref": "main",
         "path": "skills/brutalist-skill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4889,7 +4969,7 @@
         "ref": "main",
         "path": "skills/minimalist-skill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4905,7 +4985,7 @@
         "ref": "main",
         "path": "skills/redesign-skill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4921,7 +5001,7 @@
         "ref": "main",
         "path": "skills/stitch-skill"
       },
-      "stars": 59872,
+      "stars": 62703,
       "updatedAt": "2026-07-04T22:02:55Z",
       "provenance": "curated",
       "sourceId": "taste-skill"
@@ -4937,8 +5017,8 @@
         "ref": "main",
         "path": ".claude/skills/banner-design"
       },
-      "stars": 102112,
-      "updatedAt": "2026-07-06T15:33:37Z",
+      "stars": 104937,
+      "updatedAt": "2026-07-13T09:32:25Z",
       "provenance": "curated",
       "sourceId": "ui-ux-pro-max"
     },
@@ -4953,8 +5033,8 @@
         "ref": "main",
         "path": ".claude/skills/brand"
       },
-      "stars": 102112,
-      "updatedAt": "2026-07-06T15:33:37Z",
+      "stars": 104937,
+      "updatedAt": "2026-07-13T09:32:25Z",
       "provenance": "curated",
       "sourceId": "ui-ux-pro-max"
     },
@@ -4969,8 +5049,8 @@
         "ref": "main",
         "path": ".claude/skills/design"
       },
-      "stars": 102112,
-      "updatedAt": "2026-07-06T15:33:37Z",
+      "stars": 104937,
+      "updatedAt": "2026-07-13T09:32:25Z",
       "provenance": "curated",
       "sourceId": "ui-ux-pro-max"
     },
@@ -4985,8 +5065,8 @@
         "ref": "main",
         "path": ".claude/skills/design-system"
       },
-      "stars": 102112,
-      "updatedAt": "2026-07-06T15:33:37Z",
+      "stars": 104937,
+      "updatedAt": "2026-07-13T09:32:25Z",
       "provenance": "curated",
       "sourceId": "ui-ux-pro-max"
     },
@@ -5001,8 +5081,8 @@
         "ref": "main",
         "path": ".claude/skills/slides"
       },
-      "stars": 102112,
-      "updatedAt": "2026-07-06T15:33:37Z",
+      "stars": 104937,
+      "updatedAt": "2026-07-13T09:32:25Z",
       "provenance": "curated",
       "sourceId": "ui-ux-pro-max"
     },
@@ -5017,15 +5097,15 @@
         "ref": "main",
         "path": ".claude/skills/ui-styling"
       },
-      "stars": 102112,
-      "updatedAt": "2026-07-06T15:33:37Z",
+      "stars": 104937,
+      "updatedAt": "2026-07-13T09:32:25Z",
       "provenance": "curated",
       "sourceId": "ui-ux-pro-max"
     },
     {
       "id": "ui-ux-pro-max/ui-ux-pro-max",
       "name": "ui-ux-pro-max",
-      "description": "UI/UX design intelligence for web and mobile. Includes 50+ styles, 161 color palettes, 57 font pairings, 161 product types, 99 UX guidelines, and 25 chart types across 10 stacks (React, Next.js, Vue, Svelte, SwiftUI, React Native, Flutter, Tailwind, shadcn/ui, and HTML/CSS). Actions: plan, build, create, design, implement, review, fix, improve, optimize, enhance, refactor, and check UI/UX code. Projects: website, landing page, dashboard, admin panel, e-commerce, SaaS, portfolio, blog, and mobile app. Elements: button, modal, navbar, sidebar, card, table, form, and chart. Styles: glassmorphism, claymorphism, minimalism, brutalism, neumorphism, bento grid, dark mode, responsive, skeuomorphism, and flat design. Topics: color systems, accessibility, animation, layout, typography, font pairing, spacing, interaction states, shadow, and gradient. Integrations: shadcn/ui MCP for component search and examples.",
+      "description": "UI/UX design intelligence for web and mobile. Searchable local database with 50+ styles, 161 color palettes, 57 font pairings, 161 product types, 99 UX guidelines, and 25 chart types across 10 stacks (React, Next.js, Vue, Svelte, SwiftUI, React Native, Flutter, Tailwind, shadcn/ui, and HTML/CSS). Use when designing, building, or reviewing UI: pages, components, color schemes, typography, layout, accessibility, animation, or data visualization.",
       "tags": [],
       "format": "skill-md",
       "source": {
@@ -5033,8 +5113,8 @@
         "ref": "main",
         "path": ".claude/skills/ui-ux-pro-max"
       },
-      "stars": 102112,
-      "updatedAt": "2026-07-06T15:33:37Z",
+      "stars": 104937,
+      "updatedAt": "2026-07-13T09:32:25Z",
       "provenance": "curated",
       "sourceId": "ui-ux-pro-max"
     },
@@ -5049,7 +5129,7 @@
         "ref": "main",
         "path": "skills/deploy-to-vercel"
       },
-      "stars": 28769,
+      "stars": 29004,
       "updatedAt": "2026-07-07T14:05:22Z",
       "provenance": "curated",
       "sourceId": "vercel-agent-skills"
@@ -5065,7 +5145,7 @@
         "ref": "main",
         "path": "skills/vercel-cli-with-tokens"
       },
-      "stars": 28769,
+      "stars": 29004,
       "updatedAt": "2026-07-07T14:05:22Z",
       "provenance": "curated",
       "sourceId": "vercel-agent-skills"
@@ -5081,7 +5161,7 @@
         "ref": "main",
         "path": "skills/vercel-optimize"
       },
-      "stars": 28769,
+      "stars": 29004,
       "updatedAt": "2026-07-07T14:05:22Z",
       "provenance": "curated",
       "sourceId": "vercel-agent-skills"
@@ -5097,7 +5177,7 @@
         "ref": "main",
         "path": "skills/react-best-practices"
       },
-      "stars": 28769,
+      "stars": 29004,
       "updatedAt": "2026-07-07T14:05:22Z",
       "provenance": "curated",
       "sourceId": "vercel-agent-skills"
@@ -5113,7 +5193,7 @@
         "ref": "main",
         "path": "skills/react-view-transitions"
       },
-      "stars": 28769,
+      "stars": 29004,
       "updatedAt": "2026-07-07T14:05:22Z",
       "provenance": "curated",
       "sourceId": "vercel-agent-skills"
@@ -5129,7 +5209,7 @@
         "ref": "main",
         "path": "skills/web-design-guidelines"
       },
-      "stars": 28769,
+      "stars": 29004,
       "updatedAt": "2026-07-07T14:05:22Z",
       "provenance": "curated",
       "sourceId": "vercel-agent-skills"
@@ -5145,7 +5225,7 @@
         "ref": "main",
         "path": "skills/writing-guidelines"
       },
-      "stars": 28769,
+      "stars": 29004,
       "updatedAt": "2026-07-07T14:05:22Z",
       "provenance": "curated",
       "sourceId": "vercel-agent-skills"
@@ -5161,8 +5241,24 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/accessibility-compliance"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
+      "provenance": "curated",
+      "sourceId": "wshobson-agents"
+    },
+    {
+      "id": "wshobson-agents/ai-debt-detector",
+      "name": "ai-debt-detector",
+      "description": "Use after generating code, after accepting AI suggestions, or when reviewing AI-written modules. Also use when code works but feels brittle, when error handling seems thin, when orphaned resources or missing cleanup are suspected, or when the agent claims done but hidden debt may exist. Catches the specific failure patterns AI agents produce that humans would not.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "wshobson/agents",
+        "ref": "main",
+        "path": "plugins/skill-forge-essentials/skills/ai-debt-detector"
+      },
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5177,8 +5273,8 @@
         "ref": "main",
         "path": "plugins/data-engineering/skills/airflow-dag-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5193,8 +5289,8 @@
         "ref": "main",
         "path": "plugins/framework-migration/skills/angular-migration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5209,8 +5305,8 @@
         "ref": "main",
         "path": "plugins/reverse-engineering/skills/anti-reversing-techniques"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5225,8 +5321,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/api-design-principles"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5241,8 +5337,8 @@
         "ref": "main",
         "path": "plugins/documentation-generation/skills/architecture-decision-records"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5257,8 +5353,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/architecture-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5273,8 +5369,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/async-python-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5289,8 +5385,8 @@
         "ref": "main",
         "path": "plugins/security-scanning/skills/attack-tree-construction"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5305,8 +5401,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/auth-implementation-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5321,8 +5417,8 @@
         "ref": "main",
         "path": "plugins/quantitative-trading/skills/backtesting-frameworks"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5337,8 +5433,8 @@
         "ref": "main",
         "path": "plugins/shell-scripting/skills/bash-defensive-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5353,8 +5449,8 @@
         "ref": "main",
         "path": "plugins/shell-scripting/skills/bats-testing-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5369,8 +5465,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/bazel-build-optimization"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5385,8 +5481,8 @@
         "ref": "main",
         "path": "plugins/before-you-build/skills/before-you-build"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5401,8 +5497,8 @@
         "ref": "main",
         "path": "plugins/payment-processing/skills/billing-automation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5417,8 +5513,8 @@
         "ref": "main",
         "path": "plugins/reverse-engineering/skills/binary-analysis-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5433,8 +5529,8 @@
         "ref": "main",
         "path": "plugins/block-no-verify/skills/block-no-verify-hook"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5449,8 +5545,8 @@
         "ref": "main",
         "path": "plugins/brand-landingpage/skills/brand-landingpage"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5465,8 +5561,8 @@
         "ref": "main",
         "path": "plugins/documentation-generation/skills/changelog-automation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5481,8 +5577,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/code-review-excellence"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5497,8 +5593,8 @@
         "ref": "main",
         "path": "plugins/startup-business-analyst/skills/competitive-landscape"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5513,8 +5609,8 @@
         "ref": "main",
         "path": "plugins/conductor/skills/context-driven-development"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5529,8 +5625,8 @@
         "ref": "main",
         "path": "plugins/cloud-infrastructure/skills/cost-optimization"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5545,8 +5641,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/cqrs-implementation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5561,8 +5657,8 @@
         "ref": "main",
         "path": "plugins/data-engineering/skills/data-quality-frameworks"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5577,8 +5673,8 @@
         "ref": "main",
         "path": "plugins/business-analytics/skills/data-storytelling"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5593,8 +5689,8 @@
         "ref": "main",
         "path": "plugins/framework-migration/skills/database-migration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5609,8 +5705,8 @@
         "ref": "main",
         "path": "plugins/data-engineering/skills/dbt-transformation-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5625,8 +5721,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/debugging-strategies"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5641,8 +5737,8 @@
         "ref": "main",
         "path": "plugins/blockchain-web3/skills/defi-protocol-templates"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5657,8 +5753,8 @@
         "ref": "main",
         "path": "plugins/framework-migration/skills/dependency-upgrade"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5673,8 +5769,8 @@
         "ref": "main",
         "path": "plugins/cicd-automation/skills/deployment-pipeline-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5689,8 +5785,8 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/design-system-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5705,8 +5801,8 @@
         "ref": "main",
         "path": "plugins/observability-monitoring/skills/distributed-tracing"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5721,8 +5817,8 @@
         "ref": "main",
         "path": "plugins/dotnet-contribution/skills/dotnet-backend-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5737,8 +5833,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/e2e-testing-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5753,8 +5849,8 @@
         "ref": "main",
         "path": "plugins/llm-application-dev/skills/embedding-strategies"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5769,8 +5865,8 @@
         "ref": "main",
         "path": "plugins/hr-legal-compliance/skills/employment-contract-templates"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5785,8 +5881,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/error-handling-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5801,8 +5897,8 @@
         "ref": "main",
         "path": "plugins/plugin-eval/skills/evaluation-methodology"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5817,8 +5913,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/event-store-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5833,8 +5929,8 @@
         "ref": "main",
         "path": "plugins/api-scaffolding/skills/fastapi-templates"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5849,8 +5945,8 @@
         "ref": "main",
         "path": "plugins/file-conversion/skills/file-conversion"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5865,8 +5961,8 @@
         "ref": "main",
         "path": "plugins/hr-legal-compliance/skills/gdpr-data-handling"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5881,8 +5977,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/git-advanced-workflows"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5897,8 +5993,8 @@
         "ref": "main",
         "path": "plugins/cicd-automation/skills/github-actions-templates"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5913,8 +6009,8 @@
         "ref": "main",
         "path": "plugins/cicd-automation/skills/gitlab-ci-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5929,8 +6025,8 @@
         "ref": "main",
         "path": "plugins/kubernetes-operations/skills/gitops-workflow"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5945,8 +6041,8 @@
         "ref": "main",
         "path": "plugins/systems-programming/skills/go-concurrency-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5961,8 +6057,8 @@
         "ref": "main",
         "path": "plugins/game-development/skills/godot-gdscript-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5977,8 +6073,8 @@
         "ref": "main",
         "path": "plugins/observability-monitoring/skills/grafana-dashboards"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -5993,8 +6089,8 @@
         "ref": "main",
         "path": "plugins/documentation-standards/skills/hads"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6009,8 +6105,24 @@
         "ref": "main",
         "path": "plugins/kubernetes-operations/skills/helm-chart-scaffolding"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
+      "provenance": "curated",
+      "sourceId": "wshobson-agents"
+    },
+    {
+      "id": "wshobson-agents/hermes-tweet",
+      "name": "hermes-tweet",
+      "description": "Install and operate Hermes Tweet, a Hermes Agent plugin for X/Twitter research, timeline reading, tweet analysis, and approval-gated tweet actions. Use this skill when installing Hermes Tweet, researching X/Twitter accounts, monitoring launch signals, investigating mentions, auditing giveaways, or preparing guarded tweet actions. Use proactively when a Hermes Agent workflow needs current X/Twitter context. Requires XQUIK_API_KEY for read and action tools.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "wshobson/agents",
+        "ref": "main",
+        "path": "plugins/hermes-tweet/skills/hermes-tweet"
+      },
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6025,8 +6137,8 @@
         "ref": "main",
         "path": "plugins/cloud-infrastructure/skills/hybrid-cloud-networking"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6041,8 +6153,8 @@
         "ref": "main",
         "path": "plugins/llm-application-dev/skills/hybrid-search-implementation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6057,8 +6169,8 @@
         "ref": "main",
         "path": "plugins/incident-response/skills/incident-runbook-templates"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6073,8 +6185,8 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/interaction-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6089,8 +6201,8 @@
         "ref": "main",
         "path": "plugins/cloud-infrastructure/skills/istio-traffic-management"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6105,8 +6217,8 @@
         "ref": "main",
         "path": "plugins/javascript-typescript/skills/javascript-testing-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6121,8 +6233,8 @@
         "ref": "main",
         "path": "plugins/kubernetes-operations/skills/k8s-manifest-generator"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6137,8 +6249,8 @@
         "ref": "main",
         "path": "plugins/kubernetes-operations/skills/k8s-security-policies"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6153,8 +6265,8 @@
         "ref": "main",
         "path": "plugins/business-analytics/skills/kpi-dashboard-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6169,8 +6281,8 @@
         "ref": "main",
         "path": "plugins/llm-application-dev/skills/langchain-architecture"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6185,8 +6297,8 @@
         "ref": "main",
         "path": "plugins/cloud-infrastructure/skills/linkerd-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6201,8 +6313,8 @@
         "ref": "main",
         "path": "plugins/llm-application-dev/skills/llm-evaluation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6217,8 +6329,8 @@
         "ref": "main",
         "path": "plugins/startup-business-analyst/skills/market-sizing-analysis"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6233,8 +6345,8 @@
         "ref": "main",
         "path": "plugins/reverse-engineering/skills/memory-forensics"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6249,8 +6361,8 @@
         "ref": "main",
         "path": "plugins/systems-programming/skills/memory-safety-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6265,8 +6377,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/microservices-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6281,8 +6393,8 @@
         "ref": "main",
         "path": "plugins/machine-learning-ops/skills/ml-pipeline-workflow"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6297,8 +6409,8 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/mobile-android-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6313,8 +6425,8 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/mobile-ios-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6329,8 +6441,8 @@
         "ref": "main",
         "path": "plugins/javascript-typescript/skills/modern-javascript-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6345,8 +6457,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/monorepo-management"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6361,8 +6473,8 @@
         "ref": "main",
         "path": "plugins/cloud-infrastructure/skills/mtls-configuration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6377,8 +6489,8 @@
         "ref": "main",
         "path": "plugins/cloud-infrastructure/skills/multi-cloud-architecture"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6393,8 +6505,8 @@
         "ref": "main",
         "path": "plugins/agent-teams/skills/multi-reviewer-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6409,8 +6521,8 @@
         "ref": "main",
         "path": "plugins/frontend-mobile-development/skills/nextjs-app-router-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6425,8 +6537,8 @@
         "ref": "main",
         "path": "plugins/blockchain-web3/skills/nft-standards"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6441,8 +6553,8 @@
         "ref": "main",
         "path": "plugins/javascript-typescript/skills/nodejs-backend-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6457,8 +6569,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/nx-workspace-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6473,8 +6585,8 @@
         "ref": "main",
         "path": "plugins/incident-response/skills/on-call-handoff-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6489,8 +6601,8 @@
         "ref": "main",
         "path": "plugins/documentation-generation/skills/openapi-spec-generation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6505,8 +6617,8 @@
         "ref": "main",
         "path": "plugins/agent-teams/skills/parallel-debugging"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6521,8 +6633,8 @@
         "ref": "main",
         "path": "plugins/agent-teams/skills/parallel-feature-development"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6537,8 +6649,8 @@
         "ref": "main",
         "path": "plugins/payment-processing/skills/paypal-integration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6553,8 +6665,8 @@
         "ref": "main",
         "path": "plugins/payment-processing/skills/pci-compliance"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6569,8 +6681,8 @@
         "ref": "main",
         "path": "plugins/database-design/skills/postgresql"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6585,8 +6697,8 @@
         "ref": "main",
         "path": "plugins/incident-response/skills/postmortem-writing"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6601,8 +6713,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/projection-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6617,8 +6729,8 @@
         "ref": "main",
         "path": "plugins/observability-monitoring/skills/prometheus-configuration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6633,8 +6745,8 @@
         "ref": "main",
         "path": "plugins/llm-application-dev/skills/prompt-engineering-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6649,8 +6761,8 @@
         "ref": "main",
         "path": "plugins/protect-mcp/skills/protect-mcp-setup"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6665,8 +6777,8 @@
         "ref": "main",
         "path": "plugins/reverse-engineering/skills/protocol-reverse-engineering"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6681,8 +6793,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-anti-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6697,8 +6809,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-background-jobs"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6713,8 +6825,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-code-style"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6729,8 +6841,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-configuration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6745,8 +6857,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-design-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6761,8 +6873,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-error-handling"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6777,8 +6889,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-observability"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6793,8 +6905,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-packaging"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6809,8 +6921,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-performance-optimization"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6825,8 +6937,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-project-structure"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6841,8 +6953,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-resilience"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6857,8 +6969,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-resource-management"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6873,8 +6985,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-testing-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6889,8 +7001,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/python-type-safety"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6905,8 +7017,8 @@
         "ref": "main",
         "path": "plugins/llm-application-dev/skills/rag-implementation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6921,8 +7033,8 @@
         "ref": "main",
         "path": "plugins/framework-migration/skills/react-modernization"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6937,8 +7049,8 @@
         "ref": "main",
         "path": "plugins/frontend-mobile-development/skills/react-native-architecture"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6953,8 +7065,8 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/react-native-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6969,8 +7081,8 @@
         "ref": "main",
         "path": "plugins/frontend-mobile-development/skills/react-state-management"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -6985,8 +7097,8 @@
         "ref": "main",
         "path": "plugins/machine-learning-ops/skills/recsys-pipeline-architect"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7001,8 +7113,8 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/responsive-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7017,8 +7129,8 @@
         "ref": "main",
         "path": "plugins/review-agent-governance/skills/review-agent-setup"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7033,8 +7145,8 @@
         "ref": "main",
         "path": "plugins/quantitative-trading/skills/risk-metrics-calculation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7049,8 +7161,8 @@
         "ref": "main",
         "path": "plugins/systems-programming/skills/rust-async-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7065,8 +7177,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/saga-orchestration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7081,8 +7193,8 @@
         "ref": "main",
         "path": "plugins/security-scanning/skills/sast-configuration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7097,8 +7209,8 @@
         "ref": "main",
         "path": "plugins/ship-mate/skills/scan"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7113,8 +7225,8 @@
         "ref": "main",
         "path": "plugins/accessibility-compliance/skills/screen-reader-testing"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7129,8 +7241,8 @@
         "ref": "main",
         "path": "plugins/cicd-automation/skills/secrets-management"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7145,8 +7257,8 @@
         "ref": "main",
         "path": "plugins/security-scanning/skills/security-requirement-extraction"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7161,8 +7273,24 @@
         "ref": "main",
         "path": "plugins/cloud-infrastructure/skills/service-mesh-observability"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
+      "provenance": "curated",
+      "sourceId": "wshobson-agents"
+    },
+    {
+      "id": "wshobson-agents/session-guard",
+      "name": "session-guard",
+      "description": "Use when working on complex multi-step tasks, when a session is getting long (40+ tool calls), when the agent starts ignoring rules it followed earlier, when conventions drift, when output quality seems to degrade, or after any context compaction event. Prevents long-session corruption AND context compaction amnesia through behavioral self-enforcement.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "wshobson/agents",
+        "ref": "main",
+        "path": "plugins/skill-forge-essentials/skills/session-guard"
+      },
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7177,8 +7305,8 @@
         "ref": "main",
         "path": "plugins/shell-scripting/skills/shellcheck-configuration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7193,8 +7321,8 @@
         "ref": "main",
         "path": "plugins/signed-audit-trails/skills/signed-audit-trails-recipe"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7209,8 +7337,8 @@
         "ref": "main",
         "path": "plugins/llm-application-dev/skills/similarity-search-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7225,8 +7353,8 @@
         "ref": "main",
         "path": "plugins/observability-monitoring/skills/slo-implementation"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7241,8 +7369,8 @@
         "ref": "main",
         "path": "plugins/social-publishing/skills/social-publishing"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7257,8 +7385,8 @@
         "ref": "main",
         "path": "plugins/blockchain-web3/skills/solidity-security"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7273,8 +7401,8 @@
         "ref": "main",
         "path": "plugins/data-engineering/skills/spark-optimization"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7289,8 +7417,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/sql-optimization-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7305,8 +7433,8 @@
         "ref": "main",
         "path": "plugins/startup-business-analyst/skills/startup-financial-modeling"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7321,8 +7449,8 @@
         "ref": "main",
         "path": "plugins/startup-business-analyst/skills/startup-metrics-framework"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7337,8 +7465,8 @@
         "ref": "main",
         "path": "plugins/security-scanning/skills/stride-analysis-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7353,8 +7481,8 @@
         "ref": "main",
         "path": "plugins/payment-processing/skills/stripe-integration"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7369,8 +7497,8 @@
         "ref": "main",
         "path": "plugins/frontend-mobile-development/skills/tailwind-design-system"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7385,8 +7513,8 @@
         "ref": "main",
         "path": "plugins/agent-teams/skills/task-coordination-strategies"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7401,8 +7529,8 @@
         "ref": "main",
         "path": "plugins/agent-teams/skills/team-communication-protocols"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7417,8 +7545,8 @@
         "ref": "main",
         "path": "plugins/startup-business-analyst/skills/team-composition-analysis"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7433,8 +7561,8 @@
         "ref": "main",
         "path": "plugins/agent-teams/skills/team-composition-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7449,8 +7577,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/temporal-python-testing"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7465,8 +7593,8 @@
         "ref": "main",
         "path": "plugins/cloud-infrastructure/skills/terraform-module-library"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7481,8 +7609,8 @@
         "ref": "main",
         "path": "plugins/security-scanning/skills/threat-mitigation-mapping"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7497,8 +7625,8 @@
         "ref": "main",
         "path": "plugins/conductor/skills/track-management"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7513,8 +7641,8 @@
         "ref": "main",
         "path": "plugins/developer-essentials/skills/turborepo-caching"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7529,8 +7657,8 @@
         "ref": "main",
         "path": "plugins/javascript-typescript/skills/typescript-advanced-types"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7545,8 +7673,8 @@
         "ref": "main",
         "path": "plugins/game-development/skills/unity-ecs-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7561,8 +7689,8 @@
         "ref": "main",
         "path": "plugins/python-development/skills/uv-package-manager"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7577,8 +7705,8 @@
         "ref": "main",
         "path": "plugins/llm-application-dev/skills/vector-index-tuning"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7593,8 +7721,24 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/visual-design-foundations"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
+      "provenance": "curated",
+      "sourceId": "wshobson-agents"
+    },
+    {
+      "id": "wshobson-agents/visual-edit-precision",
+      "name": "visual-edit-precision",
+      "description": "Use when making UI/frontend changes guided by visual context, when the user selects elements visually, draws annotations, or provides screenshots alongside change requests. Also use when editing components where spatial context (element identity, DOM references, layout data) supplements text instructions.",
+      "tags": [],
+      "format": "skill-md",
+      "source": {
+        "repo": "wshobson/agents",
+        "ref": "main",
+        "path": "plugins/skill-forge-essentials/skills/visual-edit-precision"
+      },
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7609,8 +7753,8 @@
         "ref": "main",
         "path": "plugins/accessibility-compliance/skills/wcag-audit-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7625,8 +7769,8 @@
         "ref": "main",
         "path": "plugins/ui-design/skills/web-component-design"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7641,8 +7785,8 @@
         "ref": "main",
         "path": "plugins/blockchain-web3/skills/web3-testing"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7657,8 +7801,8 @@
         "ref": "main",
         "path": "plugins/backend-development/skills/workflow-orchestration-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     },
@@ -7673,8 +7817,8 @@
         "ref": "main",
         "path": "plugins/conductor/skills/workflow-patterns"
       },
-      "stars": 37629,
-      "updatedAt": "2026-07-06T01:08:16Z",
+      "stars": 37855,
+      "updatedAt": "2026-07-13T01:09:42Z",
       "provenance": "curated",
       "sourceId": "wshobson-agents"
     }

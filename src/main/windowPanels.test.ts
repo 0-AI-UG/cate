@@ -23,8 +23,9 @@ import {
   setWindowPanels,
   getWindowPanels,
   revealWindowPanel,
+  closeWindowPanel,
 } from './windowPanels'
-import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW } from '../shared/ipc-channels'
+import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW, CLOSE_PANEL_IN_WINDOW } from '../shared/ipc-channels'
 import type { WindowPanelInfo, WindowPanelReport, PanelState } from '../shared/types'
 
 // -----------------------------------------------------------------------------
@@ -39,6 +40,9 @@ interface FakeWin {
   focus: ReturnType<typeof vi.fn>
   restore: ReturnType<typeof vi.fn>
   fireClosed: () => void
+  /** Simulates a window that died WITHOUT a clean close: isDestroyed() flips
+   *  true while the union still holds its last report. */
+  destroyed: boolean
   win: never
 }
 
@@ -53,9 +57,10 @@ function makeWin(id: number): FakeWin {
     focus: vi.fn(),
     restore: vi.fn(),
     fireClosed: () => handlers['closed']?.(),
+    destroyed: false,
     win: {
       id,
-      isDestroyed: () => false,
+      isDestroyed: () => fake.destroyed,
       isMinimized: () => false,
       restore: () => fake.restore(),
       focus: () => fake.focus(),
@@ -203,6 +208,36 @@ describe('cross-window panel discovery (main)', () => {
 
     // Unknown panel → no-op, reported as not found.
     expect(revealWindowPanel('nope')).toBe(false)
+  })
+
+  it('closes a panel by focusing its owner window and asking IT to run the close (behind its gates)', () => {
+    open(1, 'main', 'ws-A')
+    const dock = open(160, 'dock', 'ws-A')
+    setWindowPanels(160, [report('t1', 'terminal', 'Terminal 1')])
+
+    expect(closeWindowPanel('t1')).toBe(true)
+    // Focused first so the owner's confirm dialogs are visible.
+    expect(dock.focus).toHaveBeenCalled()
+    const close = dock.sent.filter((m) => m.channel === CLOSE_PANEL_IN_WINDOW)
+    expect(close).toHaveLength(1)
+    expect(close[0].args[0]).toBe('t1')
+
+    // Unknown panel → not found, nothing sent anywhere.
+    expect(closeWindowPanel('nope')).toBe(false)
+  })
+
+  it('closeWindowPanel returns false when the owning window died without a clean close', () => {
+    const dock = open(161, 'dock', 'ws-A')
+    setWindowPanels(161, [report('t2', 'terminal', 'Terminal 2')])
+    expect(getWindowPanels()).toHaveLength(1)
+
+    // The window is destroyed but 'closed' never fired, so the union still
+    // holds its stale report — closeWindowPanel must not target a dead window.
+    dock.destroyed = true
+
+    expect(closeWindowPanel('t2')).toBe(false)
+    expect(dock.sent.filter((m) => m.channel === CLOSE_PANEL_IN_WINDOW)).toHaveLength(0)
+    expect(dock.focus).not.toHaveBeenCalled()
   })
 
   it('does NOT drive discovery from the dock session-persistence sync', () => {

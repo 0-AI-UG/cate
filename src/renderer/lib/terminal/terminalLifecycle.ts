@@ -35,7 +35,7 @@ import {
 import { createTerminalLinkHandler, makeTerminalKeyEventHandler } from './terminalInput'
 import { registerOsc52ClipboardHandler } from './terminalOsc52Clipboard'
 import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvider'
-import { clearWebglDisabled } from './terminalDom'
+import { clearWebglDisabled, releaseWebglGrant } from './terminalDom'
 import { getActiveTheme } from '../themeManager'
 import { useStatusStore } from '../../stores/statusStore'
 import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
@@ -578,6 +578,7 @@ export function dispose(panelId: string): void {
   registry.delete(panelId)
   if (entry.ptyId) ptyToPanel.delete(entry.ptyId)
   clearWebglDisabled(panelId)
+  releaseWebglGrant(panelId)
 
   const { ptyId } = entry
   const { electronAPI } = window

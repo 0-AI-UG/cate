@@ -18,10 +18,8 @@ import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { ensurePanelsInAppStore } from '../lib/canvas/applyCanvasChildPanels'
 import { hydrateReceivedPanel, hydrateCanvasState } from '../lib/panelTransfer'
-import { removePanelFromWindow } from '../lib/panels/removePanelFromWindow'
 import { useAppStore } from '../stores/appStore'
-import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
-import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
+import { closeDockWindowPanel } from './dockWindowClosePanel'
 import { isDockEmpty } from './dockEmpty'
 import { shouldCloseDockWindow } from './shouldCloseDockWindow'
 import WindowControls from './WindowControls'
@@ -306,22 +304,13 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
   const handleClosePanel = useCallback(
     async (panelId: string) => {
-      if (!(await confirmCloseDirtyPanels([panels[panelId]]))) return
-      if (!(await confirmCloseRunningTerminals([panels[panelId]]))) return
-      // Undock from THIS shell's own dock store first (removePanelFromWindow
-      // never touches layout stores — the workspace dock registry would be the
-      // wrong tree for this shell), then tear down content + records with
-      // 'close' semantics: PTYs killed (including a canvas tab's children),
-      // xterms and pi sessions disposed, records dropped.
-      dockStore.getState().undockPanel(panelId)
-      const panel = panels[panelId]
-      if (panel) removePanelFromWindow(wsId, panelId, panel.type, 'close')
+      if (!(await closeDockWindowPanel(wsId, panelId, dockStore))) return
 
       if (isDockEmpty(dockStore.getState())) {
         window.close()
       }
     },
-    [dockStore, panels, wsId],
+    [dockStore, wsId],
   )
 
   const handlePanelRenamed = useCallback(

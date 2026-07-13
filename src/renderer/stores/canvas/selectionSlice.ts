@@ -5,6 +5,7 @@
 
 import { collectPanelIds } from '../../../shared/collectPanelIds'
 import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
+import { provideAppStoreForHistory } from './historySlice'
 import { withLead } from './selectionModel'
 
 type SelectionActions = Pick<
@@ -86,7 +87,17 @@ export function createSelectionSlice(set: CanvasSet, get: CanvasGet): SelectionA
           import('../appStore'),
           import('../../lib/closePanelWithConfirm'),
         ])
+        provideAppStoreForHistory(useAppStore)
         const workspaceId = useAppStore.getState().selectedWorkspaceId
+        // Snapshot the panel records before closing so the history entry can
+        // carry them — undo re-adds the records and restores the nodes. Copied
+        // eagerly: the close loop below removes them from the workspace.
+        const livePanels = useAppStore.getState().workspaces
+          .find((w) => w.id === workspaceId)?.panels ?? {}
+        const panelRecords = new Map([...panelIds].flatMap((id) => {
+          const panel = livePanels[id]
+          return panel ? [[id, panel] as const] : []
+        }))
         const closedPanelIds = new Set<string>()
 
         const removeClosedNodes = () => {
@@ -97,7 +108,6 @@ export function createSelectionSlice(set: CanvasSet, get: CanvasGet): SelectionA
           if (nodeIdsToRemove.length === 0) return
 
           const state = get()
-          state.pushHistory()
           for (const nodeId of nodeIdsToRemove) state.removeNode(nodeId)
           set((current) => ({
             selection: current.selection.filter((nodeId) => !nodeIdsToRemove.includes(nodeId)),
@@ -105,15 +115,26 @@ export function createSelectionSlice(set: CanvasSet, get: CanvasGet): SelectionA
           }))
         }
 
-        for (const panelId of panelIds) {
-          if (!(await closePanelWithConfirm(workspaceId, panelId))) {
-            removeClosedNodes()
-            return
+        // One transaction around the whole delete: every node removal (both the
+        // ones closePanel triggers internally and removeClosedNodes below)
+        // collapses into a single undo step carrying the closed panel records.
+        get().beginHistoryTransaction()
+        try {
+          for (const panelId of panelIds) {
+            if (!(await closePanelWithConfirm(workspaceId, panelId))) {
+              removeClosedNodes()
+              return
+            }
+            closedPanelIds.add(panelId)
           }
-          closedPanelIds.add(panelId)
-        }
 
-        removeClosedNodes()
+          removeClosedNodes()
+        } finally {
+          const closed = [...closedPanelIds].flatMap((id) => panelRecords.get(id) ?? [])
+          get().commitHistoryTransaction(
+            closed.length > 0 ? { workspaceId, panels: closed } : undefined,
+          )
+        }
       } catch {
         // Closing is user-initiated; an unavailable confirmation path must not
         // remove the selected nodes behind the user's back.

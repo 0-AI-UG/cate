@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { CaretDoubleDown, CaretDoubleUp, Plus } from '@phosphor-icons/react'
 import { useAppStore, useWorkspaceList } from '../stores/appStore'
+import { removeWorkspacesWithConfirm } from '../lib/closePanelWithConfirm'
 import { WorkspaceTab } from './WorkspaceTab'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { NativeContextMenuItem } from '../../shared/electron-api.d'
@@ -59,20 +60,20 @@ export const ProjectList: React.FC = () => {
     selectWorkspace(wsId)
   }, [workspaces, selectWorkspace])
 
-  const handleBulkDelete = useCallback(() => {
+  const handleBulkDelete = useCallback(async () => {
     if (multiSelected.size === 0) return
-    const idsToRemove = [...multiSelected]
+    // Same confirm-gated close as a single workspace / panel close — one
+    // aggregate dialog for dirty editors + running terminals across the
+    // selection. Keep the selection when the user cancels.
+    if (!(await removeWorkspacesWithConfirm([...multiSelected]))) return
     setMultiSelected(new Set())
     lastClickedIndexRef.current = null
-    for (const id of idsToRemove) {
-      useAppStore.getState().removeWorkspace(id, true)
-    }
   }, [multiSelected])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.key === 'Delete' || e.key === 'Backspace') && multiSelected.size > 0) {
       e.preventDefault()
-      handleBulkDelete()
+      void handleBulkDelete()
     }
     if (e.key === 'Escape' && multiSelected.size > 0) {
       e.preventDefault()
@@ -91,7 +92,7 @@ export const ProjectList: React.FC = () => {
     ]
     const id = await window.electronAPI.showContextMenu(items)
     if (id === 'delete-selected') {
-      handleBulkDelete()
+      void handleBulkDelete()
     }
     return true
   }, [multiSelected, handleBulkDelete])

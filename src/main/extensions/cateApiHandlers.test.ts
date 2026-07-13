@@ -25,17 +25,16 @@ vi.mock('electron', () => ({
 }))
 
 // Agent runtime is a heavy singleton; stub it so importing cateApiHandlers
-// stays light and cate.agent.run dispatch is observable.
-const { runForExtension, openForExtension, sendForExtension, disposeForExtension, cancelForExtension } =
+// stays light and cate.agent.* dispatch is observable.
+const { openForExtension, sendForExtension, disposeForExtension, cancelForExtension } =
   vi.hoisted(() => ({
-    runForExtension: vi.fn(async () => ({ text: 'done', message: null })),
     openForExtension: vi.fn(async () => ({ sessionId: 'sess-1' })),
     sendForExtension: vi.fn(async () => ({ text: 'reply', message: { role: 'assistant' } })),
     disposeForExtension: vi.fn(async () => {}),
     cancelForExtension: vi.fn(async () => {}),
   }))
 vi.mock('../../agent/main/agentManager', () => ({
-  agentManager: { runForExtension, openForExtension, sendForExtension, disposeForExtension, cancelForExtension },
+  agentManager: { openForExtension, sendForExtension, disposeForExtension, cancelForExtension },
 }))
 
 // cate.ui.notify reuses the shared OS-notification path; spy on it + the setting.
@@ -48,7 +47,7 @@ vi.mock('../ipc/notifications', () => ({ showOsNotification }))
 // --- extension registry: enabled/known toggled per test via `state.enabled` ---
 const state = vi.hoisted(() => ({
   enabled: true,
-  scopes: ['storage', 'editor', 'canvas', 'theme', 'ui', 'workspace.read'] as string[] | undefined,
+  scopes: ['storage', 'editor', 'canvas', 'theme', 'ui', 'workspace.read', 'panel'] as string[] | undefined,
 }))
 vi.mock('./ExtensionManager', () => ({
   extensionManager: {
@@ -118,7 +117,7 @@ function scope(forward: InvokeScope['forward'] = vi.fn()): InvokeScope {
 
 beforeEach(() => {
   state.enabled = true
-  state.scopes = ['storage', 'editor', 'canvas', 'theme', 'ui', 'workspace.read']
+  state.scopes = ['storage', 'editor', 'canvas', 'theme', 'ui', 'workspace.read', 'panel']
   settings.notificationsEnabled = true
   activeWindow.value = undefined
   windowsById.clear()
@@ -128,8 +127,6 @@ beforeEach(() => {
   showOsNotification.mockClear()
   showMessageBox.mockClear()
   showMessageBox.mockResolvedValue({ response: 0 })
-  runForExtension.mockClear()
-  runForExtension.mockResolvedValue({ text: 'done', message: null })
   openForExtension.mockClear()
   openForExtension.mockResolvedValue({ sessionId: 'sess-1' })
   sendForExtension.mockClear()
@@ -140,7 +137,7 @@ beforeEach(() => {
 
 describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
   it('reports the API version for feature detection', async () => {
-    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(2)
+    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(3)
   })
 
   it('resolves the workspace root from the locator', async () => {
@@ -189,6 +186,8 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     ['cate.editor.openFile', { path: 'package.json' }],
     ['cate.canvas.createPanel', { type: 'extension', extensionPanelId: 'main' }],
     ['cate.panel.setTitle', { title: 'Renamed' }],
+    ['cate.panel.list', {}],
+    ['cate.panel.focus', { panelId: 'p1' }],
   ])('forwards %s to the owning renderer', async (method, args) => {
     const forward = vi.fn(async () => ({ panelId: 'new' }))
     const res = await dispatchCateInvoke(scope(forward), method, args)
@@ -206,7 +205,7 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     // panel.* stay allowed (feature detection + panel self-control).
     state.scopes = undefined
     const forward = vi.fn()
-    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(2)
+    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(3)
     expect(await dispatchCateInvoke(scope(forward), 'cate.storage.get', { key: 'k' })).toEqual({ error: 'scope-denied', method: 'cate.storage.get' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.editor.openFile', { path: 'x' })).toEqual({ error: 'scope-denied', method: 'cate.editor.openFile' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.theme.get', undefined)).toEqual({ error: 'scope-denied', method: 'cate.theme.get' })
@@ -230,7 +229,7 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
   })
 })
 
-describe('dispatchCateInvoke — cate.agent.run', () => {
+describe('dispatchCateInvoke — cate.agent.* (open/send/dispose; run is gone)', () => {
   const fakeWin = { isDestroyed: () => false, webContents: {} }
   // Consent is granted once per extension for the app session, so each test
   // uses a fresh extension id to stay isolated.
@@ -242,51 +241,64 @@ describe('dispatchCateInvoke — cate.agent.run', () => {
     forward: vi.fn(),
   })
 
-  it('denies cate.agent.run when the manifest lacks the agent scope', async () => {
-    // default scopes (no `agent`)
+  it('cate.agent.run is no longer a method (compose open -> send -> dispose)', async () => {
+    state.scopes = ['agent']
+    activeWindow.value = fakeWin
     expect(await dispatchCateInvoke(agentScope(), 'cate.agent.run', { prompt: 'hi' }))
-      .toEqual({ error: 'scope-denied', method: 'cate.agent.run' })
-    expect(runForExtension).not.toHaveBeenCalled()
+      .toEqual({ error: 'unsupported', method: 'cate.agent.run' })
   })
 
-  it('runs one turn through pi after consent and returns the final text', async () => {
+  it('denies cate.agent.open when the manifest lacks the agent scope', async () => {
+    // default scopes (no `agent`)
+    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.open', {}))
+      .toEqual({ error: 'scope-denied', method: 'cate.agent.open' })
+    expect(openForExtension).not.toHaveBeenCalled()
+  })
+
+  it('opens a session after consent and sends one turn', async () => {
     state.scopes = ['agent']
     activeWindow.value = fakeWin
     const s = agentScope()
-    const res = await dispatchCateInvoke(s, 'cate.agent.run', { prompt: '  build it  ' })
-    expect(res).toEqual({ text: 'done', message: null })
+    const opened = await dispatchCateInvoke(s, 'cate.agent.open', {})
+    expect(opened).toEqual({ sessionId: 'sess-1' })
     expect(showMessageBox).toHaveBeenCalledTimes(1) // first-use consent
-    expect(runForExtension).toHaveBeenCalledWith('build it', {
+    expect(openForExtension).toHaveBeenCalledWith({
       workspaceId: WS,
       locator: '/ws/root',
       extensionId: s.extensionId,
       sender: fakeWin.webContents,
+      resume: undefined,
     })
+    const res = await dispatchCateInvoke(s, 'cate.agent.send', { sessionId: 'sess-1', prompt: 'build it' })
+    expect(res).toEqual({ text: 'reply', message: { role: 'assistant' } })
+    expect(sendForExtension).toHaveBeenCalledWith({ extensionId: s.extensionId, sessionId: 'sess-1', text: 'build it' })
   })
 
-  it('rejects an empty prompt before touching the agent', async () => {
+  it('rejects a send without a prompt or session before touching the agent', async () => {
     state.scopes = ['agent']
     activeWindow.value = fakeWin
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.run', { prompt: '   ' }))
-      .toEqual({ error: 'bad-args', method: 'cate.agent.run' })
-    expect(runForExtension).not.toHaveBeenCalled()
+    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.send', { sessionId: 'sess-1', prompt: '   ' }))
+      .toEqual({ error: 'bad-args', method: 'cate.agent.send' })
+    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.send', { prompt: 'hi' }))
+      .toEqual({ error: 'bad-args', method: 'cate.agent.send' })
+    expect(sendForExtension).not.toHaveBeenCalled()
   })
 
-  it('does not run when the user denies consent', async () => {
+  it('does not open when the user denies consent', async () => {
     state.scopes = ['agent']
     activeWindow.value = fakeWin
     showMessageBox.mockResolvedValue({ response: 1 }) // Deny
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.run', { prompt: 'hi' }))
-      .toEqual({ error: 'consent-denied', method: 'cate.agent.run' })
-    expect(runForExtension).not.toHaveBeenCalled()
+    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.open', {}))
+      .toEqual({ error: 'consent-denied', method: 'cate.agent.open' })
+    expect(openForExtension).not.toHaveBeenCalled()
   })
 
-  it('surfaces the one-run-at-a-time guard as agent-busy', async () => {
+  it('surfaces the one-turn-at-a-time guard as agent-busy', async () => {
     state.scopes = ['agent']
     activeWindow.value = fakeWin
-    runForExtension.mockRejectedValueOnce(new Error('agent-busy'))
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.run', { prompt: 'hi' }))
-      .toEqual({ error: 'agent-busy', method: 'cate.agent.run' })
+    sendForExtension.mockRejectedValueOnce(new Error('agent-busy'))
+    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.send', { sessionId: 'sess-1', prompt: 'hi' }))
+      .toEqual({ error: 'agent-busy', method: 'cate.agent.send' })
   })
 
   it('cancels this extension\'s in-flight run', async () => {
@@ -396,6 +408,24 @@ describe('dispatchCateInvoke — cate.browser.* namespace', () => {
   it('maps every cate.browser.* method to the single `browser` scope', () => {
     expect(requiredScopeFor('cate.browser.open')).toBe('browser')
     expect(requiredScopeFor('cate.browser.back')).toBe('browser')
+    expect(requiredScopeFor('cate.browser.wait')).toBe('browser')
+    expect(requiredScopeFor('cate.browser.press')).toBe('browser')
+  })
+
+  it('panel.list/focus need the `panel` scope; panel self-identity stays scope-free', () => {
+    expect(requiredScopeFor('cate.panel.list')).toBe('panel')
+    expect(requiredScopeFor('cate.panel.focus')).toBe('panel')
+    expect(requiredScopeFor('cate.panel.setTitle')).toBeNull()
+  })
+
+  it('denies panel.list without the panel scope', async () => {
+    state.scopes = ['editor']
+    const forward = vi.fn()
+    expect(await dispatchCateInvoke(scope(forward), 'cate.panel.list', {})).toEqual({
+      error: 'scope-denied',
+      method: 'cate.panel.list',
+    })
+    expect(forward).not.toHaveBeenCalled()
   })
 
   it('lets a first-party caller with granted `browser` scope through the gate', async () => {

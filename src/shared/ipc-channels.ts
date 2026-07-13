@@ -15,6 +15,12 @@ export const TERMINAL_SCROLLBACK_SAVE = 'terminal:scrollbackSave'
 export const TERMINAL_SET_VISIBILITY = 'terminal:setVisibility'
 export const TERMINAL_CLIPBOARD_WRITE = 'terminal:clipboardWrite'
 
+// WebGL context budget — process-wide cap on terminal WebGL renderers, brokered
+// by main because Chromium's live-context limit is per GPU process (shared
+// across every window). See src/main/webglBudget.ts.
+export const WEBGL_REQUEST_GRANT = 'webgl:requestGrant'
+export const WEBGL_RELEASE_GRANT = 'webgl:releaseGrant'
+
 // Filesystem
 export const FS_READ_FILE = 'fs:readFile'
 export const FS_WRITE_FILE = 'fs:writeFile'
@@ -300,6 +306,8 @@ export const DOCK_WINDOW_FLUSH_SYNC_DONE = 'dock:windowFlushSyncDone' // rendere
 export const WINDOW_PANELS_CHANGED = 'window:panelsChanged'   // main -> renderer (broadcast)
 export const FOCUS_WINDOW_PANEL = 'window:focusPanel'         // renderer -> main
 export const REVEAL_PANEL_IN_WINDOW = 'detached:revealPanelInWindow' // main -> owning renderer
+export const CLOSE_WINDOW_PANEL = 'window:closePanel'         // renderer -> main
+export const CLOSE_PANEL_IN_WINDOW = 'detached:closePanelInWindow' // main -> owning renderer
 export const WINDOW_PANELS_REPORT = 'window:panelsReport'     // renderer -> main (this window's panels)
 
 // Cross-window drag coordination

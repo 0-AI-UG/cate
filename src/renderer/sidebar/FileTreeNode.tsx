@@ -21,7 +21,8 @@ import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExtern
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
-import { parseLocator } from '../../main/runtime/locator'
+import { parseLocator, isLocalLocator } from '../../main/runtime/locator'
+import { relativeDisplayPath } from '../lib/fs/displayPath'
 import { InlineEditInput } from './InlineEditInput'
 import { CreateFileForm } from './CreateFileForm'
 import { CATE_FILE_MIME, readCateFilePaths, writeCateFileDrag } from '../drag/fileDragPayload'
@@ -223,9 +224,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       ? selectedFiles
       : [node.path]
 
-    const relPath = node.path.startsWith(rootPath + '/')
-      ? node.path.slice(rootPath.length + 1)
-      : node.path
+    const relPath = relativeDisplayPath(node.path, rootPath)
 
     const items: import('../../shared/electron-api').NativeContextMenuItem[] = []
     if (!node.isDirectory) {
@@ -243,8 +242,14 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       { id: 'new-file', label: 'New File…' },
       { id: 'new-folder', label: 'New Folder…' },
       { type: 'separator' },
-      { id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' },
-      { type: 'separator' },
+      // Reveal opens the LOCAL Finder; a remote file has nothing to reveal
+      // here, so the item is omitted instead of silently no-oping.
+      ...(isLocalLocator(node.path)
+        ? ([
+            { id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' },
+            { type: 'separator' },
+          ] as import('../../shared/electron-api').NativeContextMenuItem[])
+        : []),
       { id: 'copy', label: pathsToOpen.length > 1 ? `Copy ${pathsToOpen.length} Items` : 'Copy', accelerator: 'Cmd+C' },
       { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: hasClipboard() },
       { type: 'separator' },

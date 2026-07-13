@@ -23,6 +23,9 @@ vi.mock('./agentDir', () => ({
   prepareAgentDir: vi.fn(),
   watchWorkspaceAuth: vi.fn(),
   pushSharedToWorkspace: vi.fn(),
+  // Pulled in transitively (workspaceManager → seedCateCliSkill → skills targets).
+  PI_AGENT_DIR: 'pi-agent',
+  hostJoin: vi.fn((_rt: string, ...segs: string[]) => segs.join('/')),
 }))
 vi.mock('./customModels', () => ({ mirrorModelsToWorkspace: vi.fn() }))
 

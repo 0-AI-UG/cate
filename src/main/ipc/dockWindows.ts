@@ -5,7 +5,7 @@ import {
   listDockWindows,
   windowFromEvent,
 } from '../windowRegistry'
-import { revealWindowPanel } from '../windowPanels'
+import { revealWindowPanel, closeWindowPanel } from '../windowPanels'
 import { collectTopLevelPanelIds } from '../windows/dockState'
 import { revealWindow } from '../windows/reveal'
 import type {
@@ -20,6 +20,7 @@ import {
   DOCK_WINDOWS_LIST,
   DOCK_WINDOW_RESTORE,
   FOCUS_WINDOW_PANEL,
+  CLOSE_WINDOW_PANEL,
 } from '../../shared/ipc-channels'
 
 interface DockWindowDeps {
@@ -43,6 +44,12 @@ export function registerDockWindowHandlers({ createWindow }: DockWindowDeps): vo
   // window, and ask it to bring the panel forward within itself.
   ipcMain.handle(FOCUS_WINDOW_PANEL, async (_event, panelId: string) => {
     revealWindowPanel(panelId)
+  })
+
+  // Close a panel that lives in another window: route the request to its owner,
+  // which runs its own dirty/running confirmation gates before closing.
+  ipcMain.handle(CLOSE_WINDOW_PANEL, async (_event, panelId: string) => {
+    closeWindowPanel(panelId)
   })
 
   // Session restore of a detached dock window — rebuilds the FULL window (every

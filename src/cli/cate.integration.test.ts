@@ -36,7 +36,7 @@ let lastRequest: CapturedRequest | undefined
 let requests: CapturedRequest[] = []
 // Each test sets the reply the server should give; defaults to a bland success.
 let nextResponse: ScriptedResponse = { status: 200, body: { result: null } }
-// `cate.browser.list` is answered from here (used by --panel resolution), so a
+// `cate.panel.list` is answered from here (used by --panel resolution), so a
 // scripted `nextResponse` for a targeted command isn't consumed by the lookup.
 let panelsForList: unknown[] = []
 
@@ -62,7 +62,7 @@ function startServer(): Promise<void> {
         // Answer a --panel resolution lookup from panelsForList; everything else
         // gets the test's scripted nextResponse.
         const reply: ScriptedResponse =
-          lastRequest.method === 'cate.browser.list' && panelsForList.length > 0
+          lastRequest.method === 'cate.panel.list' && panelsForList.length > 0
             ? { status: 200, body: { result: panelsForList } }
             : nextResponse
         const json = JSON.stringify(reply.body ?? null)
@@ -152,17 +152,17 @@ afterEach(() => {
 })
 
 describe('cate CLI — real binary over a real socket', () => {
-  it('1. api cate.version: POSTs method + bearer, prints the scalar; --json prints valid JSON', async () => {
+  it('1. version: POSTs method + bearer, prints the scalar; --json prints valid JSON', async () => {
     nextResponse = { status: 200, body: { result: 2 } }
 
-    const human = await runCli(['api', 'cate.version'], connectedEnv())
+    const human = await runCli(['version'], connectedEnv())
     expect(human.code).toBe(0)
     expect(human.stdout.trim()).toBe('2')
     expect(lastRequest?.method).toBe('cate.version')
     expect(lastRequest?.args).toEqual({})
     expect(lastRequest?.authHeader).toBe('Bearer tok123')
 
-    const asJson = await runCli(['api', 'cate.version', '--json'], connectedEnv())
+    const asJson = await runCli(['version', '--json'], connectedEnv())
     expect(asJson.code).toBe(0)
     expect(asJson.stdout.trim()).toBe('2')
     expect(JSON.parse(asJson.stdout)).toBe(2)
@@ -170,16 +170,16 @@ describe('cate CLI — real binary over a real socket', () => {
 
   it('2. browser open <url> --panel <short id>: resolves the id via list, sends the FULL panelId', async () => {
     // The user copies the short 8-char id that `list` prints; the CLI resolves it
-    // to the full id (an extra cate.browser.list lookup) before dispatching.
+    // to the full id (an extra cate.panel.list lookup) before dispatching.
     const fullId = 'a1b2c3d4e5f6g7h8'
-    panelsForList = [{ panelId: fullId, url: 'https://x.test', focused: true }]
+    panelsForList = [{ panelId: fullId, type: 'browser', url: 'https://x.test', focused: true }]
     nextResponse = { status: 200, body: { result: { panelId: fullId, url: 'https://x.test' } } }
 
     const r = await runCli(['browser', 'open', 'https://x.test', '--panel', 'a1b2c3d4'], connectedEnv())
     expect(r.code).toBe(0)
     expect(r.stdout.trim()).toBe('https://x.test')
     // Two calls over the wire: the resolution lookup, then the real open.
-    expect(requests.map((q) => q.method)).toEqual(['cate.browser.list', 'cate.browser.open'])
+    expect(requests.map((q) => q.method)).toEqual(['cate.panel.list', 'cate.browser.open'])
     expect(lastRequest?.args).toEqual({ url: 'https://x.test', panelId: fullId })
   }, 20_000)
 
@@ -208,7 +208,7 @@ describe('cate CLI — real binary over a real socket', () => {
       body: { result: { error: 'no-browser', method: 'cate.browser.back' } },
     }
 
-    const r = await runCli(['browser', 'back'], connectedEnv())
+    const r = await runCli(['browser', 'reload'], connectedEnv())
     expect(r.code).toBe(1)
     expect(r.stderr).toContain('no-browser')
     expect(r.stdout.trim()).toBe('')
@@ -217,15 +217,16 @@ describe('cate CLI — real binary over a real socket', () => {
   it('5. transport error (HTTP 401 {error}): exit 1', async () => {
     nextResponse = { status: 401, body: { error: 'unauthorized' } }
 
-    const r = await runCli(['api', 'cate.version'], connectedEnv())
+    const r = await runCli(['version'], connectedEnv())
     expect(r.code).toBe(1)
     expect(r.stderr).toContain('unauthorized')
   }, 20_000)
 
-  it('6. env unset: exit 3 with the "not running inside a Cate terminal" message', async () => {
-    const r = await runCli(['browser', 'current'], { PATH: process.env.PATH ?? '' })
+  it('6. env unset: exit 3 with the how-to-enable message', async () => {
+    const r = await runCli(['browser', 'reload'], { PATH: process.env.PATH ?? '' })
     expect(r.code).toBe(3)
-    expect(r.stderr).toContain('not running inside a Cate terminal')
+    expect(r.stderr).toContain('CATE_API/CATE_TOKEN unset')
+    expect(r.stderr).toContain('Settings → Terminal')
     // Never reached the server.
     expect(lastRequest).toBeUndefined()
   }, 20_000)

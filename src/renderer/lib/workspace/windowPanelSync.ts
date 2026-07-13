@@ -17,7 +17,10 @@ import { selectAgentInfoByPanel } from '../../hooks/useAgentPanelInfo'
 import { terminalRegistry } from '../terminal/terminalRegistry'
 import { peekCanvasStoreForPanel, getAllCanvasStores } from '../../stores/canvasStore'
 import { getLiveNodeDockLayout } from '../../panels/nodeDockRegistry'
-import { buildColdStartCanvasChildOwners } from '../../sidebar/partitionWorkspacePanels'
+import { buildColdStartCanvasChildOwners, partitionWorkspacePanels } from '../../sidebar/partitionWorkspacePanels'
+import { getWorkspaceDockSnapshot } from './canvasAccess'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
+import { panelRowLabel } from '../panelTitle'
 import type { WindowPanelReport } from '../../../shared/types'
 
 let cleanup: (() => void) | null = null
@@ -97,11 +100,29 @@ export function setupWindowPanelSync(): () => void {
       // rows.
       const agentInfo = selectAgentInfoByPanel(status, ws.id)
       const withPorts = panelsWithPorts(ws.id)
-      for (const p of Object.values(ws.panels)) {
+      // Report only PLACED panels, using the same partition rules as the local
+      // tree (ghost records — in ws.panels but referenced by no canvas or dock —
+      // would otherwise surface in other windows as phantom rows). Placement
+      // unknown at cold start → nothing is filtered, same as the local tree.
+      const dockSnapshot = getWorkspaceDockSnapshot(ws.id)
+      const dockPlacedIds = dockSnapshot
+        ? new Set(Object.values(dockSnapshot.zones).flatMap((zone) => collectPanelIds(zone.layout)))
+        : null
+      const { canvasPanels, childrenByCanvas, orphanCanvasChildren, freePanels } =
+        partitionWorkspacePanels(Object.values(ws.panels), childToCanvas, dockPlacedIds)
+      const placed = [
+        ...canvasPanels,
+        ...Object.values(childrenByCanvas).flat(),
+        ...orphanCanvasChildren,
+        ...freePanels,
+      ]
+      for (const p of placed) {
         report.push({
           panelId: p.id,
           type: p.type,
-          title: p.title,
+          // The derived label (basename / URL / type when there's no explicit
+          // title), so a panel reads the same in other windows as it does here.
+          title: panelRowLabel(p),
           workspaceId: ws.id,
           parentCanvasId: childToCanvas.get(p.id),
           worktreeId: p.worktreeId,

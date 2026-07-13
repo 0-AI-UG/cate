@@ -29,7 +29,7 @@ vi.mock('./terminalFileLinkProvider', () => ({
   createFileLinkProvider: () => ({ provideLinks: () => {} }),
   resolveLinkRoot: () => '',
 }))
-vi.mock('./terminalDom', () => ({ clearWebglDisabled: vi.fn() }))
+vi.mock('./terminalDom', () => ({ clearWebglDisabled: vi.fn(), releaseWebglGrant: vi.fn() }))
 vi.mock('../themeManager', () => ({ getActiveTheme: () => ({ terminal: {} }) }))
 vi.mock('../../stores/appStore', () => ({
   awaitWorkspaceSync: async () => {},

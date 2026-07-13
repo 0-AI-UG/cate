@@ -27,6 +27,10 @@ export interface WslOptions {
   root: string
   id: string
   exclusions?: string[]
+  /** Idle-suspend of backgrounded terminals (the user's setting); appended as
+   *  `--idle-suspend` to the daemon launch args when true — same flag the
+   *  local transport passes, so a WSL host honors the setting identically. */
+  idleSuspend?: boolean
 }
 
 export class WslTransport implements RuntimeTransport {
@@ -150,6 +154,7 @@ export class WslTransport implements RuntimeTransport {
     const nodeBin = `${this.installDir}/runtime/bin/node`
     const args = ['-d', this.opts.distro, '-e', nodeBin, `${this.installDir}/runtime.cjs`, '--root', this.opts.root, '--id', this.opts.id]
     if (this.opts.exclusions?.length) args.push('--exclude', this.opts.exclusions.join(','))
+    if (this.opts.idleSuspend) args.push('--idle-suspend')
     const child = spawn('wsl.exe', args, { stdio: ['pipe', 'pipe', 'pipe'] })
     child.stdin?.on('error', () => { /* EPIPE after daemon exit is reported via close */ })
     this.child = child

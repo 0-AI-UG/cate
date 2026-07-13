@@ -27,11 +27,13 @@ const h = vi.hoisted(() => ({
 vi.mock('electron', () => ({ app: { getPath: () => h.userData }, shell: {} }))
 vi.mock('./agentDir', () => ({ sharedAuthPath: () => h.authJsonPath }))
 vi.mock('./customModels', () => ({ readCustomOpenAI: () => h.readCustomOpenAI() }))
-vi.mock('@earendil-works/pi-ai', () => ({
+vi.mock('@earendil-works/pi-ai/compat', () => ({
   findEnvKeys: (...args: unknown[]) => h.findEnvKeys(...args),
-  getModels: (...args: unknown[]) => h.getModels(...args),
-  getProviders: () => h.getProviders(),
   getEnvApiKey: () => undefined,
+}))
+vi.mock('@earendil-works/pi-ai/providers/all', () => ({
+  getBuiltinModels: (...args: unknown[]) => h.getModels(...args),
+  getBuiltinProviders: () => h.getProviders(),
 }))
 vi.mock('@earendil-works/pi-ai/oauth', () => ({
   getOAuthApiKey: (...args: unknown[]) => h.getOAuthApiKey(...args),

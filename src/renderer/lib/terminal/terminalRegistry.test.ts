@@ -83,7 +83,7 @@ vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class { proposeDimensions() { return { ...fitProposal } } fit() {} dispose() {} },
 }))
 vi.mock('@xterm/addon-webgl', () => ({
-  WebglAddon: class { onContextLoss() {} dispose() {} },
+  WebglAddon: class { onContextLoss() {} dispose() {} clearTextureAtlas() {} },
 }))
 vi.mock('@xterm/addon-search', () => ({
   SearchAddon: class { findNext() { return false } findPrevious() { return false } clearDecorations() {} },
@@ -120,6 +120,10 @@ vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: 
 // causes a fresh getOrCreate to silently go down the reconnect path.
 const terminalCreate = vi.fn(async () => 'pty-fresh')
 const panelTransferAck = vi.fn(async (_id: string) => undefined as undefined)
+// Process-wide WebGL grant broker (main-side); default to granting so the
+// attach() upgrade path runs. Individual tests can override the resolved value.
+const webglRequestGrant = vi.fn(async (_panelId: string) => true)
+const webglReleaseGrant = vi.fn(async (_panelId: string) => undefined as undefined)
 
 beforeEach(() => {
   fitProposal.cols = 80
@@ -133,6 +137,9 @@ beforeEach(() => {
   settingsState.terminalOptionIsMeta = true
   terminalCreate.mockClear()
   panelTransferAck.mockClear()
+  webglRequestGrant.mockClear()
+  webglRequestGrant.mockImplementation(async () => true)
+  webglReleaseGrant.mockClear()
   panelTransferAck.mockImplementation(async (id: string) => {
     events.push(`ack:${id}`)
   })
@@ -148,6 +155,8 @@ beforeEach(() => {
       onTerminalExit: vi.fn(() => () => {}),
       settingsGet: vi.fn(async () => ''),
       panelTransferAck,
+      webglRequestGrant,
+      webglReleaseGrant,
     },
   })
 })
@@ -666,5 +675,108 @@ describe('terminal identity bimap', () => {
 
     terminalRegistry.dispose('panel-E')
     expect(terminalRegistry.isAlive('panel-E')).toBeUndefined()
+  })
+})
+
+describe('WebGL glyph-atlas resync on a shared-config change', () => {
+  // xterm caches ONE glyph atlas shared by every terminal with the same
+  // font/theme/DPR. Theme, font, and minimumContrastRatio all feed that atlas
+  // key, so changing any of them re-rasterizes the shared atlas — but xterm only
+  // redraws the terminal whose option changed, leaving every sibling's render
+  // model pointing at stale texture coordinates (the scrambled-glyph artifact).
+  // The apply-to-all setters must therefore run one coordinated forceWebglRepaint
+  // pass: clearTextureAtlas + refresh on EVERY live terminal, not just one.
+  it('clears the atlas and refreshes every live terminal after theme/font/contrast changes', async () => {
+    const { registry } = await import('./registryState')
+    const { repaintAllTerminals, applyFontSettingsToAll, applyContrastRatioToAll } =
+      await import('./terminalSettings')
+
+    const makeEntry = (): { clearTextureAtlas: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn>; entry: unknown } => {
+      const clearTextureAtlas = vi.fn()
+      const refresh = vi.fn()
+      return {
+        clearTextureAtlas,
+        refresh,
+        entry: {
+          terminal: { options: {} as Record<string, unknown>, rows: 24, refresh },
+          webglAddon: { clearTextureAtlas },
+        },
+      }
+    }
+
+    const a = makeEntry()
+    const b = makeEntry()
+    registry.set('atlas-a', a.entry as never)
+    registry.set('atlas-b', b.entry as never)
+
+    try {
+      repaintAllTerminals({ terminal: { background: '#000' } } as never)
+      for (const t of [a, b]) {
+        expect(t.clearTextureAtlas).toHaveBeenCalledTimes(1)
+        expect(t.refresh).toHaveBeenCalledTimes(1)
+      }
+
+      applyFontSettingsToAll('Menlo', 14)
+      for (const t of [a, b]) expect(t.clearTextureAtlas).toHaveBeenCalledTimes(2)
+
+      applyContrastRatioToAll(7)
+      for (const t of [a, b]) expect(t.clearTextureAtlas).toHaveBeenCalledTimes(3)
+    } finally {
+      registry.delete('atlas-a')
+      registry.delete('atlas-b')
+    }
+  })
+})
+
+describe('process-wide WebGL context grant lifecycle', () => {
+  async function mountAndAttach(panelId: string): Promise<{
+    terminalRegistry: typeof import('./terminalRegistry').terminalRegistry
+    container: HTMLDivElement
+  }> {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    await terminalRegistry.getOrCreate(panelId, { workspaceId: 'ws-1' })
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'offsetWidth', { value: 800, configurable: true })
+    Object.defineProperty(container, 'offsetHeight', { value: 600, configurable: true })
+    document.body.appendChild(container)
+    terminalRegistry.attach(panelId, container)
+    // Two frames for attach()'s fit/retry, plus a microtask flush for the async
+    // grant round-trip that upgrades the panel to the WebGL renderer.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    await Promise.resolve()
+    return { terminalRegistry, container }
+  }
+
+  it('requests a grant on attach and upgrades to WebGL when granted', async () => {
+    const { terminalRegistry, container } = await mountAndAttach('panel-grant')
+
+    expect(webglRequestGrant).toHaveBeenCalledWith('panel-grant')
+    // Granted → the entry gets a live WebGL addon (the GPU renderer).
+    expect(terminalRegistry.getEntry('panel-grant')?.webglAddon).toBeTruthy()
+
+    document.body.removeChild(container)
+    terminalRegistry.dispose('panel-grant')
+  })
+
+  it('stays on the DOM renderer when the grant is denied (no leaked context)', async () => {
+    webglRequestGrant.mockImplementation(async () => false)
+    const { terminalRegistry, container } = await mountAndAttach('panel-denied')
+
+    expect(webglRequestGrant).toHaveBeenCalledWith('panel-denied')
+    expect(terminalRegistry.getEntry('panel-denied')?.webglAddon).toBeNull()
+
+    document.body.removeChild(container)
+    terminalRegistry.dispose('panel-denied')
+  })
+
+  it('releases the grant on dispose so the slot returns to the budget', async () => {
+    const { terminalRegistry, container } = await mountAndAttach('panel-release')
+    expect(terminalRegistry.getEntry('panel-release')?.webglAddon).toBeTruthy()
+
+    document.body.removeChild(container)
+    terminalRegistry.dispose('panel-release')
+
+    expect(webglReleaseGrant).toHaveBeenCalledWith('panel-release')
   })
 })

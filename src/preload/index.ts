@@ -15,6 +15,8 @@ import {
   TERMINAL_SCROLLBACK_SAVE,
   TERMINAL_SET_VISIBILITY,
   TERMINAL_CLIPBOARD_WRITE,
+  WEBGL_REQUEST_GRANT,
+  WEBGL_RELEASE_GRANT,
   FS_READ_FILE,
   FS_READ_BINARY,
   FS_WRITE_FILE,
@@ -158,6 +160,8 @@ import {
   WINDOW_PANELS_CHANGED,
   FOCUS_WINDOW_PANEL,
   REVEAL_PANEL_IN_WINDOW,
+  CLOSE_WINDOW_PANEL,
+  CLOSE_PANEL_IN_WINDOW,
   WINDOW_PANELS_REPORT,
   CROSS_WINDOW_DRAG_START,
   CROSS_WINDOW_DRAG_UPDATE,
@@ -344,6 +348,8 @@ const invokeForwarders = {
   terminalScrollbackSave: makeInvoker<'terminalScrollbackSave'>(TERMINAL_SCROLLBACK_SAVE),
   terminalSetVisibility: makeInvoker<'terminalSetVisibility'>(TERMINAL_SET_VISIBILITY),
   terminalClipboardWrite: makeInvoker<'terminalClipboardWrite'>(TERMINAL_CLIPBOARD_WRITE),
+  webglRequestGrant: makeInvoker<'webglRequestGrant'>(WEBGL_REQUEST_GRANT),
+  webglReleaseGrant: makeInvoker<'webglReleaseGrant'>(WEBGL_RELEASE_GRANT),
 
   // Filesystem
   fsReadFile: makeInvoker<'fsReadFile'>(FS_READ_FILE),
@@ -489,6 +495,7 @@ const invokeForwarders = {
 
   // Cross-window panel discovery
   focusWindowPanel: makeInvoker<'focusWindowPanel'>(FOCUS_WINDOW_PANEL),
+  closeWindowPanel: makeInvoker<'closeWindowPanel'>(CLOSE_WINDOW_PANEL),
   reportWindowPanels: makeInvoker<'reportWindowPanels'>(WINDOW_PANELS_REPORT),
 
   // Cross-window drag coordination
@@ -848,6 +855,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onRevealPanelInWindow(callback: (panelId: string) => void): () => void {
     return createIpcListener(REVEAL_PANEL_IN_WINDOW, callback)
+  },
+
+  onClosePanelInWindow(callback: (panelId: string) => void): () => void {
+    return createIpcListener(CLOSE_PANEL_IN_WINDOW, callback)
   },
 
   // ---------------------------------------------------------------------------

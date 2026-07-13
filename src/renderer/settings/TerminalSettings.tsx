@@ -87,11 +87,20 @@ export function TerminalSettings() {
       </SettingRow>
       <SettingRow
         label="Command-line control (cate CLI)"
-        description="Let agents and tools in your terminals drive Cate (browser, panels, editor) via the `cate` command. Off by default: turning it on puts a loopback endpoint and token in the env of every process in your terminals, so any of them can drive the browser on your live session. Off: the endpoint is never created."
+        description="Let agents and tools in your terminals drive Cate (browser, panels, editor) via the `cate` command. On puts a loopback endpoint and token in the env of every process in your terminals, so any of them can drive the browser on your live session. Off: the endpoint is never created; `cate` stays on PATH and explains how to re-enable it. New terminals pick up a change."
       >
         <Toggle
           checked={store.cliEnabled}
           onChange={(v) => store.setSetting('cliEnabled', v)}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Install cate CLI skill"
+        description="Auto-install the cate-cli skill into each workspace so agents learn the `cate` command: Cate's agent always, plus Claude Code, Pi, OpenCode, Codex and Antigravity where their folder exists. Installs once, never overwrites edits; uninstalls stick. Off stops future installs."
+      >
+        <Toggle
+          checked={store.cliSkillInstallEnabled}
+          onChange={(v) => store.setSetting('cliSkillInstallEnabled', v)}
         />
       </SettingRow>
     </div>

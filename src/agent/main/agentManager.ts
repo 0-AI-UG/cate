@@ -91,7 +91,7 @@ export class AgentManager {
   private sessions = new Map<string, AgentSession>()
   private locks = new KeyedLock()
   // Used to resolve the default model for extension-initiated background runs
-  // (see runForExtension) and for the auth-change mirror hook below.
+  // (see openForExtension) and for the auth-change mirror hook below.
   private authManager: AuthManager
   // Live extension agent sessions, keyed by handle (pi's session file). pi owns
   // all conversation state on disk; Cate keeps only this in-memory handle->client
@@ -417,19 +417,6 @@ export class AgentManager {
     if (!ext || ext.extensionId !== opts.extensionId) return
     this.extSessions.delete(opts.sessionId)
     await this.dispose(ext.panelId)
-  }
-
-  /** One-shot sugar over open -> send -> dispose (cate.agent.run). */
-  async runForExtension(
-    text: string,
-    opts: { workspaceId: string; locator: string; extensionId: string; sender: WebContents },
-  ): Promise<AgentTurnResult> {
-    const { sessionId } = await this.openForExtension(opts)
-    try {
-      return await this.sendForExtension({ extensionId: opts.extensionId, sessionId, text })
-    } finally {
-      await this.disposeForExtension({ extensionId: opts.extensionId, sessionId })
-    }
   }
 
   /** Abort the in-flight turn of this extension's session (best effort). */
