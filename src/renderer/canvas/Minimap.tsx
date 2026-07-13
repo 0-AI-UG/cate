@@ -41,12 +41,9 @@ function themedPanelColor(panelType: string): string {
 
 interface MinimapProps {
   mode?: 'floating' | 'popover'
-  /** Fired after a click/drag navigate gesture ends (mouse released). Lets a
-   *  host — e.g. the command palette — dismiss itself once the user has jumped. */
-  onNavigateEnd?: () => void
 }
 
-const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) => {
+const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
   const nodeList = useCanvasStoreContext((s) => Object.values(s.nodes), shallow)
   // NOTE: viewportOffset is intentionally NOT subscribed via React here.
   // The viewport rect div is updated imperatively via canvasApi.subscribe
@@ -78,17 +75,13 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) =
   // Stable ref for minimap layout params so the subscription callback always
   // reads fresh values without needing to re-subscribe.
   const layoutRef = useRef({
-    worldMinX: 0, worldMinY: 0, scale: 1, offsetX: 0, offsetY: 0,
+    worldMinX: 0, worldMinY: 0, scale: 1,
     zoomLevel: 1, containerWidth: 0, containerHeight: 0,
   })
   const [corner, setCorner] = useState<Corner>(loadCorner)
   const [size, setSize] = useState<{ w: number; h: number }>(loadSize)
-  // Popover mode fills its host (width/height 100%), so the fit-scale must use the
-  // host's real pixel size rather than a fixed guess — measured here so the map
-  // scales to whatever card the palette gives it. Seeded with a sane default.
-  const [popoverSize, setPopoverSize] = useState<{ w: number; h: number }>({ w: 218, h: 158 })
-  const MINIMAP_WIDTH = mode === 'popover' ? popoverSize.w : size.w
-  const MINIMAP_HEIGHT = mode === 'popover' ? popoverSize.h : size.h
+  const MINIMAP_WIDTH = mode === 'popover' ? 218 : size.w
+  const MINIMAP_HEIGHT = mode === 'popover' ? 158 : size.h
 
   const sizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cornerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -155,13 +148,13 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) =
     // Capture world bounds + scale ONCE at drag start so the mapping stays linear
     // for the whole drag — otherwise each mousemove re-derives bounds that include
     // the current viewport, which shifts the scale and makes motion accelerate.
-    const { worldMinX, worldMinY, scale, offsetX, offsetY } = layoutRef.current
+    const { worldMinX, worldMinY, scale } = layoutRef.current
     const rect = minimapRef.current.getBoundingClientRect()
 
     const navigate = (clientX: number, clientY: number) => {
       const state = canvasApi.getState()
-      const canvasX = (clientX - rect.left - MINIMAP_PADDING - offsetX) / scale + worldMinX
-      const canvasY = (clientY - rect.top - MINIMAP_PADDING - offsetY) / scale + worldMinY
+      const canvasX = (clientX - rect.left - MINIMAP_PADDING) / scale + worldMinX
+      const canvasY = (clientY - rect.top - MINIMAP_PADDING) / scale + worldMinY
       state.setViewportOffset({
         x: state.containerSize.width / 2 - canvasX * state.zoomLevel,
         y: state.containerSize.height / 2 - canvasY * state.zoomLevel,
@@ -173,28 +166,10 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) =
     const handleUp = () => {
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
-      onNavigateEnd?.()
     }
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
-  }, [canvasApi, onNavigateEnd])
-
-  // Track the popover host's real size so the fit-scale matches the rendered box.
-  useEffect(() => {
-    if (mode !== 'popover') return
-    const el = minimapRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    // Measure WIDTH only — popover height is derived from content aspect below
-    // (the div sets its own height), so reading it back would feed a loop.
-    const measure = () => {
-      const w = Math.round(el.getBoundingClientRect().width)
-      if (w > 0) setPopoverSize((prev) => (prev.w === w ? prev : { ...prev, w }))
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [mode, nodeList.length])
+  }, [canvasApi])
 
   // Imperatively update the viewport rect on pan — no React re-render needed.
   useEffect(() => {
@@ -225,7 +200,6 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) =
   if (!contentBounds) return null
 
   const { minX, minY, maxX, maxY } = contentBounds
-  const isPopover = mode === 'popover'
 
   // Seed world bounds from current offset (used for initial render and re-renders on zoom/node change)
   const seedOffset = canvasApi.getState().viewportOffset
@@ -234,46 +208,21 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) =
   const vpRight0 = vpLeft0 + containerSize.width / zoomLevel
   const vpBottom0 = vpTop0 + containerSize.height / zoomLevel
 
-  // Floating mode frames the content AND the current viewport (the view rect is
-  // always kept visible). Popover mode is a pure content overview that fills the
-  // card: it frames only the nodes (a small margin) and omits the view rect.
-  const margin = isPopover ? 60 : 100
-  const worldMinX = (isPopover ? minX : Math.min(minX, vpLeft0)) - margin
-  const worldMinY = (isPopover ? minY : Math.min(minY, vpTop0)) - margin
-  const worldMaxX = (isPopover ? maxX : Math.max(maxX, vpRight0)) + margin
-  const worldMaxY = (isPopover ? maxY : Math.max(maxY, vpBottom0)) + margin
+  const worldMinX = Math.min(minX, vpLeft0) - 100
+  const worldMinY = Math.min(minY, vpTop0) - 100
+  const worldMaxX = Math.max(maxX, vpRight0) + 100
+  const worldMaxY = Math.max(maxY, vpBottom0) + 100
 
   const worldW = worldMaxX - worldMinX
   const worldH = worldMaxY - worldMinY
 
+  // Scale to fit minimap
   const innerW = MINIMAP_WIDTH - MINIMAP_PADDING * 2
+  const innerH = MINIMAP_HEIGHT - MINIMAP_PADDING * 2
+  const scale = Math.min(innerW / worldW, innerH / worldH)
 
-  // Floating: fixed box, fit both axes. Popover: fill the card WIDTH and grow the
-  // card height to the content's aspect (capped) so the map spans edge-to-edge
-  // without cropping any node; only very tall canvases fall back to fit-both
-  // within the cap. `popoverHeight` drives the (auto-height) card.
-  const POPOVER_MAX_H = 360
-  const POPOVER_MIN_H = 140
-  let scale: number
-  let popoverHeight = MINIMAP_HEIGHT
-  if (isPopover) {
-    scale = innerW / worldW
-    popoverHeight = worldH * scale + MINIMAP_PADDING * 2
-    if (popoverHeight > POPOVER_MAX_H) {
-      popoverHeight = POPOVER_MAX_H
-      scale = Math.min(innerW / worldW, (POPOVER_MAX_H - MINIMAP_PADDING * 2) / worldH)
-    }
-    popoverHeight = Math.max(popoverHeight, POPOVER_MIN_H)
-  } else {
-    scale = Math.min(innerW / worldW, (MINIMAP_HEIGHT - MINIMAP_PADDING * 2) / worldH)
-  }
-  // Center within the resolved box (no-op on the axis the fit is tight against).
-  const innerHFinal = (isPopover ? popoverHeight : MINIMAP_HEIGHT) - MINIMAP_PADDING * 2
-  const offsetX = isPopover ? (innerW - worldW * scale) / 2 : 0
-  const offsetY = isPopover ? (innerHFinal - worldH * scale) / 2 : 0
-
-  const toMiniX = (x: number) => MINIMAP_PADDING + (x - worldMinX) * scale + offsetX
-  const toMiniY = (y: number) => MINIMAP_PADDING + (y - worldMinY) * scale + offsetY
+  const toMiniX = (x: number) => MINIMAP_PADDING + (x - worldMinX) * scale
+  const toMiniY = (y: number) => MINIMAP_PADDING + (y - worldMinY) * scale
 
   // Initial viewport rect position (for render)
   const vpRectLeft = toMiniX(vpLeft0)
@@ -286,19 +235,19 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) =
     worldMinX,
     worldMinY,
     scale,
-    offsetX,
-    offsetY,
     zoomLevel,
     containerWidth: containerSize.width,
     containerHeight: containerSize.height,
   }
+
+  const isPopover = mode === 'popover'
 
   return (
     <div
       ref={minimapRef}
       style={{
         ...(isPopover
-          ? { position: 'relative' as const, width: '100%', height: popoverHeight }
+          ? { position: 'relative' as const, width: '100%', height: '100%' }
           : {
               position: 'absolute' as const,
               ...(corner.startsWith('bottom') ? { bottom: MINIMAP_GAP } : { top: MINIMAP_GAP }),
@@ -378,7 +327,6 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) =
               e.stopPropagation()
               e.preventDefault()
               canvasApi.getState().focusAndCenter(node.id)
-              onNavigateEnd?.()
             }}
             style={{
               position: 'absolute',
@@ -417,24 +365,20 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating', onNavigateEnd }) =
         )
       })}
 
-      {/* Viewport rectangle — position is updated imperatively by canvasApi.subscribe.
-          Omitted in popover mode: the palette overview is a pure content map, so
-          the framing rectangle would just read as an unwanted border. */}
-      {!isPopover && (
-        <div
-          ref={viewportRectRef}
-          style={{
-            position: 'absolute',
-            left: vpRectLeft,
-            top: vpRectTop,
-            width: vpRectWidth,
-            height: vpRectHeight,
-            border: `var(--hairline) solid var(--border-strong)`,
-            borderRadius: 2,
-            pointerEvents: 'none',
-          }}
-        />
-      )}
+      {/* Viewport rectangle — position is updated imperatively by canvasApi.subscribe */}
+      <div
+        ref={viewportRectRef}
+        style={{
+          position: 'absolute',
+          left: vpRectLeft,
+          top: vpRectTop,
+          width: vpRectWidth,
+          height: vpRectHeight,
+          border: `1.5px solid var(--border-strong)`,
+          borderRadius: 2,
+          pointerEvents: 'none',
+        }}
+      />
     </div>
   )
 }

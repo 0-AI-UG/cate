@@ -593,6 +593,7 @@ export const SHORTCUT_DEFINITIONS = {
   toggleSidebar: { label: 'Toggle Sidebar', shortcut: storedShortcut('b', { command: true }) },
   toggleFileExplorer: { label: 'Toggle File Explorer', shortcut: storedShortcut('x', { command: true, shift: true }) },
   toggleSearch: { label: 'Toggle Search', shortcut: storedShortcut('f', { command: true, shift: true }) },
+  toggleMinimap: { label: 'Toggle Minimap', shortcut: storedShortcut('m', { command: true, shift: true }) },
   commandPalette: { label: 'Command Palette', shortcut: storedShortcut('k', { command: true }) },
   zoomIn: { label: 'Zoom In', shortcut: storedShortcut('=', { command: true }) },
   zoomOut: { label: 'Zoom Out', shortcut: storedShortcut('-', { command: true }) },

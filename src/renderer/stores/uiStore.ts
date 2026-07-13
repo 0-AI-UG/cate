@@ -47,6 +47,8 @@ interface UIStoreState {
   /** Bumped whenever a saved layout is created/deleted, so open surfaces
    *  (dialog, empty-canvas overlay) can re-list. */
   layoutsVersion: number
+  /** Whether the minimap is currently expanded. */
+  minimapOpen: boolean
   showSettings: boolean
   /** Optional initial settings tab to open when showSettings flips to true. */
   settingsInitialTab: string | null
@@ -76,6 +78,8 @@ interface UIStoreActions {
   setShowLayoutsDialog: (show: boolean) => void
   setShowSkillsDialog: (show: boolean) => void
   bumpLayoutsVersion: () => void
+  setMinimapOpen: (open: boolean) => void
+  toggleMinimapOpen: () => void
   openSettings: (initialTab?: string) => void
   closeSettings: () => void
   toggleSidebar: () => void
@@ -107,6 +111,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showLayoutsDialog: false,
   showSkillsDialog: false,
   layoutsVersion: 0,
+  minimapOpen: false,
   showSettings: false,
   settingsInitialTab: null,
   marquee: null,
@@ -133,6 +138,14 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   bumpLayoutsVersion() {
     set((s) => ({ layoutsVersion: s.layoutsVersion + 1 }))
+  },
+
+  setMinimapOpen(open) {
+    set({ minimapOpen: open })
+  },
+
+  toggleMinimapOpen() {
+    set({ minimapOpen: !get().minimapOpen })
   },
 
   openSettings(initialTab) {

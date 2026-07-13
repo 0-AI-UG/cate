@@ -164,6 +164,9 @@ export async function runAction(
       if (next === 'search') useSearchStore.getState().requestFocus()
       break
     }
+    case 'toggleMinimap':
+      useUIStore.getState().toggleMinimapOpen()
+      break
     case 'commandPalette':
       useUIStore.getState().setShowCommandPalette(true)
       break

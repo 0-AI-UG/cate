@@ -198,6 +198,7 @@ export function buildApplicationMenu(): void {
         { type: 'separator' },
         { ...actionMeta('toggleSidebar'), click: dispatch('toggleSidebar') },
         { ...actionMeta('toggleFileExplorer'), click: dispatch('toggleFileExplorer') },
+        { ...actionMeta('toggleMinimap'), click: dispatch('toggleMinimap') },
         { type: 'separator' },
         { ...actionMeta('zoomIn'), click: dispatch('zoomIn') },
         { label: 'Zoom In', accelerator: 'CmdOrCtrl+Shift+=', click: dispatch('zoomIn'), visible: false, acceleratorWorksWhenHidden: true },

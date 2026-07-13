@@ -82,7 +82,7 @@ describe('DockTabBar restyle', () => {
     root = renderBar(host)
     const pills = host.querySelectorAll<HTMLElement>('[data-tab-panel-id]')
     expect(pills.length).toBe(2)
-    for (const pill of pills) expect(pill.className).toContain('rounded-md')
+    for (const pill of pills) expect(pill.className).toContain('rounded-[10px]')
     const active = host.querySelector<HTMLElement>('[data-tab-panel-id="p1"]')!
     expect(active.className).toContain('bg-surface-2')
     // Inactive tabs get the hover-fill treatment, not the solid active fill.

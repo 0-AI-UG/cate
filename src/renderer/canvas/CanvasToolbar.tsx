@@ -11,14 +11,19 @@ import {
   FileText,
   Minus,
   Plus,
+  MapTrifold,
   Cursor,
   Hand,
+  X,
   ChatCircle,
 } from '@phosphor-icons/react'
+import Minimap from './Minimap'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import ExtensionToolbarMenu from './ExtensionToolbarMenu'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
+import { useUIStateStore } from '../stores/uiStateStore'
+import { cornerFromPoint } from '../lib/canvasCorners'
 import { useResolvedShortcuts } from '../stores/shortcutStore'
 import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
@@ -197,6 +202,8 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onZoomOut,
 }) => {
   const canvasApi = useCanvasStoreApi()
+  const minimapOpen = useUIStore((s) => s.minimapOpen)
+  const toggleMinimapOpen = useUIStore((s) => s.toggleMinimapOpen)
   const activeTool = useUIStore((s) => s.activeTool)
   const setActiveTool = useUIStore((s) => s.setActiveTool)
   const shortcuts = useResolvedShortcuts()
@@ -208,7 +215,58 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const zoomResetKey = displayString(shortcuts.zoomReset)
   const zoomText = `${Math.round(zoom * 100)}%`
 
+  // Minimap pill docking corner + drag-to-dock handling. The corner is driven
+  // straight from the UI-state store so an external shove (the Cate Agent landing on
+  // this corner) moves the pill immediately. The toggle button doubles as a
+  // drag handle: a click toggles the map, a drag past a small threshold re-docks
+  // the pill to whichever corner the cursor ends up in.
+  const minimapCorner = useUIStateStore((s) => s.minimapButtonCorner)
+  const minimapDidDragRef = useRef(false)
+  const minimapPillRef = useRef<HTMLDivElement>(null)
+  const mmBottom = minimapCorner.startsWith('bottom')
+  const mmRight = minimapCorner.endsWith('right')
+
+  const handleMinimapHandleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const startX = e.clientX
+    const startY = e.clientY
+    minimapDidDragRef.current = false
+    // Resolve corners against this canvas's own area so the quadrant split lines
+    // up with where the pill (and the Cate Agent) actually render.
+    const area = minimapPillRef.current?.closest('[data-canvas-area]')
+    const rect = area?.getBoundingClientRect() ??
+      { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    const onMove = (ev: MouseEvent) => {
+      if (!minimapDidDragRef.current && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) {
+        return
+      }
+      minimapDidDragRef.current = true
+      const next = cornerFromPoint(ev.clientX, ev.clientY, rect)
+      const store = useUIStateStore.getState()
+      const prev = store.minimapButtonCorner
+      if (next === prev) return
+      store.setUIState('minimapButtonCorner', next)
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const handleMinimapToggleClick = () => {
+    // Suppress the click that fires at the end of a drag gesture.
+    if (minimapDidDragRef.current) {
+      minimapDidDragRef.current = false
+      return
+    }
+    toggleMinimapOpen()
+  }
+
   return (
+    <>
     <div className="absolute inset-x-0 bottom-4 z-50 flex justify-center pointer-events-none">
       <div data-onboarding="toolbar" className="relative pointer-events-auto">
         <div className="rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
@@ -282,6 +340,60 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       </div>
 
     </div>
+
+    {/* Minimap — pill button docked to any corner. The pill grows toward the
+        canvas centre to reveal the map, while the toggle button stays pinned to
+        the docked corner so open and close feel like the same gesture. Drag the
+        button to re-dock the pill to a different corner. */}
+    <div
+      ref={minimapPillRef}
+      className="absolute z-50 flex gap-2"
+      style={{
+        ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
+        ...(mmRight ? { right: '1rem' } : { left: '1rem' }),
+        flexDirection: mmRight ? 'row' : 'row-reverse',
+        alignItems: mmBottom ? 'flex-end' : 'flex-start',
+      }}
+    >
+      <div
+        data-testid="minimap-toggle"
+        className="relative overflow-hidden border border-subtle shadow-[0_8px_24px_-6px_var(--shadow-node)]"
+        style={{
+          borderRadius: 22,
+          transition: 'width 300ms cubic-bezier(0.16,1,0.3,1), height 300ms cubic-bezier(0.16,1,0.3,1), background 200ms ease, backdrop-filter 200ms ease',
+          width: minimapOpen ? 220 : 44,
+          height: minimapOpen ? 160 : 44,
+          background: minimapOpen
+            ? 'color-mix(in srgb, var(--surface-2) 45%, transparent)'
+            : 'var(--surface-0)',
+          backdropFilter: minimapOpen ? 'blur(24px) saturate(1.5)' : 'none',
+          WebkitBackdropFilter: minimapOpen ? 'blur(24px) saturate(1.5)' : 'none',
+        }}
+      >
+        {minimapOpen && (
+          <div className="absolute inset-0">
+            <Minimap mode="popover" />
+          </div>
+        )}
+        <button
+          type="button"
+          onMouseDown={handleMinimapHandleMouseDown}
+          onClick={handleMinimapToggleClick}
+          title={minimapOpen ? 'Hide minimap (drag to move)' : 'Show minimap (drag to move)'}
+          style={{
+            WebkitTapHighlightColor: 'transparent',
+            position: 'absolute',
+            cursor: 'grab',
+            ...(mmBottom ? { bottom: -1 } : { top: -1 }),
+            ...(mmRight ? { right: -1 } : { left: -1 }),
+          }}
+          className="w-[44px] h-[44px] flex items-center justify-center text-secondary hover:text-primary active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100 z-10"
+        >
+          {minimapOpen ? <X size={14} weight="bold" /> : <MapTrifold size={18} />}
+        </button>
+      </div>
+    </div>
+    </>
   )
 }
 
