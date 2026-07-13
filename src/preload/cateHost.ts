@@ -15,12 +15,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AgentTurnResult,
   CateBrowserSnapshot,
-  CateBrowserState,
-  CateBrowserTab,
   CateDroppedFile,
   CateHost,
   CateHostTheme,
   CateHostWorkspace,
+  CatePanelInfo,
 } from '../shared/cate-host-api'
 
 // Channel names are inlined (NOT imported from ../shared/ipc-channels) on
@@ -49,6 +48,8 @@ const api: CateHost = {
   panel: {
     id: panelId,
     setTitle: (title: string) => invoke('cate.panel.setTitle', { title }).then(() => undefined),
+    list: () => invoke('cate.panel.list') as Promise<CatePanelInfo[]>,
+    focus: (targetPanelId: string) => invoke('cate.panel.focus', { panelId: targetPanelId }),
   },
 
   workspace: {
@@ -87,18 +88,13 @@ const api: CateHost = {
     send: (sessionId: string, prompt: string) =>
       invoke('cate.agent.send', { sessionId, prompt }) as Promise<AgentTurnResult | { error: string }>,
     dispose: (sessionId: string) => invoke('cate.agent.dispose', { sessionId }),
-    run: (prompt: string) => invoke('cate.agent.run', { prompt }) as Promise<AgentTurnResult | { error: string }>,
     cancel: () => invoke('cate.agent.cancel'),
   },
 
   browser: {
-    list: () => invoke('cate.browser.list') as Promise<CateBrowserTab[]>,
     open: (opts: { url: string; panelId?: string }) =>
       invoke('cate.browser.open', opts) as Promise<{ panelId: string; url: string }>,
-    back: (opts?: { panelId?: string }) => invoke('cate.browser.back', opts) as Promise<{ ok: true }>,
-    forward: (opts?: { panelId?: string }) => invoke('cate.browser.forward', opts) as Promise<{ ok: true }>,
     reload: (opts?: { panelId?: string }) => invoke('cate.browser.reload', opts) as Promise<{ ok: true }>,
-    current: (opts?: { panelId?: string }) => invoke('cate.browser.current', opts) as Promise<CateBrowserState>,
     screenshot: (opts?: { panelId?: string }) =>
       invoke('cate.browser.screenshot', opts) as Promise<{ path: string }>,
     snapshot: (opts?: { panelId?: string }) =>
@@ -107,6 +103,10 @@ const api: CateHost = {
       invoke('cate.browser.click', opts) as Promise<{ ok: true }>,
     type: (opts: { ref: string; text: string; panelId?: string }) =>
       invoke('cate.browser.type', opts) as Promise<{ ok: true }>,
+    wait: (opts?: { panelId?: string; timeoutMs?: number }) =>
+      invoke('cate.browser.wait', opts) as Promise<{ url: string; title: string; loading: false }>,
+    press: (opts: { key: string; ref?: string; panelId?: string }) =>
+      invoke('cate.browser.press', opts) as Promise<{ ok: true }>,
   },
 
   files: {

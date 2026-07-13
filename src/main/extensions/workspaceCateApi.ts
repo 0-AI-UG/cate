@@ -9,10 +9,11 @@ import { CateApiEndpointManager, cateApiEndpointManager } from './cateApiEndpoin
 const FIRST_PARTY_ID = 'terminal'
 const endpointKey = (workspaceId: string): string => `first-party:${workspaceId}`
 
+// Only scopes the CLI has verbs for. workspace.read/theme exist for extensions
+// (webviews with no filesystem) — a terminal's cwd IS the workspace root, so
+// granting them here would be dead surface.
 export const GRANTED_SCOPES: readonly string[] = [
   'browser',
-  'workspace.read',
-  'theme',
   'ui',
   'editor',
   'canvas',

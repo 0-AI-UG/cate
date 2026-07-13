@@ -24,6 +24,7 @@ dev-app-update.yml
 
 # Claude Code
 .claude/
+.agents/
 
 # Cate workspace + local session state
 .cate/
