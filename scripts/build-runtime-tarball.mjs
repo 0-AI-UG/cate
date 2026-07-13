@@ -35,7 +35,7 @@
 // (e.g. a Mac) for local end-to-end testing before CI exists.
 // =============================================================================
 
-import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync, readdirSync, openSync, readSync, closeSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -563,6 +563,10 @@ async function stageCateCli(outRoot) {
  * pty.node/spawn-helper and @parcel/watcher's watcher.node must be signed like
  * the app. node also gets the runtime entitlements (JIT + disable-library-
  * validation) so it still runs and can load the native addons once hardened.
+ * The bundled pi tree (staged cross-platform, so it carries BOTH darwin arches)
+ * also ships native addons — e.g. @earendil-works/pi-tui's darwin-modifiers.node
+ * — so we discover every Mach-O .node under it and sign those too; a hard-coded
+ * list silently missed them and broke notarization when pi added the addon.
  * No-op unless we're building a darwin tarball on a darwin host with
  * CATE_MAC_SIGN_IDENTITY set (see ci-mac-signing-keychain.sh); when absent the
  * binaries stay unsigned and notarization fails loudly.
@@ -578,6 +582,10 @@ function signMacNatives(stageDir) {
     path.join(pbDir, 'pty.node'),
     path.join(pbDir, 'spawn-helper'),
     path.join('node_modules', '@parcel', parcelBinaryDir(targetPlatform, targetArch), 'watcher.node'),
+    // pi's own native addons (both darwin arches ride in the cross-platform pi
+    // tarball). win32/linux prebuilds under the same tree are skipped: the
+    // finder keeps only Mach-O files, so codesign never sees a PE/ELF .node.
+    ...findMachONodes(path.join(stageDir, 'pi')).map((abs) => path.relative(stageDir, abs)),
   ]
   // The identity is found via the keychain search list (ci-mac-signing-keychain.sh
   // adds the signing keychain to it); codesign --keychain alone is unreliable.
@@ -593,6 +601,43 @@ function signMacNatives(stageDir) {
     execFileSync('codesign', ['--verify', '--strict', file], { stdio: 'inherit' })
   }
   console.log(`[runtime] signed darwin natives for ${targetArg} (Developer ID ${identity})`)
+}
+
+/** Recursively collect absolute paths of Mach-O `.node` addons under `root`.
+ *  Reads each candidate's 4-byte magic so win32 PE / linux ELF prebuilds that
+ *  share the tree (e.g. pi-tui's win32-console-mode.node) are skipped — only
+ *  darwin binaries that notarytool would flag get returned. Missing root → []. */
+function findMachONodes(root) {
+  const out = []
+  const walk = (dir) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return // dir absent (e.g. no pi staged) — nothing to sign
+    }
+    for (const e of entries) {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) walk(p)
+      else if (e.isFile() && e.name.endsWith('.node') && isMachO(p)) out.push(p)
+    }
+  }
+  walk(root)
+  return out
+}
+
+/** True if `file` starts with a Mach-O magic (thin 32/64-bit or fat/universal,
+ *  either byte order). Non-Mach-O binaries (PE `MZ…`, ELF `\x7fELF`) return false. */
+function isMachO(file) {
+  const MACH_O_MAGICS = new Set([0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca])
+  const fd = openSync(file, 'r')
+  try {
+    const buf = Buffer.alloc(4)
+    if (readSync(fd, buf, 0, 4, 0) < 4) return false
+    return MACH_O_MAGICS.has(buf.readUInt32BE(0))
+  } finally {
+    closeSync(fd)
+  }
 }
 
 function plat(p) {
