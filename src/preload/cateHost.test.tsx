@@ -67,11 +67,16 @@ describe('cateHost preload — invoke wire contract', () => {
     expect(invoke).toHaveBeenCalledWith('cate:invoke', { ...IDENTITY, method: 'cate.agent.dispose', args: { sessionId: 's1' } })
   })
 
-  it('agent.run maps the prompt; cancel takes no args', async () => {
-    await cate.agent.run('do it')
-    expect(invoke).toHaveBeenCalledWith('cate:invoke', { ...IDENTITY, method: 'cate.agent.run', args: { prompt: 'do it' } })
+  it('cancel takes no args; the removed methods are off the bridge entirely', async () => {
     await cate.agent.cancel()
     expect(invoke).toHaveBeenCalledWith('cate:invoke', { ...IDENTITY, method: 'cate.agent.cancel', args: undefined })
+    // v3 cuts: not present at all, so feature detection is a simple `in` check.
+    expect(cate.agent.run).toBeUndefined()
+    expect(cate.browser.list).toBeUndefined()
+    expect(cate.browser.back).toBeUndefined()
+    expect(cate.browser.forward).toBeUndefined()
+    expect(cate.browser.current).toBeUndefined()
+    expect(cate.editor.active).toBeUndefined()
   })
 })
 

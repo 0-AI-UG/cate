@@ -32,12 +32,14 @@ const h = vi.hoisted(() => ({
   editorCreate: vi.fn(() => 'reg-editor-id'),
   placementForActivePanel: vi.fn(),
   setPendingReveal: vi.fn(),
+  activePanelId: null as string | null,
 }))
 
 vi.mock('../lib/fs/fileRouting', () => ({ openFileAsPanel: h.openFileAsPanel }))
 vi.mock('../lib/workspace/panelReveal', () => ({ revealPanel: h.revealPanel }))
 vi.mock('../lib/workspace/canvasAccess', () => ({ placementForActivePanel: h.placementForActivePanel }))
 vi.mock('../lib/editor/editorReveal', () => ({ setPendingReveal: h.setPendingReveal }))
+vi.mock('../lib/activePanel', () => ({ getActivePanelId: () => h.activePanelId }))
 vi.mock('../lib/logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../panels/registry', () => ({
   PANEL_REGISTRY: {
@@ -51,7 +53,28 @@ vi.mock('../stores/appStore', () => ({
       // `host-panel` lives in THIS window's store; a detached panel would be
       // absent (drives the panel.setTitle not-in-window reply).
       workspaces: [
-        { id: WS, rootPath: ROOT, panels: { 'host-panel': { id: 'host-panel', type: 'terminal', title: 'Term' } } },
+        {
+          id: WS,
+          rootPath: ROOT,
+          panels: {
+            'host-panel': { id: 'host-panel', type: 'terminal', title: 'Term' },
+            'ed-1': { id: 'ed-1', type: 'editor', title: 'a.ts', filePath: `${ROOT}/src/a.ts` },
+            'br-1': {
+              id: 'br-1',
+              type: 'browser',
+              title: 'Docs',
+              tabs: [{ id: 'br-1-tab', url: 'https://docs.example/', title: '' }],
+              activeTabId: 'br-1-tab',
+            },
+            'br-2': {
+              id: 'br-2',
+              type: 'browser',
+              title: 'New Tab',
+              tabs: [{ id: 'br-2-tab', url: 'cate://newtab', title: '' }],
+              activeTabId: 'br-2-tab',
+            },
+          },
+        },
         { id: REMOTE_WS, rootPath: REMOTE_ROOT_LOCATOR, panels: {} },
       ],
       createExtensionPanel: h.createExtensionPanel,
@@ -108,6 +131,7 @@ const ACTIVE_PLACEMENT = { target: 'dock', zone: 'left', stackId: 'stack-9' }
 beforeEach(() => {
   vi.clearAllMocks()
   h.placementForActivePanel.mockReturnValue(ACTIVE_PLACEMENT)
+  h.activePanelId = null
   actionCb = null
   replies.length = 0
   installElectronAPI()
@@ -248,4 +272,30 @@ describe('useCateHostActionResponder', () => {
     await fire('cate.unknown.method', {})
     expect(replies).toContainEqual({ requestId: 'req-cate.unknown.method', ok: false, error: 'unsupported' })
   })
+
+  it('panel.list enumerates this window panels: focus, bare filePath, browser url', async () => {
+    h.activePanelId = 'ed-1'
+    await fire('cate.panel.list', {})
+    expect(replies).toContainEqual({
+      requestId: 'req-cate.panel.list',
+      ok: true,
+      result: [
+        { panelId: 'host-panel', type: 'terminal', title: 'Term', focused: false },
+        { panelId: 'ed-1', type: 'editor', title: 'a.ts', focused: true, filePath: `${ROOT}/src/a.ts` },
+        { panelId: 'br-1', type: 'browser', title: 'Docs', focused: false, url: 'https://docs.example/' },
+        // Start-page urls normalize to '' — the caller sees "no real page yet".
+        { panelId: 'br-2', type: 'browser', title: 'New Tab', focused: false, url: '' },
+      ],
+    })
+  })
+
+  it('panel.focus reveals the panel; an absent one is rejected', async () => {
+    await fire('cate.panel.focus', { panelId: 'ed-1' })
+    expect(h.revealPanel).toHaveBeenCalledWith(WS, 'ed-1')
+    expect(replies).toContainEqual({ requestId: 'req-cate.panel.focus', ok: true })
+
+    await fire('cate.panel.focus', { panelId: 'detached-panel' })
+    expect(replies).toContainEqual({ requestId: 'req-cate.panel.focus', ok: false, error: 'panel-not-in-window' })
+  })
+
 })

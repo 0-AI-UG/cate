@@ -14,6 +14,7 @@
 import { useEffect } from 'react'
 import log from '../lib/logger'
 import { useAppStore } from '../stores/appStore'
+import { getActivePanelId } from '../lib/activePanel'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { revealPanel } from '../lib/workspace/panelReveal'
@@ -22,7 +23,7 @@ import { setPendingReveal } from '../lib/editor/editorReveal'
 import { toAbsolutePath, pathKey } from '../../shared/pathUtils'
 import { parseLocator, formatLocator } from '../../main/runtime/locator'
 import { handleBrowserMethod } from '../lib/browser/browserDriver'
-import type { PanelType, Point } from '../../shared/types'
+import { browserPanelUrl, isStartPageUrl, type PanelType, type Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 
 // Reverse-API panel creation reuses the SAME placement the keyboard shortcuts
@@ -127,14 +128,7 @@ export function useCateHostActionResponder(): void {
 
         switch (method) {
           case 'cate.editor.openFile': {
-            // The public bridge (cateHost.ts) sends the file as `path`; accept
-            // `filePath` too for callers that use the older arg name.
-            const filePath =
-              typeof args.path === 'string'
-                ? args.path
-                : typeof args.filePath === 'string'
-                  ? args.filePath
-                  : undefined
+            const filePath = typeof args.path === 'string' ? args.path : undefined
             if (!filePath) return reply(false, { error: 'path required' })
             // Confine the target to the workspace root — reject any path that
             // escapes it (absolute or traversal).
@@ -185,6 +179,38 @@ export function useCateHostActionResponder(): void {
             if (!newPanelId) return reply(false, { error: 'panel creation failed' })
             void revealPanel(workspaceId, newPanelId).catch(() => { /* best effort */ })
             return reply(true, { result: { panelId: newPanelId } })
+          }
+
+          case 'cate.panel.list': {
+            // THE enumeration surface — there is no per-type list (no
+            // browser.list); browser panels carry their url here instead.
+            // Same single-window scope as setTitle: panels detached into other
+            // windows are absent from this store and thus from this list.
+            const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+            const active = getActivePanelId()
+            const panels = Object.values(ws?.panels ?? {}).map((p) => ({
+              panelId: p.id,
+              type: p.type,
+              title: p.title,
+              focused: p.id === active,
+              // Hand back the bare runtime path, matching workspace.get.
+              ...(p.filePath ? { filePath: parseLocator(p.filePath).path } : {}),
+              ...(p.type === 'browser'
+                ? { url: isStartPageUrl(browserPanelUrl(p)) ? '' : (browserPanelUrl(p) ?? '') }
+                : {}),
+            }))
+            return reply(true, { result: panels })
+          }
+
+          case 'cate.panel.focus': {
+            const targetPanelId = typeof args.panelId === 'string' ? args.panelId : undefined
+            if (!targetPanelId) return reply(false, { error: 'panelId required' })
+            const panel = useAppStore
+              .getState()
+              .workspaces.find((w) => w.id === workspaceId)?.panels?.[targetPanelId]
+            if (!panel) return reply(false, { error: 'panel-not-in-window' })
+            await revealPanel(workspaceId, targetPanelId)
+            return reply(true)
           }
 
           case 'cate.panel.setTitle': {

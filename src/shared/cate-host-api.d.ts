@@ -16,7 +16,7 @@ export interface CateHostTheme {
   terminal: Record<string, string>
 }
 
-/** Result of one agent turn (`cate.agent.send` / `cate.agent.run`): the flattened
+/** Result of one agent turn (`cate.agent.send`): the flattened
  *  `text` for convenience plus the raw final assistant `message` from pi (its role
  *  and content blocks — text, tool calls, etc.), or null if the turn produced none. */
 export interface AgentTurnResult {
@@ -49,6 +49,26 @@ export interface CatePanel {
   /** This panel instance's id. */
   readonly id: string
   setTitle(title: string): Promise<void>
+  /** List this window's panels (requires the `panel` scope). Panels detached
+   *  into other windows are not included. THE single enumeration surface: the
+   *  focused entry answers "what is the user looking at", and browser panels
+   *  carry their `url` (there is no separate browser list). */
+  list(): Promise<CatePanelInfo[]>
+  /** Reveal/focus a panel by id (requires the `panel` scope). */
+  focus(panelId: string): Promise<unknown>
+}
+
+/** One open panel, as reported by `cate.panel.list()`. `filePath` is the bare
+ *  runtime path (same form as `workspace.get().rootPath`), present for panels
+ *  backed by a file (editors, documents). `url` is present for browser panels
+ *  (empty while on the start page). */
+export interface CatePanelInfo {
+  panelId: string
+  type: string
+  title: string
+  focused: boolean
+  filePath?: string
+  url?: string
 }
 
 /** A file the user dragged onto this extension's panel, delivered to
@@ -66,23 +86,6 @@ export interface CateDroppedFile {
   size?: number
   /** True when `text` was cut to the host's size cap. */
   truncated?: boolean
-}
-
-/** One open browser panel, as reported by `cate.browser.list()`. */
-export interface CateBrowserTab {
-  panelId: string
-  title: string
-  url: string
-  focused: boolean
-}
-
-/** Navigation state of a browser panel, from `cate.browser.current()`. */
-export interface CateBrowserState {
-  url: string
-  title: string
-  canGoBack: boolean
-  canGoForward: boolean
-  loading: boolean
 }
 
 /** One interactable element in an accessibility `snapshot()`. `ref` is an opaque
@@ -145,7 +148,7 @@ export interface CateHost {
   /** Drive Cate's bundled agent (requires the `agent` scope + first-use user
    *  consent). pi owns all conversation state on its session file; the handle
    *  returned by `open` is that file's path, so a conversation can be resumed
-   *  later with nothing persisted on Cate's side. Turn-based: each `send`/`run`
+   *  later with nothing persisted on Cate's side. Turn-based: each `send`
    *  resolves on the agent's terminal `agent_end` (a turn can take minutes). One
    *  live session per extension; one turn in flight per session. */
   agent: {
@@ -155,8 +158,6 @@ export interface CateHost {
     send(sessionId: string, prompt: string): Promise<AgentTurnResult | { error: string }>
     /** Tear down the live session (pi's jsonl stays; reopen via `resume`). */
     dispose(sessionId: string): Promise<unknown>
-    /** One-shot sugar over open -> send -> dispose. */
-    run(prompt: string): Promise<AgentTurnResult | { error: string }>
     /** Abort the in-flight turn of this extension's session. */
     cancel(): Promise<unknown>
   }
@@ -171,18 +172,11 @@ export interface CateHost {
    *  filesystem `path` (see the note in docs/extensions.md — a webview guest can't
    *  read it directly; a server-backed extension can). */
   browser: {
-    /** List open browser panels. */
-    list(): Promise<CateBrowserTab[]>
-    /** Point a panel at `url` (or open a new one); returns the target panel + url. */
+    /** Point a panel at `url` (or open a new one); returns the target panel + url.
+     *  To enumerate open browser panels, use `cate.panel.list()`. */
     open(opts: { url: string; panelId?: string }): Promise<{ panelId: string; url: string }>
-    /** Navigate back in a panel's history. */
-    back(opts?: { panelId?: string }): Promise<{ ok: true }>
-    /** Navigate forward in a panel's history. */
-    forward(opts?: { panelId?: string }): Promise<{ ok: true }>
     /** Reload a panel. */
     reload(opts?: { panelId?: string }): Promise<{ ok: true }>
-    /** Current navigation state of a panel. */
-    current(opts?: { panelId?: string }): Promise<CateBrowserState>
     /** Capture a screenshot; returns a host filesystem path. */
     screenshot(opts?: { panelId?: string }): Promise<{ path: string }>
     /** Accessibility snapshot with interactable element refs. */
@@ -191,6 +185,15 @@ export interface CateHost {
     click(opts: { ref: string; panelId?: string }): Promise<{ ok: true }>
     /** Type `text` into the element identified by `ref`. */
     type(opts: { ref: string; text: string; panelId?: string }): Promise<{ ok: true }>
+    /** Resolve once the panel stops loading (poll-based; `timeoutMs` defaults to
+     *  5000 and is capped at 8000). Rejects in-band with `still-loading`. */
+    wait(opts?: { panelId?: string; timeoutMs?: number }): Promise<{ url: string; title: string; loading: false }>
+    /** Press a named key (Enter, Tab, Escape, Backspace, Delete, Space, arrows,
+     *  PageUp/PageDown, Home, End) as TRUSTED input — unlike `click`/`type`,
+     *  which synthesise untrusted DOM events — so Enter submits forms. With
+     *  `ref` the element is focused first; without it the key goes to the
+     *  guest's current focus. */
+    press(opts: { key: string; ref?: string; panelId?: string }): Promise<{ ok: true }>
   }
   storage: CateHostStorage
 }
