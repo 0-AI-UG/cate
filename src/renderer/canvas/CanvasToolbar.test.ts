@@ -1,8 +1,10 @@
 // =============================================================================
-// Regression tests for the minimap section of CanvasToolbar.
+// Regression tests for the minimap — which now lives in the command palette
+// (a collapsible card at its foot) rather than as a floating pill on the
+// canvas toolbar.
 //
-// These are source-level assertions rather than full React renders — the
-// toolbar pulls in heavy renderer modules (xterm, electron-log, the canvas
+// These are source-level assertions rather than full React renders — both
+// modules pull in heavy renderer dependencies (xterm, electron-log, the canvas
 // store context tree) that aren't worth wiring up just to verify structural
 // invariants.
 // =============================================================================
@@ -11,28 +13,48 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 
-const SOURCE = readFileSync(
+const TOOLBAR_SOURCE = readFileSync(
   resolve(__dirname, 'CanvasToolbar.tsx'),
   'utf8',
 )
+const PALETTE_SOURCE = readFileSync(
+  resolve(__dirname, '../ui/CommandPalette.tsx'),
+  'utf8',
+)
 
-describe('CanvasToolbar — minimap section', () => {
-  it('does not force a hard-coded theme on the minimap container (must inherit the active app theme)', () => {
-    const minimapStart = SOURCE.indexOf('<Minimap mode="popover"')
+describe('CanvasToolbar — no minimap', () => {
+  it('no longer renders the minimap or its toggle on the canvas toolbar', () => {
+    expect(TOOLBAR_SOURCE).not.toContain('<Minimap')
+    expect(TOOLBAR_SOURCE).not.toContain('minimap-toggle')
+  })
+})
+
+describe('CommandPalette — minimap card', () => {
+  it('renders the minimap in popover mode for the active canvas', () => {
+    const minimapStart = PALETTE_SOURCE.indexOf('<Minimap mode="popover"')
     expect(minimapStart).toBeGreaterThan(-1)
 
-    const wrapperBlock = SOURCE.slice(Math.max(0, minimapStart - 600), minimapStart)
+    // The card must be wrapped in a CanvasStoreProvider so it previews the
+    // resolved active canvas rather than a mount-time context store.
+    const wrapperBlock = PALETTE_SOURCE.slice(Math.max(0, minimapStart - 400), minimapStart)
+    expect(wrapperBlock).toContain('CanvasStoreProvider')
+    // Must not pin a hard-coded theme onto the container.
     expect(wrapperBlock).not.toMatch(/data-theme=/)
   })
 
-  it('drives the popover open/close from the transient uiStore, not from a persisted setting', () => {
-    expect(SOURCE).toMatch(/toggleMinimapOpen/)
-    expect(SOURCE).not.toMatch(/saveSetting\(['"]showMinimap['"]/)
-    expect(SOURCE).not.toMatch(/setSetting\(['"]showMinimap['"]/)
+  it('is always shown (not collapsible) and not gated by a persisted setting', () => {
+    // No collapse state — the card is always rendered when a canvas exists.
+    expect(PALETTE_SOURCE).not.toMatch(/minimapOpen/)
+    expect(PALETTE_SOURCE).not.toMatch(/saveSetting\(['"]showMinimap['"]/)
+    expect(PALETTE_SOURCE).not.toMatch(/setSetting\(['"]showMinimap['"]/)
   })
 
-  it('always renders the minimap button (not gated by a setting)', () => {
-    expect(SOURCE).toContain('<MapTrifold')
-    expect(SOURCE).not.toMatch(/\{showMinimap && \(/)
+  it('offers a tab per workspace canvas and highlights the shown one', () => {
+    expect(PALETTE_SOURCE).toMatch(/canvasTabs/)
+    expect(PALETTE_SOURCE).toMatch(/setSelectedCanvasId/)
+  })
+
+  it('dismisses the palette after a navigate gesture', () => {
+    expect(PALETTE_SOURCE).toMatch(/onNavigateEnd=\{close\}/)
   })
 })

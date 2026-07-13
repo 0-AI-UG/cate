@@ -94,7 +94,7 @@ export function FileExplorerSettings() {
               {name}
               <button
                 onClick={() => remove(name)}
-                className="p-0.5 rounded text-muted hover:text-red-400"
+                className="p-0.5 rounded-lg text-muted hover:text-red-400"
                 title={`Remove ${name}`}
               >
                 <X size={11} />

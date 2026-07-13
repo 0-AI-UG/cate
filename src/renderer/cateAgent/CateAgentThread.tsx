@@ -157,7 +157,7 @@ const RunWorktreePill: React.FC<{ worktree: JoinedWorktree }> = ({ worktree }) =
         transition: 'gap 150ms ease, padding 150ms ease',
       }}
     >
-      <ArrowsSplit size={11} weight="bold" style={{ flexShrink: 0 }} />
+      <ArrowsSplit size={11} style={{ flexShrink: 0 }} />
       <span
         style={{
           maxWidth: hovered ? 180 : 0,
@@ -435,7 +435,7 @@ const ObserverTimeline: React.FC<{ wsId: string; items: CateAgentFeedItem[]; onR
   if (items.length === 0) {
     return (
       <div className="flex min-h-[96px] flex-col items-center justify-center gap-2 px-8 py-6 text-center">
-        <Eye size={20} weight="bold" className="opacity-60" style={{ color: 'rgb(var(--agent-rgb))' }} />
+        <Eye size={20} className="opacity-60" style={{ color: 'rgb(var(--agent-rgb))' }} />
         <span className="text-[12px] text-muted">Nothing to report yet</span>
       </div>
     )
@@ -478,7 +478,7 @@ const ObserverTimeline: React.FC<{ wsId: string; items: CateAgentFeedItem[]; onR
                   <span className="self-start flex items-center gap-1 px-2 py-0.5 rounded text-xs text-muted opacity-70">
                     {item.resolved === 'approved' ? (
                       <>
-                        <Check size={11} weight="bold" /> {item.action.label}
+                        <Check size={11} /> {item.action.label}
                       </>
                     ) : (
                       <span className="line-through">{item.action.label}</span>
@@ -504,7 +504,7 @@ const ObserverTimeline: React.FC<{ wsId: string; items: CateAgentFeedItem[]; onR
               <button
                 onClick={() => (item.action ? resolveFeedAction(wsId, item.id, 'dismissed') : dismissFeedItem(wsId, item.id))}
                 title="Dismiss"
-                className="flex-shrink-0 -mt-[1px] p-0.5 rounded text-muted opacity-0 group-hover/obs:opacity-100 hover:text-primary hover:bg-hover transition-opacity"
+                className="flex-shrink-0 -mt-[1px] p-0.5 rounded-lg text-muted opacity-0 group-hover/obs:opacity-100 hover:text-primary hover:bg-hover transition-opacity"
               >
                 <X size={12} />
               </button>
@@ -584,7 +584,7 @@ const EmptyState: React.FC = () => (
   <div className="flex h-full flex-col items-center justify-center px-6 py-6">
     <div className="flex max-w-[320px] flex-col gap-1">
       <EmptyRow
-        icon={<ArrowsSplit size={16} weight="bold" className="text-muted" />}
+        icon={<ArrowsSplit size={16} className="text-muted" />}
         title="Runs parallel loops"
         sub="each in its own worktree"
       />

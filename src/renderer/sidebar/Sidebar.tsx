@@ -16,10 +16,13 @@ import {
   MagnifyingGlass,
   FloppyDisk,
   PuzzlePiece,
+  SidebarSimple,
 } from '@phosphor-icons/react'
 import pkg from '../../../package.json'
 import { Tooltip } from '../ui/Tooltip'
 import { CateLogo } from '../ui/CateLogo'
+import { IS_MAC } from '../lib/platform'
+import { MAC_CHROME_HEIGHT } from '../shells/MacWindowChrome'
 
 // ---------------------------------------------------------------------------
 // View metadata — icon + title for each possible sidebar view
@@ -88,7 +91,6 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
 // Shared activity bar sidebar — parameterized by side
 // ---------------------------------------------------------------------------
 
-const DRAG_MIME = 'application/x-cate-view'
 const BAR_WIDTH = 40
 
 interface ActivityBarSidebarProps {
@@ -106,12 +108,12 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const setActiveView = useUIStore((s) =>
     side === 'left' ? s.setActiveLeftSidebarView : s.setActiveRightSidebarView,
   )
-  const moveSidebarView = useUIStore((s) => s.moveSidebarView)
-  const draggingView = useUIStore((s) => s.draggingView)
-  const setDraggingView = useUIStore((s) => s.setDraggingView)
-  const isDragActive = draggingView !== null
+  // Right sidebar can be fully hidden (rail + content, width 0) via its top
+  // toggle; reopened from the floating top-right toggle in MainWindowShell.
+  const rightSidebarHidden = useUIStore((s) => s.rightSidebarHidden)
+  const setRightSidebarHidden = useUIStore((s) => s.setRightSidebarHidden)
 
-  // Guard: if activeView is not present on this side (e.g. just moved away), clear it
+  // Guard: if activeView is not present on this side (e.g. layout changed), clear it
   useEffect(() => {
     if (activeView !== null && !views.includes(activeView)) {
       setActiveView(null)
@@ -121,38 +123,17 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const isExpanded = activeView !== null
   const isEmpty = views.length === 0
 
-  // When empty, the sidebar is hidden. During a drag, if the cursor enters
-  // this side's half of the window, we reveal it so the user can drop here.
-  const [dragRevealed, setDragRevealed] = useState(false)
-  useEffect(() => {
-    if (!isDragActive || !isEmpty) {
-      setDragRevealed(false)
-      return
-    }
-    const onDragOver = (e: DragEvent) => {
-      const half = window.innerWidth / 2
-      const inside = side === 'left' ? e.clientX < half : e.clientX >= half
-      setDragRevealed(inside)
-    }
-    window.addEventListener('dragover', onDragOver)
-    return () => window.removeEventListener('dragover', onDragOver)
-  }, [isDragActive, isEmpty, side])
+  // macOS: the traffic-light island (MacWindowChrome) floats over the top-left,
+  // so the left sidebar insets its content below it while its surface fills to
+  // y=0 (seamless behind the lights). The toggle lives in this strip in both
+  // windowed and fullscreen (only the lights disappear in fullscreen), so the
+  // inset is unconditional on the left. Only the left side sits under it.
+  const macChromeInset = side === 'left' && IS_MAC ? MAC_CHROME_HEIGHT : 0
 
   const [width, setWidth] = useState(defaultWidth)
   const [isResizing, setIsResizing] = useState(false)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
-
-  // Drop indicator: index where the drop would land. Mirrored in a ref so the
-  // drop handler reads the latest value (state updates from dragOver may not
-  // have flushed by the time drop fires).
-  const [dropIndicator, setDropIndicatorState] = useState<number | null>(null)
-  const dropIndicatorRef = useRef<number | null>(null)
-  const setDropIndicator = useCallback((value: number | null | ((prev: number | null) => number | null)) => {
-    const next = typeof value === 'function' ? value(dropIndicatorRef.current) : value
-    dropIndicatorRef.current = next
-    setDropIndicatorState(next)
-  }, [])
 
   const selectedWorkspace = useAppStore((s) => {
     const id = s.selectedWorkspaceId
@@ -197,68 +178,6 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
     else setActiveView(view)
   }, [activeView, setActiveView])
 
-  // --- Drag handlers ---
-
-  const handleIconDragStart = (e: React.DragEvent, view: SidebarView) => {
-    e.dataTransfer.setData(DRAG_MIME, view)
-    e.dataTransfer.setData('text/plain', view)
-    e.dataTransfer.effectAllowed = 'move'
-    setDraggingView(view)
-  }
-
-  const handleIconDragEnd = () => {
-    setDraggingView(null)
-    setDropIndicator(null)
-  }
-
-  const iconsContainerRef = useRef<HTMLDivElement | null>(null)
-
-  const computeDropIndex = (clientY: number): number => {
-    const container = iconsContainerRef.current
-    if (!container) return views.length
-    const buttons = Array.from(container.querySelectorAll<HTMLElement>('[data-sidebar-icon]'))
-    if (buttons.length === 0) return 0
-    for (let i = 0; i < buttons.length; i++) {
-      const rect = buttons[i].getBoundingClientRect()
-      if (clientY < rect.top + rect.height / 2) return i
-    }
-    return buttons.length
-  }
-
-  const handleBarDragEnter = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
-  const handleBarDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'move'
-    setDropIndicator(computeDropIndex(e.clientY))
-  }
-
-  const handleBarDragLeave = (e: React.DragEvent) => {
-    // Only clear when leaving the bar entirely
-    const related = e.relatedTarget as Node | null
-    if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
-      setDropIndicator(null)
-    }
-  }
-
-  const handleBarDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const view = ((e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData('text/plain')) as SidebarView) || draggingView
-    // Compute index fresh from cursor position — relying on the indicator
-    // ref is unsafe because dragleave with null relatedTarget can clear it
-    // immediately before drop fires.
-    const targetIndex = computeDropIndex(e.clientY)
-    setDropIndicator(null)
-    setDraggingView(null)
-    if (!view) return
-    moveSidebarView(view, side, targetIndex)
-  }
-
   // --- Render ---
 
   const bar = (
@@ -270,32 +189,34 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
           ? 'color-mix(in srgb, var(--surface-0) 60%, transparent)'
           : undefined,
       }}
-      onDragEnter={handleBarDragEnter}
-      onDragOver={handleBarDragOver}
-      onDragLeave={handleBarDragLeave}
-      onDrop={handleBarDrop}
     >
-      <div ref={iconsContainerRef} className="flex flex-col items-center pt-0.5 w-full relative">
-        {views.map((view, index) => {
+      {/* Collapse toggle — its own 36px header so it centers on the same line
+          as the canvas tab bar's +/split buttons (and the left-side toggle),
+          then fully hides the right sidebar. Reopened from the floating
+          top-right toggle. */}
+      <div className="flex items-center justify-center w-full flex-shrink-0" style={{ height: 36 }}>
+        <Tooltip label="Hide sidebar" placement="left">
+          <button
+            type="button"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"
+            onClick={() => setRightSidebarHidden(true)}
+            aria-label="Hide sidebar"
+          >
+            <SidebarSimple size={16} className="pointer-events-none" style={{ transform: 'scaleX(-1)' }} />
+          </button>
+        </Tooltip>
+      </div>
+      <div className="flex flex-col items-center w-full relative">
+        {views.map((view) => {
           const meta = VIEW_META[view]
           const Icon = meta.icon
           const isActive = activeView === view
-          const showIndicatorBefore = isDragActive && dropIndicator === index
-          const showIndicatorAfter = isDragActive && index === views.length - 1 && dropIndicator === views.length
           return (
-            <React.Fragment key={view}>
-              {showIndicatorBefore && (
-                <div className="w-7 h-[2px] my-0.5 bg-blue-400 rounded-full pointer-events-none" />
-              )}
-              <div className="relative w-full flex items-center justify-center">
+            <div key={view} className="relative w-full flex items-center justify-center">
               <div
                 role="button"
                 tabIndex={0}
-                data-sidebar-icon=""
-                draggable
-                onDragStart={(e) => handleIconDragStart(e, view)}
-                onDragEnd={handleIconDragEnd}
-                className={`relative flex items-center justify-center w-8 h-8 my-1 rounded transition-colors cursor-pointer ${
+                className={`relative flex items-center justify-center w-8 h-8 my-1 rounded-lg transition-colors cursor-pointer ${
                   isActive ? 'text-primary' : 'text-muted hover:text-secondary'
                 }`}
                 onClick={() => handleIconClick(view)}
@@ -304,44 +225,37 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
                 <Icon size={16} className="pointer-events-none" />
               </div>
             </div>
-              {showIndicatorAfter && (
-                <div className="w-7 h-[2px] my-0.5 bg-blue-400 rounded-full pointer-events-none" />
-              )}
-            </React.Fragment>
           )
         })}
-        {isDragActive && views.length === 0 && dropIndicator !== null && (
-          <div className="w-7 h-[2px] my-0.5 bg-blue-400 rounded-full pointer-events-none" />
-        )}
       </div>
-      {side === 'left' && (
+      {side === 'right' && (
         <div className="mt-auto flex flex-col items-center pb-1 w-full">
           {/* The standalone ⌘K search icon was removed now that the dedicated
               Search view exists; ⌘K still opens the command palette via keyboard. */}
-          <Tooltip label="Skills" placement="right">
+          <Tooltip label="Skills" placement="left">
             <button
               type="button"
-              className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+              className="flex items-center justify-center w-8 h-8 my-1 rounded-lg text-muted hover:text-secondary transition-colors"
               onClick={() => useUIStore.getState().setShowSkillsDialog(true)}
               aria-label="Skills"
             >
               <PuzzlePiece size={16} className="pointer-events-none" />
             </button>
           </Tooltip>
-          <Tooltip label="Saved Layouts" placement="right">
+          <Tooltip label="Saved Layouts" placement="left">
             <button
               type="button"
-              className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+              className="flex items-center justify-center w-8 h-8 my-1 rounded-lg text-muted hover:text-secondary transition-colors"
               onClick={() => useUIStore.getState().setShowLayoutsDialog(true)}
               aria-label="Saved Layouts"
             >
               <FloppyDisk size={16} className="pointer-events-none" />
             </button>
           </Tooltip>
-          <Tooltip label="Settings" placement="right">
+          <Tooltip label="Settings" placement="left">
             <button
               type="button"
-              className="flex items-center justify-center w-8 h-8 my-1 rounded text-muted hover:text-secondary transition-colors"
+              className="flex items-center justify-center w-8 h-8 my-1 rounded-lg text-muted hover:text-secondary transition-colors"
               onClick={() => useUIStore.getState().openSettings()}
               aria-label="Settings"
             >
@@ -387,39 +301,55 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
     </div>
   )
 
+  // Left has no activity-bar rail — just the content, opened/closed by the
+  // MacWindowChrome sidebar toggle (collapses fully to 0). Right keeps its 40px
+  // rail (it hosts the extra views + skills/layouts/settings actions).
+  const sidebarWidth =
+    side === 'left'
+      ? isExpanded
+        ? width
+        : 0
+      : rightSidebarHidden || isEmpty
+        ? 0
+        : isExpanded
+          ? BAR_WIDTH + width
+          : BAR_WIDTH
+
   return (
     <div
       data-sidebar-scrollarea
       className={`flex-shrink-0 relative flex flex-row h-full select-none overflow-hidden ${
         isResizing ? '' : 'transition-[width] duration-200 ease-in-out'
+      } ${
+        // Right sidebar only: hairline seam on its canvas-facing (left) edge.
+        // Omitted when collapsed to 0 width so no stray 1px line shows.
+        side === 'right' && sidebarWidth !== 0 ? 'border-l border-subtle' : ''
       }`}
       style={{
-        width:
-          isEmpty && !dragRevealed
-            ? 0
-            : isExpanded
-              ? BAR_WIDTH + width
-              : BAR_WIDTH,
+        width: sidebarWidth,
+        // macOS: reserve the traffic-light island's height at the top so the
+        // sidebar's surface fills to y=0 (seamless behind the lights) while its
+        // content starts below them. box-sizing keeps the fill under the padding.
+        paddingTop: macChromeInset,
         // Static translucent fill — no backdrop-filter. A live blur forces the
         // compositor to re-sample everything behind the sidebar on every frame
         // that anything underneath changes (a major sustained WindowServer cost
         // given the canvas/terminals behind it). A near-opaque tint reads as the
         // same frosted surface without the per-frame compositing. The fill
         // percentage is the user's "Background opacity" sidebar setting.
-        backgroundColor: `color-mix(in srgb, var(--surface-1) ${Math.round(tintOpacity * 100)}%, transparent)`,
+        // Right sidebar blends into the canvas (canvas-bg); left stays brighter
+        // (surface-1). Both respect the user's "Background opacity" setting.
+        backgroundColor: `color-mix(in srgb, var(${side === 'right' ? '--canvas-bg' : '--surface-1'}) ${Math.round(tintOpacity * 100)}%, transparent)`,
       }}
     >
       {/* Opaque top strip — matches the dock tab bar height (36px) so the
           sidebar chrome lines up with the canvas tab bar. */}
       <div
         className="pointer-events-none absolute top-0 left-0 right-0 h-9"
-        style={{ backgroundColor: 'var(--surface-1)' }}
+        style={{ backgroundColor: side === 'right' ? 'var(--canvas-bg)' : 'var(--surface-1)' }}
       />
       {side === 'left' ? (
-        <>
-          {bar}
-          {content}
-        </>
+        content
       ) : (
         <>
           {content}

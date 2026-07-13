@@ -180,7 +180,7 @@ export function SavedLayoutsDialog() {
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDelete(name) }}
                           disabled={busy}
-                          className="p-1.5 rounded-md text-muted hover:text-red-400 hover:bg-red-600/10"
+                          className="p-1.5 rounded-[10px] text-muted hover:text-red-400 hover:bg-red-600/10"
                           aria-label="Delete"
                         >
                           <Trash size={12} />

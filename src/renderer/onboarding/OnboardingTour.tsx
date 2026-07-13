@@ -328,7 +328,7 @@ export function OnboardingTour() {
               className="inline-flex items-center gap-1.5 text-[12px] font-semibold pl-4 pr-3 py-1.5 rounded-full bg-blue-500 text-white hover:bg-blue-400 transition-all"
             >
               {isLast ? 'Get started' : 'Next'}
-              {!isLast && <ArrowRight size={13} weight="bold" />}
+              {!isLast && <ArrowRight size={13} />}
             </button>
           </div>
         </div>

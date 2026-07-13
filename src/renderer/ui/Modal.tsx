@@ -67,20 +67,28 @@ interface PaletteDialogShellProps {
   /** Extra props forwarded to the inner card (e.g. data-onboarding). */
   cardProps?: HTMLAttributes<HTMLDivElement> & Record<`data-${string}`, string>
   children: ReactNode
+  /** Optional detached card rendered as a sibling BELOW the main card (its own
+   *  CARD_SURFACE, own stop-propagation), separated by a gap. */
+  aside?: ReactNode
+  /** Sizing/positioning classes for the aside card. CARD_SURFACE is applied. */
+  asideClassName?: string
 }
 
 /** Top-anchored palette shell: full-screen dimmed backdrop that closes on an
  *  outside click, wrapping a centered card that stops propagation so clicks
  *  inside don't dismiss. Shared by the Cmd+K palette and palette-style dialogs;
- *  Escape handling stays with each caller. */
+ *  Escape handling stays with each caller. An optional `aside` renders as a
+ *  second, detached card beside the main one (the pair is centered as a group). */
 export function PaletteDialogShell({
   onClose,
   cardClassName,
   cardProps,
   children,
+  aside,
+  asideClassName,
 }: PaletteDialogShellProps) {
   return (
-    <div className={`fixed inset-0 flex justify-center z-50 ${BACKDROP}`} onClick={onClose}>
+    <div className={`fixed inset-0 flex flex-row items-start justify-center gap-2 z-50 ${BACKDROP}`} onClick={onClose}>
       <div
         {...cardProps}
         className={`${cardClassName} ${CARD_SURFACE}`}
@@ -88,6 +96,14 @@ export function PaletteDialogShell({
       >
         {children}
       </div>
+      {aside && (
+        <div
+          className={`${asideClassName ?? ''} ${CARD_SURFACE}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {aside}
+        </div>
+      )}
     </div>
   )
 }
@@ -135,7 +151,7 @@ export function ModalCard({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex items-center justify-center w-6 h-6 -mr-1 rounded-md text-secondary hover:text-primary hover:bg-hover transition-colors"
+                className="flex items-center justify-center w-6 h-6 -mr-1 rounded-[10px] text-secondary hover:text-primary hover:bg-hover transition-colors"
                 aria-label="Close"
               >
                 <X size={14} />

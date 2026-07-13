@@ -14,10 +14,10 @@ import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { SEARCH_ENGINE_URLS, BROWSER_NEW_TAB_URL, isStartPageUrl } from '../../shared/types'
 import { UrlSuggestions } from './UrlSuggestions'
 import { StartPage } from './StartPage'
-import { BookmarksBar } from './BookmarksBar'
 import { BrowserMenu } from './BrowserMenu'
 import { BrowserSettingsPopover } from './BrowserSettingsPopover'
-import { BrowserTabSidebar } from './BrowserTabSidebar'
+import { BrowserTabStrip } from './BrowserTabStrip'
+import { BrowserBookmarksSidebar } from './BrowserBookmarksSidebar'
 import type { BrowserTab } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
@@ -349,8 +349,7 @@ export default function BrowserPanel({
   const isBookmarked = bookmarks.some((b) => b.url === currentUrl)
   const canBookmark = !isStartPageUrl(currentUrl) && !currentUrl.startsWith('about:')
 
-  // Chrome-like chrome: bookmarks bar (setting-driven), overflow menu + settings.
-  const showBookmarksBar = useSettingsStore((s) => s.browserShowBookmarksBar)
+  // Chrome-like chrome: bookmarks sidebar (setting-driven), overflow menu + settings.
   const showTabSidebar = useSettingsStore((s) => s.browserShowTabSidebar)
   const setSetting = useSettingsStore((s) => s.setSetting)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -574,6 +573,13 @@ export default function BrowserPanel({
       patchActiveTab({ url })
     }
 
+    const onPageFaviconUpdated = (event: any) => {
+      // Electron fires an array of candidate favicon URLs; the first is the
+      // page's preferred icon. Store it on the active tab (persisted with tabs).
+      const favicon = Array.isArray(event.favicons) ? event.favicons[0] : undefined
+      if (favicon) patchActiveTab({ favicon })
+    }
+
     const onPageTitleUpdated = (event: any) => {
       const title = event.title ?? webview.getTitle()
       if (title) {
@@ -631,6 +637,7 @@ export default function BrowserPanel({
 
     webview.addEventListener('did-navigate', onDidNavigate)
     webview.addEventListener('did-navigate-in-page', onDidNavigateInPage)
+    webview.addEventListener('page-favicon-updated', onPageFaviconUpdated)
     webview.addEventListener('page-title-updated', onPageTitleUpdated)
     webview.addEventListener('did-fail-load', onDidFailLoad)
     webview.addEventListener('did-start-loading', onDidStartLoading)
@@ -642,6 +649,7 @@ export default function BrowserPanel({
       webview.removeEventListener('dom-ready', onDomReady)
       webview.removeEventListener('did-navigate', onDidNavigate)
       webview.removeEventListener('did-navigate-in-page', onDidNavigateInPage)
+      webview.removeEventListener('page-favicon-updated', onPageFaviconUpdated)
       webview.removeEventListener('page-title-updated', onPageTitleUpdated)
       webview.removeEventListener('did-fail-load', onDidFailLoad)
       webview.removeEventListener('did-start-loading', onDidStartLoading)
@@ -659,70 +667,59 @@ export default function BrowserPanel({
 
   return (
     <div className="flex w-full h-full relative" onKeyDown={handleChromeKeyDown}>
-      {/* Vertical tab sidebar (Arc/Edge-style) */}
-      {showTabSidebar && (
-        <BrowserTabSidebar
-          tabs={tabs}
-          activeTabId={activeTabId}
-          onSelect={selectTab}
-          onClose={closeTab}
-          onNewTab={addTab}
-          onTogglePin={togglePin}
-        />
-      )}
+      {/* Bookmarks sidebar (Safari-style) — the slot the vertical tab list vacated */}
+      {showTabSidebar && <BrowserBookmarksSidebar onNavigate={navigateTo} />}
 
       {/* Main column: toolbar + bookmarks bar + content */}
       <div className="flex flex-col flex-1 min-w-0 h-full">
       {/* URL bar */}
       <div className="h-10 flex items-center gap-2 px-2 bg-surface-4 border-b border-subtle shrink-0">
-        {/* Sidebar toggle */}
-        <Tooltip label={showTabSidebar ? 'Hide tabs' : 'Show tabs'}>
+        {/* Sidebar toggle — bookmarks sidebar */}
+        <Tooltip label={showTabSidebar ? 'Hide bookmarks' : 'Show bookmarks'}>
           <button
             onClick={() => setSetting('browserShowTabSidebar', !showTabSidebar)}
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-hover text-primary transition-colors shrink-0"
-            aria-label={showTabSidebar ? 'Hide tabs' : 'Show tabs'}
+            className="w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover text-secondary hover:text-primary transition-colors shrink-0"
+            aria-label={showTabSidebar ? 'Hide bookmarks' : 'Show bookmarks'}
           >
             <SidebarSimple size={14} weight={showTabSidebar ? 'fill' : 'regular'} />
           </button>
         </Tooltip>
-        {/* Navigation pill */}
-        <div className="flex items-center h-7 rounded-full border border-subtle bg-surface-5 overflow-hidden">
+        {/* Navigation controls — flat ghost buttons */}
+        <div className="flex items-center gap-0.5 shrink-0">
           <Tooltip label="Back">
             <button
               onClick={handleGoBack}
               disabled={!canGoBack}
-              className="w-7 h-7 flex items-center justify-center hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-primary transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-secondary hover:text-primary transition-colors"
               aria-label="Back"
             >
-              <ArrowLeft size={13} />
+              <ArrowLeft size={14} />
             </button>
           </Tooltip>
-          <div className="w-px h-3.5 bg-subtle" />
           <Tooltip label="Forward">
             <button
               onClick={handleGoForward}
               disabled={!canGoForward}
-              className="w-7 h-7 flex items-center justify-center hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-primary transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-secondary hover:text-primary transition-colors"
               aria-label="Forward"
             >
-              <ArrowRight size={13} />
+              <ArrowRight size={14} />
             </button>
           </Tooltip>
-          <div className="w-px h-3.5 bg-subtle" />
           <Tooltip label="Reload">
             <button
               onClick={handleReload}
-              className="w-7 h-7 flex items-center justify-center hover:bg-hover text-primary transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover text-secondary hover:text-primary transition-colors"
               aria-label="Reload"
             >
-              <ArrowClockwise size={13} className={isLoading ? 'animate-spin' : ''} />
+              <ArrowClockwise size={14} className={isLoading ? 'animate-spin' : ''} />
             </button>
           </Tooltip>
         </div>
 
         {/* URL input + autocomplete */}
         <div className="flex-1 relative">
-          <div className="flex items-center h-7 rounded-full border border-subtle bg-surface-5 px-3 gap-2 focus-within:border-strong transition-colors">
+          <div className="flex items-center h-7 rounded-full bg-transparent hover:bg-surface-3 px-3 gap-2 transition-colors">
             <MagnifyingGlass size={13} className="text-muted shrink-0" />
             <input
               ref={urlInputRef}
@@ -749,10 +746,10 @@ export default function BrowserPanel({
           <button
             onClick={() => canBookmark && toggleBookmark(currentUrl, webviewRef.current?.getTitle() || currentUrl)}
             disabled={!canBookmark}
-            className={`w-7 h-7 flex items-center justify-center rounded-full border transition-colors disabled:opacity-30 ${
+            className={`w-7 h-7 flex items-center justify-center rounded-[10px] transition-colors disabled:opacity-30 ${
               isBookmarked
-                ? 'border-agent bg-agent/15 text-agent hover:bg-agent/25'
-                : 'border-subtle bg-surface-5 hover:bg-hover text-primary'
+                ? 'text-agent hover:bg-hover'
+                : 'text-secondary hover:text-primary hover:bg-hover'
             }`}
             aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
           >
@@ -765,10 +762,10 @@ export default function BrowserPanel({
           <button
             onClick={openProxyDialog}
             onContextMenu={handleProxyContextMenu}
-            className={`w-7 h-7 flex items-center justify-center rounded-full border transition-colors ${
+            className={`w-7 h-7 flex items-center justify-center rounded-[10px] transition-colors ${
               activeProxy
-                ? 'border-agent bg-agent/15 text-agent hover:bg-agent/25'
-                : 'border-subtle bg-surface-5 hover:bg-hover text-primary'
+                ? 'text-agent hover:bg-hover'
+                : 'text-secondary hover:text-primary hover:bg-hover'
             }`}
             aria-label={activeProxy ? `Proxy: ${activeProxy}` : 'Configure proxy'}
           >
@@ -780,7 +777,7 @@ export default function BrowserPanel({
         <Tooltip label="Screenshot">
           <button
             onClick={handleScreenshot}
-            className="w-7 h-7 flex items-center justify-center rounded-full border border-subtle bg-surface-5 hover:bg-hover text-primary transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover text-secondary hover:text-primary transition-colors"
             aria-label="Screenshot"
           >
             <Camera size={13} />
@@ -791,16 +788,23 @@ export default function BrowserPanel({
         <Tooltip label="Menu">
           <button
             onClick={() => { setMenuOpen((o) => !o); setSettingsOpen(false) }}
-            className="w-7 h-7 flex items-center justify-center rounded-full border border-subtle bg-surface-5 hover:bg-hover text-primary transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover text-secondary hover:text-primary transition-colors"
             aria-label="Browser menu"
           >
-            <DotsThreeVertical size={15} weight="bold" />
+            <DotsThreeVertical size={15} />
           </button>
         </Tooltip>
       </div>
 
-      {/* Bookmarks bar */}
-      {showBookmarksBar && <BookmarksBar onNavigate={navigateTo} />}
+      {/* Horizontal tab strip (Safari-style) — pinned favicon chips + regular tabs */}
+      <BrowserTabStrip
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onSelect={selectTab}
+        onClose={closeTab}
+        onNewTab={addTab}
+        onTogglePin={togglePin}
+      />
 
       {/* Overflow menu + settings popover */}
       {menuOpen && (

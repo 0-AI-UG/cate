@@ -232,9 +232,25 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       {/* Tab bar — VS Code style: dark strip with active tab merging into the
           content area below via a top accent border. */}
       <div
-        className={`dock-tab-bar flex items-stretch overflow-hidden ${compact ? 'min-h-[26px]' : 'min-h-[36px]'}`}
+        className={`dock-tab-bar flex items-center overflow-hidden ${
+          // The main canvas header floats: it's positioned absolutely so the
+          // canvas content fills the full height BEHIND it, and its background +
+          // divider stay transparent until hovered (see .dock-tab-bar-floating in
+          // globals.css) — so at rest only the tabs and buttons read against the
+          // canvas grid. Canvas-node mini-docks (compact) also go chromeless: no
+          // solid band, no divider — the tabs float directly on the panel body so
+          // the active pill nests into the node's rounded corner. Only docked
+          // side/bottom stacks keep the solid, in-flow chrome + divider.
+          !compact && zoneProp === 'center'
+            ? `dock-tab-bar-floating absolute top-0 left-0 right-0 z-20 ${showTabPlaceholder ? 'drop-active' : ''}`
+            : compact
+              ? ''
+              : 'border-b border-subtle'
+        } ${compact ? 'min-h-[26px] px-0.5' : 'min-h-[32px] px-1.5'}`}
         style={{
-          backgroundColor: 'var(--node-chrome-bg, var(--surface-1))',
+          ...(!compact && zoneProp !== 'center'
+            ? { backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }
+            : null),
           ...(onTabBarMouseDown ? { cursor: 'grab' } : null),
         }}
         onContextMenu={onEmptyContextMenu}
@@ -283,7 +299,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         {activePanel && (
           <Tooltip label={`New ${PANEL_TYPE_LABELS[activePanel.type] ?? 'Tab'}`}>
             <button
-              className={`flex items-center justify-center self-center rounded text-secondary hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'mx-0.5 my-0.5 w-[18px] h-[18px]' : 'mx-1 my-1 w-[22px] h-[22px]'}`}
+              className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'mx-0.5 w-[22px] h-[22px]' : 'mx-1 w-6 h-6'}`}
               aria-label={`New ${PANEL_TYPE_LABELS[activePanel.type] ?? 'Tab'}`}
               onClick={() => actions.addTabOfType(activePanel.type)}
             >
@@ -298,7 +314,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             <Tooltip label="Split (hold to choose type)">
               <button
                 ref={splitButtonRef}
-                className={`flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[18px] h-[18px]' : 'w-[22px] h-[22px]'}`}
+                className={`flex items-center justify-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
                 aria-label="Split (hold to choose type)"
                 onClick={handleSplitClick}
                 onMouseDown={handleSplitMouseDown}

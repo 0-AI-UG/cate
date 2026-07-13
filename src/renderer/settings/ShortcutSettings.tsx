@@ -41,7 +41,7 @@ export function ShortcutSettings() {
               <button
                 onClick={() => clearShortcut(action)}
                 disabled={!shortcuts[action].key}
-                className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-hover text-muted hover:text-secondary disabled:opacity-30 disabled:hover:bg-transparent"
+                className="w-6 h-6 flex items-center justify-center rounded-[10px] hover:bg-hover text-muted hover:text-secondary disabled:opacity-30 disabled:hover:bg-transparent"
                 aria-label="Disable shortcut"
               >
                 <X size={12} />
@@ -50,7 +50,7 @@ export function ShortcutSettings() {
             <Tooltip label="Reset to default">
               <button
                 onClick={() => resetShortcut(action)}
-                className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-hover text-muted hover:text-secondary"
+                className="w-6 h-6 flex items-center justify-center rounded-[10px] hover:bg-hover text-muted hover:text-secondary"
                 aria-label="Reset to default"
               >
                 <ArrowCounterClockwise size={12} />

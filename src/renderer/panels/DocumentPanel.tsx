@@ -209,11 +209,11 @@ function PdfViewer({ data }: { data: Uint8Array }) {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800/60 border-b border-white/5 text-xs text-neutral-400">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800/60 border-b border-subtle text-xs text-neutral-400">
         <button
           onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
           disabled={currentPage <= 1}
-          className="p-1 rounded hover:bg-white/10 disabled:opacity-30"
+          className="p-1 rounded-lg hover:bg-white/10 disabled:opacity-30"
         >
           <ArrowLeft size={14} />
         </button>
@@ -223,21 +223,21 @@ function PdfViewer({ data }: { data: Uint8Array }) {
         <button
           onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
           disabled={currentPage >= numPages}
-          className="p-1 rounded hover:bg-white/10 disabled:opacity-30"
+          className="p-1 rounded-lg hover:bg-white/10 disabled:opacity-30"
         >
           <ArrowRight size={14} />
         </button>
         <div className="w-px h-4 bg-white/10 mx-1" />
         <button
           onClick={() => setScale((s) => Math.max(0.5, s - 0.25))}
-          className="p-1 rounded hover:bg-white/10"
+          className="p-1 rounded-lg hover:bg-white/10"
         >
           <Minus size={14} />
         </button>
         <span>{Math.round(scale * 100)}%</span>
         <button
           onClick={() => setScale((s) => Math.min(4, s + 0.25))}
-          className="p-1 rounded hover:bg-white/10"
+          className="p-1 rounded-lg hover:bg-white/10"
         >
           <Plus size={14} />
         </button>

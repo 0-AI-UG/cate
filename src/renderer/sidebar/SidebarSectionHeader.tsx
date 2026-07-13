@@ -11,16 +11,21 @@ interface SidebarSectionHeaderProps {
   actions?: React.ReactNode
   /** Optional small subtitle row rendered beneath the main header (no border). */
   subtitle?: React.ReactNode
+  /** Larger, bolder title. Used only by the top-level Workspace header; every
+   *  other section (Source Control, Search, …) keeps the small default. */
+  large?: boolean
 }
 
-export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ title, actions, subtitle }) => {
+export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ title, actions, subtitle, large }) => {
   return (
     <div className="flex-shrink-0">
       <div
         className="flex items-center min-h-[36px] px-3"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        <span className="text-[13px] text-primary flex-1 truncate">
+        <span
+          className={`flex-1 truncate text-primary ${large ? 'text-[18px] font-semibold' : 'text-[13px]'}`}
+        >
           {title}
         </span>
         {actions && (
@@ -49,7 +54,7 @@ export const SidebarHeaderButton: React.FC<
     <button
       aria-label={title}
       {...rest}
-      className={`flex items-center justify-center w-[22px] h-[22px] my-1 rounded text-secondary hover:text-primary hover:bg-hover transition-colors disabled:opacity-30 ${className}`}
+      className={`flex items-center justify-center w-[22px] h-[22px] my-1 rounded-lg text-secondary hover:text-primary hover:bg-hover transition-colors disabled:opacity-30 ${className}`}
     >
       <span className={spinning ? 'inline-flex opacity-60' : 'inline-flex'}>{children}</span>
     </button>

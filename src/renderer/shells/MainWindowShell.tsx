@@ -16,6 +16,12 @@ import {
   DockZoneDropIndicator,
   DragOverlay,
 } from '../drag'
+import { useUIStore } from '../stores/uiStore'
+import { IS_MAC } from '../lib/platform'
+import { useWindowFullscreen } from '../lib/useWindowFullscreen'
+import { MAC_CHROME_WIDTH, MAC_CHROME_WIDTH_FS } from './MacWindowChrome'
+import { SidebarSimple } from '@phosphor-icons/react'
+import { Tooltip } from '../ui/Tooltip'
 
 interface MainWindowShellProps {
   renderPanel: (panelId: string) => React.ReactNode
@@ -26,11 +32,29 @@ interface MainWindowShellProps {
 /** Width/height of the edge drop zone strips */
 const EDGE_ZONE_SIZE = 60
 
+/** Horizontal space reserved at the center tab bar's right end for the floating
+ *  reopen toggle shown when the right sidebar is fully hidden. */
+const RIGHT_CHROME_WIDTH = 40
+
 export default function MainWindowShell({
   renderPanel,
   getPanelTitle,
   onClosePanel,
 }: MainWindowShellProps) {
+  // macOS: when the left sidebar is collapsed, the dock tab bar sits at the
+  // window's top-left under the traffic-light island, so reserve room for it on
+  // the top-level tab bar (not nested canvas-node bars). Cleared when the
+  // sidebar is open (it holds the space instead). In fullscreen the lights are
+  // gone, so only the toggle needs clearing.
+  const leftSidebarOpen = useUIStore((s) => s.activeLeftSidebarView !== null)
+  const isFullscreen = useWindowFullscreen()
+  const reserveTrafficLights = IS_MAC && !leftSidebarOpen
+  const chromeReserve = isFullscreen ? MAC_CHROME_WIDTH_FS : MAC_CHROME_WIDTH
+
+  // Right sidebar fully hidden → float a reopen toggle at the top-right, next to
+  // the center tab bar's split button (mirrors the top-left sidebar toggle).
+  const rightSidebarHidden = useUIStore((s) => s.rightSidebarHidden)
+
   const leftVisible = useDockStoreContext((s) => s.zones.left.visible)
   const rightVisible = useDockStoreContext((s) => s.zones.right.visible)
   const bottomVisible = useDockStoreContext((s) => s.zones.bottom.visible)
@@ -120,9 +144,46 @@ export default function MainWindowShell({
   return (
     <div
       ref={shellRef}
-      className="flex flex-col h-full w-full min-h-0 min-w-0 relative"
+      className="main-window-shell-root flex flex-col h-full w-full min-h-0 min-w-0 relative"
       style={workspaceAccent ? ({ ['--workspace-accent' as string]: workspaceAccent } as React.CSSProperties) : undefined}
     >
+      {/* macOS: indent the top-level dock tab bar so its first tab clears the
+          traffic-light island when the left sidebar is collapsed. Nested
+          canvas-node tab bars ([data-node-id]) are exempt. */}
+      {reserveTrafficLights && (
+        <style>{`
+          .main-window-shell-root .dock-tab-bar { padding-left: ${chromeReserve}px; }
+          .main-window-shell-root [data-node-id] .dock-tab-bar { padding-left: 0; }
+        `}</style>
+      )}
+      {/* Right sidebar hidden: reserve room at the center tab bar's right end so
+          its split button clears the floating reopen toggle (below). Nested
+          canvas-node tab bars ([data-node-id]) are exempt. */}
+      {rightSidebarHidden && (
+        <style>{`
+          .main-window-shell-root [data-dock-zone="center"] .dock-tab-bar { padding-right: ${RIGHT_CHROME_WIDTH}px; }
+          .main-window-shell-root [data-dock-zone="center"] [data-node-id] .dock-tab-bar { padding-right: 0; }
+        `}</style>
+      )}
+      {/* Floating reopen toggle — pinned top-right, next to the split button,
+          mirroring the top-left sidebar toggle. Only while fully hidden. */}
+      {rightSidebarHidden && (
+        <div
+          className="absolute top-0 right-0 z-40 flex items-center justify-end select-none"
+          style={{ height: 36, width: RIGHT_CHROME_WIDTH, paddingRight: 6 }}
+        >
+          <Tooltip label="Show sidebar" placement="bottom">
+            <button
+              type="button"
+              aria-label="Show sidebar"
+              onClick={() => useUIStore.getState().setRightSidebarHidden(false)}
+              className="flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-hover transition-colors"
+            >
+              <SidebarSimple size={16} style={{ transform: 'scaleX(-1)' }} />
+            </button>
+          </Tooltip>
+        </div>
+      )}
       {/* Top row: left dock | center dock | right dock */}
       <div className="flex flex-1 min-h-0 min-w-0">
         {/* Left dock zone */}

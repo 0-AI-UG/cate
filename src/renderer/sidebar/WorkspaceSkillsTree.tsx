@@ -101,7 +101,7 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
         type="button"
         onClick={() => setOpen((v) => !v)}
         title={open ? 'Collapse skills' : 'Expand skills'}
-        className="flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 w-full focus:outline-none"
+        className="flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none mx-1.5 my-0.5 rounded-lg"
       >
         <CaretRight
           size={10}
@@ -119,7 +119,7 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
               type="button"
               onClick={openDialog}
               title={TARGET_LABEL[g.targetId] ?? g.targetId}
-              className="flex items-center gap-1.5 h-7 pl-10 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 w-full focus:outline-none"
+              className="flex items-center gap-1.5 h-7 pl-10 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none mx-1.5 my-0.5 rounded-lg"
             >
               <AgentIcon targetId={g.targetId} />
               <span className="truncate min-w-0 flex-1">{TARGET_LABEL[g.targetId] ?? g.targetId}</span>
@@ -132,7 +132,7 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
                 onClick={openDialog}
                 title={s.name}
                 aria-label={`Skill ${s.name}`}
-                className="flex items-center gap-1.5 h-7 pl-[3.25rem] pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 w-full focus:outline-none"
+                className="flex items-center gap-1.5 h-7 pl-[3.25rem] pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none mx-1.5 my-0.5 rounded-lg"
               >
                 <PuzzlePiece size={11} className="flex-shrink-0" style={{ opacity: 0.6 }} />
                 <span className="truncate min-w-0 flex-1">{s.name}</span>

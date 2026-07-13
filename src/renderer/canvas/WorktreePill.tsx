@@ -134,7 +134,7 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <ArrowsSplit size={11} weight="bold" style={{ flexShrink: 0 }} />
+      <ArrowsSplit size={11} style={{ flexShrink: 0 }} />
       <span
         style={{
           maxWidth: hovered ? 180 : 0,

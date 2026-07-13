@@ -161,7 +161,7 @@ const FileEntry: React.FC<{
   const dir = dirName(file.path)
   return (
     <div
-      className="group flex items-center gap-1 px-3 py-[3px] text-[12px] cursor-pointer hover:bg-hover"
+      className="group flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] text-[12px] cursor-pointer hover:bg-hover"
       onClick={onClick}
     >
       <span className={`w-4 text-center font-mono text-[11px] flex-shrink-0 ${statusColor(statusChar)}`}>
@@ -175,7 +175,7 @@ const FileEntry: React.FC<{
         {onDiscard && (
           <Tooltip label="Discard changes">
             <button
-              className="p-0.5 rounded hover:bg-hover text-muted hover:text-red-400"
+              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-red-400"
               onClick={(e) => { e.stopPropagation(); onDiscard() }}
               aria-label="Discard changes"
             >
@@ -186,7 +186,7 @@ const FileEntry: React.FC<{
         {onStage && (
           <Tooltip label="Stage file">
             <button
-              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
               onClick={(e) => { e.stopPropagation(); onStage() }}
               aria-label="Stage file"
             >
@@ -197,7 +197,7 @@ const FileEntry: React.FC<{
         {onUnstage && (
           <Tooltip label="Unstage file">
             <button
-              className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
               onClick={(e) => { e.stopPropagation(); onUnstage() }}
               aria-label="Unstage file"
             >
@@ -313,15 +313,15 @@ const BranchPicker: React.FC<{
                   value={newBranchName}
                   onChange={(e) => setNewBranchName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setCreating(false) }}
-                  className="flex-1 min-w-0 bg-surface-5 border border-subtle rounded px-2 py-1 text-[11px] text-primary placeholder:text-muted focus:outline-none focus:border-subtle"
+                  className="flex-1 min-w-0 bg-surface-2 border border-subtle rounded-lg px-2 py-1 text-[11px] text-primary placeholder:text-muted focus:outline-none focus:border-subtle"
                   placeholder="New branch name..."
                   autoFocus
                 />
                 <Tooltip label="Create branch">
-                  <button onClick={handleCreate} aria-label="Create branch" className="p-0.5 rounded hover:bg-hover text-green-400/70"><Check size={13} /></button>
+                  <button onClick={handleCreate} aria-label="Create branch" className="p-0.5 rounded-lg hover:bg-hover text-green-400/70"><Check size={13} /></button>
                 </Tooltip>
                 <Tooltip label="Cancel">
-                  <button onClick={() => setCreating(false)} aria-label="Cancel" className="p-0.5 rounded hover:bg-hover text-muted"><X size={13} /></button>
+                  <button onClick={() => setCreating(false)} aria-label="Cancel" className="p-0.5 rounded-lg hover:bg-hover text-muted"><X size={13} /></button>
                 </Tooltip>
               </div>
             ) : (
@@ -329,13 +329,13 @@ const BranchPicker: React.FC<{
                 <input
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
-                  className="flex-1 min-w-0 bg-surface-5 border border-subtle rounded px-2 py-1 text-[11px] text-primary placeholder:text-muted focus:outline-none focus:border-subtle"
+                  className="flex-1 min-w-0 bg-surface-2 border border-subtle rounded-lg px-2 py-1 text-[11px] text-primary placeholder:text-muted focus:outline-none focus:border-subtle"
                   placeholder="Filter branches..."
                 />
                 <Tooltip label="New branch">
                   <button
                     onClick={() => setCreating(true)}
-                    className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+                    className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
                     aria-label="New branch"
                   >
                     <Plus size={13} />
@@ -353,7 +353,7 @@ const BranchPicker: React.FC<{
           {filtered(localBranches).map(b => (
             <div
               key={b.name}
-              className={`group flex items-center gap-1 px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] ${b.current ? 'text-primary' : 'text-secondary'}`}
+              className={`group flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] ${b.current ? 'text-primary' : 'text-secondary'}`}
               onClick={() => handleCheckout(b.name)}
             >
               <GitBranch size={11} className="flex-shrink-0" />
@@ -362,7 +362,7 @@ const BranchPicker: React.FC<{
               {!b.current && (
                 <Tooltip label="Delete branch">
                   <button
-                    className="hidden group-hover:block p-0.5 rounded hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
+                    className="hidden group-hover:block p-0.5 rounded-lg hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
                     onClick={(e) => handleDelete(b.name, e)}
                     aria-label="Delete branch"
                   >
@@ -378,7 +378,7 @@ const BranchPicker: React.FC<{
               {filtered(remoteBranches).map(b => (
                 <div
                   key={b.name}
-                  className="flex items-center gap-1 px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] text-muted"
+                  className="flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] text-muted"
                   onClick={() => handleCheckout(b.name)}
                 >
                   <GitBranch size={11} className="flex-shrink-0" />
@@ -616,7 +616,9 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`
+      // Floor at 72px (a comfortable multi-line box) and cap at 160 before the
+      // hidden overflow kicks in.
+      textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 72), 160)}px`
     }
   }, [commitMessage])
 
@@ -680,7 +682,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     <div className={nested ? 'flex flex-col text-[12px]' : 'flex flex-col h-full overflow-hidden text-[12px]'}>
       {nested ? (
         <div
-          className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-muted cursor-pointer hover:bg-hover select-none"
+          className="flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-2 py-1 text-[11px] font-medium text-muted cursor-pointer hover:bg-hover select-none"
           onClick={() => setSectionOpen((v) => !v)}
         >
           {sectionOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}
@@ -705,7 +707,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
         <div className="flex items-center gap-1 px-2 py-1 bg-red-500/[0.1] text-red-400/80 text-[11px] flex-shrink-0">
           <span className="flex-1 truncate">{actionError}</span>
           <Tooltip label="Dismiss">
-            <button onClick={() => setActionError(null)} aria-label="Dismiss" className="p-0.5 hover:bg-hover rounded">
+            <button onClick={() => setActionError(null)} aria-label="Dismiss" className="p-0.5 hover:bg-hover rounded-lg">
               <X size={12} />
             </button>
           </Tooltip>
@@ -716,7 +718,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
       <div className="px-2 pt-2 pb-2 flex-shrink-0">
         <textarea
           ref={textareaRef}
-          className="w-full bg-surface-5 border border-subtle rounded px-2 py-1.5 text-[12px] text-primary placeholder:text-muted resize-none focus:outline-none focus:border-subtle"
+          className="w-full bg-surface-2 border border-subtle rounded-lg px-2 py-1.5 text-[12px] text-primary placeholder:text-muted resize-none focus:outline-none focus:border-subtle min-h-[72px] no-scrollbar"
           placeholder="Commit message"
           value={commitMessage}
           onChange={(e) => setCommitMessage(e.target.value)}
@@ -730,7 +732,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
         />
         <div className="flex gap-1 mt-1.5">
           <button
-            className="flex-1 py-1 rounded text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-surface-5 hover:bg-hover text-primary"
+            className="flex-1 py-1 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-surface-2 hover:bg-hover text-primary"
             disabled={!commitMessage.trim() || stagedFiles.length === 0 || committing}
             onClick={commit}
           >
@@ -738,7 +740,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           </button>
           <Tooltip label="Stash changes" placement="top">
             <button
-              className="px-2 py-1 rounded text-[11px] transition-colors bg-surface-5 hover:bg-hover text-secondary"
+              className="px-2 py-1 rounded-lg text-[11px] transition-colors bg-surface-2 hover:bg-hover text-secondary"
               onClick={stash}
               aria-label="Stash changes"
             >
@@ -747,7 +749,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           </Tooltip>
           <Tooltip label="Pop latest stash" placement="top">
             <button
-              className="px-2 py-1 rounded text-[11px] transition-colors bg-surface-5 hover:bg-hover text-secondary"
+              className="px-2 py-1 rounded-lg text-[11px] transition-colors bg-surface-2 hover:bg-hover text-secondary"
               onClick={stashPop}
               aria-label="Pop latest stash"
             >
@@ -767,7 +769,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           actions={
             <Tooltip label="Unstage all">
               <button
-                className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+                className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
                 onClick={() => unstageAll(stagedFiles)}
                 aria-label="Unstage all"
               >
@@ -794,7 +796,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           actions={
             <Tooltip label="Stage all">
               <button
-                className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+                className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
                 onClick={() => stageAll(changedFiles)}
                 aria-label="Stage all"
               >
@@ -823,7 +825,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           actions={
             <Tooltip label="Stage all">
               <button
-                className="p-0.5 rounded hover:bg-hover text-muted hover:text-primary"
+                className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
                 onClick={() => stageAll(untrackedFiles)}
                 aria-label="Stage all"
               >
@@ -855,7 +857,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           {logEntries.map((entry) => (
             <div
               key={entry.hash}
-              className="flex items-start gap-1.5 px-3 py-[4px] hover:bg-hover text-[11px]"
+              className="flex items-start gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[4px] hover:bg-hover text-[11px]"
             >
               <ClockCounterClockwise size={11} className="text-muted flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
@@ -880,7 +882,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           {worktrees.filter((wt) => !wt.isOrphan).map((wt) => (
             <div
               key={wt.path}
-              className={`flex items-center gap-1.5 px-3 py-[3px] ${
+              className={`flex items-center gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] ${
                 wt.isCurrent ? 'text-primary' : 'text-secondary'
               }`}
               title={wt.path}

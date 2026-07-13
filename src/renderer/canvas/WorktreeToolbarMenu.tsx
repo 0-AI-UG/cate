@@ -282,7 +282,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
             onClick={() => setCreating(true)}
             className="mx-1 w-[calc(100%-0.5rem)] flex items-center gap-2 h-[26px] px-1.5 rounded-lg text-[12px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors"
           >
-            <Plus size={13} weight="bold" className="flex-shrink-0" />
+            <Plus size={13} className="flex-shrink-0" />
             <span>Create new worktree…</span>
           </button>
 
@@ -295,7 +295,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
                 </span>
                 <button
                   onClick={() => void handlePrune()}
-                  className="px-1.5 py-0.5 rounded hover:bg-surface-4 text-secondary hover:text-primary"
+                  className="px-1.5 py-0.5 rounded-lg hover:bg-surface-4 text-secondary hover:text-primary"
                   title="Remove the missing entries"
                 >
                   Clean up
@@ -345,7 +345,7 @@ const PrPill: React.FC<{ pr: PrStatus; onClick: () => void }> = ({ pr, onClick }
       title="Open pull request on GitHub"
       className={`inline-flex items-center gap-1 text-[10px] leading-none ${tone} hover:underline`}
     >
-      <GitPullRequest size={10} weight="bold" />
+      <GitPullRequest size={10} />
       <span className="tabular-nums">#{pr.number}</span>
       <span>{label}</span>
     </button>
@@ -374,7 +374,7 @@ const SpawnButton: React.FC<{
         e.dataTransfer.setData('application/cate-spawn', JSON.stringify({ panelType, cwd, worktreeId }))
       }}
       onClick={(e) => { e.stopPropagation(); onClick() }}
-      className="w-5 h-5 flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-surface-5 cursor-grab active:cursor-grabbing transition-colors"
+      className="w-5 h-5 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-surface-5 cursor-grab active:cursor-grabbing transition-colors"
     >
       {icon}
     </div>
@@ -467,7 +467,7 @@ const WorktreeRow: React.FC<{
               if (e.key === 'Escape') setRenaming(false)
             }}
             onBlur={commitRename}
-            className="flex-1 min-w-0 text-[12px] bg-surface-5 rounded px-1 border border-blue-500/50 outline-none text-primary"
+            className="flex-1 min-w-0 text-[12px] bg-surface-5 rounded px-1 border border-focus outline-none text-primary"
           />
         ) : (
           <span
@@ -482,17 +482,17 @@ const WorktreeRow: React.FC<{
           <span className="flex-shrink-0 text-[10px] leading-none text-muted">base</span>
         )}
         {focused && !renaming && (
-          <Check size={11} weight="bold" className="flex-shrink-0 text-primary" />
+          <Check size={11} className="flex-shrink-0 text-primary" />
         )}
 
         {busy && (
-          <CircleNotch size={13} weight="bold" className="flex-shrink-0 text-muted animate-spin" />
+          <CircleNotch size={13} className="flex-shrink-0 text-muted animate-spin" />
         )}
 
         {!renaming && !busy && (
           <div className="flex items-center gap-0.5 flex-shrink-0">
             <SpawnButton
-              icon={<TerminalIcon size={12} weight="bold" />}
+              icon={<TerminalIcon size={12} />}
               title="Terminal"
               panelType="terminal"
               cwd={wt.path}
@@ -511,9 +511,9 @@ const WorktreeRow: React.FC<{
               <button
                 onClick={(e) => { e.stopPropagation(); void openMenu() }}
                 aria-label="More actions"
-                className="w-5 h-5 flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-surface-5 transition-colors"
+                className="w-5 h-5 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-surface-5 transition-colors"
               >
-                <DotsThree size={14} weight="bold" />
+                <DotsThree size={14} />
               </button>
             </Tooltip>
           </div>
@@ -530,7 +530,7 @@ const WorktreeRow: React.FC<{
             <span className="flex items-center gap-2 text-muted" title="Open on this canvas">
               {openTerminals > 0 && (
                 <span className="flex items-center gap-0.5">
-                  <TerminalIcon size={10} weight="bold" />
+                  <TerminalIcon size={10} />
                   {openTerminals}
                 </span>
               )}

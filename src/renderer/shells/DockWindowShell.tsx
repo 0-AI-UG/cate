@@ -28,6 +28,7 @@ import WindowChrome from './WindowChrome'
 
 import { PanelHost } from '../panels/PanelHost'
 import { IS_MAC } from '../lib/platform'
+import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 
 interface DockWindowShellProps {
   workspaceId?: string
@@ -48,6 +49,9 @@ const SYNC_INTERVAL_MS = 5000
 export default function DockWindowShell({ workspaceId: initialWorkspaceId }: DockWindowShellProps) {
   const [wsId, setWsId] = useState(initialWorkspaceId ?? '')
   const [ready, setReady] = useState(false)
+  // macOS: the tab bar reserves 78px for the native traffic lights — reclaimed
+  // in native fullscreen (this window's own), where the lights are hidden.
+  const isFullscreen = useWindowFullscreen()
   const dockStore = useMemo(() => createDockStore(), [])
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hadPanelsRef = useRef(false)
@@ -364,13 +368,14 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     <DockStoreProvider store={dockStore}>
       <div className="dock-window-root relative h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
         {/* Make the top tab bar the window drag region. On macOS reserve 78px on
-            the left for the traffic lights; on Windows/Linux reserve 132px on the
-            right for our custom WindowControls overlay (below). Override inside any
-            canvas-node ([data-node-id]) so nested mini-dock tab bars don't inherit
-            the indent or become drag handles. */}
+            the left for the traffic lights (reclaimed in native fullscreen where
+            they are hidden); on Windows/Linux reserve 132px on the right for our
+            custom WindowControls overlay (below). Override inside any canvas-node
+            ([data-node-id]) so nested mini-dock tab bars don't inherit the indent
+            or become drag handles. */}
         <style>{`
           .dock-window-root .dock-tab-bar {
-            ${IS_MAC ? 'padding-left: 78px;' : 'padding-right: 132px;'}
+            ${IS_MAC ? `padding-left: ${isFullscreen ? 0 : 78}px;` : 'padding-right: 132px;'}
             -webkit-app-region: drag;
           }
           .dock-window-root .dock-tab-bar > * { -webkit-app-region: no-drag; }

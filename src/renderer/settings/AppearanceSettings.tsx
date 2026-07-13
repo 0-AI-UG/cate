@@ -231,7 +231,7 @@ function CardShell({
       {children}
       {active && (
         <span className="absolute top-1.5 right-1.5 text-focus-blue">
-          <Check size={13} weight="bold" />
+          <Check size={13} />
         </span>
       )}
     </div>
@@ -278,7 +278,7 @@ function ThemeCard({
           <Tooltip label="Export theme">
             <button
               onClick={(e) => { e.stopPropagation(); onExport() }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-primary transition-opacity"
+              className="opacity-0 group-hover:opacity-100 p-0.5 rounded-lg text-muted hover:text-primary transition-opacity"
               aria-label="Export theme"
             >
               <DownloadSimple size={12} />
@@ -288,7 +288,7 @@ function ThemeCard({
             <Tooltip label="Remove theme">
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete() }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-red-400 transition-opacity"
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded-lg text-muted hover:text-red-400 transition-opacity"
                 aria-label="Remove theme"
               >
                 <Trash size={12} />

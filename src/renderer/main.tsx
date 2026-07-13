@@ -68,9 +68,10 @@ class ErrorBoundary extends React.Component<
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {/* Give every icon a touch more weight by default. Icons that set an
-        explicit `weight` prop (bold/fill/duotone) override this. */}
-    <IconContext.Provider value={{ weight: 'bold' }}>
+    {/* Default icon weight for all chrome (headers, panels, cards, dock
+        toolbar, etc.). Icons that set an explicit `weight` prop
+        (bold/fill/duotone) override this. */}
+    <IconContext.Provider value={{ weight: 'regular' }}>
       <ErrorBoundary>
         <App />
       </ErrorBoundary>

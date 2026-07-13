@@ -42,7 +42,7 @@ export function BrowserSettingsPopover({ onClose, onClearData }: Props): JSX.Ele
     >
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm font-medium text-primary">Browser settings</span>
-        <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded hover:bg-hover text-muted" aria-label="Close">
+        <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-hover text-muted" aria-label="Close">
           <X size={13} />
         </button>
       </div>
@@ -79,10 +79,10 @@ export function BrowserSettingsPopover({ onClose, onClearData }: Props): JSX.Ele
         />
       </SettingRow>
 
-      <SettingRow label="Show bookmarks bar">
+      <SettingRow label="Show bookmarks sidebar">
         <Toggle
-          checked={store.browserShowBookmarksBar}
-          onChange={(v) => store.setSetting('browserShowBookmarksBar', v)}
+          checked={store.browserShowTabSidebar}
+          onChange={(v) => store.setSetting('browserShowTabSidebar', v)}
         />
       </SettingRow>
 

@@ -54,7 +54,7 @@ export const visualStudioLight: Theme = {
     foreground: '#3b3b3b',
     cursor: '#005fb8',
     selectionBackground: '#add6ff',
-    black: '#000000', red: '#cd3131', green: '#00bc00', yellow: '#949800',
+    black: '#000000', red: '#cd3131', green: '#00a800', yellow: '#949800',
     blue: '#0451a5', magenta: '#bc05bc', cyan: '#0598bc', white: '#555555',
     brightBlack: '#666666', brightRed: '#cd3131', brightGreen: '#14ce14', brightYellow: '#b5ba00',
     brightBlue: '#0451a5', brightMagenta: '#bc05bc', brightCyan: '#0598bc', brightWhite: '#a5a5a5',

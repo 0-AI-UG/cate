@@ -119,7 +119,7 @@ export default function PerfHud(): JSX.Element | null {
       {/* Main-process snapshot */}
       {snap ? (
         <>
-          <div className="text-zinc-400 mt-1.5 border-t border-white/10 pt-1">
+          <div className="text-zinc-400 mt-1.5 border-t border-subtle pt-1">
             main · cpu <span className="text-zinc-100">{snap.totalCpu}%</span> ·{' '}
             {snap.focused ? 'focused' : <span className="text-amber-300">backgrounded</span>}
           </div>
@@ -163,7 +163,7 @@ export default function PerfHud(): JSX.Element | null {
       {/* Renderer render rates */}
       {renderRates.length > 0 && (
         <>
-          <div className="text-zinc-400 mt-1.5 border-t border-white/10 pt-1">renders/s</div>
+          <div className="text-zinc-400 mt-1.5 border-t border-subtle pt-1">renders/s</div>
           {renderRates.map((r) => (
             <div key={r.name} className="flex justify-between text-zinc-300">
               <span className="truncate mr-2">{r.name}</span>

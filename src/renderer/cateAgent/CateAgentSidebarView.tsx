@@ -79,7 +79,7 @@ const SidebarEmpty: React.FC = () => (
     <div className="flex flex-col gap-1.5">
       <span className="text-[13px] font-medium text-primary">Cate Agent</span>
       <span className="text-[12px] leading-relaxed text-muted">
-        Runs parallel loops in their own worktrees, verifies the result against a goal you can see, and lands the winner — merge, open a PR, or lay it out on the canvas.
+        Runs parallel loops in isolated worktrees and lands the winner: merge, open a PR, or place it on the canvas.
       </span>
     </div>
   </div>
@@ -128,9 +128,9 @@ export const CateAgentSidebarView: React.FC<{ wsId: string; rootPath: string }> 
   }
 
   return (
-    // A deeper surface than the sidebar/top-bar chrome (surface-1) so the agent
-    // panel reads as its own recessed well, not a seamless extension of the bar.
-    <div className="relative isolate flex h-full flex-col" style={{ backgroundColor: 'var(--surface-0)' }}>
+    // Canvas-colored so the agent panel blends into the canvas-toned right
+    // sidebar it lives in, rather than reading as a brighter inset well.
+    <div className="relative isolate flex h-full flex-col" style={{ backgroundColor: 'var(--canvas-bg)' }}>
       <PatternLayer empty={empty} />
       <div className="flex-shrink-0 flex items-center px-2 py-1.5">
         <CateAgentChatTabs wsId={wsId} rootPath={rootPath} />
@@ -147,7 +147,7 @@ export const CateAgentSidebarView: React.FC<{ wsId: string; rootPath: string }> 
       {/* Floating composer: model + stop controls with the input, over the content,
           with a top fade so the transcript dissolves into it instead of ending on a
           hard border. pointer-events pass through the fade but not the composer. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 pt-10 bg-gradient-to-t from-[var(--surface-0)] via-[var(--surface-0)] to-transparent">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 pt-10 bg-gradient-to-t from-[var(--canvas-bg)] via-[var(--canvas-bg)] to-transparent">
         <div className="pointer-events-auto">
           <CateAgentComposer wsId={wsId} rootPath={rootPath} />
         </div>

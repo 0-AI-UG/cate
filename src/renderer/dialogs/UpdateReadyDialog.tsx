@@ -136,7 +136,7 @@ export function UpdateReadyDialog() {
             disabled={restarting}
             className="flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-blue-500 text-white text-[12.5px] font-semibold hover:bg-blue-400 transition-colors disabled:opacity-50"
           >
-            <ArrowClockwise size={14} weight="bold" />
+            <ArrowClockwise size={14} />
             {restarting ? 'Restarting…' : 'Restart now'}
           </button>
         </div>

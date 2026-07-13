@@ -34,7 +34,7 @@ const Tab: React.FC<{
     onClick={onClick}
     className={`group/tab relative flex flex-shrink-0 items-center gap-1.5 h-7 max-w-[168px] pl-2.5 ${
       onClose ? 'pr-1' : 'pr-2.5'
-    } rounded-md text-[12px] cursor-pointer transition-colors ${
+    } rounded-[10px] text-[12px] cursor-pointer transition-colors ${
       active ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover'
     }`}
   >
@@ -47,7 +47,7 @@ const Tab: React.FC<{
           onClose()
         }}
         title="Close chat"
-        className={`flex-shrink-0 p-0.5 rounded text-muted hover:text-red-400 hover:bg-hover transition-opacity ${
+        className={`flex-shrink-0 p-0.5 rounded-lg text-muted hover:text-red-400 hover:bg-hover transition-opacity ${
           active ? 'opacity-70' : 'opacity-0 group-hover/tab:opacity-100'
         }`}
       >
@@ -89,9 +89,9 @@ export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = (
         type="button"
         onClick={() => setActiveChat(wsId, '')}
         title="New chat"
-        className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-primary hover:bg-hover transition-colors"
+        className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-hover transition-colors"
       >
-        <Plus size={14} weight="bold" />
+        <Plus size={14} />
       </button>
     </div>
   )

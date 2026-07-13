@@ -6,6 +6,7 @@
 import type { Theme } from '../theme'
 import { darkWarm } from './darkWarm'
 import { darkCold } from './darkCold'
+import { darkNeutral } from './darkNeutral'
 import { lightSubtle } from './lightSubtle'
 import { dracula } from './dracula'
 import { nord } from './nord'
@@ -26,6 +27,7 @@ export { BASE_DARK, BASE_LIGHT } from './base'
 
 /** Shipped themes, in catalog order. Dark Cold leads as the standard theme. */
 export const BUILT_IN_THEMES: Theme[] = [
+  darkNeutral,
   darkCold,
   darkWarm,
   lightSubtle,

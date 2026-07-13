@@ -110,7 +110,7 @@ export function PostUpdateFeedbackDialog() {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     >
       <div
-        className="w-[460px] rounded-2xl flex flex-col bg-[#1a1a1e] border border-white/[0.08] shadow-[0_32px_80px_rgba(0,0,0,0.7)] overflow-hidden"
+        className="w-[460px] rounded-2xl flex flex-col bg-[#1a1a1e] border border-subtle shadow-[0_32px_80px_rgba(0,0,0,0.7)] overflow-hidden"
       >
         {resultMessage && !sending ? (
           <div className="px-6 py-12 text-center text-white text-sm">
@@ -158,7 +158,7 @@ export function PostUpdateFeedbackDialog() {
                 </div>
                 <span className="inline-flex items-center gap-1.5 self-start px-4 py-2 bg-[#ff6154] text-white text-[13px] font-semibold rounded-lg group-hover:brightness-110 transition-all">
                   Check it out on Product Hunt
-                  <ArrowSquareOut size={13} weight="bold" />
+                  <ArrowSquareOut size={13} />
                 </span>
               </button>
 
@@ -167,7 +167,7 @@ export function PostUpdateFeedbackDialog() {
                 {/* GitHub Stars */}
                 <button
                   onClick={() => openLink(GITHUB_REPO, 'github_star')}
-                  className="flex-1 flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all group"
+                  className="flex-1 flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-subtle transition-all group"
                 >
                   <GithubLogo size={20} weight="fill" className="text-white" />
                   <span className="text-white text-[12px] font-semibold">Star on GitHub</span>
@@ -181,7 +181,7 @@ export function PostUpdateFeedbackDialog() {
                 {/* Newsletter */}
                 <button
                   onClick={() => openLink(NEWSLETTER_URL, 'newsletter')}
-                  className="flex-1 flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all group"
+                  className="flex-1 flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-subtle transition-all group"
                 >
                   <Envelope size={20} weight="fill" className="text-blue-400" />
                   <span className="text-white text-[12px] font-semibold">Newsletter</span>
@@ -219,7 +219,7 @@ export function PostUpdateFeedbackDialog() {
                     onChange={(e) => setComment(e.target.value.slice(0, 1000))}
                     placeholder="Anything specific? (optional)"
                     rows={2}
-                    className="mt-2 w-full bg-[#111113] border border-white/[0.08] rounded-lg p-2.5 text-[13px] text-white placeholder:text-[#555] outline-none focus:border-blue-500/50 resize-none transition-colors"
+                    className="mt-2 w-full bg-[#111113] border border-subtle rounded-lg p-2.5 text-[13px] text-white placeholder:text-[#555] outline-none focus:border-focus resize-none transition-colors"
                   />
                 </div>
               )}

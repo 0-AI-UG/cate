@@ -2,7 +2,9 @@
 // EmptyCanvasOverlay — shown on an empty canvas (with a folder open), including
 // a freshly-added 2nd canvas. Offers one-click loading of a saved layout into
 // *this* canvas. Renders nothing when there are no saved layouts. Dismissable
-// via the close button, "Continue without layout", or Escape.
+// via the close button, "Continue without layout", or Escape — and once
+// dismissed on a given canvas it stays dismissed for that canvas (persisted by
+// workspace+canvas id), so emptying/reopening the same canvas won't resurface it.
 // =============================================================================
 
 import React, { useEffect, useState, useCallback } from 'react'
@@ -14,6 +16,30 @@ import { listLayouts, loadLayoutIntoCanvas } from '../lib/layouts'
 import { CARD_SURFACE } from '../ui/Modal'
 import { Tooltip } from '../ui/Tooltip'
 import log from '../lib/logger'
+
+// Per-canvas dismissal is durable: a canvas the user has waved off should never
+// re-offer layouts, even after it's emptied again or the app restarts. Keyed by
+// `${workspaceId}:${panelId}` (both stable across restarts) in localStorage.
+const DISMISS_STORAGE_KEY = 'cate.emptyCanvasOverlay.dismissed'
+
+function loadDismissed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISS_STORAGE_KEY)
+    return new Set(raw ? (JSON.parse(raw) as string[]) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function persistDismissed(canvasKey: string): void {
+  try {
+    const set = loadDismissed()
+    set.add(canvasKey)
+    localStorage.setItem(DISMISS_STORAGE_KEY, JSON.stringify([...set]))
+  } catch (err) {
+    log.warn('[EmptyCanvasOverlay] persist dismissal failed', err)
+  }
+}
 
 export function EmptyCanvasOverlay({
   workspaceId,
@@ -28,7 +54,14 @@ export function EmptyCanvasOverlay({
   const setShowLayoutsDialog = useUIStore((s) => s.setShowLayoutsDialog)
   const [names, setNames] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
-  const [dismissed, setDismissed] = useState(false)
+  const canvasKey = `${workspaceId}:${panelId}`
+  const [dismissed, setDismissed] = useState(() => loadDismissed().has(canvasKey))
+
+  // Once dismissed on this canvas, remember it for good.
+  const dismiss = useCallback(() => {
+    persistDismissed(canvasKey)
+    setDismissed(true)
+  }, [canvasKey])
 
   useEffect(() => {
     listLayouts().then(setNames).catch((err) => log.warn('[EmptyCanvasOverlay] list failed', err))
@@ -49,11 +82,11 @@ export function EmptyCanvasOverlay({
   useEffect(() => {
     if (!visible) return
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); setDismissed(true) }
+      if (e.key === 'Escape') { e.preventDefault(); dismiss() }
     }
     document.addEventListener('keydown', handler, { capture: true })
     return () => document.removeEventListener('keydown', handler, { capture: true })
-  }, [visible])
+  }, [visible, dismiss])
 
   if (!visible) return null
 
@@ -61,14 +94,14 @@ export function EmptyCanvasOverlay({
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
       <div className={`pointer-events-auto w-[360px] max-w-[90%] overflow-hidden ${CARD_SURFACE}`}>
         <div className="flex items-center justify-between pl-3.5 pr-2 pt-2 pb-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+          <span className="text-[12px] font-medium text-secondary">
             Start from a layout
           </span>
           <Tooltip label="Close (Esc)">
             <button
               type="button"
-              onClick={() => setDismissed(true)}
-              className="flex items-center justify-center w-5 h-5 rounded text-muted hover:text-secondary hover:bg-white/5"
+              onClick={dismiss}
+              className="flex items-center justify-center w-5 h-5 rounded-lg text-muted hover:text-secondary hover:bg-white/5"
               aria-label="Close"
             >
               <X size={13} />
@@ -92,7 +125,7 @@ export function EmptyCanvasOverlay({
         <div className="flex items-center justify-between border-t border-subtle">
           <button
             type="button"
-            onClick={() => setDismissed(true)}
+            onClick={dismiss}
             className="px-3.5 py-2 text-left text-[11px] text-muted hover:text-secondary"
           >
             Continue without layout

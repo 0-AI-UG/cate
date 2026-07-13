@@ -238,7 +238,7 @@ export function RemoteConnect({
             className="flex items-center gap-1 self-start text-[12px] text-muted hover:text-secondary transition-colors"
             onClick={() => setAdvancedOpen((o) => !o)}
           >
-            <CaretRight size={12} weight="bold" className={`transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
+            <CaretRight size={12} className={`transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
             Advanced
           </button>
 

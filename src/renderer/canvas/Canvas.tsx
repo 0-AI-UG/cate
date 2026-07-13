@@ -93,9 +93,13 @@ const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   }}>{children}</kbd>
 )
 
+// Faint mid-dot separating the clauses of the subtle placement hint.
+const Dot: React.FC = () => (
+  <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>·</span>
+)
+
 const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = ({ canvasRef }) => {
   const pending = useCanvasStoreContext((s) => s.pendingPlacement)
-  const api = useCanvasStoreApi()
   if (!pending) return null
   const r = canvasRef.current?.getBoundingClientRect()
   if (!r) return null
@@ -108,34 +112,30 @@ const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = 
 
   return createPortal(
     <>
-      {/* Hint pill centred on the visible canvas (matching the bottom toolbar). */}
+      {/* Subtle inline hint floating just above the bottom toolbar — no blocking
+          chrome, so the canvas stays interactive. Sits bottom-centre over the
+          visible canvas so it lines up with the toolbar underneath it. */}
       <div style={{
-        position: 'fixed', left: (visLeft + visRight) / 2, top: r.top + 16, transform: 'translateX(-50%)',
-        zIndex: 2147483000, display: 'flex', alignItems: 'center', gap: 14,
-        padding: '9px 9px 9px 16px', borderRadius: 999,
-        // Match the bottom toolbar so the bar adapts to the active theme.
-        background: 'var(--surface-0)', border: '1px solid var(--border-subtle)',
-        boxShadow: '0 8px 24px -6px var(--shadow-node)', color: 'var(--text-primary)',
-        fontSize: 13, fontWeight: 500, fontFamily: 'system-ui, -apple-system, sans-serif',
+        position: 'fixed', left: (visLeft + visRight) / 2, top: r.bottom - 100,
+        transform: 'translate(-50%, -100%)', zIndex: 2147483000,
+        display: 'flex', alignItems: 'center',
+        padding: '5px 12px', borderRadius: 999,
+        // Faint translucent chip matching the toolbar drop-ups — legible over
+        // panel content without reading as a heavy banner.
+        background: 'color-mix(in srgb, var(--surface-0) 78%, transparent)',
+        backdropFilter: 'blur(24px) saturate(1.5)',
+        border: 'var(--hairline) solid var(--border-subtle)',
+        color: 'var(--text-secondary)',
+        fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-sans)',
         animation: 'ghostHintIn 200ms ease both', userSelect: 'none', whiteSpace: 'nowrap',
       }}>
         <span>
           {armed ? (
-            <>Click anywhere to place. <Kbd>F</Kbd> to go back.</>
+            <>Click anywhere to place<Dot /><Kbd>F</Kbd> to go back<Dot /><Kbd>Esc</Kbd> to cancel</>
           ) : (
-            <>Pick a spot. Press <Kbd>1</Kbd>{count > 1 ? <>–<Kbd>{count}</Kbd></> : null}, click a ghost, or <Kbd>F</Kbd> to place anywhere.</>
+            <>Pick a spot<Dot /><Kbd>1</Kbd>{count > 1 ? <>–<Kbd>{count}</Kbd></> : null} or click a ghost<Dot /><Kbd>F</Kbd> anywhere<Dot /><Kbd>Esc</Kbd> to cancel</>
           )}
         </span>
-        <button
-          onClick={() => api.getState().cancelPlacement()}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999,
-            border: 'none', cursor: 'pointer', background: 'var(--surface-hover-strong)',
-            color: 'var(--text-secondary)', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
-          }}
-        >
-          Cancel <Kbd>Esc</Kbd>
-        </button>
       </div>
     </>,
     document.body,

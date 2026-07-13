@@ -153,9 +153,9 @@ export function RuntimeLockOverlay(): JSX.Element | null {
               {view.primary && (
                 <button className={btn.primary} onClick={view.primary.onClick}>
                   {view.primary.icon === 'install' ? (
-                    <CloudArrowDown size={14} weight="bold" />
+                    <CloudArrowDown size={14} />
                   ) : (
-                    <PlugsConnected size={14} weight="bold" />
+                    <PlugsConnected size={14} />
                   )}
                   {view.primary.label}
                 </button>

@@ -38,6 +38,22 @@ export function isUrl(input: string): boolean {
   return false
 }
 
+/** Best-effort favicon URL for a page: the site's own `/favicon.ico`. Same-origin
+ *  (no third-party lookup service), so it only ever talks to a host the user is
+ *  already visiting. Returns undefined for non-web schemes (cate://newtab,
+ *  file://, about:) which have no favicon. Used as a fallback when the page
+ *  hasn't reported a favicon via page-favicon-updated (e.g. restored/inactive
+ *  tabs and bookmarks). The <img> falls back to a globe glyph if this 404s. */
+export function faviconForUrl(rawUrl: string): string | undefined {
+  try {
+    const u = new URL(rawUrl)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined
+    return `${u.origin}/favicon.ico`
+  } catch {
+    return undefined
+  }
+}
+
 /** Percent-encode the characters in a filesystem path that would otherwise be
  *  interpreted as URL syntax: `%` (must be escaped first so we don't double-
  *  encode the others), `#` (fragment), and `?` (query). Other characters in

@@ -18,10 +18,10 @@ export const lightSubtle: Theme = {
     cursorAccent: '#ddd5ca',
     selectionBackground: '#b1a696',
     selectionForeground: '#38322b',
-    black: '#38322b', red: '#c04030', green: '#4a8f3a', yellow: '#b58900',
-    blue: '#3c7ef0', magenta: '#a04a7a', cyan: '#5e747f', white: '#8a8274',
+    black: '#38322b', red: '#c04030', green: '#428034', yellow: '#916e00',
+    blue: '#246eee', magenta: '#a04a7a', cyan: '#5e747f', white: '#797266',
     brightBlack: '#5e747f', brightRed: '#cb4b16', brightGreen: '#5fa34a', brightYellow: '#c89a1f',
-    brightBlue: '#5e93f4', brightMagenta: '#b85a8a', brightCyan: '#7a8f99', brightWhite: '#38322b',
+    brightBlue: '#256df0', brightMagenta: '#b85a8a', brightCyan: '#7a8f99', brightWhite: '#38322b',
   },
   editor: {
     base: 'vs',

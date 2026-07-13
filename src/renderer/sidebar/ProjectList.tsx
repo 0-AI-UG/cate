@@ -137,6 +137,7 @@ export const ProjectList: React.FC = () => {
     >
       <SidebarSectionHeader
         title="Workspace"
+        large
         actions={
           <>
             <SidebarHeaderButton
@@ -147,7 +148,7 @@ export const ProjectList: React.FC = () => {
               {allExpanded ? <CaretDoubleUp size={14} /> : <CaretDoubleDown size={14} />}
             </SidebarHeaderButton>
             <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
-              <Plus size={14} weight="bold" />
+              <Plus size={14} />
             </SidebarHeaderButton>
           </>
         }

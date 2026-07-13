@@ -147,9 +147,9 @@ export const CreateWorktreeForm: React.FC<{
         }`}
       >
         {selectedPr ? (
-          <GitPullRequest size={14} weight="bold" className="flex-shrink-0 opacity-60 ml-1" />
+          <GitPullRequest size={14} className="flex-shrink-0 opacity-60 ml-1" />
         ) : (
-          <GitBranch size={14} weight="bold" className="flex-shrink-0 opacity-60 ml-1" />
+          <GitBranch size={14} className="flex-shrink-0 opacity-60 ml-1" />
         )}
         {selectedPr ? (
           <div className="flex-1 min-w-0 flex items-center gap-1.5 text-[14px] text-primary">
@@ -174,19 +174,19 @@ export const CreateWorktreeForm: React.FC<{
           <button
             onClick={submit}
             disabled={!canSubmit || busy}
-            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
             aria-label={selectedPr ? 'Check out pull request' : 'Start'}
           >
-            <Check size={14} weight="bold" />
+            <Check size={14} />
           </button>
         </Tooltip>
         <Tooltip label="Cancel">
           <button
             onClick={onCancel}
-            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-primary hover:bg-hover transition-colors"
+            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-hover transition-colors"
             aria-label="Cancel"
           >
-            <X size={14} weight="bold" />
+            <X size={14} />
           </button>
         </Tooltip>
       </div>
@@ -297,7 +297,7 @@ export const CreateWorktreeForm: React.FC<{
                           selectedPr?.number === p.number ? 'bg-hover' : ''
                         }`}
                       >
-                        <GitPullRequest size={11} weight="bold" className="flex-shrink-0 opacity-50" />
+                        <GitPullRequest size={11} className="flex-shrink-0 opacity-50" />
                         <span className="text-muted tabular-nums flex-shrink-0">#{p.number}</span>
                         <span className="truncate flex-1 text-left text-secondary">{p.title}</span>
                         {p.isFork && (

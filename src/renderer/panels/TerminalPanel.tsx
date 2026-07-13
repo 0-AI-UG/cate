@@ -704,7 +704,7 @@ export default function TerminalPanel({
               }
               if (e.key === 'Escape') handleCloseSearch()
             }}
-            className="flex-1 bg-surface-4 text-primary text-xs px-2 py-1 rounded border border-subtle outline-none focus:border-blue-500/50"
+            className="flex-1 bg-surface-4 text-primary text-xs px-2 py-1 rounded-lg border border-subtle outline-none focus:border-focus"
             placeholder="Search terminal..."
           />
           <button

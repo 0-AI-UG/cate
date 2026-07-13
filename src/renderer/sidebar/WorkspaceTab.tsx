@@ -129,7 +129,7 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
 
   return (
     <button
-      className={`group/panel flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
+      className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
         indent ? 'pl-10' : 'pl-7'
       } ${isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
       onClick={onClick}
@@ -532,7 +532,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     }
     return (
       <div
-        className={`group flex items-center gap-2 h-8 px-2 cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
+        className={`group mx-1.5 my-0.5 rounded-lg flex items-center gap-2 h-7 px-2 cursor-pointer text-muted hover:text-secondary hover:bg-hover transition-colors outline-none ${
           isContextActive ? 'ring-1 ring-strong' : ''
         } ${isSelected ? 'bg-surface-6' : ''}`}
         onClick={handlePickFolder}
@@ -601,7 +601,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return (
       <button
         key={p.panelId}
-        className={`group/panel flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
+        className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
           indent ? 'pl-10' : 'pl-7'
         }`}
         onClick={onClick}
@@ -627,7 +627,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       <div
         role="button"
         tabIndex={0}
-        className="group/panel flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
+        className="group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
         onClick={(e) => { e.stopPropagation(); void window.electronAPI.focusWindowPanel(p.panelId) }}
         onContextMenu={(e) => handleDetachedContextMenu(e, p.panelId)}
         onKeyDown={(e) => {
@@ -691,7 +691,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     return (
       <button
         key={p.id}
-        className={`group/panel flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
+        className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
           indent ? 'pl-10' : 'pl-7'
         }`}
         onClick={(e) => handlePanelClick(e, p.id)}
@@ -744,7 +744,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       <div
         role="button"
         tabIndex={0}
-        className="group/panel flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
+        className="group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
         onClick={(e) => handlePanelClick(e, cp.id)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -796,7 +796,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     <div onContextMenu={handleContextMenu}>
       {/* Project row */}
       <div
-        className={`group flex items-center gap-1 h-8 px-1.5 cursor-pointer transition-colors outline-none ${
+        className={`group mx-1.5 my-0.5 rounded-lg flex items-center gap-1 h-7 px-1.5 cursor-pointer transition-colors outline-none ${
           isContextActive ? 'ring-1 ring-strong' : ''
         } ${
           isMultiSelected
@@ -831,7 +831,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         {/* Folder icon (tinted by accent if set) */}
         <Folder
           size={14}
-          weight="bold"
           className="flex-shrink-0 opacity-90"
           style={hasColor ? { color: accent } : undefined}
         />
@@ -876,7 +875,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
             onClick={(e) => { e.stopPropagation(); handleContextMenu(e) }}
             aria-label="More actions"
           >
-            <DotsThree size={14} weight="bold" />
+            <DotsThree size={14} />
           </button>
         </Tooltip>
       </div>

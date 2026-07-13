@@ -697,7 +697,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
                 e.stopPropagation()
               }}
               placeholder="Filter by name"
-              className="w-full bg-surface-5 text-primary text-xs pl-7 pr-2 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
+              className="w-full bg-surface-2 text-primary text-xs pl-7 pr-2 py-1 rounded-lg border border-subtle focus:border-focus outline-none"
             />
           </div>
           {searchQuery && (

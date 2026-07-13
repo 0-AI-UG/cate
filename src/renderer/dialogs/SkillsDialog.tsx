@@ -392,7 +392,7 @@ function SkillRow({
         onClick={() => void toggleSave()}
         disabled={saveBusy}
         aria-label={saved ? 'Remove from your library' : 'Save to your library'}
-        className="shrink-0 w-6 h-6 flex items-center justify-center rounded disabled:opacity-50"
+        className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg disabled:opacity-50"
       >
         {saveBusy ? (
           <CircleNotch size={13} className="animate-spin text-muted" />
@@ -423,7 +423,7 @@ function SkillRow({
           <button
             onClick={() => window.electronAPI?.openExternalUrl(link)}
             aria-label="Open skill on GitHub"
-            className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-muted hover:text-secondary"
+            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-secondary"
           >
             <ArrowSquareOut size={14} />
           </button>
@@ -539,7 +539,7 @@ function AgentMenu({
             title={on ? 'Installed — click to remove' : 'Install here'}
           >
             <span className="w-3.5 shrink-0 flex items-center justify-center text-accent">
-              {working ? <CircleNotch size={11} className="animate-spin" /> : on ? <Check size={11} weight="bold" /> : null}
+              {working ? <CircleNotch size={11} className="animate-spin" /> : on ? <Check size={11} /> : null}
             </span>
             <span className="flex-1">{t.label}</span>
             {t.beta && <span className="text-[8px] uppercase opacity-60">beta</span>}
@@ -570,7 +570,7 @@ function IconBtn({
         type="button"
         aria-label={title}
         onClick={onClick}
-        className="flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-primary hover:bg-white/5 transition-colors"
+        className="flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-white/5 transition-colors"
       >
         {children}
       </button>

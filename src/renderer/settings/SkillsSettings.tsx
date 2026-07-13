@@ -107,7 +107,7 @@ export function SkillsSettings() {
                 <Tooltip label="Remove">
                   <button
                     onClick={() => void remove(s.id)}
-                    className="shrink-0 p-0.5 rounded text-muted opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
+                    className="shrink-0 p-0.5 rounded-lg text-muted opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
                     aria-label="Remove"
                   >
                     <Trash size={12} />

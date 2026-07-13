@@ -37,7 +37,7 @@ const ToggleBtn: React.FC<ToggleBtnProps> = ({ active, onClick, title, children 
       aria-label={title}
       aria-pressed={active}
       onClick={onClick}
-      className={`flex items-center justify-center w-5 h-5 rounded text-[11px] leading-none transition-colors ${
+      className={`flex items-center justify-center w-5 h-5 rounded-lg text-[11px] leading-none transition-colors ${
         active ? 'bg-accent text-white' : 'text-secondary hover:text-primary hover:bg-surface-5'
       }`}
     >
@@ -183,7 +183,7 @@ export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = 
               }}
               placeholder={focusedField === 'query' ? 'Search' : ''}
               spellCheck={false}
-              className="w-full bg-surface-5 text-primary text-xs pl-7 pr-14 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
+              className="w-full bg-surface-2 text-primary text-xs pl-7 pr-14 py-1 rounded-lg border border-subtle focus:border-focus outline-none"
             />
             <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
               <ToggleBtn active={matchCase} onClick={() => setOptions({ matchCase: !matchCase })} title="Match Case">
@@ -204,11 +204,11 @@ export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = 
               aria-label="Toggle search details"
               aria-pressed={optionsExpanded}
               onClick={toggleOptionsExpanded}
-              className={`flex-shrink-0 flex items-center justify-center w-6 h-6 rounded transition-colors ${
+              className={`flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-lg transition-colors ${
                 optionsExpanded ? 'bg-accent text-white' : 'text-secondary hover:text-primary hover:bg-surface-5'
               }`}
             >
-              <DotsThree size={18} weight="bold" />
+              <DotsThree size={18} />
             </button>
           </Tooltip>
         </div>
@@ -227,7 +227,7 @@ export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = 
                 onKeyDown={(e) => e.stopPropagation()}
                 placeholder={focusedField === 'include' ? 'e.g. src/**, *.ts' : ''}
                 spellCheck={false}
-                className="w-full bg-surface-5 text-primary text-[11px] px-2 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
+                className="w-full bg-surface-2 text-primary text-[11px] px-2 py-1 rounded-lg border border-subtle focus:border-focus outline-none"
               />
             </div>
             <div className="flex flex-col gap-0.5">
@@ -242,7 +242,7 @@ export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = 
                   onKeyDown={(e) => e.stopPropagation()}
                   placeholder={focusedField === 'exclude' ? 'e.g. *.lock, dist/**' : ''}
                   spellCheck={false}
-                  className="w-full bg-surface-5 text-primary text-[11px] pl-2 pr-7 py-1 rounded border border-subtle focus:border-blue-500/50 outline-none"
+                  className="w-full bg-surface-2 text-primary text-[11px] pl-2 pr-7 py-1 rounded-lg border border-subtle focus:border-focus outline-none"
                 />
                 <div className="absolute right-1 top-1/2 -translate-y-1/2">
                   <ToggleBtn

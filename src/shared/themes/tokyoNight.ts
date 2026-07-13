@@ -28,7 +28,7 @@ export const tokyoNight: Theme = {
     'border-focus': '#7aa2f7',
     'text-primary': '#c0caf5',
     'text-secondary': '#a9b1d6',
-    'text-muted': '#565f89',
+    'text-muted': '#6b75a2',
     'text-inverse': '#1a1b26',
     'focus-blue': '#7aa2f7',
     'activity-green': '#9ece6a',
@@ -61,7 +61,7 @@ export const tokyoNight: Theme = {
     selectionForeground: '#c0caf5',
     black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
     blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
-    brightBlack: '#414868', brightRed: '#f7768e', brightGreen: '#9ece6a', brightYellow: '#e0af68',
+    brightBlack: '#5e6997', brightRed: '#f7768e', brightGreen: '#9ece6a', brightYellow: '#e0af68',
     brightBlue: '#7aa2f7', brightMagenta: '#bb9af7', brightCyan: '#7dcfff', brightWhite: '#c0caf5',
   },
   editor: {

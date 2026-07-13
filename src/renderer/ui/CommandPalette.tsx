@@ -25,7 +25,6 @@ import {
   GraduationCap,
   PuzzlePiece,
   X,
-  MapTrifold,
   Selection,
   ArrowUUpLeft,
   ArrowUUpRight,
@@ -38,8 +37,11 @@ import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useOtherWindowPanels } from '../stores/windowPanelStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { useOptionalCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { useOptionalCanvasStoreApi, CanvasStoreProvider } from '../stores/CanvasStoreContext'
 import { WindowTypeContext } from '../stores/WindowTypeContext'
+import { getActiveCanvasPanelId } from '../lib/workspace/canvasAccess'
+import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
+import Minimap from '../canvas/Minimap'
 import { runAction } from '../lib/runAction'
 import { useWorkspacePanelTree } from '../lib/workspace/useWorkspacePanelTree'
 import { revealPanel } from '../lib/workspace/panelReveal'
@@ -80,7 +82,6 @@ const SkillsIcon = () => <PuzzlePiece size={ICON_SIZE} />
 const AgentIcon = () => <ChatCircle size={ICON_SIZE} />
 const ObserveIcon = () => <Eye size={ICON_SIZE} />
 const CloseIcon = () => <X size={ICON_SIZE} />
-const MinimapIcon = () => <MapTrifold size={ICON_SIZE} />
 const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
 const RedoIcon = () => <ArrowUUpRight size={ICON_SIZE} />
 
@@ -146,6 +147,33 @@ export const CommandPalette: React.FC = () => {
     setFileResults([])
   }, [setShowCommandPalette])
 
+  // --- Minimap card: a live overview of a canvas, shown as a detached card at
+  // the foot of the palette. Every canvas in the workspace is offered as a tab
+  // (when there's more than one); the on-screen (active) canvas is selected by
+  // default and highlighted. ---
+  const wsPanels = useAppStore((s) => s.workspaces.find((w) => w.id === s.selectedWorkspaceId)?.panels)
+  const canvasTabs = useMemo(
+    () =>
+      Object.values(wsPanels ?? {})
+        .filter((p) => p.type === 'canvas')
+        .map((p) => ({ id: p.id, title: p.title || 'Canvas' })),
+    [wsPanels],
+  )
+  const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null)
+  // Reset the shown canvas to the on-screen (active) one each time it opens.
+  useEffect(() => {
+    if (showCommandPalette) setSelectedCanvasId(getActiveCanvasPanelId())
+  }, [showCommandPalette])
+  // Fall back to the active canvas if the selection is stale (canvas closed).
+  const shownCanvasId =
+    selectedCanvasId && canvasTabs.some((t) => t.id === selectedCanvasId)
+      ? selectedCanvasId
+      : getActiveCanvasPanelId()
+  const minimapCanvasStore = useMemo(
+    () => (shownCanvasId && showCommandPalette ? getOrCreateCanvasStoreForPanel(shownCanvasId) : null),
+    [shownCanvasId, showCommandPalette],
+  )
+
   // Dispatch a menu/shortcut action through the SAME code path as the keyboard
   // shortcut and native menu (lib/runAction) — so panel creation here is
   // context-aware (drops onto the focused canvas or tabs into the focused dock
@@ -188,7 +216,6 @@ export const CommandPalette: React.FC = () => {
             { id: 'toggleSearch', title: shortcutTitle('toggleSearch'), icon: <SearchIcon />, action: run('toggleSearch') },
           ]
         : []),
-      { id: 'toggleMinimap', title: shortcutTitle('toggleMinimap'), icon: <MinimapIcon />, action: run('toggleMinimap') },
       { id: 'zoomReset', title: shortcutTitle('zoomReset'), icon: <ZoomResetIcon />, action: run('zoomReset') },
       { id: 'zoomToFit', title: shortcutTitle('zoomToFit'), icon: <ZoomToFitIcon />, action: run('zoomToFit') },
       { id: 'zoomToSelection', title: shortcutTitle('zoomToSelection'), icon: <ZoomSelectionIcon />, action: run('zoomToSelection') },
@@ -413,8 +440,43 @@ export const CommandPalette: React.FC = () => {
   return (
     <PaletteDialogShell
       onClose={close}
-      cardClassName="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] overflow-hidden flex flex-col self-start"
+      cardClassName="w-[600px] max-w-[600px] max-h-[560px] mt-[100px] overflow-hidden flex flex-col"
       cardProps={{ 'data-onboarding': 'command-palette' }}
+      asideClassName={minimapCanvasStore ? 'w-[300px] mt-[100px] overflow-hidden shrink-0 flex flex-col self-start' : undefined}
+      aside={
+        minimapCanvasStore ? (
+          <>
+            {/* Canvas tabs — only when the workspace has more than one canvas.
+                The active/shown canvas is highlighted. */}
+            {canvasTabs.length > 1 && (
+              <div className="flex items-center gap-1 px-1.5 py-1.5 border-b border-subtle overflow-x-auto no-scrollbar shrink-0">
+                {canvasTabs.map((t) => {
+                  const active = t.id === shownCanvasId
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setSelectedCanvasId(t.id)}
+                      className={`h-6 px-2 rounded-md text-[11px] whitespace-nowrap truncate max-w-[160px] transition-colors ${
+                        active ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover'
+                      }`}
+                    >
+                      {t.title}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {/* Map fills the card edge to edge; its height follows the canvas
+                aspect (see Minimap popover mode). */}
+            <div className="w-full">
+              <CanvasStoreProvider key={shownCanvasId ?? ''} store={minimapCanvasStore}>
+                <Minimap mode="popover" onNavigateEnd={close} />
+              </CanvasStoreProvider>
+            </div>
+          </>
+        ) : undefined
+      }
     >
         {/* Search input */}
         <div className="p-2 shrink-0">

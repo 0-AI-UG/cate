@@ -171,7 +171,7 @@ const GhostPlacementLayer: React.FC = () => {
         >
           <div style={{ transform: `scale(${badgeScale})`, padding: '3px 10px', borderRadius: 6,
             background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 500,
-            fontFamily: 'system-ui, -apple-system, sans-serif', whiteSpace: 'nowrap', userSelect: 'none' }}>
+            fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', userSelect: 'none' }}>
             Place here
           </div>
         </div>
@@ -219,7 +219,7 @@ const GhostPlacementLayer: React.FC = () => {
                   width: 42, height: 42, borderRadius: 21,
                   background: accent(hovered || isBest ? 100 : 85),
                   color: '#fff', fontWeight: 700, fontSize: 19,
-                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  fontFamily: 'var(--font-sans)',
                   boxShadow: '0 3px 10px rgba(0,0,0,0.35)',
                 }}
               >
@@ -228,7 +228,7 @@ const GhostPlacementLayer: React.FC = () => {
               {isBest && (
                 <div style={{ padding: '2px 8px', borderRadius: 6, background: accent(95),
                   color: '#fff', fontSize: 10.5, fontWeight: 600, letterSpacing: 0.3,
-                  fontFamily: 'system-ui, -apple-system, sans-serif', textTransform: 'uppercase' }}>
+                  fontFamily: 'var(--font-sans)', textTransform: 'uppercase' }}>
                   Best
                 </div>
               )}

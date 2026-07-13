@@ -472,7 +472,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       {/* Node row */}
       <div
         data-filepath={node.path}
-        className={`h-7 flex items-center gap-1.5 px-2 text-sm text-primary cursor-pointer rounded-sm ${
+        className={`h-7 flex items-center gap-1.5 px-2 text-sm text-primary cursor-pointer mx-1.5 my-0.5 rounded-lg ${
           isSelected ? 'bg-surface-6 text-primary' : 'hover:bg-hover'
         } ${isIgnored ? 'opacity-40' : ''} ${isDragOver && node.isDirectory ? 'ring-1 ring-blue-500/60 bg-blue-500/10' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
@@ -516,7 +516,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         {isRenaming ? (
           <InlineEditInput
             ref={renameInputRef}
-            className="flex-1 min-w-0 bg-surface-5 text-primary text-sm px-1 rounded border border-blue-500/50 outline-none"
+            className="flex-1 min-w-0 bg-surface-5 text-primary text-sm px-1 rounded border border-focus outline-none"
             value={renameValue}
             onChange={setRenameValue}
             onSubmit={commitRename}

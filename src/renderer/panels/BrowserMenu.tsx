@@ -1,6 +1,6 @@
 // =============================================================================
 // BrowserMenu — the URL-bar overflow (⋮) dropdown for a browser panel: new tab,
-// toggle the bookmarks bar, and open the in-panel browser settings popover.
+// toggle the bookmarks sidebar, and open the in-panel browser settings popover.
 // =============================================================================
 import { useEffect, useRef } from 'react'
 import { Plus, BookmarkSimple, Gear, Check } from '@phosphor-icons/react'
@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function BrowserMenu({ onNewTab, onOpenSettings, onClose }: Props): JSX.Element {
-  const showBookmarksBar = useSettingsStore((s) => s.browserShowBookmarksBar)
+  const showBookmarks = useSettingsStore((s) => s.browserShowTabSidebar)
   const setSetting = useSettingsStore((s) => s.setSetting)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -43,11 +43,11 @@ export function BrowserMenu({ onNewTab, onOpenSettings, onClose }: Props): JSX.E
       </button>
       <button
         className={item}
-        onClick={() => setSetting('browserShowBookmarksBar', !showBookmarksBar)}
+        onClick={() => setSetting('browserShowTabSidebar', !showBookmarks)}
       >
         <BookmarkSimple size={14} className="text-muted" />
-        <span className="flex-1">Show bookmarks bar</span>
-        {showBookmarksBar && <Check size={14} className="text-agent" />}
+        <span className="flex-1">Show bookmarks</span>
+        {showBookmarks && <Check size={14} className="text-agent" />}
       </button>
       <div className="my-1 border-t border-subtle" />
       <button className={item} onClick={() => { onClose(); onOpenSettings() }}>

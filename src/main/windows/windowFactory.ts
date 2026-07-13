@@ -3,14 +3,12 @@ import path from 'path'
 import log from '../logger'
 import { installRendererCrashRecovery } from './crashRecovery'
 import { revealWindow } from './reveal'
-import { anyWindowFullscreen } from './fullscreen'
 import { readBootSnapshot, writeBootSnapshot } from '../store'
 import {
   registerWindow,
   getWindowType,
   getActiveMainWindow,
   listWindows,
-  broadcastToAll,
   sendToWindow,
 } from '../windowRegistry'
 import { stopWatchersForWindow } from '../ipc/filesystem'
@@ -70,15 +68,15 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     // renderer (WindowControls), so the chrome matches the theme. `titleBarStyle`
     // is irrelevant once `frame:false`.
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    // Align traffic lights with our 28px themed TitlebarStrip on macOS. Apple's
-    // standard NSWindow title bar is ~28pt with lights at y≈7; matching that
-    // here makes the themed bar visually identical to a native title bar.
+    // Center the traffic lights on the 36px chrome line shared by the dock tab
+    // bar, the MacWindowChrome toggle, and the sidebar's top strip (y≈11 for a
+    // 36px row). Dock and main windows use the same line so they read alike.
     trafficLightPosition: process.platform !== 'darwin'
       ? undefined
       : isDock
         ? { x: 12, y: 11 }
         : windowType === 'main'
-          ? { x: 10, y: 6 }
+          ? { x: 10, y: 11 }
           : undefined,
     // macOS main windows keep a (hidden-inset) native frame; dock windows — and
     // every window on Windows/Linux — are frameless.
@@ -222,22 +220,25 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     })
   }
 
-  // Broadcast fullscreen state changes so the renderer can react
-  // (e.g., hide detach affordances). The authoritative check is a sync IPC
-  // handler registered once below, but these broadcasts cover the cache
-  // path used by any listener that wants push updates.
-  const broadcastFullscreen = (value: boolean): void => {
-    broadcastToAll(WINDOW_FULLSCREEN_STATE, value)
+  // Push *this* window's own fullscreen state to *its own* renderer so each
+  // window's chrome (the macOS window-control island / dock tab-bar dot
+  // reservation) collapses only when that window itself is fullscreen — not
+  // when some other window is. Consumers that genuinely need "is ANY window
+  // fullscreen" (drag-to-detach refusal) use the sync `anyWindowFullscreen`
+  // getter instead. The authoritative sync IPC handler is registered once
+  // below; these pushes cover listeners that want live updates.
+  const sendFullscreen = (value: boolean): void => {
+    sendToWindow(win.id, WINDOW_FULLSCREEN_STATE, value)
   }
-  win.on('enter-full-screen', () => broadcastFullscreen(anyWindowFullscreen()))
-  win.on('leave-full-screen', () => broadcastFullscreen(anyWindowFullscreen()))
+  win.on('enter-full-screen', () => sendFullscreen(true))
+  win.on('leave-full-screen', () => sendFullscreen(false))
   // Fire at the *start* of the transition too so the renderer can hide the
-  // header drag-region before macOS begins its slide animation, instead of
+  // chrome drag-region before macOS begins its slide animation, instead of
   // waiting for the post-animation enter/leave events.
   // macOS-only events; cast to sidestep missing type overloads.
-  ;(win as unknown as { on: (e: string, fn: () => void) => void }).on('will-enter-full-screen', () => broadcastFullscreen(true))
-  ;(win as unknown as { on: (e: string, fn: () => void) => void }).on('will-leave-full-screen', () => broadcastFullscreen(false))
-  win.webContents.once('did-finish-load', () => broadcastFullscreen(anyWindowFullscreen()))
+  ;(win as unknown as { on: (e: string, fn: () => void) => void }).on('will-enter-full-screen', () => sendFullscreen(true))
+  ;(win as unknown as { on: (e: string, fn: () => void) => void }).on('will-leave-full-screen', () => sendFullscreen(false))
+  win.webContents.once('did-finish-load', () => sendFullscreen(win.isFullScreen()))
 
   // Push this window's own maximize state to its renderer so the custom window
   // controls (WindowControls, Windows/Linux) can swap the maximize/restore glyph.

@@ -92,7 +92,7 @@ const MenuRow: React.FC<{ selected: boolean; onClick: () => void; children: Reac
     }`}
   >
     {children}
-    {selected && <Check size={12} weight="bold" className="flex-shrink-0 text-secondary" />}
+    {selected && <Check size={12} className="flex-shrink-0 text-secondary" />}
   </button>
 )
 
@@ -107,7 +107,7 @@ const PillButton = React.forwardRef<HTMLButtonElement, { onClick: () => void; op
       className={`flex items-center gap-1.5 h-6 max-w-[180px] px-2 rounded-md text-[11px] text-secondary hover:text-primary hover:bg-hover transition-colors ${className}`}
     >
       {children}
-      <CaretDown size={10} weight="bold" className={`flex-shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      <CaretDown size={10} className={`flex-shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>
   ),
 )
@@ -255,7 +255,7 @@ export const CateAgentComposer: React.FC<{ wsId: string; rootPath: string }> = (
             title="Send"
             className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100 disabled:opacity-30"
           >
-            <ArrowUp size={15} weight="bold" />
+            <ArrowUp size={15} />
           </button>
         </div>
       </div>

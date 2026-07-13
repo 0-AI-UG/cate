@@ -35,6 +35,7 @@ import { createDockStore } from './stores/dockStore'
 import MainWindowShell from './shells/MainWindowShell'
 import DockWindowShell from './shells/DockWindowShell'
 import TitlebarStrip from './shells/TitlebarStrip'
+import MacWindowChrome from './shells/MacWindowChrome'
 import { WindowTypeContext } from './stores/WindowTypeContext'
 import { setupCrossWindowDragListeners } from './drag'
 import { createRemoteDropHandler } from './drag/crossWindow'
@@ -381,6 +382,9 @@ function MainApp() {
     <CanvasStoreProvider store={activeCanvasStore}>
     <div className="h-screen w-screen flex flex-col bg-canvas-bg">
       <TitlebarStrip />
+      {/* macOS window-control island — floats over the top-left corner (traffic
+          lights + sidebar toggle); no dead header row above the canvas. */}
+      <MacWindowChrome />
       <div className="relative flex-1 min-h-0 min-w-0">
       {/* Layout row: left sidebar | shell | right sidebar. The sidebars are real
           flex items that push the shell rather than overlaying it; their own

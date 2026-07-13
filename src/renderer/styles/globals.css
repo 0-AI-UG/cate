@@ -16,6 +16,9 @@
    ============================================================================= */
 
 :root {
+  /* UI chrome font — native system stack. */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+
   --surface-0: #1d1c1a;
   --surface-1: #232220;
   --surface-2: #282724;
@@ -28,12 +31,16 @@
   --canvas-bg-alt: #1c1b19;
   --grid-dot: rgba(255, 255, 255, 0.077);
   --grid-line: rgba(255, 255, 255, 0.03);
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-strong: rgba(255, 255, 255, 0.10);
+  --border-subtle: rgba(255, 255, 255, 0.035);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  /* Hairline width for inline-styled borders (canvas nodes, overlays). 1px on
+     standard displays; overridden to 0.5px on hi-DPI (see the @media rule below)
+     so panels get the same true 1-device-pixel line as the utility borders. */
+  --hairline: 1px;
   --border-focus: #4a9eff;
   --text-primary: #e8e6e3;
   --text-secondary: #a8a49e;
-  --text-muted: #6b6762;
+  --text-muted: #78746e;
   --text-inverse: #141311;
   --focus-blue: #4a9eff;
   --activity-green: #4dd964;
@@ -42,8 +49,8 @@
   --shadow-node-focused: rgba(74, 158, 255, 0.35);
   --node-bg-active: #1a1917;
   --node-dim-overlay: rgba(0, 0, 0, 0.18);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
   --surface-hover: rgba(255, 255, 255, 0.06);
   --surface-hover-strong: rgba(255, 255, 255, 0.12);
   --git-added: #4dd964;
@@ -147,38 +154,55 @@
 @layer base {
   html, body, #root {
     @apply h-full w-full m-0 p-0 overflow-hidden;
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Custom scrollbar */
+  /* Custom scrollbar — a thin, fully-rounded floating pill. The 2px transparent
+     border + padding-box clip insets the thumb from the track edge so it reads
+     as a pill rather than a full-width bar. :hover only swaps background-COLOR
+     (not the `background` shorthand) so the clip/inset survives. */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 3px;
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+    /* Asymmetric inset: fat transparent border on the left, hairline on the
+       right, so the thin pill hugs the right edge (overlays content) instead of
+       floating in a reserved gutter. */
+    border-top: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+    border-left: 3px solid transparent;
+    border-right: 1px solid transparent;
+    background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-hover);
+    background-color: var(--scrollbar-thumb-hover);
   }
 }
 
-/* Sidebar scrollbars: a touch thicker, squared-off, and only visible while the
-   pointer is over the sidebar. The thumb is transparent until then (its track
-   space stays reserved, so revealing it doesn't shift the content). Unlayered
-   so it overrides the @layer base defaults above. */
+/* Sidebar scrollbars: the same thin rounded floating pill as the base, but only
+   visible while the pointer is over the sidebar. The thumb is transparent until
+   then (its track space stays reserved, so revealing it doesn't shift the
+   content). Unlayered so it overrides the @layer base defaults above. */
 [data-sidebar-scrollarea] ::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
 }
 [data-sidebar-scrollarea] ::-webkit-scrollbar-thumb {
   background-color: transparent;
-  border-radius: 0;
+  border-radius: 9999px;
+  /* Same right-hugging asymmetric inset as the base scrollbar. */
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-left: 3px solid transparent;
+  border-right: 1px solid transparent;
+  background-clip: padding-box;
   /* Fade the thumb in/out as the pointer enters/leaves the sidebar. */
   transition: background-color 280ms ease;
 }
@@ -187,6 +211,73 @@
 }
 [data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb:hover {
   background-color: var(--scrollbar-thumb-hover);
+}
+
+/* Terminal scrollbar: the same thin rounded floating pill as the base, but only
+   visible while the pointer is over the terminal or the terminal is focused
+   (xterm toggles `.focus` on its root element). The thumb is transparent until
+   then — its track space stays reserved, so revealing it doesn't reflow the
+   terminal. Unlayered so it overrides the @layer base defaults above. */
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  /* Fade the thumb in/out as the pointer enters/leaves or focus changes. */
+  transition: background-color 280ms ease;
+}
+.xterm:hover .xterm-viewport::-webkit-scrollbar-thumb,
+.xterm.focus .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+.xterm:hover .xterm-viewport::-webkit-scrollbar-thumb:hover,
+.xterm.focus .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* Floating canvas header: the tab bar's background + bottom divider stay
+   transparent until the pointer is over the bar, so at rest only the tabs and
+   +/split buttons read against the canvas. Fades its chrome in on hover. */
+.dock-tab-bar-floating {
+  background-color: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+/* Inactive tabs float over the canvas with no chrome behind them, so give them a
+   translucent glass fill + backdrop blur — enough to read against the canvas grid
+   and separate from the content behind, while staying recessed vs the opaque
+   active tab. Scoped to the floating canvas bar; docked/mini-dock tab bars have a
+   solid chrome background already and keep their transparent-at-rest inactive
+   tabs. */
+.dock-tab-bar-floating .dock-tab-inactive {
+  background-color: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.dock-tab-bar-floating .dock-tab-inactive:hover {
+  background-color: color-mix(in srgb, var(--surface-3) 72%, transparent);
+}
+
+/* Stays transparent at rest and on hover. Only lights up as a drop target while
+   something is being dragged onto it. */
+.dock-tab-bar-floating.drop-active {
+  background-color: color-mix(in srgb, var(--focus-blue, #4a9eff) 14%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--focus-blue, #4a9eff) 45%, transparent);
+}
+
+/* Hairline borders on hi-DPI: render the 1px border utilities as a true
+   1-device-pixel line (0.5px) so all chrome reads as crisp hairlines, leaning on
+   the higher border-token contrast for visibility. Unlayered so these win over
+   Tailwind's @layer utilities; directional utilities keep their side (border-b
+   stays bottom-only). Standard-DPI displays keep the 1px fallback. Thicker
+   borders (border-2 etc.) and inline-styled borders are untouched. */
+@media (min-resolution: 1.5dppx) {
+  :root { --hairline: 0.5px; }
+  .border { border-width: 0.5px; }
+  .border-t { border-top-width: 0.5px; }
+  .border-r { border-right-width: 0.5px; }
+  .border-b { border-bottom-width: 0.5px; }
+  .border-l { border-left-width: 0.5px; }
+  .border-x { border-left-width: 0.5px; border-right-width: 0.5px; }
+  .border-y { border-top-width: 0.5px; border-bottom-width: 0.5px; }
+  .dock-tab-bar-floating { border-bottom-width: 0.5px; }
 }
 
 /* Hide the scrollbar entirely while keeping the element scrollable (wheel/drag).

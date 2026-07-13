@@ -65,7 +65,7 @@ const IconAction = ({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className={`shrink-0 p-0.5 rounded text-muted disabled:opacity-30 ${
+      className={`shrink-0 p-0.5 rounded-lg text-muted disabled:opacity-30 ${
         danger ? 'hover:text-red-400' : 'hover:text-primary'
       }`}
     >

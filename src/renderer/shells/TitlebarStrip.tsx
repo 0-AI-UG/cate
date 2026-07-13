@@ -1,10 +1,8 @@
 // =============================================================================
-// TitlebarStrip — themed drag region rendered at the top of the main window.
+// TitlebarStrip — Windows/Linux drag region rendered at the top of the window.
 //
-// macOS (titleBarStyle: 'hiddenInset'): reserves space for the native traffic
-// lights and provides a themed drag region. The native bar can't be tinted to a
-// theme color, only dark/light, so we always use hidden-inset + this strip. The
-// application menu is the global system menu bar, so nothing is drawn here.
+// macOS is handled by MacWindowChrome (a floating top-left island) instead, so
+// this component renders nothing there — the app content fills from y=0.
 //
 // Windows/Linux (frame: false): the window is fully frameless, so this strip is
 // the entire title bar. Because frame:false also removes the native in-window
@@ -69,17 +67,12 @@ export default function TitlebarStrip() {
     return window.electronAPI.onFullscreenChange?.((value) => setIsFullscreen(value))
   }, [])
 
-  if (isFullscreen) return null
+  // macOS chrome is the floating MacWindowChrome island (traffic-light
+  // reservation + drag region + sidebar toggle); this strip is Windows/Linux
+  // only. Rendered unconditionally by App, so bail out on macOS here.
+  if (IS_MAC) return null
 
-  // macOS: empty strip, padded for the native traffic lights.
-  if (IS_MAC) {
-    return (
-      <div
-        className="titlebar-drag shrink-0 bg-titlebar-bg select-none"
-        style={{ paddingLeft: 80, height: 28 }}
-      />
-    )
-  }
+  if (isFullscreen) return null
 
   // Windows/Linux: full title bar — menu bar on the left, draggable spacer in the
   // middle (double-click to maximize), custom window controls on the right.

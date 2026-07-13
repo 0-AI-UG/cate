@@ -32,7 +32,7 @@ export const CreateFileForm = forwardRef<HTMLInputElement, CreateFileFormProps>(
       </span>
       <InlineEditInput
         ref={ref}
-        className="flex-1 min-w-0 bg-surface-5 text-primary text-sm px-1 rounded border border-blue-500/50 outline-none"
+        className="flex-1 min-w-0 bg-surface-5 text-primary text-sm px-1 rounded border border-focus outline-none"
         value={value}
         placeholder={type === 'folder' ? 'folder name' : 'file name'}
         onChange={onChange}

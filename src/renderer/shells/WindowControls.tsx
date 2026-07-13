@@ -36,7 +36,7 @@ export default function WindowControls() {
         className="h-full w-11 flex items-center justify-center text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
         onClick={() => window.electronAPI.windowMinimize?.()}
       >
-        <Minus size={15} weight="bold" />
+        <Minus size={15} />
       </button>
       <button
         type="button"
@@ -45,7 +45,7 @@ export default function WindowControls() {
         className="h-full w-11 flex items-center justify-center text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
         onClick={() => window.electronAPI.windowToggleMaximize?.()}
       >
-        {isMaximized ? <Copy size={13} weight="bold" /> : <Square size={12} weight="bold" />}
+        {isMaximized ? <Copy size={13} /> : <Square size={12} />}
       </button>
       <button
         type="button"
@@ -54,7 +54,7 @@ export default function WindowControls() {
         className="h-full w-11 flex items-center justify-center text-secondary hover:bg-red-600 hover:text-white transition-colors"
         onClick={() => window.electronAPI.windowClose?.()}
       >
-        <X size={15} weight="bold" />
+        <X size={15} />
       </button>
     </div>
   )

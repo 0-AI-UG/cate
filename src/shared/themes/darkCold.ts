@@ -28,7 +28,7 @@ export const darkCold: Theme = {
     'border-focus': '#0a84ff',
     'text-primary': '#f2f2f7',
     'text-secondary': '#8e8e93',
-    'text-muted': '#636366',
+    'text-muted': '#727276',
     'text-inverse': '#0a0a0b',
     'focus-blue': '#0a84ff',
     'activity-green': '#30d158',
@@ -61,7 +61,7 @@ export const darkCold: Theme = {
     selectionForeground: '#f2f2f7',
     black: '#1c1c1e', red: '#ff453a', green: '#30d158', yellow: '#ffd60a',
     blue: '#0a84ff', magenta: '#bf5af2', cyan: '#64d2ff', white: '#d1d1d6',
-    brightBlack: '#636366', brightRed: '#ff6961', brightGreen: '#5de36e', brightYellow: '#ffe066',
+    brightBlack: '#6b6b6e', brightRed: '#ff6961', brightGreen: '#5de36e', brightYellow: '#ffe066',
     brightBlue: '#5eb0ff', brightMagenta: '#d28cf6', brightCyan: '#8ee0ff', brightWhite: '#f2f2f7',
   },
   editor: {

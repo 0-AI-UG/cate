@@ -19,7 +19,7 @@ export const darkWarm: Theme = {
     selectionForeground: '#D4D4D4',
     black: '#000000', red: '#CD3131', green: '#0DBC79', yellow: '#E5E510',
     blue: '#2472C8', magenta: '#BC3FBC', cyan: '#11A8CD', white: '#E5E5E5',
-    brightBlack: '#666666', brightRed: '#F14C4C', brightGreen: '#23D18B', brightYellow: '#F5F543',
+    brightBlack: '#6e6e6e', brightRed: '#F14C4C', brightGreen: '#23D18B', brightYellow: '#F5F543',
     brightBlue: '#3B8EEA', brightMagenta: '#D670D6', brightCyan: '#29B8DB', brightWhite: '#FFFFFF',
   },
   editor: {

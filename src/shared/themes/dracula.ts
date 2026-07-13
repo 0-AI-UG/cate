@@ -29,7 +29,7 @@ export const dracula: Theme = {
     'border-focus': '#bd93f9',
     'text-primary': '#f8f8f2',
     'text-secondary': '#b8b8d4',
-    'text-muted': '#6272a4',
+    'text-muted': '#7583af',
     'text-inverse': '#21222c',
     'focus-blue': '#bd93f9',
     'activity-green': '#50fa7b',

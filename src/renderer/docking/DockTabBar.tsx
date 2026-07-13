@@ -152,13 +152,13 @@ export function DockTabBar(props: DockTabBarProps) {
     <div
       key="__tab-placeholder__"
       aria-hidden
-      className={`flex items-center justify-center whitespace-nowrap select-none border-r border-white/5 ${compact ? 'px-2 text-[11px]' : 'px-3 text-xs'}`}
+      className={`flex flex-shrink-0 items-center justify-center whitespace-nowrap select-none rounded-[10px] ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
       style={{
         minWidth: 100,
         color: 'var(--focus-blue, #3b82f6)',
         backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
         border: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
-        borderRadius: 4,
+        borderRadius: 10,
       }}
     >
       + new tab
@@ -167,7 +167,7 @@ export function DockTabBar(props: DockTabBarProps) {
 
   return (
     <div
-      className="flex items-stretch flex-1 min-w-0"
+      className={`flex items-center flex-1 min-w-0 ${compact ? 'gap-0.5' : 'gap-1'}`}
       style={onEmptyMouseDown ? { cursor: 'grab' } : undefined}
       onContextMenu={onEmptyContextMenu}
       onMouseDown={(e) => {
@@ -188,9 +188,10 @@ export function DockTabBar(props: DockTabBarProps) {
             panelId={panelId}
             className={`
               group relative flex items-center gap-1.5 whitespace-nowrap
-              cursor-grab select-none min-w-0 shrink max-w-[200px]
-              ${compact ? 'pl-2 pr-1.5 text-[11px]' : 'pl-3 pr-2 text-xs'}
-              ${isActive ? 'text-secondary font-medium' : 'text-muted hover:text-secondary'}
+              cursor-grab select-none min-w-0 shrink rounded-[10px] transition-colors
+              ${compact ? 'h-[22px] max-w-[160px] pl-2 text-[11px]' : 'h-6 max-w-[200px] pl-2.5 text-[12px]'}
+              ${onClosePanel ? 'pr-1' : compact ? 'pr-2' : 'pr-2.5'}
+              ${isActive ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover dock-tab-inactive'}
             `}
             onClick={() => onTabClick(i)}
             onMouseDown={(e) => {
@@ -225,12 +226,7 @@ export function DockTabBar(props: DockTabBarProps) {
                 springLoadTimer.current = null
               }
             }}
-            baseStyle={{
-              backgroundColor: isActive
-                ? 'var(--node-chrome-active-bg, var(--surface-3))'
-                : 'var(--node-chrome-bg, var(--surface-1))',
-              WebkitAppRegion: 'no-drag',
-            } as React.CSSProperties}
+            baseStyle={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             title={getPanelTitle(panelId)}
           >
             <span
@@ -256,7 +252,7 @@ export function DockTabBar(props: DockTabBarProps) {
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
-                className="truncate flex-1 min-w-0 bg-transparent outline-none border-b border-blue-500/60 text-primary px-0"
+                className="truncate flex-1 min-w-0 bg-transparent outline-none border-b border-focus text-primary px-0"
                 style={{ font: 'inherit' }}
               />
             ) : (
@@ -272,8 +268,8 @@ export function DockTabBar(props: DockTabBarProps) {
             )}
             {onClosePanel && (
               <span
-                className={`shrink-0 p-0.5 rounded-sm hover:bg-hover cursor-pointer ${
-                  isActive ? 'opacity-80' : 'opacity-0 group-hover:opacity-70'
+                className={`shrink-0 p-0.5 rounded-md text-muted hover:text-red-400 hover:bg-hover cursor-pointer transition-opacity ${
+                  isActive ? 'opacity-70' : 'opacity-0 group-hover:opacity-100'
                 }`}
                 onClick={(e) => {
                   e.stopPropagation()
