@@ -253,6 +253,16 @@
   animation: cate-fade-in 0.35s ease-out both;
 }
 
+/* Sidebar empty-state pattern wipe — the diagonal hatch dissolves left-to-right
+   the moment a chat gets its first message. The layer carries a 300%-wide alpha
+   mask (transparent | ramp | opaque); sliding mask-position from 100% (fully
+   shown) to 0% (fully masked) sweeps the transparent edge across from the left.
+   Slow + eased so it reads as a calm fade-away, not a swipe. */
+@keyframes cate-pattern-wipe {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; opacity: 1; }
+  to   { -webkit-mask-position: 0% 0;   mask-position: 0% 0;   opacity: 0; }
+}
+
 
 /* Skill install progress — an indeterminate left-to-right fill on an agent pill
    while a skill downloads/installs. The pill sets position:relative;overflow:hidden

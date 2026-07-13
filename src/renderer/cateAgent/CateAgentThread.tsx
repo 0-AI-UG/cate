@@ -213,7 +213,10 @@ const IterationRow: React.FC<{ it: Iteration; index: number; multi: boolean; win
 const TextBlock: React.FC<{ msg: ChatTextMessage }> = ({ msg }) => {
   if (msg.role === 'user') {
     return (
-      <div className="self-end max-w-[85%] rounded-2xl rounded-br-md bg-surface-2/70 px-3 py-1.5 text-[13px] leading-snug text-secondary break-words">
+      <div
+        data-cate-user-msg={msg.id}
+        className="self-end max-w-[85%] rounded-2xl rounded-br-md bg-surface-2 px-3 py-1.5 text-[13px] leading-snug text-secondary break-words"
+      >
         {msg.text}
       </div>
     )
@@ -608,7 +611,7 @@ const EmptyState: React.FC = () => (
 // sizing surface it needs. Both homes render this, so they never drift.
 // =============================================================================
 
-export const CateAgentThread: React.FC<{ wsId: string; rootPath: string }> = ({ wsId, rootPath }) => {
+export const CateAgentThread: React.FC<{ wsId: string; rootPath: string; emptyState?: React.ReactNode }> = ({ wsId, rootPath, emptyState }) => {
   const cateAgent = useCateAgentWs(wsId)
   const chats = useChatsStore((s) => s.chatsByRoot[rootPath])
   const loadChats = useChatsStore((s) => s.loadChats)
@@ -635,9 +638,9 @@ export const CateAgentThread: React.FC<{ wsId: string; rootPath: string }> = ({ 
   if (cateAgent.observerView) {
     return <ObserverTimeline wsId={wsId} items={visibleFeed} onRun={(prompt) => sendCateAgentMessage(wsId, rootPath, prompt)} />
   }
-  if (!activeChat) return <EmptyState />
+  if (!activeChat) return <>{emptyState ?? <EmptyState />}</>
   return (
-    <div className="flex flex-col gap-3.5 px-3 py-3">
+    <div className="flex flex-col gap-3.5 px-4 py-3 pr-5">
       {activeChat.messages.map((msg) => (
         <MessageBlock key={msg.id} chat={activeChat} msg={msg} wsId={wsId} rootPath={rootPath} worktrees={worktrees} />
       ))}

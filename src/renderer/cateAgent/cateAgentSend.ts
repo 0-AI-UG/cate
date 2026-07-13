@@ -10,8 +10,9 @@ import { useChatsStore } from '../stores/chatsStore'
 import { useCateAgentStore } from './cateAgentStore'
 import { cateAgentController } from './cateAgentController'
 import { deriveTopic } from './cateAgentTools'
+import { setLandTarget } from './cateAgentLandTarget'
 
-export function sendCateAgentMessage(wsId: string, rootPath: string, text: string): void {
+export function sendCateAgentMessage(wsId: string, rootPath: string, text: string, landBranch?: string): void {
   const chats = useChatsStore.getState()
   const cate = useCateAgentStore.getState()
   const ws = cate.byWs[wsId]
@@ -21,6 +22,9 @@ export function sendCateAgentMessage(wsId: string, rootPath: string, text: strin
   if (!chatId || !chats.getChat(rootPath, chatId)) {
     chatId = chats.createChat(rootPath, deriveTopic(text)).id
   }
+  // Bind the composer's chosen merge target to the (possibly just-minted) chat, so
+  // its winning run lands into that branch even when the pick predated the chat.
+  if (landBranch) setLandTarget(chatId, landBranch)
   cate.setActiveChat(wsId, chatId)
   void cateAgentController.sendMessage(wsId, rootPath, chatId, text)
 }

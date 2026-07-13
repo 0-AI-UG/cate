@@ -16,22 +16,27 @@ import {
   MagnifyingGlass,
   FloppyDisk,
   PuzzlePiece,
-  Sparkle,
-  type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import pkg from '../../../package.json'
 import { Tooltip } from '../ui/Tooltip'
+import { CateLogo } from '../ui/CateLogo'
 
 // ---------------------------------------------------------------------------
 // View metadata — icon + title for each possible sidebar view
 // ---------------------------------------------------------------------------
 
-const VIEW_META: Record<SidebarView, { icon: PhosphorIcon; title: string }> = {
+// Icons are called as `<Icon size={n} className=… />`; Phosphor icons and the
+// Cate wordmark both satisfy this call signature. A plain function type (rather
+// than ComponentType) sidesteps the static propTypes clash between Phosphor's
+// forward-ref icons and a custom SVG component.
+type SidebarViewIcon = (props: { size?: number; className?: string }) => React.ReactNode
+
+const VIEW_META: Record<SidebarView, { icon: SidebarViewIcon; title: string }> = {
   workspaces: { icon: Stack, title: 'Workspaces' },
   explorer: { icon: FolderOpen, title: 'Explorer' },
   search: { icon: MagnifyingGlass, title: 'Search' },
   git: { icon: GitBranch, title: 'Source Control' },
-  cateAgent: { icon: Sparkle, title: 'Cate Agent' },
+  cateAgent: { icon: CateLogo, title: 'Cate Agent' },
 }
 
 // ---------------------------------------------------------------------------

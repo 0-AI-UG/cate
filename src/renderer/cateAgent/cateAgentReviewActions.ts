@@ -12,6 +12,7 @@ import type { Chat, ChatRun } from '../../shared/types'
 import { useChatsStore } from '../stores/chatsStore'
 import { closeCanvasPanel } from './cateAgentTerminals'
 import { worktreeMetaFor, teardownWorktree } from './cateAgentWorktrees'
+import { getLandTarget, setLandTarget } from './cateAgentLandTarget'
 import log from '../lib/logger'
 
 export interface ReviewResult {
@@ -30,6 +31,8 @@ export async function mergeChat(wsId: string, rootPath: string, chat: Chat): Pro
   const run = chat.run
   const meta = worktreeMetaFor(wsId, run?.worktreeId)
   if (!run || !meta || !run.branch) return { ok: false, message: 'No worktree to merge' }
+  // Prefer the target the user picked in the composer; otherwise land into whatever
+  // branch is checked out now (falling back to main).
   let toBranch = 'main'
   try {
     const status = await window.electronAPI.gitStatus(rootPath, wsId)
@@ -37,6 +40,8 @@ export async function mergeChat(wsId: string, rootPath: string, chat: Chat): Pro
   } catch {
     /* fall back to main */
   }
+  const chosen = getLandTarget(chat.id)
+  if (chosen) toBranch = chosen
   const res = await window.electronAPI.gitWorktreeMergeTo(rootPath, run.branch, toBranch, wsId)
   if (!res.ok) {
     const message = res.conflict ? `Merge conflict with ${toBranch}` : res.message
@@ -45,6 +50,7 @@ export async function mergeChat(wsId: string, rootPath: string, chat: Chat): Pro
   }
   await teardownWorktree(wsId, rootPath, meta.id, { force: false })
   markResult(rootPath, chat, 'merged', `Merged into ${toBranch}`)
+  setLandTarget(chat.id, null)
   useChatsStore.getState().clearRun(rootPath, chat.id)
   return { ok: true }
 }
@@ -104,6 +110,7 @@ export async function teardownRunWork(
 export async function discardChat(wsId: string, rootPath: string, chat: Chat): Promise<ReviewResult> {
   if (chat.run) await teardownRunWork(wsId, rootPath, chat.run, { deleteBranch: true })
   markResult(rootPath, chat, 'discarded', 'Discarded')
+  setLandTarget(chat.id, null)
   useChatsStore.getState().clearRun(rootPath, chat.id)
   return { ok: true }
 }

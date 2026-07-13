@@ -30,6 +30,9 @@ beforeEach(() => {
     onGitBranchUpdate: vi.fn().mockReturnValue(() => {}),
     fsWatchStart: vi.fn().mockResolvedValue(undefined),
     fsWatchStop: vi.fn().mockResolvedValue(undefined),
+    // The composer fetches the model list and branch list on mount.
+    agentListModels: vi.fn().mockResolvedValue([]),
+    gitBranchList: vi.fn().mockResolvedValue({ current: '', branches: [] }),
   }
 })
 
@@ -45,7 +48,8 @@ describe('CateAgentSidebarView', () => {
       root.render(<CateAgentSidebarView wsId="ws1" rootPath="/root" />)
     })
     // The default ws1 state has observerView: false, activeChatId: '', so
-    // CateAgentThread falls through to the EmptyState copy.
+    // CateAgentThread falls through to the sidebar's own logo empty state.
+    expect(host.textContent).toContain('Cate Agent')
     expect(host.textContent).toContain('Runs parallel loops')
   })
 })
