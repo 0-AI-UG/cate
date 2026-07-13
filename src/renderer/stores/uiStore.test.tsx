@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 
-import { useSidebarLayout } from './uiStore'
+import { useSidebarLayout, normalizeSidebarLayout } from './uiStore'
 import { useSettingsStore } from './settingsStore'
 import type { SidebarLayout } from '../../shared/types'
 
@@ -63,5 +63,20 @@ describe('useSidebarLayout', () => {
     })
     expect(lastLayout).toBe(firstRef)
     expect(renderCount).toBe(mountRenders)
+  })
+})
+
+describe('normalizeSidebarLayout — cateAgent view', () => {
+  it('appends cateAgent to the right sidebar when a stored layout omits it', () => {
+    const layout = normalizeSidebarLayout({ left: ['explorer'], right: ['git'] })
+    expect([...layout.left, ...layout.right]).toContain('cateAgent')
+    // Missing views land on the right.
+    expect(layout.right).toContain('cateAgent')
+  })
+
+  it('preserves an explicit placement of cateAgent on the left', () => {
+    const layout = normalizeSidebarLayout({ left: ['cateAgent', 'explorer'], right: [] })
+    expect(layout.left).toContain('cateAgent')
+    expect(layout.right).not.toContain('cateAgent')
   })
 })
