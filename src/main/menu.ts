@@ -219,6 +219,9 @@ export function buildApplicationMenu(): void {
       submenu: [
         { ...actionMeta('focusNext'), label: 'Next Panel', click: dispatch('focusNext') },
         { ...actionMeta('focusPrevious'), label: 'Previous Panel', click: dispatch('focusPrevious') },
+        { type: 'separator' },
+        { ...actionMeta('previousWorkspace'), click: dispatch('previousWorkspace') },
+        { ...actionMeta('nextWorkspace'), click: dispatch('nextWorkspace') },
       ],
     },
     // Layouts menu — save / manage / load named canvas layouts. The list is

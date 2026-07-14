@@ -170,6 +170,12 @@ export async function runAction(
     case 'commandPalette':
       useUIStore.getState().setShowCommandPalette(true)
       break
+    case 'nextWorkspace':
+      void appStore().switchWorkspaceByOffset(1)
+      break
+    case 'previousWorkspace':
+      void appStore().switchWorkspaceByOffset(-1)
+      break
     case 'zoomIn':
       { const canvas = canvasStore(); if (canvas) canvas.animateZoomTo(canvas.zoomLevel + 0.1) }
       break

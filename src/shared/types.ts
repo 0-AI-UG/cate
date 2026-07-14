@@ -595,6 +595,8 @@ export const SHORTCUT_DEFINITIONS = {
   toggleSearch: { label: 'Toggle Search', shortcut: storedShortcut('f', { command: true, shift: true }) },
   toggleMinimap: { label: 'Toggle Minimap', shortcut: storedShortcut('m', { command: true, shift: true }) },
   commandPalette: { label: 'Command Palette', shortcut: storedShortcut('k', { command: true }) },
+  nextWorkspace: { label: 'Next Workspace', shortcut: storedShortcut('→', { command: true, option: true }) },
+  previousWorkspace: { label: 'Previous Workspace', shortcut: storedShortcut('←', { command: true, option: true }) },
   zoomIn: { label: 'Zoom In', shortcut: storedShortcut('=', { command: true }) },
   zoomOut: { label: 'Zoom Out', shortcut: storedShortcut('-', { command: true }) },
   zoomReset: { label: 'Reset Zoom', shortcut: storedShortcut('0', { command: true }) },

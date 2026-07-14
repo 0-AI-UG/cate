@@ -30,6 +30,8 @@ import {
   ArrowUUpRight,
   ChatCircle,
   Eye,
+  CaretLeft,
+  CaretRight,
 } from '@phosphor-icons/react'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { PaletteDialogShell } from './Modal'
@@ -81,6 +83,8 @@ const ObserveIcon = () => <Eye size={ICON_SIZE} />
 const CloseIcon = () => <X size={ICON_SIZE} />
 const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
 const RedoIcon = () => <ArrowUUpRight size={ICON_SIZE} />
+const PreviousWorkspaceIcon = () => <CaretLeft size={ICON_SIZE} />
+const NextWorkspaceIcon = () => <CaretRight size={ICON_SIZE} />
 
 // -----------------------------------------------------------------------------
 // Result types
@@ -209,6 +213,8 @@ export const CommandPalette: React.FC = () => {
           try { window.electronAPI?.trackFeatureUsed?.('onboarding_replayed') } catch { /* noop */ }
         },
       },
+      { id: 'previousWorkspace', title: shortcutTitle('previousWorkspace'), icon: <PreviousWorkspaceIcon />, action: run('previousWorkspace') },
+      { id: 'nextWorkspace', title: shortcutTitle('nextWorkspace'), icon: <NextWorkspaceIcon />, action: run('nextWorkspace') },
       { id: 'reloadWorkspace', title: 'Reload Workspace from Disk', icon: <ReloadIcon />, action: run('reloadWorkspace') },
       // Remote-only: delete the daemon from the host. Main re-probes to the
       // 'missing' phase; the canvas lock then offers "Install Runtime" for a
