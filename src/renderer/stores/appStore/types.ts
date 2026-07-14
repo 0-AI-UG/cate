@@ -65,6 +65,10 @@ export interface AppStoreActions {
   // Workspace management
   addWorkspace: (name?: string, rootPath?: string, id?: string, connection?: RuntimeConnection) => string
   selectWorkspace: (id: string) => Promise<void>
+  /** Switch to the workspace `offset` steps away in list order, wrapping around
+   *  both ends. No-op with fewer than two workspaces. Backs the next/previous
+   *  workspace shortcuts. */
+  switchWorkspaceByOffset: (offset: number) => Promise<void>
   removeWorkspace: (id: string, forgetRecent?: boolean) => void
 
   // Panel creation — each adds a PanelState to the workspace AND places it

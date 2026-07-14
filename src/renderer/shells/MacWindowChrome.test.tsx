@@ -3,8 +3,8 @@
 //
 // jsdom's navigator is not "Mac", so the real IS_MAC is false and the component
 // would render null. We mock the platform module to force the macOS path, then
-// verify: the sidebar toggle renders and calls uiStore.toggleSidebar, and it
-// stays rendered in native fullscreen (only the traffic lights disappear).
+// verify the draggable lights strip renders (windowed and fullscreen) and that
+// the old sidebar toggle is gone (it now lives in the rail / MainWindowShell).
 // =============================================================================
 
 import React from 'react'
@@ -14,8 +14,7 @@ import { act } from 'react'
 
 vi.mock('../lib/platform', () => ({ IS_MAC: true }))
 
-import MacWindowChrome from './MacWindowChrome'
-import { useUIStore } from '../stores/uiStore'
+import MacWindowChrome, { TRAFFIC_LIGHTS_WIDTH } from './MacWindowChrome'
 
 let host: HTMLDivElement
 let root: Root
@@ -39,23 +38,23 @@ function render() {
 }
 
 describe('MacWindowChrome', () => {
-  it('renders the sidebar toggle when windowed', () => {
+  it('renders a draggable lights strip when windowed', () => {
     const el = render()
-    expect(el.querySelector('button[aria-label="Toggle sidebar"]')).not.toBeNull()
+    const island = el.querySelector<HTMLElement>('div')
+    expect(island).not.toBeNull()
+    expect(island!.style.width).toBe(`${TRAFFIC_LIGHTS_WIDTH}px`)
   })
 
-  it('toggle button calls uiStore.toggleSidebar', () => {
-    const spy = vi.fn()
-    act(() => { useUIStore.setState({ toggleSidebar: spy }) })
+  it('no longer renders a sidebar toggle button (moved to the rail)', () => {
     const el = render()
-    const btn = el.querySelector<HTMLButtonElement>('button[aria-label="Toggle sidebar"]')!
-    act(() => { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    expect(spy).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('button[aria-label="Toggle sidebar"]')).toBeNull()
+    expect(el.querySelector('button')).toBeNull()
   })
 
-  it('still renders the toggle in native fullscreen (lights gone, toggle stays)', () => {
+  it('shrinks to a small pad in native fullscreen (lights gone)', () => {
     vi.mocked(window.electronAPI.isMainWindowFullscreen).mockReturnValue(true)
     const el = render()
-    expect(el.querySelector('button[aria-label="Toggle sidebar"]')).not.toBeNull()
+    const island = el.querySelector<HTMLElement>('div')!
+    expect(island.style.width).toBe('8px')
   })
 })

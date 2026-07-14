@@ -29,6 +29,14 @@ describe('shortcutStore', () => {
     expect(matchShortcutEvent(keyEvent(' ', { ctrl: true }))).toBe('toggleTool')
   })
 
+  it('nextWorkspace / previousWorkspace default to Cmd+Option+Arrow (#456)', async () => {
+    const { matchShortcutEvent } = await loadStores()
+    expect(matchShortcutEvent(keyEvent('ArrowRight', { meta: true, alt: true }))).toBe('nextWorkspace')
+    expect(matchShortcutEvent(keyEvent('ArrowLeft', { meta: true, alt: true }))).toBe('previousWorkspace')
+    // Plain Cmd+Arrow stays panel navigation, not workspace switching.
+    expect(matchShortcutEvent(keyEvent('ArrowRight', { meta: true }))).not.toBe('nextWorkspace')
+  })
+
   it('clearShortcut disables a binding so it never matches (#372)', async () => {
     const { clearShortcut, getResolvedShortcuts, matchShortcutEvent } = await loadStores()
     clearShortcut('toggleTool')

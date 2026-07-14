@@ -31,6 +31,7 @@ type WorkspaceSliceActions = Pick<
   AppStoreActions,
   | 'addWorkspace'
   | 'selectWorkspace'
+  | 'switchWorkspaceByOffset'
   | 'removeWorkspace'
   | 'ensureCenterCanvas'
   | 'setWorkspaceColor'
@@ -42,6 +43,23 @@ type WorkspaceSliceActions = Pick<
   | 'getWorkspace'
   | 'selectedWorkspace'
 >
+
+/** Resolve the workspace `offset` steps away from `currentId` in list order,
+ *  wrapping around both ends. Returns null when switching is a no-op: fewer than
+ *  two workspaces, or `currentId` isn't in the list. Ordering follows the
+ *  `workspaces` array — the same order the sidebar renders. */
+export function workspaceIdAtOffset(
+  workspaces: readonly { id: string }[],
+  currentId: string,
+  offset: number,
+): string | null {
+  if (workspaces.length < 2) return null
+  const currentIndex = workspaces.findIndex((w) => w.id === currentId)
+  if (currentIndex === -1) return null
+  const len = workspaces.length
+  const nextIndex = (((currentIndex + offset) % len) + len) % len
+  return workspaces[nextIndex].id
+}
 
 export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceActions {
   return {
@@ -315,6 +333,12 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
 
       // Sync to main process
       syncRemoveFromMain(id)
+    },
+
+    async switchWorkspaceByOffset(offset) {
+      const state = get()
+      const targetId = workspaceIdAtOffset(state.workspaces, state.selectedWorkspaceId, offset)
+      if (targetId) await get().selectWorkspace(targetId)
     },
 
     getWorkspace(id) {

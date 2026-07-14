@@ -17,7 +17,7 @@ import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
 import { setActivePanel } from '../lib/activePanel'
 import { Tooltip } from '../ui/Tooltip'
 import { useDockTabDrag } from './useDockTabDrag'
-import { PANEL_DEFINITIONS } from '../../shared/panels'
+import { PANEL_DEFINITIONS, keepsMountedWhenTabHidden } from '../../shared/panels'
 
 // Human-readable labels for each panel type, used in tooltips and the split menu.
 const PANEL_TYPE_LABELS: Record<PanelType, string> = Object.fromEntries(
@@ -209,6 +209,16 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     return { draggedPanelId: dragSource.panelId, originalIndex: idx }
   }, [showTabPlaceholder, dragSource, stack.id, stack.panelIds])
 
+  // Center-zone tabs float over the panel body ONLY for a canvas, so the canvas
+  // grid shows through behind the chromeless header. For any other panel type a
+  // floating header would leave the panel's own content/toolbar (e.g. an editor's
+  // markdown Preview strip) sitting behind the tabs AND the window chrome
+  // (traffic-light island / sidebar toggles), which reads as a broken overlay. So
+  // non-canvas center stacks use a solid, in-flow strip that pushes content down —
+  // exactly like the docked side/bottom stacks.
+  const floatingCenterTabs =
+    !compact && zoneProp === 'center' && activePanel?.type === 'canvas'
+
   return (
     <div
       ref={stackRef}
@@ -233,22 +243,23 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           content area below via a top accent border. */}
       <div
         className={`dock-tab-bar flex items-center overflow-hidden ${
-          // The main canvas header floats: it's positioned absolutely so the
-          // canvas content fills the full height BEHIND it, and its background +
-          // divider stay transparent until hovered (see .dock-tab-bar-floating in
+          // The canvas header floats: it's positioned absolutely so the canvas
+          // content fills the full height BEHIND it, and its background + divider
+          // stay transparent until hovered (see .dock-tab-bar-floating in
           // globals.css) — so at rest only the tabs and buttons read against the
           // canvas grid. Canvas-node mini-docks (compact) also go chromeless: no
           // solid band, no divider — the tabs float directly on the panel body so
-          // the active pill nests into the node's rounded corner. Only docked
-          // side/bottom stacks keep the solid, in-flow chrome + divider.
-          !compact && zoneProp === 'center'
+          // the active pill nests into the node's rounded corner. Docked side/bottom
+          // stacks AND non-canvas center stacks keep the solid, in-flow chrome +
+          // divider (so their panel content isn't occluded — see floatingCenterTabs).
+          floatingCenterTabs
             ? `dock-tab-bar-floating absolute top-0 left-0 right-0 z-20 ${showTabPlaceholder ? 'drop-active' : ''}`
             : compact
               ? ''
               : 'border-b border-subtle'
         } ${compact ? 'min-h-[26px] px-0.5' : 'min-h-[32px] px-1.5'}`}
         style={{
-          ...(!compact && zoneProp !== 'center'
+          ...(!compact && !floatingCenterTabs
             ? { backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }
             : null),
           ...(onTabBarMouseDown ? { cursor: 'grab' } : null),
@@ -345,15 +356,43 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         )}
       </div>
 
-      {/* Active panel content. Keyed by panel id: switching between two tabs of
-          the SAME component type (canvas↔canvas, terminal↔terminal) must
-          remount the content, not reuse the instance with a swapped panelId —
-          panels wire store subscriptions in mount-only effects, so a reused
-          instance keeps driving the previous panel's store (visible canvas
-          transformed by the hidden canvas's zoom/offset). */}
+      {/* Panel content. Each panel gets its OWN stable keyed slot (keyed by panel
+          id): switching between two tabs of the SAME component type
+          (canvas↔canvas, terminal↔terminal) must remount the content, not reuse
+          the instance with a swapped panelId — panels wire store subscriptions in
+          mount-only effects, so a reused instance keeps driving the previous
+          panel's store (visible canvas transformed by the hidden canvas's
+          zoom/offset).
+
+          Ordinary panels render only while active and unmount otherwise (freeing
+          xterm/WebGL, Monaco, etc.). Webview-backed panels
+          (keepsMountedWhenTabHidden: browser/extension) instead stay MOUNTED but
+          hidden when inactive, so their live `<webview>` guest process survives a
+          tab switch — unmounting and remounting would reload the page and lose all
+          in-page state (#459). Because each keep-alive panel keeps its stable
+          keyed slot, toggling active only flips visibility rather than
+          remounting. */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {activePanelId ? (
-          <React.Fragment key={activePanelId}>{renderPanel(activePanelId)}</React.Fragment>
+          stack.panelIds.map((panelId) => {
+            const isActive = panelId === activePanelId
+            const keepAlive = keepsMountedWhenTabHidden(resolvePanel(panelId)?.type)
+            if (!isActive && !keepAlive) return null
+            return (
+              <div
+                key={panelId}
+                className="absolute inset-0"
+                // visibility:hidden (not display:none) keeps the hidden webview
+                // laid out at full size so it's ready the instant its tab is
+                // reselected; pointer-events:none stops the hidden layer from
+                // intercepting clicks meant for the active panel.
+                style={isActive ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
+                aria-hidden={isActive ? undefined : true}
+              >
+                {renderPanel(panelId)}
+              </div>
+            )
+          })
         ) : (
           <div className="flex items-center justify-center h-full text-muted text-sm">
             No panel

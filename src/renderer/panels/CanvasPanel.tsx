@@ -18,7 +18,6 @@ import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, type PanelPlacement } from '../stores/appStore'
 import { useCateAgentStore } from '../cateAgent/cateAgentStore'
-import { useStore } from 'zustand'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import type { StoreApi } from 'zustand'
 import { keepsMountedOffscreen } from '../../shared/panels'
@@ -234,7 +233,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     setActivePanel(panelId)
   }, [panelId])
 
-  const zoomLevel = useStore(store, (s) => s.zoomLevel)
   // `nodeIds` is the full ordered list (used where we need to know about every
   // node regardless of visibility — e.g. the "canvas empty" welcome page).
   // `visibleNodeIds` is viewport-culled: we only mount CanvasNodeWrapper for
@@ -311,14 +309,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
   }, [workspaceId, here, store])
 
-  const onZoomIn = useCallback(() => {
-    store.getState().animateZoomTo(zoomLevel + 0.1)
-  }, [zoomLevel, store])
-
-  const onZoomOut = useCallback(() => {
-    store.getState().animateZoomTo(zoomLevel - 0.1)
-  }, [zoomLevel, store])
-
   return (
     <CanvasStoreProvider store={store}>
       {/* `isolate` keeps the toolbar/minimap's z-50 contained within this panel
@@ -357,13 +347,10 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
             canvasPanelId={panelId}
             workspaceId={workspaceId}
             rootPath={workspaceRootPath}
-            zoom={zoomLevel}
             onNewTerminal={onNewTerminal}
             onNewBrowser={onNewBrowser}
             onNewEditor={onNewEditor}
             onNewAgent={onNewAgent}
-            onZoomIn={onZoomIn}
-            onZoomOut={onZoomOut}
           />
         )}
       </div>

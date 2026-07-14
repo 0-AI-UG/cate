@@ -24,9 +24,18 @@ import {
 interface ExtensionToolbarMenuProps {
   canvasPanelId: string
   workspaceId: string
+  tooltipPlacement?: 'top' | 'right'
+  menuSide?: 'up' | 'right'
+  onOpenChange?: (open: boolean) => void
 }
 
-const ExtensionToolbarMenu: React.FC<ExtensionToolbarMenuProps> = ({ canvasPanelId, workspaceId }) => {
+const ExtensionToolbarMenu: React.FC<ExtensionToolbarMenuProps> = ({
+  canvasPanelId,
+  workspaceId,
+  tooltipPlacement = 'top',
+  menuSide = 'up',
+  onOpenChange,
+}) => {
   const entries = useExtensionsStore((s) => s.entries)
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null)
@@ -35,6 +44,13 @@ const ExtensionToolbarMenu: React.FC<ExtensionToolbarMenuProps> = ({ canvasPanel
   useEffect(() => {
     ensureExtensionsStarted()
   }, [])
+
+  // Keep the parent card expanded while the picker is open (real transitions only).
+  const onOpenChangeRef = useRef(onOpenChange)
+  onOpenChangeRef.current = onOpenChange
+  useEffect(() => {
+    onOpenChangeRef.current?.(open)
+  }, [open])
 
   const targets = enabledPanelTargets(entries)
 
@@ -64,15 +80,22 @@ const ExtensionToolbarMenu: React.FC<ExtensionToolbarMenuProps> = ({ canvasPanel
       setOpen(false)
       return
     }
-    const r = btnRef.current?.getBoundingClientRect()
-    if (r) {
-      // Center the popover over the button, clamped to the viewport.
-      const width = 240
-      const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8))
-      setPos({ left, bottom: window.innerHeight - r.top + 10 })
+    if (menuSide === 'right') {
+      // Fly out to the right of the compact vertical bar, growing upward.
+      const cardEl = btnRef.current?.closest('[data-toolbar-card]') as HTMLElement | null
+      const r = (cardEl ?? btnRef.current)?.getBoundingClientRect()
+      if (r) setPos({ left: r.right + 8, bottom: window.innerHeight - r.bottom })
+    } else {
+      // Drop up from the horizontal bar, centered over the button.
+      const r = btnRef.current?.getBoundingClientRect()
+      if (r) {
+        const width = 240
+        const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8))
+        setPos({ left, bottom: window.innerHeight - r.top + 10 })
+      }
     }
     setOpen(true)
-  }, [targets, open, openTarget])
+  }, [targets, open, openTarget, menuSide])
 
   // Nothing enabled exposes a panel — no button.
   if (targets.length === 0) return null
@@ -82,7 +105,7 @@ const ExtensionToolbarMenu: React.FC<ExtensionToolbarMenuProps> = ({ canvasPanel
 
   return (
     <>
-      <Tooltip label={title} placement="top">
+      <Tooltip label={title} placement={tooltipPlacement}>
         <button
           ref={btnRef}
           type="button"
