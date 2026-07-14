@@ -150,10 +150,22 @@ final class ServeRunner {
         self.displayHandle = handle
         let displayID = handle.displayID
         let bounds = CGDisplayBounds(displayID)
-        let pxWide = CGDisplayPixelsWide(displayID)
-        let pxHigh = CGDisplayPixelsHigh(displayID)
-        let scaleApprox = bounds.width > 0 ? Double(pxWide) / Double(bounds.width) : 0
-        log("virtual display created: displayID=\(displayID) bounds=\(bounds) pixels=\(pxWide)x\(pxHigh) scale≈\(scaleApprox)")
+        if let mode = CGDisplayCopyDisplayMode(displayID) {
+            let scale = mode.width > 0 ? Double(mode.pixelWidth) / Double(mode.width) : 0
+            log("virtual display created: displayID=\(displayID) bounds=\(bounds) points=\(mode.width)x\(mode.height) pixels=\(mode.pixelWidth)x\(mode.pixelHeight) scale=\(scale)")
+        } else {
+            log("virtual display created: displayID=\(displayID) bounds=\(bounds) (mode unavailable)")
+        }
+
+        // Place the app window at a normal logical size at the display origin —
+        // NOT filling the whole (large, Retina) display. On a 2× display a
+        // 1440×900-point window captures at 2880×1800 px: crisp, but ~5 MP/frame
+        // rather than the whole display's ~20 MP.
+        let windowRect = CGRect(
+            x: bounds.origin.x, y: bounds.origin.y,
+            width: CGFloat(min(options.width, Int(bounds.width))),
+            height: CGFloat(min(options.height, Int(bounds.height)))
+        )
 
         // 3. Launch the target app.
         let app: NSRunningApplication
@@ -172,8 +184,8 @@ final class ServeRunner {
 
         // 4. Place the app's main window on the virtual display, with retry
         // (apps take time to build their AX tree). Never fatal.
-        let placement = AppLauncher.placeMainWindow(pid: pid, bounds: bounds)
-        log("placement: placed=\(placement.placed) detail=\(placement.detail)")
+        let placement = AppLauncher.placeMainWindow(pid: pid, bounds: windowRect)
+        log("placement: placed=\(placement.placed) detail=\(placement.detail) rect=\(windowRect)")
 
         // 5. Confirm on-display via CGWindowListCopyWindowInfo, independent
         // of whether AX reported success.

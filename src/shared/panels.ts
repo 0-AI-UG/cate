@@ -167,8 +167,10 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     brandColor: '#00C7BE',
     mutedColor: '#3a8f8a',
     tintClass: 'text-teal-400',
-    defaultSize: { width: 800, height: 600 },
-    minimumSize: { width: 400, height: 300 },
+    // 8:5 to match the captured window aspect (1440×900), so the live frame
+    // fills the panel without letterbox bands at the default size.
+    defaultSize: { width: 800, height: 500 },
+    minimumSize: { width: 400, height: 250 },
     ghostSvg: ghost('rgb(0,199,190)', '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'),
     canLiveOnCanvas: true,
     // The live capture session (cate-nativehost sidecar + virtual display) is

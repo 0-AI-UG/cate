@@ -249,6 +249,11 @@ func createReverseEngineeredVirtualDisplay(
     let pixelsWide = pointsWide * effectiveScale
     let pixelsHigh = pointsHigh * effectiveScale
     let hiDPI = effectiveScale > 1
+    // Extra pixel headroom on the descriptor so the OS auto-generates large
+    // HiDPI (2×) modes up to the target point size. Without headroom it tends
+    // to emit the target pixel size as a 1× mode instead of a 2× one.
+    let maxPixelsWide = pointsWide * max(effectiveScale, 4)
+    let maxPixelsHigh = pointsHigh * max(effectiveScale, 4)
 
     print("[virtualdisplay] Step 1/5: locating private classes...")
     guard let descriptorClass = objcClass("CGVirtualDisplayDescriptor"),
@@ -268,8 +273,8 @@ func createReverseEngineeredVirtualDisplay(
     }
 
     setPrivateProperty(descriptor, key: "name", value: name)
-    setPrivateProperty(descriptor, key: "maxPixelsWide", value: NSNumber(value: pixelsWide))
-    setPrivateProperty(descriptor, key: "maxPixelsHigh", value: NSNumber(value: pixelsHigh))
+    setPrivateProperty(descriptor, key: "maxPixelsWide", value: NSNumber(value: maxPixelsWide))
+    setPrivateProperty(descriptor, key: "maxPixelsHigh", value: NSNumber(value: maxPixelsHigh))
     setPrivateProperty(descriptor, key: "sizeInMillimeters", value: NSValue(size: CGSize(width: CGFloat(widthMM), height: CGFloat(heightMM))))
     setPrivateProperty(descriptor, key: "productID", value: NSNumber(value: UInt32(0x1234)))
     setPrivateProperty(descriptor, key: "vendorID", value: NSNumber(value: UInt32(0x5678)))
@@ -283,8 +288,12 @@ func createReverseEngineeredVirtualDisplay(
     setPrivateProperty(descriptor, key: "terminationHandler", value: terminationHandler)
 
     print("[virtualdisplay] Step 3/5: constructing CGVirtualDisplayMode + CGVirtualDisplaySettings...")
+    // CGVirtualDisplayMode takes PIXEL dimensions. HiDPI/Retina is produced by
+    // giving the mode the full pixel resolution and enabling `hiDPI` in the
+    // settings — the OS then presents it as a (pixels / scale)-point display at
+    // the given backing scale. (Passing point dims here yields a 1× display.)
     guard let modeAlloc = objcAlloc(modeClass),
-          let mode = objcInitWithWidthHeightRefresh(modeAlloc, width: pointsWide, height: pointsHigh, refreshRate: 60.0)
+          let mode = objcInitWithWidthHeightRefresh(modeAlloc, width: pixelsWide, height: pixelsHigh, refreshRate: 60.0)
     else {
         print("  [private-api] ERROR: failed to alloc/init CGVirtualDisplayMode via initWithWidth:height:refreshRate:.")
         return nil
