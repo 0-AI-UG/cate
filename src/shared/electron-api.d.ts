@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentModelDescriptor, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
+import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentModelDescriptor, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState, NativeAppAcquireOptions, NativeAppAcquireResult, NativeAppControlMessage } from './types'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { ExtensionListEntry, ExtensionManifest } from './extensions'
 
@@ -96,6 +96,25 @@ export interface ElectronAPI {
 
   /** Release a terminal panel's WebGL context slot (on context loss / dispose). */
   webglReleaseGrant(panelId: string): Promise<void>
+
+  // ---------------------------------------------------------------------------
+  // Native app capture (cate-nativehost sidecar) — see
+  // src/main/nativeApp/NativeAppBroker.ts and native/nativehost/PROTOCOL.md.
+  // ---------------------------------------------------------------------------
+
+  /** Acquire a capture session for a native app bundle. Resolves once the
+   *  sidecar's `ready` control message arrives, or with an `error` if it
+   *  exits early or never becomes ready in time. */
+  nativeAppAcquire(options: NativeAppAcquireOptions): Promise<NativeAppAcquireResult>
+
+  /** Release a capture session — stops the sidecar and frees its socket. */
+  nativeAppRelease(sessionId: string): Promise<void>
+
+  /** Subscribe to JPEG frames for any active session (main -> renderer). */
+  onNativeAppFrame(callback: (payload: { sessionId: string; jpeg: Uint8Array }) => void): () => void
+
+  /** Subscribe to control messages for any active session (main -> renderer). */
+  onNativeAppStatus(callback: (payload: { sessionId: string; control: NativeAppControlMessage }) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Filesystem

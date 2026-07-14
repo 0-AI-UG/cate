@@ -41,6 +41,7 @@ import { createWindow } from './windows/windowFactory'
 import { IS_E2E } from './windows/reveal'
 import { registerDialogHandlers } from './ipc/dialogs'
 import { registerCaptureHandlers } from './ipc/capture'
+import { registerNativeAppHandlers } from './ipc/nativeApp'
 import { registerWindowControlHandlers } from './ipc/windowControls'
 import { registerDockWindowHandlers } from './ipc/dockWindows'
 import { registerWindowPanelHandlers } from './ipc/windowPanels'
@@ -122,6 +123,7 @@ function registerDeferredHandlers(): void {
   registerSkillHandlers()
   registerRuntimeHandlers()
   registerExtensionHandlers()
+  registerNativeAppHandlers()
 }
 
 // =============================================================================

@@ -1901,3 +1901,29 @@ export interface PerfSnapshot {
   ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
   terminal: { kbPerSec: number; chunksPerSec: number }
 }
+
+// -----------------------------------------------------------------------------
+// Native app capture — sessions brokered to the cate-nativehost sidecar
+// (native/nativehost/PROTOCOL.md). NativeAppBroker owns the socket + sidecar
+// process; these types describe what crosses the main -> renderer IPC.
+// -----------------------------------------------------------------------------
+
+/** JSON control messages from cate-nativehost (wire type 0x01). Mirrors
+ *  PROTOCOL.md's control-message table. Forward-compatible clients ignore
+ *  unrecognized `t` values rather than erroring — the catch-all member covers
+ *  those. */
+export type NativeAppControlMessage =
+  | { t: 'ready'; displayId: number; appPid: number }
+  | { t: 'placed'; onDisplay: boolean }
+  | { t: 'status'; frames: number; complete: number; idle: number; suspended: number }
+  | { t: 'error'; message: string }
+  | { t: string; [key: string]: unknown }
+
+export interface NativeAppAcquireOptions {
+  bundleId: string
+  width?: number
+  height?: number
+  fps?: number
+}
+
+export type NativeAppAcquireResult = { sessionId: string } | { error: string }

@@ -321,6 +321,13 @@ export const CROSS_WINDOW_DRAG_RESOLVE = 'crossDrag:resolve'   // renderer -> ma
 export const WEBVIEW_SCREENSHOT = 'webview:screenshot'
 export const NATIVE_FILE_DRAG = 'native:fileDrag'
 
+// Native app capture — sessions brokered to the cate-nativehost sidecar
+// (see src/main/nativeApp/NativeAppBroker.ts, native/nativehost/PROTOCOL.md).
+export const NATIVE_APP_ACQUIRE = 'nativeApp:acquire' // renderer -> main
+export const NATIVE_APP_RELEASE = 'nativeApp:release' // renderer -> main
+export const NATIVE_APP_FRAME = 'nativeApp:frame'     // main -> renderer: { sessionId, jpeg }
+export const NATIVE_APP_STATUS = 'nativeApp:status'   // main -> renderer: { sessionId, control }
+
 // Pi agent (renderer <-> main)
 export const AGENT_CREATE = 'agent:create'           // renderer -> main
 export const AGENT_PROMPT = 'agent:prompt'           // renderer -> main

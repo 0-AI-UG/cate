@@ -186,6 +186,10 @@ import {
   WEBVIEW_SCREENSHOT,
   BROWSER_SET_PROXY,
   NATIVE_FILE_DRAG,
+  NATIVE_APP_ACQUIRE,
+  NATIVE_APP_RELEASE,
+  NATIVE_APP_FRAME,
+  NATIVE_APP_STATUS,
   UPDATE_STATUS,
   UPDATE_QUIT_AND_INSTALL,
   UPDATE_GET_STATUS,
@@ -269,7 +273,7 @@ import {
   CATE_HOST_FORWARD,
   CATE_HOST_FORWARD_REPLY,
 } from '../shared/ipc-channels'
-import type { AppSettings, SearchResultBatch, SearchDoneEvent } from '../shared/types'
+import type { AppSettings, SearchResultBatch, SearchDoneEvent, NativeAppControlMessage } from '../shared/types'
 import type { ElectronAPI, UpdateStatus } from '../shared/electron-api'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
@@ -466,6 +470,10 @@ const invokeForwarders = {
   browserSetProxy: makeInvoker<'browserSetProxy'>(BROWSER_SET_PROXY),
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
 
+  // Native app capture (cate-nativehost sidecar)
+  nativeAppAcquire: makeInvoker<'nativeAppAcquire'>(NATIVE_APP_ACQUIRE),
+  nativeAppRelease: makeInvoker<'nativeAppRelease'>(NATIVE_APP_RELEASE),
+
   // Shell utilities
   shellShowInFolder: makeInvoker<'shellShowInFolder'>(SHELL_SHOW_IN_FOLDER),
 
@@ -627,6 +635,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onTerminalExit(callback: (terminalId: string, exitCode: number) => void): () => void {
     return createIpcListener(TERMINAL_EXIT, callback)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Native app capture (cate-nativehost sidecar)
+  // ---------------------------------------------------------------------------
+
+  onNativeAppFrame(callback: (payload: { sessionId: string; jpeg: Uint8Array }) => void): () => void {
+    return createIpcListener(NATIVE_APP_FRAME, callback)
+  },
+
+  onNativeAppStatus(callback: (payload: { sessionId: string; control: NativeAppControlMessage }) => void): () => void {
+    return createIpcListener(NATIVE_APP_STATUS, callback)
   },
 
   // ---------------------------------------------------------------------------

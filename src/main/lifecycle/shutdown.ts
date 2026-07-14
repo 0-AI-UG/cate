@@ -5,6 +5,7 @@ import { setMainWindowReady, flushPendingOpenPaths } from './openPath'
 import { getActiveMainWindow, sendToWindow, listDockWindowIds, listWindows, windowFromEvent } from '../windowRegistry'
 import { flushDockWindowsBeforeQuit } from '../dockWindowFlush'
 import { flushAllLoggers, killAllTerminals } from '../ipc/terminal'
+import { releaseAll as releaseAllNativeAppSessions } from '../nativeApp/NativeAppBroker'
 import { getRunningTerminals } from '../ipc/shell'
 import { getSetting } from '../settingsFile'
 import { saveProjectStateSync } from '../projectWorkspaceStore'
@@ -303,6 +304,7 @@ export function registerLifecycleHandlers(): void {
       workspaceCateApi.disposeAll()
       void extensionServerManager.disposeAll()
       void runtimes.disposeAll()
+      void releaseAllNativeAppSessions()
       log.info('will-quit: update staged, yielding to electron-updater install-on-quit')
       return
     }
@@ -328,7 +330,11 @@ export function registerLifecycleHandlers(): void {
         // is fire-and-forget + reverse.dispose closes the http server), then the
         // bounded async server/runtime dispose.
         workspaceCateApi.disposeAll()
-        return Promise.allSettled([extensionServerManager.disposeAll(), runtimes.disposeAll()])
+        return Promise.allSettled([
+          extensionServerManager.disposeAll(),
+          runtimes.disposeAll(),
+          releaseAllNativeAppSessions(),
+        ])
       },
       // process.reallyExit is Node's binding to libc exit() — it skips the 'exit'
       // event and the cleanup path app.exit/process.exit would run, bypassing
