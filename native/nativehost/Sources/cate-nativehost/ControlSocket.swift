@@ -35,6 +35,9 @@ enum ControlSocketError: Error, CustomStringConvertible {
 enum ControlMessageType: UInt8 {
     case json = 0x01
     case jpegFrame = 0x02
+    // Inbound (client → sidecar):
+    case input = 0x10   // JSON: a mouse/keyboard/scroll event
+    case resize = 0x11  // JSON: { w, h } target window point size
 }
 
 /// One-client UNIX-domain socket server implementing the length-prefixed
@@ -49,6 +52,11 @@ final class ControlSocket {
     /// Checked by the capture loop to know when to stop.
     private let disconnectedFlag = AtomicBool()
     var isClientDisconnected: Bool { disconnectedFlag.value }
+
+    /// Invoked (on the socket read queue) for each inbound framed message from
+    /// the client — input events (0x10) and resize commands (0x11). Set before
+    /// acceptClient().
+    var onMessage: ((ControlMessageType, Data) -> Void)?
 
     init(path: String) throws {
         self.path = path
@@ -104,22 +112,40 @@ final class ControlSocket {
         guard fd >= 0 else { throw ControlSocketError.acceptFailed(errno: errno) }
         clientFD = fd
 
-        // Watch for the client closing its end (e.g. Node process exiting) so
-        // the capture loop can react promptly instead of writing into a dead
-        // socket until SIGPIPE/EPIPE piles up. A single byte read that returns
-        // 0 means orderly close; a negative return with a real error also
-        // counts as "gone".
+        // Read inbound framed messages (input + resize) from the client, and
+        // detect close: read() returning 0 = orderly close, negative = error;
+        // either means the client is gone and the capture loop should stop.
         let watchedFD = fd
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            var buf = [UInt8](repeating: 0, count: 1)
-            while true {
-                let n = read(watchedFD, &buf, 1)
-                if n <= 0 {
-                    self?.disconnectedFlag.value = true
-                    return
+            self?.readLoop(fd: watchedFD)
+        }
+    }
+
+    /// Parses the `[UInt32 BE len][UInt8 type][payload]` framing from the client
+    /// stream and dispatches each complete message to `onMessage`. A partial
+    /// frame at the end of a read is retained until the rest arrives.
+    private func readLoop(fd: Int32) {
+        var buffer = Data()
+        var chunk = [UInt8](repeating: 0, count: 16 * 1024)
+        while true {
+            let n = read(fd, &chunk, chunk.count)
+            if n <= 0 {
+                disconnectedFlag.value = true
+                return
+            }
+            buffer.append(contentsOf: chunk[0..<n])
+
+            // Drain as many complete frames as the buffer holds.
+            while buffer.count >= 5 {
+                let len = buffer.prefix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+                let total = 5 + Int(len)
+                guard buffer.count >= total else { break }
+                let typeByte = buffer[buffer.startIndex + 4]
+                let payload = buffer.subdata(in: (buffer.startIndex + 5)..<(buffer.startIndex + total))
+                buffer.removeSubrange(buffer.startIndex..<(buffer.startIndex + total))
+                if let type = ControlMessageType(rawValue: typeByte) {
+                    onMessage?(type, payload)
                 }
-                // Client isn't expected to send anything; if it does, ignore
-                // and keep watching for close.
             }
         }
     }

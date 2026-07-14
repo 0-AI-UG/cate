@@ -23,6 +23,24 @@ export interface DecodedMessage {
 
 const HEADER_LENGTH = 5 // 4-byte BE length + 1-byte type
 
+/** Inbound (main → sidecar) message types. See PROTOCOL.md. */
+export const CLIENT_MSG_INPUT = 0x10
+export const CLIENT_MSG_RESIZE = 0x11
+
+/** Encode one message in the wire framing: [UInt32 BE len][UInt8 type][payload].
+ *  Used by the broker to send input/resize commands to the sidecar. */
+export function encodeFrame(type: number, payload: Buffer): Buffer {
+  const header = Buffer.alloc(HEADER_LENGTH)
+  header.writeUInt32BE(payload.length, 0)
+  header.writeUInt8(type, 4)
+  return Buffer.concat([header, payload])
+}
+
+/** Encode a JSON control message (input/resize) for the sidecar. */
+export function encodeJSONFrame(type: number, obj: unknown): Buffer {
+  return encodeFrame(type, Buffer.from(JSON.stringify(obj), 'utf8'))
+}
+
 export class FrameDecoder {
   private buffer: Buffer = Buffer.alloc(0)
 

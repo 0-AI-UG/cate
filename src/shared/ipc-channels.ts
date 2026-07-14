@@ -327,6 +327,8 @@ export const NATIVE_APP_ACQUIRE = 'nativeApp:acquire' // renderer -> main
 export const NATIVE_APP_RELEASE = 'nativeApp:release' // renderer -> main
 export const NATIVE_APP_FRAME = 'nativeApp:frame'     // main -> renderer: { sessionId, jpeg }
 export const NATIVE_APP_STATUS = 'nativeApp:status'   // main -> renderer: { sessionId, control }
+export const NATIVE_APP_INPUT = 'nativeApp:input'     // renderer -> main: { sessionId, event }
+export const NATIVE_APP_RESIZE = 'nativeApp:resize'   // renderer -> main: { sessionId, width, height }
 
 // Pi agent (renderer <-> main)
 export const AGENT_CREATE = 'agent:create'           // renderer -> main

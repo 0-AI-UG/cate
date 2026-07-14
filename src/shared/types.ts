@@ -1936,3 +1936,13 @@ export interface NativeAppAcquireOptions {
 }
 
 export type NativeAppAcquireResult = { sessionId: string } | { error: string }
+
+/** Input events forwarded renderer → main → sidecar for a captured app.
+ *  Pointer positions are NORMALIZED (0…1) over the captured window content, so
+ *  they're independent of panel/window pixel size. Modifier booleans and (for
+ *  keys) a macOS virtual key `code` let the sidecar reproduce shortcuts + text.
+ *  Compact keys keep the per-event JSON small at interaction frequency. */
+export type NativeAppInputEvent =
+  | { k: 'm'; a: 'down' | 'up' | 'move' | 'drag'; nx: number; ny: number; b?: 0 | 1; clicks?: number; cmd?: boolean; shift?: boolean; opt?: boolean; ctrl?: boolean }
+  | { k: 's'; nx: number; ny: number; dx: number; dy: number }
+  | { k: 'k'; a: 'down' | 'up'; code?: number; text?: string; cmd?: boolean; shift?: boolean; opt?: boolean; ctrl?: boolean }

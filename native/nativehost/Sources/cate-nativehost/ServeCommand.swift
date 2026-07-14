@@ -90,6 +90,14 @@ final class ServeRunner {
     private var displayHandle: VirtualDisplayHandle?
     private var launchedApp: NSRunningApplication?
     private var captureSession: CaptureSession?
+    private var inputInjector: InputInjector?
+    private var appPid: pid_t = 0
+    private var displayOrigin: CGPoint = .zero
+    private var displayPointSize: CGSize = .zero
+    // Set when a resize arrives before capture has started; applied once ready.
+    private let stateLock = NSLock()
+    private var pendingResize: (w: Int, h: Int)?
+    private var lastAppliedSize: (w: Int, h: Int)?
     private let shutdownFlag = AtomicBool()
 
     init(options: ServeOptions) {
@@ -112,6 +120,9 @@ final class ServeRunner {
             exit(1)
         }
         self.socket = socket
+        socket.onMessage = { [weak self] type, payload in
+            self?.handleClientMessage(type: type, payload: payload)
+        }
 
         log("listening on \(options.socketPath), waiting for client...")
         do {
@@ -150,6 +161,8 @@ final class ServeRunner {
         self.displayHandle = handle
         let displayID = handle.displayID
         let bounds = CGDisplayBounds(displayID)
+        displayOrigin = bounds.origin
+        displayPointSize = bounds.size
         if let mode = CGDisplayCopyDisplayMode(displayID) {
             let scale = mode.width > 0 ? Double(mode.pixelWidth) / Double(mode.width) : 0
             log("virtual display created: displayID=\(displayID) bounds=\(bounds) points=\(mode.width)x\(mode.height) pixels=\(mode.pixelWidth)x\(mode.pixelHeight) scale=\(scale)")
@@ -178,6 +191,7 @@ final class ServeRunner {
         }
         self.launchedApp = app
         let pid = app.processIdentifier
+        self.appPid = pid
         log("launched \(options.bundleID) as PID=\(pid)")
 
         socket.sendJSON(["t": "ready", "displayId": displayID, "appPid": pid])
@@ -208,6 +222,17 @@ final class ServeRunner {
         }
         captureSema.wait()
 
+        // Create the input injector using the window's actual frame (fall back
+        // to the requested rect). Its geometry is refreshed on every resize.
+        let initialFrame = AppLauncher.mainWindow(pid: pid).flatMap { AppLauncher.windowFrame($0) } ?? windowRect
+        inputInjector = InputInjector(pid: pid, geometry: WindowGeometry(globalOrigin: initialFrame.origin, pointSize: initialFrame.size))
+
+        // A resize requested before capture was ready is applied now.
+        stateLock.lock(); let pending = pendingResize; pendingResize = nil; stateLock.unlock()
+        if let pending = pending {
+            applyResize(width: pending.w, height: pending.h)
+        }
+
         if let captureStartError = captureStartError {
             socket.sendJSON(["t": "error", "message": "failed to start capture: \(captureStartError)"])
             log("FATAL: capture start failed: \(captureStartError)")
@@ -230,6 +255,46 @@ final class ServeRunner {
         }
 
         cleanupAndExit(0)
+    }
+
+    /// Handles an inbound framed message from the client (runs on the socket
+    /// read queue): input events (0x10) and resize commands (0x11).
+    private func handleClientMessage(type: ControlMessageType, payload: Data) {
+        switch type {
+        case .input:
+            guard let injector = inputInjector,
+                  let obj = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else { return }
+            injector.handle(obj)
+        case .resize:
+            guard let obj = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+                  let w = (obj["w"] as? NSNumber)?.intValue,
+                  let h = (obj["h"] as? NSNumber)?.intValue else { return }
+            if captureSession != nil && inputInjector != nil {
+                applyResize(width: w, height: h)
+            } else {
+                stateLock.lock(); pendingResize = (w, h); stateLock.unlock()
+            }
+        default:
+            break
+        }
+    }
+
+    /// Resizes the real app window to `width`×`height` points (pinned to the
+    /// display origin so it stays off the real desktop), refreshes the input
+    /// injector's geometry, and reconfigures capture to the new size. Clamped
+    /// to the display and a sane minimum; a no-op if the size is unchanged.
+    private func applyResize(width: Int, height: Int) {
+        let w = max(200, min(width, Int(displayPointSize.width)))
+        let h = max(150, min(height, Int(displayPointSize.height)))
+        stateLock.lock()
+        if let last = lastAppliedSize, last.w == w, last.h == h { stateLock.unlock(); return }
+        lastAppliedSize = (w, h)
+        stateLock.unlock()
+
+        let frame = AppLauncher.resizeMainWindow(pid: appPid, size: CGSize(width: w, height: h), origin: displayOrigin)
+        let geomRect = frame ?? CGRect(origin: displayOrigin, size: CGSize(width: w, height: h))
+        inputInjector?.updateGeometry(WindowGeometry(globalOrigin: geomRect.origin, pointSize: geomRect.size))
+        Task { await captureSession?.updateSize(pointWidth: w, pointHeight: h) }
     }
 
     private func installSignalHandlers() {

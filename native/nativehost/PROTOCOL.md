@@ -17,12 +17,17 @@ Every message on the wire has the same envelope:
 - `payloadLength` — length of `payload` in bytes, NOT including the 4-byte
   length field or the 1-byte type field. Big-endian (network byte order).
 - `type` — one byte:
-  - `0x01` — JSON control message (UTF-8 encoded JSON object).
-  - `0x02` — JPEG frame (raw JPEG bytes, no further wrapping).
+  - Server → client:
+    - `0x01` — JSON control message (UTF-8 encoded JSON object).
+    - `0x02` — JPEG frame (raw JPEG bytes, no further wrapping).
+  - Client → server (same framing, the client may send these once connected):
+    - `0x10` — JSON input event (mouse/keyboard/scroll).
+    - `0x11` — JSON resize command.
 - `payload` — exactly `payloadLength` bytes.
 
 There is no message-count prefix and no trailer; keep reading
-`4 + 1 + payloadLength` bytes per message until EOF.
+`4 + 1 + payloadLength` bytes per message until EOF. The framing is identical
+in both directions.
 
 ## Control messages (`type` 0x01)
 
@@ -36,8 +41,38 @@ message kind:
 | `status`   | `frames` (number), `complete` (number), `idle` (number), `suspended` (number) | Every ~2s while capturing. Counts are cumulative since capture start (not reset between messages). |
 | `error`    | `message` (string)                                                | Any time something recoverable-but-worth-surfacing or fatal happens (e.g. capture failed to start, SCStream stopped with an error). An `error` message does not by itself mean the process is exiting — check whether frames/status keep arriving afterward. |
 
+In addition to those, the capture path also emits `{"t":"capture", ...}` once
+capture starts, reporting the chosen mode (`window` or `display-fallback`) and
+the frame pixel size + backing `scale`.
+
 Unknown `t` values should be ignored by forward-compatible clients rather
 than treated as a protocol error.
+
+## Inbound messages (client → server)
+
+Sent by the client after connecting, using the same framing.
+
+### Input events (`type` 0x10)
+
+A single JSON object. Pointer positions are **normalized** (`nx`, `ny` in
+0…1) over the captured window content, so they're independent of window/panel
+pixel size; the server maps them to global display points via the window's
+live frame. `k` names the event kind:
+
+| `k`  | Fields | Meaning |
+|------|--------|---------|
+| `m`  | `a` (`down`/`up`/`move`/`drag`), `nx`, `ny`, `b` (0 left, 1 right), `clicks`, `cmd`/`shift`/`opt`/`ctrl` | Mouse button / motion. |
+| `s`  | `nx`, `ny`, `dx`, `dy` | Scroll (pixel deltas; +y = up). |
+| `k`  | `a` (`down`/`up`), `code` (macOS virtual key code) or `text` (unicode), `cmd`/`shift`/`opt`/`ctrl` | Keyboard. |
+
+Events are injected via `CGEvent` posted to the app's PID, so they land even
+though the window is on a headless display and never frontmost.
+
+### Resize (`type` 0x11)
+
+`{ "w": <points>, "h": <points> }` — resize the captured app window to this
+logical size (pinned to the virtual display origin) and reconfigure capture to
+match, so the frame fills the panel at native resolution with no letterboxing.
 
 ## Frame messages (`type` 0x02)
 

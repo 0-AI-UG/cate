@@ -112,6 +112,50 @@ enum AppLauncher {
         return PlacementResult(placed: false, detail: "timed out after \(timeout)s: \(lastDetail)")
     }
 
+    /// The app's current AX main window element, or nil if none yet.
+    static func mainWindow(pid: pid_t) -> AXUIElement? {
+        let axApp = AXUIElementCreateApplication(pid)
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axApp, kAXMainWindowAttribute as CFString, &ref) == .success,
+              let ref = ref else { return nil }
+        return (unsafeBitCast(ref, to: AXUIElement.self))
+    }
+
+    /// Reads a window's current global frame (position + size, in points).
+    static func windowFrame(_ axWindow: AXUIElement) -> CGRect? {
+        var posRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axWindow, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(axWindow, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let posRef = posRef, let sizeRef = sizeRef else { return nil }
+        var pos = CGPoint.zero
+        var size = CGSize.zero
+        // Safe: the attributes are AXValue of the requested types.
+        AXValueGetValue(unsafeBitCast(posRef, to: AXValue.self), .cgPoint, &pos)
+        AXValueGetValue(unsafeBitCast(sizeRef, to: AXValue.self), .cgSize, &size)
+        return CGRect(origin: pos, size: size)
+    }
+
+    /// Resizes the app's main window to `size` (points), keeping it pinned to
+    /// `origin` if given (so it stays on the virtual display). Returns the
+    /// window's resulting frame. Best-effort; returns nil if there's no window
+    /// or AX rejects the change.
+    @discardableResult
+    static func resizeMainWindow(pid: pid_t, size: CGSize, origin: CGPoint?) -> CGRect? {
+        guard let win = mainWindow(pid: pid) else { return nil }
+        if let origin = origin {
+            var p = origin
+            if let posValue = AXValueCreate(.cgPoint, &p) {
+                AXUIElementSetAttributeValue(win, kAXPositionAttribute as CFString, posValue)
+            }
+        }
+        var s = size
+        if let sizeValue = AXValueCreate(.cgSize, &s) {
+            AXUIElementSetAttributeValue(win, kAXSizeAttribute as CFString, sizeValue)
+        }
+        return windowFrame(win)
+    }
+
     /// Confirms a window owned by `pid` currently intersects `bounds`, via
     /// CGWindowListCopyWindowInfo (does not depend on AX permission).
     static func isOnDisplay(pid: pid_t, bounds: CGRect) -> Bool {

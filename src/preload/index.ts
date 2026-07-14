@@ -190,6 +190,8 @@ import {
   NATIVE_APP_RELEASE,
   NATIVE_APP_FRAME,
   NATIVE_APP_STATUS,
+  NATIVE_APP_INPUT,
+  NATIVE_APP_RESIZE,
   UPDATE_STATUS,
   UPDATE_QUIT_AND_INSTALL,
   UPDATE_GET_STATUS,
@@ -273,7 +275,7 @@ import {
   CATE_HOST_FORWARD,
   CATE_HOST_FORWARD_REPLY,
 } from '../shared/ipc-channels'
-import type { AppSettings, SearchResultBatch, SearchDoneEvent, NativeAppControlMessage } from '../shared/types'
+import type { AppSettings, SearchResultBatch, SearchDoneEvent, NativeAppControlMessage, NativeAppInputEvent } from '../shared/types'
 import type { ElectronAPI, UpdateStatus } from '../shared/electron-api'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
@@ -647,6 +649,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onNativeAppStatus(callback: (payload: { sessionId: string; control: NativeAppControlMessage }) => void): () => void {
     return createIpcListener(NATIVE_APP_STATUS, callback)
+  },
+
+  nativeAppInput(sessionId: string, event: NativeAppInputEvent): void {
+    ipcRenderer.send(NATIVE_APP_INPUT, sessionId, event)
+  },
+
+  nativeAppResize(sessionId: string, width: number, height: number): void {
+    ipcRenderer.send(NATIVE_APP_RESIZE, sessionId, width, height)
   },
 
   // ---------------------------------------------------------------------------

@@ -15,13 +15,20 @@
 // must not add its own zoom logic.
 // =============================================================================
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppWindow } from '@phosphor-icons/react'
 import { useAppStore } from '../../stores/appStore'
 import { KNOWN_NATIVE_APPS } from '../../lib/nativeApps'
+import { macKeyCode } from './keycodes'
+import type { NativeAppInputEvent } from '../../../shared/types'
 import type { NativeAppPanelProps } from '../types'
 
-const CAPTURE_FPS = 12
+const CAPTURE_FPS = 30
+// Throttle interval for pointer-move forwarding (ms) — ~120/s is smooth
+// without flooding the socket.
+const MOVE_THROTTLE_MS = 8
+// Debounce for panel-resize → window-resize commands (ms).
+const RESIZE_DEBOUNCE_MS = 100
 
 // -----------------------------------------------------------------------------
 // Component
@@ -99,11 +106,19 @@ function NativeAppLauncher({ panelId, workspaceId }: { panelId: string; workspac
 
 type CaptureStatus = { phase: 'launching' } | { phase: 'live' } | { phase: 'error'; message: string }
 
+// The image's placement within the canvas (fractions of canvas size), updated
+// on every draw so pointer coordinates can be mapped past any letterbox bands.
+interface ImageRect { left: number; top: number; width: number; height: number }
+
 function NativeAppCapture({ bundleId }: { bundleId: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const imageRectRef = useRef<ImageRect>({ left: 0, top: 0, width: 1, height: 1 })
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
   const [status, setStatus] = useState<CaptureStatus>({ phase: 'launching' })
   const [hasFrame, setHasFrame] = useState(false)
+  const lastMoveRef = useRef(0)
 
   // Acquire on mount, release on unmount (and whenever `bundleId` changes —
   // though in practice a bundle change remounts this whole component via the
@@ -159,12 +174,18 @@ function NativeAppCapture({ bundleId }: { bundleId: string }) {
       // into a fresh ArrayBuffer-backed view first.
       createImageBitmap(new Blob([new Uint8Array(payload.jpeg)], { type: 'image/jpeg' }))
         .then((bitmap) => {
-          drawLetterboxed(canvas, bitmap)
+          imageRectRef.current = drawLetterboxed(canvas, bitmap)
           if (typeof bitmap.close === 'function') bitmap.close()
           setHasFrame(true)
         })
         .catch(() => { /* dropped frame — the next one will draw */ })
     })
+  }, [sessionId])
+
+  // Keep a ref of the session id for the DOM event handlers (which are wired
+  // once and read the latest id without re-binding on every change).
+  useEffect(() => {
+    sessionIdRef.current = sessionId
   }, [sessionId])
 
   // Surface ready/error control messages as a small overlay.
@@ -179,12 +200,144 @@ function NativeAppCapture({ bundleId }: { bundleId: string }) {
     })
   }, [sessionId])
 
+  // Send an input event to the captured app for the current session.
+  const sendInput = useCallback((event: NativeAppInputEvent): void => {
+    const sid = sessionIdRef.current
+    if (sid) window.electronAPI.nativeAppInput(sid, event)
+  }, [])
+
+  // Map a client-space pointer position to normalized (0…1) coords over the
+  // captured window content, accounting for any letterbox bands.
+  const normPoint = useCallback((clientX: number, clientY: number): { nx: number; ny: number } => {
+    const canvas = canvasRef.current
+    if (!canvas) return { nx: 0, ny: 0 }
+    const rect = canvas.getBoundingClientRect()
+    const fracX = rect.width > 0 ? (clientX - rect.left) / rect.width : 0
+    const fracY = rect.height > 0 ? (clientY - rect.top) / rect.height : 0
+    const img = imageRectRef.current
+    const nx = img.width > 0 ? (fracX - img.left) / img.width : fracX
+    const ny = img.height > 0 ? (fracY - img.top) / img.height : fracY
+    return { nx: clamp01(nx), ny: clamp01(ny) }
+  }, [])
+
+  // Wire pointer + keyboard + wheel forwarding directly on the canvas so we can
+  // control passive/preventDefault (React's synthetic wheel is passive). Drag
+  // tracking uses window listeners so a drag that leaves the panel still moves.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const mods = (e: MouseEvent | KeyboardEvent) => ({ cmd: e.metaKey, shift: e.shiftKey, opt: e.altKey, ctrl: e.ctrlKey })
+    const button = (e: MouseEvent): 0 | 1 => (e.button === 2 ? 1 : 0)
+
+    const onWindowMove = (e: MouseEvent): void => {
+      const now = performance.now()
+      if (now - lastMoveRef.current < MOVE_THROTTLE_MS) return
+      lastMoveRef.current = now
+      const { nx, ny } = normPoint(e.clientX, e.clientY)
+      sendInput({ k: 'm', a: 'move', nx, ny })
+    }
+    const onWindowUp = (e: MouseEvent): void => {
+      const { nx, ny } = normPoint(e.clientX, e.clientY)
+      sendInput({ k: 'm', a: 'up', nx, ny, b: button(e) })
+      window.removeEventListener('mousemove', onWindowMove)
+      window.removeEventListener('mouseup', onWindowUp)
+    }
+    const onMouseDown = (e: MouseEvent): void => {
+      e.preventDefault()
+      e.stopPropagation() // don't let the canvas start a node-drag / pan
+      canvas.focus()
+      const { nx, ny } = normPoint(e.clientX, e.clientY)
+      sendInput({ k: 'm', a: 'down', nx, ny, b: button(e), clicks: e.detail || 1, ...mods(e) })
+      window.addEventListener('mousemove', onWindowMove)
+      window.addEventListener('mouseup', onWindowUp)
+    }
+    const onHoverMove = (e: MouseEvent): void => {
+      const now = performance.now()
+      if (now - lastMoveRef.current < MOVE_THROTTLE_MS) return
+      lastMoveRef.current = now
+      const { nx, ny } = normPoint(e.clientX, e.clientY)
+      sendInput({ k: 'm', a: 'move', nx, ny })
+    }
+    const onContextMenu = (e: MouseEvent): void => { e.preventDefault() }
+    const onWheel = (e: WheelEvent): void => {
+      // Cmd/Ctrl+scroll stays with the canvas (zoom); plain scroll goes to app.
+      if (e.metaKey || e.ctrlKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      const { nx, ny } = normPoint(e.clientX, e.clientY)
+      sendInput({ k: 's', nx, ny, dx: Math.round(-e.deltaX), dy: Math.round(-e.deltaY) })
+    }
+    const onKeyDown = (e: KeyboardEvent): void => {
+      e.preventDefault(); e.stopPropagation()
+      const code = macKeyCode(e.code)
+      if (code !== undefined) sendInput({ k: 'k', a: 'down', code, ...mods(e) })
+      else if (e.key.length === 1) sendInput({ k: 'k', a: 'down', text: e.key, ...mods(e) })
+    }
+    const onKeyUp = (e: KeyboardEvent): void => {
+      e.preventDefault(); e.stopPropagation()
+      const code = macKeyCode(e.code)
+      if (code !== undefined) sendInput({ k: 'k', a: 'up', code, ...mods(e) })
+    }
+
+    canvas.addEventListener('mousedown', onMouseDown)
+    canvas.addEventListener('mousemove', onHoverMove)
+    canvas.addEventListener('contextmenu', onContextMenu)
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    canvas.addEventListener('keydown', onKeyDown)
+    canvas.addEventListener('keyup', onKeyUp)
+    return () => {
+      canvas.removeEventListener('mousedown', onMouseDown)
+      canvas.removeEventListener('mousemove', onHoverMove)
+      canvas.removeEventListener('contextmenu', onContextMenu)
+      canvas.removeEventListener('wheel', onWheel)
+      canvas.removeEventListener('keydown', onKeyDown)
+      canvas.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('mousemove', onWindowMove)
+      window.removeEventListener('mouseup', onWindowUp)
+    }
+  }, [normPoint, sendInput])
+
+  // Drive the captured app window to the panel's logical size (debounced), so
+  // it reflows to fill the panel — no letterbox, native resolution. Fires on
+  // mount and whenever the panel resizes.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const push = (): void => {
+      const sid = sessionIdRef.current
+      const w = container.clientWidth
+      const h = container.clientHeight
+      if (sid && w > 0 && h > 0) window.electronAPI.nativeAppResize(sid, w, h)
+    }
+    const schedule = (): void => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(push, RESIZE_DEBOUNCE_MS)
+    }
+    // Initial push once a session exists (the observer also fires on observe).
+    schedule()
+    if (typeof ResizeObserver === 'undefined') {
+      return () => { if (timer) clearTimeout(timer) }
+    }
+    const observer = new ResizeObserver(schedule)
+    observer.observe(container)
+    return () => {
+      if (timer) clearTimeout(timer)
+      observer.disconnect()
+    }
+  }, [sessionId])
+
   const overlayText =
     status.phase === 'error' ? `Capture error — ${status.message}` : !hasFrame ? 'Launching…' : null
 
   return (
-    <div className="relative w-full h-full bg-black">
-      <canvas ref={canvasRef} className="w-full h-full block" />
+    <div ref={containerRef} className="relative w-full h-full bg-black">
+      <canvas
+        ref={canvasRef}
+        tabIndex={0}
+        className="w-full h-full block outline-none cursor-default"
+      />
       {overlayText && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs text-secondary pointer-events-none px-4 text-center">
           {overlayText}
@@ -194,15 +347,20 @@ function NativeAppCapture({ bundleId }: { bundleId: string }) {
   )
 }
 
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v
+}
+
 // -----------------------------------------------------------------------------
 // Frame drawing — letterbox the source bitmap into the canvas's current CSS
 // size (device-pixel-scaled) so aspect ratio is preserved regardless of the
-// panel's shape.
+// panel's shape. Returns the image's placement (fractions of the canvas) so
+// pointer coordinates can be mapped past the letterbox bands.
 // -----------------------------------------------------------------------------
 
-function drawLetterboxed(canvas: HTMLCanvasElement, bitmap: ImageBitmap): void {
+function drawLetterboxed(canvas: HTMLCanvasElement, bitmap: ImageBitmap): ImageRect {
   const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  if (!ctx) return { left: 0, top: 0, width: 1, height: 1 }
   const dpr = window.devicePixelRatio || 1
   const pixelWidth = Math.max(1, Math.round((canvas.clientWidth || bitmap.width) * dpr))
   const pixelHeight = Math.max(1, Math.round((canvas.clientHeight || bitmap.height) * dpr))
@@ -218,4 +376,10 @@ function drawLetterboxed(canvas: HTMLCanvasElement, bitmap: ImageBitmap): void {
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.drawImage(bitmap, dx, dy, drawWidth, drawHeight)
+  return {
+    left: dx / canvas.width,
+    top: dy / canvas.height,
+    width: drawWidth / canvas.width,
+    height: drawHeight / canvas.height,
+  }
 }

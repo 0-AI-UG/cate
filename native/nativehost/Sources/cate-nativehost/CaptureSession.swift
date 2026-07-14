@@ -42,8 +42,37 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Set when the stream stops with an error (e.g. client/app gone).
     private(set) var stoppedWithError: String?
 
+    // Retained so a resize can rebuild the stream configuration at the same
+    // fps / backing scale for the new window size.
+    private var fps: Int = 12
+    private var pointPixelScale: CGFloat = 2
+    private(set) var currentPointSize: CGSize = .zero
+
     init(socket: ControlSocket) {
         self.socket = socket
+    }
+
+    private func makeConfiguration(pxWidth: Int, pxHeight: Int) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, fps)))
+        config.pixelFormat = kCVPixelFormatType_32BGRA
+        config.queueDepth = 6
+        config.width = max(2, pxWidth)
+        config.height = max(2, pxHeight)
+        config.scalesToFit = false
+        config.showsCursor = true
+        return config
+    }
+
+    /// Reconfigures the live stream for a new window POINT size (called when the
+    /// panel — and thus the app window — is resized). Captures at the stored
+    /// backing scale so it stays crisp. No-op if not yet streaming.
+    func updateSize(pointWidth: Int, pointHeight: Int) async {
+        guard let stream = stream, pointWidth > 0, pointHeight > 0 else { return }
+        let pxWidth = max(2, Int((CGFloat(pointWidth) * pointPixelScale).rounded()))
+        let pxHeight = max(2, Int((CGFloat(pointHeight) * pointPixelScale).rounded()))
+        currentPointSize = CGSize(width: pointWidth, height: pointHeight)
+        try? await stream.updateConfiguration(makeConfiguration(pxWidth: pxWidth, pxHeight: pxHeight))
     }
 
     /// Picks the app's main window from the shareable-content window list:
@@ -69,6 +98,7 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     /// at `fallbackWidth`×`fallbackHeight` so the pipeline still produces
     /// frames rather than going dark.
     func start(displayID: CGDirectDisplayID, pid: pid_t, fallbackWidth: Int, fallbackHeight: Int, fps: Int) async throws {
+        self.fps = fps
         let content = try await SCShareableContent.current
         guard let scDisplay = content.displays.first(where: { $0.displayID == displayID }) else {
             throw CaptureSessionError.virtualDisplayNotVisibleToSCK(
@@ -97,6 +127,8 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
             filter = SCContentFilter(desktopIndependentWindow: window)
             let scale = CGFloat(filter.pointPixelScale)
             let rect = filter.contentRect
+            pointPixelScale = scale
+            currentPointSize = rect.size
             pxWidth = max(2, Int((rect.width * scale).rounded()))
             pxHeight = max(2, Int((rect.height * scale).rounded()))
             socket.sendJSON([
@@ -114,14 +146,7 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
             ])
         }
 
-        let config = SCStreamConfiguration()
-        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, fps)))
-        config.pixelFormat = kCVPixelFormatType_32BGRA
-        config.queueDepth = 6
-        config.width = pxWidth
-        config.height = pxHeight
-        config.scalesToFit = false
-        config.showsCursor = true
+        let config = makeConfiguration(pxWidth: pxWidth, pxHeight: pxHeight)
 
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.cate.nativehost.capture"))

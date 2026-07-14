@@ -26,6 +26,7 @@ import { app } from 'electron'
 import log from '../logger'
 import { sendToWindow } from '../windowRegistry'
 import { NATIVE_APP_FRAME, NATIVE_APP_STATUS } from '../../shared/ipc-channels'
+import { CLIENT_MSG_INPUT, CLIENT_MSG_RESIZE, encodeJSONFrame } from './frameProtocol'
 import type { NativeAppControlMessage } from '../../shared/types'
 import { FrameDecoder } from './frameProtocol'
 
@@ -285,6 +286,31 @@ export async function release(sessionId: string): Promise<void> {
   })
 
   unlinkSocketFile(session.socketPath)
+}
+
+/** Forward an input event (mouse/keyboard/scroll) to a session's sidecar.
+ *  Silently ignores unknown/closed sessions — input for a torn-down panel is
+ *  expected during teardown races. */
+export function sendInput(sessionId: string, event: unknown): void {
+  const session = sessions.get(sessionId)
+  if (!session?.socket) return
+  try {
+    session.socket.write(encodeJSONFrame(CLIENT_MSG_INPUT, event))
+  } catch (err) {
+    log.warn('[nativeApp] failed to send input for session %s: %s', sessionId, err)
+  }
+}
+
+/** Ask a session's sidecar to resize the captured app window to
+ *  `width`×`height` points (and reconfigure capture to match). */
+export function sendResize(sessionId: string, width: number, height: number): void {
+  const session = sessions.get(sessionId)
+  if (!session?.socket) return
+  try {
+    session.socket.write(encodeJSONFrame(CLIENT_MSG_RESIZE, { w: Math.round(width), h: Math.round(height) }))
+  } catch (err) {
+    log.warn('[nativeApp] failed to send resize for session %s: %s', sessionId, err)
+  }
 }
 
 /** Tear down every live session — called on app quit. */

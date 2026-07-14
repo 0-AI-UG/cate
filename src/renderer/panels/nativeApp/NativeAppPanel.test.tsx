@@ -45,6 +45,8 @@ const nativeAppAcquire = vi.fn(async (_opts: { bundleId: string; fps?: number })
 const nativeAppRelease = vi.fn(async (_sessionId: string) => undefined)
 const onNativeAppFrame = vi.fn((_cb: (p: { sessionId: string; jpeg: Uint8Array }) => void) => () => {})
 const onNativeAppStatus = vi.fn((_cb: (p: { sessionId: string; control: { t: string } }) => void) => () => {})
+const nativeAppInput = vi.fn((_sessionId: string, _event: unknown) => undefined)
+const nativeAppResize = vi.fn((_sessionId: string, _w: number, _h: number) => undefined)
 
 let host: HTMLDivElement
 let root: Root
@@ -56,6 +58,8 @@ beforeEach(() => {
     nativeAppRelease,
     onNativeAppFrame,
     onNativeAppStatus,
+    nativeAppInput,
+    nativeAppResize,
   }
   h.onBundleId = null
   host = document.createElement('div')
@@ -105,7 +109,7 @@ describe('NativeAppPanel', () => {
     await act(async () => { await Promise.resolve() })
 
     expect(nativeAppAcquire).toHaveBeenCalledTimes(1)
-    expect(nativeAppAcquire).toHaveBeenCalledWith({ bundleId: 'com.apple.Safari', fps: 12 })
+    expect(nativeAppAcquire).toHaveBeenCalledWith({ bundleId: 'com.apple.Safari', fps: 30 })
     // Launcher is gone; the capture canvas has replaced it.
     expect(host.textContent).not.toContain('Capture a native app')
     expect(host.querySelector('canvas')).toBeTruthy()
@@ -115,7 +119,7 @@ describe('NativeAppPanel', () => {
     act(() => { root.render(<NativeAppPanel panelId="p1" workspaceId="ws1" nativeAppBundleId="com.apple.Safari" />) })
     await act(async () => { await Promise.resolve() })
 
-    expect(nativeAppAcquire).toHaveBeenCalledWith({ bundleId: 'com.apple.Safari', fps: 12 })
+    expect(nativeAppAcquire).toHaveBeenCalledWith({ bundleId: 'com.apple.Safari', fps: 30 })
 
     act(() => { root.unmount() })
     // Re-mount a throwaway so afterEach's unmount has a live root.
