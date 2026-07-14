@@ -3,7 +3,7 @@
 // Ported from CanvasToolbar.swift.
 // =============================================================================
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Terminal,
@@ -20,7 +20,7 @@ import {
 import Minimap from './Minimap'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import ExtensionToolbarMenu from './ExtensionToolbarMenu'
-import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
+import { useCanvasStoreApi, useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
 import { useUIStateStore } from '../stores/uiStateStore'
 import { cornerFromPoint } from '../lib/canvasCorners'
@@ -34,13 +34,10 @@ interface CanvasToolbarProps {
   canvasPanelId: string
   workspaceId: string
   rootPath: string
-  zoom: number
   onNewTerminal: () => void
   onNewBrowser: () => void
   onNewEditor: () => void
   onNewAgent: () => void
-  onZoomIn: () => void
-  onZoomOut: () => void
 }
 
 const ToolbarButton: React.FC<{
@@ -49,12 +46,13 @@ const ToolbarButton: React.FC<{
   size?: 'panel' | 'zoom'
   active?: boolean
   onMouseDown?: (e: React.MouseEvent) => void
+  placement?: 'top' | 'right'
   children: React.ReactNode
-}> = ({ onClick, title, size = 'panel', active = false, onMouseDown, children }) => {
+}> = ({ onClick, title, size = 'panel', active = false, onMouseDown, placement = 'top', children }) => {
   const sizeClass = size === 'panel' ? 'w-9 h-9' : 'w-8 h-8'
   const activeClass = active ? 'bg-hover-strong' : 'bg-transparent'
   return (
-    <Tooltip label={title} placement="top">
+    <Tooltip label={title} placement={placement}>
       <button
         type="button"
         onClick={onClick}
@@ -73,7 +71,7 @@ const ToolbarButton: React.FC<{
 // picker (onClick), while dragging onto the canvas spawns a ghost that follows
 // the cursor and drops a terminal at that exact spot (explicit position →
 // bypasses the picker). The cursor is treated as the new terminal's centre.
-const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string }> = ({ onClick, canvasPanelId }) => {
+const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string; placement?: 'top' | 'right' }> = ({ onClick, canvasPanelId, placement = 'top' }) => {
   const canvasApi = useCanvasStoreApi()
   const [ghost, setGhost] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const justDragged = useRef(false)
@@ -133,6 +131,7 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
         onMouseDown={handleMouseDown}
         title="Terminal. Click for recommendations, or drag onto the canvas."
         size="panel"
+        placement={placement}
       >
         <Terminal size={18} />
       </ToolbarButton>
@@ -171,11 +170,12 @@ const ModeButton: React.FC<{
   onClick: () => void
   title: string
   active: boolean
+  placement?: 'top' | 'right'
   children: React.ReactNode
-}> = ({ onClick, title, active, children }) => {
+}> = ({ onClick, title, active, placement = 'top', children }) => {
   const activeClass = active ? 'bg-hover-strong' : 'bg-transparent'
   return (
-    <Tooltip label={title} placement="top">
+    <Tooltip label={title} placement={placement}>
       <button
         type="button"
         onClick={onClick}
@@ -193,15 +193,13 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   canvasPanelId,
   workspaceId,
   rootPath,
-  zoom,
   onNewTerminal,
   onNewBrowser,
   onNewEditor,
   onNewAgent,
-  onZoomIn,
-  onZoomOut,
 }) => {
   const canvasApi = useCanvasStoreApi()
+  const zoom = useCanvasStoreContext((s) => s.zoomLevel)
   const minimapOpen = useUIStore((s) => s.minimapOpen)
   const toggleMinimapOpen = useUIStore((s) => s.toggleMinimapOpen)
   const activeTool = useUIStore((s) => s.activeTool)
@@ -214,6 +212,93 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const zoomOutKey = displayString(shortcuts.zoomOut)
   const zoomResetKey = displayString(shortcuts.zoomReset)
   const zoomText = `${Math.round(zoom * 100)}%`
+
+  // Responsive layout keyed on canvas width. When there's room we show the
+  // original horizontal bar centered along the bottom; when the canvas gets too
+  // narrow (split view, small window) — where a centered bar would crowd the
+  // corner minimap — we collapse to a single bottom-left button that reveals a
+  // vertical version on hover.
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const [areaWidth, setAreaWidth] = useState(0)
+
+  useEffect(() => {
+    const area = wrapperRef.current?.closest('[data-canvas-area]') as HTMLElement | null
+    if (!area) return
+    const measure = () => setAreaWidth(area.clientWidth)
+    const ro = new ResizeObserver(measure)
+    ro.observe(area)
+    measure()
+    return () => ro.disconnect()
+  }, [])
+
+  // Below this canvas width the centered bar would crowd the corner minimap.
+  // Default to horizontal until measured so we don't flash the button on load.
+  const HORIZONTAL_MIN_WIDTH = 640
+  const mode: 'horizontal' | 'compact' =
+    areaWidth > 0 && areaWidth < HORIZONTAL_MIN_WIDTH ? 'compact' : 'horizontal'
+  const isHorizontal = mode === 'horizontal'
+
+  // In 'compact' mode: hovering reveals the vertical bar, clicking the resting
+  // button pins it open, and an open worktree/extension fly-out keeps it open so
+  // the pointer can travel to the portaled popover without collapsing the card.
+  const [hovered, setHovered] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const [openMenu, setOpenMenu] = useState<'worktree' | 'extension' | null>(null)
+  const expanded = hovered || pinned || openMenu !== null
+  const ToolIcon = activeTool === 'hand' ? Hand : Cursor
+
+  // The buttons are identical between layouts — only the tooltip side, fly-out
+  // direction, and divider orientation change. Shared so the two layouts can't
+  // drift apart.
+  const place: 'top' | 'right' = isHorizontal ? 'top' : 'right'
+  const menuSide: 'up' | 'right' = isHorizontal ? 'up' : 'right'
+  const divider = <div className={isHorizontal ? 'w-px h-5 bg-surface-5 mx-1' : 'h-px w-6 bg-surface-5 my-1'} />
+  const items = (
+    <>
+      <ModeButton
+        onClick={() => setActiveTool('select')}
+        title={`Select tool (Space, or ${toggleToolKey} inside a panel)`}
+        active={activeTool === 'select'}
+        placement={place}
+      >
+        <Cursor size={18} />
+      </ModeButton>
+      <ModeButton
+        onClick={() => setActiveTool('hand')}
+        title={`Hand tool for panning (Space, or ${toggleToolKey} inside a panel)`}
+        active={activeTool === 'hand'}
+        placement={place}
+      >
+        <Hand size={18} />
+      </ModeButton>
+      <WorktreeToolbarMenu
+        canvasPanelId={canvasPanelId}
+        workspaceId={workspaceId}
+        rootPath={rootPath}
+        tooltipPlacement={place}
+        menuSide={menuSide}
+        onOpenChange={(o) => setOpenMenu(o ? 'worktree' : null)}
+      />
+      {divider}
+      <TerminalSpawnButton onClick={onNewTerminal} canvasPanelId={canvasPanelId} placement={place} />
+      <ToolbarButton onClick={onNewBrowser} title={`Browser (${newBrowserKey})`} size="panel" placement={place}>
+        <Globe size={18} />
+      </ToolbarButton>
+      <ToolbarButton onClick={onNewEditor} title={`Editor (${newEditorKey})`} size="panel" placement={place}>
+        <FileText size={18} />
+      </ToolbarButton>
+      <ToolbarButton onClick={onNewAgent} title="Agent" size="panel" placement={place}>
+        <ChatCircle size={18} />
+      </ToolbarButton>
+      <ExtensionToolbarMenu
+        canvasPanelId={canvasPanelId}
+        workspaceId={workspaceId}
+        tooltipPlacement={place}
+        menuSide={menuSide}
+        onOpenChange={(o) => setOpenMenu(o ? 'extension' : null)}
+      />
+    </>
+  )
 
   // Minimap pill docking corner + drag-to-dock handling. The corner is driven
   // straight from the UI-state store so an external shove (the Cate Agent landing on
@@ -267,58 +352,23 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 
   return (
     <>
-    <div className="absolute inset-x-0 bottom-4 z-50 flex justify-center pointer-events-none">
-      <div data-onboarding="toolbar" className="relative pointer-events-auto">
-        <div className="rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]">
+    {isHorizontal ? (
+      /* Wide canvas — the original horizontal bar, centered along the bottom. */
+      <div ref={wrapperRef} className="absolute inset-x-0 bottom-4 z-50 flex justify-center pointer-events-none">
+        <div
+          data-onboarding="toolbar"
+          data-toolbar-card
+          className="relative pointer-events-auto rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
+        >
           <div className="flex items-center gap-0.5 px-1 py-1">
-            {/* Interaction tools (Select / Hand) */}
-            <ModeButton
-              onClick={() => setActiveTool('select')}
-              title={`Select tool (Space, or ${toggleToolKey} inside a panel)`}
-              active={activeTool === 'select'}
-            >
-              <Cursor size={18} />
-            </ModeButton>
-            <ModeButton
-              onClick={() => setActiveTool('hand')}
-              title={`Hand tool for panning (Space, or ${toggleToolKey} inside a panel)`}
-              active={activeTool === 'hand'}
-            >
-              <Hand size={18} />
-            </ModeButton>
-
-            {/* Parallel worktrees — drop-up: focus a worktree's spatial lens,
-                open a terminal in one, or start a new parallel branch. */}
-            <WorktreeToolbarMenu
-              canvasPanelId={canvasPanelId}
-              workspaceId={workspaceId}
-              rootPath={rootPath}
-            />
-
-            {/* Divider */}
+            {items}
+            {/* Zoom controls — only in the horizontal bar, where there's room. */}
             <div className="w-px h-5 bg-surface-5 mx-1" />
-
-            {/* Basic panel buttons */}
-            <TerminalSpawnButton onClick={onNewTerminal} canvasPanelId={canvasPanelId} />
-            <ToolbarButton onClick={onNewBrowser} title={`Browser (${newBrowserKey})`} size="panel">
-              <Globe size={18} />
-            </ToolbarButton>
-            <ToolbarButton onClick={onNewEditor} title={`Editor (${newEditorKey})`} size="panel">
-              <FileText size={18} />
-            </ToolbarButton>
-            <ToolbarButton onClick={onNewAgent} title="Agent" size="panel">
-              <ChatCircle size={18} />
-            </ToolbarButton>
-
-            {/* Extensions — only shown when an enabled extension exposes a panel.
-                One panel opens directly; several open a drop-up picker. */}
-            <ExtensionToolbarMenu canvasPanelId={canvasPanelId} workspaceId={workspaceId} />
-
-            {/* Divider */}
-            <div className="w-px h-5 bg-surface-5 mx-1" />
-
-            {/* Zoom controls */}
-            <ToolbarButton onClick={onZoomOut} title={`Zoom Out (${zoomOutKey})`} size="zoom">
+            <ToolbarButton
+              onClick={() => canvasApi.getState().animateZoomTo(zoom - 0.1)}
+              title={`Zoom Out (${zoomOutKey})`}
+              size="zoom"
+            >
               <Minus size={16} />
             </ToolbarButton>
             <Tooltip label={`Reset zoom to 100% (${zoomResetKey})`} placement="top">
@@ -332,14 +382,66 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                 {zoomText}
               </button>
             </Tooltip>
-            <ToolbarButton onClick={onZoomIn} title={`Zoom In (${zoomInKey})`} size="zoom">
+            <ToolbarButton
+              onClick={() => canvasApi.getState().animateZoomTo(zoom + 0.1)}
+              title={`Zoom In (${zoomInKey})`}
+              size="zoom"
+            >
               <Plus size={16} />
             </ToolbarButton>
           </div>
         </div>
       </div>
+    ) : (
+      /* Narrow canvas — a single bottom-left button that reveals a vertical bar
+         on hover. It floats directly above the resting button; the transparent
+         paddingBottom keeps the hover region continuous so the pointer can travel
+         up without it collapsing. */
+      <div ref={wrapperRef} className="absolute bottom-4 left-4 z-50 pointer-events-none">
+        <div
+          data-onboarding="toolbar"
+          className="relative pointer-events-auto"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          <div
+            aria-hidden={!expanded}
+            style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: 0,
+              paddingBottom: 10,
+              opacity: expanded ? 1 : 0,
+              transform: expanded ? 'translateY(0)' : 'translateY(6px)',
+              pointerEvents: expanded ? 'auto' : 'none',
+              transition: 'opacity 160ms ease, transform 160ms cubic-bezier(0.16,1,0.3,1)',
+            }}
+          >
+            <div
+              data-toolbar-card
+              className="rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)] flex flex-col-reverse items-center gap-0.5 p-1"
+            >
+              {items}
+            </div>
+          </div>
 
-    </div>
+          {/* Resting button — shows the active tool; click pins the bar open,
+              hovering it (or the bar above) reveals. */}
+          <Tooltip label={pinned ? 'Collapse toolbar' : 'Tools — hover to expand, click to keep open'} placement="right">
+            <button
+              type="button"
+              onClick={() => setPinned((p) => !p)}
+              aria-label="Toolbar"
+              aria-expanded={expanded}
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+              className={`w-11 h-11 flex items-center justify-center rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)] ${expanded ? 'text-primary' : 'text-secondary'} hover:text-primary active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
+            >
+              <ToolIcon size={18} />
+            </button>
+          </Tooltip>
+        </div>
+      </div>
+    )}
 
     {/* Minimap — pill button docked to any corner. The pill grows toward the
         canvas centre to reveal the map, while the toggle button stays pinned to

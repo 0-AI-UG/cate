@@ -46,6 +46,14 @@ export interface SharedPanelDefinition {
    *  Terminals/editors leave this false: their backing state is in the main
    *  process (PTY) or trivially rehydrated (Monaco), so culling them is safe. */
   keepMountedOffscreen: boolean
+  /** When true, an inactive tab of this type stays mounted (hidden) in its dock
+   *  stack instead of being unmounted, so its live `<webview>` guest process
+   *  survives a tab switch. Without this, switching away from a browser/extension
+   *  tab and back reloads the page and loses all in-page state (#459).
+   *  Terminals/editors leave this false: unmounting an inactive terminal frees
+   *  its xterm/WebGL context (the PTY keeps running in main), which is the
+   *  cheaper trade-off. */
+  keepMountedWhenTabHidden: boolean
 }
 
 // -----------------------------------------------------------------------------
@@ -73,6 +81,7 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(77,217,100)', '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'),
     canLiveOnCanvas: true,
     keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
   },
   browser: {
     type: 'browser',
@@ -85,6 +94,7 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(74,158,255)', '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'),
     canLiveOnCanvas: true,
     keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: true,
   },
   editor: {
     type: 'editor',
@@ -97,6 +107,7 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(255,159,10)', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'),
     canLiveOnCanvas: true,
     keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
   },
   agent: {
     type: 'agent',
@@ -109,6 +120,7 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(74,158,255)', '<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"/>'),
     canLiveOnCanvas: true,
     keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
   },
   document: {
     type: 'document',
@@ -121,6 +133,7 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(175,82,222)', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="12" cy="15" r="3"/>'),
     canLiveOnCanvas: true,
     keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
   },
   canvas: {
     type: 'canvas',
@@ -133,6 +146,7 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(191,90,242)', '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>'),
     canLiveOnCanvas: false,
     keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
   },
   extension: {
     type: 'extension',
@@ -145,6 +159,7 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     ghostSvg: ghost('rgb(142,142,147)', '<path d="M16 4h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 0 0 4 2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2 2 2 0 0 0-4 0 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2 2 2 0 0 0 0-4 2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2 2 2 0 0 0 4 0 2 2 0 0 1 2-2z"/>'),
     canLiveOnCanvas: true,
     keepMountedOffscreen: true,
+    keepMountedWhenTabHidden: true,
   },
 }
 
@@ -158,6 +173,13 @@ export function getSharedPanelDef(type: PanelType | string): SharedPanelDefiniti
  *  scrolled off-screen (its live `<webview>` state can't survive a remount). */
 export function keepsMountedOffscreen(type: PanelType | string | undefined): boolean {
   return !!type && getSharedPanelDef(type).keepMountedOffscreen
+}
+
+/** True when an inactive tab of this type must stay mounted (hidden) in its dock
+ *  stack rather than being unmounted — its live `<webview>` state can't survive a
+ *  remount, so unmounting on tab switch would reload the page (#459). */
+export function keepsMountedWhenTabHidden(type: PanelType | string | undefined): boolean {
+  return !!type && getSharedPanelDef(type).keepMountedWhenTabHidden
 }
 
 // -----------------------------------------------------------------------------

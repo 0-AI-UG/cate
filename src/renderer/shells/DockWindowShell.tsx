@@ -25,10 +25,10 @@ import { shouldCloseDockWindow } from './shouldCloseDockWindow'
 import WindowControls from './WindowControls'
 import { useWindowRuntime } from '../lib/hooks/useWindowRuntime'
 import WindowChrome from './WindowChrome'
+import DockWindowTitlebar from './DockWindowTitlebar'
 
 import { PanelHost } from '../panels/PanelHost'
 import { IS_MAC } from '../lib/platform'
-import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 
 interface DockWindowShellProps {
   workspaceId?: string
@@ -49,9 +49,6 @@ const SYNC_INTERVAL_MS = 5000
 export default function DockWindowShell({ workspaceId: initialWorkspaceId }: DockWindowShellProps) {
   const [wsId, setWsId] = useState(initialWorkspaceId ?? '')
   const [ready, setReady] = useState(false)
-  // macOS: the tab bar reserves 78px for the native traffic lights — reclaimed
-  // in native fullscreen (this window's own), where the lights are hidden.
-  const isFullscreen = useWindowFullscreen()
   const dockStore = useMemo(() => createDockStore(), [])
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hadPanelsRef = useRef(false)
@@ -367,24 +364,30 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   return (
     <DockStoreProvider store={dockStore}>
       <div className="dock-window-root relative h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
-        {/* Make the top tab bar the window drag region. On macOS reserve 78px on
-            the left for the traffic lights (reclaimed in native fullscreen where
-            they are hidden); on Windows/Linux reserve 132px on the right for our
-            custom WindowControls overlay (below). Override inside any canvas-node
-            ([data-node-id]) so nested mini-dock tab bars don't inherit the indent
-            or become drag handles. */}
+        {/* macOS: DockWindowTitlebar (below) is the header + drag region and owns
+            the traffic-light reservation, so the tab bar sits full-width beneath
+            it with no indent or drag behavior of its own. Windows/Linux keep the
+            tab bar AS the drag region and reserve 132px on the right for the
+            custom WindowControls overlay. Override inside any canvas-node
+            ([data-node-id]) so nested mini-dock tab bars don't inherit either. */}
         <style>{`
+          ${IS_MAC ? '' : `
           .dock-window-root .dock-tab-bar {
-            ${IS_MAC ? `padding-left: ${isFullscreen ? 0 : 78}px;` : 'padding-right: 132px;'}
+            padding-right: 132px;
             -webkit-app-region: drag;
           }
           .dock-window-root .dock-tab-bar > * { -webkit-app-region: no-drag; }
+          `}
           .dock-window-root [data-node-id] .dock-tab-bar {
             padding-left: 0;
             padding-right: 0;
             -webkit-app-region: no-drag;
           }
         `}</style>
+        {/* macOS: conventional header/title bar (unlike the main window's floating
+            island) — traffic-light reservation + drag region + active panel title.
+            Collapses in native fullscreen. */}
+        <DockWindowTitlebar workspaceId={wsId} />
         {/* Frameless Windows/Linux: custom window controls pinned to the top-right,
             over the tab bar's reserved right padding. */}
         {!IS_MAC && (

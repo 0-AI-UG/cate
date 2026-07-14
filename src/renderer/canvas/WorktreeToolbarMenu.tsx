@@ -41,6 +41,9 @@ interface WorktreeToolbarMenuProps {
   canvasPanelId: string
   workspaceId: string
   rootPath: string
+  tooltipPlacement?: 'top' | 'right'
+  menuSide?: 'up' | 'right'
+  onOpenChange?: (open: boolean) => void
 }
 
 interface PopoverPos {
@@ -52,12 +55,23 @@ const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
   canvasPanelId,
   workspaceId,
   rootPath,
+  tooltipPlacement = 'top',
+  menuSide = 'up',
+  onOpenChange,
 }) => {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<PopoverPos | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
   const active = open || !!focusedWorktreeId
+
+  // Notify the parent card on real open/close transitions only (not on every
+  // render), so an open fly-out keeps the collapsing toolbar expanded.
+  const onOpenChangeRef = useRef(onOpenChange)
+  onOpenChangeRef.current = onOpenChange
+  useEffect(() => {
+    onOpenChangeRef.current?.(open)
+  }, [open])
 
   const close = useCallback(() => setOpen(false), [])
 
@@ -66,17 +80,23 @@ const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
       setOpen(false)
       return
     }
-    const toolbarEl = btnRef.current?.closest('[data-onboarding="toolbar"]') as HTMLElement | null
-    const r = (toolbarEl ?? btnRef.current)?.getBoundingClientRect()
+    // Anchor to the toolbar card: drop up from it in the horizontal bar, or fly
+    // out to its right in the compact vertical bar (growing upward either way).
+    const cardEl = btnRef.current?.closest('[data-toolbar-card]') as HTMLElement | null
+    const r = (cardEl ?? btnRef.current)?.getBoundingClientRect()
     if (r) {
-      setPos({ left: r.left, bottom: window.innerHeight - r.top + 10 })
+      setPos(
+        menuSide === 'right'
+          ? { left: r.right + 8, bottom: window.innerHeight - r.bottom }
+          : { left: r.left, bottom: window.innerHeight - r.top + 10 },
+      )
     }
     setOpen(true)
-  }, [open])
+  }, [open, menuSide])
 
   return (
     <>
-      <Tooltip label="Parallel worktrees" placement="top">
+      <Tooltip label="Parallel worktrees" placement={tooltipPlacement}>
         <button
           ref={btnRef}
           type="button"

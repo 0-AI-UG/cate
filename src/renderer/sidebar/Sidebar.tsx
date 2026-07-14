@@ -91,7 +91,14 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
 // Shared activity bar sidebar — parameterized by side
 // ---------------------------------------------------------------------------
 
-const BAR_WIDTH = 40
+/** Width of an activity-bar rail (icon strip). Shared with MainWindowShell so
+ *  it can reserve the right amount of top-left space past the macOS lights. */
+export const BAR_WIDTH = 40
+
+// dataTransfer MIME for rail-to-rail view drags. Native HTML5 DnD is used here
+// (same-window, lightweight) — deliberately separate from the panel useDragStore
+// system, which handles cross-window panel drags.
+const DRAG_MIME = 'application/x-cate-sidebar-view'
 
 interface ActivityBarSidebarProps {
   side: SidebarSide
@@ -108,10 +115,22 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const setActiveView = useUIStore((s) =>
     side === 'left' ? s.setActiveLeftSidebarView : s.setActiveRightSidebarView,
   )
-  // Right sidebar can be fully hidden (rail + content, width 0) via its top
-  // toggle; reopened from the floating top-right toggle in MainWindowShell.
+  // Either sidebar can be fully hidden (rail + content, width 0) via its top
+  // toggle; reopened from the floating edge toggle in MainWindowShell. Selected
+  // by side so the shared rail's toggle drives the correct one.
+  const leftSidebarHidden = useUIStore((s) => s.leftSidebarHidden)
   const rightSidebarHidden = useUIStore((s) => s.rightSidebarHidden)
+  const setLeftSidebarHidden = useUIStore((s) => s.setLeftSidebarHidden)
   const setRightSidebarHidden = useUIStore((s) => s.setRightSidebarHidden)
+  const sidebarHidden = side === 'left' ? leftSidebarHidden : rightSidebarHidden
+  const setSidebarHidden = side === 'left' ? setLeftSidebarHidden : setRightSidebarHidden
+
+  // Rail-to-rail view drag (native HTML5 DnD). draggingView is shared across
+  // both rails so each can act as a drop target for the other.
+  const moveSidebarView = useUIStore((s) => s.moveSidebarView)
+  const draggingView = useUIStore((s) => s.draggingView)
+  const setDraggingView = useUIStore((s) => s.setDraggingView)
+  const isDragActive = draggingView !== null
 
   // Guard: if activeView is not present on this side (e.g. layout changed), clear it
   useEffect(() => {
@@ -134,6 +153,35 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   const [isResizing, setIsResizing] = useState(false)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
+
+  // When a rail is empty it collapses to 0. During a view drag, reveal it as a
+  // drop target when the cursor enters this side's half of the window, so a user
+  // can move every view off a rail and still drop back onto it.
+  const [dragRevealed, setDragRevealed] = useState(false)
+  useEffect(() => {
+    if (!isDragActive || !isEmpty) {
+      setDragRevealed(false)
+      return
+    }
+    const onDragOver = (e: DragEvent) => {
+      const half = window.innerWidth / 2
+      setDragRevealed(side === 'left' ? e.clientX < half : e.clientX >= half)
+    }
+    window.addEventListener('dragover', onDragOver)
+    return () => window.removeEventListener('dragover', onDragOver)
+  }, [isDragActive, isEmpty, side])
+
+  // Drop indicator: the index where a drop would land among this rail's icons.
+  // Mirrored in a ref because the drop handler needs the freshest value (dragOver
+  // state updates may not have flushed, and dragLeave can clear it just before
+  // drop fires).
+  const [dropIndicator, setDropIndicatorState] = useState<number | null>(null)
+  const dropIndicatorRef = useRef<number | null>(null)
+  const setDropIndicator = useCallback((value: number | null) => {
+    dropIndicatorRef.current = value
+    setDropIndicatorState(value)
+  }, [])
+  const iconsContainerRef = useRef<HTMLDivElement | null>(null)
 
   const selectedWorkspace = useAppStore((s) => {
     const id = s.selectedWorkspaceId
@@ -178,7 +226,67 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
     else setActiveView(view)
   }, [activeView, setActiveView])
 
+  // --- Drag handlers (rail-to-rail view DnD) ---
+
+  const handleIconDragStart = (e: React.DragEvent, view: SidebarView) => {
+    e.dataTransfer.setData(DRAG_MIME, view)
+    e.dataTransfer.setData('text/plain', view)
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggingView(view)
+  }
+
+  const handleIconDragEnd = () => {
+    setDraggingView(null)
+    setDropIndicator(null)
+  }
+
+  // Index (0..views.length) where a drop at clientY would insert, from each
+  // icon's mid-height.
+  const computeDropIndex = (clientY: number): number => {
+    const container = iconsContainerRef.current
+    if (!container) return views.length
+    const buttons = Array.from(container.querySelectorAll<HTMLElement>('[data-sidebar-icon]'))
+    for (let i = 0; i < buttons.length; i++) {
+      const rect = buttons[i].getBoundingClientRect()
+      if (clientY < rect.top + rect.height / 2) return i
+    }
+    return buttons.length
+  }
+
+  const handleBarDragOver = (e: React.DragEvent) => {
+    if (!isDragActive) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    setDropIndicator(computeDropIndex(e.clientY))
+  }
+
+  const handleBarDragLeave = (e: React.DragEvent) => {
+    // Only clear when the cursor leaves the bar entirely (not on inner moves).
+    const related = e.relatedTarget as Node | null
+    if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
+      setDropIndicator(null)
+    }
+  }
+
+  const handleBarDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const view = ((e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData('text/plain')) as SidebarView) || draggingView
+    // Recompute from the cursor — the indicator ref can be cleared by a stray
+    // dragLeave immediately before drop fires.
+    const targetIndex = computeDropIndex(e.clientY)
+    setDropIndicator(null)
+    setDraggingView(null)
+    if (view) moveSidebarView(view, side, targetIndex)
+  }
+
   // --- Render ---
+
+  // Drop-indicator line shown between icons during a view drag.
+  const dropLine = (
+    <div className="w-6 h-[2px] my-0.5 bg-blue-400 rounded-full pointer-events-none" />
+  )
 
   const bar = (
     <div
@@ -189,44 +297,64 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
           ? 'color-mix(in srgb, var(--surface-0) 60%, transparent)'
           : undefined,
       }}
+      onDragOver={handleBarDragOver}
+      onDragLeave={handleBarDragLeave}
+      onDrop={handleBarDrop}
     >
       {/* Collapse toggle — its own 36px header so it centers on the same line
-          as the canvas tab bar's +/split buttons (and the left-side toggle),
-          then fully hides the right sidebar. Reopened from the floating
-          top-right toggle. */}
+          as the canvas tab bar's +/split buttons, then fully hides this
+          sidebar. Reopened from the floating edge toggle in MainWindowShell.
+          The icon points toward the window edge it collapses to. */}
       <div className="flex items-center justify-center w-full flex-shrink-0" style={{ height: 36 }}>
-        <Tooltip label="Hide sidebar" placement="left">
+        <Tooltip label="Hide sidebar" placement={side === 'left' ? 'right' : 'left'}>
           <button
             type="button"
             className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"
-            onClick={() => setRightSidebarHidden(true)}
+            onClick={() => setSidebarHidden(true)}
             aria-label="Hide sidebar"
           >
-            <SidebarSimple size={16} className="pointer-events-none" style={{ transform: 'scaleX(-1)' }} />
+            <SidebarSimple
+              size={16}
+              className="pointer-events-none"
+              style={side === 'right' ? { transform: 'scaleX(-1)' } : undefined}
+            />
           </button>
         </Tooltip>
       </div>
-      <div className="flex flex-col items-center w-full relative">
-        {views.map((view) => {
+      <div ref={iconsContainerRef} className="flex flex-col items-center w-full relative">
+        {views.map((view, index) => {
           const meta = VIEW_META[view]
           const Icon = meta.icon
           const isActive = activeView === view
+          const showBefore = isDragActive && dropIndicator === index
+          const showAfter =
+            isDragActive && index === views.length - 1 && dropIndicator === views.length
           return (
-            <div key={view} className="relative w-full flex items-center justify-center">
-              <div
-                role="button"
-                tabIndex={0}
-                className={`relative flex items-center justify-center w-8 h-8 my-1 rounded-lg transition-colors cursor-pointer ${
-                  isActive ? 'text-primary' : 'text-muted hover:text-secondary'
-                }`}
-                onClick={() => handleIconClick(view)}
-                title={isActive ? `${meta.title}. Click to collapse.` : meta.title}
-              >
-                <Icon size={16} className="pointer-events-none" />
+            <React.Fragment key={view}>
+              {showBefore && dropLine}
+              <div className="relative w-full flex items-center justify-center">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  data-sidebar-icon=""
+                  draggable
+                  onDragStart={(e) => handleIconDragStart(e, view)}
+                  onDragEnd={handleIconDragEnd}
+                  className={`relative flex items-center justify-center w-8 h-8 my-1 rounded-lg transition-colors cursor-pointer ${
+                    isActive ? 'text-primary' : 'text-muted hover:text-secondary'
+                  }`}
+                  onClick={() => handleIconClick(view)}
+                  title={isActive ? `${meta.title}. Click to collapse.` : meta.title}
+                >
+                  <Icon size={16} className="pointer-events-none" />
+                </div>
               </div>
-            </div>
+              {showAfter && dropLine}
+            </React.Fragment>
           )
         })}
+        {/* Empty-rail drop target (revealed during a drag). */}
+        {isDragActive && views.length === 0 && dropIndicator !== null && dropLine}
       </div>
       {side === 'right' && (
         <div className="mt-auto flex flex-col items-center pb-1 w-full">
@@ -301,19 +429,16 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
     </div>
   )
 
-  // Left has no activity-bar rail — just the content, opened/closed by the
-  // MacWindowChrome sidebar toggle (collapses fully to 0). Right keeps its 40px
-  // rail (it hosts the extra views + skills/layouts/settings actions).
+  // Both rails share the three-state model: fully hidden (0), rail-only
+  // (BAR_WIDTH), or opened (BAR_WIDTH + content width). An empty rail collapses
+  // to 0 unless a drag revealed it as a drop target. The right rail also hosts
+  // the skills/layouts/settings actions; the left does not.
   const sidebarWidth =
-    side === 'left'
-      ? isExpanded
-        ? width
-        : 0
-      : rightSidebarHidden || isEmpty
-        ? 0
-        : isExpanded
-          ? BAR_WIDTH + width
-          : BAR_WIDTH
+    sidebarHidden || (isEmpty && !dragRevealed)
+      ? 0
+      : isExpanded
+        ? BAR_WIDTH + width
+        : BAR_WIDTH
 
   return (
     <div
@@ -321,9 +446,14 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
       className={`flex-shrink-0 relative flex flex-row h-full select-none overflow-hidden ${
         isResizing ? '' : 'transition-[width] duration-200 ease-in-out'
       } ${
-        // Right sidebar only: hairline seam on its canvas-facing (left) edge.
-        // Omitted when collapsed to 0 width so no stray 1px line shows.
-        side === 'right' && sidebarWidth !== 0 ? 'border-l border-subtle' : ''
+        // Hairline seam on each rail's canvas-facing edge (right rail's left
+        // edge, left rail's right edge). Omitted at 0 width so no stray 1px
+        // line shows when collapsed.
+        sidebarWidth === 0
+          ? ''
+          : side === 'right'
+            ? 'border-l border-subtle'
+            : 'border-r border-subtle'
       }`}
       style={{
         width: sidebarWidth,
@@ -348,8 +478,13 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
         className="pointer-events-none absolute top-0 left-0 right-0 h-9"
         style={{ backgroundColor: side === 'right' ? 'var(--canvas-bg)' : 'var(--surface-1)' }}
       />
+      {/* Rail hugs the window edge (left rail on the left, right rail on the
+          right); content sits on the canvas-facing side of each. */}
       {side === 'left' ? (
-        content
+        <>
+          {bar}
+          {content}
+        </>
       ) : (
         <>
           {content}
