@@ -19,7 +19,8 @@ import {
 import { useUIStore } from '../stores/uiStore'
 import { IS_MAC } from '../lib/platform'
 import { useWindowFullscreen } from '../lib/useWindowFullscreen'
-import { MAC_CHROME_WIDTH, MAC_CHROME_WIDTH_FS } from './MacWindowChrome'
+import { MAC_CHROME_WIDTH, MAC_CHROME_WIDTH_FS, TRAFFIC_LIGHTS_WIDTH } from './MacWindowChrome'
+import { BAR_WIDTH } from '../sidebar/Sidebar'
 import { SidebarSimple } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
 
@@ -36,20 +37,32 @@ const EDGE_ZONE_SIZE = 60
  *  reopen toggle shown when the right sidebar is fully hidden. */
 const RIGHT_CHROME_WIDTH = 40
 
+/** Left inset for the floating left-reopen toggle when not clearing the macOS
+ *  lights (fullscreen / non-macOS) — a small edge hug. */
+const LEFT_TOGGLE_EDGE_PAD = 8
+
 export default function MainWindowShell({
   renderPanel,
   getPanelTitle,
   onClosePanel,
 }: MainWindowShellProps) {
-  // macOS: when the left sidebar is collapsed, the dock tab bar sits at the
-  // window's top-left under the traffic-light island, so reserve room for it on
-  // the top-level tab bar (not nested canvas-node bars). Cleared when the
-  // sidebar is open (it holds the space instead). In fullscreen the lights are
-  // gone, so only the toggle needs clearing.
+  // macOS: reserve room at the top-left so the leftmost dock tab bar clears the
+  // traffic-light island. How much depends on the left sidebar's state:
+  //   • fully hidden → clear the lights + the floating reopen toggle,
+  //   • rail-only    → the 40px rail already covers the left of the lights, so
+  //                    only the remainder needs clearing,
+  //   • opened       → the sidebar holds the space; no reserve.
+  // In fullscreen the lights are gone, so only the hidden state (with its
+  // floating toggle) needs a small reserve. Nested canvas-node bars are exempt.
+  const leftSidebarHidden = useUIStore((s) => s.leftSidebarHidden)
   const leftSidebarOpen = useUIStore((s) => s.activeLeftSidebarView !== null)
+  const setLeftSidebarHidden = useUIStore((s) => s.setLeftSidebarHidden)
   const isFullscreen = useWindowFullscreen()
-  const reserveTrafficLights = IS_MAC && !leftSidebarOpen
-  const chromeReserve = isFullscreen ? MAC_CHROME_WIDTH_FS : MAC_CHROME_WIDTH
+  let leftReserve = 0
+  if (IS_MAC) {
+    if (leftSidebarHidden) leftReserve = isFullscreen ? MAC_CHROME_WIDTH_FS : MAC_CHROME_WIDTH
+    else if (!leftSidebarOpen && !isFullscreen) leftReserve = Math.max(0, TRAFFIC_LIGHTS_WIDTH - BAR_WIDTH)
+  }
 
   // Right sidebar fully hidden → float a reopen toggle at the top-right, next to
   // the center tab bar's split button (mirrors the top-left sidebar toggle).
@@ -148,11 +161,11 @@ export default function MainWindowShell({
       style={workspaceAccent ? ({ ['--workspace-accent' as string]: workspaceAccent } as React.CSSProperties) : undefined}
     >
       {/* macOS: indent the top-level dock tab bar so its first tab clears the
-          traffic-light island when the left sidebar is collapsed. Nested
-          canvas-node tab bars ([data-node-id]) are exempt. */}
-      {reserveTrafficLights && (
+          traffic-light island (amount scales with the left sidebar state).
+          Nested canvas-node tab bars ([data-node-id]) are exempt. */}
+      {leftReserve > 0 && (
         <style>{`
-          .main-window-shell-root .dock-tab-bar { padding-left: ${chromeReserve}px; }
+          .main-window-shell-root .dock-tab-bar { padding-left: ${leftReserve}px; }
           .main-window-shell-root [data-node-id] .dock-tab-bar { padding-left: 0; }
         `}</style>
       )}
@@ -180,6 +193,30 @@ export default function MainWindowShell({
               className="flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-hover transition-colors"
             >
               <SidebarSimple size={16} style={{ transform: 'scaleX(-1)' }} />
+            </button>
+          </Tooltip>
+        </div>
+      )}
+      {/* Left sidebar fully hidden → float a reopen toggle at the top-left, past
+          the macOS traffic lights (mirrors the right reopen toggle). Marked
+          no-drag so it stays clickable over the window drag island. */}
+      {leftSidebarHidden && (
+        <div
+          className="absolute top-0 left-0 z-40 flex items-center select-none"
+          style={{
+            height: 36,
+            paddingLeft: IS_MAC && !isFullscreen ? TRAFFIC_LIGHTS_WIDTH : LEFT_TOGGLE_EDGE_PAD,
+            WebkitAppRegion: 'no-drag',
+          } as React.CSSProperties}
+        >
+          <Tooltip label="Show sidebar" placement="bottom">
+            <button
+              type="button"
+              aria-label="Show sidebar"
+              onClick={() => setLeftSidebarHidden(false)}
+              className="flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-hover transition-colors"
+            >
+              <SidebarSimple size={16} />
             </button>
           </Tooltip>
         </div>
