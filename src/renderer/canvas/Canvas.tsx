@@ -504,6 +504,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           { id: 'new-browser', label: 'New Browser' },
           { id: 'new-agent', label: 'New Agent' },
           { id: 'new-canvas', label: 'New Canvas' },
+          { id: 'new-native-app', label: 'New Native App' },
           { type: 'separator' as const },
         )
       }
@@ -536,6 +537,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         case 'new-browser': onCreateAtPoint?.('browser', point); break
         case 'new-agent': onCreateAtPoint?.('agent', point); break
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
+        case 'new-native-app': onCreateAtPoint?.('nativeApp', point); break
         case 'auto-layout':
           canvasApi.getState().autoLayout()
           break

@@ -7,6 +7,7 @@ import { disambiguateTitle } from '../../lib/panelTitle'
 import type { PanelState, PanelType } from '../../../shared/types'
 import { BROWSER_NEW_TAB_URL } from '../../../shared/types'
 import { resolvePanelSize } from '../../../shared/panels'
+import { nativeAppLabelFor } from '../../lib/nativeApps'
 import { useSettingsStore } from '../settingsStore'
 import { generateId } from '../canvas/helpers'
 import type { AppSet, AppGet, AppStoreActions, PanelPlacement } from './types'
@@ -41,6 +42,8 @@ type PanelSliceActions = Pick<
   | 'createAgent'
   | 'createDocument'
   | 'createExtensionPanel'
+  | 'createNativeApp'
+  | 'setPanelNativeAppBundleId'
   | 'closePanel'
   | 'updatePanelTitle'
   | 'updatePanelTitleFromAgent'
@@ -187,6 +190,17 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('extension', placement), position)
     },
 
+    createNativeApp(workspaceId, bundleId?, position?, placement?) {
+      const panel: PanelState = {
+        id: generateId(),
+        type: 'nativeApp',
+        title: bundleId ? nativeAppLabelFor(bundleId) : 'Native App',
+        isDirty: false,
+        ...(bundleId ? { nativeAppBundleId: bundleId } : {}),
+      }
+      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('nativeApp', placement), position)
+    },
+
     // --- Panel management ---
 
     closePanel(workspaceId, panelId) {
@@ -289,6 +303,17 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     updatePanelFilePath(workspaceId, panelId, filePath) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, filePath }))
+    },
+
+    // Native app panels only: persist the bundle id chosen from the panel's
+    // launcher (or a rename triggered by later re-picking an app). Renames the
+    // panel to match unless the user has already renamed it by hand.
+    setPanelNativeAppBundleId(workspaceId, panelId, bundleId) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({
+        ...panel,
+        nativeAppBundleId: bundleId,
+        title: panel.titleUserOverridden ? panel.title : nativeAppLabelFor(bundleId),
+      }))
     },
 
     setPanelDirty(workspaceId, panelId, dirty) {

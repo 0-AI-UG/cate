@@ -21,6 +21,7 @@ import {
   FileDoc,
   ChatCircle,
   PuzzlePiece,
+  AppWindow,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
@@ -43,6 +44,7 @@ const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('../../agent/renderer/AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
 const ExtensionPanel = React.lazy(() => import('./ExtensionPanel'))
+const NativeAppPanel = React.lazy(() => import('./nativeApp/NativeAppPanel'))
 
 // -----------------------------------------------------------------------------
 // Renderer definition
@@ -66,6 +68,8 @@ export interface PanelCreateArgs {
   extensionId?: string
   /** Extension only — panel id within the extension's manifest. */
   extensionPanelId?: string
+  /** Native app only — macOS bundle id to capture. */
+  bundleId?: string
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
@@ -165,6 +169,17 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
       ...baseProps(panel, ctx),
       extensionId: panel.extensionId,
       extensionPanelId: panel.extensionPanelId,
+    }),
+  },
+  nativeApp: {
+    ...PANEL_DEFINITIONS.nativeApp,
+    icon: AppWindow,
+    Component: NativeAppPanel,
+    create: ({ workspaceId, canvasPoint, placement, bundleId }) =>
+      trackCreated('nativeApp', useAppStore.getState().createNativeApp(workspaceId, bundleId, canvasPoint, placement) || null),
+    props: (panel, ctx) => ({
+      ...baseProps(panel, ctx),
+      nativeAppBundleId: panel.nativeAppBundleId,
     }),
   },
 }

@@ -146,6 +146,21 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     canLiveOnCanvas: true,
     keepMountedOffscreen: true,
   },
+  nativeApp: {
+    type: 'nativeApp',
+    label: 'Native App',
+    brandColor: '#00C7BE',
+    mutedColor: '#3a8f8a',
+    tintClass: 'text-teal-400',
+    defaultSize: { width: 800, height: 600 },
+    minimumSize: { width: 400, height: 300 },
+    ghostSvg: ghost('rgb(0,199,190)', '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'),
+    canLiveOnCanvas: true,
+    // The live capture session (cate-nativehost sidecar + virtual display) is
+    // external state that cannot be reconstructed from a remount without
+    // re-launching the target app — same reasoning as extension panels.
+    keepMountedOffscreen: true,
+  },
 }
 
 /** Lookup helper. Falls back to the editor definition (matches the previous

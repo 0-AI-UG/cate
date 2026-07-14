@@ -29,7 +29,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'extension'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'extension' | 'nativeApp'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -112,6 +112,11 @@ export interface PanelState {
    *  panels this instance renders. */
   extensionId?: string
   extensionPanelId?: string
+  /** Native app panels only: the macOS bundle id captured by the
+   *  cate-nativehost sidecar (e.g. "com.apple.Safari"). Unset until the user
+   *  picks an app from the panel's launcher. Persisted so the capture session
+   *  is re-acquired for the right app across remounts/restarts. */
+  nativeAppBundleId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -588,6 +593,7 @@ export const SHORTCUT_DEFINITIONS = {
   newEditor: { label: 'New Editor', shortcut: storedShortcut('e', { command: true, shift: true }) },
   newAgent: { label: 'New Agent', shortcut: storedShortcut('a', { command: true, shift: true }) },
   newCanvas: { label: 'New Canvas', shortcut: storedShortcut('c', { command: true, shift: true }) },
+  newNativeApp: { label: 'New Native App', shortcut: storedShortcut('g', { command: true, shift: true }) },
   newFile: { label: 'New File', shortcut: storedShortcut('n', { command: true }) },
   closePanel: { label: 'Close Panel', shortcut: storedShortcut('w', { command: true }) },
   toggleSidebar: { label: 'Toggle Sidebar', shortcut: storedShortcut('b', { command: true }) },
@@ -1651,6 +1657,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
   extension: { width: 520, height: 360 },
+  nativeApp: { width: 640, height: 440 },
 }
 
 // -----------------------------------------------------------------------------

@@ -159,6 +159,7 @@ export function buildApplicationMenu(): void {
         { ...actionMeta('newBrowser'), click: dispatch('newBrowser') },
         { ...actionMeta('newAgent'), click: dispatch('newAgent') },
         { ...actionMeta('newCanvas'), click: dispatch('newCanvas') },
+        { ...actionMeta('newNativeApp'), click: dispatch('newNativeApp') },
         { type: 'separator' },
         { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },
         { label: 'Reload Workspace from Disk', click: dispatch('reloadWorkspace') },

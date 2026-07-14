@@ -79,6 +79,10 @@ export interface AppStoreActions {
    *  which panel from the extension's manifest. `title` defaults to the panel
    *  id when omitted (a title-resolver can fill the manifest label later). */
   createExtensionPanel: (workspaceId: string, extensionId: string, extensionPanelId: string, position?: Point, placement?: PanelPlacement, title?: string) => string
+  /** Open a native-app capture panel. Without `bundleId` the panel renders its
+   *  launcher (pick-an-app screen) until one is chosen via
+   *  `setPanelNativeAppBundleId`. */
+  createNativeApp: (workspaceId: string, bundleId?: string, position?: Point, placement?: PanelPlacement) => string
 
   // Ensure the center dock zone contains a canvas panel for the given workspace.
   // Covers session-restore and new-workspace paths where the center layout may
@@ -101,6 +105,8 @@ export interface AppStoreActions {
    *  revert the panel to the shared (direct) browser session. */
   updatePanelProxy: (workspaceId: string, panelId: string, proxyUrl?: string) => void
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
+  /** Native app panels only: persist the bundle id picked from the launcher. */
+  setPanelNativeAppBundleId: (workspaceId: string, panelId: string, bundleId: string) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void

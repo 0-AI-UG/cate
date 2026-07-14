@@ -30,6 +30,7 @@ import {
   ArrowUUpRight,
   ChatCircle,
   Eye,
+  AppWindow,
 } from '@phosphor-icons/react'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { PaletteDialogShell } from './Modal'
@@ -77,6 +78,7 @@ const DeleteRuntimeIcon = () => <Trash size={ICON_SIZE} />
 const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const SkillsIcon = () => <PuzzlePiece size={ICON_SIZE} />
 const AgentIcon = () => <ChatCircle size={ICON_SIZE} />
+const NativeAppIcon = () => <AppWindow size={ICON_SIZE} />
 const ObserveIcon = () => <Eye size={ICON_SIZE} />
 const CloseIcon = () => <X size={ICON_SIZE} />
 const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
@@ -109,7 +111,7 @@ type FlatItem =
   | { kind: 'file'; file: FileResult }
 
 // Panel types worth surfacing as navigable destinations.
-const NAVIGABLE_PANEL_TYPES: PanelType[] = ['terminal', 'editor', 'browser', 'agent', 'document']
+const NAVIGABLE_PANEL_TYPES: PanelType[] = ['terminal', 'editor', 'browser', 'agent', 'document', 'nativeApp']
 
 // -----------------------------------------------------------------------------
 // Component
@@ -161,6 +163,7 @@ export const CommandPalette: React.FC = () => {
       { id: 'newBrowser', title: shortcutTitle('newBrowser'), icon: <GlobeIcon />, action: run('newBrowser') },
       { id: 'newEditor', title: shortcutTitle('newEditor'), icon: <FileTextIcon />, action: run('newEditor') },
       { id: 'newAgent', title: shortcutTitle('newAgent'), icon: <AgentIcon />, action: run('newAgent') },
+      { id: 'newNativeApp', title: shortcutTitle('newNativeApp'), icon: <NativeAppIcon />, action: run('newNativeApp') },
       {
         id: 'observeNow',
         title: 'Run Cate Agent Observer',
@@ -259,7 +262,7 @@ export const CommandPalette: React.FC = () => {
         panelId: panel.id,
         title,
         type: panel.type,
-        secondary: panel.filePath ?? browserPanelUrl(panel) ?? panel.type,
+        secondary: panel.filePath ?? browserPanelUrl(panel) ?? panel.nativeAppBundleId ?? panel.type,
       })
     }
     for (const panel of otherWindowPanels) {
@@ -580,5 +583,6 @@ function PanelIcon({ type }: { type: PanelType }) {
   if (type === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
   if (type === 'editor' || type === 'document') return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
   if (type === 'agent')    return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><ChatCircle size={ICON_SIZE} /></span>
+  if (type === 'nativeApp') return <span className={`${cls} text-teal-400`}><AppWindow size={ICON_SIZE} /></span>
   return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }

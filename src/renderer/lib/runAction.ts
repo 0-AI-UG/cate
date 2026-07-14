@@ -131,6 +131,13 @@ export async function runAction(
       if (wsId) appStore().createCanvas(wsId, undefined, placement)
       break
     }
+    case 'newNativeApp': {
+      const placement = placementForActivePanel()
+      const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
+      // No bundleId: the panel opens on its launcher (pick-an-app screen).
+      if (wsId) appStore().createNativeApp(wsId, undefined, undefined, placement)
+      break
+    }
     case 'closePanel': {
       const canvas = canvasStore()
       const focusedNodeId = canvas ? focusedNodeIdOf(canvas) : null

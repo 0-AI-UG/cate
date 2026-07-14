@@ -28,6 +28,7 @@ function prefetchPanelChunks(types: ReadonlySet<PanelType>): void {
   if (types.has('editor')) void import('../../panels/EditorPanel')
   if (types.has('browser')) void import('../../panels/BrowserPanel')
   if (types.has('canvas')) void import('../../panels/CanvasPanel')
+  if (types.has('nativeApp')) void import('../../panels/nativeApp/NativeAppPanel')
 }
 
 // -----------------------------------------------------------------------------

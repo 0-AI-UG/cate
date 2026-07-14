@@ -41,3 +41,9 @@ export interface ExtensionPanelProps extends PanelProps {
   /** Panel id WITHIN the extension's manifest (one extension can declare many). */
   extensionPanelId?: string
 }
+
+export interface NativeAppPanelProps extends PanelProps {
+  /** macOS bundle id to capture (e.g. "com.apple.Safari"). Unset until the
+   *  user picks an app from the panel's launcher. */
+  nativeAppBundleId?: string
+}
