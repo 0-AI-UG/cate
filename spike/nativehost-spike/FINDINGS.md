@@ -21,6 +21,12 @@ swift run nativehost-spike help
 Does an app rendered on a headless `CGVirtualDisplay` keep producing LIVE
 ScreenCaptureKit frames (no App-Nap/occlusion freeze)?
 
+**Note for the human running this:** Swift's interactive crash backtracer will hang
+these commands on a "Press space… 30s" prompt if the process ever crashes/traps.
+Always prefix probe runs with `SWIFT_BACKTRACE=enable=no`, e.g.
+`SWIFT_BACKTRACE=enable=no swift run nativehost-spike virtualdisplay`, so a crash
+fails fast instead of hanging your terminal for 30 seconds waiting for input.
+
 **How to reproduce:**
 ```
 swift run nativehost-spike virtualdisplay

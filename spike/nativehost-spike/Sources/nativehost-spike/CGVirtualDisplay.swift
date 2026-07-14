@@ -79,49 +79,119 @@ private func objcClass(_ name: String) -> AnyClass? {
     return cls
 }
 
-private func objcAlloc(_ cls: AnyClass) -> AnyObject? {
+/// Prints every method (name + real ObjC type encoding) the ObjC runtime knows about for
+/// `cls`, as reported by `class_copyMethodList`. This is the "last resort" diagnostic when
+/// a selector we guessed doesn't exist at all — it tells the human the *actual* selector
+/// names to try next, instead of leaving them to keep guessing blind.
+private func printAllMethods(of cls: AnyClass) {
+    var count: UInt32 = 0
+    guard let methodList = class_copyMethodList(cls, &count) else {
+        print("  [private-api] DIAGNOSTIC: class_copyMethodList returned no methods for \(NSStringFromClass(cls)).")
+        return
+    }
+    defer { free(methodList) }
+    print("  [private-api] DIAGNOSTIC: full instance method list for \(NSStringFromClass(cls)) (\(count) methods):")
+    for i in 0..<Int(count) {
+        let method = methodList[i]
+        let selName = NSStringFromSelector(method_getName(method))
+        let encoding = method_getTypeEncoding(method).map { String(cString: $0) } ?? "<none>"
+        print("    - \(selName)  [\(encoding)]")
+    }
+}
+
+//
+// Ownership note (alloc/init pair):
+//
+// `+alloc` hands back a fresh object at +1 retain count. Cocoa's `-init` family
+// *consumes* that +1 (it owns the reference it's called on) and returns its own +1
+// result — which, for the vast majority of `-init` implementations (anything that
+// doesn't swap `self` for a different/shared instance), is physically the *same*
+// object at the *same* retain count the whole time; `init` itself does not perform
+// an extra retain.
+//
+// When ARC-compiled code writes `[[Foo alloc] init]`, the compiler *knows* (by the
+// `init` selector-family convention) not to insert a matching release for the alloc
+// result, because ownership was transferred into (and is now represented solely by)
+// init's return value. We are calling both `alloc`'s and `init`'s IMPs directly via
+// raw `@convention(c)` function pointers, so none of that convention is applied
+// automatically — if we naively `takeRetainedValue()` on *both* the alloc result and
+// the init result, Swift ends up believing it owns two independent +1 references
+// backed by a single physical retain. Each falls out of scope independently and each
+// triggers a release, over-releasing the object by one and freeing it while still
+// "alive" from Swift's point of view — the observed `swift_unknownObjectRelease`
+// SIGSEGV on the *next* release of that same (now-deallocated) object.
+//
+// Fix: only ever claim ownership once. `objcAlloc` returns the raw `Unmanaged<AnyObject>`
+// without taking it; the various `objcInit*` helpers below borrow it via
+// `takeUnretainedValue()` to make the call, and only the *init* call's return value is
+// retained into Swift's ARC (`takeRetainedValue()`). If init's selector turns out to be
+// missing, we release the un-consumed alloc result ourselves so it doesn't leak.
+//
+
+private func objcAlloc(_ cls: AnyClass) -> Unmanaged<AnyObject>? {
     let sel = NSSelectorFromString("alloc")
     guard logTypeEncoding(class: cls, selector: sel, isClassMethod: true) != nil else { return nil }
     typealias Fn = @convention(c) (AnyClass, Selector) -> Unmanaged<AnyObject>?
     let imp = method_getImplementation(class_getClassMethod(cls, sel)!)
     let fn = unsafeBitCast(imp, to: Fn.self)
-    return fn(cls, sel)?.takeRetainedValue()
+    return fn(cls, sel)
 }
 
-private func objcInitPlain(_ instance: AnyObject) -> AnyObject? {
+private func objcInitPlain(_ allocResult: Unmanaged<AnyObject>) -> AnyObject? {
+    let instance = allocResult.takeUnretainedValue()
     let sel = NSSelectorFromString("init")
     let cls: AnyClass = object_getClass(instance)!
-    guard logTypeEncoding(class: cls, selector: sel, isClassMethod: false) != nil else { return nil }
+    guard logTypeEncoding(class: cls, selector: sel, isClassMethod: false) != nil else {
+        allocResult.release()
+        return nil
+    }
     typealias Fn = @convention(c) (AnyObject, Selector) -> Unmanaged<AnyObject>?
     let imp = method_getImplementation(class_getInstanceMethod(cls, sel)!)
     let fn = unsafeBitCast(imp, to: Fn.self)
     return fn(instance, sel)?.takeRetainedValue()
 }
 
-private func objcInitWithObjectArg(_ instance: AnyObject, selectorName: String, arg: AnyObject) -> AnyObject? {
+private func objcInitWithObjectArg(_ allocResult: Unmanaged<AnyObject>, selectorName: String, arg: AnyObject) -> AnyObject? {
+    let instance = allocResult.takeUnretainedValue()
     let sel = NSSelectorFromString(selectorName)
     let cls: AnyClass = object_getClass(instance)!
-    guard logTypeEncoding(class: cls, selector: sel, isClassMethod: false) != nil else { return nil }
+    guard logTypeEncoding(class: cls, selector: sel, isClassMethod: false) != nil else {
+        allocResult.release()
+        return nil
+    }
     typealias Fn = @convention(c) (AnyObject, Selector, AnyObject) -> Unmanaged<AnyObject>?
     let imp = method_getImplementation(class_getInstanceMethod(cls, sel)!)
     let fn = unsafeBitCast(imp, to: Fn.self)
     return fn(instance, sel, arg)?.takeRetainedValue()
 }
 
-private func objcInitWithWidthHeightRefresh(_ instance: AnyObject, width: UInt32, height: UInt32, refreshRate: Double) -> AnyObject? {
+private func objcInitWithWidthHeightRefresh(_ allocResult: Unmanaged<AnyObject>, width: UInt32, height: UInt32, refreshRate: Double) -> AnyObject? {
+    let instance = allocResult.takeUnretainedValue()
     let sel = NSSelectorFromString("initWithWidth:height:refreshRate:")
     let cls: AnyClass = object_getClass(instance)!
-    guard logTypeEncoding(class: cls, selector: sel, isClassMethod: false) != nil else { return nil }
+    guard logTypeEncoding(class: cls, selector: sel, isClassMethod: false) != nil else {
+        allocResult.release()
+        return nil
+    }
     typealias Fn = @convention(c) (AnyObject, Selector, UInt32, UInt32, Double) -> Unmanaged<AnyObject>?
     let imp = method_getImplementation(class_getInstanceMethod(cls, sel)!)
     let fn = unsafeBitCast(imp, to: Fn.self)
     return fn(instance, sel, width, height, refreshRate)?.takeRetainedValue()
 }
 
-private func objcApply(_ instance: AnyObject, settings: AnyObject) -> Bool? {
-    let sel = NSSelectorFromString("apply:")
+/// Applies settings via `-applySettings:` (the historical CGVirtualDisplay selector — NOT
+/// `-apply:`, which does not exist on any macOS version we've observed). Not an init-family
+/// call — `instance`/`settings` are both borrowed for the duration of the call, no ownership
+/// transfer, no `Unmanaged` involved, so no double-release risk here regardless of outcome.
+/// Returns nil (never crashes) if the selector is missing; if so, dumps the full method list
+/// of the class so the human can find the real selector name on this macOS version.
+private func objcApplySettings(_ instance: AnyObject, settings: AnyObject) -> Bool? {
+    let sel = NSSelectorFromString("applySettings:")
     let cls: AnyClass = object_getClass(instance)!
-    guard logTypeEncoding(class: cls, selector: sel, isClassMethod: false) != nil else { return nil }
+    guard logTypeEncoding(class: cls, selector: sel, isClassMethod: false) != nil else {
+        printAllMethods(of: cls)
+        return nil
+    }
     typealias Fn = @convention(c) (AnyObject, Selector, AnyObject) -> Bool
     let imp = method_getImplementation(class_getInstanceMethod(cls, sel)!)
     let fn = unsafeBitCast(imp, to: Fn.self)
@@ -226,8 +296,8 @@ func createReverseEngineeredVirtualDisplay(
     }
 
     print("[virtualdisplay] Step 5/5: applying settings + reading displayID...")
-    guard let applied = objcApply(display, settings: settings), applied else {
-        print("  [private-api] ERROR: CGVirtualDisplay.apply(_:) returned false or the selector could not be invoked.")
+    guard let applied = objcApplySettings(display, settings: settings), applied else {
+        print("  [private-api] ERROR: CGVirtualDisplay.applySettings(_:) returned false or the selector could not be invoked.")
         return nil
     }
 
