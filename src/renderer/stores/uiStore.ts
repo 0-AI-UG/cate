@@ -60,11 +60,19 @@ interface UIStoreState {
   activeLeftSidebarView: SidebarView | null
   /** Active view on the right sidebar, null = collapsed */
   activeRightSidebarView: SidebarView | null
+  /** When true the left sidebar (activity rail + content) is fully hidden
+   *  (width 0), reopened via the floating top-left toggle. Mirror of
+   *  rightSidebarHidden; distinct from activeLeftSidebarView === null, which
+   *  only collapses the content and keeps the rail visible. */
+  leftSidebarHidden: boolean
   /** When true the right sidebar (activity rail + content) is fully hidden
    *  (width 0), reopened via the floating top-right toggle. Distinct from
    *  activeRightSidebarView === null, which only collapses the content and
    *  keeps the rail visible. */
   rightSidebarHidden: boolean
+  /** View icon currently being dragged between rails, or null when idle.
+   *  Transient (not persisted); the layout itself lives in settingsStore. */
+  draggingView: SidebarView | null
   /** Worktree being hovered (chip or sidebar row) — transiently highlights all
    *  its member nodes + sludge. Null when nothing is hovered. */
   hoveredWorktreeId: string | null
@@ -87,10 +95,19 @@ interface UIStoreActions {
   setActiveTool: (tool: CanvasTool) => void
   setActiveLeftSidebarView: (view: SidebarView | null) => void
   setActiveRightSidebarView: (view: SidebarView | null) => void
+  /** Show/hide the entire left sidebar (rail + content). */
+  setLeftSidebarHidden: (hidden: boolean) => void
+  /** Flip the left sidebar between fully hidden and shown. */
+  toggleLeftSidebar: () => void
   /** Show/hide the entire right sidebar (rail + content). */
   setRightSidebarHidden: (hidden: boolean) => void
   /** Flip the right sidebar between fully hidden and shown. */
   toggleRightSidebar: () => void
+  /** Mark a view icon as being dragged (rail-to-rail DnD); null to clear. */
+  setDraggingView: (view: SidebarView | null) => void
+  /** Move a sidebar view to targetSide at targetIndex, persisting the new
+   *  layout to settings and focusing the moved view on its new side. */
+  moveSidebarView: (view: SidebarView, targetSide: SidebarSide, targetIndex: number) => void
   /** Highlight (hover) a worktree's member nodes; pass null to clear. */
   setHoveredWorktree: (id: string | null) => void
   /** Lock the focus lens onto a worktree (caller frames the camera separately). */
@@ -118,7 +135,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
   activeTool: 'select',
   activeLeftSidebarView: 'workspaces',
   activeRightSidebarView: null,
+  leftSidebarHidden: false,
   rightSidebarHidden: false,
+  draggingView: null,
   hoveredWorktreeId: null,
   focusedWorktreeId: null,
 
@@ -157,9 +176,15 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
 
   toggleSidebar() {
-    // Toggles the left sidebar between collapsed (null) and the first view on the left.
-    const { activeLeftSidebarView } = get()
-    if (activeLeftSidebarView !== null) {
+    // Cmd+B / menu / command-palette action. Across the three-state left rail:
+    //   • fully hidden → reveal and open the first left view,
+    //   • opened       → collapse to rail-only (content hidden, rail kept),
+    //   • rail-only     → open the first left view.
+    const { leftSidebarHidden, activeLeftSidebarView } = get()
+    if (leftSidebarHidden) {
+      const first = getSidebarLayout().left[0] ?? null
+      set({ leftSidebarHidden: false, activeLeftSidebarView: first })
+    } else if (activeLeftSidebarView !== null) {
       set({ activeLeftSidebarView: null })
     } else {
       const first = getSidebarLayout().left[0] ?? null
@@ -183,12 +208,59 @@ export const useUIStore = create<UIStore>((set, get) => ({
     set({ activeRightSidebarView: view })
   },
 
+  setLeftSidebarHidden(hidden) {
+    set({ leftSidebarHidden: hidden })
+  },
+
+  toggleLeftSidebar() {
+    set((s) => ({ leftSidebarHidden: !s.leftSidebarHidden }))
+  },
+
   setRightSidebarHidden(hidden) {
     set({ rightSidebarHidden: hidden })
   },
 
   toggleRightSidebar() {
     set((s) => ({ rightSidebarHidden: !s.rightSidebarHidden }))
+  },
+
+  setDraggingView(view) {
+    set({ draggingView: view })
+  },
+
+  moveSidebarView(view, targetSide, targetIndex) {
+    // Layout's single home is settingsStore; work on a copy, then persist.
+    const current = getSidebarLayout()
+    const layout: SidebarLayout = { left: current.left.slice(), right: current.right.slice() }
+
+    // Find the view's source side + index.
+    let sourceSide: SidebarSide | null = null
+    let sourceIndex = layout.left.indexOf(view)
+    if (sourceIndex >= 0) sourceSide = 'left'
+    else if ((sourceIndex = layout.right.indexOf(view)) >= 0) sourceSide = 'right'
+    if (sourceSide === null) return
+
+    // Remove from source, then compensate the target index for the removal when
+    // moving within the same rail and the source sat before the drop point.
+    layout[sourceSide].splice(sourceIndex, 1)
+    let insertAt = targetIndex
+    if (sourceSide === targetSide && sourceIndex < targetIndex) insertAt -= 1
+    insertAt = Math.max(0, Math.min(insertAt, layout[targetSide].length))
+    layout[targetSide].splice(insertAt, 0, view)
+
+    // Persist (settingsStore is the source of truth; components read via
+    // useSidebarLayout, so this drives the re-render).
+    useSettingsStore.getState().setSetting('sidebarLayout', layout)
+
+    // Keep active views coherent: if the moved view was active on its source
+    // side, clear it there; focus it on the target side so its landing shows.
+    const state = get()
+    const patch: Partial<UIStoreState> = {}
+    if (sourceSide === 'left' && state.activeLeftSidebarView === view) patch.activeLeftSidebarView = null
+    if (sourceSide === 'right' && state.activeRightSidebarView === view) patch.activeRightSidebarView = null
+    if (targetSide === 'left') patch.activeLeftSidebarView = view
+    else patch.activeRightSidebarView = view
+    set(patch)
   },
 
 
