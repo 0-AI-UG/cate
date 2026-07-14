@@ -17,7 +17,7 @@
 // exported so even hand-rolled overlays match without a component per element.
 // =============================================================================
 
-import { useEffect, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from '@phosphor-icons/react'
 import { Tooltip } from './Tooltip'
@@ -59,6 +59,30 @@ export const SEGMENT = {
     }`,
 }
 
+/** Return keyboard focus to wherever it was before this dialog opened. The
+ *  active element is captured on the first render — before the dialog's own
+ *  autoFocus moves focus — and restored on unmount, but only when focus fell
+ *  back to <body> (i.e. the dialog closed without the user deliberately focusing
+ *  something else). Without this, closing a dialog/palette leaves focus on
+ *  <body> and keyboard shortcuts stop reaching the panel until the user clicks. */
+function useRestoreFocusOnUnmount(): void {
+  const [previous] = useState<Element | null>(() =>
+    typeof document === 'undefined' ? null : document.activeElement,
+  )
+  useEffect(() => {
+    return () => {
+      const active = document.activeElement
+      if (
+        previous instanceof HTMLElement &&
+        previous.isConnected &&
+        (active === null || active === document.body)
+      ) {
+        previous.focus({ preventScroll: true })
+      }
+    }
+  }, [previous])
+}
+
 interface PaletteDialogShellProps {
   /** Dismiss when the backdrop (outside the card) is clicked. */
   onClose: () => void
@@ -87,6 +111,7 @@ export function PaletteDialogShell({
   aside,
   asideClassName,
 }: PaletteDialogShellProps) {
+  useRestoreFocusOnUnmount()
   return (
     <div className={`fixed inset-0 flex flex-row items-start justify-center gap-2 z-50 ${BACKDROP}`} onClick={onClose}>
       <div
@@ -192,6 +217,7 @@ export function Modal({
   bodyClassName,
   ...card
 }: ModalProps) {
+  useRestoreFocusOnUnmount()
   const escapeCloses = closeOnEscape ?? dismissable
   useEffect(() => {
     if (!escapeCloses) return

@@ -14,6 +14,8 @@ import remarkGfm from 'remark-gfm'
 import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
+import { focusedNodeId } from '../stores/canvas/selectionModel'
 import {
   registerEditorSave,
   unregisterEditorSave,
@@ -288,6 +290,7 @@ export default function EditorPanel({
   panelId,
   workspaceId,
   filePath,
+  nodeId,
 }: EditorPanelProps) {
   useRenderCount('EditorPanel')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -312,6 +315,26 @@ export default function EditorPanel({
       useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, next),
     [workspaceId, panelId],
   )
+
+  // When this panel becomes the focused canvas node, move keyboard focus into
+  // the editor so typing works without a second click — matching TerminalPanel
+  // and BrowserPanel. (A panel with no CanvasStoreProvider — e.g. docked in a
+  // detached window — reads as not-focused.) Retries across a few frames because
+  // the Monaco instance is created asynchronously and may not exist yet when
+  // focus first lands. Skipped in markdown-preview mode (no text surface).
+  const isFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
+  useEffect(() => {
+    if (!isFocused || markdownPreview) return
+    let raf = 0
+    let tries = 0
+    const tryFocus = (): void => {
+      const editor = editorRef.current ?? diffEditorRef.current
+      if (editor) { editor.focus(); return }
+      if (tries++ < 10) raf = requestAnimationFrame(tryFocus)
+    }
+    raf = requestAnimationFrame(tryFocus)
+    return () => cancelAnimationFrame(raf)
+  }, [isFocused, markdownPreview])
   const rootPath = ws?.rootPath
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
 
