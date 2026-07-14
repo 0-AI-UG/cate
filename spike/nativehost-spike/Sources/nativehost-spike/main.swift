@@ -69,11 +69,22 @@ func printUsage() {
           OBSERVE: does the app's window visually relocate onto the target
           display bounds?
 
+      livecheck [bundleID]
+          ONE-COMMAND Q1 self-check. In a single process: creates a headless
+          virtual display, launches [bundleID] (default com.apple.Safari),
+          AX-repositions its main window onto the display, confirms it actually
+          landed there via CGWindowListCopyWindowInfo, then runs an SCStream on
+          the virtual display for 60s tallying SCFrameStatus per frame and a
+          pixel-subsample hash — and prints an automatic GO/LIVE, NO-GO/FROZEN,
+          or INCONCLUSIVE verdict. No manual PNG diffing required.
+          OBSERVE (Q1): just read the printed VERDICT line at the end.
+
       help
           Prints this usage text.
 
     THE 5 FEASIBILITY QUESTIONS (see FINDINGS.md for the full template):
-      Q1 Liveness      — virtualdisplay + capture
+      Q1 Liveness      — livecheck (preferred, one command + automatic verdict)
+                         or virtualdisplay + capture (manual PNG diffing)
       Q2 Transport      — capture (IOSurfaceID / lookup lines)
       Q3 Input          — input
       Q4 Child windows  — childwindows
@@ -126,6 +137,10 @@ case "launch":
         exit(64)
     }
     runLaunch(bundleIDOrPath: arguments[2], displayIDArg: arguments[3])
+
+case "livecheck":
+    let bundleIDArg = arguments.count > 2 ? arguments[2] : nil
+    runLiveCheck(bundleIDArg: bundleIDArg)
 
 case "help", "-h", "--help":
     printUsage()

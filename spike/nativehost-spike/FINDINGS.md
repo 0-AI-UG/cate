@@ -27,7 +27,24 @@ Always prefix probe runs with `SWIFT_BACKTRACE=enable=no`, e.g.
 `SWIFT_BACKTRACE=enable=no swift run nativehost-spike virtualdisplay`, so a crash
 fails fast instead of hanging your terminal for 30 seconds waiting for input.
 
-**How to reproduce:**
+**How to reproduce (preferred — one command, automatic verdict):**
+```
+SWIFT_BACKTRACE=enable=no swift run nativehost-spike livecheck [bundleID]
+```
+`livecheck` does everything in a single process (so the virtual display's
+process-tied lifetime is held for the whole test): creates the virtual display,
+launches `bundleID` (default `com.apple.Safari`), AX-repositions its main window
+onto the display, confirms via `CGWindowListCopyWindowInfo` that the window
+actually landed there, then runs an `SCStream` on the virtual display for 60s
+tallying `SCFrameStatus` per frame (complete/idle/blank/suspended/started/stopped)
+plus a cheap pixel-subsample hash for a distinct-frame count. It prints a tally
+every 10s and ends with an automatic **GO/LIVE**, **NO-GO/FROZEN**, or
+**INCONCLUSIVE** verdict — no manual PNG diffing required. If step 4 (confirm
+on-display) reports NO, the verdict is INCONCLUSIVE and it says so — re-run with
+a different `bundleID`, or manually drag a window onto the virtual display bounds
+first (see the printed bounds).
+
+**Manual fallback (older, 3-process, requires PNG diffing):**
 ```
 swift run nativehost-spike virtualdisplay
 # note the printed CGDirectDisplayID, then in a second terminal:
@@ -35,7 +52,6 @@ swift run nativehost-spike launch com.apple.TextEdit <displayID>
 # in a third terminal:
 swift run nativehost-spike capture <displayID>
 ```
-
 **Expected observation:** `out/frame-*.png` files are written once per second for
 60s. Open several of them (e.g. `frame-5.png`, `frame-30.png`, `frame-55.png`) and
 compare — if the app is animating/blinking a cursor/etc., later frames should
@@ -43,7 +59,14 @@ differ from earlier ones. If frames stop changing after a few seconds even thoug
 the source app should still be updating, that's App Nap or occlusion-based frame
 throttling — the core risk this question is about.
 
-**Result:** [ human fills in ]
+**Result:** [ human fills in — run `livecheck` and paste the VERDICT line here.
+Note: an agent test run in this repo's dev environment got as far as a clean
+INCONCLUSIVE verdict (AX repositioning failed with -25200 in that sandboxed
+context, so the app never landed on the virtual display) — the capture pipeline
+itself ran end-to-end for the full 60s with real ScreenCaptureKit frames
+(total=500, complete=12, idle=488, 0 suspended), so Screen Recording + the
+SCStream plumbing are confirmed working; only the "does the app itself stay
+live" verdict still needs a human run with a window actually on the display. ]
 
 ---
 
