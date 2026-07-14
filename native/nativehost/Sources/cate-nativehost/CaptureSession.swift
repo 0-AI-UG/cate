@@ -28,7 +28,7 @@ enum CaptureSessionError: Error, CustomStringConvertible {
 
 final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     private let socket: ControlSocket
-    private let jpegQuality: CGFloat = 0.7
+    private let jpegQuality: CGFloat = 0.9
     private var stream: SCStream?
 
     // Rolling tally, reset each time it's flushed into a "status" message.
@@ -46,9 +46,29 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         self.socket = socket
     }
 
-    /// Starts SCStream capture of the SCDisplay matching `displayID`, at
-    /// `fps`, writing frames to the socket as they arrive.
-    func start(displayID: CGDirectDisplayID, width: Int, height: Int, fps: Int) async throws {
+    /// Picks the app's main window from the shareable-content window list:
+    /// a normal (layer 0), reasonably sized window owned by `pid`. Prefers
+    /// windows that land on the virtual display; among the candidates, the
+    /// largest by area (the document/content window, not a small palette).
+    private func resolveTargetWindow(pid: pid_t, displayBounds: CGRect, in content: SCShareableContent) -> SCWindow? {
+        let candidates = content.windows.filter { win in
+            win.owningApplication?.processID == pid &&
+            win.windowLayer == 0 &&
+            win.frame.width >= 50 && win.frame.height >= 50
+        }
+        let onDisplay = candidates.filter { $0.frame.intersects(displayBounds) }
+        let pool = onDisplay.isEmpty ? candidates : onDisplay
+        return pool.max(by: { ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height) })
+    }
+
+    /// Starts SCStream capture of the app window owned by `pid` on the virtual
+    /// display, at `fps`, writing JPEG frames to the socket as they arrive.
+    /// Captures ONLY the app's window (no menu bar / wallpaper / other apps)
+    /// at its native pixel size, so a Retina display yields crisp frames. If
+    /// the window can't be found, falls back to capturing the whole display
+    /// at `fallbackWidth`×`fallbackHeight` so the pipeline still produces
+    /// frames rather than going dark.
+    func start(displayID: CGDirectDisplayID, pid: pid_t, fallbackWidth: Int, fallbackHeight: Int, fps: Int) async throws {
         let content = try await SCShareableContent.current
         guard let scDisplay = content.displays.first(where: { $0.displayID == displayID }) else {
             throw CaptureSessionError.virtualDisplayNotVisibleToSCK(
@@ -56,14 +76,51 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
                 knownDisplayIDs: content.displays.map { $0.displayID }
             )
         }
+        let displayBounds = CGDisplayBounds(displayID)
 
-        let filter = SCContentFilter(display: scDisplay, excludingWindows: [])
+        // The window may not be enumerable the instant the app launches; retry
+        // briefly (placement already ran before capture start, so this usually
+        // hits on the first try).
+        var targetWindow = resolveTargetWindow(pid: pid, displayBounds: displayBounds, in: content)
+        var attempts = 0
+        while targetWindow == nil && attempts < 10 {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let fresh = try await SCShareableContent.current
+            targetWindow = resolveTargetWindow(pid: pid, displayBounds: displayBounds, in: fresh)
+            attempts += 1
+        }
+
+        let filter: SCContentFilter
+        let pxWidth: Int
+        let pxHeight: Int
+        if let window = targetWindow {
+            filter = SCContentFilter(desktopIndependentWindow: window)
+            let scale = CGFloat(filter.pointPixelScale)
+            let rect = filter.contentRect
+            pxWidth = max(2, Int((rect.width * scale).rounded()))
+            pxHeight = max(2, Int((rect.height * scale).rounded()))
+            socket.sendJSON([
+                "t": "capture", "mode": "window",
+                "windowId": Int(window.windowID),
+                "pxWidth": pxWidth, "pxHeight": pxHeight, "scale": Double(scale)
+            ])
+        } else {
+            filter = SCContentFilter(display: scDisplay, excludingWindows: [])
+            pxWidth = max(2, fallbackWidth)
+            pxHeight = max(2, fallbackHeight)
+            socket.sendJSON([
+                "t": "capture", "mode": "display-fallback",
+                "pxWidth": pxWidth, "pxHeight": pxHeight
+            ])
+        }
+
         let config = SCStreamConfiguration()
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, fps)))
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.queueDepth = 6
-        config.width = max(2, width)
-        config.height = max(2, height)
+        config.width = pxWidth
+        config.height = pxHeight
+        config.scalesToFit = false
         config.showsCursor = true
 
         let stream = SCStream(filter: filter, configuration: config, delegate: self)

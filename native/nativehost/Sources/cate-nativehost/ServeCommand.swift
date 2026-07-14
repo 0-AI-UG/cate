@@ -122,16 +122,27 @@ final class ServeRunner {
         }
         log("client connected.")
 
-        // 2. Headless virtual display.
+        // 2. Headless virtual display — Retina (2×) so the app renders crisp;
+        // fall back to a plain 1× display if HiDPI construction fails on this
+        // OS build.
         let widthMM = UInt32(max(1, Int((Double(options.width) / 96.0 * 25.4).rounded())))
         let heightMM = UInt32(max(1, Int((Double(options.height) / 96.0 * 25.4).rounded())))
-        guard let handle = createReverseEngineeredVirtualDisplay(
+        let handle = createReverseEngineeredVirtualDisplay(
             name: "Cate Native App Display",
-            widthPx: UInt32(options.width),
-            heightPx: UInt32(options.height),
+            pointsWide: UInt32(options.width),
+            pointsHigh: UInt32(options.height),
+            scale: 2,
             widthMM: widthMM,
             heightMM: heightMM
-        ) else {
+        ) ?? createReverseEngineeredVirtualDisplay(
+            name: "Cate Native App Display",
+            pointsWide: UInt32(options.width),
+            pointsHigh: UInt32(options.height),
+            scale: 1,
+            widthMM: widthMM,
+            heightMM: heightMM
+        )
+        guard let handle = handle else {
             socket.sendJSON(["t": "error", "message": "failed to create headless CGVirtualDisplay (see stderr for diagnostics)"])
             log("FATAL: createReverseEngineeredVirtualDisplay failed.")
             cleanupAndExit(1)
@@ -139,7 +150,10 @@ final class ServeRunner {
         self.displayHandle = handle
         let displayID = handle.displayID
         let bounds = CGDisplayBounds(displayID)
-        log("virtual display created: displayID=\(displayID) bounds=\(bounds)")
+        let pxWide = CGDisplayPixelsWide(displayID)
+        let pxHigh = CGDisplayPixelsHigh(displayID)
+        let scaleApprox = bounds.width > 0 ? Double(pxWide) / Double(bounds.width) : 0
+        log("virtual display created: displayID=\(displayID) bounds=\(bounds) pixels=\(pxWide)x\(pxHigh) scale≈\(scaleApprox)")
 
         // 3. Launch the target app.
         let app: NSRunningApplication
@@ -174,7 +188,7 @@ final class ServeRunner {
         var captureStartError: String?
         Task {
             do {
-                try await session.start(displayID: displayID, width: options.width, height: options.height, fps: options.fps)
+                try await session.start(displayID: displayID, pid: pid, fallbackWidth: options.width, fallbackHeight: options.height, fps: options.fps)
             } catch {
                 captureStartError = "\(error)"
             }

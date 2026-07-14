@@ -230,13 +230,25 @@ private func setPrivateProperty(_ object: NSObject, key: String, value: Any?) ->
 
 /// Best-effort construction of a headless CGVirtualDisplay. Returns nil (with rich
 /// diagnostics already printed) on any failure — never crashes on a missing selector.
+/// `pointsWide`/`pointsHigh` are the display's logical (point) size. `scale`
+/// is the backing scale factor: pass 2 for a Retina display (the app renders
+/// at 2× and text/UI is crisp), 1 for a plain display. With scale=2 the mode
+/// is expressed in points while the descriptor advertises 2× the pixels and
+/// `hiDPI` is enabled — the community-established recipe for a HiDPI
+/// CGVirtualDisplay. The caller should try scale=2 first and fall back to
+/// scale=1 if this returns nil (retina construction failing on some OS build).
 func createReverseEngineeredVirtualDisplay(
     name: String,
-    widthPx: UInt32,
-    heightPx: UInt32,
+    pointsWide: UInt32,
+    pointsHigh: UInt32,
+    scale: UInt32,
     widthMM: UInt32,
     heightMM: UInt32
 ) -> VirtualDisplayHandle? {
+    let effectiveScale = max(1, scale)
+    let pixelsWide = pointsWide * effectiveScale
+    let pixelsHigh = pointsHigh * effectiveScale
+    let hiDPI = effectiveScale > 1
 
     print("[virtualdisplay] Step 1/5: locating private classes...")
     guard let descriptorClass = objcClass("CGVirtualDisplayDescriptor"),
@@ -256,8 +268,8 @@ func createReverseEngineeredVirtualDisplay(
     }
 
     setPrivateProperty(descriptor, key: "name", value: name)
-    setPrivateProperty(descriptor, key: "maxPixelsWide", value: NSNumber(value: widthPx))
-    setPrivateProperty(descriptor, key: "maxPixelsHigh", value: NSNumber(value: heightPx))
+    setPrivateProperty(descriptor, key: "maxPixelsWide", value: NSNumber(value: pixelsWide))
+    setPrivateProperty(descriptor, key: "maxPixelsHigh", value: NSNumber(value: pixelsHigh))
     setPrivateProperty(descriptor, key: "sizeInMillimeters", value: NSValue(size: CGSize(width: CGFloat(widthMM), height: CGFloat(heightMM))))
     setPrivateProperty(descriptor, key: "productID", value: NSNumber(value: UInt32(0x1234)))
     setPrivateProperty(descriptor, key: "vendorID", value: NSNumber(value: UInt32(0x5678)))
@@ -272,7 +284,7 @@ func createReverseEngineeredVirtualDisplay(
 
     print("[virtualdisplay] Step 3/5: constructing CGVirtualDisplayMode + CGVirtualDisplaySettings...")
     guard let modeAlloc = objcAlloc(modeClass),
-          let mode = objcInitWithWidthHeightRefresh(modeAlloc, width: widthPx, height: heightPx, refreshRate: 60.0)
+          let mode = objcInitWithWidthHeightRefresh(modeAlloc, width: pointsWide, height: pointsHigh, refreshRate: 60.0)
     else {
         print("  [private-api] ERROR: failed to alloc/init CGVirtualDisplayMode via initWithWidth:height:refreshRate:.")
         return nil
@@ -284,7 +296,7 @@ func createReverseEngineeredVirtualDisplay(
         print("  [private-api] ERROR: failed to alloc/init CGVirtualDisplaySettings.")
         return nil
     }
-    setPrivateProperty(settings, key: "hiDPI", value: NSNumber(value: UInt32(0)))
+    setPrivateProperty(settings, key: "hiDPI", value: NSNumber(value: UInt32(hiDPI ? 1 : 0)))
     setPrivateProperty(settings, key: "modes", value: [mode])
 
     print("[virtualdisplay] Step 4/5: constructing CGVirtualDisplay via initWithDescriptor:...")
@@ -311,7 +323,7 @@ func createReverseEngineeredVirtualDisplay(
         descriptorObject: descriptor,
         settingsObject: settings,
         displayID: displayID,
-        widthPx: widthPx,
-        heightPx: heightPx
+        widthPx: pixelsWide,
+        heightPx: pixelsHigh
     )
 }
