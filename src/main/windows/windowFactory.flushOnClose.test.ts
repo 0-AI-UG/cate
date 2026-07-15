@@ -8,7 +8,13 @@
 // windowFactory.reveal.test.ts.
 //
 // The fake BrowserWindow mirrors Electron's documented lifecycle: close() emits
-// 'close' then 'closed'; destroy() skips 'close' but still emits 'closed'.
+// 'close' (with a preventable event) then 'closed'; destroy() skips 'close' but
+// still emits 'closed'.
+//
+// Note on the main window: its 'close' gate routes the last main window into the
+// quit sequence (app.quit()) instead of closing, so the teardown these tests
+// exercise only happens once the quit is committed — see
+// windowFactory.quitGuard.test.ts. Cases below commit it explicitly.
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -21,24 +27,24 @@ const hooks = vi.hoisted(() => {
     id: number
     destroyed: boolean
     sent: Array<{ channel: string; args: unknown[] }>
-    emit(ev: string): void
+    emit(ev: string, e?: unknown): void
     close(): void
     destroy(): void
-    webContents: { emit(ev: string): void; send(channel: string, ...args: unknown[]): void }
+    webContents: { emit(ev: string, e?: unknown): void; send(channel: string, ...args: unknown[]): void }
     [key: string]: unknown
   }
 
   function makeEmitter() {
-    const once: Record<string, Array<() => void>> = {}
-    const on: Record<string, Array<() => void>> = {}
+    const once: Record<string, Array<(e: unknown) => void>> = {}
+    const on: Record<string, Array<(e: unknown) => void>> = {}
     return {
-      once(ev: string, cb: () => void) { (once[ev] ??= []).push(cb) },
-      on(ev: string, cb: () => void) { (on[ev] ??= []).push(cb) },
-      emit(ev: string) {
+      once(ev: string, cb: (e: unknown) => void) { (once[ev] ??= []).push(cb) },
+      on(ev: string, cb: (e: unknown) => void) { (on[ev] ??= []).push(cb) },
+      emit(ev: string, e?: unknown) {
         const fired = once[ev] ?? []
         once[ev] = []
-        fired.forEach((f) => f())
-        ;(on[ev] ?? []).forEach((f) => f())
+        fired.forEach((f) => f(e))
+        ;(on[ev] ?? []).forEach((f) => f(e))
       },
     }
   }
@@ -64,9 +70,12 @@ const hooks = vi.hoisted(() => {
       isMinimized() { return false },
       isFullScreen() { return false },
       isMaximized() { return false },
-      // Electron: close() runs the 'close' gate, then tears down and emits 'closed'.
+      // Electron: close() runs the 'close' gate with a preventable event, then
+      // (if no listener prevented it) tears down and emits 'closed'.
       close() {
-        win.emit('close')
+        let prevented = false
+        win.emit('close', { preventDefault: () => { prevented = true } })
+        if (prevented) return
         win.destroyed = true
         win.emit('closed')
       },
@@ -87,6 +96,7 @@ vi.mock('electron', () => {
   const BrowserWindow = function () { return hooks.makeWin() }
   const electron = {
     BrowserWindow,
+    app: { quit: () => {} },
     nativeImage: { createFromPath: () => ({}) },
     nativeTheme: { themeSource: 'system' },
   }
@@ -117,8 +127,11 @@ vi.mock('../runtime/runtimeManager', () => ({
 vi.mock('../grantedPathStore', () => ({ listPersistentGrants: () => Promise.resolve([]) }))
 vi.mock('../menu', () => ({ rebuildApplicationMenu: () => {} }))
 vi.mock('../featureFlags', () => ({ disableRendererSandbox: () => false }))
+vi.mock('../settingsFile', () => ({ getSetting: () => false }))
+vi.mock('../ipc/shell', () => ({ getRunningTerminals: () => [] }))
 
 const { createWindow } = await import('./windowFactory')
+const { markQuitCommitted, resetQuitAttempt } = await import('../lifecycle/quitConfirm')
 const { closeWindowsForWorkspace } = await import('../windowRegistry')
 const { SESSION_FLUSH_SAVE } = await import('../../shared/ipc-channels')
 
@@ -129,9 +142,11 @@ const flushesTo = (win: FakeWin): number =>
 
 describe('createWindow close -> session flush wiring', () => {
   beforeEach(() => {
-    // Close any window a previous test left registered so the shared registry
-    // (active-main tracking, workspace maps) starts clean.
-    for (const w of [...hooks.created]) { if (!w.destroyed) w.close() }
+    resetQuitAttempt()
+    // Drop any window a previous test left registered so the shared registry
+    // (active-main tracking, workspace maps) starts clean. destroy() rather than
+    // close() — close() on a lone main window now defers to the quit sequence.
+    for (const w of [...hooks.created]) { if (!w.destroyed) w.destroy() }
     hooks.created.length = 0
   })
 
@@ -148,7 +163,9 @@ describe('createWindow close -> session flush wiring', () => {
 
   it('closing the main window itself does not take the flush path', () => {
     const main = createWindow({ type: 'main' }) as unknown as FakeWin
+    markQuitCommitted() // as before-quit does, once it has confirmed + flushed
     main.close()
+    expect(main.destroyed).toBe(true)
     expect(flushesTo(main)).toBe(0)
   })
 
@@ -175,10 +192,12 @@ describe('createWindow close -> session flush wiring', () => {
     const main = createWindow({ type: 'main' }) as unknown as FakeWin
     const dock = createWindow({ type: 'dock', workspaceId: 'ws-A' }) as unknown as FakeWin
 
-    // Real quit order: main's 'close' handler close()s the docks while main is
-    // still registered, so each dock flush targets the dying-but-live main.
-    // Pinned here: main.close() cascades into dock.close(), whose 'closed'
-    // flush is sent to main BEFORE main's own 'closed' unregisters it.
+    // Real quit order: once the quit is committed, main's 'close' handler
+    // close()s the docks while main is still registered, so each dock flush
+    // targets the dying-but-live main. Pinned here: main.close() cascades into
+    // dock.close(), whose 'closed' flush is sent to main BEFORE main's own
+    // 'closed' unregisters it.
+    markQuitCommitted()
     main.close()
     expect(dock.destroyed).toBe(true)
     expect(flushesTo(main)).toBe(1)

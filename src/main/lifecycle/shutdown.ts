@@ -1,12 +1,11 @@
-import { app, ipcMain, dialog } from 'electron'
+import { app, ipcMain } from 'electron'
 import log from '../logger'
 import { createWindow } from '../windows/windowFactory'
 import { setMainWindowReady, flushPendingOpenPaths } from './openPath'
 import { getActiveMainWindow, sendToWindow, listDockWindowIds, listWindows, windowFromEvent } from '../windowRegistry'
 import { flushDockWindowsBeforeQuit } from '../dockWindowFlush'
 import { flushAllLoggers, killAllTerminals } from '../ipc/terminal'
-import { getRunningTerminals } from '../ipc/shell'
-import { getSetting } from '../settingsFile'
+import { guardQuit, isQuitCommitted, markQuitCommitted } from './quitConfirm'
 import { saveProjectStateSync } from '../projectWorkspaceStore'
 import { flushPendingWritesSync as flushSettingsPendingWritesSync } from '../settingsFile'
 import { flushWorkspaceStateSync } from '../workspaceStateStore'
@@ -29,19 +28,21 @@ import {
 // Quit coordination — the renderer needs live PTYs to capture terminal CWD
 // and scrollback, so we defer PTY teardown until the renderer confirms the
 // session save is complete. Flow:
-//   1. before-quit: flush loggers, send SESSION_FLUSH_SAVE to renderer, defer quit
+//   1. before-quit: confirm with the user (quitConfirm), flush loggers, send
+//      SESSION_FLUSH_SAVE to the renderer, defer quit
 //   2. renderer saves session (async — needs live PTYs for CWD/scrollback)
 //   3. renderer sends SESSION_FLUSH_SAVE_DONE
-//   4. main process re-triggers app.quit()
-//   5. before-quit fires again (sessionFlushed = true, falls through)
+//   4. main process marks the quit committed and re-triggers app.quit()
+//   5. before-quit fires again (isQuitCommitted() — falls through)
 //   6. will-quit: sync fallback save, kill PTYs, _exit(0)
+//
+// EVERY quit route lands here with its windows still alive: Cmd+Q and menu-Quit
+// arrive directly, and closing the last main window is turned into an app.quit()
+// by windowFactory's 'close' gate rather than destroying itself first. That
+// ordering is what gives step 1 a window to attach the prompt to and step 2 a
+// live renderer to save from.
 // ---------------------------------------------------------------------------
 
-let sessionFlushed = false
-// Set once the user has confirmed (or there was nothing to confirm) that it's OK
-// to quit while terminals are still running a foreground process. Gates the
-// flush/quit sequence below so the confirmation only runs on the first pass.
-let quitConfirmed = false
 const FLUSH_TIMEOUT_MS = 1500
 // Bound the pre-quit dock-window sync so an unresponsive detached window can't
 // stall quit. Kept short relative to FLUSH_TIMEOUT_MS — it runs BEFORE the main
@@ -93,36 +94,6 @@ export async function runHardExit(
   deps.exit(0)
 }
 
-/** A confirmation dialog to show before quitting, or null to quit immediately.
- *  Two independent reasons gate quit: terminals still running a foreground
- *  process (data-loss warning, takes precedence so its specific message wins),
- *  and the user's "Warn before quit" preference (a plain confirmation). */
-export function decideQuitPrompt(opts: {
-  warnBeforeQuit: boolean
-  running: Array<{ processName: string | null }>
-}): { message: string; detail?: string } | null {
-  const count = opts.running.length
-  if (count > 0) {
-    const name = count === 1 ? opts.running[0].processName?.trim() : undefined
-    return {
-      message:
-        count > 1
-          ? `${count} terminals are still running. Quit anyway?`
-          : name
-            ? `“${name}” is still running. Quit anyway?`
-            : 'A terminal is still running. Quit anyway?',
-      detail:
-        count > 1
-          ? 'The processes running in these terminals will be terminated.'
-          : 'The process running in this terminal will be terminated.',
-    }
-  }
-  if (opts.warnBeforeQuit) {
-    return { message: 'Quit Cate?' }
-  }
-  return null
-}
-
 /**
  * Wire the app-lifecycle event handlers: window-all-closed, activate, and the
  * before-quit / will-quit / quit teardown sequence. Called once from the index
@@ -152,7 +123,7 @@ export function registerLifecycleHandlers(): void {
   })
 
   app.on('before-quit', (event) => {
-    if (sessionFlushed) {
+    if (isQuitCommitted()) {
       // Second pass — renderer already saved, let quit proceed to will-quit
       log.info('before-quit: session already flushed, proceeding')
       return
@@ -161,43 +132,20 @@ export function registerLifecycleHandlers(): void {
     // First gate: warn before tearing down terminals that are still running a
     // foreground process (dev server, editor, agent, …) — and, when the user has
     // enabled "Warn before quit", confirm a plain quit too. Mirrors the
-    // per-terminal close confirmation. Deferred async, so we prevent the quit and
-    // re-trigger it once the user confirms.
+    // per-terminal close confirmation. Deferred async, so the quit is prevented
+    // and re-triggered once the user confirms.
+    //
+    // Every quit route reaches this gate with its windows alive (see the flow
+    // note at the top), so the prompt always has a window to sheet onto and a
+    // Cancel always leaves a fully intact app.
     //
     // Note: updates install on a NORMAL quit (electron-updater autoInstallOnAppQuit),
     // so there's no special update case here — the user is quitting deliberately and
     // the normal terminal-confirmation applies. will-quit handles the install hook.
-    if (!quitConfirmed) {
-      const prompt = decideQuitPrompt({
-        warnBeforeQuit: getSetting('warnBeforeQuit'),
-        running: getRunningTerminals(),
-      })
-      if (prompt) {
-        event.preventDefault()
-        const focusWin =
-          getActiveMainWindow() ?? listWindows()[0]
-        void dialog
-          .showMessageBox(focusWin!, {
-            type: 'warning',
-            message: prompt.message,
-            detail: prompt.detail,
-            buttons: ['Quit', 'Cancel'],
-            defaultId: 1,
-            cancelId: 1,
-            noLink: true,
-          })
-          .then((result) => {
-            if (result.response === 0) {
-              quitConfirmed = true
-              app.quit() // re-trigger quit; this gate now passes
-            }
-            // Cancel: leave the app running.
-          })
-        return
-      }
-      // Nothing to confirm — skip the confirmation on the re-triggered pass too.
-      quitConfirmed = true
-    }
+    const gate = guardQuit(event, getActiveMainWindow() ?? listWindows()[0], () => {
+      app.quit() // re-trigger quit; the guard now passes
+    })
+    if (gate === 'deferred') return
 
     log.info('Before quit, flushing loggers and requesting session save')
     flushAllLoggers()
@@ -205,7 +153,7 @@ export function registerLifecycleHandlers(): void {
 
     if (!mainWin) {
       // No renderer to save — proceed immediately
-      sessionFlushed = true
+      markQuitCommitted()
       return
     }
 
@@ -213,7 +161,7 @@ export function registerLifecycleHandlers(): void {
     event.preventDefault()
 
     const proceed = () => {
-      sessionFlushed = true
+      markQuitCommitted()
       app.quit()
     }
 
@@ -247,7 +195,7 @@ export function registerLifecycleHandlers(): void {
     })
       .catch(() => {})
       .finally(() => {
-        if (sessionFlushed) return
+        if (isQuitCommitted()) return
         if (mainWin.isDestroyed()) {
           // Renderer gone mid-flush — nothing to save from, let quit proceed.
           proceed()
@@ -256,7 +204,7 @@ export function registerLifecycleHandlers(): void {
         sendToWindow(mainWin.id, SESSION_FLUSH_SAVE)
         // Safety timeout — don't hang forever if the renderer is unresponsive
         setTimeout(() => {
-          if (!sessionFlushed) {
+          if (!isQuitCommitted()) {
             log.warn('Session flush timed out after %dms, proceeding with quit', FLUSH_TIMEOUT_MS)
             proceed()
           }
