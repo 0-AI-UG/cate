@@ -156,6 +156,9 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [isAnimatingLayout, setIsAnimatingLayout] = useState(false)
+  // True while a file/panel drag is hovering an unfocused node, so the dim
+  // overlay lets the drop fall through to the panel content that owns it.
+  const [fileDragOver, setFileDragOver] = useState(false)
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const node = useCanvasStoreContext(
@@ -650,15 +653,11 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       <div
         data-panel-content
         onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-            const overlay = e.currentTarget.querySelector<HTMLElement>('[data-unfocused-overlay]')
-            if (overlay && !isFocused) overlay.style.pointerEvents = 'auto'
-          }
+          // Left the panel entirely (not just moving between children): the
+          // overlay goes back to blocking so an unfocused node stays click-to-focus.
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setFileDragOver(false)
         }}
-        onDrop={() => {
-          const el = nodeRef.current?.querySelector<HTMLElement>('[data-unfocused-overlay]')
-          if (el && !isFocused) el.style.pointerEvents = 'auto'
-        }}
+        onDrop={() => setFileDragOver(false)}
         style={{
           position: 'relative',
           height: rootIsTabs ? '100%' : `calc(100% - ${GRAB_STRIP_HEIGHT}px)`,
@@ -690,11 +689,13 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
             focusThisNode()
           }}
           onDragEnter={(e) => {
+            // Let a file/panel drag fall through to the panel content (which owns
+            // the drop) instead of landing on this blocking overlay.
             if (
               e.dataTransfer.types.includes('Files') ||
               e.dataTransfer.types.includes('application/cate-file')
             ) {
-              ;(e.currentTarget as HTMLElement).style.pointerEvents = 'none'
+              setFileDragOver(true)
             }
           }}
           style={{
@@ -704,7 +705,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
             right: 0,
             bottom: 0,
             backgroundColor: 'var(--node-dim-overlay)',
-            pointerEvents: isFocused || isDockDragging ? 'none' : 'auto',
+            pointerEvents: isFocused || isDockDragging || fileDragOver ? 'none' : 'auto',
             cursor: isFocused ? undefined : 'default',
             zIndex: 1,
             opacity: isFocused || isDockDragging ? 0 : 1,
