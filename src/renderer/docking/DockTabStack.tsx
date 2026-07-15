@@ -8,6 +8,7 @@ import { useDockStoreApi } from '../stores/DockStoreContext'
 import { registerDropZone, useDragStore } from '../drag'
 import type { DockTabStack as DockTabStackType, PanelState, PanelType } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
+import { PanelChromeProvider, type PanelChromeApi } from '../panels/panelChrome'
 import { Columns, Plus } from '@phosphor-icons/react'
 import { DockTabBar } from './DockTabBar'
 import { WorktreePill } from '../canvas/WorktreePill'
@@ -98,6 +99,11 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
   )
 
   const activePanel = activePanelId ? resolvePanel(activePanelId) : undefined
+
+  // Set while the visible panel's own UI covers its top-right corner (see the
+  // worktree chip below, which otherwise overlays exactly there).
+  const [cornerClaimed, setCornerClaimed] = useState(false)
+  const chromeApi = useMemo<PanelChromeApi>(() => ({ setCornerClaimed }), [])
 
   // Tab interaction actions (rename, click, context menus, add/split helpers).
   const actions = useDockTabActions({
@@ -389,7 +395,9 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                 style={isActive ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
                 aria-hidden={isActive ? undefined : true}
               >
-                {renderPanel(panelId)}
+                <PanelChromeProvider api={chromeApi} enabled={isActive}>
+                  {renderPanel(panelId)}
+                </PanelChromeProvider>
               </div>
             )
           })
@@ -401,8 +409,10 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         {/* Worktree chip — overlaid on the panel's top-right rather than crammed
             into the tab strip (where it starved the title). Collapsed to its icon
             until hovered so it covers almost no content (#370). Self-hides for
-            non-terminal/agent panels and single-worktree workspaces. */}
-        {activePanel && effectiveWorkspaceId && (
+            non-terminal/agent panels and single-worktree workspaces, and stands
+            down while the panel claims the corner for its own UI (see
+            panelChrome) rather than sitting on top of it. */}
+        {activePanel && effectiveWorkspaceId && !cornerClaimed && (
           // right-3 (12px), not right-1.5: terminal/agent panels are xterm-backed
           // and always reserve a 6px scrollbar lane (overflow-y: scroll). Offset
           // past it so the chip clears the scrollbar and leaves a 6px gap that

@@ -19,6 +19,7 @@ import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { formatTerminalPaste, type DroppedRef } from './terminalDrop'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useClaimPanelCorner } from './panelChrome'
 import { useOptionalCanvasStoreApi, useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
@@ -170,6 +171,10 @@ export default function TerminalPanel({
     setSearchQuery('')
     terminalRegistry.clearSearch(panelId)
   }, [panelId])
+
+  // The search row sits in the panel's top-right, where the host overlays the
+  // worktree chip — claim the corner so the chip stands down while it's up.
+  useClaimPanelCorner(showSearch)
 
   // -------------------------------------------------------------------------
   // Keyboard shortcut: Cmd+F / Ctrl+F opens search; Escape closes it
