@@ -13,15 +13,19 @@ import { deleteSession, listSessions, loadSessionTranscript } from './sessionFil
 import { formatLocator } from '../../main/runtime/locator'
 import type { Runtime } from '../../main/runtime/types'
 
+const norm = (value: string): string => value.replace(/\\/g, '/')
+
 function runtimeWithFiles(files: Record<string, string>, id = 'local'): Runtime {
+  const normalizedFiles = new Map(Object.entries(files).map(([filePath, content]) => [norm(filePath), content]))
   return {
     id,
     file: {
       readFile: vi.fn(async (filePath: string) => {
-        if (!(filePath in files)) throw new Error(`missing: ${filePath}`)
-        return files[filePath]
+        const content = normalizedFiles.get(norm(filePath))
+        if (content == null) throw new Error(`missing: ${filePath}`)
+        return content
       }),
-      readDir: vi.fn(async () => Object.keys(files).map((filePath) => ({
+      readDir: vi.fn(async () => [...normalizedFiles.keys()].map((filePath) => ({
         name: filePath.slice(filePath.lastIndexOf('/') + 1),
         path: filePath,
         isDirectory: false,

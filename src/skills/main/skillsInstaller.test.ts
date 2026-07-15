@@ -112,7 +112,8 @@ describe('skillsInstaller workspace manifest', () => {
 
     expect(files.get(`${WS}/.codex/skills/demo-skill/SKILL.md`)).toContain('name: demo-skill')
     expect(files.get(`${WS}/.codex/skills/demo-skill/references/guide.md`)).toBe('guide')
-    expect(manifest().skills).toEqual([
+    const skills = manifest().skills.map((skill) => ({ ...skill, path: norm(skill.path) }))
+    expect(skills).toEqual([
       expect.objectContaining({ targetId: 'claude-code', path: '/claude' }),
       expect.objectContaining({ skillId: entry().id, targetId: 'codex', path: `${WS}/.codex/skills/demo-skill/SKILL.md` }),
     ])

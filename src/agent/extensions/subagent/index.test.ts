@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./agents.ts", () => ({ discoverAgents: mocks.discoverAgents }))
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }))
+vi.mock("@earendil-works/pi-coding-agent", () => ({
+  getMarkdownTheme: vi.fn(() => ({})),
+  withFileMutationQueue: async (_filePath: string, mutate: () => Promise<unknown>) => mutate(),
+}))
 
 import registerSubagent from "./index"
 
