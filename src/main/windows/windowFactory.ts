@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeImage, nativeTheme } from 'electron'
+import { app, BrowserWindow, nativeImage, nativeTheme } from 'electron'
 import path from 'path'
 import log from '../logger'
 import { installRendererCrashRecovery } from './crashRecovery'
@@ -21,6 +21,7 @@ import {
   forwardClearScopedWriteAllowancesForWindow,
 } from '../runtime/runtimeManager'
 import { listPersistentGrants } from '../grantedPathStore'
+import { isQuitCommitted } from '../lifecycle/quitConfirm'
 import { rebuildApplicationMenu } from '../menu'
 import { disableRendererSandbox } from '../featureFlags'
 import { WINDOW_FULLSCREEN_STATE, WINDOW_MAXIMIZE_STATE, SESSION_FLUSH_SAVE } from '../../shared/ipc-channels'
@@ -178,11 +179,35 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     }
   })()
 
-  // When the main window is closed, also close any detached dock windows so
-  // the app actually quits (otherwise they keep the process alive and
-  // `window-all-closed` never fires).
   if (windowType === 'main') {
-    win.on('close', () => {
+    win.on('close', (event) => {
+      // Closing the LAST main window IS quitting the app (`window-all-closed` →
+      // app.quit()), so route it through the real quit sequence FIRST — while
+      // this window and its renderer are still alive. app.quit() runs
+      // 'before-quit', which both confirms with the user and flushes the session
+      // (the renderer needs live PTYs to read terminal CWD/scrollback).
+      //
+      // Letting the window die first broke both of those: the confirmation had
+      // no window left to attach to, so Cancel left a running app with zero
+      // windows (indistinguishable from a quit) and the next 'activate' built a
+      // fresh window (which read as a restart) — and the session flush found no
+      // renderer and silently skipped, losing terminal CWD/scrollback.
+      //
+      // Once the attempt has cleared its gates, Electron closes the windows for
+      // real and this gate stands aside. "New Window" allows several main
+      // windows; closing a non-last one quits nothing, so it isn't gated.
+      const isLastMainWindow = !listWindows().some(
+        (other) =>
+          other.id !== windowId && !other.isDestroyed() && getWindowType(other.id) === 'main',
+      )
+      if (isLastMainWindow && !isQuitCommitted()) {
+        event.preventDefault()
+        app.quit()
+        return
+      }
+
+      // Close any detached dock windows so the app actually quits (otherwise
+      // they keep the process alive and `window-all-closed` never fires).
       for (const other of listWindows()) {
         if (other.id === windowId) continue
         const t = getWindowType(other.id)

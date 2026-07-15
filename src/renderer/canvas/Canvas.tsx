@@ -322,7 +322,15 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       const dRight = rect.right - prevRect.right
       prevRect = rect
       prevWindowWidth = window.innerWidth
-      if (!windowResized && Math.abs(dLeft) < 0.5 && Math.abs(dRight) > 0.5) {
+      // The sidebar push (animated) and divider drags this compensation is for
+      // nudge the edge incrementally — a small delta per callback. Creating or
+      // removing a split instead jumps this pane by a large chunk in a single
+      // callback; that's not an external push to chase, and chasing it yanks the
+      // content sideways (the intermittent glitch seen on split). Skip such
+      // structural jumps: only compensate when the right edge moved by less than
+      // a quarter of the pane width.
+      const structuralJump = Math.abs(dRight) > rect.width * 0.25
+      if (!windowResized && !structuralJump && Math.abs(dLeft) < 0.5 && Math.abs(dRight) > 0.5) {
         const { viewportOffset } = canvasApi.getState()
         canvasApi.setState({ viewportOffset: { x: viewportOffset.x + dRight, y: viewportOffset.y } })
       }

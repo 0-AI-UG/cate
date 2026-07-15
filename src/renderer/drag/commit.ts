@@ -9,7 +9,7 @@ import type { PanelTransferSnapshot, PanelType, DockDropTarget, Point, Size } fr
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import type { DragSource, DropTarget } from './types'
-import { findZoneForStack } from '../stores/dockTreeUtils'
+import { findZoneForStack, findTabStackAcrossZones } from '../stores/dockTreeUtils'
 import { getDefaultSession } from './session'
 
 export interface CommitContext {
@@ -90,6 +90,19 @@ export async function commitDrop(
       // Stack vanished between resolve and commit — abort without touching the
       // source.
       if (!zone) return
+      // Lone tab dropped back onto its own stack (center): it's already the sole
+      // occupant, so undock+redock would prune the stack out from under the
+      // redock. Leave the layout untouched — a visual no-op. (resolve.ts still
+      // returns this target so the "+ new tab" preview shows during the drag.)
+      if (
+        target.kind === 'dock-tab' &&
+        source.origin.kind === 'dock-tab' &&
+        source.origin.dockStoreApi === target.dockStoreApi &&
+        source.origin.stackId === target.stackId
+      ) {
+        const stack = findTabStackAcrossZones(targetState.zones, target.stackId)
+        if (!stack || stack.panelIds.length <= 1) return
+      }
       const dockTarget: DockDropTarget =
         target.kind === 'dock-tab'
           ? { type: 'tab', stackId: target.stackId }
