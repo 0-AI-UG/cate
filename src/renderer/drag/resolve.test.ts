@@ -237,7 +237,7 @@ describe('resolveDrop — dock zones', () => {
     expect((t as { stackId?: string })?.stackId).toBe('small-stack')
   })
 
-  it('self-drop guard: single-tab dock-tab (center) on its own stack returns null', () => {
+  it('self-drop: single-tab dock-tab (center) on its own stack → dock-tab target (preview shows; commit no-ops)', () => {
     const dock = makeDockStoreWithStack('stack-1', ['only'])
     const ownStack: DropZoneEntry = {
       id: 'own',
@@ -252,6 +252,33 @@ describe('resolveDrop — dock zones', () => {
     }
     const t = resolveDropT(
       { client: { x: 250, y: 10 }, screen: { x: 250, y: 10 }, insideWindow: true },
+      src,
+      grab,
+      ghostSize,
+      'editor',
+      env({ zones: [ownStack] }),
+    )
+    expect((t as { kind?: string })?.kind).toBe('dock-tab')
+    expect((t as { stackId?: string })?.stackId).toBe('stack-1')
+  })
+
+  it('self-drop guard: single-tab at an EDGE of its own stack returns null (no self-split of a lone panel)', () => {
+    const dock = makeDockStoreWithStack('stack-1', ['only'])
+    const ownStack: DropZoneEntry = {
+      id: 'own',
+      zone: 'left',
+      stackId: 'stack-1',
+      dockStoreApi: dock,
+      getRect: () => rect(0, 0, 500, 400),
+    }
+    const src: DragSource = {
+      panelId: 'panel-T',
+      origin: { kind: 'dock-tab', dockStoreApi: dock, zone: 'left', stackId: 'stack-1' },
+    }
+    const t = resolveDropT(
+      // Far right of the stack → 'right' edge (a split), which is suppressed for
+      // a lone panel dropping on its own stack.
+      { client: { x: 490, y: 200 }, screen: { x: 490, y: 200 }, insideWindow: true },
       src,
       grab,
       ghostSize,
