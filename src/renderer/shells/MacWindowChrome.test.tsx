@@ -3,8 +3,9 @@
 //
 // jsdom's navigator is not "Mac", so the real IS_MAC is false and the component
 // would render null. We mock the platform module to force the macOS path, then
-// verify the draggable lights strip renders (windowed and fullscreen) and that
-// the old sidebar toggle is gone (it now lives in the rail / MainWindowShell).
+// verify the draggable lights strip renders when windowed (and collapses away in
+// fullscreen) and that the old sidebar toggle is gone (it now lives in the rail
+// / MainWindowShell).
 // =============================================================================
 
 import React from 'react'
@@ -51,10 +52,11 @@ describe('MacWindowChrome', () => {
     expect(el.querySelector('button')).toBeNull()
   })
 
-  it('shrinks to a small pad in native fullscreen (lights gone)', () => {
+  // The lights are gone in fullscreen and a fullscreen window can't be dragged,
+  // so the island has nothing left to do — and the left rail's collapse toggle
+  // moves into this corner, which a leftover drag strip would sit on top of.
+  it('renders nothing in native fullscreen (lights gone)', () => {
     vi.mocked(window.electronAPI.isMainWindowFullscreen).mockReturnValue(true)
-    const el = render()
-    const island = el.querySelector<HTMLElement>('div')!
-    expect(island.style.width).toBe('8px')
+    expect(render().querySelector('div')).toBeNull()
   })
 })
