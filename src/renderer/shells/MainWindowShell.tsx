@@ -19,7 +19,7 @@ import {
 import { useUIStore } from '../stores/uiStore'
 import { IS_MAC } from '../lib/platform'
 import { useWindowFullscreen } from '../lib/useWindowFullscreen'
-import { MAC_CHROME_WIDTH, MAC_CHROME_WIDTH_FS, TRAFFIC_LIGHTS_WIDTH } from './MacWindowChrome'
+import { MAC_CHROME_WIDTH, TRAFFIC_LIGHTS_WIDTH } from './MacWindowChrome'
 import { BAR_WIDTH } from '../sidebar/Sidebar'
 import { SidebarSimple } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
@@ -41,28 +41,37 @@ const RIGHT_CHROME_WIDTH = 40
  *  lights (fullscreen / non-macOS) — a small edge hug. */
 const LEFT_TOGGLE_EDGE_PAD = 8
 
+/** Horizontal space reserved at the tab bar's left end for the floating reopen
+ *  toggle shown when the left sidebar is fully hidden — the mirror of
+ *  RIGHT_CHROME_WIDTH, and enough for the toggle's edge pad + its 28px button.
+ *  Needed on every platform; non-fullscreen macOS reserves MAC_CHROME_WIDTH
+ *  instead, which clears the traffic lights AND the toggle. */
+const LEFT_CHROME_WIDTH = 40
+
 export default function MainWindowShell({
   renderPanel,
   getPanelTitle,
   onClosePanel,
 }: MainWindowShellProps) {
-  // macOS: reserve room at the top-left so the leftmost dock tab bar clears the
-  // traffic-light island. How much depends on the left sidebar's state:
-  //   • fully hidden → clear the lights + the floating reopen toggle,
-  //   • rail-only    → the 40px rail already covers the left of the lights, so
-  //                    only the remainder needs clearing,
+  // Reserve room at the top-left so the leftmost dock tab bar's first tab clears
+  // whatever floats over that corner. Two independent things can sit there:
+  //   • the floating reopen toggle — rendered on EVERY platform, but only while
+  //     the left sidebar is fully hidden,
+  //   • the macOS traffic-light island — only on macOS, and not in fullscreen.
+  // So by left sidebar state:
+  //   • fully hidden → clear the toggle, and the lights too where they exist,
+  //   • rail-only    → no toggle; the 40px rail already covers the left of the
+  //                    lights, so only the remainder needs clearing (mac only),
   //   • opened       → the sidebar holds the space; no reserve.
-  // In fullscreen the lights are gone, so only the hidden state (with its
-  // floating toggle) needs a small reserve. Nested canvas-node bars are exempt.
+  // Nested canvas-node bars are exempt.
   const leftSidebarHidden = useUIStore((s) => s.leftSidebarHidden)
   const leftSidebarOpen = useUIStore((s) => s.activeLeftSidebarView !== null)
   const setLeftSidebarHidden = useUIStore((s) => s.setLeftSidebarHidden)
   const isFullscreen = useWindowFullscreen()
+  const macLights = IS_MAC && !isFullscreen
   let leftReserve = 0
-  if (IS_MAC) {
-    if (leftSidebarHidden) leftReserve = isFullscreen ? MAC_CHROME_WIDTH_FS : MAC_CHROME_WIDTH
-    else if (!leftSidebarOpen && !isFullscreen) leftReserve = Math.max(0, TRAFFIC_LIGHTS_WIDTH - BAR_WIDTH)
-  }
+  if (leftSidebarHidden) leftReserve = macLights ? MAC_CHROME_WIDTH : LEFT_CHROME_WIDTH
+  else if (macLights && !leftSidebarOpen) leftReserve = Math.max(0, TRAFFIC_LIGHTS_WIDTH - BAR_WIDTH)
 
   // Right sidebar fully hidden → float a reopen toggle at the top-right, next to
   // the center tab bar's split button (mirrors the top-left sidebar toggle).
@@ -160,8 +169,9 @@ export default function MainWindowShell({
       className="main-window-shell-root flex flex-col h-full w-full min-h-0 min-w-0 relative"
       style={workspaceAccent ? ({ ['--workspace-accent' as string]: workspaceAccent } as React.CSSProperties) : undefined}
     >
-      {/* macOS: indent the top-level dock tab bar so its first tab clears the
-          traffic-light island (amount scales with the left sidebar state).
+      {/* Indent the top-level dock tab bar so its first tab clears the floating
+          reopen toggle (all platforms) and the macOS traffic-light island
+          (amount scales with the left sidebar state — see leftReserve above).
           Nested canvas-node tab bars ([data-node-id]) are exempt. */}
       {leftReserve > 0 && (
         <style>{`
@@ -205,7 +215,7 @@ export default function MainWindowShell({
           className="absolute top-0 left-0 z-40 flex items-center select-none"
           style={{
             height: 36,
-            paddingLeft: IS_MAC && !isFullscreen ? TRAFFIC_LIGHTS_WIDTH : LEFT_TOGGLE_EDGE_PAD,
+            paddingLeft: macLights ? TRAFFIC_LIGHTS_WIDTH : LEFT_TOGGLE_EDGE_PAD,
             WebkitAppRegion: 'no-drag',
           } as React.CSSProperties}
         >

@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeImage, nativeTheme } from 'electron'
+import { app, BrowserWindow, nativeImage, nativeTheme } from 'electron'
 import path from 'path'
 import log from '../logger'
 import { installRendererCrashRecovery } from './crashRecovery'
@@ -21,6 +21,7 @@ import {
   forwardClearScopedWriteAllowancesForWindow,
 } from '../runtime/runtimeManager'
 import { listPersistentGrants } from '../grantedPathStore'
+import { isQuitCommitted } from '../lifecycle/quitConfirm'
 import { rebuildApplicationMenu } from '../menu'
 import { disableRendererSandbox } from '../featureFlags'
 import { WINDOW_FULLSCREEN_STATE, WINDOW_MAXIMIZE_STATE, SESSION_FLUSH_SAVE } from '../../shared/ipc-channels'
@@ -31,6 +32,13 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   const iconPath = path.join(__dirname, '../../build/icon-1024.png')
   const windowType = params?.type ?? 'main'
   const isDock = windowType === 'dock'
+
+  // Dev preview override: CATE_FAKE_PLATFORM=win32|linux|darwin lets you see the
+  // other platforms' window chrome from a Mac. It drives the native frame/traffic
+  // lights below and is forwarded to the renderer (?platform=) so IS_MAC matches.
+  const fakePlatform = process.env.CATE_FAKE_PLATFORM
+  const effectivePlatform = fakePlatform || process.platform
+  const isMacChrome = effectivePlatform === 'darwin'
 
   // Boot snapshot — used only for the main window. Lets us restore the user's
   // last window bounds + theme-matched background color synchronously, so the
@@ -67,11 +75,11 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     // Windows/Linux: go fully frameless and draw our own window controls in the
     // renderer (WindowControls), so the chrome matches the theme. `titleBarStyle`
     // is irrelevant once `frame:false`.
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    titleBarStyle: isMacChrome ? 'hiddenInset' : 'default',
     // Center the traffic lights on the 36px chrome line shared by the dock tab
     // bar, the MacWindowChrome toggle, and the sidebar's top strip (y≈11 for a
     // 36px row). Dock and main windows use the same line so they read alike.
-    trafficLightPosition: process.platform !== 'darwin'
+    trafficLightPosition: !isMacChrome
       ? undefined
       : isDock
         ? { x: 12, y: 11 }
@@ -80,7 +88,7 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
           : undefined,
     // macOS main windows keep a (hidden-inset) native frame; dock windows — and
     // every window on Windows/Linux — are frameless.
-    frame: process.platform === 'darwin' ? !isDock : false,
+    frame: isMacChrome ? !isDock : false,
     backgroundColor: bgColor,
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
@@ -171,11 +179,35 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     }
   })()
 
-  // When the main window is closed, also close any detached dock windows so
-  // the app actually quits (otherwise they keep the process alive and
-  // `window-all-closed` never fires).
   if (windowType === 'main') {
-    win.on('close', () => {
+    win.on('close', (event) => {
+      // Closing the LAST main window IS quitting the app (`window-all-closed` →
+      // app.quit()), so route it through the real quit sequence FIRST — while
+      // this window and its renderer are still alive. app.quit() runs
+      // 'before-quit', which both confirms with the user and flushes the session
+      // (the renderer needs live PTYs to read terminal CWD/scrollback).
+      //
+      // Letting the window die first broke both of those: the confirmation had
+      // no window left to attach to, so Cancel left a running app with zero
+      // windows (indistinguishable from a quit) and the next 'activate' built a
+      // fresh window (which read as a restart) — and the session flush found no
+      // renderer and silently skipped, losing terminal CWD/scrollback.
+      //
+      // Once the attempt has cleared its gates, Electron closes the windows for
+      // real and this gate stands aside. "New Window" allows several main
+      // windows; closing a non-last one quits nothing, so it isn't gated.
+      const isLastMainWindow = !listWindows().some(
+        (other) =>
+          other.id !== windowId && !other.isDestroyed() && getWindowType(other.id) === 'main',
+      )
+      if (isLastMainWindow && !isQuitCommitted()) {
+        event.preventDefault()
+        app.quit()
+        return
+      }
+
+      // Close any detached dock windows so the app actually quits (otherwise
+      // they keep the process alive and `window-all-closed` never fires).
       for (const other of listWindows()) {
         if (other.id === windowId) continue
         const t = getWindowType(other.id)
@@ -258,6 +290,9 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   // to match the window backdrop on the first frame (main window only).
   if (windowType === 'main') queryParts.push(`bg=${encodeURIComponent(bgColor)}`)
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)
+  // Forward the dev platform override so the renderer's IS_MAC matches the
+  // native chrome chosen above.
+  if (fakePlatform) queryParts.push(`platform=${encodeURIComponent(effectivePlatform)}`)
   const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : ''
 
   // Defer loadURL until persisted grants are applied. Without this, the

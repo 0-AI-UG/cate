@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 
-// decideQuitPrompt is a pure function, but shutdown.ts imports the whole main
-// process graph (electron + native-backed siblings) at module load. Stub every
-// top-level import so the module evaluates in a plain node test env; none of
-// these are exercised by the function under test.
+// runHardExit takes its collaborators as arguments, but shutdown.ts imports the
+// whole main process graph (electron + native-backed siblings) at module load.
+// Stub every top-level import so the module evaluates in a plain node test env;
+// none of these are exercised by the function under test.
+//
+// The quit confirmation itself lives in ./quitConfirm — see quitConfirm.test.ts
+// for decideQuitPrompt and the guard's Cancel/Quit behavior.
 vi.mock('electron', () => {
   const e = { app: {}, BrowserWindow: {}, ipcMain: {}, dialog: {} }
   return { ...e, default: e }
@@ -33,51 +36,7 @@ vi.mock('../extensions/ExtensionServerManager', () => ({
 vi.mock('../extensions/storage', () => ({ flushAllPendingWritesSync: () => {} }))
 vi.mock('../auto-updater', () => ({ isUpdatePendingInstall: () => false }))
 
-const { decideQuitPrompt, runHardExit } = await import('./shutdown')
-
-describe('decideQuitPrompt', () => {
-  it('does not prompt when nothing is running and warn-before-quit is off', () => {
-    expect(decideQuitPrompt({ warnBeforeQuit: false, running: [] })).toBeNull()
-  })
-
-  it('prompts a plain quit confirmation when warn-before-quit is on', () => {
-    const prompt = decideQuitPrompt({ warnBeforeQuit: true, running: [] })
-    expect(prompt).not.toBeNull()
-    expect(prompt!.message).toBe('Quit Cate?')
-    expect(prompt!.detail).toBeUndefined()
-  })
-
-  it('warns about a single running terminal, naming the process', () => {
-    const prompt = decideQuitPrompt({
-      warnBeforeQuit: false,
-      running: [{ processName: 'npm run dev' }],
-    })
-    expect(prompt!.message).toBe('“npm run dev” is still running. Quit anyway?')
-    expect(prompt!.detail).toContain('process running in this terminal')
-  })
-
-  it('falls back to a generic message when the single process name is unknown', () => {
-    const prompt = decideQuitPrompt({ warnBeforeQuit: false, running: [{ processName: null }] })
-    expect(prompt!.message).toBe('A terminal is still running. Quit anyway?')
-  })
-
-  it('counts multiple running terminals', () => {
-    const prompt = decideQuitPrompt({
-      warnBeforeQuit: false,
-      running: [{ processName: 'vim' }, { processName: 'top' }],
-    })
-    expect(prompt!.message).toBe('2 terminals are still running. Quit anyway?')
-    expect(prompt!.detail).toContain('these terminals')
-  })
-
-  it('lets a running-terminal warning take precedence over the plain quit prompt', () => {
-    const prompt = decideQuitPrompt({
-      warnBeforeQuit: true,
-      running: [{ processName: 'vim' }],
-    })
-    expect(prompt!.message).toContain('still running')
-  })
-})
+const { runHardExit } = await import('./shutdown')
 
 describe('runHardExit', () => {
   it('prevents natural teardown, awaits dispose, then exits — in that order', async () => {

@@ -16,7 +16,6 @@
 
 import { shell, type WebContents } from 'electron'
 import type {
-  KnownProvider,
   OAuthCredentials,
   OAuthLoginCallbacks,
 } from '@earendil-works/pi-ai'
@@ -38,6 +37,21 @@ import type {
   ProviderVerification,
 } from '../../shared/types'
 import { AUTH_OAUTH_EVENT } from '../../shared/ipc-channels'
+
+// Only the fields listAvailableModels reads off a builtin model row.
+type BuiltinModelRow = {
+  provider: string
+  id: string
+  name?: string
+  contextWindow?: number
+  reasoning?: boolean
+}
+// getBuiltinModels is a generic keyed on pi's KnownProvider union. That union
+// can drift ahead of the generated model catalog (0.80.7 added providers with
+// no catalog entry), which makes the generic reject a plain KnownProvider arg.
+// The impl just indexes a static map and returns [] for unknown ids, so call it
+// through a widened, catalog-independent signature.
+const listBuiltinModels = getBuiltinModels as unknown as (provider: string) => BuiltinModelRow[]
 
 // ---------------------------------------------------------------------------
 // On-disk auth.json shape (mirrors pi's AuthStorageData)
@@ -204,8 +218,11 @@ export class AuthManager {
     for (const providerId of connected) {
       if (providerId === 'custom-openai') continue
       // getBuiltinModels indexes a static catalog and returns [] for unknown
-      // ids, so the cast is safe even for providers pi doesn't recognise.
-      for (const m of getBuiltinModels(providerId as KnownProvider)) {
+      // ids, so calling it with any provider string is safe. pi's KnownProvider
+      // union can drift ahead of that catalog (0.80.7 widened the union past the
+      // generated model keys), so call through a widened, catalog-independent
+      // signature instead of the exported generic.
+      for (const m of listBuiltinModels(providerId)) {
         const key = `${m.provider}:${m.id}`
         if (seen.has(key)) continue
         seen.add(key)
