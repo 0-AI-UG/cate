@@ -177,11 +177,16 @@ function resolveDockHit(
       source.origin.dockStoreApi === targetStore &&
       best.entry.stackId === source.origin.stackId
     if (isSelfStack) {
-      // Single-panel self-drops are trivial no-ops; multi-panel self-drops
-      // (center re-dock or edge split) produce real layout changes.
+      // A lone panel can't meaningfully split against its own stack (the other
+      // half would be empty), so suppress lone-panel self-splits. But dragging
+      // that lone tab back onto its own tab strip (center) is a valid no-op that
+      // should still preview as "+ new tab" — so let center fall through to the
+      // dock-tab target below. The commit treats it as a no-op (see commit.ts).
+      // Multi-panel self-drops (center re-dock or edge split) are real changes.
       const zones = (targetStore.getState() as { zones?: WindowDockState }).zones
       const stack = zones ? findTabStackAcrossZones(zones, best.entry.stackId) : null
-      if (!stack || stack.panelIds.length <= 1) return null
+      const lonePanel = !stack || stack.panelIds.length <= 1
+      if (lonePanel && edge !== 'center') return null
     }
     if (edge === 'center') {
       return { kind: 'dock-tab', dockStoreApi: targetStore, stackId: best.entry.stackId }

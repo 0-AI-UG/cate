@@ -473,10 +473,18 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
       }}
     >
       {/* Opaque top strip — matches the dock tab bar height (36px) so the
-          sidebar chrome lines up with the canvas tab bar. */}
+          sidebar chrome lines up with the canvas tab bar. On the macOS left
+          sidebar this band is the traffic-light inset (macChromeInset): nothing
+          interactive sits under it (the rail/content start below the inset), so
+          make it a window-drag region — otherwise the strip beside the traffic
+          lights is a dead zone you can't drag the window by. Elsewhere it stays
+          inert (pointer-events-none). */}
       <div
-        className="pointer-events-none absolute top-0 left-0 right-0 h-9"
-        style={{ backgroundColor: side === 'right' ? 'var(--canvas-bg)' : 'var(--surface-1)' }}
+        className={`absolute top-0 left-0 right-0 h-9 ${macChromeInset > 0 ? '' : 'pointer-events-none'}`}
+        style={{
+          backgroundColor: side === 'right' ? 'var(--canvas-bg)' : 'var(--surface-1)',
+          ...(macChromeInset > 0 ? { WebkitAppRegion: 'drag' } : {}),
+        } as React.CSSProperties}
       />
       {/* Rail hugs the window edge (left rail on the left, right rail on the
           right); content sits on the canvas-facing side of each. */}

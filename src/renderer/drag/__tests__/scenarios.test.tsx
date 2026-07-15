@@ -424,11 +424,12 @@ describe('drag integration — dock-drop scenarios', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // 6. Single-tab self-drop guard — dragging the only tab of a stack back onto
-  //    that same stack's center is a trivial no-op: resolveDrop returns null
-  //    (the self-stack guard in resolve.ts:158-168), so commit never runs and
-  //    the panel stays put. The drop zone sits alone (no canvas under it) so a
-  //    null dock target resolves to a null overall target.
+  // 6. Single-tab self-drop — dragging the only tab of a stack back onto that
+  //    same stack's center resolves to a dock-tab target (so the "+ new tab"
+  //    drop preview renders during the drag), but the commit treats it as a
+  //    no-op: the lone panel is already the stack's sole occupant, so undock +
+  //    redock would prune the stack out from under itself. Net effect — the
+  //    panel stays put.
   // ---------------------------------------------------------------------------
   it('6: single-tab self-drop on its own stack is a no-op', () => {
     dockScene = renderDockScene({
@@ -447,11 +448,12 @@ describe('drag integration — dock-drop scenarios', () => {
     dockScene.mouse.dragBy({ x: 20, y: 10 })
     dockScene.mouse.moveTo({ x: 120, y: 20 })
     const target = dockScene.drag().target
-    // The self-stack single-tab guard makes the resolved target null.
-    expect(target).toBeNull()
+    // The lone tab resolves to a dock-tab target so the "+ new tab" preview
+    // shows during the drag; the commit (below) treats it as a no-op.
+    expect(target).toMatchObject({ kind: 'dock-tab', stackId: 's1' })
     dockScene.mouse.up()
 
-    // Panel untouched — still the sole tab of its stack.
+    // Panel untouched — still the sole tab of its stack (commit no-op).
     expect(dockScene.stackPanelIds('s1')).toEqual(['p1'])
   })
 
