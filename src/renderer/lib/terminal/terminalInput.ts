@@ -8,9 +8,11 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { resolveTerminalKeySequence } from './terminalKeymap'
 import { openTerminalUrl } from './terminalUrlOpen'
 import { resolveTerminalLinkTarget } from './terminalLinks'
+import { IS_MAC } from '../platform'
 
-const isMacPlatform =
-  typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent)
+// Route through the shared IS_MAC so the CATE_FAKE_PLATFORM dev override also
+// flips terminal keymap/paste-chord behavior, keeping one platform source.
+const isMacPlatform = IS_MAC
 
 /**
  * True for the Windows/Linux paste chord (Ctrl+V or Ctrl+Shift+V). xterm.js has

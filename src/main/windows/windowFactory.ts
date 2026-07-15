@@ -32,6 +32,13 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   const windowType = params?.type ?? 'main'
   const isDock = windowType === 'dock'
 
+  // Dev preview override: CATE_FAKE_PLATFORM=win32|linux|darwin lets you see the
+  // other platforms' window chrome from a Mac. It drives the native frame/traffic
+  // lights below and is forwarded to the renderer (?platform=) so IS_MAC matches.
+  const fakePlatform = process.env.CATE_FAKE_PLATFORM
+  const effectivePlatform = fakePlatform || process.platform
+  const isMacChrome = effectivePlatform === 'darwin'
+
   // Boot snapshot — used only for the main window. Lets us restore the user's
   // last window bounds + theme-matched background color synchronously, so the
   // first frame matches the final UI and there's no white flash.
@@ -67,11 +74,11 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     // Windows/Linux: go fully frameless and draw our own window controls in the
     // renderer (WindowControls), so the chrome matches the theme. `titleBarStyle`
     // is irrelevant once `frame:false`.
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    titleBarStyle: isMacChrome ? 'hiddenInset' : 'default',
     // Center the traffic lights on the 36px chrome line shared by the dock tab
     // bar, the MacWindowChrome toggle, and the sidebar's top strip (y≈11 for a
     // 36px row). Dock and main windows use the same line so they read alike.
-    trafficLightPosition: process.platform !== 'darwin'
+    trafficLightPosition: !isMacChrome
       ? undefined
       : isDock
         ? { x: 12, y: 11 }
@@ -80,7 +87,7 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
           : undefined,
     // macOS main windows keep a (hidden-inset) native frame; dock windows — and
     // every window on Windows/Linux — are frameless.
-    frame: process.platform === 'darwin' ? !isDock : false,
+    frame: isMacChrome ? !isDock : false,
     backgroundColor: bgColor,
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
@@ -258,6 +265,9 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
   // to match the window backdrop on the first frame (main window only).
   if (windowType === 'main') queryParts.push(`bg=${encodeURIComponent(bgColor)}`)
   if (params?.workspaceId) queryParts.push(`workspaceId=${encodeURIComponent(params.workspaceId)}`)
+  // Forward the dev platform override so the renderer's IS_MAC matches the
+  // native chrome chosen above.
+  if (fakePlatform) queryParts.push(`platform=${encodeURIComponent(effectivePlatform)}`)
   const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : ''
 
   // Defer loadURL until persisted grants are applied. Without this, the
