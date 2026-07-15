@@ -744,26 +744,6 @@ export default function EditorPanel({
 
   return (
     <div className="w-full h-full flex flex-col">
-      {/* Markdown header strip — the Source/Preview toggle lives in its own
-          row instead of floating over the first line of content (#370). */}
-      {isMarkdown && !diffMode && (
-        <div
-          className="flex items-center justify-end shrink-0 px-1.5 py-1 border-b border-subtle"
-          style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}
-        >
-          <button
-            onClick={() => setMarkdownPreview(!markdownPreview)}
-            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-              markdownPreview
-                ? 'bg-agent/15 text-agent hover:bg-agent/25'
-                : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
-            }`}
-            title={markdownPreview ? 'Show source' : 'Preview markdown'}
-          >
-            {markdownPreview ? 'Source' : 'Preview'}
-          </button>
-        </div>
-      )}
       {conflict && !diffMode && (
         <EditorConflictBanner
           kind={conflict.kind}
@@ -793,6 +773,23 @@ export default function EditorPanel({
           </div>
         )}
         <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
+        {/* Source/Preview toggle — floats over the content's top-right instead
+            of taking a header row. right-3 (12px) clears Monaco's 8px vertical
+            scrollbar lane; z-40 keeps it above the diff (z-30) and load-error
+            (z-20) overlays, matching the reach it had as a header. */}
+        {isMarkdown && !diffMode && (
+          <button
+            onClick={() => setMarkdownPreview(!markdownPreview)}
+            className={`absolute top-1.5 right-3 z-40 px-2 py-0.5 rounded text-[11px] font-medium shadow-sm transition-colors ${
+              markdownPreview
+                ? 'bg-agent/15 text-agent hover:bg-agent/25'
+                : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
+            }`}
+            title={markdownPreview ? 'Show source' : 'Preview markdown'}
+          >
+            {markdownPreview ? 'Source' : 'Preview'}
+          </button>
+        )}
       </div>
     </div>
   )
