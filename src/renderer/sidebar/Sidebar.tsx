@@ -22,6 +22,7 @@ import pkg from '../../../package.json'
 import { Tooltip } from '../ui/Tooltip'
 import { CateLogo } from '../ui/CateLogo'
 import { IS_MAC } from '../lib/platform'
+import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 import { MAC_CHROME_HEIGHT } from '../shells/MacWindowChrome'
 
 // ---------------------------------------------------------------------------
@@ -144,10 +145,13 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
 
   // macOS: the traffic-light island (MacWindowChrome) floats over the top-left,
   // so the left sidebar insets its content below it while its surface fills to
-  // y=0 (seamless behind the lights). The toggle lives in this strip in both
-  // windowed and fullscreen (only the lights disappear in fullscreen), so the
-  // inset is unconditional on the left. Only the left side sits under it.
-  const macChromeInset = side === 'left' && IS_MAC ? MAC_CHROME_HEIGHT : 0
+  // y=0 (seamless behind the lights). Only the left side sits under it. Nothing
+  // of ours lives in that strip any more (the rail carries its own toggle in its
+  // own 36px header), so it exists purely to clear the lights — in native
+  // fullscreen the OS hides them and the inset must collapse, or the rail and
+  // content stay pushed down by an empty band.
+  const isFullscreen = useWindowFullscreen()
+  const macChromeInset = side === 'left' && IS_MAC && !isFullscreen ? MAC_CHROME_HEIGHT : 0
 
   const [width, setWidth] = useState(defaultWidth)
   const [isResizing, setIsResizing] = useState(false)
