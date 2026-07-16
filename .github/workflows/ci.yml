@@ -33,11 +33,12 @@ jobs:
       - name: Install setuptools (needed by node-gyp)
         run: pip install setuptools
 
-      - name: Delete lockfile
-        run: node -e "try{require('fs').unlinkSync('package-lock.json')}catch{}"
-
+      # npm ci honors the committed package-lock.json so PR runs are
+      # deterministic — a fresh upstream release (pi publishes often) can't
+      # break an unrelated PR. It fails loudly if package.json and the
+      # lockfile drift out of sync; regenerate with `npm install` locally.
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build
         run: npm run build
