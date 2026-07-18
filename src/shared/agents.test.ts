@@ -24,10 +24,11 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('pi', uuid)).toBe(`pi --session ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
     expect(resumeCommandForAgent('cursor', uuid)).toBe(`cursor-agent --resume ${uuid}`)
+    // agy takes the conversation id as a single --conversation=<id> token.
+    expect(resumeCommandForAgent('antigravity', uuid)).toBe(`agy --conversation=${uuid}`)
   })
 
-  it('returns null for agents without a pinned resume contract', () => {
-    expect(resumeCommandForAgent('antigravity', 'abc')).toBeNull()
+  it('returns null for unknown agent ids', () => {
     expect(resumeCommandForAgent('nonsense', 'abc')).toBeNull()
   })
 

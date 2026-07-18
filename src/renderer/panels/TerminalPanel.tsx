@@ -332,8 +332,8 @@ export default function TerminalPanel({
 
     // Agent session persisted at last save (terminal restore): resolve it to
     // the resume command the lifecycle types into the fresh shell. Read via
-    // getState — the stamp is written back on a poll cadence while an agent
-    // runs, and must not re-run this lifecycle effect.
+    // getState — the stamp is written back whenever the agent's hook events
+    // report a session change, and must not re-run this lifecycle effect.
     const agentSession = useAppStore.getState().workspaces
       .find((w) => w.id === workspaceId)?.panels[panelId]?.agentSession
     const resumeCommand = agentSession

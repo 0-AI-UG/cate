@@ -306,8 +306,8 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     setPanelAgentSession(workspaceId, panelId, session) {
       setPanelField(set, workspaceId, panelId, (panel) => {
-        // Stamps arrive on a poll cadence — skip the no-op write so panel state
-        // (and its session.json persistence) isn't churned every probe.
+        // Stamps are re-sent on repeat hook events / fallback probes — skip the
+        // no-op write so panel state (and its session.json persistence) isn't churned.
         const prev = panel.agentSession
         if (!session && !prev) return panel
         if (

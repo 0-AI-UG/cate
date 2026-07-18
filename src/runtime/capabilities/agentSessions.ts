@@ -1,6 +1,14 @@
 // =============================================================================
-// Agent session probe — resolves which stored agent-CLI session a terminal is
-// running, so session-restore can re-attach it after an app restart.
+// Agent session probe — the FALLBACK resolver for which stored agent-CLI
+// session a terminal is running. Session identity is primarily hook-pushed:
+// the agent CLIs announce their own session ids through the unified hook
+// stream (src/shared/agentHooks.ts → src/main/ipc/agentSessionStamps.ts), and
+// once hooks have spoken for a terminal this probe is never consulted for it.
+// It runs on-demand only — once on the agent-present rising edge and once in
+// the quit-time flush — to cover what hooks cannot: a codex TUI before its
+// first prompt (it pushes nothing until then; the fd scan below is the only
+// signal) and agents launched before Cate injected hooks (e.g. an app upgrade
+// mid-session).
 //
 // Every CLI persists its session lazily (no file/row until the first prompt),
 // so "newest stored session for this cwd" alone systematically returns the

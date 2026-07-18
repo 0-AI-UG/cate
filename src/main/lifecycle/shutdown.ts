@@ -49,10 +49,10 @@ const FLUSH_TIMEOUT_MS = 1500
 // stall quit. Kept short relative to FLUSH_TIMEOUT_MS — it runs BEFORE the main
 // renderer's session flush, so dock sync + session save share the quit budget.
 const DOCK_FLUSH_TIMEOUT_MS = 600
-// Bound the quit-time agent-session stamp flush (a registry read / fd scan /
-// store stat per agent terminal — normally tens of ms; the bound guards a hung
-// remote runtime). Runs before the dock flush so BOTH window kinds serialize
-// fresh stamps.
+// Bound the quit-time agent-session stamp flush (a store probe per agent
+// terminal whose session hooks have NOT identified — hook-stamped terminals
+// are already current and skipped; the bound guards a hung remote runtime).
+// Runs before the dock flush so BOTH window kinds serialize fresh stamps.
 const AGENT_STAMP_FLUSH_TIMEOUT_MS = 800
 // Bound the await of extension-server / runtime teardown on will-quit before the
 // hard reallyExit(). Long enough for a clean local SIGTERM, short enough that an
@@ -177,10 +177,11 @@ export function registerLifecycleHandlers(): void {
       proceed()
     })
 
-    // Refresh the terminal agent-session stamps FIRST (bounded): the periodic
-    // probe can be up to 20s stale, and the stamp being saved is exactly "what
-    // to resume after restart" — a /clear or session rotation moments before
-    // quit must not persist the wrong id. Each window receives its stamp
+    // Refresh the terminal agent-session stamps FIRST (bounded): the stamp
+    // being saved is exactly "what to resume after restart", and terminals
+    // whose agent predates hook injection (or a never-prompted codex TUI)
+    // have no hook-pushed stamp yet — probe those now; hook-stamped terminals
+    // are already current and skipped. Each window receives its stamp
     // updates before its flush/save request on the same ordered IPC channel,
     // so both dock windows and the main renderer serialize the fresh values.
     flushAgentSessionStamps(AGENT_STAMP_FLUSH_TIMEOUT_MS)

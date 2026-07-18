@@ -78,13 +78,11 @@ export function matchAgentProcess(procName: string): string | null {
 
 // Session-resume argv per agent, used by terminal session-restore: the command
 // typed into a restored terminal's shell to re-attach the agent to the session
-// it was running at save time. Only agents whose resume contract is pinned
-// live by agentHookContracts.itest.ts appear here — an agent absent from this
-// map (antigravity, resumable via `agy --conversation=<id>` but not yet wired
-// up) restores as a plain shell. The session id is
+// it was running at save time. Every resume contract here is pinned live by
+// agentHookContracts.itest.ts. The session id is
 // interpolated into a shell command line, so it is validated to be a bare
 // token first (uuids / opencode ses_* ids; never quoting-sensitive).
-const RESUME_ARGS: Partial<Record<AgentId, (sessionId: string) => string[]>> = {
+const RESUME_ARGS: Record<AgentId, (sessionId: string) => string[]> = {
   'claude-code': (sid) => ['--resume', sid],
   codex: (sid) => ['resume', sid],
   // pi's --resume is an interactive picker; --session takes an exact id.
@@ -92,15 +90,17 @@ const RESUME_ARGS: Partial<Record<AgentId, (sessionId: string) => string[]>> = {
   opencode: (sid) => ['--session', sid],
   // cursor chat ids are the ~/.cursor/chats/<md5(cwd)>/<chatId> dir names.
   cursor: (sid) => ['--resume', sid],
+  // agy's conversationId (hook-pushed) resumes via a single `--conversation=<id>` token.
+  antigravity: (sid) => [`--conversation=${sid}`],
 }
 
 const SAFE_SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 /** The full shell command that resumes `sessionId` for `agentId`, or null when
- *  this agent has no pinned resume contract (or the id isn't a bare token). */
+ *  the agent id is unknown (or the id isn't a bare token). */
 export function resumeCommandForAgent(agentId: string, sessionId: string): string | null {
   const def = AGENTS.find((a) => a.id === agentId)
-  const args = RESUME_ARGS[agentId as AgentId]
+  const args = RESUME_ARGS[agentId as AgentId] as ((sessionId: string) => string[]) | undefined
   if (!def || !args || !SAFE_SESSION_ID.test(sessionId)) return null
   return [def.command, ...args(sessionId)].join(' ')
 }

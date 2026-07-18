@@ -6,9 +6,10 @@
 // runtime's stream and re-emits each event to the window that owns the
 // terminal, mirroring how SHELL_AGENT_SESSION_UPDATE flows today.
 //
-// Mechanism only: the renderer just gets the subscription surface
-// (onShellAgentHookEvent). Wiring it into status/notification/session-stamp
-// features is follow-up work.
+// Each event is also fed to the session-stamp tracker (agentSessionStamps.ts),
+// the main-side consumer that keeps the terminal-restore stamp current; the
+// renderer additionally gets the raw subscription surface
+// (onShellAgentHookEvent) for its own features.
 // =============================================================================
 
 import { SHELL_AGENT_HOOK_EVENT } from '../../shared/ipc-channels'
@@ -17,6 +18,7 @@ import { runtimes } from '../runtime/runtimeManager'
 import type { RuntimeId } from '../runtime/locator'
 import { getTerminalOwner } from './terminal'
 import { sendToWindow } from '../windowRegistry'
+import { ingestAgentSessionStamp } from './agentSessionStamps'
 
 const unsubs = new Map<RuntimeId, () => void>()
 
@@ -33,6 +35,7 @@ export function registerAgentHookForwarding(): void {
         // that has no owner (already closed, or an id we never spawned) drops.
         const ownerWindowId = getTerminalOwner(event.terminalId)
         if (ownerWindowId == null) return
+        ingestAgentSessionStamp(runtime, event)
         try {
           sendToWindow(ownerWindowId, SHELL_AGENT_HOOK_EVENT, event.terminalId, event)
         } catch { /* window gone */ }

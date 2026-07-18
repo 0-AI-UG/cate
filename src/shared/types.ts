@@ -64,11 +64,11 @@ export function isMaximized(node: CanvasNodeState): boolean {
 // Panel state (renderer-side representation)
 // -----------------------------------------------------------------------------
 
-/** A coding-agent CLI session observed in a terminal, as probed from the CLI's
- *  own session store on the terminal's runtime host ("newest stored session
- *  whose cwd matches the terminal's cwd" — see
- *  src/runtime/capabilities/agentSessions.ts). Persisted on the terminal's
- *  PanelState so restore can re-attach the agent by id. */
+/** A coding-agent CLI session observed in a terminal — pushed by the agent's
+ *  own hook events (src/main/ipc/agentSessionStamps.ts), with a store probe
+ *  fallback for hook-less agents (src/runtime/capabilities/agentSessions.ts).
+ *  Persisted on the terminal's PanelState so restore can re-attach the agent
+ *  by id. */
 export interface TerminalAgentSession {
   /** AgentId from src/shared/agents.ts (e.g. 'claude-code'). */
   agentId: string
