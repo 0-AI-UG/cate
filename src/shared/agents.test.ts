@@ -15,8 +15,8 @@ describe('matchAgentDef', () => {
 })
 
 describe('resumeCommandForAgent', () => {
-  // These argv shapes are pinned live against the real CLIs by
-  // agentSessionContracts.itest.ts — keep the two in sync.
+  // These argv shapes are pinned live against the real CLIs by the resume
+  // steps of agentHookContracts.itest.ts — keep the two in sync.
   it('builds the pinned resume command per agent', () => {
     const uuid = '11111111-1111-4111-8111-111111111111'
     expect(resumeCommandForAgent('claude-code', uuid)).toBe(`claude --resume ${uuid}`)

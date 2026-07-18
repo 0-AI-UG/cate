@@ -37,7 +37,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:agent-contracts": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts agentSessionContracts",
+    "test:agent-contracts": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts agentHookContracts",
     "test:e2e": "playwright test",
     "test:e2e:ci": "E2E_SKIP_PERF=1 playwright test",
     "test:smoke:electron": "node scripts/run-electron-smoke.mjs",

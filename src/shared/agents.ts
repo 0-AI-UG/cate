@@ -78,9 +78,10 @@ export function matchAgentProcess(procName: string): string | null {
 
 // Session-resume argv per agent, used by terminal session-restore: the command
 // typed into a restored terminal's shell to re-attach the agent to the session
-// it was running at save time. Only agents whose session-store contract is
-// pinned by agentSessionContracts.itest.ts appear here — an agent absent from
-// this map (antigravity) restores as a plain shell. The session id is
+// it was running at save time. Only agents whose resume contract is pinned
+// live by agentHookContracts.itest.ts appear here — an agent absent from this
+// map (antigravity, resumable via `agy --conversation=<id>` but not yet wired
+// up) restores as a plain shell. The session id is
 // interpolated into a shell command line, so it is validated to be a bare
 // token first (uuids / opencode ses_* ids; never quoting-sensitive).
 const RESUME_ARGS: Partial<Record<AgentId, (sessionId: string) => string[]>> = {

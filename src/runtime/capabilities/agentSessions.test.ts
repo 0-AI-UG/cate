@@ -1,7 +1,7 @@
 // =============================================================================
 // Agent session probe — fixture-backed unit tests. The LIVE counterparts of
-// these fixtures (what the real CLIs write) are pinned by
-// agentSessionContracts.itest.ts; here we pin the probe's own behavior.
+// these fixtures (what the real CLIs write) are pinned by the store-join steps
+// of agentHookContracts.itest.ts; here we pin the probe's own behavior.
 //
 // The load-bearing cases are the OFFSET regressions: every CLI persists its
 // session lazily, so a freshly-launched agent must probe to its EXACT current

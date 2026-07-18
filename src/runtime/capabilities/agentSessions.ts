@@ -22,10 +22,10 @@
 //             (the workspace dir IS the cwd join), same gate; resume by the
 //             chatId dir name.
 //
-// These contracts are pinned LIVE against the installed CLIs by
-// agentSessionContracts.itest.ts — a CLI update that changes a store shape
-// fails there, loudly, pre-release, and the probe degrades to "no session"
-// (plain-shell restore) rather than resuming the wrong session.
+// These store shapes are pinned LIVE against the installed CLIs by the
+// store-join steps of agentHookContracts.itest.ts — a CLI update that changes
+// a store shape fails there, loudly, pre-release, and the probe degrades to
+// "no session" (plain-shell restore) rather than resuming the wrong session.
 //
 // Electron-free: runs inside the runtime daemon, so local and remote
 // workspaces probe identically on whichever host owns the terminal. Agents

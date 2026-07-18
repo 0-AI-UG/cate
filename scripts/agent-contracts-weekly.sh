@@ -1,9 +1,9 @@
 #!/bin/zsh
 # =============================================================================
-# Weekly live run of the agent-CLI session contracts (agentSessionContracts
-# .itest.ts) — the early-warning system for terminal session-restore: every
-# signal the restore probe reads is an undocumented CLI internal, so a CLI
-# update can silently break restore. This run catches the drift pre-release.
+# Weekly live run of the agent-CLI hook contracts (agentHookContracts
+# .itest.ts) — the early-warning system for terminal session-restore: the hook
+# surfaces and store shapes Cate reads can move under a CLI update, and this
+# run catches the drift pre-release.
 #
 # Drives the REAL locally-installed CLIs with the user's accounts (a few tiny
 # prompts — cents per run). Logs to ~/Library/Logs/cate-agent-contracts.log
