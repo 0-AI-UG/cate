@@ -64,6 +64,19 @@ export function isMaximized(node: CanvasNodeState): boolean {
 // Panel state (renderer-side representation)
 // -----------------------------------------------------------------------------
 
+/** A coding-agent CLI session observed in a terminal, as probed from the CLI's
+ *  own session store on the terminal's runtime host ("newest stored session
+ *  whose cwd matches the terminal's cwd" — see
+ *  src/runtime/capabilities/agentSessions.ts). Persisted on the terminal's
+ *  PanelState so restore can re-attach the agent by id. */
+export interface TerminalAgentSession {
+  /** AgentId from src/shared/agents.ts (e.g. 'claude-code'). */
+  agentId: string
+  sessionId: string
+  /** The cwd the session belongs to (the agent process's cwd at probe time). */
+  cwd: string
+}
+
 export interface PanelState {
   id: string
   type: PanelType
@@ -108,6 +121,11 @@ export interface PanelState {
    *  registry entry is disposed and `TerminalPanel`'s create effect re-runs at
    *  the new `cwd`. */
   ptyEpoch?: number
+  /** Terminal panels only: the coding-agent session running in this terminal
+   *  at save time (probed from the agent CLI's session store while the agent
+   *  is present, cleared when it exits). On restore, TerminalPanel types the
+   *  agent's resume command into the fresh shell and clears this. */
+  agentSession?: TerminalAgentSession
   /** Extension panels only: which installed extension + which of its declared
    *  panels this instance renders. */
   extensionId?: string
@@ -1014,6 +1032,9 @@ export interface ProjectSessionPanel {
   /** Worktree this terminal/agent panel is tagged with. Machine-local (worktree
    *  ids are runtime uuids), so it lives in session.json, not workspace.json. */
   worktreeId?: string
+  /** Agent-CLI session running in this terminal at save time. Machine-local
+   *  (session ids reference stores on this machine's runtime host). */
+  agentSession?: TerminalAgentSession
 }
 
 // -----------------------------------------------------------------------------

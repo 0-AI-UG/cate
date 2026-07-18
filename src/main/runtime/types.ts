@@ -14,7 +14,7 @@
 //     terminal.ts, which must stay in the IPC layer for cross-window transfer).
 // =============================================================================
 
-import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity } from '../../shared/types'
+import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity, TerminalAgentSession } from '../../shared/types'
 import type { RuntimeId } from './locator'
 
 // ---------------------------------------------------------------------------
@@ -91,6 +91,15 @@ export interface ProcessHost {
    * omitted. POSIX-only; returns {} where `lsof` is unavailable.
    */
   scanPorts(ids: string[]): Promise<Record<string, number[]>>
+  /**
+   * Resolve the agent-CLI session this pty is running, for terminal
+   * session-restore: detect the agent among the pty's direct children, take
+   * THAT process's cwd, and look up the newest session for it in the CLI's
+   * own session store on this host (src/runtime/capabilities/agentSessions.ts).
+   * Null when no agent is running, the agent has no session-store adapter, or
+   * no stored session matches. POSIX-only.
+   */
+  probeAgentSession(id: string): Promise<TerminalAgentSession | null>
 }
 
 // ---------------------------------------------------------------------------

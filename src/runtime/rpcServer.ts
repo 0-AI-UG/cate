@@ -168,6 +168,7 @@ export class RpcServer {
       case Methods.ptySetVisibility: return api.process.setVisibility(s(0), p[1] as boolean)
       case Methods.ptyScanActivity: return api.process.scanActivity(p[0] as string[])
       case Methods.ptyScanPorts: return api.process.scanPorts(p[0] as string[])
+      case Methods.ptyProbeAgentSession: return api.process.probeAgentSession(s(0))
 
       // --- agent (pi) --- line/exit stream back keyed by the agent id ---
       case Methods.agentEnsurePi: return api.agent.ensurePi()

@@ -13,9 +13,10 @@ import type { IPty } from 'node-pty'
 import os from 'os'
 import { execFile } from 'child_process'
 import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/runtime/types'
-import type { TerminalActivity } from '../../shared/types'
-import { matchAgentProcess } from '../../shared/agents'
+import type { TerminalActivity, TerminalAgentSession } from '../../shared/types'
+import { matchAgentDef, matchAgentProcess } from '../../shared/agents'
 import { catePathEnv } from '../cateCli'
+import { probeSessionForAgent, startTimeForPid } from './agentSessions'
 import {
   type ProcTree,
   snapshotProcessTreeProc,
@@ -70,6 +71,20 @@ function snapshotProcessTreePs(): Promise<ProcTree> {
 /** Process-table snapshot: /proc on Linux (no fork — #246), `ps` elsewhere. */
 function snapshotProcessTree(): Promise<ProcTree> {
   return isLinux ? snapshotProcessTreeProc() : snapshotProcessTreePs()
+}
+
+/** A process's cwd. Linux: readlink /proc/<pid>/cwd (no fork — #246). macOS:
+ *  lsof. win32: null. */
+function cwdForPid(pid: number): Promise<string | null> {
+  if (process.platform === 'win32') return Promise.resolve(null)
+  if (isLinux) return getCwdProc(pid)
+  return new Promise((resolve) => {
+    execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pid}`, '-Fn'], { encoding: 'utf-8', timeout: 2000 }, (err, stdout) => {
+      if (err || !stdout) { return resolve(null) }
+      const nameLine = stdout.split('\n').find((l) => l.startsWith('n'))
+      resolve(nameLine ? nameLine.slice(1) : null)
+    })
+  })
 }
 
 /** All descendant pids of `pid` (BFS over the snapshot), excluding `pid`. */
@@ -289,16 +304,8 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
 
     async getCwd(id: string): Promise<string | null> {
       const pty = ptys.get(id)
-      if (!pty || process.platform === 'win32') return null
-      // Linux: readlink /proc/<pid>/cwd (no fork — #246). macOS: lsof.
-      if (isLinux) return getCwdProc(pty.pid)
-      return new Promise((resolve) => {
-        execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pty.pid}`, '-Fn'], { encoding: 'utf-8', timeout: 2000 }, (err, stdout) => {
-          if (err || !stdout) { return resolve(null) }
-          const nameLine = stdout.split('\n').find((l) => l.startsWith('n'))
-          resolve(nameLine ? nameLine.slice(1) : null)
-        })
-      })
+      if (!pty) return null
+      return cwdForPid(pty.pid)
     },
 
     setVisibility(id: string, visible: boolean): void {
@@ -323,6 +330,37 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       const out: Record<string, PtyActivity> = {}
       for (const { id, pid } of owned) out[id] = activityForPid(pid, tree)
       return out
+    },
+
+    async probeAgentSession(id: string): Promise<TerminalAgentSession | null> {
+      const pty = ptys.get(id)
+      if (!pty || process.platform === 'win32') return null
+      // Same direct-children detection as activityForPid, but resolving the
+      // AgentDef (its id keys the session-store adapter).
+      const tree = await snapshotProcessTree()
+      let agentPid: number | null = null
+      let agentId: string | null = null
+      for (const childPid of tree.childrenByPid.get(pty.pid) ?? []) {
+        const name = tree.nameByPid.get(childPid)
+        const def = name ? matchAgentDef(name) : null
+        if (def) {
+          agentPid = childPid
+          agentId = def.id
+          break
+        }
+      }
+      if (agentPid == null || agentId == null) return null
+      // The AGENT process's cwd is the session join key (the CLIs record the
+      // cwd they were launched in); fall back to the shell's cwd — while the
+      // agent runs in the foreground the two can only differ for a subshell
+      // launch like `(cd sub && claude)`. Its start time gates the store scan:
+      // sessions are persisted lazily, so without the gate a fresh agent would
+      // probe to the PREVIOUS session in the same cwd.
+      const [agentCwd, agentStartMs] = await Promise.all([cwdForPid(agentPid), startTimeForPid(agentPid)])
+      const cwd = agentCwd ?? (await cwdForPid(pty.pid))
+      if (!cwd) return null
+      const sessionId = await probeSessionForAgent({ agentId, agentPid, cwd, agentStartMs })
+      return sessionId ? { agentId, sessionId, cwd } : null
     },
 
     async scanPorts(ids: string[]): Promise<Record<string, number[]>> {

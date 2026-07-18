@@ -89,12 +89,13 @@ export function buildSessionFile(
   const panels: Record<string, ProjectSessionPanel> = {}
   for (const p of Object.values(snapshot.panels ?? {})) {
     const workingDirectory = snapshot.terminalCwds?.[p.id]
-    if (!p.worktreeId && !workingDirectory && !p.unsavedContent) continue
+    if (!p.worktreeId && !workingDirectory && !p.unsavedContent && !p.agentSession) continue
     panels[p.id] = {
       panelId: p.id,
       workingDirectory,
       unsavedContent: p.unsavedContent,
       worktreeId: p.worktreeId,
+      agentSession: p.agentSession,
     }
   }
 
@@ -139,6 +140,9 @@ export function projectFilesToSnapshot(
         // Re-attach the machine-local facts kept out of the committed file.
         worktreeId: sp?.worktreeId,
         unsavedContent: sp?.unsavedContent,
+        // The agent session to resume in this terminal — TerminalPanel types
+        // the resume command into the fresh shell and clears the field.
+        agentSession: sp?.agentSession,
         // Restore the per-panel cwd (worktree path / dropped folder) so the
         // terminal respawns there. TerminalPanel reads panel.cwd directly. The
         // terminalCwds map below feeds the separate scrollback-restore path.

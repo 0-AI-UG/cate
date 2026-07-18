@@ -53,6 +53,7 @@ export class DeferredRuntime implements Runtime {
       setVisibility: (id, visible) => { void ready_.then((c) => c.process.setVisibility(id, visible)).catch(() => {}) },
       scanActivity: (ids) => d((c) => c.process.scanActivity(ids)),
       scanPorts: (ids) => d((c) => c.process.scanPorts(ids)),
+      probeAgentSession: (id) => d((c) => c.process.probeAgentSession(id)),
     }
 
     this.agent = {

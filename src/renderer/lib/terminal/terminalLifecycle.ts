@@ -48,6 +48,11 @@ interface CreateOpts {
   workspaceId: string
   cwd?: string
   initialInput?: string
+  /** Terminal session-restore: a full agent resume command (e.g.
+   *  `claude --resume <id>`) typed into the fresh shell right after spawn, via
+   *  the real PTY input path. One-shot — the persisted stamp it came from is
+   *  cleared as soon as it is written. */
+  resumeCommand?: string
 }
 
 // A freshly-spawned shell that exits cleanly (code 0) within this window WITHOUT
@@ -370,6 +375,18 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     //     fragile (slow systems) and unnecessary.
     if (opts.initialInput) {
       terminal.write(opts.initialInput)
+    }
+
+    // 11b. Resume a persisted agent session: type the resume command into the
+    //      PTY (kernel type-ahead — the shell reads it at its first prompt and
+    //      echoes it like user input). Clear the stamp immediately: if the
+    //      resume succeeds the process monitor re-probes and re-stamps; if the
+    //      id is stale the CLI errors visibly and the next restore is a plain
+    //      shell. Only fresh spawns reach this line, so a remount that reuses
+    //      a live registry entry never re-injects.
+    if (opts.resumeCommand) {
+      void electronAPI.terminalWrite(ptyId, opts.resumeCommand + '\r')
+      useAppStore.getState().setPanelAgentSession(opts.workspaceId, panelId, null)
     }
 
     // 12. Replay scrollback log if this terminal was restored from a session

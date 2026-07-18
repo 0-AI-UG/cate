@@ -79,6 +79,56 @@ export async function getCwdProc(pid: number): Promise<string | null> {
   }
 }
 
+// starttime in /proc/<pid>/stat is measured in USER_HZ clock ticks since boot;
+// USER_HZ is fixed at 100 on every supported Linux ABI (the kernel scales the
+// real HZ down to it for exactly this interface).
+const USER_HZ = 100
+
+/** Process start time as a ms epoch — /proc/<pid>/stat starttime (field 22,
+ *  ticks since boot) anchored via /proc/uptime. The lsof-free equivalent of
+ *  `ps -o lstart=`. Null when the process is gone or the files are unreadable. */
+export async function getStartTimeProc(pid: number): Promise<number | null> {
+  try {
+    const [stat, uptime] = await Promise.all([
+      readFile(`/proc/${pid}/stat`, 'utf-8'),
+      readFile('/proc/uptime', 'utf-8'),
+    ])
+    // Anchor on the LAST ')' (comm may contain spaces/parens — see parseStat);
+    // after it the fields are space-separated with state at index 0, so
+    // starttime (overall field 22) lands at index 19.
+    const close = stat.lastIndexOf(')')
+    if (close < 0) return null
+    const startTicks = parseInt(stat.slice(close + 2).split(' ')[19], 10)
+    const uptimeSec = parseFloat(uptime.split(' ')[0])
+    if (isNaN(startTicks) || isNaN(uptimeSec)) return null
+    const bootMs = Date.now() - uptimeSec * 1000
+    return bootMs + (startTicks / USER_HZ) * 1000
+  } catch {
+    return null
+  }
+}
+
+/** Absolute paths the process holds open — readlink over /proc/<pid>/fd (the
+ *  lsof -p <pid> -Fn equivalent). Non-file fds (sockets, pipes) resolve to
+ *  "socket:[…]"-style targets and are filtered by the caller's path checks. */
+export async function openFilePathsProc(pid: number): Promise<string[]> {
+  try {
+    const fds = await readdir(`/proc/${pid}/fd`)
+    const paths = await Promise.all(
+      fds.map(async (fd) => {
+        try {
+          return await readlink(`/proc/${pid}/fd/${fd}`)
+        } catch {
+          return null // fd closed mid-scan
+        }
+      }),
+    )
+    return paths.filter((p): p is string => p !== null)
+  } catch {
+    return []
+  }
+}
+
 const TCP_LISTEN = '0A'
 
 /**

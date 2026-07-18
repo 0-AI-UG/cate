@@ -103,6 +103,7 @@ export const Methods = {
   ptySetVisibility: 'pty.setVisibility',
   ptyScanActivity: 'pty.scanActivity',
   ptyScanPorts: 'pty.scanPorts',
+  ptyProbeAgentSession: 'pty.probeAgentSession',
 
   vcsIsRepo: 'vcs.isRepo',
   vcsFindRepos: 'vcs.findRepos',

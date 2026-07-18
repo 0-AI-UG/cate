@@ -141,6 +141,11 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
         cwd,
         worktreeId,
         ptyEpoch: (panel.ptyEpoch ?? 0) + 1,
+        // An agent-resume stamp belongs to the OLD checkout's cwd — dropping it
+        // keeps the fresh shell from resuming a session in the wrong worktree.
+        // (dispose() also kills the agent, and an unregistered terminal gets no
+        // falling-edge clear from the process monitor.)
+        agentSession: undefined,
       }))
     },
   }

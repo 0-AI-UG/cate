@@ -34,7 +34,7 @@ import type {
 import type { FileAccessContext } from './types'
 import type { RuntimeRpcClient } from './rpcClient'
 import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
-import type { FileTreeNode, FileSearchResult } from '../../shared/types'
+import type { FileTreeNode, FileSearchResult, TerminalAgentSession } from '../../shared/types'
 
 export class RemoteRuntime implements Runtime {
   readonly process: ProcessHost
@@ -98,6 +98,7 @@ export class RemoteRuntime implements Runtime {
       setVisibility: (id, visible) => { void this.rpc.call(Methods.ptySetVisibility, [id, visible]).catch(() => {}) },
       scanActivity: (ids) => call<Record<string, PtyActivity>>(Methods.ptyScanActivity, [ids]),
       scanPorts: (ids) => call<Record<string, number[]>>(Methods.ptyScanPorts, [ids]),
+      probeAgentSession: (id) => call<TerminalAgentSession | null>(Methods.ptyProbeAgentSession, [id]),
     }
 
     // Agent: pi runs on the daemon's host; lines/exit stream back keyed by the

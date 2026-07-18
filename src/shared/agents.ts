@@ -61,12 +61,45 @@ export function launchCommandForAgent(id: string): string | null {
   return AGENTS.find((a) => a.id === id)?.command ?? null
 }
 
-/** Display name of the agent whose process name matches, or null if none.
- *  Matching is case-insensitive (the name is lowercased before the rules run). */
-export function matchAgentProcess(procName: string): string | null {
+/** The agent whose process name matches, or null if none. Matching is
+ *  case-insensitive (the name is lowercased before the rules run). */
+export function matchAgentDef(procName: string): AgentDef | null {
   const lower = procName.toLowerCase()
   for (const a of AGENTS) {
-    if (a.matchProcess(lower)) return a.displayName
+    if (a.matchProcess(lower)) return a
   }
   return null
+}
+
+/** Display name of the agent whose process name matches, or null if none. */
+export function matchAgentProcess(procName: string): string | null {
+  return matchAgentDef(procName)?.displayName ?? null
+}
+
+// Session-resume argv per agent, used by terminal session-restore: the command
+// typed into a restored terminal's shell to re-attach the agent to the session
+// it was running at save time. Only agents whose session-store contract is
+// pinned by agentSessionContracts.itest.ts appear here — an agent absent from
+// this map (antigravity) restores as a plain shell. The session id is
+// interpolated into a shell command line, so it is validated to be a bare
+// token first (uuids / opencode ses_* ids; never quoting-sensitive).
+const RESUME_ARGS: Partial<Record<AgentId, (sessionId: string) => string[]>> = {
+  'claude-code': (sid) => ['--resume', sid],
+  codex: (sid) => ['resume', sid],
+  // pi's --resume is an interactive picker; --session takes an exact id.
+  pi: (sid) => ['--session', sid],
+  opencode: (sid) => ['--session', sid],
+  // cursor chat ids are the ~/.cursor/chats/<md5(cwd)>/<chatId> dir names.
+  cursor: (sid) => ['--resume', sid],
+}
+
+const SAFE_SESSION_ID = /^[A-Za-z0-9_-]+$/
+
+/** The full shell command that resumes `sessionId` for `agentId`, or null when
+ *  this agent has no pinned resume contract (or the id isn't a bare token). */
+export function resumeCommandForAgent(agentId: string, sessionId: string): string | null {
+  const def = AGENTS.find((a) => a.id === agentId)
+  const args = RESUME_ARGS[agentId as AgentId]
+  if (!def || !args || !SAFE_SESSION_ID.test(sessionId)) return null
+  return [def.command, ...args(sessionId)].join(' ')
 }

@@ -16,16 +16,25 @@ import {
   SHELL_PORTS_UPDATE,
   SHELL_CWD_UPDATE,
   SHELL_AGENT_SCREEN_STATE,
+  SHELL_AGENT_SESSION_UPDATE,
 } from '../../shared/ipc-channels'
 import { getRuntimeForTerminal, getTerminalIds, getTerminalOwner, onTerminalSessionsChanged } from './terminal'
 import { sendToWindow, broadcastToAll, isAnyWindowFocused } from '../windowRegistry'
 import type { Runtime, PtyActivity } from '../runtime/types'
-import type { TerminalActivity } from '../../shared/types'
+import type { TerminalActivity, TerminalAgentSession } from '../../shared/types'
 
 interface PreviousState {
   /** Last agent name seen — carried across transient scan misses so the tab
    *  name doesn't flicker when a single scan cycle fails to spot the agent. */
   previousAgentName: string | null
+  /** Whether the last scan saw an agent — the falling edge (agent exited while
+   *  the terminal lives on) clears the persisted resume stamp. */
+  previousAgentPresent?: boolean
+  /** When this terminal's agent session was last probed, for the throttle. */
+  agentSessionProbedAt?: number
+  /** Dedup key of the last SHELL_AGENT_SESSION_UPDATE sent, so an unchanged
+   *  probe result doesn't re-emit (and re-touch renderer panel state). */
+  agentSessionKey?: string | null
 }
 
 // Track previous state for transition detection
@@ -69,6 +78,13 @@ const SLOW_POLL_FOCUSED_MS = 5000
 const SLOW_POLL_UNFOCUSED_MS = 15000
 let slowPollInterval: ReturnType<typeof setInterval> | null = null
 let slowPollBusy = false
+
+// While an agent CLI is present in a terminal, its stored session is re-probed
+// on this cadence (newest-session lookup in the CLI's session store, on the
+// terminal's runtime host) so the persisted resume stamp tracks session
+// rotation (e.g. claude's /clear). Kept off the 1s loop — the probe stats
+// session files / opens a sqlite db, and a ≤20s-stale stamp at quit is fine.
+const AGENT_SESSION_PROBE_MS = 20_000
 
 // Cadence the timers are currently running at, so applyPollCadence() can skip a
 // needless clear/re-arm when focus flips but the resulting cadence is unchanged.
@@ -163,15 +179,90 @@ async function runActivityScan(): Promise<void> {
           const agentName = scanned?.agentName ?? prev.previousAgentName
           const agentPresent = scanned?.agentPresent ?? false
 
-          previousStates.set(terminalId, { previousAgentName: agentName })
+          const next: PreviousState = { ...prev, previousAgentName: agentName, previousAgentPresent: agentPresent }
+          previousStates.set(terminalId, next)
           lastActivity.set(terminalId, activity)
           sendToWindow(ownerWindowId, SHELL_ACTIVITY_UPDATE, terminalId, activity, agentName, agentPresent)
+
+          // Agent-session capture for terminal restore. While an agent is
+          // present, re-probe its stored session on the throttled cadence
+          // (immediately on the rising edge — probedAt resets on the falling
+          // edge, so an agent relaunched within the window is picked up right
+          // away). On the falling edge, clear the stamp: the agent exited
+          // while the terminal lives on, so there is nothing to resume. An
+          // app quit kills the poll loop itself, leaving the last stamp
+          // persisted — exactly "what was running at save time".
+          if (agentPresent) {
+            const now = Date.now()
+            if (now - (next.agentSessionProbedAt ?? 0) >= AGENT_SESSION_PROBE_MS) {
+              next.agentSessionProbedAt = now
+              void probeAndEmitAgentSession(runtime, terminalId)
+            }
+          } else if (prev.previousAgentPresent) {
+            next.agentSessionProbedAt = 0
+            emitAgentSession(terminalId, null)
+          }
         }
       }),
     )
   } finally {
     pollBusy = false
   }
+}
+
+/** Send an agent-session stamp (or a clear) to the terminal's owner window,
+ *  deduped against the last one sent for that terminal. */
+function emitAgentSession(terminalId: string, session: TerminalAgentSession | null): void {
+  const ownerWindowId = getTerminalOwner(terminalId)
+  const state = previousStates.get(terminalId)
+  if (ownerWindowId == null || !state) return
+  const key = session ? `${session.agentId} ${session.sessionId} ${session.cwd}` : null
+  if (state.agentSessionKey === key) return
+  state.agentSessionKey = key
+  sendToWindow(ownerWindowId, SHELL_AGENT_SESSION_UPDATE, terminalId, session)
+}
+
+/**
+ * Quit-time stamp flush: re-probe EVERY terminal that currently has an agent,
+ * emitting fresh SHELL_AGENT_SESSION_UPDATE stamps to the owner windows, so
+ * the session save that follows persists the agent's CURRENT session rather
+ * than one up to AGENT_SESSION_PROBE_MS stale (e.g. a /clear moments before
+ * quit). Called from the before-quit sequence BEFORE the dock-window flush and
+ * the main renderer's SESSION_FLUSH_SAVE — IPC ordering per window then
+ * guarantees the renderer sees the stamps before it serializes panel state.
+ * Bounded: a hung probe (dead remote) must never stall quit.
+ */
+export async function flushAgentSessionStamps(timeoutMs: number): Promise<void> {
+  const probes: Promise<void>[] = []
+  for (const terminalId of getTerminalIds()) {
+    if (!previousStates.get(terminalId)?.previousAgentPresent) continue
+    const runtime = getRuntimeForTerminal(terminalId)
+    if (!runtime) continue
+    probes.push(probeAndEmitAgentSession(runtime, terminalId))
+  }
+  if (probes.length === 0) return
+  await Promise.race([
+    Promise.allSettled(probes),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ])
+}
+
+async function probeAndEmitAgentSession(runtime: Runtime, terminalId: string): Promise<void> {
+  let session: TerminalAgentSession | null = null
+  try {
+    session = await runtime.process.probeAgentSession(terminalId)
+  } catch (err) {
+    log.debug('[shell] probeAgentSession failed: %s', err instanceof Error ? err.message : String(err))
+    return // transient failure — keep the last stamp rather than clearing it
+  }
+  // The agent may have exited while this probe was in flight — the falling
+  // edge already cleared the stamp, and a late result must not resurrect it
+  // (nothing is running to resume).
+  if (!previousStates.get(terminalId)?.previousAgentPresent) return
+  // A present agent with no stored session yet (just launched, nothing
+  // prompted) probes to null — emit it so a stale stamp from an earlier
+  // agent in this terminal doesn't outlive that agent's own sessions.
+  emitAgentSession(terminalId, session)
 }
 
 /**

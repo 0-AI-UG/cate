@@ -26,6 +26,7 @@ import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
 import { shouldAdjustTerminalCoords } from '../lib/terminal/terminalCoordAdjust'
 import { useTerminalGlow } from '../cateAgent/cateAgentStore'
 import { resolveWorktree } from '../../shared/worktrees'
+import { resumeCommandForAgent } from '../../shared/agents'
 import { CATE_FILE_MIME, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
 import { parseLocator } from '../../main/runtime/locator'
 
@@ -329,12 +330,23 @@ export default function TerminalPanel({
       }
     }
 
+    // Agent session persisted at last save (terminal restore): resolve it to
+    // the resume command the lifecycle types into the fresh shell. Read via
+    // getState — the stamp is written back on a poll cadence while an agent
+    // runs, and must not re-run this lifecycle effect.
+    const agentSession = useAppStore.getState().workspaces
+      .find((w) => w.id === workspaceId)?.panels[panelId]?.agentSession
+    const resumeCommand = agentSession
+      ? resumeCommandForAgent(agentSession.agentId, agentSession.sessionId) ?? undefined
+      : undefined
+
     // 1. Ensure the terminal + PTY exist in the registry (no-op if already live)
     terminalRegistry
       .getOrCreate(panelId, {
         workspaceId,
         cwd: rootPathRef.current || undefined,
         initialInput,
+        resumeCommand,
       })
       .then((entry) => {
         if (cancelled) return

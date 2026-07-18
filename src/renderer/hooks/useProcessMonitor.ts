@@ -92,6 +92,24 @@ export function useOwnedTerminalTelemetry(): void {
     return () => { unsubscribe() }
   }, [])
 
+  // Agent-session stamps for terminal restore: main probes the agent CLI's
+  // session store while an agent runs in a terminal and sends the (deduped)
+  // result here; it lands on the terminal's PanelState, which persists into
+  // session.json. On restore, TerminalPanel types the resume command into the
+  // fresh shell. Null clears the stamp (the agent exited).
+  useEffect(() => {
+    const api = window.electronAPI
+    if (!api?.onShellAgentSessionUpdate) return
+    const unsubscribe = api.onShellAgentSessionUpdate((terminalId, session) => {
+      const workspaceId =
+        workspaceIdForTerminal(terminalId) ?? useAppStore.getState().selectedWorkspaceId
+      if (!workspaceId) return
+      const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
+      useAppStore.getState().setPanelAgentSession(workspaceId, panelId, session)
+    })
+    return () => { unsubscribe() }
+  }, [])
+
   useEffect(() => {
     const api = window.electronAPI
     if (!api?.onShellCwdUpdate) return
