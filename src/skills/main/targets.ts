@@ -22,7 +22,6 @@ const BASE_SEGMENTS: Record<SkillTargetId, string[]> = {
   'pi-native': ['.agents', 'skills'],
   'opencode': ['.opencode', 'skills'],
   'codex': ['.codex', 'skills'],
-  'antigravity': ['.agent', 'skills'],
 }
 
 /** Host path to a target's skills root under the workspace. */

@@ -35,7 +35,6 @@ const TARGET_LOGO_ID: Partial<Record<SkillTargetId, AgentId>> = {
   'pi-native': 'pi',
   opencode: 'opencode',
   codex: 'codex',
-  antigravity: 'antigravity',
 }
 
 const AgentIcon: React.FC<{ targetId: SkillTargetId }> = ({ targetId }) => {

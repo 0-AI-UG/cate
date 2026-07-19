@@ -2,14 +2,19 @@
 // Agent hooks capability — the daemon-side mechanism that turns the per-agent
 // declarations in src/shared/agentHooks.ts into a live push event stream:
 //
-//   1. materialize a per-boot hooks dir: the stdin→HTTP bridge, per-agent
-//      bridge wrappers, in-process support files (pi/opencode), and a PATH
-//      shim dir with `claude`/`codex`/`pi` executables that exec the real
-//      binary with the injection argv prepended;
+//   1. materialize a STABLE per-user hooks dir (~/.cate/agent-hooks — same
+//      convention as the extensions root): the stdin→HTTP bridge, per-agent
+//      bridge wrappers, and the opencode in-process support file. Stable on
+//      purpose: the bridge paths are embedded in repo-scoped hook files
+//      (.codex/hooks.json, .claude/settings.local.json), where a per-boot
+//      path would rewrite user repos every boot and re-trigger codex's
+//      "modified since last trusted" hook review on every restart. Contents
+//      are regenerated on every boot; stale files are harmless.
 //   2. plant the hook env on every PTY (endpoint + per-boot token +
 //      CATE_TERMINAL_ID — the terminal↔event correlation contract — plus the
 //      opencode ambient config);
-//   3. prepare workspace-scoped hook files (cursor/agy) at PTY create time;
+//   3. prepare workspace-scoped hook files (claude, codex, pi) at PTY create
+//      time;
 //   4. ingest hook posts on a daemon-owned loopback HTTP endpoint, normalize
 //      them (shared code), and emit AgentHookEvents to subscribers (the
 //      rpcServer forwards them to the client as evt frames).
@@ -20,7 +25,9 @@
 // ingests locally and the normalized events ride the existing LF-JSON pipe to
 // the app. HTTP over a unix socket was rejected because the in-process
 // injections (pi extension, opencode plugin) post with plain `fetch`, which
-// cannot target a unix socket without extra dependencies.
+// cannot target a unix socket without extra dependencies. (The pi extension
+// is a workspace file — pi discovers <cwd>/.pi/extensions/*.ts itself — not
+// a hooks-dir support file.)
 //
 // Bridge choice: a tiny sh wrapper exec'ing the daemon's OWN node binary
 // (process.execPath) on a daemon-written JS file. Node is NOT guaranteed on
@@ -36,7 +43,7 @@ import { randomBytes } from 'crypto'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
+import { chmod, mkdir, readFile, stat, writeFile } from 'fs/promises'
 import { AGENTS, type AgentId } from '../../shared/agents'
 import {
   AGENT_HOOK_SPECS,
@@ -45,7 +52,6 @@ import {
   CATE_HOOK_TOKEN_ENV,
   CATE_TERMINAL_ID_ENV,
   normalizeAgentHookPayload,
-  sessionPreassignEnvVar,
   type AgentHookEvent,
   type AgentHookSpec,
   type HookInjectionContext,
@@ -55,32 +61,34 @@ const MAX_BODY_BYTES = 512 * 1024
 
 export interface AgentHooksCapability {
   /** The full spawn env for a PTY: hook endpoint/token, CATE_TERMINAL_ID=ptyId,
-   *  ambient per-agent vars, and the shim dir prepended to PATH. Lazily boots
-   *  the ingestion endpoint + hooks dir on first use. Returns `env` unchanged
-   *  on win32 or when hook setup fails (a plain shell is always spawnable). */
+   *  and ambient per-agent vars. Lazily boots the ingestion endpoint + hooks
+   *  dir on first use. Returns `env` unchanged on win32 or when hook setup
+   *  fails (a plain shell is always spawnable). */
   envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
-  /** Write workspace-scoped hook files (cursor/agy) for the PTY's cwd, keep
-   *  them out of git status via .git/info/exclude, and seed agy's workspace
-   *  trust. Best-effort and idempotent; no-op on win32. */
+  /** Write workspace-scoped hook files (claude, codex, pi) for the PTY's cwd
+   *  and keep them out of git status via .git/info/exclude. Best-effort and
+   *  idempotent; no-op on win32, and never touches the user's home dir
+   *  (~/.codex, ~/.claude etc. are the CLIs' USER-GLOBAL config dirs —
+   *  injection stays repo-local). */
   prepareWorkspace(cwd: string): Promise<void>
   /** Subscribe to normalized hook events. Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
   /** The ingestion endpoint (boots it if needed) — for tests/diagnostics. */
   endpoint(): Promise<{ url: string; token: string; dir: string }>
-  /** Close the endpoint and remove the per-boot hooks dir. */
+  /** Close the ingestion endpoint. The stable hooks dir is left in place —
+   *  repo hook files embed its bridge paths, which must survive restarts. */
   dispose(): void
 }
 
 export interface AgentHooksDeps {
   /** Binary-presence probe for gating workspace file writes (tests inject). */
   hasBin?: (command: string) => Promise<boolean>
-  /** Home dir for global trust seeding (tests inject a sandbox). */
-  homeDir?: () => string
+  /** Override the stable hooks dir (tests). Default: ~/.cate/agent-hooks. */
+  hooksDir?: string
 }
 
 interface HookState {
   dir: string
-  binDir: string
   url: string
   token: string
   server: http.Server
@@ -108,51 +116,9 @@ function makeHasBin(): (command: string) => Promise<boolean> {
 
 const shQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 
-/** POSIX-sh PATH shim: finds the real binary later in PATH and exec's it with
- *  the injection argv prepended, so the process name + pid the shell (and
- *  Cate's process-tree scans) see are unchanged. */
-function shimScript(command: string, injectedArgs: string[], preassign?: { envVar: string; flag: string; blockers: string[] }): string {
-  let preassignBlock = ''
-  if (preassign) {
-    // A blocker `--flag` also matches its `--flag=value` spelling.
-    const patterns = preassign.blockers
-      .flatMap((b) => (b.startsWith('--') ? [b, `${b}=*`] : [b]))
-      .join('|')
-    preassignBlock = `preassign="\${${preassign.envVar}:-}"
-if [ -n "$preassign" ]; then
-  for a in "$@"; do
-    case "$a" in
-      ${patterns}) preassign=""; break ;;
-    esac
-  done
-fi
-if [ -n "$preassign" ]; then set -- ${preassign.flag} "$preassign" "$@"; fi
-`
-  }
-  return `#!/bin/sh
-# Cate agent-hook shim for \`${command}\` — generated by the Cate runtime
-# daemon; do not edit. Resolves the real binary later in PATH and exec's it
-# with Cate's hook-injection flags prepended.
-selfdir=$(cd "$(dirname "$0")" && pwd)
-real=""
-_ifs=$IFS; IFS=:
-for d in $PATH; do
-  [ -z "$d" ] || [ "$d" = "$selfdir" ] && continue
-  if [ -x "$d/${command}" ]; then real="$d/${command}"; break; fi
-done
-IFS=$_ifs
-if [ -z "$real" ]; then
-  echo "${command}: command not found" >&2
-  exit 127
-fi
-${preassignBlock}exec "$real" ${injectedArgs.map(shQuote).join(' ')} "$@"
-`
-}
-
-/** The generic stdin→HTTP bridge all stdin-JSON CLIs share (claude, codex,
- *  cursor, agy). No stdout on purpose: agy denies tool calls on non-allow hook
- *  output, and every CLI accepts silent exit-0. Always exits 0 — a hook
- *  failure must never surface into the user's agent turn. */
+/** The generic stdin→HTTP bridge all stdin-JSON CLIs share (claude, codex).
+ *  No stdout on purpose: every CLI accepts silent exit-0. Always exits 0 — a
+ *  hook failure must never surface into the user's agent turn. */
 const BRIDGE_JS = `// Generated by the Cate runtime daemon (agent hook injection). Do not edit.
 'use strict'
 const http = require('http')
@@ -182,7 +148,6 @@ setTimeout(() => process.exit(0), 10000)
 
 export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHooksCapability {
   const hasBin = deps.hasBin ?? makeHasBin()
-  const homeDir = deps.homeDir ?? ((): string => os.homedir())
   const listeners = new Set<(event: AgentHookEvent) => void>()
   let ready: Promise<HookState> | null = null
   let disposed = false
@@ -230,68 +195,62 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     })
   }
 
-  /** One-time (lazy) setup: hooks dir + bridge + wrappers + shims + endpoint.
-   *  Lazy so a daemon that never spawns a terminal binds no port. */
+  /** One-time (lazy) setup: hooks dir + bridge + wrappers + endpoint.
+   *  Lazy so a daemon that never spawns a terminal binds no port. The dir is
+   *  a STABLE per-user location (not a per-boot mkdtemp): its bridge paths
+   *  are embedded in repo-scoped hook files, and codex keys its persisted
+   *  hook trust on them — a churning path would rewrite user repos and
+   *  re-prompt "modified since last trusted" on every restart. Contents are
+   *  still (re)written on every boot; a partially-built dir left by a failed
+   *  setup is harmless and overwritten by the retry. */
   const ensureReady = (): Promise<HookState> => {
     if (ready) return ready
-    ready = (async (): Promise<HookState> => {
-      const dir = await mkdtemp(path.join(os.tmpdir(), 'cate-agent-hooks-'))
-      const binDir = path.join(dir, 'bin')
-      await mkdir(binDir, { recursive: true })
-
-      const bridgeJs = path.join(dir, 'cate-hook-bridge.js')
-      await writeFile(bridgeJs, BRIDGE_JS)
-
-      const token = randomBytes(24).toString('hex')
-      const contexts = new Map<AgentId, HookInjectionContext>()
-      const ambientVars: Record<string, string> = {}
-
-      for (const agent of AGENTS) {
-        const spec: AgentHookSpec = AGENT_HOOK_SPECS[agent.id]
-        // Per-agent bridge wrapper: hook configs get ONE command path with no
-        // args (codex/cursor/agy run the command string directly), so the
-        // agent id rides as a baked-in argv of the wrapper.
-        const wrapper = path.join(dir, `cate-hook-bridge-${agent.id}`)
-        await writeFile(wrapper, `#!/bin/sh\nexec ${shQuote(process.execPath)} ${shQuote(bridgeJs)} ${shQuote(agent.id)} "$@"\n`)
-        await chmod(wrapper, 0o755)
-
-        const supportFile = spec.shim?.file ?? spec.env?.file
-        let filePath = ''
-        if (supportFile) {
-          filePath = path.join(dir, supportFile.name)
-          await writeFile(filePath, supportFile.content())
-        }
-        const ctx: HookInjectionContext = { bridgeCommand: wrapper, filePath }
-        contexts.set(agent.id, ctx)
-
-        if (spec.shim) {
-          const preassign = spec.shim.preassign
-          const shimPath = path.join(binDir, agent.command)
-          await writeFile(
-            shimPath,
-            shimScript(
-              agent.command,
-              spec.shim.args(ctx),
-              preassign ? { envVar: sessionPreassignEnvVar(agent.id), ...preassign } : undefined,
-            ),
-          )
-          await chmod(shimPath, 0o755)
-        }
-        if (spec.env) Object.assign(ambientVars, spec.env.vars(ctx))
-      }
-
-      const server = http.createServer((req, res) => handleRequest(req, res, token))
-      const port = await new Promise<number>((resolve, reject) => {
-        server.once('error', reject)
-        server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port))
-      })
-      server.unref()
-      return { dir, binDir, url: `http://127.0.0.1:${port}`, token, server, ambientVars, contexts }
-    })()
+    ready = buildState(deps.hooksDir ?? path.join(os.homedir(), '.cate', 'agent-hooks'))
     // A failed setup must not wedge every later PTY create on the same
     // rejection — reset so the next create retries.
     ready.catch(() => { ready = null })
     return ready
+  }
+
+  /** Populate the stable hooks dir and bind the ingestion endpoint. */
+  const buildState = async (dir: string): Promise<HookState> => {
+    await mkdir(dir, { recursive: true })
+
+    const bridgeJs = path.join(dir, 'cate-hook-bridge.js')
+    await writeFile(bridgeJs, BRIDGE_JS)
+
+    const token = randomBytes(24).toString('hex')
+    const contexts = new Map<AgentId, HookInjectionContext>()
+    const ambientVars: Record<string, string> = {}
+
+    for (const agent of AGENTS) {
+      const spec: AgentHookSpec = AGENT_HOOK_SPECS[agent.id]
+      // Per-agent bridge wrapper: hook configs get ONE command path with no
+      // args (codex runs the command string directly), so the agent id
+      // rides as a baked-in argv of the wrapper.
+      const wrapper = path.join(dir, `cate-hook-bridge-${agent.id}`)
+      await writeFile(wrapper, `#!/bin/sh\nexec ${shQuote(process.execPath)} ${shQuote(bridgeJs)} ${shQuote(agent.id)} "$@"\n`)
+      await chmod(wrapper, 0o755)
+
+      const supportFile = spec.env?.file
+      let filePath = ''
+      if (supportFile) {
+        filePath = path.join(dir, supportFile.name)
+        await writeFile(filePath, supportFile.content())
+      }
+      const ctx: HookInjectionContext = { bridgeCommand: wrapper, filePath }
+      contexts.set(agent.id, ctx)
+
+      if (spec.env) Object.assign(ambientVars, spec.env.vars(ctx))
+    }
+
+    const server = http.createServer((req, res) => handleRequest(req, res, token))
+    const port = await new Promise<number>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port))
+    })
+    server.unref()
+    return { dir, url: `http://127.0.0.1:${port}`, token, server, ambientVars, contexts }
   }
 
   return {
@@ -311,15 +270,18 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       out[CATE_HOOK_ENDPOINT_ENV] = state.url
       out[CATE_HOOK_TOKEN_ENV] = state.token
       out[CATE_TERMINAL_ID_ENV] = ptyId
-      // Shims first on PATH so a typed `claude`/`codex`/`pi` resolves to the
-      // injection shim (which execs the real binary found later in PATH).
-      const pathKey = Object.keys(out).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH'
-      out[pathKey] = state.binDir + path.delimiter + (out[pathKey] ?? '')
       return out
     },
 
     async prepareWorkspace(cwd) {
-      if (process.platform === 'win32' || disposed || !cwd) return
+      if (process.platform === 'win32' || disposed) return
+      // Never plant agent files in the user's home directory: ~/.codex and
+      // ~/.claude are the CLIs' USER-GLOBAL config dirs, and writing there
+      // would violate the repo-local-only injection policy. Bail on an
+      // empty/relative cwd too — resolving those against the daemon's own
+      // cwd would write files somewhere the user never asked for.
+      const home = os.homedir()
+      if (!cwd || !path.isAbsolute(cwd) || !home || path.resolve(cwd) === path.resolve(home)) return
       let state: HookState
       try {
         state = await ensureReady()
@@ -329,9 +291,9 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       const excludeRels: string[] = []
       for (const agent of AGENTS) {
         const spec = AGENT_HOOK_SPECS[agent.id]
-        if (!spec.projectFiles && !spec.trust) continue
+        if (!spec.projectFiles) continue
         // Only touch workspaces of users who actually have this CLI — no
-        // .cursor/.agents litter for everyone else.
+        // hook-file litter for everyone else.
         if (!(await hasBin(agent.command).catch(() => false))) continue
         const ctx = state.contexts.get(agent.id)!
         for (const pf of spec.projectFiles ?? []) {
@@ -353,20 +315,6 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
           // is not ours to hide.
           if (wrote || existing?.includes(CATE_HOOK_MARKER)) excludeRels.push(pf.relPath)
         }
-        if (spec.trust) {
-          // Seed trust only when the CLI's config dir already exists — never
-          // pre-create another tool's config tree just in case.
-          const trustPath = path.join(homeDir(), spec.trust.relPath)
-          try {
-            await stat(path.dirname(trustPath))
-            let existing: string | null = null
-            try {
-              existing = await readFile(trustPath, 'utf-8')
-            } catch { /* absent */ }
-            const next = spec.trust.build(existing, cwd)
-            if (next !== null) await writeFile(trustPath, next)
-          } catch { /* CLI not initialized / unwritable — skip */ }
-        }
       }
       if (excludeRels.length > 0) await ensureGitExcluded(cwd, excludeRels)
     },
@@ -386,11 +334,10 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       listeners.clear()
       const pending = ready
       ready = null
+      // The stable hooks dir is deliberately NOT removed: repo hook files
+      // embed its bridge paths, which must stay valid across restarts.
       if (pending) {
-        void pending.then((state) => {
-          state.server.close()
-          void rm(state.dir, { recursive: true, force: true }).catch(() => {})
-        }).catch(() => {})
+        void pending.then((state) => { state.server.close() }).catch(() => {})
       }
     },
   }

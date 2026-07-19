@@ -122,9 +122,10 @@ export interface PanelState {
    *  the new `cwd`. */
   ptyEpoch?: number
   /** Terminal panels only: the coding-agent session running in this terminal
-   *  at save time (probed from the agent CLI's session store while the agent
-   *  is present, cleared when it exits). On restore, TerminalPanel types the
-   *  agent's resume command into the fresh shell and clears this. */
+   *  at save time (pushed by the agent's own hook events, with a session-store
+   *  probe as fallback for hook-less agents; cleared when the agent exits).
+   *  On restore, TerminalPanel types the agent's resume command into the
+   *  fresh shell and clears this. */
   agentSession?: TerminalAgentSession
   /** Extension panels only: which installed extension + which of its declared
    *  panels this instance renders. */
@@ -1434,7 +1435,7 @@ export interface AppSettings {
   /** Auto-install the bundled cate-cli skill so agents learn the `cate` command:
    *  seeded into each opened workspace through the skills installer, the same
    *  way for local and remote hosts — Cate's own agent always, other supported
-   *  agents (Claude Code, Pi, OpenCode, Codex, Antigravity) when their tool dir
+   *  agents (Claude Code, Pi, OpenCode, Codex) when their tool dir
    *  exists there (see seedCateCliSkill).
    *  Seeds at most once per workspace/target, never overwrites edits, and an
    *  uninstall sticks. Turning this off stops future installs; it does not

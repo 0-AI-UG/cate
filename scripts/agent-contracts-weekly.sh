@@ -19,7 +19,11 @@ mkdir -p "$(dirname "$LOG")"
 
 {
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') live agent-CLI contract run ($REPO) ==="
-  cd "$REPO" || exit 0
+  if ! cd "$REPO"; then
+    echo "=== FAIL $(date '+%Y-%m-%d %H:%M:%S') — repo checkout missing: $REPO ==="
+    osascript -e 'display notification "The weekly agent-contract run cannot find its repo checkout — the drift alarm is NOT running. See ~/Library/Logs/cate-agent-contracts.log" with title "Cate: agent contract tests FAILED"' 2>/dev/null || true
+    exit 1
+  fi
   if npm run --silent test:agent-contracts; then
     echo "=== PASS $(date '+%Y-%m-%d %H:%M:%S') ==="
   else

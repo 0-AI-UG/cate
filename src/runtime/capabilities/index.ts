@@ -192,7 +192,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   const vcs = createVcsCapability({ env, scopeId: config.id })
 
   // Agent hook injection: every PTY gets the hook env (ingestion endpoint,
-  // per-boot token, CATE_TERMINAL_ID, PATH shims) and its cwd gets the
+  // per-boot token, CATE_TERMINAL_ID, ambient agent env) and its cwd gets the
   // workspace-scoped hook files, so agent CLIs the user types push their
   // session/turn/permission events back to this daemon.
   const agentHooks = createAgentHooksCapability()

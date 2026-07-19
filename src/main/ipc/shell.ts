@@ -171,7 +171,15 @@ async function runActivityScan(): Promise<void> {
           const activity: TerminalActivity = scanned?.activity ?? { type: 'idle' }
           // Carry the last-seen agent name across a transient miss (no flicker).
           const agentName = scanned?.agentName ?? prev.previousAgentName
-          const agentPresent = scanned?.agentPresent ?? false
+          // An entirely-missing entry means the scan had nothing to say about
+          // this pty (SIGSTOP-suspended ptys are omitted from scanActivity
+          // results, or the scan transiently missed it) — carry the previous
+          // presence so no phantom falling edge clears the resume stamp. A
+          // genuinely dead pty resolves via terminal teardown (the sessions-
+          // changed handler below drops its previousStates entry), so a
+          // carried `true` can't outlive the terminal. An entry that IS
+          // present with agentPresent:false is a real answer (agent exited).
+          const agentPresent = scanned ? scanned.agentPresent : (prev.previousAgentPresent ?? false)
 
           const next: PreviousState = { ...prev, previousAgentName: agentName, previousAgentPresent: agentPresent }
           previousStates.set(terminalId, next)

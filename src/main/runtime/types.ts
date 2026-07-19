@@ -37,8 +37,8 @@ export interface PtyCreateOptions {
    *  (RemoteRuntime spreads opts; rpcServer forwards verbatim), so no protocol
    *  change is needed to reach a remote host. */
   env?: Record<string, string>
-  /** Opt this pty into agent hook injection (hook env + PATH shims + workspace
-   *  hook files — see src/runtime/capabilities/agentHooks.ts). Set by Cate's
+  /** Opt this pty into agent hook injection (hook env + workspace hook files
+   *  — see src/runtime/capabilities/agentHooks.ts). Set by Cate's
    *  terminal layer for user terminals; OFF by default so bare process.create
    *  callers (tests, tooling) spawn untouched shells and write nothing. Rides
    *  the same opts pass-through as `env`. */
@@ -113,7 +113,7 @@ export interface ProcessHost {
 // Agent hook host (push-based agent-CLI hook events)
 //
 // The daemon injects hook bridges into the agent CLIs running in its PTYs
-// (PATH shims / env / workspace files — see src/runtime/capabilities/
+// (ambient env / workspace files — see src/runtime/capabilities/
 // agentHooks.ts), ingests their events on a daemon-local endpoint, and
 // normalizes them (src/shared/agentHooks.ts). This host is the subscription
 // seam: events are already correlated to a pty id (CATE_TERMINAL_ID), so the

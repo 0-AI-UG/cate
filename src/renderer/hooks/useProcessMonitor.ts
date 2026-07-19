@@ -23,7 +23,7 @@ export function forgetTerminalForProcessMonitor(_terminalId: string): void {
  * its own terminals' agent presence. Crucially, the agent coordinator gates
  * `running` on presence (resolveAgentState returns notRunning when !present), so
  * without this a detached terminal's agent never shows the running shimmer even
- * though its hook events/spinner arrive locally. Wired once per window from
+ * though its hook events arrive locally. Wired once per window from
  * useWindowRuntime; only terminals this window owns are ever delivered here, so
  * there is no cross-window contamination.
  */
@@ -61,11 +61,10 @@ export function useOwnedTerminalTelemetry(): void {
         store().setTerminalActivity(actualWorkspaceId, terminalId, terminalActivity)
         store().setAgentPresent(actualWorkspaceId, terminalId, agentPresent)
         store().setAgentName(actualWorkspaceId, terminalId, agentName)
-        // Running-state comes from hook events (claude/codex/pi/opencode) or
-        // spinners (cursor/agy); feed presence into the coordinator for the
-        // notRunning/finished edges. The name is already in statusStore (above,
-        // deliberately BEFORE this call) so the coordinator can derive the
-        // agent id for hook/fallback routing and read the name at commit.
+        // Running-state comes from hook events; feed presence into the
+        // coordinator for the notRunning/finished edges. The name is already
+        // in statusStore (above, deliberately BEFORE this call) so the
+        // coordinator can read it at commit.
         noteAgentPresence(terminalId, agentPresent)
 
         // Agent tab title: show the clean detected agent name (e.g. "Codex",

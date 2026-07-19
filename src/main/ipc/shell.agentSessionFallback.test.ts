@@ -153,6 +153,31 @@ describe('rising-edge fallback probe', () => {
   })
 })
 
+describe('suspended-terminal scan omission', () => {
+  it('carries agent presence when the scan result omits the terminal entirely', async () => {
+    const id = addTerminal(true)
+    await tick() // rising edge — probe + stamp
+    harness.sent.length = 0
+    probeAgentSession.mockClear()
+
+    // (a) The daemon omits SIGSTOP-suspended ptys from scanActivity results —
+    // the entry vanishes while the agent is alive but frozen. No falling edge,
+    // stamp kept, still eligible for the quit-time flush.
+    scans.delete(id)
+    await tick()
+    await tick()
+    expect(stampUpdates()).toEqual([]) // no phantom clear
+    await flushAgentSessionStamps(500)
+    expect(probeAgentSession.mock.calls.map((c) => c[0])).toEqual([id])
+    harness.sent.length = 0
+
+    // (b) A PRESENT entry with agentPresent:false is a real exit — still clears.
+    scans.set(id, { agentPresent: false })
+    await tick()
+    expect(stampUpdates().at(-1)).toEqual({ terminalId: id, session: null })
+  })
+})
+
 describe('flushAgentSessionStamps', () => {
   it('probes hook-less agent terminals only', async () => {
     const hookless = addTerminal(true)

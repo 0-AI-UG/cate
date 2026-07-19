@@ -26,9 +26,6 @@
 //             touched since the agent started cannot be its session.
 //   opencode· newest sqlite session row (id/directory/time_updated in
 //             ~/.local/share/opencode/opencode.db) matching the cwd, same gate.
-//   cursor  · newest chat under ~/.cursor/chats/<md5(cwd)>/<chatId>/store.db
-//             (the workspace dir IS the cwd join), same gate; resume by the
-//             chatId dir name.
 //
 // These store shapes are pinned LIVE against the installed CLIs by the
 // store-join steps of agentHookContracts.itest.ts — a CLI update that changes
@@ -37,11 +34,10 @@
 //
 // Electron-free: runs inside the runtime daemon, so local and remote
 // workspaces probe identically on whichever host owns the terminal. Agents
-// with no adapter here (antigravity) probe to null.
+// with no adapter here probe to null.
 // =============================================================================
 
 import { execFile } from 'child_process'
-import { createHash } from 'crypto'
 import { open, readdir, readFile, stat } from 'fs/promises'
 import { homedir } from 'os'
 import { basename, join } from 'path'
@@ -167,7 +163,9 @@ export async function startTimeForPid(pid: number): Promise<number | null> {
   if (process.platform === 'win32') return null
   if (process.platform === 'linux') return getStartTimeProc(pid)
   return new Promise((resolve) => {
-    execFile('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf-8', timeout: 3000 }, (err, stdout) => {
+    // LC_ALL=C pins lstart to English — Date.parse can't read localized month/
+    // day names (a German locale would NaN out and silently drop the gate).
+    execFile('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf-8', timeout: 3000, env: { ...process.env, LC_ALL: 'C' } }, (err, stdout) => {
       if (err || !stdout.trim()) return resolve(null)
       const ms = Date.parse(stdout.trim()) // "Thu Jul 16 20:34:45 2026"
       resolve(isNaN(ms) ? null : ms)
@@ -306,57 +304,6 @@ export async function newestOpencodeSessionFor(
   }
 }
 
-/** Newest cursor chat for `cwd`: chats are grouped per workspace under
- *  <chatsRoot>/<md5(cwd)>/<chatId>/store.db, so the hash dir IS the cwd join
- *  and the chatId dir name is the resume id. Recency = the NEWEST mtime of any
- *  file in the chat dir — the store is WAL-mode sqlite, so a live TUI appends
- *  to store.db-wal while store.db itself stays untouched until a checkpoint.
- *  Gated by sinceMs. */
-export async function newestCursorSessionFor(
-  chatsRoot: string,
-  cwd: string,
-  sinceMs = 0,
-): Promise<string | null> {
-  const workspaceDir = join(chatsRoot, createHash('md5').update(cwd).digest('hex'))
-  let chatIds: string[]
-  try {
-    chatIds = await readdir(workspaceDir)
-  } catch {
-    return null // no chats for this cwd
-  }
-  let best: { id: string; mtimeMs: number } | null = null
-  await Promise.all(
-    chatIds.map(async (id) => {
-      const mtimeMs = await newestMtimeIn(join(workspaceDir, id))
-      if (mtimeMs !== null && mtimeMs >= sinceMs && (!best || mtimeMs > best.mtimeMs)) {
-        best = { id, mtimeMs }
-      }
-    }),
-  )
-  return best ? (best as { id: string }).id : null
-}
-
-/** Newest mtime of any file directly inside `dir`, or null when it has none
- *  (or is not a directory). */
-async function newestMtimeIn(dir: string): Promise<number | null> {
-  let names: string[]
-  try {
-    names = await readdir(dir)
-  } catch {
-    return null
-  }
-  let newest: number | null = null
-  await Promise.all(
-    names.map(async (name) => {
-      try {
-        const st = await stat(join(dir, name))
-        if (st.isFile() && (newest === null || st.mtimeMs > newest)) newest = st.mtimeMs
-      } catch { /* vanished mid-scan */ }
-    }),
-  )
-  return newest
-}
-
 // ---------------------------------------------------------------------------
 // The probe
 // ---------------------------------------------------------------------------
@@ -385,8 +332,6 @@ export async function probeSessionForAgent(probe: AgentSessionProbe): Promise<st
       return newestFileSessionFor(join(homedir(), '.pi', 'agent', 'sessions'), FILE_STORES.pi, cwd, gate)
     case 'opencode':
       return newestOpencodeSessionFor(join(homedir(), '.local', 'share', 'opencode', 'opencode.db'), cwd, gate)
-    case 'cursor':
-      return newestCursorSessionFor(join(homedir(), '.cursor', 'chats'), cwd, gate)
     default:
       return null
   }

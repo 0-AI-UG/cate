@@ -18,7 +18,6 @@ describe('skillsRootDir', () => {
     expect(skillsRootDir('pi-native', 'local', cwd)).toBe(path.join(cwd, '.agents', 'skills'))
     expect(skillsRootDir('opencode', 'local', cwd)).toBe(path.join(cwd, '.opencode', 'skills'))
     expect(skillsRootDir('codex', 'local', cwd)).toBe(path.join(cwd, '.codex', 'skills'))
-    expect(skillsRootDir('antigravity', 'local', cwd)).toBe(path.join(cwd, '.agent', 'skills'))
   })
 
   it('uses POSIX joins for a remote runtime', () => {

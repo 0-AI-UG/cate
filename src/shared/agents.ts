@@ -22,8 +22,6 @@
 export type AgentId =
   | 'claude-code'
   | 'codex'
-  | 'antigravity'
-  | 'cursor'
   | 'opencode'
   | 'pi'
 
@@ -32,8 +30,7 @@ export interface AgentDef {
   /** Label shown in panel titles / tooltips. */
   displayName: string
   /** The CLI command that launches this agent in a terminal — usually the same
-   *  as the detected process name, but not always (Antigravity installs as
-   *  `agy`, Cursor's agent as `cursor-agent`). Used by the Cate Agent orchestrator. */
+   *  as the detected process name. Used by the Cate Agent orchestrator. */
   command: string
   /** True when a shell child process with this (already-lowercased) name means
    *  this agent is the one running in that terminal. */
@@ -48,9 +45,6 @@ export const AGENTS: readonly AgentDef[] = [
     matchProcess: (n) => n === 'claude' || n === 'claude-code' || n.startsWith('claude'),
   },
   { id: 'codex', displayName: 'Codex', command: 'codex', matchProcess: (n) => n === 'codex' },
-  // Antigravity's CLI installs as `agy` (`antigravity` is the GUI IDE).
-  { id: 'antigravity', displayName: 'Antigravity', command: 'agy', matchProcess: (n) => n === 'agy' },
-  { id: 'cursor', displayName: 'Cursor', command: 'cursor-agent', matchProcess: (n) => n === 'cursor' || n === 'cursor-agent' },
   { id: 'opencode', displayName: 'OpenCode', command: 'opencode', matchProcess: (n) => n === 'opencode' },
   // @earendil-works/pi-coding-agent — runs as the `pi` binary.
   { id: 'pi', displayName: 'PI Agent', command: 'pi', matchProcess: (n) => n === 'pi' },
@@ -88,13 +82,13 @@ const RESUME_ARGS: Record<AgentId, (sessionId: string) => string[]> = {
   // pi's --resume is an interactive picker; --session takes an exact id.
   pi: (sid) => ['--session', sid],
   opencode: (sid) => ['--session', sid],
-  // cursor chat ids are the ~/.cursor/chats/<md5(cwd)>/<chatId> dir names.
-  cursor: (sid) => ['--resume', sid],
-  // agy's conversationId (hook-pushed) resumes via a single `--conversation=<id>` token.
-  antigravity: (sid) => [`--conversation=${sid}`],
 }
 
-const SAFE_SESSION_ID = /^[A-Za-z0-9_-]+$/
+// First char must be alphanumeric: session ids originate from hook posts any
+// terminal process can forge, and a dash-led "id" (`--dangerously-skip-
+// permissions`) would otherwise be joined into the resume command as a flag.
+// Real ids are uuids / opencode `ses_*` — never dash-led.
+const SAFE_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
 
 /** The full shell command that resumes `sessionId` for `agentId`, or null when
  *  the agent id is unknown (or the id isn't a bare token). */

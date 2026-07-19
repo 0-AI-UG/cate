@@ -27,12 +27,6 @@
 // resuming a transcript-less id FAILS (pinned live by
 // agentHookContracts.itest.ts) — so claude is only stamped from its first
 // turn event. See RESUMABLE_FROM_SESSION_START below.
-//
-// Session pre-assignment (agentHooks.ts sessionPreassignEnvVar) is the policy
-// this module WOULD own: planting the var on a PTY makes claude/pi launch with
-// a Cate-chosen id. Deliberately not set — a preassigned id is still not
-// resumable until the first prompt, and hook events deliver the real id in
-// time for stamping, so pre-assignment adds nothing today.
 // =============================================================================
 
 import { SHELL_AGENT_SESSION_UPDATE } from '../../shared/ipc-channels'
@@ -52,9 +46,7 @@ import { sendToWindow } from '../windowRegistry'
  * turn-end / permission-wait equally prove a submitted prompt). Everyone
  * else's first sessionId-bearing event is already tied to a persisted store:
  * codex's TUI pushes nothing until the first submit (exec pushes at start,
- * with the rollout as transcript), pi/opencode create-or-resume by exact id,
- * cursor's sessionStart doesn't even fire on --resume, and agy has no
- * session-start kind at all (conversationId rides its turn events).
+ * with the rollout as transcript), pi/opencode create-or-resume by exact id.
  * Contracts pinned live in agentHookContracts.itest.ts.
  */
 const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
@@ -62,8 +54,6 @@ const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
   codex: true,
   pi: true,
   opencode: true,
-  cursor: true,
-  antigravity: true,
 }
 
 interface StampState {
@@ -110,8 +100,8 @@ function emit(terminalId: string, session: TerminalAgentSession | null): void {
  * sessions aren't resumable yet at that point (claude).
  *
  * cwd: the event's own cwd when the payload carries one (claude/codex/pi/
- * opencode); agy and cursor events don't, so the terminal's current cwd is
- * fetched from its runtime. Restore only types `<cli> <resume-args>` into the
+ * opencode); when an event doesn't, the terminal's current cwd is fetched
+ * from its runtime. Restore only types `<cli> <resume-args>` into the
  * respawned shell (worktree respawn drops the stamp wholesale rather than
  * comparing cwds), so the stamp's cwd is informational.
  */

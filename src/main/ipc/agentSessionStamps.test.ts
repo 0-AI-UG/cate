@@ -2,7 +2,7 @@
 // Stamping rules for hook-pushed agent-session identity (agentSessionStamps.ts):
 // per-agent resumability gating (claude only stamps once a turn proves the
 // session is persisted), the /clear rotation (clear on session-end, re-stamp
-// only after the next turn), the cwd fallback for cwd-less payloads (agy),
+// only after the next turn), the cwd fallback for cwd-less payloads,
 // dedup, and the hook-over-probe authority handoff.
 // =============================================================================
 
@@ -104,7 +104,7 @@ describe('claude resumability gating', () => {
 })
 
 describe('agents whose first sessionId-bearing event is already persisted', () => {
-  it.each(['codex', 'pi', 'opencode', 'cursor'] as const)('%s stamps on session-start', (agentId) => {
+  it.each(['codex', 'pi', 'opencode'] as const)('%s stamps on session-start', (agentId) => {
     ingestAgentSessionStamp(runtime, ev(tid, agentId, 'session-start', 'id-1', '/w'))
     expect(stamps(tid)).toEqual([{ agentId, sessionId: 'id-1', cwd: '/w' }])
   })
@@ -116,23 +116,23 @@ describe('agents whose first sessionId-bearing event is already persisted', () =
   })
 })
 
-describe('cwd fallback (agy/cursor payloads carry no cwd)', () => {
-  it('stamps agy with the terminal cwd fetched from the runtime', async () => {
-    ingestAgentSessionStamp(runtime, ev(tid, 'antigravity', 'turn-start', 'conv-1'))
+describe('cwd fallback (payloads that carry no cwd)', () => {
+  it('stamps with the terminal cwd fetched from the runtime', async () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1'))
     expect(stamps(tid)).toEqual([]) // async — nothing until getCwd resolves
     await resolveCwds()
-    expect(stamps(tid)).toEqual([{ agentId: 'antigravity', sessionId: 'conv-1', cwd: '/runtime-cwd' }])
+    expect(stamps(tid)).toEqual([{ agentId: 'codex', sessionId: 'id-1', cwd: '/runtime-cwd' }])
   })
 
   it('stamps with empty cwd when the runtime cannot resolve one', async () => {
     nextCwd = null
-    ingestAgentSessionStamp(runtime, ev(tid, 'antigravity', 'turn-end', 'conv-1'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-end', 'id-1'))
     await resolveCwds()
-    expect(stamps(tid)).toEqual([{ agentId: 'antigravity', sessionId: 'conv-1', cwd: '' }])
+    expect(stamps(tid)).toEqual([{ agentId: 'codex', sessionId: 'id-1', cwd: '' }])
   })
 
   it('drops an in-flight cwd lookup superseded by a clear (no resurrection)', async () => {
-    ingestAgentSessionStamp(runtime, ev(tid, 'antigravity', 'turn-start', 'conv-1'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1'))
     clearAgentSessionStamp(tid) // agent exited while getCwd was in flight
     await resolveCwds()
     // Only the clear went out — the late cwd result must not resurrect a stamp.

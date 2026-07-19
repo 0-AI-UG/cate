@@ -27,6 +27,14 @@ fi
 REPO="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 RUNNER="$REPO/scripts/agent-contracts-weekly.sh"
 
+# $RUNNER is embedded raw inside single quotes in the plist XML below — a path
+# containing any of these characters would break the shell quoting or the XML
+# and fail silently at run time. Refuse loudly instead.
+if printf '%s' "$RUNNER" | grep -q '['\''"&<>]'; then
+  echo "Error: repo path contains characters unsafe to embed in the launchd plist ('\"&<>): $RUNNER" >&2
+  exit 1
+fi
+
 mkdir -p "$(dirname "$PLIST")"
 cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

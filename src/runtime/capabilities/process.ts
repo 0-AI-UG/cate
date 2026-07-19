@@ -167,7 +167,7 @@ export interface ProcessDeps {
   idleSuspend?: boolean
   /**
    * Agent hook injection (see agentHooks.ts): plants the per-pty hook env
-   * (ingestion endpoint/token + CATE_TERMINAL_ID + PATH shims) and prepares
+   * (ingestion endpoint/token + CATE_TERMINAL_ID + ambient agent env) and prepares
    * workspace-scoped hook files before the shell spawns. Optional — hosts and
    * tests without hook support spawn plain shells.
    */
@@ -261,7 +261,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       // (CATE_API), also put the bundled `cate` on PATH so agents can run it.
       let env = catePathEnv({ ...deps.getEnv(), ...(opts.env ?? {}) })
       // Agent hook injection (opt-in per pty via opts.agentHooks): hook env
-      // (endpoint/token/CATE_TERMINAL_ID + PATH shims) on the pty, workspace
+      // (endpoint/token/CATE_TERMINAL_ID + ambient agent env) on the pty, workspace
       // hook files in its cwd. Failure degrades to a plain shell — a terminal
       // must never fail to open over hooks.
       if (deps.hooks && opts.agentHooks) {

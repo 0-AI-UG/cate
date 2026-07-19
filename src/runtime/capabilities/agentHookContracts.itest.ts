@@ -15,22 +15,31 @@
 // Per-CLI mechanism (all verified live 2026-07-18; claude file channel
 // re-pinned 2026-07-19):
 //   claude  · JSON-on-stdin hooks configured in <cwd>/.claude/
-//             settings.local.json (project scope — PATH-independent, unlike
-//             the --settings argv channel this replaced, which rode a
-//             bypassable PATH shim). session_id/transcript_path/cwd on every
-//             event; /clear = SessionEnd(reason=clear) + SessionStart(
-//             source=clear, new id); --session-id pre-assigns the id. Works
-//             in -p and TUI.
+//             settings.local.json (project scope — launch-method independent,
+//             unlike the --settings argv channel this replaced). session_id/
+//             transcript_path/cwd on every event; /clear = SessionEnd(
+//             reason=clear) + SessionStart(source=clear, new id). Works in
+//             -p and TUI.
 //             Permission-wait: Notification hook, notification_type
 //             "permission_prompt" (and "idle_prompt" once idle nags kick in).
 //             Approval resolution: PostToolUse fires once the approved tool
 //             ran (denial produces no PostToolUse — the turn just Stops).
-//   codex   · JSON-on-stdin hooks injected per-invocation via -c overrides.
-//             Untrusted hooks are SILENTLY skipped: a hooks.state entry with a
-//             trusted_hash (sha256 of the canonical handler identity, key
-//             source "/<session-flags>/config.toml") must ride along — the
-//             hash scheme is internal, so THIS is the contract most likely to
-//             drift. transcript_path IS the rollout file; exec resume reuses
+//   codex   · JSON-on-stdin hooks configured in <project root>/.codex/
+//             hooks.json (repo scope, discovered by codex itself —
+//             launch-method independent, unlike the six per-invocation -c
+//             overrides this replaced; moved
+//             2026-07-19). Project hooks load ONLY from a folder the user
+//             TRUSTS, and unknown hooks are SILENTLY skipped until trusted
+//             (interactive TUI: one-time review prompt; codex persists the
+//             grant in its own user state). The shipped product relies on
+//             that native trust UX; the tests below pre-plant the granted
+//             state per-invocation as HARNESS ONLY (see trustArgs): folder
+//             trust via -c projects={...} (inline-table form — the
+//             dotted-path form silently no-ops) and hook trust via -c
+//             hooks.state keyed "<root>/.codex/hooks.json:<label>:0:0" with
+//             a trusted_hash (sha256 of the canonical handler identity) —
+//             the hash scheme is internal, so THIS is the contract most
+//             likely to drift. transcript_path IS the rollout file; exec resume reuses
 //             the same id + file (source="resume"). SessionEnd never fires.
 //             In the TUI, NO hook fires at launch — SessionStart(source=
 //             startup) + everything else arrives at the FIRST prompt submit.
@@ -39,11 +48,15 @@
 //             unanswerable approval is then auto-rejected and the turn Stops.
 //             Approval resolution: PostToolUse (label post_tool_use) fires
 //             after an executed command, same payload family.
-//   pi      · in-process extension via -e <file.ts>; ctx.sessionManager gives
-//             sessionId + sessionFile on every event; agent_start/agent_end
-//             bracket each turn; --session-id creates-or-resumes an exact id.
-//             The test registers a fake offline provider (also via -e), so pi
-//             runs cost nothing and need no credentials.
+//   pi      · in-process extension auto-discovered from <cwd>/.pi/extensions/
+//             *.ts (project scope — launch-method independent, unlike the -e
+//             argv channel this replaced; moved 2026-07-19).
+//             ctx.sessionManager gives sessionId + sessionFile on every
+//             event; agent_start/agent_end bracket each turn; --session
+//             resumes an exact id. The test launches pi by ABSOLUTE PATH to
+//             pin launch-method independence and registers a fake offline
+//             provider via -e, so pi runs cost nothing and need no
+//             credentials.
 //   opencode· in-process plugin injected via OPENCODE_CONFIG_CONTENT env (no
 //             config file); bus events carry sessionID; session.status
 //             busy/idle + session.idle mark turn state. The full lifecycle
@@ -59,20 +72,7 @@
 //
 // Permission-wait exists ONLY on claude/codex/opencode. pi has no approval
 // concept at all (tools execute directly — verified: zero approval strings in
-// its dist), and cursor/agy expose no permission hook — for those Cate keeps
-// the screen-heuristic settle-timer fallback.
-//   cursor  · <cwd>/.cursor/hooks.json (project-scoped; fine for a throwaway
-//             cwd). conversation_id (= chats/<md5(cwd)>/<id> dir) on every
-//             event. TUI fires beforeSubmitPrompt/stop/afterAgentResponse;
-//             print mode does NOT (only sessionStart/sessionEnd). sessionStart
-//             does not fire on --resume. create-chat pre-assigns an id.
-//   agy     · <cwd>/.agents/hooks.json (agy-specific schema, NOT Claude's),
-//             trust pre-seeded via trustedWorkspaces in
-//             ~/.gemini/antigravity-cli/settings.json. conversationId on every
-//             event = the `agy --conversation=<id>` resume handle. Hooks fire
-//             in interactive mode ONLY (never in -p). Only PreInvocation/Stop
-//             are registered — an observing PreToolUse hook that doesn't
-//             answer {"decision":"allow"} blocks tool calls.
+// its dist).
 //
 // Opt-in only: drives the real, locally-installed CLIs with the user's
 // accounts (a few tiny prompts — cents; pi is offline/free). *.itest.ts is
@@ -84,13 +84,13 @@
 
 import { describe, test, expect, afterAll } from 'vitest'
 import { execFile, execFileSync } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs'
-import { FILE_STORES, newestCursorSessionFor, newestOpencodeSessionFor } from './agentSessions'
+import { FILE_STORES, newestOpencodeSessionFor } from './agentSessions'
 
 /** Headless CLI run with stdin CLOSED — several CLIs (codex exec, pi -p,
  *  opencode run) block reading a never-ending stdin pipe otherwise. PWD is
@@ -158,22 +158,12 @@ function makeCwd(sub: string): string {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-async function until(pred: () => boolean, timeoutMs: number, label: string): Promise<void> {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    if (pred()) return
-    await sleep(250)
-  }
-  throw new Error(`timeout waiting for ${label}`)
-}
-
 // --- the bridge: one hook process shape for all stdin-JSON CLIs --------------
-// (claude, codex, cursor, agy all deliver one JSON payload on stdin. The
+// (claude and codex deliver one JSON payload on stdin. The
 // events-file path and the terminal correlation id both arrive via env — that
 // env inheritance IS part of the contract under test: Cate correlates a hook
 // event to a terminal by the CATE_TERMINAL_ID it planted on the PTY. No
-// stdout on purpose: agy denies tool calls on non-allow hook output, and
-// every CLI accepts silent exit-0.)
+// stdout on purpose: every CLI accepts silent exit-0.)
 function writeBridge(dir: string): string {
   const path = join(dir, 'cate-bridge.js')
   writeFileSync(
@@ -245,7 +235,7 @@ async function driveTui(bin: string, args: string[], cwd: string, env: Record<st
   cleanups.push(() => { if (!exited) p.kill() })
 
   // First-run interstitials, checked on every poll tick: folder-trust prompts
-  // (claude, codex, cursor ask in a fresh cwd; default is "yes, trust") and
+  // (claude and codex ask in a fresh cwd; default is "yes, trust") and
   // update banners. NEVER Enter through an update banner — Enter ACCEPTS the
   // self-update (observed: opencode updated itself). Esc dismisses.
   const handleInterstitials = async (): Promise<void> => {
@@ -296,10 +286,10 @@ async function driveTui(bin: string, args: string[], cwd: string, env: Record<st
 
 // =============================================================================
 // claude — hooks via <cwd>/.claude/settings.local.json (project scope). File
-// injection on purpose: the earlier `--settings` argv channel rode the PATH
-// shim, which any rc-file PATH prepend (~/.local/bin — claude's own install
-// dir), alias, or absolute-path launch silently bypasses. The pinned contract
-// is that project-local settings hooks fire in BOTH TUI and print mode.
+// injection on purpose: an argv channel is launch-method dependent (aliases,
+// rc-file PATH prepends, absolute-path launches all sidestep argv injection),
+// while repo-scoped settings hooks fire regardless. The pinned contract is
+// that project-local settings hooks fire in BOTH TUI and print mode.
 // =============================================================================
 
 describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
@@ -390,40 +380,40 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     tui.kill()
   })
 
-  test('print mode: --session-id pre-assigns the id; hooks fire on a resume relaunch', { timeout: 300_000 }, async () => {
-    const cwd = makeCwd('claude-assign')
+  test('print mode: hooks report one consistent id; hooks fire on a resume relaunch', { timeout: 300_000 }, async () => {
+    const cwd = makeCwd('claude-print')
     const bridge = writeBridge(cwd)
     writeClaudeSettings(cwd, bridge)
     const tid = `cate-term-claude-p-${Date.now()}`
-    const assigned = randomUUID()
 
-    // Pre-assignment: Cate can CHOOSE the session id at spawn instead of
-    // discovering it — the strongest possible terminal↔session binding.
-    const eventsFile = join(cwd, 'events-assign.jsonl')
+    const eventsFile = join(cwd, 'events-print.jsonl')
     await run(
       'claude',
-      ['-p', PROMPT, '--model', 'haiku', '--session-id', assigned],
+      ['-p', PROMPT, '--model', 'haiku'],
       { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
     )
     const events = readJsonl<BridgeEvent>(eventsFile)
+    const id = events.find((e) => e.payload.hook_event_name === 'SessionStart')?.payload.session_id as string
+    expect(id).toMatch(UUID_RE)
     for (const name of ['SessionStart', 'UserPromptSubmit', 'Stop']) {
       const hits = events.filter((e) => e.payload.hook_event_name === name)
       expect(hits.length, `${name} fired`).toBeGreaterThan(0)
-      for (const h of hits) expect(h.payload.session_id, `${name} reports the assigned id`).toBe(assigned)
+      for (const h of hits) expect(h.payload.session_id, `${name} reports the same id`).toBe(id)
     }
     const transcript = events[0].payload.transcript_path as string
-    expect(existsSync(transcript), 'assigned-id transcript exists').toBe(true)
+    expect(existsSync(transcript), 'transcript exists').toBe(true)
     cleanups.push(() => rmSync(dirname(transcript), { recursive: true, force: true }))
     expectEcho(events, tid)
 
-    // Resume relaunch: hooks keep flowing. claude may FORK on resume (shadow
-    // session continuing the original transcript) — the id is not asserted;
-    // the contract is that the relaunched process pushes events at all, so
-    // Cate's tracker re-stamps whatever the fork produced.
+    // Resume relaunch (the shipped restore argv, --resume <id>): hooks keep
+    // flowing. claude may FORK on resume (shadow session continuing the
+    // original transcript) — the id is not asserted; the contract is that the
+    // relaunched process pushes events at all, so Cate's tracker re-stamps
+    // whatever the fork produced.
     const eventsFile2 = join(cwd, 'events-resume.jsonl')
     await run(
       'claude',
-      ['-p', PROMPT2, '--resume', assigned, '--model', 'haiku'],
+      ['-p', PROMPT2, '--resume', id, '--model', 'haiku'],
       { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
     )
     const resumeEvents = readJsonl<BridgeEvent>(eventsFile2)
@@ -496,14 +486,31 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
 })
 
 // =============================================================================
-// codex — hooks via -c overrides + self-supplied trusted_hash
+// codex — hooks via <project root>/.codex/hooks.json + codex's own trust.
+// codex is launched by ABSOLUTE PATH throughout: the shipped channel is a repo
+// file codex discovers itself, so events must fire independent of how the
+// binary was found (alias, rc-file PATH prepend, absolute invocation).
 // =============================================================================
 
 describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
-  // Untrusted hooks are SILENTLY skipped, so a per-invocation injection must
-  // bring its own hooks.state trust entry. Key + hash formats are codex
-  // internals (source comment: "replace this positional suffix with a durable
-  // hook id") — when this breaks, THIS assertion is the early warning.
+  // Resolved lazily inside tests — the describe body runs even when skipped.
+  const codexBin = (): string => execFileSync('which', ['codex']).toString().trim()
+
+  /** [hooks.json key (CamelCase), trust label (snake_case)] pairs — the two
+   *  casings are a codex quirk, not a typo. */
+  const CODEX_EVENTS: [string, string][] = [
+    ['SessionStart', 'session_start'],
+    ['UserPromptSubmit', 'user_prompt_submit'],
+    ['PermissionRequest', 'permission_request'],
+    ['PostToolUse', 'post_tool_use'],
+    ['Stop', 'stop'],
+  ]
+
+  // Trust-key hash: sha256 of the canonical handler identity. Key + hash
+  // formats are codex internals (source comment: "replace this positional
+  // suffix with a durable hook id") — when this breaks, THIS suite is the
+  // early warning. Must stay byte-identical to codexTrustedHash in
+  // src/shared/agentHooks.ts (pinned there by a vector test).
   const trustedHash = (label: string, command: string, timeout: number): string => {
     const identity =
       `{"event_name":${JSON.stringify(label)},"hooks":[{"async":false,` +
@@ -511,40 +518,56 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     return 'sha256:' + createHash('sha256').update(identity).digest('hex')
   }
 
-  const hookArgs = (bridge: string): string[] => {
-    const events: [string, string][] = [
-      ['SessionStart', 'session_start'],
-      ['UserPromptSubmit', 'user_prompt_submit'],
-      ['PermissionRequest', 'permission_request'],
-      ['PostToolUse', 'post_tool_use'],
-      ['Stop', 'stop'],
-    ]
-    const args: string[] = []
-    const state: string[] = []
-    for (const [toml, label] of events) {
-      args.push('-c', `hooks.${toml}=[{hooks=[{type="command",command="${bridge}",timeout=60}]}]`)
-      // The state key contains dots, so it must ride as one inline table —
-      // it cannot go through -c's dotted-path parser.
-      state.push(`"/<session-flags>/config.toml:${label}:0:0"={trusted_hash="${trustedHash(label, bridge, 60)}"}`)
-    }
-    args.push('-c', `hooks.state={${state.join(',')}}`)
-    return args
+  /** The SHIPPED channel: the hooks.json Cate's prepareWorkspace merges into
+   *  the project root (same shape, same 60s timeout). */
+  const writeHooksFile = (root: string, bridge: string): void => {
+    mkdirSync(join(root, '.codex'), { recursive: true })
+    writeFileSync(
+      join(root, '.codex', 'hooks.json'),
+      JSON.stringify({
+        hooks: Object.fromEntries(
+          CODEX_EVENTS.map(([key]) => [key, [{ hooks: [{ type: 'command', command: bridge, timeout: 60 }] }]]),
+        ),
+      }),
+    )
   }
 
-  test('exec: injected hooks report identity + turn; exec resume reuses id and rollout', { timeout: 420_000 }, async () => {
+  /** Folder trust for the project root. Inline-table form REQUIRED — the
+   *  dotted-path `-c projects."<root>".trust_level=...` spelling silently
+   *  no-ops (pinned live). --dangerously-bypass-hook-trust does NOT bypass
+   *  folder trust either. */
+  const folderTrustArg = (root: string): string => `projects={"${root}"={trust_level="trusted"}}`
+
+  /** Hook trust for every injected hook, keyed by the REAL source-file path.
+   *  HARNESS ONLY — the shipped product plants no trust: a headless test
+   *  cannot answer codex's interactive review prompt, so these overrides
+   *  simulate the state the user's one-time "trust" click persists. */
+  const hookTrustArg = (root: string, bridge: string): string =>
+    `hooks.state={${CODEX_EVENTS.map(
+      ([, label]) => `"${root}/.codex/hooks.json:${label}:0:0"={trusted_hash="${trustedHash(label, bridge, 60)}"}`,
+    ).join(',')}}`
+
+  /** The full harness-only trust pre-plant: trusted folder + trusted hooks. */
+  const trustArgs = (root: string, bridge: string): string[] => [
+    '-c', folderTrustArg(root),
+    '-c', hookTrustArg(root, bridge),
+  ]
+
+  test('exec: project-file hooks report identity + turn; exec resume reuses id and rollout', { timeout: 420_000 }, async () => {
     const cwd = makeCwd('codex')
     const bridge = writeBridge(cwd)
+    writeHooksFile(cwd, bridge)
     const tid = `cate-term-codex-${Date.now()}`
 
     const eventsFile = join(cwd, 'events.jsonl')
     await run(
-      'codex',
-      ['exec', '--skip-git-repo-check', ...hookArgs(bridge), PROMPT],
+      codexBin(),
+      ['exec', '--skip-git-repo-check', ...trustArgs(cwd, bridge), PROMPT],
       { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 300_000 },
     )
     const events = readJsonl<BridgeEvent>(eventsFile)
     const start = events.find((e) => e.payload.hook_event_name === 'SessionStart')?.payload
-    expect(start, 'SessionStart fired — absence means the trusted_hash scheme drifted').toBeTruthy()
+    expect(start, 'SessionStart fired — absence means hooks.json discovery or the trust scheme drifted').toBeTruthy()
     expect(start?.source).toBe('startup')
     expect(start?.session_id).toMatch(UUID_RE)
     expect(start?.cwd).toBe(cwd)
@@ -565,8 +588,8 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     // exec resume: same id, same rollout, source=resume — no fork.
     const eventsFile2 = join(cwd, 'events-resume.jsonl')
     await run(
-      'codex',
-      ['exec', '--skip-git-repo-check', ...hookArgs(bridge), 'resume', id, PROMPT2],
+      codexBin(),
+      ['exec', '--skip-git-repo-check', ...trustArgs(cwd, bridge), 'resume', id, PROMPT2],
       { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }), timeout: 300_000 },
     )
     const resumeEvents = readJsonl<BridgeEvent>(eventsFile2)
@@ -585,14 +608,15 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
   test('exec: PermissionRequest fires when a command needs approval', { timeout: 300_000 }, async () => {
     const cwd = makeCwd('codex-perm')
     const bridge = writeBridge(cwd)
+    writeHooksFile(cwd, bridge)
     const tid = `cate-term-codex-perm-${Date.now()}`
     const eventsFile = join(cwd, 'events.jsonl')
 
     // approval_policy=untrusted parks ANY command on approval; the exec run
     // still exits 0 (the model reports the rejection), so run() must not throw.
     await run(
-      'codex',
-      ['exec', '--skip-git-repo-check', '-c', 'approval_policy="untrusted"', ...hookArgs(bridge),
+      codexBin(),
+      ['exec', '--skip-git-repo-check', '-c', 'approval_policy="untrusted"', ...trustArgs(cwd, bridge),
         'Run exactly this shell command: touch needs-approval.txt'],
       { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
     )
@@ -621,12 +645,13 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
   test('exec: PostToolUse fires after an executed command', { timeout: 300_000 }, async () => {
     const cwd = makeCwd('codex-pt')
     const bridge = writeBridge(cwd)
+    writeHooksFile(cwd, bridge)
     const tid = `cate-term-codex-pt-${Date.now()}`
     const eventsFile = join(cwd, 'events.jsonl')
 
     await run(
-      'codex',
-      ['exec', '--skip-git-repo-check', '--full-auto', ...hookArgs(bridge), 'Run exactly this shell command: echo cate-pt-probe'],
+      codexBin(),
+      ['exec', '--skip-git-repo-check', '--full-auto', ...trustArgs(cwd, bridge), 'Run exactly this shell command: echo cate-pt-probe'],
       { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
     )
     const events = readJsonl<BridgeEvent>(eventsFile)
@@ -649,13 +674,16 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
   test('TUI: hooks are silent at launch; SessionStart arrives with the first submit', { retry: 1, timeout: 420_000 }, async () => {
     const cwd = makeCwd('codex-tui')
     const bridge = writeBridge(cwd)
+    writeHooksFile(cwd, bridge)
     const tid = `cate-term-codex-tui-${Date.now()}`
     const eventsFile = join(cwd, 'events.jsonl')
     const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
 
+    // Trust pre-planted (harness) so the one-time hook review prompt never
+    // appears — headless PTY driving cannot answer it deterministically.
     const tui = await driveTui(
-      'codex',
-      ['-c', 'approval_policy="untrusted"', ...hookArgs(bridge)],
+      codexBin(),
+      ['-c', 'approval_policy="untrusted"', ...trustArgs(cwd, bridge)],
       cwd,
       cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
     )
@@ -677,10 +705,49 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     expectEcho(events(), tid)
     tui.kill()
   })
+
+  // Negative controls: every broken link in the trust chain must yield ZERO
+  // events — a silent skip, no error, no partial delivery. This is the safety
+  // property the interactive-trust UX (and Cate's "hooks may never arrive"
+  // tolerance) is built on. Rollouts of these runs are not cleaned up (no
+  // events → no transcript_path to find them by).
+  test('exec: untrusted folder / wrong hash / wrong key path all silently skip hooks', { timeout: 600_000 }, async () => {
+    const cwd = makeCwd('codex-neg')
+    const bridge = writeBridge(cwd)
+    writeHooksFile(cwd, bridge)
+
+    const runCase = async (name: string, args: string[]): Promise<void> => {
+      const eventsFile = join(cwd, `events-${name}.jsonl`)
+      await run(
+        codexBin(),
+        ['exec', '--skip-git-repo-check', ...args, PROMPT],
+        { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: `cate-term-${name}` }), timeout: 180_000 },
+      )
+      expect(readJsonl<BridgeEvent>(eventsFile).length, `${name}: hooks must be silently skipped`).toBe(0)
+    }
+
+    // Folder NOT trusted (hook trust alone is not enough — project hooks
+    // only load from a trusted folder).
+    await runCase('untrusted-folder', ['-c', hookTrustArg(cwd, bridge)])
+    // Trusted folder, but a garbage trusted_hash.
+    const zeroState = `hooks.state={${CODEX_EVENTS.map(
+      ([, label]) => `"${cwd}/.codex/hooks.json:${label}:0:0"={trusted_hash="sha256:${'0'.repeat(64)}"}`,
+    ).join(',')}}`
+    await runCase('bad-hash', ['-c', folderTrustArg(cwd), '-c', zeroState])
+    // Trusted folder, correct hashes, but the OLD placeholder path segment in
+    // the key — the source-file path is part of the trust identity.
+    const wrongPathState = `hooks.state={${CODEX_EVENTS.map(
+      ([, label]) => `"/<session-flags>/config.toml:${label}:0:0"={trusted_hash="${trustedHash(label, bridge, 60)}"}`,
+    ).join(',')}}`
+    await runCase('wrong-key-path', ['-c', folderTrustArg(cwd), '-c', wrongPathState])
+  })
 })
 
 // =============================================================================
-// pi — in-process extension via -e (offline: fake provider, zero cost)
+// pi — in-process extension discovered from <cwd>/.pi/extensions (offline:
+// fake provider via -e, zero cost). pi is launched by ABSOLUTE PATH on
+// purpose: the file channel must fire regardless of how the binary was found
+// (alias, rc-file PATH prepend, absolute invocation).
 // =============================================================================
 
 describe.skipIf(!LIVE || !hasBin('pi'))('pi hook contract', () => {
@@ -763,42 +830,48 @@ export default function (pi: ExtensionAPI) {
 }
 `
 
-  test('print: -e bridge streams identity + turns; --session-id pre-assigns; --session resumes', { timeout: 300_000 }, async () => {
+  test('print: workspace-file bridge streams identity + turns; --session resumes', { timeout: 300_000 }, async () => {
     const cwd = makeCwd('pi')
-    const bridge = join(cwd, 'cate-bridge.ts')
-    const fake = join(cwd, 'fake-provider.ts')
+    // The bridge rides the SHIPPED channel: a project-local extension at
+    // <cwd>/.pi/extensions/cate-hook.ts, discovered by pi itself — no argv.
+    const bridge = join(cwd, '.pi', 'extensions', 'cate-hook.ts')
+    mkdirSync(dirname(bridge), { recursive: true })
     writeFileSync(bridge, BRIDGE_TS)
+    const fake = join(cwd, 'fake-provider.ts')
     writeFileSync(fake, FAKE_PROVIDER_TS)
     const tid = `cate-term-pi-${Date.now()}`
-    const assigned = randomUUID()
-    const piArgs = ['-p', '-e', bridge, '-e', fake, '--provider', 'fake', '--model', 'fake-1']
+    // Absolute path — the extension must load regardless of launch method.
+    const piBin = execFileSync('which', ['pi']).toString().trim()
+    const piArgs = ['-p', '-e', fake, '--provider', 'fake', '--model', 'fake-1']
 
     const eventsFile = join(cwd, 'events.jsonl')
-    await run('pi', [...piArgs, '--session-id', assigned, PROMPT], {
+    await run(piBin, [...piArgs, PROMPT], {
       cwd,
       env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
       timeout: 120_000,
     })
     const events = readJsonl<PiEvent>(eventsFile)
-    // Full lifecycle, every event stamped with the ASSIGNED session identity.
+    const id = events[0]?.sessionId as string
+    expect(id).toMatch(UUID_RE)
+    // Full lifecycle, every event stamped with the same session identity.
     for (const name of ['session_start', 'agent_start', 'turn_end', 'agent_end', 'session_shutdown']) {
       const hit = events.find((e) => e.event === name)
       expect(hit, `${name} fired`).toBeTruthy()
-      expect(hit?.sessionId, `${name} carries the assigned session id`).toBe(assigned)
+      expect(hit?.sessionId, `${name} carries the session id`).toBe(id)
     }
     const sessionFile = events[0].sessionFile as string
-    expect(sessionFile).toContain(assigned)
+    expect(sessionFile).toContain(id)
     cleanups.push(() => rmSync(dirname(sessionFile), { recursive: true, force: true }))
 
     // Store join: the event's sessionFile is the store file the fallback
     // probe scans, and its header agrees on id + cwd.
     expect(existsSync(sessionFile)).toBe(true)
-    expect(FILE_STORES.pi.meta(readFileSync(sessionFile, 'utf8'))).toEqual({ sessionId: assigned, cwd })
+    expect(FILE_STORES.pi.meta(readFileSync(sessionFile, 'utf8'))).toEqual({ sessionId: id, cwd })
     expectEcho(events, tid)
 
     // Resume via the shipped restore argv (--session <id>): same id, same file.
     const eventsFile2 = join(cwd, 'events-resume.jsonl')
-    await run('pi', [...piArgs, '--session', assigned, PROMPT2], {
+    await run(piBin, [...piArgs, '--session', id, PROMPT2], {
       cwd,
       env: cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }),
       timeout: 120_000,
@@ -806,7 +879,7 @@ export default function (pi: ExtensionAPI) {
     const resumeEvents = readJsonl<PiEvent>(eventsFile2)
     const end = resumeEvents.find((e) => e.event === 'agent_end')
     expect(end, 'agent_end fired on the resumed run').toBeTruthy()
-    expect(end?.sessionId, 'resume re-attaches to the SAME session').toBe(assigned)
+    expect(end?.sessionId, 'resume re-attaches to the SAME session').toBe(id)
     expect(end?.sessionFile).toBe(sessionFile)
     expectEcho(resumeEvents, tid)
   })
@@ -1041,218 +1114,5 @@ export const CatePermLogger = async () => ({
     )
     expectEcho(events().map((e) => ({ cateTerminalId: e.cate_terminal_id })), tid)
     tui.kill()
-  })
-})
-
-// =============================================================================
-// cursor — hooks.json in the (throwaway) project cwd
-// =============================================================================
-
-describe.skipIf(!LIVE || !hasBin('cursor-agent'))('cursor hook contract', () => {
-  const CURSOR_CHATS = join(homedir(), '.cursor', 'chats')
-
-  const writeHooksJson = (cwd: string, bridge: string): void => {
-    mkdirSync(join(cwd, '.cursor'), { recursive: true })
-    writeFileSync(
-      join(cwd, '.cursor', 'hooks.json'),
-      JSON.stringify({
-        version: 1,
-        hooks: Object.fromEntries(
-          ['sessionStart', 'beforeSubmitPrompt', 'stop', 'afterAgentResponse', 'sessionEnd'].map(
-            (e) => [e, [{ command: bridge }]],
-          ),
-        ),
-      }),
-    )
-  }
-
-  const byName = (events: BridgeEvent[], name: string): BridgeEvent[] =>
-    events.filter((e) => e.payload.hook_event_name === name)
-
-  test('TUI: hooks stream conversation_id + stop; print --resume re-attaches', { retry: 1, timeout: 420_000 }, async () => {
-    const cwd = makeCwd('cursor')
-    const eventsFile = join(cwd, 'events.jsonl')
-    const bridge = writeBridge(cwd)
-    writeHooksJson(cwd, bridge)
-    const tid = `cate-term-cursor-${Date.now()}`
-    const env = cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid })
-    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
-    // The whole md5(cwd) chats dir belongs to this throwaway cwd.
-    cleanups.push(() =>
-      rmSync(join(CURSOR_CHATS, createHash('md5').update(cwd).digest('hex')), { recursive: true, force: true }),
-    )
-
-    const tui = await driveTui('cursor-agent', [], cwd, env)
-    await tui.waitFor(() => byName(events(), 'sessionStart').length > 0, 90_000, 'sessionStart')
-    const start = byName(events(), 'sessionStart')[0].payload
-    expect(start.conversation_id).toMatch(UUID_RE)
-    const id = start.conversation_id as string
-
-    // beforeSubmitPrompt and stop fire in the TUI ONLY — print mode never
-    // emits them; if that changes, Cate can simplify to print-mode probing.
-    await tui.send(PROMPT)
-    await tui.waitFor(() => byName(events(), 'beforeSubmitPrompt').length > 0, 120_000, 'beforeSubmitPrompt')
-    expect(byName(events(), 'beforeSubmitPrompt')[0].payload.conversation_id).toBe(id)
-    await tui.waitFor(() => byName(events(), 'stop').length > 0, 180_000, 'stop (turn end)')
-    const stop = byName(events(), 'stop')[0].payload
-    expect(stop.conversation_id).toBe(id)
-    expect(stop.status, 'stop carries turn status').toBeTruthy()
-
-    // Store join: the fallback probe's chats-dir lookup resolves the same id.
-    expect(await newestCursorSessionFor(CURSOR_CHATS, cwd)).toBe(id)
-    expectEcho(events(), tid)
-    tui.kill()
-
-    // Print-mode resume re-attaches: sessionStart does NOT fire on resume, so
-    // the id must come from sessionEnd (or any turn event) — exactly what
-    // Cate's tracker has to key on.
-    const eventsFile2 = join(cwd, 'events-resume.jsonl')
-    await run('cursor-agent', ['-p', '--trust', '--resume', id, PROMPT2], {
-      cwd,
-      env: cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }),
-      timeout: 240_000,
-    })
-    const resumeEvents = readJsonl<BridgeEvent>(eventsFile2)
-    const end = byName(resumeEvents, 'sessionEnd')[0]?.payload
-    expect(end?.conversation_id, 'resumed run reports the SAME conversation').toBe(id)
-    expectEcho(resumeEvents, tid)
-  })
-
-  test('create-chat pre-assigns an id that --resume attaches to', { timeout: 300_000 }, async () => {
-    const cwd = makeCwd('cursor-create')
-    const eventsFile = join(cwd, 'events.jsonl')
-    const bridge = writeBridge(cwd)
-    writeHooksJson(cwd, bridge)
-    const tid = `cate-term-cursor-c-${Date.now()}`
-    cleanups.push(() =>
-      rmSync(join(CURSOR_CHATS, createHash('md5').update(cwd).digest('hex')), { recursive: true, force: true }),
-    )
-
-    const { stdout } = await run('cursor-agent', ['create-chat'], { cwd, env: cleanEnv(), timeout: 60_000 })
-    const chatId = stdout.trim().match(UUID_RE)?.[0]
-    expect(chatId, 'create-chat prints a chat id').toBeTruthy()
-
-    await run('cursor-agent', ['-p', '--trust', '--resume', chatId as string, PROMPT], {
-      cwd,
-      env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
-      timeout: 240_000,
-    })
-    const events = readJsonl<BridgeEvent>(eventsFile)
-    expect(
-      events.some((e) => e.payload.conversation_id === chatId),
-      'hooks report the pre-created chat id',
-    ).toBe(true)
-    expect(existsSync(join(CURSOR_CHATS, createHash('md5').update(cwd).digest('hex'), chatId as string))).toBe(true)
-  })
-})
-
-// =============================================================================
-// agy — .agents/hooks.json in the (throwaway) cwd, trust pre-seeded
-// =============================================================================
-
-describe.skipIf(!LIVE || !hasBin('agy'))('agy hook contract', () => {
-  const AGY_DIR = join(homedir(), '.gemini', 'antigravity-cli')
-
-  // agy's trust gate persists in settings.json:trustedWorkspaces — seeding the
-  // throwaway cwd there before launch skips the interactive prompt entirely.
-  // The entry is removed again in cleanup.
-  const trustWorkspace = (cwd: string): void => {
-    const settingsPath = join(AGY_DIR, 'settings.json')
-    let settings: { trustedWorkspaces?: string[] } = {}
-    try {
-      settings = JSON.parse(readFileSync(settingsPath, 'utf8'))
-    } catch { /* fresh install */ }
-    const list = (settings.trustedWorkspaces ??= [])
-    if (!list.includes(cwd)) list.push(cwd)
-    mkdirSync(AGY_DIR, { recursive: true })
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
-    cleanups.push(() => {
-      const s = JSON.parse(readFileSync(settingsPath, 'utf8'))
-      s.trustedWorkspaces = (s.trustedWorkspaces ?? []).filter((w: string) => w !== cwd)
-      writeFileSync(settingsPath, JSON.stringify(s, null, 2))
-    })
-  }
-
-  // agy-specific schema: named hook → event → flat handler list. Only
-  // PreInvocation/Stop — an observing PreToolUse that doesn't answer
-  // {"decision":"allow"} DENIES the tool call.
-  const writeHooksJson = (cwd: string, bridge: string): void => {
-    mkdirSync(join(cwd, '.agents'), { recursive: true })
-    writeFileSync(
-      join(cwd, '.agents', 'hooks.json'),
-      JSON.stringify({
-        'cate-bridge': {
-          PreInvocation: [{ type: 'command', command: bridge, timeout: 30 }],
-          Stop: [{ type: 'command', command: bridge, timeout: 30 }],
-        },
-      }),
-    )
-  }
-
-  test('TUI: hooks stream conversationId + Stop; --conversation resumes', { retry: 1, timeout: 420_000 }, async () => {
-    const cwd = makeCwd('agy')
-    const eventsFile = join(cwd, 'events.jsonl')
-    const bridge = writeBridge(cwd)
-    writeHooksJson(cwd, bridge)
-    trustWorkspace(cwd)
-    const tid = `cate-term-agy-${Date.now()}`
-    const env = cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid })
-    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
-
-    // Hooks fire in interactive mode ONLY (verified: never in -p) — so this
-    // contract is pinned through a live TUI, both launch and resume.
-    const tui = await driveTui('agy', [], cwd, env)
-    await tui.waitFor(() => tui.peek().length > 0, 60_000, 'agy first paint')
-    await tui.settle(6_000)
-    await tui.send(PROMPT)
-    await tui.waitFor(
-      () => events().some((e) => typeof e.payload.conversationId === 'string'),
-      180_000,
-      'first hook event with conversationId',
-    )
-    const id = events().find((e) => typeof e.payload.conversationId === 'string')?.payload.conversationId as string
-    expect(id).toMatch(UUID_RE)
-    cleanups.push(() => {
-      rmSync(join(AGY_DIR, 'conversations', `${id}.db`), { force: true })
-      rmSync(join(AGY_DIR, 'conversations', `${id}.pb`), { force: true })
-      rmSync(join(AGY_DIR, 'brain', id), { recursive: true, force: true })
-    })
-
-    // Stop = turn end, same conversation.
-    await tui.waitFor(
-      () => events().some((e) => e.payload.terminationReason !== undefined),
-      180_000,
-      'Stop event (terminationReason)',
-    )
-    expect(events().find((e) => e.payload.terminationReason !== undefined)?.payload.conversationId).toBe(id)
-
-    // Store join: the conversationId IS the resume handle and the .db name.
-    await until(
-      () => existsSync(join(AGY_DIR, 'conversations', `${id}.db`)) || existsSync(join(AGY_DIR, 'conversations', `${id}.pb`)),
-      60_000,
-      'conversation store file',
-    )
-    expectEcho(events(), tid)
-    tui.kill()
-
-    // Resume: `agy --conversation=<id>` re-attaches — hooks report the same id.
-    const eventsFile2 = join(cwd, 'events-resume.jsonl')
-    const env2 = cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid })
-    const resumeEvents = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile2)
-    const tui2 = await driveTui('agy', [`--conversation=${id}`], cwd, env2)
-    await tui2.waitFor(() => tui2.peek().length > 0, 60_000, 'agy resume paint')
-    await tui2.settle(6_000)
-    await tui2.send(PROMPT2)
-    await tui2.waitFor(
-      () => resumeEvents().some((e) => typeof e.payload.conversationId === 'string'),
-      180_000,
-      'hook event on the resumed conversation',
-    )
-    expect(
-      resumeEvents().find((e) => typeof e.payload.conversationId === 'string')?.payload.conversationId,
-      'resume re-attaches to the SAME conversation',
-    ).toBe(id)
-    expectEcho(resumeEvents(), tid)
-    tui2.kill()
   })
 })

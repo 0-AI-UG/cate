@@ -96,7 +96,7 @@ export function TerminalSettings() {
       </SettingRow>
       <SettingRow
         label="Install cate CLI skill"
-        description="Auto-install the cate-cli skill into each workspace so agents learn the `cate` command: Cate's agent always, plus Claude Code, Pi, OpenCode, Codex and Antigravity where their folder exists. Installs once, never overwrites edits; uninstalls stick. Off stops future installs."
+        description="Auto-install the cate-cli skill into each workspace so agents learn the `cate` command: Cate's agent always, plus Claude Code, Pi, OpenCode and Codex where their folder exists. Installs once, never overwrites edits; uninstalls stick. Off stops future installs."
       >
         <Toggle
           checked={store.cliSkillInstallEnabled}

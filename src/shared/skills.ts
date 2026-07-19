@@ -22,7 +22,6 @@ export type SkillTargetId =
   | 'pi-native'
   | 'opencode'
   | 'codex'
-  | 'antigravity'
 
 /** Where a skill lives in a source repo: the directory that contains its
  *  `SKILL.md` (path === '' means the repo root is the skill dir). */
@@ -105,7 +104,6 @@ export const SKILL_TARGETS: readonly SkillTargetInfo[] = [
   { id: 'pi-native', label: 'Pi', layout: 'folder', bundledResources: true, nameMatchesDir: false },
   { id: 'opencode', label: 'OpenCode', layout: 'folder', bundledResources: true, nameMatchesDir: false },
   { id: 'codex', label: 'Codex', layout: 'folder', bundledResources: true, nameMatchesDir: false },
-  { id: 'antigravity', label: 'Antigravity', layout: 'folder', bundledResources: true, nameMatchesDir: false, beta: true },
 ]
 
 export function getSkillTarget(id: SkillTargetId): SkillTargetInfo {

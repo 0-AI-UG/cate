@@ -12,14 +12,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { closeSync, mkdtempSync, mkdirSync, openSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   FILE_STORES,
   claudeRegistrySession,
   codexOpenRolloutSession,
-  newestCursorSessionFor,
   newestFileSessionFor,
   newestOpencodeSessionFor,
   probeSessionForAgent,
@@ -204,37 +202,9 @@ describe('opencode sqlite store', () => {
   })
 })
 
-describe('cursor chat store', () => {
-  const CWD = '/work/app'
-  const hash = createHash('md5').update(CWD).digest('hex')
-
-  it('returns the newest chat under the md5(cwd) workspace dir, gated', async () => {
-    writeStamped(`${hash}/${UUID_A}/store.db`, 'x', 1000)
-    writeStamped(`${hash}/${UUID_B}/store.db`, 'x', 2000)
-    writeStamped(`${hash}/not-a-chat.txt`, 'x', 3000) // tolerated non-chat entry
-    await expect(newestCursorSessionFor(root, CWD)).resolves.toBe(UUID_B)
-    // OFFSET REGRESSION: chats untouched since the agent started are invisible.
-    await expect(newestCursorSessionFor(root, CWD, 2500_000)).resolves.toBeNull()
-  })
-
-  it('WAL REGRESSION: a live TUI writing store.db-wal counts as recency', async () => {
-    // The store is WAL-mode sqlite: turns append to store.db-wal while
-    // store.db itself keeps its old mtime until a checkpoint. Recency must be
-    // the newest file in the chat dir, else a running chat looks stale.
-    writeStamped(`${hash}/${UUID_A}/store.db`, 'x', 1000)
-    writeStamped(`${hash}/${UUID_A}/store.db-wal`, 'x', 5000)
-    await expect(newestCursorSessionFor(root, CWD, 3000_000)).resolves.toBe(UUID_A)
-  })
-
-  it('returns null for a cwd with no workspace dir', () => {
-    return expect(newestCursorSessionFor(root, '/work/none')).resolves.toBeNull()
-  })
-})
-
 describe('probeSessionForAgent', () => {
   it('probes to null for agents with no session-store adapter', async () => {
     const probe = { agentPid: 1, cwd: '/work/app', agentStartMs: null }
-    await expect(probeSessionForAgent({ ...probe, agentId: 'antigravity' })).resolves.toBeNull()
     await expect(probeSessionForAgent({ ...probe, agentId: 'unknown-agent' })).resolves.toBeNull()
   })
 })

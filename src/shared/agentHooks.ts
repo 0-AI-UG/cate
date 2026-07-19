@@ -1,10 +1,10 @@
 // =============================================================================
-// Agent hook abstraction — the per-CLI declarations that turn the six agent
+// Agent hook abstraction — the per-CLI declarations that turn the agent
 // CLIs' hook/extension/plugin surfaces into ONE normalized push event stream.
-// Each agent entry declares (a) HOW Cate injects its hook bridge (PATH-shim
-// argv, ambient env, or workspace-scoped files) and (b) how that CLI's raw
-// hook payload normalizes into an AgentHookEvent. Adding a CLI is one entry
-// here plus its AgentDef in agents.ts.
+// Each agent entry declares (a) HOW Cate injects its hook bridge (ambient env
+// or workspace-scoped files) and (b) how that CLI's raw hook payload
+// normalizes into an AgentHookEvent. Adding a CLI is one entry here plus its
+// AgentDef in agents.ts.
 //
 // The injection/payload contracts are pinned LIVE against the installed CLIs
 // by src/runtime/capabilities/agentHookContracts.itest.ts — when a CLI update
@@ -27,16 +27,6 @@ import type { AgentId } from './agents'
 export const CATE_HOOK_ENDPOINT_ENV = 'CATE_HOOK_ENDPOINT'
 export const CATE_HOOK_TOKEN_ENV = 'CATE_HOOK_TOKEN'
 export const CATE_TERMINAL_ID_ENV = 'CATE_TERMINAL_ID'
-
-/** Per-PTY session pre-assignment env var for an agent (e.g.
- *  CATE_SESSION_PREASSIGN_CLAUDE_CODE). When set on the PTY and the user's own
- *  argv has no session-affecting flags, the agent's shim injects
- *  `<preassign.flag> <value>` so Cate CHOOSES the session id at spawn. The
- *  daemon never sets it itself — policy belongs to the session-stamp feature,
- *  which can plant it per-terminal via PtyCreateOptions.env. */
-export function sessionPreassignEnvVar(agentId: AgentId): string {
-  return `CATE_SESSION_PREASSIGN_${agentId.toUpperCase().replace(/-/g, '_')}`
-}
 
 // ---------------------------------------------------------------------------
 // The one normalized event
@@ -84,36 +74,16 @@ export type NormalizedHookFields = Pick<AgentHookEvent, 'kind' | 'sessionId'> &
  *  pure function of this. */
 export interface HookInjectionContext {
   /** Absolute path of this agent's bridge executable — a dependency-free
-   *  command that forwards one stdin-JSON hook payload to the daemon. */
+   *  command that forwards one stdin-JSON hook payload to the daemon. The
+   *  path is STABLE across daemon restarts (it lands in repo-scoped hook
+   *  files, and codex additionally keys its persisted hook trust on it). */
   bridgeCommand: string
-  /** Absolute path of this agent's in-process support file (pi extension /
-   *  opencode plugin), when the spec declares one. Empty otherwise. */
+  /** Absolute path of this agent's in-process support file (opencode
+   *  plugin), when the spec declares one. Empty otherwise. */
   filePath: string
 }
 
 export interface AgentHookSpec {
-  /**
-   * PATH-shim argv injection: terminals are plain user-typed shells, so CLIs
-   * with per-invocation flags (codex hooks, pi's -e extension, claude/pi
-   * session pre-assignment) are intercepted by an executable of the same name
-   * earlier in PATH that exec's the real binary with `args` prepended.
-   * CAVEAT: the shim dir only wins while it stays first on PATH — a shell rc
-   * file prepending the CLI's own install dir (~/.local/bin etc.), an alias,
-   * or an absolute-path launch bypasses it. Prefer a file/env channel where
-   * the CLI offers one; consumers must tolerate shim-injected events never
-   * arriving.
-   */
-  shim?: {
-    /** Extra argv tokens inserted BEFORE the user's own args. */
-    args(ctx: HookInjectionContext): string[]
-    /** In-process support file (pi's -e extension) written into the hooks
-     *  dir; args() receives its absolute path as ctx.filePath. */
-    file?: { name: string; content(): string }
-    /** Session pre-assignment: the shim injects `flag <value-of-preassign-env>`
-     *  unless the user's argv contains one of `blockers` (session-affecting
-     *  flags / subcommands — the user's own choice always wins). */
-    preassign?: { flag: string; blockers: string[] }
-  }
   /**
    * Ambient env injection (opencode): vars planted on every PTY. Verified
    * against the opencode 1.18.x binary: OPENCODE_CONFIG_CONTENT is parsed and
@@ -129,119 +99,125 @@ export interface AgentHookSpec {
   }
   /**
    * Workspace-scoped hook files (claude's .claude/settings.local.json,
-   * cursor/agy's hooks.json). `build` returns the file's new content given
-   * the existing one, or null to leave the file untouched. Merge policy
-   * (never clobber user config): a missing file is created; a parseable file
-   * is merged — our entries (marked by the CATE_HOOK_MARKER in the command
-   * path) are replaced/refreshed, every user entry is preserved; an
-   * unparseable file is left alone.
+   * codex's .codex/hooks.json, pi's .pi/extensions/cate-hook.ts). `build`
+   * returns the file's new content given the existing one, or null to leave
+   * the file untouched. Update policy is per-file: a SHARED file (claude's
+   * settings, which also carries user config; codex's hooks.json, where users
+   * may keep their own hooks) is merged — our entries (marked by the
+   * CATE_HOOK_MARKER) are replaced/refreshed, every user entry is preserved,
+   * an unparseable file is left alone; a file Cate owns outright (pi's
+   * extension, marked in its header comment) is rewritten whenever its
+   * content differs.
    */
   projectFiles?: Array<{
     relPath: string
     build(existing: string | null, ctx: HookInjectionContext): string | null
   }>
-  /**
-   * Global trust seeding (agy): hooks only run in trusted workspaces, so the
-   * workspace root is added to a settings file under the HOME dir. `build`
-   * returns updated content or null to leave the file alone.
-   */
-  trust?: {
-    /** Path relative to the host home dir. */
-    relPath: string
-    build(existing: string | null, workspaceRoot: string): string | null
-  }
   /** Normalize one raw payload posted by this agent's bridge. Null = drop
    *  (an event Cate doesn't track, e.g. claude's idle_prompt notification). */
   normalize(payload: Record<string, unknown>): NormalizedHookFields | null
 }
 
 /** Marker every generated bridge/wrapper path contains — how the project-file
- *  merge recognizes (and refreshes) Cate's own entries across daemon restarts
- *  (the hooks dir is per-boot, so stale paths must be replaced). */
+ *  merge recognizes (and refreshes) Cate's own entries when the bridge path
+ *  changes (the hooks dir is stable across boots, but an app relocation or a
+ *  file written by an older per-boot-dir version leaves stale paths behind). */
 export const CATE_HOOK_MARKER = 'cate-hook'
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
 
 // ---------------------------------------------------------------------------
-// claude — hooks ride in <workspace>/.claude/settings.local.json (project
-// scope, merged by claude over user settings; same file whether claude is in
-// TUI or -p mode). File injection on purpose: the original per-invocation
-// `--settings` shim relied on the shim dir staying FIRST on PATH, which every
-// rc-file `export PATH="~/.local/bin:$PATH"` prepend (uv/bun/brew boilerplate
-// — and claude installs into ~/.local/bin) silently defeats, as do aliases
-// and absolute-path launches. The shim survives only for session
-// pre-assignment. JSON payload on hook stdin; session_id/transcript_path/cwd
-// on every event.
+// Shared {hooks: {<Event>: [groups]}} file merge — claude's
+// settings.local.json and codex's hooks.json use the same shape.
 // ---------------------------------------------------------------------------
 
-const CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
-
 /** One matcher-group per event, holding only our bridge command. */
-interface ClaudeHookGroup {
+interface HookGroup {
   matcher?: unknown
   hooks?: Array<{ type?: unknown; command?: unknown }>
   [k: string]: unknown
 }
 
-interface ClaudeSettingsJson {
-  hooks?: Record<string, ClaudeHookGroup[]>
+interface SharedHooksJson {
+  hooks?: Record<string, HookGroup[]>
   [k: string]: unknown
 }
 
+/**
+ * Merge OUR one-command group into every tracked event of a SHARED hooks file.
+ * Merge, never clobber: the file also carries user content (claude's "always
+ * allow" grants, a user's own codex hooks), so every user field and every user
+ * hook group is preserved. Only groups consisting solely of STALE Cate bridge
+ * entries (recognized by the marker) are dropped, then the fresh group is
+ * appended per tracked event. Returns the new content, or null to leave the
+ * file untouched (unparseable, or already correct).
+ */
+function mergeSharedHooksFile(
+  existing: string | null,
+  events: readonly string[],
+  oursGroup: () => HookGroup,
+): string | null {
+  if (existing === null) {
+    return JSON.stringify({ hooks: Object.fromEntries(events.map((e) => [e, [oursGroup()]])) }, null, 2) + '\n'
+  }
+  let parsed: SharedHooksJson
+  try {
+    parsed = JSON.parse(existing) as SharedHooksJson
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  } catch {
+    return null
+  }
+  // The !Array.isArray guard is load-bearing: a `"hooks": []` value passes
+  // the typeof-object check, and named keys assigned onto an array are
+  // silently dropped by JSON.stringify — the file would look merged but
+  // carry no hooks.
+  const hooks: Record<string, HookGroup[]> =
+    typeof parsed.hooks === 'object' && parsed.hooks !== null && !Array.isArray(parsed.hooks)
+      ? parsed.hooks
+      : {}
+  for (const event of events) {
+    const kept: HookGroup[] = []
+    for (const group of Array.isArray(hooks[event]) ? hooks[event] : []) {
+      if (typeof group !== 'object' || group === null) {
+        kept.push(group)
+        continue
+      }
+      const entries = Array.isArray(group.hooks) ? group.hooks : []
+      const filtered = entries.filter(
+        (h) => !(typeof h?.command === 'string' && h.command.includes(CATE_HOOK_MARKER)),
+      )
+      if (entries.length > 0 && filtered.length === 0) continue // group was ours
+      kept.push(filtered.length === entries.length ? group : { ...group, hooks: filtered })
+    }
+    hooks[event] = [...kept, oursGroup()]
+  }
+  const out = JSON.stringify({ ...parsed, hooks }, null, 2) + '\n'
+  return out === existing ? null : out
+}
+
+// ---------------------------------------------------------------------------
+// claude — hooks ride in <workspace>/.claude/settings.local.json (project
+// scope, merged by claude over user settings; same file whether claude is in
+// TUI or -p mode). File injection on purpose: the original per-invocation
+// `--settings` argv channel was launch-method dependent — every rc-file
+// `export PATH="~/.local/bin:$PATH"` prepend (uv/bun/brew boilerplate — and
+// claude installs into ~/.local/bin), alias, and absolute-path launch
+// silently sidestepped it. JSON payload on hook stdin;
+// session_id/transcript_path/cwd on every event.
+// ---------------------------------------------------------------------------
+
+const CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
+
 const claudeSpec: AgentHookSpec = {
-  shim: {
-    args: () => [],
-    preassign: {
-      flag: '--session-id',
-      // claude's session-affecting argv: resume (2 spellings), continue
-      // (2 spellings), an explicit --session-id, or the resume subcommand.
-      blockers: ['--resume', '-r', '--continue', '-c', '--session-id', 'resume'],
-    },
-  },
   projectFiles: [
     {
       relPath: '.claude/settings.local.json',
-      build: (existing, ctx) => {
-        const oursGroup = (): ClaudeHookGroup => ({ hooks: [{ type: 'command', command: ctx.bridgeCommand }] })
-        const oursHooks = (): Record<string, ClaudeHookGroup[]> =>
-          Object.fromEntries(CLAUDE_EVENTS.map((e) => [e, [oursGroup()]]))
-        if (existing === null) return JSON.stringify({ hooks: oursHooks() }, null, 2) + '\n'
-        // Merge, never clobber: claude owns this file too (its "always allow"
-        // permission grants land here), so every user field and every user
-        // hook group is preserved. Only groups consisting solely of STALE Cate
-        // bridge entries (per-boot paths, recognized by the marker) are
-        // dropped, then the fresh group is appended per tracked event.
-        // Unparseable → leave alone.
-        let parsed: ClaudeSettingsJson
-        try {
-          parsed = JSON.parse(existing) as ClaudeSettingsJson
-          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
-        } catch {
-          return null
-        }
-        const hooks: Record<string, ClaudeHookGroup[]> =
-          typeof parsed.hooks === 'object' && parsed.hooks !== null && !Array.isArray(parsed.hooks)
-            ? parsed.hooks
-            : {}
-        for (const event of CLAUDE_EVENTS) {
-          const kept: ClaudeHookGroup[] = []
-          for (const group of Array.isArray(hooks[event]) ? hooks[event] : []) {
-            if (typeof group !== 'object' || group === null) {
-              kept.push(group)
-              continue
-            }
-            const entries = Array.isArray(group.hooks) ? group.hooks : []
-            const filtered = entries.filter(
-              (h) => !(typeof h?.command === 'string' && h.command.includes(CATE_HOOK_MARKER)),
-            )
-            if (entries.length > 0 && filtered.length === 0) continue // group was ours
-            kept.push(filtered.length === entries.length ? group : { ...group, hooks: filtered })
-          }
-          hooks[event] = [...kept, oursGroup()]
-        }
-        const out = JSON.stringify({ ...parsed, hooks }, null, 2) + '\n'
-        return out === existing ? null : out
-      },
+      // Shared with claude's own writes (its "always allow" permission grants
+      // land in this file) — merged, never clobbered.
+      build: (existing, ctx) =>
+        mergeSharedHooksFile(existing, CLAUDE_EVENTS, () => ({
+          hooks: [{ type: 'command', command: ctx.bridgeCommand }],
+        })),
     },
   ],
   normalize: (p) => {
@@ -269,15 +245,25 @@ const claudeSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
-// codex — per-invocation `-c` overrides. Untrusted hooks are SILENTLY skipped,
-// so each injected hook rides with a hooks.state trust entry whose
-// trusted_hash covers the canonical handler identity. Key + hash formats are
-// codex internals pinned by the live contract suite — the assertion there is
-// the early warning when this drifts.
+// codex — hooks ride in <project>/.codex/hooks.json (repo scope, discovered
+// by codex itself). File injection on purpose: the earlier six per-invocation
+// `-c` overrides were argv injection, which any alias, rc-file PATH prepend,
+// or absolute-path launch silently bypasses. Codex loads project hooks ONLY
+// from a folder the user trusts, and unknown hooks get a ONE-TIME interactive
+// review prompt (non-interactive runs silently skip them); on "trust", codex
+// persists the grant in ITS OWN user state, keyed by the hook source path and
+// a hash of the handler identity. That trust key is why the bridge command
+// path must stay stable across app restarts (see the stable hooks dir in
+// runtime/capabilities/agentHooks.ts) — a churning path would re-prompt
+// "modified since last trusted" on every boot. Schema + trust behavior pinned
+// live by agentHookContracts.itest.ts.
 // ---------------------------------------------------------------------------
 
-/** sha256 of codex's canonical handler identity — the exact builder verified
- *  live (see agentHookContracts.itest.ts trustedHash). */
+/** sha256 of codex's canonical handler identity — the recipe codex checks a
+ *  hooks.state trusted_hash against, verified live (see
+ *  agentHookContracts.itest.ts trustedHash). Product code no longer plants
+ *  trust (the user grants it once in codex's own review prompt); the builder
+ *  stays exported for the pinned-vector test and the live suite's harness. */
 export function codexTrustedHash(label: string, command: string, timeout: number): string {
   const identity =
     `{"event_name":${JSON.stringify(label)},"hooks":[{"async":false,` +
@@ -285,36 +271,24 @@ export function codexTrustedHash(label: string, command: string, timeout: number
   return 'sha256:' + createHash('sha256').update(identity).digest('hex')
 }
 
-/** [TOML key (CamelCase), trust label (snake_case)] pairs — the two casings
- *  are a codex quirk, not a typo. */
-const CODEX_EVENTS: Array<[string, string]> = [
-  ['SessionStart', 'session_start'],
-  ['UserPromptSubmit', 'user_prompt_submit'],
-  ['PermissionRequest', 'permission_request'],
-  ['PostToolUse', 'post_tool_use'],
-  ['Stop', 'stop'],
-]
+/** hooks.json event keys (CamelCase). Codex's own trust-state keys use
+ *  snake_case labels of these same events — a codex quirk the live suite's
+ *  trust harness mirrors. */
+const CODEX_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'Stop']
 
 const CODEX_HOOK_TIMEOUT = 60
 
 const codexSpec: AgentHookSpec = {
-  shim: {
-    args: (ctx) => {
-      const args: string[] = []
-      const state: string[] = []
-      for (const [toml, label] of CODEX_EVENTS) {
-        args.push('-c', `hooks.${toml}=[{hooks=[{type="command",command="${ctx.bridgeCommand}",timeout=${CODEX_HOOK_TIMEOUT}}]}]`)
-        // The state key contains dots, so it rides as one inline table — it
-        // cannot go through -c's dotted-path parser.
-        state.push(
-          `"/<session-flags>/config.toml:${label}:0:0"={trusted_hash="${codexTrustedHash(label, ctx.bridgeCommand, CODEX_HOOK_TIMEOUT)}"}`,
-        )
-      }
-      args.push('-c', `hooks.state={${state.join(',')}}`)
-      return args
+  projectFiles: [
+    {
+      relPath: '.codex/hooks.json',
+      // Shared with the user's own codex hooks — merged, never clobbered.
+      build: (existing, ctx) =>
+        mergeSharedHooksFile(existing, CODEX_EVENTS, () => ({
+          hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: CODEX_HOOK_TIMEOUT }],
+        })),
     },
-    // No preassign: codex has no session-id pre-assignment flag.
-  },
+  ],
   normalize: (p) => {
     const base = {
       sessionId: str(p.session_id),
@@ -336,12 +310,21 @@ const codexSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
-// pi — in-process extension via `-e <file.ts>`; identity from
+// pi — in-process extension auto-discovered from <cwd>/.pi/extensions/*.ts
+// (project scope, `--no-extensions` disables). File injection on purpose: the
+// original `-e <tempfile>` argv channel was launch-method dependent (any
+// rc-file PATH prepend, alias, or absolute-path launch silently bypassed
+// it) — the same failure mode that moved claude's hooks into its settings
+// file. Cate owns
+// cate-hook.ts outright; it self-gates on the Cate env vars, so it is inert
+// if committed and loaded by a teammate's pi. Identity from
 // ctx.sessionManager on every event; agent_start/agent_end bracket each turn.
-// The extension posts to the daemon itself (fetch), so no bridge process runs.
+// The extension posts to the daemon itself (fetch), so no bridge process
+// runs.
 // ---------------------------------------------------------------------------
 
-const PI_EXTENSION_SOURCE = `// Generated by the Cate runtime daemon (agent hook injection). Do not edit.
+const PI_EXTENSION_SOURCE = `// cate-hook — generated by Cate (agent hook injection); do not edit.
+// Inert outside Cate terminals: it no-ops unless the CATE_HOOK_* env vars are set.
 const ENDPOINT = process.env.${CATE_HOOK_ENDPOINT_ENV};
 const TOKEN = process.env.${CATE_HOOK_TOKEN_ENV};
 export default function (pi: any) {
@@ -373,14 +356,16 @@ export default function (pi: any) {
 `
 
 const piSpec: AgentHookSpec = {
-  shim: {
-    file: { name: 'cate-hook-pi.ts', content: () => PI_EXTENSION_SOURCE },
-    args: (ctx) => ['-e', ctx.filePath],
-    preassign: {
-      flag: '--session-id',
-      blockers: ['--resume', '--session', '--session-id', '--continue', 'resume'],
+  projectFiles: [
+    {
+      relPath: '.pi/extensions/cate-hook.ts',
+      // Cate owns this whole file (the header marker says so): rewrite on any
+      // drift — including a user edit — and leave every other file in
+      // .pi/extensions/ alone. The content is boot-independent (the endpoint
+      // rides in env), so an up-to-date file is never rewritten.
+      build: (existing) => (existing === PI_EXTENSION_SOURCE ? null : PI_EXTENSION_SOURCE),
     },
-  },
+  ],
   normalize: (p) => {
     const base = {
       sessionId: str(p.sessionId),
@@ -462,133 +447,6 @@ const opencodeSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
-// cursor — <workspace>/.cursor/hooks.json (project-scoped), conversation_id on
-// every event. sessionStart does NOT fire on --resume (pinned live), so the
-// tracker keys on whatever event carries the id first.
-// ---------------------------------------------------------------------------
-
-const CURSOR_EVENTS = ['sessionStart', 'beforeSubmitPrompt', 'stop', 'sessionEnd']
-
-interface CursorHooksJson {
-  version?: unknown
-  hooks?: Record<string, Array<{ command?: unknown }>>
-  [k: string]: unknown
-}
-
-const cursorSpec: AgentHookSpec = {
-  projectFiles: [
-    {
-      relPath: '.cursor/hooks.json',
-      build: (existing, ctx) => {
-        const ours = (): CursorHooksJson => ({
-          version: 1,
-          hooks: Object.fromEntries(CURSOR_EVENTS.map((e) => [e, [{ command: ctx.bridgeCommand }]])),
-        })
-        if (existing === null) return JSON.stringify(ours(), null, 2) + '\n'
-        // Merge, never clobber: keep every user field/handler; drop only STALE
-        // Cate entries (per-boot bridge paths, recognized by the marker) and
-        // append the fresh one per tracked event. Unparseable → leave alone.
-        let parsed: CursorHooksJson
-        try {
-          parsed = JSON.parse(existing) as CursorHooksJson
-          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
-        } catch {
-          return null
-        }
-        const hooks: Record<string, Array<{ command?: unknown }>> =
-          typeof parsed.hooks === 'object' && parsed.hooks !== null ? parsed.hooks : {}
-        for (const event of CURSOR_EVENTS) {
-          const kept = (Array.isArray(hooks[event]) ? hooks[event] : []).filter(
-            (h) => !(typeof h?.command === 'string' && h.command.includes(CATE_HOOK_MARKER)),
-          )
-          hooks[event] = [...kept, { command: ctx.bridgeCommand }]
-        }
-        const next = { version: parsed.version ?? 1, ...parsed, hooks }
-        const out = JSON.stringify(next, null, 2) + '\n'
-        return out === existing ? null : out
-      },
-    },
-  ],
-  normalize: (p) => {
-    const base = { sessionId: str(p.conversation_id) }
-    switch (p.hook_event_name) {
-      case 'sessionStart': return { kind: 'session-start', ...base }
-      case 'beforeSubmitPrompt': return { kind: 'turn-start', ...base }
-      case 'stop': return { kind: 'turn-end', ...base }
-      case 'sessionEnd': return { kind: 'session-end', ...base }
-      default: return null
-    }
-  },
-}
-
-// ---------------------------------------------------------------------------
-// agy — <workspace>/.agents/hooks.json (agy-specific schema: named hook →
-// event → handler list). Only PreInvocation/Stop are safe to observe (an
-// observing PreToolUse that doesn't answer {"decision":"allow"} DENIES tool
-// calls). Trust is pre-seeded via trustedWorkspaces in the CLI's settings.
-// ---------------------------------------------------------------------------
-
-const AGY_HOOK_NAME = 'cate-hook-bridge'
-
-interface AgyHooksJson {
-  [name: string]: unknown
-}
-
-const agySpec: AgentHookSpec = {
-  projectFiles: [
-    {
-      relPath: '.agents/hooks.json',
-      build: (existing, ctx) => {
-        const ours = {
-          PreInvocation: [{ type: 'command', command: ctx.bridgeCommand, timeout: 30 }],
-          Stop: [{ type: 'command', command: ctx.bridgeCommand, timeout: 30 }],
-        }
-        if (existing === null) return JSON.stringify({ [AGY_HOOK_NAME]: ours }, null, 2) + '\n'
-        // Merge under our own named-hook key (agy's schema namespaces hooks by
-        // name, so replacing ONLY that key preserves every user hook).
-        // Unparseable → leave alone.
-        let parsed: AgyHooksJson
-        try {
-          parsed = JSON.parse(existing) as AgyHooksJson
-          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
-        } catch {
-          return null
-        }
-        const out = JSON.stringify({ ...parsed, [AGY_HOOK_NAME]: ours }, null, 2) + '\n'
-        return out === existing ? null : out
-      },
-    },
-  ],
-  trust: {
-    relPath: '.gemini/antigravity-cli/settings.json',
-    build: (existing, workspaceRoot) => {
-      let settings: { trustedWorkspaces?: unknown; [k: string]: unknown } = {}
-      if (existing !== null) {
-        try {
-          settings = JSON.parse(existing) as typeof settings
-          if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return null
-        } catch {
-          return null // never clobber an unparseable user settings file
-        }
-      }
-      const list = Array.isArray(settings.trustedWorkspaces) ? (settings.trustedWorkspaces as unknown[]) : []
-      if (list.includes(workspaceRoot)) return null
-      return JSON.stringify({ ...settings, trustedWorkspaces: [...list, workspaceRoot] }, null, 2) + '\n'
-    },
-  },
-  normalize: (p) => {
-    // agy payloads carry conversationId on every event but no event name; only
-    // PreInvocation and Stop are registered, and Stop is the one that carries
-    // terminationReason — the same disambiguation the live contract suite uses.
-    const sessionId = str(p.conversationId)
-    if (sessionId === null) return null
-    return p.terminationReason !== undefined
-      ? { kind: 'turn-end', sessionId }
-      : { kind: 'turn-start', sessionId }
-  },
-}
-
-// ---------------------------------------------------------------------------
 // Registry + normalization entry point
 // ---------------------------------------------------------------------------
 
@@ -597,8 +455,6 @@ export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   codex: codexSpec,
   pi: piSpec,
   opencode: opencodeSpec,
-  cursor: cursorSpec,
-  antigravity: agySpec,
 }
 
 /** Normalize one raw bridge-posted payload into the shared event, or null when

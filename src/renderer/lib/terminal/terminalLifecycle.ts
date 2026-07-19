@@ -41,8 +41,6 @@ import { useStatusStore } from '../../stores/statusStore'
 import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
 import { replayTerminalLog } from '../workspace/session'
 import { extractAgentTitleSegment, shellTitleBasename } from '../agent/agentTitleParser'
-import { titleIndicatesRunning, outputShowsBodySpinner } from '../agent/agentSpinner'
-import { noteAgentTitle, noteAgentSpinnerByte } from '../agent/agentScreenDetector'
 
 interface CreateOpts {
   workspaceId: string
@@ -200,9 +198,6 @@ export function wireTerminalListeners(args: {
     if (id === ptyId) {
       sawOutput = true
       terminal.write(data)
-      // Body-spinner feed for the fallback agents (cursor/agy); the
-      // coordinator drops this input for hook-covered agents.
-      if (outputShowsBodySpinner(data)) noteAgentSpinnerByte(ptyId)
     }
   })
   cleanupListeners.push(removeDataListener)
@@ -226,17 +221,14 @@ export function wireTerminalListeners(args: {
 
   // OSC 0/1/2 — agent CLIs write their live status into the terminal title.
   // Forward the parsed middle segment to the panel title unless the user has
-  // manually renamed the tab. The spinner classification feeds the fallback
-  // agents (cursor/agy) only; the coordinator drops it for hook-covered ones.
+  // manually renamed the tab.
   const titleDisposable = terminal.onTitleChange((raw) => {
     const parsed = extractAgentTitleSegment(raw)
     if (!parsed) return
-    const running = titleIndicatesRunning(parsed)
     // Defer to a microtask so OSC sequences arriving during xterm.write()
     // (e.g. scrollback replay on attach) don't run set() inside React's
     // commit phase, which would trip "Maximum update depth".
     queueMicrotask(() => {
-      noteAgentTitle(ptyId, running)
       applyOscTitleIfNoAgent(ptyId, opts.workspaceId, panelId, parsed)
     })
   })

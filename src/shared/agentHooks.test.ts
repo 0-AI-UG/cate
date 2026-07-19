@@ -10,7 +10,6 @@ import {
   CATE_HOOK_MARKER,
   codexTrustedHash,
   normalizeAgentHookPayload,
-  sessionPreassignEnvVar,
   type HookInjectionContext,
 } from './agentHooks'
 
@@ -41,14 +40,6 @@ describe('claude spec', () => {
   }
 
   const file = spec.projectFiles![0]
-
-  test('shim injects NO argv (hooks ride the project file; PATH shims are bypassable)', () => {
-    // Regression: --settings hook injection via the PATH shim silently died
-    // for every user whose shell rc prepends the CLI's install dir (uv/bun
-    // boilerplate prepends ~/.local/bin — where claude lives). Hooks must not
-    // depend on the shim; it survives only for session pre-assignment.
-    expect(spec.shim!.args(ctx)).toEqual([])
-  })
 
   test('creates .claude/settings.local.json with the bridge on all six hook events', () => {
     expect(file.relPath).toBe('.claude/settings.local.json')
@@ -91,14 +82,6 @@ describe('claude spec', () => {
     expect(file.build('{not json', ctx)).toBeNull()
     const fresh = file.build(null, ctx)!
     expect(file.build(fresh, ctx)).toBeNull()
-  })
-
-  test('preassign declares --session-id gated on session-affecting argv', () => {
-    expect(spec.shim!.preassign!.flag).toBe('--session-id')
-    for (const b of ['--resume', '-r', '--continue', '-c', '--session-id', 'resume']) {
-      expect(spec.shim!.preassign!.blockers).toContain(b)
-    }
-    expect(sessionPreassignEnvVar('claude-code')).toBe('CATE_SESSION_PREASSIGN_CLAUDE_CODE')
   })
 
   test('lifecycle events normalize with identity fields', () => {
@@ -146,27 +129,59 @@ describe('claude spec', () => {
 
 describe('codex spec', () => {
   const spec = AGENT_HOOK_SPECS.codex
+  const file = spec.projectFiles![0]
 
-  test('shim args carry the -c hook overrides plus a matching hooks.state trust table', () => {
-    const args = spec.shim!.args(ctx)
-    // Alternating -c/value pairs.
-    for (let i = 0; i < args.length; i += 2) expect(args[i]).toBe('-c')
-    const values = args.filter((_, i) => i % 2 === 1)
-    // CamelCase TOML keys for the hook arrays…
-    for (const toml of ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'Stop']) {
-      const entry = values.find((v) => v.startsWith(`hooks.${toml}=`))
-      expect(entry, `hooks.${toml}`).toBeTruthy()
-      expect(entry).toContain(`command="${ctx.bridgeCommand}"`)
-      expect(entry).toContain('timeout=60')
+  test('creates .codex/hooks.json with the bridge + timeout on all five events', () => {
+    expect(file.relPath).toBe('.codex/hooks.json')
+    const parsed = JSON.parse(file.build(null, ctx)!) as {
+      hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string; timeout: number }> }>>
     }
-    // …snake_case labels in the ONE inline hooks.state table, each with the
-    // self-supplied trusted_hash (untrusted hooks are silently skipped).
-    const state = values.find((v) => v.startsWith('hooks.state='))
-    expect(state).toBeTruthy()
-    for (const label of ['session_start', 'user_prompt_submit', 'permission_request', 'post_tool_use', 'stop']) {
-      expect(state).toContain(`"/<session-flags>/config.toml:${label}:0:0"`)
-      expect(state).toContain(codexTrustedHash(label, ctx.bridgeCommand, 60))
+    expect(Object.keys(parsed.hooks).sort()).toEqual(
+      ['PermissionRequest', 'PostToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort(),
+    )
+    for (const groups of Object.values(parsed.hooks)) {
+      expect(groups).toEqual([{ hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: 60 }] }])
     }
+  })
+
+  test('merges into an existing hooks.json: user hooks/fields kept, stale Cate groups refreshed', () => {
+    const existing = JSON.stringify({
+      notifications: true, // a foreign top-level field survives
+      hooks: {
+        Stop: [
+          { hooks: [{ type: 'command', command: '/home/u/my-codex-hook.sh', timeout: 5 }] },
+          { hooks: [{ type: 'command', command: `/old-boot-dir/${CATE_HOOK_MARKER}-bridge-codex`, timeout: 60 }] },
+        ],
+      },
+    })
+    const out = file.build(existing, ctx)!
+    const parsed = JSON.parse(out) as {
+      notifications: unknown
+      hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>
+    }
+    expect(parsed.notifications).toBe(true)
+    const stopCommands = parsed.hooks.Stop.flatMap((g) => g.hooks.map((h) => h.command))
+    expect(stopCommands).toContain('/home/u/my-codex-hook.sh')
+    expect(stopCommands).toContain(ctx.bridgeCommand)
+    expect(stopCommands).not.toContain(`/old-boot-dir/${CATE_HOOK_MARKER}-bridge-codex`)
+    // Every tracked event gained our group.
+    expect(parsed.hooks.PermissionRequest.flatMap((g) => g.hooks.map((h) => h.command))).toContain(ctx.bridgeCommand)
+  })
+
+  test('a "hooks": [] value is replaced, never silently swallowed', () => {
+    // [] passes typeof-object checks, and named keys assigned onto an array
+    // vanish in JSON.stringify — this exact bug shipped in the old cursor
+    // merge. The guard must rebuild hooks as a real object.
+    const out = file.build(JSON.stringify({ hooks: [] }), ctx)!
+    const parsed = JSON.parse(out) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> }
+    expect(Array.isArray(parsed.hooks)).toBe(false)
+    expect(parsed.hooks.SessionStart[0].hooks[0].command).toBe(ctx.bridgeCommand)
+  })
+
+  test('leaves an unparseable hooks.json alone; identical rewrite is a no-op', () => {
+    expect(file.build('{not json', ctx)).toBeNull()
+    const fresh = file.build(null, ctx)!
+    expect(file.build(fresh, ctx)).toBeNull()
   })
 
   test('normalizes lifecycle + PermissionRequest', () => {
@@ -200,16 +215,25 @@ describe('codex spec', () => {
 
 describe('pi spec', () => {
   const spec = AGENT_HOOK_SPECS.pi
+  const file = spec.projectFiles![0]
 
-  test('shim injects -e with the in-process extension file', () => {
-    expect(spec.shim!.args(ctx)).toEqual(['-e', ctx.filePath])
-    const src = spec.shim!.file!.content()
-    // The extension posts identity from ctx.sessionManager and echoes the env.
+  test('owns .pi/extensions/cate-hook.ts outright: created when absent, rewritten on any drift', () => {
+    expect(file.relPath).toBe('.pi/extensions/cate-hook.ts')
+    const src = file.build(null, ctx)!
+    // Marker in the header — prepareWorkspace re-recognizes the file as ours.
+    expect(src).toContain(CATE_HOOK_MARKER)
+    // The extension posts identity from ctx.sessionManager, echoes the env,
+    // and self-gates on the Cate env vars (inert in a teammate's checkout).
     expect(src).toContain('getSessionId')
     expect(src).toContain('CATE_TERMINAL_ID')
+    expect(src).toContain('CATE_HOOK_ENDPOINT')
     for (const ev of ['session_start', 'agent_start', 'agent_end', 'session_shutdown']) {
       expect(src).toContain(ev)
     }
+    // Content is boot-independent: up-to-date file untouched, ANY drift
+    // (even a user edit — Cate owns this file) rewritten.
+    expect(file.build(src, ctx)).toBeNull()
+    expect(file.build('// user-edited\n' + src, ctx)).toBe(src)
   })
 
   test('normalizes the extension-posted lifecycle', () => {
@@ -266,106 +290,6 @@ describe('opencode spec', () => {
     // forward the reply value at all.
     expect(norm('opencode', { type: 'permission.replied', sessionID: 'ses_1' })?.kind).toBe('turn-resume')
     expect(spec.env!.file.content()).toContain('permission.replied')
-  })
-})
-
-describe('cursor spec', () => {
-  const spec = AGENT_HOOK_SPECS.cursor
-  const file = spec.projectFiles![0]
-
-  test('creates .cursor/hooks.json when absent', () => {
-    expect(file.relPath).toBe('.cursor/hooks.json')
-    const out = file.build(null, ctx)!
-    const parsed = JSON.parse(out) as { version: number; hooks: Record<string, Array<{ command: string }>> }
-    expect(parsed.version).toBe(1)
-    expect(Object.keys(parsed.hooks).sort()).toEqual(['beforeSubmitPrompt', 'sessionEnd', 'sessionStart', 'stop'].sort())
-    for (const handlers of Object.values(parsed.hooks)) expect(handlers[0].command).toBe(ctx.bridgeCommand)
-  })
-
-  test('merges into an existing user file: user handlers kept, stale Cate entries refreshed', () => {
-    const existing = JSON.stringify({
-      version: 1,
-      hooks: {
-        sessionStart: [
-          { command: '/home/u/my-own-hook.sh' },
-          { command: `/old-boot-dir/${CATE_HOOK_MARKER}-bridge-cursor` }, // stale ours
-        ],
-      },
-      userField: true,
-    })
-    const out = file.build(existing, ctx)!
-    const parsed = JSON.parse(out) as { hooks: Record<string, Array<{ command: string }>>; userField: boolean }
-    expect(parsed.userField).toBe(true)
-    const commands = parsed.hooks.sessionStart.map((h) => h.command)
-    expect(commands).toContain('/home/u/my-own-hook.sh')
-    expect(commands).toContain(ctx.bridgeCommand)
-    expect(commands).not.toContain(`/old-boot-dir/${CATE_HOOK_MARKER}-bridge-cursor`)
-    // Every tracked event gained our handler.
-    expect(parsed.hooks.stop.map((h) => h.command)).toContain(ctx.bridgeCommand)
-  })
-
-  test('leaves an unparseable user file alone; identical rewrite is a no-op', () => {
-    expect(file.build('{not json', ctx)).toBeNull()
-    const fresh = file.build(null, ctx)!
-    expect(file.build(fresh, ctx)).toBeNull()
-  })
-
-  test('normalizes conversation events', () => {
-    const id = '12121212-3434-4545-8767-989898989898'
-    expect(norm('cursor', { hook_event_name: 'sessionStart', conversation_id: id })).toMatchObject({
-      kind: 'session-start',
-      sessionId: id,
-    })
-    expect(norm('cursor', { hook_event_name: 'beforeSubmitPrompt', conversation_id: id })?.kind).toBe('turn-start')
-    expect(norm('cursor', { hook_event_name: 'stop', conversation_id: id, status: 'completed' })?.kind).toBe('turn-end')
-    expect(norm('cursor', { hook_event_name: 'sessionEnd', conversation_id: id })?.kind).toBe('session-end')
-    // afterAgentResponse is not registered, but a stray payload must drop.
-    expect(norm('cursor', { hook_event_name: 'afterAgentResponse', conversation_id: id })).toBeNull()
-  })
-})
-
-describe('agy spec', () => {
-  const spec = AGENT_HOOK_SPECS.antigravity
-  const file = spec.projectFiles![0]
-
-  test('creates .agents/hooks.json with only the safe PreInvocation/Stop hooks', () => {
-    expect(file.relPath).toBe('.agents/hooks.json')
-    const parsed = JSON.parse(file.build(null, ctx)!) as Record<string, Record<string, Array<{ command: string }>>>
-    const ours = parsed['cate-hook-bridge']
-    // ONLY PreInvocation/Stop — an observing PreToolUse would DENY tool calls.
-    expect(Object.keys(ours).sort()).toEqual(['PreInvocation', 'Stop'])
-    expect(ours.Stop[0].command).toBe(ctx.bridgeCommand)
-  })
-
-  test('merges under our named key, preserving user hooks; unparseable is left alone', () => {
-    const existing = JSON.stringify({ 'user-hook': { Stop: [{ type: 'command', command: '/u/x.sh' }] } })
-    const parsed = JSON.parse(file.build(existing, ctx)!) as Record<string, unknown>
-    expect(parsed['user-hook']).toEqual({ Stop: [{ type: 'command', command: '/u/x.sh' }] })
-    expect(parsed['cate-hook-bridge']).toBeTruthy()
-    expect(file.build('][', ctx)).toBeNull()
-    const fresh = file.build(null, ctx)!
-    expect(file.build(fresh, ctx)).toBeNull()
-  })
-
-  test('trust seeding adds the workspace once and preserves other settings', () => {
-    const t = spec.trust!
-    expect(t.relPath).toBe('.gemini/antigravity-cli/settings.json')
-    const first = t.build(JSON.stringify({ theme: 'dark' }), '/w')!
-    const parsed = JSON.parse(first) as { theme: string; trustedWorkspaces: string[] }
-    expect(parsed.theme).toBe('dark')
-    expect(parsed.trustedWorkspaces).toEqual(['/w'])
-    // Already trusted → no rewrite; unparseable → left alone.
-    expect(t.build(first, '/w')).toBeNull()
-    expect(t.build('nope{', '/w')).toBeNull()
-    // Absent file → created with just the trust list.
-    expect(JSON.parse(t.build(null, '/w')!)).toEqual({ trustedWorkspaces: ['/w'] })
-  })
-
-  test('normalizes by payload shape: terminationReason marks turn-end', () => {
-    const id = 'abcdabcd-1234-4123-8123-abcdabcdabcd'
-    expect(norm('antigravity', { conversationId: id })).toMatchObject({ kind: 'turn-start', sessionId: id })
-    expect(norm('antigravity', { conversationId: id, terminationReason: 'STOP' })?.kind).toBe('turn-end')
-    expect(norm('antigravity', { something: 'else' })).toBeNull()
   })
 })
 

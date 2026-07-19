@@ -12,7 +12,7 @@
 //   - gated by the cliSkillInstallEnabled setting (Settings → Terminal);
 //   - `cate-agent` is always seeded — it is Cate's own agent and `.cate/` is
 //     already Cate-managed;
-//   - every other target (claude-code, pi-native, opencode, codex, antigravity)
+//   - every other target (claude-code, pi-native, opencode, codex)
 //     is seeded only when its tool dir (`.claude`, `.agents`, …) already exists
 //     in the workspace, so repos don't grow dot-dirs for agents nobody uses
 //     there. A tool dir created later is picked up on a subsequent open.

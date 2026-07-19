@@ -23,9 +23,6 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('codex', uuid)).toBe(`codex resume ${uuid}`)
     expect(resumeCommandForAgent('pi', uuid)).toBe(`pi --session ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
-    expect(resumeCommandForAgent('cursor', uuid)).toBe(`cursor-agent --resume ${uuid}`)
-    // agy takes the conversation id as a single --conversation=<id> token.
-    expect(resumeCommandForAgent('antigravity', uuid)).toBe(`agy --conversation=${uuid}`)
   })
 
   it('returns null for unknown agent ids', () => {
@@ -37,5 +34,11 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('claude-code', 'abc def')).toBeNull()
     expect(resumeCommandForAgent('claude-code', '$(evil)')).toBeNull()
     expect(resumeCommandForAgent('claude-code', '')).toBeNull()
+  })
+
+  it('rejects dash-led session ids (flag injection into the resume argv)', () => {
+    expect(resumeCommandForAgent('claude-code', '--dangerously-skip-permissions')).toBeNull()
+    expect(resumeCommandForAgent('codex', '-x')).toBeNull()
+    expect(resumeCommandForAgent('opencode', '_leading-underscore')).toBeNull()
   })
 })
